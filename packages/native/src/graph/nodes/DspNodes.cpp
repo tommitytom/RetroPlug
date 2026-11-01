@@ -172,24 +172,32 @@ struct Gain {
 // instance or a fresh activation starts from cleared state (what `init` does). The kernel's output clamp is part of its
 // arithmetic, so the node's output is clamped to [-1, 1] as the kit path's is.
 //
-// A frequency or Q beyond the project's range is the document's to refuse (the params' range), and the kernel then
-// computes the coefficients the RBJ formulas give there; the node clamps nothing of its own, a frequency above
-// Nyquist included, because the kit path hands the spec's frequency straight to the kernel and a clamp here would be a
-// different byte for the same kit.
+// A frequency or Q beyond the project's range is not refused: the params' ranges are the node's, not the kernel's,
+// and they are narrower than a kit spec can be (20 Hz to 20 kHz, Q 0.1 to 10, -24 to 24 dB, where a kit's
+// `FilterEffect` is four plain floats). A document's or `setParam`'s value outside one is clamped silently by the
+// planner and the host, and a wired value is not clamped at all, so the kernel computes the coefficients the RBJ
+// formulas give for whatever it reads. The node clamps nothing of its own, a frequency above Nyquist included, because
+// the kit path hands the spec's frequency straight to the kernel and a clamp here would be a different byte for the
+// same kit. A kit compile therefore cannot send its spec through these params as they are: D2's design has to widen
+// them, carry the spec in settings or wire it (the D1 design, section 8).
 //
 // Above Nyquist the RBJ formulas put the poles outside the unit circle, so the kernel's unclamped feedback grows until
 // the state is infinite and then NaN, and the clamp writes a NaN through (`std::clamp` of a NaN is the NaN). That is
 // reachable at the 22050 and 32000 Hz rates the standalone offers, where the frequency knob's top half is above
-// Nyquist, and nothing between the node and the host output rejects a non-finite sample. So the node guards the state
-// and leaves the coefficients alone: a channel whose filter came out of a block with any of its four state values not
-// finite has that filter reset and its block written as silence, so a sweep past Nyquist cannot poison the stream, and
-// a frequency that comes back into range is a fresh filter's from the next block on.
+// Nyquist, and nothing between the node and the host output rejects a non-finite sample. The growth is slow enough to
+// be heard: about 700 samples from a cleared state at 12 kHz on a 22.05 kHz plan, and the kernel's clamp writes
+// rail-to-rail output in every block until the guard fires, so a held above-Nyquist setting is full-scale bursts with
+// the silent blocks the guard writes between them rather than silence. So the node guards the state and leaves the
+// coefficients alone: a channel whose filter came out of a block with any of its four state values not finite has that
+// filter reset and its block written as silence, so a sweep past Nyquist cannot poison the stream, and a frequency that
+// comes back into range is a fresh filter's from the next block on.
 //
-// That guard is the one place this node knowingly differs from the kernel run directly, and the difference is
-// byte-visible: a kit filter whose frequency is above its source rate's Nyquist produces constant codes today (the
-// state goes NaN, and the quantiser reads every NaN as code 0), where this node recovers instead. No case in the kit
-// baseline is in that regime, so none of its bytes moved; D2, whose contract is byte identity, has to decide between
-// the kernel call and this node for such a kit.
+// That guard differs from the kernel run directly in two regimes, and it is byte-visible in both: a kit filter whose
+// frequency is above its source rate's Nyquist produces constant codes today (the state goes NaN, and the quantiser
+// reads every NaN as code 0), where this node recovers; and any non-finite input sample, which a decoded 32-bit float
+// WAV can carry (nothing between the sample cache and the kit compiler checks), latches the kernel for good, where this
+// node resets. No case in the kit baseline is in either regime, so none of its bytes moved; D2, whose contract is byte
+// identity, has to decide between the kernel call and this node for both.
 struct Biquad {
     static constexpr const char* id = "rp.dsp.biquad";
     static constexpr const char* name = "Biquad";
@@ -301,6 +309,11 @@ struct Biquad {
 // a block with any of its state not finite therefore has its state restarted from the settings: the latch lasts one
 // block rather than the stream. The block itself is left as the kernel quantised it, which is finite and at worst full
 // scale, so only the state is restarted and the click is one block's.
+//
+// That restart is a second place the node differs from the kernel run directly, and a kit can reach it: nothing
+// between `SampleCache` and `KitCompiler` rejects a non-finite sample, so a 32-bit float WAV carrying a NaN or an
+// infinity latches the kernel for the rest of the slot where this node recovers at the next block. No baseline case
+// carries one, so no kit byte moved; D2 has to decide for both this and the biquad's guard.
 struct Dither {
     static constexpr const char* id = "rp.dsp.dither";
     static constexpr const char* name = "Dither";

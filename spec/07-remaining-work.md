@@ -352,7 +352,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `lsdj/Effects`, `KitUtil` and `RisaDmcCodec` run those kernels. The graph has them as `rp.dsp.gain`, `.biquad`,
   `.dither` and `rp.dsp.resample` (`retroplug-dsp-nodes` / `retroplug-dsp-resample-nodes`, the resampler a package and
   target of its own so a Pico build can leave it and r8brain out). TPDF dither is seeded from a hash of the sample it
-  sees, so a kit compiles to the same bytes, and `retroplug-audio-test`'s `[kit-baseline]` holds 33 compiled banks to
+  sees, so a kit compiles to the same bytes, and `retroplug-audio-test`'s `[kit-baseline]` holds 39 compiled banks to
   a golden. Strict parity held bit for bit at every commit, and the baseline did not move by a hash through the kernel
   move. What it leaves:
   - **D2**: audio buffers in and out of a document, a run-to-completion driver over `GraphHost`, normalise in a graph,
@@ -360,6 +360,13 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     baseline. D1's build fixes the seed rule (hash the whole pre-trim buffer and pass `rp::dsp::inputSeed` in the
     node's `seed`), normalise (call `normalizedGain`, a reciprocal multiply), and the order (effects at the source
     rate, resample, quantise, `frameAlign`, nibble pack).
+  - **D2 has to widen the nodes or wire around them.** The nodes' param ranges are narrower than a kit spec can be
+    (`rp.dsp.gain` 0..4 where a normalised `gain / peak` runs to about 7.4 for a quiet source and negative for a phase
+    flip; `rp.dsp.biquad` 20 Hz to 20 kHz, Q 0.1 to 10, -24..24 dB where a kit's `FilterEffect` can be 10 Hz at Q 20 or
+    a 30 dB shelf), and a document's or `setParam`'s out-of-range value is clamped into the range silently, where a
+    wired param is not clamped. D2 needs wider ranges, settings-level values or a control wire, and the baseline now
+    carries the cases to hold it to: a quiet source normalised at all three rates (and through a dither), a negative
+    gain, a 10 Hz high-pass at Q 20, and a 30 dB high shelf.
   - **D3**: the CLI `render` and the UI background renders on the offline driver, keeping their block-size sequence
     and per-block side effects or re-scoping their byte-identity claim; D1 changed neither path.
   - **Residuals.** The kit baseline is a 4-bit view and nearly blind to a one-ulp move in Sierra Lite or JJN (the
@@ -367,10 +374,17 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     refuses a port reader beside a writer, and a settings ref is a binding it does not see), and a rate change resumes
     where the output had reached, so a fresh r8brain run-in is heard from there rather than a gap. Dither's per-channel
     state is about 5 KB, and two `rp.dsp.dither` nodes with the same settings draw the same noise: the seed step
-    separates one node's channels, not two nodes. An above-Nyquist kit filter compiles to constant codes today (the
-    biquad's state goes NaN and the quantiser reads every NaN as code 0), where `rp.dsp.biquad` recovers, so D2 has to
-    decide between the kernel call and the node for such a kit. The plugin still cannot compile a kit (the RPCs remain
-    harness-only), which D2 owns.
+    separates one node's channels, not two nodes. A kit filter above its source rate's Nyquist compiles to constant
+    codes today (the biquad's state goes NaN and the quantiser reads every NaN as code 0), where `rp.dsp.biquad`
+    recovers, so D2 has to decide between the kernel call and the node for such a kit. Both guards also differ from the
+    kernel on any non-finite sample a decoded 32-bit float WAV can carry (nothing between `SampleCache` and
+    `KitCompiler` checks `isfinite`): a NaN or an infinity latches a kernel where its node restarts, so D2 decides for
+    both rules. Before the biquad's guard fires its kernel writes rail-to-rail output, so a held above-Nyquist setting
+    is full-scale bursts between the guard's silent blocks, not silence. A `rp::dsp::Resampler` destroyed after
+    `R8bBase.cpp`'s statics is a use-after-free in r8brain's `unref` (it locks a static mutex and writes into
+    cache-owned objects), so D2's driver and D3's renders keep every resampler inside an `Engine`'s life, as D1's hosts
+    do by tearing every Engine down before exit. The plugin still cannot compile a kit (the RPCs remain harness-only),
+    which D2 owns.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

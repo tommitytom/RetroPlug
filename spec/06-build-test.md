@@ -225,13 +225,15 @@ compared a compiled bank with anything; the suite is the gate Phase D's graph co
 
 - **Matrix.** `[kit-baseline]` ([KitBaseline.test.cpp](../packages/native/test/audio/KitBaseline.test.cpp), in
   `retroplug-audio-test`; it carries `[kit]` beside the tag, which `[dither]` carries too, so one `"[kit]"` run
-  covers the kit path's whole byte surface) synthesises every source in the test (two sines, a chirp, seeded noise and
-  silence at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk), writes each as a
-  32-bit float WAV in a temp dir, and compiles it through `KitCompiler` over `LsdjKitCodec` / `RisaDmcCodec`, so
-  `SampleCache` and miniaudio's decode are in the loop and the suite needs no fixtures. 33 cases: LSDj has no effect,
-  gain, normalise (a silent source too), each of the eight filters, each of the five dithers, rotate on and off, a
-  filter-gain-dither chain, the short source and a two-slot bank; risa has five DMC rate indices, normalise off, loop
-  on, a silent normalise at two rates, the short source and a two-slot bank. The two-slot banks add a second sample
+  covers the kit path's whole byte surface) synthesises every source in the test (two sines, a quiet sine, a chirp,
+  seeded noise and silence at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk), writes
+  each as a 32-bit float WAV in a temp dir, and compiles it through `KitCompiler` over `LsdjKitCodec` / `RisaDmcCodec`,
+  so `SampleCache` and miniaudio's decode are in the loop and the suite needs no fixtures. 39 cases: LSDj has no
+  effect, gain, normalise (a silent source too), a quiet source normalised at every rate and through a dither, a
+  negative gain, each of the eight filters, a 10 Hz high-pass at Q 20 and a 30 dB shelf (both outside the biquad
+  node's ranges), each of the five dithers, rotate on and off, a filter-gain-dither chain, the short source and a
+  two-slot bank; risa has five DMC rate indices, normalise off, loop on, a silent normalise at two rates, the short
+  source and a two-slot bank. The two-slot banks add a second sample
   named SNR with its own effects (on risa, a rate index of its own too) and, on the LSDj one, a lowercase over-long
   bank name, so the assembler's offset accumulation past slot 0, a second sample name and `writeString`'s uppercase
   and truncation are held by a hash too (the 15-slot loop is in every case already).
@@ -371,7 +373,7 @@ Pick the cheapest tier that actually exercises the code you touched. Trust-but-v
 |---|---|---|
 | **Application-layer logic** — stores, project model, path/sibling/suffix resolution, config schemas, routing, recent, kit selection | `pnpm test [slug]` | Runs the real TS against the mock backend on `tjs`. No emulator, ~instant. The canonical first stop for anything in `packages/retroplug/src` that doesn't need a live core. |
 | **The engine's output, bit for bit**: routing, block handling, MIDI staging, sync, anything Phase B moves | `pnpm test:native parity` | The parity baseline: one changed bit in any lane, MIDI byte or RAM byte fails, which RMS-based tests never see. |
-| **A kit compile or the DSP kernels/nodes**: the kit chain's effects and resample, anything D2's offline graphs will reuse | `pnpm test:plugin` (`[kit-baseline]`, `[dsp]`, `[dsp-nodes]`, `[dsp-resample]`) | The kit baseline holds every compiled bank to its recorded bytes (33 cases, a two-slot bank for each codec among them); the `[dsp]` cases hold the kernels to their padded references at 16 bits where a 4-bit code cannot see a one-ulp move, and the nodes' cases hold the state guards and the dither's per-channel noise. |
+| **A kit compile or the DSP kernels/nodes**: the kit chain's effects and resample, anything D2's offline graphs will reuse | `pnpm test:plugin` (`[kit-baseline]`, `[dsp]`, `[dsp-nodes]`, `[dsp-resample]`) | The kit baseline holds every compiled bank to its recorded bytes (39 cases, a two-slot bank for each codec among them, and the values the `rp.dsp` nodes' ranges would clamp silently: a normalised gain past 4, a negative gain, a 10 Hz high-pass at Q 20, a 30 dB shelf); the `[dsp]` cases hold the kernels to their padded references at 16 bits where a 4-bit code cannot see a one-ulp move, and the nodes' cases hold the state guards and the dither's per-channel noise. |
 | **DSP behaviour / cores / the command-ring & snapshot seam**: the protocol nodes and their wires, MIDI/serial, transport, actual emulator output | `pnpm test:native [slug]` | Runs the **real** Backend RPC surface with a live `SameBoySystem` on the real engine graph, the protocol nodes running in the script host every Engine embeds. Can read emulator state and branch on it. This is the tier that proves audio actually flows. |
 | **React/LVGL UI** — App/SystemGrid/tiles/Menu, input, layout | `pnpm test:ui [slug]` | Boots the real UI bundle on a software LVGL display and asserts on the live widget tree (structure, not just pixels). |
 | **Anything you want to eyeball** in the standalone | `pnpm screenshot` → Read `/tmp/retroplug.png` | Runs the JACK standalone under Xvfb + dummy jackd and dumps the LVGL screen. Drive input mid-run with `tools/standalone-key.sh` using `RETROPLUG_WINDOW_NAME="RetroPlug"`. |

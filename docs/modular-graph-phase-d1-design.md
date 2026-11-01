@@ -120,20 +120,29 @@ the graph test rig (the resampler is a package of its own beside it):
 
 - **`rp.dsp.gain`**: audio in, audio out, any channel count; one linear `gain` param (0..4, default 1). A held value
   is an exact multiply (the kit path's); a change ramps across one block from the previous block's end to the block's
-  last value, and the first block after activation snaps, so a document's value is exact from sample 0.
+  last value, and the first block after activation snaps, so a document's value is exact from sample 0. The range is
+  the node's, not the kit's: a kit's normalised gain (`gain / peak`) is well past 4 for a quiet source and negative for
+  a phase flip, and a document's or `setParam`'s value outside the range is clamped silently by the planner and the
+  host, while a wired value is not clamped at all, so D2 must not send a kit's gain through this param as it is
+  (section 8).
 - **`rp.dsp.biquad`**: state per channel; the type a setting; frequency, Q and gain (dB) params (20..20000 Hz, Q
   0.1..10, gain -24..24 dB, the last read by Peak and the shelves only), so a patch can sweep them, the coefficients
   recomputed at block start when one changes; `init` clears the state on activation and on a type change, `setup` keeps
-  it on a sweep; the clamp kept, and no other clamp added. A frequency above the plan rate's Nyquist is left to the RBJ
+  it on a sweep; the clamp kept, and no other clamp added. Those ranges are narrower than a kit spec's (a 10 Hz
+  high-pass, a Q of 20 and a 30 dB shelf are legal `FilterEffect`s today), and an out-of-range document or `setParam`
+  value is clamped silently by the planner and the host, where a wire is not clamped; D2 needs wider ranges,
+  settings-level values or a wired param (section 8). A frequency above the plan rate's Nyquist is left to the RBJ
   formulas, which put the poles outside the unit circle there, so the node guards the state rather than the
   coefficients: a channel whose filter comes out of a block with any state value not finite has that filter reset and
   its block written as silence, so a sweep past Nyquist cannot latch a NaN into the stream and the filter recovers when
-  the frequency comes back. A clamp would be a different kit byte for the same spec (D2's identity), so there is none.
-  The guard is the one place the node knowingly differs from the kernel run directly, and the difference is
-  byte-visible: a kit filter whose frequency is above its source rate's Nyquist produces constant codes today (the
-  state goes NaN, and the quantiser reads every NaN as code 0), where this node recovers. No baseline case is in that
-  regime, so no kit byte moved; D2's contract is byte identity, so D2 has to decide between the kernel call and this
-  node for such a kit.
+  the frequency comes back. Before the guard fires the kernel's clamp writes rail-to-rail output, about 700 samples of
+  growth at 12 kHz on a 22.05 kHz plan, so a held above-Nyquist setting is full-scale bursts between the guard's silent
+  blocks rather than silence. A clamp would be a different kit byte for the same spec (D2's identity), so there is
+  none. The guard differs from the kernel run directly in two regimes: a kit filter whose frequency is above its source
+  rate's Nyquist produces constant codes today (the state goes NaN, and the quantiser reads every NaN as code 0), where
+  this node recovers, and any non-finite input sample, which a decoded float WAV can carry, latches the kernel for good
+  where this node resets. No baseline case is in either regime, so no kit byte moved; D2's contract is byte identity,
+  so D2 has to decide between the kernel call and this node for both.
 - **`rp.dsp.dither`**: settings for the algorithm (the five, or `none`), the bit depth (1 to 16) and a `seed` (default
   `none`, 4 bits and `0x9e3779b9`); out as audio at the quantised levels. A settings commit restarts the noise. D2's kit
   compile fills `seed` from `inputSeed` over the whole pre-trim buffer; a live patch gets a fixed default. Each
@@ -144,7 +153,9 @@ the graph test rig (the resampler is a package of its own beside it):
   error terms would otherwise stay NaN for the rest of the stream. A NaN poisons every form's state; an infinity only
   the diffusion forms' `past[]`, because the TPDF and error-diffusion forms clamp the value before deriving their
   state from it. The block that carried the bad sample is left as the kernel quantised it, finite and at worst full
-  scale, so only the state restarts.
+  scale, so only the state restarts. A non-finite input is not only a live-device concern: a decoded 32-bit float WAV
+  can carry a NaN or an infinity and nothing between the sample cache and the kit compiler rejects one, so this restart
+  is a second byte-visible difference from the kernel run directly and D2 decides for both guards.
 - **`rp.dsp.resample`**: every port in a plan carries the same frame count at the plan's one rate, so a node cannot take
   1024 frames in and give 256 out. The resampler is a rate-aware sibling of `rp.core.buffer-player`: it takes an
   `audio-buffer` resource as a settings ref (`"buffer":"res:N"`) at that buffer's own rate and outputs at the plan
@@ -218,6 +229,27 @@ implementers and follow-ups, Opus code reviews of tasks 3 and 5, a DeepSeek acce
   - **Normalise must call `rp::dsp::normalizedGain`** (and `peak` over the whole buffer): it is a reciprocal multiply,
     where a division rounds differently and moves kit bytes. The graph form still has to be decided (section 5's gain is
     a plain streaming gain; D2 owns the offline form).
+  - **The nodes' param ranges are narrower than a kit spec's, and a document's value is clamped into them silently.**
+    `rp.dsp.gain` takes 0..4, where a normalised gain is `gain / peak` (about 7.4 for a source peaking at -26 dBFS) and
+    a phase flip's is negative; `rp.dsp.biquad` takes 20 Hz to 20 kHz, Q 0.1 to 10 and -24..24 dB, where a kit's
+    `FilterEffect` can be a 10 Hz high-pass at Q 20 or a 30 dB shelf. `Planner` and `GraphHost::setParam` `std::clamp`
+    such a value into the range with no diagnostic, and a wired param is not clamped at all. So D2 must not send a
+    kit's spec through the params as they are: it needs wider ranges (a range is compile-time and part of the
+    descriptor), the spec carried in settings the node reads unclamped, or a control wire into the param. The kit
+    baseline carries the cases D2 has to reproduce with those values: a quiet source normalised at all three rates (and
+    through a dither), a negative gain, a 10 Hz high-pass at Q 20, and a 30 dB high shelf.
+  - **The guards differ from the kernel on any non-finite sample too, not only above Nyquist.** A decoded 32-bit float
+    WAV can carry a NaN or an infinity, and nothing between `SampleCache` and `KitCompiler` checks `isfinite`. With no
+    filter r8brain is FIR, so an isolated NaN poisons a few blocks of its output and the dither kernel latches (a NaN's
+    code is 0 for the rest of the slot), where `rp.dsp.dither` restarts and recovers; with a filter the biquad kernel
+    latches for good, where `rp.dsp.biquad` resets. A kit's byte identity is at stake in both regimes, so D2 decides
+    for both. Above Nyquist the biquad's guard also only bounds the damage: until it fires the kernel's clamp writes
+    rail-to-rail output, so a held above-Nyquist setting is full-scale bursts between the guard's silent blocks.
+  - **A resampler must not outlive r8brain's static members.** `rp.dsp.resample` keeps its `rp::dsp::Resampler`s as
+    instance members, and a `Resampler`'s destructor calls r8brain's `unref`, which locks a static mutex and writes into
+    cache-owned objects (`CDSPFIRFilter`, `CDSPFracDelayFilterBank`): destroyed after `R8bBase.cpp`'s statics, it is a
+    use-after-free in that teardown. Harmless while every `Engine` is destroyed before exit, which D1's hosts do; D2's
+    offline driver and D3's renders, which may hold one longer, keep every resampler inside an `Engine`'s life.
   - **The resample node plays a buffer, it does not fill one.** A recorder and a resampler on the same buffer in one
     plan are unsupported (the planner refuses a port reader beside a writer and does not see a settings ref), so the
     driver fills each buffer before the plan that plays it. A rate change resumes where the output had reached, so a
@@ -227,9 +259,9 @@ implementers and follow-ups, Opus code reviews of tasks 3 and 5, a DeepSeek acce
   - **The kit chain's order is the bytes**: window, the effects at the source rate, resample to the kit rate, quantise
     (codes), `frameAlign`, then the nibble pack. D2's graph must keep that order and the whole-buffer cut at
     `resampledLength`; the D1 baseline is its oracle. The codes are a graph's problem: `rp.dsp.dither` outputs audio at
-    the quantised levels (section 2), so a graph compile either inverts `codeToLevel` - levels are k/(2^bits-1), so
-    `round((level + 1) * 0.5 * maxValue)` recovers the code exactly - or the node gains a codes output D1 does not
-    have; the driver decides, and either way the packer must see the same codes.
+    the quantised levels (section 2), so a graph compile either inverts `codeToLevel` - levels are
+    `2k/(2^bits-1) - 1`, so `round((level + 1) * 0.5 * maxValue)` recovers the code exactly - or the node gains a codes
+    output D1 does not have; the driver decides, and either way the packer must see the same codes.
 - **D3**: the CLI `render` and the UI's background renders on the offline driver, keeping their block-size sequence and
   per-block side effects or re-scoping their byte-identity claim. D1 changed neither path, so nothing is owed here
   beyond D2's driver.
@@ -285,7 +317,12 @@ follow-up moved a kit byte or a parity baseline either.
   two-slot bank per codec (a second sample named SNR with its own effects), which puts the assembler's offset
   accumulation past slot 0 and a second sample name inside the baseline, and a lowercase over-long bank name on the
   LSDj one, for `writeString`'s uppercase and truncation. It added two records and moved no existing one; a second
-  follow-up gave risa's second slot a rate index of its own, which re-recorded that one entry and moved nothing else.
+  follow-up gave risa's second slot a rate index of its own, which re-recorded that one entry and moved nothing else. A
+  third added six records and moved no existing one, for what the nodes' ranges and the guards cannot carry: the quiet
+  source normalised at all three rates (about 7.4 at two of them, past `rp.dsp.gain`'s 4) and through a dither, a
+  negative gain, a 10 Hz high-pass at Q 20, and a 30 dB high shelf. The two-slot entries were recorded in a follow-up,
+  after the kernel move, so they pin D2's future rather than attesting that move; every single-slot entry attests it,
+  and the two-slot banks add the assembler and a second slot, which the move did not touch.
 - **3, the kernels.** The target named `retroplug-dsp` in section 4 was taken by `dpf_add_plugin(retroplug ...)`, which
   creates the plugin's own DSP library of that name, so the library is `retroplug-dsp-kernels` (gain, peak, the
   normalising gain, the biquads, dither and quantise) plus `retroplug-dsp-resample` (r8brain, pthreads, RTTI). The
@@ -303,8 +340,11 @@ follow-up moved a kit byte or a parity baseline either.
   carrying. Gain's param is linear 0..4 default 1; a held value is the kernel's exact multiply, a move ramps across one
   block from the previous block's end to the block's last value, and the first block after activation snaps. Biquad's
   type is a setting, its frequency, Q and gain (dB) are params, `setup` keeps state on a sweep and `init` clears it on
-  activation or a type change, and the node hands the kernel an out-of-range frequency rather than clamping, because a
-  clamp would be a different kit byte. Dither's defaults are `none`, 4 bits and seed `0x9e3779b9`; a settings commit
+  activation or a type change, and the node clamps no value of its own (a frequency above Nyquist included), because
+  the kit path hands the spec straight to the kernel and a clamp here would be a different byte. Those ranges are the
+  nodes' and narrower than a kit spec's (a kit's normalised gain runs past 4, its Q past 10, its shelves past 24 dB),
+  and the planner and `setParam` clamp a document's value into them silently where a wire is not clamped: section 8
+  records what D2 has to do about it. Dither's defaults are `none`, 4 bits and seed `0x9e3779b9`; a settings commit
   restarts the noise, and each channel's seed is the setting's plus its index times a golden-ratio step of
   `0x9e3779b9`. Its per-channel state is about 5 KB on LP64 (`std::mt19937` is 624 words of 8-byte `uint_fast32_t`),
   sized from `sizeof` and the settings' channel count. All three follow `channels` through `adjust_layout`, keep their
@@ -313,10 +353,10 @@ follow-up moved a kit byte or a parity baseline either.
   came out of the review, both on state rather than on a document's values: a biquad channel whose filter comes out of
   a block not finite is reset and its block silenced, because a frequency above the plan rate's Nyquist makes the RBJ
   poles unstable and the kernel's clamp writes a NaN through; and a dither channel whose state comes out not finite is
-  restarted, because a non-finite input sample would latch the error terms for the rest of the stream. The biquad's
-  guard is byte-visible where it matters for D2: a kit filter above its source rate's Nyquist compiles to constant
-  codes today, the dither's guard is not (a kit's input is a decoded file, not a live device), and no baseline case is
-  in the first regime.
+  restarted, because a non-finite input sample would latch the error terms for the rest of the stream. Both guards are
+  byte-visible against the kernel run directly, and section 8 carries how: a kit filter above its source rate's Nyquist
+  compiles to constant codes today where the node recovers, and a non-finite sample in a decoded float WAV latches
+  either kernel where its node restarts. No baseline case is in either regime.
 - **5, the resampler.** It is a package of its own, `rp.dsp.resample`, with a target of its own
   (`retroplug-dsp-resample-nodes`), because a node that reaches r8brain must be separable at link time, not only
   refused by the planner; its package id and its type id are the same string, which is legal because the registry keeps
@@ -384,7 +424,7 @@ follow-up moved a kit byte or a parity baseline either.
 ### What building it changed in sections 3 to 5
 
 - **Section 3**: the seed is over the resampled, pre-trim buffer and salted by a stable constant, with a specified draw;
-  the baseline is 33 cases, records the slot length, uses `RP_KIT_GOLDEN_REQUIRE_TARGET` and the shared
+  the baseline is 39 cases, records the slot length, uses `RP_KIT_GOLDEN_REQUIRE_TARGET` and the shared
   `rp::buildTarget()`, and refuses a disagreeing case at recording.
 - **Section 4**: the target is `retroplug-dsp-kernels` + `retroplug-dsp-resample`, not `retroplug-dsp`, with r8brain's
   static members in `retroplug-r8brain-base` beside it (vendored code, off this tree's warning level); the resampler's
@@ -393,11 +433,13 @@ follow-up moved a kit byte or a parity baseline either.
   errors; `normalizedGain` is a reciprocal multiply the kit path must call.
 - **Section 5**: gain ramps at block rate to the block's last value and snaps on activation; the biquad keeps state when
   its coefficients move and guards the state a frequency above Nyquist poisons, a guard that is byte-visible against the
-  kernel and leaves D2 to choose between them for an above-Nyquist kit filter; dither's defaults, its settings-commit
-  restart and its per-channel seeds are stated (the step's constant included), and a non-finite state restarts a
-  channel, leaving the block it appeared in as quantised; `rp.dsp.resample` is a package (and target) of its own whose
-  buffer is a settings ref, built in `activate`, with `loop` false, the recorder caveat, and the
-  resume-at-a-rate-change behaviour.
+  kernel and leaves D2 to choose between them for an above-Nyquist kit filter; the nodes' param ranges are narrower
+  than a kit spec's and a document's out-of-range value is clamped silently by the planner and the host (a wire is not),
+  which D2 has to design around; dither's defaults, its settings-commit restart and its per-channel seeds are stated
+  (the step's constant included), and a non-finite state restarts a channel, leaving the block it appeared in as
+  quantised, a second byte-visible difference from the kernel for any non-finite sample a decoded float WAV can carry;
+  `rp.dsp.resample` is a package (and target) of its own whose buffer is a settings ref, built in `activate`, with
+  `loop` false, the recorder caveat, and the resume-at-a-rate-change behaviour.
 
 ### Found while building
 
@@ -422,7 +464,7 @@ follow-up moved a kit byte or a parity baseline either.
 
 ### The suite, as built
 
-- `retroplug-audio-test` gained `[kit-baseline]` (`test/audio/KitBaseline.test.cpp`, 33 banks, one case, 362
+- `retroplug-audio-test` gained `[kit-baseline]` (`test/audio/KitBaseline.test.cpp`, 39 banks, one case, 428
   assertions) and `[dither]` (`test/audio/Dither.test.cpp`, the same-twice cases and the eight-code golden), and
   `test-native` gained `kit-dither` (`test-native/kit-dither.test.ts`): each TPDF kit compiled twice to one bank, the
   bank read back through `KitView` holding a varied sample in both polarities (a constant or all-zero slot would
@@ -440,6 +482,8 @@ follow-up moved a kit byte or a parity baseline either.
   case: a 22.05 kHz buffer into a 48 kHz plan and a 48 kHz one into the kit rate, at six splits, a loop committed after
   the buffer ran out, a rate change, a re-activation past the buffer's end with `loop` wrapping and without it clamping,
   a block counted from the plan's first block and the Pico refusal). It went from 208 cases to 257 and from 92566
-  assertions to 301647.
+  assertions to 302166. `retroplug-engine-graph-test` gained one case that names every `rp.dsp` type in one document,
+  so the engine's registration of both packages is planned rather than assumed (267 cases to 268).
 - The kit baseline ran in a fresh process and under ASan, hash for hash, and the nodes and kernels under ASan and TSan
-  with no report; D1 itself re-recorded nothing, and the follow-ups' two-slot cases moved no existing bank.
+  with no report; D1 itself re-recorded nothing, and the follow-ups' two-slot cases and the later six moved no existing
+  bank.

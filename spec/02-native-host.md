@@ -1124,11 +1124,16 @@ Two of the nodes guard their state, because nothing between a plan and the host 
 `rp.dsp.biquad` resets a channel's filter and writes that block as silence when the filter comes out of it non-finite
 (a frequency above the plan rate's Nyquist makes the RBJ poles unstable, and the kernel's output clamp passes a NaN
 straight through), and `rp.dsp.dither` restarts a channel whose state came out non-finite (a non-finite input sample
-would latch its error terms for the rest of the stream). The guards are on state, not on a document's values: the
-biquad hands the kernel the frequency it is given, because a clamp would be a different kit byte. The biquad's guard
-is also the one place the node differs from the kernel run directly in a way a kit could see: a kit filter above its
-source rate's Nyquist compiles to constant codes today, where the node recovers, and D2 has to decide between the
-kernel call and the node for such a kit. A dither node's channels each draw their own noise, channel `c` from the
+would latch its error terms for the rest of the stream). The guards are on state, not on a document's values: a node
+hands its kernel the values it reads, because a clamp would be a different kit byte (the planner and `setParam` clamp
+a document's value into a param's range with no diagnostic, and a wired value is not clamped at all). The param ranges
+are also narrower than a kit spec's (gain 0..4, frequency 20 Hz to 20 kHz, Q 0.1 to 10, -24..24 dB), so a kit's values
+cannot reach the kernels through them unclamped; D2 carries that work. Both guards differ from the kernel run directly
+in a way a kit could see: a kit filter above its source rate's Nyquist compiles to constant codes today, where the node
+recovers, and a decoded 32-bit float WAV can carry a NaN or an infinity (nothing between `SampleCache` and
+`KitCompiler` checks `isfinite`), which latches either kernel where its node restarts, so D2 has to decide for both.
+Until the biquad's guard fires its kernel writes rail-to-rail output, so a held above-Nyquist setting is full-scale
+bursts between the guard's silent blocks. A dither node's channels each draw their own noise, channel `c` from the
 setting's seed plus `c` times a golden-ratio step, so a stereo patch's dither is decorrelated and channel 0 is the
 setting's own seed (a mono patch is unchanged); the kit path calls the kernel directly, so none of this moves a kit
 byte.

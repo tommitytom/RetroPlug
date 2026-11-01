@@ -424,7 +424,7 @@ own change with a re-record, as the LSDj master-sync fix and the narrow-host NES
 fixture-only), so a Phase B step is accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.
 
 **The kit baseline** (`build/bin/retroplug-audio-test "[kit-baseline]"`, [spec/06-build-test.md](spec/06-build-test.md))
-holds the kit compilers' bytes: 33 synthesised cases through `KitCompiler` and the two codecs, each bank's FNV-1a-64,
+holds the kit compilers' bytes: 39 synthesised cases through `KitCompiler` and the two codecs, each bank's FNV-1a-64,
 size and slot length against `packages/native/test/audio/golden/kit-baseline.json`. Exact bytes are compared only on
 `linux-x64-gnu13` (CI's linux-x64 job sets `RP_KIT_GOLDEN_REQUIRE_TARGET=1`), elsewhere a case must agree with itself,
 and a re-record (`RP_KIT_GOLDEN_UPDATE=1`) is refused off that host and for a case that disagrees with itself. Unlike
