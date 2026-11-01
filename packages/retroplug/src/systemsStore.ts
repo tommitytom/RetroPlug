@@ -700,8 +700,9 @@ export class SystemsStore {
       if (params.length > 0) {
         // The system the document places the cart for after this edit (buildGraph's own rule): its node carries the same
         // knob as its own param, and a live edit publishes no document, so without this the real console keeps the level
-        // the last published document gave it. A system that drives no cart - or drives one another system is placed
-        // for - places no cart node, so the second call is skipped rather than addressed at a node that is not there.
+        // the last published document gave it. A system that drives no cart - or drives one that another system is
+        // placed for - places no cart node, so the second call is skipped rather than addressed at a node that is not
+        // there.
         const systems = this.graphSystems();
         const drivesCart = drivenCartSystem(systems)?.id === id;
         for (const [param, value] of params) {

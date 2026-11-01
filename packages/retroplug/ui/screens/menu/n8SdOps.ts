@@ -40,7 +40,8 @@ let job: N8CartJob = {
 };
 // The file name of the ROM this process booted on the cart through `load`, and the name a dump or a restore after it
 // reaches that ROM's battery file by without asking. The cart's state, not a node's: the ROM booted on the card
-// outlives the drive moving to another NES and a UI realm reload, so one name serves whichever node is the cart's now.
+// outlives the drive moving to another NES, an editor close and reopen, and a project load (a fresh UI realm starts
+// with none and falls back to the driven system's ROM file), so one name serves whichever node is the cart's now.
 let bootedName: string | null = null;
 
 /** The live snapshot, read fresh each poll (the menu and useN8SdWatch). */

@@ -601,6 +601,9 @@ export class MockBackend implements Backend {
   cartProgress: { progress: number; total: number }[] = [];
   /** The ROM image the last rom.upload booted, and the name it was stored under. */
   cartRom: { name: string; bytes: Uint8Array } | null = null;
+  /** The card's game folders this host made (or a booted ROM's folder): a restore into one answers `created: false`,
+   *  as native's does when the folder it lists is already there. */
+  private cardFolders = new Set<string>();
   private heldCartJob: { id: number; bytes: Uint8Array; apply: () => void } | null = null;
   /** The ids of the last document's rp.n8.nes nodes. */
   private cartNodes = new Set<string>();
@@ -719,11 +722,12 @@ export class MockBackend implements Backend {
       const bytes = request.bytes ?? new Uint8Array(0);
       if (!bytes.length) return refuse("a battery restore takes at least one byte");
       // The card's file for that name, and whether its folder had to be made: one exists for a ROM this host booted on
-      // the card (a game that has run there makes it at its first write-back), and a restore makes one for any other
-      // name, which its result says as native's does.
-      const created = name !== this.cartRom?.name;
+      // the card (a game that has run there makes it at its first write-back) or one a restore already made, and a
+      // restore makes one for any other name, which its result says as native's does.
+      const created = !this.cardFolders.has(name);
       const result = enc.encode(JSON.stringify({ path: `EDN8/gamedata/${name}/bram.srm`, created }));
       return this.cartJob(result, () => {
+        this.cardFolders.add(name);
         this.cartBattery = new Uint8Array(bytes);
       });
     }
@@ -737,6 +741,7 @@ export class MockBackend implements Backend {
         enc.encode(JSON.stringify({ path: `usb-games/${uploadName}`, mapIndex: 0, streaming: "stopped" })),
         () => {
           this.cartRom = { name: uploadName, bytes: new Uint8Array(bytes) };
+          this.cardFolders.add(uploadName);
         },
       );
     }

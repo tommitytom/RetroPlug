@@ -372,7 +372,7 @@ function n8SdLabel(job: N8CartJob): string {
 }
 
 /** The cart node this menu's card rows act on: the project's driven cart when `sys` is that system, or (with no
- *  `sys`) the project's cart alone. Null when the project drives none, and the rows say so. */
+ *  `sys`) the project's cart alone. Null when the project drives none, and the card block is not built at all. */
 function cartFor(ctx: MenuContext, sys: SystemView | null): { system: SystemView; nodeId: string } | null {
   const cart = projectCart(ctx.systems);
   return cart && (sys === null || cart.system.id === sys.id) ? cart : null;

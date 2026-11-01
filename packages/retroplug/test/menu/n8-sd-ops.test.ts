@@ -175,6 +175,15 @@ test("a restore into a folder the card had to make warns (the ROM's file name on
     expect(job.result.includes("EDN8/gamedata/a.nes/bram.srm")).toBe(true);
     // The bytes still landed: it is where they landed that the row is warning about.
     expect(be.cartBattery).toEqual(be.readFile("/saves/in.srm"));
+
+    // The card's folder exists now, so a second restore to the same name finds it: native lists the folder, and the
+    // mock keeps what it made, so neither warns again.
+    be.queueBrowse("/saves/in.srm");
+    findItem(n8Submenu(stores, be), "n8-restore-sram")!.onSelect!();
+    await flush();
+    expect(getN8CartJob().result).toBe(
+      "Restored the battery to EDN8/gamedata/a.nes/bram.srm (it loads at the next boot)",
+    );
   } finally {
     env.restore();
   }
@@ -202,6 +211,24 @@ test("a file that cannot be read leaves a running job's row alone", async () => 
     be.pumpJobs();
     await flush();
     expect(getN8CartJob().result).toBe("Backed up the cart's battery");
+  } finally {
+    env.restore();
+  }
+});
+
+test("a picked file that cannot be read shows its error when no job holds the row", async () => {
+  // The other half of unreadable(): with no job running there is no busy state to leave alone, so the row must show
+  // what could not be read rather than the "Ready" label a dropped update() would leave.
+  const env = installN8();
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    n8Submenu(stores, be);
+    n8RestoreSram(be, projectCart(stores.project.systems.view())!, "/saves/missing.srm");
+    const job = getN8CartJob();
+    expect(job.busy).toBe(false);
+    expect(job.error).toBe("cannot read /saves/missing.srm");
+    expect(job.result).toBe("");
   } finally {
     env.restore();
   }
