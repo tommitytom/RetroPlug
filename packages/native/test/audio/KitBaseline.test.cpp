@@ -62,8 +62,8 @@
 // was recorded on. The slot length is the half that carries information off the target: a bank is a fixed size
 // whatever happened, but a slot is as long as the resample and the pack made it, so a truncated resample on a foreign
 // host moves it. It is as long as the bank says, which quantises differently per codec: LSDj's offset table gives the
-// slot's exact packed bytes (2 per byte, so the last nibble pair padded), while risa's index entry holds a length
-// register whose (reg + 1) * 16 is the $4013 playback span, up to 15 bytes past what was written.
+// slot's exact packed bytes, while risa's index entry holds a length register whose (reg + 1) * 16 is the $4013
+// playback span, up to 15 bytes past what was written.
 //
 // These structs live in a NAMED namespace deliberately: reflect-cpp reflects a struct through a fake-object
 // conversion operator, which clang refuses to define for a type with no linkage.

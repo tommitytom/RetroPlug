@@ -66,11 +66,11 @@ rotate on and off, one filter-gain-dither chain, a short source and one two-slot
 rate indices, normalise off, loop on, a silent normalise at two rates, a short source and one two-slot bank. The
 two-slot banks (a second sample named SNR with its own effects, and on the LSDj one a lowercase over-long bank name)
 put the assembler's offset accumulation past slot 0, its 15-slot loop and `writeString`'s uppercase and truncation
-inside the baseline. Each case's bank is recorded in a golden
-JSON beside the test as its hash, size and slot length, re-recorded only with `RP_KIT_GOLDEN_UPDATE=1`. Exact bytes
-are compared on `linux-x64-gnu13` (as parity does), off it a case must agree with itself across two runs while its
-size and slot length are still held, and `RP_KIT_GOLDEN_REQUIRE_TARGET=1` turns the fallback into a failure on CI's
-linux-x64 job. From then on a change that moves a kit byte fails this suite.
+inside the baseline. Each case's bank is recorded in a golden JSON beside the test as its hash, size and slot length,
+re-recorded only with `RP_KIT_GOLDEN_UPDATE=1`. Exact bytes are compared on `linux-x64-gnu13` (as parity does), off it
+a case must agree with itself across two runs while its size and slot length are still held, and
+`RP_KIT_GOLDEN_REQUIRE_TARGET=1` turns the fallback into a failure on CI's linux-x64 job. From then on a change that
+moves a kit byte fails this suite.
 
 ## 4. The DSP library
 
@@ -307,7 +307,8 @@ findings worth naming; each stage's own report is the full record.
   adding them in the same order reproduces the same float operations, and the `i + k < n` guards only drop writes past
   the end. A `[dsp]` case holds the streaming form against verbatim copies of both padded functions at lengths 0 to 5,
   two noises and an overdriven sine, four bit depths (1, 4, 8 and 16) and five block splits. The kit baseline alone is
-  too coarse to prove it: swapping Sierra's two terms left all 31 hashes matching while the `[dsp]` case failed.
+  too coarse to prove it: swapping Sierra's two terms left all 31 hashes it then had matching while the `[dsp]`
+  case failed; the follow-up's dither references make the same point for `(in + 1) * halfScale` at 16 bits.
 - **Does r8brain allocate in `process`?** No, only at construction: 8 to 14 blocks in the constructor, then zero
   allocations and frees over 200 chunks from the first `process`, at every kit-relevant rate pair. A related finding
   is load-bearing: r8brain's double output depends on how its input is split across calls (low bits in 60 to 90% of
@@ -346,7 +347,7 @@ findings worth naming; each stage's own report is the full record.
 ### Found while building
 
 - **The kit baseline is the only proof of the kernel move, and it is nearly blind to some arithmetic.** A one-ulp
-  change in Sierra Lite's term order moves no 4-bit code across all 31 cases; the `[dsp]` cases had to carry verbatim
+  change in Sierra Lite's term order moves no 4-bit code across the matrix; the `[dsp]` cases had to carry verbatim
   references and 16-bit depths to see it. The baseline still catches anything that moves a bank, which is the contract
   D2 needs, but it is not a substitute for the kernel tests.
 - **`sizeof(rp::dsp::Dither)` is about 5 KB on LP64**, not the 2.5 KB an MSVC 32-bit `uint_fast32_t` gives; the node's
@@ -381,7 +382,7 @@ findings worth naming; each stage's own report is the full record.
   plan's first block, and the descriptor goldens) and `[dsp-resample]`
   (`test/graph/DspResample.test.cpp`, 12 cases plus the shared descriptor case: a 22.05 kHz buffer into a 48 kHz plan
   and a 48 kHz one into the kit rate, at six splits, a loop committed after the buffer ran out, a rate change, a block
-  counted from the plan's first block and the Pico refusal). It went from 208 cases to 250 and from 92566 assertions to
-  291744.
+  counted from the plan's first block and the Pico refusal). It went from 208 cases to 252 and from 92566 assertions to
+  292291.
 - The kit baseline ran in a fresh process and under ASan, hash for hash, and the nodes and kernels under ASan and TSan
-  with no report; nothing was re-recorded.
+  with no report; D1 itself re-recorded nothing, and the follow-ups' two-slot cases moved no existing bank.
