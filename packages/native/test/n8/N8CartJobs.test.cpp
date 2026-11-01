@@ -976,6 +976,31 @@ TEST_CASE("a restore replaces a longer file whole and says whether it made the R
     CHECK(rig.dev.filesOpen == 0);
 }
 
+TEST_CASE("a result's paths are JSON strings, so a name the card accepts cannot break the result", "[n8][cart-jobs]") {
+    Rig rig;
+    rig.connect();
+    // plainFileName allows a quote (it refuses a separator and a control byte), so the result must escape it: TS parses
+    // these results, and an unescaped quote would end the string early.
+    auto r = battery("restore", "quo\"te.nes");
+    r.bytes = saveOf(16, 1);
+    Job job;
+    REQUIRE(rig.submit(r, job));
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    REQUIRE(job.state.load() == Job::Done);
+    CHECK(std::string(job.result.begin(), job.result.end()) ==
+          R"({"path":"EDN8/gamedata/quo\"te.nes/bram.srm","created":true})");
+
+    auto up = request(RP_SYSTEM_ROM_INTERFACE, "upload");
+    up.bytes = inesImage(8);
+    up.name  = "quo\"te.nes";
+    Job uploaded;
+    REQUIRE(rig.submit(up, uploaded));
+    REQUIRE(waitUntil([&] { return uploaded.finished(); }));
+    REQUIRE(uploaded.state.load() == Job::Done);
+    CHECK(std::string(uploaded.result.begin(), uploaded.result.end()) ==
+          R"({"path":"usb-games/quo\"te.nes","mapIndex":69,"streaming":"stopped"})");
+}
+
 TEST_CASE("a dump keeps the restore's bound and tells a missing folder from a card that will not list",
           "[n8][cart-jobs]") {
     Rig rig;

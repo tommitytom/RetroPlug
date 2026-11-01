@@ -121,13 +121,34 @@ bool plainFileName(const std::string& name) {
     return true;
 }
 
+// `s` as the body of a JSON string. A job's `name` is the caller's, and a card that accepts it does not make it a JSON
+// string: a quote (which plainFileName allows) would end the string early and break the result TS parses.
+std::string jsonString(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (const char c : s) {
+        if (c == '"' || c == '\\') {
+            out.push_back('\\');
+            out.push_back(c);
+        } else if (static_cast<unsigned char>(c) < 0x20) {
+            char esc[7];
+            std::snprintf(esc, sizeof esc, "\\u%04X", static_cast<unsigned char>(c));
+            out += esc;
+        } else {
+            out.push_back(c);
+        }
+    }
+    return out;
+}
+
 }  // namespace
 
 N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string configDir)
     : link_(std::move(factory)), lister_(std::move(lister)), configDir_(std::move(configDir)) {
-    // Every time the streaming link comes up - a Connect, a live port switch, the resume after a job's transfer, the
-    // reconnect restore() does - set the expansion-audio master volume. Connect is the moment that matters:
-    // a ROM load deliberately leaves streaming stopped, so the user comes back through here either way.
+    // Every time the streaming link comes up - a Connect, a live port switch, the reconnect restore() does - set the
+    // expansion-audio master volume. Connect is the moment that matters: a ROM load deliberately leaves streaming
+    // stopped, so the user comes back through here either way. A job's pause is not a connect: the port and the
+    // register stay as they were, and only a boot (which the job applies itself, on the ROM's own mapper) changes them.
     link_.setOnConnected([this](Edio& edio) {
         // Read the generation first: a change made after this read is applied again on the serial thread's next turn,
         // never marked applied without having been written.
@@ -445,7 +466,7 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
                 edio->fileClose();
                 open = false;
                 const std::string json =
-                    "{\"path\":\"" + path + "\",\"created\":" + (created ? "true" : "false") + "}";
+                    "{\"path\":\"" + jsonString(path) + "\",\"created\":" + (created ? "true" : "false") + "}";
                 outcome->bytes.assign(json.begin(), json.end());
                 outcome->ok = true;
             } catch (const std::exception& e) {
@@ -528,8 +549,8 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
             // connect and setLookahead refuse while cartJobBusy()), so it cannot move here.
             enabled_.store(false, std::memory_order_relaxed);
             save();
-            const std::string json = "{\"path\":\"" + bootPath + "\",\"mapIndex\":" + std::to_string(mapIndex) +
-                                     ",\"streaming\":\"stopped\"}";
+            const std::string json = "{\"path\":\"" + jsonString(bootPath) + "\",\"mapIndex\":" +
+                                     std::to_string(mapIndex) + ",\"streaming\":\"stopped\"}";
             outcome->bytes.assign(json.begin(), json.end());
             outcome->ok = true;
             return AfterJob::Stop;
