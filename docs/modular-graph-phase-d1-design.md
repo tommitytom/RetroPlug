@@ -362,7 +362,10 @@ findings worth naming; each stage's own report is the full record.
 
 - `retroplug-audio-test` gained `[kit-baseline]` (`test/audio/KitBaseline.test.cpp`, 33 banks, one case, 362
   assertions) and `[dither]` (`test/audio/Dither.test.cpp`, the same-twice cases and the eight-code golden), and
-  `test-native` gained `kit-dither` (`test-native/kit-dither.test.ts`).
+  `test-native` gained `kit-dither` (`test-native/kit-dither.test.ts`): each TPDF kit compiled twice to one bank, the
+  bank read back through `KitView` holding a varied sample in both polarities (a constant or all-zero slot would
+  otherwise pass, since LSDj's inverted nibbles decode zeros to +1.0), and the same source compiled with no effects
+  differing from each dithered bank.
 - `retroplug-graph-test` gained `[dsp]` (`test/graph/Dsp.test.cpp`, 17 cases: chunk-exact streaming at 1, 4, 8 and 16
   bits and every split, a `process` allocating nothing once warmed with the resampler counted from its first chunk, the
   padded references, the resampler's split independence, the seed golden), `[dsp-nodes]`
