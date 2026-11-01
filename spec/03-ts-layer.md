@@ -308,22 +308,28 @@ one after the systems, before the host's outputs
 [lsdj-serial-out-design.md](../docs/lsdj-serial-out-design.md) section 3,
 [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)):
 
-- `midi-in` (`rp.host.midi-in`) and `controller-in` (`rp.host.controller-in`);
+- `midi-in` (`rp.host.midi-in`) and, when a controller is enabled, `surface-in`
+  (`rp.launchpad.surface-in`);
 - `routing` (`rp.midi.route`, settings the routing mode and the system ids in slot order) when the model
   has a MIDI routing, fed from `midi-in`, an output per system;
 - `controller` (`rp.controller.session`) when a controller is enabled, its target resolved and its app
-  config already parsed by the publisher, fed from `controller-in`;
+  config already parsed by the publisher, fed from `surface-in`'s `in` and `connected`, its control-surface
+  output to `surface-out`;
 - each system's protocol nodes (`sys-<id>/<role-kind>`, settings the role's parsed config), fed its routed
   MIDI, each output wired to that system node's input of the same name; the MI.MAP controller's cart has
   its `lsdj-sync` nodes forced to the mode the app needs;
 - after the systems, each LSDj's serial-out decoder (`sys-<id>/lsdj-sync/out`, `rp.lsdj.serial-out`, on a
   Game Boy, with its `rp.lsdj.sync`'s settings), fed that Game Boy's `serialOut` over a forward wire, so
   MI.OUT and master sync reach it in the block the core captured them;
-- `cart` (`rp.n8.cart-mirror`, settings `{ system }`), fed what the first NES's protocol nodes send its
-  `midi` and `bytes`, when there is a NES;
+- `cart-<id>` (`rp.n8.nes`) for the first NES in slot order whose "drive the real cart" setting is on
+  (default on), fed by fan-out what that system's protocol nodes send its `midi` and `bytes`;
 - `midi-out` (`rp.host.midi-out`, settings `{ systems }`), its inputs the controller's `midiOut` and then
-  each `rp.lsdj.serial-out`'s in slot order, and `controller-out` (`rp.host.controller-out`), fed from the
+  each `rp.lsdj.serial-out`'s in slot order, and `surface-out` (`rp.launchpad.surface-out`), fed from the
   controller's `controllerOut`.
+
+The surface is two nodes because one that both feeds a session and follows it is a node-level cycle, and the
+only wire a cycle breaks on delivers the previous block; the two keep the session's recorded digests, and its
+per-block LED stream, unchanged.
 
 [`EngineGraph`](../packages/retroplug/src/engineGraph.ts) is one control-plane context's publisher:
 `publish({ systems, routing, midiRouting, controller }, { rearmTap })` makes that its model, builds the document at

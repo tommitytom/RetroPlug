@@ -138,8 +138,9 @@ GraphHost's ring itself),
 running plan holds a system), the render calls, and the profile calls `dspResetAllocStats`,
 `dspRunGc` and `dspTraceReset` (which the script host refuses while the audio thread owns its
 runtime). The render calls drive `processBlock` on the calling thread themselves and refuse while the
-audio thread owns the engine; `renderBlocks` also stages each block's MIDI and controller traffic on
-the `Engine` itself before it drains the ring, and sets the block's bpm, transport and ppq after. Every
+audio thread owns the engine; `renderBlocks` also stages each block's MIDI on the `Engine` itself and its
+controller traffic into the harness surface link before it drains the ring, and sets the block's bpm,
+transport and ppq after. Every
 read of a core's state routes through the `SnapshotRegistry`. No method walks a live core.
 
 | Method | Signature | Behaviour |
@@ -157,15 +158,19 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 | `renderAudio` | `(double ms) → Bytestring` | synchronous pull render, interleaved f32 L/R, into a graph TS built for 2 host channels; empty while the audio thread owns the engine or the running graph writes another width (as are `renderAudioPerSystem` / `renderAudioPerChannel`, for 2 channels per system or stream) |
 | `setTransport` / `setBpm` | `→ bool` | queued transport ops |
 | `stageMidiIn` | `(vector<uint8> bytes, uint32 frame) → bool` | any non-empty length: a channel message, a SysEx, or several messages as one run, at intra-block `frame` (TS defaults it to 0, and refuses one that is not an integer from 0 to 1023 before sending, since rpcpp would truncate it); false for a frame past `renderAudio`'s 1024-frame block |
+| `stageNodeMidi` | `(string nodeId, vector<uint8> bytes) → bool` | the UI's staged message, at the node the running plan places under `nodeId` (`rp.stage/1`): a system node hands it to its core's ingress, the cart node pushes it at its link. False for an empty message, an id the running plan does not place, or a node that stages nothing |
+| `submitJob` | `(RpcJobRequest) → RpcJobSubmitResult` | a capability job for a node of the last published plan: `{id}` when it was taken, `{error}` when it was refused (a capability the node does not present, an operation it does not have, a device's "busy" or "not connected", the engine's 64-outstanding bound, an emulated restore). A read or a ROM header completes before it returns; a write at the next block boundary; a device's job on its own thread |
+| `drainJobs` | `→ vector<RpcJobCompletion>` | what finished since the last drain (`done`, `ok`, the result's bytes or the error) and every running job whose progress changed, with `progress` of `total` |
 | `drainMidiOut` | `→ vector<RpcMidiOut>` | the host MIDI out (`Engine::midiOut`, which `rp.host.midi-out` fills each block) gathered over the `renderAudio*` renders since the last drain, each message with its system and frame (`renderBlocks` returns its own) |
 | `droppedMessages` | `→ uint32` | messages dropped so far (`Engine::droppedMessages`) by the plan's full output queues; never reset, and it wraps, so a test compares two reads |
 
 The table is a selection. The facets
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 19
-`host` methods, 13 `emulator`, 22 `harness` (the renders, transport and sample rate, staged MIDI in and
+`host` methods, 15 `emulator` (the resources, the graph and script packs, the snapshot reads and writes, the
+capability jobs and the node staging), 22 `harness` (the renders, transport and sample rate, staged MIDI in and
 MIDI out, `droppedMessages`, `buildTarget`, the kit compiles and the audio runtimes' profiling calls),
 27 `debug` and
-6 `driver`: 87 in the union. There is no call for what the roles do on the audio thread: their protocol
+6 `driver`: 89 in the union. There is no call for what the roles do on the audio thread: their protocol
 nodes are script node types every Engine embeds, and each node's settings ride the documents `setGraph`
 plans. Nor is there one for a system's knobs: they are its system node's settings, in the same documents,
 and its params, whose live edits are `setParam`
@@ -230,11 +235,12 @@ these follow is [modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b
 ### `Engine`
 
 [`Engine`](../packages/native/src/host/engine/Engine.hpp) is single-threaded and thread-unaware.
-It owns the staged host MIDI (`pendingMidi_`, `pendingControllerMidi_`: flat arenas, each message a
-frame and a place in one byte buffer, reserved at construction for what the input nodes carry in a
-block, so staging allocates nothing until a block stages more), the host outputs the plan fills
-(`midiOut_`, `controllerOut_`, which still allocate one vector per message on the block thread), the
-snapshot registry, the transport fields, and the graph the systems run on: the `ScriptHost` its script
+It owns the staged host MIDI (`pendingMidi_`: a flat arena, each message a frame and a place in one
+byte buffer, reserved at construction for what `rp.host.midi-in` carries in a block, so staging
+allocates nothing until a block stages more), the host MIDI out the plan fills (`midiOut_`, which still
+allocates one vector per message on the block thread), the capability jobs and their completions
+(`host/engine/CapabilityJobs.hpp`), the device links its host installed, the snapshot registry, the
+transport fields, and the graph the systems run on: the `ScriptHost` its script
 nodes (the MIDI routing, the controller session and each role's protocol node) run in, a `NodeRegistry`
 holding the node packages (`rp.core`,
 `rp.host`, `rp.sameboy`, `rp.mesen`, `rp.host.io`, `rp.n8`, `rp.script`, and each script node pack
@@ -249,27 +255,27 @@ or displaced core is never freed on a hot path: it leaves with the plan that las
 
 Its per-block driver `Engine::processBlock(frames, outputs, n)` is the one place every host funnels a
 block. The host has already drained the ring (`drainInto` → `Engine::drainCommands` →
-`GraphHost::drain`: plan swaps and commands applied in push order, a staged message landing in the
-staging). Then, in order:
+`GraphHost::drain`: plan swaps and commands applied in push order, a staged host message landing in the
+staging and a staged node message handed to the node the running plan places under its id). Then, in order:
 
 1. `ScriptHost::beginBlock()`: release the script instances whose shims the control thread destroyed
    since the last block (up to 16 a block), before any of this block's JS runs. An empty block stops
    here; so does one longer than the plan's buffers, which renders silence, drops what was staged for
    it and is counted, for `reclaim` to report (a host avoids it by calling `setMaxBlockFrames` with its
    buffer size, as the plugin's `activate()` does).
-2. `syncTrace_.beginBlock(...)` (inert unless `RETROPLUG_SYNC_TRACE` is set), and `midiOut_` /
-   `controllerOut_` cleared for the plan's output nodes to fill.
+2. `syncTrace_.beginBlock(...)` (inert unless `RETROPLUG_SYNC_TRACE` is set), and `midiOut_` cleared
+   for the plan's host output node to fill.
 3. `GraphHost::run(frames, transport, outputs, n)`: silence every host output, then run the plan, in
    the planner's order (topological, ties broken by document order):
-   1. **The host inputs and the script nodes that feed the systems.** `rp.host.midi-in` and
-      `rp.host.controller-in` take what the hosts staged (the host MIDI stable-sorted by frame). Then the
-      script nodes, run by the [script host](../packages/native/src/host/script/ScriptHost.hpp)
+   1. **The host inputs and the script nodes that feed the systems.** `rp.host.midi-in` takes what the
+      hosts staged (stable-sorted by frame), and `rp.launchpad.surface-in` drains the surface link's
+      receive ring (every message at frame 0, the device's traffic not being timed against the block).
+      Then the script nodes, run by the [script host](../packages/native/src/host/script/ScriptHost.hpp)
       ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)): the MIDI routing (`rp.midi.route`) fans
-      the host MIDI out to the systems; the controller session reads the control surface; and each
+      the host MIDI out to the systems; the controller session reads `surface-in`; and each
       system's protocol nodes read what they need (mGB, N8 and LSDj their routed MIDI; risa and smsggdj only the
       transport) at the **block-start** `ppq_`, and send that system node's `serialIn`, `midi`, `bytes` and
-      `buttons` inputs, the session its host MIDI out to `rp.host.midi-out` and its control-surface out to
-      `rp.host.controller-out`.
+      `buttons` inputs and the session its host MIDI out to `rp.host.midi-out`.
    2. **The system nodes** ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp):
       `rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`), each a `SystemNode<T>` over a
       core's `prepareForBlock` / `stepIfBelowTarget` / `finishBlock`. Each applies its inputs first
@@ -285,13 +291,12 @@ staging). Then, in order:
    3. **The script nodes that read the systems.** An LSDj's serial-out decoder (`rp.lsdj.serial-out`)
       reads its Game Boy's `serialOut` of this block, over a forward wire, and sends its host MIDI out to
       `rp.host.midi-out`, each message at its byte's frame.
-   4. **The cart mirror and the host outputs.** `rp.n8.cart-mirror`, wired from the first NES in slot order,
-      hands what that system was sent to `coreByteSink_` for a physical N8 (a message staged straight
-      at it, `StageSystemMidi`, reaches the sink too, at drain); `rp.host.midi-out` fills
-      `midiOut_`, its inputs merged by frame, which the plugin drains to the DAW after the block, each
-      message at its frame (the SDL standalone to its MIDI out port at once, without the frame);
-      `rp.host.controller-out` appends to `controllerOut_`, which the SDL standalone drains to the Launchpad
-      link.
+   4. **The cart and the host outputs.** `rp.n8.nes` pushes what its `midi` and `bytes` inputs carry (the
+      fan-out of its system's protocol nodes) at the cart link, each message at its frame and the block's
+      rate, and hands the link the expansion volume it owes; `rp.host.midi-out` fills `midiOut_`, its inputs
+      merged by frame, which the plugin drains to the DAW after the block, each message at its frame (the SDL
+      standalone to its MIDI out port at once, without the frame); `rp.launchpad.surface-out` hands the
+      session's LED and page messages to the surface link's send ring, in queue order.
    5. **The mixing nodes**, `rp.core.split` and `rp.core.add`: the routing, as wiring (below).
    6. **`rp.host.audio-out`**, which copies its buses into the host's buffers (it reaches them
       through `rp_host.get_interface("rp.host.audio-buffers/1")`).
@@ -299,8 +304,8 @@ staging). Then, in order:
    nodes' promise jobs ran at each call's checkpoint, inside the plan's run); a profile build closes the
    block's `apu-render` span, the plan's whole run with the script nodes' spans inside it, just before
    ([08-profiling.md](08-profiling.md)).
-   What was staged and no node of the plan took (a plan with no `rp.host.midi-in` or `controller-in`)
-   is dropped, not carried into the next block.
+   What was staged and no node of the plan took (a plan with no `rp.host.midi-in`) is dropped, not
+   carried into the next block.
 5. `registry_.publishSystem(...)` for each system of the plan, in slot order: copy its
    freshly-published frame/state/SRAM into the owned snapshot store.
 6. `syncTrace_.endBlock()`, then advance `ppq_` only if transport is running (so the protocol nodes'
@@ -320,7 +325,7 @@ What the script nodes read and send are wires the planner sees
 ([modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md) section 3,
 [modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md) section 5). The host
 I/O nodes ([HostIoNodes.hpp](../packages/native/src/host/graph/HostIoNodes.hpp)) reach the engine
-through its host service `rp.engine.host-io/2`
+through its host service `rp.engine.host-io/3`
 ([HostServices.hpp](../packages/native/src/host/graph/HostServices.hpp)) and do not activate without
 it:
 
@@ -328,21 +333,22 @@ it:
 |---|---|---|
 | `rp.host.midi-in` | out `midi` (events: 2048 messages, 64 KiB) | takes the staged host MIDI, stable-sorted by frame without allocating: the plugin stages two runs in frame order (a block's DAW events, then each moved automation slot's CC at frame 0), which it merges onto its queue, a tie to the earlier run; more runs are sorted in place first, by insertion |
 | `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs' concatenation, input by input, each in queue order; each message goes at the later of its frame and the last handed out in the block, and at the block's last frame at most, a guard that keeps the list frame-sorted and inside the block whatever an input's queue holds (a node on the C ABI writes its own, and a script node's `send` carries a frame past the block as given), since the plugin hands each frame to the DAW unchecked. The merge allocates nothing, a head index per input, and costs messages times inputs; the sink it hands each message to, `Engine::midiOut`, still takes a `std::vector` per message ([07-remaining-work.md](07-remaining-work.md)). Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
-| `rp.host.controller-in` | out `midi` (events: 1024 messages, 16 KiB), out `connected` (control) | takes the staged control-surface traffic, all at frame 0; `connected` is 1 while a surface is attached, from frame 0 of the block (a change at frame 0 on the block the flag flips, since a control output's start is the last block's end) |
-| `rp.host.controller-out` | in `midi` | appends each message to `Engine::controllerOut` |
-| `rp.n8.cart-mirror` | in `midi` (events), in `bytes` | settings `{"system": <id>}`; hands the core-byte sink every MIDI message, then every byte message with its flush flag, in queue order, skipping empty ones; nothing while no sink is set |
+| `rp.launchpad.surface-in` | out `in` (events: 1024 messages, 16 KiB), out `connected` (control) | drains the surface link's receive ring at the top of its block (16-message batches until the link answers short), every message at frame 0; `connected` is 1 while the device is attached, from frame 0 of the block. Its first block discards what the link held when it bound it, so a press from before the plan is not replayed; a message its queue cannot hold is dropped and counted. `unique`, `threads`, category `device` |
+| `rp.launchpad.surface-out` | in `out` (events) | hands each message to the surface link's send ring in queue order; a detached link drops and counts them. `unique`, `threads`, category `device` |
+| `rp.n8.nes` | in `midi` (events), in `bytes`, param `expansionVolume`, out `connected` (control) | pushes each message at the cart link at its frame and the block's rate, the `bytes` port's flush flag carried; hands the link the expansion volume at its first block, on a change and on every reconnect; `connected` is the link's state from frame 0. No audio output. `unique`, `threads`, category `device` |
 
 An input node takes everything staged whether or not its output is wired, so `Engine::setGraph` refuses
-(`midi-in`, `controller-in`) a document with a second of either. It refuses (`midi-out`) a second
+(`midi-in`) a document with a second `rp.host.midi-in`. It refuses (`midi-out`) a second
 `rp.host.midi-out`: the node frame-sorts only what it merges, so a second would append its own run behind
-the first's, and `Engine::midiOut`, which the plugin writes to a DAW as it is, would step back in frame. It
-refuses (`cart-mirror`) a second cart mirror too, or one whose `system` is not one of the slots' NES
-systems, reading the settings with the node's own reader (`cartMirrorSystem`). The system it names goes into
-the plan's `SystemTable`, and `Engine::cartMirrorSystemId()` reads it off the running plan: while it is
-non-zero the plugin and the SDL standalone stop forwarding their raw host MIDI (the DAW's, or the
-standalone's MIDI input) to the cart (it would arrive twice, the second copy unrouted), and a
-`StageSystemMidi` aimed at that system reaches the cart too. The node's settings change nothing it does, so
-it prepares statelessly and a change is a swap.
+the first's, and `Engine::midiOut`, which the plugin writes to a DAW as it is, would step back in frame.
+The device nodes' uniqueness is their descriptors' `"unique":true` instead, which the planner checks for
+every host: a plan holds one `rp.n8.nes`, one `rp.launchpad.surface-in` and one `rp.launchpad.surface-out` at
+most, and a second is refused at plan time with code `unique`. The device nodes reach their devices through
+`rp.host.devices/1` ([DeviceLinks.hpp](../packages/native/src/host/devices/DeviceLinks.hpp)), not the host I/O
+service: a node asks for `"n8"` or `"launchpad"` by name in its activate and is handed a link the host owns,
+or a never-connected one in a host that owns no such device, so a document plans and runs everywhere. A
+message the UI stages at a node rides `rp.stage/1`, the third seam beside these two: a system node hands it to
+its core's ingress, the cart node pushes it at its link.
 
 Every system node has four inputs, mapped onto core calls `SystemBase` already has. It applies them
 at the top of its `prepare` (where `process` starts too, and which a linked group runs for every member
@@ -425,6 +431,34 @@ and counted on its queue; after each block the executor adds the counts to the p
 atomic and the GraphHost's, `GraphHost::reclaim` names a node the first time its outputs drop, and
 `Engine::droppedMessages()` (the harness RPC `droppedMessages`) reads the total, which the parity rig and
 the native goldens run hold at zero.
+
+### Device nodes, their links and capability jobs
+
+`rp.n8.nes` and `rp.launchpad.surface-in` / `-out` are the hardware nodes
+([N8Nodes.cpp](../packages/native/src/host/graph/N8Nodes.cpp),
+[LaunchpadNodes.cpp](../packages/native/src/host/graph/LaunchpadNodes.cpp)). Each binds the host-owned device it
+drives through `rp.host.devices/1`
+([DeviceLinks.hpp](../packages/native/src/host/devices/DeviceLinks.hpp)): a `CartLink` for the cart, with a push per
+message (frame, bytes, the flush flag, the block's rate), the link's connected state and drop count, the
+expansion-volume register and `submitJob` / `abandonJobs`; a `SurfaceLink` for the pad, with a drain into the node's
+own array, a push, the connected state and its drop count. A host installs its links with
+`Engine::setDeviceLinks` before its first plan (the plugin passes its `N8CartLink` and no surface, the SDL
+standalone both, the test host a `HarnessSurfaceLink`, and the CLI, the Node addon and the render host neither), and a
+name it has no device for answers a handle that is never connected and that drops and counts everything, so a
+document plans and runs in every host. A node keeps its handle across a reactivate and gives it back once in destroy,
+which runs at reclaim on the control thread while the links are still installed: a host tears its plans down first
+(`Engine::clearGraph`), then uninstalls its links.
+
+A capability job ([CapabilityJobs.hpp](../packages/native/src/host/engine/CapabilityJobs.hpp)) is what `submitJob`
+takes: a request for a node of the last published plan, answered with an id or a refusal. A system node's job goes to the
+`memory()` / `sram()` / `rom()` accessor its core presents: a memory read is the published copy and a ROM header the
+core's immutable image, both at once, a write rides the command ring and completes once the block after its apply has
+published the region, and an emulated `sram.restore` is refused (a battery is a seed on a rebuild). A device node's
+job goes to its link, on the device's own thread: one at a time ("busy"), none while the device is not attached ("not
+connected"), progress reported per drain, and a node leaving the plan abandons the job it still runs. The engine keeps
+at most `kMaxJobs` (64) outstanding, engine-wide back-pressure that leaves room for every completion, and a request
+names a capability from the one reserved id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`), so the
+engine asks a node only by an id it knows and never casts an answer.
 
 ### The system nodes' settings and params
 
@@ -539,11 +573,10 @@ name:
   document's system nodes and the slots name the same systems, each node `sys-<id>` with settings naming
   its system (`"system": <id>`) and its ROM (`"rom": "res:N"`), that a tap arm names one of the slots and a mode
   from 1 to 3 (the NES's own numbering, which the engine validates rather than the capability: the arm travels as a
-  byte TS numbers, and a NES's tap is the only one today), that there is at most one
-  `rp.host.midi-in` and one `rp.host.controller-in`, and at most one `rp.n8.cart-mirror`, naming one of
-  the slots' NES systems (any of these refuses the document before anything is built); builds the plan's
-  `SystemTable` (a slot-ordered list of `{ id, SystemBase*, ChannelTap* }`, the tap filled from
-  `SystemBase::channelTap()` and null for a core that offers none, plus the system the cart mirrors,
+  byte TS numbers, and a NES's tap is the only one today), and that there is at most one `rp.host.midi-in`
+  (a second refuses the document before anything is built; the device nodes' `unique` flag is the planner's);
+  builds the plan's `SystemTable` (a slot-ordered list of `{ id, SystemBase*, ChannelTap* }`, the tap filled
+  from `SystemBase::channelTap()` and null for a core that offers none,
   [SystemTable.hpp](../packages/native/src/host/graph/SystemTable.hpp)) from the slots and the live cores, a slot
   whose node is reused from the previous plan already filled;
   turns `tap` into the swap's `SyncTap` trailer; and hands both to `GraphHost::setGraph`, which computes
@@ -556,18 +589,18 @@ name:
 
 The document `buildGraph` writes:
 
-- **Order.** `rp.host.midi-in`, `rp.host.controller-in`, then the script nodes: the MIDI routing (when the
-  model has a routing mode), the controller session (when one is enabled) and each system's protocol nodes,
-  in slot order and then role order; then the unlinked systems by slot, then the link groups in order of
-  first appearance (members by slot, one `link` wire chaining each member to the next), then the script
-  nodes that read a system, in slot order (an LSDj's `rp.lsdj.serial-out`, on a Game Boy), then
-  `rp.n8.cart-mirror` when there is a NES, `rp.host.midi-out` and `rp.host.controller-out`, then the mixing
-  nodes, then `rp.host.audio-out`. A protocol node runs before its system because the system reads its
+- **Order.** `rp.host.midi-in`, then `rp.launchpad.surface-in` when a controller is enabled, then the script
+  nodes: the MIDI routing (when the model has a routing mode), the controller session (when one is enabled) and
+  each system's protocol nodes, in slot order and then role order; then the unlinked systems by slot, then the
+  link groups in order of first appearance (members by slot, one `link` wire chaining each member to the next),
+  then the script nodes that read a system, in slot order (an LSDj's `rp.lsdj.serial-out`, on a Game Boy), then
+  `rp.n8.nes` when a NES drives one, `rp.host.midi-out` and `rp.launchpad.surface-out`, then the mixing nodes,
+  then `rp.host.audio-out`. A protocol node runs before its system because the system reads its
   outputs, and LSDj's decoder after it because it reads the system's `serialOut` in the same block: every
   node reads only nodes placed before it (but over a feedback wire, which orders nothing, and which no document
   `buildGraph` builds holds), and the planner breaks ties by document order (`Planner.cpp` `order()`), so
-  this is also the order the plan runs in. Node ids are `midi-in`, `controller-in`, `routing`, `controller`,
-  `cart`, `midi-out`, `controller-out`, `out`, `sys-<id>`, a system's protocol nodes `sys-<id>/<role-kind>`
+  this is also the order the plan runs in. Node ids are `midi-in`, `surface-in`, `routing`, `controller`,
+  `cart-<id>`, `midi-out`, `surface-out`, `out`, `sys-<id>`, a system's protocol nodes `sys-<id>/<role-kind>`
   (one placed after its system `sys-<id>/<role-kind>/out`), and names derived from a system id
   (`split-<id>`, `stem-<id>-<k>`) or a host channel (`lane-<c>`), never from position, so a system and its
   nodes keep their instances across edits. Link groups are Game Boys only, bucketed by nonzero link-group id
@@ -575,12 +608,13 @@ The document `buildGraph` writes:
 - **The script nodes** ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)). `routing`
   (`rp.midi.route`, settings the routing mode and the system ids in slot order, which positional MIDI
   routing reads) takes `midi-in.midi` and has an output per system, `sys-<id>`, into each of that system's
-  protocol nodes that reads MIDI. `controller` (`rp.controller.session`) takes `controller-in.midi` and
-  `.connected`, its `controllerOut` to `controller-out`, its `launches` into the target system's
+  protocol nodes that reads MIDI. `controller` (`rp.controller.session`) takes `surface-in.in` and
+  `.connected`, its `controllerOut` to `surface-out.out`, its `launches` into the target system's
   `rp.lsdj.sync` when its target is a system. Each protocol node's outputs go to its system node's inputs of
   the same name; each LSDj's Game Boy's `serialOut` goes forward into its `rp.lsdj.serial-out`, which reads
-  the bytes MI.OUT and master sync decode in the block the core captured them; the first NES's protocol
-  nodes' `midi` and `bytes` go to the cart mirror as well; and `midi-out` takes the controller's `midiOut`
+  the bytes MI.OUT and master sync decode in the block the core captured them; the driving NES's protocol
+  nodes' `midi` and `bytes` go to its `rp.n8.nes` (`cart-<id>`) as well, the fan-out that makes emulated, real
+  or both plain wiring; and `midi-out` takes the controller's `midiOut`
   and then each `rp.lsdj.serial-out`'s, in slot order, each input under its system: the controller's first, so
   its message wins a tie at a frame. Every script node reshapes, so a structure change keeps each surviving
   instance (the routing node's ports follow the systems) and its wires stay bound.
@@ -659,11 +693,10 @@ cleanly.
 | Kind | Payload | Ownership |
 |---|---|---|
 | `StageMidi` | `uint8 data[4]`, `len`, or `vector<uint8>* ext`, `frame` | inline for a message of up to 4 bytes; a longer one (a SysEx) owning; applied into the engine's staging, which `rp.host.midi-in` takes |
-| `StageControllerMidi` | `uint8 data[4]`, `len` | inline only; a message over 4 bytes is refused before it is pushed |
-| `StageSystemMidi` | `id`, `data[4]` / `len` or `ext` | as `StageMidi`, delivered at drain to one system's ingress (and to the cart when the plan's cart mirror names that system), never through the routing node |
+| `StageNodeMidi` | `id`, `StagedNodeMessage* ext` | owning; applied at drain to the node the running plan places under `id`, through `rp.stage/1`, which hands the bytes to a system's core ingress or to a device |
 | `SetBpm` / `SetTransport` / `SetPpq` | `double` / `bool` / `double` | inline |
 | `PressButton` | `id`, `button`, `down` | inline |
-| `WriteRam` | `id`, `offset`, `vector<uint8>* bytes` | owning |
+| `CapabilityWrite` | `Job*` | a non-owning pointer to a job record the control thread owns; the block thread reads its bytes and marks it applied, and the engine frees the record once it is done |
 | `SyncTap` | `arm`, `mode`, `id` | inline; rides in the plan's swap command as a trailer for every `setGraph` request carrying a `tap` |
 
 Heavy, rare payloads (RAM writes, long MIDI) cross as raw **owning** pointers: the accepted
@@ -1033,17 +1066,17 @@ its **runtime** classes:
 
 | Shared class | Host use |
 |---|---|
-| [`SystemBase`](../packages/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn`/`reserveAudio`. Its surface is what the engine and the nodes call: no battery-path accessors, no `fastBoot()` getter, no `clearSram`, no sub-block MIDI out, and no memory-snapshot arming (C4). The capabilities beside `debugTarget()` are `channelTap()`, and the per-block contract is `reserveAudio` plus `kDefaultBlockFrames`; its ingress queues report `inputAccepted()` / `inputDropped()` |
+| [`SystemBase`](../packages/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn`/`reserveAudio`. Its surface is what the engine and the nodes call: no battery-path accessors, no `fastBoot()` getter, no `clearSram`, no sub-block MIDI out, and no memory-snapshot arming (C4). The capabilities beside `debugTarget()` are `channelTap()` and, since C5, the nullable `memory()` / `sram()` / `rom()` accessors a system node presents to the capability job model (`system/SystemCapabilities.hpp`), and the per-block contract is `reserveAudio` plus `kDefaultBlockFrames`; its ingress queues report `inputAccepted()` / `inputDropped()` |
 | [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; its node gives it its knobs through value-guarded setters (`setModel`, `setHighpass`, the display group, `setSerialOutCapture`); its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
-| [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap and build check name no console: it forward-declares `ChannelTap` and includes no core header, and its one console check is the N8 cart mirror's (`SystemKind::MesenNes`, NES by construction) |
+| [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap and build check name no console: it forward-declares `ChannelTap` and includes no core header, and with C5's cart node it has no console check at all |
 | the LSDj kit/sample pipeline (`KitCompiler` / `KitUtil` / `SampleCache` / `Effects`), `util/MinizZip`, `EmbeddedRoms` | backing kit patching, `zip`/`unzip`, and embedded-ROM resolution |
 | `SpscRing` / `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the command/release rings and the snapshot registry are built on |
 
 The graph the engine runs on is not in `retroplug-core`: the executor, planner and
 [`GraphHost`](../packages/native/src/graph/GraphHost.hpp), with the `rp.core` mixing nodes and the
 `rp.host` package's `rp.host.audio-out`, are the `retroplug-graph` / `retroplug-graph-exec` libs
-(`src/graph/`), and the engine's own nodes (`src/host/graph/`: the system nodes, the host MIDI and
-control-surface I/O, the cart mirror) and the script host (`src/host/script/`) compile into
+(`src/graph/`), and the engine's own nodes (`src/host/graph/`: the system nodes, the host MIDI I/O, the cart's node
+and the control surface's two) and the script host (`src/host/script/`) compile into
 `retroplug-backend`.
 
 ROM classification (the legacy build's C++ `RomSniffer`) and the LSDj sav codec are TS-owned - neither is in
@@ -1092,7 +1125,7 @@ is one automatable parameter applied post-render across all 8 channels
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
 - [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs and the registry; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
-- [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host I/O nodes and the cart mirror), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
+- [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes), [`N8Nodes.cpp`](../packages/native/src/host/graph/N8Nodes.cpp) (the cart's node), [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) (the control surface's two), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
 - [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.

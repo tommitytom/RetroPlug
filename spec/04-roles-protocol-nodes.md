@@ -379,13 +379,13 @@ systems (the planner breaks ties by document order, so they run before them):
    a `DirectGraph`, or a `SystemsStore` used without a project, routes none until a mode is set), fed from
    `midi-in.midi`;
 2. `controller`, the `rp.controller.session` node, when a controller is enabled, fed from
-   `controller-in.midi` and `.connected`, its `controllerOut` to `controller-out`;
+   `surface-in.in` and `.connected`, its `controllerOut` to `surface-out.out`;
 3. each system's protocol nodes, in slot order and then the order of its roles, each `sys-<id>/<kind>`
    with the role's parsed config as its settings: what reads MIDI is fed from `routing.sys-<id>`, each
    output wired to the system node's input of the same name, and the controller's `launches` into the
    target system's `rp.lsdj.sync` when the target is `"system"`.
 
-After the systems and their link wires, and before the cart mirror and the host outputs, it places the
+After the systems and their link wires, and before the cart's node and the host outputs, it places the
 node a role's type names to run after its system (its `out`), in slot order: `rp.lsdj.serial-out` for an
 `lsdj-sync` on a Game Boy, `sys-<id>/lsdj-sync/out`, with the settings its `rp.lsdj.sync` got (the MI.MAP
 controller's forced mode included), fed `sys-<id>.serialOut` over a forward wire, so it reads what the core
@@ -435,8 +435,10 @@ The rest of the document follows from those nodes:
   it handed out in the block, and at the block's last frame at most, a guard that keeps the host's list
   frame-sorted and inside the block whatever an input holds, which `Engine::midiOut` promises and CLAP and
   LV2 require.
-- **The N8 cart mirror** (`cart`, `rp.n8.cart-mirror`) for the first NES in slot order, fed what that
-  system's protocol nodes send its `midi` and `bytes` inputs.
+- **The cart** (`cart-<id>`, `rp.n8.nes`) for the first NES in slot order whose "drive the real cart" setting
+  is on, fed by fan-out what that system's protocol nodes send its `midi` and `bytes` inputs; and the two
+  control-surface nodes (`surface-in` before the systems, `surface-out` after them) when a controller is
+  enabled, which is what the session reads and writes in place of the old host controller staging.
 - **The controller** ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): its target
   "0 is the first system" is resolved here (`controllerTarget`), so it follows a change of first system;
   with no system its host MIDI is tagged `NO_SYSTEM` (4294967295) and the node takes 0, its none. The
@@ -507,5 +509,6 @@ Native ([packages/native/src/](../packages/native/src/)):
   protocol nodes run in.
 - [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp): each system node's settings, params
   and inputs, applied before its core runs.
-- [HostIoNodes.cpp](../packages/native/src/host/graph/HostIoNodes.cpp): the host I/O nodes the protocol
-  nodes read from and send to, and the N8 cart mirror.
+- [HostIoNodes.cpp](../packages/native/src/host/graph/HostIoNodes.cpp): the host MIDI I/O nodes the protocol
+  nodes read from and send to; [N8Nodes.cpp](../packages/native/src/host/graph/N8Nodes.cpp): the cart's node;
+  [LaunchpadNodes.cpp](../packages/native/src/host/graph/LaunchpadNodes.cpp): the control surface's two.

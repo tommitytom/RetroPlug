@@ -38,10 +38,10 @@ struct HostSystems {
 //
 // Host services are looked up by this versioned id so that a change of shape is visible to a node built against the
 // old one. /2: the drop counter left the struct, which /1 had. /3: the control-surface half (takeControllerMidi,
-// controllerConnected, controllerOut) and cartBytes left it, which /2 had, with the nodes that read them: a
-// rp.launchpad.surface node takes the device's traffic from its link, and rp.n8.nes pushes at its cart's. Every
-// consumer is in tree (the nodes, the tests' rigs), but a node built against /2 would read a struct a member past
-// its end, so the id moved.
+// controllerConnected, controllerOut) and cartBytes left it, which /2 had, with the nodes that read them: the
+// rp.launchpad.surface-in / -out nodes take the device's traffic from their link, and rp.n8.nes pushes at its cart's.
+// Every consumer is in tree (the nodes, the tests' rigs), but a node built against /2 would read a struct a member
+// past its end, so the id moved.
 #define RP_ENGINE_HOST_IO_INTERFACE "rp.engine.host-io/3"
 struct EngineHostIo {
     void* ctx;

@@ -50,9 +50,19 @@ The rules below are the parts that don't fit those.
   the audio path and then the whole block counted at ragged sizes with input staged, a freshly built core's first
   block costing only the boot savestate capture, the `[video]` hashes, a live arm
   sizing nothing, a `[input-drops]` case per queue kind, the tap a capability only a NES offers (so the tap and the
-  node's kind check name no console; the engine's one remaining console check is the N8 cart mirror's), and a node
+  node's kind check name no console; with C5's cart node the engine makes no console check at all), and a node
   refusing a core of another console's kind; the engine places, re-arms and frees what the graph documents
-  TS builds say; the host I/O nodes and the N8 cart mirror move what the hosts stage and drain;
+  TS builds say; the host MIDI I/O nodes move what the hosts stage and drain; the hardware nodes (C5,
+  [docs/modular-graph-phase-c5-design.md](docs/modular-graph-phase-c5-design.md)): `rp.host.devices/1` over fake
+  devices, a host that owns no device, a link kept across a reactivate and given back once at a teardown, and a
+  warmed block touching both links allocating nothing; the capability jobs (`rp.system.memory/1`, `.sram/1`,
+  `.rom/1`) on each emulated console against the system-id RPCs and the ROM file, a write completing at the block
+  that publishes it, a node removed or a plan replaced under a job, the engine's 64-job bound, a real device
+  thread's progress, and a warmed block with writes in flight; `rp.n8.nes` from one source receiving what
+  `rp.mesen.nes` receives, in order and at their frames, its expansion volume, the note-offs a pause dropped, its
+  jobs' busy and not-connected refusals, an abandoned job and its `threads`; the surface's two nodes (a frame-0
+  drain, the queue's bound, the first-block discard, uniqueness, one link each); and the UI's staged message
+  reaching the node the running plan places under its id;
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
   creation and release on the block thread, throws, a node's promise jobs charged to it; script node packs beside the
@@ -357,7 +367,7 @@ own change with a re-record, as the LSDj master-sync fix and the narrow-host NES
 ([docs/lsdj-master-sync-fix-design.md](docs/lsdj-master-sync-fix-design.md),
 [docs/modular-graph-phase-c4-design.md](docs/modular-graph-phase-c4-design.md) section 10). The fixture groups need
 `RETROPLUG_RESOURCES_DIR` pointed at the sibling resources tree, and CI runs only the 152 fixture-free cases
-(every LSDj case, its MIDI-out and link-cable ones among them, and every controller-in, risa and GBA case is
+(every LSDj case, its MIDI-out and link-cable ones among them, and every controller, risa and GBA case is
 fixture-only), so a Phase B step is accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.
 
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):

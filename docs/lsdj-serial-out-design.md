@@ -65,7 +65,7 @@ beside the one before it: `rp.lsdj.sync`'s spec drops `serialOut` and `midiOut` 
 whose own spec says it reads its system's `serialOut` and sends host MIDI. `protocolPipeline`, `placedRole` and the
 one-writer rule are unchanged: the decoder writes no system input.
 [buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts) pushes the decoders after the systems in slot order,
-before the cart mirror and the host outputs, and its comment that every script node goes before the systems becomes
+before the cart's node and the host outputs, and its comment that every script node goes before the systems becomes
 the rule that a script node reads only earlier nodes (or a feedback wire). The role goldens' forward-wire check (B3b
 follow-up E) holds it. The new type registers last in [bundle.ts](../packages/retroplug/src/script/bundle.ts), so
 the production span labels 16 to 22 keep their types and it takes 23.
@@ -117,7 +117,9 @@ inside the block whatever arrives, a document holding one `rp.host.midi-out` (`E
 section 12). With every frame 0 the merge is today's order, input by input, so it moves nothing on its own. The
 merge allocates nothing (one head index per input, `kMidiOutMaxInputs` of them) and costs messages times inputs a
 block; the sink it hands each message to still allocates, `Engine::midiOut` taking a `std::vector` per message, as
-spec/07's item from B3a records. Nothing it exposes changes, so the host-io service id stays `rp.engine.host-io/2`.
+spec/07's item from B3a records. Nothing it exposes changes, so the host-io service id stayed
+`rp.engine.host-io/2`; C5's deletion of the controller nodes moved it to `/3`
+([modular-graph-phase-c5-design.md](modular-graph-phase-c5-design.md)).
 
 What a host does with a frame is unchanged: the plugin hands it to the DAW (`writeMidiEvent`), the RPC drains record
 it, and the SDL standalone sends each message once its block is rendered, without it (its RtMidi out has no
@@ -300,8 +302,8 @@ The commits' reviews found more, fixed in the commits after them:
 - **`Engine::midiOut` is frame-sorted only within one `rp.host.midi-out`.** Section 5's promise held for the one
   `buildGraph` places, but a document holding two would append the second's merge behind the first's, and the
   plugin writes the list to the DAW as it is (CLAP and LV2 require the order). Nothing places two (every golden
-  holds one), so `Engine::setGraph` refuses a second (`midi-out`), as it refuses a second `rp.host.midi-in`,
-  `rp.host.controller-in` or cart mirror.
+  holds one), so `Engine::setGraph` refuses a second (`midi-out`), as it refuses a second `rp.host.midi-in` (a
+  second device node is the planner's `unique` flag since C5).
 - **No document holds a feedback wire, and every role golden is now held to that.** The role goldens' forward-wire
   check passed feedback wires over, and `build-graph.test.ts` looks for one in an LSDj's structure alone:
   [build-graph-role-goldens.test.ts](../packages/retroplug/test/graph/build-graph-role-goldens.test.ts) refuses a

@@ -919,9 +919,16 @@ C4 built the first piece of this list that the engine itself needed, and not as 
 `ChannelTap` ([ChannelTap.hpp](../packages/native/src/system/ChannelTap.hpp), `exportMode` / `setExportMode` and nothing
 else), which `SystemBase::channelTap()` returns or answers null for, and `SystemTable`'s slot carries that pointer, so
 `Engine`'s tap arming and build check name no console
-([modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md); the one console check the engine still makes is
-the N8 cart mirror's, NES by construction, and the per-console node definitions keep naming their cores, which is the
-seam C3 made for them). The rest of the split is P7's.
+([modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md); C4 left one console check, the N8 cart mirror's,
+NES by construction, and C5 deleted it with the mirror, so the engine now names no console at all; the per-console node
+definitions keep naming their cores, which is the seam C3 made for them).
+
+C5 built the three interfaces its hardware nodes needed, still as nullable accessors on `SystemBase` rather than
+`rp_host` objects: `memory()` (`rp.system.memory/1`, the one published region), `sram()` (`rp.system.sram/1`) and
+`rom()` (`rp.system.rom/1`), presented by a system node or by a device node and consumed through the asynchronous
+capability job model ([modular-graph-phase-c5-design.md](modular-graph-phase-c5-design.md) sections 6 and 10). What is
+left of the table is video, buttons, debug and `state/1`, the tap's move from `ChannelTap` to `rp.system.tap/1`, and
+one node file per console, which is P7's remainder.
 
 **The threading rule is unchanged: the control plane never touches a live core.** The executor calls
 these interfaces at safe points on the audio thread. Reads come from published snapshots; writes and
@@ -948,14 +955,19 @@ What remains of `Engine` is the executor, the rings and the registry.
 
 ### 6.6 Real hardware as nodes
 
-`rp.n8.nes` (`n8` package) has the **same `fifo` input as `rp.mesen.nes`**. Its `process` pushes bytes
-onto the lock-free ring `N8Link` already uses to feed its serial thread (so it declares `threads`). It
-implements `rp.system.sram/1` (dump and restore over USB) and `rp.system.rom/1` (upload and boot). It has
-no audio output: the sound comes from the console, or from a capture input through `rp.host.audio-in`.
+`rp.n8.nes` (`n8` package) has the **same `midi` and `bytes` inputs as `rp.mesen.nes`**. Its `process` pushes each
+message, at its frame, onto the lock-free ring `N8Link` already uses to feed its serial thread (so it declares
+`threads`). It presents `rp.system.sram/1` (a dump and a restore of the SD card's own save file, at the cart's menu: a
+cart-memory read wedges a running game and leaves the menu deaf) and `rp.system.rom/1` (header and title from what the
+host booted, plus upload-and-boot). It has no audio output: the sound comes from the console, or from a capture input
+through `rp.host.audio-in`.
 
-**Today's "mirror the emulated FIFO to the hardware" (`coreByteSink_`) becomes plain fan-out**: the risa
-sync node's `fifo` output feeds both the emulated NES and the N8 node. Emulated, real, or both is just
-wiring. The Launchpad works the same way: `rp.launchpad.surface` has events ports to and from the device.
+**The old "mirror the emulated FIFO to the hardware" (`coreByteSink_`) is plain fan-out**: the risa sync node's
+outputs feed both the emulated NES and the N8 node. Emulated, real, or both is just wiring. The Launchpad works the
+same way: `rp.launchpad.surface-in` / `-out` have events ports to and from the device, two nodes rather than one
+because a node that both fed a session and followed it is a cycle, and a feedback wire would deliver the previous
+block. Both devices reach their links through `rp.host.devices/1` and their long operations through capability jobs
+([modular-graph-phase-c5-design.md](modular-graph-phase-c5-design.md) sections 3 to 6 and 10).
 
 ---
 
@@ -1203,11 +1215,20 @@ bounded ring sized when the core is built. Strict parity held bit for bit at eve
 narrow-host defect the B0 design records was fixed afterwards, in a follow-up that re-recorded the two groups it
 pinned (section 10 of the C4 design).
 
+C5 is built ([modular-graph-phase-c5-design.md](modular-graph-phase-c5-design.md)): the N8 cart and the Launchpad are
+nodes (`rp.n8.nes`, `rp.launchpad.surface-in` / `-out`) that bind a host-owned device through `rp.host.devices/1`, the
+operations an emulated system and a cart share are asynchronous capability jobs (`rp.system.memory/1`, `.sram/1`,
+`.rom/1`, §6.4), and the cart mirror and its sink, the controller channel and the system-addressed staging are gone, so
+`Engine` names no console and no device. Strict parity held bit for bit at every commit, nothing re-recorded. What it
+leaves (its section 10): P7's remainder, and a cart's battery reachable only at the N8 menu.
+
 - Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes: done in C4 for `src/`, the suites'
   console-only casts aside.
-- `SystemBase` shrinks to the capability interfaces (§6.4): its dead surface went in C4, the split itself is P7's.
+- `SystemBase` shrinks to the capability interfaces (§6.4): its dead surface went in C4, `memory/1`, `sram/1` and
+  `rom/1` are nullable accessors since C5, and video, buttons, debug and `state/1` are P7's.
   `MesenAudioDevice`'s preallocated ring is built.
-- `rp.n8.nes` and `rp.launchpad.surface` replace the N8 mirror sink and the controller special cases.
+- `rp.n8.nes` and `rp.launchpad.surface-in` / `-out` replace the N8 mirror sink and the controller special cases:
+  built in C5.
 
 ### Phase D: the DSP library and offline graphs
 

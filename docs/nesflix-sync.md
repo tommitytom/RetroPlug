@@ -70,7 +70,7 @@ Anything that gets bytes into that FIFO drives the ROM; the byte source is inter
 1. **CLI on a Pi (the actual target)** - a CLI process is the clock master, generating the
    stream from an internal clock or from audio analysis. See the Driver section.
 2. **Real N8** - the same generated stream is mirrored to a physical cart
-   (`Engine::setCoreByteSink` -> `N8Link`), byte-identical to the emulated stream. On a Pi
+   (the graph's fan-out into `rp.n8.nes` -> `N8Link`), byte-identical to the emulated stream. On a Pi
    this is the shipping path (arm64 + N8, already proven for risa).
 3. **DAW plugin / standalone (secondary)** - transport or MIDI-clock in generates the stream;
    handy as a deterministic test harness even though it is not the deployment.
@@ -137,7 +137,7 @@ fine in TS on a Pi, or drop to C++ if a heavier onset/beat tracker is wanted lat
 
 - A CLI session/tool (`retroplug-cli nesflix` or similar, long-running like `n8-sync`) that owns
   the core + optional N8 mirror and runs the chosen generator. Mostly reuse of `n8-sync` +
-  `setCoreByteSink` + the long-session infra.
+  the graph's `rp.n8.nes` fan-out + the long-session infra.
 - For Mode 2 external audio: the audio-in facet (new). Mode 2 closed-loop and Mode 1 need no new
   native seam.
 - The analysis/mapping TS module (`src/nesflix/` or a user script), unit-testable on recorded WAV.

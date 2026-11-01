@@ -169,12 +169,12 @@ descriptors by shared golden files.
 
 **The native engine runs on it** (Phase B1,
 [docs/modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md)):
-`Engine::processBlock` runs a `GraphHost` plan of the engine's own nodes: the host I/O nodes
-(`rp.host.midi-in`, `-midi-out`, `-controller-in`, `-controller-out`), the script nodes that feed the
-systems (and LSDj's serial-out decoder, which reads its Game Boy), one system node per core
-(`rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`) and, with a NES, the
-`rp.n8.cart-mirror` that feeds a physical N8, mixed by `rp.core.split` / `rp.core.add` into
-`rp.host.audio-out`.
+`Engine::processBlock` runs a `GraphHost` plan of the engine's own nodes: the host MIDI I/O nodes
+(`rp.host.midi-in`, `-midi-out`), the script nodes that feed the systems (and LSDj's serial-out
+decoder, which reads its Game Boy), one system node per core (`rp.sameboy.gb`, `rp.mesen.nes`,
+`rp.mesen.gba`, `rp.mesen.sms`) and, where a setting places them, the hardware nodes: `rp.n8.nes` feeding a
+physical N8, and the control surface's `rp.launchpad.surface-in` / `-out`, mixed by `rp.core.split` /
+`rp.core.add` into `rp.host.audio-out`.
 **TS builds the graph** (Phase B2,
 [docs/modular-graph-phase-b2-design.md](../docs/modular-graph-phase-b2-design.md)): the stores publish one
 whole document per structural edit through `EngineGraph` (`buildGraph` writes it from the systems, the

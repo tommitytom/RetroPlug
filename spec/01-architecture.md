@@ -185,7 +185,7 @@ one without `RP_TYPE_STATELESS_PREPARE` (`PlanStorage::awaitsAdoption`): the pla
 such a node to prepare again while its last commit may still be landing. The commits the engine's
 documents carry are the script nodes', whenever their settings change (a system added or removed, which
 moves the routing node's outputs, a role's config, the MIDI routing, the controller), the system nodes',
-whenever a knob moves (a model, a palette, an LSDj's capture), and the cart mirror's, and all of them prepare
+whenever a knob moves (a model, a palette, an LSDj's capture), and all of them prepare
 statelessly: every script type does, and a system node rebuilds only for a new system id, `romName` or a
 construct-time field, which it compares against the key of the instance it was created with (node.hpp's
 `rebuild_key`; a moved resource ref rebuilds it too), never against settings a commit writes.
@@ -223,15 +223,16 @@ outputs before the handoff.
 ### Producers and the drain
 
 Producer methods pack a command and push. Lightweight commands are pure POD: `stageMidi` (a message
-of up to 4 bytes rides inline), `stageControllerMidi`, `setBpm`, `setTransport`, `setPpq`,
-`pressButton`; if the ring is full they are simply dropped (a lost edge, never a leak), as is a
-`setParam`'s, which answers false then. Heavy commands carry an **owning heap payload**: a `stageMidi` /
-`stageSystemMidi` longer than 4 bytes boxes a `new`-ed buffer (deleted after apply or, if the push fails,
-immediately). A `writeRam`, like any capability job's write, carries a pointer to a job record the control thread
-owns and frees once the block thread has marked it finished (`host/engine/CapabilityJobs.hpp`), so applying one
-allocates and frees nothing. `stageControllerMidi` is inline only: a message longer than 4 bytes is refused
-before it is pushed. A staged message lands in the engine's staging at drain, where the plan's
-`rp.host.midi-in` / `controller-in` take it at the top of the next block.
+of up to 4 bytes rides inline), `setBpm`, `setTransport`, `setPpq`, `pressButton`; if the ring is full
+they are simply dropped (a lost edge, never a leak), as is a `setParam`'s, which answers false then.
+Heavy commands carry an **owning heap payload**: a `stageMidi` longer than 4 bytes boxes a `new`-ed
+buffer (deleted after apply or, if the push fails, immediately), and `stageNodeMidi` carries the node id and
+the bytes as one owning payload (`DspCommand::stageNodeMidi`). A `writeRam`, like any capability job's write,
+carries a pointer to a job record the control thread owns and frees once the block thread has marked it finished
+(`host/engine/CapabilityJobs.hpp`), so applying one allocates and frees nothing. A staged host MIDI message
+lands in the engine's staging at drain, where the plan's `rp.host.midi-in` takes it at the top of the next block;
+a staged node message is handed there to the node the running plan places under the id, through `rp.stage/1`,
+which is how a UI message reaches a system's ingress or a real cart without the engine naming either.
 
 Structure never rides the ring as a command. A `setGraph` request carries a `tap` when its edit re-arms
 the NES channel tap (every edit that builds or drops a core, and every routing change, even to the mode
@@ -397,15 +398,15 @@ A pack's audio side runs on **both** threads over its lifetime (the control thre
 guard to the current thread with `JS_UpdateStackTop` before entering JS, or a call from a
 different stack throws a spurious overflow. The control side does the same.
 
-`Engine::processBlock` runs the plan: `rp.host.midi-in` and `rp.host.controller-in` take what the hosts
-staged; the routing node fans the host MIDI out to the systems, the controller session reads the surface,
-and each system's protocol nodes read their routed MIDI (risa and smsggdj read only the transport) and
-send that system node its inputs; the system nodes give their cores what moved of their settings and
-params, then those inputs, and run them; an LSDj's serial-out decoder reads what its Game Boy captured on
-its link port in that block and decodes it to host MIDI, each message at its byte's frame;
-`rp.n8.cart-mirror` hands a physical N8 what the first NES was sent, and `rp.host.midi-out` /
-`controller-out` hand the host the script nodes' MIDI (merged by frame) and control-surface output; the
-mixing nodes and `rp.host.audio-out` fill the host's buffers. Then `registry_.publishSystem(...)` runs for
+`Engine::processBlock` runs the plan: `rp.host.midi-in` takes what the hosts staged; the routing node fans the host
+MIDI out to the systems, the controller session reads the control surface's `rp.launchpad.surface-in`, and each
+system's protocol nodes read their routed MIDI (risa and smsggdj read only the transport) and send that system node
+its inputs; the system nodes give their cores what moved of their settings and params, then those inputs, and run
+them; an LSDj's serial-out decoder reads what its Game Boy captured on its link port in that block and decodes it to
+host MIDI, each message at its byte's frame; `rp.n8.nes`, fed by fan-out what its system's protocol nodes send, hands
+a physical N8 the same MIDI and bytes; the controller session's LED and page output goes to
+`rp.launchpad.surface-out`; `rp.host.midi-out` hands the host the script nodes' MIDI, merged by frame; the mixing
+nodes and `rp.host.audio-out` fill the host's buffers. Then `registry_.publishSystem(...)` runs for
 each system: the one place every driver funnels the block
 ([`Engine.cpp`](../packages/native/src/host/engine/Engine.cpp); the full order is in
 [02-native-host.md](02-native-host.md)). The host MIDI out (LSDj's MI.OUT and master sync, the
@@ -503,7 +504,7 @@ lost mutation.
 | [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp) | the POD command the ring carries as an opaque host command |
 | [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp) | the one command ring, the release ring of plans, `setGraph` / `drain` / `run` / `reclaim` |
 | [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and its publisher (the `ProjectStore`'s, or a `DirectGraph`'s or bare `SystemsStore`'s own) |
-| [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the host I/O nodes and the cart mirror, and the host services they ask for |
+| [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) / [`N8Nodes.cpp`](../packages/native/src/host/graph/N8Nodes.cpp) / [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the host MIDI I/O nodes, the cart's node and the control surface's two, and the host services they ask for |
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
 | [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), its one `SystemFactory`, the staged host MIDI, the host outputs and the registry; `buildSystem` / `destroySystem` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
 | [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in packs, each two bare QuickJS runtimes of its own (the built-in pack first, more loaded and reloaded at runtime), and the audio runtimes' profiling |

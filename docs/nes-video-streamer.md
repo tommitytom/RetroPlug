@@ -37,8 +37,10 @@ Everything the streamer needs on the emulator side already exists:
   before confirming the N8 supports it.
 - **The NES framebuffer is renderable** (the UI/screenshot/render path), so a decoded frame can
   be captured and compared to the source video - a headless fidelity test (tile-diff / PSNR).
-- **The byte stream fans out to real hardware** via `Engine::setCoreByteSink` -> `N8Link`, so the
-  same generated stream drives the emulated core and a physical cart, byte-identical.
+- **The byte stream fans out to real hardware** through the graph: the generating node's `bytes` output feeds
+  both the emulated NES and an `rp.n8.nes`, whose node pushes at `N8Link`, so the same generated stream drives
+  the emulated core and a physical cart, byte-identical (C5 replaced the engine's `coreByteSink_` with this
+  wiring, [modular-graph-phase-c5-design.md](modular-graph-phase-c5-design.md)).
 
 Net: a working "NES plays streamed video" demo lives in the emulator long before a cart is
 touched, and hardware bring-up reduces to two measured unknowns (mapper support + real USB
@@ -199,8 +201,8 @@ Realistic product target: a small-resolution, delta-encoded feed at a watchable 
   PSNR against the (quantized) source. Deterministic, headless, no hardware.
 - **SD-pull test.** Stage an encoded stream file in the emulated SD root, run the ROM's `F_FRD`
   reader, assert the same decoded frames.
-- **Byte-identity to hardware.** Assert the stream fed to the emulated FIFO equals what
-  `setCoreByteSink` -> `N8Link` would mirror to a real N8 (the risa parity check).
+- **Byte-identity to hardware.** Assert the stream fed to the emulated FIFO equals what the `rp.n8.nes`
+  fan-out pushes at `N8Link` for a real N8 (the risa parity check).
 - **Hardware bring-up (confirm before firing).** Pi + N8 + the streamer cart: measure real USB
   throughput and the achievable fps, watch a clip play on a real NES.
 

@@ -238,12 +238,12 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   plumbing included, and a block carrying host input does too: every ingress queue is a bounded ring sized when the
   core is built, and a push past its bound is dropped and counted. Strict parity held bit for bit at every commit,
   nothing re-recorded; the narrow-host defect the B0 design records was fixed afterwards, in a follow-up of its own
-  that re-recorded the two groups it pinned (section 10 of the C4 design). The one console name `Engine` still makes is
-  the N8 cart mirror's (`SystemKind::MesenNes`, NES
-  by construction), plus the tap's 1-to-3 mode bound. What it leaves (its section 12):
+  that re-recorded the two groups it pinned (section 10 of the C4 design). The one console name `Engine` still made was
+  the N8 cart mirror's (`SystemKind::MesenNes`, NES by construction), which C5 removed; what is left is the tap's
+  1-to-3 mode bound, a number TS owns. What it leaves (its section 12):
   - **P3, cores borrowing their node's pinned ROM bytes**, and **P4, the snapshot registry's double copy** (section 3
-    above), and **P7, the full capability split of `SystemBase`** and one node file per console, best done when C5's
-    hardware nodes need the interfaces.
+    above), and **P7's remainder, the full capability split of `SystemBase`** and one node file per console, which C5
+    built three interfaces of (`memory/1`, `sram/1`, `rom/1`) and left video, buttons, debug and `state/1` of.
   - **The N8 firmware's SD path still allocates**: `std::string` and `std::filesystem` in the command handlers, a
     bigger directory listing, and `_txQueue`'s unbounded growth when a ROM writes CMD_USB_WR and no host drains it.
     Bounding the queue would change the "never drop a byte the device would deliver" contract. Nothing in the block
@@ -278,6 +278,33 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     its button held. A rule that keeps a release, or headroom reserved for one, is its own change.
   - **The suite keeps its console-only casts** (`EngineGraph`, `SystemNode`, `HostIo`, `EngineSampleRate` tests read a
     config field, `linkPeers_` or a ring counter); no tap read casts any more.
+- **C5 built: hardware as nodes, and the engine names no device**
+  ([modular-graph-phase-c5-design.md](../docs/modular-graph-phase-c5-design.md), seven commits): the N8 cart and the
+  Launchpad are nodes (`rp.n8.nes`, `rp.launchpad.surface-in` / `-out`) that bind the host-owned device through
+  `rp.host.devices/1`, the operations an emulated system and a cart share are asynchronous capability jobs
+  (`rp.system.memory/1`, `.sram/1`, `.rom/1`), and the cart mirror, the controller channel, `stageSystemMidi`, the
+  `__rp_n8*` operation hooks and `N8Host`'s SD worker are gone. Strict parity held bit for bit at every commit,
+  nothing re-recorded. What it leaves (its section 10):
+  - **P7's remainder**, above: video, buttons and debug are still `SystemBase` virtuals, `state/1` is still the
+    system-id RPC, and `SystemNodes.cpp` still holds all four consoles' nodes.
+  - **A cart's battery is reachable only at the N8 menu**, through the SD card's save file (`EDN8/gamedata/<rom>/
+    bram.srm`): a dump takes about a minute for 64 KB, a running game refuses the job (a direct cart-memory read
+    wedges it and leaves the menu deaf), and a restore goes before a `rom.upload` so the game loads it at its next
+    boot.
+  - **`rom.header` / `rom.title` are what this host last booted**, stale after a power-cycle or a game started from
+    the cart's own browser; the cart has no query for the image it runs.
+  - **No project-level fallback forwards DAW MIDI to the cart without a NES system**: the cart is placed by the
+    "drive the real cart" setting now, and the start menu's N8 card rows are gone (a card job addresses a node, and a
+    project with no system places none). Driving a MIDI cart with no NES in the project has no UI path.
+  - **The harness's controller seam needs a surface link**: `stageControllerIn` and `renderBlocks`' controller field
+    work only where a host installs `HarnessSurfaceLink` (the test host), and a harness-facet host with none refuses
+    them rather than staging into nothing.
+  - **The CLI's n8 tools keep their own raw serial path**, the battery dump among them: it is the one cart-memory
+    read left, and the capabilities deliberately offer no peek, poke, sniffer or FIFO reads.
+  - **A cart job pauses streaming**: pushes during it are dropped and counted, the node re-sends the note-offs it
+    lost, and a `rom.upload` leaves streaming stopped until the host reconnects.
+  - **A retained generation of a script pack, the 0.5 s state publish and the N8 firmware's SD path** are the
+    allocations left on the block thread, as C1/C4 list them above; C5 added none.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype
@@ -326,10 +353,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     a case is harmless but was kept out of B3b, which changed no test's identity it did not have to (the one case
     `dsp-serial.test.ts` renamed, because its name described the deleted kernel, is the exception).
 - **Found while building B3a, left as they are:**
-  - `rp.host.midi-out` and `rp.host.controller-out` append one `std::vector` per message to the engine's
-    host outputs (`Engine::midiOut_` / `controllerOut_`, the `rp.engine.host-io/2` service in
+  - `rp.host.midi-out` appends one `std::vector` per message to the engine's host output
+    (`Engine::midiOut_`, the `rp.engine.host-io/3` service in
     [Engine.cpp](../packages/native/src/host/engine/Engine.cpp)), an allocation on the block thread for
-    every message out; a flat arena, as the staging has, would remove it.
+    every message out; a flat arena, as the staging has, would remove it. The surface's output node hands each
+    message straight to its link, so it allocates nothing.
   - The script node `Block` ([defineNode.ts](../packages/retroplug/src/graph/defineNode.ts)) has no
     resource accessor and no link peers yet.
   - With commits to script nodes never making `setGraph` wait (their prepare is stateless), the
