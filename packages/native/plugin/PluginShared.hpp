@@ -25,6 +25,12 @@ struct SharedDSP {
     // the UI changes what the parameters mean without ever passing through DPF's setState. Cheap when
     // nothing changed (one JS call + a string compare), and main-thread only — which uiIdle is.
     std::function<void()> pollParameterMap;
+    // Free the plans the audio thread has handed back (QueuedInvoker::reclaimReleased), on the main thread, which is
+    // the control thread setGraph runs on. The editor calls it every idle: the plugin has no idle of its own, and
+    // without it a plan an edit replaced while the DAW plays waits for the next graph publish or deactivate, the nodes
+    // it alone held (a cart node and the notes it still holds on the cart, a core, the resources they pin) with it.
+    // Cheap when nothing came back: no allocation, and no lock the audio thread takes.
+    std::function<void()> reclaimReleased;
 };
 
 // Defined in PluginDSP.cpp — returns the plugin instance's shared struct.

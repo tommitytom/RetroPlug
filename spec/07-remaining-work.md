@@ -168,9 +168,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     authoring work.
   - **A retired generation waits for the host's reclaims.** Under an audio thread, a generation a reload replaced is
     freed at the host's next reclaim after its nodes' records come back, which they do once a reclaim has freed the
-    plan that held them and a block has released them. The plugin and SDL reclaim only inside `setGraph` and
-    `loadScriptPack` while their audio runs, so the generation the last reload replaced, its two
-    runtimes, stays until later calls have done that; an idle reclaim in the plugin and SDL would free it sooner.
+    plan that held them and a block has released them. The plugin (with its editor open) and the SDL standalone
+    reclaim at every frame of their idle tick, so there it goes within a few frames; a plugin whose editor is closed
+    reclaims only inside `setGraph` and `loadScriptPack` while its audio runs, so the generation the last reload
+    replaced, its two runtimes, stays until later calls have done that.
   - **A record the release ring back cannot take keeps its pack for the host's life**, as it leaks its record rather
     than free it on the audio thread; nothing has filled that ring. A profile build's absolute live heap leaves out
     what the load of any pack loaded beside the built-in one allocated (its deltas are exact).
@@ -227,8 +228,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     is no blob to carry it, so `systemKnobs` drops it and `adopt` notes it.
   - **Each system holds one more full copy of its ROM.** The `rom` resource a node pins for the system's life is on top
     of the vector the build hands the core and Mesen's own copies: a 32 MB GBA ROM is +32 MB per system, per plugin
-    instance. And the plugin and SDL reclaim only inside `setGraph` and `loadScriptPack`, so a removed system's core,
-    ROM and seeds stay until the next one of those (the core always lived that long; the bytes are new). Phase C's
+    instance. A removed system's core, ROM and seeds go at the next reclaim: within a frame in the SDL standalone and
+    in a plugin whose editor is open (their idle tick reclaims, C5), and at the next `setGraph` or `loadScriptPack` in
+    a plugin whose editor is closed. Phase C's
     P3 (below) is the piece that would let a core borrow the pinned bytes.
 - **C4 built: the tap and the build check name no console, and no allocation in a warmed block**
   ([modular-graph-phase-c4-design.md](../docs/modular-graph-phase-c4-design.md), six commits): `SystemBase`'s dead
@@ -307,7 +309,13 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     submitting thread (the DAW's main thread in the plugin) waits for that read, up to 1 s.
   - **A handover can cut a key the new cart node strikes before the old one is reclaimed**: the old node's held notes
     are released behind every byte pushed when its destroy runs, the new node's first blocks among them, so a note the
-    new node starts on a key the old one still held, in the block or two before the reclaim, is released with them.
+    new node starts on a key the old one still held, between the swap and the reclaim, is released with them. Where an
+    idle tick reclaims (the SDL standalone, the plugin with its editor open) that is the frame or so after the swap;
+    in a plugin whose editor is closed it runs to the next graph publish, the editor opening or a deactivate.
+  - **A plugin whose editor is closed has no idle reclaim**: DPF gives a plugin no idle callback of its own, so a plan
+    a DAW's `setState` replaced while the transport plays keeps its nodes (a cart node and the notes it holds on the
+    cart, a core, the resources they pin) until the next publish, the editor opening or a deactivate. The harness hosts
+    (test host, CLI, Node addon) reclaim when their session calls `drainReleased` or `stopAudio`.
   - **MIDI streamed to a cart at its menu reaches the menu's own command parser** (pre-C5, unverified on hardware):
     the menu takes commands over the same FIFO, so a MIDI data pair such as `0x2A 0x73` (`*s`) sent while the menu
     shows can ask it to start an app. It holds for raw MIDI after a connect at the menu and for framed MIDI after a

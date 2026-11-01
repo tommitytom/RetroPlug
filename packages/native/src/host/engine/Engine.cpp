@@ -493,9 +493,9 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
     rp::host::ScriptHost& script = graph_->script;
     rp::graph::NodeRegistry& registry = graph_->registry;
     // What the audio thread has handed back is reclaimed first, as setGraph does: the plans it no longer
-    // runs, and each retired or discarded generation whose last record is back. The plugin and SDL reclaim only in
-    // those calls, so in a dev loop each load, a refused one or one that replans nothing among them, frees the
-    // generations earlier reloads replaced once blocks have released their nodes.
+    // runs, and each retired or discarded generation whose last record is back. A host with no idle tick reclaims only
+    // in those calls, so there each load, a refused one or one that replans nothing among them, frees the generations
+    // earlier reloads replaced once blocks have released their nodes.
     graph_->host->reclaim();
     script.reclaim();
     // The id first: a refused one is refused whatever its source says, and costs no compile.

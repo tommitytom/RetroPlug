@@ -99,19 +99,24 @@ which door the bytes enter (`rp.stage/1`: a system node hands them to its core's
 the link); TS stages to the system node, and to its cart node when one is placed, so a UI message still reaches the real
 cart and the engine stays neutral.
 
-**Lifetime**: disconnected, pushes go nowhere without allocating and `connected` reads false; reconnecting is the link's
-job on its own thread; removing the node releases its handle at reclaim, on the control thread, a job it still runs
-failing there rather than at the next publish. A pause a job makes drops and counts the block's pushes, and the node
-re-sends the note-offs a pause dropped for notes the cart holds, at frame 0 of the first block the link reads connected
-again, so no note is left sounding. Leaving the plan with notes held (the setting turned off, the NES removed or
-replaced, the drive moving, a project loaded or closed while the DAW plays) is the same hazard with no later block to
-pay it in, so the node's destroy hands what it holds to the link (`CartLink::releaseNotes`), whose serial thread writes
-their note-offs behind every byte pushed before the call, on a streaming turn (never inside a job's pause), and before
-the port closes on a disconnect; a link that is down drops them. The destroy runs on the control thread after the swap
-and may not push into the ring itself, as the audio thread, or the node taking over, may be pushing then. A handover
-releases the old node's notes and starts the new node's books empty, so a key held across it sounds again at its next
-note-on. Each plugin instance keeps its own `N8Host` and the port stays exclusive, so with two instances the first to
-connect has the cart and the other's handle stays disconnected with the open error in its `lastError`.
+**Lifetime**: disconnected, pushes go nowhere without allocating and `connected` reads false; reconnecting is the
+link's job on its own thread; removing the node releases its handle at reclaim, on the control thread, a job it still
+runs failing there rather than at the next publish. That reclaim, which frees the plan the swap replaced and every node
+only it held, comes at the host's next idle tick after the audio thread adopts the swap (the plugin's editor idle, the
+SDL standalone's frame loop: within a frame or so), at once while no audio thread runs, and otherwise at the next graph
+publish, deactivate or teardown (a plugin whose editor is closed has no idle of its own; the harness hosts reclaim when
+their session calls `drainReleased` or `stopAudio`). A pause a job makes drops and counts the block's pushes, and the
+node re-sends the note-offs a pause dropped for notes the cart holds, at frame 0 of the first block the link reads
+connected again, so no note is left sounding. Leaving the plan with notes held (the setting turned off, the NES removed
+or replaced, the drive moving, a project loaded or closed while the DAW plays) is the same hazard with no later block
+to pay it in, so the node's destroy, at that reclaim, hands what it holds to the link (`CartLink::releaseNotes`), whose
+serial thread writes their note-offs behind every byte pushed before the call, on a streaming turn (never inside a
+job's pause), and before the port closes on a disconnect; a link that is down drops them. The destroy runs on the
+control thread after the swap and may not push into the ring itself, as the audio thread, or the node taking over, may
+be pushing then. A handover releases the old node's notes and starts the new node's books empty, so a key held across
+it sounds again at its next note-on. Each plugin instance keeps its own `N8Host` and the port stays exclusive, so with
+two instances the first to connect has the cart and the other's handle stays disconnected with the open error in its
+`lastError`.
 
 ## 5. `rp.launchpad.surface-in` and `rp.launchpad.surface-out`
 
@@ -367,10 +372,11 @@ Each correction is in place; this is the list.
   the engine's losses gained `stageSystemMidi` itself, and the two devices bind through a typed acquire each.
 - **Section 4**: the staging command addresses a node, not its input (`rp.stage/1` chooses the door); the node declares
   `unique` as well as `threads`; a removed node abandons its job at reclaim; a pause never leaves a note sounding, and
-  neither does the node leaving the plan (its held notes go to the link, which writes their note-offs); the expansion
-  volume is a standing value the link's serial thread applies, and the last node to release the link puts it back to
-  AUTO, so a project that stops driving the cart leaves the register to the cart rather than at the level it last played
-  at (a handover never reaches zero: the new node acquires before the old one is reclaimed).
+  neither does the node leaving the plan (its held notes go to the link at the plan's reclaim, which a host's idle tick
+  makes within a frame of the swap, and the link writes their note-offs); the expansion volume is a standing value the
+  link's serial thread applies, and the last node to release the link puts it back to AUTO, so a project that stops
+  driving the cart leaves the register to the cart rather than at the level it last played at (a handover never reaches
+  zero: the new node acquires before the old one is reclaimed).
 - **Section 5**: one `rp.launchpad.surface` became `rp.launchpad.surface-in` / `-out` (the cycle), each unique, with
   the first-block discard.
 - **Section 6**: `sram/1` on the cart reads and writes the SD card's save file at the menu, not the cart's memory (the
@@ -455,6 +461,20 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   disconnect writes them before the port closes (so a plugin closed while the cart plays leaves nothing held) without
   waiting for the ring it is throwing away, and a link with no serial thread, or one whose stream stopped by itself (a
   failed write, an upload's boot), drops them.
+- **A plan a running host replaced waited for the next publish** (section 4, the review of the held-notes fix). A cart
+  node's note release, its handle's, its job's abandon and every pin of a replaced plan happen when that plan is
+  reclaimed, and with an audio thread running blocks `GraphHost` reclaimed only at `setGraph`, `loadScriptPack`, a
+  deactivate or a stop: an idle reclaim was owed by the hosts since Phase A (the main design's section 8). So turning
+  "Drive Real Cart" off left the note sounding until the user's next graph edit, and a handover's cut reached every key
+  struck until then. The plugin's editor idle and the SDL standalone's frame loop now call
+  `QueuedInvoker::reclaimReleased` on the thread `setGraph` runs on, which frees each plan the audio thread has handed
+  back: only plans it has moved past, as the release ring has always required. With nothing handed back the call pops
+  an empty ring and reads a few counters, allocating nothing and taking no lock the audio thread takes (an `[n8-node]`
+  case counts it with blocks running). Two places still have no tick while audio runs: a plugin whose editor is closed
+  (DPF offers a plugin no idle; its only graph edit then is a DAW's `setState`, whose replaced plan waits for the
+  editor to open, the next publish or a deactivate) and the harness hosts (the test host, the CLI, the Node addon, the
+  render host), whose background audio thread is a test driver and whose session reclaims through `drainReleased` or
+  `stopAudio`. The UI harness never runs an audio thread, so every push there reclaims inline.
 - **The surface link's receive ring rode a host's stack** (stage 1). 256 slots of one 562-byte message is 140 KiB, and
   the link is a member of the SDL standalone's `AppState`, which is a local of `main`: Windows gives that thread 1 MiB
   of stack, and every suite in this tree runs where it is 8, so nothing here would have caught it. The ring is one
@@ -478,21 +498,23 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   each emulated console against the system-id RPCs and the ROM file, the ROM title's printable-ASCII stop, a node that
   presents no capability, a battery dump holding what `readSram` answers, block-boundary completion (or in the call
   while no audio thread runs), removal and discard, the 64 bound, a real device thread's progress, a warmed block with
-  writes in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion cannot leave the
-  engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`, the expansion
-  volume, owed note-offs, the held notes a removal, a teardown and a handover hand the link, the jobs and their
-  refusals, abandonment, `threads`, `unique`, a warmed block), `[n8-adapters]` (`N8Adapters.test.cpp`: the one case that
-  composes the production adapters behind a real Engine, `rp.n8.nes` through `N8CartLink`, `N8Host` and `N8Link` to
-  `test/n8/FakeN8.hpp`'s serial port: a note, `rom.title` before and after an upload, a dump refused at a game, a dump
-  abandoned by a replan with the held note's note-off written once streaming resumes, and the hosts' teardown order
-  ending in `~N8Host`'s join; here rather than in `retroplug-n8-test`, which links no engine, and run by
-  `pnpm test:plugin`, which CI runs and `pnpm test:n8` is not), `[launchpad]` (`Surface.test.cpp`: the drain, the
-  output, `connected`, the queue's bound, the first-block discard, uniqueness, `threads`, acquire balance, a warmed
-  block) and `[stage]` (`StageNode.test.cpp`: a staged message reaching the node the running plan places under the id,
-  in both orders relative to the swap that changes which plan runs, and one added later). The protocol cases run the
-  surface wiring and hold their recorded digests; the goldens' documents moved with the fan-out and the surface nodes,
-  and their driven runs hold each cart node's pushes to what the system it drives had fed its own FIFO, byte for byte,
-  one cart per document as the compare requires.
+  writes in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion cannot leave
+  the engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`, the expansion
+  volume, owed note-offs, the held notes a removal, a teardown and a handover hand the link, an idle reclaim freeing a
+  replaced plan with blocks running and no further publish (and allocating nothing when nothing came back), the jobs
+  and their refusals, abandonment, `threads`, `unique`, a warmed block), `[n8-adapters]` (`N8Adapters.test.cpp`: the
+  one case that composes the production adapters behind a real Engine, `rp.n8.nes` through `N8CartLink`, `N8Host` and
+  `N8Link` to `test/n8/FakeN8.hpp`'s serial port: a note, `rom.title` before and after an upload, a dump refused at a
+  game, a dump abandoned by a replan with the held note's note-off written once streaming resumes, and the hosts'
+  teardown order ending in `~N8Host`'s join; here
+  rather than in `retroplug-n8-test`, which links no engine, and run by `pnpm test:plugin`, which CI runs and
+  `pnpm test:n8` is not), `[launchpad]` (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the
+  first-block discard, uniqueness, `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a
+  staged message reaching the node the running plan places under the id, in both orders relative to the swap that
+  changes which plan runs, and one added later). The protocol cases run the surface wiring and hold their recorded
+  digests; the goldens' documents moved with the fan-out and the surface nodes, and their driven runs hold each cart
+  node's pushes to what the system it drives had fed its own FIFO, byte for byte, one cart per document as the compare
+  requires.
 - `retroplug-n8-test` gained `[cart-jobs]` (`N8CartJobs.test.cpp`: the pause and its ack bound, battery file dumps and
   restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws), a
   game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a cart reset to
@@ -529,10 +551,16 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   Unsolicited bytes would keep `lastHeardNs` fresh and make a menu with stale frames read as never quiet, refusing
   every submission.
 - **A handover can cut a key the new node strikes before the old one is reclaimed.** The old node's release waits behind
-  every byte pushed when its destroy runs, the new node's first blocks among them, so a note the new node starts in the
-  block or two between the swap and the reclaim, on a key the old node still held, is released with the old one's (the
-  new node's books still hold it, and the DAW's next note-on sounds it again). Waiting behind only the old node's own
-  pushes would need the ring to say whose bytes are whose.
+  every byte pushed when its destroy runs, the new node's first blocks among them, so a note the new node starts between
+  the swap and the reclaim, on a key the old node still held, is released with the old one's (the new node's books still
+  hold it, and the DAW's next note-on sounds it again). With an idle tick (the plugin with its editor open, the SDL
+  standalone) that window is the frame or so before the next tick; without one (a plugin whose editor is closed) it runs
+  to the next graph publish, the editor opening or a deactivate. Waiting behind only the old node's own pushes would need
+  the ring to say whose bytes are whose.
+- **A plugin whose editor is closed reclaims only at a publish, a deactivate or its editor's next idle.** DPF gives a
+  plugin no idle callback of its own, so a plan a DAW's `setState` replaced while the transport plays keeps its nodes,
+  a cart node's held notes and the pins they hold until then. The harness hosts likewise reclaim only when their session
+  asks (`drainReleased`, `stopAudio`), which their tests do.
 - **A heavy stream into a menu can starve the probe.** The window's 48-frame re-sync clears and re-stamps the oldest
   frame's first send, so a probe needs a quiet turn between re-syncs; past about 190 messages a second (48 per
   250 ms) into a menu there is none, and the submission is refused for a link that never went quiet.

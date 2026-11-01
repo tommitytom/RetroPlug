@@ -403,6 +403,10 @@ protected:
             if ((++paramMapTick_ % 15) == 0 && sharedDsp_ != nullptr && sharedDsp_->pollParameterMap)
                 sharedDsp_->pollParameterMap();
         }
+        // The plans the audio thread has handed back since the last idle, freed here rather than at the next graph
+        // publish, so a node an edit removed while the DAW plays (a cart node and the notes it holds on the cart, a
+        // core, the resources they pin) goes within a frame. Every idle, since it costs nothing when none came back.
+        if (sharedDsp_ != nullptr && sharedDsp_->reclaimReleased) sharedDsp_->reclaimReleased();
         jsEngine.tick();                                               // pump the shared host's JS loop
         maybeWriteScreenshot();
     }

@@ -7,15 +7,19 @@
 // holds it, drops (and counts) what is pushed otherwise, and lets a case play the device's thread for a job (progress,
 // then the result or the error, streaming resumed before the completion). How the real link pauses and resumes is
 // retroplug-n8-test's (N8CartJobs.test.cpp). Wiring, frames, order and the param are held on a NodeRig, where a case
-// reads the node's neighbours directly; the jobs, a removal and the allocation count on a real Engine.
+// reads the node's neighbours directly; the jobs, a removal, an idle reclaim under a running audio thread and the
+// allocation count on a real Engine.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[n8-node]"`.
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -590,6 +594,90 @@ TEST_CASE("a cart node leaving the plan hands its link the notes the cart holds;
         CHECK(cart.released.empty());
         CHECK(cart.releases == 1);
     }
+}
+
+TEST_CASE("an idle reclaim destroys the plan an audio thread replaced with no further publish: the cart node's held "
+          "notes reach the link, the pins its plan held drop, and a reclaim with nothing back allocates nothing",
+          "[engine-graph][n8-node]") {
+    // A host's idle tick (the plugin's editor idle, the SDL standalone's frame loop) reclaims on the control thread
+    // while the audio thread runs blocks; without one, a replaced plan waits for the next publish.
+    FakeCart               cart;
+    Engine                 e(kRate);
+    rp::host::test::Roms   roms;
+    std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
+    withRoms(e, systems, roms);
+    e.setDeviceLinks(&cart, nullptr);
+    REQUIRE(e.setGraph(cartDocument(systems)).ok);
+    e.stageMidi(0, Bytes{0x90, 60, 100});
+    block(e);
+    // The owner's hold goes, so the ROM lives on only in the pins of the plan that places the NES and of its node.
+    const std::uint32_t rom = systems[0].rom;
+    REQUIRE(e.releaseResource(rom));
+    REQUIRE(e.resourcePinCount(rom) > 0);
+
+    // The audio thread runs blocks from here on: the cart's fields it reads (attached, jobRunning) stay as they are,
+    // and nothing is staged, so the node pushes nothing at it.
+    e.setAudioThreadOwns(true);
+    std::atomic<bool>     running{true};
+    std::atomic<unsigned> blocks{0};
+    std::thread           audio([&] {
+        std::vector<float> l(kFrames), r(kFrames);
+        while (running.load(std::memory_order_acquire)) {
+            e.drainCommands();
+            block(e, l, r);
+            blocks.fetch_add(1, std::memory_order_release);
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
+    });
+    struct Join {
+        Engine&            e;
+        std::atomic<bool>& running;
+        std::thread&       audio;
+        ~Join() {
+            running.store(false, std::memory_order_release);
+            if (audio.joinable()) audio.join();
+            e.setAudioThreadOwns(false);
+        }
+    } join{e, running, audio};
+    const auto blocksPass = [&](unsigned n) {
+        const unsigned from     = blocks.load(std::memory_order_acquire);
+        const auto     deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (blocks.load(std::memory_order_acquire) < from + n && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return blocks.load(std::memory_order_acquire) >= from + n;
+    };
+
+    // The publish that drops the NES and its cart node, adopted by the audio thread a few blocks ago. Nothing has
+    // reclaimed since, so the replaced plan, its node, the core and the ROM's pins are all still alive.
+    REQUIRE(e.setGraph(graphRequest(stereoDocument({}), {})).ok);
+    REQUIRE(blocksPass(4));
+    CHECK(cart.released.empty());
+    CHECK(cart.releases == 0);
+    CHECK(e.liveSystemCount() == 1);
+    CHECK(e.resource(rom) == nullptr);  // the owner's view: dropped, though the plan still pins it
+    CHECK(e.resourcePinCount(rom) > 0);
+
+    // One idle reclaim, no publish: the plan goes on this thread, and with it the node (its held note to the link, its
+    // handle given back), the core and the last pins on the ROM.
+    CHECK(e.reclaim() >= 1);
+    REQUIRE(cart.released.size() == 1);
+    rp::host::CartNotes held;
+    held.set(60);
+    CHECK(cart.released[0] == held);
+    CHECK(cart.releases == 1);
+    CHECK(e.liveSystemCount() == 0);
+    CHECK(e.resourcePinCount(rom) == 0);
+
+    // With nothing handed back, the tick a host makes every frame costs no allocation and no free, on either side of
+    // the C library where this binary sees it, while blocks keep running.
+    REQUIRE(blocksPass(4));
+    rp::test::beginCountingAllocations(true);
+    std::size_t freed = 0;
+    for (int i = 0; i < 100; ++i) freed += e.reclaim();
+    const auto counted = rp::test::endCountingAllocations();
+    CHECK(freed == 0);
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
 }
 
 TEST_CASE("a warmed block feeding a NES and its cart node allocates and frees nothing", "[engine-graph][n8-node]") {

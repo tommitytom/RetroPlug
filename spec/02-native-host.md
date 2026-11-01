@@ -466,7 +466,9 @@ pausing the stream and dropping the block's notes; the submitting thread waits f
 The cart node keeps books on the notes the cart holds: it re-sends at frame 0 the note-offs a pause dropped, and its
 destroy hands what is still sounding to the link (`CartLink::releaseNotes`), whose serial thread writes their note-offs
 behind every byte pushed before the call (a disconnect writes them before the port closes; a link that is down drops
-them), so a node leaving the plan mid-note leaves no tone on the console. The engine keeps at most `kMaxJobs` (64)
+them), so a node leaving the plan mid-note leaves no tone on the console once its plan is reclaimed: within a frame of
+the swap where the host has an idle tick (the plugin with its editor open, the SDL standalone), and at the next
+publish or deactivate in a plugin whose editor is closed. The engine keeps at most `kMaxJobs` (64)
 outstanding, engine-wide back-pressure that leaves room for every completion, and a request names a capability from
 the one reserved id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`), so the engine asks a node only
 by an id it knows and never casts an answer.
@@ -725,7 +727,9 @@ armed tap was freed still matches, which TS cannot reach (design section 12). A 
 rides the same ring as a command of the GraphHost's own, not a `DspCommand`, into its param's control stream.
 
 **Ownership handoff.** A displaced or removed core leaves with the plan that last ran it, and is
-freed on the control thread when that plan is reclaimed (`reclaimReleased` → `GraphHost::reclaim`):
+freed on the control thread when that plan is reclaimed (`reclaimReleased` → `GraphHost::reclaim`), which a
+host with an idle tick does every frame (the plugin's editor idle, the SDL standalone's frame loop) and every host
+does in `setGraph`, `loadScriptPack` and as its audio stops:
 the node destroying it releases the snapshot slot first, then deletes the core
 ([01-architecture.md](01-architecture.md) section 5). Producer edge cases are handled without
 blocking or freeing in render: a **full ring** on an inline POD command drops a lost edge, not a
@@ -916,8 +920,10 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   thread holds nothing of a pack none of whose records is alive. With no audio thread running, a reload frees
   the old generation within the call. Under one, the old generation goes at the first reclaim after its
   records come back, which they do once a reclaim has freed the plan that held its nodes and a block has
-  released them: the Engine reclaims first in `setGraph` and in every `loadScriptPack`, which in the plugin and SDL
-  are the only reclaims while audio runs
+  released them: the Engine reclaims first in `setGraph` and in every `loadScriptPack`, and the plugin (while its
+  editor is open) and the SDL standalone reclaim at every frame of their idle tick too, so there the generation goes
+  within a few frames of the replan; a host with no tick while audio runs (a plugin whose editor is closed, the harness
+  hosts) frees it only at those calls, a stop or `drainReleased`
   ([07-remaining-work.md](07-remaining-work.md) section 5). A record the release ring back could not take,
   leaked rather than freed on the audio thread, keeps its pack for the host's life.
 - **Settings and layout** (control side, the planning thread). `layout_for` and `prepare_settings` run

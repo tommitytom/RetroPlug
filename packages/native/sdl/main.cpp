@@ -1790,6 +1790,10 @@ int main(int argc, char** argv) {
         handleEvents(app);
         pollFileDialog(app);    // deliver a finished OS file-dialog pick (async; no-op when none is open)
         app.launchpadHost.link().pump();  // write the LED traffic the audio thread queued (no-op when idle)
+        // Free the plans the audio thread has handed back, on this thread (the one setGraph runs on), rather than at
+        // the next graph publish: a node an edit removed while audio runs (a cart node and the notes it holds on the
+        // cart, a surface node, a core, the resources they pin) goes within a frame. Nothing to free costs nothing.
+        app.svc.invoker.reclaimReleased();
         if (JSContext* ctx = app.ui.getContext()) {
             // arg0 = LVGL tick (ms): the UI's monotonic clock (menu gamepad hold-to-repeat timing).
             JSValue tickMs = JS_NewUint32(ctx, lv_tick_get());

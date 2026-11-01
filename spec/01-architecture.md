@@ -329,11 +329,15 @@ The stores never reuse a system id (a `DirectGraph` caller may, once the old cor
 reclaimed), so a new core always plans as a new instance. A core a refused plan built is destroyed as
 that plan's instances unwind.
 
-`reclaim` runs at every `setGraph` and every `loadScriptPack`, in every
-inline flush (quiescent), and at the hosts' stop and deactivate points; it returns the number of
-plans freed and is exposed on the wire as `drainReleased` (`QueuedInvoker::reclaimReleased`) for
-the test host to pump while running. A removed core is freed at the first of those after the audio
-thread has moved past it.
+`reclaim` runs at every `setGraph` and every `loadScriptPack`, in every inline flush (quiescent), at the
+hosts' stop and deactivate points, and at each idle tick of a host that has one while its audio runs: the
+plugin's editor idle and the SDL standalone's frame loop call `QueuedInvoker::reclaimReleased` every frame,
+which with nothing handed back allocates nothing and takes no lock the audio thread takes. It returns the
+number of plans freed and is exposed on the wire as `drainReleased` for the harness hosts (the test host, the
+CLI, the Node addon), whose session pumps it while their background audio thread runs, since they have no
+tick. A removed core, and every node and resource pin only its plan held, is freed at the first of those after
+the audio thread has moved past it: within a frame where a tick runs, and at the next publish, deactivate or
+`drainReleased` where none does (a plugin whose editor is closed: DPF gives a plugin no idle of its own).
 
 **Leak, don't block.** If the release ring is full (512 unreclaimed plans; `setGraph` reclaims before every publish, so a drain cannot outrun it), the audio thread
 **leaks the plan rather than block or free in the render loop**: it only counts the leak (it must

@@ -1135,14 +1135,17 @@ doc's §0 has the table, and its §4 the requirements recording today's engine f
   that cannot hold is documented explicitly, not waved through.
 - Then delete: the routers and native `AudioRouting`; `LinkGroup`; the add / replace / remove / routing /
   config / kernel commands; the DSP kernel.
-- Settled in Phase A, owed by the host that adopts it: call `GraphHost::reclaim()` from an idle tick (a
-  removed node and its resource pins otherwise linger until the next `setGraph`); expect `setGraph` to
-  block the control thread up to its adoption timeout while the audio thread is stalled (since B3a only
-  behind a commit to a type without `RP_TYPE_STATELESS_PREPARE`, §4.3); and read the host's inputs
-  before `processBlock` silences its outputs, since a DAW often hands both as one buffer. Two more it
-  owed are paid: a second `rp.host.audio-out` is refused (`audio-out-twice`, where Phase A let the last
-  one win), and `rp.host.audio-out` takes its buffers through `rp_host.get_interface` rather than the
-  `ctx` cast Phase A gave it.
+- Settled in Phase A, owed by the host that adopts it: expect `setGraph` to block the control thread up
+  to its adoption timeout while the audio thread is stalled (since B3a only behind a commit to a type
+  without `RP_TYPE_STATELESS_PREPARE`, §4.3); and read the host's inputs before `processBlock` silences
+  its outputs, since a DAW often hands both as one buffer. Three more it owed are paid: a second
+  `rp.host.audio-out` is refused (`audio-out-twice`, where Phase A let the last one win),
+  `rp.host.audio-out` takes its buffers through `rp_host.get_interface` rather than the `ctx` cast Phase
+  A gave it, and a reclaim from an idle tick (C5,
+  [modular-graph-phase-c5-design.md](modular-graph-phase-c5-design.md) section 10): the plugin's editor
+  idle and the SDL standalone's frame loop reclaim on the control thread, so a removed node and its
+  resource pins no longer linger until the next `setGraph`. A plugin whose editor is closed has no idle
+  to do it from, and the harness hosts reclaim when their session asks (`drainReleased`, `stopAudio`).
 - Two decisions Phase A leaves open, both cheap now and costly once Phase B builds on them:
   - **One ring or two.** `GraphHost` has its own command and release rings. The engine's ring also
     carries commands (RAM writes, state loads) that name nodes. Either give `GraphHost`'s `Command` a

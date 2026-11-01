@@ -180,7 +180,11 @@ public:
     bool pushCommand(const DspCommand& c);          // control thread: false when the ring is full
     void drainCommands();                           // the block thread (or the control thread, quiescent)
     void setAudioThreadOwns(bool owns);
-    // Control thread. Also where the blocks processBlock refused as too long are reported, once per new one.
+    // Control thread: free the plans the block thread has handed back (each only once the block thread has moved past
+    // it), the nodes only they held with them, and the script records it has released. Also where the blocks
+    // processBlock refused as too long are reported, once per new one. A host with an idle tick calls it every frame
+    // while its audio runs (the plugin's editor idle, the SDL standalone's frame loop), so with nothing handed back it
+    // allocates nothing and takes no lock the block thread takes.
     std::size_t reclaim();
     void discardPending();                          // teardown, the audio thread stopped
     // Grow the plan's block size to a host's maximum (never below kDefaultMaxBlockFrames). Quiescent.
@@ -299,10 +303,11 @@ public:
     // registry entries dropped with it, once its nodes' records come back: within the call when no audio thread runs.
     // Under one, they come back once a reclaim has freed the plan that held those nodes, queuing their releases to the
     // block thread, and a block has released them; the generation goes at the host's next reclaim after that, which is
-    // reclaim() or the one setGraph and every load begin with. The plugin and SDL reclaim only in those calls, and
-    // as they stop the audio thread, so the generation the last reload replaced stays until later ones have freed
-    // that plan and, once a block has released its nodes, found their records back. A document that places none of
-    // the pack's nodes is not replanned: it would plan as it runs.
+    // reclaim() or the one setGraph and every load begin with. The plugin (while its editor is open) and the SDL
+    // standalone call reclaim() from their idle tick every frame, so there the generation goes within a few frames; a
+    // host with no tick reclaims only in those calls and as it stops the audio thread, so the generation the last
+    // reload replaced stays until later ones have freed that plan and, once a block has released its nodes, found
+    // their records back. A document that places none of the pack's nodes is not replanned: it would plan as it runs.
     ScriptPackResult loadScriptPack(const std::string& id, const std::string& source, std::size_t memoryLimit = 0);
     // How much of the calling thread's CPU time one call into a script pack's JS may use, on either side
     // (ScriptHost::setCallDeadline): set it before an audio thread runs blocks.

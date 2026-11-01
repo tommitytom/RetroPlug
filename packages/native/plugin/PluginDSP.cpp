@@ -427,6 +427,7 @@ private:
         // Publish the host so an editor can attach its LVGL display to this same context.
         shared_.host = &host_;
         shared_.pollParameterMap = [this] { updateParameterMap(); };
+        shared_.reclaimReleased  = [this] { svc_.invoker.reclaimReleased(); };
 
         // Turn on the native file watcher (config.json + bindings/ recursively; ROMs registered by TS via
         // setWatchedRoms). The TS FileWatcher.pump() drains it from the UI idle loop (__rp_pumpWatcher).
