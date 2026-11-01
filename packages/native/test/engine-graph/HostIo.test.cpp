@@ -781,7 +781,8 @@ TEST_CASE("a document holds one rp.host.midi-in and one midi-out at most", "[eng
         CHECK(refused.errors[0].code == type.substr(std::string("rp.host.").size()));
         CHECK(e.setGraph(hostIoOnly({docNode("in-a", type)}, {})).ok);
     }
-    CHECK(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out")}, {})).ok);
+    CHECK(e.setGraph(hostIoOnly({docNode("midi-in", "rp.host.midi-in"), docNode("midi-out", "rp.host.midi-out")}, {}))
+              .ok);
 }
 
 TEST_CASE("the Game Boy's serialOut carries what its core captured, each byte at the frame its core completed it",
