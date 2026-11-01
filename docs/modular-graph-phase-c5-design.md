@@ -261,17 +261,18 @@ in place there), and the findings worth naming; each stage's own report is the f
   second answer): the thread sets `connected` false, writes what the ring already holds at its release times, waits
   (bounded) for the reliable link's outstanding frames to be acknowledged, runs the job on its own Edio, and resumes
   with the port still open and the sequence state untouched. A throw that escapes a job is the port's, so the link
-  records it (`lastError`), has a job that never ran report the link went down, and stops streaming as a failed write
-  stops it. The node abandons a job it still runs in its destructor rather than the engine failing device jobs
-  centrally, so every touch of the record is under the slot's lock and the record cannot outlive the device's use of
-  it; the failure then lands at the plan's reclaim. `rom.header` and `rom.title` answer from what this host last
-  booted, at once; the cart has no query for the image it runs, and a PRG read is a DMA. `rom.upload` takes the
-  image's bytes and a plain file name, writes it to the card in 8 KB chunks, installs and boots it through the menu,
-  and stops streaming so the CLI's tools can open the port. The first battery dump was one 64 KB read, not sixteen 4
-  KB ones: measured on the cart, a memory read answers about a second after it is asked whatever its size (one 64 KB
-  read 1150 ms, 16 x 4 KB 16174 ms, 64 x 1 KB 60979 ms). The node keeps the notes the cart holds and the ones whose
-  note-off a pause dropped, and re-sends them. The type's category is `device`, not `system`, and the package moved to
-  `N8Nodes.cpp`.
+  records it (`lastError`), has a job that never started report the link went down (one whose own `run` threw did run,
+  and is not run again), and stops streaming as a failed write stops it, closing the port when the job had already
+  decided to stop so an upload still frees it. The node abandons a job it still runs in its destructor rather than the
+  engine failing device jobs centrally, so every touch of the record is under the slot's lock and the record cannot
+  outlive the device's use of it; the failure then lands at the plan's reclaim. `rom.header` and `rom.title` answer
+  from what this host last booted, at once; the cart has no query for the image it runs, and a PRG read is a DMA.
+  `rom.upload` takes the image's bytes and a plain file name, writes it to the card in 8 KB chunks, installs and boots
+  it through the menu, and stops streaming so the CLI's tools can open the port. The first battery dump was one 64 KB
+  read, not sixteen 4 KB ones: measured on the cart, a memory read answers about a second after it is asked whatever its
+  size (one 64 KB read 1150 ms, 16 x 4 KB 16174 ms, 64 x 1 KB 60979 ms). The node keeps the notes the cart holds and
+  the ones whose note-off a pause dropped, and re-sends them. The type's category is `device`, not `system`, and the
+  package moved to `N8Nodes.cpp`.
 - **3, reworked: the battery through the SD file.** The first battery jobs read the cart's own memory and the console
   proved that wrong: a 64 KB read with a game running froze it, and a read at the menu left the menu deaf to its
   commands (the CLI's own `--screenshot` timed out). So `sram.dump` and `sram.restore` reach the card's save file

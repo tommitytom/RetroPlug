@@ -347,23 +347,26 @@ void N8Link::runJob(TimedChunk& chunk, bool& have) {
         setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
         portOk = false;
     }
-    AfterJob after = AfterJob::Stop;
-    bool       ran = false;
+    AfterJob  after   = AfterJob::Resume;  // a throw out of `run` decides nothing: only `decided` says one did
+    bool      started = false, decided = false;
     if (portOk && running_.load(std::memory_order_acquire)) {
         try {
             // Whatever the back-channel still holds (a late ack) would read as the first bytes of the job's reply.
             serialPort_->flushInput();
-            after = job.run(edio_.get());
-            ran   = true;
+            started = true;
+            after   = job.run(edio_.get());
+            decided = true;
             serialPort_->flushInput();
             edio_->setReadTimeout(2000);  // a menu command raises it; streaming's own reads never wait on it
         } catch (const std::exception& e) {
             // A throw this far into a job is the port's: the jobs report their own failures and return (a flush that
-            // fails, or an edio call outside a job's own catch). The port cannot be trusted with another chunk, so the
-            // link stops exactly as a failed write stops it, with the reason kept for the UI (lastError), and a job
-            // that never ran hears that the link went down rather than failing with no reason at all.
+            // fails, or an edio call outside a job's own catch - only a bad_alloc gets out of a `run`). The port cannot
+            // be trusted with another chunk, so the link stops exactly as a failed write stops it, with the reason kept
+            // for the UI (lastError), and a job that never started hears that the link went down rather than failing
+            // with no reason at all. A job whose own `run` threw did run: re-running it would report a boot that
+            // happened as the link going down, so it is left with what it recorded.
             setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
-            if (!ran) {
+            if (!started) {
                 try {
                     job.run(nullptr);
                 } catch (const std::exception&) {
@@ -379,7 +382,10 @@ void N8Link::runJob(TimedChunk& chunk, bool& have) {
     }
     if (after == AfterJob::Resume && portOk && running_.load(std::memory_order_acquire)) {
         connected_.store(true, std::memory_order_release);
-    } else if (portOk) {
+    } else if (portOk || (decided && after == AfterJob::Stop)) {
+        // The job asked for streaming to stop (a ROM boot, whose result says so). It closes the port even when the
+        // job's own trailing flush threw: an upload frees the port for the CLI's tools, and a dead port cannot deliver
+        // another chunk either way.
         stopStreaming();
     } else {
         running_.store(false, std::memory_order_release);  // a failed write, as streamLoop's: the UI can reconnect

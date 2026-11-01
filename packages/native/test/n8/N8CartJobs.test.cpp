@@ -852,6 +852,24 @@ TEST_CASE("a port that throws after a job ran still posts its outcome, and the l
     CHECK(rig.dev.count("file-") > 0);
 }
 
+TEST_CASE("an upload whose trailing flush throws still closes the port it booted from", "[n8][cart-jobs]") {
+    Rig rig;
+    rig.connect();
+    rig.dev.throwOnFlushInput = 2;  // 1: the run's own pre-flush, 2: the flush after the boot
+    Job job;
+    REQUIRE(rig.submit(uploadOf(inesImage(8)), job));
+    REQUIRE(waitUntil([&] { return job.finished() && !rig.host.cartJobBusy(); }));
+    // The boot was decided before the throw, so its completion stands, and the port an upload frees for the CLI's
+    // tools is closed as the boot would have closed it rather than held until a disconnect.
+    CHECK(job.state.load() == Job::Done);
+    CHECK(rig.host.link().lastError() == "serial write failed (N8 unplugged?): fake port: flushInput failed");
+    CHECK_FALSE(rig.host.link().isConnected());
+    std::lock_guard<std::mutex> l(rig.dev.mu);
+    CHECK(rig.dev.openNow == 0);
+    CHECK_FALSE(rig.dev.menu);
+    CHECK(rig.dev.booted == "usb-games/game.nes");
+}
+
 TEST_CASE("a job its node abandons fails at once, stops at its next chunk, and the cart resumes streaming",
           "[n8][cart-jobs]") {
     Rig rig;

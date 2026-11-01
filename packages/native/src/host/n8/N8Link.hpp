@@ -61,8 +61,9 @@ public:
     // write once it has begun (under a second), an upload's 8 KB chunk, up to the Edio timeout (2 s, raised to 10 s
     // while the menu installs an uploaded ROM) for a cart that stops answering, plus the drain's bounded wait for acks.
     // A throw that escapes `run` is the port's (a job reports its own failures and returns): it is recorded
-    // (lastError), a job that never ran is told the link went down, and the link stops streaming as a failed write
-    // stops it, so a completion that had already been decided is still posted.
+    // (lastError), a job that never started is told the link went down (one whose `run` threw did run, and is not run
+    // again), and the link stops streaming as a failed write stops it, so a completion that had already been decided is
+    // still posted - and a job that had decided to stop closes the port as it would have.
     struct PausedJob {
         std::function<AfterJob(Edio*)> run;
         std::function<void()>          done;
