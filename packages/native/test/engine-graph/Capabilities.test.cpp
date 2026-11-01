@@ -243,16 +243,24 @@ TEST_CASE("writes submitted while a real audio thread runs blocks complete, each
             std::this_thread::sleep_for(std::chrono::microseconds(200));
         }
     });
-    // A failing REQUIRE below throws: the thread must be stopped and joined on the way out, or std::thread's
-    // destructor calls std::terminate and the failure is never reported.
+    // A failing REQUIRE below throws: the thread must be stopped and joined on the way out, or std::thread's destructor
+    // calls std::terminate and the failure is never reported, and only then is the engine's ownership bit cleared, or
+    // the Rig destroys a GraphHost that believes an audio thread still owns it. `stopNow` is the same three steps the
+    // end of the case takes, so the passing and the failing path tear down alike.
     struct StopOnExit {
         std::atomic<bool>& stop;
         std::thread&        thread;
-        ~StopOnExit() {
+        QueuedInvoker&      invoker;
+        bool                stopped = false;
+        void stopNow() {
+            if (stopped) return;
+            stopped = true;
             stop.store(true, std::memory_order_release);
             if (thread.joinable()) thread.join();
+            invoker.setAudioThreadOwns(false);
         }
-    } stopOnExit{stop, audio};
+        ~StopOnExit() { stopNow(); }
+    } stopOnExit{stop, audio, rig.invoker};
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
     for (std::uint8_t k = 1; k <= 16; ++k) {
         const std::vector<std::uint8_t> written = {k, static_cast<std::uint8_t>(k * 3), static_cast<std::uint8_t>(~k)};
@@ -271,9 +279,7 @@ TEST_CASE("writes submitted while a real audio thread runs blocks complete, each
         REQUIRE(done);
         CHECK(rig.now(rig.submit("sys-1", kMemory, "read", "ram", 0x100 + k * 4, 3)) == written);
     }
-    stop.store(true, std::memory_order_release);
-    audio.join();
-    rig.invoker.setAudioThreadOwns(false);
+    stopOnExit.stopNow();
     CHECK(rig.now(rig.submit("sys-1", kMemory, "read", "ram", 0x201, 1)) == std::vector<std::uint8_t>{1});
     CHECK(rig.e.jobsOutstanding() == 0);
 }
