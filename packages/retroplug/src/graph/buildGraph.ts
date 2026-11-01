@@ -142,6 +142,17 @@ export function drivesRealCartOf(config: Readonly<Record<string, unknown>> | und
   return config?.driveRealCart !== false;
 }
 
+/** The system a document places an rp.n8.nes for, if any: the first NES in slot order whose core config drives the real
+ *  cart (drivesRealCartOf). The type is unique, so a project has one cart and one link at most, and everything that
+ *  picks the node reads it here - buildGraph's placement, the menu's card jobs, the store's live expansion volume - so
+ *  the document and the UI cannot disagree about which system's cart it is. A caller holds its systems as whatever it
+ *  has, with the core-config role's config as `coreConfig` (a SystemView's is roleConfig(roles, "mesen")). */
+export function drivenCartSystem<T extends { platform: Platform; coreConfig?: Readonly<Record<string, unknown>> }>(
+  systems: readonly T[],
+): T | null {
+  return systems.find((s) => s.platform === "nes" && drivesRealCartOf(s.coreConfig)) ?? null;
+}
+
 // ---- the system nodes' knobs ----------------------------------------------------------------------------------------
 //
 // A system node's knobs (docs/modular-graph-phase-c2-design.md section 3): the setting fields each type takes from its
@@ -494,11 +505,11 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     nodes.push(a.node);
     if (a.reads !== null) wire(a.reads, `${a.node.id}.serialOut`);
   }
-  // The real cart: the first NES in slot order whose "drive the real cart" setting is on drives one (the type is
-  // unique, one cart one link). What its protocol nodes send that system's core MIDI and core bytes, they send the cart
-  // too - fan-out, so emulated, real or both is wiring - and its expansion volume is the system's own knob, the one
-  // value the emulated core and the cart both take.
-  const cart = systems.find((s) => s.type === "rp.mesen.nes" && drivesRealCartOf(s.coreConfig));
+  // The real cart: the first NES in slot order that drives it (drivenCartSystem, the one rule the UI picks the node by
+  // too). What its protocol nodes send that system's core MIDI and core bytes, they send the cart too - fan-out, so
+  // emulated, real or both is wiring - and its expansion volume is the system's own knob, the one value the emulated
+  // core and the cart both take.
+  const cart = drivenCartSystem(systems);
   if (cart) {
     const id = cartNodeId(cart.id);
     const expansionVolume = systemKnobs(cart).params.expansionVolume;

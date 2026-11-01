@@ -12,7 +12,7 @@
 
 import type { ControlPlaneBackend } from "../../../src/backend";
 import type { SystemView } from "../../../src/systemsStore";
-import { cartNodeId, drivesRealCartOf } from "../../../src/graph/buildGraph";
+import { cartNodeId, drivenCartSystem } from "../../../src/graph/buildGraph";
 import { basename } from "../../../src/pathUtil";
 import { roleConfig } from "../../../src/systemRoles";
 
@@ -44,12 +44,14 @@ function update(patch: Partial<N8CartJob>): void {
   job = { ...job, ...patch, version: job.version + 1 };
 }
 
-/** The cart the project drives, and the node that is it: the first NES in slot order whose "drive the real cart" setting
- *  is on, which is the one system buildGraph places an rp.n8.nes for (the type is unique: one cart, one link). Null when
- *  no system drives one, which is the only way the card rows have nothing to act on. */
+/** The cart the project drives, and the node that is it: the system buildGraph places an rp.n8.nes for (that rule, not
+ *  a second one), which is the one whose core config drives the real cart. Null when no system drives one, which is the
+ *  only way the card rows have nothing to act on. */
 export function projectCart(systems: readonly SystemView[]): { system: SystemView; nodeId: string } | null {
-  const system = systems.find((s) => s.platform === "nes" && drivesRealCartOf(roleConfig(s.roles, "mesen")));
-  return system ? { system, nodeId: cartNodeId(system.id) } : null;
+  const cart = drivenCartSystem(
+    systems.map((system) => ({ system, platform: system.platform, coreConfig: roleConfig(system.roles, "mesen") })),
+  );
+  return cart ? { system: cart.system, nodeId: cartNodeId(cart.system.id) } : null;
 }
 
 /** The ROM name a card job reaches the cart's files by: the ROM this process booted on the cart, else the driven

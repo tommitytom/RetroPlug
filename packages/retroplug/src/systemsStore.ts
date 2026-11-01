@@ -14,6 +14,7 @@
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
 import {
   cartNodeId,
+  drivenCartSystem,
   drivesRealCartOf,
   droppedKnobs,
   exportModeOf,
@@ -697,15 +698,17 @@ export class SystemsStore {
     } else {
       this.entries = entries;
       if (params.length > 0) {
+        // The system the document places the cart for after this edit (buildGraph's own rule): its node carries the same
+        // knob as its own param, and a live edit publishes no document, so without this the real console keeps the level
+        // the last published document gave it. A system that drives no cart - or drives one another system is placed
+        // for - places no cart node, so the second call is skipped rather than addressed at a node that is not there.
+        const systems = this.graphSystems();
+        const drivesCart = drivenCartSystem(systems)?.id === id;
         for (const [param, value] of params) {
           this.backend.setParam(systemNodeId(id), param, value);
-          // The driven cart carries the same knob as its own param, and a live edit publishes no document: without this
-          // the real console keeps the level the last published document gave it. A system that drives no cart places
-          // no cart node, so the second call answers false and changes nothing.
-          if (param === "expansionVolume" && type === "rp.mesen.nes" && drivesRealCartOf(config))
-            this.backend.setParam(cartNodeId(id), param, value);
+          if (param === "expansionVolume" && drivesCart) this.backend.setParam(cartNodeId(id), param, value);
         }
-        this.onLiveParam(this.graphSystems());
+        this.onLiveParam(systems);
       }
     }
     this.markDirty();
