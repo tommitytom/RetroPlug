@@ -4,8 +4,9 @@
 // the ROM resource its settings name and gives it back at reclaim; a system node's settings carry its core's knobs
 // beside the system it names (docs/modular-graph-phase-c2-design.md section 4); and Engine::setParam reaches a param of
 // the running plan at the next block, a system node's gain and a NES's expansion volume among them, over the RPC as TS
-// calls it. Driven on a quiescent Engine, so every plan applies as it is published, except where a test owns the drain
-// itself.
+// calls it; and the engine's registration of both DSP packages is planned rather than assumed, by one document naming
+// every `rp.dsp` type (a refused package only prints a line). Driven on a quiescent Engine, so every plan applies as it
+// is published, except where a test owns the drain itself.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -1144,6 +1145,36 @@ TEST_CASE("a system built from resources joins and leaves while an audio thread 
     CHECK(e.liveSystemCount() == 0);
     CHECK(e.registry().liveCount() == 0);
     CHECK(e.resourcePinCount(rom) == 0);
+}
+
+TEST_CASE("the engine registers both DSP packages, so a document naming every type plans", "[engine-graph][dsp]") {
+    // A package the engine refuses is a stderr line at construction and nothing else, and every `[dsp-nodes]` and
+    // `[dsp-resample]` case runs on the graph rig, which registers its own copy: without this, a registration that
+    // broke would leave the types unplannable on the one host that has them and fail no test. One document names all
+    // four, chained from a resampler with no buffer (silence) to the host output, so planning it is the proof; the
+    // inputs are all silence, so the only thing to hold the block to is that it runs with no fault.
+    Engine e(kRate);
+    const std::string document =
+        R"({"nodes":[)"
+        R"({"id":"resample","type":"rp.dsp.resample","settings":{"channels":2,"loop":false}},)"
+        R"({"id":"gain","type":"rp.dsp.gain"},)"
+        R"({"id":"biquad","type":"rp.dsp.biquad","settings":{"channels":2,"type":"low-pass"}},)"
+        R"({"id":"dither","type":"rp.dsp.dither","settings":{"channels":2,"algorithm":"high-pass-tpdf","bits":4,"seed":7}},)"
+        R"({"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}})"
+        R"(],"wires":[)"
+        R"({"from":"resample.out","to":"gain.in"},)"
+        R"({"from":"gain.out","to":"biquad.in"},)"
+        R"({"from":"biquad.out","to":"dither.in"},)"
+        R"({"from":"dither.out","to":"out.out.1-2"}]})";
+    const auto result = e.setGraph(rp::host::test::graphRequest(document, {}));
+    REQUIRE(result.ok);
+    CHECK(result.errors.empty());
+    CHECK(e.hostWidth() == 2);
+
+    std::vector<float> lanes(2 * 256);
+    float*             outs[2] = {&lanes[0], &lanes[256]};
+    e.processBlock(256, outs, 2);
+    CHECK(e.faultCount() == 0);
 }
 
 TEST_CASE("the idle probe a host's smoke arms publishes a plan and the one that replaces it, and reports the idle tick "
