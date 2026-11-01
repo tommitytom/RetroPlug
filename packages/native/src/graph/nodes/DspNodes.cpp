@@ -23,7 +23,8 @@ namespace rp::graph {
 // its qualified name, which compilers spell differently for an anonymous namespace. Only they need the name;
 // everything else below stays internal to this file. The kernels are rp::dsp (src/dsp/), so a kernel type is always
 // spelled out in full here, and each settings struct carries `Node` because the kernel has a settings struct of its own
-// under the same short name (`rp::dsp::BiquadSettings` is what Biquad::process builds, and it is in scope here).
+// under the same short name (`rp::dsp::BiquadSettings` is what `Biquad::process` builds, and it turns up in this file
+// under that short name).
 namespace dsp {
 
 // The eight filters and the six dither forms, labelled as every other enum in a document is: the kebab-case of the
@@ -61,10 +62,10 @@ static_assert(DitherAlgorithm::value_of<"none">() == static_cast<std::uint32_t>(
 constexpr std::uint32_t kDefaultDitherSeed = 0x9e3779b9u;
 
 // A label as the kernel's enumerator: a cast, since the static_asserts above hold the two in step.
-rp::dsp::BiquadType biquadTypeOf(const BiquadType& t) noexcept {
+static rp::dsp::BiquadType biquadTypeOf(const BiquadType& t) noexcept {
     return static_cast<rp::dsp::BiquadType>(t.value());
 }
-rp::dsp::DitherAlgorithm ditherAlgorithmOf(const DitherAlgorithm& a) noexcept {
+static rp::dsp::DitherAlgorithm ditherAlgorithmOf(const DitherAlgorithm& a) noexcept {
     return static_cast<rp::dsp::DitherAlgorithm>(a.value());
 }
 
@@ -140,15 +141,15 @@ struct Gain {
                 kernel.process(inputs.in[c], outputs.out[c], n);
             return;
         }
-        const float delta = target - applied;
+        // One step for every channel: the ramp is the same on each of them, and a per-sample division is not.
+        const float step = (target - applied) / static_cast<float>(n);
         for (std::uint32_t c = 0; c < outputs.out.channel_count; ++c) {
             const float* x = inputs.in[c];
             float*       y = outputs.out[c];
             for (std::uint32_t i = 0; i < n; ++i) {
                 // The last sample lands on the target itself rather than one step short of it, so the next block is
                 // the held case: an exact multiply.
-                const float g = i + 1 == n ? target
-                                           : applied + delta * (static_cast<float>(i + 1) / static_cast<float>(n));
+                const float g = i + 1 == n ? target : applied + step * static_cast<float>(i + 1);
                 y[i] = x[i] * g;
             }
         }
