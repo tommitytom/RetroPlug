@@ -104,8 +104,9 @@ link's job on its own thread; removing the node releases its handle at reclaim, 
 runs failing there rather than at the next publish. That reclaim, which frees the plan the swap replaced and every node
 only it held, comes at the host's next idle tick after the audio thread adopts the swap (the plugin's editor idle, the
 SDL standalone's frame loop: within a frame or so), at once while no audio thread runs, and otherwise at the next graph
-publish, deactivate or teardown (a plugin whose editor is closed has no idle of its own; the harness hosts reclaim when
-their session calls `drainReleased` or `stopAudio`). A pause a job makes drops and counts the block's pushes, and the
+publish, deactivate or teardown (a plugin whose editor is closed has no idle of its own; a harness host whose session
+starts the background audio thread reclaims when it calls `drainReleased` or `stopAudio`, and the render host, which
+starts none, reclaims inline on every push). A pause a job makes drops and counts the block's pushes, and the
 node re-sends the note-offs a pause dropped for notes the cart holds, at frame 0 of the first block the link reads
 connected again, so no note is left sounding. Leaving the plan with notes held (the setting turned off, the NES removed
 or replaced, the drive moving, a project loaded or closed while the DAW plays) is the same hazard with no later block
@@ -466,15 +467,26 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   reclaimed, and with an audio thread running blocks `GraphHost` reclaimed only at `setGraph`, `loadScriptPack`, a
   deactivate or a stop: an idle reclaim was owed by the hosts since Phase A (the main design's section 8). So turning
   "Drive Real Cart" off left the note sounding until the user's next graph edit, and a handover's cut reached every key
-  struck until then. The plugin's editor idle and the SDL standalone's frame loop now call
-  `QueuedInvoker::reclaimReleased` on the thread `setGraph` runs on, which frees each plan the audio thread has handed
+  struck until then. The plugin's editor idle and the SDL standalone's frame loop now call one seam,
+  `HostServices::reclaimOnIdle`, on the thread `setGraph` runs on, which frees each plan the audio thread has handed
   back: only plans it has moved past, as the release ring has always required. With nothing handed back the call pops
   an empty ring and reads a few counters, allocating nothing and taking no lock the audio thread takes (an `[n8-node]`
   case counts it with blocks running). Two places still have no tick while audio runs: a plugin whose editor is closed
   (DPF offers a plugin no idle; its only graph edit then is a DAW's `setState`, whose replaced plan waits for the
-  editor to open, the next publish or a deactivate) and the harness hosts (the test host, the CLI, the Node addon, the
-  render host), whose background audio thread is a test driver and whose session reclaims through `drainReleased` or
-  `stopAudio`. The UI harness never runs an audio thread, so every push there reclaims inline.
+  editor to open, the next publish or a deactivate) and a harness host whose session starts the background audio
+  thread (the test host, the CLI, the Node addon), whose thread is a test driver and whose session reclaims through
+  `drainReleased` or `stopAudio`; the render host starts none, so every push there reclaims inline, as it does in the
+  UI harness.
+- **The two idle ticks had no test of their own.** The case above holds what the tick does with a replaced plan, but it
+  calls the engine itself: deleting the call from either host's frame loop left every suite green, and the Reaper editor
+  legs run the plugin's idle without asserting what it reclaimed. `host/IdleReclaimProbe` closes that: at the idle tick
+  `RETROPLUG_IDLE_RECLAIM_TEST` names it publishes a stereo plan (the engine's own empty graph, renamed) and, six ticks
+  later, one that replaces it, and the first tick after that whose reclaim returns a plan is the pass. So the check is
+  the host's own loop and nothing else - a publish's reclaim would have freed the plan first, which reads as no pass -
+  and a host that stops calling the seam prints the give-up line instead, which fails its smoke:
+  `tools/run-sdl-smoke.sh` (the SDL loop) and `tools/run-standalone.sh` (the plugin's editor, its only per-frame hook)
+  both arm it and assert the pass. Both hosts' ticks also go through the one seam now, so a new host has one call to
+  make and the two documents are the probe's, not the host's.
 - **The surface link's receive ring rode a host's stack** (stage 1). 256 slots of one 562-byte message is 140 KiB, and
   the link is a member of the SDL standalone's `AppState`, which is a local of `main`: Windows gives that thread 1 MiB
   of stack, and every suite in this tree runs where it is 8, so nothing here would have caught it. The ring is one
@@ -500,8 +512,9 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   while no audio thread runs), removal and discard, the 64 bound, a real device thread's progress, a warmed block with
   writes in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion cannot leave
   the engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`, the expansion
-  volume, owed note-offs, the held notes a removal, a teardown and a handover hand the link, an idle reclaim freeing a
-  replaced plan with blocks running and no further publish (and allocating nothing when nothing came back), the jobs
+  volume, owed note-offs, the held notes a removal, a teardown and a handover hand the link, the idle tick's seam
+  (`HostServices::reclaimOnIdle`, the call both host loops make) freeing a replaced plan with blocks running and no
+  further publish and allocating nothing when nothing came back, the jobs
   and their refusals, abandonment, `threads`, `unique`, a warmed block), `[n8-adapters]` (`N8Adapters.test.cpp`: the
   one case that composes the production adapters behind a real Engine, `rp.n8.nes` through `N8CartLink`, `N8Host` and
   `N8Link` to `test/n8/FakeN8.hpp`'s serial port: a note, then in one section `rom.title` before and after an upload, a
@@ -515,6 +528,9 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   digests; the goldens' documents moved with the fan-out and the surface nodes, and their driven runs hold each cart
   node's pushes to what the system it drives had fed its own FIFO, byte for byte, one cart per document as the compare
   requires.
+- `EngineGraph.test.cpp` gained the host side of that seam: `HostServices::reclaimOnIdle` is what the `[n8-node]` case
+  above now calls, and a `[b2]` case drives `host/IdleReclaimProbe` over an audio thread to its pass, the harness both
+  host smokes arm. What it cannot reach is the two call sites, which is what those smokes are for.
 - `retroplug-n8-test` gained `[cart-jobs]` (`N8CartJobs.test.cpp`: the pause and its ack bound, battery file dumps and
   restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws), a
   game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a cart reset to

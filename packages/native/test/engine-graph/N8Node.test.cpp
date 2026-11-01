@@ -29,6 +29,7 @@
 #include "NodeRig.hpp"
 #include "host/devices/DeviceLinks.hpp"
 #include "host/engine/CapabilityJobs.hpp"
+#include "host/HostServices.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/graph/N8Nodes.hpp"
 
@@ -596,13 +597,16 @@ TEST_CASE("a cart node leaving the plan hands its link the notes the cart holds;
     }
 }
 
-TEST_CASE("an idle reclaim destroys the plan an audio thread replaced with no further publish: the cart node's held "
-          "notes reach the link, the pins its plan held drop, and a reclaim with nothing back allocates nothing",
+TEST_CASE("the idle tick a host's frame loop calls destroys the plan an audio thread replaced with no further "
+          "publish: the cart node's held notes reach the link, the pins its plan held drop, and a tick with nothing "
+          "back allocates nothing",
           "[engine-graph][n8-node]") {
     // A host's idle tick (the plugin's editor idle, the SDL standalone's frame loop) reclaims on the control thread
-    // while the audio thread runs blocks; without one, a replaced plan waits for the next publish.
-    FakeCart               cart;
-    Engine                 e(kRate);
+    // while the audio thread runs blocks; without one, a replaced plan waits for the next publish. HostServices is the
+    // seam both hosts call, so a case drives them through it rather than the Engine underneath.
+    FakeCart cart;
+    HostServices svc;
+    Engine&      e = svc.engine;
     rp::host::test::Roms   roms;
     std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
     withRoms(e, systems, roms);
@@ -657,9 +661,9 @@ TEST_CASE("an idle reclaim destroys the plan an audio thread replaced with no fu
     CHECK(e.resource(rom) == nullptr);  // the owner's view: dropped, though the plan still pins it
     CHECK(e.resourcePinCount(rom) > 0);
 
-    // One idle reclaim, no publish: the plan goes on this thread, and with it the node (its held note to the link, its
+    // One idle tick, no publish: the plan goes on this thread, and with it the node (its held note to the link, its
     // handle given back), the core and the last pins on the ROM.
-    CHECK(e.reclaim() >= 1);
+    CHECK(svc.reclaimOnIdle() >= 1);
     REQUIRE(cart.released.size() == 1);
     rp::host::CartNotes held;
     held.set(60);
@@ -673,7 +677,7 @@ TEST_CASE("an idle reclaim destroys the plan an audio thread replaced with no fu
     REQUIRE(blocksPass(4));
     rp::test::beginCountingAllocations(true);
     std::size_t freed = 0;
-    for (int i = 0; i < 100; ++i) freed += e.reclaim();
+    for (int i = 0; i < 100; ++i) freed += svc.reclaimOnIdle();
     const auto counted = rp::test::endCountingAllocations();
     CHECK(freed == 0);
     CHECK(counted.allocations == 0);

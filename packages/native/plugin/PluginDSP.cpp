@@ -39,6 +39,7 @@
 #include "transports/QuickJSTransport.h"
 #include "host/QuickJsGlobals.hpp"
 #include "host/HostServices.hpp"
+#include "host/IdleReclaimProbe.hpp"      // the editor idle's smoke hook (RETROPLUG_IDLE_RECLAIM_TEST)
 
 // The embedded control-plane bundle (bytecode) — build/native/cp-bundle_data.c, rp_ prefix.
 extern "C" {
@@ -86,6 +87,9 @@ class PluginDSP : public Plugin {
     // The three facets below are ALL this channel mounts — no debug, no audio-driver. See host/
     // HostServices.hpp for why those two are not members here rather than merely unmounted.
     HostServices     svc_;
+    // RETROPLUG_IDLE_RECLAIM_TEST: inert unless `tools/run-standalone.sh` arms it. Holds the editor's idle (the only
+    // per-frame hook the plugin has) to the idle tick it owes the engine, which no in-process test can reach.
+    retroplug::IdleReclaimProbe idleProbe_;
     // Physical Everdrive N8 Pro streaming (Settings > N8) - the SAME N8Host the SDL standalone uses. Nothing in
     // run() pushes at it: the graph's rp.n8.nes node does, on the audio thread, through n8CartLink_ (below), which
     // the engine hands the node by name; the config UI drives connect/setPort through bindN8Hooks. svc_.host
@@ -427,7 +431,14 @@ private:
         // Publish the host so an editor can attach its LVGL display to this same context.
         shared_.host = &host_;
         shared_.pollParameterMap = [this] { updateParameterMap(); };
-        shared_.reclaimReleased  = [this] { svc_.invoker.reclaimReleased(); };
+        // The editor's per-frame hand-back, through the one idle seam both hosts call (the SDL standalone's loop is the
+        // other). The probe rides it so a host that stops calling it goes red in its own smoke.
+        shared_.reclaimReleased  = [this] {
+            const std::size_t freed = svc_.reclaimOnIdle();
+            idleProbe_.tick(freed);
+            return freed;
+        };
+        idleProbe_.armFromEnv(svc_.engine);
 
         // Turn on the native file watcher (config.json + bindings/ recursively; ROMs registered by TS via
         // setWatchedRoms). The TS FileWatcher.pump() drains it from the UI idle loop (__rp_pumpWatcher).

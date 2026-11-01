@@ -104,4 +104,13 @@ run quit 120 RETROPLUG_SDL_TEST_QUIT=1
 want "$LOG" "close-guard test: exited at frame ([0-9]|[1-9][0-9])$" "quit: close guard did not exit early"
 echo "  ok: close guard"
 
+# 7) Idle reclaim: the frame loop frees the plans the audio thread handed back, with no further publish, which is the
+#    tick HostServices::reclaimOnIdle exists for. The probe publishes a plan, then one that replaces it; it passes only when
+#    an idle tick frees the replaced one, so a loop that stops calling the seam never prints the pass line (it prints
+#    the give-up instead). Arming at frame 60 keeps the swap clear of the control plane's own boot publishes.
+run idle 200 RETROPLUG_IDLE_RECLAIM_TEST=60
+want "$LOG" "\[idle-reclaim\] self-test: tick [0-9]+ freed [1-9][0-9]* replaced plan" \
+     "idle: the frame loop did not reclaim what the audio thread handed back"
+echo "  ok: idle reclaim"
+
 echo "SDL smoke OK"

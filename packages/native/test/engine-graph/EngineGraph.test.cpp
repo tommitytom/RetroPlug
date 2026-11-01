@@ -16,6 +16,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -27,6 +28,8 @@
 #include "NodeRig.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
+#include "host/HostServices.hpp"
+#include "host/IdleReclaimProbe.hpp"
 #include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
@@ -1141,4 +1144,53 @@ TEST_CASE("a system built from resources joins and leaves while an audio thread 
     CHECK(e.liveSystemCount() == 0);
     CHECK(e.registry().liveCount() == 0);
     CHECK(e.resourcePinCount(rom) == 0);
+}
+
+TEST_CASE("the idle probe a host's smoke arms publishes a plan and the one that replaces it, and reports the idle tick "
+          "that frees the first",
+          "[engine-graph][b2]") {
+    // What `tools/run-sdl-smoke.sh` and `tools/run-standalone.sh` set RETROPLUG_IDLE_RECLAIM_TEST for: the probe is the
+    // half of that check a test can drive, and it passes only if the host's tick reaches the engine. Its own plans need
+    // no resource and no core, so a case needs nothing but an engine with an audio thread on it.
+    HostServices svc;
+    Engine&      e = svc.engine;
+    retroplug::IdleReclaimProbe probe;
+    probe.arm(e, 2);
+    REQUIRE(probe.active());
+
+    e.setAudioThreadOwns(true);
+    std::atomic<bool> running{true};
+    std::thread       audio([&] {
+        std::vector<float> l(256), r(256);
+        while (running.load(std::memory_order_acquire)) {
+            e.drainCommands();
+            e.processBlock(256, l.data(), r.data());
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
+    });
+    struct Join {
+        Engine&            e;
+        std::atomic<bool>& running;
+        std::thread&       audio;
+        ~Join() {
+            running.store(false, std::memory_order_release);
+            if (audio.joinable()) audio.join();
+            e.setAudioThreadOwns(false);
+        }
+    } join{e, running, audio};
+
+    // Two ticks publish (the plan, then its replacement); each later one is a frame of the host's loop. The tick the
+    // probe is told about is the one the frame ran, which is how it reports the free.
+    unsigned ticks = 0;
+    for (; ticks < 400 && !probe.ok(); ++ticks) {
+        probe.tick(svc.reclaimOnIdle());
+        std::this_thread::sleep_for(std::chrono::milliseconds(2)); // the audio thread's blocks between frames
+    }
+    CHECK(probe.ok());
+    CHECK_FALSE(probe.active());
+    CHECK(ticks < 400);
+    // The plan the probe last published is the running one, and the one it replaced is gone: nothing of the swap is
+    // left for a later tick to free.
+    CHECK(e.hostWidth() == 2);
+    CHECK(svc.reclaimOnIdle() == 0);
 }

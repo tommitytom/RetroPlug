@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/EngineRpcService.hpp"
@@ -30,6 +32,14 @@ struct HostServices {
     EngineRpcService      engineSvc{engine, invoker};
 
     HostServices() = default;
+
+    // The idle tick a host gives its engine between audio callbacks: free the plans the block thread has handed back
+    // since the last one, with the nodes only they held (a cart node and the notes it holds on the cart, a core, the
+    // resources they pin), on this thread, which is the one setGraph runs on. Every host with a frame loop calls it
+    // each frame - the plugin's editor idle and the SDL standalone's loop, through this one seam - because without one
+    // a replaced plan waits for the next publish. Returns how many plans it freed; with nothing handed back it
+    // allocates nothing and takes no lock the block thread takes (Engine::reclaim).
+    std::size_t reclaimOnIdle() { return invoker.reclaimReleased(); }
 
     HostServices(const HostServices&)            = delete;
     HostServices& operator=(const HostServices&) = delete;
