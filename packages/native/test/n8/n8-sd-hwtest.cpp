@@ -12,8 +12,8 @@
 // A battery job's <rom-name> is a bare file name, not a path: it names the ROM whose folder under EDN8/gamedata/ holds
 // the battery file, which is why `dump /roms/mGB.nes out.srm` is refused.
 //
-// The rest take the port directly, with no N8Host and no capability job. link, linkdbg and timing bring up N8Link's
-// own streaming thread; the others drive a bare Edio:
+// The rest take the port directly, with no N8Host and no capability job. link and timing bring up N8Link's own
+// streaming thread; the others, linkdbg included, drive a bare Edio:
 //   retroplug-n8-hwtest peek     <addr-hex> <len> [port]       # CMD_MEM_RD: read bytes from a device address
 //   retroplug-n8-hwtest poke     <addr-hex> <byte> [port]      # CMD_MEM_WR: write one byte to a device address
 //   retroplug-n8-hwtest read     <sd-path> <local-dest> [port] # CMD_F_FRD: read an SD file over USB
