@@ -32,9 +32,10 @@ class SystemBase;
 // A job's record is the control thread's: made by submitJob (a device node's included) or adoptJob, freed once its
 // state is terminal by the next sweep (drainJobs, submitJob, adoptJob and Engine::writeRam each sweep first), or by the
 // engine's destruction. Another thread only writes the fields the hand-off covers, never frees it, and never touches it
-// after storing a terminal state: the block thread writes a write's `core` and `failure` at the apply and its state at
-// the confirm, a device thread its progress, result, error and failure. So the block thread allocates and frees
-// nothing for a job: a write's bytes are allocated on the control thread with the record and freed back on it.
+// after storing a terminal state: the block thread writes a write's `core`, `failure` and its `Applied` state at the
+// apply (a detached write's `Done`, and nothing after) and its terminal state at the confirm, a device thread its
+// progress, result, error and failure. So the block thread allocates and frees nothing for a job: a write's bytes are
+// allocated on the control thread with the record and freed back on it.
 //
 // Two rules a device's jobs keep, beside the engine's own bound (Engine::kMaxJobs outstanding, engine-wide, the
 // back-pressure that keeps room for every completion):

@@ -580,9 +580,9 @@ export class MockBackend implements Backend {
   // --- capability jobs (src/capability.ts) over the mock's model: a system node is sys-<id>, its memory region "ram"
   // is setRam's buffer, its battery what setSram / readSram answer and its ROM the seeded file its ROM path names. As
   // natively: a read completes at once, a write at once while no audio runs and at the next runBlock() while it does
-  // (audioRunning), and at most 64 jobs are outstanding. A node the document places that is not a system presents no
-  // capability; a full command ring is not modelled (that is the ring's occupancy, which the mock does not track, and
-  // commands other than writes fill it too).
+  // (audioRunning), and at most 64 jobs are queued (a held cart transfer is the cart's own, one at a time, outside
+  // that count). A node the document places that is not a system presents no capability; a full command ring is not
+  // modelled (that is the ring's occupancy, which the mock does not track, and commands other than writes fill it too).
 
   /** Model a running audio thread: a write then completes at the next runBlock(), not at its submission. */
   audioRunning = false;

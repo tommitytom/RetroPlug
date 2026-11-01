@@ -101,7 +101,11 @@ const resourceParams = (spec: ResourceSpec): Record<string, unknown> => {
 
 // Native's completion queue is one per engine, and a runtime binds one engine (globalThis[Symbol.for("plugin")]), so
 // every emulator client of a runtime shares one CapabilityJobs: a second client's drain settles the first client's
-// promises, where a per-client queue would drop the completions it does not hold.
+// promises, where a per-client queue would drop the completions it does not hold. The sharing is per module registry,
+// not per QuickJS context, so its precondition is one bundle per engine creating emulator clients: the UI bundle
+// borrows the control plane's stores rather than composing its own, and bootSession replans the one engine instead of
+// replacing it. A host that rebound the RPC to another engine would hold the old promises' ids, which are the old
+// engine's, against the new channel's completions; nothing rebinds today.
 let realJobs: CapabilityJobs | null = null;
 
 function sharedJobs(): CapabilityJobs {

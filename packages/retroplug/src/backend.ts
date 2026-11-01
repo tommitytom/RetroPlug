@@ -242,7 +242,8 @@ export interface Backend {
    *  still pending. */
   pumpJobs(): number;
 
-  /** Reject every pending capability promise with `reason`: the project closed, and the nodes they named with it. */
+  /** Reject every pending capability promise with `reason`: the project closed, and the nodes they named with it. A
+   *  real client's queue is its engine's, shared by every emulator client of a runtime, so this reaches theirs too. */
   rejectPendingJobs(reason: string): void;
 
   /** The system's latest video frame for display, or `null` when the id is gone / has no framebuffer.

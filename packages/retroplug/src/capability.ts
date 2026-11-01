@@ -157,7 +157,8 @@ export function setJobWait(wait: ((ms: number) => void) | null): void {
   jobWait = wait;
 }
 
-/** Pump every backend's jobs: the audio driver calls it after the calls that advance time. */
+/** Pump every live job queue: the audio driver calls it after the calls that advance time. A real client's queue is its
+ *  engine's, so one visit can settle more than one backend's promises. */
 export function pumpAllJobs(): void {
   for (const jobs of liveJobs) jobs.pump();
 }
@@ -168,15 +169,17 @@ export function liveJobCount(): number {
   return liveJobs.size;
 }
 
-// How long a submission waits through jobWait before it rejects: a write completes within a block, so this bounds only
-// a job that is stuck (a device's) rather than slow.
+// How long a submission waits through jobWait before it rejects. A write completes within a block, but a device job can
+// run for seconds by design, so the bound catches a job that has not settled rather than one that will not: its bytes
+// may still land after the promise is gone.
 const JOB_WAIT_LIMIT_MS = 10_000;
 
 /** The promises over one queue of jobs: native's, which is one per engine, or the mock's over its own model. */
 export class CapabilityJobs {
   private readonly pending = new Map<number, Pending>();
-  // Jobs whose promises a close rejected while native still owed their completions: drained and dropped as they come,
-  // since each holds one of native's outstanding slots until a drain collects it.
+  // Jobs whose promise is gone while native still owes the completion (a close rejected it, or the wait's bound
+  // withdrew it): drained and dropped as they come, since each holds one of native's outstanding slots until a drain
+  // collects it.
   private readonly orphans = new Set<number>();
 
   constructor(private readonly port: JobPort) {}
@@ -198,7 +201,7 @@ export class CapabilityJobs {
     if (args.length !== undefined) request.length = args.length;
     if (args.bytes !== undefined) request.bytes = args.bytes;
     if (args.name !== undefined) request.name = args.name;
-    // What a close left behind first, so its completions cannot hold native's bound full against this submission.
+    // What a gone promise left owed first, so its completion cannot hold native's bound full against this submission.
     if (this.orphans.size) this.pump();
     const submitted = this.port.submitJob(request);
     if (submitted.id == null) {
