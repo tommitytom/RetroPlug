@@ -123,6 +123,7 @@ public:
 
     bool              attached   = true;
     bool              jobRunning = false;
+    int               refuseAfterPushes = -1;  // >= 0: the push after that many more of this block's is refused
     std::uint64_t     drops      = 0;
     int               acquires   = 0;
     int               releases   = 0;
@@ -328,6 +329,69 @@ TEST_CASE("a note-off the link dropped during a pause goes out at frame 0 of the
     CHECK(cart.pushes[3].bytes() == Bytes{0x81, 64, 0});
     block(rig);
     CHECK(cart.pushes.size() == 4);  // paid once
+}
+
+TEST_CASE("an owed note-off the link refuses part-way stays owed, and a retrigger clears one",
+          "[engine-graph][n8-node]") {
+    SECTION("a pay the link refuses part-way keeps the rest owed") {
+        FakeCart cart;
+        NodeRig  rig(kRate);
+        rig.devices.install(&cart, nullptr);
+        REQUIRE(rig.set(fanOut(rig)).ok);
+        Feed& feed = rig.node<Feed>("feed");
+        // Two notes the cart is holding, then a pause that drops both their note-offs.
+        feed.next[Feed::Midi] = {{1, {0x90, 60, 100}}, {2, {0x90, 64, 100}}};
+        block(rig);
+        REQUIRE(cart.pushes.size() == 2);
+        cart.jobRunning = true;
+        feed.next[Feed::Midi] = {{0, {0x80, 60, 0}}, {1, {0x80, 64, 0}}};
+        block(rig);
+        CHECK(cart.drops == 2);
+
+        // Streaming is back, and the link takes the first owed note-off and refuses the second: the one it refused is
+        // still owed, so it is not lost.
+        cart.jobRunning        = false;
+        cart.refuseAfterPushes = 1;
+        feed.next[Feed::Midi]  = {};
+        cart.pushes.clear();
+        block(rig);
+        REQUIRE(cart.pushes.size() == 1);
+        CHECK(cart.pushes[0].frame == 0);
+        CHECK(cart.pushes[0].bytes() == Bytes{0x80, 60, 0});
+        block(rig);
+        REQUIRE(cart.pushes.size() == 2);
+        CHECK(cart.pushes[1].frame == 0);
+        CHECK(cart.pushes[1].bytes() == Bytes{0x80, 64, 0});
+        block(rig);
+        CHECK(cart.pushes.size() == 2);  // both paid once
+    }
+    SECTION("a note-on that reaches the cart clears that note's owed note-off") {
+        FakeCart cart;
+        NodeRig  rig(kRate);
+        rig.devices.install(&cart, nullptr);
+        REQUIRE(rig.set(fanOut(rig)).ok);
+        Feed& feed = rig.node<Feed>("feed");
+        feed.next[Feed::Midi] = {{1, {0x90, 60, 100}}};
+        block(rig);
+        cart.jobRunning = true;
+        feed.next[Feed::Midi] = {{0, {0x80, 60, 0}}};
+        block(rig);
+        CHECK(cart.drops == 1);
+
+        // Back, with the link refusing the owed note-off while the block's own note-on for the same note reaches it:
+        // the note is sounding again, so nothing is owed, and the next block must not cut it with a stale note-off.
+        cart.jobRunning        = false;
+        cart.refuseAfterPushes = 0;
+        feed.next[Feed::Midi]  = {{5, {0x90, 60, 100}}};
+        cart.pushes.clear();
+        block(rig);
+        REQUIRE(cart.pushes.size() == 1);
+        CHECK(cart.pushes[0].frame == 5);
+        CHECK(cart.pushes[0].bytes() == Bytes{0x90, 60, 100});
+        feed.next[Feed::Midi] = {};
+        block(rig);
+        CHECK(cart.pushes.size() == 1);
+    }
 }
 
 TEST_CASE("rp.n8.nes's jobs: one at a time, none while disconnected, streaming paused for each, progress, completion",

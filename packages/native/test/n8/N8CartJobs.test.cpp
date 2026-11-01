@@ -1001,6 +1001,30 @@ TEST_CASE("a result's paths are JSON strings, so a name the card accepts cannot 
           R"({"path":"usb-games/quo\"te.nes","mapIndex":69,"streaming":"stopped"})");
 }
 
+TEST_CASE("a reconnect re-applies the standing expansion volume, which is the path a cart node relies on",
+          "[n8][cart-jobs]") {
+    Rig rig;
+    rig.connect();
+    rig.cart.setExpansionVolume(64);
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.cfg[3] == 64;
+    }));
+    // A power-cycle clears the register (master_vol is 0 on a fresh cart). A cart node's own re-send on the connected
+    // edge asks for a value N8Host already holds, which setExpVol does not rewrite; the connect path is what writes it
+    // again, and this pins that it does.
+    rig.host.connect(false);
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.cfg[3] = 0;
+    }
+    rig.host.connect(true);
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.cfg[3] == 64;
+    }));
+}
+
 TEST_CASE("a dump keeps the restore's bound and tells a missing folder from a card that will not list",
           "[n8][cart-jobs]") {
     Rig rig;
