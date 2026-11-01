@@ -1367,3 +1367,98 @@ TEST_CASE("a battery job's name wins over the ROM this host booted, names are pl
     CHECK_FALSE(rig.submit(request(RP_SYSTEM_SRAM_INTERFACE, "dump"), none, &why));
     CHECK(why == "a battery job needs the ROM's file name: name it, or boot the ROM through rom.upload first");
 }
+
+namespace {
+
+// The notes a cart node hands its link when it leaves the plan: 60 on channel 1 and 67 on channel 2.
+rp::host::CartNotes heldNotes() {
+    rp::host::CartNotes notes;
+    notes.set(60);
+    notes.set(128 + 67);
+    return notes;
+}
+
+// Where `entry` first appears in the cart's log, or the log's length when it never does.
+std::ptrdiff_t logIndex(FakeN8& dev, const std::string& entry) {
+    std::lock_guard<std::mutex> l(dev.mu);
+    return std::find(dev.log.begin(), dev.log.end(), entry) - dev.log.begin();
+}
+
+}  // namespace
+
+TEST_CASE("the notes a leaving cart node held get their note-offs from the serial thread, behind what it pushed",
+          "[n8][cart-release]") {
+    SECTION("raw: after a note-on still waiting for its release time") {
+        Rig rig;
+        rig.connect();
+        // The note-on is due 200 ms out (a lookahead and a late frame), so it is still in the ring when the node's
+        // destroy hands over its books: its note-off must not overtake it.
+        const Bytes on{0x90, 0x3C, 0x7F};
+        rig.cart.push(9600, on.data(), on.size(), false, 48000.0);
+        rig.cart.releaseNotes(heldNotes());
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:81 43 00") == 1; }));
+        CHECK(rig.dev.count("fifo:80 3C 00") == 1);
+        CHECK(logIndex(rig.dev, "fifo:90 3C 7F") < logIndex(rig.dev, "fifo:80 3C 00"));
+        CHECK(rig.cart.connected());
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        CHECK(rig.dev.count("fifo:80 3C 00") == 1);  // once
+    }
+    SECTION("framed: the reliable link delivers them in order, as any message") {
+        Rig rig;
+        rig.dev.menu    = false;
+        rig.dev.linkRom = true;  // BlipToaster, which answers the probe
+        rig.connect();
+        REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+        rig.push({0x90, 0x3C, 0x7F});
+        rig.cart.releaseNotes(heldNotes());
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.applied.size() == 3;
+        }));
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        CHECK(rig.dev.applied[0] == Bytes{0x90, 0x3C, 0x7F});
+        CHECK(rig.dev.applied[1] == Bytes{0x80, 0x3C, 0x00});
+        CHECK(rig.dev.applied[2] == Bytes{0x81, 0x43, 0x00});
+    }
+    SECTION("a job's pause: none while it holds the port, all on the first streaming turn after it") {
+        Rig rig;
+        rig.dev.files[kGameBattery] = saveOf(3000, 7);
+        rig.dev.fileReadDelayMs     = 20;
+        rig.connect();
+        Job job;
+        REQUIRE(rig.submit(battery("dump"), job));
+        REQUIRE(waitUntil([&] { return rig.dev.count("file-rd") > 0; }));
+        rig.cart.releaseNotes(heldNotes());
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        CHECK(rig.dev.count("fifo:8") == 0);
+        REQUIRE(waitUntil([&] { return job.finished(); }));
+        CHECK(job.state.load() == Job::Done);
+        REQUIRE(waitUntil([&] { return rig.dev.count("fifo:81 43 00") == 1; }));
+        CHECK(rig.dev.count("fifo:80 3C 00") == 1);
+        CHECK(rig.dev.count("file-rd") == 6);
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        const auto lastRead = std::find(rig.dev.log.rbegin(), rig.dev.log.rend(), "file-rd");
+        const auto release  = std::find(rig.dev.log.rbegin(), rig.dev.log.rend(), "fifo:80 3C 00");
+        CHECK(release < lastRead);  // reversed: the note-off is the later entry
+    }
+    SECTION("a disconnect writes a release still waiting before the port closes; a link that is down drops one") {
+        Rig rig;
+        rig.connect();
+        // A note-on due a second out never goes (the disconnect throws the ring away), and the release does not wait
+        // for it: a note-off for a note that never sounded is harmless, a held one left behind is not.
+        const Bytes on{0x90, 0x3C, 0x7F};
+        rig.cart.push(48000, on.data(), on.size(), false, 48000.0);
+        rig.cart.releaseNotes(heldNotes());
+        rig.host.connect(false);
+        CHECK(rig.dev.count("fifo:80 3C 00") == 1);
+        CHECK(rig.dev.count("fifo:81 43 00") == 1);
+        CHECK(rig.dev.count("fifo:90") == 0);
+
+        // Down: nothing runs to write it, and the next connect does not either (the console it reaches may have been
+        // power-cycled since, and a cart node that still drives it keeps its own books).
+        rig.cart.releaseNotes(heldNotes());
+        rig.connect();
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        CHECK(rig.dev.count("fifo:80 3C 00") == 1);
+    }
+}

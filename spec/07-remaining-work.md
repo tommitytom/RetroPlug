@@ -304,6 +304,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **A cart job pauses streaming**: pushes during it are dropped and counted, the node re-sends the note-offs it
     lost, and a `rom.upload` leaves streaming stopped until the host reconnects. A job that a running game will refuse
     never pauses: its submission reads the cart's config block first, so a game's notes keep flowing.
+  - **A handover can cut a key the new cart node strikes before the old one is reclaimed**: the old node's held notes
+    are released behind every byte pushed when its destroy runs, the new node's first blocks among them, so a note the
+    new node starts on a key the old one still held, in the block or two before the reclaim, is released with them.
   - **MIDI streamed to a cart at its menu reaches the menu's own command parser** (pre-C5, unverified on hardware):
     the menu takes commands over the same FIFO, so a MIDI data pair such as `0x2A 0x73` (`*s`) sent while the menu
     shows can ask it to start an app. It holds for raw MIDI after a connect at the menu and for framed MIDI after a

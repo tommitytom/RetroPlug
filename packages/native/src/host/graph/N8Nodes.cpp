@@ -1,7 +1,6 @@
 #include "host/graph/N8Nodes.hpp"
 
 #include <algorithm>
-#include <bitset>
 #include <cmath>
 #include <cstdint>
 #include <iterator>
@@ -62,8 +61,9 @@ struct N8Nes {
     // The notes the cart was sent a note-on for and no note-off yet (a channel's 128 notes a channel, 16 channels), and
     // of those, the ones whose note-off the link dropped (it was down, or a job held it). An owed note-off goes out at
     // the start of the next block the link reads connected in: a pause drops what is pushed while it lasts, and a
-    // note-off lost there would leave the console holding the note for good.
-    std::bitset<16 * 128> sounding, owed;
+    // note-off lost there would leave the console holding the note for good. What is still sounding when the node
+    // leaves the plan is handed to the link (the destructor).
+    CartNotes sounding, owed;
 
     void bind_host(const rp_host* h) noexcept {
         devices = static_cast<const HostDevices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
@@ -77,6 +77,12 @@ struct N8Nes {
     }
     ~N8Nes() {
         if (!devices || !cart) return;
+        // The notes the cart still holds go to the link, whose own thread sends their note-offs behind what this node
+        // pushed: no later message can reach the cart through a node that is gone, so a note held now (the setting
+        // turned off, the NES removed, the drive moving, a project closed while the DAW plays) would sound until a
+        // power-cycle. Not pushed here: this runs on the control thread after the swap, and the audio thread, or the
+        // node taking over (whose books start empty), may be pushing at the ring now.
+        if (sounding.any()) cart->releaseNotes(sounding);
         // A job this node submitted that is still running fails now, and the link reports into its record no more, so
         // the engine may free the record; the device stops at its next safe point.
         cart->abandonJobs(this);

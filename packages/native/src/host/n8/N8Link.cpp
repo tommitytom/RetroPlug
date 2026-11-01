@@ -75,6 +75,7 @@ bool N8Link::connect(const std::string& port) {
     // Quiescent here (connected_ is false, so no producer is pushing): clear any stale items from a prior
     // connection, then start the consumer thread BEFORE allowing producers.
     { TimedChunk drop; while (ring_.tryPop(drop)) {} }
+    chunksWritten_ = chunksPushed_.load(std::memory_order_acquire);  // the ring is empty: nothing pushed is still to go
     bytesForwarded_.store(0, std::memory_order_relaxed);
     controlRetryAtNs_ = 0;  // a prior connection's failed control write does not hold this one's first turn back
     backChannelQuiet_.store(true, std::memory_order_relaxed);
@@ -117,9 +118,44 @@ bool N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::siz
             pushesDropped_.fetch_add(1, std::memory_order_relaxed);
             return false;
         }
+        chunksPushed_.fetch_add(1, std::memory_order_release);
         i += take;
     }
     return true;
+}
+
+void N8Link::releaseNotes(const NoteSet& notes) {
+    if (notes.none()) return;
+    std::lock_guard<std::mutex> l(jobMutex_);
+    if (!acceptingJobs_) return;  // no serial thread to write them: the link is down
+    releasePending_ |= notes;
+    // Everything pushed so far, which the caller's own pushes are among: a cart node's destroy runs after the plan swap
+    // that ordered its last block before it.
+    releaseAfter_ = chunksPushed_.load(std::memory_order_acquire);
+    releaseWanted_.store(true, std::memory_order_release);
+}
+
+void N8Link::writeReleases(bool stopping) {
+    if (!releaseWanted_.load(std::memory_order_acquire)) return;
+    NoteSet notes;
+    {
+        std::lock_guard<std::mutex> l(jobMutex_);
+        // A chunk pushed before the release is still to go (a note-on waiting for its release time would otherwise
+        // follow its own note-off and sound for good). A stopping link writes no more chunks, so it does not wait.
+        if (!stopping && chunksWritten_ < releaseAfter_) return;
+        notes = releasePending_;
+        releasePending_.reset();
+        releaseWanted_.store(false, std::memory_order_relaxed);
+    }
+    for (std::size_t i = 0; i < notes.size(); ++i) {
+        if (!notes.test(i)) continue;
+        TimedChunk off;
+        off.len     = 3;
+        off.data[0] = static_cast<std::uint8_t>(0x80 | (i / 128));
+        off.data[1] = static_cast<std::uint8_t>(i % 128);
+        off.data[2] = 0;
+        writeChunk(off);
+    }
 }
 
 bool N8Link::runPaused(PausedJob job) {
@@ -230,6 +266,9 @@ void N8Link::serialLoop() {
         std::lock_guard<std::mutex> l(jobMutex_);
         acceptingJobs_ = false;
         if (jobPending_.load(std::memory_order_relaxed)) orphan = std::move(job_);
+        // A release the stream could not write goes with it (see releaseNotes).
+        releasePending_.reset();
+        releaseWanted_.store(false, std::memory_order_relaxed);
     }
     if (orphan.run) {
         try {
@@ -279,6 +318,9 @@ void N8Link::streamLoop() {
                     controlRetryAtNs_ = turnNs + 1'000'000'000;
                 }
             }
+            // A leaving cart node's held notes (releaseNotes), once what was pushed before them has gone: on a
+            // streaming turn, never inside a job's pause, which only the job's own traffic may use.
+            writeReleases(false);
             if (jobPending_.load(std::memory_order_acquire)) {
                 runJob(chunk, have);
                 continue;
@@ -297,12 +339,23 @@ void N8Link::streamLoop() {
             }
             have = false;
             writeChunk(chunk);
+            ++chunksWritten_;
         } catch (const std::exception& e) {
             setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
             connected_.store(false, std::memory_order_release);
             running_.store(false, std::memory_order_release);  // stop; the UI can reconnect
-            break;
+            return;
         }
+    }
+    // Asked to stop (a disconnect, the owner's destructor) with the port still open: a release waiting behind the ring
+    // goes now, since the ring will never be written, so a plugin closed while the cart plays leaves no note sounding.
+    // A stream a job stopped has closed the port already (an upload booted a fresh ROM, which holds no notes).
+    if (!edio_) return;
+    try {
+        writeReleases(true);
+    } catch (const std::exception&) {
+        // A port that fails here (one whose failure inside a job is what stopped the stream) is closed by the
+        // disconnect anyway.
     }
 }
 
@@ -336,6 +389,7 @@ void N8Link::drainForJob(TimedChunk& chunk, bool& have) {
         }
         have = false;
         writeChunk(chunk);
+        ++chunksWritten_;
     }
     // And with the reliable link, until the ROM has acknowledged every frame, so the job does not sit on a frame a
     // DMC-DMA halt ate and only a re-send would deliver. Bounded: a cart that has stopped answering gets its re-sends

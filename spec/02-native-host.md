@@ -335,7 +335,7 @@ it:
 | `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs' concatenation, input by input, each in queue order; each message goes at the later of its frame and the last handed out in the block, and at the block's last frame at most, a guard that keeps the list frame-sorted and inside the block whatever an input's queue holds (a node on the C ABI writes its own, and a script node's `send` carries a frame past the block as given), since the plugin hands each frame to the DAW unchecked. The merge allocates nothing, a head index per input, and costs messages times inputs; the sink it hands each message to, `Engine::midiOut`, still takes a `std::vector` per message ([07-remaining-work.md](07-remaining-work.md)). Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
 | `rp.launchpad.surface-in` | out `in` (events: 1024 messages, 16 KiB), out `connected` (control) | drains the surface link's receive ring at the top of its block (16-message batches until the link answers short), every message at frame 0; `connected` is 1 while the device is attached, from frame 0 of the block. Its first block discards what the link held when it bound it, so a press from before the plan is not replayed; a message the link's ring cannot hold is counted apart from the device's lost frames, and one the node's queue cannot hold is dropped and counted. `unique`, `threads`, category `device` |
 | `rp.launchpad.surface-out` | in `out` (events) | hands each message to the surface link's send ring in queue order; a detached link drops and counts them. `unique`, `threads`, category `device` |
-| `rp.n8.nes` | in `midi` (events), in `bytes`, param `expansionVolume`, out `connected` (control) | pushes each message at the cart link at its frame and the block's rate, the `bytes` port's flush flag carried; hands the link the expansion volume at its first block, on a change and on every reconnect; `connected` is the link's state from frame 0. No audio output. `unique`, `threads`, category `device` |
+| `rp.n8.nes` | in `midi` (events), in `bytes`, param `expansionVolume`, out `connected` (control) | pushes each message at the cart link at its frame and the block's rate, the `bytes` port's flush flag carried; hands the link the expansion volume at its first block, on a change and on every reconnect; `connected` is the link's state from frame 0; leaving the plan, hands the link the notes the cart still holds for their note-offs. No audio output. `unique`, `threads`, category `device` |
 
 An input node takes everything staged whether or not its output is wired, so `Engine::setGraph` refuses
 (`midi-in`) a document with a second `rp.host.midi-in`. It refuses (`midi-out`) a second
@@ -462,10 +462,14 @@ connected"), progress reported per drain, and a node leaving the plan abandons t
 its FPGA config block at submission (on that thread, between MIDI chunks, as the expansion volume reaches it, and only
 on a turn quiet for the read: nothing outstanding on the reliable link, or a cart silent for 250 ms since its oldest
 outstanding frame first went out, as one at its menu is), so a transfer a running game will refuse is refused without
-pausing the stream and dropping the block's notes. The engine keeps at most `kMaxJobs` (64) outstanding,
-engine-wide back-pressure that leaves room for every completion, and a request names a capability from the one reserved
-id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`), so the engine asks a node only by an id it
-knows and never casts an answer.
+pausing the stream and dropping the block's notes.
+The cart node keeps books on the notes the cart holds: it re-sends at frame 0 the note-offs a pause dropped, and its
+destroy hands what is still sounding to the link (`CartLink::releaseNotes`), whose serial thread writes their note-offs
+behind every byte pushed before the call (a disconnect writes them before the port closes; a link that is down drops
+them), so a node leaving the plan mid-note leaves no tone on the console. The engine keeps at most `kMaxJobs` (64)
+outstanding, engine-wide back-pressure that leaves room for every completion, and a request names a capability from
+the one reserved id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`), so the engine asks a node only
+by an id it knows and never casts an answer.
 
 ### The system nodes' settings and params
 

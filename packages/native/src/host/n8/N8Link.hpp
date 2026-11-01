@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <bitset>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -108,6 +109,15 @@ public:
     // Chunks a stream that stopped after a job (AfterJob::Stop) found in its ring and threw away: pushes that raced the
     // pause's start, and so reached the ring after its drain. Counted in pushesDropped() too.
     std::uint64_t chunksDiscarded() const { return chunksDiscarded_.load(std::memory_order_relaxed); }
+    // The notes a cart holds, one bit a note (channel * 128 + note), as rp.host.devices/1's CartNotes.
+    using NoteSet = std::bitset<16 * 128>;
+    // [control] Send each of `notes` a note-off (0x8n, note, 0) from the serial thread: after every chunk pushed before
+    // this call has gone out, so a note-on still waiting for its release time cannot follow its own release, framed
+    // when the link is reliable, never during a job's pause (the next streaming turn writes them), and on a disconnect
+    // before the port closes. Dropped when no serial thread runs (the link is down) and when the stream stops by
+    // itself (a failed write, an upload's boot: a fresh ROM holds no notes). How a cart node leaving the plan releases
+    // what it held: its destroy runs on the control thread, which may not push into the audio thread's ring.
+    void          releaseNotes(const NoteSet& notes);
     bool          connect(const std::string& port);  // open + handshake + spawn the serial thread
     // Stop + join the serial thread, close the port. With a paused job running the join waits for the job's current
     // step to end (see PausedJob): a caller on a UI thread (Settings > N8's Connect and port rows) should not offer it
@@ -161,6 +171,7 @@ private:
     void serialLoop();
     void streamLoop();                                   // serial thread: the probe, then stream until stopped
     void writeChunk(const TimedChunk& chunk);            // serial thread: one chunk out, framed when reliable
+    void writeReleases(bool stopping);                   // serial thread: releaseNotes' note-offs, once they may go
     void runJob(TimedChunk& chunk, bool& have);          // serial thread: pause, run the pending job, resume
     void drainForJob(TimedChunk& chunk, bool& have);     // serial thread: what was pushed before the pause goes out
     void stopStreaming();                                // serial thread: stop and close the port (AfterJob::Stop)
@@ -180,6 +191,11 @@ private:
     std::atomic<std::uint64_t> bytesForwarded_{0};
     std::atomic<std::uint64_t> pushesDropped_{0};
     std::atomic<std::uint64_t> chunksDiscarded_{0};
+    // Every chunk push() put in the ring (written on the audio thread), and every one the serial thread took out and
+    // wrote (its own, reset to the first at each connect): a release waits until the second reaches what the first
+    // read when it was asked, so it goes out behind everything pushed before it.
+    std::atomic<std::uint64_t> chunksPushed_{0};
+    std::uint64_t              chunksWritten_ = 0;
     // The earliest moment OnControl runs again after a throw (see the loop in streamLoop), and a wake a caller asked
     // for since the last quiet turn: the first is serial-thread state, the second is stored from any thread.
     std::int64_t               controlRetryAtNs_ = 0;
@@ -194,6 +210,12 @@ private:
     PausedJob                  job_;
     bool                       acceptingJobs_ = false;  // under jobMutex_: the serial thread is running and will poll
     std::atomic<bool>          jobPending_{false};
+    // The notes releaseNotes was given and the serial thread has not written yet, and the push count they wait behind,
+    // both under jobMutex_ (a control thread and the serial thread; the audio thread never takes it). The flag is what
+    // the serial thread polls, so a turn with nothing to release takes no lock.
+    NoteSet                    releasePending_;
+    std::uint64_t              releaseAfter_ = 0;
+    std::atomic<bool>          releaseWanted_{false};
 
     mutable std::mutex meta_;      // guards portName_ + error_ (set on connect/disconnect/error, read by status)
     std::string        portName_;

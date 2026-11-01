@@ -103,9 +103,15 @@ cart and the engine stays neutral.
 job on its own thread; removing the node releases its handle at reclaim, on the control thread, a job it still runs
 failing there rather than at the next publish. A pause a job makes drops and counts the block's pushes, and the node
 re-sends the note-offs a pause dropped for notes the cart holds, at frame 0 of the first block the link reads connected
-again, so no note is left sounding. Each plugin instance keeps its own `N8Host` and the port stays exclusive, so with
-two instances the first to connect has the cart and the other's handle stays disconnected with the open error in its
-`lastError`.
+again, so no note is left sounding. Leaving the plan with notes held (the setting turned off, the NES removed or
+replaced, the drive moving, a project loaded or closed while the DAW plays) is the same hazard with no later block to
+pay it in, so the node's destroy hands what it holds to the link (`CartLink::releaseNotes`), whose serial thread writes
+their note-offs behind every byte pushed before the call, on a streaming turn (never inside a job's pause), and before
+the port closes on a disconnect; a link that is down drops them. The destroy runs on the control thread after the swap
+and may not push into the ring itself, as the audio thread, or the node taking over, may be pushing then. A handover
+releases the old node's notes and starts the new node's books empty, so a key held across it sounds again at its next
+note-on. Each plugin instance keeps its own `N8Host` and the port stays exclusive, so with two instances the first to
+connect has the cart and the other's handle stays disconnected with the open error in its `lastError`.
 
 ## 5. `rp.launchpad.surface-in` and `rp.launchpad.surface-out`
 
@@ -357,11 +363,12 @@ Each correction is in place; this is the list.
 
 - **Section 3**: "reconnecting after a reset or an SD operation" is a reset, or a job that stops the link (an upload);
   the engine's losses gained `stageSystemMidi` itself, and the two devices bind through a typed acquire each.
-- **Section 4**: the staging command addresses a node, not its input (`rp.stage/1` chooses the door); the node
-  declares `unique` as well as `threads`; a removed node abandons its job at reclaim; a pause never leaves a note
-  sounding; the expansion volume is a standing value the link's serial thread applies, and the last node to release the
-  link puts it back to AUTO, so a project that stops driving the cart leaves the register to the cart rather than at the
-  level it last played at (a handover never reaches zero: the new node acquires before the old one is reclaimed).
+- **Section 4**: the staging command addresses a node, not its input (`rp.stage/1` chooses the door); the node declares
+  `unique` as well as `threads`; a removed node abandons its job at reclaim; a pause never leaves a note sounding, and
+  neither does the node leaving the plan (its held notes go to the link, which writes their note-offs); the expansion
+  volume is a standing value the link's serial thread applies, and the last node to release the link puts it back to
+  AUTO, so a project that stops driving the cart leaves the register to the cart rather than at the level it last played
+  at (a handover never reaches zero: the new node acquires before the old one is reclaimed).
 - **Section 5**: one `rp.launchpad.surface` became `rp.launchpad.surface-in` / `-out` (the cycle), each unique, with
   the first-block discard.
 - **Section 6**: `sram/1` on the cart reads and writes the SD card's save file at the menu, not the cart's memory (the
@@ -435,6 +442,17 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   table read off the screen against the save; and a ROM uploaded through the job booted in 2.8 s with the header
   matching the file. The rig was left at a fresh menu with every scratch file deleted. The probe's quiet-turn read has
   not been run on a cart.
+- **A cart node leaving the plan left its notes sounding** (section 4, the final review). The node paid owed note-offs
+  after a pause, but its destructor only abandoned and released, and with the no-NES raw fallback gone nothing else
+  could carry the DAW's eventual note-off to the cart: a note held when the setting went off, the NES was removed or
+  replaced, the drive moved or a project was loaded or closed mid-note sounded on the console until a power-cycle. The
+  node now hands its `sounding` books to the link, which keeps them under the job mutex beside the push count they wait
+  behind (the audio thread counts each chunk it puts in the ring, the serial thread each one it writes), so a note-on
+  still waiting for its release time cannot follow its own note-off. The serial thread writes them on its next streaming
+  turn once that count is reached, framed when the link is reliable; a job's pause holds them until streaming resumes, a
+  disconnect writes them before the port closes (so a plugin closed while the cart plays leaves nothing held) without
+  waiting for the ring it is throwing away, and a link with no serial thread, or one whose stream stopped by itself (a
+  failed write, an upload's boot), drops them.
 - **The surface link's receive ring rode a host's stack** (stage 1). 256 slots of one 562-byte message is 140 KiB, and
   the link is a member of the SDL standalone's `AppState`, which is a local of `main`: Windows gives that thread 1 MiB
   of stack, and every suite in this tree runs where it is 8, so nothing here would have caught it. The ring is one
@@ -458,23 +476,26 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   each emulated console against the system-id RPCs and the ROM file, the ROM title's printable-ASCII stop, a node that
   presents no capability, a battery dump holding what `readSram` answers, block-boundary completion (or in the call
   while no audio thread runs), removal and discard, the 64 bound, a real device thread's progress, a warmed block with
-  writes in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion cannot leave
-  the engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`, the
-  expansion volume, owed note-offs, the jobs and their refusals, abandonment, `threads`, `unique`, a warmed block),
-  `[launchpad]` (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the first-block discard,
-  uniqueness, `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a staged message
-  reaching the node the running plan places under the id, in both orders relative to the swap that changes which plan
-  runs, and one added later). The protocol cases run the surface wiring and hold their recorded digests; the goldens'
-  documents moved with the fan-out and the surface nodes, and their driven runs hold each cart node's pushes to what
-  the system it drives had fed its own FIFO, byte for byte, one cart per document as the compare requires.
+  writes in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion cannot leave the
+  engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`, the expansion
+  volume, owed note-offs, the held notes a removal, a teardown and a handover hand the link, the jobs and their
+  refusals, abandonment, `threads`, `unique`, a warmed block), `[launchpad]` (`Surface.test.cpp`: the drain, the output,
+  `connected`, the queue's bound, the first-block discard, uniqueness, `threads`, acquire balance, a warmed block) and
+  `[stage]` (`StageNode.test.cpp`: a staged message reaching the node the running plan places under the id, in both
+  orders relative to the swap that changes which plan runs, and one added later). The protocol cases run the surface
+  wiring and hold their recorded digests; the goldens' documents moved with the fan-out and the surface nodes, and their
+  driven runs hold each cart node's pushes to what the system it drives had fed its own FIFO, byte for byte, one cart
+  per document as the compare requires.
 - `retroplug-n8-test` gained `[cart-jobs]` (`N8CartJobs.test.cpp`: the pause and its ack bound, battery file dumps and
-  restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws),
-  a game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a cart reset
-  to its menu with a frame its game never acknowledged still taking a job, a link that never goes quiet refused for
-  that, a probe's wake outlasting a busy turn, a port that throws as a job starts and after it ran, a job whose `run`
-  throws run once, the JSON a name reaches, an abandoned dump), and the two link adapters have their own files:
-  `N8CartLink.test.cpp` (the volume's retry, its once-a-second bound, the probe's turn of its own, the last release's
-  AUTO) and `LaunchpadSurfaceLink.test.cpp` (the ring's inbound losses counted apart from `dropped`).
+  restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws), a
+  game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a cart reset to
+  its menu with a frame its game never acknowledged still taking a job, a link that never goes quiet refused for that, a
+  probe's wake outlasting a busy turn, a port that throws as a job starts and after it ran, a job whose `run` throws run
+  once, the JSON a name reaches, an abandoned dump) and `[cart-release]` (a leaving node's held notes: behind a note-on
+  still waiting for its release time, framed on the reliable link, held through a job's pause, written by a disconnect,
+  dropped by a link that is down), and the two link adapters have their own files: `N8CartLink.test.cpp` (the volume's
+  retry, its once-a-second bound, the probe's turn of its own, the last release's AUTO) and
+  `LaunchpadSurfaceLink.test.cpp` (the ring's inbound losses counted apart from `dropped`).
 - TS: `test/capability/capability.test.ts` (the promises, the refusals, a close rejecting pending, progress, the full
   title, a node that presents no capability, a battery dump that is not a battery read, the wait's bound, and a queue
   leaving the pump's set), and on the real host `test-native/capability.test.ts` (two backends over one engine settling
@@ -499,6 +520,11 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
 - **The quiet rule assumes the N8 menu writes nothing unprompted on the back-channel** (unverified on a cart).
   Unsolicited bytes would keep `lastHeardNs` fresh and make a menu with stale frames read as never quiet, refusing
   every submission.
+- **A handover can cut a key the new node strikes before the old one is reclaimed.** The old node's release waits behind
+  every byte pushed when its destroy runs, the new node's first blocks among them, so a note the new node starts in the
+  block or two between the swap and the reclaim, on a key the old node still held, is released with the old one's (the
+  new node's books still hold it, and the DAW's next note-on sounds it again). Waiting behind only the old node's own
+  pushes would need the ring to say whose bytes are whose.
 - **A heavy stream into a menu can starve the probe.** The window's 48-frame re-sync clears and re-stamps the oldest
   frame's first send, so a probe needs a quiet turn between re-syncs; past about 190 messages a second (48 per
   250 ms) into a menu there is none, and the submission is refused for a link that never went quiet.

@@ -110,6 +110,7 @@ public:
         ++abandons;
         slot.abandon(owner);
     }
+    void releaseNotes(const rp::host::CartNotes& notes) override { released.push_back(notes); }
     // The device's thread: progress, then streaming back and the completion after it.
     void progress(std::uint32_t done, std::uint32_t total) { slot.progress(done, total); }
     void finish(Bytes result) {
@@ -130,6 +131,7 @@ public:
     int               abandons   = 0;
     std::vector<int>  volumes;
     std::vector<Push> pushes;
+    std::vector<rp::host::CartNotes> released;  // each release a leaving node handed over, in order
     JobRequest        lastRequest;
     DeviceJobSlot     slot;
 };
@@ -161,12 +163,14 @@ std::string fanOut(NodeRig& rig, const std::string& params = "") {
                         {"from":"cart.connected","to":"probe.control"}]})";
 }
 
-// The Engine documents: one NES, host MIDI wired to it and to the cart, the cart's params as given.
-Engine::GraphRequest cartDocument(std::vector<DocSystem>& systems, const std::string& cartParams = "") {
-    const std::string cart = rp::host::test::docs_detail::node("cart", "rp.n8.nes", "", cartParams);
+// The Engine documents: one NES, host MIDI wired to it and to the cart, the cart's params as given, the cart node
+// under `id` (another id is another node: a handover, as the drive moving to another NES is).
+Engine::GraphRequest cartDocument(std::vector<DocSystem>& systems, const std::string& cartParams = "",
+                                  const std::string& id = "cart") {
+    const std::string cart = rp::host::test::docs_detail::node(id, "rp.n8.nes", "", cartParams);
     return graphRequest(stereoDocument(systems, DocExtras{{docNode("midi-in", "rp.host.midi-in"), cart},
                                                           {docWire("midi-in.midi", "sys-1.midi"),
-                                                           docWire("midi-in.midi", "cart.midi")}}),
+                                                           docWire("midi-in.midi", id + ".midi")}}),
                         {1});
 }
 // The same without the cart, so publishing it removes the node.
@@ -515,6 +519,77 @@ TEST_CASE("a cart node removed during a job abandons it: it fails at once, and t
     cart.finish(Bytes(16, 1));
     CHECK_FALSE(cart.slot.busy());
     CHECK(e.drainJobs().empty());
+}
+
+TEST_CASE("a cart node leaving the plan hands its link the notes the cart holds; one taking over starts with none",
+          "[engine-graph][n8-node]") {
+    FakeCart               cart;
+    Engine                 e(kRate);
+    rp::host::test::Roms   roms;
+    std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
+    withRoms(e, systems, roms);
+    e.setDeviceLinks(&cart, nullptr);
+    REQUIRE(e.setGraph(cartDocument(systems)).ok);
+    block(e);
+    const auto notes = [](std::initializer_list<std::size_t> held) {
+        rp::host::CartNotes n;
+        for (std::size_t note : held) n.set(note);
+        return n;
+    };
+
+    SECTION("removed: what it held, its note-offs a pause dropped among them") {
+        // 60 and 64 on channel 1 and 67 on channel 2; 64 released, and 67's note-off lost to a job's pause, so the
+        // cart still holds 60 and 67 when the plan without the node replaces this one.
+        e.stageMidi(0, Bytes{0x90, 60, 100});
+        e.stageMidi(1, Bytes{0x90, 64, 100});
+        e.stageMidi(2, Bytes{0x91, 67, 100});
+        e.stageMidi(3, Bytes{0x80, 64, 0});
+        block(e);
+        cart.jobRunning = true;
+        e.stageMidi(0, Bytes{0x81, 67, 0});
+        block(e);
+        cart.jobRunning = false;
+        REQUIRE(e.setGraph(noCartDocument(systems)).ok);
+        block(e);
+        block(e);  // the plan that held it is reclaimed here at the latest
+        REQUIRE(cart.released.size() == 1);
+        CHECK(cart.released[0] == notes({60, 128 + 67}));
+        CHECK(cart.releases == 1);
+    }
+    SECTION("a host's teardown: the same release, from clearGraph") {
+        e.stageMidi(0, Bytes{0x9F, 127, 1});
+        block(e);
+        e.clearGraph();
+        REQUIRE(cart.released.size() == 1);
+        CHECK(cart.released[0] == notes({15 * 128 + 127}));
+    }
+    SECTION("a handover: the old node releases what it held, the new one only what it pushed itself") {
+        e.stageMidi(0, Bytes{0x90, 60, 100});
+        block(e);
+        REQUIRE(e.setGraph(cartDocument(systems, "", "cart-2")).ok);
+        e.stageMidi(0, Bytes{0x90, 62, 100});
+        block(e);
+        block(e);
+        REQUIRE(cart.released.size() == 1);
+        CHECK(cart.released[0] == notes({60}));
+        CHECK(cart.acquires == 2);
+        CHECK(cart.releases == 1);
+        REQUIRE(e.setGraph(noCartDocument(systems)).ok);
+        block(e);
+        block(e);
+        REQUIRE(cart.released.size() == 2);
+        CHECK(cart.released[1] == notes({62}));
+    }
+    SECTION("nothing held: nothing handed over") {
+        e.stageMidi(0, Bytes{0x90, 60, 100});
+        e.stageMidi(4, Bytes{0x90, 60, 0});  // a note-on at velocity 0 is a note-off
+        block(e);
+        REQUIRE(e.setGraph(noCartDocument(systems)).ok);
+        block(e);
+        block(e);
+        CHECK(cart.released.empty());
+        CHECK(cart.releases == 1);
+    }
 }
 
 TEST_CASE("a warmed block feeding a NES and its cart node allocates and frees nothing", "[engine-graph][n8-node]") {

@@ -63,6 +63,8 @@ public:
         return host_.submitCartJob(request, job, owner, error);
     }
     void abandonJobs(const void* owner) override { host_.abandonCartJobs(owner); }
+    // [control] N8Link::releaseNotes: the serial thread writes their note-offs behind what was already pushed.
+    void releaseNotes(const rp::host::CartNotes& notes) override { host_.link().releaseNotes(notes); }
 
 private:
     N8Host&                    host_;

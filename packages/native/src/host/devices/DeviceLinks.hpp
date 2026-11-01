@@ -9,8 +9,9 @@
 //
 // The link outlives every plan whose nodes hold a handle: a host tears its plans down while its links are alive, and a
 // reactivate keeps the handle across it. So a node may use its handle in destroy, not only give it back: a job it
-// cancels, a queue it flushes, a connected() or dropped() it reads.
+// cancels, the notes a cart still holds that it hands over, a queue it flushes, a connected() or dropped() it reads.
 
+#include <bitset>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -37,6 +38,10 @@ struct DeviceMessage {
     std::uint16_t size                     = 0;
     std::uint8_t  data[kMaxDeviceMessage] = {};
 };
+
+// The notes a cart holds, one bit a note: channel * 128 + note, 16 channels of 128 (what rp.n8.nes keeps its books in,
+// and what it hands its link when it leaves the plan holding some).
+using CartNotes = std::bitset<16 * 128>;
 
 // A cart in a real console (rp.n8.nes): the same inputs an emulated NES takes, pushed at the cart's FIFO.
 class CartLink {
@@ -79,6 +84,12 @@ public:
     // the device reports into its record no more, stopping at the next point that leaves the device coherent. Nothing
     // when it holds no job.
     virtual void abandonJobs(const void* owner) { (void)owner; }
+    // [control] The node is leaving the plan while the cart holds `notes` (it pushed their note-ons and no note-offs):
+    // the device sends each a note-off from its own thread, after every byte pushed before this call, so no console is
+    // left holding a tone no node will ever release. The node's destroy calls it, on the control thread after the plan
+    // swap, where it may not push itself: the audio thread (and the node taking over) may still be pushing. A link with
+    // no device, or one not streaming, drops them; nothing a node does depends on whether they went.
+    virtual void releaseNotes(const CartNotes& notes) { (void)notes; }
 
     // There is deliberately no error string here: why a cart would not open is the host UI's (it reads N8Host's
     // lastError through Settings > N8), not something a document's node can act on.
