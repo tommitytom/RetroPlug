@@ -5,8 +5,8 @@
 // what a node reads off dropped(); and the LED traffic a node pushes is queued for the host's main loop exactly as
 // LaunchpadLink queues it.
 //
-// The slots are the point: the block thread copies out of fixed storage and frees nothing, where the standalone's
-// vector drain hands it a vector per message to destroy. No rtmidi, no MIDI system, no hardware.
+// The slots are the point: the block thread copies out of the link's fixed slots and frees nothing, so a drain costs
+// the audio thread no allocation at all. No rtmidi, no MIDI system, no hardware.
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
@@ -121,8 +121,9 @@ TEST_CASE("LaunchpadSurfaceLink: a full ring drops and counts what the device se
     REQUIRE(link.connect("in", "out"));
     LaunchpadSurfaceLink surface(link);
 
-    // The ring holds LaunchpadLink's capacity less its one free slot: every message past that is dropped, not queued.
-    constexpr std::size_t kSlots = 256;
+    // The ring holds LaunchpadLink::kInCapacity slots less its one free slot: every message past that is dropped, not
+    // queued.
+    constexpr std::size_t kSlots = LaunchpadLink::kInCapacity;
     constexpr std::size_t kHeld  = kSlots - 1;
     const std::uint8_t    m[2]   = {0x90, 0x51};
     for (std::size_t i = 0; i < kSlots + 8; ++i) log.receiver(m, sizeof m);
@@ -181,7 +182,8 @@ TEST_CASE("LaunchpadSurfaceLink: a push while the device is gone goes nowhere an
     REQUIRE(surface.dropped() == 0);
 
     // The device goes away: the push the block thread makes reaches nothing, and the link counts it, which is what a
-    // node reads off dropped().
+    // node reads off dropped(). The link keeps that count apart from the frames it lost while attached
+    // (messagesDetached), and the handle's dropped() is the sum: one number for what the device never got.
     link.disconnect();
     const std::uint8_t led[3] = {0x90, 0x51, 0x15};
     surface.pushOutput(led, sizeof led);

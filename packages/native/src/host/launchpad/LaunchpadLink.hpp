@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -34,9 +33,10 @@ public:
 // Three decisions worth knowing before touching anything here:
 //
 //   1. **Both rings are POD, because one end of each is the audio thread.** Device -> audio keeps one message per
-//      fixed slot (rp::host::DeviceMessage): the producer is the backend's callback thread, where allocating would be
-//      that thread's own problem, and the audio thread copies bytes out and frees nothing (a vector per slot would be
-//      freed there by whoever dropped it). Audio -> main is an SpscRing of fixed slots for the same reason.
+//      fixed slot (rp::host::DeviceMessage) in a single allocation made at construction: the producer is the
+//      backend's callback thread, where allocating would be that thread's own problem, and the audio thread copies
+//      bytes out and frees nothing (a vector per slot would be freed there by whoever dropped it). Audio -> main is
+//      an SpscRing of fixed slots for the same reason.
 //   2. **LEDs leave on the main loop, not the audio thread.** A frame of latency is invisible on a light,
 //      and it keeps a possible 538-byte USB write off the RT path without adding a thread to own.
 //   3. **The farewell is an opaque blob.** Programmer mode locks the device's front panel, so the message
@@ -56,6 +56,12 @@ public:
     // up; a longer message is dropped and counted rather than truncated into nonsense. The same bound sizes a
     // received slot, in either direction: the device's own replies are far shorter.
     static constexpr std::size_t kMaxOutMessage = rp::host::kMaxDeviceMessage;
+
+    // The messages the link holds for the block thread, in slots of one kMaxDeviceMessage: 256 x 562 bytes is 140
+    // KiB, and a host's link is a member of its own state (the SDL standalone's AppState is a local of main, whose
+    // thread Windows gives 1 MiB of stack), so the ring is allocated once when the link is built and never rides a
+    // stack. Public so a case that fills it counts its own capacity rather than spelling the number.
+    static constexpr std::size_t kInCapacity = 256;
 
     explicit LaunchpadLink(PortFactory factory);
     ~LaunchpadLink();
@@ -110,8 +116,7 @@ private:
     // device -> audio. Fixed-capacity SPSC ring of fixed slots: the producer (backend callback) copies the bytes into
     // a slot, the consumer (audio thread) copies them out, so neither end of the block thread's path allocates or
     // frees. Overflow, and a message wider than a slot, drop and count.
-    static constexpr std::size_t kInCapacity = 256;
-    std::array<rp::host::DeviceMessage, kInCapacity> inRing_;
+    std::unique_ptr<rp::host::DeviceMessage[]> inRing_;
     std::atomic<std::size_t>         inHead_{0};  // consumer index (audio thread)
     std::atomic<std::size_t>         inTail_{0};  // producer index (callback thread)
 

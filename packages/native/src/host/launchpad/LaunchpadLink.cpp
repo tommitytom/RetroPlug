@@ -8,7 +8,8 @@
 
 namespace retroplug {
 
-LaunchpadLink::LaunchpadLink(PortFactory factory) : factory_(std::move(factory)) {}
+LaunchpadLink::LaunchpadLink(PortFactory factory)
+    : factory_(std::move(factory)), inRing_(std::make_unique<rp::host::DeviceMessage[]>(kInCapacity)) {}
 
 LaunchpadLink::~LaunchpadLink() { disconnect(); }
 
