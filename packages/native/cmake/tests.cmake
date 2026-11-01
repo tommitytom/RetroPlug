@@ -68,6 +68,7 @@ retroplug_add_test_binary(
              test/audio/NesTeardown.test.cpp           # the NES twin of SMS's construct/destruct guard
              test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
              test/audio/EngineInvoker.test.cpp         # the teardown discards a staged-message payload
+             test/audio/Dither.test.cpp                # the kit TPDF dithers are seeded from their input
              test/graph/CountingAllocator.cpp          # replaces operator new / delete: the N8 FIFO's [alloc] case
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
