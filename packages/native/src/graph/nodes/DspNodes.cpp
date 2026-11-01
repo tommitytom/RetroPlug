@@ -1,5 +1,7 @@
 #include "graph/nodes/DspNodes.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -169,6 +171,14 @@ struct Gain {
 // computes the coefficients the RBJ formulas give there; the node clamps nothing of its own, a frequency above
 // Nyquist included, because the kit path hands the spec's frequency straight to the kernel and a clamp here would be a
 // different byte for the same kit.
+//
+// Above Nyquist the RBJ formulas put the poles outside the unit circle, so the kernel's unclamped feedback grows until
+// the state is infinite and then NaN, and the clamp writes a NaN through (`std::clamp` of a NaN is the NaN). That is
+// reachable at the 22050 and 32000 Hz rates the standalone offers, where the frequency knob's top half is above
+// Nyquist, and nothing between the node and the host output rejects a non-finite sample. So the node guards the state
+// and leaves the coefficients alone: a channel whose filter came out of a block with any of its four state values not
+// finite has that filter reset and its block written as silence, so a sweep past Nyquist cannot poison the stream, and
+// a frequency that comes back into range is a fresh filter's from the next block on.
 struct Biquad {
     static constexpr const char* id = "rp.dsp.biquad";
     static constexpr const char* name = "Biquad";
@@ -240,8 +250,18 @@ struct Biquad {
             q = qq;
             gainDb = g;
         }
-        for (std::uint32_t c = 0; c < outputs.out.channel_count && c < filters.size(); ++c)
-            filters[c].process(inputs.in[c], outputs.out[c], b.frames());
+        for (std::uint32_t c = 0; c < outputs.out.channel_count && c < filters.size(); ++c) {
+            rp::dsp::Biquad& filter = filters[c];
+            float* const     y = outputs.out[c];
+            filter.process(inputs.in[c], y, b.frames());
+            if (!std::isfinite(filter.x1) || !std::isfinite(filter.x2) || !std::isfinite(filter.y1) ||
+                !std::isfinite(filter.y2)) {
+                // Nothing of a block whose filter ran away is worth keeping: the state is what a poisoned filter is,
+                // and the block may already hold the NaNs it wrote, which the clamp passed through.
+                filter.reset();
+                std::fill(y, y + b.frames(), 0.0f);
+            }
+        }
     }
 };
 

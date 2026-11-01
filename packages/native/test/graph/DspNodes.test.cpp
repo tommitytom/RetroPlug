@@ -88,10 +88,12 @@ void inBlocks(std::size_t frames, const std::vector<std::size_t>& split, Run run
 }
 
 /** A rig whose plans may run blocks up to `maxFrames` frames, so a split can be compared with one call over the
- *  whole stream: GraphRig sizes its host output rows from the same number. */
+ *  whole stream: GraphRig sizes its host output rows from the same number. A rig can run at another plan rate too, for
+ *  a case about what a rate's Nyquist does to a filter. */
 struct DspRig : GraphRig {
-    explicit DspRig(rp::graph::Target target = rp::graph::Target::Desktop, std::uint32_t maxFrames = 4096)
-        : GraphRig({48000.0, maxFrames, target}, 8, nullptr, maxFrames) {}
+    explicit DspRig(rp::graph::Target target = rp::graph::Target::Desktop, std::uint32_t maxFrames = 4096,
+                    double rate = 48000.0)
+        : GraphRig({rate, maxFrames, target}, 8, nullptr, maxFrames) {}
 
     // An audio buffer resource holding one stream per channel.
     rp::graph::ResourceTable::Id buffer(const std::vector<std::vector<float>>& perChannel) {
@@ -376,6 +378,70 @@ TEST_CASE("rp.dsp.biquad recomputes its coefficients when the type changes", "[d
     carried.setup({rp::dsp::BiquadType::HighPass, 48000.0f, 1000.0f, 1.0f, 0.0f});
     carried.process(in.data() + 64, filtered.data(), 64);
     CHECK(firstDifference(filtered, changed) != -1);
+}
+
+TEST_CASE("rp.dsp.biquad guards the state a sweep past Nyquist poisons", "[dsp-nodes]") {
+    // The standalone offers 22050 Hz, where the frequency knob's top half is above Nyquist (11025 Hz): the RBJ
+    // formulas put the poles outside the unit circle, the kernel's feedback grows until the state is infinite and then
+    // NaN, and its clamp passes a NaN through. Nothing between the node and the host output rejects a non-finite
+    // sample, so the node resets a channel's filter whose state came out of a block non-finite and writes that block
+    // as silence: the sweep cannot poison the stream, and the filter recovers when the frequency comes back.
+    constexpr std::uint32_t kBlock = 64, kBlocks = 32;
+    constexpr std::uint32_t kSweep = 8, kBack = 16;  // the blocks the frequency changes before: in range, past Nyquist
+    const std::vector<float> in = signal(kBlock * kBlocks);
+    const auto frequencyOf = [](std::uint32_t block) { return block >= kSweep && block < kBack ? 20000.0f : 2000.0f; };
+
+    DspRig     rig(rp::graph::Target::Desktop, 4096, 22050.0);
+    const auto sample = rig.buffer(in, 1);
+    REQUIRE(rig.play(sample, "rp.dsp.biquad", R"({"channels":1,"type":"low-pass"},"params":{"frequency":2000,"q":1})"));
+
+    // One block of a filter following the plan's coefficient schedule, with the node's guard: a state that is not
+    // finite is reset and the block silenced.
+    rp::dsp::Biquad reference;
+    reference.init({rp::dsp::BiquadType::LowPass, 22050.0f, frequencyOf(0), 1.0f, 0.0f});
+    const auto step = [&](rp::dsp::Biquad& filter, std::uint32_t block, float* out) {
+        if (block > 0 && frequencyOf(block) != frequencyOf(block - 1))
+            filter.setup({rp::dsp::BiquadType::LowPass, 22050.0f, frequencyOf(block), 1.0f, 0.0f});
+        filter.process(in.data() + block * kBlock, out, kBlock);
+        if (std::isfinite(filter.x1) && std::isfinite(filter.x2) && std::isfinite(filter.y1) &&
+            std::isfinite(filter.y2))
+            return false;
+        filter.reset();
+        std::fill(out, out + kBlock, 0.0f);
+        return true;
+    };
+
+    std::vector<float>       got;
+    std::vector<float>       block(kBlock);
+    std::ptrdiff_t           lastReset = -1;
+    for (std::uint32_t k = 0; k < kBlocks; ++k) {
+        if (k == kSweep) REQUIRE(rig.host->setParam("x", "frequency", 20000.0));
+        if (k == kBack) REQUIRE(rig.host->setParam("x", "frequency", 2000.0));
+        rig.run(kBlock);
+        const std::vector<float> running = rig.block(0, kBlock);
+        INFO("block " << k);
+        if (step(reference, k, block.data())) lastReset = k;
+        CHECK(firstDifference(block, running) == -1);
+        got.insert(got.end(), running.begin(), running.end());
+    }
+    // The guard fired: without it the stream is NaN from the first runaway block to the end.
+    REQUIRE(lastReset >= static_cast<std::ptrdiff_t>(kSweep));
+    for (const float v : got) CHECK(std::isfinite(v));
+
+    // And the reset is a reset: from the block after the last one, a filter built fresh (no history at all) and
+    // handed the same coefficient schedule gives the node's stream sample for sample, which a filter still carrying
+    // the poisoned state could not.
+    rp::dsp::Biquad fresh;
+    fresh.init({rp::dsp::BiquadType::LowPass, 22050.0f, frequencyOf(static_cast<std::uint32_t>(lastReset) + 1), 1.0f,
+                0.0f});
+    for (std::uint32_t k = static_cast<std::uint32_t>(lastReset) + 1; k < kBlocks; ++k) {
+        if (k > static_cast<std::uint32_t>(lastReset) + 1 && frequencyOf(k) != frequencyOf(k - 1))
+            fresh.setup({rp::dsp::BiquadType::LowPass, 22050.0f, frequencyOf(k), 1.0f, 0.0f});
+        fresh.process(in.data() + k * kBlock, block.data(), kBlock);
+        INFO("recovery block " << k);
+        CHECK(firstDifference(block, std::vector<float>(got.begin() + k * kBlock, got.begin() + (k + 1) * kBlock)) ==
+              -1);
+    }
 }
 
 TEST_CASE("rp.dsp.dither through a plan is its kernel's quantised levels, whole or split any way", "[dsp-nodes]") {
