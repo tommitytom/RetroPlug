@@ -166,24 +166,35 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
                 loadedMapIndex_ = -1;
             }
         }
-        applyExpVol(edio, mapper);
+        applyExpVol(edio, expVol_.load(std::memory_order_relaxed), mapper);
         expVolApplied_.store(generation, std::memory_order_relaxed);
     });
     // A value a param changed while the link is up: the serial thread owns the port, so it writes the standing value
     // on its own turn, between MIDI chunks, and marks the generation it wrote. A throw leaves the generation behind,
     // so the next turn tries again (N8Link catches it: a config write must not take the MIDI link down).
-    link_.setOnControl([this](Edio& edio) {
+    link_.setOnControl([this](Edio& edio, bool backChannelQuiet) {
         // The config block a submission's refusal reads (probeMenu). Taken here, between chunks, for the reason the
         // volume is: a system-region read on the thread that owns the port, putting no byte in a running game's FIFO.
-        // Ahead of the volume, so a config write that keeps failing cannot starve it.
+        // Ahead of the volume, and a submission asks the link for a turn of its own (N8Link::wakeControl), so a config
+        // write that keeps failing does not hold it up.
+        //
+        // Both reads below wait for a turn with nothing outstanding on the reliable link: an ack answering one of
+        // those frames can arrive inside a read, and would be taken for the reply's first bytes while the reply's tail
+        // was left in the input to be parsed as link traffic. N8Link services the link before this turn and passes
+        // whether it is quiet; the probe's own deadline covers a cart that never goes quiet.
         const unsigned probe = menuProbeGeneration_.load(std::memory_order_acquire);
-        if (probe != menuProbeApplied_.load(std::memory_order_relaxed)) {
+        if (backChannelQuiet && probe != menuProbeApplied_.load(std::memory_order_relaxed)) {
             menuProbeIndex_.store(runningMapper(edio), std::memory_order_relaxed);
             menuProbeApplied_.store(probe, std::memory_order_release);
         }
         const unsigned generation = expVolGeneration_.load(std::memory_order_acquire);
         if (generation == expVolApplied_.load(std::memory_order_relaxed)) return;
-        applyExpVol(edio, -1);
+        const int value = expVol_.load(std::memory_order_relaxed);
+        // A standing value needs no read; Auto asks the cart which mapper runs, so it has the probe's exposure. The
+        // value is the one read here, not a second read inside applyExpVol: a param moving it to Auto between the two
+        // would take the read past this turn's guard.
+        if (value == EXP_VOL_AUTO && !backChannelQuiet) return;
+        applyExpVol(edio, value, -1);
         expVolApplied_.store(generation, std::memory_order_relaxed);
     });
 }
@@ -261,8 +272,7 @@ int N8Host::probeMenu() {
     return menuProbeIndex_.load(std::memory_order_relaxed);
 }
 
-void N8Host::applyExpVol(Edio& edio, int mapperHint) {
-    int value = expVol_.load(std::memory_order_relaxed);
+void N8Host::applyExpVol(Edio& edio, int value, int mapperHint) {
     if (value == EXP_VOL_AUTO) {
         const int mapper = mapperHint >= 0 ? mapperHint : runningMapper(edio);
         // Not an expansion-audio cart (or nothing readable to say it is): leave the register as the N8 OS set
@@ -535,7 +545,7 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
             // The game runs. The mapload reloaded the OS's stored master_vol, so set ours on the ROM we hold, whose
             // header names the mapper outright; best-effort, as every expansion-volume write is.
             try {
-                applyExpVol(*edio, inesMapper(image));
+                applyExpVol(*edio, expVol_.load(std::memory_order_relaxed), inesMapper(image));
             } catch (const std::exception&) {
             }
             {

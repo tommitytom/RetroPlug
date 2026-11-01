@@ -52,6 +52,7 @@ struct FakeN8 {
     bool                     menu = true;           // the file browser is showing (it answers '*' commands)
     bool                     linkRom = false;       // the running game answers the reliable link (BlipToaster)
     bool                     linkDeaf = false;      // ... until it stops answering (it read no frame and acks nothing)
+    int                      linkAckDelayMs = 0;    // how long the game takes to write a frame's ack back
     int                      fileDelayMs = 0;       // likewise each SD file write
     int                      fileReadDelayMs = 0;   // likewise each SD file read block
     bool                     failNextWrite = false; // the next SD file write answers its first block with an error
@@ -109,6 +110,7 @@ struct FakeN8Port : ISerialPort {
     }
     std::size_t read(std::uint8_t* b, std::size_t n, int) override {
         std::lock_guard<std::mutex> l(dev_.mu);
+        releaseAcks(true);  // whatever the game has had time to write since the last read
         std::size_t i = 0;
         while (i < n && !out_.empty()) {
             b[i++] = out_.front();
@@ -129,8 +131,37 @@ private:
     }
     void reply(std::initializer_list<std::uint8_t> bytes) { out_.insert(out_.end(), bytes); }
 
+    // An ack the game still owes the link: it writes one when its FIFO runs empty after a frame, so the ack can be
+    // in its own queue when the host's next command arrives, and the MCU puts it ahead of that command's reply.
+    struct PendingAck {
+        std::chrono::steady_clock::time_point due;
+        std::deque<std::uint8_t>              bytes;
+    };
+    void replyAck(std::initializer_list<std::uint8_t> bytes) {
+        if (dev_.linkAckDelayMs <= 0) {
+            reply(bytes);
+            return;
+        }
+        acks_.push_back({std::chrono::steady_clock::now() + std::chrono::milliseconds(dev_.linkAckDelayMs),
+                         std::deque<std::uint8_t>(bytes)});
+    }
+    // Hand the host the acks the game has written: only those now due, or everything it still owes - what a command
+    // arriving first sees, since the cart answers it behind what its queue holds.
+    void releaseAcks(bool dueOnly) {
+        const auto now = std::chrono::steady_clock::now();
+        for (auto it = acks_.begin(); it != acks_.end();) {
+            if (!dueOnly || now >= it->due) {
+                out_.insert(out_.end(), it->bytes.begin(), it->bytes.end());
+                it = acks_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     // Consume every complete command in in_; the delay a battery read asks for, applied outside the lock.
     int parse() {
+        releaseAcks(false);  // ahead of any reply below: what the game owes a frame is written first
         int delay = 0;
         for (;;) {
             if (fileLeft_ > 0) {  // the data of a file write, a 1 KB block after each ack
@@ -298,7 +329,7 @@ private:
             case WantSync:
                 next_ = b;
                 ++dev_.syncs;
-                reply({0xF5, next_, static_cast<std::uint8_t>((next_ - 1) & 0x7F)});
+                replyAck({0xF5, next_, static_cast<std::uint8_t>((next_ - 1) & 0x7F)});
                 link_ = Idle;
                 return;
             case WantSeq:
@@ -322,7 +353,7 @@ private:
                     dev_.applied.push_back(msg_);
                     next_ = static_cast<std::uint8_t>((next_ + 1) & 0x7F);
                 }
-                reply({0xF5, next_, seq_});
+                replyAck({0xF5, next_, seq_});
                 return;
             }
         }
@@ -338,6 +369,7 @@ private:
     Bytes                    file_;
     std::size_t              fileLeft_ = 0, blockLeft_ = 0;
     Bytes                    menu_;
+    std::deque<PendingAck>   acks_;  // what the game owes the link, in the order it will write it
     std::string              menuPath_;
     enum { Idle, WantSync, WantSeq, InMsg, WantSum } link_ = Idle;
     std::uint8_t             next_ = 0, seq_ = 0;
@@ -697,6 +729,87 @@ TEST_CASE("the reliable link keeps its sequence across a pause: no new sync, the
     CHECK(rig.host.link().reliable());
 }
 
+TEST_CASE("the menu probe waits out an ack the game still owes, so its config read sees only its reply",
+          "[n8][cart-jobs]") {
+    using Clock = std::chrono::steady_clock;
+    const auto ms = [](Clock::time_point t) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count();
+    };
+    // A game runs, the link is up, and the game writes a frame's ack a little after the host writes the frame, so the
+    // ack is still in the cart's queue when a submission's config read arrives: the cart's MCU puts what it owes ahead
+    // of the reply. Reading across that is what a probe must not do - the ack becomes the read's first bytes, and the
+    // reply's own tail is left in the input to be parsed as link traffic.
+    //
+    // The last three bytes of the config block are an ack that names a frame two ahead, so a tail parsed as link
+    // traffic would point the sequence past the frame the game is about to acknowledge.
+    const auto cfgTail = [](FakeN8& dev) {
+        dev.cfg[13] = 0xF5;
+        dev.cfg[14] = 0x7F;
+        dev.cfg[15] = 0x00;
+    };
+
+    SECTION("the probe waits, so the config read answers the menu") {
+        Rig rig;
+        rig.dev.menu = false;
+        rig.dev.linkRom = true;  // BlipToaster, which answers the probe
+        rig.dev.cfg[0] = 0xFF;   // the config block says the menu, so the job is taken (the fake's combination)
+        rig.dev.cfg[2] = 0;
+        cfgTail(rig.dev);
+        rig.dev.linkAckDelayMs = 60;
+        rig.dev.files[kGameBattery] = saveOf(1024, 3);
+        rig.connect();
+        REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+
+        rig.push({0x90, 0x3C, 0x7F});
+        REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
+        Job job;
+        const auto t0 = Clock::now();
+        REQUIRE(rig.submit(battery("dump"), job));
+        CHECK(ms(t0) >= 30);  // it waited for the ack the game still owed, then read the block
+        REQUIRE(waitUntil([&] { return job.finished(); }));
+        CHECK(job.state.load() == Job::Done);
+        CHECK(job.result == saveOf(1024, 3));
+        CHECK(rig.host.link().linkOutstanding() == 0);
+        CHECK(rig.host.link().linkRttMinNs() >= 0);  // the link measured the round trip: the ack was its own
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        // The frame went once. An ack the read had swallowed would leave it outstanding, and a tail parsed as an ack
+        // would point the link past it: either way the frame is sent again and the game reads its seq a second time.
+        CHECK(rig.dev.frameSeqs == std::vector<int>{0});
+        CHECK(rig.dev.syncs == 2);
+        CHECK(rig.dev.applied == std::vector<Bytes>{Bytes{0x90, 0x3C, 0x7F}});
+    }
+
+    SECTION("the volume's Auto read waits for it too") {
+        Rig rig;
+        rig.dev.menu = false;
+        rig.dev.linkRom = true;
+        rig.dev.cfg[0] = 69;  // Sunsoft 5B: a cart with its own sound chip, so Auto writes unity
+        rig.dev.cfg[2] = 0;
+        cfgTail(rig.dev);
+        rig.dev.linkAckDelayMs = 60;
+        rig.connect();
+        REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+
+        rig.cart.setExpansionVolume(64);
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.cfg[3] == 64;
+        }));
+        rig.push({0x90, 0x3C, 0x7F});
+        REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
+        rig.host.setExpVol(N8Host::EXP_VOL_AUTO);
+        // Auto asks the cart which mapper runs, so that read has the probe's exposure: it waits for the ack, then
+        // reads the block and writes unity for this mapper.
+        REQUIRE(waitUntil([&] {
+            std::lock_guard<std::mutex> l(rig.dev.mu);
+            return rig.dev.cfg[3] == N8Host::EXP_VOL_UNITY;
+        }));
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        CHECK(rig.dev.frameSeqs == std::vector<int>{0});
+        CHECK(rig.dev.syncs == 2);
+    }
+}
+
 TEST_CASE("a port that throws as a job starts stops the link with the reason, and the job says the link went down",
           "[n8][cart-jobs]") {
     Rig rig;
@@ -881,8 +994,11 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
             std::lock_guard<std::mutex> l(rig.dev.mu);
             rig.dev.linkDeaf = true;
         }
-        rig.push({0x90, 0x3C, 0x7F});  // a frame the cart never acknowledges
-        REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
+        // The probe reads a quiet link, so the frame the drain has to wait for is one the drain itself writes: pushed
+        // ahead of its release time, it is still in the ring when the submission's read comes.
+        rig.host.link().setLookaheadMs(20);
+        rig.push({0x90, 0x3C, 0x7F});
+        rig.host.link().setLookaheadMs(0);
         Job job;
         const auto t0 = Clock::now();
         REQUIRE(rig.submit(battery("dump"), job));
@@ -904,8 +1020,9 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
             std::lock_guard<std::mutex> l(rig.dev.mu);
             rig.dev.linkDeaf = true;
         }
+        rig.host.link().setLookaheadMs(20);
         rig.push({0x90, 0x3C, 0x7F});
-        REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
+        rig.host.link().setLookaheadMs(0);
         Job job;
         REQUIRE(rig.submit(battery("dump"), job));
         std::this_thread::sleep_for(std::chrono::milliseconds(60));  // inside the 250 ms the drain waits for acks

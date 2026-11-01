@@ -242,13 +242,17 @@ void N8Link::streamLoop() {
     TimedChunk chunk;
     bool have = false;
     while (running_.load(std::memory_order_acquire)) {
-        // A setting that lives in an atomic (see OnControl) is applied between chunks, on the thread that owns the
-        // port. Best-effort, like the connect-time write: a config register must not take the MIDI link down.
-        if (onControl_) {
-            const std::int64_t now = nowNs();
-            if (now >= controlRetryAtNs_) {
+        try {
+            // Acks in, re-sends out, before anything else this turn: the control turn below can read a reply, and an
+            // ack that answered an outstanding frame must be behind us before it does.
+            if (rel_) serviceLink();
+            // A setting that lives in an atomic (see OnControl) is applied between chunks, on the thread that owns the
+            // port. Best-effort, like the connect-time write: a config register must not take the MIDI link down.
+            const bool woken = controlWanted_.exchange(false, std::memory_order_acquire);
+            if (onControl_ && (woken || nowNs() >= controlRetryAtNs_)) {
+                const std::int64_t now = nowNs();
                 try {
-                    onControl_(*edio_);
+                    onControl_(*edio_, !rel_ || rel_->outstanding() == 0);
                     controlRetryAtNs_ = 0;
                 } catch (const std::exception&) {
                     // A write that keeps failing is retried once a second, not once a turn: a wedged-but-open port
@@ -257,13 +261,10 @@ void N8Link::streamLoop() {
                     controlRetryAtNs_ = now + 1'000'000'000;
                 }
             }
-        }
-        if (jobPending_.load(std::memory_order_acquire)) {
-            runJob(chunk, have);
-            continue;
-        }
-        try {
-            if (rel_) serviceLink();   // acks in, re-sends out - between every chunk and while waiting for one
+            if (jobPending_.load(std::memory_order_acquire)) {
+                runJob(chunk, have);
+                continue;
+            }
             if (!have) have = ring_.tryPop(chunk);
             if (!have) {
                 std::this_thread::sleep_for(std::chrono::microseconds(200));  // ring empty

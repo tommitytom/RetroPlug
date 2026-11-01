@@ -145,11 +145,13 @@ loading it at its next boot.
 and gets a job id; completions drain from a queue TS polls. On an emulated core a read is served from the snapshot
 registry and completes at once, and a write goes through the command ring and completes at the next block boundary, as
 `readSram` / `writeRam` do today (those system-id RPCs stay as thin wrappers). On the N8 node a submission first reads
-the cart's config block on the link's worker thread, between MIDI chunks, the expansion volume's path: the three
-transfers run at the menu only, so a job a running game will refuse (or a cart whose block does not answer) is refused
-there, and the stream never pauses for it. A job that is taken then runs on that thread: streaming pauses, `connected`
-reads false for the duration and pushes are dropped and counted, the transfer runs, streaming resumes, the completion
-is posted. One job at a time per device (a second is refused busy); a job while disconnected fails "not connected". A
+the cart's config block on the link's worker thread, between MIDI chunks, the expansion volume's path, and only on a
+turn where the reliable link has nothing outstanding (an ack landing inside the read would be taken for the reply's
+first bytes): the three transfers run at the menu only, so a job a running game will refuse (or a cart whose block does
+not answer) is refused there, and the stream never pauses for it. A job that is taken then runs on that thread:
+streaming pauses, `connected` reads false for the duration and pushes are dropped and counted, the transfer runs,
+streaming resumes, the completion is posted. One job at a time per device (a second is refused busy); a job while
+disconnected fails "not connected". A
 cart's `rom.header` and `rom.title` answer at once from the image and name this host last booted, with no transfer. A
 `rom.upload` is the one job that does not resume streaming: it writes the image, installs and boots it through the
 cart's menu, and closes the port, so the link reads disconnected and its result says streaming stopped. A node removed
@@ -376,8 +378,10 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
 - **`postControl` was not needed, and neither is any call from the block into the link's thread** (section 4). The
   expansion volume is a value the host holds with a generation counter: the block only clamps, stores and bumps, and
   the serial thread applies the standing value at the top of its turn, so a failed write retries and no lock or
-  `std::function` is on the audio path. A write that keeps failing is retried once a second rather than every turn, and
-  the same turn carries the menu probe, so a wedged-but-open port cannot take the stream's turns for a config register.
+  `std::function` is on the audio path. A write that keeps failing is retried once a second rather than every turn, so
+  a wedged-but-open port cannot take the stream's turns for a config register; the menu probe is behind no such wait,
+  since a submission asks the link for a turn of its own (`N8Link::wakeControl`) and its read waits only for a turn the
+  reliable link has nothing outstanding on, with its own 1 s deadline as the bound.
 - **A project with no NES no longer forwards DAW MIDI to the cart** (section 4). The fallback existed for "no emulated
   NES to mirror"; the cart is placed by a setting now, a raw copy beside the fan-out would arrive twice, and a user who
   drove a MIDI cart with no NES system in the project (a MENU or debug pattern) loses that. Restoring it would be a rule

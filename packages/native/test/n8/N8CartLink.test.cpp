@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "host/devices/DeviceLinks.hpp"
+#include "host/engine/CapabilityJobs.hpp"
 #include "host/n8/Edio.hpp"  // ISerialPort
 #include "host/n8/N8CartLink.hpp"
 #include "host/n8/N8Host.hpp"
@@ -317,6 +318,38 @@ TEST_CASE("N8CartLink: a control write that keeps failing is retried about once 
     CHECK(attempts >= 1);
     CHECK(attempts <= 2);
     CHECK(link.connected());
+    // And it is a pause, not a stop: the next attempt comes about a second after the failure it followed.
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    {
+        std::lock_guard<std::mutex> l(dev.mu);
+        CHECK(dev.expVolAttempts >= 3);
+    }
+}
+
+TEST_CASE("N8CartLink: a submission's menu probe takes a turn of its own, not the failed write's wait", "[n8]") {
+    FakeDevice dev;
+    dev.refuseExpVolWrites = 1'000'000;  // a port that is open but refuses every config write
+    N8Host host(factoryFor(dev), noPorts(), tempCfgDir());
+    host.link().setLinkAllowed(false);
+    N8CartLink link(host);
+    link.setExpansionVolume(64);
+    REQUIRE(host.link().connect("fake"));
+    // The connect-time write dies and the retry interval is a second. A probe that waited behind it would be refused
+    // "the cart's config block did not answer" after its own 1 s deadline, on a cart whose block answers.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    rp::host::JobRequest r;
+    r.nodeId     = "cart";
+    r.capability = RP_SYSTEM_SRAM_INTERFACE;
+    r.op         = "dump";
+    r.name       = "game.nes";
+    rp::host::Job job;
+    std::string   why;
+    const auto    t0 = std::chrono::steady_clock::now();
+    CHECK_FALSE(link.submitJob(r, job, &link, &why));
+    CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+    const auto took =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(took < 500);
 }
 
 TEST_CASE("N8CartLink: the last node to release the link puts the expansion volume back to the cart's own", "[n8]") {

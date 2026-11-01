@@ -154,18 +154,18 @@ private:
     // the probe was asked. Each call asks afresh, since a game can boot between two jobs.
     int probeMenu();
 
-    // Write the configured expansion-audio master volume through `edio` (see EXP_VOL_AUTO). `mapperHint` is
-    // the iNES mapper when the caller knows it (a ROM we just uploaded), or -1 to ask the running cart.
+    // Write the expansion-audio master volume `value` through `edio` (see EXP_VOL_AUTO). `mapperHint` is the iNES
+    // mapper when the caller knows it (a ROM we just uploaded), or -1 to ask the running cart.
     // Runs on whichever thread owns the port: the UI thread inside connect(), or the serial thread a job's transfer
     // runs on.
-    void applyExpVol(Edio& edio, int mapperHint);
+    void applyExpVol(Edio& edio, int value, int mapperHint);
 
     N8Link              link_;
     PortLister          lister_;
     std::string         configDir_;
     std::string         port_;
     std::atomic<bool>   enabled_{false};  // atomic: a successful ROM load clears it from the serial thread
-    std::atomic<int>      expVol_{EXP_VOL_AUTO};  // read by applyExpVol on whichever thread owns the port
+    std::atomic<int>      expVol_{EXP_VOL_AUTO};  // read by the caller, which passes it to applyExpVol
     // A change counter, so the serial thread applies the standing value at its next turn without a mutex or a
     // std::function built on the caller's side: setExpVol only bumps the generation, and OnControl applies the value
     // while the applied generation lags. Bumping after a failed write is what retries it, so no failure needs a
