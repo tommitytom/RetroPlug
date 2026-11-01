@@ -3,10 +3,11 @@
 // and readFilePrefix on the ROM it was built from), and a write through it and one through writeRam land in the same
 // region, each visible to the other's read. Rendering on the calling thread (no audio thread), every job completes at
 // its submission; with the audio driver's thread running, a write completes at a block boundary, and the submission
-// waits through the driver's native sleep until it does, since this host fires no timer and has no frame tick. The queue, the block-boundary completion and the threading are held by
-// retroplug-engine-graph-test "[capability]".
+// waits through the driver's native sleep until it does, since this host fires no timer and has no frame tick. The
+// queue, the block-boundary completion and the threading are held by retroplug-engine-graph-test "[capability]".
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
+import { setJobWait } from "../src/capability";
 import { createAudioDriver } from "../src/audioDriver";
 import { directGraph } from "../src/graph/directGraph";
 
@@ -79,5 +80,45 @@ test("with the audio thread running, capability() settles a write with no timer 
   expect(await be.capability(node, "memory.read", { region: "ram", offset, length: 2 })).toEqual(Uint8Array.from([0x12, 0x34]));
   expect(audio.stopAudio()).toBeTruthy();
   expect(be.pumpJobs()).toBe(0);
+  expect(graph.remove(id)).toBeTruthy();
+});
+
+test("two real backends over one engine settle each other's completions", async () => {
+  // Native's completion queue is one per engine, and a runtime binds one engine, so the queue TS holds is one too
+  // (src/realBackend.ts): a job one backend submits is settled by whichever backend pumps next. Here the submission
+  // returns pending, as a host whose control plane has its own tick does, and the second backend's pumps are the only
+  // ones that drain; a per-backend queue would leave the promise waiting forever.
+  const be1 = createRealBackend();
+  const be2 = createRealBackend();
+  if (!be1.fileExists(ROM)) skip(`capability: missing ${ROM}`);
+  const audio = createAudioDriver();
+  const id = 3;
+  expect(
+    graph.add(
+      { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, coreConfig: { enableFm: false } },
+      id,
+    ),
+  ).toBeTruthy();
+  audio.renderAudio(200);
+  expect(audio.startAudio()).toBeTruthy();
+  const node = `sys-${id}`;
+  const offset = 0x1f20;
+  setJobWait(null);
+  let state = "pending";
+  const write = be1.capability(node, "memory.write", { region: "ram", offset, bytes: Uint8Array.from([0x56, 0x78]) });
+  write.then(() => (state = "resolved"), (e: Error) => (state = `rejected: ${e.message}`));
+  await Promise.resolve();
+  expect(state).toBe("pending");
+  // The audio thread applies and publishes the write on its own turns; draining through the OTHER backend is what
+  // lets the tick settle, and the microtask turns are how this thread sees it.
+  for (let tick = 0; tick < 5000 && state === "pending"; ++tick) {
+    be2.pumpJobs();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+  expect(state).toBe("resolved");
+  expect(audio.stopAudio()).toBeTruthy();
+  expect(await be1.capability(node, "memory.read", { region: "ram", offset, length: 2 })).toEqual(Uint8Array.from([0x56, 0x78]));
+  expect(be1.pumpJobs()).toBe(0);
   expect(graph.remove(id)).toBeTruthy();
 });

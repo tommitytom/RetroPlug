@@ -9,9 +9,10 @@
 // each submission (so everything that completed at once settles there and then), from the UI's frame tick
 // (ui/app/useJobPump.ts) while anything is pending, and, in a host with no UI tick that runs its own audio thread (the
 // CLI, the Node addon), after each audio-driver call that lets time pass, with a submission waiting through a native
-// sleep while that thread runs (setJobWait), so `await capability(...)` settles there with no timer at all. A closed project rejects what is still pending (SystemsStore.clear,
-// which a new project and every load go through): the node it named is gone with the graph, and a caller holding the
-// promise learns so rather than waiting for a completion that belongs to the old project.
+// sleep while that thread runs (setJobWait), so `await capability(...)` settles there with no timer at all. A closed
+// project rejects what is still pending (SystemsStore.clear, which a new project and every load go through): the node
+// it named is gone with the graph, and a caller holding the promise learns so rather than waiting for a completion
+// that belongs to the old project.
 
 /** The operations, as `<capability>.<op>`; each names its versioned native interface below. */
 export type CapabilityOp =
@@ -140,9 +141,10 @@ interface Pending {
   onProgress?: (p: CapabilityProgress) => void;
 }
 
-// Every CapabilityJobs alive (one per backend), for the calls that advance time to pump: a host with no UI frame tick
-// (the CLI, the Node addon, the native test host) drives its own audio thread through the audio driver, which pumps
-// these after each render, sleep and stop (src/audioDriver.ts).
+// Every CapabilityJobs a time-advancing pump should visit: the ones with a promise waiting, or a completion a close
+// left owed. A queue that owes nothing leaves the set, so a runtime that makes backends repeatedly bounds it; one real
+// client's queue serves every client of a runtime, since native's completion queue is one per engine and a runtime
+// binds one engine (realBackend.ts), while the mock has one per mock, over its own model.
 const liveJobs = new Set<CapabilityJobs>();
 
 // How to let time pass while a submitted job waits, or null to return its promise pending: the audio driver installs
@@ -160,20 +162,24 @@ export function pumpAllJobs(): void {
   for (const jobs of liveJobs) jobs.pump();
 }
 
-// How long a submission waits through jobWait before it returns its promise still pending: a write completes within a
-// block, so this bounds only a job that is stuck (a device's) rather than slow.
+/** How many queues a time-advancing pump visits: those with a promise waiting or a completion owed, since a queue that
+ *  owes nothing leaves the set. */
+export function liveJobCount(): number {
+  return liveJobs.size;
+}
+
+// How long a submission waits through jobWait before it rejects: a write completes within a block, so this bounds only
+// a job that is stuck (a device's) rather than slow.
 const JOB_WAIT_LIMIT_MS = 10_000;
 
-/** The promises over one backend's jobs. */
+/** The promises over one queue of jobs: native's, which is one per engine, or the mock's over its own model. */
 export class CapabilityJobs {
   private readonly pending = new Map<number, Pending>();
   // Jobs whose promises a close rejected while native still owed their completions: drained and dropped as they come,
   // since each holds one of native's outstanding slots until a drain collects it.
   private readonly orphans = new Set<number>();
 
-  constructor(private readonly port: JobPort) {
-    liveJobs.add(this);
-  }
+  constructor(private readonly port: JobPort) {}
 
   /** Run `op` on node `nodeId`. Rejects at once with native's reason when the job is refused; otherwise settles with
    *  its completion, and calls `onProgress` for each progress a long job reports first. */
@@ -201,12 +207,23 @@ export class CapabilityJobs {
       return Promise.reject(new Error(submitted.error ?? "the job was refused"));
     }
     const id = submitted.id;
+    let fail: (error: Error) => void = () => {};
     const promise = new Promise<CapabilityResults[O]>((resolve, reject) => {
+      fail = reject;
       this.pending.set(id, { op, resolve: resolve as (value: unknown) => void, reject, onProgress });
     });
+    liveJobs.add(this);
     this.pump();
     // With an audio thread no frame tick pumps for (the CLI's), wait here: the job settles before this returns.
-    for (let waited = 0; jobWait && this.pending.has(id) && waited < JOB_WAIT_LIMIT_MS; waited++) {
+    for (let waited = 0; jobWait && this.pending.has(id); waited++) {
+      if (waited === JOB_WAIT_LIMIT_MS) {
+        // Nothing completed within the bound: reject rather than hand back a promise no pump may ever settle. Native
+        // still owes the completion, so its record stays owed (a drain drops it) instead of holding a slot forever.
+        this.pending.delete(id);
+        this.orphans.add(id);
+        fail(new Error(`the job did not complete within ${JOB_WAIT_LIMIT_MS / 1000} s`));
+        break;
+      }
       jobWait(1);
       this.pump();
     }
@@ -217,7 +234,10 @@ export class CapabilityJobs {
    *  close left none owed. A completion whose promise is gone (rejected by a close) is dropped. Returns how many are
    *  still pending. */
   pump(): number {
-    if (this.pending.size === 0 && this.orphans.size === 0) return 0;
+    if (this.pending.size === 0 && this.orphans.size === 0) {
+      liveJobs.delete(this);
+      return 0;
+    }
     for (const c of this.port.drainJobs()) {
       if (c.done) this.orphans.delete(c.id);
       const p = this.pending.get(c.id);
@@ -230,12 +250,14 @@ export class CapabilityJobs {
       if (c.ok) p.resolve(decode(p.op, c.bytes));
       else p.reject(new Error(c.error));
     }
+    if (this.pending.size === 0 && this.orphans.size === 0) liveJobs.delete(this);
     return this.pending.size;
   }
 
   /** Reject every pending promise with `reason` (a project closing), so none waits on a node that is gone. */
   rejectAll(reason: string): void {
     const all = [...this.pending.values()];
+    if (all.length) liveJobs.add(this);
     for (const id of this.pending.keys()) this.orphans.add(id);
     this.pending.clear();
     for (const p of all) p.reject(new Error(reason));

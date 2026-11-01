@@ -99,13 +99,23 @@ const resourceParams = (spec: ResourceSpec): Record<string, unknown> => {
   return p;
 };
 
+// Native's completion queue is one per engine, and a runtime binds one engine (globalThis[Symbol.for("plugin")]), so
+// every emulator client of a runtime shares one CapabilityJobs: a second client's drain settles the first client's
+// promises, where a per-client queue would drop the completions it does not hold.
+let realJobs: CapabilityJobs | null = null;
+
+function sharedJobs(): CapabilityJobs {
+  realJobs ??= new CapabilityJobs({
+    submitJob: (request: JobRequest) => makeCall()("submitJob", request) as JobSubmitResult,
+    drainJobs: () => makeCall()("drainJobs") as JobCompletion[],
+  });
+  return realJobs;
+}
+
 /** The emulator lifecycle / live params / input / snapshot-reads facet. Throws if no RPC surface is bound. */
 export function createEmulatorClient(): EmulatorBackend {
   const call = makeCall();
-  const jobs = new CapabilityJobs({
-    submitJob: (request: JobRequest) => call("submitJob", request) as JobSubmitResult,
-    drainJobs: () => call("drainJobs") as JobCompletion[],
-  });
+  const jobs = sharedJobs();
   return {
     // Native answers { id } or { error }: one optional each way, so a refused put has no id to name.
     putResource: (spec: ResourceSpec): PutResourceResult => {

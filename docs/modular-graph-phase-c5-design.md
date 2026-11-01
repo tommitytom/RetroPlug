@@ -250,9 +250,11 @@ in place there), and the findings worth naming; each stage's own report is the f
   that never settles). The quiescent path completes a write before `submitJob` returns, which is the CLI between
   renders. The old system-id RPCs are thin wrappers over the same reads and writes; the one behaviour that changed is
   `writeRam`'s full-ring answer (false, where it answered true and dropped the write). TS adds `backend.capability`,
-  `pumpJobs` and `rejectPendingJobs`: the pump runs right after each submission, on the UI's frame tick, and, in a
-  host with no UI tick that runs its own audio thread, after each audio-driver call, with a submission waiting through
-  a native sleep; closing a project rejects what is pending.
+  `pumpJobs` and `rejectPendingJobs`: the promises are one queue per engine (a runtime binds one engine), the pump runs
+  right after each submission, on the UI's frame tick, and, in a host with no UI tick that runs its own audio thread,
+  after each audio-driver call, with a submission waiting through a native sleep and, past a 10 s bound, rejecting
+  rather than handing back a promise no pump would settle; closing a project rejects what is pending, and a queue that
+  owes nothing leaves the set the time-advancing pump walks.
 - **3, `rp.n8.nes`.** Pausing is a real pause inside the serial thread, not a disconnect and reopen (section 9's
   second answer): the thread sets `connected` false, writes what the ring already holds at its release times, waits
   (bounded) for the reliable link's outstanding frames to be acknowledged, runs the job on its own Edio, and resumes

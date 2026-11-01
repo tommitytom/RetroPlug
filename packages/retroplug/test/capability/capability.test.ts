@@ -9,7 +9,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { ProjectStore } from "../../src/projectStore";
 import { RecentStore } from "../../src/recentStore";
 import { buildAppRegistry } from "../../src/appHost";
-import { CapabilityJobs, pumpAllJobs, setJobWait, type JobCompletion, type JobRequest, type JobSubmitResult } from "../../src/capability";
+import { CapabilityJobs, liveJobCount, pumpAllJobs, setJobWait, type JobCompletion, type JobRequest, type JobSubmitResult } from "../../src/capability";
 import { gbRom } from "../systems/fixtures";
 
 // The message `promise` rejects with, held to contain `text`; a promise that resolves fails the case.
@@ -201,4 +201,58 @@ test("with an audio thread no tick pumps for, a submission waits through the ins
   queue.push({ id: 1, done: true, ok: true, error: "", bytes: new Uint8Array([6]), progress: 0, total: 0 });
   pumpAllJobs();
   expect(await later).toEqual(new Uint8Array([6]));
+});
+
+test("a job the audio thread never finishes rejects at the wait's bound, leaving no promise pending", async () => {
+  // Only a stuck job gets here: a write completes within a block. The completion native still owes is drained and
+  // dropped later, so its record does not hold native's bound for the rest of the run.
+  const queue: JobCompletion[] = [];
+  const jobs = new CapabilityJobs({ submitJob: () => ({ id: 1 }), drainJobs: () => queue.splice(0) });
+  let waits = 0;
+  setJobWait(() => {
+    waits++;
+  });
+  let state = "pending";
+  let message = "";
+  try {
+    void jobs.run("sys-1", "memory.read", { region: "ram" }).then(
+      () => (state = "resolved"),
+      (e: Error) => {
+        state = "rejected";
+        message = e.message;
+      },
+    );
+  } finally {
+    setJobWait(null);
+  }
+  for (let i = 0; i < 4; i++) await Promise.resolve();
+  expect(state).toBe("rejected");
+  expect(message).toBe("the job did not complete within 10 s");
+  expect(waits).toBe(10_000);
+  expect(jobs.pendingCount()).toBe(0);
+  queue.push({ id: 1, done: true, ok: true, error: "", bytes: new Uint8Array([1]), progress: 0, total: 0 });
+  expect(jobs.pump()).toBe(0);
+});
+
+test("a backend's queue leaves the pump's set once it owes nothing", async () => {
+  // The set pumpAllJobs walks is the queues with a promise waiting or a completion a close left owed, not every
+  // backend a runtime has ever made.
+  const before = liveJobCount();
+  const { be, project, node } = cart();
+  expect(liveJobCount()).toBe(before);
+  be.audioRunning = true;
+  const write = be.capability(node, "memory.write", { region: "ram", offset: 0, bytes: new Uint8Array([1]) });
+  expect(liveJobCount()).toBe(before + 1);
+  be.runBlock();
+  expect(be.pumpJobs()).toBe(0);
+  await write;
+  expect(liveJobCount()).toBe(before);
+  // A close leaves its completion owed: the queue stays in the set until a drain collects it.
+  const closed = be.capability(node, "memory.write", { region: "ram", offset: 1, bytes: new Uint8Array([2]) });
+  project.newProject();
+  await rejectsWith(closed, "the project closed");
+  expect(liveJobCount()).toBe(before + 1);
+  be.runBlock();
+  expect(be.pumpJobs()).toBe(0);
+  expect(liveJobCount()).toBe(before);
 });
