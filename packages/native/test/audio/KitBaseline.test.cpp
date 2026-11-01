@@ -39,6 +39,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <random>
 #include <string>
 #include <string_view>
@@ -222,10 +223,12 @@ void writeFloatWav(const std::filesystem::path& path, const std::vector<float>& 
 
 enum class KitCodec { Lsdj, Risa };
 
-/** A sample after slot 0: its name and its own effects, compiled from the case's source, rate and flags. */
+/** A sample after slot 0: its name, its own effects, and its own DMC rate index when it has one (`dmcRate` is risa's
+ *  PAL DPCM rate index, unused by LSDj, and absent means slot 0's). */
 struct ExtraSlot {
     const char*                       name;
     std::vector<rp::lsdj::LsdjEffect> effects;
+    std::optional<std::uint8_t>       dmcRate;
 };
 
 /** One matrix entry. `rate` is the source's own rate; `dmcRate` is risa's PAL DPCM rate index, unused by LSDj;
@@ -304,9 +307,9 @@ std::vector<KitCase> kitCases() {
          {filterEffect(FilterType::LowPass, 3000.0f, 1.0f), gainEffect(0.5f, false),
           ditherEffect(DitherType::HighPassTPDF)}},
         {"lsdj/short-source", KitCodec::Lsdj, Signal::Short, 44100, {}},
-        // Two slots, the second named SNR and shaped by a gain slot 0 does not have: the assembler's offset
-        // accumulation (offsets[i + 1] for i > 0), its 15-slot loop and the sample-name rule are inside the baseline,
-        // and so is `writeString`, on a lowercase over-long bank name it has to uppercase and truncate.
+        // Two slots, the second named SNR and shaped by a gain slot 0 does not have: what the pair adds to the baseline
+        // is the assembler's offset accumulation past slot 0 and a second sample name (its 15-slot loop is in every
+        // case already), and so is `writeString`, on a lowercase over-long bank name it has to uppercase and truncate.
         {"lsdj/two-slots", KitCodec::Lsdj, Signal::Sine440, 44100, {}, true, 12, true, false,
          {{"SNR", {gainEffect(0.5f, false)}}}, "baseline-kit"},
 
@@ -326,9 +329,9 @@ std::vector<KitCase> kitCases() {
         {"risa/normalize-silence-rate-12", KitCodec::Risa, Signal::Silence, 22050, {}, true, 12},
         {"risa/normalize-silence-rate-4", KitCodec::Risa, Signal::Silence, 48000, {}, true, 4},
         // The two-slot twin on risa's side: its index entries and the sample-data cursor move for slot 1, and the
-        // second slot's rate and effects are its own.
+        // second slot's rate and effects are its own, so a compile that applied slot 0's to every slot moves this bank.
         {"risa/two-slots-rate-12", KitCodec::Risa, Signal::Chirp, 48000, {}, true, 12, true, false,
-         {{"SNR", {gainEffect(0.4f, false)}}}},
+         {{"SNR", {gainEffect(0.4f, false)}, 4}}},
     };
 }
 
@@ -396,6 +399,7 @@ rp::kit::CompiledKit compileCase(rp::kit::KitCompiler& compiler, const KitCase& 
         rp::risa::CompileDmcSampleSpec next = slot;
         next.name    = extra.name;
         next.effects = extra.effects;
+        if (extra.dmcRate) next.rate = *extra.dmcRate;
         slots.push_back(std::move(next));
     }
     const rp::risa::RisaDmcCodec codec(kitName, std::move(slots));

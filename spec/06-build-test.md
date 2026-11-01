@@ -230,12 +230,13 @@ compared a compiled bank with anything; the suite is the gate Phase D's graph co
   gain, normalise (a silent source too), each of the eight filters, each of the five dithers, rotate on and off, a
   filter-gain-dither chain, the short source and a two-slot bank; risa has five DMC rate indices, normalise off, loop
   on, a silent normalise at two rates, the short source and a two-slot bank. The two-slot banks add a second sample
-  named SNR with its own effects (and a lowercase, over-long bank name on the LSDj one), so the assembler's offset
-  accumulation past slot 0, its 15-slot loop and `writeString`'s uppercase and truncation are held by a hash too.
+  named SNR with its own effects (on risa, a rate index of its own too) and, on the LSDj one, a lowercase over-long
+  bank name, so the assembler's offset accumulation past slot 0, a second sample name and `writeString`'s uppercase
+  and truncation are held by a hash too (the 15-slot loop is in every case already).
 - **Golden.** `golden/kit-baseline.json` holds `target` and `{hash, size, slot}` per case, sorted, read with
   reflect-cpp. `hash` is FNV-1a-64 of the bank; `size` and `slot` are the layout facts. The suite asserts each case
-  compiles clean, the bank carries its slot and the golden names exactly the matrix's cases, so a broken case cannot
-  pin a stable empty bank.
+  compiles clean, the bank carries every slot it compiles and the golden names exactly the matrix's cases, so a broken
+  case cannot pin a stable empty bank.
 - **Targets.** As parity: exact bytes only on `linux-x64-gnu13` (float arithmetic is bit-stable only per compiler and
   architecture); elsewhere a case compiles twice and must agree with itself, and `size` / `slot` are still compared.
   `RP_KIT_GOLDEN_REQUIRE_TARGET=1` makes a foreign host fail instead, and CI's linux-x64 job sets it. The target is

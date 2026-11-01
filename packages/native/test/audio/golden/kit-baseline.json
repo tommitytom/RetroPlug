@@ -33,6 +33,6 @@
     "risa/normalize-silence-rate-12": { "hash": "492a6c104578b10f", "size": 8192, "slot": 816 },
     "risa/normalize-silence-rate-4": { "hash": "519a7d01915f2a38", "size": 8192, "slot": 144 },
     "risa/short-source-rate-12": { "hash": "205a41e6da035559", "size": 8192, "slot": 48 },
-    "risa/two-slots-rate-12": { "hash": "9e15ffa5f819f01d", "size": 8192, "slot": 384 }
+    "risa/two-slots-rate-12": { "hash": "99918b9a833a7ae1", "size": 8192, "slot": 384 }
   }
 }

@@ -64,9 +64,10 @@ chirp, seeded noise and silence at 22.05, 44.1 and 48 kHz, and a 600-frame sourc
 for LSDj, no effect, gain, normalise (a silent source too), each of the eight filters, each of the five dithers,
 rotate on and off, one filter-gain-dither chain, a short source and one two-slot bank; for risa, the DMC codec at five
 rate indices, normalise off, loop on, a silent normalise at two rates, a short source and one two-slot bank. The
-two-slot banks (a second sample named SNR with its own effects, and on the LSDj one a lowercase over-long bank name)
-put the assembler's offset accumulation past slot 0, its 15-slot loop and `writeString`'s uppercase and truncation
-inside the baseline. Each case's bank is recorded in a golden JSON beside the test as its hash, size and slot length,
+two-slot banks (a second sample named SNR with its own effects and, on the risa one, a rate index of its own, and on
+the LSDj one a lowercase over-long bank name) put the assembler's offset accumulation past slot 0, a second sample
+name and `writeString`'s uppercase and truncation inside the baseline; its 15-slot loop is in every case already.
+Each case's bank is recorded in a golden JSON beside the test as its hash, size and slot length,
 re-recorded only with `RP_KIT_GOLDEN_UPDATE=1`. Exact bytes are compared on `linux-x64-gnu13` (as parity does), off it
 a case must agree with itself across two runs while its size and slot length are still held, and
 `RP_KIT_GOLDEN_REQUIRE_TARGET=1` turns the fallback into a failure on CI's linux-x64 job. From then on a change that
@@ -273,8 +274,9 @@ follow-up moved a kit byte or a parity baseline either.
   name exactly the matrix's cases. The matrix grew from 26 to 31 cases in review: silent sources for both normalise
   paths, risa's normalise-off and loop branches, and the slot length beside the hash. A follow-up took it to 33: one
   two-slot bank per codec (a second sample named SNR with its own effects), which puts the assembler's offset
-  accumulation past slot 0 and its 15-slot loop inside the baseline, and a lowercase over-long bank name on the LSDj
-  one, for `writeString`'s uppercase and truncation. They added two records and moved no existing one.
+  accumulation past slot 0 and a second sample name inside the baseline, and a lowercase over-long bank name on the
+  LSDj one, for `writeString`'s uppercase and truncation. It added two records and moved no existing one; a second
+  follow-up gave risa's second slot a rate index of its own, which re-recorded that one entry and moved nothing else.
 - **3, the kernels.** The target named `retroplug-dsp` in section 4 was taken by `dpf_add_plugin(retroplug ...)`, which
   creates the plugin's own DSP library of that name, so the library is `retroplug-dsp-kernels` (gain, peak, the
   normalising gain, the biquads, dither and quantise) plus `retroplug-dsp-resample` (r8brain, pthreads, RTTI). The
