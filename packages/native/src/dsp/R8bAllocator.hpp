@@ -39,16 +39,23 @@ struct R8bAllocator {
     // failure path on a host whose memory is not exhausted. Nothing else in the process may resample while it is set.
     static inline std::size_t allocationLimitForTest = 0;
 
+    // A request for no bytes still gets a block. `malloc(0)` and `realloc(block, 0)` are allowed to return null, which
+    // would be read here as an out-of-memory throw for a request that asks for nothing, so both hooks round a zero-byte
+    // request up to one byte: a null result from either always means exhaustion.
+    static constexpr std::size_t bytesFor(std::size_t size) noexcept { return size == 0 ? 1 : size; }
+
     static void* allocmem(std::size_t size) {
-        if (allocationLimitForTest != 0 && size > allocationLimitForTest) throw std::bad_alloc();
-        void* const block = std::malloc(size);
+        const std::size_t bytes = bytesFor(size);
+        if (allocationLimitForTest != 0 && bytes > allocationLimitForTest) throw std::bad_alloc();
+        void* const block = std::malloc(bytes);
         if (block == nullptr) throw std::bad_alloc();
         return block;
     }
 
     static void* reallocmem(void* block, std::size_t size) {
-        if (allocationLimitForTest != 0 && size > allocationLimitForTest) throw std::bad_alloc();
-        void* const grown = std::realloc(block, size);
+        const std::size_t bytes = bytesFor(size);
+        if (allocationLimitForTest != 0 && bytes > allocationLimitForTest) throw std::bad_alloc();
+        void* const grown = std::realloc(block, bytes);
         if (grown == nullptr) throw std::bad_alloc();
         return grown;
     }

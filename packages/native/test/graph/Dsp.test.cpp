@@ -906,6 +906,17 @@ TEST_CASE("a failed r8brain allocation throws out of init and leaves it unbuilt"
     CHECK(r.ready());
 }
 
+TEST_CASE("a zero-byte request gets a block, not an out-of-memory throw", "[dsp][resample]") {
+    // `malloc(0)` and `realloc(block, 0)` are allowed to return null, and the hooks read a null as exhaustion. They
+    // round a zero-byte request up to one byte, so a null result always means out of memory: r8brain asks for a
+    // zero-sized buffer on its shorter paths, and that must not throw.
+    void* const empty = rp::dsp::R8bAllocator::allocmem(0);
+    REQUIRE(empty != nullptr);
+    void* const grown = rp::dsp::R8bAllocator::reallocmem(empty, 0);
+    REQUIRE(grown != nullptr);
+    rp::dsp::R8bAllocator::freemem(grown);
+}
+
 TEST_CASE("a re-initialised resampler starts a fresh stream", "[dsp][resample]") {
     const std::vector<float> in = signal(3000);
     std::vector<float> fresh;
