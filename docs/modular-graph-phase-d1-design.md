@@ -148,9 +148,10 @@ beside it, so only a build that wants the resampler reaches r8brain.
 - **The kit baseline** (section 3): every hash unchanged after the kernel move.
 - **Kernels**, in `retroplug-graph-test`: one block equals the same input split into 1-, 7-, 64- and 1024-frame blocks,
   bit for bit; a `process` allocates and frees nothing once warmed, and the resampler from its very first chunk (the
-  suite's CountingAllocator); the same seed gives the same codes and different seeds different noise; Sierra Lite and
-  JJN match their old padded arithmetic; resample's output is independent of the input's chunking, a source shorter
-  than a chunk included.
+  suite's CountingAllocator); the same seed gives the same codes and different seeds different noise; every dither
+  algorithm, the no-dither rounding included, matches a verbatim copy of the old whole-buffer loop it replaced (Sierra
+  Lite's and JJN's padded); resample's output is independent of the input's chunking, a source shorter than a chunk
+  included, and a failed allocation in `init` throws with the resampler unbuilt.
 - **Nodes**, through real plans (the graph rig): each node's output equals its kernel run directly; ragged block splits
   give identical output; a param change ramps over one block and a held one is exact; a plan's blocks allocate and free
   nothing counted from its first; a descriptor golden per type; resample from a 22.05 kHz buffer into a 48 kHz plan
@@ -371,9 +372,10 @@ findings worth naming; each stage's own report is the full record.
   bank read back through `KitView` holding a varied sample in both polarities (a constant or all-zero slot would
   otherwise pass, since LSDj's inverted nibbles decode zeros to +1.0), and the same source compiled with no effects
   differing from each dithered bank.
-- `retroplug-graph-test` gained `[dsp]` (`test/graph/Dsp.test.cpp`, 17 cases: chunk-exact streaming at 1, 4, 8 and 16
+- `retroplug-graph-test` gained `[dsp]` (`test/graph/Dsp.test.cpp`, 19 cases: chunk-exact streaming at 1, 4, 8 and 16
   bits and every split, a `process` allocating nothing once warmed with the resampler counted from its first chunk, the
-  padded references, the resampler's split independence, the seed golden), `[dsp-nodes]`
+  verbatim references of every dither algorithm and of both padded error diffusions, the resampler's split
+  independence, a failed `init` throwing with `ready()` false, the seed golden), `[dsp-nodes]`
   (`test/graph/DspNodes.test.cpp`, 13 cases: each node against its kernel through a real plan, ragged splits, the gain
   ramp and snap, the biquad's sweep and type change, the dither's seed and channel sizing, a block counted from the
   plan's first block, and the descriptor goldens) and `[dsp-resample]`

@@ -8,10 +8,12 @@
 //   where this build can see them, which matters for r8brain, whose own allocator is malloc).
 // - Biquad: the eight coefficient calculators and the loop, written out here from lsdj/Effects.cpp, give the
 //   kernel's coefficients (every field bit for bit) and its filtered buffer sample for sample.
-// - Dither: the same seed gives the same codes and a different seed different noise; Sierra Lite and JJN, kept as a
-//   few past errors, give the codes their padded whole-buffer arithmetic gives; and the seed drawn from a buffer
-//   gives the codes test/audio/Dither.test.cpp pins through the kit effect. (inputSeed's big-endian half cannot be
-//   exercised on a little-endian host; the two halves are held to one value by construction, not by a case here.)
+// - Dither: the same seed gives the same codes and a different seed different noise; the four algorithms without a
+//   padded reference (HighPassTPDF, ShapedTPDF, ErrorDiffusion, None) give the old whole-buffer loops' codes; Sierra
+//   Lite and JJN, kept as a few past errors, give the codes their padded whole-buffer arithmetic gives; and the seed
+//   drawn from a buffer gives the codes test/audio/Dither.test.cpp pins through the kit effect. (inputSeed's
+//   big-endian half cannot be exercised on a little-endian host; the two halves are held to one value by construction,
+//   not by a case here.)
 // - Resample: the output stream is independent of how the input arrives (a source shorter than one chunk included),
 //   and equals a direct fixed-chunk feed of r8brain, written out here as a reference; a failed allocation in `init`
 //   throws and leaves the resampler unbuilt.
@@ -144,6 +146,96 @@ std::vector<float> paddedJjn(std::vector<float> buf, int bitDepth) {
         if (i + 2 < n) padded[i + 2] += err * w2;
         if (i + 3 < n) padded[i + 3] += err * w3;
         if (i + 4 < n) padded[i + 4] += err * w4;
+    }
+    return buf;
+}
+
+// ---- the kit path's dithers as they were before the kernel ---------------------------------------------------------
+// Verbatim from 12905a59's lsdj/Effects.cpp (the two TPDF algorithms and error diffusion) and KitUtil.cpp's no-dither
+// branch. The RNG is handed in rather than drawn from the buffer here: the kernel salts `inputSeed` itself, so the
+// reference starts from `mt19937(inputSeed ^ salt)`, the word the kernel's `init` seeds. Codes as floats in [0, 2^bits
+// - 1], the same shape the padded references give.
+
+constexpr std::uint32_t kHighPassTPDFSalt = 0x8064fcc5u; // fold(fnv1a64("HighPassTPDF"))
+constexpr std::uint32_t kShapedTPDFSalt   = 0x262f0818u; // fold(fnv1a64("ShapedTPDF"))
+
+float uniform01(std::mt19937& rng) { return static_cast<float>(rng() >> 8) * (1.0f / 16777216.0f); }
+
+std::mt19937 ditherRng(const std::vector<float>& buf, std::uint32_t salt) {
+    return std::mt19937(rp::dsp::inputSeed(buf.data(), buf.size()) ^ salt);
+}
+
+std::vector<float> highPassTPDF(std::vector<float>& buf, int bitDepth) {
+    const int   levels    = 1 << bitDepth;
+    const float maxValue  = static_cast<float>(levels - 1);
+    const float halfScale = maxValue / 2.0f;
+    constexpr float quantum = 1.0f;
+
+    std::mt19937 rng = ditherRng(buf, kHighPassTPDFSalt);
+
+    float prevDither   = 0.0f;
+    float shapingState = 0.0f;
+
+    for (float& v : buf) {
+        const float dither = (uniform01(rng) + uniform01(rng) - 1.0f) * quantum * 0.5f;
+        float shaped = dither - prevDither * 0.94f;
+        prevDither = dither;
+        shaped -= shapingState * 0.5f;
+        float value = (v + 1.0f) * halfScale + shaped;
+        value = std::clamp(value, 0.0f, maxValue);
+        const float q = std::round(value);
+        shapingState = q - value;
+        v = q;
+    }
+    return buf;
+}
+
+std::vector<float> shapedTPDF2ndOrder(std::vector<float>& buf, int bitDepth) {
+    const int   levels    = 1 << bitDepth;
+    const float maxValue  = static_cast<float>(levels - 1);
+    const float halfScale = maxValue / 2.0f;
+    constexpr float quantum = 1.0f;
+
+    std::mt19937 rng = ditherRng(buf, kShapedTPDFSalt);
+
+    float err1 = 0.0f, err2 = 0.0f;
+    for (float& v : buf) {
+        const float dither = (uniform01(rng) + uniform01(rng) - 1.0f) * quantum * 0.5f;
+        // Coefficients tuned for ~11 kHz target rate (LSDJ kit sample rate)
+        float value = (v + 1.0f) * halfScale + dither + (1.623f * err1) - (0.982f * err2);
+        value = std::clamp(value, 0.0f, maxValue);
+        const float q = std::round(value);
+        const float qe = q - value;
+        err2 = err1;
+        err1 = qe;
+        v = q;
+    }
+    return buf;
+}
+
+std::vector<float> errorDiffusion(std::vector<float>& buf, int bitDepth) {
+    const int   levels    = 1 << bitDepth;
+    const float maxValue  = static_cast<float>(levels - 1);
+    const float halfScale = maxValue / 2.0f;
+    float error = 0.0f;
+    for (float& v : buf) {
+        float value = (v + 1.0f) * halfScale;
+        value += error * 0.9f;
+        value = std::clamp(value, 0.0f, maxValue);
+        const float q = std::round(value);
+        error = value - q;
+        v = q;
+    }
+    return buf;
+}
+
+/** The no-dither branch of the old `KitUtil::compileSample` (clamp, scale to [0, 1], round to the code), with the kit
+ *  path's hard-coded 15.0f written as the maximum any depth gives. */
+std::vector<float> noDither(std::vector<float>& buf, int bitDepth) {
+    const float maxValue = static_cast<float>((1 << bitDepth) - 1);
+    for (float& v : buf) {
+        v = (std::clamp(v, -1.0f, 1.0f) + 1.0f) * 0.5f;
+        v = std::round(v * maxValue);
     }
     return buf;
 }
@@ -613,7 +705,6 @@ TEST_CASE("the input seed gives the codes the kit path pinned", "[dsp][dither]")
     };
     CHECK(codes(DitherAlgorithm::HighPassTPDF) == std::vector<std::uint16_t>{7, 8, 7, 7, 8, 7, 8, 8});
     CHECK(codes(DitherAlgorithm::ShapedTPDF) == std::vector<std::uint16_t>{7, 7, 7, 7, 8, 7, 8, 7});
-
     // A function of the samples: one changed bit moves it.
     std::vector<float> nudged = silence;
     nudged[5] = 1.0e-30f;
@@ -641,6 +732,50 @@ TEST_CASE("Sierra Lite and JJN as past errors give their padded arithmetic's cod
                     INFO("split starting " << split[0]);
                     rp::dsp::Dither d;
                     d.init(algo, bits, 0);
+                    std::vector<std::uint16_t> codes(in.size());
+                    inBlocks(in.size(), split, [&](std::size_t at, std::size_t n) {
+                        d.process(in.data() + at, codes.data() + at, n);
+                    });
+                    std::vector<float> asFloats(codes.begin(), codes.end());
+                    CHECK(firstDifference(reference, asFloats) == -1);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("the dithers without a padded reference give the old whole-buffer loops' codes", "[dsp][dither]") {
+    // HighPassTPDF (the kit default), ShapedTPDF, ErrorDiffusion and None were held only by the streaming case, which
+    // compares the kernel with itself, and by the eight-code golden, which cannot see a reordering: on silence
+    // (in + 1) * halfScale and in * halfScale + halfScale are both exactly 7.5. The references below are the legacy
+    // loops verbatim, seeded from the word the kernel salts, over the padded pair's inputs and splits at three depths:
+    // the kit's 4 bits, 8, and 16, where a rounding of `value` one ulp apart reaches a code's boundary often enough to
+    // show (at 4 bits a one-ulp change flips a code about once in ten million samples, which is why the kit baseline
+    // cannot see it).
+    std::vector<std::vector<float>> inputs;
+    for (std::size_t n = 0; n <= 5; ++n) inputs.push_back(noise(n, 1.3f, 0x51e77b00u + static_cast<std::uint32_t>(n)));
+    inputs.push_back(noise(kFrames, 1.3f, 0x51e77b10u));
+    inputs.push_back(noise(kFrames, 0.02f, 0x51e77b11u));
+    inputs.push_back(signal(kFrames));
+
+    for (const int bits : {4, 8, 16}) {
+        for (const auto& in : inputs) {
+            INFO(bits << " bits, " << in.size() << " frames");
+            for (const DitherAlgorithm algo : {DitherAlgorithm::None, DitherAlgorithm::HighPassTPDF,
+                                              DitherAlgorithm::ShapedTPDF, DitherAlgorithm::ErrorDiffusion}) {
+                INFO("algorithm " << static_cast<int>(algo));
+                std::vector<float> reference = in;
+                switch (algo) {
+                    case DitherAlgorithm::None:         reference = noDither(reference, bits); break;
+                    case DitherAlgorithm::HighPassTPDF: reference = highPassTPDF(reference, bits); break;
+                    case DitherAlgorithm::ShapedTPDF:   reference = shapedTPDF2ndOrder(reference, bits); break;
+                    default:                            reference = errorDiffusion(reference, bits); break;
+                }
+                const std::uint32_t seed = rp::dsp::inputSeed(in.data(), in.size());
+                for (const auto& split : kSplits) {
+                    INFO("split starting " << split[0]);
+                    rp::dsp::Dither d;
+                    d.init(algo, bits, seed);
                     std::vector<std::uint16_t> codes(in.size());
                     inBlocks(in.size(), split, [&](std::size_t at, std::size_t n) {
                         d.process(in.data() + at, codes.data() + at, n);
