@@ -10,9 +10,9 @@
 //   filter's stream.
 // - A dither's settings are its stream's: a new seed restarts the noise, and the node's output is the kernel's
 //   quantised levels, so a live patch and a kit compile run the same arithmetic.
-// - A warmed plan block allocates and frees nothing (the suite's counting allocator), and all three types plan on the
-//   Pico: they declare neither heap nor threads, and their extra memory is requested for the settings' channel count
-//   (the request's size is the assertion), never for the descriptor's maximum.
+// - A plan block allocates and frees nothing counted from the plan's first block (the suite's counting allocator), and
+//   all three types plan on the Pico: they declare neither heap nor threads, and their extra memory is requested for
+//   the settings' channel count (the request's size is the assertion), never for the descriptor's maximum.
 // - Each type's descriptor is a golden beside golden/rp.test.gain.descriptor.json, recorded with
 //   RP_GRAPH_GOLDEN_UPDATE=1.
 #include <catch2/catch_test_macros.hpp>
@@ -569,7 +569,7 @@ TEST_CASE("rp.dsp.dither's seed setting is its noise: a new seed restarts the st
     CHECK(firstDifference(first, second) != -1);  // and a different seed is different noise
 }
 
-TEST_CASE("a warmed rp.dsp plan block allocates and frees nothing", "[dsp-nodes]") {
+TEST_CASE("rp.dsp's plan allocates and frees nothing, counted from its first block", "[dsp-nodes]") {
     DspRig     rig;
     const std::vector<float> in = signal(1024);
     const auto sample = rig.buffer(in, 2);
@@ -614,12 +614,15 @@ TEST_CASE("each rp.dsp type's descriptor is its golden", "[dsp-nodes][dsp-resamp
 
 TEST_CASE("the three rp.dsp nodes plan on the Pico", "[dsp-nodes]") {
     // This package's types alone: the resampler's node is the one that declares heap, and the planner refuses it on the
-    // Pico.
+    // Pico. The parsed descriptor's flags are the ones the planner reads, so a field added to `requires` cannot break
+    // this case for a formatting reason.
     for (std::uint32_t i = 0; i < rp::graph::dspPackage()->node_type_count; ++i) {
         const rp_node_type* type = rp::graph::dspPackage()->node_types[i];
-        const std::string   json = type->descriptor(type);
         INFO(type->id);
-        CHECK(json.find(R"("requires":{"heap":false,"threads":false})") != std::string::npos);
+        auto parsed = rp::graph::parseDescriptor(type->descriptor(type));
+        REQUIRE(parsed);
+        CHECK_FALSE(parsed->heap);
+        CHECK_FALSE(parsed->threads);
     }
 
     DspRig     pico(rp::graph::Target::Pico);

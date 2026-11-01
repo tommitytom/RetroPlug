@@ -10,8 +10,8 @@
 //   is a node that names no buffer.
 // - A buffer the settings rename is a rebuild whose stream starts at the new buffer's first frame, at its own rate; a
 //   re-activation at a new plan rate carries on from the buffer frame the output had reached.
-// - A warmed plan block allocates and frees nothing (the suite's counting allocator): the resamplers are built when the
-//   node activates, on the control thread.
+// - A plan block allocates and frees nothing counted from the plan's first block (the suite's counting allocator): the
+//   resamplers are built when the node activates, on the control thread.
 // - The node declares heap, so the Pico refuses it (the planner's `capability` code). Its descriptor golden is
 //   DspNodes.test.cpp's case, which walks this package beside rp.dsp and carries this file's tag too.
 #include <catch2/catch_test_macros.hpp>
@@ -36,7 +36,8 @@ using rp::graph::test::GraphRig;
 
 constexpr std::uint32_t kMaxBlock = 1024;
 
-// The block sizes the brief's streams are split into, and a ragged sequence that cycles.
+// The block sizes a stream is split into: one frame, an odd size, a host block, the resampler's chunk, and a ragged
+// sequence that cycles.
 const std::vector<std::vector<std::size_t>> kSplits = {{1}, {7}, {64}, {512}, {1024}, {1, 31, 512, 3, 1024, 77}};
 
 /** A sine plus noise; `salt` makes another channel's content differ. */
