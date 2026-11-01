@@ -84,11 +84,11 @@ public:
     // lastError through Settings > N8), not something a document's node can act on.
     //
     // [control] A node took this handle, in its activate, and gave it back, in its destroy. The registry forwards
-    // both, so a link that counts or acts on the nodes bound to it can; neither real adapter implements them. Acquire
-    // runs more than once for one node when a sample-rate change or a block growth reactivates the plan
-    // (GraphHost::reactivate), so a node that already holds its handles keeps them across deactivate / activate and
-    // releases them once, in destroy: a link that arms or pauses something in acquire must see one release for one
-    // acquire.
+    // both: the cart adapter counts the nodes holding it and puts the expansion volume back to AUTO on the last
+    // release, the surface adapter implements neither. Acquire runs more than once for one node when a sample-rate
+    // change or a block growth reactivates the plan (GraphHost::reactivate), so a node that already holds its handles
+    // keeps them across deactivate / activate and releases them once, in destroy: a link that arms or pauses something
+    // in acquire must see one release for one acquire.
     virtual void acquire() {}
     virtual void release() {}
 };

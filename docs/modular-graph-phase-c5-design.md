@@ -151,11 +151,11 @@ first bytes): the three transfers run at the menu only, so a job a running game 
 not answer) is refused there, and the stream never pauses for it. A job that is taken then runs on that thread:
 streaming pauses, `connected` reads false for the duration and pushes are dropped and counted, the transfer runs,
 streaming resumes, the completion is posted. One job at a time per device (a second is refused busy); a job while
-disconnected fails "not connected". A
-cart's `rom.header` and `rom.title` answer at once from the image and name this host last booted, with no transfer. A
-`rom.upload` is the one job that does not resume streaming: it writes the image, installs and boots it through the
-cart's menu, and closes the port, so the link reads disconnected and its result says streaming stopped. A node removed
-while its job runs abandons it at reclaim, and the device stops at its next safe point.
+disconnected fails "not connected". A cart's `rom.header` and `rom.title` answer at once from the image and name this
+host last booted, with no transfer. A `rom.upload` is the one job that does not resume streaming: it writes the image,
+installs and boots it through the cart's menu, and closes the port, so the link reads disconnected and its result says
+streaming stopped. A node removed while its job runs abandons it at reclaim, and the device stops at its next safe
+point.
 
 **TS**: `backend.capability(nodeId, op, args)`, a promise over submit and poll, the same for emulated and real. The UI's
 cart menu (back up and restore the cart's SRAM, load a ROM to the cart) moves onto it, and the `__rp_n8LoadRom` /
@@ -403,17 +403,27 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   the block's note-ons during it were dropped (note-offs are owed and re-sent, note-ons are not). The config block read
   needs no pause at all, and reading it at submission is what makes the refusal free; the volume's own config writes
   already ran there, between chunks.
-- **The hardware smoke, on the real NES and N8 Pro.** A pause over a playing ROM kept the reliable link continuous
-  (resends 0, outstanding 0, no re-sync) and the note before and after it sounded (A4 at 440.30 Hz, E5 at 657.66 Hz,
-  silent after the note-off); a battery dump, restore and dump round-tripped byte for byte through the card's file; a
-  66,560-byte save restored through the job loaded at the game's next boot, its song table read off the screen against
-  the save; and a ROM uploaded through the job booted in 2.8 s with the header matching the file. The rig was left at a
-  fresh menu with every scratch file deleted.
+- **A config read on a live reliable link waits for a quiet turn** (sections 4 and 6). Moving the probe out of the pause
+  took away the two things that kept it clear of a playing ROM's acks (the drain that waited for them, and the flush
+  before a job's own reply), and a game whose link is up owes an ack for every frame it has not answered: one arriving
+  inside the read is taken for the reply's first bytes, and the reply's tail is then parsed as link traffic, which can
+  mark a frame delivered that was not. The serial thread services the link before a control turn and tells the read
+  whether anything is still outstanding, with the probe's 1 s deadline as the bound for a cart that never goes quiet;
+  the volume's Auto read has the same exposure and takes the same guard.
+- **The hardware smoke, on the real NES and N8 Pro.** Recorded on the prototype, before the probe moved to submission:
+  then a job paused a playing ROM, which a submission now refuses instead of pausing for. A pause over a playing ROM
+  kept the reliable link continuous (resends 0, outstanding 0, no re-sync) and the note before and after it sounded (A4
+  at 440.30 Hz, E5 at 657.66 Hz, silent after the note-off); a battery dump, restore and dump round-tripped byte for
+  byte through the card's file; a 66,560-byte save restored through the job loaded at the game's next boot, its song
+  table read off the screen against the save; and a ROM uploaded through the job booted in 2.8 s with the header
+  matching the file. The rig was left at a fresh menu with every scratch file deleted. The probe's quiet-turn read has
+  not been run on a cart.
 
 ### The suite, as built
 
 - `retroplug-engine-graph-test` gained `[devices]` (`Devices.test.cpp`: both links over fake devices, a host with no
-  device, acquire and release across a reactivate and a teardown, a warmed block allocating nothing), `[capability]`
+  device, acquire and release across a reactivate and a teardown, a handover to a new node that never leaves the link
+  with no holder, a warmed block allocating nothing), `[capability]`
   (`Capabilities.test.cpp`: each emulated console against the system-id RPCs and the ROM file, block-boundary completion,
   removal and discard, the 64 bound, a real device thread's progress, a warmed block with writes in flight), `[n8-node]`
   (`N8Node.test.cpp`: the fan-out, `connected`, the expansion volume, owed note-offs, the jobs and their refusals,
@@ -423,10 +433,11 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   The protocol cases run the surface wiring and hold their recorded digests; the goldens' documents moved with the
   fan-out and the surface nodes.
 - `retroplug-n8-test` gained `[cart-jobs]` (`N8CartJobs.test.cpp`: the pause and its ack bound, battery file dumps and
-  restores with their refusals, the upload and its `Stop`, a game's refusals at submission (which drop no push), a port
-  that throws at a job's start and after it ran, the JSON a name reaches, an abandoned dump), and the two link adapters
-  have their own files (`N8CartLink.test.cpp`: the volume's retry, its once-a-second bound, the last release's AUTO, and
-  `LaunchpadSurfaceLink.test.cpp`).
+  restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws), a
+  game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a port that
+  throws at a job's start and after it ran, the JSON a name reaches, an abandoned dump), and the two link adapters have
+  their own files: `N8CartLink.test.cpp` (the volume's retry, its once-a-second bound, the probe's turn of its own, the
+  last release's AUTO) and `LaunchpadSurfaceLink.test.cpp`.
 - TS: `test/capability/capability.test.ts` (the promises, the refusals, a close rejecting pending, progress), and on
   the real host `test-native/capability.test.ts` and `test-native/stage-node-midi.test.ts`;
   `test/graph/build-graph.test.ts` holds the placement and the fan-out,

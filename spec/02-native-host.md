@@ -442,8 +442,7 @@ drives through `rp.host.devices/1`
 message (frame, bytes, the flush flag, the block's rate) that answers whether all of it reached the device, the link's
 connected state and drop count, the expansion-volume register and `submitJob` / `abandonJobs`; a `SurfaceLink` for the
 pad, with a drain into the node's own array, a push, the connected state and its drop count. A host installs its links
-with
-`Engine::setDeviceLinks` before its first plan (the plugin passes its `N8CartLink` and no surface, the SDL
+with `Engine::setDeviceLinks` before its first plan (the plugin passes its `N8CartLink` and no surface, the SDL
 standalone both, the test host a `HarnessSurfaceLink`, and the CLI, the Node addon and the render host neither), and a
 name it has no device for answers a handle that is never connected and that drops and counts everything, so a
 document plans and runs in every host. A node keeps its handle across a reactivate and gives it back once in destroy,

@@ -103,9 +103,10 @@ public:
     bool          isConnected() const { return connected_.load(std::memory_order_acquire); }
     std::string   portName() const;
     std::uint64_t bytesForwarded() const { return bytesForwarded_.load(std::memory_order_relaxed); }
-    // Pushes that lost their bytes: the link was down or a job held it, or the ring was full. Written on the audio
-    // thread, read relaxed; a device link's own count is made of the `false` push() answers instead, and N8CartLink's
-    // dropped() adds the chunks a stopped stream discarded.
+    // Pushes that lost their bytes: the link was down or a job held it, the ring was full, or a stopped stream threw
+    // a chunk away (chunksDiscarded). Written on the audio thread and by the serial thread's stopStreaming, read
+    // relaxed; a device link's own count is made of the `false` push() answers instead, and N8CartLink's dropped()
+    // adds the chunks a stopped stream discarded.
     std::uint64_t pushesDropped() const { return pushesDropped_.load(std::memory_order_relaxed); }
     std::string   lastError() const;
     void          setLookaheadMs(int ms) { lookaheadNs_.store(std::int64_t(ms) * 1'000'000, std::memory_order_relaxed); }

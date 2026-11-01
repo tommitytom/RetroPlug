@@ -256,13 +256,17 @@ void N8Host::setExpVol(int v) {
     const int clamped = v < 0 ? EXP_VOL_AUTO : (v > 255 ? 255 : v);
     if (expVol_.exchange(clamped, std::memory_order_release) == clamped) return;
     // Publish the change; a live link's serial thread picks it up at its next turn, so turning the knob is audible on
-    // the console straight away without interrupting the MIDI stream. A no-op while disconnected (and while a job
-    // holds the link paused): the next connect applies the new value.
+    // the console straight away without interrupting the MIDI stream. Nothing is written while a job holds the link
+    // paused, but the generation survives the pause, so the value goes out on the serial thread's first turn after the
+    // resume; while disconnected the next connect applies it.
     expVolGeneration_.fetch_add(1, std::memory_order_release);
 }
 
 int N8Host::probeMenu() {
     const unsigned generation = menuProbeGeneration_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    // A turn of its own, so a volume write that keeps failing (whose retry interval is a second) is not what this
+    // waits behind; the deadline below covers a cart that never answers, whatever the link is doing.
+    link_.wakeControl();
     const auto     deadline   = std::chrono::steady_clock::now() + std::chrono::milliseconds(kMenuProbeMs);
     while (menuProbeApplied_.load(std::memory_order_acquire) < generation) {
         if (!link_.isConnected()) return kProbeLinkDown;
@@ -300,8 +304,8 @@ void N8Host::restore() {
         link_.setLookaheadMs(la < 0 ? 0 : la);
         enabled_ = (en != 0);
     }
-    // Note there is no expansion volume here: it belongs to the project, not the link (see EXP_VOL_AUTO), so
-    // this reconnect comes up on AUTO and the UI pushes the loaded project's value when it has one.
+    // Note there is no expansion volume here: it belongs to the project, not the link (see EXP_VOL_AUTO), so this
+    // reconnect comes up on AUTO and the cart node pushes the loaded project's value when it has one.
     if (enabled_) connect(true);  // reconnect the persisted link (auto-picks if the saved port is empty)
 }
 

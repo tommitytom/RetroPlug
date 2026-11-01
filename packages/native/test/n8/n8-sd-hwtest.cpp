@@ -12,7 +12,8 @@
 // A battery job's <rom-name> is a bare file name, not a path: it names the ROM whose folder under EDN8/gamedata/ holds
 // the battery file, which is why `dump /roms/mGB.nes out.srm` is refused.
 //
-// The rest drive a bare Edio (no N8Host / streaming thread):
+// The rest take the port directly, with no N8Host and no capability job. link, linkdbg and timing bring up N8Link's
+// own streaming thread; the others drive a bare Edio:
 //   retroplug-n8-hwtest peek     <addr-hex> <len> [port]       # CMD_MEM_RD: read bytes from a device address
 //   retroplug-n8-hwtest poke     <addr-hex> <byte> [port]      # CMD_MEM_WR: write one byte to a device address
 //   retroplug-n8-hwtest read     <sd-path> <local-dest> [port] # CMD_F_FRD: read an SD file over USB
@@ -31,10 +32,9 @@
 // flushInput, which would throw away bytes a running ROM had already queued. So it opens the port and reads,
 // and a wrong/absent port simply times out rather than reporting "no device".
 //
-// peek/poke reach FPGA config regs like the expansion-audio master volume at 0x1800023 (MapConfig.master_vol =
-// scfg[3]; see
-// krikzz edn8-pro-pub edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read
-// pulls a whole SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
+// peek/poke reach FPGA config regs like the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3];
+// see krikzz edn8-pro-pub edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain.
+// read pulls a whole SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
 //
 // Exit 0 on success, 1 on the op's error, 2 on a usage / no-device problem.
 #include <chrono>
