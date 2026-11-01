@@ -316,11 +316,25 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     a DAW's `setState` replaced while the transport plays keeps its nodes (a cart node and the notes it holds on the
     cart, a core, the resources they pin) until the next publish, the editor opening or a deactivate. The harness hosts
     (test host, CLI, Node addon) reclaim when their session calls `drainReleased` or `stopAudio`.
-  - **The DPF JACK standalone can reclaim on two threads** (pre-C5): a JACK buffer-size change runs
-    `PluginDSP::deactivate` on JACK's notification thread, which drains and reclaims the release ring there, beside the
-    main thread's own reclaim (`setGraph`'s, and since C5 the editor's per-frame one). The ring has one reader by
-    design, so the two can race while a buffer-size change lands; that is rare and manual, but the per-frame reclaim
-    widens the window from an edit to any frame. The fix is to route the deactivate's reclaim to the main thread.
+  - **The DPF JACK standalone's whole control handoff can run on JACK's thread** (pre-C5): a JACK buffer-size or
+    sample-rate change runs `PluginDSP::deactivate`, the change and then `activate` from DPF's notification callback
+    (`DistrhoPluginJACK.cpp`'s `jackBufferSizeCallback` / `jackSampleRateCallback` -> `setBufferSize(n, true)`), not
+    on the main thread every other control path of the plugin runs on, and the editor's `uiIdle` reclaims on that main
+    thread every frame. So `deactivate` hands the engine back on JACK's thread: `setAudioThreadOwns(false)` clears the
+    ownership bit, from which every push flushes inline on whichever thread makes it (an edit landing beside the JACK
+    thread's drain), and then `drainInto` drains the command ring there, `reclaimReleased` takes the release ring
+    there, and the script host's `reclaim` runs a pack's GC and free there (the ownership flip runs a `collect()` of
+    its own too) - a second consumer of the ring, and two threads in `JS_RunGC`/`freePack` is undefined behaviour, not
+    a corrupt ring. `activate` can likewise grow the plan
+    on that thread when the new buffer exceeds the plan's maximum (`setMaxBlockFrames` -> `GraphHost::reactivate`,
+    which replans and publishes), and re-declare the DAW parameters there. The fix is to marshal that whole handoff to
+    the control thread - the flush, the ownership flip, the drain, the release-ring reclaim and the script host's
+    GC/free, and the activate on the other side with its replan and parameter re-declaration - or to treat a
+    buffer-size or rate change as a message that thread applies, so the quiescent engine has one owner. Rare and
+    manual (a JACK buffer-size change in the standalone only; the formats a DAW loads - CLAP, VST3, AU - call both on
+    the host's main thread, and VST2's block-size opcode is the host's thread too). Only `activate`'s
+    `setMaxBlockFrames` is a no-op for a block within the plan's maximum, which is why the path went unnoticed; C5's
+    per-frame reclaim widened its window from an edit to any frame.
   - **MIDI streamed to a cart at its menu reaches the menu's own command parser** (pre-C5, unverified on hardware):
     the menu takes commands over the same FIFO, so a MIDI data pair such as `0x2A 0x73` (`*s`) sent while the menu
     shows can ask it to start an app. It holds for raw MIDI after a connect at the menu and for framed MIDI after a

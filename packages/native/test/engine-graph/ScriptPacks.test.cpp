@@ -1441,8 +1441,9 @@ TEST_CASE("under an audio thread, a load reclaims first: the generation a reload
     load(e, "test.back", toys(tally("test.back.count", 1)));
     place(e, document({docNode("count", "test.back.count"), midiOut("1")}, {docWire("count.out", "midi-out.in1")}));
     CHECK(block(e) == std::vector<Out>{{1, 0, {1, 1}}});
-    // The test thread is the block thread from here, and nothing reclaims but the loads, as in the plugin and SDL,
-    // which reclaim only inside setGraph and a load.
+    // The test thread is the block thread from here, and nothing reclaims but the loads, as in a host with no idle
+    // tick (a plugin with its editor closed; the plugin with one open and the SDL loop also reclaim at their idle
+    // tick).
     e.setAudioThreadOwns(true);
     const auto drained = [&] {
         e.drainCommands();

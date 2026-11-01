@@ -285,12 +285,15 @@ protected:
     // directly here (mirrors AudioDriverRpcService's loop, minus the spawned thread). ---
     //
     // activate and sampleRateChanged can re-activate the graph, so they assume DPF calls them on the control
-    // thread, as it does for CLAP, VST3 and AU. JACK re-runs deactivate/activate from its buffer-size
-    // callback, and VST2 resumes from processReplacing a plugin its host has not activated. Both are no-ops in
-    // practice: a block within the plan's maximum leaves setMaxBlockFrames nothing to do, and DPF skips an
-    // unchanged rate. Only a VST2 host that processes before it ever activates, with a block larger than the
-    // default maximum, would re-activate here first. The hazard predates the graph engine. (The output shape
-    // is no longer set here: the control plane builds the graph for the plugin's outputs at boot.)
+    // thread, as it does for CLAP, VST3 and AU. JACK does not: a buffer-size or sample-rate change runs deactivate(),
+    // the change, then activate() from its notification callback (DistrhoPluginJACK.cpp's jackBufferSizeCallback /
+    // jackSampleRateCallback -> setBufferSize(n, true)), and VST2 runs the same setBufferSize(n, true) from its own
+    // block-size opcode, on whichever thread its host calls that from. On a thread beside the main one, this is not a
+    // no-op to wave through: deactivate hands the engine back there (the ring's flush, the ownership flip, the drain,
+    // the release ring) with the editor's idle reclaiming and editing on this thread, which is spec/07's "control
+    // handoff on JACK's thread" residual, and only activate's setMaxBlockFrames is a no-op for a block within the
+    // plan's maximum - which is why that is the only part ever noticed. The hazard predates the graph engine. (The
+    // output shape is no longer set here: the control plane builds the graph for the plugin's outputs at boot.)
     void activate() override {
         // Hand the Engine to the DPF audio thread: from here every control-plane edit is push-only,
         // drained by run() each block. (Set BEFORE the host starts calling run(); the quiescent path
