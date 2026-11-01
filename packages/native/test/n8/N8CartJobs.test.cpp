@@ -55,6 +55,7 @@ struct FakeN8 {
     int                      fileDelayMs = 0;       // likewise each SD file write
     int                      fileReadDelayMs = 0;   // likewise each SD file read block
     bool                     failNextWrite = false; // the next SD file write answers its first block with an error
+    int                      throwOnFlushInput = 0; // the Nth flushInput from now throws, as a port that just died does
     bool                     failNextRead = false;  // the next SD file read block answers an error
     bool                     failNextList = false;  // the next directory load answers a disk error
     int                      filesOpen = 0;         // files opened on the card and not yet closed
@@ -118,6 +119,8 @@ struct FakeN8Port : ISerialPort {
     void flushInput() override {
         std::lock_guard<std::mutex> l(dev_.mu);
         out_.clear();
+        if (dev_.throwOnFlushInput > 0 && --dev_.throwOnFlushInput == 0)
+            throw std::runtime_error("fake port: flushInput failed");
     }
 
 private:
@@ -692,6 +695,48 @@ TEST_CASE("the reliable link keeps its sequence across a pause: no new sync, the
     CHECK(rig.dev.frameSeqs == std::vector<int>{0, 1});
     CHECK(rig.dev.opens == 1);
     CHECK(rig.host.link().reliable());
+}
+
+TEST_CASE("a port that throws as a job starts stops the link with the reason, and the job says the link went down",
+          "[n8][cart-jobs]") {
+    Rig rig;
+    rig.dev.files[kGameBattery] = saveOf(1024, 3);
+    rig.connect();
+    // The run's own pre-flush throws, as a USB unplug during a job does: the job never runs, so nothing addresses the
+    // card, and its record must still carry a reason rather than the generic failure a job with no outcome gets.
+    rig.dev.throwOnFlushInput = 1;  // connect() flushed once already; the job's own flush is the next
+    Job job;
+    REQUIRE(rig.submit(battery("dump"), job));
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    CHECK(job.state.load() == Job::Failed);
+    CHECK(job.error == "the link went down before the job ran");
+    // The failure is the link's, and lastError is where Settings > N8 reads it: the thread ended, so a connect can
+    // start it afresh.
+    CHECK(rig.host.link().lastError() == "serial write failed (N8 unplugged?): fake port: flushInput failed");
+    CHECK_FALSE(rig.host.link().isConnected());
+    CHECK_FALSE(rig.host.cartJobBusy());
+    CHECK(rig.dev.count("file-") == 0);
+    Job again;
+    std::string why;
+    CHECK_FALSE(rig.submit(battery("dump"), again, &why));
+    CHECK(why == "not connected");
+}
+
+TEST_CASE("a port that throws after a job ran still posts its outcome, and the link stops with the reason",
+          "[n8][cart-jobs]") {
+    Rig rig;
+    rig.dev.files[kGameBattery] = saveOf(1024, 3);
+    rig.connect();
+    // The flush after the job throws: the transfer itself completed, so its completion is the one that was decided.
+    rig.dev.throwOnFlushInput = 2;  // 1: the job's drain, 2: the flush after it
+    Job job;
+    REQUIRE(rig.submit(battery("dump"), job));
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    CHECK(job.state.load() == Job::Done);
+    CHECK(job.result == saveOf(1024, 3));
+    CHECK(rig.host.link().lastError() == "serial write failed (N8 unplugged?): fake port: flushInput failed");
+    CHECK_FALSE(rig.host.link().isConnected());
+    CHECK(rig.dev.count("file-") > 0);
 }
 
 TEST_CASE("a job its node abandons fails at once, stops at its next chunk, and the cart resumes streaming",

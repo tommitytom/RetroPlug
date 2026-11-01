@@ -338,15 +338,28 @@ void N8Link::runJob(TimedChunk& chunk, bool& have) {
         portOk = false;
     }
     AfterJob after = AfterJob::Stop;
+    bool       ran = false;
     if (portOk && running_.load(std::memory_order_acquire)) {
         try {
             // Whatever the back-channel still holds (a late ack) would read as the first bytes of the job's reply.
             serialPort_->flushInput();
             after = job.run(edio_.get());
+            ran   = true;
             serialPort_->flushInput();
             edio_->setReadTimeout(2000);  // a menu command raises it; streaming's own reads never wait on it
-        } catch (const std::exception&) {
-            // The job reports its own failure; one that escapes it leaves the link as a failed op does: streaming.
+        } catch (const std::exception& e) {
+            // A throw this far into a job is the port's: the jobs report their own failures and return (a flush that
+            // fails, or an edio call outside a job's own catch). The port cannot be trusted with another chunk, so the
+            // link stops exactly as a failed write stops it, with the reason kept for the UI (lastError), and a job
+            // that never ran hears that the link went down rather than failing with no reason at all.
+            setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
+            if (!ran) {
+                try {
+                    job.run(nullptr);
+                } catch (const std::exception&) {
+                }
+            }
+            portOk = false;
         }
     } else {
         try {

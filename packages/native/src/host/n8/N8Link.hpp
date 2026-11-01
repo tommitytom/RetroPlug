@@ -53,8 +53,11 @@ public:
     // the serial thread, so a job's completion is posted after the link is back. A job checks stopRequested() between
     // its steps, and those are its only stop points: a disconnect() (or the owner's destructor) that lands inside a
     // step waits for it: a 512-byte block of a file read (about half a second on the real cart), a battery file's whole
-    // write once it has begun (under a second), an upload's 8 KB chunk, up to the Edio timeout (2 s) for a cart that
-    // stops answering, plus the drain's bounded wait for acks.
+    // write once it has begun (under a second), an upload's 8 KB chunk, up to the Edio timeout (2 s, raised to 10 s
+    // while the menu installs an uploaded ROM) for a cart that stops answering, plus the drain's bounded wait for acks.
+    // A throw that escapes `run` is the port's (a job reports its own failures and returns): it is recorded
+    // (lastError), a job that never ran is told the link went down, and the link stops streaming as a failed write
+    // stops it, so a completion that had already been decided is still posted.
     struct PausedJob {
         std::function<AfterJob(Edio*)> run;
         std::function<void()>          done;
@@ -66,15 +69,16 @@ public:
     N8Link& operator=(const N8Link&) = delete;
 
     // --- Control (UI/main thread) ---
-    // Set once by the owner before any connect (read-only afterwards, so a job's resume-connect can run it
-    // too).
+    // Set once by the owner before any connect; connect() runs it on the caller's thread, while the link is the only
+    // thing on the port.
     void          setOnConnected(OnConnected fn) { onConnected_ = std::move(fn); }
     void          setOnControl(OnControl fn) { onControl_ = std::move(fn); }
     // Hand the serial thread a job to run with streaming paused (see PausedJob). False, and nothing runs, while the
     // link is down or another job is pending. From the moment the thread takes it until it is done, isConnected()
     // reads false and push() drops (and counts) what it is given.
     bool          runPaused(PausedJob job);
-    // A job was handed over and is not done yet (its `done` has not returned).
+    // The serial thread has a job to run, or is running one: the flag clears just before the job's `done`, which is
+    // what keeps a completion `done` posts out of the link's own busy answer.
     bool          jobPending() const { return jobPending_.load(std::memory_order_acquire); }
     // [any] A disconnect has been asked for: a paused job checks this between its steps and stops early.
     bool          stopRequested() const { return !running_.load(std::memory_order_acquire); }
