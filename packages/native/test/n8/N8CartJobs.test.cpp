@@ -841,7 +841,7 @@ TEST_CASE("a port that throws after a job ran still posts its outcome, and the l
     rig.dev.files[kGameBattery] = saveOf(1024, 3);
     rig.connect();
     // The flush after the job throws: the transfer itself completed, so its completion is the one that was decided.
-    rig.dev.throwOnFlushInput = 2;  // 1: the job's drain, 2: the flush after it
+    rig.dev.throwOnFlushInput = 2;  // 1: the run's own pre-flush, 2: the flush after it ran
     Job job;
     REQUIRE(rig.submit(battery("dump"), job));
     REQUIRE(waitUntil([&] { return job.finished(); }));

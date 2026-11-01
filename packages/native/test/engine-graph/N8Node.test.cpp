@@ -123,7 +123,7 @@ public:
 
     bool              attached   = true;
     bool              jobRunning = false;
-    int               refuseAfterPushes = -1;  // >= 0: the push after that many more of this block's is refused
+    int               refuseAfterPushes = -1;  // >= 0: the push after that many more is refused (it spans blocks)
     std::uint64_t     drops      = 0;
     int               acquires   = 0;
     int               releases   = 0;
@@ -279,7 +279,7 @@ TEST_CASE("rp.n8.nes gives the link its expansion volume at its first block, on 
     rig.devices.install(&cart, nullptr);
     REQUIRE(rig.set(fanOut(rig, R"("expansionVolume":50)")).ok);
     block(rig);
-    // 50 % of unity, rescaled as the UI's expVolToN8 does: round(50 * 128 / 100).
+    // 50 % of unity, rescaled as the node's expansionVolumeRegister does: round(50 * 128 / 100).
     REQUIRE(cart.volumes == std::vector<int>{64});
     block(rig);
     CHECK(cart.volumes.size() == 1);  // unchanged: nothing more

@@ -364,11 +364,15 @@ TEST_CASE("N8CartLink: the last node to release the link puts the expansion volu
     REQUIRE(waitForExpVolWrites(dev, 1));
     CHECK(expVolWrites(dev.wire()) == std::vector<int>{64});
 
-    // One node still drives the cart while the other releases: the register keeps the level it was given.
+    // One node still drives the cart while the other releases: the register keeps the level it was given, and the
+    // release writes nothing - a reset here would be a write of its own, which the wire below would hold.
     link.acquire();
     link.release();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));  // several serial turns: a reset would have gone out
+    CHECK(expVolWrites(dev.wire()) == std::vector<int>{64});
     link.setExpansionVolume(96);
     REQUIRE(waitForExpVolValue(dev, 96));
+    CHECK(expVolWrites(dev.wire()) == std::vector<int>{64, 96});
 
     // The last release: nothing in any plan drives the cart, so the register goes back to the cart's own setting
     // (unity for this mapper's Auto).

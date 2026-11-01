@@ -147,14 +147,25 @@ public:
     bool          connected() const override { return attached; }
     std::uint64_t dropped() const override { return drops; }
     void          setExpansionVolume(int value) override { volume = value; }
-    void          acquire() override { ++acquires; }
-    void          release() override { ++releases; }
+    void          acquire() override {
+        ++acquires;
+        ++holders;
+    }
+    void release() override {
+        ++releases;
+        --holders;
+        if (holders < minHolders) minHolders = holders;
+    }
 
     bool              attached = true;
     std::uint64_t     drops    = 0;
     int               volume   = -1;
     int               acquires = 0;
     int               releases = 0;
+    // The nodes holding the link right now, and the lowest that count has been after a release: a link that resets its
+    // device state on its last release needs the second never to be 0 while anything still drives the cart.
+    int               holders    = 0;
+    int               minHolders = 1;
     std::vector<Push> pushes;
 };
 
@@ -166,6 +177,14 @@ using rp::host::test::stereoDocument;
 // A document holding the probe beside the host's stereo pair, and nothing else.
 Engine::GraphRequest probeDocument() {
     return graphRequest(stereoDocument({}, DocExtras{{docNode("probe", DeviceProbe::id)}, {}}), {});
+}
+
+// The same document with the probe under another node id: a replacement instance, as a project edit that swaps the
+// system driving the cart makes.
+Engine::GraphRequest probeDocumentAs(const std::string& id) {
+    DocExtras extras;
+    extras.nodes.push_back(docNode(id, DeviceProbe::id));
+    return graphRequest(stereoDocument({}, extras), {});
 }
 
 // The same document without the probe, so publishing it reclaims the plan that held the node.
@@ -340,6 +359,34 @@ TEST_CASE("acquire and release balance across a plan that keeps the node and one
     CHECK(cart.releases == 1);
     CHECK(surface.acquires == 2);
     CHECK(surface.releases == 1);
+}
+
+TEST_CASE("a handover to a new node never leaves the cart link with no holder", "[devices]") {
+    script = ProbeScript{};  // one case at a time: nothing a case scripted reaches the next
+    FakeCartLink cart;
+    Engine       e(kRate);
+    REQUIRE(e.addNodePackage(deviceProbePackage()));
+    e.setDeviceLinks(&cart, nullptr);
+
+    // The document is republished with the node replaced by a new instance under a new id - what a project edit that
+    // swaps the system driving the cart does. The plan that replaces the first activates the second (and so acquires)
+    // before the first is reclaimed and destroyed, so the count a last release keys on never reaches zero.
+    REQUIRE(e.setGraph(probeDocumentAs("cart-a")).ok);
+    CHECK(cart.holders == 1);
+    REQUIRE(e.setGraph(probeDocumentAs("cart-b")).ok);
+    CHECK(cart.acquires == 2);
+    CHECK(cart.releases <= 1);
+    CHECK(cart.holders == 1);
+    CHECK(cart.minHolders >= 1);
+    block(e);
+    CHECK(script.rate == kRate);  // the new node runs on the handle it took
+
+    // Removing it is the only release that empties the link, and it comes once for each node that held it: the
+    // handover's own releases each left a holder behind.
+    REQUIRE(e.setGraph(noProbeDocument()).ok);
+    CHECK(cart.releases == 2);
+    CHECK(cart.holders == 0);
+    CHECK(cart.minHolders == 0);  // the count this link can key a device reset on, reached only with nothing left
 }
 
 TEST_CASE("a reactivate keeps the handles a node already holds, and destroy still releases once", "[devices]") {
