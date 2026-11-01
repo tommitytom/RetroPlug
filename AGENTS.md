@@ -59,10 +59,12 @@ The rules below are the parts that don't fit those.
   `.rom/1`) on each emulated console against the system-id RPCs and the ROM file, a write completing at the block
   that publishes it, a node removed or a plan replaced under a job, the engine's 64-job bound, a real device
   thread's progress, and a warmed block with writes in flight; `rp.n8.nes` from one source receiving what
-  `rp.mesen.nes` receives, in order and at their frames, its expansion volume, the note-offs a pause dropped, its
-  jobs' busy and not-connected refusals, an abandoned job and its `threads`; the surface's two nodes (a frame-0
-  drain, the queue's bound, the first-block discard, uniqueness, one link each); and the UI's staged message
-  reaching the node the running plan places under its id;
+  `rp.mesen.nes` receives, in order and at their frames, its expansion volume, the note-offs a pause dropped, the
+  notes it holds handed to its link when it leaves the plan (by an idle reclaim too, with no further publish), its
+  jobs' busy and not-connected refusals, an abandoned job and its `threads`, and the same node behind a real Engine
+  driving the production cart adapters to a fake serial port (`[n8-adapters]`), a host's teardown included; the
+  surface's two nodes (a frame-0 drain, the queue's bound, the first-block discard, uniqueness, one link each); and
+  the UI's staged message reaching the node the running plan places under its id;
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
   creation and release on the block thread, throws, a node's promise jobs charged to it; script node packs beside the

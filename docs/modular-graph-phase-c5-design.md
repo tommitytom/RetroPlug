@@ -504,9 +504,9 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   replaced plan with blocks running and no further publish (and allocating nothing when nothing came back), the jobs
   and their refusals, abandonment, `threads`, `unique`, a warmed block), `[n8-adapters]` (`N8Adapters.test.cpp`: the
   one case that composes the production adapters behind a real Engine, `rp.n8.nes` through `N8CartLink`, `N8Host` and
-  `N8Link` to `test/n8/FakeN8.hpp`'s serial port: a note, `rom.title` before and after an upload, a dump refused at a
-  game, a dump abandoned by a replan with the held note's note-off written once streaming resumes, and the hosts'
-  teardown order ending in `~N8Host`'s join; here
+  `N8Link` to `test/n8/FakeN8.hpp`'s serial port: a note, then in one section `rom.title` before and after an upload, a
+  dump refused at a game and a dump abandoned by a replan with the held note's note-off written once streaming resumes,
+  and in another the hosts' teardown order with a note held, its note-off written, ending in `~N8Host`'s join; here
   rather than in `retroplug-n8-test`, which links no engine, and run by `pnpm test:plugin`, which CI runs and
   `pnpm test:n8` is not), `[launchpad]` (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the
   first-block discard, uniqueness, `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a
