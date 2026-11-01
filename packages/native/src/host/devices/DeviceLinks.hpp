@@ -32,8 +32,7 @@ inline constexpr std::size_t kMaxDeviceMessage = 560;
 
 // One message in storage the caller owns: a drain copies into the node's own array, so nothing the block thread drops
 // is freed there. Also the slot a device link's own receive ring holds (LaunchpadLink's). There is no arrival frame:
-// the device's traffic is not timed against the block, so a surface node places what it drains at frame 0, exactly as
-// rp.host.controller-in places the host's staged pad traffic.
+// the device's traffic is not timed against the block, so a surface node places what it drains at frame 0.
 struct DeviceMessage {
     std::uint16_t size                     = 0;
     std::uint8_t  data[kMaxDeviceMessage] = {};

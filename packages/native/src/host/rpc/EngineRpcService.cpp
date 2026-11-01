@@ -247,16 +247,6 @@ bool EngineRpcService::pressButton(std::uint32_t id, std::uint32_t button, bool 
     return true;
 }
 
-bool EngineRpcService::stageSystemMidi(std::uint32_t id, std::vector<std::uint8_t> bytes) {
-    // Same optimistic contract as pressButton: queued through the invoker so it reaches a live core whether
-    // the audio thread is running or the flush is inline, and the queued apply cannot report back. Refuse
-    // only what can never be delivered - an empty message. There is no upper bound: a rig SysEx is ten
-    // bytes, and the command carries anything past four as an owning payload.
-    if (bytes.empty()) return false;
-    invoker_.stageSystemMidi(id, std::move(bytes));
-    return true;
-}
-
 bool EngineRpcService::stageNodeMidi(std::string nodeId, std::vector<std::uint8_t> bytes) {
     if (bytes.empty()) return false;
     invoker_.stageNodeMidi(std::move(nodeId), std::move(bytes));

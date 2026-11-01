@@ -27,35 +27,6 @@ void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes, std::uint32_t fra
     }
 }
 
-bool QueuedInvoker::stageControllerMidi(std::vector<std::uint8_t> bytes) {
-    // Inline-only: drainInto reads `len` bytes out of the 4-byte slot, so a longer message would read past it.
-    if (bytes.empty() || bytes.size() > 4) return false;
-    DspCommand c;
-    c.kind = DspCommand::Kind::StageControllerMidi;
-    c.stageMidi.ext = nullptr;
-    c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());
-    for (std::size_t i = 0; i < bytes.size(); ++i) c.stageMidi.data[i] = bytes[i];
-    push(c);
-    return true;
-}
-
-void QueuedInvoker::stageSystemMidi(SystemId id, std::vector<std::uint8_t> bytes) {
-    if (bytes.empty()) return;
-    DspCommand c;
-    c.kind = DspCommand::Kind::StageSystemMidi;
-    c.stageSystemMidi.id = static_cast<std::uint32_t>(id);
-    c.stageSystemMidi.ext = nullptr;
-    if (bytes.size() <= 4) {
-        c.stageSystemMidi.len = static_cast<std::uint8_t>(bytes.size());
-        for (std::size_t i = 0; i < bytes.size(); ++i) c.stageSystemMidi.data[i] = bytes[i];
-        push(c);  // no heap payload: dropped on a full ring (a lost knob step, not a leak)
-    } else {
-        c.stageSystemMidi.len = 0;
-        c.stageSystemMidi.ext = new std::vector<std::uint8_t>(std::move(bytes));
-        if (!push(c)) delete c.stageSystemMidi.ext;  // full ring: drop it, never leak it
-    }
-}
-
 void QueuedInvoker::stageNodeMidi(std::string nodeId, std::vector<std::uint8_t> bytes) {
     if (bytes.empty()) return;
     DspCommand c;

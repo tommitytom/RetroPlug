@@ -22,7 +22,6 @@
 #include "transport/FrameBufferTriple.hpp"
 #include "native/core/img/png/lodepng.h"
 
-#include "graph/CanonicalJson.hpp"
 #include "graph/Descriptor.hpp"
 #include "graph/GraphHost.hpp"
 #include "graph/HostNodes.hpp"
@@ -177,9 +176,7 @@ struct Engine::Graph {
 Engine::Engine(double sampleRate) : Engine(sampleRate, embeddedScripts()) {}
 
 Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> scriptBundle)
-    : sampleRate_(sampleRate),
-      pendingMidi_(rp::host::kHostMidiInMessages, rp::host::kHostMidiInBytes),
-      pendingControllerMidi_(rp::host::kControllerInMessages, rp::host::kControllerInBytes) {
+    : sampleRate_(sampleRate), pendingMidi_(rp::host::kHostMidiInMessages, rp::host::kHostMidiInBytes) {
     graph_ = std::make_unique<Graph>();
     // The one factory a system node's build goes through, with every core backend on it: a host that composes an Engine
     // builds cores, whatever else it keeps.
@@ -218,20 +215,12 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
             return core;
         },
         [](void* ctx, SystemBase* core) { static_cast<Engine*>(ctx)->destroySystem(core); }};
-    // rp.engine.host-io/2: the staging the hosts fill and the buffers they drain, on the block thread.
+    // rp.engine.host-io/3: the staging the hosts fill and the buffer they drain, on the block thread.
     graph_->hostIo = {
         this,
         [](void* ctx, rp_queue* out) { static_cast<Engine*>(ctx)->pendingMidi_.takeSortedInto(*out); },
-        [](void* ctx, rp_queue* out) { static_cast<Engine*>(ctx)->pendingControllerMidi_.takeInto(*out); },
-        [](void* ctx) { return static_cast<Engine*>(ctx)->controllerConnected_; },
         [](void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
             static_cast<Engine*>(ctx)->midiOut_.push_back({system, frame, std::vector<std::uint8_t>(data, data + size)});
-        },
-        [](void* ctx, const std::uint8_t* data, std::size_t size) {
-            static_cast<Engine*>(ctx)->controllerOut_.emplace_back(data, data + size);
-        },
-        [](void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush) {
-            if (const auto& sink = static_cast<Engine*>(ctx)->coreByteSink_) sink(frame, data, size, flush);
         }};
     graph_->syncTrace = {this, [](void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
                              auto* self = static_cast<Engine*>(ctx);
@@ -351,11 +340,6 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     // The system nodes and the slots name the same systems, each node as sys-<id>, its settings naming the `system` it
     // builds its core for. A node naming none is left to its own create, which refuses it with a reason naming what it
     // must name (so the whole check waits: a node with no id cannot be lined up against the slots).
-    struct SystemNodeInDoc {
-        SystemId                  id = 0;
-        const rp::graph::NodeDoc* node = nullptr;
-    };
-    std::vector<SystemNodeInDoc> systemNodes;
     std::vector<SystemId> named;
     bool malformed = false;
     for (const auto& n : doc->nodes) {
@@ -372,7 +356,6 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
         if (n.id != "sys-" + std::to_string(*target.id))
             return refuse(n.id, "slots",
                           "a system node is sys-<id>, its settings naming its system as {\"system\": <id>}");
-        systemNodes.push_back({*target.id, &n});
         named.push_back(*target.id);
     }
     std::vector<SystemId> slots = request.slots;
@@ -405,9 +388,8 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     }
     // The host inputs, one of each at most: each takes everything staged, wired or not, so a second would take it from
     // the first whenever it ran first. The host MIDI out, one at most: it frame-sorts what it merges, and a second
-    // would append its own run behind it, so midiOut_ would step back in frame (buildGraph places one). And the one
-    // system a physical N8 can mirror, of the document's.
-    bool takesHostMidi = false, takesControllerMidi = false, sendsHostMidi = false;
+    // would append its own run behind it, so midiOut_ would step back in frame (buildGraph places one).
+    bool takesHostMidi = false, sendsHostMidi = false;
     for (const auto& n : doc->nodes) {
         if (n.type == "rp.host.midi-in") {
             if (takesHostMidi)
@@ -420,27 +402,6 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
                               "a document has one rp.host.midi-out at most: it merges all the host MIDI out by frame");
             sendsHostMidi = true;
         }
-        if (n.type == "rp.host.controller-in") {
-            if (takesControllerMidi)
-                return refuse(n.id, "controller-in",
-                              "a document has one rp.host.controller-in at most: it takes all the staged control-surface MIDI");
-            takesControllerMidi = true;
-        }
-        if (n.type != "rp.n8.cart-mirror") continue;
-        if (table->cartMirror != 0)
-            return refuse(n.id, "cart-mirror", "a document has one rp.n8.cart-mirror at most: there is one cart to mirror to");
-        // Read as the node reads its settings, so the two accept the same ones.
-        const auto id = rp::host::cartMirrorSystem(n.settings ? rp::graph::canonicalJson(*n.settings) : std::string("{}"));
-        if (!id || std::find(request.slots.begin(), request.slots.end(), *id) == request.slots.end())
-            return refuse(n.id, "cart-mirror", "a cart mirror's settings are {\"system\": <id>}, naming one of the slots");
-        // The document's own type for the slot, which is the core a built one becomes: a NES system's node builds a NES.
-        const SystemNodeInDoc* systemNode = nullptr;
-        for (const auto& e : systemNodes)
-            if (e.id == *id) systemNode = &e;
-        if (systemNode && systemNode->node->type != rp::host::systemNodeType(SystemKind::MesenNes))
-            return refuse(n.id, "cart-mirror", "a cart mirror names a NES, the one system an N8 is a cart for: system " +
-                                                   std::to_string(*id) + " is placed as " + systemNode->node->type);
-        table->cartMirror = *id;
     }
 
     rp::graph::HostCommand trailer{};
@@ -693,7 +654,6 @@ void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const v
             break;
         }
         case DspCommand::Kind::StageMidi:       delete c.stageMidi.ext; break;
-        case DspCommand::Kind::StageSystemMidi: delete c.stageSystemMidi.ext; break;
         case DspCommand::Kind::StageNodeMidi:   delete c.stageNodeMidi.ext; break;
         default: break;
     }
@@ -715,21 +675,6 @@ void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
                 stageMidi(cmd.stageMidi.frame, std::span<const std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.len));
             }
             break;
-        case DspCommand::Kind::StageControllerMidi:
-            stageControllerMidi(std::span<const std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.len));
-            break;
-        case DspCommand::Kind::StageSystemMidi: {
-            // Whether the cart mirrors this system: the rp.n8.cart-mirror of this plan's table, judged like the core
-            // lookup against the plan current at this point of the drain (a handler must not read currentTable()).
-            const bool toCart = coreByteSink_ && cmd.stageSystemMidi.id != 0 && cmd.stageSystemMidi.id == table.cartMirror;
-            if (cmd.stageSystemMidi.ext) {
-                stageSystemMidi(core(cmd.stageSystemMidi.id), cmd.stageSystemMidi.ext->data(), cmd.stageSystemMidi.ext->size(), toCart);
-                delete cmd.stageSystemMidi.ext;
-            } else {
-                stageSystemMidi(core(cmd.stageSystemMidi.id), cmd.stageSystemMidi.data, cmd.stageSystemMidi.len, toCart);
-            }
-            break;
-        }
         case DspCommand::Kind::StageNodeMidi:
             if (cmd.stageNodeMidi.ext) {
                 stageNodeMidi(cmd.stageNodeMidi.ext->node, cmd.stageNodeMidi.ext->bytes.data(),
@@ -845,17 +790,9 @@ void Engine::Staging::clear() {
 
 void Engine::stageMidi(std::uint32_t frame, std::span<const std::uint8_t> bytes) { pendingMidi_.add(frame, bytes); }
 
-void Engine::stageControllerMidi(std::span<const std::uint8_t> bytes) {
-    // Frame 0: a control surface's timing is not musical. A pad press is quantised by the controller app
-    // against the block clock, not placed by sample, so an intra-block offset would carry no information.
-    pendingControllerMidi_.add(0, bytes);
-}
-
 void Engine::setBpm(double bpm) { bpm_ = bpm; }
 void Engine::setTransport(bool playing) { transport_ = playing; }
 void Engine::setPpq(double ppq) { ppq_ = ppq < 0.0 ? 0.0 : ppq; }
-
-SystemId Engine::cartMirrorSystemId() const { return currentTable().cartMirror; }
 
 // The graph TS published decides who goes where: it built it for the host's outputs.
 void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
@@ -875,15 +812,13 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
         for (std::size_t c = 0; c < numOutputs; ++c)
             if (outputs[c]) std::memset(outputs[c], 0, frames * sizeof(float));
         pendingMidi_.clear();
-        pendingControllerMidi_.clear();
         oversizedFrames_.store(frames, std::memory_order_relaxed);
         oversizedBlocks_.fetch_add(1, std::memory_order_release);
         return;
     }
     blockTracing_ = syncTrace_.beginBlock(frames, sampleRate_, bpm_, ppq_, transport_);
-    // The block's host outputs start empty here, and the plan's rp.host.midi-out / controller-out append to them.
+    // The block's host output starts empty here, and the plan's rp.host.midi-out appends to it.
     midiOut_.clear();
-    controllerOut_.clear();
     const rp_transport transport{sampleRate_, bpm_, ppq_, transport_ ? std::uint32_t{RP_TRANSPORT_PLAYING} : 0u};
 #ifdef RETROPLUG_PROFILE
     rp::host::ScriptHost& script = graph_->script;
@@ -900,10 +835,9 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     // The allocation window's block counts (a profile build): the script nodes' promise jobs ran at their calls'
     // checkpoints, inside the plan's run.
     graph_->script.endBlock();
-    // What was staged for this block and no node of the plan took (a plan with no rp.host.midi-in or controller-in)
-    // is dropped, not carried into the next block.
+    // What was staged for this block and no node of the plan took (a plan with no rp.host.midi-in) is dropped, not
+    // carried into the next block.
     pendingMidi_.clear();
-    pendingControllerMidi_.clear();
     const rp::host::SystemTable& table = currentTable();
 #ifdef RETROPLUG_PROFILE
     script.spanBegin(rp::host::DSP_SPAN_PUBLISH);
@@ -1300,32 +1234,4 @@ bool Engine::stageNodeMidi(const std::string& nodeId, const std::uint8_t* bytes,
     if (!node) return false;
     const auto* stage = static_cast<const rp::host::rp_host_stage*>(node->vt->get_interface(node, RP_STAGE_INTERFACE));
     return stage != nullptr && stage->stage(stage->ctx, bytes, len, sampleRate_);
-}
-
-bool Engine::stageSystemMidi(SystemBase* sys, const std::uint8_t* bytes, std::size_t len, bool toCart) {
-    if (!bytes || len == 0 || !sys) return false;
-    // The cart mirrors this system (the plan's rp.n8.cart-mirror): it gets the message too, or a setting changed from the UI would
-    // reach the emulated console and not the real one. (Drained on the audio thread, as the cart mirror node calls it.)
-    if (toCart) coreByteSink_(0, bytes, len, false);
-    // Frame 0: a knob has no musical position, exactly as stageControllerMidi argues for a pad press.
-    //
-    // pushCoreBytes, not onMidi, and the difference is load-bearing: onMidi is the MIDI-FRAMED door, and the
-    // NES role's implementation clamps every event to MidiEvent::kDataSize and ignores dataExt
-    // (NesN8FifoRole.cpp), so a SysEx through it arrives as its first four bytes and the cart waits forever
-    // for an F7 that was thrown away. pushCoreBytes is the raw door a protocol node's bytes reach a system
-    // through (the system node's bytes input), with no framing and no cap - which is what a rig message
-    // needs. A system with no raw ingress falls back to the framed one, where a channel message still fits.
-    if (sys->hasCoreBytesIn()) {
-        // flush=false on purpose: flush DISCARDS whatever the device still holds, which for the N8 FIFO is
-        // the performance queued behind this. A settings message is not a barrier - it joins the stream.
-        sys->pushCoreBytes(0, bytes, len, false);
-        return true;
-    }
-    if (len > ::MidiEvent::kDataSize) return false;
-    ::MidiEvent ev;
-    ev.frame = 0;
-    ev.size = static_cast<std::uint32_t>(len);
-    for (std::size_t i = 0; i < len; ++i) ev.data[i] = bytes[i];
-    sys->onMidi(&ev, 1);
-    return true;
 }

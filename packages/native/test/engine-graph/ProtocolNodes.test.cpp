@@ -411,9 +411,9 @@ std::vector<Message> serialBytes(const std::vector<Message>& ms) {
 
 // The surface link a surface structure's rig installs, over the fake: what the session sends recorded as the node
 // hands it over, in that order, whether or not a device is there to take it, and the rest the fake's. That is the
-// same stream rp.host.controller-out's sink recorded before the surface replaced it, while nothing was attached too
-// (the session paints a device it has just taken, but an LED update it computes while detached is still its output),
-// so the two runs' controller-out digests are of the same thing: what the session sent, not what a device kept.
+// stream the recorded digests are of, whether or not the link is attached: the session paints a device it has just
+// taken, but an LED update it computes while detached is still its output, so a run's controller-out digest is of what
+// the session sent, not what a device kept.
 class RecordingSurfaceLink final : public rp::host::SurfaceLink {
 public:
     RecordingSurfaceLink(rp::host::test::FakeSurfaceLink& fake, std::vector<Bytes>& out) : fake_(fake), out_(out) {}
@@ -443,10 +443,8 @@ struct ProtocolRig {
     ScriptHost                        scripts{&rp::host::test::bindProbes, &log};
     rp::graph::NodeRegistry           registry;
     rp::graph::ResourceTable          resources;
-    // The engine's host I/O, standing in: what is staged for a block, and what the output nodes hand back.
+    // The engine's host I/O, standing in: what is staged for a block, and what the output node hands back.
     std::vector<std::pair<std::uint32_t, Bytes>> stagedMidi;
-    std::vector<Bytes>                           stagedController;
-    bool                                         connected = false;
     struct Out {
         std::uint32_t system;
         std::uint32_t frame;
@@ -454,11 +452,10 @@ struct ProtocolRig {
     };
     std::vector<Out>                  midiOut;
     std::vector<Bytes>                controllerOut;
-    // What each block handed the controller's sink: the host's controller-out node, or (a surface structure) the
-    // surface output node, which pushes the session's LED and page stream as that node hands it over.
+    // What each block handed the surface's link: the surface output node, which pushes the session's LED and page
+    // stream as that node hands it over.
     std::vector<std::vector<Bytes>>   outByBlock;
-    rp::host::EngineHostIo            hostIo{this, &takeMidi, &takeController, &isConnected, &recordMidiOut, &recordControllerOut,
-                                             &noCart};
+    rp::host::EngineHostIo            hostIo{this, &takeMidi, &recordMidiOut};
     // A structure whose session is wired to rp.launchpad.surface-in / -out: the device's link, fed the traffic a host
     // would stage and drained for what the session wrote, and rp.host.devices/1 answering for it.
     rp::host::test::FakeSurfaceLink   surface;
@@ -580,20 +577,13 @@ struct ProtocolRig {
     // output recorded.
     void block(const BlockIn& in) {
         stagedMidi = in.midi;
-        if (structure.surface) {
-            // The host stages nothing for the controller's nodes: the device's link carries the same traffic in, and
-            // what the session writes reaches it through the surface output node in the block, into the same record
-            // the host's controller-out node fills.
-            stagedController.clear();
-            surface.attached = in.connected;
-            surface.input.clear();
-            surface.next = 0;
-            surface.outputs.clear();  // what the device took: unread here, and it would grow block after block
-            for (const Bytes& data : in.controller) surface.input.push_back(rp::host::test::deviceMessage(data));
-        } else {
-            stagedController = in.controller;
-        }
-        connected = in.connected;
+        // The device's link carries the session's traffic in, and what the session writes reaches it through the
+        // surface output node in the block.
+        surface.attached = in.connected;
+        surface.input.clear();
+        surface.next = 0;
+        surface.outputs.clear();  // what the device took: unread here, and it would grow block after block
+        for (const Bytes& data : in.controller) surface.input.push_back(rp::host::test::deviceMessage(data));
         for (const std::uint32_t gb : structure.gameBoys) {
             Feed& feed = node<Feed>("mi-out-" + std::to_string(gb));
             for (const Captured& c : in.serialOut)
@@ -674,26 +664,16 @@ struct ProtocolRig {
         for (const auto& [frame, data] : staged) rp::graph::pushMessage(*out, frame, data);
         staged.clear();
     }
-    static void takeController(void* ctx, rp_queue* out) {
-        for (const Bytes& data : of(ctx).stagedController) rp::graph::pushMessage(*out, 0, data);
-        of(ctx).stagedController.clear();
-    }
-    // The surface's traffic is the link's on the way in and the output node's `out` on the way back, so a session
-    // wired to it reads and writes the same two streams the host's staging carried.
+    // The surface's traffic is the link's on the way in and the output node's `out` on the way back.
     static rp::host::SurfaceLink* acquireSurface(void* ctx, const char* name) {
         return of(ctx).devices.acquireSurface(name);
     }
     static void releaseSurface(void* ctx, rp::host::SurfaceLink* link) { of(ctx).devices.release(link); }
     static rp::host::CartLink* acquireCart(void* ctx, const char* name) { return of(ctx).devices.acquireCart(name); }
     static void releaseCart(void* ctx, rp::host::CartLink* link) { of(ctx).devices.release(link); }
-    static bool isConnected(void* ctx) { return of(ctx).connected; }
     static void recordMidiOut(void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
         of(ctx).midiOut.push_back({system, frame, Bytes(data, data + size)});
     }
-    static void recordControllerOut(void* ctx, const std::uint8_t* data, std::size_t size) {
-        of(ctx).controllerOut.emplace_back(data, data + size);
-    }
-    static void noCart(void*, std::uint32_t, const std::uint8_t*, std::size_t, bool) {}
 
     // True before an audio thread starts running blocks, false after it has stopped, as the Engine does.
     void setAudioThreadOwns(bool owns) {

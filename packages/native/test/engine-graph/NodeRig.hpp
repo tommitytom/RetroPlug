@@ -2,9 +2,8 @@
 
 // A GraphHost carrying the system node packages, the host I/O nodes and the test nodes (TestNodes.hpp), with
 // stand-ins for the engine's services: a node naming a `system` and a `rom` resource builds its core through the rig's
-// factory and the rig's resource table, as the Engine's rp.host.systems/1 and putResource would; what the host MIDI out,
-// the cart mirror and the sync trace would hand the engine is recorded instead; the device links are the ones a case
-// installs.
+// factory and the rig's resource table, as the Engine's rp.host.systems/1 and putResource would; what the host MIDI out
+// and the sync trace would hand the engine is recorded instead; the device links are the ones a case installs.
 
 #include <algorithm>
 #include <cstdio>
@@ -33,7 +32,7 @@
 
 namespace rp::host::test {
 
-// One call a node made on the engine's cart sink or sync trace.
+// One call a node made on the engine's sync trace.
 struct HostCall {
     std::uint32_t             frame = 0;
     std::vector<std::uint8_t> data;
@@ -80,14 +79,10 @@ struct NodeRig {
     // The factory a `system` node builds through, every core backend registered: the engine's own on a smaller scale.
     SystemFactory                                        factory;
     HostSystems                                          systems{this, &buildSystem, &destroySystem};
-    // The host I/O stand-in: nothing is ever staged, `connected` is the control surface, and the host MIDI out and the
-    // cart's calls are recorded. The control-surface out goes nowhere, since no test reads it off this rig
-    // (HostIo.test.cpp reads it off an Engine), but a node calls it, so it is wired.
-    bool                                                 connected = false;
-    std::vector<HostCall>                                cart, traced;
+    // The host I/O stand-in: nothing is ever staged, and what the host MIDI out hands the engine is recorded.
+    std::vector<HostCall>                                traced;
     std::vector<HostMidiOut>                             midiOut;
-    EngineHostIo                                         hostIo{this, &takeNothing, &takeNothing, &isConnected, &recordMidiOut,
-                                                                &ignoreControllerOut, &recordCart};
+    EngineHostIo                                         hostIo{this, &takeNothing, &recordMidiOut};
     EngineSyncTrace                                      trace{this, &recordTrace};
     // rp.host.devices/1: the links a case installs (devices.install), each name with none answering never connected, as
     // an Engine's registry does.
@@ -198,14 +193,9 @@ struct NodeRig {
 
     static std::vector<std::uint8_t> bytesOf(const std::uint8_t* data, std::size_t size) { return {data, data + size}; }
     static void takeNothing(void*, rp_queue*) {}
-    static bool isConnected(void* ctx) { return static_cast<NodeRig*>(ctx)->connected; }
     static void recordMidiOut(void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data,
                               std::size_t size) {
         static_cast<NodeRig*>(ctx)->midiOut.push_back({system, frame, bytesOf(data, size)});
-    }
-    static void ignoreControllerOut(void*, const std::uint8_t*, std::size_t) {}
-    static void recordCart(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush) {
-        static_cast<NodeRig*>(ctx)->cart.push_back({frame, bytesOf(data, size), flush});
     }
     static void recordTrace(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
         static_cast<NodeRig*>(ctx)->traced.push_back({frame, bytesOf(data, size), false});

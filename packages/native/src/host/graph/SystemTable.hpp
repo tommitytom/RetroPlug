@@ -26,8 +26,6 @@ struct SystemEntry {
 // complete (no null core) before it is published with the plan, and nothing writes it after publication.
 struct SystemTable {
     std::vector<SystemEntry> slots;
-    // The system the plan's rp.n8.cart-mirror names (0 = none): one of the plan's NES systems.
-    SystemId                 cartMirror = 0;
 
     // A linear scan in slot order: a per-system command names a system by id.
     const SystemEntry* find(SystemId id) const {

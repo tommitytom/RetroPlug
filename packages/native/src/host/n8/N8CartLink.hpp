@@ -3,9 +3,9 @@
 // The cart device link rp.n8.nes binds through rp.host.devices/1, over the N8Host a host already owns: the streaming
 // ring, the connected state, the pushes it lost, the expansion-audio master volume N8Host keeps for the project and
 // re-applies on every connect, and the cart's capability jobs. Nothing here opens the port or decides when the link
-// comes up: that stays the host's (Settings > N8, the SD worker's pause and resume, the port being exclusive so one
-// instance has it). Header-only, as it is a few forwards over what N8Host already does; the plugin and the standalone,
-// which own the N8Host, are its only callers.
+// comes up: that stays the host's (Settings > N8, the port being exclusive so one instance has it, and the pause and
+// resume a job's transfer needs). Header-only, as it is a few forwards over what N8Host already does; the plugin and
+// the standalone, which own the N8Host, are its only callers.
 
 #include <atomic>
 #include <cstddef>

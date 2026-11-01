@@ -52,7 +52,6 @@ void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::screenshot>(e);
     s.template addMethod<&EngineRpcService::getFrame>(e);
     s.template addMethod<&EngineRpcService::pressButton>(e);
-    s.template addMethod<&EngineRpcService::stageSystemMidi>(e);
     s.template addMethod<&EngineRpcService::stageNodeMidi>(e);
 }
 

@@ -10,10 +10,11 @@
 //   real Game Boy   send goes out on the node's `midiOut` port, and an Arduinoboy on the other end does
 //                   the same job
 //
-// So both paths carry the SAME launch stream and are in sync by construction - the property
-// Engine::setCoreByteSink gives the risa/N8 mirror. Note what is deliberately NOT here: the app does not
-// reimplement the MI.MAP protocol. It emits the ordinary NoteOn/NoteOff that the shipped role already
-// consumes, which is why there is no second copy of the wire format to keep in step.
+// So both paths carry the SAME launch stream and are in sync by construction - the property buildGraph's
+// fan-out gives an emulated cart and the N8 beside it, both fed one protocol node's output. Note what is
+// deliberately NOT here: the app does not reimplement the MI.MAP protocol. It emits the ordinary
+// NoteOn/NoteOff that the shipped role already consumes, which is why there is no second copy of the wire
+// format to keep in step.
 
 /** The MI.MAP row range. Rows 254 and 255 are byte-identical to the 0xFE handshake and 0xFF clock
  *  sentinels, so they are not addressable (MEASURED, docs/launchpad-plan.md 2.5 B7). */

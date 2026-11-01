@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -16,19 +14,6 @@
 namespace retroplug {
 
 namespace {
-
-// Read a whole local file into bytes (the ROM / .srm to upload). Throws if it can't be opened.
-std::vector<std::uint8_t> readFileBytes(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) throw std::runtime_error("cannot open file: " + path);
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-}
-
-// The final path component (basename) of a local or SD path.
-std::string baseNameOf(const std::string& path) {
-    const auto i = path.find_last_of("/\\");
-    return i == std::string::npos ? path : path.substr(i + 1);
-}
 
 // iNES mappers whose cartridge carries its own sound chip - the audio the N8's FPGA mixes in through
 // `master_vol`. The TS twin is EXPANSION_MAPPERS in cli/sessions/n8-play.ts (the same policy behind
@@ -80,12 +65,6 @@ constexpr int kMenuMapper = 255;
 constexpr const char* kBatteryAtGame =
     "the battery file can only be reached at the N8 menu: power-cycle to the menu first";
 
-// Why the SD worker's battery transfers (startDumpSram, startRestoreSram) are refused: they would move the cart's own
-// battery over USB, which the battery jobs never do.
-constexpr const char* kBatteryDirect =
-    "the battery file can only be reached at the N8 menu: power-cycle to the menu first, and use the cart node's "
-    "rp.system.sram/1 jobs (sram.dump, sram.restore); the cart's own battery is never transferred over USB";
-
 // The largest battery file a restore takes: far past any the N8 writes (a 64 KB battery is a 66,560-byte file), so
 // only a mistake is refused.
 constexpr std::size_t kMaxBatteryFile = 1u << 20;
@@ -130,8 +109,8 @@ bool plainFileName(const std::string& name) {
 }  // namespace
 
 N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string configDir)
-    : factory_(std::move(factory)), link_(factory_), lister_(std::move(lister)), configDir_(std::move(configDir)) {
-    // Every time the streaming link comes up - a Connect, a live port switch, the resume after an SD op, the
+    : link_(std::move(factory)), lister_(std::move(lister)), configDir_(std::move(configDir)) {
+    // Every time the streaming link comes up - a Connect, a live port switch, the resume after a job's transfer, the
     // reconnect restore() does - set the expansion-audio master volume. Connect is the moment that matters:
     // a ROM load deliberately leaves streaming stopped, so the user comes back through here either way.
     link_.setOnConnected([this](Edio& edio) {
@@ -180,7 +159,7 @@ N8ConfigDto N8Host::getConfig() {
 }
 
 void N8Host::setPort(const std::string& port) {
-    if (sdWorker_.busy() || cartJobBusy()) return;  // an SD op or a cart job owns the port; don't race link_ connect
+    if (cartJobBusy()) return;  // a cart job owns the port; don't race link_ connect
     const bool wasStreaming = link_.isConnected();
     if (port != port_) {
         // Another port may be another cart, with another SD card: what this host booted on the last one names nothing
@@ -197,7 +176,7 @@ void N8Host::setPort(const std::string& port) {
 }
 
 void N8Host::connect(bool enable) {
-    if (sdWorker_.busy() || cartJobBusy()) return;  // a job owns the port; the menu also disables this row while busy
+    if (cartJobBusy()) return;  // a job owns the port; the menu also disables this row while busy
     if (enable) {
         if (port_.empty()) {  // auto-pick the first attached N8 (USB VID:PID 38df:0017)
             for (const N8PortDto& p : (lister_ ? lister_() : std::vector<N8PortDto>{}))
@@ -213,7 +192,7 @@ void N8Host::connect(bool enable) {
 }
 
 void N8Host::setLookahead(int ms) {
-    if (sdWorker_.busy() || cartJobBusy()) return;
+    if (cartJobBusy()) return;
     link_.setLookaheadMs(ms < 0 ? 0 : ms);
     save();
 }
@@ -222,8 +201,8 @@ void N8Host::setExpVol(int v) {
     const int clamped = v < 0 ? EXP_VOL_AUTO : (v > 255 ? 255 : v);
     if (expVol_.exchange(clamped, std::memory_order_release) == clamped) return;
     // Publish the change; a live link's serial thread picks it up at its next turn, so turning the knob is audible on
-    // the console straight away without interrupting the MIDI stream. A no-op while disconnected (and while an SD op
-    // owns the port, since that disconnects the link first): the next connect applies the new value.
+    // the console straight away without interrupting the MIDI stream. A no-op while disconnected (and while a job
+    // holds the link paused): the next connect applies the new value.
     expVolGeneration_.fetch_add(1, std::memory_order_release);
 }
 
@@ -266,85 +245,6 @@ void N8Host::save() {
         std::fprintf(f, "%s\n%d\n%d\n", port_.c_str(), link_.lookaheadMs(), enabled_ ? 1 : 0);
         std::fclose(f);
     }
-}
-
-N8SdWorker::Job N8Host::controlJob(bool reconnectAfter, std::function<void(Edio&, N8SdWorker::Progress&)> op) {
-    N8Link::PortFactory factory = factory_;  // copy for the worker thread
-    const std::string   port    = port_;      // stable while busy (config edits are rejected)
-    N8Link*             link    = &link_;      // sdWorker_ joins before link_ is destroyed, so this stays valid
-    return [factory, port, link, reconnectAfter, op = std::move(op)](N8SdWorker::Progress& p) {
-        if (port.empty()) throw std::runtime_error("no N8 port selected");
-        const bool wasStreaming = link->isConnected();
-        link->disconnect();  // release the exclusive serial port so the control Edio can open it
-        std::unique_ptr<ISerialPort> sp;
-        try {
-            sp = factory(port);  // exclusive OS open; throws if busy / absent
-        } catch (const std::exception& e) {
-            if (wasStreaming) link->connect(port);
-            throw std::runtime_error("cannot open " + port + ": " + e.what());
-        }
-        Edio edio(*sp);
-        try {
-            edio.connect();  // N8 hardware handshake (works whether the menu or a game is running)
-            op(edio, p);
-        } catch (...) {
-            if (wasStreaming) link->connect(port);  // a failed op leaves the previously-running state streaming
-            throw;
-        }
-        if (reconnectAfter && wasStreaming) link->connect(port);
-    };
-}
-
-void N8Host::startLoadRom(const std::string& romPath) {
-    if (sdWorker_.busy() || cartJobBusy()) return;
-    // reconnectAfter=false: a successful load boots a NEW ROM, so the old stream is stale - leave it stopped.
-    sdWorker_.start("load", controlJob(false, [this, romPath](Edio& edio, N8SdWorker::Progress& p) {
-        p.phase("Reading ROM");
-        const std::vector<std::uint8_t> rom = readFileBytes(romPath);
-        if (rom.empty()) throw std::runtime_error("ROM file is empty: " + romPath);
-        N8Menu menu(edio);
-        p.phase("Checking menu");
-        menu.test();  // clear error if the cart isn't at its file browser
-        const std::string name     = baseNameOf(romPath);
-        const std::string bootPath = "usb-games/" + name;
-        p.phase("Uploading");
-        p.total(rom.size());
-        edio.fileOpen(bootPath, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH);
-        constexpr std::size_t CHUNK = 8192;
-        for (std::size_t off = 0; off < rom.size(); off += CHUNK) {
-            const std::size_t n = std::min(CHUNK, rom.size() - off);
-            edio.fileWrite(rom.data() + off, n);
-            p.advance(n);
-        }
-        edio.fileClose();
-        p.phase("Booting");
-        const int mapIndex = menu.appInstall(bootPath);  // menu parses iNES + sources the core from SD
-        menu.appStart();
-        // The mapload just reloaded the OS's stored master_vol, so set ours on the ROM we hold - its header
-        // names the mapper outright, no need to ask the cart. The next Connect applies it again (streaming is
-        // stopped below), which is what covers a cart booted from the N8's own file browser.
-        applyExpVol(edio, inesMapper(rom));
-        p.result("Booted " + name + " (map " + std::to_string(mapIndex) + ") - streaming stopped");
-        // The old stream died with the previous ROM (controlJob left link_ disconnected + doesn't reconnect a
-        // load), so commit that: clear the enabled toggle + persist. Without this, enabled_ stays true with the
-        // link down, so the Status row reads a forever "Connecting..." and a restart would try to resume a dead
-        // stream. Race-free here: config writers (connect/setPort/setLookahead) are gated on the worker being
-        // busy, which we still are; enabled_ is atomic; and this only runs on success (a throw skips it).
-        enabled_.store(false, std::memory_order_relaxed);
-        save();
-    }));
-}
-
-void N8Host::startDumpSram(const std::string& destPath) {
-    (void)destPath;
-    if (sdWorker_.busy() || cartJobBusy()) return;
-    sdWorker_.start("dump", [](N8SdWorker::Progress&) { throw std::runtime_error(kBatteryDirect); });
-}
-
-void N8Host::startRestoreSram(const std::string& srmPath) {
-    (void)srmPath;
-    if (sdWorker_.busy() || cartJobBusy()) return;
-    sdWorker_.start("restore", [](N8SdWorker::Progress&) { throw std::runtime_error(kBatteryDirect); });
 }
 
 bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, const void* owner, std::string* error) {
@@ -397,7 +297,7 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
         if (batteryRom.empty())
             return refuse("a battery job needs the ROM's file name: name it, or boot the ROM through rom.upload first");
     }
-    if (sdWorker_.busy() || cartJobBusy()) return refuse("busy: the cart is running another job");
+    if (cartJobBusy()) return refuse("busy: the cart is running another job");
     if (!link_.isConnected()) return refuse("not connected");
     if (!cartJob_.claim(job, owner)) return refuse("busy: the cart is running another job");
 
@@ -584,8 +484,8 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
                 lastBootedName_ = name;
             }
             // The old stream died with the previous ROM, so streaming stops here and the enabled toggle clears and is
-            // persisted, as startLoadRom does. save() reads port_ on this thread: no config writer runs while a job
-            // holds the cart (setPort, connect and setLookahead refuse while cartJobBusy()), so it cannot move here.
+            // persisted. save() reads port_ on this thread: no config writer runs while a job holds the cart (setPort,
+            // connect and setLookahead refuse while cartJobBusy()), so it cannot move here.
             enabled_.store(false, std::memory_order_relaxed);
             save();
             const std::string json = "{\"path\":\"" + bootPath + "\",\"mapIndex\":" + std::to_string(mapIndex) +

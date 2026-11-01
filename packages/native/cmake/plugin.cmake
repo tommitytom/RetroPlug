@@ -18,9 +18,9 @@ dpf_add_plugin(retroplug
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp             # N8 Pro serial client
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp # serial-port factory + listSerialPorts
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp           # shared N8 link + config + n8.cfg
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp          # binds the __rp_*N8* config + SD-op hooks
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp           # on-device menu (*t/*n/*s) for SD ops
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8SdWorker.cpp       # background worker: ROM upload / SRAM dump+restore
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp          # binds the __rp_*N8* config, port, connect and
+                                                                    # lookahead hooks
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp           # on-device menu (*t/*n/*s) for the cart's rom job
         ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     FILES_UI
         plugin/PluginUI.cpp

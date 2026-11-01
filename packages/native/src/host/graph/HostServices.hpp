@@ -30,30 +30,25 @@ struct HostSystems {
     void (*destroy)(void* ctx, SystemBase* core);
 };
 
-// The engine's host I/O (docs/modular-graph-phase-b3a-design.md section 3.3), for the rp.host I/O nodes and the cart
-// mirror: the hosts stage what they receive through the engine and drain what it sends after each block, and these
-// move it between that staging and the plan's queues. [audio], though not allocation-free: midiOut and controllerOut
-// each append one std::vector per message to the buffers the hosts drain, as the native kernel stage's sinks did before
-// B3a. A flat arena, as the staged host MIDI's is (Engine::Staging), is the fix.
+// The engine's host I/O (docs/modular-graph-phase-b3a-design.md section 3.3), for the rp.host I/O nodes: the hosts
+// stage what they receive through the engine and drain what it sends after each block, and these move it between that
+// staging and the plan's queues. [audio], though not allocation-free: midiOut appends one std::vector per message to
+// the buffer the hosts drain, as the native kernel stage's sink did before B3a. A flat arena, as the staged host
+// MIDI's is (Engine::Staging), is the fix.
 //
 // Host services are looked up by this versioned id so that a change of shape is visible to a node built against the
-// old one. /2: the drop counter left the struct, which /1 had. Every consumer is in tree (the nodes, the tests' rigs),
-// but a node built against /1 would read a struct a member short, so the id moved.
-#define RP_ENGINE_HOST_IO_INTERFACE "rp.engine.host-io/2"
+// old one. /2: the drop counter left the struct, which /1 had. /3: the control-surface half (takeControllerMidi,
+// controllerConnected, controllerOut) and cartBytes left it, which /2 had, with the nodes that read them: a
+// rp.launchpad.surface node takes the device's traffic from its link, and rp.n8.nes pushes at its cart's. Every
+// consumer is in tree (the nodes, the tests' rigs), but a node built against /2 would read a struct a member past
+// its end, so the id moved.
+#define RP_ENGINE_HOST_IO_INTERFACE "rp.engine.host-io/3"
 struct EngineHostIo {
     void* ctx;
     // Push the host MIDI staged since the last take onto `out`, stable-sorted by frame, and clear the staging.
     void (*takeMidi)(void* ctx, rp_queue* out);
-    // The same for the control-surface MIDI, every message at frame 0.
-    void (*takeControllerMidi)(void* ctx, rp_queue* out);
-    // Whether a control surface is attached this block.
-    bool (*controllerConnected)(void* ctx);
     // Append one message to the host MIDI out (Engine::midiOut), as `system` emitted it. Allocates (see above).
     void (*midiOut)(void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size);
-    // Append one message to the control-surface out (Engine::controllerOut). Allocates (see above).
-    void (*controllerOut)(void* ctx, const std::uint8_t* data, std::size_t size);
-    // Hand one message to the physical N8 the engine feeds (Engine::setCoreByteSink); nothing while none is set.
-    void (*cartBytes)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush);
 };
 
 // The host's device links (docs/modular-graph-phase-c5-design.md section 3), for the hardware nodes: a node binds the

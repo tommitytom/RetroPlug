@@ -34,8 +34,8 @@ struct LaunchpadScanStatusDto {
 };
 
 // Finds which MIDI port PAIR has a device on it, by writing an opaque probe out of each output and reporting
-// what comes back on every input. Single-in-flight, run on its own thread, polled through status() - the
-// N8SdWorker lifecycle, without the progress handle (a scan has no byte count to report).
+// what comes back on every input. Single-in-flight, run on its own thread, polled through status() - a busy flag, a
+// generation and a result, with no progress handle (a scan has no byte count to report).
 //
 // This class does not know what a Launchpad is, deliberately, and for the same reason LaunchpadLink does not
 // know what the farewell means: TS hands down the probe bytes (a Universal Device Inquiry) and parses the

@@ -10,7 +10,7 @@
 //   1. It DRIVES the predictor. On the real-Game-Boy path nothing tells us where the song is, so the
 //      model has to be fed the same clock we are generating (docs/launchpad-plan.md 4.2).
 //   2. It MIRRORS launches into that predictor, so the prediction and the wire cannot disagree - the same
-//      by-construction property Engine::setCoreByteSink gives the risa/N8 mirror.
+//      by-construction property buildGraph's fan-out gives the emulated cart and an N8 playing the same bytes.
 //   3. It restores LIVE MODE on disconnect. The manual is emphatic: while Programmer mode is set over
 //      SysEx the device's own Settings menu is locked out, so a host that skips this leaves the user's
 //      hardware in a state they cannot escape from the front panel.

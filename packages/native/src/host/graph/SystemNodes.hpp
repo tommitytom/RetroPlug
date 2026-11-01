@@ -1,7 +1,6 @@
 #pragma once
 
 #include "graph/rp_node.h"
-#include "system/SystemTypes.hpp"
 
 namespace rp::host {
 
@@ -10,9 +9,6 @@ namespace rp::host {
 // the ROM and seed resources its settings name, through rp.host.systems/1 (docs/modular-graph-phase-c3-design.md).
 const rp_package* sameboyPackage();
 const rp_package* mesenPackage();
-
-// The node type a core of this kind is placed as (rp.sameboy.gb, rp.mesen.nes, ...).
-const char* systemNodeType(SystemKind kind);
 
 // The NES's `expansionVolume` param (docs/modular-graph-phase-c2-design.md section 3): its cartridge sound chip's level
 // in whole percent of unity. One range for the emulated NES, which hands it to its core, and for rp.n8.nes, which

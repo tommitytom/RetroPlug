@@ -66,8 +66,8 @@ public:
     N8Link& operator=(const N8Link&) = delete;
 
     // --- Control (UI/main thread) ---
-    // Set once by the owner before any connect (read-only afterwards, so the SD worker's resume-connect can
-    // run it too).
+    // Set once by the owner before any connect (read-only afterwards, so a job's resume-connect can run it
+    // too).
     void          setOnConnected(OnConnected fn) { onConnected_ = std::move(fn); }
     void          setOnControl(OnControl fn) { onControl_ = std::move(fn); }
     // Hand the serial thread a job to run with streaming paused (see PausedJob). False, and nothing runs, while the

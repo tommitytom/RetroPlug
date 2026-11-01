@@ -5,7 +5,6 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
-#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -74,27 +73,14 @@ public:
     std::size_t systemCount() const;
     SystemBase* findSystem(SystemId id);   // borrowed (non-owning)
 
-    // --- host input, taken by the plan's rp.host.midi-in / controller-in at the top of the next block (dropped at
-    // its end by a plan with neither). The bytes are copied into the engine's staging, which allocates nothing while a
-    // block stages no more than those nodes carry (HostIoNodes.hpp) ---
+    // --- host input, taken by the plan's rp.host.midi-in at the top of the next block (dropped at its end by a plan
+    // without one). The bytes are copied into the engine's staging, which allocates nothing while a block stages no
+    // more than that node carries (HostIoNodes.hpp) ---
     // Delivered on the next processBlock, at intra-block `frame`.
     void stageMidi(std::uint32_t frame, std::span<const std::uint8_t> bytes);
     void stageMidi(std::uint32_t frame, const std::vector<std::uint8_t>& bytes) {
         stageMidi(frame, std::span<const std::uint8_t>(bytes));
     }
-
-    // Stage traffic from a CONTROL SURFACE (a Launchpad), delivered on the next processBlock by the plan's
-    // rp.host.controller-in to the controller node's `controllerIn` - a separate stream from stageMidi, and separate
-    // for a reason: a pad press is a NoteOn, and a translator like LSDj's MidiMap reads a NoteOn as a row launch. A
-    // surface sharing the musical stream would fire every launch twice, once through the controller app and once raw.
-    void stageControllerMidi(std::span<const std::uint8_t> bytes);
-    void stageControllerMidi(const std::vector<std::uint8_t>& bytes) {
-        stageControllerMidi(std::span<const std::uint8_t>(bytes));
-    }
-
-    // Whether a control surface is attached. Plain member, like transport: the host sets it each block from
-    // its device link, and the controller node takes the device on the false->true edge.
-    void setControllerConnected(bool connected) { controllerConnected_ = connected; }
 
     // --- transport (plain members; mutated only by the Engine's owning thread) ---
     void setBpm(double bpm);
@@ -119,34 +105,6 @@ public:
     // (drainMidiOut, the harness's) read it too.
     const std::vector<EngineMidiOut>& midiOut() const { return midiOut_; }
     void clearMidiOut() { midiOut_.clear(); }
-
-    // The CONTROL-SURFACE out of this block (LED traffic), from the plan's rp.host.controller-out, likewise. Not
-    // system-addressed - the device is a project-scope peripheral, not something a system owns. Unused: no host binds
-    // rp.host.controller-out now (the SDL standalone's link takes the stream from rp.launchpad.surface-out inside the
-    // plan), so every host leaves it empty, and it goes with the old control-surface path in the next change.
-    const std::vector<std::vector<std::uint8_t>>& controllerOut() const { return controllerOut_; }
-    void clearControllerOut() { controllerOut_.clear(); }
-
-    // The physical-N8 mirror: invoked on the audio thread, once per message, with what the cart system
-    // (cartMirrorSystemId, below) is fed - its protocol nodes' MIDI and bytes, through the plan's rp.n8.cart-mirror,
-    // and any message staged at it - so the real cart stays in lock-step with the emulated core. Unused: no host sets
-    // it now (rp.n8.nes is fed by the plan's own wiring, and a cart tied to a turned-on setting is placed by
-    // buildGraph), so it stays null everywhere, and it goes with the cart mirror in the next change. `frame` is the
-    // intra-block sample offset; `flush` is the arm-barrier flag.
-    void setCoreByteSink(std::function<void(std::uint32_t frame, const std::uint8_t* data,
-                                            std::size_t size, bool flush)> sink) {
-        coreByteSink_ = std::move(sink);
-    }
-
-    // The emulated system a connected physical N8 MIRRORS (0 = none): the one the running plan's rp.n8.cart-mirror
-    // names, which the B1 translator wired from the first NES in slot order (docs/modular-graph-phase-b3a-design.md
-    // section 3.5). The cart then gets exactly what that system's emulated FIFO gets from its protocol nodes - its MIDI
-    // after the project's routing (which picks the messages it gets and may rewrite their channel) and its generated
-    // bytes (risa's host sync) - and nothing from any other system. Unused: the hosts no longer consult it (rp.n8.nes
-    // is placed by a setting and fed by fan-out, so forwarding raw DAW MIDI beside it would arrive twice), and it goes
-    // with the cart mirror in the next change. The block thread, or the control thread while no audio thread runs (it
-    // reads the running plan's system table, as findSystem does).
-    SystemId cartMirrorSystemId() const;
 
     // --- profiling the audio runtimes (spec/08-profiling.md): the script host's allocation window (every pack's audio
     // runtime, summed), its GC pass (a collection of each) and its trace window, which holds the engine's own stages
@@ -275,14 +233,13 @@ public:
     // Plan `request` and publish it with its system table (built from the slots and the live cores) and its
     // SyncTap. Refused before planning when a system node's `system` field is present but is not a system id, its node
     // id is not `sys-<its id>`, two of its nodes name one system, its slots and its system nodes name different
-    // systems, the tap arms a mode other than 1 to 3 or a system not in the slots, the document holds a second
-    // rp.host.midi-in, rp.host.controller-in, rp.host.midi-out or rp.n8.cart-mirror, or its mirror names anything but
-    // one of its NES systems. A node that names no system is refused by its own create (settings-invalid) with the
-    // reason naming what it must name, and a node refused that way holds the slots and duplicate checks back rather
-    // than being lined up by an id it lacks. A node's failure to build (the ROM gate, a Mesen boot, a live id, a full
-    // snapshot pool, no builder) is activate-failed on that node. A refused plan destroys the cores its nodes built and
-    // leaves the running plan, its cores, its slots and every resource pin as they were. The request is the one a
-    // script pack's reload replans (loadScriptPack).
+    // systems, the tap arms a mode other than 1 to 3 or a system not in the slots, or the document holds a second
+    // rp.host.midi-in or rp.host.midi-out. A node that names no system is refused by its own create
+    // (settings-invalid) with the reason naming what it must name, and a node refused that way holds the slots and
+    // duplicate checks back rather than being lined up by an id it lacks. A node's failure to build (the ROM gate, a
+    // Mesen boot, a live id, a full snapshot pool, no builder) is activate-failed on that node. A refused plan destroys
+    // the cores its nodes built and leaves the running plan, its cores, its slots and every resource pin as they were.
+    // The request is the one a script pack's reload replans (loadScriptPack).
     GraphResult setGraph(const GraphRequest& request);
     // A live change to a param of a node the last published plan places (GraphHost::setParam): clamped to the param's
     // range (and rounded for an int, enum or bool), and applied at the start of the next block, flushed inline while
@@ -423,11 +380,6 @@ private:
 
     // --- the per-system commands, applied by applyCommand to the core its table names (false, or nothing,
     // when it names none) ---
-    // Hand `len` MIDI bytes straight to ONE system's ingress, skipping the project's MIDI routing. For CONTROL
-    // traffic the UI aims at a specific cart (a settings knob), which must not depend on how the project
-    // routes musical MIDI. See DspCommand::stageSystemMidi. `toCart`: `sys` is the system a physical N8 mirrors
-    // (the plan's rp.n8.cart-mirror), so the cart gets the message too.
-    bool stageSystemMidi(SystemBase* sys, const std::uint8_t* bytes, std::size_t len, bool toCart);
     // Hand `len` staged bytes to the node the plan running at this point of the drain places under `nodeId`, through
     // the rp.stage/1 interface the node answers (a system node hands them to its core's ingress, a device node to its
     // device). See DspCommand::stageNodeMidi: the id is the document's, so the engine reads no node's type. [audio]
@@ -474,26 +426,18 @@ private:
     SnapshotRegistry registry_;
     double           sampleRate_;
     // Staged host MIDI, taken on the next block by the plan's rp.host.midi-in (its one, which takes it whether or not
-    // its output is wired), and the staged control-surface traffic, by its rp.host.controller-in; what neither takes
-    // is dropped at the block's end.
+    // its output is wired); what it does not take is dropped at the block's end.
     Staging pendingMidi_;
-    Staging pendingControllerMidi_;
-    // This block's host MIDI out and control-surface out, which the plan's rp.host.midi-out and controller-out append
-    // to; cleared at the top of each block.
-    std::vector<EngineMidiOut>             midiOut_;
-    std::vector<std::vector<std::uint8_t>> controllerOut_;
+    // This block's host MIDI out, which the plan's rp.host.midi-out appends to; cleared at the top of each block.
+    std::vector<EngineMidiOut> midiOut_;
 
     // Simulated host transport, driven per block. Continuous ppq clock (the pull path and the audio
     // loop share it; they never run concurrently). Plain — mutated only by the owning thread.
     double bpm_       = 120.0;
     bool   transport_ = false;
     double ppq_       = 0.0;
-    bool   controllerConnected_ = false;  // a control surface is bound (set per block by the host)
     bool   blockTracing_ = false;         // this block's syncTrace_.beginBlock answer, for the system nodes
     HostSyncTrace syncTrace_;  // inert unless RETROPLUG_SYNC_TRACE is set
-    // Optional external mirror of what the cart system is fed (set by the plugin and the standalone to reach a
-    // physical N8); null in every other host. Called on the audio thread, so the target must be RT-safe (N8Link is).
-    std::function<void(std::uint32_t, const std::uint8_t*, std::size_t, bool)> coreByteSink_;
 
     // Blocks processBlock refused as longer than the plan's buffers, and the length of the last one: counted
     // on the block thread, reported by reclaim() on the control thread (oversizedReported_ is its side).

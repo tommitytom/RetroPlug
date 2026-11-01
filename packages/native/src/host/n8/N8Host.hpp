@@ -9,7 +9,6 @@
 
 #include "host/n8/Edio.hpp"        // Edio (control-op protocol), ISerialPort
 #include "host/n8/N8Link.hpp"
-#include "host/n8/N8SdWorker.hpp"
 #include "host/engine/CapabilityJobs.hpp"  // the capability jobs rp.n8.nes hands the cart (N8CartLink)
 
 namespace retroplug {
@@ -58,8 +57,7 @@ public:
     N8Host(N8Link::PortFactory factory, PortLister lister, std::string configDir);
     // Stops the serial thread before any member it reads goes away: the control turn (OnControl, which applies
     // setExpVol's value) captures `this` and runs on that thread, and link_ is declared BEFORE the fields such a
-    // callback touches, so its own destructor would join too late. (The SD worker, whose jobs also capture `this`, is
-    // declared last and so is already joined first.)
+    // callback touches, so its own destructor would join too late.
     ~N8Host();
 
     N8Link&       link() { return link_; }
@@ -85,23 +83,6 @@ public:
 
     // Load n8.cfg (port / lookahead / enabled) and reconnect if it was enabled. Call once at host startup.
     void restore();
-
-    // --- SD-card / menu control ops (Settings > N8 Pro). Each runs on the N8SdWorker's background thread:
-    // it pauses streaming (link_.disconnect()), borrows the one serial port, drives a C++ Edio, then (for
-    // Dump/Restore) resumes streaming. Fire-and-forget; the UI polls sdStatus(). A no-op if a job is already
-    // in flight. All paths are absolute local files (from the OS file dialog). ---
-
-    // Upload a local ROM to usb-games/<name> and boot it via the on-device menu (needs the cart at its menu).
-    // Leaves streaming stopped (a new ROM is now running).
-    void startLoadRom(const std::string& romPath);
-    // Refused, through the worker's error channel (the job fails at once and touches nothing): the cart's own battery
-    // is never transferred over USB, since on the real cart one read of it wedged a running game and one at the menu
-    // left the menu deaf. The battery is reached through its file on the SD card instead, by the cart node's
-    // rp.system.sram/1 jobs (submitCartJob, below). Kept as entry points only until the SD worker goes.
-    void startDumpSram(const std::string& destPath);
-    void startRestoreSram(const std::string& srmPath);
-
-    N8SdStatusDto sdStatus() { return sdWorker_.status(); }
 
     // --- The cart's capability jobs (docs/modular-graph-phase-c5-design.md section 6), which rp.n8.nes hands over
     // through its cart link (N8CartLink). The transfers run on the link's serial thread with streaming PAUSED rather
@@ -139,7 +120,7 @@ public:
     //                              installed and booted by the cart's menu, which must be showing (a running game is
     //                              refused before any byte reaches its FIFO). A boot STOPS streaming and clears the
     //                              enabled toggle (a running game has no menu, so the old stream is stale; the user
-    //                              reconnects to the new ROM), as startLoadRom does, and the result, JSON, says so:
+    //                              reconnects to the new ROM), and the result, JSON, says so:
     //                              {"path":..., "mapIndex":N, "streaming":"stopped"}. Abandoned or failed before the
     //                              boot, it boots nothing, deletes the file it created and resumes streaming.
     //   rp.system.rom/1 header     the first `length` bytes (0: all) of the image this host last booted on the cart,
@@ -150,7 +131,7 @@ public:
     //                              this host booted is running" then; another game of the same mapper is what it
     //                              cannot tell.
     //
-    // One job at a time, an SD worker op included ("busy: ..."), and none while the link is down ("not connected").
+    // One job at a time ("busy: ..."), and none while the link is down ("not connected").
     // [control], like abandonCartJobs: the node submitting is the job's owner, and a node leaving the plan abandons its
     // job, which fails at once (Removed) and stops at its next safe point.
     bool submitCartJob(const rp::host::JobRequest& request, rp::host::Job& job, const void* owner, std::string* error);
@@ -164,20 +145,16 @@ private:
 
     // Write the configured expansion-audio master volume through `edio` (see EXP_VOL_AUTO). `mapperHint` is
     // the iNES mapper when the caller knows it (a ROM we just uploaded), or -1 to ask the running cart.
-    // Runs on whichever thread owns the port: the UI thread inside connect(), or the SD worker after a load.
+    // Runs on whichever thread owns the port: the UI thread inside connect(), or the serial thread a job's transfer
+    // runs on.
     void applyExpVol(Edio& edio, int mapperHint);
 
-    // Build a worker job that borrows the port from link_ (pausing streaming), opens a control Edio, runs
-    // `op(edio, progress)`, then resumes streaming iff reconnectAfter (a thrown op always resumes streaming).
-    N8SdWorker::Job controlJob(bool reconnectAfter, std::function<void(Edio&, N8SdWorker::Progress&)> op);
-
-    N8Link::PortFactory factory_;    // FIRST: kept so the SD worker can open a control port (link_ has its own copy)
     N8Link              link_;
     PortLister          lister_;
     std::string         configDir_;
     std::string         port_;
-    std::atomic<bool>   enabled_{false};  // atomic: a successful ROM load clears it from the worker thread (below)
-    std::atomic<int>      expVol_{EXP_VOL_AUTO};  // read by applyExpVol on the SD + serial threads
+    std::atomic<bool>   enabled_{false};  // atomic: a successful ROM load clears it from the serial thread
+    std::atomic<int>      expVol_{EXP_VOL_AUTO};  // read by applyExpVol on whichever thread owns the port
     // A change counter, so the serial thread applies the standing value at its next turn without a mutex or a
     // std::function built on the caller's side: setExpVol only bumps the generation, and OnControl applies the value
     // while the applied generation lags. Bumping after a failed write is what retries it, so no failure needs a
@@ -194,7 +171,6 @@ private:
     // The file name this host last booted on the cart, which a connect does not forget (the battery jobs' default ROM,
     // reached at the menu, where the game is no longer running) and a port change does (another cart, another card).
     std::string               lastBootedName_;
-    N8SdWorker          sdWorker_;   // LAST: destroyed first, so its thread joins while link_ + factory_ are alive
 };
 
 }  // namespace retroplug

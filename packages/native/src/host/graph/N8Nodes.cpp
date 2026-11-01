@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <iterator>
 #include <limits>
-#include <optional>
 #include <string>
 #include <string_view>
 
@@ -18,57 +17,12 @@
 
 namespace rp::host {
 
-// Named, so its JSON Schema $defs key is the same under every compiler.
-struct CartMirrorSettings {
-    // The system the cart mirrors (a system id, as a system node's {"system": <id>}).
-    std::uint64_t system = 0;
-};
-
 int expansionVolumeRegister(double percent) {
     const long value = std::lround(percent * 128.0 / 100.0);
     return static_cast<int>(std::clamp(value, 0L, 255L));
 }
 
 namespace {
-
-// What the cart mirror's system's FIFO is fed, in the order the kernel stage the kernel node replaced fed it: its MIDI,
-// then its bytes, each in queue order. An empty message is skipped, as that stage skipped it. It needs the engine's
-// host I/O, so it does not activate without it.
-struct CartMirror {
-    static constexpr const char* id = "rp.n8.cart-mirror";
-    static constexpr const char* name = "N8 Cart Mirror";
-    static constexpr const char* category = "host";
-    using Settings = CartMirrorSettings;
-    // Its settings change nothing it does (the engine reads them off the document), so a change is a swap, and its
-    // prepare reads nothing a commit writes.
-    static constexpr bool stateless_prepare = true;
-    struct {
-        rp::events_in midi;
-        rp::bytes_in  bytes;
-    } inputs;
-
-    const EngineHostIo* io = nullptr;
-    void bind_host(const rp_host* h) noexcept {
-        io = static_cast<const EngineHostIo*>(h->get_interface(h, RP_ENGINE_HOST_IO_INTERFACE));
-    }
-    bool activate(double, std::uint32_t) { return io != nullptr; }
-
-    static std::optional<std::string> validate(const Settings& s) {
-        if (s.system == 0 || s.system > UINT32_MAX) return "system names the system the cart mirrors: 1 to 4294967295";
-        return std::nullopt;
-    }
-
-    void process(const rp::Block&) noexcept {
-        for (const rp_message& m : inputs.midi.messages()) {
-            const auto data = inputs.midi.data(m);
-            if (!data.empty()) io->cartBytes(io->ctx, m.frame, data.data(), data.size(), false);
-        }
-        for (const rp_message& m : inputs.bytes.messages()) {
-            const auto data = inputs.bytes.data(m);
-            if (!data.empty()) io->cartBytes(io->ctx, m.frame, data.data(), data.size(), (m.flags & RP_MESSAGE_FLUSH) != 0);
-        }
-    }
-};
 
 using ExpansionVolumeParam =
     rp::int_param<"Expansion volume", rp::range{kExpansionVolumeMin, kExpansionVolumeMax, kExpansionVolumeDefault}, "%">;
@@ -232,17 +186,10 @@ struct N8Nes {
 }  // namespace
 
 const rp_package* n8Package() {
-    static const rp_node_type* const kTypes[] = {rp::node_type<CartMirror>(), rp::node_type<N8Nes>()};
+    static const rp_node_type* const kTypes[] = {rp::node_type<N8Nes>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.n8","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;
-}
-
-std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings) {
-    const rp_settings s{settings.data(), settings.size(), RP_SETTINGS_JSON};
-    const auto parsed = rp::detail::parseSettings<CartMirror>(&s);
-    if (!parsed) return std::nullopt;
-    return static_cast<std::uint32_t>(parsed->system);  // validate kept it to 1..UINT32_MAX
 }
 
 }  // namespace rp::host

@@ -53,7 +53,6 @@ retroplug_add_test_binary(
 retroplug_add_test_binary(
     NAME     retroplug-audio-test
     SOURCES  test/audio/SameBoyStems.test.cpp
-             test/audio/EngineCartMirror.test.cpp      # what a physical N8 is fed: the first NES system's protocol output
              test/audio/EngineSampleRate.test.cpp      # host sample-rate change re-rates live cores
              test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
              test/audio/NesApuLatency.test.cpp         # runtime NES APU flush window (live apuLatencyMs knob)
@@ -163,24 +162,21 @@ retroplug_add_test_binary(
 
 # Guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact krikzz CMD_MEM_WR
 # byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status word; plus the
-# N8Link forward path (the SDL standalone's realtime serial thread) and the N8SdWorker SD / menu
-# control ops (ROM upload / SRAM dump+restore + the connection manager that pauses streaming).
-# Compiles those against a capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware. The
-# CLI's risa-sync translation lives in TS (packages/retroplug src/n8, `pnpm test n8`); the C++
-# Edio/N8Link/N8Menu twin backs the realtime + UI paths (the native worker can't run the
-# single-threaded TS stack off the UI thread). Run by `pnpm test:n8`.
+# N8Link forward path (the SDL standalone's realtime serial thread) and the cart's capability jobs
+# (SRAM dump and restore, the ROM upload and its boot), which pause and resume streaming around the
+# transfer. Compiles those against a capturing FakeSerialPort - no `serial` lib, no `rtmidi`, no
+# hardware. The CLI's risa-sync translation lives in TS (packages/retroplug src/n8, `pnpm test n8`); the
+# C++ Edio/N8Link/N8Menu twin backs the realtime + job paths. Run by `pnpm test:n8`.
 retroplug_add_test_binary(
     NAME     retroplug-n8-test
     SOURCES  test/n8/Edio.test.cpp
              test/n8/N8Host.test.cpp
              test/n8/N8CartLink.test.cpp   # the cart device link over N8Link + N8Host
              test/n8/N8CartJobs.test.cpp   # the cart's capability jobs, run with streaming paused
-             test/n8/N8SdWorker.test.cpp
              src/host/n8/Edio.cpp
              src/host/n8/N8Link.cpp
              src/host/n8/N8Host.cpp
              src/host/n8/N8Menu.cpp
-             src/host/n8/N8SdWorker.cpp
     LIBS     reflectcpp::reflectcpp                    # rfl::json - parse the shared Edio golden (twins edio.test.ts)
              Threads::Threads                          # N8Link's serial thread
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src           # host/n8/Edio.hpp
@@ -197,9 +193,9 @@ retroplug_add_test_binary(
     LIBS     serial
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# A manual hardware harness (NOT CI) that drives the real N8 SD/menu ops through the same native
-# N8Host + N8SdWorker the Settings > N8 Pro menu uses, over a real /dev/ttyACM0 (adds the real
-# WjwwoodSerialPort + `serial`). Brings its own main(), hence NO_CATCH2.
+# A manual hardware harness (NOT CI) that drives the real N8 card's jobs through the same native
+# N8Host the cart's node hands them to, over a real /dev/ttyACM0 (adds the real WjwwoodSerialPort +
+# `serial`). Brings its own main(), hence NO_CATCH2.
 # Build by name: cmake --build build --target retroplug-n8-hwtest.
 retroplug_add_test_binary(
     NAME     retroplug-n8-hwtest
@@ -209,7 +205,6 @@ retroplug_add_test_binary(
              src/host/n8/N8Link.cpp
              src/host/n8/N8Host.cpp
              src/host/n8/N8Menu.cpp
-             src/host/n8/N8SdWorker.cpp
              src/host/n8/WjwwoodSerialPort.cpp
     LIBS     serial
              Threads::Threads

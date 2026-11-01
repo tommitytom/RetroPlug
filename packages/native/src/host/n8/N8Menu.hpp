@@ -20,7 +20,8 @@ struct N8VramDump {
 // writes to, and replies over USB. This drives the menu to install + boot a ROM: the menu firmware itself
 // parses the iNES header, sources the standard mapper core from its SD, and boots the FPGA - the host does
 // none of that. Only valid while the MENU is running; after appStart() the game runs (to switch ROMs the
-// console must be reset back to the menu first). Used by the UI SD-op worker (N8SdWorker) over an Edio.
+// console must be reset back to the menu first). Used by the cart's rom.upload job (N8Host::submitCartJob) over
+// an Edio.
 class N8Menu {
 public:
     explicit N8Menu(Edio& edio) : edio_(edio) {}

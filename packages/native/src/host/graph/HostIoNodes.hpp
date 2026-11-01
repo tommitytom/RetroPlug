@@ -7,7 +7,7 @@
 namespace rp::host {
 
 // The engine's host I/O nodes (docs/modular-graph-phase-b3a-design.md section 3.3), each over the engine's
-// rp.engine.host-io/2 service, without which it will not activate:
+// rp.engine.host-io/3 service, without which it will not activate:
 //
 //   rp.host.midi-in         out midi: the host MIDI the engine staged, stable-sorted by frame
 //   rp.host.midi-out        {"systems": [<id>, ...]}: inputs in1 to inN, one per entry, whose messages land in
@@ -16,16 +16,16 @@ namespace rp::host {
 //                           (docs/modular-graph-phase-b3b-design.md section 9, docs/lsdj-serial-out-design.md
 //                           section 5); two entries may name one system. With no systems (the default) it has no
 //                           inputs and sends nothing
-//   rp.host.controller-in   out midi: the staged control-surface MIDI, at frame 0; out connected: 1 while a
-//                           control surface is attached, from frame 0 of the block
-//   rp.host.controller-out  in midi: appended to Engine::controllerOut
 //
-// The host keeps staging and draining as it does; each input node takes what is staged at the top of its block, and a
-// plan without one drops what it would have taken at the block's end. An input node owns its staging whether or not
-// its output is wired: it takes everything staged, and an unwired output goes nowhere. So a document holds one
-// rp.host.midi-in and one rp.host.controller-in at most (Engine::setGraph refuses a second), and a plan holding one
-// should wire it. A document holds one rp.host.midi-out at most too (Engine::setGraph refuses a second), which keeps
-// Engine::midiOut frame-sorted: a second would append its own merge behind the first's.
+// The host keeps staging and draining as it does; the input node takes what is staged at the top of its block, and a
+// plan without one drops what it would have taken at the block's end. It owns its staging whether or not its output
+// is wired: it takes everything staged, and an unwired output goes nowhere. So a document holds one rp.host.midi-in at
+// most (Engine::setGraph refuses a second), and a plan holding one should wire it. A document holds one
+// rp.host.midi-out at most too (Engine::setGraph refuses a second), which keeps Engine::midiOut frame-sorted: a second
+// would append its own merge behind the first's.
+//
+// A control surface's traffic is not the host's: rp.launchpad.surface-in takes what its device sent and
+// rp.launchpad.surface-out writes back to it (LaunchpadNodes.hpp), through the device link a host installs.
 const rp_package* hostIoPackage();
 
 // The most inputs rp.host.midi-out's systems form takes: it copies their ids into a fixed array at each commit, which
@@ -41,8 +41,5 @@ inline constexpr std::uint32_t kMidiOutMaxInputs = 128;
 // past it is dropped and counted (GraphHost::droppedMessages).
 inline constexpr std::uint32_t kHostMidiInMessages = 2048;
 inline constexpr std::uint32_t kHostMidiInBytes = 65536;
-// rp.host.controller-in's: a Launchpad's pad traffic and its replies.
-inline constexpr std::uint32_t kControllerInMessages = 1024;
-inline constexpr std::uint32_t kControllerInBytes = 16384;
 
 }  // namespace rp::host

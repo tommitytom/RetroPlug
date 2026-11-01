@@ -1,11 +1,15 @@
-// n8-sd-hwtest - a manual hardware harness for the N8 SD / menu ops (Settings > N8 Pro). It constructs the
-// SAME native N8Host + N8SdWorker + connection manager the standalone/plugin menu drives, but against a real
-// /dev/ttyACM0, so a hardware pass exercises exactly the code path the UI does (not the CLI's TS stack).
-// EXCLUDE_FROM_ALL, built by name (retroplug-n8-hwtest); NOT a CI target. Needs a real N8 plugged in.
+// n8-sd-hwtest - a manual hardware harness for the cart's capability jobs (Settings > N8 Pro). It constructs the
+// SAME native N8Host the cart node hands a job to, but against a real /dev/ttyACM0, and brings its link up as the
+// Settings > N8 row would (a job is refused while the link is down), so a hardware pass exercises exactly the code
+// path the UI does (not the CLI's TS stack). EXCLUDE_FROM_ALL, built by name
+// (retroplug-n8-hwtest); NOT a CI target. Needs a real N8 plugged in.
 //
-//   retroplug-n8-hwtest dump    <dest.srm>   [port]   # read the 64 KB battery to a file (non-destructive)
-//   retroplug-n8-hwtest load    <rom.nes>    [port]   # upload + boot a ROM (cart must be at its menu)
-//   retroplug-n8-hwtest restore <save.srm>   [port]   # write a .srm to the running game's SRAM + verify
+//   retroplug-n8-hwtest dump    <rom-name> <dest.srm>  [port]  # read the battery file to a local file (non-destructive)
+//   retroplug-n8-hwtest load    <rom.nes>         [port]   # upload + boot a ROM (cart must be at its menu)
+//   retroplug-n8-hwtest restore <rom-name> <save.srm> [port] # write a .srm as the battery file the game loads next
+//
+// A battery job's <rom-name> is a bare file name, not a path: it names the ROM whose folder under EDN8/gamedata/ holds the
+// battery file, which is why `dump /roms/mGB.nes out.srm` is refused.
 //   retroplug-n8-hwtest peek    <addr-hex> <len> [port]   # CMD_MEM_RD: read bytes from a device address
 //   retroplug-n8-hwtest poke    <addr-hex> <byte>[port]   # CMD_MEM_WR: write one byte to a device address
 //   retroplug-n8-hwtest read    <sd-path> <local-dest> [port]  # CMD_F_FRD: read an SD file over USB
@@ -545,13 +549,25 @@ int main(int argc, char** argv) {
         }
     }
 
-    const std::string path = argv[2];
-    std::string       port = argc > 3 ? argv[3] : findN8Port();
+    if (op != "dump" && op != "load" && op != "restore") {
+        std::fprintf(stderr, "unknown op '%s'\n", op.c_str());
+        return 2;
+    }
+    // The card's operations are the cart node's capability jobs, which is what this drives: a battery job names the ROM
+    // whose file it reaches, and is run at the cart's menu (see N8Host::submitCartJob).
+    const bool        battery = op != "load";
+    const std::string romName = battery ? argv[2] : "";
+    const std::string path    = battery ? (argc > 3 ? argv[3] : "") : argv[2];
+    if (battery && path.empty()) {
+        std::fprintf(stderr, "usage: %s %s <rom-name> <file> [port]\n", argv[0], op.c_str());
+        return 2;
+    }
+    std::string port = argc > (battery ? 4 : 3) ? argv[battery ? 4 : 3] : findN8Port();
     if (port.empty()) {
         std::fprintf(stderr, "no Everdrive N8 found (VID:PID 38df:0017); pass a port explicitly\n");
         return 2;
     }
-    std::printf("N8 SD hw-test: op=%s path=%s port=%s\n", op.c_str(), path.c_str(), port.c_str());
+    std::printf("N8 SD hw-test: op=%s file=%s port=%s\n", op.c_str(), path.c_str(), port.c_str());
 
     N8Host host(
         [](const std::string& p) -> std::unique_ptr<ISerialPort> { return std::make_unique<WjwwoodSerialPort>(p); },
@@ -561,34 +577,75 @@ int main(int argc, char** argv) {
             return v;
         },
         "/tmp");
+    // setPort only reconnects a link that is already streaming, and a job is refused while the link is down, so bring it
+    // up the way Settings > N8 would: the cart node's jobs run on that link.
     host.setPort(port);
-
-    if (op == "dump")         host.startDumpSram(path);
-    else if (op == "load")    host.startLoadRom(path);
-    else if (op == "restore") host.startRestoreSram(path);
-    else {
-        std::fprintf(stderr, "unknown op '%s'\n", op.c_str());
+    host.connect(true);
+    if (!host.link().isConnected()) {
+        std::fprintf(stderr, "link did not come up on %s: %s\n", port.c_str(), host.link().lastError().c_str());
         return 2;
     }
 
-    // Poll the same status snapshot the UI polls, printing progress until the job finishes.
-    std::uint64_t lastVersion = ~0ull;
-    for (;;) {
-        const N8SdStatusDto s = host.sdStatus();
-        if (s.version != lastVersion) {
-            lastVersion = s.version;
-            const int pct = s.bytesTotal ? static_cast<int>(100 * s.bytesDone / s.bytesTotal) : 0;
-            std::printf("\r  [%-8s] %-14s %6llu/%-6llu %3d%%   ", s.op.c_str(), s.phase.c_str(),
-                        static_cast<unsigned long long>(s.bytesDone),
-                        static_cast<unsigned long long>(s.bytesTotal), pct);
-            std::fflush(stdout);
+    rp::host::JobRequest request;
+    if (op == "load") {
+        request.capability = RP_SYSTEM_ROM_INTERFACE;
+        request.op         = "upload";
+        request.bytes      = slurpLocal(path);
+        if (request.bytes.empty()) {
+            std::fprintf(stderr, "cannot read %s (or it is empty)\n", path.c_str());
+            return 1;
         }
-        if (s.done) {
-            std::printf("\n");
-            if (!s.error.empty()) { std::printf("ERROR: %s\n", s.error.c_str()); return 1; }
-            std::printf("OK: %s\n", s.result.c_str());
-            return 0;
+        const auto slash   = path.find_last_of("/\\");
+        request.name       = slash == std::string::npos ? path : path.substr(slash + 1);
+    } else {
+        request.capability = RP_SYSTEM_SRAM_INTERFACE;
+        request.op         = op;
+        request.name       = romName;
+        if (op == "restore") {
+            request.bytes = slurpLocal(path);
+            if (request.bytes.empty()) {
+                std::fprintf(stderr, "cannot read %s (or it is empty)\n", path.c_str());
+                return 1;
+            }
+        }
+    }
+
+    rp::host::Job job;
+    std::string    error;
+    if (!host.submitCartJob(request, job, &host, &error)) {
+        std::fprintf(stderr, "%s: %s\n", op.c_str(), error.c_str());
+        return 1;
+    }
+    // Poll the record the engine's drainJobs would report, printing progress until the job is terminal.
+    std::uint32_t lastProgress = ~0u, lastTotal = ~0u;
+    while (!job.finished()) {
+        const std::uint32_t done = job.progress.load(std::memory_order_acquire);
+        const std::uint32_t total = job.total.load(std::memory_order_acquire);
+        if (done != lastProgress || total != lastTotal) {
+            lastProgress = done;
+            lastTotal    = total;
+            const int pct = total ? static_cast<int>(100.0 * done / total) : 0;
+            std::printf("\r  [%-8s] %6u/%-6u %3d%%   ", op.c_str(), done, total, pct);
+            std::fflush(stdout);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
+    std::printf("\n");
+    if (job.state.load(std::memory_order_acquire) != rp::host::Job::Done) {
+        std::printf("ERROR: %s\n", job.error.c_str());
+        return 1;
+    }
+    if (op == "dump") {
+        std::FILE* f = std::fopen(path.c_str(), "wb");
+        if (!f) {
+            std::fprintf(stderr, "cannot write %s\n", path.c_str());
+            return 1;
+        }
+        std::fwrite(job.result.data(), 1, job.result.size(), f);
+        std::fclose(f);
+        std::printf("OK: %zu bytes -> %s\n", job.result.size(), path.c_str());
+    } else {
+        std::printf("OK: %.*s\n", static_cast<int>(job.result.size()), reinterpret_cast<const char*>(job.result.data()));
+    }
+    return 0;
 }

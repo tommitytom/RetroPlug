@@ -336,10 +336,10 @@ struct ProtocolBench {
     ScriptHost               scripts;
     rp::graph::NodeRegistry  registry;
     rp::graph::ResourceTable resources;
-    // The engine's host I/O, standing in: what is staged for the block, and the host outputs counted.
+    // The engine's host I/O, standing in: what is staged for the block, and the host output counted.
     const std::vector<Staged>* staged = nullptr;
-    std::uint64_t              midiOut = 0, controllerOut = 0;
-    rp::host::EngineHostIo hostIo{this, &takeMidi, &takeNothing, &disconnected, &countMidiOut, &countControllerOut, &noCart};
+    std::uint64_t              midiOut = 0;
+    rp::host::EngineHostIo     hostIo{this, &takeMidi, &countMidiOut};
     std::unique_ptr<rp::graph::GraphHost> host;
 
     // `scriptNodes`: false for the plan's native nodes alone.
@@ -371,7 +371,7 @@ struct ProtocolBench {
     // serial out, then the LSDj's decoder, taking that serial out by a forward wire, its host MIDI out going to
     // rp.host.midi-out's one input (under its system), and the host outputs.
     static std::string document(const Structure& structure, bool scriptNodes) {
-        std::vector<std::string> nodes{node("midi-in", "rp.host.midi-in"), node("controller-in", "rp.host.controller-in")};
+        std::vector<std::string> nodes{node("midi-in", "rp.host.midi-in")};
         std::vector<std::string> wires;
         if (scriptNodes) {
             nodes.push_back(node("routing", "rp.midi.route", R"({"mode":"sendToAll","systems":[1,2,3]})"));
@@ -396,7 +396,6 @@ struct ProtocolBench {
             wires.push_back(wire(id + ".midiOut", "midi-out.in1"));
         }
         nodes.push_back(node("midi-out", "rp.host.midi-out", scriptNodes ? R"({"systems":[2]})" : R"({"systems":[]})"));
-        nodes.push_back(node("controller-out", "rp.host.controller-out"));
         return graphJson(nodes, wires);
     }
 
@@ -416,11 +415,7 @@ struct ProtocolBench {
     static void takeMidi(void* ctx, rp_queue* out) {
         for (const auto& m : *of(ctx).staged) rp::graph::pushMessage(*out, m.frame, m.data);
     }
-    static void takeNothing(void*, rp_queue*) {}
-    static bool disconnected(void*) { return false; }
     static void countMidiOut(void* ctx, std::uint32_t, std::uint32_t, const std::uint8_t*, std::size_t) { ++of(ctx).midiOut; }
-    static void countControllerOut(void* ctx, const std::uint8_t*, std::size_t) { ++of(ctx).controllerOut; }
-    static void noCart(void*, std::uint32_t, const std::uint8_t*, std::size_t, bool) {}
 };
 
 struct ProtocolRow {

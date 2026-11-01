@@ -131,9 +131,10 @@ public:
                                bool /*flush*/ = false) {}
 
     // Does pushCoreBytes actually go anywhere on this system? The default above is a silent no-op, which is
-    // right for a stream a core simply has no use for — but a caller with ONE message to deliver (a host
+    // right for a stream a core simply has no use for - but a caller with ONE message to deliver (a host
     // settings SysEx) needs to know whether it was delivered or dropped, and a message too long for the
-    // MIDI-framed door has nowhere else to go. Ask before choosing a door; see Engine::stageSystemMidi.
+    // MIDI-framed door has nowhere else to go. The system node's rp.stage/1 asks it before delivering a
+    // staged message (SystemNodes.cpp).
     virtual bool hasCoreBytesIn() const { return false; }
 
     // The inverse of pushCoreBytes: take the RAW bytes the core has sent host-ward since the last

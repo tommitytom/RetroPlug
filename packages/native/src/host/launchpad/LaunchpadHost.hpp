@@ -28,7 +28,7 @@ struct LaunchpadConfigDto {
 // Owner of the control-surface link + its config, and the thing the __rp_* hooks talk to. Holds a
 // LaunchpadLink, the selected port names + enabled toggle, and persistence to <configDir>/launchpad.cfg.
 // The port factory and the port ENUMERATION are both injected, so this is testable hardware-free (a fake
-// IMidiPort, no MIDI library). The N8Host twin, minus the SD worker.
+// IMidiPort, no MIDI library). The N8Host twin, minus the cart's capability jobs.
 //
 // The port lists are deliberately UNFILTERED. A Launchpad also speaks TRS/DIN, so on a machine short of USB
 // ports it arrives through an ordinary MIDI interface on a port named after the INTERFACE - nothing about

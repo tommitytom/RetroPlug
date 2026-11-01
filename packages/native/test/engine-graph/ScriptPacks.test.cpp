@@ -31,6 +31,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "FakeSurfaceLink.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "ScriptRig.hpp"
@@ -1036,8 +1037,12 @@ bool waitUntil(Done&& done) {
 TEST_CASE("a pack reloads while its nodes run: they rebuild on its new code, fresh, while another pack's node and a "
           "built-in one keep their instances and their state, and the old generation is freed within the call",
           "[script][packs][reload]") {
+    // The control surface the built-in session paints: attached throughout, its LED stream read back off the link.
+    // Declared before the Engine so it outlives the plan it is installed into (DeviceRegistry.hpp's rule): the plan's
+    // teardown destroys its nodes, and each one hands the link back on the way.
+    rp::host::test::FakeSurfaceLink surface;
     Engine e(kRate);
-    e.setControllerConnected(true);
+    e.setDeviceLinks(nullptr, &surface);
     load(e, "test.keep", toys(tally("test.keep.count", 1)));
     load(e, "test.code", toys(transposer("test.code.shift", 12) + tally("test.code.count", 2)));
     // Beside them the built-in controller session, which takes the control surface (Programmer mode, a full paint) on
@@ -1045,21 +1050,31 @@ TEST_CASE("a pack reloads while its nodes run: they rebuild on its new code, fre
     const auto request = [](const std::string& session) {
         return document({docNode("midi-in", "rp.host.midi-in"), docNode("shift", "test.code.shift"),
                          docNode("keep", "test.keep.count"), docNode("count", "test.code.count"), midiOut("1,2,3"),
-                         docNode("surface-in", "rp.host.controller-in"), docNode(session, "rp.controller.session"),
-                         docNode("surface-out", "rp.host.controller-out")},
+                         docNode("surface-in", "rp.launchpad.surface-in"), docNode(session, "rp.controller.session"),
+                         docNode("surface-out", "rp.launchpad.surface-out")},
                         {docWire("midi-in.midi", "shift.in"), docWire("shift.out", "midi-out.in1"),
                          docWire("keep.out", "midi-out.in2"), docWire("count.out", "midi-out.in3"),
-                         docWire("surface-in.midi", session + ".controllerIn"),
+                         docWire("surface-in.in", session + ".controllerIn"),
                          docWire("surface-in.connected", session + ".controllerConnected"),
-                         docWire(session + ".controllerOut", "surface-out.midi")});
+                         docWire(session + ".controllerOut", "surface-out.out")});
+    };
+    // A block, with the LED stream the session wrote cleared first, and how many messages it wrote.
+    const auto ledBlock = [&](bool note) {
+        surface.outputs.clear();
+        const auto out = note ? block(e, {{3, kNote}}) : block(e);
+        return std::make_pair(out, surface.outputs.size());
     };
     place(e, request("session"));
-    CHECK(block(e, {{3, kNote}}) == sorted({{1, 3, {0x90, 72, 100}}, {2, 0, {1, 1}}, {3, 0, {2, 1}}}));
-    CHECK_FALSE(e.controllerOut().empty());
+    {
+        const auto [out, leds] = ledBlock(true);
+        CHECK(out == sorted({{1, 3, {0x90, 72, 100}}, {2, 0, {1, 1}}, {3, 0, {2, 1}}}));
+        CHECK(leds > 0);
+    }
     for (std::uint8_t n = 2; n <= 3; ++n) {
         INFO("block " << int{n});
-        CHECK(block(e) == sorted({{2, 0, {1, n}}, {3, 0, {2, n}}}));
-        CHECK(e.controllerOut().empty());
+        const auto [out, leds] = ledBlock(false);
+        CHECK(out == sorted({{2, 0, {1, n}}, {3, 0, {2, n}}}));
+        CHECK(leds == 0);
     }
     const std::uint32_t instances = e.scriptInstances();
     const std::size_t types = e.nodeTypeCount();
@@ -1085,14 +1100,23 @@ TEST_CASE("a pack reloads while its nodes run: they rebuild on its new code, fre
 
     // The pack's nodes on the new code, counting from 1 again; the other pack's count carrying on, unbroken; the
     // session not taking the surface again.
-    CHECK(block(e, {{3, kNote}}) == sorted({{1, 3, {0x90, 48, 100}}, {2, 0, {1, 4}}, {3, 0, {3, 1}}}));
-    CHECK(e.controllerOut().empty());
-    CHECK(block(e) == sorted({{2, 0, {1, 5}}, {3, 0, {3, 2}}}));
-    CHECK(e.controllerOut().empty());
+    {
+        const auto [out, leds] = ledBlock(true);
+        CHECK(out == sorted({{1, 3, {0x90, 48, 100}}, {2, 0, {1, 4}}, {3, 0, {3, 1}}}));
+        CHECK(leds == 0);
+    }
+    {
+        const auto [out, leds] = ledBlock(false);
+        CHECK(out == sorted({{2, 0, {1, 5}}, {3, 0, {3, 2}}}));
+        CHECK(leds == 0);
+    }
     // Where a session made again does take it: the same document with the session under another id.
     place(e, request("session2"));
-    CHECK(block(e) == sorted({{2, 0, {1, 6}}, {3, 0, {3, 3}}}));
-    CHECK_FALSE(e.controllerOut().empty());
+    {
+        const auto [out, leds] = ledBlock(false);
+        CHECK(out == sorted({{2, 0, {1, 6}}, {3, 0, {3, 3}}}));
+        CHECK(leds > 0);
+    }
     CHECK(e.scriptThrows() == 0);
     CHECK(e.faultCount() == 0);
 }

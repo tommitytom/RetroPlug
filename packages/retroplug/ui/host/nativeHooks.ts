@@ -63,19 +63,13 @@ export interface RpHooks {
   __rp_setTransport?: (playing: boolean) => void;
   __rp_setClockBpm?: (bpm: number) => void;
 
-  // --- N8 Pro link + SD jobs (N8Hooks.cpp) ------------------------------------------------------------------
+  // --- N8 Pro link (N8Hooks.cpp) -----------------------------------------------------------------------------
+  // The card's own operations (a ROM load, a battery dump or restore) are the cart node's capability jobs, and
+  // its expansion volume is that node's param, so neither crosses this seam.
   __rp_getN8Config?: () => Partial<N8Config>;
   __rp_setN8Port?: (name: string) => void;
   __rp_connectN8?: (enabled: boolean) => void;
   __rp_setN8Lookahead?: (ms: number) => void;
-  __rp_setN8ExpVol?: (v: number) => void;
-  __rp_getN8SdStatus?: () => Partial<{
-    busy: boolean; op: string; bytesDone: number; bytesTotal: number; phase: string; done: boolean; error: string;
-    result: string; version: number;
-  }>;
-  __rp_n8LoadRom?: (path: string) => void;
-  __rp_n8DumpSram?: (path: string) => void;
-  __rp_n8RestoreSram?: (path: string) => void;
 
   // --- Launchpad control surface (LaunchpadHooks.cpp) -------------------------------------------------------
   __rp_getLaunchpadConfig?: () => Partial<LaunchpadConfig>;

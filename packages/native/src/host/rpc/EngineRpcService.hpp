@@ -68,14 +68,11 @@ public:
 
     // --- audio render / input drive / transport ---
     bool            pressButton(std::uint32_t id, std::uint32_t button, bool down);
-    // Control MIDI for ONE system, bypassing the routing node: a settings knob that must reach the cart
-    // it belongs to, however the project routes musical MIDI. Up to 4 bytes (a channel message).
-    bool            stageSystemMidi(std::uint32_t id, std::vector<std::uint8_t> bytes);
     // A control message aimed at ONE NODE of the running graph, by the document id it gives it: a settings SysEx to a
     // system's core ("sys-<id>") or to a cart's FIFO (its rp.n8.nes node). Queued through the invoker like every
     // per-system command, so it reaches the node whether an audio thread drains or the flush is inline, and the node
-    // id resolves against the plan running when it drains. The same optimistic contract as stageSystemMidi: refuse
-    // only what can never be delivered, an empty message (a node the plan does not place takes nothing, silently).
+    // id resolves against the plan running when it drains. The contract is optimistic: refuse only what can never be
+    // delivered, an empty message (a node the plan does not place takes nothing, silently).
     bool            stageNodeMidi(std::string nodeId, std::vector<std::uint8_t> bytes);
     rfl::Bytestring renderAudio(double ms);
     // Per-system audio: each live system's interleaved-stereo PCM, in slot order (marshals to

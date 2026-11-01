@@ -7,7 +7,7 @@
 // refuses fails here for a shape no other suite runs: chained adds past rp.core.add's 16 inputs, a NES's ten channels,
 // the Game Boy stems, link cables under every routing, the routing's outputs for thirty-three systems, and each
 // protocol node type wired into the system node it feeds, an LSDj's serial-out decoder after its Game Boy, the N8 cart
-// mirror and a controller each way.
+// node, and the control surface's two nodes.
 //
 // The cores are real: each system node builds its own from the resources its settings name (docs/
 // modular-graph-phase-c3-design.md section 6), so here each of a case's systems' ROMs is put in the engine's resource

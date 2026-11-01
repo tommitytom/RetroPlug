@@ -127,41 +127,10 @@ struct MidiOut : HostIoNode {
     }
 };
 
-struct ControllerIn : HostIoNode {
-    static constexpr const char* id = "rp.host.controller-in";
-    static constexpr const char* name = "Control Surface In";
-    static constexpr const char* category = "host";
-    struct {
-        rp::events_out::sized<rp::capacity{.messages = kControllerInMessages, .bytes = kControllerInBytes}> midi;
-        rp::control_out connected;
-    } outputs;
-    // `connected` holds 1 or 0 from frame 0: a change at frame 0 on the block the flag flips, since a stream's start
-    // value is the last block's end.
-    void process(const rp::Block&) noexcept {
-        io->takeControllerMidi(io->ctx, outputs.midi.queue);
-        const double connected = io->controllerConnected(io->ctx) ? 1.0 : 0.0;
-        if (connected != outputs.connected.queue->start) outputs.connected.push(0, connected);
-    }
-};
-
-struct ControllerOut : HostIoNode {
-    static constexpr const char* id = "rp.host.controller-out";
-    static constexpr const char* name = "Control Surface Out";
-    static constexpr const char* category = "host";
-    struct { rp::events_in midi; } inputs;
-    void process(const rp::Block&) noexcept {
-        for (const rp_message& m : inputs.midi.messages()) {
-            const auto data = inputs.midi.data(m);
-            io->controllerOut(io->ctx, data.data(), data.size());
-        }
-    }
-};
-
 }  // namespace
 
 const rp_package* hostIoPackage() {
-    static const rp_node_type* const kTypes[] = {rp::node_type<MidiIn>(), rp::node_type<MidiOut>(), rp::node_type<ControllerIn>(),
-                                                 rp::node_type<ControllerOut>()};
+    static const rp_node_type* const kTypes[] = {rp::node_type<MidiIn>(), rp::node_type<MidiOut>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.host.io","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;

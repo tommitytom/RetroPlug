@@ -40,7 +40,6 @@ using rp::host::test::docNode;
 using rp::host::test::docWire;
 using rp::host::test::Feed;
 using rp::host::test::graphRequest;
-using rp::host::test::HostCall;
 using rp::host::test::Message;
 using rp::host::test::NodeRig;
 using rp::host::test::Probe;
@@ -141,17 +140,16 @@ void block(Engine& e) {
     block(e, l, r);
 }
 
-// A NodeRig document: a feed whose midi and bytes go to a NES, to the cart, and to the cart mirror the hosts feed the
-// physical cart through today (and which rp.n8.nes stands beside until it replaces it), and a probe reading the cart's
-// `connected`. `params` are the cart node's param members, JSON without braces.
+// A NodeRig document: a feed whose midi and bytes go to a NES and to the cart, as buildGraph fans one system's
+// protocol output out to both, and a probe reading the cart's `connected`. `params` are the cart node's param members,
+// JSON without braces.
 std::string fanOut(NodeRig& rig, const std::string& params = "") {
     return R"({"nodes":[{"id":"feed","type":"rp.test.feed"},{"id":"sys-1","type":"rp.mesen.nes","settings":{)" +
            rig.boot("rp.mesen.nes", 1) + R"(}},{"id":"cart","type":"rp.n8.nes")" +
            (params.empty() ? "" : R"(,"params":{)" + params + "}") +
-           R"(},{"id":"mirror","type":"rp.n8.cart-mirror","settings":{"system":1}},{"id":"probe","type":"rp.test.probe"}],
+           R"(},{"id":"probe","type":"rp.test.probe"}],
                "wires":[{"from":"feed.midi","to":"sys-1.midi"},{"from":"feed.bytes","to":"sys-1.bytes"},
                         {"from":"feed.midi","to":"cart.midi"},{"from":"feed.bytes","to":"cart.bytes"},
-                        {"from":"feed.midi","to":"mirror.midi"},{"from":"feed.bytes","to":"mirror.bytes"},
                         {"from":"cart.connected","to":"probe.control"}]})";
 }
 
@@ -201,21 +199,25 @@ TEST_CASE("rp.n8.nes receives what rp.mesen.nes receives from one source, in ord
     feed.next[Feed::Bytes] = {{1, {0xF4, 0x00}, RP_MESSAGE_FLUSH}, {5, {0xF8}}, {63, {0xF5, 0x01, 0x02}}};
     block(rig);
 
-    // The cart got exactly what the cart mirror hands the physical N8 today, call for call: the MIDI then the bytes,
-    // each in queue order at its frame, only the bytes' flag set.
-    REQUIRE(cart.pushes.size() == rig.cart.size());
-    REQUIRE(cart.pushes.size() == 7);
+    // The cart got the MIDI then the bytes, each in queue order at its frame, only the bytes' flag set, and at the
+    // block's rate, which the link times the release at.
+    struct Push {
+        std::uint32_t frame;
+        Bytes         bytes;
+        bool          flush;
+    };
+    const std::vector<Push> expected{{3, {0x90, 60, 100}, false}, {3, {0xB0, 7, 90}, false}, {8, {0x80, 60, 0}, false},
+                                     {20, {0xF0, 0x7D, 0x42, 0x01, 0x00, 0x08, 0xF7}, false},
+                                     {1, {0xF4, 0x00}, true}, {5, {0xF8}, false}, {63, {0xF5, 0x01, 0x02}, false}};
+    // Seven pushes for eight feeds: the empty message at frame 8 is skipped, not pushed.
+    REQUIRE(cart.pushes.size() == expected.size());
     for (std::size_t i = 0; i < cart.pushes.size(); ++i) {
         INFO("push " << i);
-        CHECK(cart.pushes[i].frame == rig.cart[i].frame);
-        CHECK(cart.pushes[i].bytes() == rig.cart[i].data);
-        CHECK(cart.pushes[i].flush == rig.cart[i].flush);
-        CHECK(cart.pushes[i].rate == kRate);  // the block's rate, which the link times the release at
+        CHECK(cart.pushes[i].frame == expected[i].frame);
+        CHECK(cart.pushes[i].bytes() == expected[i].bytes);
+        CHECK(cart.pushes[i].flush == expected[i].flush);
+        CHECK(cart.pushes[i].rate == kRate);
     }
-    CHECK(cart.pushes[0].bytes() == Bytes{0x90, 60, 100});
-    CHECK(cart.pushes[4].frame == 1);
-    CHECK(cart.pushes[4].flush);
-    CHECK_FALSE(cart.pushes[5].flush);
     // And the emulated NES read the same bytes queue: what its bytes input fed its core, as the sync trace saw it.
     REQUIRE(rig.traced.size() == 3);
     for (std::size_t i = 0; i < 3; ++i) {

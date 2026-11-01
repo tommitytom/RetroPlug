@@ -3155,13 +3155,14 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
     SECTION("NES, through the engine") {
         // The same promise at the level the host sees: the whole graph block, so the system node's own per-block work
         // (params, settings, the tap's sync, its message digests) is inside the window too, together with the
-        // core-side release of what the host staged. The staging goes through the invoker's stageSystemMidi, which
-        // Engine::applyCommand applies to the core directly (its raw byte door, as a protocol node's bytes input
-        // would reach it): a short message and a settings-length SysEx, staged between blocks - the invoker applies
-        // every push inline while the audio thread owns nothing, so the window holds the release, not the staging, and
-        // the acceptance below is what holds the staging reached the core. The core is the Engine's, so it publishes a
-        // whole savestate every 0.5 s: that capture allocates in Mesen's serializer, and is charged a full interval
-        // here before the window, which stays under one interval (~12.5 k of 24 k frames).
+        // core-side release of what the host staged. The staging goes through the invoker's stageNodeMidi, which
+        // Engine::applyCommand hands to the system node's rp.stage/1 - its core's raw byte door, the same one a
+        // protocol node's bytes input reaches: a short message and a settings-length SysEx, staged between blocks
+        // - the invoker applies every push inline while the audio thread owns nothing, so the window holds the
+        // release, not the staging, and the acceptance below is what holds the staging reached the core. The core is
+        // the Engine's, so it publishes a whole savestate every 0.5 s: that capture allocates in Mesen's serializer,
+        // and is charged a full interval here before the window, which stays under one interval (~12.5 k of 24 k
+        // frames).
         Engine e(kRate);
         rp::host::test::Roms roms;
         auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kNesType}};
@@ -3181,12 +3182,12 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
             std::fill_n(lanes.ptrs[1], frames, 0.0f);
             const std::uint64_t before = ramHash(*core);
             const std::uint8_t note[] = {0x90, 64, 100, 0xF8, 0x80, 64, 0x00};
-            invoker.stageSystemMidi(1, std::vector<std::uint8_t>(note, note + sizeof note));
+            invoker.stageNodeMidi("sys-1", std::vector<std::uint8_t>(note, note + sizeof note));
             stagedBytes += sizeof note;
             std::array<std::uint8_t, 192> sysex{};
             sysex.front() = 0xF0;
             sysex.back()  = 0xF7;
-            invoker.stageSystemMidi(1, std::vector<std::uint8_t>(sysex.begin(), sysex.end()));
+            invoker.stageNodeMidi("sys-1", std::vector<std::uint8_t>(sysex.begin(), sysex.end()));
             stagedBytes += sysex.size();
             rp::test::beginCountingAllocations(true);
             e.processBlock(frames, lanes.ptrs.data(), 2);

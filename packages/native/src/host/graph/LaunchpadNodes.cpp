@@ -61,7 +61,7 @@ struct SurfaceIn : SurfaceNode {
     // One device, one link: the planner refuses a second node of this type in a plan.
     static constexpr bool unique = true;
 
-    // Named rather than spelled inline so the two ports below declare flush, as rp.host.controller-in's do.
+    // Named rather than spelled inline so the two ports below declare flush, as rp.host.midi-in's does.
     using InQueue = rp::events_out::sized<rp::capacity{.messages = kSurfaceInMessages, .bytes = kSurfaceInBytes}>;
     struct {
         InQueue         in;
@@ -81,8 +81,8 @@ struct SurfaceIn : SurfaceNode {
         // start value is the last block's end.
         const double flag = surface->connected() ? 1.0 : 0.0;
         if (flag != outputs.connected.queue->start) outputs.connected.push(0, flag);
-        // What the device sent since the last drain goes into `in` at frame 0, as rp.host.controller-in places the pad
-        // traffic the host stages. A message the queue has no room for is dropped and counted by the queue
+        // What the device sent since the last drain goes into `in` at frame 0, a control surface's timing being no
+        // musical one. A message the queue has no room for is dropped and counted by the queue
         // (rp_queue::dropped), never allocated for, and the link stays drained either way: each call takes what it
         // answers, so a full batch means the ring may hold more.
         for (;;) {

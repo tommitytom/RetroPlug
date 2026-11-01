@@ -7,9 +7,9 @@
 // refuses, and breaking it on a feedback wire would deliver the LED stream a block late.
 //
 // The link here is stage 1's fake: what it was scripted to send, what a node handed it, and the nodes holding it.
-// ProtocolNodes.test.cpp holds the session behind these nodes to the digests it sends through rp.host.controller-in and
-// -out; these cases hold the nodes themselves, their acquire and release, the missing device, the uniqueness rule the
-// types declare, and a warmed block's allocation count.
+// ProtocolNodes.test.cpp holds the session behind these nodes to its recorded digests; these cases hold the nodes
+// themselves, their acquire and release, the missing device, the uniqueness rule the types declare, and a warmed
+// block's allocation count.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[launchpad]"`.
 
@@ -118,7 +118,7 @@ TEST_CASE("a surface's in carries what the device sent, in order, every message 
 
     // More than one drain batch, and one message at the link's widest, so the node's drain loop and a full-size slot
     // are both exercised in one block. The device's traffic carries no frame of its own: every message lands at frame
-    // 0, where rp.host.controller-in places the host's staged pad traffic.
+    // 0, a control surface's timing being no musical one.
     std::vector<std::uint8_t> wide(kMaxDeviceMessage, 0x5A);
     surface.input.push_back(deviceMessage(wide));
     for (int i = 0; i < 40; ++i)
@@ -173,8 +173,8 @@ TEST_CASE("a surface's connected follows the link, from frame 0", "[launchpad]")
     CHECK(probe.controlStart == 0.0);
     CHECK(probe.controlChanges.empty());
 
-    // Attached: the flag flips at frame 0 of that block, as rp.host.controller-in's does, so a session reading it
-    // takes the device on the block it appears.
+    // Attached: the flag flips at frame 0 of that block, so a session reading it takes the device on the block it
+    // appears.
     surface.attached = true;
     block(rig);
     CHECK(probe.controlStart == 0.0);
@@ -290,10 +290,12 @@ TEST_CASE("a plan holds one surface input node and one surface output node", "[l
     }
 
     // rp.n8.nes carries the same rule (the design's own device, placed by stage 5's setting), so a document that
-    // drives the cart twice is refused for the same reason.
+    // drives the cart twice is refused for the same reason, naming the second.
     const auto carts = rig.set(plainDocument({docNode("cart-a", "rp.n8.nes"), docNode("cart-b", "rp.n8.nes")}));
     REQUIRE_FALSE(carts.ok);
     CHECK(carts.errors.at(0).code == "unique");
+    CHECK(carts.errors.at(0).nodeId == "cart-b");
+    CHECK(carts.errors.at(0).message.find("rp.n8.nes") != std::string::npos);
 
     // One of each is the plan buildGraph makes when both settings are on.
     CHECK(rig.set(plainDocument({docNode("surface-in", "rp.launchpad.surface-in"),
