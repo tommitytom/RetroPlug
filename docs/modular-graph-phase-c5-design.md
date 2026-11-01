@@ -479,13 +479,18 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   writes in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion cannot leave the
   engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`, the expansion
   volume, owed note-offs, the held notes a removal, a teardown and a handover hand the link, the jobs and their
-  refusals, abandonment, `threads`, `unique`, a warmed block), `[launchpad]` (`Surface.test.cpp`: the drain, the output,
-  `connected`, the queue's bound, the first-block discard, uniqueness, `threads`, acquire balance, a warmed block) and
-  `[stage]` (`StageNode.test.cpp`: a staged message reaching the node the running plan places under the id, in both
-  orders relative to the swap that changes which plan runs, and one added later). The protocol cases run the surface
-  wiring and hold their recorded digests; the goldens' documents moved with the fan-out and the surface nodes, and their
-  driven runs hold each cart node's pushes to what the system it drives had fed its own FIFO, byte for byte, one cart
-  per document as the compare requires.
+  refusals, abandonment, `threads`, `unique`, a warmed block), `[n8-adapters]` (`N8Adapters.test.cpp`: the one case that
+  composes the production adapters behind a real Engine, `rp.n8.nes` through `N8CartLink`, `N8Host` and `N8Link` to
+  `test/n8/FakeN8.hpp`'s serial port: a note, `rom.title` before and after an upload, a dump refused at a game, a dump
+  abandoned by a replan with the held note's note-off written once streaming resumes, and the hosts' teardown order
+  ending in `~N8Host`'s join; here rather than in `retroplug-n8-test`, which links no engine, and run by
+  `pnpm test:plugin`, which CI runs and `pnpm test:n8` is not), `[launchpad]` (`Surface.test.cpp`: the drain, the
+  output, `connected`, the queue's bound, the first-block discard, uniqueness, `threads`, acquire balance, a warmed
+  block) and `[stage]` (`StageNode.test.cpp`: a staged message reaching the node the running plan places under the id,
+  in both orders relative to the swap that changes which plan runs, and one added later). The protocol cases run the
+  surface wiring and hold their recorded digests; the goldens' documents moved with the fan-out and the surface nodes,
+  and their driven runs hold each cart node's pushes to what the system it drives had fed its own FIFO, byte for byte,
+  one cart per document as the compare requires.
 - `retroplug-n8-test` gained `[cart-jobs]` (`N8CartJobs.test.cpp`: the pause and its ack bound, battery file dumps and
   restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws), a
   game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a cart reset to
@@ -493,9 +498,10 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   probe's wake outlasting a busy turn, a port that throws as a job starts and after it ran, a job whose `run` throws run
   once, the JSON a name reaches, an abandoned dump) and `[cart-release]` (a leaving node's held notes: behind a note-on
   still waiting for its release time, framed on the reliable link, held through a job's pause, written by a disconnect,
-  dropped by a link that is down), and the two link adapters have their own files: `N8CartLink.test.cpp` (the volume's
-  retry, its once-a-second bound, the probe's turn of its own, the last release's AUTO) and
-  `LaunchpadSurfaceLink.test.cpp` (the ring's inbound losses counted apart from `dropped`).
+  dropped by a link that is down), over the cart model both suites share (`test/n8/FakeN8.hpp`), and the two link
+  adapters have their own files: `N8CartLink.test.cpp` (the volume's retry, its once-a-second bound, the probe's turn of
+  its own, the last release's AUTO) and `LaunchpadSurfaceLink.test.cpp` (the ring's inbound losses counted apart from
+  `dropped`).
 - TS: `test/capability/capability.test.ts` (the promises, the refusals, a close rejecting pending, progress, the full
   title, a node that presents no capability, a battery dump that is not a battery read, the wait's bound, and a queue
   leaving the pump's set), and on the real host `test-native/capability.test.ts` (two backends over one engine settling

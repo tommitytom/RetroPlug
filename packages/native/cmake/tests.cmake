@@ -79,9 +79,10 @@ retroplug_add_test_binary(
 # Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md, -b3b-design.md,
 # -c2-design.md): each system node renders exactly what its core renders driven directly, its inputs and its settings'
 # knobs included, the engine places, re-arms and frees what the documents TS builds say, the host MIDI I/O nodes move
-# what the hosts stage and drain and the hardware nodes drive their fake device links, TS nodes run behind the C ABI in
-# the script host, a script node pack loads beside the built-in one into runtimes of its own and reloads, the
-# generation it replaced freed off the audio thread, the protocol script nodes send what the DSP kernel they replaced
+# what the hosts stage and drain and the hardware nodes drive their fake device links (and the cart's node its real
+# adapters, down to test/n8/FakeN8.hpp's serial port), TS nodes run behind the C ABI in the script host, a script
+# node pack loads beside the built-in one into runtimes of its own and reloads, the generation it replaced freed off
+# the audio thread, the protocol script nodes send what the DSP kernel they replaced
 # was recorded sending, and every document in buildGraph's goldens, its role goldens among them, plans on it.
 # A hidden bench times a script node per block.
 # Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
@@ -98,6 +99,7 @@ retroplug_add_test_binary(
              test/engine-graph/Devices.test.cpp        # rp.host.devices/1: the links a hardware node binds by name
              test/engine-graph/Capabilities.test.cpp   # rp.system.memory/1, sram/1, rom/1 as asynchronous jobs
              test/engine-graph/N8Node.test.cpp         # rp.n8.nes: the real cart as a node, its jobs on the link
+             test/engine-graph/N8Adapters.test.cpp     # rp.n8.nes through N8CartLink / N8Host to a fake serial port
              test/engine-graph/Surface.test.cpp        # rp.launchpad.surface-in / -out: the control surface as nodes
              test/engine-graph/StageNode.test.cpp      # staging a message at one node by id, through rp.stage/1
              test/engine-graph/ScriptNodes.test.cpp
@@ -106,6 +108,10 @@ retroplug_add_test_binary(
              test/engine-graph/ScriptBench.test.cpp    # hidden: run with "[bench]"
              test/engine-graph/BuildGraphGoldens.test.cpp
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
+             src/host/n8/Edio.cpp                      # the cart's adapters N8Adapters.test.cpp composes: serial-free,
+             src/host/n8/N8Link.cpp                    # as retroplug-n8-test compiles them (the backend holds none of
+             src/host/n8/N8Host.cpp                    # them; the hosts that own an N8Host compile their own)
+             src/host/n8/N8Menu.cpp
              ${SCRIPT_TEST_BUNDLE_C}                    # rp_script_test_bundle
     LIBS     retroplug-backend
     INCLUDES ${RP_QUICKJS_INCLUDE}
