@@ -22,6 +22,7 @@
     "lsdj/rotate-off": { "hash": "dbdbec83c10ef215", "size": 16384, "slot": 1056 },
     "lsdj/rotate-on": { "hash": "e692c7cb87c64887", "size": 16384, "slot": 1056 },
     "lsdj/short-source": { "hash": "d53ebc650e589004", "size": 16384, "slot": 64 },
+    "lsdj/two-slots": { "hash": "d9128bade8ee4b41", "size": 16384, "slot": 1056 },
     "risa/filter-rate-8": { "hash": "ea46d3533e71797d", "size": 8192, "slot": 224 },
     "risa/gain-rate-10": { "hash": "a598d2590bf9306e", "size": 8192, "slot": 320 },
     "risa/loop-rate-4": { "hash": "8c53bcce60861b79", "size": 8192, "slot": 160 },
@@ -31,6 +32,7 @@
     "risa/no-normalize-rate-12": { "hash": "919fac26b94094ea", "size": 8192, "slot": 416 },
     "risa/normalize-silence-rate-12": { "hash": "492a6c104578b10f", "size": 8192, "slot": 816 },
     "risa/normalize-silence-rate-4": { "hash": "519a7d01915f2a38", "size": 8192, "slot": 144 },
-    "risa/short-source-rate-12": { "hash": "205a41e6da035559", "size": 8192, "slot": 48 }
+    "risa/short-source-rate-12": { "hash": "205a41e6da035559", "size": 8192, "slot": 48 },
+    "risa/two-slots-rate-12": { "hash": "9e15ffa5f819f01d", "size": 8192, "slot": 384 }
   }
 }

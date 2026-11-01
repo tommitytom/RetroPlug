@@ -226,10 +226,12 @@ compared a compiled bank with anything; the suite is the gate Phase D's graph co
   covers the kit path's whole byte surface) synthesises every source in the test (two sines, a chirp, seeded noise and
   silence at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk), writes each as a
   32-bit float WAV in a temp dir, and compiles it through `KitCompiler` over `LsdjKitCodec` / `RisaDmcCodec`, so
-  `SampleCache` and miniaudio's decode are in the loop and the suite needs no fixtures. 31 cases: LSDj has no effect,
+  `SampleCache` and miniaudio's decode are in the loop and the suite needs no fixtures. 33 cases: LSDj has no effect,
   gain, normalise (a silent source too), each of the eight filters, each of the five dithers, rotate on and off, a
-  filter-gain-dither chain and the short source; risa has five DMC rate indices, normalise off, loop on, a silent
-  normalise at two rates and the short source.
+  filter-gain-dither chain, the short source and a two-slot bank; risa has five DMC rate indices, normalise off, loop
+  on, a silent normalise at two rates, the short source and a two-slot bank. The two-slot banks add a second sample
+  named SNR with its own effects (and a lowercase, over-long bank name on the LSDj one), so the assembler's offset
+  accumulation past slot 0, its 15-slot loop and `writeString`'s uppercase and truncation are held by a hash too.
 - **Golden.** `golden/kit-baseline.json` holds `target` and `{hash, size, slot}` per case, sorted, read with
   reflect-cpp. `hash` is FNV-1a-64 of the bank; `size` and `slot` are the layout facts. The suite asserts each case
   compiles clean, the bank carries its slot and the golden names exactly the matrix's cases, so a broken case cannot
@@ -244,8 +246,8 @@ compared a compiled bank with anything; the suite is the gate Phase D's graph co
   byte-identical file, so a diff shows only moved banks. Moving the target is one change: `kBaselineTarget` in the
   test, a re-record on the new host, the golden's `target` line, and CI's `RP_KIT_GOLDEN_REQUIRE_TARGET` step on that
   host.
-- **A trap.** The baseline is coarse: a one-ulp change in a dither's arithmetic can move no 4-bit code across all 31
-  cases (stage 3's Sierra Lite mutation), which is why the kernels have `[dsp]`'s verbatim references at 16 bits.
+- **A trap.** The baseline is coarse: a one-ulp change in a dither's arithmetic can move no 4-bit code across every
+  case (stage 3's Sierra Lite mutation), which is why the kernels have `[dsp]`'s verbatim references at 16 bits.
   Treat a kit baseline failure as a real change to the bytes, and do not re-record it to make a refactor pass.
 
 | Tier | Backend under test | Command | Runner | Test dir |

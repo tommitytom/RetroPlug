@@ -62,8 +62,11 @@ time; the noise is still TPDF noise. This is D1's one deliberate kit behaviour c
 `KitCompiler` over a fixed matrix of cases synthesised in the test, so it needs no fixtures and runs in CI: sines, a
 chirp, seeded noise and silence at 22.05, 44.1 and 48 kHz, and a 600-frame source shorter than one resampler chunk;
 for LSDj, no effect, gain, normalise (a silent source too), each of the eight filters, each of the five dithers,
-rotate on and off, one filter-gain-dither chain and a short source; for risa, the DMC codec at five rate indices,
-normalise off, loop on, a silent normalise at two rates and a short source. Each case's bank is recorded in a golden
+rotate on and off, one filter-gain-dither chain, a short source and one two-slot bank; for risa, the DMC codec at five
+rate indices, normalise off, loop on, a silent normalise at two rates, a short source and one two-slot bank. The
+two-slot banks (a second sample named SNR with its own effects, and on the LSDj one a lowercase over-long bank name)
+put the assembler's offset accumulation past slot 0, its 15-slot loop and `writeString`'s uppercase and truncation
+inside the baseline. Each case's bank is recorded in a golden
 JSON beside the test as its hash, size and slot length, re-recorded only with `RP_KIT_GOLDEN_UPDATE=1`. Exact bytes
 are compared on `linux-x64-gnu13` (as parity does), off it a case must agree with itself across two runs while its
 size and slot length are still held, and `RP_KIT_GOLDEN_REQUIRE_TARGET=1` turns the fallback into a failure on CI's
@@ -247,9 +250,12 @@ findings worth naming; each stage's own report is the full record.
   (`RP_KIT_GOLDEN_UPDATE=1`) refuses a case whose two compiles disagree, refuses a matrix it cannot represent (the
   record is keyed by case name), refuses to write anywhere but the target host, and writes through a sibling temp file
   renamed into place, so a failed record leaves the committed golden as it was rather than truncated. The suite guards
-  against a vacuous pass: every case must compile clean, the bank must carry its slot, and the golden must name exactly
-  the matrix's cases. The matrix grew from 26 to 31 cases in review: silent sources for both
-  normalise paths, risa's normalise-off and loop branches, and the slot length beside the hash.
+  against a vacuous pass: every case must compile clean, the bank must carry every slot it compiles, and the golden must
+  name exactly the matrix's cases. The matrix grew from 26 to 31 cases in review: silent sources for both normalise
+  paths, risa's normalise-off and loop branches, and the slot length beside the hash. A follow-up took it to 33: one
+  two-slot bank per codec (a second sample named SNR with its own effects), which puts the assembler's offset
+  accumulation past slot 0 and its 15-slot loop inside the baseline, and a lowercase over-long bank name on the LSDj
+  one, for `writeString`'s uppercase and truncation. They added two records and moved no existing one.
 - **3, the kernels.** The target named `retroplug-dsp` in section 4 was taken by `dpf_add_plugin(retroplug ...)`, which
   creates the plugin's own DSP library of that name, so the library is `retroplug-dsp-kernels` (gain, peak, the
   normalising gain, the biquads, dither and quantise) plus `retroplug-dsp-resample` (r8brain, pthreads, RTTI). The
@@ -320,7 +326,7 @@ findings worth naming; each stage's own report is the full record.
 ### What building it changed in sections 3 to 5
 
 - **Section 3**: the seed is over the resampled, pre-trim buffer and salted by a stable constant, with a specified draw;
-  the baseline is 31 cases, records the slot length, uses `RP_KIT_GOLDEN_REQUIRE_TARGET` and the shared
+  the baseline is 33 cases, records the slot length, uses `RP_KIT_GOLDEN_REQUIRE_TARGET` and the shared
   `rp::buildTarget()`, and refuses a disagreeing case at recording.
 - **Section 4**: the target is `retroplug-dsp-kernels` + `retroplug-dsp-resample`, not `retroplug-dsp`; the resampler's
   API is push/pull and its `process`-equivalent is allocation-free from the first chunk; the dither's seed is split into
@@ -354,7 +360,7 @@ findings worth naming; each stage's own report is the full record.
 
 ### The suite, as built
 
-- `retroplug-audio-test` gained `[kit-baseline]` (`test/audio/KitBaseline.test.cpp`, 31 banks, one case, 346
+- `retroplug-audio-test` gained `[kit-baseline]` (`test/audio/KitBaseline.test.cpp`, 33 banks, one case, 362
   assertions) and `[dither]` (`test/audio/Dither.test.cpp`, the same-twice cases and the eight-code golden), and
   `test-native` gained `kit-dither` (`test-native/kit-dither.test.ts`).
 - `retroplug-graph-test` gained `[dsp]` (`test/graph/Dsp.test.cpp`, 17 cases: chunk-exact streaming at 1, 4, 8 and 16

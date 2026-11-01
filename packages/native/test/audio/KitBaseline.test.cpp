@@ -11,9 +11,11 @@
 // silence, each at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk. LSDj
 // cases: no effect, a non-unity gain with normalise off, the same gain with normalise on, that normalise over a
 // silent source, each of the eight filter types, each of the five dither algorithms, rotate on and off, one chain of
-// filter then gain then dither, and the short source on its own. risa cases: the DMC codec at five rate indices, with
-// and without a pre-effect, with normalise off and with loop set, a normalise of a silent source, and the short source
-// on its own.
+// filter then gain then dither, the short source on its own, and one bank carrying a second slot beside the first.
+// risa cases: the DMC codec at five rate indices, with and without a pre-effect, with normalise off and with loop set,
+// a normalise of a silent source, the short source on its own, and one bank of two slots. One of the two-slot cases
+// names its bank with a lowercase, over-long string, so `writeString`'s uppercase and truncation are in the baseline
+// as well as the assembler's offset accumulation for every slot but the first.
 //
 // Exact bytes are compared only on the host the golden was recorded on (`linux-x64-gnu13`), as the engine's parity
 // baseline does, because float arithmetic is bit-stable only for one compiler on one architecture. Elsewhere a case
@@ -220,8 +222,15 @@ void writeFloatWav(const std::filesystem::path& path, const std::vector<float>& 
 
 enum class KitCodec { Lsdj, Risa };
 
+/** A sample after slot 0: its name and its own effects, compiled from the case's source, rate and flags. */
+struct ExtraSlot {
+    const char*                       name;
+    std::vector<rp::lsdj::LsdjEffect> effects;
+};
+
 /** One matrix entry. `rate` is the source's own rate; `dmcRate` is risa's PAL DPCM rate index, unused by LSDj;
- *  `normalize` and `loop` are risa's DMC encode flags, unused by LSDj (LSDj normalises through a `GainEffect`). */
+ *  `normalize` and `loop` are risa's DMC encode flags, unused by LSDj (LSDj normalises through a `GainEffect`).
+ *  `extraSlots` adds samples after slot 0; `kitName` overrides the codec's own bank name. */
 struct KitCase {
     const char*                       name;
     KitCodec                          codec;
@@ -232,6 +241,8 @@ struct KitCase {
     std::uint8_t                      dmcRate   = 12;
     bool                              normalize = true;
     bool                              loop      = false;
+    std::vector<ExtraSlot>            extraSlots;
+    const char*                       kitName = nullptr;
 };
 
 rp::lsdj::LsdjEffect gainEffect(float gain, bool normalize) {
@@ -293,6 +304,11 @@ std::vector<KitCase> kitCases() {
          {filterEffect(FilterType::LowPass, 3000.0f, 1.0f), gainEffect(0.5f, false),
           ditherEffect(DitherType::HighPassTPDF)}},
         {"lsdj/short-source", KitCodec::Lsdj, Signal::Short, 44100, {}},
+        // Two slots, the second named SNR and shaped by a gain slot 0 does not have: the assembler's offset
+        // accumulation (offsets[i + 1] for i > 0), its 15-slot loop and the sample-name rule are inside the baseline,
+        // and so is `writeString`, on a lowercase over-long bank name it has to uppercase and truncate.
+        {"lsdj/two-slots", KitCodec::Lsdj, Signal::Sine440, 44100, {}, true, 12, true, false,
+         {{"SNR", {gainEffect(0.5f, false)}}}, "baseline-kit"},
 
         {"risa/no-effect-rate-4", KitCodec::Risa, Signal::Sine440, 44100, {}, true, 4},
         {"risa/no-effect-rate-12", KitCodec::Risa, Signal::Chirp, 48000, {}, true, 12},
@@ -309,6 +325,10 @@ std::vector<KitCase> kitCases() {
         // no-peak branch of the DMC normalise.
         {"risa/normalize-silence-rate-12", KitCodec::Risa, Signal::Silence, 22050, {}, true, 12},
         {"risa/normalize-silence-rate-4", KitCodec::Risa, Signal::Silence, 48000, {}, true, 4},
+        // The two-slot twin on risa's side: its index entries and the sample-data cursor move for slot 1, and the
+        // second slot's rate and effects are its own.
+        {"risa/two-slots-rate-12", KitCodec::Risa, Signal::Chirp, 48000, {}, true, 12, true, false,
+         {{"SNR", {gainEffect(0.4f, false)}}}},
     };
 }
 
@@ -341,18 +361,26 @@ struct TempDir {
     TempDir& operator=(const TempDir&) = delete;
 };
 
-/** Compile one case the way its RPC does: build the codec with a single slot, then hand it to a shared compiler. The
+/** Compile one case the way its RPC does: build the codec with its slots, then hand it to a shared compiler. The
  *  compiler owns the `SampleCache`, so a case compiled twice decodes once; `SampleCache` keys on the path and both of
  *  a case's compiles pass the same one. */
 rp::kit::CompiledKit compileCase(rp::kit::KitCompiler& compiler, const KitCase& c,
                                  const SourceFile& source) {
+    const char* kitName = c.kitName != nullptr ? c.kitName : (c.codec == KitCodec::Lsdj ? "BASELINE" : "RISA");
     if (c.codec == KitCodec::Lsdj) {
         rp::lsdj::CompileSampleSpec slot;
         slot.path    = source.path.string();
         slot.name    = "KIK";
         slot.effects = c.effects;
         slot.rotate  = c.rotate;
-        const rp::lsdj::LsdjKitCodec codec("BASELINE", {slot});
+        std::vector<rp::lsdj::CompileSampleSpec> slots{slot};
+        for (const ExtraSlot& extra : c.extraSlots) {
+            rp::lsdj::CompileSampleSpec next = slot;
+            next.name    = extra.name;
+            next.effects = extra.effects;
+            slots.push_back(std::move(next));
+        }
+        const rp::lsdj::LsdjKitCodec codec(kitName, std::move(slots));
         return compiler.compile(codec);
     }
 
@@ -363,25 +391,42 @@ rp::kit::CompiledKit compileCase(rp::kit::KitCompiler& compiler, const KitCase& 
     slot.rate      = c.dmcRate;
     slot.normalize = c.normalize;
     slot.loop      = c.loop;
-    const rp::risa::RisaDmcCodec codec("RISA", {slot});
+    std::vector<rp::risa::CompileDmcSampleSpec> slots{slot};
+    for (const ExtraSlot& extra : c.extraSlots) {
+        rp::risa::CompileDmcSampleSpec next = slot;
+        next.name    = extra.name;
+        next.effects = extra.effects;
+        slots.push_back(std::move(next));
+    }
+    const rp::risa::RisaDmcCodec codec(kitName, std::move(slots));
     return compiler.compile(codec);
 }
 
-/** Whether the bank carries the case's sample in slot 0. A case whose decode or resample failed leaves the slot empty,
- *  and an empty slot is a stable bank, so without this a broken case would pin nothing and still pass. */
-bool bankHasSlot(const KitCase& c, const std::vector<std::uint8_t>& bank) {
+/** Whether the bank carries every sample the case compiles. A case whose decode or resample failed leaves that slot
+ *  empty, and an empty slot is a stable bank, so without this a broken case would pin nothing and still pass. */
+bool bankHasSlots(const KitCase& c, const std::vector<std::uint8_t>& bank) {
+    const std::size_t slots = 1 + c.extraSlots.size();
     if (c.codec == KitCodec::Lsdj) {
-        // The offset table's first two little-endian u16 entries: offsets[0] is the sample-data start, offsets[1] the
-        // end of slot 0. A slot with no sample gets neither.
+        // The offset table's little-endian u16 entries: offsets[0] is the sample-data start, offsets[i + 1] the end of
+        // slot i. A slot with no sample gets neither, and the table only moves forward, so slot i is present exactly
+        // when entry(i + 1) is past entry(i), which is also the accumulation a second slot reaches.
         if (bank.size() != rp::lsdj::Kit::kSize) return false;
         const auto entry = [&](std::size_t i) {
             return static_cast<std::uint16_t>(bank[i * 2] | (bank[i * 2 + 1] << 8));
         };
-        return entry(0) == rp::lsdj::Kit::kBankBase + rp::lsdj::Kit::kSampleDataOffset && entry(1) > entry(0);
+        if (entry(0) != rp::lsdj::Kit::kBankBase + rp::lsdj::Kit::kSampleDataOffset) return false;
+        for (std::size_t i = 0; i < slots; ++i) {
+            if (entry(i + 1) <= entry(i)) return false;
+        }
+        return true;
     }
-    // The risa bank's slot-0 index entry: its address byte is 0xFF when the slot is empty.
+    // The risa bank's index entries: a slot's address byte is 0xFF when the slot is empty.
     using rp::risa::RisaDmcCodec;
-    return bank.size() == RisaDmcCodec::kBankSize && bank[RisaDmcCodec::kIndexOffset] != 0xFF;
+    if (bank.size() != RisaDmcCodec::kBankSize) return false;
+    for (std::size_t i = 0; i < slots; ++i) {
+        if (bank[RisaDmcCodec::kIndexOffset + i * RisaDmcCodec::kIndexEntry] == 0xFF) return false;
+    }
+    return true;
 }
 
 /** Slot 0's length in an assembled bank, as the bank itself records it: LSDj's offset table gives the start and end of
@@ -513,7 +558,7 @@ TEST_CASE("every kit case compiles to the bank the golden records", "[kit-baseli
             const auto first = compileCase(compiler, c, sources.at(sourceKey(c.signal, c.rate)));
             REQUIRE(first.ok);
             REQUIRE(first.error.empty());
-            REQUIRE(bankHasSlot(c, first.bytes));
+            REQUIRE(bankHasSlots(c, first.bytes));
             const auto second = compileCase(compiler, c, sources.at(sourceKey(c.signal, c.rate)));
             // REQUIRE, not CHECK: a case whose two compiles disagree depends on something outside its input, so its
             // digest would mean nothing and writing it (let alone re-recording a different one next time) would put
@@ -554,11 +599,11 @@ TEST_CASE("every kit case compiles to the bank the golden records", "[kit-baseli
         // These three hold `KitCompiler`'s contract, not the case's: `compile` sets `ok` unconditionally and computes
         // its hash as the FNV of the bytes it returns (the dirty-tracking hash the RPC throws away), so they fail
         // only if that contract changes, and the check keeps the golden a hash of the bank and nothing else.
-        // `bankHasSlot` below is the case's own vacuous-pass guard.
+        // `bankHasSlots` below is the case's own vacuous-pass guard.
         REQUIRE(kit.ok);
         REQUIRE(kit.error.empty());
         CHECK(kit.hash == rp::hash::fnv1a64(kit.bytes.data(), kit.bytes.size()));
-        REQUIRE(bankHasSlot(c, kit.bytes));
+        REQUIRE(bankHasSlots(c, kit.bytes));
 
         const auto expected = golden.cases.find(c.name);
         REQUIRE(expected != golden.cases.end());

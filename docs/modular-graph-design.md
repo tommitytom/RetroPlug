@@ -1243,7 +1243,7 @@ D1 is built ([modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md
 core-free library of block-streaming kernels (`src/dsp/`, `retroplug-dsp-kernels` + `retroplug-dsp-resample`), the kit
 compilers run it, and the graph has it as `rp.dsp.gain`, `.biquad`, `.dither` and `rp.dsp.resample`; TPDF dither is
 seeded from the sample it receives, so a kit compiles to the same bytes, and `retroplug-audio-test`'s `[kit-baseline]`
-records 31 compiled banks. D2 (audio buffers into and out of a document, a run-to-completion driver, normalise and the
+records 33 compiled banks. D2 (audio buffers into and out of a document, a run-to-completion driver, normalise and the
 two-rate kit chain, kit compiles as graphs byte-identical to the baseline) and D3 (the CLI `render` and the background
 renders on that driver) are left.
 
