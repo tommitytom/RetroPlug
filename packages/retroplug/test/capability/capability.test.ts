@@ -69,6 +69,21 @@ test("a refused job rejects at once with native's reason", async () => {
   expect(be.pumpJobs()).toBe(0);
 });
 
+test("a Game Boy title that fills its 15 bytes stops before the CGB flag", async () => {
+  // $0134-$0142 hold 15 printable bytes, so nothing NUL-terminates the field and $0143 is the CGB flag: appending it
+  // would make the title 16 characters ending in U+0080.
+  const be = new MockBackend("/cfg");
+  const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
+  const rom = gbRom();
+  const title = "LSDj-v9.3.3aboy";
+  for (let i = 0; i < title.length; i++) rom[0x134 + i] = title.charCodeAt(i);
+  rom[0x143] = 0x80;
+  be.seed("/roms/full-title.gb", rom);
+  const id = project.systems.addSystem("/roms/full-title.gb")!;
+  expect(await be.capability(`sys-${id}`, "rom.title")).toBe(title);
+  project.systems.removeSystem(id);
+});
+
 test("closing the project rejects what is still pending, and a late completion is dropped", async () => {
   const { be, project, node } = cart();
   be.audioRunning = true;

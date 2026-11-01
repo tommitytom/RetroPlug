@@ -62,8 +62,8 @@ public:
 
     // [any] The whole ROM image, as the file the system was built from holds it: its header is a prefix of this.
     virtual std::span<const std::uint8_t> image() const = 0;
-    // [any] The cartridge's title field as the ROM stores it, up to its first NUL, or empty for a console whose header
-    // has none (a NES's iNES header, a Master System's).
+    // [any] The cartridge's title field as the ROM stores it, up to its first byte that is not printable ASCII, or
+    // empty for a console whose header has none (a NES's iNES header, a Master System's).
     virtual std::string title() const = 0;
 };
 

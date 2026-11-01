@@ -239,7 +239,8 @@ in place there), and the findings worth naming; each stage's own report is the f
   through the host's services.
 - **2, the capabilities and the job model.** The interfaces are restricted to what the control plane reads:
   `memory/1` lists one region, the published work RAM; `sram/1`'s dump is the battery bytes; `rom/1`'s header is a
-  prefix of the image and its title the raw field up to the first NUL; `state/1` stays the system-id RPC, which this
+  prefix of the image and its title the raw field up to its first byte that is not printable ASCII (so a Game Boy
+  title that fills its 15 bytes stops before the CGB flag at $0143); `state/1` stays the system-id RPC, which this
   design does not list. An emulated `sram.restore` is refused at submission: a battery is restored by a rebuild with
   the bytes as the seed, and SameBoy's published battery is a savestate slice refreshed every 0.5 s, so a live restore
   could not honour "visible to the next read". A write completes when it is readable, not when it is applied: it is

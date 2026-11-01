@@ -676,11 +676,12 @@ export class MockBackend implements Backend {
     const rom = this.files.get(this.canonicalize(this.systems.get(system)!.romPath)) ?? new Uint8Array(0);
     if (key === "rp.system.rom/1 header") return now(rom.slice(0, request.length || rom.length));
     if (key === "rp.system.rom/1 title") {
-      // The title field of the node's console, as each core's CoreRom reads it: a Game Boy's and a GBA's; none else.
+      // The title field of the node's console, as each core's CoreRom reads it: a Game Boy's and a GBA's, printable
+      // ASCII up to the first byte that is not (a title filling its 15 bytes stops before the CGB flag at $0143).
       const type = this.systemNodes.get(system)?.type;
       const [start, length] = type === "rp.sameboy.gb" ? [0x134, 16] : type === "rp.mesen.gba" ? [0xa0, 12] : [0, 0];
       let end = start;
-      while (end < start + length && end < rom.length && rom[end] !== 0) end++;
+      while (end < start + length && end < rom.length && rom[end] >= 0x20 && rom[end] <= 0x7e) end++;
       return now(rom.slice(start, end));
     }
     return refuse(`unknown capability ${request.capability}`);

@@ -109,7 +109,8 @@ std::vector<std::uint8_t> resourceFixture(const char* relative) {
 }
 
 // Every capability of system 1 against what the system-id RPCs answer for it, and against `rom`, the file it was built
-// from. `title` is the ROM's title as its console's header stores it.
+// from. `title` is the ROM's title as this capability reads it: the header field up to its first byte that is not
+// printable ASCII.
 void checkAgainstTheRpcs(Rig& rig, const std::vector<std::uint8_t>& rom, const std::string& title) {
     for (int b = 0; b < 8; ++b) rig.block();
     const auto ram = rig.rpc.readRam(1);
@@ -147,7 +148,8 @@ TEST_CASE("each capability answers what the system-id RPCs and the ROM file answ
         REQUIRE(rig.plan({{1, rp::host::test::kGbType}}));
         const auto rom = readFile(RP_MGB_ROM_PATH);
         std::string title;
-        for (std::size_t i = 0x134; i < 0x144 && rom[i] != 0; ++i) title.push_back(static_cast<char>(rom[i]));
+        for (std::size_t i = 0x134; i < 0x144 && rom[i] >= 0x20 && rom[i] <= 0x7e; ++i)
+            title.push_back(static_cast<char>(rom[i]));
         REQUIRE(!title.empty());
         checkAgainstTheRpcs(rig, rom, title);
     }
@@ -174,8 +176,27 @@ TEST_CASE("each capability answers what the system-id RPCs and the ROM file answ
     REQUIRE(rig.plan({gba}));
     std::string title;
     // The game title field, $A0-$AB, which this homebrew cart leaves blank (as the ROM stores it, so empty).
-    for (std::size_t i = 0xA0; i < 0xAC && rom[i] != 0; ++i) title.push_back(static_cast<char>(rom[i]));
+    for (std::size_t i = 0xA0; i < 0xAC && rom[i] >= 0x20 && rom[i] <= 0x7e; ++i)
+        title.push_back(static_cast<char>(rom[i]));
     checkAgainstTheRpcs(rig, rom, title);
+}
+
+TEST_CASE("a Game Boy title that fills its field stops before the CGB flag, not at a NUL",
+          "[engine-graph][capability]") {
+    // Fifteen printable bytes fill $0134-$0142, so nothing NUL-terminates the field and $0143 holds the CGB flag:
+    // appending it would make the title a 16-character string ending in U+0080.
+    Rig rig;
+    auto rom = readFile(RP_MGB_ROM_PATH);
+    REQUIRE(rom.size() > 0x143);
+    const std::string title = "LSDj-v9.3.3aboy";
+    REQUIRE(title.size() == 15);
+    for (std::size_t i = 0; i < title.size(); ++i) rom[0x134 + i] = static_cast<std::uint8_t>(title[i]);
+    rom[0x143] = 0x80;
+    DocSystem gb{1, rp::host::test::kGbType};
+    gb.rom = rig.e.putResource("rom", rom);
+    REQUIRE(gb.rom != 0);
+    REQUIRE(rig.plan({gb}));
+    CHECK(rig.now(rig.submit("sys-1", kRom, "title")) == bytesOf(title));
 }
 
 TEST_CASE("a write completes once the block after its drain has published it, and the next read sees it",

@@ -29,8 +29,11 @@ bool CoreMemory::write(std::size_t region, std::uint32_t offset, const std::uint
 std::string CoreRom::title() const {
     std::string out;
     for (std::size_t i = titleOffset_; i < titleOffset_ + titleLength_ && i < rom_.size(); ++i) {
-        if (rom_[i] == 0) break;
-        out.push_back(static_cast<char>(rom_[i]));
+        const std::uint8_t c = rom_[i];
+        // Printable ASCII to the first byte that is not: a Game Boy title that fills its 15 bytes leaves the CGB flag
+        // (0x80 or 0xC0) at $0143, which is not part of the title.
+        if (c < 0x20 || c > 0x7e) break;
+        out.push_back(static_cast<char>(c));
     }
     return out;
 }
