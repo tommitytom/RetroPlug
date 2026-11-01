@@ -82,10 +82,9 @@ library and nothing else: gain, peak and the normalising gain, the biquads, dith
 heap nor pthreads nor RTTI. r8brain's static members are `retroplug-r8brain-base`, a target of their own beside it
 (`R8bBase.cpp`, built on the throwing allocator section 10 describes): that one translation unit is vendored r8brain
 code, so it keeps the compiler's default warning level rather than this tree's `/W4 /WX` on Windows, and gets the
-deps' `-w` on GNU/Clang. `retroplug-core`
-links both for the kit path, the node packages link them, and so does `retroplug-graph-test`, which tests the nodes with
-no core, txiki or backend. The design's `retroplug-dsp` name is taken: `dpf_add_plugin(retroplug ...)` creates the
-plugin's own DSP library of that name.
+deps' `-w` on GNU/Clang. `retroplug-core` links both for the kit path, the node packages link them, and so does
+`retroplug-graph-test`, which tests the nodes with no core, txiki or backend. The design's `retroplug-dsp` name is
+taken: `dpf_add_plugin(retroplug ...)` creates the plugin's own DSP library of that name.
 
 **The kernels.** Each is a plain state struct and an `init` on the control thread (coefficients; the resampler's
 allocation). Gain, biquad and dither add a `process(in, out, frames)` that is `noexcept` and allocates nothing; the
@@ -358,8 +357,10 @@ follow-up moved a kit byte or a parity baseline either.
   r8brain class in the program is built on that allocator, its static members included: `dsp/R8bBase.cpp` compiles
   r8brain's own `r8bbase.cpp` through that header in `retroplug-r8brain-base` (a target of its own, kept off this
   tree's `/W4 /WX` because its one source is vendored), and neither that target nor `retroplug-dsp-resample` links the
-  vendored library, whose default hooks would otherwise give the linker a second definition of each class to keep; the
-  root CMakeLists' `retroplug_forbid_linking(r8brain)` fails the configure if anything links it again. The free hooks
+  vendored library, whose default hooks would otherwise give the linker a second definition of each class to keep. The
+  tree declares no target for the vendored library and keeps its headers private to the translation units that include
+  `R8bAllocator.hpp` first (the resample target, the base target and `Dsp.test.cpp`), so there is no target to link and
+  no TU that reads its classes without the allocator. The free hooks
   stay malloc/free-compatible, because r8brain's static caches free what it allocated from a static destructor at exit,
   and a zero-byte request is rounded up to one byte first, since `malloc(0)` and `realloc(block, 0)` may return null,
   which the hooks would otherwise read as exhaustion. What a throw costs, besides the processors a half-built

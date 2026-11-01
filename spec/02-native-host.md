@@ -1105,8 +1105,8 @@ the C++ tree.
 The kit path's DSP and the graph's DSP nodes are the same kernels, in `src/dsp/`, split across five targets:
 `retroplug-dsp-kernels` (gain and peak, the eight RBJ biquads, dither and quantise; the C++ standard library alone),
 `retroplug-dsp-resample` (the r8brain resampler, which brings the heap, pthreads and RTTI), `retroplug-r8brain-base`
-(r8brain's static members, one vendored translation unit compiled on an allocator that throws instead of linking the
-vendored library; kept off RetroPlug's own warning level), and the two node packages
+(r8brain's static members, one vendored translation unit compiled on an allocator that throws, with no target declared
+for the vendored library; kept off RetroPlug's own warning level), and the two node packages
 `retroplug-dsp-nodes` (`rp.dsp.gain`, `.biquad`, `.dither`) and `retroplug-dsp-resample-nodes` (`rp.dsp.resample`), in
 [cmake/graph.cmake](../packages/native/cmake/graph.cmake). `retroplug-core` links both kernel libraries for
 `KitCompiler`, `KitUtil` and `RisaDmcCodec`; `retroplug-graph` links none of them; `retroplug-backend` links both
