@@ -155,7 +155,8 @@ beside it, so only a build that wants the resampler reaches r8brain.
 - **Unchanged**: strict parity bit for bit (nothing in the live engine path changes), `pnpm test:native`'s `lsdj-rom` and
   `risa-kit` cases plus one new case (a kit compiled twice gives identical bytes), both consumer suites, and the new
   tags under both sanitizers. The tags as built are `[dsp]`, `[dsp-nodes]` and `[dsp-resample]` in
-  `retroplug-graph-test`, `[kit-baseline]` and `[dither]` in `retroplug-audio-test`, and `kit-dither` in
+  `retroplug-graph-test`, `[kit-baseline]` and `[dither]` in `retroplug-audio-test` (both carry `[kit]` too, so one
+  run covers the kit path's whole byte surface), and `kit-dither` in
   `test-native`.
 
 ## 7. Landing
@@ -243,9 +244,11 @@ findings worth naming; each stage's own report is the full record.
   the bank) only on `linux-x64-gnu13`; off the target a case compiles twice and must agree with itself, and
   `RP_KIT_GOLDEN_REQUIRE_TARGET=1` (set on CI's linux-x64 job) turns that fallback into a failure. The target is
   `rp::buildTarget()`, the same function the RPC reports, and `golden.target` is checked against it. Recording
-  (`RP_KIT_GOLDEN_UPDATE=1`) refuses a case whose two compiles disagree and refuses to write anywhere but the target
-  host. The suite guards against a vacuous pass: every case must compile clean, the bank must carry its slot, and the
-  golden must name exactly the matrix's cases. The matrix grew from 26 to 31 cases in review: silent sources for both
+  (`RP_KIT_GOLDEN_UPDATE=1`) refuses a case whose two compiles disagree, refuses a matrix it cannot represent (the
+  record is keyed by case name), refuses to write anywhere but the target host, and writes through a sibling temp file
+  renamed into place, so a failed record leaves the committed golden as it was rather than truncated. The suite guards
+  against a vacuous pass: every case must compile clean, the bank must carry its slot, and the golden must name exactly
+  the matrix's cases. The matrix grew from 26 to 31 cases in review: silent sources for both
   normalise paths, risa's normalise-off and loop branches, and the slot length beside the hash.
 - **3, the kernels.** The target named `retroplug-dsp` in section 4 was taken by `dpf_add_plugin(retroplug ...)`, which
   creates the plugin's own DSP library of that name, so the library is `retroplug-dsp-kernels` (gain, peak, the

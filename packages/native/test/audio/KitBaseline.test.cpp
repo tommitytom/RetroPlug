@@ -8,7 +8,7 @@
 // here reads a fixture: the matrix runs wherever the binary does.
 //
 // The matrix is fixed. Sources: two sine frequencies, a chirp, seeded noise (`std::mt19937`, a fixed seed) and
-// silence, each at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one 1024-frame resampler chunk. LSDj
+// silence, each at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk. LSDj
 // cases: no effect, a non-unity gain with normalise off, the same gain with normalise on, that normalise over a
 // silent source, each of the eight filter types, each of the five dither algorithms, rotate on and off, one chain of
 // filter then gain then dither, and the short source on its own. risa cases: the DMC codec at five rate indices, with
@@ -19,7 +19,7 @@
 // baseline does, because float arithmetic is bit-stable only for one compiler on one architecture. Elsewhere a case
 // compiles twice and must agree with itself, and its bank size and slot length are still held to the golden.
 // RP_KIT_GOLDEN_REQUIRE_TARGET=1 makes a foreign host fail instead of falling back, as RP_PARITY_REQUIRE_TARGET does
-// for parity (CI's linux-x64 job sets that one, so exact checking there cannot fade out).
+// for parity (CI's linux-x64 job sets both, so neither exact check can fade out on the host that has it).
 //
 // RP_KIT_GOLDEN_UPDATE=1 re-records golden/kit-baseline.json from this tree, and only on the baseline's target: a
 // recording refuses a case whose two compiles disagree, because such a case depends on something outside its input
@@ -46,6 +46,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <rfl/json.hpp>
 
+#include "dsp/Resample.hpp"  // rp::dsp::Resampler::kChunk, the chunk size the short source is shorter than
 #include "kit/KitCompiler.hpp"
 #include "lsdj/Effects.hpp"
 #include "lsdj/LsdjKitCodec.hpp"
@@ -54,11 +55,13 @@
 #include "util/BuildTarget.hpp"
 #include "util/Hash.hpp"
 
-// A golden case's record: the bank's FNV-1a-64 in lowercase hex, the bank's size, and the byte length of slot 0
-// within it. The size and the slot length are compared on every host (a bank layout is not float arithmetic); the
-// hash only on the target it was recorded on. The slot length is the half that carries information off the target: a
-// bank is a fixed size whatever happened, but a slot is as long as the resample and the pack made it, so a truncated
-// resample on a foreign host moves it.
+// A golden case's record: the bank's FNV-1a-64 in lowercase hex, the bank's size, and slot 0's length. The size and
+// the slot length are compared on every host (a bank layout is not float arithmetic); the hash only on the target it
+// was recorded on. The slot length is the half that carries information off the target: a bank is a fixed size
+// whatever happened, but a slot is as long as the resample and the pack made it, so a truncated resample on a foreign
+// host moves it. It is as long as the bank says, which quantises differently per codec: LSDj's offset table gives the
+// slot's exact packed bytes (2 per byte, so the last nibble pair padded), while risa's index entry holds a length
+// register whose (reg + 1) * 16 is the $4013 playback span, up to 15 bytes past what was written.
 //
 // These structs live in a NAMED namespace deliberately: reflect-cpp reflects a struct through a fake-object
 // conversion operator, which clang refuses to define for a type with no linkage.
@@ -381,9 +384,10 @@ bool bankHasSlot(const KitCase& c, const std::vector<std::uint8_t>& bank) {
     return bank.size() == RisaDmcCodec::kBankSize && bank[RisaDmcCodec::kIndexOffset] != 0xFF;
 }
 
-/** Slot 0's byte length in an assembled bank, as the bank itself records it: LSDj's offset table gives the start and
- *  end of the slot's packed nibbles, and risa's index entry gives its length register (a count of 16-byte steps, the
- *  last one partial). Unlike the bank size this is not a constant: it follows the resample and the pack. */
+/** Slot 0's length in an assembled bank, as the bank itself records it: LSDj's offset table gives the start and end of
+ *  the slot's packed nibbles (an exact byte count), and risa's length register is the index entry's `(reg + 1) * 16`,
+ *  the $4013 playback span, which covers the bytes written plus up to 15 of padding. Unlike the bank size this is not
+ *  a constant: it follows the resample and the pack. */
 std::uint64_t slotLength(const KitCase& c, const std::vector<std::uint8_t>& bank) {
     if (c.codec == KitCodec::Lsdj) {
         const auto entry = [&](std::size_t i) {
@@ -402,17 +406,38 @@ std::string hexHash(std::uint64_t hash) {
     return buffer;
 }
 
+/**
+ * Writes the golden through a sibling temp file renamed into place, so a failed record leaves the committed file as it
+ * was and says so: truncating the golden in place would destroy it on a read-only directory or a full disk, and a
+ * rename within one directory is atomic, so a reader never sees a half-written golden either.
+ */
 void writeGolden(const std::filesystem::path& path, const kit_baseline::Golden& golden) {
     std::filesystem::create_directories(path.parent_path());
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << "{\n  \"target\": \"" << golden.target << "\",\n  \"cases\": {\n";
-    std::size_t written = 0;
-    for (const auto& [name, bank] : golden.cases) {
-        out << "    \"" << name << "\": { \"hash\": \"" << bank.hash << "\", \"size\": " << bank.size
-            << ", \"slot\": " << bank.slot << " }";
-        out << (++written < golden.cases.size() ? ",\n" : "\n");
+    const std::filesystem::path temp = path.string() + ".tmp";
+    {
+        std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+        out << "{\n  \"target\": \"" << golden.target << "\",\n  \"cases\": {\n";
+        std::size_t written = 0;
+        for (const auto& [name, bank] : golden.cases) {
+            out << "    \"" << name << "\": { \"hash\": \"" << bank.hash << "\", \"size\": " << bank.size
+                << ", \"slot\": " << bank.slot << " }";
+            out << (++written < golden.cases.size() ? ",\n" : "\n");
+        }
+        out << "  }\n}\n";
+        out.close();
+        if (!out.good()) {
+            std::error_code ignored;
+            std::filesystem::remove(temp, ignored);
+            FAIL("cannot write " << temp.string() << ", so the recorded golden is left as it was");
+        }
     }
-    out << "  }\n}\n";
+    std::error_code ec;
+    std::filesystem::rename(temp, path, ec);
+    if (ec) {
+        std::error_code ignored;
+        std::filesystem::remove(temp, ignored);
+        FAIL("cannot rename " << temp.string() << " onto " << path.string() << ": " << ec.message());
+    }
 }
 
 std::string readFile(const std::filesystem::path& path) {
@@ -428,7 +453,7 @@ std::string readFile(const std::filesystem::path& path) {
 
 } // namespace
 
-TEST_CASE("every kit case compiles to the bank the golden records", "[kit-baseline]") {
+TEST_CASE("every kit case compiles to the bank the golden records", "[kit-baseline][kit]") {
     const auto cases = kitCases();
     const std::filesystem::path goldenPath = std::filesystem::path(RP_KIT_GOLDEN_DIR) / "kit-baseline.json";
     const std::string host = rp::buildTarget();
@@ -436,7 +461,8 @@ TEST_CASE("every kit case compiles to the bank the golden records", "[kit-baseli
     const bool update = envFlag("RP_KIT_GOLDEN_UPDATE");
     const bool requireTarget = envFlag("RP_KIT_GOLDEN_REQUIRE_TARGET");
 
-    static_assert(signalFrames(Signal::Short) < 1024, "the short source must be shorter than one resampler chunk");
+    static_assert(signalFrames(Signal::Short) < rp::dsp::Resampler::kChunk,
+                  "the short source must be shorter than one resampler chunk");
 
     TempDir dir;
 
@@ -495,6 +521,9 @@ TEST_CASE("every kit case compiles to the bank the golden records", "[kit-baseli
             REQUIRE(second.bytes == first.bytes);
             recorded.cases[c.name] = {hexHash(first.hash), first.bytes.size(), slotLength(c, first.bytes)};
         }
+        // The record is a map keyed by the case's name, so two cases sharing one name would collapse into one entry
+        // and the matrix would still call the recording a success. Refuse a matrix the file cannot represent.
+        REQUIRE(recorded.cases.size() == cases.size());
         writeGolden(goldenPath, recorded);
         SUCCEED("recorded " << recorded.cases.size() << " banks to " << goldenPath.string());
         return;
@@ -507,7 +536,9 @@ TEST_CASE("every kit case compiles to the bank the golden records", "[kit-baseli
                             << "); record it with RP_KIT_GOLDEN_UPDATE=1 on " << kBaselineTarget);
     }
     const kit_baseline::Golden golden = *parsed;
-    CHECK(golden.target == kBaselineTarget);
+    // REQUIRE, not CHECK: a half-moved target (the constant moved, the golden not re-recorded) would otherwise print
+    // one accurate line and then one hash mismatch per case, each blaming a case for the target.
+    REQUIRE(golden.target == kBaselineTarget);
     // A renamed or dropped case must be re-recorded, not silently skipped: the golden holds exactly this matrix.
     REQUIRE(golden.cases.size() == cases.size());
 

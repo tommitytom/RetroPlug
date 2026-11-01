@@ -222,13 +222,14 @@ compared a compiled bank with anything; the suite is the gate Phase D's graph co
 ([modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md)).
 
 - **Matrix.** `[kit-baseline]` ([KitBaseline.test.cpp](../packages/native/test/audio/KitBaseline.test.cpp), in
-  `retroplug-audio-test`) synthesises every source in the test (two sines, a chirp, seeded noise and silence at 22.05,
-  44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk), writes each as a 32-bit float WAV in a
-  temp dir, and compiles it through `KitCompiler` over `LsdjKitCodec` / `RisaDmcCodec`, so `SampleCache` and
-  miniaudio's decode are in the loop and the suite needs no fixtures. 31 cases: LSDj has no effect, gain, normalise
-  (a silent source too), each of the eight filters, each of the five dithers, rotate on and off, a filter-gain-dither
-  chain and the short source; risa has five DMC rate indices, normalise off, loop on, a silent normalise at two rates
-  and the short source.
+  `retroplug-audio-test`; it carries `[kit]` beside the tag, which `[dither]` carries too, so one `"[kit]"` run
+  covers the kit path's whole byte surface) synthesises every source in the test (two sines, a chirp, seeded noise and
+  silence at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk), writes each as a
+  32-bit float WAV in a temp dir, and compiles it through `KitCompiler` over `LsdjKitCodec` / `RisaDmcCodec`, so
+  `SampleCache` and miniaudio's decode are in the loop and the suite needs no fixtures. 31 cases: LSDj has no effect,
+  gain, normalise (a silent source too), each of the eight filters, each of the five dithers, rotate on and off, a
+  filter-gain-dither chain and the short source; risa has five DMC rate indices, normalise off, loop on, a silent
+  normalise at two rates and the short source.
 - **Golden.** `golden/kit-baseline.json` holds `target` and `{hash, size, slot}` per case, sorted, read with
   reflect-cpp. `hash` is FNV-1a-64 of the bank; `size` and `slot` are the layout facts. The suite asserts each case
   compiles clean, the bank carries its slot and the golden names exactly the matrix's cases, so a broken case cannot
@@ -238,9 +239,11 @@ compared a compiled bank with anything; the suite is the gate Phase D's graph co
   `RP_KIT_GOLDEN_REQUIRE_TARGET=1` makes a foreign host fail instead, and CI's linux-x64 job sets it. The target is
   `rp::buildTarget()`, the same function the RPC reports, so the two baselines name one toolchain.
 - **Re-record** with `RP_KIT_GOLDEN_UPDATE=1`. It refuses on any other host, and refuses a case whose two compiles
-  disagree (that case depends on something outside its input). A re-record on a stable tree is a byte-identical file,
-  so a diff shows only moved banks. Moving the target is one change: `kBaselineTarget` in the test, a re-record on the
-  new host, the golden's `target` line, and CI's `RP_KIT_GOLDEN_REQUIRE_TARGET` step on that host.
+  disagree (that case depends on something outside its input). The file is written through a sibling temp file and
+  renamed into place, so a failed write leaves the committed golden as it was. A re-record on a stable tree is a
+  byte-identical file, so a diff shows only moved banks. Moving the target is one change: `kBaselineTarget` in the
+  test, a re-record on the new host, the golden's `target` line, and CI's `RP_KIT_GOLDEN_REQUIRE_TARGET` step on that
+  host.
 - **A trap.** The baseline is coarse: a one-ulp change in a dither's arithmetic can move no 4-bit code across all 31
   cases (stage 3's Sierra Lite mutation), which is why the kernels have `[dsp]`'s verbatim references at 16 bits.
   Treat a kit baseline failure as a real change to the bytes, and do not re-record it to make a refactor pass.
