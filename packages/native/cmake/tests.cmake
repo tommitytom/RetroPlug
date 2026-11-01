@@ -96,6 +96,7 @@ retroplug_add_test_binary(
              test/engine-graph/EngineGraph.test.cpp
              test/engine-graph/SlurpFile.test.cpp     # the file reader putResource reads a `path` resource with
              test/engine-graph/HostIo.test.cpp
+             test/engine-graph/Devices.test.cpp        # rp.host.devices/1: the links a hardware node binds by name
              test/engine-graph/ScriptNodes.test.cpp
              test/engine-graph/ScriptPacks.test.cpp
              test/engine-graph/ProtocolNodes.test.cpp
@@ -147,11 +148,14 @@ retroplug_add_test_binary(
 retroplug_add_test_binary(
     NAME     retroplug-launchpad-test
     SOURCES  test/launchpad/LaunchpadLink.test.cpp
+             test/launchpad/LaunchpadSurfaceLink.test.cpp  # the surface device link over LaunchpadLink
              src/host/launchpad/LaunchpadLink.cpp
              src/host/launchpad/LaunchpadHost.cpp
              src/host/launchpad/LaunchpadScanner.cpp
+             test/graph/CountingAllocator.cpp          # the block thread's drain allocates and frees nothing
     LIBS     Threads::Threads                          # LaunchpadScanner's scan thread
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/launchpad/*.hpp + transport/SpscRing.hpp
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
+             ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/launchpad/*.hpp + transport/SpscRing.hpp
 
 # Guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact krikzz CMD_MEM_WR
 # byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status word; plus the
@@ -165,6 +169,7 @@ retroplug_add_test_binary(
     NAME     retroplug-n8-test
     SOURCES  test/n8/Edio.test.cpp
              test/n8/N8Host.test.cpp
+             test/n8/N8CartLink.test.cpp   # the cart device link over N8Link + N8Host
              test/n8/N8SdWorker.test.cpp
              src/host/n8/Edio.cpp
              src/host/n8/N8Link.cpp

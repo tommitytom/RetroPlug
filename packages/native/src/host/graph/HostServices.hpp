@@ -6,6 +6,7 @@
 #include <cstdint>
 
 #include "graph/rp_node.h"
+#include "host/devices/DeviceLinks.hpp"
 
 class SystemBase;
 struct SystemBuildRequest;  // system/SystemFactory.hpp, which only the builders need in full
@@ -53,6 +54,23 @@ struct EngineHostIo {
     void (*controllerOut)(void* ctx, const std::uint8_t* data, std::size_t size);
     // Hand one message to the physical N8 the engine feeds (Engine::setCoreByteSink); nothing while none is set.
     void (*cartBytes)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush);
+};
+
+// The host's device links (docs/modular-graph-phase-c5-design.md section 3), for the hardware nodes: a node binds the
+// device it drives by name and is handed a link (host/devices/DeviceLinks.hpp), which it borrows for the life of its
+// plan rather than owning - the host's link outlives every plan that could hold a handle, so a node may use it in
+// destroy. acquire is [control], in the node's activate; release likewise, in its destroy. A reactivate runs activate
+// again on the same instance (a sample-rate change, a block growth), so a node keeps a handle it already holds and
+// acquires no second one. A name this host has no device for answers with a link that is never connected and accepts
+// and drops everything, never null, so a node needs no null checks and a document plans and runs the same in every
+// host.
+#define RP_HOST_DEVICES_INTERFACE "rp.host.devices/1"
+struct HostDevices {
+    void* ctx;
+    CartLink* (*acquireCart)(void* ctx, const char* name);
+    void (*releaseCart)(void* ctx, CartLink* link);
+    SurfaceLink* (*acquireSurface)(void* ctx, const char* name);
+    void (*releaseSurface)(void* ctx, SurfaceLink* link);
 };
 
 // The engine's sync trace (HostSyncTrace): a system node records the bytes its `bytes` input feeds the core's byte

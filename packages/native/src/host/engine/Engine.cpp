@@ -28,6 +28,7 @@
 #include "graph/Queue.hpp"
 #include "graph/nodes/CoreNodes.hpp"
 #include "host/dsp/ScriptCompiler.hpp"
+#include "host/devices/DeviceRegistry.hpp"
 #include "host/engine/DspCommand.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
@@ -161,6 +162,11 @@ struct Engine::Graph {
     rp::host::HostSystems                  systems{};
     rp::host::EngineHostIo                 hostIo{};
     rp::host::EngineSyncTrace              syncTrace{};
+    // The links this host's engine hands out by name (rp.host.devices/1), and the struct the nodes read them through.
+    // The registry is declared before the GraphHost below, so it outlives the plans whose nodes give their handles back
+    // as the graph goes.
+    rp::host::DeviceRegistry               devices;
+    rp::host::HostDevices                  devicesApi{};
     std::unique_ptr<rp::graph::GraphHost>  host;
     std::uint32_t                          maxFrames = kDefaultMaxBlockFrames;
 };
@@ -228,6 +234,18 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
                              if (!self->blockTracing_) return;
                              for (std::size_t i = 0; i < size; ++i) self->syncTrace_.byte(frame, data[i]);
                          }};
+    // rp.host.devices/1: the links the host installed, by name, handed out for the life of a plan. A host with no
+    // device never installs one, and its nodes get the never-connected handle instead (design section 3).
+    graph_->devicesApi = {
+        this,
+        [](void* ctx, const char* name) {
+            return static_cast<Engine*>(ctx)->graph_->devices.acquireCart(name ? name : "");
+        },
+        [](void* ctx, rp::host::CartLink* link) { static_cast<Engine*>(ctx)->graph_->devices.release(link); },
+        [](void* ctx, const char* name) {
+            return static_cast<Engine*>(ctx)->graph_->devices.acquireSurface(name ? name : "");
+        },
+        [](void* ctx, rp::host::SurfaceLink* link) { static_cast<Engine*>(ctx)->graph_->devices.release(link); }};
     rp::graph::HostConfig config;
     config.sampleRate = sampleRate;
     config.maxFrames = graph_->maxFrames;
@@ -250,6 +268,7 @@ const void* Engine::graphInterface(void* ctx, const char* id) {
     if (std::strcmp(id, RP_HOST_SYSTEMS_INTERFACE) == 0) return &self->graph_->systems;
     if (std::strcmp(id, RP_ENGINE_HOST_IO_INTERFACE) == 0) return &self->graph_->hostIo;
     if (std::strcmp(id, RP_ENGINE_SYNC_TRACE_INTERFACE) == 0) return &self->graph_->syncTrace;
+    if (std::strcmp(id, RP_HOST_DEVICES_INTERFACE) == 0) return &self->graph_->devicesApi;
     return nullptr;
 }
 
@@ -578,6 +597,39 @@ Engine::ScriptPackResult Engine::loadScriptPack(const std::string& id, const std
 }
 
 void Engine::setScriptCallDeadline(std::chrono::milliseconds limit) { graph_->script.setCallDeadline(limit); }
+
+bool Engine::addNodePackage(const rp_package* package, std::string* why) {
+    if (package == nullptr) {
+        if (why) *why = "no package";
+        else std::fprintf(stderr, "[engine] a node package was refused (no package)\n");
+        return false;
+    }
+    std::string reason;
+    if (!graph_->registry.addPackage(package, &reason)) {
+        if (why) *why = reason;
+        else std::fprintf(stderr, "[engine] a node package was refused (%s)\n", reason.c_str());
+        return false;
+    }
+    return true;
+}
+
+void Engine::setDeviceLinks(rp::host::CartLink* cart, rp::host::SurfaceLink* surface) {
+    graph_->devices.install(cart, surface);
+}
+
+void Engine::clearGraph() {
+    // The caller stopped the audio thread: make the engine quiescent so the swap below and the reclaim that follows it
+    // run inline, and the plan a host's nodes are in is freed here rather than by a block thread that no longer runs.
+    setAudioThreadOwns(false);
+    const GraphResult empty = setGraph({kEmptyDocument, {}});
+    if (!empty.ok)
+        for (const auto& e : empty.errors)
+            std::fprintf(stderr, "[engine] the empty graph was refused (%s) at %s%s%s: %s\n", e.code.c_str(),
+                         e.nodeId.c_str(), e.port.empty() ? "" : ".", e.port.c_str(), e.message.c_str());
+    // The plan the publish replaced is in the release ring: freeing it here destroys its nodes, whose device handles
+    // this engine still holds.
+    reclaim();
+}
 
 std::vector<rp::host::ScriptHost::PackInfo> Engine::scriptPacks() const { return graph_->script.packs(); }
 

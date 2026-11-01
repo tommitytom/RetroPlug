@@ -25,7 +25,7 @@ class ChannelTap;
 struct DspCommand;
 struct SystemBuildRequest;
 namespace rp::graph { struct HostCommand; }
-namespace rp::host { struct SystemTable; }
+namespace rp::host { class CartLink; class SurfaceLink; struct SystemTable; }
 
 // One message of the host MIDI out (Engine::midiOut), tagged with the system that emitted it.
 struct EngineMidiOut {
@@ -314,6 +314,10 @@ public:
     void setScriptCallDeadline(std::chrono::milliseconds limit);
     // The script host's packs, the built-in one first (ScriptHost::packs).
     std::vector<rp::host::ScriptHost::PackInfo> scriptPacks() const;
+    // TEST / HARNESS: one more native node package beside the built-in ones, which is how the engine-graph suite puts
+    // its probe nodes on the real engine. Control thread; a document may place its types from the next setGraph on.
+    // False, with the reason in *why (or on stderr when `why` is null), for a package the registry refuses.
+    bool addNodePackage(const rp_package* package, std::string* why = nullptr);
     // The node types a document can name: the registry's, native and script.
     std::size_t nodeTypeCount() const;
     // The registry's entries a reload swapped out whose generation the script host has not yet freed.
@@ -321,6 +325,21 @@ public:
     // Script node instances whose JS is made and not yet released (ScriptHost::liveInstances): any thread, as
     // faultCount.
     std::uint32_t scriptInstances() const;
+
+    // --- device links (docs/modular-graph-phase-c5-design.md section 3), control thread ---
+    // The host's device links, for the nodes that bind one by name through rp.host.devices/1. Install them before the
+    // first graph: the engine keeps these pointers for the life of its graph, and a node borrows a handle for the life
+    // of the plan it runs in. A null link leaves that name answering with a handle that is never connected, which is
+    // what a host that owns no such device leaves it as by never calling this (the CLI, the Node addon, the render host
+    // and the UI harness). A host that owns its links as members of its own state tears its plans down with
+    // clearGraph first, then uninstalls them here, before those members go: its engine is destroyed after them, and
+    // with it the plans whose nodes still hold a handle.
+    void setDeviceLinks(rp::host::CartLink* cart, rp::host::SurfaceLink* surface);
+    // Control thread, audio thread stopped: publish the construction-time empty document and reclaim the plan it
+    // replaced, so every node of the host's last graph is destroyed here, while the links it may use in its destroy are
+    // still alive. A host that owns its device links as members and cannot declare them before its engine runs this
+    // from its destructor body, before setDeviceLinks(nullptr, nullptr).
+    void clearGraph();
 
 private:
     // The node giving its core up, or a refused plan unwinding one it built. Only rp.host.systems/1's destroy lambda

@@ -35,6 +35,11 @@ public:
     // expansion-audio master volume off it (N8Host::applyExpVol). A throw is caught and ignored: a config
     // write must never fail a working MIDI link.
     using OnConnected = std::function<void(Edio&)>;
+    // Ran on the serial thread at the top of every turn, while the link is up: where a setting whose value lives in an
+    // atomic (N8Host's expansion volume) reaches the device without the caller taking a lock or building a
+    // std::function. Set once before any connect, like OnConnected, so it is never mutated while the thread reads it;
+    // a throw is caught and ignored, so a config write never takes the MIDI link down.
+    using OnControl = std::function<void(Edio&)>;
 
     explicit N8Link(PortFactory factory);
     ~N8Link();
@@ -45,17 +50,15 @@ public:
     // Set once by the owner before any connect (read-only afterwards, so the SD worker's resume-connect can
     // run it too).
     void          setOnConnected(OnConnected fn) { onConnected_ = std::move(fn); }
-    // Run `fn` on the serial thread's Edio at its next turn. The UI thread must NOT touch the port while the
-    // link is up (the serial thread owns it), and tearing the link down to reach the device would drop
-    // whatever MIDI was in flight - a dropped note-off is a stuck note on real hardware. Replaces any call
-    // still pending (these are "make the device match the current setting", so only the last one matters).
-    // A no-op while disconnected: the connect path applies the current config through OnConnected anyway.
-    void          postControl(std::function<void(Edio&)> fn);
+    void          setOnControl(OnControl fn) { onControl_ = std::move(fn); }
     bool          connect(const std::string& port);  // open + handshake + spawn the serial thread
     void          disconnect();                       // stop + join the serial thread, close the port
     bool          isConnected() const { return connected_.load(std::memory_order_acquire); }
     std::string   portName() const;
     std::uint64_t bytesForwarded() const { return bytesForwarded_.load(std::memory_order_relaxed); }
+    // Pushes that lost their bytes: the link was down, or the ring was full. Written on the audio thread, so it is the
+    // device link's (rp.host.devices/1) dropped count and the UI's, read relaxed.
+    std::uint64_t pushesDropped() const { return pushesDropped_.load(std::memory_order_relaxed); }
     std::string   lastError() const;
     void          setLookaheadMs(int ms) { lookaheadNs_.store(std::int64_t(ms) * 1'000'000, std::memory_order_relaxed); }
     int           lookaheadMs() const { return static_cast<int>(lookaheadNs_.load(std::memory_order_relaxed) / 1'000'000); }
@@ -80,8 +83,10 @@ public:
 
     // --- Audio thread ---
     // Forward MIDI/bytes with their intra-block sample offset. Lock-free, never blocks; drops on ring-full;
-    // a no-op when not connected. Splits a >8-byte push into multiple chunks (rare - MIDI is <=4).
-    void push(std::uint32_t sampleOffset, const std::uint8_t* data, std::size_t n, double sampleRate);
+    // a no-op when not connected. Splits a >8-byte push into multiple chunks (rare - MIDI is <=4). False when any of
+    // the bytes were lost (the link is down, or a chunk found the ring full), which is what a device link's own drop
+    // count is made of: pushesDropped() also counts the callers that are not that node.
+    bool push(std::uint32_t sampleOffset, const std::uint8_t* data, std::size_t n, double sampleRate);
 
 private:
     struct TimedChunk {
@@ -98,18 +103,17 @@ private:
 
     PortFactory                factory_;
     OnConnected                onConnected_;  // set before the first connect; never mutated afterwards
+    OnControl                  onControl_;    // likewise
     SpscRing<TimedChunk, 1024> ring_;  // audio producer -> serial consumer
     std::atomic<std::int64_t>  lookaheadNs_{0};
     std::atomic<bool>          connected_{false};
     std::atomic<bool>          running_{false};
     std::atomic<std::uint64_t> bytesForwarded_{0};
+    std::atomic<std::uint64_t> pushesDropped_{0};
 
     mutable std::mutex meta_;      // guards portName_ + error_ (set on connect/disconnect/error, read by status)
     std::string        portName_;
     std::string        error_;
-
-    std::mutex             control_;  // guards pendingControl_ (posted by the UI thread, taken by the serial one)
-    std::function<void(Edio&)> pendingControl_;
 
     // The reliable link: owned by the serial thread (null = raw); the atomics are its stats for other threads.
     std::unique_ptr<rp::N8ReliableSender> rel_;

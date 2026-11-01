@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <exception>
 #include <utility>
 
@@ -56,25 +57,32 @@ void LaunchpadLink::disconnect() {
 
 void LaunchpadLink::pushInputRing(const std::uint8_t* data, std::size_t n) {
     if (!data || n == 0) return;
+    if (n > kMaxOutMessage) {  // wider than any message the protocol produces: count it, never truncate it
+        dropped_.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
     const std::size_t t    = inTail_.load(std::memory_order_relaxed);
     const std::size_t next = (t + 1) % kInCapacity;
     if (next == inHead_.load(std::memory_order_acquire)) {  // full -> drop
         dropped_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    inRing_[t].assign(data, data + n);
+    inRing_[t].size = static_cast<std::uint16_t>(n);
+    std::memcpy(inRing_[t].data, data, n);
     inTail_.store(next, std::memory_order_release);
 }
 
-void LaunchpadLink::drainInput(std::vector<Message>& out) {
-    out.clear();
+std::size_t LaunchpadLink::drainInput(rp::host::DeviceMessage* out, std::size_t capacity) {
+    if (!out) return 0;
     std::size_t       h = inHead_.load(std::memory_order_relaxed);
     const std::size_t t = inTail_.load(std::memory_order_acquire);
-    while (h != t) {
-        out.push_back(std::move(inRing_[h]));
-        h = (h + 1) % kInCapacity;
+    std::size_t       n = 0;
+    while (h != t && n < capacity) {
+        out[n++] = inRing_[h];
+        h        = (h + 1) % kInCapacity;
     }
     inHead_.store(h, std::memory_order_release);
+    return n;
 }
 
 void LaunchpadLink::pushOutput(const std::uint8_t* data, std::size_t n) {

@@ -87,20 +87,14 @@ void N8Link::disconnect() {
     connected_.store(false, std::memory_order_release);
     edio_.reset();
     serialPort_.reset();
-    // Drop anything posted but never run: it described the device we just let go of, and the next connect
-    // applies the current config from scratch.
-    std::lock_guard<std::mutex> l(control_);
-    pendingControl_ = nullptr;
 }
 
-void N8Link::postControl(std::function<void(Edio&)> fn) {
-    if (!connected_.load(std::memory_order_acquire)) return;
-    std::lock_guard<std::mutex> l(control_);
-    pendingControl_ = std::move(fn);
-}
-
-void N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::size_t n, double sampleRate) {
-    if (!connected_.load(std::memory_order_acquire) || n == 0) return;
+bool N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::size_t n, double sampleRate) {
+    if (n == 0) return true;
+    if (!connected_.load(std::memory_order_acquire)) {
+        pushesDropped_.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
     const std::int64_t offNs  = sampleRate > 0.0 ? static_cast<std::int64_t>(sampleOffset * 1e9 / sampleRate) : 0;
     const std::int64_t target = nowNs() + offNs + lookaheadNs_.load(std::memory_order_relaxed);
     std::size_t i = 0;
@@ -110,9 +104,13 @@ void N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::siz
         c.targetNs = target;
         c.len      = static_cast<std::uint8_t>(take);
         std::memcpy(c.data, data + i, take);
-        if (!ring_.tryPush(c)) return;  // ring full: drop (never block the audio thread)
+        if (!ring_.tryPush(c)) {  // ring full: drop (never block the audio thread), and say so
+            pushesDropped_.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
         i += take;
     }
+    return true;
 }
 
 void N8Link::probeLink() {
@@ -205,20 +203,12 @@ void N8Link::serialLoop() {
     TimedChunk chunk;
     bool have = false;
     while (running_.load(std::memory_order_acquire)) {
-        // A posted control write (see postControl) runs between chunks, on the thread that owns the port.
-        // Best-effort, like the connect-time one: a config register must not take the MIDI link down.
-        {
-            std::function<void(Edio&)> control;
-            {
-                std::lock_guard<std::mutex> l(control_);
-                control = std::move(pendingControl_);
-                pendingControl_ = nullptr;
-            }
-            if (control) {
-                try {
-                    control(*edio_);
-                } catch (const std::exception&) {
-                }
+        // A setting that lives in an atomic (see OnControl) is applied between chunks, on the thread that owns the
+        // port. Best-effort, like the connect-time write: a config register must not take the MIDI link down.
+        if (onControl_) {
+            try {
+                onControl_(*edio_);
+            } catch (const std::exception&) {
             }
         }
         try {

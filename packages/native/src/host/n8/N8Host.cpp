@@ -83,7 +83,22 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
     // Every time the streaming link comes up - a Connect, a live port switch, the resume after an SD op, the
     // reconnect restore() does - set the expansion-audio master volume. Connect is the moment that matters:
     // a ROM load deliberately leaves streaming stopped, so the user comes back through here either way.
-    link_.setOnConnected([this](Edio& edio) { applyExpVol(edio, -1); });
+    link_.setOnConnected([this](Edio& edio) {
+        // Read the generation first: a change made after this read is applied again on the serial thread's next turn,
+        // never marked applied without having been written.
+        const unsigned generation = expVolGeneration_.load(std::memory_order_acquire);
+        applyExpVol(edio, -1);
+        expVolApplied_.store(generation, std::memory_order_relaxed);
+    });
+    // A value a param changed while the link is up: the serial thread owns the port, so it writes the standing value
+    // on its own turn, between MIDI chunks, and marks the generation it wrote. A throw leaves the generation behind,
+    // so the next turn tries again (N8Link catches it: a config write must not take the MIDI link down).
+    link_.setOnControl([this](Edio& edio) {
+        const unsigned generation = expVolGeneration_.load(std::memory_order_acquire);
+        if (generation == expVolApplied_.load(std::memory_order_relaxed)) return;
+        applyExpVol(edio, -1);
+        expVolApplied_.store(generation, std::memory_order_relaxed);
+    });
 }
 
 N8Host::~N8Host() { link_.disconnect(); }
@@ -135,11 +150,11 @@ void N8Host::setLookahead(int ms) {
 
 void N8Host::setExpVol(int v) {
     const int clamped = v < 0 ? EXP_VOL_AUTO : (v > 255 ? 255 : v);
-    if (expVol_.exchange(clamped, std::memory_order_relaxed) == clamped) return;
-    // Reach a live link through its own serial thread, so turning the knob is audible on the console
-    // straight away without interrupting the MIDI stream. A no-op while disconnected (and while an SD op
+    if (expVol_.exchange(clamped, std::memory_order_release) == clamped) return;
+    // Publish the change; a live link's serial thread picks it up at its next turn, so turning the knob is audible on
+    // the console straight away without interrupting the MIDI stream. A no-op while disconnected (and while an SD op
     // owns the port, since that disconnects the link first): the next connect applies the new value.
-    link_.postControl([this](Edio& edio) { applyExpVol(edio, -1); });
+    expVolGeneration_.fetch_add(1, std::memory_order_release);
 }
 
 void N8Host::applyExpVol(Edio& edio, int mapperHint) {

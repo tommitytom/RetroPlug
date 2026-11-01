@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "host/devices/DeviceLinks.hpp"
 #include "transport/SpscRing.hpp"
 
 namespace retroplug {
@@ -26,16 +27,16 @@ public:
 };
 
 // Host-side link to a control surface (a Novation Launchpad) on its own in/out pair, kept out of the shared
-// musical MIDI stream. Pad presses arrive on the backend's callback thread and are drained by the audio
-// thread into the Engine's `controllerIn`; LED traffic the controller session produced during processBlock is
-// pushed by the audio thread and written out by the host's MAIN loop.
+// musical MIDI stream. Pad presses arrive on the backend's callback thread and are drained by the audio thread; LED
+// traffic the controller session produced during processBlock is pushed by the audio thread and written out by the
+// host's MAIN loop.
 //
 // Three decisions worth knowing before touching anything here:
 //
-//   1. **The two rings are deliberately different**, because their producers are. Device -> audio copies
-//      MidiIo's ring (a std::vector per slot): the producer is the backend's callback thread, where
-//      allocating is that thread's own problem, and the audio thread just MOVES the vector out. Audio ->
-//      main is a POD SpscRing, because there the producer IS the audio thread and a vector would allocate.
+//   1. **Both rings are POD, because one end of each is the audio thread.** Device -> audio keeps one message per
+//      fixed slot (rp::host::DeviceMessage): the producer is the backend's callback thread, where allocating would be
+//      that thread's own problem, and the audio thread copies bytes out and frees nothing (a vector per slot would be
+//      freed there by whoever dropped it). Audio -> main is an SpscRing of fixed slots for the same reason.
 //   2. **LEDs leave on the main loop, not the audio thread.** A frame of latency is invisible on a light,
 //      and it keeps a possible 538-byte USB write off the RT path without adding a thread to own.
 //   3. **The farewell is an opaque blob.** Programmer mode locks the device's front panel, so the message
@@ -50,13 +51,11 @@ public:
     using PortFactory = std::function<std::unique_ptr<IMidiPort>(
         const std::string& inName, const std::string& outName, IMidiPort::Receiver receiver)>;
 
-    /** One message in either direction. */
-    using Message = std::vector<std::uint8_t>;
-
     // The worst case a controller app can produce in one message: a bulk LED SysEx carrying the Pro MK3's
     // maximum 106 colour specs at the RGB form's 5 bytes each, plus the 8-byte SysEx frame = 538. Rounded
-    // up; a longer message is dropped and counted rather than truncated into nonsense.
-    static constexpr std::size_t kMaxOutMessage = 560;
+    // up; a longer message is dropped and counted rather than truncated into nonsense. The same bound sizes a
+    // received slot, in either direction: the device's own replies are far shorter.
+    static constexpr std::size_t kMaxOutMessage = rp::host::kMaxDeviceMessage;
 
     explicit LaunchpadLink(PortFactory factory);
     ~LaunchpadLink();
@@ -76,9 +75,12 @@ public:
     void pump();
 
     // --- audio thread ---
-    /** Move the messages received since the last call into `out` (cleared first). Allocation-free: the
-     *  vectors were built on the backend's callback thread and are moved, not copied. */
-    void drainInput(std::vector<Message>& out);
+    /** Copy the messages received since the last call into `out`, up to `capacity`, and answer how many. This is the
+     *  only drain, and the one the block thread uses (the device link forwards it): the messages stay in the link's
+     *  own fixed slots until they are copied, so nothing is allocated or freed here, and one the caller has no room
+     *  for waits for its next call. A message carries no arrival frame: the drain's caller places it at frame 0, as
+     *  rp.host.controller-in does. */
+    std::size_t drainInput(rp::host::DeviceMessage* out, std::size_t capacity);
     /** Queue one message for the device. Lock-free, never blocks; drops (and counts) when the ring is full,
      *  the message is oversized, or nothing is connected. */
     void pushOutput(const std::uint8_t* data, std::size_t n);
@@ -104,10 +106,11 @@ private:
     std::atomic<std::uint64_t> sent_{0};
     std::atomic<std::uint64_t> dropped_{0};
 
-    // device -> audio. Fixed-capacity SPSC; the producer (backend callback) allocates into a slot's vector,
-    // the consumer (audio thread) moves it out. Overflow drops the incoming message.
+    // device -> audio. Fixed-capacity SPSC ring of fixed slots: the producer (backend callback) copies the bytes into
+    // a slot, the consumer (audio thread) copies them out, so neither end of the block thread's path allocates or
+    // frees. Overflow, and a message wider than a slot, drop and count.
     static constexpr std::size_t kInCapacity = 256;
-    std::array<Message, kInCapacity> inRing_;
+    std::array<rp::host::DeviceMessage, kInCapacity> inRing_;
     std::atomic<std::size_t>         inHead_{0};  // consumer index (audio thread)
     std::atomic<std::size_t>         inTail_{0};  // producer index (callback thread)
 

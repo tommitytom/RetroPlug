@@ -259,14 +259,14 @@ TEST_CASE("LaunchpadLink: a message from the device reaches the audio-thread dra
     const std::uint8_t release[3] = {0x90, 0x51, 0x00};
     log.receiver(release, 3);
 
-    std::vector<LaunchpadLink::Message> drained;
-    link.drainInput(drained);
-    REQUIRE(drained.size() == 2);
-    REQUIRE(drained[0] == std::vector<std::uint8_t>{0x90, 0x51, 0x7F});
-    REQUIRE(drained[1] == std::vector<std::uint8_t>{0x90, 0x51, 0x00});
+    rp::host::DeviceMessage drained[2];
+    REQUIRE(link.drainInput(drained, 2) == 2);
+    REQUIRE(std::vector<std::uint8_t>(drained[0].data, drained[0].data + drained[0].size) ==
+            std::vector<std::uint8_t>{0x90, 0x51, 0x7F});
+    REQUIRE(std::vector<std::uint8_t>(drained[1].data, drained[1].data + drained[1].size) ==
+            std::vector<std::uint8_t>{0x90, 0x51, 0x00});
 
-    link.drainInput(drained);  // drained once, delivered once
-    REQUIRE(drained.empty());
+    REQUIRE(link.drainInput(drained, 2) == 0);  // drained once, delivered once
 }
 
 TEST_CASE("LaunchpadLink: queued LED traffic goes out on pump, not on push", "[launchpad]") {

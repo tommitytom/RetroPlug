@@ -203,8 +203,8 @@ TEST_CASE("N8Host.setExpVol writes the pushed level whatever is running, on the 
 
 TEST_CASE("N8Host.setExpVol reaches a live link without tearing it down", "[n8host]") {
     // Turning the knob mid-session must be audible on the console at once AND must not interrupt the MIDI
-    // stream - a dropped note-off is a stuck note. The write rides the serial thread (N8Link::postControl),
-    // so the link stays up and connected throughout.
+    // stream - a dropped note-off is a stuck note. The value is an atomic the serial thread applies at its next
+    // control turn (N8Link::setOnControl), so the link stays up and connected throughout.
     FakeDevice dev;
     dev.mapper = 0;
     N8Host host(factoryFor(dev), listerWith({{"/dev/ttyACM0", true}}), tempCfgDir());

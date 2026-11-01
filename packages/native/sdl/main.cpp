@@ -19,6 +19,7 @@
 // setup mirrors packages/native/test/ui/RenderCore.cpp; the boot mirrors plugin/PluginDSP.cpp.
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -28,6 +29,7 @@
 #include <cstring>
 #include <deque>
 #include <memory>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -62,14 +64,17 @@ extern "C" {
 
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
+#include "host/graph/HostIoNodes.hpp"        // kControllerInMessages: the surface drain's fixed capacity
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
 #include "host/input/GamepadPump.hpp"        // the event->bus switch, shared with the plugin editor
 #include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
 #include "host/n8/N8Link.hpp"                // host serial thread -> physical Everdrive N8 Pro (MIDI forward)
 #include "host/n8/N8Host.hpp"                // shared N8 link + config + n8.cfg (also used by the DAW plugin)
+#include "host/n8/N8CartLink.hpp"             // the cart device link rp.host.devices/1 hands a node
 #include "host/n8/N8Hooks.hpp"               // binds the __rp_*N8* config hooks (shared with the plugin)
 #include "host/n8/WjwwoodSerialPort.hpp"     // the serial-port factory + listSerialPorts for the N8 picker
 #include "host/launchpad/LaunchpadHost.hpp"  // control-surface link + config + launchpad.cfg
+#include "host/launchpad/LaunchpadSurfaceLink.hpp"  // the surface device link rp.host.devices/1 hands a node
 #include "host/launchpad/LaunchpadHooks.hpp" // binds the __rp_*Launchpad* config hooks
 #include "host/launchpad/RtMidiPort.hpp"     // the RtMidi in/out pair the link claims exclusively
 #include "host/rpc/BackendRpcRegistration.hpp"
@@ -263,7 +268,22 @@ struct AppState {
         retroplug::rtMidiPortOpener("RetroPlug Scan"),  // one-port-at-a-time, for Settings > MIDI's scan
         [this](bool input) { return input ? midi.listInputs() : midi.listOutputs(); },
         svc.host.configDir()};
-    std::vector<retroplug::LaunchpadLink::Message> launchpadScratch;  // reused per block (no per-block alloc)
+    // Control-surface input, drained per block into fixed slots the engine's controller-in capacity sizes: the block
+    // thread allocates nothing and frees nothing, where a vector per message would do both (the ring's slots stay in
+    // the link; this is only where one block's messages are copied).
+    std::array<rp::host::DeviceMessage, rp::host::kControllerInMessages> launchpadIn{};
+
+    // The device links the graph's hardware nodes bind (rp.host.devices/1): the cart and the surface this host owns.
+    // svc (the engine) is declared above them (n8Host and launchpadHost read its config dir), so it is destroyed LAST,
+    // after both links. The destructor below reclaims the plans first, while every member is still alive: a node may
+    // use its handle in destroy, and it must reach a live link. The engine has no plan left to destroy by then.
+    retroplug::N8CartLink           n8CartLink{n8Host};
+    retroplug::LaunchpadSurfaceLink launchpadSurfaceLink{launchpadHost.link()};
+
+    ~AppState() {
+        svc.engine.clearGraph();
+        svc.engine.setDeviceLinks(nullptr, nullptr);
+    }
 
     std::uint32_t width = 640;
     std::uint32_t height = 480;
@@ -881,14 +901,18 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     }
     a.clockSync.advance(frames);
 
-    // Control-surface traffic, on its own stream. Same shape as the MIDI drain above (the vectors were
-    // allocated on the backend's callback thread, and the engine copies each into its staging arena, which
-    // allocates nothing), but staged as controllerIn rather than musical MIDI - a pad NoteOn must reach the
-    // controller app's quantiser and nothing else. The connected flag rides the block so the session can take
-    // the device the moment one shows up (it enters Programmer mode and repaints on that edge).
-    a.launchpadHost.link().drainInput(a.launchpadScratch);
-    for (const auto& m : a.launchpadScratch)
-        if (!m.empty()) a.svc.engine.stageControllerMidi(m);
+    // Control-surface traffic, on its own stream. Same shape as the MIDI drain above, but staged as controllerIn
+    // rather than musical MIDI - a pad NoteOn must reach the controller app's quantiser and nothing else. The
+    // messages are copied out of the link's fixed slots into this block's array, and the engine copies each into
+    // its staging arena, so neither end of the block thread's path allocates or frees. A message carries no arrival
+    // frame, so it is placed at frame 0, as rp.host.controller-in places the host's staged pad traffic. The connected
+    // flag rides the block so the session can take the device the moment one shows up (it enters Programmer mode and
+    // repaints on that edge).
+    const std::size_t surfaceN = a.launchpadHost.link().drainInput(a.launchpadIn.data(), a.launchpadIn.size());
+    for (std::size_t i = 0; i < surfaceN; ++i)
+        if (a.launchpadIn[i].size != 0)
+            a.svc.engine.stageControllerMidi(
+                std::span<const std::uint8_t>(a.launchpadIn[i].data, a.launchpadIn[i].size));
     a.svc.engine.setControllerConnected(a.launchpadHost.link().isConnected());
 
     // Fold in the menu's play/stop + tempo, then publish what the transport ended up being (see AppState).
@@ -1587,6 +1611,9 @@ void handleEvents(AppState& a) {
 int main(int argc, char** argv) {
     AppState app;
     g_app = &app;
+    // The graph's hardware nodes bind these by name (rp.host.devices/1), so they go in before any document can place
+    // one: the control plane below is the first thing that can publish a graph.
+    app.svc.engine.setDeviceLinks(&app.n8CartLink, &app.launchpadSurfaceLink);
 
     // --- args / env ---
     std::string autoloadPath;

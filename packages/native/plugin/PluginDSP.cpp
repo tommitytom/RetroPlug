@@ -31,6 +31,7 @@
 #include "Version.hpp"                    // single source of truth for the plugin version
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/n8/N8Host.hpp"             // physical Everdrive N8 link + config (shared with the SDL standalone)
+#include "host/n8/N8CartLink.hpp"          // the cart device link rp.host.devices/1 hands a node (over that N8Host)
 #include "host/n8/N8Hooks.hpp"            // binds the __rp_*N8* config hooks (shared)
 #include "host/n8/WjwwoodSerialPort.hpp"  // the serial-port factory + listSerialPorts for the N8 picker
 #include "TypedRpcServer.h"
@@ -98,6 +99,10 @@ class PluginDSP : public Plugin {
             return ports;
         },
         svc_.host.configDir()};
+    // The cart link the graph's device nodes bind (rp.host.devices/1). The plugin owns no control surface, so its
+    // surface name answers with a handle that is never connected: every message is SysEx, which the DAW MIDI seam caps
+    // at 4 bytes (the SDL standalone's comment says the same where it binds its Launchpad).
+    retroplug::N8CartLink n8CartLink_{n8Host_};
     std::unique_ptr<rpcpp::QuickJSTransport> transport_;
     std::unique_ptr<PluginRpcServer>     server_;
     // Did the control plane come up AND signal __rp_ready? Gates callGlobal, so a runtime that failed
@@ -136,11 +141,22 @@ public:
         for (auto& b : ccBinding_) b.store(0, std::memory_order_relaxed);
         for (auto& v : ccValue_)   v.store(0.0f, std::memory_order_relaxed);
         ccSent_.fill(0.0f);
+        // The device links before the first graph the control plane can publish, so a node of that graph binds one.
+        svc_.engine.setDeviceLinks(&n8CartLink_, nullptr);
         bootControlPlane();
         // The autoload in bootControlPlane may already have put a ROM in place, so name the pool from
         // it before DPF reads the parameters. (This is the construct-time pass; the host has no
         // parameter info yet, so it only fills ccName_ - there is nothing to notify.)
         updateParameterMap();
+    }
+
+    // svc_ (the engine) is declared above n8Host_, so it is destroyed last, after the link adapter and the N8Host it
+    // wraps. Reclaim the plans first, in this body, while both are still alive: a node may use its handle in destroy
+    // (a farewell, a flush, a read), and it must reach a live link. The engine has no plan left to destroy by the time
+    // the members go.
+    ~PluginDSP() override {
+        svc_.engine.clearGraph();
+        svc_.engine.setDeviceLinks(nullptr, nullptr);
     }
 
 protected:

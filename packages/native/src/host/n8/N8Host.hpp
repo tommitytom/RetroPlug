@@ -54,9 +54,9 @@ public:
     static constexpr int EXP_VOL_UNITY = 128;
 
     N8Host(N8Link::PortFactory factory, PortLister lister, std::string configDir);
-    // Stops the serial thread before any member it reads goes away: a posted control write (setExpVol)
-    // captures `this` and runs on that thread, and link_ is declared BEFORE the fields such a callback
-    // touches, so its own destructor would join too late. (The SD worker, whose jobs also capture `this`, is
+    // Stops the serial thread before any member it reads goes away: the control turn (OnControl, which applies
+    // setExpVol's value) captures `this` and runs on that thread, and link_ is declared BEFORE the fields such a
+    // callback touches, so its own destructor would join too late. (The SD worker, whose jobs also capture `this`, is
     // declared last and so is already joined first.)
     ~N8Host();
 
@@ -75,8 +75,10 @@ public:
     // Timed-release lookahead (ms, clamped >= 0). Persists.
     void setLookahead(int ms);
 
-    // Expansion-audio master volume: EXP_VOL_AUTO or a 0..255 value (clamped). Written on every connect, and
-    // at once (through the serial thread) when it changes on a live link. Not persisted - see EXP_VOL_AUTO.
+    // Expansion-audio master volume: EXP_VOL_AUTO or a 0..255 value (clamped). Written on every connect, and on a
+    // live link at the serial thread's next turn after it changes: the value is an atomic and a generation, so any
+    // thread may call this (a node's param does, from the block) without a lock or an allocation. Not persisted - see
+    // EXP_VOL_AUTO.
     void setExpVol(int v);
 
     // Load n8.cfg (port / lookahead / enabled) and reconnect if it was enabled. Call once at host startup.
@@ -115,7 +117,13 @@ private:
     std::string         configDir_;
     std::string         port_;
     std::atomic<bool>   enabled_{false};  // atomic: a successful ROM load clears it from the worker thread (below)
-    std::atomic<int>    expVol_{EXP_VOL_AUTO};  // atomic: read by applyExpVol on the SD + serial threads
+    std::atomic<int>      expVol_{EXP_VOL_AUTO};  // read by applyExpVol on the SD + serial threads
+    // A change counter, so the serial thread applies the standing value at its next turn without a mutex or a
+    // std::function built on the caller's side: setExpVol only bumps the generation, and OnControl applies the value
+    // while the applied generation lags. Bumping after a failed write is what retries it, so no failure needs a
+    // re-arm.
+    std::atomic<unsigned> expVolGeneration_{0};
+    std::atomic<unsigned> expVolApplied_{0};  // serial thread writes, after a successful write
     N8SdWorker          sdWorker_;   // LAST: destroyed first, so its thread joins while link_ + factory_ are alive
 };
 
