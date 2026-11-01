@@ -64,11 +64,17 @@ public:
 
     bool streaming() const { return attached && !jobRunning; }
 
-    void push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush, double rate) override {
+    bool push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush, double rate) override {
         if (!streaming()) {  // detached, or a job holds the device: the bytes go nowhere and are counted
             ++drops;
-            return;
+            return false;
         }
+        if (refuseAfterPushes == 0) {  // the device's ring was full for this one: the bytes are lost, and counted
+            refuseAfterPushes = -1;
+            ++drops;
+            return false;
+        }
+        if (refuseAfterPushes > 0) --refuseAfterPushes;
         Push p;
         p.frame = frame;
         p.flush = flush;
@@ -76,6 +82,7 @@ public:
         p.size  = static_cast<std::uint16_t>(std::min(size, rp::host::kMaxDeviceMessage));
         std::memcpy(p.data, data, p.size);
         pushes.push_back(p);
+        return true;
     }
     bool          connected() const override { return streaming(); }
     std::uint64_t dropped() const override { return drops; }

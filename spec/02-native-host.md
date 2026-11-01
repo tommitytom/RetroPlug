@@ -439,9 +439,10 @@ the native goldens run hold at zero.
 [LaunchpadNodes.cpp](../packages/native/src/host/graph/LaunchpadNodes.cpp)). Each binds the host-owned device it
 drives through `rp.host.devices/1`
 ([DeviceLinks.hpp](../packages/native/src/host/devices/DeviceLinks.hpp)): a `CartLink` for the cart, with a push per
-message (frame, bytes, the flush flag, the block's rate), the link's connected state and drop count, the
-expansion-volume register and `submitJob` / `abandonJobs`; a `SurfaceLink` for the pad, with a drain into the node's
-own array, a push, the connected state and its drop count. A host installs its links with
+message (frame, bytes, the flush flag, the block's rate) that answers whether all of it reached the device, the link's
+connected state and drop count, the expansion-volume register and `submitJob` / `abandonJobs`; a `SurfaceLink` for the
+pad, with a drain into the node's own array, a push, the connected state and its drop count. A host installs its links
+with
 `Engine::setDeviceLinks` before its first plan (the plugin passes its `N8CartLink` and no surface, the SDL
 standalone both, the test host a `HarnessSurfaceLink`, and the CLI, the Node addon and the render host neither), and a
 name it has no device for answers a handle that is never connected and that drops and counts everything, so a

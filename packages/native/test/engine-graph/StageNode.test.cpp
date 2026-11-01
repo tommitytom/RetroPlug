@@ -48,8 +48,9 @@ public:
         double        rate  = 0.0;
         Bytes         data;
     };
-    void push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush, double rate) override {
+    bool push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush, double rate) override {
         pushes.push_back({frame, flush, rate, Bytes(data, data + size)});
+        return true;
     }
     bool          connected() const override { return true; }
     std::uint64_t dropped() const override { return 0; }

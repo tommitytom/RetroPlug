@@ -163,13 +163,14 @@ public:
         std::uint8_t  data[rp::host::kMaxDeviceMessage] = {};
     };
 
-    void push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush, double) override {
+    bool push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush, double) override {
         Push p;
         p.frame = frame;
         p.flush = flush;
         p.size  = static_cast<std::uint16_t>(std::min(size, rp::host::kMaxDeviceMessage));
         std::memcpy(p.data, data, p.size);
         pushes.push_back(p);
+        return true;
     }
     bool              connected() const override { return true; }
     std::uint64_t     dropped() const override { return 0; }

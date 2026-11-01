@@ -59,8 +59,9 @@ private:
     // connected" (CartLink's own answer).
     class NoCart final : public CartLink {
     public:
-        void push(std::uint32_t, const std::uint8_t*, std::size_t size, bool, double) override {
+        bool push(std::uint32_t, const std::uint8_t*, std::size_t size, bool, double) override {
             if (size != 0) dropped_.fetch_add(1, std::memory_order_relaxed);
+            return size == 0;
         }
         bool          connected() const override { return false; }
         std::uint64_t dropped() const override { return dropped_.load(std::memory_order_relaxed); }

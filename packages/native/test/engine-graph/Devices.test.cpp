@@ -129,11 +129,11 @@ public:
 
     void reserve(std::size_t n) { pushes.reserve(n); }
 
-    void push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush,
+    bool push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush,
               double sampleRate) override {
         if (!attached) {  // the device went away: the bytes go nowhere, as a real link's do
             ++drops;
-            return;
+            return false;
         }
         Push p;
         p.frame      = frame;
@@ -142,6 +142,7 @@ public:
         p.size       = static_cast<std::uint16_t>(std::min(size, rp::host::kMaxDeviceMessage));
         std::memcpy(p.data, data, p.size);
         pushes.push_back(p);
+        return true;
     }
     bool          connected() const override { return attached; }
     std::uint64_t dropped() const override { return drops; }

@@ -24,18 +24,18 @@ public:
     // [audio] N8Link::push. `frame` is the intra-block sample offset and `sampleRate` the block's rate, which the link
     // turns into the moment it releases the bytes at, through its timed scheduler and lookahead. `flush` goes no
     // further: on the physical side the arm byte itself is the barrier the bytes port's flag stands for, so the link's
-    // ring carries the barrier and no extra byte. A push the link did not take counts here, so the count a node reads
-    // is the pushes IT lost: until the hosts' old paths go, they push at the same N8Link, and its own pushesDropped()
-    // counts those too.
-    void push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush,
+    // ring carries the barrier and no extra byte.
+    bool push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush,
               double sampleRate) override {
         (void)flush;
-        if (!host_.link().push(frame, data, size, sampleRate))
-            dropped_.fetch_add(1, std::memory_order_relaxed);
+        if (host_.link().push(frame, data, size, sampleRate)) return true;
+        dropped_.fetch_add(1, std::memory_order_relaxed);
+        return false;
     }
     bool          connected() const override { return host_.link().isConnected(); }
-    // Its own lost pushes, and the chunks a stream stopped after a job threw away (N8Link::chunksDiscarded: pushes that
-    // raced the pause's start, whichever path made them, which the link cannot tell apart).
+    // Every push of this adapter that lost its bytes, plus the chunks a stream stopped after a job found in its ring
+    // (N8Link::chunksDiscarded: pushes that reached the ring after the pause's drain, whose caller the link cannot
+    // tell). A node keeps its own books on push()'s answer; this is the count for a caller that reads the link.
     std::uint64_t dropped() const override {
         return dropped_.load(std::memory_order_relaxed) + host_.link().chunksDiscarded();
     }

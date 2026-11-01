@@ -143,12 +143,10 @@ struct N8Nes {
         volumeSent = percent;
     }
 
-    // One MIDI message to the link, keeping the books on its notes. Whether the push went out is read off the link's
-    // own drop count around it, which only the block thread moves.
+    // One MIDI message to the link, keeping the books on its notes. Whether it went is the push's own answer, so the
+    // books never read a count that another thread moves.
     void pushMidi(std::uint32_t frame, const std::uint8_t* data, std::size_t size, double rate) noexcept {
-        const std::uint64_t before = cart->dropped();
-        cart->push(frame, data, size, false, rate);
-        const bool sent = cart->dropped() == before;
+        const bool sent = cart->push(frame, data, size, false, rate);
         if (size < 3) return;
         const std::uint8_t kind = data[0] & 0xF0;
         const std::size_t  note = static_cast<std::size_t>(data[0] & 0x0F) * 128 + (data[1] & 0x7F);
@@ -174,9 +172,7 @@ struct N8Nes {
             if (!owed.test(note)) continue;
             const std::uint8_t off[3] = {static_cast<std::uint8_t>(0x80 | (note / 128)),
                                          static_cast<std::uint8_t>(note % 128), 0};
-            const std::uint64_t before = cart->dropped();
-            cart->push(0, off, sizeof off, false, rate);
-            if (cart->dropped() != before) return;
+            if (!cart->push(0, off, sizeof off, false, rate)) return;
             owed.reset(note);
             sounding.reset(note);
         }

@@ -45,14 +45,16 @@ public:
 
     // [audio] Hand one message to the device at its intra-block `frame`, a sample offset `sampleRate` turns into the
     // moment the link releases it at. Lock-free, never allocates, never blocks; `flush` is the bytes port's barrier
-    // flag, which the cart needs no separate byte for. A push while disconnected goes nowhere and is counted in
-    // dropped().
-    virtual void push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush,
+    // flag, which the cart needs no separate byte for. False when any of the bytes were lost (the device is detached, a
+    // job holds it, or its ring was full), which is the answer a node keeps its own books on; dropped() is the same
+    // losses as a count.
+    virtual bool push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush,
                       double sampleRate) = 0;
     // [any] Whether the device is attached. Plain state, read afresh: a link may come up or go away between two reads.
     virtual bool connected() const = 0;
-    // [any] The pushes that lost their bytes: the link was down, or the device's ring was full. An adapter counts its
-    // own, so a node reads the pushes it made that went nowhere even while an old path pushes at the same device.
+    // [any] The pushes that lost their bytes: the device was detached, a job held it, or its ring was full. An adapter
+    // counts its own, so a caller reads the pushes it made that went nowhere even while another path pushes at the same
+    // device.
     virtual std::uint64_t dropped() const = 0;
     // [audio, any thread] The cart's expansion-audio master-volume register: 0..255, or -1 to leave the register to
     // the cart (N8Host::EXP_VOL_AUTO: unity for a mapper that carries the sound chip, otherwise whatever the device's

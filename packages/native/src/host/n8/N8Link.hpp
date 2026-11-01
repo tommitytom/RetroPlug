@@ -95,8 +95,9 @@ public:
     bool          isConnected() const { return connected_.load(std::memory_order_acquire); }
     std::string   portName() const;
     std::uint64_t bytesForwarded() const { return bytesForwarded_.load(std::memory_order_relaxed); }
-    // Pushes that lost their bytes: the link was down, or the ring was full. Written on the audio thread, so it is the
-    // device link's (rp.host.devices/1) dropped count and the UI's, read relaxed.
+    // Pushes that lost their bytes: the link was down or a job held it, or the ring was full. Written on the audio
+    // thread, read relaxed; a device link's own count is made of the `false` push() answers instead, and N8CartLink's
+    // dropped() adds the chunks a stopped stream discarded.
     std::uint64_t pushesDropped() const { return pushesDropped_.load(std::memory_order_relaxed); }
     std::string   lastError() const;
     void          setLookaheadMs(int ms) { lookaheadNs_.store(std::int64_t(ms) * 1'000'000, std::memory_order_relaxed); }
@@ -121,10 +122,11 @@ public:
     void          setWriteLog(WriteLog log) { writeLog_ = std::move(log); }
 
     // --- Audio thread ---
-    // Forward MIDI/bytes with their intra-block sample offset. Lock-free, never blocks; drops on ring-full;
-    // a no-op when not connected. Splits a >8-byte push into multiple chunks (rare - MIDI is <=4). False when any of
-    // the bytes were lost (the link is down, or a chunk found the ring full), which is what a device link's own drop
-    // count is made of: pushesDropped() also counts the callers that are not that node.
+    // Forward MIDI/bytes with their intra-block sample offset. Lock-free, never blocks; drops on ring-full, and drops
+    // everything while the link is down or a job holds it (both counted, never waited on). Splits a >8-byte push into
+    // multiple chunks (rare - MIDI is <=4). False when any of the bytes were lost (the link is down, a job holds it, or
+    // a chunk found the ring full): what a node keeps its own books on, where pushesDropped() is also every other
+    // caller's.
     bool push(std::uint32_t sampleOffset, const std::uint8_t* data, std::size_t n, double sampleRate);
 
 private:
