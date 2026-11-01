@@ -89,16 +89,17 @@ void inBlocks(std::size_t frames, const std::vector<std::size_t>& split, Run run
 
 /** A rig whose plans may run blocks up to `maxFrames` frames, so a split can be compared with one call over the
  *  whole stream: GraphRig sizes its host output rows from the same number. A rig can run at another plan rate too, for
- *  a case about what a rate's Nyquist does to a filter. */
+ *  a case about what a rate's Nyquist does to a filter, and the buffers it makes carry that rate. */
 struct DspRig : GraphRig {
     explicit DspRig(rp::graph::Target target = rp::graph::Target::Desktop, std::uint32_t maxFrames = 4096,
                     double rate = 48000.0)
-        : GraphRig({rate, maxFrames, target}, 8, nullptr, maxFrames) {}
+        : GraphRig({rate, maxFrames, target}, 8, nullptr, maxFrames), rate_(rate) {}
 
-    // An audio buffer resource holding one stream per channel.
+    // An audio buffer resource holding one stream per channel, at the plan's rate. Nothing in these plans reads it
+    // (the player just walks the buffer), so the rate is the rig's for a reader's benefit rather than the node's.
     rp::graph::ResourceTable::Id buffer(const std::vector<std::vector<float>>& perChannel) {
         const auto channels = static_cast<std::uint32_t>(perChannel.size());
-        const auto id = resources.createAudioBuffer(channels, static_cast<std::uint32_t>(perChannel[0].size()), 48000.0);
+        const auto id = resources.createAudioBuffer(channels, static_cast<std::uint32_t>(perChannel[0].size()), rate_);
         auto* const b = static_cast<rp_audio_buffer*>(resources.get(id)->payload);
         for (std::uint32_t c = 0; c < channels; ++c) std::copy(perChannel[c].begin(), perChannel[c].end(), b->data[c]);
         return id;
@@ -110,6 +111,8 @@ struct DspRig : GraphRig {
     }
 
     static std::string res(rp::graph::ResourceTable::Id id) { return "\"res:" + std::to_string(id) + "\""; }
+
+    double rate_;  // what activate gives the plan, and what a buffer made here claims
 
     // The host output `bus` names, one port for a mono bus and a range for a stereo one.
     static std::string port(std::uint32_t channels) {
@@ -387,7 +390,8 @@ TEST_CASE("rp.dsp.biquad guards the state a sweep past Nyquist poisons", "[dsp-n
     // sample, so the node resets a channel's filter whose state came out of a block non-finite and writes that block
     // as silence: the sweep cannot poison the stream, and the filter recovers when the frequency comes back.
     constexpr std::uint32_t kBlock = 64, kBlocks = 32;
-    constexpr std::uint32_t kSweep = 8, kBack = 16;  // the blocks the frequency changes before: in range, past Nyquist
+    // The blocks the frequency changes at: past Nyquist from `kSweep`, back in range at `kBack`.
+    constexpr std::uint32_t kSweep = 8, kBack = 16;
     const std::vector<float> in = signal(kBlock * kBlocks);
     const auto frequencyOf = [](std::uint32_t block) { return block >= kSweep && block < kBack ? 20000.0f : 2000.0f; };
 
@@ -424,8 +428,10 @@ TEST_CASE("rp.dsp.biquad guards the state a sweep past Nyquist poisons", "[dsp-n
         CHECK(firstDifference(block, running) == -1);
         got.insert(got.end(), running.begin(), running.end());
     }
-    // The guard fired: without it the stream is NaN from the first runaway block to the end.
+    // The guard fired: without it the stream is NaN from the first runaway block to the end. It also stopped by
+    // `kBack`, where the frequency is in range again, so the recovery loop below is guaranteed to run.
     REQUIRE(lastReset >= static_cast<std::ptrdiff_t>(kSweep));
+    REQUIRE(lastReset < static_cast<std::ptrdiff_t>(kBack));
     for (const float v : got) CHECK(std::isfinite(v));
 
     // And the reset is a reset: from the block after the last one, a filter built fresh (no history at all) and
@@ -510,6 +516,13 @@ TEST_CASE("rp.dsp.dither gives each channel its own noise", "[dsp-nodes]") {
     first.processLevels(in.data(), reference.data(), 512);
     CHECK(firstDifference(reference, out[0]) == -1);
 
+    // Channel 1 is the setting's seed plus the node's golden-ratio step, pinned here: if that constant moves, this
+    // test moves rather than every multi-channel patch's noise changing silently.
+    rp::dsp::Dither second;
+    second.init(rp::dsp::DitherAlgorithm::HighPassTPDF, 8, 12345u + 0x9e3779b9u);
+    second.processLevels(in.data(), reference.data(), 512);
+    CHECK(firstDifference(reference, out[1]) == -1);
+
     // The second channel is its own stream, not the first one's. Two independent TPDF noises move a sample's code
     // apart only when they straddle a rounding boundary, which is about a quarter of them; two channels seeded alike
     // move it apart on none.
@@ -520,24 +533,49 @@ TEST_CASE("rp.dsp.dither gives each channel its own noise", "[dsp-nodes]") {
 }
 
 TEST_CASE("rp.dsp.dither restarts a channel whose input is not finite", "[dsp-nodes]") {
-    // A non-finite input sample latches the stateful algorithms' error terms (a NaN error is a NaN error for the rest
-    // of the stream, and the kernel reads a NaN code as 0, so the channel would sit at -1 for good). The node restarts
-    // such a channel's state from the settings after the block it appeared in, so one bad sample costs one block.
-    std::vector<float> in = signal(512);
-    in[200] = std::numeric_limits<float>::quiet_NaN();
-    DspRig     rig;
-    const auto sample = rig.buffer(in, 1);
-    REQUIRE(rig.play(sample, "rp.dsp.dither", R"({"channels":1,"algorithm":"high-pass-tpdf","bits":4,"seed":8})"));
-    const std::vector<float> out = rig.render(512, {64})[0];
-    for (const float v : out) CHECK(std::isfinite(v));  // the levels are finite whatever the input is
+    // A non-finite input sample latches the stateful algorithms' state. A NaN poisons every form's: the error terms
+    // and the shaping state are differences of it (and the kernel reads a NaN code as 0, so the channel would sit at
+    // -1 for good). An infinity poisons only the diffusion forms' `past[]`, which holds `value - q` of the unclamped
+    // value; the TPDF and error-diffusion forms clamp the value before deriving their state from it, so a `+inf`
+    // sample there just quantises to full scale and leaves them running. Either way the node restarts such a channel's
+    // state from the settings after the block it appeared in, so one bad sample costs one block.
+    struct Case {
+        float                    bad;
+        const char*              json;
+        rp::dsp::DitherAlgorithm algorithm;
+    };
+    const Case cases[] = {
+        {std::numeric_limits<float>::quiet_NaN(),
+         R"({"channels":1,"algorithm":"high-pass-tpdf","bits":4,"seed":8})", rp::dsp::DitherAlgorithm::HighPassTPDF},
+        {std::numeric_limits<float>::quiet_NaN(), R"({"channels":1,"algorithm":"jjn","bits":4,"seed":8})",
+         rp::dsp::DitherAlgorithm::JJN},
+        {std::numeric_limits<float>::quiet_NaN(), R"({"channels":1,"algorithm":"shaped-tpdf","bits":4,"seed":8})",
+         rp::dsp::DitherAlgorithm::ShapedTPDF},
+        {std::numeric_limits<float>::quiet_NaN(), R"({"channels":1,"algorithm":"error-diffusion","bits":4,"seed":8})",
+         rp::dsp::DitherAlgorithm::ErrorDiffusion},
+        {std::numeric_limits<float>::infinity(), R"({"channels":1,"algorithm":"jjn","bits":4,"seed":8})",
+         rp::dsp::DitherAlgorithm::JJN},
+        {std::numeric_limits<float>::infinity(), R"({"channels":1,"algorithm":"sierra-lite","bits":4,"seed":8})",
+         rp::dsp::DitherAlgorithm::SierraLite},
+    };
+    for (const Case& c : cases) {
+        INFO(c.json << " with " << c.bad);
+        std::vector<float> in = signal(512);
+        in[200] = c.bad;
+        DspRig     rig;
+        const auto sample = rig.buffer(in, 1);
+        REQUIRE(rig.play(sample, "rp.dsp.dither", c.json));
+        const std::vector<float> out = rig.render(512, {64})[0];
+        for (const float v : out) CHECK(std::isfinite(v));  // the levels are finite whatever the input is
 
-    // The NaN is in block 3 (frames 192..255), so block 4 on is a fresh kernel's stream over the input from there. A
-    // state left latched gives -1 there for the rest of the plan.
-    rp::dsp::Dither fresh;
-    fresh.init(rp::dsp::DitherAlgorithm::HighPassTPDF, 4, 8);
-    std::vector<float> reference(256);
-    fresh.processLevels(in.data() + 256, reference.data(), 256);
-    CHECK(firstDifference(reference, std::vector<float>(out.begin() + 256, out.end())) == -1);
+        // The bad sample is in block 3 (frames 192..255), so block 4 on is a fresh kernel's stream over the input from
+        // there. A state left latched gives -1 (NaN) or +1 (infinity) there for the rest of the plan.
+        rp::dsp::Dither fresh;
+        fresh.init(c.algorithm, 4, 8);
+        std::vector<float> reference(256);
+        fresh.processLevels(in.data() + 256, reference.data(), 256);
+        CHECK(firstDifference(reference, std::vector<float>(out.begin() + 256, out.end())) == -1);
+    }
 }
 
 TEST_CASE("rp.dsp.dither's seed setting is its noise: a new seed restarts the stream", "[dsp-nodes]") {

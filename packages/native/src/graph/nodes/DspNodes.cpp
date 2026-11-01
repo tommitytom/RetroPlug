@@ -24,9 +24,9 @@ namespace rp::graph {
 // The settings structs live in a named namespace, not an anonymous one: a Settings struct's JSON Schema $defs key is
 // its qualified name, which compilers spell differently for an anonymous namespace. Only they need the name;
 // everything else below stays internal to this file. The kernels are rp::dsp (src/dsp/), so a kernel type is always
-// spelled out in full here, and each settings struct carries `Node` because the kernel has a settings struct of its own
-// under the same short name (`rp::dsp::BiquadSettings` is what `Biquad::process` builds, and it turns up in this file
-// under that short name).
+// spelled out in full here, and the biquad's settings struct carries `Node` because the kernel has one under the same
+// short name (`rp::dsp::BiquadSettings` is the kernel's: this file builds one unnamed for `biquadCoefficients`).
+// Gain's and dither's settings structs have no kernel counterpart, so nothing else needs the suffix.
 namespace dsp {
 
 // The eight filters and the six dither forms, labelled as every other enum in a document is: the kebab-case of the
@@ -147,7 +147,8 @@ struct Gain {
                 kernel.process(inputs.in[c], outputs.out[c], n);
             return;
         }
-        // One step for every channel: the ramp is the same on each of them, and a per-sample division is not.
+        // One step applies to every channel, since the ramp is the same on each of them: the division happens once a
+        // block, not per sample and per channel.
         const float step = (target - applied) / static_cast<float>(n);
         for (std::uint32_t c = 0; c < outputs.out.channel_count; ++c) {
             const float* x = inputs.in[c];
@@ -183,6 +184,12 @@ struct Gain {
 // and leaves the coefficients alone: a channel whose filter came out of a block with any of its four state values not
 // finite has that filter reset and its block written as silence, so a sweep past Nyquist cannot poison the stream, and
 // a frequency that comes back into range is a fresh filter's from the next block on.
+//
+// That guard is the one place this node knowingly differs from the kernel run directly, and the difference is
+// byte-visible: a kit filter whose frequency is above its source rate's Nyquist produces constant codes today (the
+// state goes NaN, and the quantiser reads every NaN as code 0), where this node recovers instead. No case in the kit
+// baseline is in that regime, so none of its bytes moved; D2, whose contract is byte identity, has to decide between
+// the kernel call and this node for such a kit.
 struct Biquad {
     static constexpr const char* id = "rp.dsp.biquad";
     static constexpr const char* name = "Biquad";
@@ -287,9 +294,13 @@ struct Biquad {
 // centre) instead of spreading. Channel 0 keeps the setting's own seed, so a mono patch is unchanged. The error
 // diffusion forms draw no noise and are unaffected.
 //
-// A block whose input is not finite would latch the error terms (a NaN error is a NaN error for the rest of the
-// stream, and `toCode` reads a NaN as code 0), so a channel that comes out of a block with any of its state not
-// finite has its state restarted from the settings: the latch lasts one block rather than the stream.
+// A block whose input is not finite would latch the state: a NaN error is a NaN error for the rest of the stream
+// (`toCode` reads a NaN as code 0, so the channel sits at -1 for good), and a `+inf` leaves JJN's and Sierra Lite's
+// `past[]` infinite, which pins the output at +1 (the TPDF and error-diffusion forms clamp the value before deriving
+// their state from it, so an infinity there only quantises that one sample to full scale). A channel that comes out of
+// a block with any of its state not finite therefore has its state restarted from the settings: the latch lasts one
+// block rather than the stream. The block itself is left as the kernel quantised it, which is finite and at worst full
+// scale, so only the state is restarted and the click is one block's.
 struct Dither {
     static constexpr const char* id = "rp.dsp.dither";
     static constexpr const char* name = "Dither";
