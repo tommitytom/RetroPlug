@@ -252,7 +252,7 @@ TEST_CASE("a surface's in discards what the link held when it bound it, and a re
     surface.input.push_back(deviceMessage({0x90, 0x35, 100}));
     std::string why;
     REQUIRE(rig.host->reactivate(kRate, 8192, &why));
-    CHECK(surface.acquires == 2);  // the handle it bound is the one it keeps
+    CHECK(surface.acquires == 2);  // two nodes, one acquire each: the reactivate kept the handle it bound
     block(rig);
     REQUIRE(rig.node<Probe>("probe").events.size() == 1);
     CHECK(rig.node<Probe>("probe").events[0].data == Bytes{0x90, 0x35, 100});

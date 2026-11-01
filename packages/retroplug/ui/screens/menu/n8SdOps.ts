@@ -29,10 +29,18 @@ export interface N8CartJob {
 
 // The snapshot the menu row renders and useN8SdWatch polls: it is replaced, never mutated, and its version moves on
 // every change, so the poll re-renders exactly when something it shows did.
-let job: N8CartJob = { busy: false, op: "", bytesDone: 0, bytesTotal: 0, error: "", result: "", version: 0 };
+let job: N8CartJob = {
+  busy: false,
+  op: "",
+  bytesDone: 0,
+  bytesTotal: 0,
+  error: "",
+  result: "",
+  version: 0,
+};
 // The file name of the ROM this process booted on the cart through `load`, and the name a dump or a restore after it
-// reaches that ROM's battery file by without asking. The cart's state, not a node's: the ROM booted on the card outlives
-// the drive moving to another NES and a UI realm reload, so one name serves whichever node is the cart's now.
+// reaches that ROM's battery file by without asking. The cart's state, not a node's: the ROM booted on the card
+// outlives the drive moving to another NES and a UI realm reload, so one name serves whichever node is the cart's now.
 let bootedName: string | null = null;
 
 /** The live snapshot, read fresh each poll (the menu and useN8SdWatch). */
@@ -44,9 +52,9 @@ function update(patch: Partial<N8CartJob>): void {
   job = { ...job, ...patch, version: job.version + 1 };
 }
 
-/** The cart the project drives, and the node that is it: the system buildGraph places an rp.n8.nes for (that rule, not
- *  a second one), which is the one whose core config drives the real cart. Null when no system drives one, which is the
- *  only way the card rows have nothing to act on. */
+/** The cart the project drives, and the node that is it: the system buildGraph places an rp.n8.nes for (that rule,
+ *  not a second one), which is the one whose core config drives the real cart. Null when no system drives one, which is
+ *  the only way the card rows have nothing to act on. */
 export function projectCart(systems: readonly SystemView[]): { system: SystemView; nodeId: string } | null {
   const cart = drivenCartSystem(
     systems.map((system) => ({ system, platform: system.platform, coreConfig: roleConfig(system.roles, "mesen") })),
@@ -55,8 +63,8 @@ export function projectCart(systems: readonly SystemView[]): { system: SystemVie
 }
 
 /** The ROM name a card job reaches the cart's files by: the ROM this process booted on the cart, else the driven
- *  system's own ROM file (the card's folder for a game is named after it). Empty when neither is known, which leaves the
- *  choice to the host: it resolves the ROM it last booted, or refuses the job. */
+ *  system's own ROM file (the card's folder for a game is named after it). Empty when neither is known, which leaves
+ *  the choice to the host: it resolves the ROM it last booted, or refuses the job. */
 function romNameFor(cart: { system: SystemView }): string {
   return bootedName || basename(cart.system.romPath);
 }
@@ -82,12 +90,19 @@ function doneLabel(op: N8CartJob["op"]): string {
   return "";
 }
 
+/** A file the user picked that could not be read: no job ran, so the row only gets its error - unless a job already
+ *  holds it, which no row allows (they are all disabled while one runs) and a call that reaches here anyway must not
+ *  clear. */
+function unreadable(path: string): void {
+  if (!job.busy) update({ busy: false, op: "", error: `cannot read ${path}` });
+}
+
 /** Upload a local ROM to the cart's SD card and boot it (the cart must be at its menu). The job's name is the file's
  *  own name, which is the folder its battery lives in. */
 export function n8LoadRom(backend: ControlPlaneBackend, cart: { nodeId: string }, path: string): void {
   const bytes = backend.readFile(path);
   if (!bytes) {
-    update({ busy: false, op: "", error: `cannot read ${path}` });
+    unreadable(path);
     return;
   }
   const name = basename(path);
@@ -97,9 +112,13 @@ export function n8LoadRom(backend: ControlPlaneBackend, cart: { nodeId: string }
   });
 }
 
-/** Back up the cart's battery (its SD card's bram.srm for the ROM) to the local file the user picked. About a minute for
- *  64 KB over USB, so the row shows the block progress while it runs. */
-export function n8DumpSram(backend: ControlPlaneBackend, cart: { system: SystemView; nodeId: string }, path: string): void {
+/** Back up the cart's battery (its SD card's bram.srm for the ROM) to the local file the user picked. About a minute
+ *  for 64 KB over USB, so the row shows the block progress while it runs. */
+export function n8DumpSram(
+  backend: ControlPlaneBackend,
+  cart: { system: SystemView; nodeId: string },
+  path: string,
+): void {
   const name = romNameFor(cart);
   run("dump", async (onProgress) => {
     const bytes = await backend.capability(
@@ -114,10 +133,14 @@ export function n8DumpSram(backend: ControlPlaneBackend, cart: { system: SystemV
 
 /** Write a local .srm to the cart's SD card battery file. The game loads it at its next boot, so a restore goes before
  *  the ROM load: restore, then n8LoadRom. */
-export function n8RestoreSram(backend: ControlPlaneBackend, cart: { system: SystemView; nodeId: string }, path: string): void {
+export function n8RestoreSram(
+  backend: ControlPlaneBackend,
+  cart: { system: SystemView; nodeId: string },
+  path: string,
+): void {
   const bytes = backend.readFile(path);
   if (!bytes) {
-    update({ busy: false, op: "", error: `cannot read ${path}` });
+    unreadable(path);
     return;
   }
   const name = romNameFor(cart);
@@ -126,8 +149,8 @@ export function n8RestoreSram(backend: ControlPlaneBackend, cart: { system: Syst
       onProgress(p.progress, p.total),
     );
     // The result names the file the cart wrote and whether the ROM's folder had to be made for it, which is how a name
-    // the card has no folder for shows: a mistyped one as often as a game that never saved, and either way the bytes may
-    // land in a folder the game never reads. So the row says where they went instead of that the restore worked.
+    // the card has no folder for shows: a mistyped one as often as a game that never saved, and either way the bytes
+    // may land in a folder the game never reads. So the row says where they went instead of that the restore worked.
     if (!wrote) return;
     return wrote.created
       ? `Warning: restored the battery to ${wrote.path}, and made that folder: is that the ROM's file name on the card?`
@@ -135,9 +158,9 @@ export function n8RestoreSram(backend: ControlPlaneBackend, cart: { system: Syst
   });
 }
 
-/** Forget the last job's snapshot and the ROM this process booted on the cart: a test seam, so one case's job does not
- *  colour the next one's rows. A project close does not need it (a rejected promise clears `busy`, and the booted ROM is
- *  read only as a name a dump or restore reaches by, so keeping it across projects is harmless). */
+/** Forget the last job's snapshot and the ROM this process booted on the cart: a test seam, so one case's job does
+ *  not colour the next one's rows. A project close does not need it (a rejected promise clears `busy`, and the booted
+ *  ROM is read only as a name a dump or restore reaches by, so keeping it across projects is harmless). */
 export function resetN8CartJob(): void {
   bootedName = null;
   update({ busy: false, op: "", bytesDone: 0, bytesTotal: 0, error: "", result: "" });

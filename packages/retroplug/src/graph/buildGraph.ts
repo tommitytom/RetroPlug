@@ -443,8 +443,8 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   if (controller) {
     // Its target resolved here ("0 is the first system"), so it follows a change of first system.
     nodes.push({ id: "controller", type: CONTROLLER_SESSION, settings: controllerSettings(controller, target) });
-    // The device's own side of the session: what it sent, and whether it is attached (docs/modular-graph-phase-c5-
-    // design.md section 5). Two nodes, one each way, so neither is in a cycle with the session.
+    // The device's own side of the session: what it sent, and whether it is attached - two nodes, one each way, so
+    // neither is in a cycle with the session (docs/modular-graph-phase-c5-design.md section 5).
     wire("surface-in.in", "controller.controllerIn");
     wire("surface-in.connected", "controller.controllerConnected");
     // Driving a cart, it sends no host MIDI; it is wired all the same, as the kernel tagged its MIDI out either way.

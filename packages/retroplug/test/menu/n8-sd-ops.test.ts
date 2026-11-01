@@ -11,7 +11,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { getN8CartJob, projectCart, resetN8CartJob } from "../../ui/screens/menu/n8SdOps";
+import { getN8CartJob, n8RestoreSram, projectCart, resetN8CartJob } from "../../ui/screens/menu/n8SdOps";
 import { nesRom, gbRom } from "../systems/fixtures";
 
 // The MenuContext App.tsx assembles from its hooks, minus React (mirrors leaves.test's ctxOf).
@@ -98,7 +98,8 @@ function installN8(cfg?: Partial<CfgStub>): { calls: { setPort: string[] }; cfg:
   };
 }
 
-test("N8 Pro (instance menu) shows the card rows when connected, and each browses a local file then runs its job", async () => {
+test("N8 Pro (instance menu) shows the card rows when connected, and each browses a local file then runs its job",
+  async () => {
   const env = installN8();
   try {
     const be = new MockBackend("/cfg");
@@ -132,7 +133,9 @@ test("N8 Pro (instance menu) shows the card rows when connected, and each browse
     await flush();
     expect(be.fileBrowserCalls[be.fileBrowserCalls.length - 1].saving).toBe(true);
     const dump = be.jobRequests[be.jobRequests.length - 1];
-    expect([dump.nodeId, dump.capability, dump.op, dump.name]).toEqual([cart.nodeId, "rp.system.sram/1", "dump", "game.nes"]);
+    expect([dump.nodeId, dump.capability, dump.op, dump.name]).toEqual([
+      cart.nodeId, "rp.system.sram/1", "dump", "game.nes",
+    ]);
     expect(be.readFile("/saves/out.srm")).toEqual(be.cartBattery);
     expect(getN8CartJob().result).toBe("Backed up the cart's battery");
 
@@ -177,6 +180,33 @@ test("a restore into a folder the card had to make warns (the ROM's file name on
   }
 });
 
+test("a file that cannot be read leaves a running job's row alone", async () => {
+  // The rows are disabled while a job runs, so nothing in the menu reaches a card operation then; a call that does must
+  // not clear the job's busy state and progress out from under it, since no job ran to report either.
+  const env = installN8();
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    n8Submenu(stores, be);
+    be.holdCartJobs = true;
+    be.cartProgress = [{ progress: 4096, total: 65_536 }];
+    be.queueBrowse("/saves/held.srm");
+    findItem(n8Submenu(stores, be), "n8-dump-sram")!.onSelect!();
+    await flush();
+    expect(getN8CartJob().busy).toBe(true);
+    n8RestoreSram(be, projectCart(stores.project.systems.view())!, "/saves/missing.srm");
+    expect(getN8CartJob().busy).toBe(true);
+    expect(getN8CartJob().error).toBe("");
+    expect(getN8CartJob().bytesDone).toBe(4096);
+    be.runCartJob();
+    be.pumpJobs();
+    await flush();
+    expect(getN8CartJob().result).toBe("Backed up the cart's battery");
+  } finally {
+    env.restore();
+  }
+});
+
 test("a handover to another NES keeps the ROM this process booted on the card", async () => {
   const env = installN8();
   try {
@@ -192,9 +222,9 @@ test("a handover to another NES keeps the ROM this process booted on the card", 
     findItem(n8Submenu(stores, be), "n8-load-rom")!.onSelect!();
     await flush();
     expect(be.cartRom?.name).toBe("game.nes");
-    // The first NES stops driving: the second drives the cart now, so the document places cart-<b> and cart-<a> is gone.
-    // The ROM booted on the card is still game.nes - the physical cart's state, not the old node's - so a dump after the
-    // handover names it, not the new system's own ROM file.
+    // The first NES stops driving: the second drives the cart now, so the document places cart-<b> and cart-<a> is
+    // gone. The ROM booted on the card is still game.nes - the physical cart's state, not the old node's - so a dump
+    // after the handover names it, not the new system's own ROM file.
     stores.project.systems.setRoleConfig(a, "mesen", { driveRealCart: false });
     expect(projectCart(stores.project.systems.view())!.nodeId).toBe(`cart-${b}`);
     be.queueBrowse("/saves/out.srm");

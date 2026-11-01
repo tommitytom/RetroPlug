@@ -529,7 +529,8 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
     // during one waits for its current step), so all three wait too.
     cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n)), busy),
     action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled), busy),
-    cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx, (n) => setN8Lookahead(N8_LOOKAHEADS[n]), busy),
+    cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx,
+      (n) => setN8Lookahead(N8_LOOKAHEADS[n]), busy),
     separator("n8-sep-status"),
     infoRow("n8-status", `Status: ${status}`),  // read-only streaming status row
   ];
@@ -546,7 +547,8 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
     items.push(
       separator("n8-sep-sd"),
       action("n8-load-rom", "Load ROM to N8...", () =>
-        browseThen(ctx, { title: "Load ROM to N8", patterns: ROM_PATTERNS }, (p) => n8LoadRom(ctx.stores.backend, cart, p)), busy),
+        browseThen(ctx, { title: "Load ROM to N8", patterns: ROM_PATTERNS },
+          (p) => n8LoadRom(ctx.stores.backend, cart, p)), busy),
       action("n8-dump-sram", "Dump SRAM to file...", () =>
         browseThen(ctx, { title: "Dump N8 SRAM", patterns: ["*.srm", "*.sav"], saving: true, defaultName: "n8.srm" },
           (p) => n8DumpSram(ctx.stores.backend, cart, p)), busy),
