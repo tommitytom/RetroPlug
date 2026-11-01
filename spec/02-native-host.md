@@ -1113,8 +1113,20 @@ reaches r8brain, so a Pico build links `retroplug-dsp-nodes` and `retroplug-dsp-
 `dspResamplePackage()` out of its registration, and has neither the resampler nor r8brain in its binary, where the
 planner's `heap` refusal is only the second line. `rp.dsp.resample` reads an `audio-buffer` resource named by its
 settings at that buffer's rate and outputs at the plan's; a recorder and a resampler on one buffer in one plan are
-unsupported (a plan orders a reader of a mutable resource only through a wire from its writer, and a settings ref has
-neither), so a driver fills a buffer before the plan that plays it.
+unsupported (the planner refuses a resource bound to a port reader when the same resource has a port writer, and a
+settings ref is not a binding it sees), so a driver fills a buffer before the plan that plays it. A rate change
+resumes where the output had reached, to within one frame, so a fresh r8brain run-in is heard from there rather than a
+gap.
+
+Two of the nodes guard their state, because nothing between a plan and the host output rejects a non-finite sample:
+`rp.dsp.biquad` resets a channel's filter and writes that block as silence when the filter comes out of it non-finite
+(a frequency above the plan rate's Nyquist makes the RBJ poles unstable, and the kernel's output clamp passes a NaN
+straight through), and `rp.dsp.dither` restarts a channel whose state came out non-finite (a non-finite input sample
+would latch its error terms for the rest of the stream). The guards are on state, not on a document's values: the
+biquad hands the kernel the frequency it is given, because a clamp would be a different kit byte. A dither node's
+channels each draw their own noise, channel `c` from the setting's seed plus `c` times a golden-ratio step, so a
+stereo patch's dither is decorrelated and channel 0 is the setting's own seed (a mono patch is unchanged); the kit
+path calls the kernel directly, so none of this moves a kit byte.
 
 ### Kit reproducibility
 

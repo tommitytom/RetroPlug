@@ -120,10 +120,19 @@ the graph test rig (the resampler is a package of its own beside it):
 - **`rp.dsp.biquad`**: state per channel; the type a setting; frequency, Q and gain (dB) params (20..20000 Hz, Q
   0.1..10, gain -24..24 dB, the last read by Peak and the shelves only), so a patch can sweep them, the coefficients
   recomputed at block start when one changes; `init` clears the state on activation and on a type change, `setup` keeps
-  it on a sweep; the clamp kept, and no other clamp added.
+  it on a sweep; the clamp kept, and no other clamp added. A frequency above the plan rate's Nyquist is left to the RBJ
+  formulas, which put the poles outside the unit circle there, so the node guards the state rather than the
+  coefficients: a channel whose filter comes out of a block with any state value not finite has that filter reset and
+  its block written as silence, so a sweep past Nyquist cannot latch a NaN into the stream and the filter recovers when
+  the frequency comes back. A clamp would be a different kit byte for the same spec (D2's identity), so there is none.
 - **`rp.dsp.dither`**: settings for the algorithm (the five, or `none`), the bit depth (1 to 16) and a `seed` (default
   `none`, 4 bits and `0x9e3779b9`); out as audio at the quantised levels. A settings commit restarts the noise. D2's kit
-  compile fills `seed` from `inputSeed` over the whole pre-trim buffer; a live patch gets a fixed default.
+  compile fills `seed` from `inputSeed` over the whole pre-trim buffer; a live patch gets a fixed default. Each
+  channel's seed is the setting's plus its index times a golden-ratio step, so the channels of one patch draw
+  uncorrelated noise (channel 0 keeps the setting's own seed, so a mono patch is unchanged); seeding them alike would
+  add the same TPDF sequence to every channel, which sums coherently and sits dead centre. A channel whose state comes
+  out of a block not finite, which a non-finite input causes, has its state restarted from the settings: the error
+  terms would otherwise stay NaN for the rest of the stream.
 - **`rp.dsp.resample`**: every port in a plan carries the same frame count at the plan's one rate, so a node cannot take
   1024 frames in and give 256 out. The resampler is a rate-aware sibling of `rp.core.buffer-player`: it takes an
   `audio-buffer` resource as a settings ref (`"buffer":"res:N"`) at that buffer's own rate and outputs at the plan
@@ -135,8 +144,8 @@ the graph test rig (the resampler is a package of its own beside it):
   on the Pico, and it is a package of its own, `rp.dsp.resample`, with a target of its own, so a Pico build also leaves
   it and r8brain out of the binary. `loop` defaults false (silence past the buffer), equal rates still go through
   r8brain and are bit-exact, and a mid-run rate change rebuilds the resamplers and carries on from the buffer position
-  the output had reached, repeating up to one input chunk. Running effects at the input rate before resampling, as the
-  kit chain does, takes two passes at two rates: D2's driver.
+  the output had reached, to within one frame, where a fresh r8brain run-in is heard. Running effects at the input rate
+  before resampling, as the kit chain does, takes two passes at two rates: D2's driver.
 
 Gain, biquad and dither declare neither `heap` nor `threads`, so they stay planable on the Pico (Phase E). Their package
 is `retroplug-dsp-nodes`, a target of its own rather than part of `retroplug-graph`, because the package brings the DSP
@@ -155,7 +164,10 @@ beside it, so only a build that wants the resampler reaches r8brain.
 - **Nodes**, through real plans (the graph rig): each node's output equals its kernel run directly; ragged block splits
   give identical output; a param change ramps over one block and a held one is exact; a plan's blocks allocate and free
   nothing counted from its first; a descriptor golden per type; resample from a 22.05 kHz buffer into a 48 kHz plan
-  matches the kernel's stream, and the Pico target refuses it.
+  matches the kernel's stream, and the Pico target refuses it. The guards have cases of their own: a low-pass swept past
+  Nyquist at 22050 Hz stays finite, is reset and recovers, and a dither fed a NaN recovers at the next block; two
+  channels of identical input through a high-pass dither differ; and a re-activation past the buffer's end wraps a loop
+  and clamps to silence without one.
 - **Unchanged**: strict parity bit for bit (nothing in the live engine path changes), `pnpm test:native`'s `lsdj-rom` and
   `risa-kit` cases plus one new case (a kit compiled twice gives identical bytes), both consumer suites, and the new
   tags under both sanitizers. The tags as built are `[dsp]`, `[dsp-nodes]` and `[dsp-resample]` in
@@ -195,9 +207,11 @@ implementers and follow-ups, Opus code reviews of tasks 3 and 5, a DeepSeek acce
     where a division rounds differently and moves kit bytes. The graph form still has to be decided (section 5's gain is
     a plain streaming gain; D2 owns the offline form).
   - **The resample node plays a buffer, it does not fill one.** A recorder and a resampler on the same buffer in one
-    plan are unsupported, so the driver fills each buffer before the plan that plays it. The node also repeats up to
-    one input chunk on a rate change, and it must not bypass `Resampler` to feed r8brain host blocks: r8brain's double
-    output is split-dependent even though the float cast hides almost all of it.
+    plan are unsupported (the planner refuses a port reader beside a writer and does not see a settings ref), so the
+    driver fills each buffer before the plan that plays it. A rate change resumes where the output had reached, so a
+    plan that changes the rate mid-run hears a fresh r8brain run-in rather than a gap. It must not bypass `Resampler`
+    to feed r8brain host blocks: r8brain's double output is split-dependent even though the float cast hides almost all
+    of it.
   - **The kit chain's order is the bytes**: window, the effects at the source rate, resample to the kit rate, quantise
     (codes), `frameAlign`, then the nibble pack. D2's graph must keep that order and the whole-buffer cut at
     `resampledLength`; the D1 baseline is its oracle. The codes are a graph's problem: `rp.dsp.dither` outputs audio at
@@ -228,7 +242,9 @@ bit for bit at every one and no parity baseline moved. Section 3's own baseline 
 record it, and every later commit had to leave all its hashes and slot lengths unchanged (stage 3's kernel move, the one
 that could have moved a byte, did not). This section records what each stage decided where the design was silent, what
 section 9 turned out to be, what building it corrected in sections 3 to 5 (each correction is in place there), and the
-findings worth naming; each stage's own report is the full record.
+findings worth naming; each stage's own report is the full record. The code reviews of those six commits asked for
+fixes, landed as follow-ups after them: where a fix changed what a stage built, its bullet below says so, and no
+follow-up moved a kit byte or a parity baseline either.
 
 ### What each stage settled
 
@@ -276,10 +292,14 @@ findings worth naming; each stage's own report is the full record.
   type is a setting, its frequency, Q and gain (dB) are params, `setup` keeps state on a sweep and `init` clears it on
   activation or a type change, and the node hands the kernel an out-of-range frequency rather than clamping, because a
   clamp would be a different kit byte. Dither's defaults are `none`, 4 bits and seed `0x9e3779b9`; a settings commit
-  restarts the noise. Its per-channel state is about 5 KB on LP64 (`std::mt19937` is 624 words of 8-byte
-  `uint_fast32_t`), sized from `sizeof` and the settings' channel count. All three follow `channels` through
-  `adjust_layout`, keep their kernel state in tail memory (gain's one float in a member), and declare neither `heap` nor
-  `threads`, so all three plan on the Pico.
+  restarts the noise, and each channel's seed is the setting's plus its index times a golden-ratio step. Its per-channel
+  state is about 5 KB on LP64 (`std::mt19937` is 624 words of 8-byte `uint_fast32_t`), sized from `sizeof` and the
+  settings' channel count. All three follow `channels` through `adjust_layout`, keep their kernel state in tail memory
+  (gain's one float in a member), and declare neither `heap` nor `threads`, so all three plan on the Pico. Two guards
+  came out of the review, both on state rather than on a document's values: a biquad channel whose filter comes out of
+  a block not finite is reset and its block silenced, because a frequency above the plan rate's Nyquist makes the RBJ
+  poles unstable and the kernel's clamp writes a NaN through; and a dither channel whose state comes out not finite is
+  restarted, because a non-finite input sample would latch the error terms for the rest of the stream.
 - **5, the resampler.** It is a package of its own, `rp.dsp.resample`, with a target of its own
   (`retroplug-dsp-resample-nodes`), because a node that reaches r8brain must be separable at link time, not only
   refused by the planner; its package id and its type id are the same string, which is legal because the registry keeps
@@ -290,8 +310,8 @@ findings worth naming; each stage's own report is the full record.
   `rp.core.buffer-recorder` and a resampler on one buffer in one plan are unsupported, and D2 fills a buffer before the
   plan that plays it. `loop` defaults false (unlike the player's true), the buffer's end is silence or a wrap into the
   same stream, equal rates still go through r8brain and are bit-exact, and a rate change rebuilds the resamplers and
-  resumes from the output's buffer position, `origin + floor(emitted * (inRate / oldRate))`, so r8brain's run-in is
-  heard again and up to one input chunk repeats. `node.hpp` gained `resource_ref::audio()`, and a resource ref's schema
+  resumes from the output's buffer position, `origin + floor(emitted * (inRate / oldRate))`, so a fresh r8brain run-in
+  is heard from there. `node.hpp` gained `resource_ref::audio()`, and a resource ref's schema
   became an inline string (an rfl Parser specialization) so descriptors no longer carry a compiler-dependent `$defs`
   key.
 - **6, docs.** This section, the specs, AGENTS.md and `docs/lsdj.md` carry the build.
@@ -340,9 +360,10 @@ findings worth naming; each stage's own report is the full record.
   an unsalted hash and `init`'s salt, and its codes are `uint16_t`; Sierra Lite and JJN keep the last two / four
   errors; `normalizedGain` is a reciprocal multiply the kit path must call.
 - **Section 5**: gain ramps at block rate to the block's last value and snaps on activation; the biquad keeps state when
-  its coefficients move; dither's defaults and its settings-commit restart are stated; `rp.dsp.resample` is a package
-  (and target) of its own whose buffer is a settings ref, built in `activate`, with `loop` false, the recorder caveat,
-  and the repeat-at-a-rate-change behaviour.
+  its coefficients move and guards the state a frequency above Nyquist poisons; dither's defaults, its settings-commit
+  restart and its per-channel seeds are stated, and a non-finite state restarts a channel; `rp.dsp.resample` is a
+  package (and target) of its own whose buffer is a settings ref, built in `activate`, with `loop` false, the recorder
+  caveat, and the resume-at-a-rate-change behaviour.
 
 ### Found while building
 
@@ -377,12 +398,13 @@ findings worth naming; each stage's own report is the full record.
   bits and every split, a `process` allocating nothing once warmed with the resampler counted from its first chunk, the
   verbatim references of every dither algorithm and of both padded error diffusions, the resampler's split
   independence, a failed `init` throwing with `ready()` false, the seed golden), `[dsp-nodes]`
-  (`test/graph/DspNodes.test.cpp`, 13 cases: each node against its kernel through a real plan, ragged splits, the gain
-  ramp and snap, the biquad's sweep and type change, the dither's seed and channel sizing, a block counted from the
-  plan's first block, and the descriptor goldens) and `[dsp-resample]`
-  (`test/graph/DspResample.test.cpp`, 12 cases plus the shared descriptor case: a 22.05 kHz buffer into a 48 kHz plan
-  and a 48 kHz one into the kit rate, at six splits, a loop committed after the buffer ran out, a rate change, a block
-  counted from the plan's first block and the Pico refusal). It went from 208 cases to 252 and from 92566 assertions to
-  292291.
+  (`test/graph/DspNodes.test.cpp`, 16 cases: each node against its kernel through a real plan, ragged splits, the gain
+  ramp and snap, the biquad's sweep, type change and its state guard past Nyquist, the dither's seed and channel sizing,
+  its per-channel noise and its non-finite-input restart, a block counted from the plan's first block, and the
+  descriptor goldens) and `[dsp-resample]`
+  (`test/graph/DspResample.test.cpp`, 13 cases plus the shared descriptor case: a 22.05 kHz buffer into a 48 kHz plan
+  and a 48 kHz one into the kit rate, at six splits, a loop committed after the buffer ran out, a rate change, a
+  re-activation past the buffer's end with `loop` wrapping and without it clamping, a block counted from the plan's
+  first block and the Pico refusal). It went from 208 cases to 256 and from 92566 assertions to 299048.
 - The kit baseline ran in a fresh process and under ASan, hash for hash, and the nodes and kernels under ASan and TSan
   with no report; D1 itself re-recorded nothing, and the follow-ups' two-slot cases moved no existing bank.

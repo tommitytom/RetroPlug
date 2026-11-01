@@ -97,12 +97,14 @@ The rules below are the parts that don't fit those.
   (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds eight `[profile]` cases
   (`tools/run-profile.sh unit`).
   `retroplug-graph-test` holds the DSP library and its nodes: the kernels are chunk-exact and allocation-free in
-  `process` once warmed, the resampler from its first chunk, the padded Sierra Lite and JJN references included
-  (`[dsp]`); each `rp.dsp` node matches its kernel through a real plan, a block counted from the plan's first block
-  allocating nothing, a descriptor golden per type, and gain/biquad/dither all plan on the Pico (`[dsp-nodes]`);
-  and `rp.dsp.resample` plays a 22.05 kHz buffer into a 48 kHz plan and a 48 kHz one into the kit rate, at six splits,
-  takes a loop committed after its buffer ran out, carries on after a rate change and is refused on the Pico
-  (`[dsp-resample]`).
+  `process` once warmed, the resampler from its first chunk, the verbatim references of every dither algorithm and of
+  both padded error diffusions included (`[dsp]`); each `rp.dsp` node matches its kernel through a real plan, a block
+  counted from the plan's first block allocating nothing, a descriptor golden per type, a biquad whose filter a sweep
+  past Nyquist poisons reset and recovering, a dither's channels drawing their own noise and a non-finite input
+  restarting a channel, and gain/biquad/dither all plan on the Pico (`[dsp-nodes]`); and `rp.dsp.resample` plays a
+  22.05 kHz buffer into a 48 kHz plan and a 48 kHz one into the kit rate, at six splits, takes a loop committed after
+  its buffer ran out, carries on after a rate change, wraps a loop and clamps to silence past the buffer's end when
+  re-activated and is refused on the Pico (`[dsp-resample]`).
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive
   `PluginExporter::reinitParameters` over a toy plugin.
