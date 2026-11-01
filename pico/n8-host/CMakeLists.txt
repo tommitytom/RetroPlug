@@ -34,6 +34,7 @@ endif()
 add_executable(n8_host
     main.c
     edio.c
+    box.c
     # Stage-1 MIDI parser, reused as-is (the bridge forwards its decoded messages).
     ${CMAKE_CURRENT_LIST_DIR}/../midi-in/midi.c
 )
@@ -48,6 +49,7 @@ target_link_libraries(n8_host
     pico_stdlib
     hardware_uart
     tinyusb_host
+    hardware_watchdog
 )
 
 if(RP_NATIVE_USB)
@@ -62,6 +64,24 @@ else()
         ${PICO_TINYUSB_PATH}/src/portable/raspberrypi/pio_usb/hcd_pio_usb.c)
     target_compile_definitions(n8_host PRIVATE PIO_USB_USE_TINYUSB)
     target_link_libraries(n8_host pico_pio_usb)
+endif()
+
+# -DN8_TUSB_DEBUG=2 traces TinyUSB's attach / enumeration on the console - the first thing to
+# look at when the N8 never mounts (no attach line at all = nothing electrical on D+/D-).
+if(DEFINED N8_TUSB_DEBUG)
+    target_compile_definitions(n8_host PRIVATE CFG_TUSB_DEBUG=${N8_TUSB_DEBUG})
+endif()
+
+# Experiment knobs, each a plain #define in main.c with a default: N8_MENU_TRIES (how many
+# '*t' attempts before giving up on the menu).
+foreach(knob N8_MENU_TRIES N8_APU_LAT N8_EXP_VOL N8_TEST_HOOKS)
+    if(DEFINED ${knob})
+        target_compile_definitions(n8_host PRIVATE ${knob}=${${knob}})
+    endif()
+endforeach()
+# The SD path of the ROM to boot (a string, so it is quoted here): -DN8_ROM_PATH=usb-games/x.nes
+if(DEFINED N8_ROM_PATH)
+    target_compile_definitions(n8_host PRIVATE N8_ROM_PATH="${N8_ROM_PATH}")
 endif()
 
 # Console (printf) over UART0 (GP0/GP1) for the debug probe. Native USB stdio stays off:

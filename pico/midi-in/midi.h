@@ -33,8 +33,15 @@ typedef struct {
 
 typedef void (*midi_sink)(const midi_message *msg, void *user);
 
+// Optional SysEx pass-through: when set, every byte of a SysEx - the F0, the payload and the F7 -
+// goes here in order (realtime bytes inside it still go to the message sink). A SysEx cut short
+// by another status byte gets a synthesised F7 first, so a consumer never sees one left open.
+// Unset (the default), the payload is skipped as before.
+typedef void (*midi_sysex_sink)(uint8_t byte, void *user);
+
 typedef struct {
     midi_sink sink;
+    midi_sysex_sink sysex;   // NULL = skip SysEx payloads
     void    *user;
     uint8_t  running_status; // last channel-voice status, for running status
     uint8_t  cur_status;     // status whose data bytes are being collected
@@ -45,6 +52,7 @@ typedef struct {
 } midi_parser;
 
 void midi_parser_init(midi_parser *p, midi_sink sink, void *user);
+void midi_parser_set_sysex_sink(midi_parser *p, midi_sysex_sink sysex);
 void midi_parser_byte(midi_parser *p, uint8_t b);
 
 #endif // MIDI_H

@@ -107,3 +107,12 @@ The parser is pure C, so it can be exercised offline:
 gcc -std=c11 -I. -o /tmp/miditest midi.c midi_print.c host_test.c
 /tmp/miditest <raw-midi-bytes-file>
 ```
+
+`parser_test.c` asserts instead of printing - running status, realtime bytes inside a message,
+and the SysEx pass-through the N8 bridge uses (`midi_parser_set_sysex_sink`: F0 / payload / F7
+in order, realtime inside still to the message sink, a synthesised F7 when another status cuts a
+SysEx short). Exit 0 = every case passed:
+
+```sh
+gcc -std=c11 -Wall -I. -o /tmp/parser_test midi.c parser_test.c && /tmp/parser_test
+```

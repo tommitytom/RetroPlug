@@ -1,4 +1,40 @@
-# Pico N8 bridge: memWR to the cart FIFO (0x1810000) never reaches the running NES code
+# Pico N8 bridge: the cart-FIFO write that "never reached" the NES - RESOLVED 2026-10-30
+
+## Resolution: it was the probe reading cart SRAM while the menu booted
+
+Not PIO-USB, not wire timing, not framing. The firmware's mount-time probe read 16 bytes of
+cart SRAM (`memRD 0x1000000`) the instant the N8 enumerated - while its menu was still booting.
+A cart-memory access is a DMA that takes the bus off the console, and this one left the menu's
+FIFO command channel dead until the next power-cycle. Measured with the Pico running across a NES
+power-cycle and only the probe varied (interleaved trials):
+
+| on mount, before `*t` | menu answered `*t` |
+|---|---|
+| nothing, or `CMD_STATUS` + `SYS_INF` | **8 / 8** |
+| + a 16-byte SRM read | **1 / 10** (the one pass had a 17 s outage, not the usual 5) |
+
+With the read removed, `n8-host/loop.sh` boots the MIDI ROM through the menu with no PC, 5/5 in
+~8 s (`menu up -> install (*n) -> boot (*s)`, confirmed on the video capture). The August
+"cleanest repro" below did a full SRM write + read-back before `*t`, so it carried the same
+poison - which is why every write-shape, chunking and DTR variant "failed": none of them was the
+variable. The PC never touches cart memory before `*t`, which is why the host always worked.
+
+Three other things had to be fixed on the way, and each looked like this bug:
+
+- **Missing USB host pull-downs + RP2350-E9.** D+/D- were wired straight to GP2/GP3, leaving the
+  chip's internal pull-downs, which E9 (this board is revision A2) can overpower. A NES
+  power-cycle under a live link then went unnoticed forever. 5k1 to GND on each fixed it.
+- **The probe halting the core.** OpenOCD leaves `C_DEBUGEN` set, and TinyUSB's `TU_ASSERT`
+  executes `BKPT` when it is - so a failed transfer silently parked the core.
+- **Test-loop races.** Flashing during a power-cycle tore enumeration; and once things worked, the
+  previous firmware booted the ROM before the new one ran. `loop.sh` now halts the Pico first.
+
+Details of all three: [`n8-host/README.md`](n8-host/README.md). Everything below is the original
+(wrong) analysis, kept as a record of what was ruled out and how.
+
+---
+
+## Original write-up (2026-08)
 
 The Raspberry Pi Pico 2 (RP2350) N8 bridge (`pico/n8-host/`) hosts the Everdrive N8 Pro over
 Pico-PIO-USB + TinyUSB `cdc_host` and speaks Edio. **Reads and RAM writes work; writes to the

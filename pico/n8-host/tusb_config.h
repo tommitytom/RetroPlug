@@ -9,7 +9,9 @@
 #endif
 
 #define CFG_TUSB_OS            OPT_OS_NONE
-#define CFG_TUSB_DEBUG         0     // bump to 2 to trace USB enumeration on the console
+#ifndef CFG_TUSB_DEBUG
+#define CFG_TUSB_DEBUG         0     // 2 traces USB enumeration: configure with -DN8_TUSB_DEBUG=2
+#endif
 
 //------------- Host stack: native USB (rhport 0) or PIO-USB (rhport 1) -------------//
 // -DRP_NATIVE_USB=ON routes the host controller to the RP2350's SILICON USB controller

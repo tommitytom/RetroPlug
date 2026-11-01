@@ -6,8 +6,24 @@
 #define EDIO_TIMEOUT_MS 2000
 
 static uint8_t g_idx = 0;
+static void (*idle_hook)(void) = 0;
 
-void edio_bind(uint8_t cdc_idx) { g_idx = cdc_idx; }
+void edio_set_idle_hook(void (*fn)(void)) { idle_hook = fn; }
+
+// Every wait in here pumps the USB host and the idle hook, which keeps the watchdog fed and the
+// status LED alive through the long ones (a ROM upload, the menu loading a ROM off the SD).
+static void pump(void) {
+    tuh_task();
+    if (idle_hook) idle_hook();
+}
+
+// The link is up from edio_bind() until edio_unbind() (the CDC unmount): while it is down every
+// wait below fails at once, instead of running out its timeout against a device that has gone -
+// up to 12 s for a menu install, during which the N8 may already be back as a new device.
+static volatile bool link_up = false;
+
+void edio_bind(uint8_t cdc_idx) { g_idx = cdc_idx; link_up = true; }
+void edio_unbind(void) { link_up = false; }
 
 static inline uint32_t now_ms(void) { return to_ms_since_boot(get_absolute_time()); }
 
@@ -16,7 +32,8 @@ static inline uint32_t now_ms(void) { return to_ms_since_boot(get_absolute_time(
 static bool edio_read_to(uint8_t *buf, uint32_t len, uint32_t timeout_ms) {
     uint32_t got = 0, start = now_ms();
     while (got < len) {
-        tuh_task();
+        pump();
+        if (!link_up) return false;
         uint32_t n = tuh_cdc_read(g_idx, buf + got, len - got);
         if (n) { got += n; start = now_ms(); }
         else if (now_ms() - start > timeout_ms) return false;
@@ -28,7 +45,8 @@ bool edio_write(const uint8_t *data, uint32_t len) {
     uint32_t avail_before = tuh_cdc_write_available(g_idx);   // TX FIFO free space when idle
     uint32_t sent = 0, start = now_ms();
     while (sent < len) {
-        tuh_task();
+        pump();
+        if (!link_up) return false;
         uint32_t n = tuh_cdc_write(g_idx, data + sent, len - sent);
         if (n) {
             sent += n;
@@ -43,7 +61,8 @@ bool edio_write(const uint8_t *data, uint32_t len) {
     // the TX FIFO fully drains (free space back to avail_before) = the transfer completed.
     start = now_ms();
     while (now_ms() - start < 500) {
-        tuh_task();
+        pump();
+        if (!link_up) return false;
         tuh_cdc_write_flush(g_idx);
         if (tuh_cdc_write_available(g_idx) >= avail_before) return true;   // TX drained = transfer done
     }
@@ -53,7 +72,8 @@ bool edio_write(const uint8_t *data, uint32_t len) {
 bool edio_read(uint8_t *buf, uint32_t len) {
     uint32_t got = 0, start = now_ms();
     while (got < len) {
-        tuh_task();
+        pump();
+        if (!link_up) return false;
         uint32_t n = tuh_cdc_read(g_idx, buf + got, len - got);
         if (n) {
             got += n;
@@ -88,39 +108,36 @@ bool edio_sys_info(uint8_t out[64]) {
     return edio_read(out, 64);
 }
 
+// Each Edio frame goes out as ONE edio_write. Pico-PIO-USB runs host transactions from its 1 ms
+// start-of-frame interrupt, one packet per endpoint per frame, so every separate write costs a
+// whole frame: memWR as five writes (cmd / addr / len / exec / data) took 5 ms, one write takes
+// one frame. The five-way split was an attempt at the "Pico can't write the cart FIFO" bug, which
+// turned out to be the probe reading cart SRAM during menu boot (../pico-n8-fifo-write-bug.md).
+#define EDIO_FRAME_MAX 256
+
+static uint32_t frame_hdr(uint8_t *f, uint8_t cmd, uint32_t addr, uint32_t len) {
+    f[0] = 0x2b; f[1] = 0xd4; f[2] = cmd; f[3] = (uint8_t)(cmd ^ 0xff);
+    put32(f + 4, addr);
+    put32(f + 8, len);
+    f[12] = 0;   // exec
+    return 13;
+}
+
 // memRD: CMD + addr(tx32) + len(tx32) + exec(0), then read `len` bytes.
 bool edio_mem_rd(uint32_t addr, uint8_t *buf, uint32_t len) {
-    if (!tx_cmd(EDIO_CMD_MEM_RD)) return false;
-    uint8_t h[9];
-    put32(h, addr);
-    put32(h + 4, len);
-    h[8] = 0;
-    if (!edio_write(h, sizeof h)) return false;
+    uint8_t f[13];
+    if (!edio_write(f, frame_hdr(f, EDIO_CMD_MEM_RD, addr, len))) return false;
     return edio_read(buf, len);
 }
 
 // memWR: CMD + addr(tx32) + len(tx32) + exec(0) + data. Fire-and-forget (no status).
-// The frame (cmd + 9-byte header + payload) MUST go out as ONE contiguous CDC write.
-// The host's kernel CDC driver coalesces its separate tx calls into one bulk transfer,
-// but the Pico's edio_write flushes each part on its own - and the cart FIFO (a streaming
-// register, unlike RAM) mis-handles a write split across USB transfers with gaps: memWR to
-// RAM (SRM) still round-trips, but a split FIFO write is silently dropped by the running
-// NES code (menu *t/*v got zero reply until this was coalesced). So coalesce here.
 bool edio_mem_wr(uint32_t addr, const uint8_t *data, uint32_t len) {
     if (len == 0) return true;
-    // Match the host's exact write chunking (observed via strace of a working FIFO memWR):
-    // FIVE separate transfers - cmd, addr, len, exec, data - with exec in its own 1-byte
-    // write. edio_write drains each to completion, so each phase is its own USB transfer.
-    // The cart FIFO needs this staging (a coalesced or cmd+9-header write is silently
-    // dropped by the FIFO, though it works for RAM). See ../pico-n8-fifo-write-bug.md.
-    uint8_t a[4], l[4], e = 0;
-    put32(a, addr);
-    put32(l, len);
-    if (!tx_cmd(EDIO_CMD_MEM_WR)) return false;   // 2b d4 1a e5
-    if (!edio_write(a, 4)) return false;          // addr (LE)
-    if (!edio_write(l, 4)) return false;          // len  (LE)
-    if (!edio_write(&e, 1)) return false;         // exec
-    return edio_write(data, len);                 // payload
+    uint8_t f[EDIO_FRAME_MAX];
+    uint32_t n = frame_hdr(f, EDIO_CMD_MEM_WR, addr, len);
+    if (n + len > sizeof f) return edio_write(f, n) && edio_write(data, len);
+    memcpy(f + n, data, len);
+    return edio_write(f, n + len);
 }
 
 bool edio_fifo_wr(const uint8_t *data, uint32_t len) {
@@ -149,7 +166,8 @@ static void edio_flush_input(void) {
     uint8_t tmp[64];
     uint32_t idle = now_ms();
     while (now_ms() - idle < 20) {          // 20ms with nothing = drained
-        tuh_task();
+        pump();
+        if (!link_up) return;
         if (tuh_cdc_read(g_idx, tmp, sizeof tmp)) idle = now_ms();
     }
 }
@@ -175,4 +193,77 @@ int edio_menu_install(const char *path) {
 
 void edio_menu_start(void) {
     menu_cmd('s');   // fire-and-forget: the menu core drops out and the game runs
+}
+
+// --- SD-card file write (fileOpen + fileWrite + fileClose, as the PC host's Edio.cpp does) ---
+
+#define EDIO_CMD_F_FOPN   0xC9
+#define EDIO_CMD_F_FWR    0xCC
+#define EDIO_CMD_F_FCLOSE 0xCE
+#define FA_WRITE          0x02
+#define FA_CREATE_ALWAYS  0x08
+#define FS_MAKEPATH       0x80    // create parent dirs if missing
+#define ACK_BLOCK         1024    // the device releases each fileWrite block with a 0 ack byte
+#define SD_TIMEOUT_MS     5000    // an SD write or a FAT update can take a while
+
+int edio_file_put(const char *path, const uint8_t *data, uint32_t len) {
+    uint8_t f[4 + 1 + 2 + 128];
+    uint32_t plen = (uint32_t)strlen(path);
+    if (plen > 128) return -1;
+    f[0] = 0x2b; f[1] = 0xd4; f[2] = EDIO_CMD_F_FOPN; f[3] = (uint8_t)(EDIO_CMD_F_FOPN ^ 0xff);
+    f[4] = FA_WRITE | FA_CREATE_ALWAYS | FS_MAKEPATH;
+    f[5] = (uint8_t)plen; f[6] = (uint8_t)(plen >> 8);
+    memcpy(f + 7, path, plen);
+    if (!edio_write(f, 7 + plen)) return -1;
+    int st = edio_get_status();
+    if (st != 0) return st;
+
+    f[2] = EDIO_CMD_F_FWR; f[3] = (uint8_t)(EDIO_CMD_F_FWR ^ 0xff);
+    put32(f + 4, len);
+    if (!edio_write(f, 8)) return -1;
+    for (uint32_t off = 0; off < len; off += ACK_BLOCK) {
+        uint8_t ack = 0xff;
+        if (!edio_read_to(&ack, 1, SD_TIMEOUT_MS)) return -1;
+        if (ack != 0) return ack;
+        uint32_t n = len - off < ACK_BLOCK ? len - off : ACK_BLOCK;
+        if (!edio_write(data + off, n)) return -1;
+    }
+    st = edio_get_status();
+    if (st != 0) return st;
+
+    if (!tx_cmd(EDIO_CMD_F_FCLOSE)) return -1;
+    return edio_get_status();
+}
+
+#define EDIO_CMD_F_FRD    0xCA
+#define FA_READ           0x01
+
+// Read exactly `len` (<= 512) bytes from the start of a file: fileOpen(FA_READ) + one fileRead
+// block (CMD_F_FRD + len, a 0 status byte, then the data) + fileClose. 0 = ok; a missing file
+// fails at the open with the device's status.
+int edio_file_get(const char *path, uint8_t *data, uint32_t len) {
+    uint8_t f[4 + 1 + 2 + 128];
+    uint32_t plen = (uint32_t)strlen(path);
+    if (plen > 128 || len > 512) return -1;
+    f[0] = 0x2b; f[1] = 0xd4; f[2] = EDIO_CMD_F_FOPN; f[3] = (uint8_t)(EDIO_CMD_F_FOPN ^ 0xff);
+    f[4] = FA_READ;
+    f[5] = (uint8_t)plen; f[6] = (uint8_t)(plen >> 8);
+    memcpy(f + 7, path, plen);
+    if (!edio_write(f, 7 + plen)) return -1;
+    int st = edio_get_status();
+    if (st != 0) return st;
+
+    f[2] = EDIO_CMD_F_FRD; f[3] = (uint8_t)(EDIO_CMD_F_FRD ^ 0xff);
+    put32(f + 4, len);
+    int rc = 0;
+    uint8_t resp = 0xff;
+    if (!edio_write(f, 8) || !edio_read_to(&resp, 1, SD_TIMEOUT_MS)) rc = -1;
+    else if (resp != 0) rc = resp;
+    else if (!edio_read_to(data, len, SD_TIMEOUT_MS)) rc = -1;
+
+    if (tx_cmd(EDIO_CMD_F_FCLOSE)) {
+        int cst = edio_get_status();
+        if (rc == 0) rc = cst;
+    }
+    return rc;
 }
