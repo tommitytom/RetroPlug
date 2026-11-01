@@ -243,6 +243,16 @@ TEST_CASE("writes submitted while a real audio thread runs blocks complete, each
             std::this_thread::sleep_for(std::chrono::microseconds(200));
         }
     });
+    // A failing REQUIRE below throws: the thread must be stopped and joined on the way out, or std::thread's
+    // destructor calls std::terminate and the failure is never reported.
+    struct StopOnExit {
+        std::atomic<bool>& stop;
+        std::thread&        thread;
+        ~StopOnExit() {
+            stop.store(true, std::memory_order_release);
+            if (thread.joinable()) thread.join();
+        }
+    } stopOnExit{stop, audio};
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
     for (std::uint8_t k = 1; k <= 16; ++k) {
         const std::vector<std::uint8_t> written = {k, static_cast<std::uint8_t>(k * 3), static_cast<std::uint8_t>(~k)};
@@ -531,6 +541,16 @@ TEST_CASE("a job a device thread runs reports its progress once per change, then
                 record->state.store(rp::host::Job::Failed, std::memory_order_release);
             }
         });
+        // Let the device finish even when the deadline passed before its last acknowledgement, and join it on the way
+        // out of any failure too: a joinable thread's destructor calls std::terminate, which would hide the failure.
+        struct FinishOnExit {
+            std::atomic<std::uint32_t>& acknowledged;
+            std::thread&                device;
+            ~FinishOnExit() {
+                acknowledged.store(4, std::memory_order_release);
+                if (device.joinable()) device.join();
+            }
+        } finish{acknowledged, device};
         std::vector<std::uint32_t> seen;
         std::optional<rp::host::JobCompletion> final;
         while (!final && std::chrono::steady_clock::now() < deadline) {
@@ -550,7 +570,6 @@ TEST_CASE("a job a device thread runs reports its progress once per change, then
             }
             std::this_thread::yield();
         }
-        device.join();
         REQUIRE(final);
         const std::vector<std::uint32_t> steps = {1, 2, 3}, stepsAndLast = {1, 2, 3, 4};
         CHECK((seen == steps || (succeed && seen == stepsAndLast)));
