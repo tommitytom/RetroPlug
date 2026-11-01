@@ -237,8 +237,9 @@ export interface Backend {
     onProgress?: (p: CapabilityProgress) => void,
   ): Promise<CapabilityResults[O]>;
 
-  /** Settle what has completed since the last look: the control plane's tick calls it (a no-op while nothing is
-   *  pending). Returns how many are still pending. */
+  /** Settle what has completed since the last look: the control plane's tick calls it, and it still drains the
+   *  completions a close left owed (a no-op only when nothing is pending and nothing is owed). Returns how many are
+   *  still pending. */
   pumpJobs(): number;
 
   /** Reject every pending capability promise with `reason`: the project closed, and the nodes they named with it. */

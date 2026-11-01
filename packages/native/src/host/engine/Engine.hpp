@@ -384,11 +384,13 @@ private:
     // the rp.stage/1 interface the node answers (a system node hands them to its core's ingress, a device node to its
     // device). See DspCommand::stageNodeMidi: the id is the document's, so the engine reads no node's type. [audio]
     bool stageNodeMidi(const std::string& nodeId, const std::uint8_t* bytes, std::size_t len);
-    // Apply a capability write to the core `table` names (the plan current at this point of the drain), never from the
-    // calling thread of submitJob - which is what separates it from the debug facet's writeCpu (a live-core write, valid
-    // only when the audio thread is stopped). Deliberately unguarded beyond bounds: writing a running core's RAM CAN
-    // confuse it, because the emulated program has its own invariants over those bytes. That is the point of the
-    // feature. Stores the job's state and touches it no more once that state is final; allocates and frees nothing.
+    // Apply a capability write to the core `table` names (the plan current at this point of the drain), at a block
+    // boundary and never mid-block - which is what separates it from the debug facet's writeCpu (a live-core write,
+    // valid only when the audio thread is stopped). It runs on the block thread at the drain, or on the control
+    // thread when the push flushes inline while no audio thread owns the cores. Deliberately unguarded beyond bounds:
+    // writing a running core's RAM CAN confuse it, because the emulated program has its own invariants over those
+    // bytes. That is the point of the feature. Stores the job's state and touches it no more once that state is final;
+    // allocates and frees nothing.
     void applyJob(rp::host::Job& job, const rp::host::SystemTable& table);
     // The block's end, after the publish: each write applied since the last block that ran is done if `ran` (the table
     // of the plan that ran it) still has its system, so its region is published, and failed (removed) if not.

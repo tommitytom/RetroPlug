@@ -30,9 +30,10 @@ class SystemBase;
 //     before it reads the rest.
 //
 // A job's record is the control thread's: made by submitJob (a device node's included) or adoptJob, freed once its
-// state is terminal by the next sweep (drainJobs, submitJob and Engine::writeRam each sweep first), or by the engine's
-// destruction. Another thread only writes the record's state (and, a device thread, its progress, result and
-// error), never frees it, and never touches it after storing a terminal state. So the block thread allocates and frees
+// state is terminal by the next sweep (drainJobs, submitJob, adoptJob and Engine::writeRam each sweep first), or by the
+// engine's destruction. Another thread only writes the fields the hand-off covers, never frees it, and never touches it
+// after storing a terminal state: the block thread writes a write's `core` and `failure` at the apply and its state at
+// the confirm, a device thread its progress, result, error and failure. So the block thread allocates and frees
 // nothing for a job: a write's bytes are allocated on the control thread with the record and freed back on it.
 //
 // Two rules a device's jobs keep, beside the engine's own bound (Engine::kMaxJobs outstanding, engine-wide, the
@@ -46,11 +47,13 @@ class SystemBase;
 //     job once per drain whose progress changed since the last, with the value it finds then: a job that reports in a
 //     tight loop while nobody drains accumulates nothing, and its listener sees the latest value, not every step.
 
-namespace rp::host {
-
+// The three interface ids a job may name, as the descriptors spell them. Defined here, outside the namespace, because
+// the job model is what carries them.
 #define RP_SYSTEM_MEMORY_INTERFACE "rp.system.memory/1"
 #define RP_SYSTEM_SRAM_INTERFACE "rp.system.sram/1"
 #define RP_SYSTEM_ROM_INTERFACE "rp.system.rom/1"
+
+namespace rp::host {
 
 // What the control plane asks for. The arguments an operation does not read are ignored.
 struct JobRequest {
@@ -87,7 +90,8 @@ struct JobCompletion {
 struct Job {
     enum State : std::uint8_t {
         Queued,   // taken, not yet applied (a write in the ring, a device job not yet finished)
-        Applied,  // a write the block thread has applied, waiting for the block that publishes it (block thread only)
+        Applied,  // a write applied, waiting for the block that publishes it (the control thread's quiescent flush,
+                  // or the block thread's confirm, finishes it)
         Done,     // finished: `result` holds its bytes
         Failed,   // finished: `failure` says why (and `error`, for one a device thread wrote)
     };

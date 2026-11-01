@@ -578,9 +578,11 @@ export class MockBackend implements Backend {
   }
 
   // --- capability jobs (src/capability.ts) over the mock's model: a system node is sys-<id>, its memory region "ram"
-  // is setRam's buffer, its battery readSram's, its ROM the seeded file its ROM path names. As natively: a read
-  // completes at once, a write at once while no audio runs and at the next runBlock() while it does (audioRunning),
-  // and at most 64 jobs are outstanding.
+  // is setRam's buffer, its battery what setSram / readSram answer and its ROM the seeded file its ROM path names. As
+  // natively: a read completes at once, a write at once while no audio runs and at the next runBlock() while it does
+  // (audioRunning), and at most 64 jobs are outstanding. A node the document places that is not a system presents no
+  // capability; a full command ring is not modelled (that is the ring's occupancy, which the mock does not track, and
+  // commands other than writes fill it too).
 
   /** Model a running audio thread: a write then completes at the next runBlock(), not at its submission. */
   audioRunning = false;
@@ -638,7 +640,12 @@ export class MockBackend implements Backend {
     if (this.cartNodes.has(request.nodeId)) return this.submitCartJob(request);
     const m = /^sys-([1-9][0-9]*)$/.exec(request.nodeId);
     const system = m ? Number(m[1]) : 0;
-    if (!this.systems.has(system)) return { error: `the running graph has no node ${request.nodeId}` };
+    if (!this.systems.has(system)) {
+      // A node the document places but which is not a system node presents no capability, as native refuses it; an id
+      // it does not place has no node at all.
+      if (this.graphNode(request.nodeId)) return { error: `node ${request.nodeId} presents no ${request.capability}` };
+      return { error: `the running graph has no node ${request.nodeId}` };
+    }
     // An id is taken only by a job accepted, as natively: a refusal takes none.
     const now = (bytes: Uint8Array): JobSubmitResult => {
       const id = this.nextJobId++;
@@ -668,8 +675,10 @@ export class MockBackend implements Backend {
       return { id };
     }
     if (key === "rp.system.sram/1 dump") {
-      const sram = this.readSram(system);
-      return sram ? now(sram) : refuse(`node ${request.nodeId} publishes no battery`);
+      // The battery as the model holds it, not through readSram: a capability dump reads what native publishes, not the
+      // system-id RPC, so it is not a battery read any test counting readSramCalls should see.
+      if (this.noBattery.has(system)) return refuse(`node ${request.nodeId} publishes no battery`);
+      return now(new Uint8Array(this.sramOverrides.get(system) ?? sramBytesFor(system)));
     }
     if (key === "rp.system.sram/1 restore")
       return refuse(`node ${request.nodeId} restores no battery in place: an emulated system's battery is restored by rebuilding it with the bytes as its seed`);

@@ -931,7 +931,9 @@ rp::host::JobSubmit Engine::submitJob(rp::host::JobRequest r) {
         for (std::size_t i = 0; i < regions.size(); ++i)
             if (r.region == regions[i].name) index = i;
         if (index == regions.size()) return refuse("node " + r.nodeId + " has no memory region '" + r.region + "'");
-        const auto notPublished = [&] { return refuse("region " + r.region + " of node " + r.nodeId + " is not published"); };
+        const auto notPublished = [&] {
+            return refuse("region " + r.region + " of node " + r.nodeId + " is not published");
+        };
         if (r.op == "read") {
             // One read of the published copy, which is its own bound: a block republishing it at a new size between
             // a size query and the read would otherwise refuse a read that was in range.
@@ -1106,8 +1108,12 @@ void Engine::sweepJobs() {
                 c.bytes = std::move(j.result);
             } else {
                 switch (j.failure.load(std::memory_order_relaxed)) {
-                    case Job::OutOfRange: c.error = "the write ran past the region of node " + j.nodeId + " as it applied"; break;
-                    case Job::Removed:    c.error = "node " + j.nodeId + " left the plan before the job completed"; break;
+                    case Job::OutOfRange:
+                        c.error = "the write ran past the region of node " + j.nodeId + " as it applied";
+                        break;
+                    case Job::Removed:
+                        c.error = "node " + j.nodeId + " left the plan before the job completed";
+                        break;
                     case Job::Discarded:  c.error = "the engine stopped before the job ran"; break;
                     case Job::Overflow:   c.error = "the engine's table of unpublished writes was full"; break;
                     default:              c.error = j.error.empty() ? "the job failed" : j.error; break;

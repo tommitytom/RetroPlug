@@ -64,6 +64,7 @@ test("a write while the audio thread runs resolves once the block boundary has p
 test("a refused job rejects at once with native's reason", async () => {
   const { be, node } = cart();
   await rejectsWith(be.capability("sys-99", "memory.read", { region: "ram" }), "the running graph has no node sys-99");
+  await rejectsWith(be.capability("out", "memory.read", { region: "ram" }), "node out presents no rp.system.memory/1");
   await rejectsWith(be.capability(node, "sram.restore", { bytes: new Uint8Array([1]) }), "restored by rebuilding it");
   await rejectsWith(be.capability(node, "memory.write", { region: "ram", offset: 63, bytes: new Uint8Array([1, 2]) }), "the write runs past region ram (64 bytes)");
   expect(be.pumpJobs()).toBe(0);
@@ -82,6 +83,14 @@ test("a Game Boy title that fills its 15 bytes stops before the CGB flag", async
   const id = project.systems.addSystem("/roms/full-title.gb")!;
   expect(await be.capability(`sys-${id}`, "rom.title")).toBe(title);
   project.systems.removeSystem(id);
+});
+
+test("a capability dump reads the model's battery, not through the system-id readSram", async () => {
+  const { be, node, id } = cart();
+  be.setSram(id, new Uint8Array([7, 8, 9]));
+  const reads = be.readSramCalls.length;
+  expect(await be.capability(node, "sram.dump")).toEqual(new Uint8Array([7, 8, 9]));
+  expect(be.readSramCalls.length).toBe(reads);
 });
 
 test("closing the project rejects what is still pending, and a late completion is dropped", async () => {

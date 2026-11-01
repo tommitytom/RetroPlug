@@ -35,7 +35,7 @@ void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::pngDecode>(h);
 }
 
-// --- emulator: resources / lifecycle / script node packs / live params / snapshot reads / capability jobs / input (15) ---
+// --- emulator: resources / lifecycle / script packs / live params / snapshot reads / capability jobs / input (15) ---
 template <class Server>
 void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::putResource>(e);

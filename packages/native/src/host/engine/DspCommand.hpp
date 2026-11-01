@@ -21,12 +21,11 @@ struct StagedNodeMessage {
 
 // A control-thread → audio-thread command for the engine, carried on the GraphHost's one ring as an
 // opaque HostCommand (docs/modular-graph-phase-b1-design.md section 5.1), in push order with the plan
-// swaps. POD / trivially copyable so it rides the ring as bytes. A long MIDI message (rare,
-// user-initiated) crosses as a raw OWNING pointer: the audio thread applies then `delete`s it, the
-// accepted non-RT-on-rare-op pattern. StageMidi is inline for a channel message (fits in 4 bytes); a
-// longer one (SysEx, or several messages staged as one run) crosses as an owning `ext` vector. A capability
-// write crosses as a pointer to a job record the control thread keeps and frees. Structure never comes this
-// way: TS sends it as graph documents.
+// swaps. POD / trivially copyable so it rides the ring as bytes. A long MIDI message (rare, user-initiated)
+// crosses as a raw OWNING pointer the audio thread deletes, the accepted non-RT-on-rare-op pattern;
+// StageMidi is inline for a channel message (fits in 4 bytes) and owns an `ext` vector otherwise. A
+// capability write crosses as a pointer to a job record the control thread keeps and frees. Structure
+// never comes this way: TS sends it as graph documents.
 struct DspCommand {
     enum class Kind : std::uint8_t {
         None = 0, StageMidi = 3,
@@ -41,8 +40,8 @@ struct DspCommand {
 
     Kind kind = Kind::None;
     union {
-        // `len` bytes inline when the message fits; else `ext` OWNS the whole message (audio thread deletes)
-        // and `len` is 0. `frame` places it in the next block.
+        // `len` bytes inline when the message fits; else `ext` owns the whole message and `len` is 0.
+        // `frame` places it in the next block.
         struct { std::uint8_t data[4]; std::uint8_t len; std::uint32_t frame; std::vector<std::uint8_t>* ext; } stageMidi;
         struct { double value; } setBpm;                          // transport as a queued op
         struct { bool value; } setTransport;
