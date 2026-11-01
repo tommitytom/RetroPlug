@@ -270,6 +270,5 @@ retroplug_add_test_binary(
              retroplug-dsp-resample-nodes             # and the rp.dsp.resample package
              retroplug-dsp-kernels                    # core-free: the standard library
              retroplug-dsp-resample                   # Dsp.test.cpp's resampler
-             r8brain                                   # Dsp.test.cpp's reference copy of the kit path's resample
              Threads::Threads                          # SwapStress runs a real audio thread
     DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden")

@@ -75,12 +75,14 @@ moves a kit byte fails this suite.
 ## 4. The DSP library
 
 **The targets.** `retroplug-dsp-kernels` (`packages/native/src/dsp/`) is a static library linking the C++ standard
-library and nothing else: gain, peak and the normalising gain, the biquads, dither and quantise. `retroplug-dsp-resample`
-is `Resample.cpp` alone, linking r8brain and (for r8brain's filter-cache mutex) `Threads::Threads`, so a build with no
-resampler omits that one target and sees neither the heap nor pthreads nor RTTI. `retroplug-core` links both for the kit
-path, the node packages link them, and so does `retroplug-graph-test`, which tests the nodes with no core, txiki or
-backend. The design's `retroplug-dsp` name is taken: `dpf_add_plugin(retroplug ...)` creates the plugin's own DSP
-library of that name.
+library and nothing else: gain, peak and the normalising gain, the biquads, dither and quantise.
+`retroplug-dsp-resample` is `Resample.cpp` plus `R8bBase.cpp` (r8brain's static members, built on the throwing
+allocator section 10 describes), taking r8brain's headers and not linking its library, and linking `Threads::Threads`
+for r8brain's filter-cache mutex, so a build with no resampler omits that one target and sees neither the heap nor
+pthreads nor RTTI. `retroplug-core`
+links both for the kit path, the node packages link them, and so does `retroplug-graph-test`, which tests the nodes with
+no core, txiki or backend. The design's `retroplug-dsp` name is taken: `dpf_add_plugin(retroplug ...)` creates the
+plugin's own DSP library of that name.
 
 **The kernels.** Each is a plain state struct and an `init` on the control thread (coefficients; the resampler's
 allocation). Gain, biquad and dither add a `process(in, out, frames)` that is `noexcept` and allocates nothing; the
@@ -336,9 +338,18 @@ follow-up moved a kit byte or a parity baseline either.
   nothing may feed r8brain host blocks. Two 20000-frame `[dsp]` cases make the reference likelier to see such a flip.
   Its allocations are `::malloc` checked only by `R8BASSERT`, which compiles to nothing, so a failure would have left a
   built resampler holding a null buffer: `dsp/R8bAllocator.hpp` points both of its memory hooks (`R8B_BASECLASS`,
-  `R8B_MEMALLOCCLASS`) at an allocator that throws, and every translation unit here reaches r8brain through it, so a
-  failed `init` is `std::bad_alloc` with `ready()` false. Its run-in is in the contract too: output lags input, and the
-  first frames of 44100 -> 11468 come after seven chunks, so a consumer pushes ahead of what it plays.
+  `R8B_MEMALLOCCLASS`) at an allocator that throws, so a failed `init` is `std::bad_alloc` with `ready()` false. Every
+  r8brain class in the program is built on that allocator, its static members included: `dsp/R8bBase.cpp` compiles
+  r8brain's own `r8bbase.cpp` through that header, and `retroplug-dsp-resample` does not link the vendored library,
+  whose default hooks would otherwise give the linker a second definition of each class to keep; the root CMakeLists'
+  `retroplug_forbid_linking(r8brain)` fails the configure if anything links it again. The free hooks stay
+  malloc/free-compatible, because r8brain's static caches free what it allocated from a static destructor at exit. What
+  a throw costs, besides the processors a half-built resampler already built, is inside the shared FIR filter cache:
+  `getLPFilter` counts a filter before it builds it, so a failed build leaks that filter and leaves `ObjCount` one above
+  the list for good, one of the cache's 96 slots each time, and repeated exhaustion over a one-element list would reach
+  r8brain's eviction with no previous object. That is accepted: it takes repeated out-of-memory, and the alternative is
+  editing a vendored library. Its run-in is in the contract too: output lags input, and the first frames of 44100 ->
+  11468 come after seven chunks, so a consumer pushes ahead of what it plays.
 - **Can `retroplug-graph-test` link the DSP libraries without the core, and do the Pico refusals hold?** Yes to both.
   The test links `retroplug-graph` + `retroplug-dsp-nodes` + `retroplug-dsp-kernels` (and the resample library for
   `Dsp.test.cpp`'s reference), with no core, txiki, efsw, LVGL or backend; `nm -u` of the kernels plus r8brain shows

@@ -424,8 +424,9 @@ without the frame).
 ### The DSP library and its nodes
 
 `src/dsp/` is the kit path's gain, biquad, dither and resample as block-streaming kernels, in two targets:
-`retroplug-dsp-kernels` (core-free, the C++ standard library only) and `retroplug-dsp-resample` (r8brain, and with it
-the heap, pthreads and RTTI, so a build with no resampler omits it). `retroplug-core` links both for the kit compilers,
+`retroplug-dsp-kernels` (core-free, the C++ standard library only) and `retroplug-dsp-resample` (r8brain, its static
+members compiled on a throwing allocator, and with it the heap, pthreads and RTTI, so a build with no resampler omits
+it). `retroplug-core` links both for the kit compilers,
 and the graph has them as `rp.dsp` (`rp.dsp.gain`, `.biquad`, `.dither`) and `rp.dsp.resample`, in targets of their own
 (`retroplug-dsp-nodes`, `retroplug-dsp-resample-nodes`) so `retroplug-graph` carries neither and a Pico build links
 `retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone. The kit compilers and the nodes run the same arithmetic, so a

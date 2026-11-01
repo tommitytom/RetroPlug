@@ -61,11 +61,18 @@ set_target_properties(retroplug-dsp-kernels PROPERTIES
 # shared lib only), and the Launchpad scan thread and N8Link's serial thread do too. Found once, for this directory.
 find_package(Threads REQUIRED)
 add_library(retroplug-dsp-resample STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Resample.cpp)
-target_include_directories(retroplug-dsp-resample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-# r8brain is PRIVATE because no header here includes it (Resample.hpp holds it behind a pointer); a static library
-# still hands it to whatever links this one.
-target_link_libraries(retroplug-dsp-resample PRIVATE r8brain Threads::Threads)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Resample.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/R8bBase.cpp)   # r8brain's static members, on the allocator in R8bAllocator.hpp
+target_include_directories(retroplug-dsp-resample PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    # r8brain's headers, all this build takes from the vendored dep: dsp/R8bAllocator.hpp includes CDSPResampler.h, so
+    # every consumer of this library's headers needs the directory too.
+    ${CMAKE_SOURCE_DIR}/deps/r8brain)
+# The vendored `r8brain` library is deliberately NOT linked. Its r8bbase.cpp would build r8brain's static members on
+# r8brain's own malloc hooks, where src/dsp/R8bBase.cpp builds them on the throwing allocator the rest of this tree
+# uses, and the linker would keep one copy of every r8brain class with no diagnostic saying which. The root CMakeLists'
+# retroplug_forbid_linking(r8brain) turns linking it again into a configure error.
+target_link_libraries(retroplug-dsp-resample PRIVATE Threads::Threads)
 set_target_properties(retroplug-dsp-resample PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON

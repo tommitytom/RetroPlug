@@ -277,8 +277,13 @@ add_subdirectory(deps/mesen)
 
 # --- r8brain-free: high-quality SRC for LSDJ kit compilation.
 # Also used for non-44.1 kHz host-rate sync accuracy.
+# EXCLUDE_FROM_ALL: nothing links this target any more. retroplug-dsp-resample compiles its one source itself, on a
+# throwing allocator (packages/native/src/dsp/R8bBase.cpp), so the archive would only be dead weight; the target stays
+# for the include directory and so that retroplug_forbid_linking() below has something to refuse.
 add_subdirectory(deps/r8brain)
 retroplug_silence_dep_warnings(r8brain)
+set_target_properties(r8brain PROPERTIES EXCLUDE_FROM_ALL ON)
+include(cmake/forbid-link.cmake)
 
 # --- enkiTS: task scheduler. Drives per-sample parallel work in the LSDJ
 # kit compiler so a 16-sample kit can recompile across cores instead of
@@ -369,4 +374,9 @@ endif()
 
 # The dpf.js seam probe (examples/minimal) now lives in the dpf.js repo and is
 # built there with -DDPFJS_BUILD_EXAMPLE=ON.
+
+# Every target exists now, so hold the tree to the rule the r8brain dep is kept under: nothing may link the vendored
+# library, because its r8bbase.cpp would build r8brain's classes on its own malloc hooks beside our copy on the
+# throwing one (see cmake/forbid-link.cmake and packages/native/src/dsp/R8bAllocator.hpp).
+retroplug_forbid_linking(r8brain)
 
