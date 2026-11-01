@@ -284,7 +284,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `rp.host.devices/1`, the operations an emulated system and a cart share are asynchronous capability jobs
   (`rp.system.memory/1`, `.sram/1`, `.rom/1`), and the cart mirror, the controller channel, `stageSystemMidi`, the
   `__rp_n8*` operation hooks and `N8Host`'s SD worker are gone. Strict parity held bit for bit at every commit,
-  nothing re-recorded. What it leaves (its section 10):
+  nothing re-recorded. What it leaves (its section 11):
   - **P7's remainder**, above: video, buttons and debug are still `SystemBase` virtuals, `state/1` is still the
     system-id RPC, and `SystemNodes.cpp` still holds all four consoles' nodes.
   - **A cart's battery is reachable only at the N8 menu**, through the SD card's save file (`EDN8/gamedata/<rom>/
@@ -304,6 +304,15 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **A cart job pauses streaming**: pushes during it are dropped and counted, the node re-sends the note-offs it
     lost, and a `rom.upload` leaves streaming stopped until the host reconnects. A job that a running game will refuse
     never pauses: its submission reads the cart's config block first, so a game's notes keep flowing.
+  - **MIDI streamed to a cart at its menu reaches the menu's own command parser** (pre-C5, unverified on hardware):
+    the menu takes commands over the same FIFO, so a MIDI data pair such as `0x2A 0x73` (`*s`) sent while the menu
+    shows can ask it to start an app. It holds for raw MIDI after a connect at the menu and for framed MIDI after a
+    console reset, where the stale window is re-sent every 100 ms until it re-syncs.
+  - **The quiet rule assumes the N8 menu writes nothing unprompted on the back-channel** (unverified on a cart):
+    unsolicited bytes would keep `lastHeardNs` fresh and make a menu with stale frames read as never quiet.
+  - **A heavy stream into a menu can starve the probe**: the window's 48-frame re-sync re-stamps the oldest frame's
+    first send, so past about 190 messages a second (48 per 250 ms) into a menu no turn is quiet and a submission is
+    refused for a link that never went quiet.
   - **A retained generation of a script pack, the 0.5 s state publish and the N8 firmware's SD path** are the
     allocations left on the block thread, as C1/C4 list them above; C5 added none.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):

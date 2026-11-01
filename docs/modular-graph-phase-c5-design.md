@@ -147,8 +147,9 @@ registry and completes at once, and a write goes through the command ring and co
 `readSram` / `writeRam` do today (those system-id RPCs stay as thin wrappers). On the N8 node a submission first reads
 the cart's config block on the link's worker thread, between MIDI chunks, the expansion volume's path, and only on a
 turn quiet for the read (an ack landing inside it would be taken for the reply's first bytes): one with nothing
-outstanding on the reliable link, or once the cart has said nothing for 250 ms since its oldest outstanding frame went
-out, as one at its menu does. The three transfers run at the menu only, so a job a running game will refuse (or a cart
+outstanding on the reliable link, or once the cart has said nothing for 250 ms since its oldest outstanding frame
+first went out, as one at its menu does. The three transfers run at the menu only, so a job a running game will refuse
+(or a cart
 whose block does not answer, or whose link keeps acknowledging for the probe's whole second) is refused there, and the
 stream never pauses for it. A job that is taken then runs on that thread: streaming pauses, `connected` reads false for
 the duration and pushes are dropped and counted, the transfer runs, streaming resumes, the completion is posted. One
@@ -341,13 +342,14 @@ in place there), and the findings worth naming; each stage's own report is the f
   the row does not claim the bytes landed where the game reads), an upload reports the card path, the mapper index and
   "streaming: stopped", with `enabled` cleared. A battery job names the ROM this process booted on the cart, else the
   driven system's ROM file: the booted ROM is the physical cart's state, not the node's, so it survives the drive
-  moving to another NES and a UI realm reload. Both battery jobs run only at the N8 menu, and a running game refuses
+  moving to another NES, an editor close and reopen, and a project load (a fresh UI realm starts with none and falls
+  back to the driven system's ROM file). Both battery jobs run only at the N8 menu, and a running game refuses
   them; a restore goes before the `rom.upload` that boots the game, whose rows say the game picks the battery file up
   at its next boot.
 - **Does the session's message digest stay identical through the surface, block for block?** Yes, with the two nodes;
   the one-node version was refused as a cycle, and its only way through (a feedback wire) delivered the LEDs a block
   late. Through `surface-in` / `surface-out` the session reads the same input queues, and its per-block LED stream and
-  every digest are the recorded ones; no golden was re-recorded for the rewiring (the role goldens' documents moved,
+  every digest are the recorded ones; no digest was re-recorded for the rewiring (the role goldens' documents moved,
   their digests did not).
 
 ### What building it changed in sections 3 to 6
@@ -444,19 +446,24 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   nothing is connected apart from a frame it lost while attached (a full send ring, an oversized message), and the
   handle a node holds answers their sum; the status line keeps `dropped` for the frames the device is missing and names
   the detached traffic as such, so one unplugged cable does not mark the device as faulting for the rest of the run.
+  A message the device sends that the receive ring had no room for is counted apart again (`messagesInboundDropped`),
+  since that is a press the audio side missed, not an LED frame the device never got; `dropped` therefore stays the
+  outbound-while-attached figure both the status line and the node read.
 
 ### The suite, as built
 
 - `retroplug-engine-graph-test` gained `[devices]` (`Devices.test.cpp`: both links over fake devices, a host with no
-  device and the state its handles answer, the expansion volume through the interface, acquire and release across a
-  reactivate and a teardown, a handover to a new node that never leaves the link with no holder, a warmed block
-  allocating nothing), `[capability]` (`Capabilities.test.cpp`: each emulated console against the system-id RPCs and
-  the ROM file, block-boundary completion, removal and discard, the 64 bound, a real device thread's progress, a warmed
-  block with writes in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion
-  cannot leave the engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`,
-  the expansion volume, owed note-offs, the jobs and their refusals, abandonment, `threads`, `unique`, a warmed block),
-  `[launchpad]` (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the first-block discard,
-  uniqueness, `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a staged message
+  device and the state its handles answer (both `connected` false, the volume through the fallback), the expansion
+  volume through the interface, acquire and release across a reactivate and a teardown, a handover to a new node that
+  never leaves the link with no holder, a warmed block allocating nothing), `[capability]` (`Capabilities.test.cpp`:
+  each emulated console against the system-id RPCs and the ROM file, the ROM title's printable-ASCII stop, a node that
+  presents no capability, a battery dump that is not a `readSram`, block-boundary completion (or in the call while no
+  audio thread runs), removal and discard, the 64 bound, a real device thread's progress, a warmed block with writes
+  in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion cannot leave the
+  engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`, the expansion
+  volume, owed note-offs, the jobs and their refusals, abandonment, `threads`, `unique`, a warmed block), `[launchpad]`
+  (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the first-block discard, uniqueness,
+  `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a staged message
   reaching the node the running plan places under the id, in both orders relative to the swap that changes which plan
   runs, and one added later). The protocol cases run the surface wiring and hold their recorded digests; the goldens'
   documents moved with the fan-out and the surface nodes, and their driven runs hold each cart node's pushes to what
@@ -465,19 +472,34 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws),
   a game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a cart reset
   to its menu with a frame its game never acknowledged still taking a job, a link that never goes quiet refused for
-  that, a probe's wake outlasting a busy turn, a port that throws at a job's start and after it ran, a job whose `run`
+  that, a probe's wake outlasting a busy turn, a port that throws as a job starts and after it ran, a job whose `run`
   throws run once, the JSON a name reaches, an abandoned dump), and the two link adapters have their own files:
   `N8CartLink.test.cpp` (the volume's retry, its once-a-second bound, the probe's turn of its own, the last release's
-  AUTO) and `LaunchpadSurfaceLink.test.cpp`.
-- TS: `test/capability/capability.test.ts` (the promises, the refusals, a close rejecting pending, progress), and on
-  the real host `test-native/capability.test.ts` and `test-native/stage-node-midi.test.ts`;
-  `test/graph/build-graph.test.ts` holds the placement and the fan-out,
-  `test/systems/store-graph.test.ts` the setting and the live expansion copy, and
-  `test/menu/n8-sd-ops.test.ts` the cart menu over the mock's capability model.
+  AUTO) and `LaunchpadSurfaceLink.test.cpp` (the ring's inbound losses counted apart from `dropped`).
+- TS: `test/capability/capability.test.ts` (the promises, the refusals, a close rejecting pending, progress, the full
+  title, a node that presents no capability, a battery dump that is not a battery read, the wait's bound, and a queue
+  leaving the pump's set), and on the real host `test-native/capability.test.ts` (two backends over one engine settling
+  each other's completions) and `test-native/stage-node-midi.test.ts`; `test/graph/build-graph.test.ts` holds the
+  placement and the fan-out, `test/systems/store-graph.test.ts` the setting and the live expansion copy, and
+  `test/menu/n8-sd-ops.test.ts` the cart menu over the mock's capability model (the restore's result and its created
+  warning, the per-process booted ROM across a handover, and a picked file that cannot be read).
 
 ## 11. Left as it is
 
+- **A cart's battery is reachable only at the N8 menu**, through the SD card's save file (`EDN8/gamedata/<rom>/
+  bram.srm`): a dump takes about a minute for 64 KB, a running game refuses the job (a direct cart-memory read wedges it
+  and leaves the menu deaf), and a restore goes before a `rom.upload` so the game loads it at its next boot.
 - **A cart-to-graph output** (the cart's replies feeding a block): nothing consumes one; the reliable link handles its
   own back-channel.
 - **A "real cart only" system** with no emulated node.
 - **The other capability interfaces** (video, buttons, debug) and C4's P3 (the ROM borrow) and P4 (the snapshot seam).
+- **MIDI streamed to a cart at its menu reaches the menu's own command parser** (pre-C5, unverified on hardware). The
+  menu takes its commands over the same FIFO (`'*'` then a byte), so a MIDI data pair such as `0x2A 0x73` (`*s`) sent
+  while the menu shows can ask it to start an app. It holds for raw MIDI after a connect at the menu and for framed
+  MIDI after a console reset, where the stale window is re-sent every 100 ms until it re-syncs.
+- **The quiet rule assumes the N8 menu writes nothing unprompted on the back-channel** (unverified on a cart).
+  Unsolicited bytes would keep `lastHeardNs` fresh and make a menu with stale frames read as never quiet, refusing
+  every submission.
+- **A heavy stream into a menu can starve the probe.** The window's 48-frame re-sync clears and re-stamps the oldest
+  frame's first send, so a probe needs a quiet turn between re-syncs; past about 190 messages a second (48 per
+  250 ms) into a menu there is none, and the submission is refused for a link that never went quiet.

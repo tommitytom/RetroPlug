@@ -147,7 +147,7 @@ which is what a `.rplg` saves and what the system node reads:
 | Role | Config (zod, defaults) |
 |---|---|
 | `sameboy` | `model` (`"cgbC"`), `highpass` (`"accurate"`), `linkGroupId` 0-255, `fastBoot` bool (true), plus the display group (`colorCorrection`, `dmgPalette`, `lightTemperature`) |
-| `mesen` | one role for every Mesen platform, so the knobs are per-platform and the menu gates each group. NES: `region`, `removeSpriteLimit`, `apuLatencyMs`, the cartridge-accuracy pair (`s5bNoise` / `mmc5PhaseReset`, both defaulting to `"n8"`), `expansionVolume` (the cartridge sound chip's level, percent of unity: the same value the UI rescales into a connected N8's `master_vol`), `channelExportMode`, `sdRoot`. SMS/GG: `enableFm` |
+| `mesen` | one role for every Mesen platform, so the knobs are per-platform and the menu gates each group. NES: `region`, `removeSpriteLimit`, `apuLatencyMs`, the cartridge-accuracy pair (`s5bNoise` / `mmc5PhaseReset`, both defaulting to `"n8"`), `expansionVolume` (the cartridge sound chip's level, percent of unity: the same value the cart node rescales into a connected N8's `master_vol`), `channelExportMode`, `sdRoot`. SMS/GG: `enableFm` |
 
 Not every system-role field is live. The live ones are the system node's knobs (below);
 `channelExportMode`, `sdRoot`, the FIFO profile and its two overrides, the N8 link and its round trip, and

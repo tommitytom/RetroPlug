@@ -1220,7 +1220,7 @@ nodes (`rp.n8.nes`, `rp.launchpad.surface-in` / `-out`) that bind a host-owned d
 operations an emulated system and a cart share are asynchronous capability jobs (`rp.system.memory/1`, `.sram/1`,
 `.rom/1`, §6.4), and the cart mirror and its sink, the controller channel and the system-addressed staging are gone, so
 `Engine` names no console and no device. Strict parity held bit for bit at every commit, nothing re-recorded. What it
-leaves (its section 10): P7's remainder, and a cart's battery reachable only at the N8 menu.
+leaves (its section 11): P7's remainder, and a cart's battery reachable only at the N8 menu.
 
 - Console-specific code moves into each node; every `dynamic_cast` in §6.5 goes: done in C4 for `src/`, the suites'
   console-only casts aside.

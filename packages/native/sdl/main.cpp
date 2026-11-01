@@ -1848,7 +1848,7 @@ int main(int argc, char** argv) {
     // handle in destroy, and a surface node reaching a port the next line has already closed reads disconnected and
     // sends its last frame nowhere. The destructor clears again, for the paths that return before this point.
     app.svc.engine.clearGraph();
-    // Give the control surface back before anything else is torn down. Programmer mode locks the device's
+    // Give the control surface back before the rest is torn down. Programmer mode locks the device's
     // front panel, so skipping this leaves the user's hardware in a state they cannot escape from its own
     // Settings menu. The link flushes whatever the last block queued, replays the farewell TS handed it, then
     // closes the ports. (The destructor does this too; doing it here keeps it ahead of the UI teardown, and

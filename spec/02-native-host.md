@@ -158,8 +158,8 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 | `renderAudio` | `(double ms) → Bytestring` | synchronous pull render, interleaved f32 L/R, into a graph TS built for 2 host channels; empty while the audio thread owns the engine or the running graph writes another width (as are `renderAudioPerSystem` / `renderAudioPerChannel`, for 2 channels per system or stream) |
 | `setTransport` / `setBpm` | `→ bool` | queued transport ops |
 | `stageMidiIn` | `(vector<uint8> bytes, uint32 frame) → bool` | any non-empty length: a channel message, a SysEx, or several messages as one run, at intra-block `frame` (TS defaults it to 0, and refuses one that is not an integer from 0 to 1023 before sending, since rpcpp would truncate it); false for a frame past `renderAudio`'s 1024-frame block |
-| `stageNodeMidi` | `(string nodeId, vector<uint8> bytes) → bool` | the UI's staged message, at the node the running plan places under `nodeId` (`rp.stage/1`): a system node hands it to its core's ingress, the cart node pushes it at its link. False for an empty message, an id the running plan does not place, or a node that stages nothing |
-| `submitJob` | `(RpcJobRequest) → RpcJobSubmitResult` | a capability job for a node of the last published plan: `{id}` when it was taken, `{error}` when it was refused (a capability the node does not present, an operation it does not have, a device's "busy" or "not connected", the engine's 64-outstanding bound, an emulated restore). A read or a ROM header completes before it returns; a write at the next block boundary; a device's job on its own thread |
+| `stageNodeMidi` | `(string nodeId, vector<uint8> bytes) → bool` | the UI's staged message, at the node the running plan places under `nodeId` (`rp.stage/1`): a system node hands it to its core's ingress, the cart node pushes it at its link. False for an empty message; the id resolves at the drain against the plan that runs, and a message no node there takes (an id the plan does not place, a node that stages nothing) is dropped there |
+| `submitJob` | `(RpcJobRequest) → RpcJobSubmitResult` | a capability job for a node of the last published plan: `{id}` when it was taken, `{error}` when it was refused (a capability the node does not present, an operation it does not have, a device's "busy" or "not connected", the engine's 64-outstanding bound, an emulated restore). A read or a ROM header completes before it returns; a write at the next block boundary, or at once while no audio thread runs (the CLI between renders); a device's job on its own thread |
 | `drainJobs` | `→ vector<RpcJobCompletion>` | what finished since the last drain (`done`, `ok`, the result's bytes or the error) and every running job whose progress changed, with `progress` of `total` |
 | `drainMidiOut` | `→ vector<RpcMidiOut>` | the host MIDI out (`Engine::midiOut`, which `rp.host.midi-out` fills each block) gathered over the `renderAudio*` renders since the last drain, each message with its system and frame (`renderBlocks` returns its own) |
 | `droppedMessages` | `→ uint32` | messages dropped so far (`Engine::droppedMessages`) by the plan's full output queues; never reset, and it wraps, so a test compares two reads |
@@ -333,7 +333,7 @@ it:
 |---|---|---|
 | `rp.host.midi-in` | out `midi` (events: 2048 messages, 64 KiB) | takes the staged host MIDI, stable-sorted by frame without allocating: the plugin stages two runs in frame order (a block's DAW events, then each moved automation slot's CC at frame 0), which it merges onto its queue, a tie to the earlier run; more runs are sorted in place first, by insertion |
 | `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs' concatenation, input by input, each in queue order; each message goes at the later of its frame and the last handed out in the block, and at the block's last frame at most, a guard that keeps the list frame-sorted and inside the block whatever an input's queue holds (a node on the C ABI writes its own, and a script node's `send` carries a frame past the block as given), since the plugin hands each frame to the DAW unchecked. The merge allocates nothing, a head index per input, and costs messages times inputs; the sink it hands each message to, `Engine::midiOut`, still takes a `std::vector` per message ([07-remaining-work.md](07-remaining-work.md)). Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
-| `rp.launchpad.surface-in` | out `in` (events: 1024 messages, 16 KiB), out `connected` (control) | drains the surface link's receive ring at the top of its block (16-message batches until the link answers short), every message at frame 0; `connected` is 1 while the device is attached, from frame 0 of the block. Its first block discards what the link held when it bound it, so a press from before the plan is not replayed; a message its queue cannot hold is dropped and counted. `unique`, `threads`, category `device` |
+| `rp.launchpad.surface-in` | out `in` (events: 1024 messages, 16 KiB), out `connected` (control) | drains the surface link's receive ring at the top of its block (16-message batches until the link answers short), every message at frame 0; `connected` is 1 while the device is attached, from frame 0 of the block. Its first block discards what the link held when it bound it, so a press from before the plan is not replayed; a message the link's ring cannot hold is counted apart from the device's lost frames, and one the node's queue cannot hold is dropped and counted. `unique`, `threads`, category `device` |
 | `rp.launchpad.surface-out` | in `out` (events) | hands each message to the surface link's send ring in queue order; a detached link drops and counts them. `unique`, `threads`, category `device` |
 | `rp.n8.nes` | in `midi` (events), in `bytes`, param `expansionVolume`, out `connected` (control) | pushes each message at the cart link at its frame and the block's rate, the `bytes` port's flush flag carried; hands the link the expansion volume at its first block, on a change and on every reconnect; `connected` is the link's state from frame 0. No audio output. `unique`, `threads`, category `device` |
 
@@ -441,13 +441,15 @@ drives through `rp.host.devices/1`
 ([DeviceLinks.hpp](../packages/native/src/host/devices/DeviceLinks.hpp)): a `CartLink` for the cart, with a push per
 message (frame, bytes, the flush flag, the block's rate) that answers whether all of it reached the device, the link's
 connected state and drop count, the expansion-volume register and `submitJob` / `abandonJobs`; a `SurfaceLink` for the
-pad, with a drain into the node's own array, a push, the connected state and its drop count. A host installs its links
-with `Engine::setDeviceLinks` before its first plan (the plugin passes its `N8CartLink` and no surface, the SDL
-standalone both, the test host a `HarnessSurfaceLink`, and the CLI, the Node addon and the render host neither), and a
-name it has no device for answers a handle that is never connected and that drops and counts everything, so a
-document plans and runs in every host. A node keeps its handle across a reactivate and gives it back once in destroy,
-which runs at reclaim on the control thread while the links are still installed: a host tears its plans down first
-(`Engine::clearGraph`), then uninstalls its links.
+pad, with a drain into the node's own array, a push, the connected state and its drop count. A real surface link's
+`dropped()` is a push it lost while the device was attached; the paint a session pushed while nothing was connected
+and a message the device sent that its receive ring had no room for are counted apart, so the status line's `dropped`
+stays a frame the device is missing. A host installs its links with `Engine::setDeviceLinks` before its first plan (the
+plugin passes its `N8CartLink` and no surface, the SDL standalone both, the test host a `HarnessSurfaceLink`, and the
+CLI, the Node addon and the render host neither), and a name it has no device for answers a handle that is never
+connected and that drops and counts everything, so a document plans and runs in every host. A node keeps its handle
+across a reactivate and gives it back once in destroy, which runs at reclaim on the control thread while the links are
+still installed: a host tears its plans down first (`Engine::clearGraph`), then uninstalls its links.
 
 A capability job ([CapabilityJobs.hpp](../packages/native/src/host/engine/CapabilityJobs.hpp)) is what `submitJob`
 takes: a request for a node of the last published plan, answered with an id or a refusal. A system node's job goes to the
@@ -458,7 +460,7 @@ job goes to its link, on the device's own thread: one at a time ("busy"), none w
 connected"), progress reported per drain, and a node leaving the plan abandons the job it still runs. The cart reads
 its FPGA config block at submission (on that thread, between MIDI chunks, as the expansion volume reaches it, and only
 on a turn quiet for the read: nothing outstanding on the reliable link, or a cart silent for 250 ms since its oldest
-outstanding frame went out, as one at its menu is), so a transfer a running game will refuse is refused without
+outstanding frame first went out, as one at its menu is), so a transfer a running game will refuse is refused without
 pausing the stream and dropping the block's notes. The engine keeps at most `kMaxJobs` (64) outstanding,
 engine-wide back-pressure that leaves room for every completion, and a request names a capability from the one reserved
 id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`), so the engine asks a node only by an id it
