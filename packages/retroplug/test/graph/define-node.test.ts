@@ -256,6 +256,10 @@ test("metadata, params and settings are typed and readable as C++ reads them", (
   expect(meta({ version: 5 })).toThrow("version must be a string");
   expect(meta({ name: "Gain\ud800" })).toThrow("name must be a string");
   expect(meta({ requires: { heap: "yes" } })).toThrow("true or false");
+  // `unique` is the planner's one-per-plan rule (C++'s TypeDescriptor.unique), emitted only when declared.
+  expect(meta({ unique: false })).toThrow("unique is true or absent");
+  expect(meta({})().unique).toBe(undefined);
+  expect(meta({ unique: true })().unique).toBe(true);
   expect(meta({ params: { b: { type: "bool", name: "B", default: false, unit: 5 } } })).toThrow("unit must be a string");
   // a stray field is not emitted (C++ would drop it when it spells the descriptor back), a missing name is the id
   const stray = meta({ params: { b: { type: "bool", default: true, min: 3, foo: 1 } } })();

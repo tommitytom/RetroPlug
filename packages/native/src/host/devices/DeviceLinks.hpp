@@ -92,20 +92,25 @@ public:
     virtual void release() {}
 };
 
-// A control surface (rp.launchpad.surface): the device's own MIDI in both directions, kept out of the musical stream.
+// A control surface (rp.launchpad.surface-in / -out): the device's own MIDI in both directions, kept out of the
+// musical stream.
 class SurfaceLink {
 public:
     virtual ~SurfaceLink() = default;
 
-    // [audio] Copy the messages the device sent since the last drain into `out`, up to `capacity`, and answer how
-    // many. Allocation-free and free-free: both ends keep every message in a fixed slot of their own, and one the
-    // caller has no room for stays queued rather than being dropped or freed here.
+    // [audio] Copy the messages the device sent since the last drain into `out` and answer how many: min(available,
+    // capacity), and fewer only when nothing is left, so a caller draining in batches can stop on a short answer.
+    // Allocation-free and free-free: both ends keep every message in a fixed slot of their own, and one the caller has
+    // no room for stays queued rather than being dropped or freed here.
     virtual std::size_t drainInput(DeviceMessage* out, std::size_t capacity) = 0;
-    // [audio] Queue one message for the device (an LED frame, a mode change). Lock-free, never blocks; drops when
-    // nothing is connected, the message is wider than kMaxDeviceMessage, or the ring is full.
+    // [audio] Queue one message for the device (an LED frame, a mode change). Lock-free, never blocks; drops (and
+    // counts in dropped()) when nothing is connected, the message is wider than kMaxDeviceMessage, or the ring is full.
     virtual void pushOutput(const std::uint8_t* data, std::size_t size) = 0;
     // [any] Whether the device is attached.
     virtual bool connected() const = 0;
+    // [any] The pushes that lost their bytes: the link was down, or its send ring was full. As CartLink's, so a node
+    // reads the LED traffic that never reached the device even while an old path pushes at the same device.
+    virtual std::uint64_t dropped() const = 0;
 
     // As CartLink's: a node keeps a handle it holds across a reactivate, and releases it once in destroy.
     virtual void acquire() {}

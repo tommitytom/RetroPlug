@@ -234,6 +234,9 @@ export interface NodeDefinition<S> {
   name?: string;
   category?: string;
   requires?: { heap?: boolean; threads?: boolean };
+  /** At most one node of this type in a plan (C++'s TypeDescriptor.unique): a type that binds a host-owned device
+   *  declares it, and the planner refuses a document that places two. True or absent. */
+  unique?: true;
   settings?: SettingsSchema<S>;
   ports: PortMap | ((settings: S) => PortMap);
   params?: ParamMap | ((settings: S) => ParamMap);
@@ -415,6 +418,8 @@ function checkMetadata<S>(def: NodeDefinition<S>): void {
     const v = def.requires?.[key];
     if (v !== undefined && typeof v !== "boolean") throw new Error(`node type ${q(def.id)}: requires.${key} must be true or false`);
   }
+  // Read by the C++ planner as given, so a false would be a rule in a form it does not read.
+  if (def.unique !== undefined && def.unique !== true) throw new Error(`node type ${q(def.id)}: unique is true or absent`);
   // Read by the script host as given, so a false would be a promise in a form it does not read.
   for (const key of ["reshapes", "faultOnThrow"] as const)
     if (def[key] !== undefined && def[key] !== true) throw new Error(`node type ${q(def.id)}: ${key} is true or absent`);
@@ -522,6 +527,7 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
       name: def.name ?? def.id,
       category: def.category ?? "",
       requires: { heap: def.requires?.heap ?? false, threads: def.requires?.threads ?? false },
+      ...(def.unique ? { unique: true as const } : {}),
       ...buildLayout(def, parseSettings({})),
       settings: def.settings ? settingsSchema(def) : { type: "object" },
     }),

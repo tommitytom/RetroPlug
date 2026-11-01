@@ -78,8 +78,9 @@ public:
     /** Copy the messages received since the last call into `out`, up to `capacity`, and answer how many. This is the
      *  only drain, and the one the block thread uses (the device link forwards it): the messages stay in the link's
      *  own fixed slots until they are copied, so nothing is allocated or freed here, and one the caller has no room
-     *  for waits for its next call. A message carries no arrival frame: the drain's caller places it at frame 0, as
-     *  rp.host.controller-in does. */
+     *  for waits for its next call. The answer is min(queued, capacity), fewer only when nothing is left, which is
+     *  what lets a node that drains in batches stop on a short answer. A message carries no arrival frame: the drain's
+     *  caller places it at frame 0, as rp.host.controller-in does. */
     std::size_t drainInput(rp::host::DeviceMessage* out, std::size_t capacity);
     /** Queue one message for the device. Lock-free, never blocks; drops (and counts) when the ring is full,
      *  the message is oversized, or nothing is connected. */

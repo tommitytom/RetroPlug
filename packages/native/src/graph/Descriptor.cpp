@@ -475,6 +475,9 @@ std::string descriptorJson(const TypeDescriptor& d) {
     put(needs, "heap", rfl::Generic(d.heap));
     put(needs, "threads", rfl::Generic(d.threads));
     put(o, "requires", rfl::Generic(std::move(needs)));
+    // Omitted unless set: a descriptor's bytes are what a host compares a pack's types by, and a flag a type does not
+    // declare is not a field of its descriptor.
+    if (d.unique) put(o, "unique", rfl::Generic(true));
     insertLayout(o, d.layout);
     // A node without settings declares an empty object schema, the same spelling the TS side writes.
     auto schema = parseJson(d.settingsSchema.empty() ? std::string(kNoSettingsSchema) : d.settingsSchema);
@@ -497,8 +500,9 @@ rfl::Result<TypeDescriptor> parseDescriptor(std::string_view json) {
     if (!g) return fail(std::string("descriptor is not JSON: ") + g.error().what());
     auto o = g->to_object();
     if (!o) return fail("descriptor must be an object");
-    if (auto bad = unknownField(*o, {"id", "version", "name", "category", "requires", "ports", "params", "exclusive", "settings"},
-                                "descriptor"))
+    if (auto bad = unknownField(
+            *o, {"id", "version", "name", "category", "requires", "unique", "ports", "params", "exclusive", "settings"},
+            "descriptor"))
         return fail(*bad);
     TypeDescriptor d;
     auto id = reqString(*o, "id", "descriptor");
@@ -525,6 +529,13 @@ rfl::Result<TypeDescriptor> parseDescriptor(std::string_view json) {
             else if (flag == "threads") d.threads = *on;
             else if (*on) return fail(where + ": requires " + q(flag) + ", which this host does not provide");
         }
+    }
+    if (const auto* u = field(*o, "unique")) {
+        // True or absent, as a node type declares it: a descriptor that spells `false` would not round-trip through
+        // descriptorJson, which omits a flag that is not set.
+        auto on = u->to_bool();
+        if (!on || !*on) return fail(where + ": \"unique\" must be true or absent");
+        d.unique = true;
     }
     auto layout = parseLayoutObject(*o);
     if (!layout) return fail(where + ": " + layout.error().what());

@@ -1,8 +1,8 @@
 // The host's device links, rp.host.devices/1 (docs/modular-graph-phase-c5-design.md sections 3 to 5): a node binds the
 // hardware it drives by name and is handed a link, which it borrows for the life of its plan and gives back when the
-// plan's reclaim destroys it. Driven on a real Engine with a test node that does what rp.n8.nes and
-// rp.launchpad.surface will: it acquires both links in its activate, pushes at the cart's frame offsets in its block,
-// drains the surface into storage it owns and pushes one LED message back, and releases both in its destructor.
+// plan's reclaim destroys it. Driven on a real Engine with a test node that does what rp.n8.nes and the surface nodes
+// do: it acquires both links in its activate, pushes at the cart's frame offsets in its block, drains the surface into
+// storage it owns and pushes one LED message back, and releases both in its destructor.
 //
 // The links here are fakes that record what a node did with them, and count how many nodes hold them: what reaches the
 // device, its order and frames, the connected state a host with no device leaves in place, the balance of acquire and
@@ -21,6 +21,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../graph/CountingAllocator.hpp"
+#include "FakeSurfaceLink.hpp"
 #include "GraphDocs.hpp"
 #include "graph/node.hpp"
 #include "host/devices/DeviceLinks.hpp"
@@ -33,6 +34,8 @@ using rp::host::CartLink;
 using rp::host::DeviceMessage;
 using rp::host::HostDevices;
 using rp::host::SurfaceLink;
+using rp::host::test::deviceMessage;
+using rp::host::test::FakeSurfaceLink;
 
 constexpr double        kRate   = 48000.0;
 constexpr std::uint32_t kFrames = 64;
@@ -154,54 +157,6 @@ public:
     std::vector<Push> pushes;
 };
 
-// A surface link with a scripted input and a recorded output, likewise counted.
-class FakeSurfaceLink final : public SurfaceLink {
-public:
-    struct Out {
-        std::uint16_t size = 0;
-        std::uint8_t  data[rp::host::kMaxDeviceMessage] = {};
-    };
-
-    void reserve(std::size_t in, std::size_t out) {
-        input.reserve(in);
-        outputs.reserve(out);
-    }
-
-    std::size_t drainInput(DeviceMessage* out, std::size_t capacity) override {
-        std::size_t n = 0;
-        while (next < input.size() && n < capacity) out[n++] = input[next++];
-        return n;
-    }
-    void pushOutput(const std::uint8_t* data, std::size_t size) override {
-        if (!attached) {
-            ++drops;
-            return;
-        }
-        Out m;
-        m.size = static_cast<std::uint16_t>(std::min(size, rp::host::kMaxDeviceMessage));
-        std::memcpy(m.data, data, m.size);
-        outputs.push_back(m);
-    }
-    bool connected() const override { return attached; }
-    void acquire() override { ++acquires; }
-    void release() override { ++releases; }
-
-    bool                       attached = true;
-    std::uint64_t              drops    = 0;
-    int                        acquires = 0;
-    int                        releases = 0;
-    std::vector<DeviceMessage> input;    // scripted: what the device sent, drained oldest first
-    std::size_t               next = 0;  // how much of it a node has drained
-    std::vector<Out>          outputs;
-};
-
-DeviceMessage message(const std::vector<std::uint8_t>& bytes) {
-    DeviceMessage m;
-    m.size = static_cast<std::uint16_t>(bytes.size());
-    std::copy(bytes.begin(), bytes.end(), m.data);
-    return m;
-}
-
 using rp::host::test::DocExtras;
 using rp::host::test::docNode;
 using rp::host::test::graphRequest;
@@ -270,7 +225,7 @@ TEST_CASE("a node's cart pushes reach the installed cart link in order, at their
 TEST_CASE("the surface link's scripted input arrives in order, and its output is recorded", "[devices]") {
     script = ProbeScript{};  // one case at a time: nothing a case scripted reaches the next
     FakeSurfaceLink surface;
-    surface.input = {message({0x90, 0x51, 0x7F}), message({0x90, 0x51, 0x00})};
+    surface.input = {deviceMessage({0x90, 0x51, 0x7F}), deviceMessage({0x90, 0x51, 0x00})};
     Engine e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
     e.setDeviceLinks(nullptr, &surface);
@@ -519,14 +474,14 @@ TEST_CASE("a warmed block touching both device links allocates and frees nothing
     // One block first, so every plan-side buffer exists, then the script and the fakes' room for the block's work,
     // which a counted block must not grow.
     script.cart = {{0, {0x90, 0x40, 0x7F}, false}, {4, {0xF0, 0x7D, 0x01, 0xF7}, true}};
-    surface.input = {message({0x90, 0x51, 0x7F}), message({0x90, 0x51, 0x00})};
+    surface.input = {deviceMessage({0x90, 0x51, 0x7F}), deviceMessage({0x90, 0x51, 0x00})};
     block(e);
     cart.pushes.clear();
     cart.reserve(2);
     surface.outputs.clear();
     surface.reserve(0, 1);
     surface.next = 0;
-    surface.input = {message({0x90, 0x51, 0x7F}), message({0x90, 0x51, 0x00})};
+    surface.input = {deviceMessage({0x90, 0x51, 0x7F}), deviceMessage({0x90, 0x51, 0x00})};
 
     std::vector<float> l(kFrames), r(kFrames);  // the block's own output, sized before the window
     rp::test::beginCountingAllocations();

@@ -70,12 +70,19 @@ private:
         std::atomic<std::uint64_t> dropped_{0};
     };
 
-    // And the same for a surface: nothing queued, nothing received.
+    // And the same for a surface: nothing queued, nothing received, and every push counted as dropped (a node reads
+    // that count as its device's drop).
     class NoSurface final : public SurfaceLink {
     public:
-        std::size_t drainInput(DeviceMessage*, std::size_t) override { return 0; }
-        void        pushOutput(const std::uint8_t*, std::size_t) override {}
-        bool        connected() const override { return false; }
+        std::size_t   drainInput(DeviceMessage*, std::size_t) override { return 0; }
+        void          pushOutput(const std::uint8_t*, std::size_t size) override {
+            if (size != 0) dropped_.fetch_add(1, std::memory_order_relaxed);
+        }
+        bool          connected() const override { return false; }
+        std::uint64_t dropped() const override { return dropped_.load(std::memory_order_relaxed); }
+
+    private:
+        std::atomic<std::uint64_t> dropped_{0};
     };
 
     CartLink*    cart_    = nullptr;

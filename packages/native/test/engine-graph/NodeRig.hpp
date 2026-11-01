@@ -23,6 +23,7 @@
 #include "graph/nodes/CoreNodes.hpp"
 #include "host/devices/DeviceRegistry.hpp"
 #include "host/graph/HostIoNodes.hpp"
+#include "host/graph/LaunchpadNodes.hpp"
 #include "host/graph/N8Nodes.hpp"
 #include "host/graph/HostServices.hpp"
 #include "host/graph/SystemNodes.hpp"
@@ -105,7 +106,7 @@ struct NodeRig {
         rate = sampleRate;
         registerCoreBackends(factory);
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), sameboyPackage(), mesenPackage(),
-                                    hostIoPackage(), n8Package(), testPackage()})
+                                    hostIoPackage(), n8Package(), launchpadPackage(), testPackage()})
             registry.addPackage(p);
         rp::graph::HostConfig config;
         config.sampleRate = sampleRate;

@@ -1,8 +1,9 @@
-// Guards the surface device link rp.host.devices/1 hands rp.launchpad.surface
+// Guards the surface device link rp.host.devices/1 hands rp.launchpad.surface-in / -out
 // (host/launchpad/LaunchpadSurfaceLink.hpp), over a real LaunchpadLink and its fake IMidiPort: the device's messages
 // drain into the caller's own slots, in order, once each; the ring's bound drops and counts rather than truncating (a
-// message wider than a slot, and a full ring); and the LED traffic a node pushes is queued for the host's main loop
-// exactly as LaunchpadLink queues it.
+// message wider than a slot, and a full ring); a push while the device is gone is dropped and counted too, which is
+// what a node reads off dropped(); and the LED traffic a node pushes is queued for the host's main loop exactly as
+// LaunchpadLink queues it.
 //
 // The slots are the point: the block thread copies out of fixed storage and frees nothing, where the standalone's
 // vector drain hands it a vector per message to destroy. No rtmidi, no MIDI system, no hardware.
@@ -170,4 +171,25 @@ TEST_CASE("LaunchpadSurfaceLink: the output a node pushes is queued for the host
     REQUIRE(log.written.size() == 1);
     CHECK(log.written[0] == std::vector<std::uint8_t>{0x90, 0x51, 0x15});
     CHECK(link.messagesSent() == 1);
+}
+
+TEST_CASE("LaunchpadSurfaceLink: a push while the device is gone goes nowhere and is counted", "[launchpad]") {
+    PortLog       log;
+    LaunchpadLink link(factoryFor(log));
+    REQUIRE(link.connect("in", "out"));
+    LaunchpadSurfaceLink surface(link);
+    REQUIRE(surface.dropped() == 0);
+
+    // The device goes away: the push the block thread makes reaches nothing, and the link counts it, which is what a
+    // node reads off dropped().
+    link.disconnect();
+    const std::uint8_t led[3] = {0x90, 0x51, 0x15};
+    surface.pushOutput(led, sizeof led);
+    CHECK(surface.dropped() == 1);
+    link.pump();
+    CHECK(log.written.empty());
+
+    // A message with no bytes is not a push that went nowhere.
+    surface.pushOutput(nullptr, 0);
+    CHECK(surface.dropped() == 1);
 }

@@ -81,6 +81,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <rfl/json.hpp>
 
+#include "FakeSurfaceLink.hpp"
 #include "NodeRig.hpp"
 #include "ScriptRig.hpp"
 #include "TestNodes.hpp"
@@ -90,8 +91,10 @@
 #include "graph/Queue.hpp"
 #include "graph/nodes/CoreNodes.hpp"
 #include "host/dsp/ScriptCompiler.hpp"
+#include "host/devices/DeviceRegistry.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
+#include "host/graph/LaunchpadNodes.hpp"
 #include "host/script/ScriptHost.hpp"
 
 using rp::host::ScriptHost;
@@ -211,18 +214,26 @@ struct Structure {
     std::vector<std::uint32_t> gameBoys;  // the systems a serialOut feed stands in for
     std::vector<PlacedNode>    nodes;     // each node of buildGraph's kept, in its document order
     std::string                document;  // what the rig plans
+    // The session wired to rp.launchpad.surface-in / -out instead of rp.host.controller-in / -out: buildGraph's
+    // document with each host controller node replaced by the surface node on its side of the link, one node each way,
+    // so the plan holds no cycle (docs/modular-graph-phase-c5-design.md section 5; no golden carries it, the TS side
+    // places the surface later).
+    bool                       surface = false;
 };
 
 const std::set<std::string> kSystemTypes{"rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"};
 const std::set<std::string> kLeftOut{"rp.core.split", "rp.core.add", "rp.host.audio-out", "rp.n8.cart-mirror"};
 
-Structure standIns(const GoldenCase& c, const Document& doc) {
-    Structure s{c.name, c.slots, {}, {}, {}};
+Structure standIns(const GoldenCase& c, const Document& doc, bool surface = false) {
+    Structure s{c.name, c.slots, {}, {}, {}, surface};
     std::map<std::string, std::uint32_t> systemOf;  // a system node's id, and its system's
     for (const std::uint32_t id : s.systems) systemOf["sys-" + std::to_string(id)] = id;
-    std::set<std::string>    leftOut;
-    std::vector<std::string> feeds, nodes, wires;
+    std::set<std::string>                leftOut;
+    std::map<std::string, std::string>   typeOf;        // a node's id and its type
+    std::map<std::string, std::string>   surfaceOf;     // a host controller node's id, and the surface node standing in
+    std::vector<std::string>             feeds, nodes, wires;
     for (const DocNode& n : doc.nodes) {
+        typeOf[n.id] = n.type;
         if (kSystemTypes.count(n.type)) {
             INFO(n.id);
             REQUIRE(systemOf.count(n.id) == 1);
@@ -240,13 +251,42 @@ Structure standIns(const GoldenCase& c, const Document& doc) {
             leftOut.insert(n.id);
             continue;
         }
+        // The surface stands in for the host's two controller nodes, one node on each side of the link: the input node
+        // drains the device into the session, the output node hands what the session sends back to it.
+        if (surface && (n.type == "rp.host.controller-in" || n.type == "rp.host.controller-out")) {
+            const bool        input = n.type == "rp.host.controller-in";
+            surfaceOf[n.id] = input ? "surface-in" : "surface-out";
+            nodes.push_back(nodeJson(surfaceOf[n.id], input ? "rp.launchpad.surface-in" : "rp.launchpad.surface-out"));
+            continue;
+        }
         const std::string settings = n.settings ? rp::graph::canonicalJson(*n.settings) : "";
         nodes.push_back(nodeJson(n.id, n.type, settings));
         s.nodes.push_back({n.id, n.type, settings});
     }
+    // The surface port a wire's endpoint crossing a host controller node becomes: the input node's two streams are the
+    // surface input node's `in` and `connected`, and the output node's sink is the surface output node's `out`. Empty
+    // for an endpoint the surface does not stand in for.
+    const auto surfacePort = [&](const std::string& node, const std::string& port) -> std::string {
+        if (!surface) return {};
+        const auto it = surfaceOf.find(node);
+        if (it == surfaceOf.end()) return {};
+        REQUIRE(typeOf.count(node) == 1);
+        if (typeOf.at(node) == "rp.host.controller-in")
+            return it->second + (port == "connected" ? ".connected" : ".in");
+        REQUIRE(typeOf.at(node) == "rp.host.controller-out");
+        return it->second + ".out";
+    };
     for (const DocWire& w : doc.wires) {
-        const auto [fromNode, fromPort] = splitEndpoint(w.from);
-        const auto [toNode, toPort] = splitEndpoint(w.to);
+        std::string from = w.from, to = w.to;
+        if (surface) {
+            INFO(w.from << " -> " << w.to);
+            const auto mapped = surfacePort(splitEndpoint(w.from).first, splitEndpoint(w.from).second);
+            if (!mapped.empty()) from = mapped;
+            const auto mappedTo = surfacePort(splitEndpoint(w.to).first, splitEndpoint(w.to).second);
+            if (!mappedTo.empty()) to = mappedTo;
+        }
+        const auto [fromNode, fromPort] = splitEndpoint(from);
+        const auto [toNode, toPort] = splitEndpoint(to);
         if (leftOut.count(fromNode) || leftOut.count(toNode)) {
             // A node the rig leaves out may feed only another it leaves out or a system, whose stand-in takes no wire
             // from it: one feeding a script node it plans would drop an input from the case without a word.
@@ -262,14 +302,14 @@ Structure standIns(const GoldenCase& c, const Document& doc) {
             // would be a system output buildGraph wires to a node the rig plans, which must fail here rather than
             // vanish.
             if (fromPort == "serialOut" && toSystem == systemOf.end()) {
-                wires.push_back(wireJson("mi-out-" + std::to_string(fromSystem->second) + ".bytes", w.to));
+                wires.push_back(wireJson("mi-out-" + std::to_string(fromSystem->second) + ".bytes", to));
                 continue;
             }
             INFO(w.from << " -> " << w.to);
             REQUIRE(toSystem != systemOf.end());
             continue;
         }
-        wires.push_back(wireJson(w.from, toSystem != systemOf.end() ? probeFor(toSystem->second, toPort) : w.to,
+        wires.push_back(wireJson(from, toSystem != systemOf.end() ? probeFor(toSystem->second, toPort) : to,
                                  w.feedback.value_or(false)));
     }
     feeds.insert(feeds.end(), nodes.begin(), nodes.end());
@@ -290,15 +330,16 @@ std::vector<std::string> rigStructureNames() {
     return names;
 }
 
-// The rig's structure `name`: buildGraph's role golden "rig/<name>", with its stand-ins.
-Structure structure(const std::string& name) {
+// The rig's structure `name`: buildGraph's role golden "rig/<name>", with its stand-ins, and with `surface` the
+// session wired to rp.launchpad.surface-in / -out instead of the host's controller nodes.
+Structure structure(const std::string& name, bool surface = false) {
     const RoleGoldens& goldens = roleGoldens();
     const auto it = std::find_if(goldens.cases.begin(), goldens.cases.end(),
                                  [&](const GoldenCase& c) { return c.name == "rig/" + name; });
     INFO("rig/" << name << ": a case of build-graph-role-goldens.test.ts, recorded into build-graph-roles.json");
     REQUIRE(it != goldens.cases.end());
     REQUIRE(it->document < goldens.documents.size());
-    return standIns(*it, goldens.documents[it->document]);
+    return standIns(*it, goldens.documents[it->document], surface);
 }
 
 // ---- one block's input -------------------------------------------------------------------------------------------
@@ -396,6 +437,30 @@ std::vector<Message> serialBytes(const std::vector<Message>& ms) {
 
 // ---- the rig ---------------------------------------------------------------------------------------------------
 
+// The surface link a surface structure's rig installs, over the fake: what the session sends recorded as the node
+// hands it over, in that order, whether or not a device is there to take it, and the rest the fake's. That is the
+// same stream the host wiring records off rp.host.controller-out, whose sink records while nothing is attached too
+// (the session paints a device it has just taken, but an LED update it computes while detached is still its output),
+// so the two runs' controller-out digests are of the same thing: what the session sent, not what a device kept.
+class RecordingSurfaceLink final : public rp::host::SurfaceLink {
+public:
+    RecordingSurfaceLink(rp::host::test::FakeSurfaceLink& fake, std::vector<Bytes>& out) : fake_(fake), out_(out) {}
+
+    std::size_t drainInput(rp::host::DeviceMessage* out, std::size_t capacity) override {
+        return fake_.drainInput(out, capacity);
+    }
+    void pushOutput(const std::uint8_t* data, std::size_t size) override {
+        out_.emplace_back(data, data + size);
+        fake_.pushOutput(data, size);
+    }
+    bool          connected() const override { return fake_.connected(); }
+    std::uint64_t dropped() const override { return fake_.dropped(); }
+
+private:
+    rp::host::test::FakeSurfaceLink& fake_;
+    std::vector<Bytes>&              out_;
+};
+
 struct ProtocolRig {
     // The script node every document places, which every structure change keeps.
     static constexpr const char* keptId = "routing";
@@ -417,8 +482,17 @@ struct ProtocolRig {
     };
     std::vector<Out>                  midiOut;
     std::vector<Bytes>                controllerOut;
+    // What each block handed the controller's sink: the host's controller-out node, or (a surface structure) the
+    // surface output node, which pushes the session's LED and page stream as that node hands it over.
+    std::vector<std::vector<Bytes>>   outByBlock;
     rp::host::EngineHostIo            hostIo{this, &takeMidi, &takeController, &isConnected, &recordMidiOut, &recordControllerOut,
                                              &noCart};
+    // A structure whose session is wired to rp.launchpad.surface-in / -out: the device's link, fed the traffic a host
+    // would stage and drained for what the session wrote, and rp.host.devices/1 answering for it.
+    rp::host::test::FakeSurfaceLink   surface;
+    RecordingSurfaceLink              recording{surface, controllerOut};
+    rp::host::DeviceRegistry          devices;
+    rp::host::HostDevices             hostDevices{this, &acquireCart, &releaseCart, &acquireSurface, &releaseSurface};
     std::unique_ptr<rp::graph::GraphHost> host;
     rp_node*                          kept = nullptr;  // keptId's instance, as the first plan made it
     int                               blocks = 0;
@@ -450,7 +524,7 @@ struct ProtocolRig {
         INFO(error);
         REQUIRE(loaded);
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::hostIoPackage(),
-                                    rp::host::test::testPackage(), scripts.package()})
+                                    rp::host::launchpadPackage(), rp::host::test::testPackage(), scripts.package()})
             REQUIRE(registry.addPackage(p, &error));
         for (std::uint32_t i = 0; i < scripts.package()->node_type_count; ++i)
             scriptTypes.insert(scripts.package()->node_types[i]->id);
@@ -458,8 +532,12 @@ struct ProtocolRig {
         config.sampleRate = kRate;
         config.maxFrames = 8192;
         config.interfaces = [](void* ctx, const char* id) -> const void* {
-            return std::string(id) == RP_ENGINE_HOST_IO_INTERFACE ? &static_cast<ProtocolRig*>(ctx)->hostIo : nullptr;
+            auto* rig = static_cast<ProtocolRig*>(ctx);
+            if (std::string(id) == RP_ENGINE_HOST_IO_INTERFACE) return &rig->hostIo;
+            if (std::string(id) == RP_HOST_DEVICES_INTERFACE) return &rig->hostDevices;
+            return nullptr;
         };
+        devices.install(nullptr, &recording);
         config.interfacesCtx = this;
         host = std::make_unique<rp::graph::GraphHost>(registry, resources, config);
         plan();
@@ -519,7 +597,19 @@ struct ProtocolRig {
     // output recorded.
     void block(const BlockIn& in) {
         stagedMidi = in.midi;
-        stagedController = in.controller;
+        if (structure.surface) {
+            // The host stages nothing for the controller's nodes: the device's link carries the same traffic in, and
+            // what the session writes reaches it through the surface output node in the block, into the same record
+            // the host's controller-out node fills.
+            stagedController.clear();
+            surface.attached = in.connected;
+            surface.input.clear();
+            surface.next = 0;
+            surface.outputs.clear();  // what the device took: unread here, and it would grow block after block
+            for (const Bytes& data : in.controller) surface.input.push_back(rp::host::test::deviceMessage(data));
+        } else {
+            stagedController = in.controller;
+        }
         connected = in.connected;
         for (const std::uint32_t gb : structure.gameBoys) {
             Feed& feed = node<Feed>("mi-out-" + std::to_string(gb));
@@ -532,6 +622,7 @@ struct ProtocolRig {
         controllerOut.clear();
         scripts.beginBlock();
         host->processBlock(in.frames, rp_transport{kRate, in.tempo, in.ppq, in.playing ? std::uint32_t{RP_TRANSPORT_PLAYING} : 0u});
+        outByBlock.push_back(controllerOut);
         record(in.frames);
         unsentByKernel.clear();
         ++blocks;
@@ -604,6 +695,14 @@ struct ProtocolRig {
         for (const Bytes& data : of(ctx).stagedController) rp::graph::pushMessage(*out, 0, data);
         of(ctx).stagedController.clear();
     }
+    // The surface's traffic is the link's on the way in and the output node's `out` on the way back, so a session
+    // wired to it reads and writes the same two streams the host's staging carried.
+    static rp::host::SurfaceLink* acquireSurface(void* ctx, const char* name) {
+        return of(ctx).devices.acquireSurface(name);
+    }
+    static void releaseSurface(void* ctx, rp::host::SurfaceLink* link) { of(ctx).devices.release(link); }
+    static rp::host::CartLink* acquireCart(void* ctx, const char* name) { return of(ctx).devices.acquireCart(name); }
+    static void releaseCart(void* ctx, rp::host::CartLink* link) { of(ctx).devices.release(link); }
     static bool isConnected(void* ctx) { return of(ctx).connected; }
     static void recordMidiOut(void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
         of(ctx).midiOut.push_back({system, frame, Bytes(data, data + size)});
@@ -636,6 +735,27 @@ struct ProtocolRig {
         CHECK(scripts.throwCount() == throws);
     }
 };
+
+// The same session driven through the host's controller nodes and through rp.launchpad.surface-in / -out, held
+// together: the recorded digests hold the host wiring, and the surface run is held to the same session behaviour -
+// every system input and every host MIDI message, block for block - and to the same LED and page stream, delivered in
+// the block the session sent it, since the link's two directions are two nodes and neither wire is a feedback wire.
+// So every value of the run matches, both digests included, and `outByBlock` shows it block by block.
+void throughSurface(ProtocolRig& host, ProtocolRig& viaSurface, const Sent& recorded) {
+    host.matches(recorded);
+    host.finish();
+    // The same device, the same pad stream in and the same LED stream out in the same block, so the surface run sends
+    // exactly what the host wiring sends: the digest folds in the host MIDI out and the controller out as well.
+    viaSurface.matches(recorded);
+    INFO("via the surface " << text(viaSurface.sent) << ", through the host " << text(host.sent));
+    CHECK(viaSurface.sent == host.sent);
+    REQUIRE(viaSurface.outByBlock.size() == host.outByBlock.size());
+    for (std::size_t i = 0; i < host.outByBlock.size(); ++i) {
+        INFO("block " << i);
+        CHECK(viaSurface.outByBlock[i] == host.outByBlock[i]);
+    }
+    viaSurface.finish();
+}
 
 // A frame-flagged MI.OUT byte as LSDj's link carries it: a flag bit, then the protocol byte's seven bits.
 std::uint8_t framed(std::uint8_t command) { return static_cast<std::uint8_t>(0x80 | (command & 0x7f)); }
@@ -800,37 +920,46 @@ TEST_CASE("the per-role graph runs a controller session: its surface, its launch
     // Boy decoding MI.OUT: the controller on Game Boy 7, quantised to the bar, and Game Boy 8 in MI.OUT. Both feed one
     // rp.host.midi-out, but only Game Boy 8 sends it anything: the one press the controller sends towards the host,
     // below, is cued for a bar past the last block (the next case's presses reach the host).
-    const auto target = [](const std::string& t) { return structure("controller/" + t); };
-    ProtocolRig rig(target("system"));
-    rig.block({.controller = {pad(0, 3)}});  // pressed with no surface attached
-    rig.block({.connected = true});          // attached: the session takes it (Programmer mode, a full paint)
-    rig.run({.connected = true}, 2);
-    BlockIn play{.frames = 1024, .ppq = 0.0, .playing = true, .connected = true};
-    play.controller = {pad(0, 0)};  // nothing playing yet: launched at once
-    rig.block(play);
-    play.ppq += 1024.0 / kBeat;
-    play.controller = {pad(0, 5), pad(4, 2)};  // cued for the bar
-    for (int i = 0; i < 100; ++i) {
+    // The same blocks over the host's controller nodes, and then with the session wired to rp.launchpad.surface-in /
+    // -out over a fake link fed the same traffic and drained for what it writes (docs/modular-graph-phase-c5-design.md
+    // section 9, its last question): both runs are held to the recorded digests, so the surface changes nothing the
+    // session reads or sends, block for block.
+    const auto run = [](ProtocolRig& rig) {
+        const auto target = [&](const std::string& t) { return structure("controller/" + t, rig.structure.surface); };
+        rig.block({.controller = {pad(0, 3)}});  // pressed with no surface attached
+        rig.block({.connected = true});          // attached: the session takes it (Programmer mode, a full paint)
+        rig.run({.connected = true}, 2);
+        BlockIn play{.frames = 1024, .ppq = 0.0, .playing = true, .connected = true};
+        play.controller = {pad(0, 0)};  // nothing playing yet: launched at once
         rig.block(play);
-        play.controller.clear();
         play.ppq += 1024.0 / kBeat;
-    }
-    rig.block({.ppq = play.ppq, .playing = true, .connected = false});  // detached
-    rig.block({.ppq = play.ppq, .playing = true, .connected = true});   // and back: repainted
-    // Its launches to a real Game Boy's MIDI out instead (a new session, the predictor carried over), while the other
-    // Game Boy's MI.OUT is decoded in the same blocks. Its press waits for a bar no block reaches, so every host MIDI
-    // out message is Game Boy 8's.
-    rig.restructure(target("midiOut"));
-    play.controller = {pad(0, 6)};
-    for (int i = 0; i < 40; ++i) {
-        play.serialOut = {{8, {framed(0x7f), framed(0x71), framed(60)}}};
-        rig.block(play);
-        for (const ProtocolRig::Out& m : rig.midiOut) CHECK(m.system == 8);
-        play.controller.clear();
-        play.ppq += 1024.0 / kBeat;
-    }
-    rig.matches({161, 0, 0, 0, 80, 35, 0xcf9b8961b949c269ULL, 0x5f3484f60d57d690ULL});
-    rig.finish();
+        play.controller = {pad(0, 5), pad(4, 2)};  // cued for the bar
+        for (int i = 0; i < 100; ++i) {
+            rig.block(play);
+            play.controller.clear();
+            play.ppq += 1024.0 / kBeat;
+        }
+        rig.block({.ppq = play.ppq, .playing = true, .connected = false});  // detached
+        rig.block({.ppq = play.ppq, .playing = true, .connected = true});   // and back: repainted
+        // Its launches to a real Game Boy's MIDI out instead (a new session, the predictor carried over), while the
+        // other Game Boy's MI.OUT is decoded in the same blocks. Its press waits for a bar no block reaches, so every
+        // host MIDI out message is Game Boy 8's.
+        rig.restructure(target("midiOut"));
+        play.controller = {pad(0, 6)};
+        for (int i = 0; i < 40; ++i) {
+            play.serialOut = {{8, {framed(0x7f), framed(0x71), framed(60)}}};
+            rig.block(play);
+            for (const ProtocolRig::Out& m : rig.midiOut) CHECK(m.system == 8);
+            play.controller.clear();
+            play.ppq += 1024.0 / kBeat;
+        }
+    };
+    const Sent recorded{161, 0, 0, 0, 80, 35, 0xcf9b8961b949c269ULL, 0x5f3484f60d57d690ULL};
+    ProtocolRig host(structure("controller/system"));
+    run(host);
+    ProtocolRig viaSurface(structure("controller/system", true));
+    run(viaSurface);
+    throughSurface(host, viaSurface, recorded);
 }
 
 TEST_CASE("the per-role graph puts a controller's launches after the routed MIDI, and its host MIDI out before the "
@@ -846,37 +975,39 @@ TEST_CASE("the per-role graph puts a controller's launches after the routed MIDI
     // graph only to what the kernel node did. So both orders are checked directly as well.
     //
     // The controller on the first system, launching at once; Game Boy 1 in MI.MAP, 2 in MI.OUT, 3 in master sync.
-    const auto target = [](const std::string& t) { return structure("controller-orders/" + t); };
-    ProtocolRig rig(target("system"));
-    BlockIn play{.frames = 1024, .ppq = 0.0, .playing = true, .connected = true};
-    std::vector<std::vector<Message>> cartSerialIn;  // Game Boy 1's serial input, a block a press, while it is targeted
-    std::vector<Bytes>                hostLaunches;  // the controller's host MIDI out, a block a press, after
-    const auto press = [&](int blocks, bool toHost) {
-        for (int i = 0; i < blocks; ++i) {
-            play.midi = {{300, on(0, 20 + i)}};
-            play.controller = {pad(i % 8, i % 4)};
-            play.serialOut = {{2, {framed(0x7f), framed(0x71), framed(60)}}, {3, {5, 5, 5}, 300}};
-            rig.block(play);
-            play.ppq += 1024.0 / kBeat;
-            if (!toHost) {
-                cartSerialIn.push_back(serialBytes(rig.node<Probe>("in-1").bytes));
-                continue;
+    // As the case above: the host's controller nodes, then the same blocks with the session on rp.launchpad's two
+    // surface nodes, both held to the recorded digests.
+    const auto run = [](ProtocolRig& rig) {
+        const auto target = [&](const std::string& t) { return structure("controller-orders/" + t, rig.structure.surface); };
+        BlockIn play{.frames = 1024, .ppq = 0.0, .playing = true, .connected = true};
+        std::vector<std::vector<Message>> cartSerialIn;  // Game Boy 1's serial input, a block a press, while it is targeted
+        std::vector<Bytes>                hostLaunches;  // the controller's host MIDI out, a block a press, after
+        const auto press = [&](int blocks, bool toHost) {
+            for (int i = 0; i < blocks; ++i) {
+                play.midi = {{300, on(0, 20 + i)}};
+                play.controller = {pad(i % 8, i % 4)};
+                play.serialOut = {{2, {framed(0x7f), framed(0x71), framed(60)}}, {3, {5, 5, 5}, 300}};
+                rig.block(play);
+                play.ppq += 1024.0 / kBeat;
+                if (!toHost) {
+                    cartSerialIn.push_back(serialBytes(rig.node<Probe>("in-1").bytes));
+                    continue;
+                }
+                // Host MIDI out, merged by frame with ties in input order, each message as frame:system: the controller's
+                // launch first, at frame 0, under the system its default target resolved to (Game Boy 1); then Game Boy 2's
+                // decoded MI.OUT, its clock at its first byte's frame (7) and its NoteOn at its third's (23), interleaved
+                // with Game Boy 3's clocks, one at each of its bytes' frames (7, 307 and 607, its run going on from the
+                // blocks before): Game Boy 2's clock first on the tie at 7, and Game Boy 3's there ahead of Game Boy 2's
+                // NoteOn. Handing the inputs out one after another, each message raised to the last frame handed out, would
+                // send Game Boy 3's first clock behind that NoteOn, at 23: still in (frame, system) order, but not this.
+                std::string merged;
+                for (const ProtocolRig::Out& m : rig.midiOut)
+                    merged += std::to_string(m.frame) + ":" + std::to_string(m.system) + " ";
+                INFO("press " << i);
+                REQUIRE_FALSE(rig.midiOut.empty());
+                hostLaunches.push_back(rig.midiOut.front().data);
+                CHECK(merged == "0:1 7:2 7:3 23:2 307:3 607:3 ");
             }
-            // Host MIDI out, merged by frame with ties in input order, each message as frame:system: the controller's
-            // launch first, at frame 0, under the system its default target resolved to (Game Boy 1); then Game Boy 2's
-            // decoded MI.OUT, its clock at its first byte's frame (7) and its NoteOn at its third's (23), interleaved
-            // with Game Boy 3's clocks, one at each of its bytes' frames (7, 307 and 607, its run going on from the
-            // blocks before): Game Boy 2's clock first on the tie at 7, and Game Boy 3's there ahead of Game Boy 2's
-            // NoteOn. Handing the inputs out one after another, each message raised to the last frame handed out, would
-            // send Game Boy 3's first clock behind that NoteOn, at 23: still in (frame, system) order, but not this.
-            std::string merged;
-            for (const ProtocolRig::Out& m : rig.midiOut)
-                merged += std::to_string(m.frame) + ":" + std::to_string(m.system) + " ";
-            INFO("press " << i);
-            REQUIRE_FALSE(rig.midiOut.empty());
-            hostLaunches.push_back(rig.midiOut.front().data);
-            CHECK(merged == "0:1 7:2 7:3 23:2 307:3 607:3 ");
-        }
     };
     press(6, false);
     rig.restructure(target("midiOut"));
@@ -894,8 +1025,13 @@ TEST_CASE("the per-role graph puts a controller's launches after the routed MIDI
         CHECK(cartSerialIn[i][0] == Message{300, {static_cast<std::uint8_t>(20 + i)}, 0});
         CHECK(cartSerialIn[i][1] == Message{300, {hostLaunches[i][1]}, 0});
     }
-    rig.matches({32, 0, 0, 0, 68, 84, 0x5474d124ec373f2bULL, 0xf7705e16658fd85cULL});
-    rig.finish();
+    };
+    const Sent recorded{32, 0, 0, 0, 68, 84, 0x5474d124ec373f2bULL, 0xf7705e16658fd85cULL};
+    ProtocolRig host(structure("controller-orders/system"));
+    run(host);
+    ProtocolRig viaSurface(structure("controller-orders/system", true));
+    run(viaSurface);
+    throughSurface(host, viaSurface, recorded);
 }
 
 TEST_CASE("the per-role graph keeps its state across structure changes: survivors go on, a system added again is fresh",
@@ -960,41 +1096,57 @@ TEST_CASE("the per-role graph keeps a controller's session through a system adde
     // and after (its target, "0 is the first system", still resolves to Game Boy 1), which is what keeps the session in
     // it from being rebuilt. What is checked here is that its state went with it. Nothing here was recorded from the
     // kernel.
-    ProtocolRig rig(structure("controller-survives/one-cart"));  // the controller on Game Boy 1's MI.MAP, by the bar
-    // MI.MAP's row bytes in a system's serial input: everything but its tick and its note-off.
-    const auto rows = [&](std::uint32_t id) {
-        std::vector<Message> out;
-        for (const Message& m : serialBytes(rig.node<Probe>("in-" + std::to_string(id)).bytes))
-            if (m.data[0] != 0xFF && m.data[0] != 0xFE) out.push_back(m);
-        return out;
-    };
-    BlockIn play{.frames = 4096, .ppq = 0.0, .playing = true, .controller = {pad(0, 0)}, .connected = true};
-    rig.block(play);  // attached, and nothing playing yet: the press launches at once
-    // A fresh session takes the device: Programmer mode first, then a full paint.
-    const std::vector<Bytes> hello = rig.controllerOut;
-    REQUIRE_FALSE(hello.empty());
-    CHECK(rows(1).size() == 1);
-    play.ppq += 4096.0 / kBeat;
-    play.controller = {pad(0, 5)};  // cued for the bar, at ppq 4
-    rig.block(play);
-    play.controller.clear();
-    CHECK(rows(1).empty());
-    rig.restructure(structure("controller-survives/system-added"));  // mGB on Game Boy 2
-    // Until the bar, no launch; then the cued one, in the first block that starts on or past it (the session reads the
-    // transport at a block's start); and the device is never taken again.
-    int launched = 0;
-    for (int i = 0; i < 24; ++i) {
-        const bool first = play.ppq < 4.0 && play.ppq + 4096.0 / kBeat >= 4.0;
+    // The same blocks over the host's controller nodes, then with the session on rp.launchpad's two surface nodes: the
+    // device is taken once through either, in the same block, with the same bytes, so the two runs' digests are equal
+    // (throughSurface compares them, and the streams block by block).
+    const auto run = [](ProtocolRig& rig, bool check) {
+        // MI.MAP's row bytes in a system's serial input: everything but its tick and its note-off.
+        const auto rows = [&](std::uint32_t id) {
+            std::vector<Message> out;
+            for (const Message& m : serialBytes(rig.node<Probe>("in-" + std::to_string(id)).bytes))
+                if (m.data[0] != 0xFF && m.data[0] != 0xFE) out.push_back(m);
+            return out;
+        };
+        BlockIn play{.frames = 4096, .ppq = 0.0, .playing = true, .controller = {pad(0, 0)}, .connected = true};
+        rig.block(play);  // attached, and nothing playing yet: the press launches at once
+        // A fresh session takes the device: Programmer mode first, then a full paint.
+        // What the session delivers, checked on the host wiring: the surface delivers the same bytes in the same block
+        // (throughSurface holds the two streams together).
+        const std::vector<Bytes> hello = rig.controllerOut;
+        if (check) REQUIRE_FALSE(hello.empty());
+        if (check) CHECK(rows(1).size() == 1);
         play.ppq += 4096.0 / kBeat;
+        play.controller = {pad(0, 5)};  // cued for the bar, at ppq 4
         rig.block(play);
-        INFO("block at ppq " << play.ppq);
-        CHECK(rows(1).size() == (first ? 1u : 0u));
-        launched += static_cast<int>(rows(1).size());
-        for (const Bytes& m : rig.controllerOut) CHECK(m != hello.front());
-    }
-    CHECK(launched == 1);
-    CHECK(rows(2).empty());
-    rig.finish();
+        play.controller.clear();
+        if (check) CHECK(rows(1).empty());
+        rig.restructure(structure("controller-survives/system-added", rig.structure.surface));  // mGB on Game Boy 2
+        // Until the bar, no launch; then the cued one, in the first block that starts on or past it (the session reads
+        // the transport at a block's start); and the device is never taken again.
+        int launched = 0;
+        for (int i = 0; i < 24; ++i) {
+            const bool first = play.ppq < 4.0 && play.ppq + 4096.0 / kBeat >= 4.0;
+            play.ppq += 4096.0 / kBeat;
+            rig.block(play);
+            INFO("block at ppq " << play.ppq);
+            if (check) CHECK(rows(1).size() == (first ? 1u : 0u));
+            launched += static_cast<int>(rows(1).size());
+            if (check)
+                for (const Bytes& m : rig.controllerOut) CHECK(m != hello.front());
+        }
+        if (check) CHECK(launched == 1);
+        if (check) CHECK(rows(2).empty());
+    };
+    ProtocolRig host(structure("controller-survives/one-cart"));  // the controller on Game Boy 1's MI.MAP, by the bar
+    run(host, true);
+    ProtocolRig viaSurface(structure("controller-survives/one-cart", true));
+    run(viaSurface, false);
+    // Nothing recorded holds this case (the kernel never saw a session kept through a structure change), so the host
+    // wiring's own values are what the surface wiring is held to: the same launches into Game Boy 1, and the stream
+    // through the surface.
+    const Sent recorded = host.sent;
+    host.finish();
+    throughSurface(host, viaSurface, recorded);
 }
 
 TEST_CASE("a throw in a protocol node keeps what was sent before it and runs the next block", "[engine-graph][protocol-nodes]") {

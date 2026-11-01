@@ -99,6 +99,7 @@ retroplug_add_test_binary(
              test/engine-graph/Devices.test.cpp        # rp.host.devices/1: the links a hardware node binds by name
              test/engine-graph/Capabilities.test.cpp   # rp.system.memory/1, sram/1, rom/1 as asynchronous jobs
              test/engine-graph/N8Node.test.cpp         # rp.n8.nes: the real cart as a node, its jobs on the link
+             test/engine-graph/Surface.test.cpp        # rp.launchpad.surface-in / -out: the control surface as nodes
              test/engine-graph/ScriptNodes.test.cpp
              test/engine-graph/ScriptPacks.test.cpp
              test/engine-graph/ProtocolNodes.test.cpp

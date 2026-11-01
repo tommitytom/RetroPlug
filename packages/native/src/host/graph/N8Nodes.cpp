@@ -85,6 +85,9 @@ struct N8Nes {
     // Its device runs threads of its own (the link's serial thread, which a job's transfer runs on), so a target with
     // none (the Pico) refuses the type.
     static constexpr bool threads = true;
+    // One cart, one link: the planner refuses a second node of this type in a plan (buildGraph places one, for the
+    // first NES whose "drive the real cart" setting is on).
+    static constexpr bool unique = true;
     // rp.mesen.nes's two inputs the cart's FIFO is fed from, shaped as that node's are, so a source wired to one wires
     // to the other.
     struct {

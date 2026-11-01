@@ -77,6 +77,10 @@ struct Layout {
 struct TypeDescriptor {
     std::string id, version, name, category;
     bool        heap = false, threads = false;
+    // At most one node of this type in a plan, which the planner refuses a second of: a type that binds a host-owned
+    // device declares it, since two nodes would share the one link. Written only when true, so a type that is not
+    // unique spells exactly what it did.
+    bool        unique = false;
     Layout      layout;          // the layout for default settings
     std::string settingsSchema;  // canonical JSON Schema of the settings object
 };

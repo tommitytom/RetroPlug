@@ -37,13 +37,20 @@ TEST_CASE("a type descriptor round-trips, settings schema included", "[graph][de
     d.name = "X";
     d.category = "test";
     d.heap = true;
+    d.unique = true;
     d.settingsSchema = R"({"type":"object","properties":{"n":{"type":"integer"}}})";
     const std::string json = descriptorJson(d);
     auto back = parseDescriptor(json);
     REQUIRE(back);
     CHECK(back->heap);
     CHECK_FALSE(back->threads);
+    CHECK(back->unique);
     CHECK(descriptorJson(*back) == json);
+    // A flag a type does not declare is not a field of its descriptor, so a descriptor that was never unique spells as
+    // it always did.
+    TypeDescriptor plain;
+    plain.id = "rp.test.y";
+    CHECK(descriptorJson(plain).find("unique") == std::string::npos);
 }
 
 namespace {
@@ -129,6 +136,13 @@ TEST_CASE("a descriptor's requires flags are exact", "[graph][descriptor]") {
     REQUIRE(d);
     CHECK(d->name == "x");
     CHECK(d->settingsSchema == R"({"type":"object"})");
+    // `unique` is a boolean of its own, not a capability the host provides, and true or absent as a type declares it:
+    // the writer omits a flag that is not set, so `false` would be a descriptor that does not round-trip.
+    const auto unique = parseDescriptor(R"({"id":"x","unique":true})");
+    REQUIRE(unique);
+    CHECK(unique->unique);
+    CHECK(descriptorReason(R"({"id":"x","unique":1})").find("true or absent") != std::string::npos);
+    CHECK(descriptorReason(R"({"id":"x","unique":false})").find("true or absent") != std::string::npos);
 }
 
 namespace {

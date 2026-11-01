@@ -150,6 +150,7 @@ add_library(retroplug-backend STATIC
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
     src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out, controller-in / -out
     src/host/graph/N8Nodes.cpp              # rp.n8.cart-mirror, rp.n8.nes
+    src/host/graph/LaunchpadNodes.cpp       # rp.launchpad.surface
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed

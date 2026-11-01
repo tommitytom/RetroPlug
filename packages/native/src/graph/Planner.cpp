@@ -161,6 +161,8 @@ private:
     // ---- structure ---------------------------------------------------------------------------------
 
     bool structure() {
+        // The unique types a plan already holds (a type that binds a host-owned device, so one node to one link).
+        std::set<std::string_view> uniqueTypes;
         for (const auto& n : in_.doc->nodes) {
             if (!isPlainId(n.id) || n.id.find('.') != std::string::npos)
                 error(n.id, "", "node-id",
@@ -176,6 +178,12 @@ private:
                 error(n.id, "", "capability",
                       "node type " + q(n.type) + " needs " + (entry->descriptor.heap ? "a heap" : "threads") +
                           ", which the Pico target does not provide");
+            // A type that declares itself unique is one per plan: two nodes would share the one thing it binds, and a
+            // document that places both is refused rather than one of them silently taking nothing.
+            if (entry->descriptor.unique && !uniqueTypes.insert(entry->descriptor.id).second) {
+                error(n.id, "", "unique", "a plan holds one node of type " + q(n.type) + " at most");
+                continue;
+            }
             NodePlan p;
             p.doc = &n;
             p.entry = entry;

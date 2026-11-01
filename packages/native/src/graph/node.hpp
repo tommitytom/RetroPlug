@@ -52,7 +52,7 @@
 //                                                         ids are reserved (answered before this is asked), and a
 //                                                         host casts an answer only to the struct of the id it
 //                                                         asked by
-//   static constexpr const char *name, *category, *version;  static constexpr bool heap, threads;
+//   static constexpr const char *name, *category, *version;  static constexpr bool heap, threads, unique;
 //   static constexpr bool reshapes;                       keep the instance through a settings change that alters
 //                                                         its layout (ports or params adjust_layout appends): prepare
 //                                                         answers RP_PREPARE_RESHAPE, the planner rebinds the ports
@@ -1044,6 +1044,8 @@ template <class T> constexpr const char* categoryOf() { if constexpr (requires {
 template <class T> constexpr const char* versionOf() { if constexpr (requires { T::version; }) return T::version; else return "1.0.0"; }
 template <class T> constexpr bool heapOf() { if constexpr (requires { T::heap; }) return T::heap; else return false; }
 template <class T> constexpr bool threadsOf() { if constexpr (requires { T::threads; }) return T::threads; else return false; }
+// At most one node of the type in a plan (the planner refuses a second): a type that binds a host-owned device sets it.
+template <class T> constexpr bool uniqueOf() { if constexpr (requires { T::unique; }) return T::unique; else return false; }
 template <class T> constexpr std::uint32_t typeFlags() {
     std::uint32_t flags = 0;
     if constexpr (statelessPrepareOf<T>()) flags |= RP_TYPE_STATELESS_PREPARE;
@@ -1064,6 +1066,7 @@ const char* descriptorFn(const rp_node_type*) {
             d.category = categoryOf<T>();
             d.heap = heapOf<T>();
             d.threads = threadsOf<T>();
+            d.unique = uniqueOf<T>();
             d.layout = layoutFor<T>(S{});
             if constexpr (!std::is_same_v<S, NoSettings>) d.settingsSchema = rfl::json::to_schema<S, rfl::DefaultIfMissing>();
             return graph::descriptorJson(d);

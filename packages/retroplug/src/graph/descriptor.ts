@@ -71,6 +71,9 @@ export interface TypeDescriptor extends Layout {
   name: string;
   category: string;
   requires: { heap: boolean; threads: boolean };
+  /** At most one node of this type in a plan (a type that binds a host-owned device): the planner refuses a second.
+   *  Written only when true, so a descriptor that was never unique spells as it always did. */
+  unique?: true;
   /** JSON Schema of the settings object. Generator-specific (zod here, reflect-cpp in C++), so it is the
    *  one part of a descriptor two languages are not expected to spell identically - except the no-settings
    *  case, which both write as {"type":"object"}. */

@@ -304,13 +304,15 @@ TEST_CASE("LaunchpadLink drops rather than overruns an oversized message", "[lau
     REQUIRE(log.written[0].size() == LaunchpadLink::kMaxOutMessage);
 }
 
-TEST_CASE("LaunchpadLink ignores output while disconnected", "[launchpad]") {
+TEST_CASE("LaunchpadLink drops and counts output while disconnected", "[launchpad]") {
     PortLog       log;
     LaunchpadLink link(factoryFor(log));
     const std::uint8_t led[3] = {0x90, 0x51, 0x15};
     link.pushOutput(led, 3);
     link.pump();
     REQUIRE(log.written.empty());
+    // Nowhere to send it is a push that went nowhere, which the host reads as the device's drops.
+    REQUIRE(link.messagesDropped() == 1);
 }
 
 TEST_CASE("LaunchpadHost connects only with BOTH ports chosen", "[launchpad]") {
