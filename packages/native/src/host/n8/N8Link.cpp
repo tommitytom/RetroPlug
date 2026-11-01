@@ -73,6 +73,7 @@ bool N8Link::connect(const std::string& port) {
     // connection, then start the consumer thread BEFORE allowing producers.
     { TimedChunk drop; while (ring_.tryPop(drop)) {} }
     bytesForwarded_.store(0, std::memory_order_relaxed);
+    controlRetryAtNs_ = 0;  // a prior connection's failed control write does not hold this one's first turn back
     running_.store(true, std::memory_order_release);
     {
         std::lock_guard<std::mutex> l(jobMutex_);
@@ -244,9 +245,17 @@ void N8Link::streamLoop() {
         // A setting that lives in an atomic (see OnControl) is applied between chunks, on the thread that owns the
         // port. Best-effort, like the connect-time write: a config register must not take the MIDI link down.
         if (onControl_) {
-            try {
-                onControl_(*edio_);
-            } catch (const std::exception&) {
+            const std::int64_t now = nowNs();
+            if (now >= controlRetryAtNs_) {
+                try {
+                    onControl_(*edio_);
+                    controlRetryAtNs_ = 0;
+                } catch (const std::exception&) {
+                    // A write that keeps failing is retried once a second, not once a turn: a wedged-but-open port
+                    // would otherwise spend the link's turns on a register write, and the volume's Auto answer is a
+                    // config read on top of it, which the MIDI stream would wait behind.
+                    controlRetryAtNs_ = now + 1'000'000'000;
+                }
             }
         }
         if (jobPending_.load(std::memory_order_acquire)) {

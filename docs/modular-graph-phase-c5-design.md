@@ -346,7 +346,9 @@ Each correction is in place; this is the list.
   the engine's losses gained `stageSystemMidi` itself, and the two devices bind through a typed acquire each.
 - **Section 4**: the staging command addresses a node, not its input (`rp.stage/1` chooses the door); the node
   declares `unique` as well as `threads`; a removed node abandons its job at reclaim; a pause never leaves a note
-  sounding; the expansion volume is a standing value the link's serial thread applies.
+  sounding; the expansion volume is a standing value the link's serial thread applies, and the last node to release the
+  link puts it back to AUTO, so a project that stops driving the cart leaves the register to the cart rather than at the
+  level it last played at (a handover never reaches zero: the new node acquires before the old one is reclaimed).
 - **Section 5**: one `rp.launchpad.surface` became `rp.launchpad.surface-in` / `-out` (the cycle), each unique, with
   the first-block discard.
 - **Section 6**: `sram/1` on the cart reads and writes the SD card's save file at the menu, not the cart's memory (the
@@ -371,7 +373,8 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
 - **`postControl` was not needed, and neither is any call from the block into the link's thread** (section 4). The
   expansion volume is a value the host holds with a generation counter: the block only clamps, stores and bumps, and
   the serial thread applies the standing value at the top of its turn, so a failed write retries and no lock or
-  `std::function` is on the audio path.
+  `std::function` is on the audio path. A write that keeps failing is retried once a second rather than every turn, and
+  the same turn carries the menu probe, so a wedged-but-open port cannot take the stream's turns for a config register.
 - **A project with no NES no longer forwards DAW MIDI to the cart** (section 4). The fallback existed for "no emulated
   NES to mirror"; the cart is placed by a setting now, a raw copy beside the fan-out would arrive twice, and a user who
   drove a MIDI cart with no NES system in the project (a MENU or debug pattern) loses that. Restoring it would be a rule

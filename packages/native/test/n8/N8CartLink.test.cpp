@@ -3,9 +3,9 @@
 // with no cart loses its bytes and is counted; the expansion volume a node's param drives goes out through the link's
 // control path and again on every connect; and the connected state is the link's own.
 //
-// The fake serial port answers the Edio handshake and records every byte, as N8Host.test.cpp's does: no `serial` lib,
-// no hardware. The link's reliable-link probe is off (setLinkAllowed), so the wire holds only what a push and a control
-// write put there.
+// The fake serial port answers the Edio commands the link writes and records every byte, as N8Host.test.cpp's does: no
+// `serial` lib, no hardware. The link's reliable-link probe is off (setLinkAllowed), so the wire holds only what a push
+// and a control write put there.
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -33,44 +34,89 @@ using retroplug::N8PortDto;
 
 namespace {
 
-// What every fake port written to one device shares: the bytes that reached the wire, mutex-guarded because the link's
-// serial thread writes them while the test reads.
+// The cart's side of the wire: every byte that reached it, the FPGA config block the host reads (its map_idx: 255
+// while the menu shows, the running game's mapper otherwise), and the writes a port that has stopped answering
+// refuses. Mutex-guarded, because the link's serial thread writes and reads it while the test does.
 struct FakeDevice {
-    void append(const std::uint8_t* data, std::size_t n) {
-        std::lock_guard<std::mutex> l(mu_);
-        written_.insert(written_.end(), data, data + n);
-    }
     std::vector<std::uint8_t> wire() {
-        std::lock_guard<std::mutex> l(mu_);
-        return written_;
+        std::lock_guard<std::mutex> l(mu);
+        return written;
     }
 
-private:
-    std::mutex                mu_;
-    std::vector<std::uint8_t> written_;
+    std::mutex                mu;
+    std::vector<std::uint8_t> written;
+    int                       mapper             = 0;  // the config block's map_idx
+    int                       expVolAttempts     = 0;  // every write to ADDR_EXP_VOL the host made
+    int                       refuseExpVolWrites = 0;  // the next N of those throw instead of reaching the device
 };
 
-// The handshake (CMD_STATUS -> 0xA500) so connect succeeds, then the config block the host reads to decide the volume.
+// A fake serial port that answers the Edio commands the link writes - the status handshake, a memory read of the
+// config block, a one-byte memory write - the way the cart does. A refused expansion-volume write is taken back off
+// the wire: it never reached the device.
 struct FakePort : ISerialPort {
-    explicit FakePort(FakeDevice& dev) : dev_(dev) {
-        toRead = {0x00, 0xA5};
-        for (int i = 0; i < Edio::SIZE_CFG; ++i) toRead.push_back(0);  // map_idx 0: no expansion audio
-    }
+    explicit FakePort(FakeDevice& dev) : dev_(dev) {}
+
     std::size_t write(const std::uint8_t* data, std::size_t n) override {
-        dev_.append(data, n);
+        std::lock_guard<std::mutex> l(dev_.mu);
+        dev_.written.insert(dev_.written.end(), data, data + n);
+        in_.insert(in_.end(), data, data + n);
+        parse();
         return n;
     }
     std::size_t read(std::uint8_t* b, std::size_t n, int) override {
+        std::lock_guard<std::mutex> l(dev_.mu);
         std::size_t i = 0;
-        while (i < n && !toRead.empty()) { b[i++] = toRead.front(); toRead.pop_front(); }
+        while (i < n && !out_.empty()) { b[i++] = out_.front(); out_.pop_front(); }
         return i;
     }
-    void flushInput() override {}
-
-    std::deque<std::uint8_t> toRead;
+    void flushInput() override {
+        std::lock_guard<std::mutex> l(dev_.mu);
+        out_.clear();
+    }
 
 private:
-    FakeDevice& dev_;
+    static std::uint32_t le32(const std::vector<std::uint8_t>& b, std::size_t at) {
+        return b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | (static_cast<std::uint32_t>(b[at + 3]) << 24);
+    }
+    // The config block's byte at `at`, for a read of the whole block: map_idx low 8 at 0, its high nibble at 2.
+    std::uint8_t cfgByte(std::uint32_t at) const {
+        const std::int64_t off = static_cast<std::int64_t>(at) - Edio::ADDR_CFG;
+        if (off < 0 || off >= static_cast<std::int64_t>(Edio::SIZE_CFG)) return 0;
+        if (off == 0) return static_cast<std::uint8_t>(dev_.mapper & 0xFF);
+        if (off == 2) return static_cast<std::uint8_t>(((dev_.mapper >> 8) & 0x0F) << 4);
+        return 0;
+    }
+    void parse() {
+        for (;;) {
+            if (in_.size() < 4) return;
+            const std::uint8_t cmd  = in_[2];
+            std::size_t        need = 4;
+            if (cmd == Edio::CMD_MEM_RD) need = 13;
+            if (cmd == Edio::CMD_MEM_WR) need = in_.size() >= 13 ? 13 + le32(in_, 8) : 13;
+            if (in_.size() < need) return;
+            const std::vector<std::uint8_t> frame(in_.begin(), in_.begin() + static_cast<std::ptrdiff_t>(need));
+            in_.erase(in_.begin(), in_.begin() + static_cast<std::ptrdiff_t>(need));
+            if (cmd == Edio::CMD_STATUS) {
+                out_.push_back(0x00);
+                out_.push_back(0xA5);  // 0xA500: the handshake's OK
+            } else if (cmd == Edio::CMD_MEM_RD) {
+                const std::uint32_t addr = le32(frame, 4), size = le32(frame, 8);
+                for (std::uint32_t i = 0; i < size; ++i) out_.push_back(cfgByte(addr + i));
+            } else if (cmd == Edio::CMD_MEM_WR) {
+                if (le32(frame, 4) != static_cast<std::uint32_t>(Edio::ADDR_EXP_VOL)) continue;
+                ++dev_.expVolAttempts;
+                if (dev_.refuseExpVolWrites > 0) {
+                    --dev_.refuseExpVolWrites;
+                    dev_.written.resize(dev_.written.size() - frame.size());  // never reached the device
+                    throw std::runtime_error("the port is gone");
+                }
+            }
+        }
+    }
+
+    FakeDevice&              dev_;
+    std::vector<std::uint8_t> in_;
+    std::deque<std::uint8_t> out_;
 };
 
 N8Link::PortFactory factoryFor(FakeDevice& dev) {
@@ -220,9 +266,9 @@ TEST_CASE("N8CartLink: the expansion volume may be set from another thread while
     REQUIRE(host.link().connect("fake"));
     REQUIRE(waitForExpVolWrites(dev, 1));
 
-    // The value is an atomic and a generation the serial thread consumes, so a knob on any thread (a node's param runs
-    // on the block thread in stage 3) neither locks nor allocates here. Many changes from another thread, then a final
-    // one: the serial thread must end on the final value, whatever it wrote on the way.
+    // The value is an atomic and a generation the serial thread consumes, so a knob on any thread (a cart node's param
+    // runs on the block thread) neither locks nor allocates here. Many changes from another thread, then a final one:
+    // the serial thread must end on the final value, whatever it wrote on the way.
     std::thread writer([&link] {
         for (int v = 0; v < 64; ++v) link.setExpansionVolume(v);
         link.setExpansionVolume(200);
@@ -231,6 +277,72 @@ TEST_CASE("N8CartLink: the expansion volume may be set from another thread while
     REQUIRE(waitForExpVolValue(dev, 200));
     const auto values = expVolWrites(dev.wire());
     CHECK(values.back() == 200);
+}
+
+TEST_CASE("N8CartLink: a control write the port refuses is retried, and never takes the link down", "[n8]") {
+    FakeDevice dev;
+    dev.refuseExpVolWrites = 1;  // the standing value's connect-time write dies on the wire
+    N8Host host(factoryFor(dev), noPorts(), tempCfgDir());
+    host.link().setLinkAllowed(false);
+    N8CartLink link(host);
+    link.setExpansionVolume(200);
+    REQUIRE(host.link().connect("fake"));  // a config write that fails must not fail the MIDI link
+    // The generation is marked applied only after a write succeeds, so the serial thread's next control turn writes the
+    // standing value again.
+    REQUIRE(waitForExpVolWrites(dev, 1));
+    CHECK(expVolWrites(dev.wire()) == std::vector<int>{200});
+    CHECK(link.connected());
+    {
+        std::lock_guard<std::mutex> l(dev.mu);
+        CHECK(dev.expVolAttempts == 2);
+    }
+}
+
+TEST_CASE("N8CartLink: a control write that keeps failing is retried about once a second, not every turn", "[n8]") {
+    FakeDevice dev;
+    dev.refuseExpVolWrites = 1'000'000;  // a port that is open but refuses every config write
+    N8Host host(factoryFor(dev), noPorts(), tempCfgDir());
+    host.link().setLinkAllowed(false);
+    N8CartLink link(host);
+    link.setExpansionVolume(64);
+    REQUIRE(host.link().connect("fake"));
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    int attempts;
+    {
+        std::lock_guard<std::mutex> l(dev.mu);
+        attempts = dev.expVolAttempts;
+    }
+    // Two in 400 ms: the connect-time one, then the serial thread's first turn. The rest of the second waits, so a
+    // wedged-but-open port cannot take the link's turns (and its config reads) from the MIDI stream.
+    CHECK(attempts >= 1);
+    CHECK(attempts <= 2);
+    CHECK(link.connected());
+}
+
+TEST_CASE("N8CartLink: the last node to release the link puts the expansion volume back to the cart's own", "[n8]") {
+    FakeDevice dev;
+    dev.mapper = 69;  // Sunsoft 5B: a cart with its own sound chip, so Auto writes unity
+    N8Host host(factoryFor(dev), noPorts(), tempCfgDir());
+    host.link().setLinkAllowed(false);
+    N8CartLink link(host);
+    link.acquire();
+    link.setExpansionVolume(64);
+    REQUIRE(host.link().connect("fake"));
+    REQUIRE(waitForExpVolWrites(dev, 1));
+    CHECK(expVolWrites(dev.wire()) == std::vector<int>{64});
+
+    // One node still drives the cart while the other releases: the register keeps the level it was given.
+    link.acquire();
+    link.release();
+    link.setExpansionVolume(96);
+    REQUIRE(waitForExpVolValue(dev, 96));
+
+    // The last release: nothing in any plan drives the cart, so the register goes back to the cart's own setting
+    // (unity for this mapper's Auto).
+    link.release();
+    REQUIRE(waitForExpVolValue(dev, N8Host::EXP_VOL_UNITY));
+    CHECK(expVolWrites(dev.wire()).back() == N8Host::EXP_VOL_UNITY);
+    CHECK(link.connected());
 }
 
 TEST_CASE("N8CartLink: a full ring loses and counts only the pushes it could not take", "[n8]") {
@@ -249,6 +361,6 @@ TEST_CASE("N8CartLink: a full ring loses and counts only the pushes it could not
     const auto after = link.dropped();
     REQUIRE(after > before);
     // The adapter counted exactly what the link would not take, and the link's own count is the same because nothing
-    // else pushes at it here. The old paths pushing at the same N8Link (until stage 6) do not reach the adapter's.
+    // else pushes at it here: a node keeps its own books on the push's answer, never on either count.
     CHECK(after == host.link().pushesDropped());
 }

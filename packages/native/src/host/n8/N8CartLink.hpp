@@ -45,8 +45,19 @@ public:
     // while streaming, without interrupting the stream, and applies it again inside every connect.
     void setExpansionVolume(int value) override { host_.setExpVol(value); }
 
-    // [control] The cart's battery and ROM as capability jobs, run on the link's serial thread with streaming paused
-    // (N8Host::submitCartJob says which operations, and what each does).
+    // [control] The nodes bound to this link. A node acquires in its activate (once: a reactivate keeps its handle) and
+    // releases once in its destructor, at reclaim on the control thread. The last release puts the register back to
+    // AUTO, so a project that stops driving the cart - the setting off, its NES removed, another console loaded - does
+    // not leave the console's expansion chip at the level it last played at. A handover never reaches zero: the node
+    // taking over acquires before the one it replaces is reclaimed, so the reset cannot race the new node's first
+    // value.
+    void acquire() override { holders_.fetch_add(1, std::memory_order_acq_rel); }
+    void release() override {
+        if (holders_.fetch_sub(1, std::memory_order_acq_rel) == 1) host_.setExpVol(N8Host::EXP_VOL_AUTO);
+    }
+
+    // [control] The cart's battery file and ROM as capability jobs, run on the link's serial thread with streaming
+    // paused (N8Host::submitCartJob says which operations, and what each does).
     bool submitJob(const rp::host::JobRequest& request, rp::host::Job& job, const void* owner,
                    std::string* error) override {
         return host_.submitCartJob(request, job, owner, error);
@@ -56,6 +67,7 @@ public:
 private:
     N8Host&                    host_;
     std::atomic<std::uint64_t> dropped_{0};
+    std::atomic<int>           holders_{0};
 };
 
 }  // namespace retroplug

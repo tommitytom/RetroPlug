@@ -45,12 +45,12 @@ public:
     // and a 0 there silences a VRC6 / VRC7 / N163 / S5B / MMC5 cart's extra voices no matter what the ROM
     // does - a symptom that reads exactly like a dead chip.
     //
-    // NOT a setting of its own: the UI owns the level as the NES system's `expansionVolume` knob (percent,
-    // in the project) and pushes the rescaled byte here, so the cart sounds the same emulated and on the
-    // console. Hence no persistence in n8.cfg - the project is where it lives. AUTO is the standing value
-    // until something pushes one: it writes unity for a cart whose mapper carries expansion audio, and
-    // leaves anything else as the N8's own menu had it. That is what a project with no NES system in it
-    // (or a link that comes up before one loads) gets.
+    // NOT a setting of its own: the UI owns the level as the NES system's `expansionVolume` knob (percent, in the
+    // project), which `buildGraph` hands to the cart node as that node's param; the node pushes the rescaled byte here,
+    // so the cart sounds the same emulated and on the console. Hence no persistence in n8.cfg - the project is where it
+    // lives. AUTO is the standing value until something pushes one: it writes unity for a cart whose mapper carries
+    // expansion audio, and leaves anything else as the N8's own menu had it. That is what a project with no NES system
+    // in it (or a link that comes up before one loads) gets, and what the last cart node releasing the link puts back.
     static constexpr int EXP_VOL_AUTO  = -1;
     static constexpr int EXP_VOL_UNITY = 128;
 

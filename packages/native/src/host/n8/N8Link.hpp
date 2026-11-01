@@ -36,9 +36,11 @@ public:
     // write must never fail a working MIDI link.
     using OnConnected = std::function<void(Edio&)>;
     // Ran on the serial thread at the top of every turn, while the link is up: where a setting whose value lives in an
-    // atomic (N8Host's expansion volume) reaches the device without the caller taking a lock or building a
-    // std::function. Set once before any connect, like OnConnected, so it is never mutated while the thread reads it;
-    // a throw is caught and ignored, so a config write never takes the MIDI link down.
+    // atomic (N8Host's expansion volume and its config-block probe) reaches the device without the caller taking a lock
+    // or building a std::function. Set once before any connect, like OnConnected, so it is never mutated while the
+    // thread reads it. A throw is caught and ignored, so a config write never takes the MIDI link down; the next turn
+    // is then a second later, not the next 200 us, so a port that keeps refusing a write cannot take the link's turns
+    // from the MIDI stream.
     using OnControl = std::function<void(Edio&)>;
 
     // What a paused job tells the link once it has run: resume streaming, or stop it (a ROM boot: the old stream is
@@ -153,6 +155,8 @@ private:
     std::atomic<std::uint64_t> bytesForwarded_{0};
     std::atomic<std::uint64_t> pushesDropped_{0};
     std::atomic<std::uint64_t> chunksDiscarded_{0};
+    // The earliest moment OnControl runs again after a throw (see the loop in streamLoop): serial thread only.
+    std::int64_t controlRetryAtNs_ = 0;
 
     // The paused job (runPaused): handed over under jobMutex_, which also orders a submission against the serial
     // thread's exit, so a job taken is always run (with null, if the link went down first). jobPending_ is the flag the
