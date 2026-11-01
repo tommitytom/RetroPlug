@@ -15,7 +15,6 @@ import type { NativeAudioConfig } from "../screens/menu/audioDraft";
 import type { MidiConfig } from "../screens/menu/midiDevices";
 import type { TransportState } from "../screens/menu/transport";
 import type { N8Config } from "../screens/menu/n8Devices";
-import type { N8SdStatus } from "../screens/menu/n8SdOps";
 import type { LaunchpadConfig, LaunchpadScanStatus } from "../screens/menu/launchpadDevices";
 
 export interface RpHooks {
@@ -70,7 +69,10 @@ export interface RpHooks {
   __rp_connectN8?: (enabled: boolean) => void;
   __rp_setN8Lookahead?: (ms: number) => void;
   __rp_setN8ExpVol?: (v: number) => void;
-  __rp_getN8SdStatus?: () => Partial<N8SdStatus>;
+  __rp_getN8SdStatus?: () => Partial<{
+    busy: boolean; op: string; bytesDone: number; bytesTotal: number; phase: string; done: boolean; error: string;
+    result: string; version: number;
+  }>;
   __rp_n8LoadRom?: (path: string) => void;
   __rp_n8DumpSram?: (path: string) => void;
   __rp_n8RestoreSram?: (path: string) => void;

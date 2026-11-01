@@ -9,12 +9,10 @@
 // by bindN8Hooks (packages/native/src/host/n8/N8Hooks.cpp) from both sdl/main.cpp and plugin/PluginDSP.cpp.
 //
 // The one piece of N8 config that is NOT host state is the cartridge sound chip's level: that belongs to the
-// NES system (its "Expansion Volume" knob, in the project), and App pushes it down here - see
-// projectExpVolForN8 / setN8ExpVol at the bottom.
-import type { SystemView } from "../../../src/systemsStore";
+// system (its "Expansion Volume" knob, in the project), and the driven cart's node carries it as its own
+// `expansionVolume` param, so no hook here reaches for it.
 import { createSubscribable } from "./subscribable";
 import { native } from "../../host/nativeHooks";
-import { roleConfig } from "../../../src/systemRoles";
 
 export interface N8Port {
   port: string; // OS serial port name (/dev/ttyACM0, COM3, ...)
@@ -77,33 +75,3 @@ export function setN8Lookahead(ms: number): void {
   native.__rp_setN8Lookahead?.(ms);
   emit();
 }
-
-/** The N8's expansion-audio master volume (`master_vol`, 128 = unity) for a system "Expansion Volume" of
- *  `percent` (100 = unity). Both scale the cartridge's own sound chip, just against different unities, so
- *  the emulated cart and the console end up at the same level. 200% saturates the register. */
-export function expVolToN8(percent: number): number {
-  return Math.max(0, Math.min(255, Math.round((percent * 128) / 100)));
-}
-
-/** Point a connected N8 at the level the project asks for (-1 = leave it to the host's own default, which
- *  derives unity from the running cart's mapper - what a project with no NES system in it gets). Applied on
- *  the spot when the link is up, and again on every connect. NOT persisted here: the level belongs to the
- *  NES system's `expansionVolume` knob, in the project. */
-export function setN8ExpVol(v: number): void {
-  native.__rp_setN8ExpVol?.(v);
-}
-
-/** The N8 master_vol a project asks for: the focused NES system's "Expansion Volume" (else the first NES
- *  system's), rescaled. -1 when the project has no NES system at all - there is no cart here to take a level
- *  from, so the host goes on deriving one from whatever is running on the console. Several NES instances can
- *  share one link (it carries the whole instance's MIDI), so the focused one - the cart whose menu you were
- *  just in - decides. */
-export function projectExpVolForN8(systems: SystemView[]): number {
-  const nes = systems.filter((s) => s.platform === "nes");
-  if (nes.length === 0) return -1;
-  const sys = nes.find((s) => s.focused) ?? nes[0];
-  const cfg = roleConfig(sys.roles, "mesen");
-  const percent = typeof cfg?.expansionVolume === "number" ? cfg.expansionVolume : 100;
-  return expVolToN8(percent);
-}
-

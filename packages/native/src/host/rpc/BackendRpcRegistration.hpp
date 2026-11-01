@@ -53,6 +53,7 @@ void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::getFrame>(e);
     s.template addMethod<&EngineRpcService::pressButton>(e);
     s.template addMethod<&EngineRpcService::stageSystemMidi>(e);
+    s.template addMethod<&EngineRpcService::stageNodeMidi>(e);
 }
 
 // --- harness: audio render / transport / MIDI + DSP profiling + kit compile + graph drops (22; CLI + tests only) ---

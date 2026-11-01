@@ -1,5 +1,5 @@
-// backend.stageSystemMidi — control MIDI aimed at ONE system, delivered straight to its ingress and NEVER
-// through the routing node.
+// backend.stageNodeMidi - control MIDI aimed at ONE node of the document, delivered straight to its core's
+// ingress and NEVER through the routing node.
 //
 // The bypass IS the feature, so that is what this proves rather than mere delivery. Two identical BlipToaster
 // carts boot side by side; a theme CC goes to the first only; the first's screen changes and the second's does
@@ -35,10 +35,10 @@ const same = (a: Uint8Array, b: Uint8Array): boolean => {
   return true;
 };
 
-test("stageSystemMidi reaches the system it names, and only that one", () => {
+test("stageNodeMidi reaches the system node it names, and only that one", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(ROM)) skip(`stageSystemMidi: no ROM at ${ROM}`);
+  if (!be.fileExists(ROM)) skip(`stageNodeMidi: no ROM at ${ROM}`);
   const spec = { romPath: ROM, platform: "nes" as const, core: "mesen" as const, embeddedRom: "", savPath: null, statePath: null };
   expect(graph.add(spec, 1)).toBeTruthy();
   expect(graph.add(spec, 2)).toBeTruthy();
@@ -52,19 +52,22 @@ test("stageSystemMidi reaches the system it names, and only that one", () => {
 
   // Theme 9 (MONO) on instance 1 only. Accepted optimistically - it is queued to the audio thread. Ten bytes,
   // so this also covers the OWNING-payload half of the command: a rig block does not fit inline.
-  expect(be.stageSystemMidi(1, sxSettings(9))).toBeTruthy();
+  expect(be.stageNodeMidi("sys-1", sxSettings(9))).toBeTruthy();
   audio.renderAudio(400);
 
   const after1 = framePixels(be, 1)!;
   const after2 = framePixels(be, 2)!;
   expect(same(after1, before1)).toBe(false); // it landed: instance 1 repainted in the new theme
   expect(same(after2, before2)).toBeTruthy(); // and stayed off instance 2 entirely
-  console.log(`[stageSystemMidi] rig SysEx (theme 9) changed instance 1's screen, left instance 2 byte-identical`);
+  console.log(`[stageNodeMidi] rig SysEx (theme 9) changed instance 1's screen, left instance 2 byte-identical`);
 
   // The one guard left: nothing to deliver. There is no upper bound any more - the raw ingress has no cap,
   // which is the whole reason a SysEx can get through at all.
-  expect(be.stageSystemMidi(1, [])).toBe(false);
-  expect(be.stageSystemMidi(0xdead, sxSettings(3))).toBeTruthy(); // queued optimistically; no such system
+  expect(be.stageNodeMidi("sys-1", [])).toBe(false);
+  expect(be.stageNodeMidi("sys-4242", sxSettings(3))).toBeTruthy(); // queued optimistically; no such node
+  // The cart node the document places for system 1 (its "drive the real cart" setting defaults on) takes the same
+  // message: with no cart attached in this host the link drops it, which is a device's business, not the node's.
+  expect(be.stageNodeMidi("cart-1", sxSettings(3))).toBeTruthy();
 
   graph.remove(1);
   graph.remove(2);

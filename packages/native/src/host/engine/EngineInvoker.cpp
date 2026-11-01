@@ -56,6 +56,15 @@ void QueuedInvoker::stageSystemMidi(SystemId id, std::vector<std::uint8_t> bytes
     }
 }
 
+void QueuedInvoker::stageNodeMidi(std::string nodeId, std::vector<std::uint8_t> bytes) {
+    if (bytes.empty()) return;
+    DspCommand c;
+    c.kind = DspCommand::Kind::StageNodeMidi;
+    auto* staged = new rp::host::StagedNodeMessage{std::move(nodeId), std::move(bytes)};
+    c.stageNodeMidi.ext = staged;
+    if (!push(c)) delete staged;  // full ring: drop it, never leak it
+}
+
 void QueuedInvoker::setBpm(double bpm) {
     DspCommand c;
     c.kind = DspCommand::Kind::SetBpm;

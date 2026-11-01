@@ -4,7 +4,10 @@
 // section 4): the MIDI routing, a controller session when one is enabled, and a protocol node for each role of each
 // system that has one, wired between the host's I/O and the systems as the DSP kernel's ports were. After the
 // systems, it places each role's second node where its type names one, which reads what its system sent in the same
-// block: LSDj's serial-out decoder, whose host MIDI goes where the kernel's did (docs/lsdj-serial-out-design.md).
+// block: LSDj's serial-out decoder, whose host MIDI goes where the kernel's did (docs/lsdj-serial-out-design.md). The
+// project's hardware is nodes too (docs/modular-graph-phase-c5-design.md): a NES whose config drives the real cart gets
+// an rp.n8.nes, fanned out from the same sources its core is, and an enabled controller's session reads and writes
+// rp.launchpad.surface-in / -out instead of the host's own controller staging.
 // Each system node carries its core's knobs (docs/modular-graph-phase-c2-design.md section 5): its core config's
 // setting fields and, on a Game Boy, the serial-out capture its LSDj's decoder needs, as settings; its gain and a NES's
 // expansion volume as params. Pure, and held to test/graph/golden/build-graph.json, whose audio wiring is the B1
@@ -70,7 +73,8 @@ export interface GraphSystem {
    *  whose node would write an input an earlier role's does; ProtocolRole says who parsed the config). */
   pipeline: ProtocolRole[];
   /** The config of the system's core-config role, the one whose kind is its core (`sameboy` or `mesen`, coreRoles.ts):
-   *  where its node's setting fields and a NES's expansionVolume come from (systemKnobs). Absent for a system with
+   *  where its node's setting fields and a NES's expansionVolume come from (systemKnobs), and where a NES's "drive the
+   *  real cart" setting decides whether the document places its rp.n8.nes at all. Absent for a system with
    *  none (a DirectGraph's, a store's with no registry, the B1 goldens' models), whose node carries none of the live
    *  fields (its construct-time fields are still written, at the node's default), so its core keeps the settings it was
    *  built with; the params it does not name still start at their defaults at its first block. */
@@ -126,6 +130,17 @@ export const systemNodeId = (id: number): string => `sys-${id}`;
 
 /** A system's protocol node: sys-<id>/<role-kind>, the main design's convention. */
 const protocolId = (system: number, kind: string): string => `${systemNodeId(system)}/${kind}`;
+
+/** The rp.n8.nes node a system is driven by: cart-<id>, so the node a document places for a system is derivable from
+ *  the system's id alone (the UI stages a settings message at it, and reads its capabilities, without the document). */
+export const cartNodeId = (system: number): string => `cart-${system}`;
+
+/** Whether a system drives a physical N8: its core config's `driveRealCart` (coreRoles.ts). An absent value drives one,
+ *  which is what a project saved before the setting existed did - the first NES's traffic reached the cart whether or
+ *  not one was plugged in - and what a DirectGraph's system, built from a spec with no core config, still does. */
+export function drivesRealCartOf(config: Readonly<Record<string, unknown>> | undefined): boolean {
+  return config?.driveRealCart !== false;
+}
 
 // ---- the system nodes' knobs ----------------------------------------------------------------------------------------
 //
@@ -391,7 +406,11 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     return [`${name}.out1`, `${name}.out2`];
   };
 
-  nodes.push({ id: "midi-in", type: "rp.host.midi-in" }, { id: "controller-in", type: "rp.host.controller-in" });
+  // The hosts' inputs: the musical MIDI always, and the control surface when a controller is on - placed only then, so
+  // a document with no controller holds neither half of the surface (a surface node drains the device's ring, and one
+  // no session reads would take the device's traffic nowhere).
+  nodes.push({ id: "midi-in", type: "rp.host.midi-in" });
+  if (model.controller) nodes.push({ id: "surface-in", type: "rp.launchpad.surface-in" });
   // Every node reads only nodes placed before it in the document, but over a feedback wire, so the plan runs the nodes,
   // the script nodes among them, in document order: the planner orders nodes topologically and breaks ties by document
   // order (Planner.cpp order()), and a feedback wire orders nothing. So the nodes that feed the systems go before them,
@@ -413,8 +432,10 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   if (controller) {
     // Its target resolved here ("0 is the first system"), so it follows a change of first system.
     nodes.push({ id: "controller", type: CONTROLLER_SESSION, settings: controllerSettings(controller, target) });
-    wire("controller-in.midi", "controller.controllerIn");
-    wire("controller-in.connected", "controller.controllerConnected");
+    // The device's own side of the session: what it sent, and whether it is attached (docs/modular-graph-phase-c5-
+    // design.md section 5). Two nodes, one each way, so neither is in a cycle with the session.
+    wire("surface-in.in", "controller.controllerIn");
+    wire("surface-in.connected", "controller.controllerConnected");
     // Driving a cart, it sends no host MIDI; it is wired all the same, as the kernel tagged its MIDI out either way.
     hostMidi.push({ from: "controller.midiOut", system: target });
   }
@@ -473,24 +494,28 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     nodes.push(a.node);
     if (a.reads !== null) wire(a.reads, `${a.node.id}.serialOut`);
   }
-  // A physical N8 mirrors the first NES in slot order: what its protocol nodes send that system's core MIDI and core
-  // bytes, they send the cart.
-  const cart = systems.find((s) => s.type === "rp.mesen.nes");
+  // The real cart: the first NES in slot order whose "drive the real cart" setting is on drives one (the type is
+  // unique, one cart one link). What its protocol nodes send that system's core MIDI and core bytes, they send the cart
+  // too - fan-out, so emulated, real or both is wiring - and its expansion volume is the system's own knob, the one
+  // value the emulated core and the cart both take.
+  const cart = systems.find((s) => s.type === "rp.mesen.nes" && drivesRealCartOf(s.coreConfig));
   if (cart) {
-    nodes.push({ id: "cart", type: "rp.n8.cart-mirror", settings: { system: cart.id } });
+    const id = cartNodeId(cart.id);
+    const expansionVolume = systemKnobs(cart).params.expansionVolume;
+    nodes.push({ id, type: "rp.n8.nes", ...(expansionVolume === undefined ? {} : { params: { expansionVolume } }) });
     for (const role of cart.pipeline)
       for (const input of PROTOCOL_NODES[role.node].writes as readonly SystemInput[])
-        if (input === "midi" || input === "bytes") wire(`${protocolId(cart.id, role.kind)}.${input}`, `cart.${input}`);
+        if (input === "midi" || input === "bytes") wire(`${protocolId(cart.id, role.kind)}.${input}`, `${id}.${input}`);
   }
-  // Host MIDI out, an input a producer, and the controller's surface traffic. With no producer the systems list is
-  // empty, an rp.host.midi-out with no inputs, which sends nothing: placed all the same, so a document has its host
+  // Host MIDI out, an input a producer, and the session's traffic back to the device. With no producer the systems list
+  // is empty, an rp.host.midi-out with no inputs, which sends nothing: placed all the same, so a document has its host
   // outputs whatever its roles.
-  nodes.push(
-    { id: "midi-out", type: "rp.host.midi-out", settings: { systems: hostMidi.map((p) => p.system) } },
-    { id: "controller-out", type: "rp.host.controller-out" },
-  );
+  nodes.push({ id: "midi-out", type: "rp.host.midi-out", settings: { systems: hostMidi.map((p) => p.system) } });
   hostMidi.forEach((p, k) => wire(p.from, `midi-out.in${k + 1}`));
-  if (controller) wire("controller.controllerOut", "controller-out.midi");
+  if (controller) {
+    nodes.push({ id: "surface-out", type: "rp.launchpad.surface-out" });
+    wire("controller.controllerOut", "surface-out.out");
+  }
 
   const buses: number[] = [];
   if (shape.kind === "perSystem") {

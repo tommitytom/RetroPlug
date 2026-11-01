@@ -257,6 +257,12 @@ bool EngineRpcService::stageSystemMidi(std::uint32_t id, std::vector<std::uint8_
     return true;
 }
 
+bool EngineRpcService::stageNodeMidi(std::string nodeId, std::vector<std::uint8_t> bytes) {
+    if (bytes.empty()) return false;
+    invoker_.stageNodeMidi(std::move(nodeId), std::move(bytes));
+    return true;
+}
+
 rfl::Bytestring EngineRpcService::renderAudio(double ms) {
     // This thread calls processBlock itself, which only the Engine's owning thread may do.
     if (ms <= 0.0 || invoker_.audioThreadOwns()) return {};
@@ -459,7 +465,10 @@ bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes, std::uint32_
 }
 
 bool EngineRpcService::stageControllerIn(std::vector<std::uint8_t> bytes) {
-    return invoker_.stageControllerMidi(std::move(bytes));  // a pad press is 3 bytes; the ring carries 4 inline
+    // A pad press waits in the harness's surface link, as a device's would, and the document's surface-in node drains
+    // it at the next block. No link is no control surface: the host answers so rather than staging into nothing.
+    if (!harnessSurface_ || bytes.empty()) return false;
+    return harnessSurface_->queueInput(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
 void EngineRpcService::accumulateMidiOut() {
@@ -487,7 +496,7 @@ constexpr std::uint32_t kMaxRenderBlockFrames = Engine::kDefaultMaxBlockFrames;
 
 // Why renderBlocks refuses `req`, or empty. Checked whole before anything renders, so a refused request
 // leaves the Engine exactly as it was.
-std::string renderBlocksRefusal(const RpcRenderBlocksRequest& req) {
+std::string renderBlocksRefusal(const RpcRenderBlocksRequest& req, bool hasSurface) {
     if (req.outputs < 2 || req.outputs > 8 || req.outputs % 2 != 0) return "outputs must be 2, 4, 6 or 8";
     for (std::size_t b = 0; b < req.blocks.size(); ++b) {
         const RpcRenderBlock& blk = req.blocks[b];
@@ -507,8 +516,12 @@ std::string renderBlocksRefusal(const RpcRenderBlocksRequest& req) {
                 return at + "MIDI frames go backwards (" + std::to_string(m.frame) + " after " + std::to_string(last) + ")";
             last = m.frame;
         }
-        for (const auto& c : blk.controller)
+        for (const auto& c : blk.controller) {
             if (c.empty() || c.size() > 4) return at + "a controller message must be 1..4 bytes";
+            // It goes where a device's own input would wait (the harness's surface link), so a host with none has
+            // nowhere to stage it: the whole run is refused rather than one message silently dropped.
+            if (!hasSurface) return at + "this host has no control surface to stage a controller message into";
+        }
         if (blk.bpm && !(std::isfinite(*blk.bpm) && *blk.bpm > 0.0)) return at + "bpm must be a positive finite number";
         if (blk.ppq && !std::isfinite(*blk.ppq)) return at + "ppq must be finite";
     }
@@ -524,7 +537,7 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
         result.error = "the background audio thread is running";
         return result;
     }
-    result.error = renderBlocksRefusal(req);
+    result.error = renderBlocksRefusal(req, harnessSurface_ != nullptr);
     if (!result.error.empty()) return result;
 
     // The graph TS published must be built for these lanes (docs/modular-graph-phase-b2-design.md section 4).
@@ -533,6 +546,10 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
                        std::to_string(req.outputs);
         return result;
     }
+    // A run is a session of its own: what an earlier run (or a stageControllerIn with no surface node in the plan) left
+    // in the harness's link was never read, and replaying it would act on a press this run did not make. Cleared before
+    // the first block, so only this run's own controller messages wait in it.
+    if (harnessSurface_) harnessSurface_->clearInput();
     std::uint64_t total = 0;
     for (const RpcRenderBlock& b : req.blocks) total += b.frames;
     // Whole-run planar lanes, zero-filled; each block renders straight into its slice of the result.
@@ -548,7 +565,10 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
         // MIDI-out size filter. ppq (a locate) and controller have no PluginDSP::run counterpart (the
         // plugin never calls setPpq, which would double-count; controller traffic is the SDL standalone's).
         for (const RpcBlockMidi& m : blk.midi) engine_.stageMidi(m.frame, m.bytes);  // copied into the staging
-        for (const auto& c : blk.controller) engine_.stageControllerMidi(c);
+        // The controller's own stream, into the harness's surface link (a pad press is staged as a device's arrival
+        // would be: frame 0 of this block). A host with no harness surface has no control surface to stage it into.
+        for (const auto& c : blk.controller)
+            harnessSurface_->queueInput(std::span<const std::uint8_t>(c.data(), c.size()));
         invoker_.drainInto(engine_);
         if (blk.bpm) engine_.setBpm(*blk.bpm);
         if (blk.playing) engine_.setTransport(*blk.playing);

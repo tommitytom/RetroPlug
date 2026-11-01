@@ -64,7 +64,6 @@ extern "C" {
 
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
-#include "host/graph/HostIoNodes.hpp"        // kControllerInMessages: the surface drain's fixed capacity
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
 #include "host/input/GamepadPump.hpp"        // the event->bus switch, shared with the plugin editor
 #include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
@@ -260,18 +259,14 @@ struct AppState {
 
     // Control surface (Settings-adjacent "Launchpad" submenu): its own RtMidi in/out pair, deliberately kept
     // out of app.midi's shared stream so pad presses never arrive as musical MIDI too (a NoteOn there is a
-    // row launch to LSDj's MI.MAP translator, so a shared stream fires every launch twice). audioCb drains
-    // its input into the Engine's controllerIn and pushes the controller session's LED traffic back; the 60 fps loop
-    // writes that out. The port + enabled toggle persist to launchpad.cfg.
+    // row launch to LSDj's MI.MAP translator, so a shared stream fires every launch twice). The graph's
+    // rp.launchpad.surface-in / -out nodes read and write the link inside the plan; the 60 fps loop's pump writes the
+    // LED traffic out. The port + enabled toggle persist to launchpad.cfg.
     retroplug::LaunchpadHost launchpadHost{
         retroplug::rtMidiPortFactory("RetroPlug Launchpad"),
         retroplug::rtMidiPortOpener("RetroPlug Scan"),  // one-port-at-a-time, for Settings > MIDI's scan
         [this](bool input) { return input ? midi.listInputs() : midi.listOutputs(); },
         svc.host.configDir()};
-    // Control-surface input, drained per block into fixed slots the engine's controller-in capacity sizes: the block
-    // thread allocates nothing and frees nothing, where a vector per message would do both (the ring's slots stay in
-    // the link; this is only where one block's messages are copied).
-    std::array<rp::host::DeviceMessage, rp::host::kControllerInMessages> launchpadIn{};
 
     // The device links the graph's hardware nodes bind (rp.host.devices/1): the cart and the surface this host owns.
     // svc (the engine) is declared above them (n8Host and launchpadHost read its config dir), so it is destroyed LAST,
@@ -873,47 +868,29 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         if (m.bytes.empty()) continue;
         // System Real-Time first, wherever it sits in the message. It drives the host transport and is
         // never staged, never sent to a cart: the sync roles regenerate whatever each core needs from
-        // Engine tempo/transport, and risa's generated stream reaches the N8 via the core-byte mirror, so
+        // Engine tempo/transport, and risa's generated stream reaches the N8 through the graph's fan-out, so
         // forwarding the wire bytes too would double-clock it. Testing only for a ONE-BYTE message (what
         // this did before) drops any clock a transport batched with another event, and a tempo estimate
         // missing pulses reads a whole ratio slow.
         retroplug::extractRealtime(m.bytes, [&](std::uint8_t status) { a.clockSync.onByte(status); });
         if (m.bytes.empty()) continue;
-        // Forward raw MIDI to a connected physical N8 (no-op + near-free when disconnected). Frame 0 - the
-        // standalone stages at frame 0 anyway; the N8Link serial thread does the timed release + USB write.
-        // Real-time is already gone (stripped above); SYSEX is excluded here, because a control surface's
-        // bulk-LED message (hundreds of bytes) would otherwise be shovelled down a cart FIFO that has no
-        // idea what it is.
-        // Only with no emulated NES system to mirror (Engine::cartMirrorSystemId): with one, the cart gets what
-        // that system's protocol nodes send its core instead, as the plugin does.
-        const bool sysex = m.bytes[0] == 0xF0;
-        if (!sysex && a.svc.engine.cartMirrorSystemId() == 0)
-            a.n8Host.link().push(0, m.bytes.data(), m.bytes.size(), a.sampleRate);
-        // Sysex crosses the RtMidi seam now (MidiIo no longer ignores it), but it is NOT staged as musical
-        // MIDI: no role consumes it, and the passthrough translators (mGB, LSDj MidiPassthrough) push every
-        // byte they are given straight down the cart's link port - so a controller's handshake or bulk-LED
-        // message would arrive at the Game Boy as noise. A control surface has its own stream for this
-        // (rp.host.controller-in, read by the controller session), which is the whole reason that stream exists.
-        if (sysex) continue;
+        // A physical N8 is fed from the graph, not from here: an rp.n8.nes node, placed by a system's "drive the real
+        // cart" setting, takes the same protocol-node MIDI and bytes its emulated NES's core does, at their frames.
+        // Sysex is still not staged as musical MIDI: no role consumes it, and the passthrough translators (mGB, LSDj
+        // MidiPassthrough) push every byte they are given straight down the cart's link port - so a controller's
+        // handshake or bulk-LED message would arrive at the Game Boy as noise. A control surface has its own stream
+        // for this (rp.launchpad.surface-in, read by the controller session).
+        if (m.bytes[0] == 0xF0) continue;
         // Everything left (notes / CC / ...) is staged as host MIDI in.
         a.svc.engine.stageMidi(0, m.bytes);
         a.midiStaged.fetch_add(1, std::memory_order_relaxed);
     }
     a.clockSync.advance(frames);
 
-    // Control-surface traffic, on its own stream. Same shape as the MIDI drain above, but staged as controllerIn
-    // rather than musical MIDI - a pad NoteOn must reach the controller app's quantiser and nothing else. The
-    // messages are copied out of the link's fixed slots into this block's array, and the engine copies each into
-    // its staging arena, so neither end of the block thread's path allocates or frees. A message carries no arrival
-    // frame, so it is placed at frame 0, as rp.host.controller-in places the host's staged pad traffic. The connected
-    // flag rides the block so the session can take the device the moment one shows up (it enters Programmer mode and
-    // repaints on that edge).
-    const std::size_t surfaceN = a.launchpadHost.link().drainInput(a.launchpadIn.data(), a.launchpadIn.size());
-    for (std::size_t i = 0; i < surfaceN; ++i)
-        if (a.launchpadIn[i].size != 0)
-            a.svc.engine.stageControllerMidi(
-                std::span<const std::uint8_t>(a.launchpadIn[i].data, a.launchpadIn[i].size));
-    a.svc.engine.setControllerConnected(a.launchpadHost.link().isConnected());
+    // The control surface needs nothing here: rp.launchpad.surface-in drains the link at the top of its block and
+    // reports `connected`, so a pad NoteOn reaches the controller app's quantiser and nothing else, and the session
+    // takes the device the moment one shows up (it enters Programmer mode and repaints on that edge) - on the audio
+    // thread, inside the plan, exactly as the surface's other direction sends its LED frames.
 
     // Fold in the menu's play/stop + tempo, then publish what the transport ended up being (see AppState).
     a.clockSync.manualPlaying = a.transportRequest.load(std::memory_order_relaxed);
@@ -939,12 +916,9 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         if (!mo.data.empty()) a.midi.send(mo.data.data(), mo.data.size());
     a.svc.engine.clearMidiOut();
 
-    // Control-surface out (the controller session's LED traffic) → the Launchpad link's ring, written to the
-    // device by the 60 fps loop rather than from here: a frame of latency is invisible on a light, and it keeps
-    // a possible 538-byte bulk-SysEx USB write off the audio thread. A no-op when no surface is connected.
-    for (const auto& co : a.svc.engine.controllerOut())
-        if (!co.empty()) a.launchpadHost.link().pushOutput(co.data(), co.size());
-    a.svc.engine.clearControllerOut();
+    // Control-surface out is the graph's too: rp.launchpad.surface-out hands the session's LED and page traffic to
+    // the link's send ring in the block it was queued, and the 60 fps loop writes it out - a frame of latency is
+    // invisible on a light, and it keeps a possible 538-byte bulk-SysEx USB write off the audio thread.
 
     for (int i = 0; i < frames; ++i)
         for (int c = 0; c < N; ++c) out[i * N + c] = a.audioPlanar[c][i]; // planar → interleaved (frame-major)
@@ -1636,17 +1610,6 @@ int main(int argc, char** argv) {
 
     if (!setupSdl(app)) return 1;
     if (!bootControlPlane(app)) return 1;
-
-    // Mirror the first emulated NES system to a connected physical N8 - what its protocol nodes send its FIFO, routed
-    // MIDI and generated bytes alike (the plan's rp.n8.cart-mirror; risa's host sync among them) - so the real cart stays
-    // in lock-step with the emulated core. No-op + near-free
-    // until an N8 is connected. The frame offset preserves each clock's intra-block timing via N8Link's
-    // timed-release scheduler. (The emulated-FIFO `flush` barrier isn't replayed: the physical arm byte
-    // carries that semantic to the cart itself, and at the default 0 ms lookahead the link ring is ~empty.)
-    app.svc.engine.setCoreByteSink([a = &app](std::uint32_t frame, const std::uint8_t* data,
-                                          std::size_t size, bool /*flush*/) {
-        a->n8Host.link().push(frame, data, size, a->sampleRate);
-    });
 
     // Autoload a .rplg project before the audio thread takes the Engine (structural build runs direct).
     if (!autoloadPath.empty()) {

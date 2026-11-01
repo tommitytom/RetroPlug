@@ -81,15 +81,19 @@ test("the System submenu shows NES core knobs for a NES system, and the SameBoy 
   expect(findItem(gbSys, "sys-nes-spritelimit")).toBe(undefined);
   expect(findItem(gbSys, "sys-nes-apu-latency")).toBe(undefined);
   expect(findItem(gbSys, "sys-nes-exp-volume")).toBe(undefined);
+  expect(findItem(gbSys, "sys-nes-drive-cart")).toBe(undefined);
 
-  // NES: Region + Remove Sprite Limit + APU Latency present (defaults read through), SameBoy knobs absent.
+  // NES: Region + Remove Sprite Limit + APU Latency + Drive Real Cart present (defaults read through), SameBoy knobs
+  // absent.
   be.seed("/roms/g.nes", nesRom());
   const nesSys = systemMenuFor(stores.project.systems.addSystem("/roms/g.nes")!);
   expect(findItem(nesSys, "sys-nes-region")?.label).toBe("Region: Auto");
   expect(findItem(nesSys, "sys-nes-spritelimit")?.label).toBe("Remove Sprite Limit: Off");
   expect(findItem(nesSys, "sys-nes-apu-latency")?.label).toBe("APU Latency: 1.4 ms");
-  // The cartridge sound chip's level - the one knob that also drives a connected N8's master_vol.
+  // The cartridge sound chip's level, which buildGraph also carries as the driven cart node's own param.
   expect(findItem(nesSys, "sys-nes-exp-volume")?.label).toBe("Expansion Volume: 100% (unity)");
+  // Whether the system places a rp.n8.nes (ON by default: what every project did before the setting existed).
+  expect(findItem(nesSys, "sys-nes-drive-cart")?.label).toBe("Drive Real Cart: On");
   expect(findItem(nesSys, "sys-model")).toBe(undefined);
 });
 

@@ -127,9 +127,12 @@ test("cycling a Settings row pins that field on the role and leaves the others u
   // "Apply" row to reboot into the change. (That also keeps the menu alive across a step: reloadSystem swaps
   // the id the instance menu is anchored to.) The send goes to THIS system, bypassing the musical routing.
   expect(findItem(settingsRows(items()), "bliptoaster-set-apply")).toBe(undefined);
-  const sent = be.stageSystemMidiCalls;
-  expect(sent.length).toBe(3); // one per cycle above, each declaring the whole block
-  expect(sent[sent.length - 1].id).toBe(stores.project.systems.view()[0].id);
+  // Each row stages the whole block at this system's node, and at the cart node the document places for it (a NES
+  // drives a real cart by default), so the emulated core and the console hear one message in one block.
+  const sent = be.stageNodeMidiCalls;
+  expect(sent.length).toBe(6); // one per cycle above, per node
+  expect(sent[sent.length - 2].nodeId).toBe(`sys-${stores.project.systems.view()[0].id}`);
+  expect(sent[sent.length - 1].nodeId).toBe(`cart-${stores.project.systems.view()[0].id}`);
   // F0 7D 42 03 <baseCh> <ppu> <curve> <theme> <font> F7 - the pins just made (base 0, ppu off) inside it.
   expect(sent[sent.length - 1].bytes).toEqual([0xf0, 0x7d, 0x42, 0x03, 0, 0, 0, 0, 0, 0xf7]);
 
@@ -337,9 +340,9 @@ test("Select on a theme row makes it the live one: the star moves, the pin lands
   const pinned = stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "bliptoaster-assets")!.config.settings;
   expect(pinned).toEqual({ theme: 2 });
   // ...and declared to the running cart, whole-block, to THIS system.
-  const sent = be.stageSystemMidiCalls;
-  expect(sent.length).toBe(1);
-  expect(sent[0].id).toBe(id);
+  const sent = be.stageNodeMidiCalls;
+  expect(sent.length).toBe(2);
+  expect(sent.map((c) => c.nodeId)).toEqual([`sys-${id}`, `cart-${id}`]);
   expect(sent[0].bytes).toEqual([0xf0, 0x7d, 0x42, 0x03, 0, 1, 0, 2, 0, 0xf7]);
 });
 

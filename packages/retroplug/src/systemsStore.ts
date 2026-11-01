@@ -13,6 +13,8 @@
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
 import {
+  cartNodeId,
+  drivesRealCartOf,
   droppedKnobs,
   exportModeOf,
   linkGroupOf,
@@ -675,6 +677,9 @@ export class SystemsStore {
     const before = systemKnobs({ type, coreConfig: was });
     const after = systemKnobs({ type, coreConfig: config });
     const linkGroupMoved = roleKind === e.core && linkGroupOf(was) !== linkGroupOf(config);
+    // Whether the system drives a physical N8 is placement, not a knob: the document either places its rp.n8.nes or
+    // does not, so a change publishes rather than riding setParam or a live settings commit.
+    const cartMoved = roleKind === e.core && drivesRealCartOf(was) !== drivesRealCartOf(config);
     const params: [string, number][] = [];
     if (roleKind === e.core) {
       for (const [param, value] of Object.entries(after.params))
@@ -687,12 +692,19 @@ export class SystemsStore {
     }
     const entries = replaceById(this.entries, id, { ...e, roles });
     const settingMoved = roleKind === e.core && canonicalJson(before.settings) !== canonicalJson(after.settings);
-    if (linkGroupMoved || settingMoved || protocolNodeOf(roleKind) !== undefined) {
+    if (linkGroupMoved || cartMoved || settingMoved || protocolNodeOf(roleKind) !== undefined) {
       if (!this.commitEdit("setRoleConfig", { entries }, false)) return false;
     } else {
       this.entries = entries;
       if (params.length > 0) {
-        for (const [param, value] of params) this.backend.setParam(systemNodeId(id), param, value);
+        for (const [param, value] of params) {
+          this.backend.setParam(systemNodeId(id), param, value);
+          // The driven cart carries the same knob as its own param, and a live edit publishes no document: without this
+          // the real console keeps the level the last published document gave it. A system that drives no cart places
+          // no cart node, so the second call answers false and changes nothing.
+          if (param === "expansionVolume" && type === "rp.mesen.nes" && drivesRealCartOf(config))
+            this.backend.setParam(cartNodeId(id), param, value);
+        }
         this.onLiveParam(this.graphSystems());
       }
     }

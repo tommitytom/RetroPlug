@@ -1,9 +1,23 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace rp::host { struct Job; }
+
+namespace rp::host {
+
+// A staged message's target: the document id of the node it is aimed at, and its bytes. The control thread allocates
+// one per staged message (EngineInvoker::stageNodeMidi) and the audio thread deletes it after handing the bytes to the
+// node the plan running at that point of the drain places under that id: a document may replace the node between the
+// push and the drain, so the id is resolved there and not here.
+struct StagedNodeMessage {
+    std::string               node;
+    std::vector<std::uint8_t> bytes;
+};
+
+}  // namespace rp::host
 
 // A control-thread → audio-thread command for the engine, carried on the GraphHost's one ring as an
 // opaque HostCommand (docs/modular-graph-phase-b1-design.md section 5.1), in push order with the plan
@@ -18,7 +32,7 @@ struct DspCommand {
         None = 0, StageMidi = 3,
         SetBpm = 7, SetTransport = 8, PressButton = 10,
         SetPpq = 12, StageControllerMidi = 13, CapabilityWrite = 14,
-        StageSystemMidi = 15,
+        StageSystemMidi = 15, StageNodeMidi = 17,
         // The NES tap arming every structural change does (docs/modular-graph-phase-b1-design.md section
         // 3.2): restore whatever is armed, then arm `id` to `mode` if `arm`. Only ever the trailer of a
         // setGraph's swap, so it lands with the plan it was made for.
@@ -46,6 +60,11 @@ struct DspCommand {
         // the whole message (audio thread deletes) and `len` is 0 - the same shape as stageMidi, because a
         // settings message is a SysEx and a rig block does not fit in four bytes.
         struct { std::uint32_t id; std::uint8_t data[4]; std::uint8_t len; std::vector<std::uint8_t>* ext; } stageSystemMidi;
+        // MIDI aimed at ONE NODE of the document, by id, handed to it through rp.stage/1 (a system node's core ingress,
+        // a device node's device). The id is the document's, so it keeps its meaning across a plan that replaces the
+        // node under it, and it does not fit the ring's slot: `ext` OWNS the id and the bytes, and the audio thread
+        // deletes it once the running plan answered.
+        struct { rp::host::StagedNodeMessage* ext; } stageNodeMidi;
         struct { bool arm; std::uint8_t mode; std::uint32_t id; } syncTap;  // what it arms after the restore
     };
 

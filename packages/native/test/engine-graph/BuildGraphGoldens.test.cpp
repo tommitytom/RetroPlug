@@ -40,6 +40,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <rfl/json.hpp>
 
+#include "FakeSurfaceLink.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "graph/CanonicalJson.hpp"
@@ -211,6 +212,12 @@ const std::vector<std::uint8_t> kEnterProgrammerMode{0xf0, 0x00, 0x20, 0x29, 0x0
 // nothing.
 std::optional<std::string> plan(const GoldenCase& c, const std::string& document, bool driven) {
     Engine e(kRate);
+    // The controller's device, as a headless harness has one: the surface link the document's rp.launchpad.surface-in
+    // node drains, installed before the plan so its nodes bind it. The press below waits in it, and it reads attached
+    // from the first block, so the session takes it (Programmer mode) on the block it first runs.
+    rp::host::test::FakeSurfaceLink surface;
+    surface.attached = true;
+    e.setDeviceLinks(nullptr, &surface);
     std::map<SystemId, const GoldenSystem*> byId;
     for (const GoldenSystem& s : c.model.systems) byId[s.id] = &s;
     for (const SystemId id : c.slots)
@@ -271,7 +278,6 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
     if (driven) {
         e.setBpm(120.0);
         e.setTransport(true);
-        e.setControllerConnected(true);
     }
     // A floor under the traffic, from what the engine hands its host: a controller told a device is attached takes it
     // into Programmer mode (its first message, sent by no other path), and one driving a real Game Boy launches the
@@ -290,10 +296,13 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
                 e.stageMidi(16u * ch, std::vector<std::uint8_t>{static_cast<std::uint8_t>(0x90 | ch), key, 100});
                 e.stageMidi(128u + 16u * ch, std::vector<std::uint8_t>{static_cast<std::uint8_t>(0x80 | ch), key, 0});
             }
-            if (b == 1) e.stageControllerMidi(kPadPress);
+            if (b == 1) surface.input.push_back(rp::host::test::deviceMessage(kPadPress));
         }
         e.processBlock(kBlockFrames, outs.data(), outs.size());
-        for (const auto& m : e.controllerOut()) enteredProgrammerMode = enteredProgrammerMode || m == kEnterProgrammerMode;
+        for (const auto& m : surface.outputs)
+            enteredProgrammerMode =
+                enteredProgrammerMode ||
+                std::equal(m.data, m.data + m.size, kEnterProgrammerMode.begin(), kEnterProgrammerMode.end());
         for (const EngineMidiOut& m : e.midiOut()) launchedOut = launchedOut || m.system == controllerSystem;
         const std::string when = driven ? " by block " + std::to_string(b + 1) : " in its first block";
         if (e.faultCount() != 0) return std::to_string(e.faultCount()) + " node(s) faulted" + when;

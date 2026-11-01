@@ -29,6 +29,7 @@
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 #include "host/HostServices.hpp"
+#include "host/rpc/HarnessSurfaceLink.hpp"
 #include "host/QuickJsGlobals.hpp"
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
@@ -85,6 +86,13 @@ int main(int argc, char** argv) try {
     }
     JSContext* ctx = host.context();
 
+    // The harness's control surface: the graph's rp.launchpad.surface-in / -out nodes bind it by name, so a headless
+    // test's staged pad presses reach the controller session a document places and its answers have a device-side
+    // count. It is the test host's only device (no serial port, no MIDI port); the panel it stands in for has no
+    // tests of its own here, so the link is the harness's, not a fake of the Launchpad protocol. Declared before the
+    // services, so it outlives the engine whose plans' nodes hold a handle on it.
+    rp::host::HarnessSurfaceLink harnessSurface;
+
     // The backend service graph (see host/HostServices.hpp). This host exposes the whole surface, so it
     // mounts every facet.
     HostServices svc;
@@ -93,6 +101,9 @@ int main(int argc, char** argv) try {
     // facet should not inherit.
     DebugRpcService       debugSvc{svc.engine};
     AudioDriverRpcService driver{svc.engine, svc.invoker};
+    // The link before the first document, and the RPC service's handle on it for the harness's staging seam.
+    svc.engine.setDeviceLinks(nullptr, &harnessSurface);
+    svc.engineSvc.setHarnessSurface(&harnessSurface);
 
     // rpcpp server over the QuickJS object codec (marshals request/response as live JS objects against
     // ctx — nothing serialized). No primary object: every facet is mounted cross-object. Async sink unused.

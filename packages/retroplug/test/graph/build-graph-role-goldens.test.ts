@@ -20,7 +20,7 @@
 // real cores, beside build-graph.json's, and runs it twenty blocks with the transport playing, host MIDI and a control
 // surface's press staged, so CI plans buildGraph's per-role wiring on the real engine: each protocol node type against
 // the system node it feeds, the routing in each mode, a controller each way, LSDj's decoder after its Game Boy and the
-// N8 cart mirror. Every document must plan, and its blocks fault no node, throw in no script node and drop no message.
+// N8 cart's node. Every document must plan, and its blocks fault no node, throw in no script node and drop no message.
 import { test, expect } from "../../testing/harness";
 import { canonicalJson } from "../../src/graph/canonicalJson";
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape, type TapArm } from "../../src/graph/buildGraph";
@@ -123,7 +123,7 @@ const knobbed = (s: GraphSystem, kind: "sameboy" | "mesen", gainDb: number, over
 
 // Every protocol node type on the system type it is placed for: mGB and an LSDj decoding MI.OUT on Game Boys (the
 // LSDj's serial out read by its decoder after the systems, whose host MIDI out is an input of rp.host.midi-out, and
-// captured as its node's settings say), the N8 and risa on a NES (which the cart mirrors), smsggdj on an SMS, and a
+// captured as its node's settings say), the N8 and risa on a NES (whose cart is driven too), smsggdj on an SMS, and a
 // GBA with no protocol role of its own. Each with its core config and gain, every setting and param away from its
 // default on the first Game Boy and the NES; the GBA and SMS carry their gain alone, since a node of theirs has no
 // setting field and no param from its core config.
@@ -172,14 +172,14 @@ const CASES: Case[] = [
       shape: { kind: "multi", channels: 4 },
     }),
   },
-  // A lone NES split into its channels (the tap armed), its N8 and risa nodes feeding the cart mirror too.
+  // A lone NES split into its channels (the tap armed), its N8 and risa nodes feeding the cart's node too.
   {
     name: "audio/lone-nes/channelSplit/multi8",
     model: model([nes(1, [N8, RISA])], { routing: "channelSplit", shape: { kind: "multi", channels: 8 } }),
   },
   // A lone NES's pins on pairs, one pair a stream.
   { name: "audio/lone-nes/pinSplit/perChannel", model: model([nes(1, [N8])], { routing: "pinSplit", shape: { kind: "perChannel" } }) },
-  // Each system on its own pair: two NES, of which the cart mirrors the first, and a Game Gear.
+  // Each system on its own pair: two NES, of which the first drives the cart, and a Game Gear.
   {
     name: "audio/two-nes-and-gg/perSystem",
     model: model([nes(1, [N8]), nes(2, [N8, RISA]), sms(3, [smsSync("gg")])], { shape: { kind: "perSystem" } }),
@@ -339,7 +339,7 @@ test("every protocol node type, both controller targets and every routing mode a
 
 test("every wire runs forward in its document's node order, and none is a feedback wire", () => {
   // The engine orders nodes topologically, breaking ties by document order, and a feedback wire orders nothing. The rig of
-  // packages/native/test/engine-graph/ProtocolNodes.test.cpp leaves out the cart mirror and the audio nodes and runs
+  // packages/native/test/engine-graph/ProtocolNodes.test.cpp leaves out the cart's node and the audio nodes and runs
   // the script nodes in that order, which holds only while no wire runs backward into one of them: a future wire from
   // the mirror or an audio node into a script node would reorder production silently while the rig stayed green. No
   // document buildGraph builds holds a feedback wire (LSDj's decoder reads its Game Boy's serial out over a forward

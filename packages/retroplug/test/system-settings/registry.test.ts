@@ -46,7 +46,7 @@ test("systemRoleFor: the core registers a SameBoy and a Mesen system role", () =
   const mesen = reg.systemRoleFor("mesen");
   expect(mesen?.kind).toBe("mesen");
   expect(mesen?.category).toBe("system");
-  expect(mesen?.schema.parse({})).toEqual({ region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200 });
+  expect(mesen?.schema.parse({})).toEqual({ region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200, driveRealCart: true });
 });
 
 test("every field a system role's schema fills reaches some system node", () => {
@@ -62,6 +62,9 @@ test("every field a system role's schema fills reaches some system node", () => 
     const config = t.schema.parse({}) as Record<string, unknown>;
     for (const field of Object.keys(config)) {
       if (field === "linkGroupId") continue; // wiring (the link cable), not a node setting
+      // Placement, not a knob: whether the system drives a real cart decides whether buildGraph places its rp.n8.nes at
+      // all, and the node carries nothing from it (the cart's own knob is the system's expansionVolume).
+      if (field === "driveRealCart") continue;
       const taken = types.some((type) => {
         const knobs = systemKnobs({ type, coreConfig: config });
         return has(knobs.settings, field) || has(knobs.construct, field) || has(knobs.params, field);
@@ -82,8 +85,8 @@ test("mesen schema: fills defaults + defaults an unknown region", () => {
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
   const mesen = reg.roleType("mesen")!;
-  expect(mesen.schema.parse({ region: 99 })).toEqual({ region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200 });
-  expect(mesen.schema.parse({ removeSpriteLimit: true })).toEqual({ region: "auto", removeSpriteLimit: true, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200 });
+  expect(mesen.schema.parse({ region: 99 })).toEqual({ region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200, driveRealCart: true });
+  expect(mesen.schema.parse({ removeSpriteLimit: true })).toEqual({ region: "auto", removeSpriteLimit: true, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200, driveRealCart: true });
 });
 
 test("mesen schema: expansion volume is a whole percent, as its node takes it", () => {
@@ -137,7 +140,7 @@ test("defaultRoles: system role first, then provider-matched feature roles", () 
 
   // A NES system gets the Mesen system role (no feature provider registered in this reg → just it).
   expect(reg.defaultRoles("mesen", "nes", headerWithTitle("SMB3"))).toEqual([
-    { kind: "mesen", config: { region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200 } },
+    { kind: "mesen", config: { region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200, driveRealCart: true } },
   ]);
 });
 

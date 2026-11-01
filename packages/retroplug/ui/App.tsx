@@ -38,7 +38,7 @@ import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel
 import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import { subscribeMidi } from "./screens/menu/midiDevices";
 import { subscribeTransport, pollTransport } from "./screens/menu/transport";
-import { subscribeN8, projectExpVolForN8, setN8ExpVol } from "./screens/menu/n8Devices";
+import { subscribeN8 } from "./screens/menu/n8Devices";
 import { subscribeLaunchpad } from "./screens/menu/launchpadDevices";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
@@ -84,13 +84,10 @@ export function App() {
   // A render is a render, so which source fired does not change what happens next. Inert in a DAW / the
   // harness, where nothing ever emits.
   useRerenderOn(subscribeAudioDraft, subscribeMidi, subscribeTransport, subscribeN8, subscribeLaunchpad);
-  // The cartridge sound chip sits at ONE level, whether you are hearing the emulator or a real console: the
-  // NES system's "Expansion Volume" knob drives Mesen's expansion channels, and this pushes the same value
-  // (rescaled) to a connected N8's `master_vol`. Deriving it from `systems` covers every way it can move -
-  // the knob itself, a project load, a focus change, an instance coming or going - and the host writes it on
-  // connect as well, so the order the link and the project come up in doesn't matter.
-  const n8ExpVol = projectExpVolForN8(systems);
-  useEffect(() => setN8ExpVol(n8ExpVol), [n8ExpVol]);
+  // The cartridge sound chip sits at ONE level, whether you are hearing the emulator or a real console: a system's
+  // "Expansion Volume" knob drives Mesen's expansion channels, and the driven cart's node carries the same value as its
+  // own `expansionVolume` param, which the node sends to the cart's master-volume register (and again on every
+  // reconnect). The graph does that; the UI pushes nothing.
 
   const empty = systems.length === 0;
   // The full-window overlay that owns the window + input, if any. Priority order: the file browser first (a

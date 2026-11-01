@@ -44,9 +44,25 @@ export function actionCycler(id: string, label: string, actions: MenuAction[]): 
 }
 
 /** A value-cycler row: label shows `prefix: names[current]`, Enter/Right step forward, Left back. */
-export function cycler(id: string, prefix: string, names: string[], current: number, apply: (next: number) => void): MenuItem {
+export function cycler(
+  id: string,
+  prefix: string,
+  names: string[],
+  current: number,
+  apply: (next: number) => void,
+  disabled = false,
+): MenuItem {
   const step = (dir: 1 | -1) => apply(cycleInt(current, 0, names.length - 1, dir));
-  return { id, label: `${prefix}: ${names[current] ?? "?"}`, kind: "cycler", keepOpen: true, onSelect: () => step(1), onCycle: step };
+  const row: MenuItem = {
+    id,
+    label: `${prefix}: ${names[current] ?? "?"}`,
+    kind: "cycler",
+    keepOpen: true,
+    onSelect: () => step(1),
+    onCycle: step,
+  };
+  // As action(): only attach `disabled` when set, so every enabled row stays byte-identical.
+  return disabled ? { ...row, disabled } : row;
 }
 
 /** A dismissible notice: the body as a read-only line, then a single OK. Ids are `${idp}-body` / `${idp}-ok`. */

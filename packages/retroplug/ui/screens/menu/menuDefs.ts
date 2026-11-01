@@ -5,6 +5,7 @@
 
 import type { AppStores } from "../../../src/appStores";
 import type { SystemView } from "../../../src/systemsStore";
+import { drivesRealCartOf } from "../../../src/graph/buildGraph";
 import type { ProjectSettings } from "../../../src/projectConfig";
 import {
   LAYOUT_VALUES,
@@ -103,7 +104,7 @@ import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDra
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
 import { getTransport, setTransport, setClockBpm, CLOCK_BPM_STEP, CLOCK_BPM_COARSE_STEP } from "./transport";
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
-import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
+import { getN8CartJob, n8DumpSram, n8LoadRom, n8RestoreSram, projectCart, type N8CartJob } from "./n8SdOps";
 import {
   getLaunchpadConfig, setLaunchpadPorts, connectLaunchpad, looksLikeLaunchpad, launchpadDetected,
   hasLaunchpadScan, startLaunchpadScan, getLaunchpadScan, launchpadFromScan, forgetLaunchpad,
@@ -112,6 +113,7 @@ import {
 import { ControllerRegistry, registerControllerApps, QUANTISE_VALUES, type Quantise } from "../../../src/controller";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/settingsEnums";
 import { controllerSyncOverride } from "../../../src/graph/controller";
+import { systemNodeId } from "../../../src/graph/buildGraph";
 import type { MenuAction, MenuItem, MenuTree } from "./menuTree";
 import { roleConfig } from "../../../src/systemRoles";
 import { action, actionCycler, button, cycleInt, cycler, infoRow, separator, submenu } from "./menuItems";
@@ -346,10 +348,10 @@ function midiSettingsChildren(): MenuItem[] {
 // NES), available in BOTH the SDL standalone and the DAW plugin. The submenu shows only when a physical N8 is
 // actually detected (a serial port with the cart's USB VID:PID, n8Detected below) - no hardware, no menu.
 // Streaming: pick a serial port (auto-detecting the N8), Connect to open the link, tune the timed-release
-// lookahead; the native host reconnects + persists (n8.cfg) on the spot. SD ops (Load ROM / Dump / Restore
-// SRAM): long native worker jobs that pause streaming, borrow the port, and report progress on the read-only
-// SD row (useN8SdWatch keeps it live). Those appear only once the link is up (see the gate below). One job at
-// a time - every action is disabled while one runs.
+// lookahead; the native host reconnects + persists (n8.cfg) on the spot. Card ops (Load ROM / back up and
+// restore the battery): long capability jobs on the driven cart's rp.n8.nes node, which report progress on the
+// read-only card row (useN8SdWatch keeps it live). Those appear only once the link is up (see the gate below).
+// One job at a time - every action is disabled while one runs.
 const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
 
 // A physical N8 counts as "here" only when one is actually enumerated (a serial port flagged isN8 by its USB
@@ -358,15 +360,22 @@ function n8Detected(cfg: N8Config | null): boolean {
   return !!cfg && cfg.ports.some((p) => p.isN8);
 }
 
-// The read-only SD-op status line: progress while busy, else the last result / error, else Ready.
-function n8SdLabel(sd: N8SdStatus): string {
-  if (sd.busy) {
-    const pct = sd.bytesTotal > 0 ? ` ${Math.floor((sd.bytesDone / sd.bytesTotal) * 100)}%` : "";
-    return `${sd.phase || "Working"}${pct}`;
+// The read-only card-operation row: progress while busy, else the last result / error, else Ready.
+function n8SdLabel(job: N8CartJob): string {
+  if (job.busy) {
+    const pct = job.bytesTotal > 0 ? ` ${Math.floor((job.bytesDone / job.bytesTotal) * 100)}%` : "";
+    return `${job.op === "load" ? "Uploading" : job.op === "dump" ? "Reading" : "Writing"}${pct}`;
   }
-  if (sd.error) return `Error: ${sd.error}`;
-  if (sd.done && sd.result) return sd.result;
+  if (job.error) return `Error: ${job.error}`;
+  if (job.result) return job.result;
   return "Ready";
+}
+
+/** The cart node this menu's card rows act on: the project's driven cart when `sys` is that system, or (with no
+ *  `sys`) the project's cart alone. Null when the project drives none, and the rows say so. */
+function cartFor(ctx: MenuContext, sys: SystemView | null): { system: SystemView; nodeId: string } | null {
+  const cart = projectCart(ctx.systems);
+  return cart && (sys === null || cart.system.id === sys.id) ? cart : null;
 }
 
 // "Launchpad" submenu (in the instance menu's tracker block, beside N8 Pro - a control surface plays a
@@ -511,33 +520,40 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
         : "Connecting..."
     : "Off";
 
-  const sd = getN8SdStatus(); // null on a host without the SD seam; non-null implies the ops are available
-  const busy = sd?.busy ?? false; // one SD job at a time -> disable every action (incl. Connect) while it runs
+  // A card job is one at a time and holds the cart, so every action here (Connect included, which would have to wait
+  // for the job's current step) is disabled while one runs, and the status row shows its progress.
+  const job = getN8CartJob();
+  const busy = job.busy;
   const items: MenuItem[] = [
-    cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n))),
+    // The port, the link and the lookahead are the host's link, which a card job holds while it runs (a disconnect
+    // during one waits for its current step), so all three wait too.
+    cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n)), busy),
     action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled), busy),
-    cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx, (n) => setN8Lookahead(N8_LOOKAHEADS[n])),
+    cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx, (n) => setN8Lookahead(N8_LOOKAHEADS[n]), busy),
     separator("n8-sep-status"),
     infoRow("n8-status", `Status: ${status}`),  // read-only streaming status row
   ];
 
-  // The SD-card ops (Load ROM / Dump / Restore SRAM) borrow the streaming link's serial port, so they only make
-  // sense once it's up: show them only while connected - or while a job runs. A job momentarily tears the link
-  // down to borrow the port, so `connected` blips false mid-job; `busy` keeps the block (and its live progress
-  // row) put. After a ROM load the link stays down on purpose (a new game booted, streaming stopped), so the
-  // block hides again until you reconnect. Absent entirely without the SD seam (headless harness -> sd null).
-  if (sd && (cfg.connected || busy)) {
-    // Each op browses a local file then kicks off the native worker. Load ROM needs the cart at its menu;
-    // Dump/Restore act on the running game's battery (see n8SdOps.ts / N8Host).
+  // The card operations (Load ROM / back up and restore the battery) are the driven cart's node's capability jobs, so
+  // they appear while the project drives a cart - or while one runs. They need the link up (a job reaches the cart
+  // only through it), and a job reads disconnected while it runs, so `connected` blips false mid-job; `busy` keeps the
+  // block put. After a ROM load streaming stays stopped (a new game booted), so the block hides until you reconnect.
+  const cart = cartFor(ctx, null);
+  if (cart && (cfg.connected || busy)) {
+    // Load ROM needs the cart at its menu; the battery rows reach its SD card's save file for the driven ROM (see
+    // n8SdOps.ts): back up takes about a minute for 64 KB and shows its progress, and a restore only lands when the
+    // game next boots - so restore first, then load.
     items.push(
       separator("n8-sep-sd"),
       action("n8-load-rom", "Load ROM to N8...", () =>
-        browseThen(ctx, { title: "Load ROM to N8", patterns: ROM_PATTERNS }, n8LoadRom), busy),
+        browseThen(ctx, { title: "Load ROM to N8", patterns: ROM_PATTERNS }, (p) => n8LoadRom(ctx.stores.backend, cart, p)), busy),
       action("n8-dump-sram", "Dump SRAM to file...", () =>
-        browseThen(ctx, { title: "Dump N8 SRAM", patterns: ["*.srm", "*.sav"], saving: true, defaultName: "n8.srm" }, n8DumpSram), busy),
+        browseThen(ctx, { title: "Dump N8 SRAM", patterns: ["*.srm", "*.sav"], saving: true, defaultName: "n8.srm" },
+          (p) => n8DumpSram(ctx.stores.backend, cart, p)), busy),
       action("n8-restore-sram", "Restore SRAM from file...", () =>
-        browseThen(ctx, { title: "Restore N8 SRAM", patterns: ["*.srm", "*.sav"] }, n8RestoreSram), busy),
-      infoRow("n8-sd-status", `SD: ${n8SdLabel(sd)}`),  // read-only SD-op status row
+        browseThen(ctx, { title: "Restore N8 SRAM", patterns: ["*.srm", "*.sav"] },
+          (p) => n8RestoreSram(ctx.stores.backend, cart, p)), busy),
+      infoRow("n8-sd-status", `SD: ${n8SdLabel(job)}`),  // read-only card-operation status row
     );
   }
   return items;
@@ -661,7 +677,7 @@ const APU_LATENCY_NAMES = ["0.5 ms", "1.0 ms", "1.4 ms", "3.0 ms", "5.0 ms"];
 
 // "Expansion Volume": how loud the CARTRIDGE's own sound chip is (VRC6 / VRC7 / N163 / S5B / MMC5 / FDS),
 // as a percentage of the level the hardware mixes it at. Not the 2A03 - a cart without an expansion chip
-// hears nothing from this row. It drives a connected Everdrive N8 Pro as well (expVolToN8), so the chip
+// hears nothing from this row. A driven Everdrive N8 Pro gets the same value as its node's param, so the chip
 // sits at the same level emulated and on the console. The role accepts any value in [0, 200].
 const EXP_VOLUMES = [0, 25, 50, 75, 100, 125, 150, 200];
 const EXP_VOLUME_NAMES = EXP_VOLUMES.map((v) => (v === 0 ? "Off" : v === 100 ? "100% (unity)" : `${v}%`));
@@ -684,6 +700,7 @@ function mesenConfig(sys: SystemView): {
   removeSpriteLimit: boolean;
   apuLatencyMs: number;
   expansionVolume: number;
+  driveRealCart: boolean;
   enableFm: boolean;
 } {
   const c = roleConfig(sys.roles, "mesen") ?? {};
@@ -692,6 +709,7 @@ function mesenConfig(sys: SystemView): {
     removeSpriteLimit: c.removeSpriteLimit === true,
     apuLatencyMs: typeof c.apuLatencyMs === "number" ? c.apuLatencyMs : 1.4,
     expansionVolume: typeof c.expansionVolume === "number" ? c.expansionVolume : 100,
+    driveRealCart: drivesRealCartOf(c), // the schema's default, read through the one predicate buildGraph places by
     enableFm: c.enableFm !== false, // default ON, matching the schema + MesenSmsConfig
   };
 }
@@ -852,6 +870,12 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       ),
       cycler("sys-nes-exp-volume", "Expansion Volume", EXP_VOLUME_NAMES, nearestIndex(EXP_VOLUMES, cfg.expansionVolume), (n) =>
         systems.setRoleConfig(sys.id, "mesen", { expansionVolume: EXP_VOLUMES[n] }),
+      ),
+      // This system's traffic reaches a real Everdrive N8 Pro (its rp.n8.nes takes the same MIDI and bytes the
+      // emulated core does). ON by default - it is what every project did before the setting existed - and the cart is
+      // driven by the FIRST NES in slot order that has it on, so a second system takes it over only if this one lets go.
+      cycler("sys-nes-drive-cart", "Drive Real Cart", OFF_ON, cfg.driveRealCart ? 1 : 0, (n) =>
+        systems.setRoleConfig(sys.id, "mesen", { driveRealCart: n === 1 }),
       ),
     );
   }
@@ -1413,13 +1437,19 @@ function blipToasterEffectiveSettings(ctx: MenuContext, sys: SystemView): BlipTo
 
 /** Pin `patch` on the role AND declare the resulting rig to the RUNNING cart. Both halves matter and neither
  *  is redundant: the pin is what a load replays and a bake writes, the SysEx is what the cart in front of you
- *  hears. Sent per-system so it reaches THIS cart whatever the project's MUSICAL routing is doing. */
+ *  hears. Staged at this system's node, so it reaches THIS cart whatever the project's MUSICAL routing is doing, and
+ *  at its rp.n8.nes too when the document places one (the real console, in the block the emulated core hears it). */
 function blipToasterPinSettings(ctx: MenuContext, sys: SystemView, patch: BlipToasterSettingsPatch): void {
   const effective = blipToasterEffectiveSettings(ctx, sys);
   if (!effective) return;
   const next = { ...readBlipToasterSettings(sys), ...patch };
   ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: next });
-  ctx.stores.backend.stageSystemMidi(sys.id, blipToasterSettingsSysex({ ...effective, ...patch }));
+  const sysex = blipToasterSettingsSysex({ ...effective, ...patch });
+  // The system's own node, and the cart node when this is the system that drives one (the first NES in slot order
+  // whose setting is on): the emulated core and the real console hear the same message in the same block.
+  ctx.stores.backend.stageNodeMidi(systemNodeId(sys.id), sysex);
+  const cart = cartFor(ctx, sys);
+  if (cart !== null) ctx.stores.backend.stageNodeMidi(cart.nodeId, sysex);
 }
 
 function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] {

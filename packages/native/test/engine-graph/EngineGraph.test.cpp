@@ -32,6 +32,7 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/rpc/EngineRpcService.hpp"
+#include "host/rpc/HarnessSurfaceLink.hpp"
 #include "system/CoreBackends.hpp"
 #include "system/SystemFactory.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
@@ -298,6 +299,51 @@ TEST_CASE("a render into buffers the planned graph does not write is refused", "
     CHECK(svc.renderAudioPerSystem(10.0).size() == 2);
     CHECK(svc.renderAudio(10.0).empty());
     CHECK(svc.renderBlocks(blocks).error.empty());
+}
+
+TEST_CASE("a render run starts from the harness surface's empty ring, so an earlier run's press is not replayed",
+          "[engine-graph][launchpad]") {
+    Engine                      e(kRate);
+    QueuedInvoker               invoker(e);
+    EngineRpcService            rpc(e, invoker);
+    rp::host::HarnessSurfaceLink surface;
+    e.setDeviceLinks(nullptr, &surface);  // as the test host installs it: the node binds it by name
+    rpc.setHarnessSurface(&surface);
+
+    // A plan with no surface node reads nothing from the harness's link, so a controller message waits there.
+    Engine::GraphRequest noSurface;
+    noSurface.document = R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],"wires":[]})";
+    REQUIRE(e.setGraph(noSurface).ok);
+    const std::vector<std::uint8_t> press{0x90, 0x33, 100};
+    const auto                      first = rpc.renderBlocks(
+        RpcRenderBlocksRequest{2, {RpcRenderBlock{64, {}, {press}, std::nullopt, std::nullopt, std::nullopt}}});
+    REQUIRE(first.error.empty());
+    CHECK(first.midiOut.empty());
+
+    // A plan that places the surface, its `in` going out as host MIDI where a case can read it. The stale press must
+    // not appear: renderBlocks clears the ring before the run's first block, so only its own messages wait in it.
+    Engine::GraphRequest withSurface;
+    withSurface.document = R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}},
+                                         {"id":"surface-in","type":"rp.launchpad.surface-in"},
+                                         {"id":"midi-out","type":"rp.host.midi-out","settings":{"systems":[0]}}],
+                               "wires":[{"from":"surface-in.in","to":"midi-out.in1"}]})";
+    REQUIRE(e.setGraph(withSurface).ok);
+    const auto stale = rpc.renderBlocks(
+        RpcRenderBlocksRequest{2, {RpcRenderBlock{64, {}, {}, std::nullopt, std::nullopt, std::nullopt}}});
+    REQUIRE(stale.error.empty());
+    CHECK(stale.midiOut.empty());
+
+    // A press the run stages itself is delivered: it waits in the ring until the surface-in node drains its block.
+    const std::vector<std::uint8_t> live{0x90, 0x34, 100};
+    const auto                      delivered = rpc.renderBlocks(
+        RpcRenderBlocksRequest{2, {RpcRenderBlock{64, {}, {live}, std::nullopt, std::nullopt, std::nullopt}}});
+    REQUIRE(delivered.error.empty());
+    REQUIRE(delivered.midiOut.size() == 1);
+    CHECK(delivered.midiOut[0].system == 0);
+    CHECK(delivered.midiOut[0].frame == 0);
+    REQUIRE(delivered.midiOut[0].data.size() == live.size());
+    for (std::size_t i = 0; i < live.size(); ++i)
+        CHECK(std::to_integer<std::uint8_t>(delivered.midiOut[0].data[i]) == live[i]);
 }
 
 // ---- knobs (docs/modular-graph-phase-c2-design.md section 4) -----------------------------------------------------

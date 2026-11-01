@@ -83,4 +83,20 @@ struct EngineSyncTrace {
     void (*bytes)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size);
 };
 
+// A node a host may hand a message aimed at it, outside its inputs (docs/modular-graph-phase-c5-design.md section 4):
+// the UI stages a settings message at one node by the document id it gives it, so it reaches the cart whose menu it is
+// whatever the project's musical routing does with channels. The engine asks the node the running plan places under
+// this id, so it learns no node's type: a system node hands the message to its core's ingress, a device node to its
+// device.
+// [audio] - the call happens on the thread that drains the engine's command ring, before the block that follows it, so
+// a staged message lands at frame 0 of the next block exactly as a per-system command did.
+#define RP_STAGE_INTERFACE "rp.stage/1"
+struct rp_host_stage {
+    void* ctx;
+    // Hand `size` staged bytes to the node, at frame 0 of the next block, the rate being the block's transport rate a
+    // device needs to time a release. False when the node stages nothing (no core yet, or a message its door cannot
+    // take), which is what the caller reads as "this node took none".
+    bool (*stage)(void* ctx, const std::uint8_t* data, std::size_t size, double sample_rate);
+};
+
 }  // namespace rp::host

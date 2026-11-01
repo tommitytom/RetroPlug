@@ -694,6 +694,7 @@ void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const v
         }
         case DspCommand::Kind::StageMidi:       delete c.stageMidi.ext; break;
         case DspCommand::Kind::StageSystemMidi: delete c.stageSystemMidi.ext; break;
+        case DspCommand::Kind::StageNodeMidi:   delete c.stageNodeMidi.ext; break;
         default: break;
     }
 }
@@ -729,6 +730,13 @@ void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
             }
             break;
         }
+        case DspCommand::Kind::StageNodeMidi:
+            if (cmd.stageNodeMidi.ext) {
+                stageNodeMidi(cmd.stageNodeMidi.ext->node, cmd.stageNodeMidi.ext->bytes.data(),
+                              cmd.stageNodeMidi.ext->bytes.size());
+                delete cmd.stageNodeMidi.ext;
+            }
+            break;
         case DspCommand::Kind::SetBpm:          setBpm(cmd.setBpm.value); break;
         case DspCommand::Kind::SetTransport:    setTransport(cmd.setTransport.value); break;
         case DspCommand::Kind::SetPpq:          setPpq(cmd.setPpq.value); break;
@@ -1280,6 +1288,18 @@ EngineFrame Engine::getFrame(SystemId id) {
     out.published = f.published;
     out.data = std::move(f.data);   // raw XRGB8888, the Canvas's native format
     return out;
+}
+
+bool Engine::stageNodeMidi(const std::string& nodeId, const std::uint8_t* bytes, std::size_t len) {
+    if (bytes == nullptr || len == 0) return false;
+    // The plan running at this point of the drain, never the control thread's live map: a document may have replaced
+    // the node under this id since the push, and only the plan that runs can take the message. The interface is asked
+    // by id alone, so this reads no node's type: a system node's hands the bytes to its core, a device node's to its
+    // device.
+    rp_node* node = graph_->host->runningNode(nodeId);
+    if (!node) return false;
+    const auto* stage = static_cast<const rp::host::rp_host_stage*>(node->vt->get_interface(node, RP_STAGE_INTERFACE));
+    return stage != nullptr && stage->stage(stage->ctx, bytes, len, sampleRate_);
 }
 
 bool Engine::stageSystemMidi(SystemBase* sys, const std::uint8_t* bytes, std::size_t len, bool toCart) {

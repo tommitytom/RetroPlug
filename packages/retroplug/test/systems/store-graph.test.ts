@@ -162,7 +162,10 @@ test("a gain or expansion-volume edit sets its param live and publishes nothing"
   expect(be.paramCalls).toEqual([
     { nodeId: `sys-${a}`, paramId: "gain", value: -6 },
     { nodeId: `sys-${c}`, paramId: "gain", value: -90 },
+    // A NES that drives a cart carries the knob on the cart's node too: a live edit publishes no document, so this
+    // is the only thing that moves the real console's master volume.
     { nodeId: `sys-${c}`, paramId: "expansionVolume", value: 40 },
+    { nodeId: `cart-${c}`, paramId: "expansionVolume", value: 40 },
   ]);
   // The next document, whatever publishes it, carries the values set live.
   p.setMidiRouting(MidiRouting.OneChannelPerInstance);
@@ -173,6 +176,33 @@ test("a gain or expansion-volume edit sets its param live and publishes nothing"
   expect(p.graph.withShape({ kind: "perSystem" }, () => true)).toBe(true);
   expect(be.graphNode(`sys-${a}`)?.params).toEqual(canon({ gain: -6 }));
   expect(be.graphNode(`sys-${c}`)?.params).toEqual(canon({ gain: -90, expansionVolume: 40 }));
+});
+
+test("driving a real cart is placement, not a knob: its edit publishes the document and moves the cart node", () => {
+  const { be, p, sys } = project();
+  const a = sys.addSystem("/roms/a.gb")!;
+  const c = sys.addSystem("/roms/c.nes")!;
+  // A NES drives the cart by default: buildGraph places its rp.n8.nes, fed from the same protocol nodes its core is.
+  expect(be.graphNode(`cart-${c}`)?.type).toBe("rp.n8.nes");
+  const n = be.graphRequests.length;
+  const publishes = countPublishes(p.graph);
+  expect(sys.setRoleConfig(c, "mesen", { driveRealCart: false })).toBe(true);
+  // A document of its own, not a live param: nothing is set on a node, the graph is republished.
+  expect(since(be, n).length).toBe(1);
+  expect(publishes.n).toBe(1);
+  expect(be.graphNode(`cart-${c}`)).toBe(undefined);
+  expect(be.lastDocument()!.wires.some((w) => w.to.startsWith(`cart-${c}`))).toBe(false);
+  // The emulated node stays and keeps its own wiring (a "real cart only" system is later work).
+  expect(be.graphNode(`sys-${c}`)?.type).toBe("rp.mesen.nes");
+  // An expansion-volume edit now reaches only the emulated node: no cart node is placed, so none is set (the shared
+  // predicate gates both the placement and the live copy).
+  const calls = be.paramCalls.length;
+  expect(sys.setRoleConfig(c, "mesen", { expansionVolume: 30 })).toBe(true);
+  expect(be.paramCalls.slice(calls)).toEqual([{ nodeId: `sys-${c}`, paramId: "expansionVolume", value: 30 }]);
+  // Back on: the node returns, and nothing is set live by either edit.
+  expect(sys.setRoleConfig(c, "mesen", { driveRealCart: true })).toBe(true);
+  expect(be.graphNode(`cart-${c}`)?.type).toBe("rp.n8.nes");
+  expect(a).toBeGreaterThan(0);
 });
 
 test("a setting edit publishes its system node's settings, without a re-arm; a link-group change rewires", () => {
@@ -217,9 +247,9 @@ test("a knob edit reaches the engine as a document or a param, and reload-on-ROM
   sys.setRoleConfig(a, "lsdj-sync", { mode: LsdjSyncMode.MasterSync });
   sys.setRoleConfig(c, "mesen", { region: "ntsc", expansionVolume: 150, removeSpriteLimit: true });
   sys.setRoleConfig(c, "mesen", { expansionVolume: 120 });
-  // The gain and the last expansion volume set live, every other edit a document, in that order: nothing else reaches
-  // the backend.
-  expect(be.log.slice(from)).toEqual(["setParam", "setGraph", "setGraph", "setGraph", "setParam"]);
+  // The gain and the last expansion volume set live (the NES drives a cart, so its knob reaches both nodes), every
+  // other edit a document, in that order: nothing else reaches the backend.
+  expect(be.log.slice(from)).toEqual(["setParam", "setGraph", "setGraph", "setGraph", "setParam", "setParam"]);
   // reload-on-ROM-change is TS's alone (the file watcher): it reaches no backend at all.
   expect(sys.view()[0].settings.reloadOnRomChange).toBe(true);
 });
@@ -725,8 +755,9 @@ const SCRIPT_NODES = new Map(
 );
 // The C++ node types buildGraph places. A type in neither this nor the bundle is one the engine registers nowhere.
 const NATIVE_TYPES = new Set([
-  "rp.host.midi-in", "rp.host.controller-in", "rp.host.midi-out", "rp.host.controller-out", "rp.host.audio-out",
-  "rp.core.split", "rp.core.add", "rp.n8.cart-mirror", "rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms",
+  "rp.host.midi-in", "rp.host.midi-out", "rp.host.audio-out", "rp.core.split", "rp.core.add",
+  "rp.launchpad.surface-in", "rp.launchpad.surface-out", "rp.n8.nes",
+  "rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms",
 ]);
 
 // What the engine's planner would refuse `doc` for, of the refusals a document TS builds can earn it: a node id used
@@ -1216,8 +1247,8 @@ test("DirectGraph sets each system's pipeline and the MIDI routing, each a publi
   const g = new DirectGraph(be);
   g.add(MGB, 1);
   g.add(MGB, 2);
-  // No roles: no protocol node, no routing and no controller.
-  expect(be.lastDocument()!.nodes.map((n) => n.id).slice(0, 4)).toEqual(["midi-in", "controller-in", "sys-1", "sys-2"]);
+  // No roles: no protocol node, no routing and no controller (so no surface either).
+  expect(be.lastDocument()!.nodes.map((n) => n.id).slice(0, 4)).toEqual(["midi-in", "sys-1", "sys-2", "midi-out"]);
   const n = be.graphRequests.length;
   const mgb: RoleInstance = { kind: "mgb", config: {} };
   expect(g.setPipeline(2, [{ kind: "sameboy", config: {} }, mgb])).toBe(true); // a role with no node is left out

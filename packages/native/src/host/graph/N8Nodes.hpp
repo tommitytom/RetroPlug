@@ -28,8 +28,8 @@ const rp_package* n8Package();
 std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings);
 
 // rp.n8.nes's `expansionVolume` (whole percent of unity, as the emulated NES's) as the cart's master-volume register:
-// 128 is unity, clamped to the register's 0..255. The same rounding as the UI's expVolToN8 (n8Devices.ts), so the
-// node and the host's own Settings > N8 row write the same byte for one value.
+// 128 is unity, clamped to the register's 0..255. The node is the only writer now: buildGraph gives it the system's own
+// knob as its param, so the emulated chip and the cartridge's are set from one value.
 int expansionVolumeRegister(double percent);
 
 }  // namespace rp::host

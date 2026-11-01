@@ -9,6 +9,7 @@
 #include <rfl/Bytestring.hpp>
 
 #include "host/rpc/BackendTypes.hpp"
+#include "host/rpc/HarnessSurfaceLink.hpp"
 #include "host/script/ScriptHost.hpp"  // DspAllocStats / DspGcResult / DspTraceSpan (no quickjs types)
 
 class Engine;
@@ -70,6 +71,12 @@ public:
     // Control MIDI for ONE system, bypassing the routing node: a settings knob that must reach the cart
     // it belongs to, however the project routes musical MIDI. Up to 4 bytes (a channel message).
     bool            stageSystemMidi(std::uint32_t id, std::vector<std::uint8_t> bytes);
+    // A control message aimed at ONE NODE of the running graph, by the document id it gives it: a settings SysEx to a
+    // system's core ("sys-<id>") or to a cart's FIFO (its rp.n8.nes node). Queued through the invoker like every
+    // per-system command, so it reaches the node whether an audio thread drains or the flush is inline, and the node
+    // id resolves against the plan running when it drains. The same optimistic contract as stageSystemMidi: refuse
+    // only what can never be delivered, an empty message (a node the plan does not place takes nothing, silently).
+    bool            stageNodeMidi(std::string nodeId, std::vector<std::uint8_t> bytes);
     rfl::Bytestring renderAudio(double ms);
     // Per-system audio: each live system's interleaved-stereo PCM, in slot order (marshals to
     // Uint8Array[]). Isolates each core so LSDj link-cable sync is provable (a follower's own RMS).
@@ -102,8 +109,14 @@ public:
     // (1.5 as 1, NaN as 0), so only the TS driver (audioDriver.ts) can refuse a frame that is no integer in range.
     bool            stageMidiIn(std::vector<std::uint8_t> bytes, std::uint32_t frame);
     // The control-surface twin: staged as `controllerIn` rather than musical MIDI, so a headless test
-    // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn.
+    // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn. It waits in the harness's
+    // own surface link (setHarnessSurface), which the document's rp.launchpad.surface-in node drains at its next block
+    // as it would a real device's input; false, staging nothing, when this host has no such link.
     bool            stageControllerIn(std::vector<std::uint8_t> bytes);
+    // TEST / HARNESS: the surface a headless host stages into (the test host's, retroplug-host). A host that owns a
+    // real surface installs its link on the Engine (setDeviceLinks) and leaves this null; the two are alternatives, not
+    // layers: this one exists only where no device does.
+    void            setHarnessSurface(rp::host::HarnessSurfaceLink* surface) { harnessSurface_ = surface; }
     // Drain the host MIDI out (LSDj's serial-out decoders, a controller's launches), accumulated across renderAudio
     // blocks since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
     std::vector<RpcMidiOut> drainMidiOut();
@@ -148,4 +161,5 @@ private:
     std::vector<float>       scratchR_;
     std::vector<RpcMidiOut> accumMidiOut_;  // host MIDI out gathered across a render window (drainMidiOut)
     std::unique_ptr<rp::kit::KitCompiler> kitCompiler_;  // lazy: built on first compileKit (enkiTS pool)
+    rp::host::HarnessSurfaceLink* harnessSurface_ = nullptr;  // the headless host's own surface, if it has one
 };

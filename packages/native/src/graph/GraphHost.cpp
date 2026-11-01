@@ -423,6 +423,13 @@ rp_node* GraphHost::node(std::string_view id) const {
     return it == live_.end() ? nullptr : it->second->node;
 }
 
+rp_node* GraphHost::runningNode(std::string_view id) const {
+    if (!current_) return nullptr;
+    for (const auto& inst : current_->instances)
+        if (inst->id == id) return inst->node;
+    return nullptr;
+}
+
 const void* GraphHost::hostData() const { return current_ ? current_->hostData.get() : nullptr; }
 
 void GraphHost::processBlock(std::uint32_t frames, const rp_transport& transport, float* const* outputs,

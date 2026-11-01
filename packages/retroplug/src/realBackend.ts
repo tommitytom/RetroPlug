@@ -118,7 +118,7 @@ export function createEmulatorClient(): EmulatorBackend {
     loadScriptPack: (request: LoadScriptPackRequest) => call("loadScriptPack", request) as LoadScriptPackResult,
     setParam: (nodeId, paramId, value) => call("setParam", nodeId, paramId, value) as boolean,
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
-    stageSystemMidi: (id, bytes) => call("stageSystemMidi", id, bytes) as boolean,
+    stageNodeMidi: (nodeId, bytes) => call("stageNodeMidi", nodeId, bytes) as boolean,
     readState: (id) => bytesOrNull(call("readState", id)),
     readSram: (id) => bytesOrNull(call("readSram", id)),
     readRam: (id) => bytesOrNull(call("readRam", id)),

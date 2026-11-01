@@ -179,12 +179,14 @@ export interface Backend {
    *  return only says the call was accepted, not that the id exists. */
   pressButton(id: number, button: number, down: boolean): boolean;
 
-  /** Deliver MIDI bytes straight to system `id`'s ingress, BYPASSING the project's MIDI routing. Any length:
-   *  For CONTROL traffic the UI aims at one cart — a settings row sending the CC that applies it live —
-   *  which must not depend on how musical MIDI is routed (`sendToAll` would reach every instance;
-   *  `midiChannelToInstance` rewrites the channel out from under it). Queued to the audio thread like
-   *  pressButton, so the return says accepted, not delivered; false only for an empty message. */
-  stageSystemMidi(id: number, bytes: number[]): boolean;
+  /** Deliver MIDI bytes straight to the input of one NODE of the running graph, by the document id the graph gives
+   *  it (docs/modular-graph-phase-c5-design.md section 4): a system node's core ingress ("sys-<id>"), a cart's FIFO
+   *  (its rp.n8.nes node). Any length, and outside the project's MIDI routing: CONTROL traffic the UI aims at one cart
+   *  (a settings row sending the message that applies it live) must not depend on how musical MIDI is routed
+   *  (`sendToAll` would reach every instance; `midiChannelToInstance` rewrites the channel out from under it). Queued
+   *  to the audio thread like pressButton, so the return says accepted, not delivered; false only for an empty
+   *  message, and a node the running plan does not place takes nothing (silently). */
+  stageNodeMidi(nodeId: string, bytes: number[]): boolean;
 
   // --- Live emulator reads (the pump) -------------------------------------
   // The DSP→TS direction: read a live system's state out. Native publishes these from
@@ -437,7 +439,7 @@ export type EmulatorBackend = Pick<
   Backend,
   | "putResource" | "releaseResource"
   | "setGraph" | "loadScriptPack" | "setParam"
-  | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
+  | "pressButton" | "stageNodeMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
   | "capability" | "pumpJobs" | "rejectPendingJobs"
 >;
 

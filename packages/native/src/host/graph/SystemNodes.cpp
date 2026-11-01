@@ -390,6 +390,34 @@ struct SystemNode {
         systems = static_cast<const HostSystems*>(h->get_interface(h, RP_HOST_SYSTEMS_INTERFACE));
         trace = static_cast<const EngineSyncTrace*>(h->get_interface(h, RP_ENGINE_SYNC_TRACE_INTERFACE));
     }
+
+    // rp.stage/1: a message a host aimed at this node, straight into its core's ingress (Engine::stageNodeMidi's
+    // path). The UI's knob traffic reaches the core whatever the project's musical routing does, and to the node
+    // whose menu it came from. Frame 0: a knob has no musical position.
+    rp_host_stage staged{this, &stageFn};
+    static bool stageFn(void* ctx, const std::uint8_t* data, std::size_t size, double) {
+        return static_cast<SystemNode*>(ctx)->stageMessage(data, size);
+    }
+    // pushCoreBytes, not onMidi, where the core has a raw ingress: onMidi is the MIDI-FRAMED door, and the NES role's
+    // implementation clamps every event to MidiEvent::kDataSize and ignores dataExt (NesN8FifoRole.cpp), so a SysEx
+    // through it arrives as its first four bytes and the cart waits forever for an F7 that was thrown away.
+    // pushCoreBytes is the raw door a protocol node's bytes reach the core through, with no framing and no cap. A core
+    // with no raw ingress falls back to the framed one, where a channel message still fits; nothing longer goes.
+    bool stageMessage(const std::uint8_t* data, std::size_t size) {
+        if (core == nullptr || data == nullptr || size == 0) return false;
+        if (core->hasCoreBytesIn()) {
+            core->pushCoreBytes(0, data, size, false);
+            return true;
+        }
+        if (size > ::MidiEvent::kDataSize) return false;
+        ::MidiEvent ev{};
+        ev.frame = 0;
+        ev.size = static_cast<std::uint32_t>(size);
+        for (std::size_t i = 0; i < size; ++i) ev.data[i] = data[i];
+        core->onMidi(&ev, 1);
+        return true;
+    }
+    const void* get_interface(std::string_view id) noexcept { return id == RP_STAGE_INTERFACE ? &staged : nullptr; }
     void on_settings(const Settings& s) noexcept {
         settings = &s;
         pending = true;

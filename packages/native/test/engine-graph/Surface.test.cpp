@@ -112,6 +112,10 @@ TEST_CASE("a surface's in carries what the device sent, in order, every message 
     rig.devices.install(nullptr, &surface);
     plan(rig, surfaceDocument({docNode("probe", "rp.test.probe")}, {docWire("surface-in.in", "probe.events")}));
 
+    // The node's first block discards what the link held when it bound it (the next case); this one scripts traffic
+    // with that block out of the way.
+    block(rig);
+
     // More than one drain batch, and one message at the link's widest, so the node's drain loop and a full-size slot
     // are both exercised in one block. The device's traffic carries no frame of its own: every message lands at frame
     // 0, where rp.host.controller-in places the host's staged pad traffic.
@@ -207,7 +211,9 @@ TEST_CASE("a surface's in drops what its queue has no room for, and counts it", 
 
     // 1100 messages of 20 bytes against rp.launchpad.surface-in's 1024 messages and 16384 bytes: the byte bound binds
     // first, at 819 messages (16380 bytes), and the 281 the queue cannot hold are dropped and counted there. The link
-    // is drained either way, so nothing accumulates behind a full queue.
+    // is drained either way, so nothing accumulates behind a full queue. The first block discards what the link bound
+    // with (the next case), so it runs before this traffic is scripted.
+    block(rig);
     const Bytes twenty(20, 0x11);
     for (int i = 0; i < 1100; ++i) surface.input.push_back(deviceMessage(twenty));
     block(rig);
@@ -220,6 +226,37 @@ TEST_CASE("a surface's in drops what its queue has no room for, and counts it", 
     block(rig);
     CHECK(rig.node<Probe>("probe").events.empty());
     CHECK(rig.host->droppedMessages("surface-in") == 1100 - held);
+}
+
+TEST_CASE("a surface's in discards what the link held when it bound it, and a reactivate keeps delivering",
+          "[launchpad]") {
+    FakeSurfaceLink surface;
+    NodeRig         rig(kRate);
+    rig.devices.install(nullptr, &surface);
+    // Presses sent while no node read the device wait in the link (a project with the controller off drains nothing):
+    // a session that starts now would replay them, so the node's first block drains the link and forwards none of it.
+    surface.input.push_back(deviceMessage({0x90, 0x33, 100}));
+    plan(rig, surfaceDocument({docNode("probe", "rp.test.probe")}, {docWire("surface-in.in", "probe.events")}));
+    block(rig);
+    CHECK(rig.node<Probe>("probe").events.empty());
+    // Drained, not kept: the block after has nothing to deliver either.
+    block(rig);
+    CHECK(rig.node<Probe>("probe").events.empty());
+    // A press after the first block is delivered, as every one after it is.
+    surface.input.push_back(deviceMessage({0x90, 0x34, 100}));
+    block(rig);
+    REQUIRE(rig.node<Probe>("probe").events.size() == 1);
+    CHECK(rig.node<Probe>("probe").events[0].data == Bytes{0x90, 0x34, 100});
+    // A reactivate that keeps the handle (the new rate and size a sample-rate change re-plans for) is not a first
+    // block: the instance already read the link before and after it, so what arrived is delivered.
+    surface.input.push_back(deviceMessage({0x90, 0x35, 100}));
+    std::string why;
+    REQUIRE(rig.host->reactivate(kRate, 8192, &why));
+    CHECK(surface.acquires == 2);  // the handle it bound is the one it keeps
+    block(rig);
+    REQUIRE(rig.node<Probe>("probe").events.size() == 1);
+    CHECK(rig.node<Probe>("probe").events[0].data == Bytes{0x90, 0x35, 100});
+    CHECK(rig.host->faultCount() == 0);
 }
 
 TEST_CASE("a plan holds one surface input node and one surface output node", "[launchpad]") {

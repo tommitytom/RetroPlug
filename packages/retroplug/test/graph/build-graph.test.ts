@@ -32,10 +32,10 @@ const nes = (id: number, exportMode = 0, pipeline: ProtocolRole[] = []): GraphSy
 });
 const multi = (channels: number): HostShape => ({ kind: "multi", channels });
 
-// The host's I/O and the script nodes around the systems, which every document carries; the B1 tables below are the
-// rest, the audio.
-const AROUND_THE_AUDIO = new Set(["midi-in", "controller-in", "routing", "controller", "cart", "midi-out", "controller-out"]);
-const aroundTheAudio = (id: string): boolean => AROUND_THE_AUDIO.has(id) || id.includes("/");
+// The host's I/O, the surface and the cart's node, and the script nodes around the systems: the B1 tables below are
+// the rest, the audio. A cart node is `cart-<system>`, so the prefix test covers it whatever the system's id.
+const AROUND_THE_AUDIO = new Set(["midi-in", "surface-in", "routing", "controller", "midi-out", "surface-out"]);
+const aroundTheAudio = (id: string): boolean => AROUND_THE_AUDIO.has(id) || id.startsWith("cart-") || id.includes("/");
 
 interface Project {
   midiRouting?: MidiRouting | null;
@@ -75,13 +75,15 @@ function built(systems: GraphSystem[], routing: AudioRouting = "stereo", shape: 
 
 test("the empty project is the host's I/O: the routing when a mode is set, and nothing that sends host MIDI", () => {
   const bare = built([]);
-  expect(bare.nodeOrder).toEqual(["midi-in", "controller-in", "midi-out", "controller-out", "out"]);
+  // No controller, so no surface either: it is placed only for one, and a surface node drains a device's ring that no
+  // session would read.
+  expect(bare.nodeOrder).toEqual(["midi-in", "midi-out", "out"]);
   expect(bare.node("midi-out")?.settings).toEqual({ systems: [] });
   expect(bare.document.wires).toEqual([]);
   expect(bare.buses).toEqual([1, 1]);
   expect(bare.slots).toEqual([]);
   const routed = built([], "stereo", multi(2), { midiRouting: "sendToAll" });
-  expect(routed.nodeOrder).toEqual(["midi-in", "controller-in", "routing", "midi-out", "controller-out", "out"]);
+  expect(routed.nodeOrder).toEqual(["midi-in", "routing", "midi-out", "out"]);
   expect(routed.node("routing")?.settings).toEqual({ mode: "sendToAll", systems: [] });
   expect(routed.document.wires).toEqual([{ from: "midi-in.midi", to: "routing.midiIn" }]);
 });
@@ -260,13 +262,13 @@ test("each type buildGraph places is the id its node module registers", () => {
 });
 
 test("the script nodes that feed the systems go before them, in slot then pipeline order, and LSDj's decoder after them", () => {
-  // Slot order, not the sum order a link group gives the systems themselves: the routing, the controller, each system's
-  // protocol nodes, the systems and their link cable, then each node that reads what a system sent, before the cart
-  // mirror and the host outputs.
+  // Slot order, not the sum order a link group gives the systems themselves: the surface in, the routing, the
+  // controller, each system's protocol nodes, the systems and their link cable, then each node that reads what a system
+  // sent, before the cart node and the host outputs, and the surface out last.
   const g = built([gb(1, 1, [MGB]), nes(2, 0, [N8, RISA]), gb(3, 1, [LSDJ()])], "stereo", multi(2), withController());
-  expect(g.nodeOrder.slice(0, 14)).toEqual([
-    "midi-in", "controller-in", "routing", "controller", "sys-1/mgb", "sys-2/nes-n8-midi", "sys-2/risa-sync", "sys-3/lsdj-sync",
-    "sys-2", "sys-1", "sys-3", "sys-3/lsdj-sync/out", "cart", "midi-out",
+  expect(g.nodeOrder.slice(0, 15)).toEqual([
+    "midi-in", "surface-in", "routing", "controller", "sys-1/mgb", "sys-2/nes-n8-midi", "sys-2/risa-sync",
+    "sys-3/lsdj-sync", "sys-2", "sys-1", "sys-3", "sys-3/lsdj-sync/out", "cart-2", "midi-out", "surface-out",
   ]);
   // Each protocol node takes its role's config as its settings.
   expect(g.node("sys-3/lsdj-sync")).toEqual({ id: "sys-3/lsdj-sync", type: LSDJ_SYNC_NODE_TYPE, settings: LSDJ().config });
@@ -371,9 +373,14 @@ test("the controller takes the surface, sends it its LEDs, and its target ('0 is
       songRowTicks: [], anchorRows: [5, 5, null, 5], anchorSeq: 3,
     },
   });
-  expect(g.into("controller.controllerIn")).toEqual(["controller-in.midi"]);
-  expect(g.into("controller.controllerConnected")).toEqual(["controller-in.connected"]);
-  expect(g.into("controller-out.midi")).toEqual(["controller.controllerOut"]);
+  // The device's own side: its traffic in and its connected flag, and the session's LEDs back out, each through its own
+  // surface node (one node that did both would be a cycle with the session).
+  expect(g.into("controller.controllerIn")).toEqual(["surface-in.in"]);
+  expect(g.into("controller.controllerConnected")).toEqual(["surface-in.connected"]);
+  expect(g.into("surface-out.out")).toEqual(["controller.controllerOut"]);
+  expect([g.node("surface-in")?.type, g.node("surface-out")?.type]).toEqual([
+    "rp.launchpad.surface-in", "rp.launchpad.surface-out",
+  ]);
   // Its launches join the target cart's routed MIDI, and no other cart's.
   expect(g.into("sys-7/lsdj-sync.launches")).toEqual(["controller.launches"]);
   expect(g.into("sys-8/lsdj-sync.launches")).toEqual([]);
@@ -381,10 +388,11 @@ test("the controller takes the surface, sends it its LEDs, and its target ('0 is
   const chosen = built([gb(7, 0, [LSDJ()]), gb(8, 0, [LSDJ()])], "stereo", multi(2), withController({ systemId: 8 }));
   expect(chosen.into("sys-8/lsdj-sync.launches")).toEqual(["controller.launches"]);
   expect(chosen.into("sys-7/lsdj-sync.launches")).toEqual([]);
-  // Without a controller the surface is wired to nothing.
+  // Without a controller there is no session and no surface: neither node is placed, so nothing drains a device.
   const without = built([gb(7, 0, [LSDJ()])]);
   expect(without.node("controller")).toBe(undefined);
-  expect(without.document.wires.some((w) => w.from.startsWith("controller-in.") || w.to.startsWith("controller-out."))).toBe(false);
+  expect(without.node("surface-in")).toBe(undefined);
+  expect(without.node("surface-out")).toBe(undefined);
 });
 
 test("the controller's launches reach only a 'system' target's lsdj-sync node", () => {
@@ -415,16 +423,44 @@ test("host MIDI out takes the controller's first, then each LSDj decoder's in sl
   expect(built([gb(1, 0, [MGB])]).node("midi-out")?.settings).toEqual({ systems: [] });
 });
 
-test("the cart mirrors the first NES in slot order, fed what its protocol nodes feed it, and there is no mirror without a NES", () => {
+test("the cart node is the first NES in slot order that drives one, fanned out from what feeds its core", () => {
   const g = built([gb(1), nes(9, 0, [N8, RISA]), nes(3, 0, [N8])]);
-  expect(g.node("cart")).toEqual({ id: "cart", type: "rp.n8.cart-mirror", settings: { system: 9 } });
-  expect(g.into("cart.midi")).toEqual(["sys-9/nes-n8-midi.midi"]);
-  expect(g.into("cart.bytes")).toEqual(["sys-9/risa-sync.bytes"]);
+  expect(g.node("cart-9")).toEqual({ id: "cart-9", type: "rp.n8.nes" });
+  expect(g.into("cart-9.midi")).toEqual(["sys-9/nes-n8-midi.midi"]);
+  expect(g.into("cart-9.bytes")).toEqual(["sys-9/risa-sync.bytes"]);
+  // The emulated node takes the same wires: emulated, real or both is plain fan-out.
+  expect(g.into("sys-9.midi")).toEqual(["sys-9/nes-n8-midi.midi"]);
+  expect(g.into("sys-9.bytes")).toEqual(["sys-9/risa-sync.bytes"]);
   // A NES with no risa-sync sends its cart no bytes; one with no protocol node at all, nothing.
-  expect(built([nes(4, 0, [N8])]).into("cart.bytes")).toEqual([]);
-  expect(built([nes(4)]).document.wires.some((w) => w.to.startsWith("cart."))).toBe(false);
-  expect(built([gb(1), gb(2)]).node("cart")).toBe(undefined);
-  expect(built([]).node("cart")).toBe(undefined);
+  expect(built([nes(4, 0, [N8])]).into("cart-4.bytes")).toEqual([]);
+  expect(built([nes(4)]).document.wires.some((w) => w.to.startsWith("cart-"))).toBe(false);
+  // A system that does not drive one gets no node (and only one NES ever does: the type is unique).
+  expect(built([gb(1), gb(2)]).nodeOrder.some((id) => id.startsWith("cart-"))).toBe(false);
+  expect(built([]).nodeOrder.some((id) => id.startsWith("cart-"))).toBe(false);
+});
+
+test("two NESes that both drive a cart still give one cart node, the first in slot order", () => {
+  const both = [nes(4, 0, [N8]), nes(7, 0, [N8])].map((s) => ({ ...s, coreConfig: { driveRealCart: true } }));
+  const g = built(both);
+  expect(g.nodeOrder.filter((id) => id.startsWith("cart-"))).toEqual(["cart-4"]);
+  expect(g.into("sys-7.midi")).toEqual(["sys-7/nes-n8-midi.midi"]); // the emulated core still hears its own
+  expect(g.document.wires.some((w) => w.to.startsWith("cart-7"))).toBe(false);
+  // The first NES letting go hands the cart to the next one that drives one.
+  const handed = [{ ...both[0], coreConfig: { driveRealCart: false } }, both[1]];
+  expect(built(handed).nodeOrder.filter((id) => id.startsWith("cart-"))).toEqual(["cart-7"]);
+  expect(built(handed).document.wires.some((w) => w.to.startsWith("cart-4"))).toBe(false);
+  // One that turns it off and no other NES drives one: no cart at all.
+  const off = built([{ ...both[0], coreConfig: { driveRealCart: false } }]);
+  expect(off.nodeOrder.some((id) => id.startsWith("cart-"))).toBe(false);
+});
+
+test("a cart node carries the system's expansion volume param, the same value its emulated node gets", () => {
+  const withKnob = (volume: number) =>
+    built([{ ...nes(2, 0, [N8]), coreConfig: { expansionVolume: volume } }]);
+  expect(withKnob(40).node("cart-2")?.params).toEqual({ expansionVolume: 40 });
+  expect(withKnob(40).node("sys-2")?.params).toEqual({ expansionVolume: 40 });
+  // A config that names none: neither node carries the param, so both run at the node's own default.
+  expect(built([nes(2, 0, [N8])]).node("cart-2")?.params).toBe(undefined);
 });
 
 // --- the cart's sync mode under a controller ----------------------------------------------------------------

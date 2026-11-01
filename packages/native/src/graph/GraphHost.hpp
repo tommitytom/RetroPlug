@@ -128,6 +128,11 @@ public:
     // size, the old plan keeps running, and a node that will not come back either is bypassed as faulted.
     bool reactivate(double sampleRate, std::uint32_t maxFrames, std::string* error = nullptr);
     rp_node*      node(std::string_view id) const;
+    // The node the plan running at the last drain places under `id`, or null. [audio, inside the host command handler]
+    // It reads the plan the drain last adopted, which only the thread draining writes, so it is the running plan and
+    // never the control thread's view: a document may replace the node under an id between the push of a command and
+    // its drain, and a host command aimed at a node must reach the one that runs.
+    rp_node* runningNode(std::string_view id) const;
     // Nodes faulted so far, each counted once. reclaim() logs new ones, naming each still in the graph. Acquired:
     // the executor releases the count after the node's flag, so every flag it counts is visible after reading it.
     std::uint32_t faultCount() const { return faults_.load(std::memory_order_acquire); }

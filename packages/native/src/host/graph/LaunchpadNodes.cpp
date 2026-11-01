@@ -27,13 +27,19 @@ constexpr std::size_t kSurfaceDrainBatch = 16;
 struct SurfaceNode {
     const HostDevices* devices = nullptr;
     SurfaceLink*       surface = nullptr;
+    // Set when activate bound the link, so the next process is the node's first block with it. A reactivate that keeps
+    // the handle does not set it: that block has a reader on both sides of it, so nothing waited unread.
+    bool               fresh = false;
 
     void bind_host(const rp_host* h) noexcept {
         devices = static_cast<const HostDevices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
     }
     bool activate(double, std::uint32_t) {
         if (!devices) return false;
-        if (!surface) surface = devices->acquireSurface(devices->ctx, kSurfaceDeviceName);
+        if (!surface) {
+            surface = devices->acquireSurface(devices->ctx, kSurfaceDeviceName);
+            fresh = surface != nullptr;
+        }
         return surface != nullptr;
     }
     ~SurfaceNode() {
@@ -65,6 +71,12 @@ struct SurfaceIn : SurfaceNode {
     std::array<DeviceMessage, kSurfaceDrainBatch> batch{};
 
     void process(const rp::Block&) noexcept {
+        // The node's first block after it binds the link discards what the link already holds: those messages were sent
+        // while no node read the device (the project's controller was off), so delivering them would replay presses
+        // into a session that has only just started. Drained through the same batch until empty, never forwarded, and
+        // allocation-free; a reactivate that keeps the handle does not discard.
+        const bool first = fresh;
+        fresh = false;
         // `connected` holds 1 or 0 from frame 0: a change at frame 0 on the block the flag flips, since a stream's
         // start value is the last block's end.
         const double flag = surface->connected() ? 1.0 : 0.0;
@@ -75,8 +87,9 @@ struct SurfaceIn : SurfaceNode {
         // answers, so a full batch means the ring may hold more.
         for (;;) {
             const std::size_t n = surface->drainInput(batch.data(), batch.size());
-            for (std::size_t i = 0; i < n; ++i)
-                outputs.in.push(0, std::span<const std::uint8_t>(batch[i].data, batch[i].size));
+            if (!first)
+                for (std::size_t i = 0; i < n; ++i)
+                    outputs.in.push(0, std::span<const std::uint8_t>(batch[i].data, batch[i].size));
             if (n < batch.size()) break;
         }
     }

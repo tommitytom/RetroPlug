@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "system/SystemTypes.hpp"  // SystemId
@@ -41,6 +42,9 @@ public:
     bool stageControllerMidi(std::vector<std::uint8_t> bytes);
     // MIDI for ONE system, bypassing the routing node entirely (see DspCommand::stageSystemMidi).
     void stageSystemMidi(SystemId id, std::vector<std::uint8_t> bytes);
+    // MIDI for ONE node of the document, by id, handed to it through rp.stage/1 on the thread that drains (see
+    // DspCommand::stageNodeMidi). Any length; the id and the bytes cross as one owning payload.
+    void stageNodeMidi(std::string nodeId, std::vector<std::uint8_t> bytes);
     void setBpm(double bpm);
     void setTransport(bool playing);
     void setPpq(double ppq);

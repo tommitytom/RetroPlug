@@ -403,10 +403,10 @@ export interface SystemsStore {
    *  such an edit with `reset(id)`, and a reset of the id it held resets what that id became (see `reset`). A second
    *  edit of that old id answers false: only a reset follows a replaced id, since every other verb treats one as
    *  absent, so the id carrying further edits is the one `systems()` lists. A live model or region edit lands when
-   *  the next block is rendered, so a `writeRam`, `pressButton` or `stageSystemMidi` issued right after one in a
-   *  quiescent session reaches the core the restart replaces: render a block first when the command must act on the
-   *  restarted core. False when the system or the role is absent, or when the rebuild's document was refused (the
-   *  system is then as it was).
+   *  the next block is rendered, so a `pressButton` or a `stageMidiIn` issued right after one in a quiescent session
+   *  reaches the core the restart replaces: render a block first when the command must act on the restarted core.
+   *  False when the system or the role is absent, or when the rebuild's document was refused (the system is then as it
+   *  was).
    *
    *  E.g. `setRoleConfig(id, "mesen", { region: "pal" })` switches a running NES to PAL; a construct-time edit
    *  such as `{ fifo: "hardware" }` rebuilds the system where it stands.

@@ -129,7 +129,20 @@ struct N8Nes {
         devices->releaseCart(devices->ctx, cart);
     }
 
+    // rp.stage/1: a message a host aimed at this node (Engine::stageNodeMidi's path), onto the link's ring at frame 0
+    // exactly as this block's `midi` input would put it there, note bookkeeping and all: a UI's settings message
+    // reaches the cart whose menu it is whatever the project's musical routing does. A push while the link is down
+    // goes nowhere and is counted; a note-off lost there stays owed and goes out on the next connected block.
+    rp_host_stage staged{this, &stageFn};
+    static bool stageFn(void* ctx, const std::uint8_t* data, std::size_t size, double sampleRate) {
+        auto* self = static_cast<N8Nes*>(ctx);
+        if (!self->cart || data == nullptr || size == 0) return false;
+        self->pushMidi(0, data, size, sampleRate);
+        return true;
+    }
+
     const void* get_interface(std::string_view id) noexcept {
+        if (id == RP_STAGE_INTERFACE) return &staged;
         return id == RP_SYSTEM_SRAM_INTERFACE || id == RP_SYSTEM_ROM_INTERFACE ? &jobs : nullptr;
     }
     static bool submitJob(void* ctx, const JobRequest& request, Job& job, std::string* error) {

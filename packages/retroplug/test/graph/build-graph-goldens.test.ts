@@ -8,9 +8,12 @@
 // I/O around the audio (every model gained an empty kernel structure), and B3b for the script nodes that replaced
 // the kernel (every model routes the host's MIDI to all its systems, with no controller and no roles, so each
 // document places the routing node and no protocol node), and C2 for the system nodes' knobs (every Game Boy's node
-// carries its serial-out capture, off with no lsdj-sync placed); and C3 for the resources they boot from (every case's
+// carries its serial-out capture, off with no lsdj-sync placed); C3 for the resources they boot from (every case's
 // model now carries its `platform`, its `resources`, whose ids are the model's resource ids, and its `romName`, a NES's
-// `coreConfig` with the export-mode label its `exportMode` names, and a Game Gear's `gameGear` setting). A NES whose
+// `coreConfig` with the export-mode label its `exportMode` names, and a Game Gear's `gameGear` setting); and C5 for the
+// hardware nodes (a NES's cart is `cart-<id>` with the expansion volume its core config names, an `rp.n8.nes` instead
+// of the plan-level mirror, and no host controller nodes at all: the surface is placed only where a controller is, and
+// no model here has one). A NES whose
 // model differed only by `exportMode` used to build a byte-identical document; it now carries that label in its node,
 // so the 840 cases point at 298 documents instead of 238, and 714 of them moved index. The documents are still each
 // system node's settings and the wiring around them, and the audio of every document is the translator's still.

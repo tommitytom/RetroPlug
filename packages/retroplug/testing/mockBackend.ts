@@ -143,8 +143,8 @@ export class MockBackend implements Backend {
   readonly paramCalls: { nodeId: string; paramId: string; value: number }[] = [];
   /** Joypad edges (backend.pressButton), in call order. */
   readonly pressButtonCalls: { id: number; button: number; down: boolean }[] = [];
-  /** Control MIDI aimed at one system (backend.stageSystemMidi), in call order. */
-  readonly stageSystemMidiCalls: { id: number; bytes: number[] }[] = [];
+  /** Control MIDI aimed at one node (backend.stageNodeMidi), in call order: the node id and its bytes. */
+  readonly stageNodeMidiCalls: { nodeId: string; bytes: number[] }[] = [];
 
   /** Ids passed to the pump reads, in order. */
   readonly readStateCalls: number[] = [];
@@ -478,6 +478,8 @@ export class MockBackend implements Backend {
     }
     this.systems = live;
     this.systemNodes = placed;
+    // The document's cart nodes, which the capability jobs address by id (one rp.n8.nes at most, its type unique).
+    this.cartNodes = new Set([...nodes.values()].filter((n) => n.type === "rp.n8.nes").map((n) => n.id));
     return { ok: true, errors: [] };
   }
 
@@ -582,6 +584,34 @@ export class MockBackend implements Backend {
 
   /** Model a running audio thread: a write then completes at the next runBlock(), not at its submission. */
   audioRunning = false;
+
+  // The cart a document's rp.n8.nes node stands for, as the card jobs see it (the N8's own battery file and the ROM
+  // this host booted on it). The bytes model the cart's SD card save file; the jobs' own refusals (busy, not
+  // connected, no battery file, a running game) come from the same places native's do.
+  /** The cart's battery file, or null when it has none (`sram.dump` then refuses). */
+  cartBattery: Uint8Array | null = new Uint8Array(66_560);
+  /** Whether a cart is attached; a job while not fails "not connected". */
+  cartConnected = true;
+  /** Hold a card job open until runCartJob(), reporting `cartProgress` first: a test's long USB transfer, whose busy
+   *  state and progress row it can watch. */
+  holdCartJobs = false;
+  /** The progress a held job reports, in order, before its completion. */
+  cartProgress: { progress: number; total: number }[] = [];
+  /** The ROM image the last rom.upload booted, and the name it was stored under. */
+  cartRom: { name: string; bytes: Uint8Array } | null = null;
+  private heldCartJob: { id: number; bytes: Uint8Array; apply: () => void } | null = null;
+  /** The ids of the last document's rp.n8.nes nodes. */
+  private cartNodes = new Set<string>();
+
+  /** Finish the card job holdCartJobs held open: its recorded progress, then the completion (applying what it wrote).
+   *  Nothing when none is held. The promise settles with the next pump. */
+  runCartJob(): void {
+    const held = this.heldCartJob;
+    if (!held) return;
+    this.heldCartJob = null;
+    held.apply();
+    this.completeJob(held.id, true, held.bytes, "");
+  }
   readonly jobRequests: JobRequest[] = [];
   private nextJobId = 1;
   private jobCompletions: JobCompletion[] = [];
@@ -605,6 +635,7 @@ export class MockBackend implements Backend {
     this.jobRequests.push(request);
     if (this.queuedWrites.length + this.jobCompletions.length >= 64)
       return { error: "busy: 64 jobs are outstanding; drain their completions first" };
+    if (this.cartNodes.has(request.nodeId)) return this.submitCartJob(request);
     const m = /^sys-([1-9][0-9]*)$/.exec(request.nodeId);
     const system = m ? Number(m[1]) : 0;
     if (!this.systems.has(system)) return { error: `the running graph has no node ${request.nodeId}` };
@@ -653,6 +684,71 @@ export class MockBackend implements Backend {
       return now(rom.slice(start, end));
     }
     return refuse(`unknown capability ${request.capability}`);
+  }
+
+  /** A card job on the cart node `request.nodeId`: the battery file's bytes, the ROM upload, the booted ROM's header
+   *  and title. `name` names the ROM whose battery file the job reaches; without one the last boot counts, as
+   *  natively. */
+  private submitCartJob(request: JobRequest): JobSubmitResult {
+    const refuse = (error: string): JobSubmitResult => ({ error });
+    if (!this.cartConnected) return refuse("not connected");
+    if (this.heldCartJob) return refuse("busy: the cart is running another job");
+    const key = `${request.capability} ${request.op}`;
+    const name = request.name ?? this.cartRom?.name ?? "";
+    if (key === "rp.system.sram/1 dump") {
+      if (!this.cartBattery) return refuse(`no battery file for ${name || "the running ROM"}`);
+      return this.cartJob(new Uint8Array(this.cartBattery), () => {});
+    }
+    if (key === "rp.system.sram/1 restore") {
+      const bytes = request.bytes ?? new Uint8Array(0);
+      if (!bytes.length) return refuse("a battery restore takes at least one byte");
+      return this.cartJob(new Uint8Array(0), () => {
+        this.cartBattery = new Uint8Array(bytes);
+      });
+    }
+    if (key === "rp.system.rom/1 upload") {
+      const bytes = request.bytes ?? new Uint8Array(0);
+      const uploadName = request.name ?? "";
+      if (!bytes.length) return refuse("the upload is not an iNES image");
+      if (!uploadName || /[\\/]/.test(uploadName) || uploadName === "." || uploadName === "..")
+        return refuse("an upload names the file it is stored under, a plain file name");
+      return this.cartJob(
+        enc.encode(JSON.stringify({ path: `usb-games/${uploadName}`, mapIndex: 0, streaming: "stopped" })),
+        () => {
+          this.cartRom = { name: uploadName, bytes: new Uint8Array(bytes) };
+        },
+      );
+    }
+    if (key === "rp.system.rom/1 header") {
+      if (!this.cartRom) return refuse("the cart is running nothing this host booted on it");
+      return this.nowJob(this.cartRom.bytes.slice(0, request.length || this.cartRom.bytes.length));
+    }
+    if (key === "rp.system.rom/1 title") return this.nowJob(enc.encode(this.cartRom?.name ?? ""));
+    return refuse(`unknown capability ${request.capability}`);
+  }
+
+  /** A cart job: completed at once (and its write applied), or held for runCartJob(). An id is taken only when the
+   *  job is accepted, as natively. */
+  private cartJob(bytes: Uint8Array, apply: () => void): JobSubmitResult {
+    const id = this.nextJobId++;
+    if (this.holdCartJobs) {
+      this.heldCartJob = { id, bytes, apply };
+      // The progress a transfer reports as it runs, before it is finished: what the menu row shows while it is busy.
+      for (const p of this.cartProgress)
+        this.jobCompletions.push({
+          id, done: false, ok: true, error: "", bytes: new Uint8Array(0), progress: p.progress, total: p.total,
+        });
+    } else {
+      apply();
+      this.completeJob(id, true, bytes, "");
+    }
+    return { id };
+  }
+
+  private nowJob(bytes: Uint8Array): JobSubmitResult {
+    const id = this.nextJobId++;
+    this.completeJob(id, true, bytes, "");
+    return { id };
   }
 
   drainJobs(): JobCompletion[] {
@@ -933,10 +1029,12 @@ export class MockBackend implements Backend {
     return true;
   }
 
-  stageSystemMidi(id: number, bytes: number[]): boolean {
-    this.log.push("stageSystemMidi");
+  stageNodeMidi(nodeId: string, bytes: number[]): boolean {
+    this.log.push("stageNodeMidi");
     if (bytes.length === 0) return false;
-    this.stageSystemMidiCalls.push({ id, bytes: [...bytes] });
+    // As natively: a node the last document (the running plan, in the mock) does not place takes nothing, silently.
+    if (!this.graphNode(nodeId)) return true;
+    this.stageNodeMidiCalls.push({ nodeId, bytes: [...bytes] });
     return true;
   }
 

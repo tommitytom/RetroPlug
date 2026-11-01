@@ -13,7 +13,10 @@ namespace rp::host {
 //   rp.launchpad.surface-in   in: the device's MIDI, drained from the link at the start of the block, each message at
 //                             frame 0 (a control surface's timing is not musical, and this is where
 //                             rp.host.controller-in places the pad traffic the host stages); connected: 1 while the
-//                             device is attached, from frame 0 of the block, as rp.host.controller-in's is.
+//                             device is attached, from frame 0 of the block, as rp.host.controller-in's is. Its first
+//                             block after it binds the link discards what the link already holds (presses sent while
+//                             no node read the device) rather than replaying them; a reactivate that keeps the handle
+//                             is not a first block.
 //   rp.launchpad.surface-out  out: every message handed to the link, in queue order, in the block it was queued.
 //
 // The two event ports are what a controller session reads and writes, so a session wired to these nodes runs as it
