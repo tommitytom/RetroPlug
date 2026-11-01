@@ -52,6 +52,9 @@ public:
     // into its slot. Runs at the end of Engine::processBlock, on the block-driving thread.
     // One system's; the engine calls it for each of the running plan's systems, in slot order.
     void publishSystem(SystemBase& system, std::uint32_t frames, double sampleRate);
+    // Just the work RAM's copy, on the thread that owns the core: what a capability write completed while no audio
+    // thread runs republishes, so the read the control plane makes next sees it without a block (Engine::submitJob).
+    void publishRam(SystemBase& system);
 
     // Control-thread reads of the OWNED copies.
     struct Frame {
@@ -108,6 +111,7 @@ private:
     static constexpr std::size_t kMaxStateBytes    = 16 * 1024 * 1024; // sanity bound on one savestate
 
     Slot* find(SystemId id);
+    void  publishRamFor(Slot& s, SystemBase& system);
     Slot* findFree();
 
     // Write [len:4 LE][payload] into a triple's next slot and publish it (prefix + len must fit the

@@ -52,6 +52,13 @@ public:
     // The WRITE counterpart of readRam, in the same coordinates. Queued like pressButton, so it lands
     // between blocks and is safe while the audio thread runs - unlike the debug facet's writeCpu.
     bool            writeRam(std::uint32_t id, std::uint32_t offset, rfl::Bytestring bytes);
+    // A capability job for a node of the running graph (Engine::submitJob, docs/modular-graph-phase-c5-design.md
+    // section 6): its id, whose completion a later drainJobs hands back, or why it was refused. readSram, readRam and
+    // writeRam above are the system-id forms of three of these, on the same paths.
+    RpcJobSubmitResult            submitJob(RpcJobRequest request);
+    // The completions since the last drain (and the progress of jobs still running), which the control plane polls
+    // from its tick (Engine::drainJobs).
+    std::vector<RpcJobCompletion> drainJobs();
     bool screenshot(std::uint32_t id, std::string path);
     RpcFrame getFrame(std::uint32_t id);
 

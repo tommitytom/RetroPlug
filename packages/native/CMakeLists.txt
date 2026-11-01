@@ -70,6 +70,7 @@ add_library(retroplug-core STATIC
     # Same rule: fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line too.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/util/FileSync.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemCapabilities.cpp
     ${_rpcore_sbs}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesSystem.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGlobalInit.cpp

@@ -45,7 +45,8 @@ public:
     void setTransport(bool playing);
     void setPpq(double ppq);
     void pressButton(SystemId id, std::uint8_t button, bool down);
-    void writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
+    // A write into a system's work RAM (Engine::writeRam): false, queuing nothing, when the engine refuses it.
+    bool writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
 
     // consumer: apply every queued command (the block thread, or the control thread while quiescent).
     void drainInto(Engine& engine);

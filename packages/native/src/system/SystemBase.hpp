@@ -19,7 +19,7 @@
 #include "transport/MemorySnapshotTriple.hpp"
 #include "transport/MidiTypes.hpp"
 
-namespace rp { class IDebugTarget; }
+namespace rp { class IDebugTarget; class MemoryCapability; class SramCapability; class RomCapability; }
 
 // What the core's host<->cartridge transport is holding, and what it has lost. Cross-core by name
 // rather than NES-specific: any core that grows a lossy transport reports the same five numbers.
@@ -263,6 +263,18 @@ public:
     // answer before it publishes a new one), so it is a pure read: no allocation, no mutation, and the same pointer for
     // the core's lifetime.
     virtual ChannelTap* channelTap() { return nullptr; }
+
+    // -- The control plane's capabilities (system/SystemCapabilities.hpp) ----
+    //
+    // rp.system.memory/1, rp.system.sram/1 and rp.system.rom/1, each null when the core does not present it. As with
+    // channelTap(), one capability object per interface rather than a virtual per operation, owned by the system and
+    // the same pointer for its lifetime, so the engine runs a job without naming the console. Asking for one is a pure
+    // read the control thread makes while the core may run a block, and so is every [any] member of the objects
+    // (memory's region list, rom's bytes and title); MemoryCapability::write is the block-side half of a write, which
+    // only the block thread (or the control thread while no audio thread runs) calls.
+    virtual rp::MemoryCapability* memory() { return nullptr; }
+    virtual rp::SramCapability*   sram() { return nullptr; }
+    virtual rp::RomCapability*    rom() { return nullptr; }
 
     // -- Debugger / profiler ------------------------------------------------
     //

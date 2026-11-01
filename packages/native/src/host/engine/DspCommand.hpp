@@ -3,18 +3,21 @@
 #include <cstdint>
 #include <vector>
 
+namespace rp::host { struct Job; }
+
 // A control-thread → audio-thread command for the engine, carried on the GraphHost's one ring as an
 // opaque HostCommand (docs/modular-graph-phase-b1-design.md section 5.1), in push order with the plan
-// swaps. POD / trivially copyable so it rides the ring as bytes. The heavy payloads (rare,
-// user-initiated) cross as raw OWNING pointers: the audio thread applies then `delete`s them, the
+// swaps. POD / trivially copyable so it rides the ring as bytes. A long MIDI message (rare,
+// user-initiated) crosses as a raw OWNING pointer: the audio thread applies then `delete`s it, the
 // accepted non-RT-on-rare-op pattern. StageMidi is inline for a channel message (fits in 4 bytes); a
-// longer one (SysEx, or several messages staged as one run) crosses as an owning `ext` vector, the same
-// rare-op pattern. Structure never comes this way: TS sends it as graph documents.
+// longer one (SysEx, or several messages staged as one run) crosses as an owning `ext` vector. A capability
+// write crosses as a pointer to a job record the control thread keeps and frees. Structure never comes this
+// way: TS sends it as graph documents.
 struct DspCommand {
     enum class Kind : std::uint8_t {
         None = 0, StageMidi = 3,
         SetBpm = 7, SetTransport = 8, PressButton = 10,
-        SetPpq = 12, StageControllerMidi = 13, WriteRam = 14,
+        SetPpq = 12, StageControllerMidi = 13, CapabilityWrite = 14,
         StageSystemMidi = 15,
         // The NES tap arming every structural change does (docs/modular-graph-phase-b1-design.md section
         // 3.2): restore whatever is armed, then arm `id` to `mode` if `arm`. Only ever the trailer of a
@@ -32,9 +35,10 @@ struct DspCommand {
         struct { bool value; } setTransport;
         struct { std::uint32_t id; std::uint8_t button; bool down; } pressButton; // joypad transition → core
         struct { double value; } setPpq;                         // host playhead jump (locate)
-        // Host poke into a core's work RAM. Owning payload (a song block is ~7 KB, far past what the
-        // union can hold inline), freed by the audio thread after applying - the rare-op pattern above.
-        struct { std::uint32_t id; std::uint32_t offset; std::vector<std::uint8_t>* bytes; } writeRam;
+        // A capability job's write into a core's memory (host/engine/CapabilityJobs.hpp). NOT an owning payload: the
+        // record and its bytes are the control thread's, which frees them once the block thread has stored the job's
+        // terminal state, so applying one allocates and frees nothing.
+        struct { rp::host::Job* job; } capabilityWrite;
         // MIDI aimed at ONE system, delivered straight to its ingress and NEVER through the routing node.
         // That is the whole point: a menu knob has to reach the cart whose menu it is, whatever the project's
         // MUSICAL routing is doing with channels (sendToAll would hit every instance; midiChannelToInstance

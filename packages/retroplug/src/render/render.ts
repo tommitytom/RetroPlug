@@ -343,6 +343,8 @@ function loadSmsggdjSongLive(ctx: RenderContext, o: RenderOpts, id: number, inde
   // stopped, and a partial match is exactly the failure being guarded against.
   for (let tries = 0; tries < SMSGGDJ_WRITE_TRIES; tries++) {
     for (const w of writes) {
+      // Refused only for a range past the work RAM (a wrong layout) or a full command ring; a render drives its blocks
+      // on this thread, so the ring is drained inline and the second cannot happen here.
       if (!ctx.backend.writeRam(id, w.offset, w.bytes))
         throw new Error(`render: work-RAM write refused at +$${w.offset.toString(16)} loading smsggdj song ${index}`);
     }

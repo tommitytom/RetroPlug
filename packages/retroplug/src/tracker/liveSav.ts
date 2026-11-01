@@ -85,9 +85,10 @@ export function mutateLiveSav(
  *
  *  False when the cart has no `liveLoad`, its ROM or battery can't be read, the version has no layout, or
  *  the song won't decode. Applies writes in order and stops at the first refusal, reporting false - a
- *  half-written song is a wedged cart, but the alternative (pressing on past a rejected write) is worse,
- *  and the only way a write is refused is an out-of-bounds offset, which means the layout is wrong and
- *  the remaining writes would be too. */
+ *  half-written song is a wedged cart, but the alternative (pressing on past a rejected write) is worse.
+ *  A write is refused for an out-of-bounds offset, which means the layout is wrong and the remaining writes
+ *  would be too, or for a full command ring (the audio thread not draining), which the remaining writes
+ *  would meet as well. */
 export function loadSongLive(backend: SavBackend, systems: SavSystems, sys: LiveSavTarget, index: number): boolean {
   const tracker = resolveTracker(sys.roles);
   if (!tracker?.liveLoad || !sys.romPath || !backend.readFile || !systems.writeRam) return false;

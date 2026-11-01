@@ -17,6 +17,7 @@
 // OS/emulator to do something TS can't. If a thing can be done in pure TS, it
 // belongs in the application layer, not here.
 
+import type { CapabilityArgs, CapabilityOp, CapabilityProgress, CapabilityResults } from "./capability";
 import type { Platform, Core } from "./platform";
 import type { TapArm } from "./graph/buildGraph";
 
@@ -219,6 +220,28 @@ export interface Backend {
    *  a confused ROM. Treat it as the debugger-style tool it is. */
   writeRam(id: number, offset: number, bytes: Uint8Array): boolean;
 
+  // --- Capability jobs (src/capability.ts, docs/modular-graph-phase-c5-design.md section 6) ----------
+  // A node of the running graph asked to read, write or dump something of the system behind it: the same for an
+  // emulated system node (`sys-<id>`) as for a device's node. readSram, readRam and writeRam above are the system-id
+  // forms of three of these, on the same native paths.
+
+  /** Run `op` on node `nodeId`: rejects with native's reason when the job is refused, else settles with its
+   *  completion (a read of an emulated system at once, a write once the block after it has published the region,
+   *  or at once while no audio thread runs). `onProgress` hears a long job's progress. */
+  capability<O extends CapabilityOp>(
+    nodeId: string,
+    op: O,
+    args?: CapabilityArgs,
+    onProgress?: (p: CapabilityProgress) => void,
+  ): Promise<CapabilityResults[O]>;
+
+  /** Settle what has completed since the last look: the control plane's tick calls it (a no-op while nothing is
+   *  pending). Returns how many are still pending. */
+  pumpJobs(): number;
+
+  /** Reject every pending capability promise with `reason`: the project closed, and the nodes they named with it. */
+  rejectPendingJobs(reason: string): void;
+
   /** The system's latest video frame for display, or `null` when the id is gone / has no framebuffer.
    *  `published` is false (and `pixels` empty) until the core has rendered a frame. Read from the
    *  race-free framebuffer triple-buffer, so it is safe to poll while the core plays. */
@@ -415,6 +438,7 @@ export type EmulatorBackend = Pick<
   | "putResource" | "releaseResource"
   | "setGraph" | "loadScriptPack" | "setParam"
   | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
+  | "capability" | "pumpJobs" | "rejectPendingJobs"
 >;
 
 /** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */

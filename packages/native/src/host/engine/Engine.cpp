@@ -13,6 +13,7 @@
 
 #include "system/ChannelTap.hpp"  // the capability SyncTap arms
 #include "system/SystemBase.hpp"
+#include "system/SystemCapabilities.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
 #include "system/CoreBackends.hpp"  // registerCoreBackends: the engine owns the one factory every build goes through
 #include "system/SystemFactory.hpp"
@@ -469,6 +470,7 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     // invariant rather than a diagnostic.
     for (const auto& e : table->slots) assert(e.core);
     hostWidth_ = hostWidthOf(*doc);
+    publishedTable_ = table;
     // A replan plans a copy of the request setGraph last kept (its re-arm cleared), so it must not replace it.
     if (replan) return out;
     lastRequest_ = request;
@@ -680,7 +682,13 @@ void Engine::onHostCommand(void* ctx, const rp::graph::HostCommand& cmd, const v
         return;
     }
     switch (c.kind) {  // dropped at teardown (QueuedInvoker::freePending): free what it owns, never apply it
-        case DspCommand::Kind::WriteRam:        delete c.writeRam.bytes; break;
+        case DspCommand::Kind::CapabilityWrite: {
+            // The record is the control thread's, which frees it; this is that thread (the audio thread has stopped).
+            rp::host::Job& job = *c.capabilityWrite.job;
+            job.failure.store(rp::host::Job::Discarded, std::memory_order_relaxed);
+            job.state.store(rp::host::Job::Failed, std::memory_order_release);
+            break;
+        }
         case DspCommand::Kind::StageMidi:       delete c.stageMidi.ext; break;
         case DspCommand::Kind::StageSystemMidi: delete c.stageSystemMidi.ext; break;
         default: break;
@@ -727,9 +735,8 @@ void Engine::applyCommand(DspCommand& cmd, const rp::host::SystemTable& table) {
                 // its controller; a Game Boy schedules the press ahead instead.
                 sys->pressButton(cmd.pressButton.button, cmd.pressButton.down);
             break;
-        case DspCommand::Kind::WriteRam:
-            writeRam(core(cmd.writeRam.id), cmd.writeRam.offset, *cmd.writeRam.bytes);
-            delete cmd.writeRam.bytes;
+        case DspCommand::Kind::CapabilityWrite:
+            applyJob(*cmd.capabilityWrite.job, table);
             break;
         case DspCommand::Kind::SyncTap:
             syncTap(cmd.syncTap.arm, cmd.syncTap.id, cmd.syncTap.mode, table);
@@ -891,6 +898,8 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     script.spanBegin(rp::host::DSP_SPAN_PUBLISH);
 #endif
     for (const auto& e : table.slots) registry_.publishSystem(*e.core, frames, sampleRate_);
+    // The writes applied at this block's drain (or an earlier one, before a block that ran nothing) are published now.
+    confirmApplied(table);
 #ifdef RETROPLUG_PROFILE
     script.spanEnd();  // state-publish
 #endif
@@ -902,6 +911,294 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
 void Engine::processBlock(std::uint32_t frames, float* outL, float* outR) {
     float* outs[2] = { outL, outR };
     processBlock(frames, outs, 2);
+}
+
+// --- capability jobs (CapabilityJobs.hpp) ---------------------------------------------------------------------------
+
+const rp::host::SystemEntry* Engine::publishedSystem(const std::string& nodeId) const {
+    constexpr std::string_view prefix = "sys-";
+    if (!publishedTable_ || nodeId.size() <= prefix.size() || nodeId.compare(0, prefix.size(), prefix) != 0)
+        return nullptr;
+    std::uint64_t id = 0;
+    for (std::size_t i = prefix.size(); i < nodeId.size(); ++i) {
+        const char c = nodeId[i];
+        if (c < '0' || c > '9' || id > UINT32_MAX) return nullptr;
+        id = id * 10 + static_cast<std::uint64_t>(c - '0');
+    }
+    if (id == 0 || id > UINT32_MAX) return nullptr;
+    const auto* e = publishedTable_->find(static_cast<SystemId>(id));
+    // The canonical spelling only: "sys-01" is not the node of system 1.
+    return e && nodeId == "sys-" + std::to_string(e->id) ? e : nullptr;
+}
+
+std::size_t Engine::jobsOutstanding() const {
+    std::size_t n = completions_.size();
+    for (const auto& j : jobs_)
+        if (!j->detached) ++n;
+    return n;
+}
+
+rp::host::JobSubmit Engine::submitJob(rp::host::JobRequest r) {
+    using rp::host::Job;
+    using rp::host::JobCompletion;
+    const auto refuse = [](std::string why) { return rp::host::JobSubmit{0, std::move(why)}; };
+    settleQuiescent();
+    sweepJobs();
+    if (jobsOutstanding() >= kMaxJobs)
+        return refuse("busy: " + std::to_string(kMaxJobs) + " jobs are outstanding; drain their completions first");
+    if (!graph_->host->node(r.nodeId)) return refuse("the running graph has no node " + r.nodeId);
+    const rp::host::SystemEntry* entry = publishedSystem(r.nodeId);
+    if (!entry) return submitDeviceJob(r);
+    SystemBase* core = entry->core;
+    const auto presentsNo = [&] { return refuse("node " + r.nodeId + " presents no " + r.capability); };
+    const auto noOp = [&] { return refuse(r.capability + " has no operation '" + r.op + "'"); };
+    // A read answered from what is published (or from the ROM, which never changes): its completion is queued here.
+    const auto completeNow = [&](std::vector<std::uint8_t> bytes) {
+        const std::uint32_t id = nextJobId_++;
+        JobCompletion c;
+        c.id = id;
+        c.done = c.ok = true;
+        c.bytes = std::move(bytes);
+        completions_.push_back(std::move(c));
+        return rp::host::JobSubmit{id, {}};
+    };
+
+    if (r.capability == RP_SYSTEM_MEMORY_INTERFACE) {
+        rp::MemoryCapability* memory = core ? core->memory() : nullptr;
+        if (!memory) return presentsNo();
+        const auto regions = memory->regions();
+        // A region's size is its published copy's; only the work RAM is published (SnapshotRegistry::publishRam).
+        const auto publishedSize = [&](const rp::MemoryCapability::Region& region) -> std::size_t {
+            return region.type == rp::MemoryType::Ram ? registry_.ramSize(entry->id) : 0;
+        };
+        if (r.op == "regions") {
+            std::string json = "[";
+            for (std::size_t i = 0; i < regions.size(); ++i) {
+                if (i) json += ",";
+                json += std::string("{\"name\":\"") + regions[i].name + "\",\"size\":" +
+                        std::to_string(publishedSize(regions[i])) + "}";
+            }
+            json += "]";
+            return completeNow(std::vector<std::uint8_t>(json.begin(), json.end()));
+        }
+        if (r.op != "read" && r.op != "write") return noOp();
+        std::size_t index = regions.size();
+        for (std::size_t i = 0; i < regions.size(); ++i)
+            if (r.region == regions[i].name) index = i;
+        if (index == regions.size()) return refuse("node " + r.nodeId + " has no memory region '" + r.region + "'");
+        const auto notPublished = [&] { return refuse("region " + r.region + " of node " + r.nodeId + " is not published"); };
+        if (r.op == "read") {
+            // One read of the published copy, which is its own bound: a block republishing it at a new size between
+            // a size query and the read would otherwise refuse a read that was in range.
+            auto ram = regions[index].type == rp::MemoryType::Ram ? registry_.readRam(entry->id) : std::nullopt;
+            if (!ram || ram->empty()) return notPublished();
+            const std::size_t size = ram->size();
+            const std::size_t length = r.length != 0 ? r.length : (r.offset < size ? size - r.offset : 0);
+            if (static_cast<std::size_t>(r.offset) + length > size || length == 0)
+                return refuse("the read runs past region " + r.region + " (" + std::to_string(size) + " bytes)");
+            if (r.offset == 0 && length == size) return completeNow(std::move(*ram));
+            return completeNow(std::vector<std::uint8_t>(ram->begin() + r.offset, ram->begin() + r.offset + length));
+        }
+        const std::size_t size = publishedSize(regions[index]);
+        if (size == 0) return notPublished();
+        // The answerable failures are answered here, from the published copy (race-free, no live-core read): the
+        // block thread re-checks the bounds as it applies, since a model switch could shrink the region between.
+        if (r.bytes.empty()) return refuse("an empty write");
+        if (static_cast<std::size_t>(r.offset) + r.bytes.size() > size)
+            return refuse("the write runs past region " + r.region + " (" + std::to_string(size) + " bytes)");
+        auto job = std::make_unique<Job>();
+        job->id = nextJobId_;
+        job->nodeId = r.nodeId;
+        job->system = entry->id;
+        job->region = index;
+        job->offset = r.offset;
+        job->bytes = std::move(r.bytes);
+        DspCommand c;
+        c.kind = DspCommand::Kind::CapabilityWrite;
+        c.capabilityWrite = {job.get()};
+        // Pushed before the record joins jobs_: a quiescent push applies it inline, which leaves it in applied_ for
+        // settleQuiescent below, and a refused one is freed here.
+        if (!pushCommand(c)) return refuse("busy: the command ring is full");
+        ++nextJobId_;
+        jobs_.push_back(std::move(job));
+        settleQuiescent();
+        return {jobs_.back()->id, {}};
+    }
+    if (r.capability == RP_SYSTEM_SRAM_INTERFACE) {
+        rp::SramCapability* sram = core ? core->sram() : nullptr;
+        if (!sram) return presentsNo();
+        if (r.op == "dump") {
+            auto bytes = registry_.readSram(entry->id);
+            if (!bytes) return refuse("node " + r.nodeId + " publishes no battery");
+            return completeNow(std::move(*bytes));
+        }
+        if (r.op == "restore")
+            return refuse("node " + r.nodeId + " restores no battery in place: an emulated system's battery is "
+                          "restored by rebuilding it with the bytes as its seed");
+        return noOp();
+    }
+    if (r.capability == RP_SYSTEM_ROM_INTERFACE) {
+        rp::RomCapability* rom = core ? core->rom() : nullptr;
+        if (!rom) return presentsNo();
+        if (r.op == "header") {
+            const auto image = rom->image();
+            const std::size_t n = r.length != 0 ? std::min<std::size_t>(r.length, image.size()) : image.size();
+            return completeNow(std::vector<std::uint8_t>(image.begin(), image.begin() + n));
+        }
+        if (r.op == "title") {
+            const std::string title = rom->title();
+            return completeNow(std::vector<std::uint8_t>(title.begin(), title.end()));
+        }
+        return noOp();
+    }
+    return refuse("unknown capability " + r.capability);
+}
+
+rp::host::JobSubmit Engine::submitDeviceJob(const rp::host::JobRequest& r) {
+    // A node that is no system node. The device nodes (docs/modular-graph-phase-c5-design.md sections 4 and 6) present
+    // their capabilities here: asked through the node for the interface, they accept the job (and the engine adopts its
+    // record, adoptJob) or refuse it synchronously, busy or not connected. No node type presents one yet.
+    return {0, "node " + r.nodeId + " presents no " + r.capability};
+}
+
+rp::host::JobSubmit Engine::adoptJob(std::unique_ptr<rp::host::Job> job) {
+    settleQuiescent();
+    sweepJobs();
+    if (!job) return {0, "no job"};
+    if (jobsOutstanding() >= kMaxJobs)
+        return {0, "busy: " + std::to_string(kMaxJobs) + " jobs are outstanding; drain their completions first"};
+    job->id = nextJobId_++;
+    job->detached = false;
+    const std::uint32_t id = job->id;
+    jobs_.push_back(std::move(job));
+    return {id, {}};
+}
+
+bool Engine::writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes) {
+    sweepJobs();
+    if (bytes.empty() || !publishedTable_) return false;
+    const auto* entry = publishedTable_->find(id);
+    rp::MemoryCapability* memory = entry ? entry->core->memory() : nullptr;
+    if (!memory) return false;
+    const auto regions = memory->regions();
+    std::size_t index = regions.size();
+    for (std::size_t i = 0; i < regions.size(); ++i)
+        if (regions[i].type == rp::MemoryType::Ram) index = i;
+    if (index == regions.size()) return false;
+    auto job = std::make_unique<rp::host::Job>();
+    job->detached = true;
+    job->system = id;
+    job->region = index;
+    job->offset = offset;
+    job->bytes = std::move(bytes);
+    DspCommand c;
+    c.kind = DspCommand::Kind::CapabilityWrite;
+    c.capabilityWrite = {job.get()};
+    if (!pushCommand(c)) return false;  // full ring: drop the poke, freeing the record here
+    jobs_.push_back(std::move(job));
+    return true;
+}
+
+std::vector<rp::host::JobCompletion> Engine::drainJobs() {
+    settleQuiescent();
+    sweepJobs();
+    std::vector<rp::host::JobCompletion> out(std::make_move_iterator(completions_.begin()),
+                                             std::make_move_iterator(completions_.end()));
+    completions_.clear();
+    // A running job's progress, once per change: what a device thread reports through the record.
+    for (const auto& j : jobs_) {
+        if (j->detached) continue;
+        const std::uint32_t progress = j->progress.load(std::memory_order_acquire);
+        const std::uint32_t total = j->total.load(std::memory_order_relaxed);
+        if (total == 0 || progress == j->reported) continue;
+        j->reported = progress;
+        rp::host::JobCompletion c;
+        c.id = j->id;
+        c.progress = progress;
+        c.total = total;
+        out.push_back(std::move(c));
+    }
+    return out;
+}
+
+void Engine::sweepJobs() {
+    using rp::host::Job;
+    for (auto it = jobs_.begin(); it != jobs_.end();) {
+        Job& j = **it;
+        if (!j.finished()) {
+            ++it;
+            continue;
+        }
+        if (!j.detached) {
+            rp::host::JobCompletion c;
+            c.id = j.id;
+            c.done = true;
+            c.ok = j.state.load(std::memory_order_relaxed) == Job::Done;
+            c.progress = j.progress.load(std::memory_order_relaxed);
+            c.total = j.total.load(std::memory_order_relaxed);
+            if (c.ok) {
+                c.bytes = std::move(j.result);
+            } else {
+                switch (j.failure.load(std::memory_order_relaxed)) {
+                    case Job::OutOfRange: c.error = "the write ran past the region of node " + j.nodeId + " as it applied"; break;
+                    case Job::Removed:    c.error = "node " + j.nodeId + " left the plan before the job completed"; break;
+                    case Job::Discarded:  c.error = "the engine stopped before the job ran"; break;
+                    case Job::Overflow:   c.error = "the engine's table of unpublished writes was full"; break;
+                    default:              c.error = j.error.empty() ? "the job failed" : j.error; break;
+                }
+            }
+            completions_.push_back(std::move(c));
+        }
+        it = jobs_.erase(it);
+    }
+}
+
+void Engine::applyJob(rp::host::Job& job, const rp::host::SystemTable& table) {
+    using rp::host::Job;
+    const rp::host::SystemEntry* e = table.find(job.system);
+    rp::MemoryCapability* memory = e ? e->core->memory() : nullptr;
+    const auto fail = [&job](Job::Failure why) {
+        job.failure.store(why, std::memory_order_relaxed);
+        job.state.store(Job::Failed, std::memory_order_release);
+    };
+    if (!memory) return fail(Job::Removed);
+    if (!memory->write(job.region, job.offset, job.bytes.data(), job.bytes.size())) return fail(Job::OutOfRange);
+    // An old write is collected by nobody, so it is done once applied; a job's write waits for the publish.
+    if (job.detached) {
+        job.state.store(Job::Done, std::memory_order_release);
+        return;
+    }
+    // The table has room: every job in it is one of at most kMaxJobs outstanding. A bound broken later must not let a
+    // write complete before its region is published, so a full table fails the write rather than finishing it.
+    assert(appliedCount_ < applied_.size());
+    if (appliedCount_ == applied_.size()) return fail(Job::Overflow);
+    job.core = e->core;
+    job.state.store(Job::Applied, std::memory_order_relaxed);
+    applied_[appliedCount_++] = &job;
+}
+
+void Engine::confirmApplied(const rp::host::SystemTable& ran) {
+    using rp::host::Job;
+    for (std::size_t i = 0; i < appliedCount_; ++i) {
+        Job& job = *applied_[i];
+        // The id and the core both: an id re-added with a new core since the apply is not the core written.
+        const rp::host::SystemEntry* e = ran.find(job.system);
+        const bool published = e && e->core == job.core;
+        if (!published) job.failure.store(Job::Removed, std::memory_order_relaxed);
+        // The job's last touch on this thread: the control thread may free it from here on.
+        job.state.store(published ? Job::Done : Job::Failed, std::memory_order_release);
+    }
+    appliedCount_ = 0;
+}
+
+void Engine::settleQuiescent() {
+    // Ownership first: applied_ is the block thread's while an audio thread runs.
+    if (graph_->host->audioThreadOwns() || appliedCount_ == 0) return;
+    const rp::host::SystemTable& table = currentTable();
+    for (std::size_t i = 0; i < appliedCount_; ++i)
+        if (const auto* e = table.find(applied_[i]->system); e && e->core == applied_[i]->core)
+            registry_.publishRam(*e->core);
+    confirmApplied(table);
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {
@@ -918,20 +1215,6 @@ std::optional<std::vector<std::uint8_t>> Engine::readRam(SystemId id) {
 
 std::size_t Engine::ramSize(SystemId id) {
     return registry_.ramSize(id);     // published copy, like readRam - no live core
-}
-
-bool Engine::writeRam(SystemBase* sys, std::uint32_t offset, const std::vector<std::uint8_t>& bytes) {
-    if (bytes.empty() || !sys) return false;
-    // ReadWrite, so a backend with a read-only RAM view reports failure rather than silently dropping
-    // the poke into a copy nobody reads.
-    auto acc = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::ReadWrite);
-    if (!acc.valid()) return false;
-    // Bounds are the ONE thing this refuses: a short write past the end would corrupt whatever the
-    // core keeps after its RAM region, which is a crash rather than the "confuse the ROM" the caller
-    // signed up for. Partial writes are refused too - half a song block is not a song.
-    if (static_cast<std::size_t>(offset) + bytes.size() > acc.size()) return false;
-    std::memcpy(acc.data() + offset, bytes.data(), bytes.size());
-    return true;
 }
 
 bool Engine::screenshot(SystemId id, const std::string& path) {

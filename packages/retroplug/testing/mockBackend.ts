@@ -9,6 +9,16 @@ import { savFromJson } from "../src/lsdj";
 import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
 import { rebuildKeyOf } from "../src/graph/buildGraph";
 import { canonicalJson } from "../src/graph/canonicalJson";
+import {
+  CapabilityJobs,
+  type CapabilityArgs,
+  type CapabilityOp,
+  type CapabilityProgress,
+  type CapabilityResults,
+  type JobCompletion,
+  type JobRequest,
+  type JobSubmitResult,
+} from "../src/capability";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -145,6 +155,7 @@ export class MockBackend implements Backend {
   /** Test-driven WRAM content per system (setRam) — lets a mock-tier test feed the LSDj runtime reader
    *  a synthetic WRAM snapshot. Absent → readRam returns null (the mock has no real core). */
   private ramOverrides = new Map<number, Uint8Array>();
+  private noBattery = new Set<number>();
 
   /** Paths queued by emitFileChange, drained by drainChangedPaths — simulates the
    *  native watcher (efsw) firing. */
@@ -180,6 +191,11 @@ export class MockBackend implements Backend {
 
   setSram(id: number, bytes: Uint8Array): void {
     this.sramOverrides.set(id, new Uint8Array(bytes));
+  }
+
+  /** Model a cart with no battery: readSram answers null for it (and sram.dump refuses). */
+  setNoBattery(id: number): void {
+    this.noBattery.add(id);
   }
 
   /** Simulate the native watcher firing for `path` (config.json / a bindings profile /
@@ -535,6 +551,7 @@ export class MockBackend implements Backend {
   readSram(id: number): Uint8Array | null {
     this.log.push("readSram");
     this.readSramCalls.push(id);
+    if (this.noBattery.has(id)) return null;
     const override = this.sramOverrides.get(id);
     if (override) return new Uint8Array(override);
     return this.systems.has(id) ? sramBytesFor(id) : null;
@@ -556,6 +573,111 @@ export class MockBackend implements Backend {
     if (offset < 0 || offset + bytes.length > ram.length) return false;
     ram.set(bytes, offset);
     return true;
+  }
+
+  // --- capability jobs (src/capability.ts) over the mock's model: a system node is sys-<id>, its memory region "ram"
+  // is setRam's buffer, its battery readSram's, its ROM the seeded file its ROM path names. As natively: a read
+  // completes at once, a write at once while no audio runs and at the next runBlock() while it does (audioRunning),
+  // and at most 64 jobs are outstanding.
+
+  /** Model a running audio thread: a write then completes at the next runBlock(), not at its submission. */
+  audioRunning = false;
+  readonly jobRequests: JobRequest[] = [];
+  private nextJobId = 1;
+  private jobCompletions: JobCompletion[] = [];
+  private queuedWrites: { id: number; system: number; offset: number; bytes: Uint8Array }[] = [];
+  private readonly jobs = new CapabilityJobs({
+    submitJob: (request) => this.submitJob(request),
+    drainJobs: () => this.drainJobs(),
+  });
+
+  /** The block boundary the queued writes land at (audioRunning). */
+  runBlock(): void {
+    for (const w of this.queuedWrites.splice(0)) {
+      const ram = this.ramOverrides.get(w.system);
+      const ok = !!ram && this.systems.has(w.system);
+      if (ok) ram.set(w.bytes, w.offset);
+      this.completeJob(w.id, ok, ok ? new Uint8Array(0) : undefined, ok ? "" : `node sys-${w.system} left the plan before the job completed`);
+    }
+  }
+
+  submitJob(request: JobRequest): JobSubmitResult {
+    this.jobRequests.push(request);
+    if (this.queuedWrites.length + this.jobCompletions.length >= 64)
+      return { error: "busy: 64 jobs are outstanding; drain their completions first" };
+    const m = /^sys-([1-9][0-9]*)$/.exec(request.nodeId);
+    const system = m ? Number(m[1]) : 0;
+    if (!this.systems.has(system)) return { error: `the running graph has no node ${request.nodeId}` };
+    // An id is taken only by a job accepted, as natively: a refusal takes none.
+    const now = (bytes: Uint8Array): JobSubmitResult => {
+      const id = this.nextJobId++;
+      this.completeJob(id, true, bytes, "");
+      return { id };
+    };
+    const refuse = (error: string): JobSubmitResult => ({ error });
+    const ram = this.ramOverrides.get(system);
+    const key = `${request.capability} ${request.op}`;
+    if (key === "rp.system.memory/1 regions")
+      return now(enc.encode(JSON.stringify([{ name: "ram", size: ram?.length ?? 0 }])));
+    if (key === "rp.system.memory/1 read" || key === "rp.system.memory/1 write") {
+      if (request.region !== "ram") return refuse(`node ${request.nodeId} has no memory region '${request.region ?? ""}'`);
+      if (!ram) return refuse(`region ram of node ${request.nodeId} is not published`);
+      const offset = request.offset ?? 0;
+      if (key.endsWith("read")) {
+        const length = request.length || ram.length - offset;
+        if (length <= 0 || offset + length > ram.length) return refuse(`the read runs past region ram (${ram.length} bytes)`);
+        return now(ram.slice(offset, offset + length));
+      }
+      const bytes = request.bytes ?? new Uint8Array(0);
+      if (!bytes.length) return refuse("an empty write");
+      if (offset + bytes.length > ram.length) return refuse(`the write runs past region ram (${ram.length} bytes)`);
+      const id = this.nextJobId++;
+      this.queuedWrites.push({ id, system, offset, bytes: new Uint8Array(bytes) });
+      if (!this.audioRunning) this.runBlock();
+      return { id };
+    }
+    if (key === "rp.system.sram/1 dump") {
+      const sram = this.readSram(system);
+      return sram ? now(sram) : refuse(`node ${request.nodeId} publishes no battery`);
+    }
+    if (key === "rp.system.sram/1 restore")
+      return refuse(`node ${request.nodeId} restores no battery in place: an emulated system's battery is restored by rebuilding it with the bytes as its seed`);
+    const rom = this.files.get(this.canonicalize(this.systems.get(system)!.romPath)) ?? new Uint8Array(0);
+    if (key === "rp.system.rom/1 header") return now(rom.slice(0, request.length || rom.length));
+    if (key === "rp.system.rom/1 title") {
+      // The title field of the node's console, as each core's CoreRom reads it: a Game Boy's and a GBA's; none else.
+      const type = this.systemNodes.get(system)?.type;
+      const [start, length] = type === "rp.sameboy.gb" ? [0x134, 16] : type === "rp.mesen.gba" ? [0xa0, 12] : [0, 0];
+      let end = start;
+      while (end < start + length && end < rom.length && rom[end] !== 0) end++;
+      return now(rom.slice(start, end));
+    }
+    return refuse(`unknown capability ${request.capability}`);
+  }
+
+  drainJobs(): JobCompletion[] {
+    return this.jobCompletions.splice(0);
+  }
+
+  private completeJob(id: number, ok: boolean, bytes: Uint8Array | undefined, error: string): void {
+    this.jobCompletions.push({ id, done: true, ok, error, bytes: bytes ?? new Uint8Array(0), progress: 0, total: 0 });
+  }
+
+  capability<O extends CapabilityOp>(
+    nodeId: string,
+    op: O,
+    args?: CapabilityArgs,
+    onProgress?: (p: CapabilityProgress) => void,
+  ): Promise<CapabilityResults[O]> {
+    return this.jobs.run(nodeId, op, args, onProgress);
+  }
+
+  pumpJobs(): number {
+    return this.jobs.pump();
+  }
+
+  rejectPendingJobs(reason: string): void {
+    this.jobs.rejectAll(reason);
   }
 
   getFrame(id: number): FrameData | null {

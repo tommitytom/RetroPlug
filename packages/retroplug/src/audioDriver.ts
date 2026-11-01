@@ -5,6 +5,7 @@
 // facade for driving the emulator headlessly.
 
 
+import { pumpAllJobs, setJobWait } from "./capability";
 import { makeCall } from "./rpcClient";
 import type { EngineGraph } from "./engineGraph";
 import type { HostShape } from "./graph/buildGraph";
@@ -238,6 +239,12 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
   // call swaps the live plan's shape, for the blocks between its document and the restore, before native refuses
   // the render itself.
   let running = false;
+  // A call that let time pass, then a pump of the capability jobs it may have completed (src/capability.ts): this
+  // host has no UI frame tick to do it.
+  const pumped = <T>(out: T): T => {
+    pumpAllJobs();
+    return out;
+  };
   const shaped = <T>(shape: HostShape, render: () => T, refused: () => T): T => {
     if (!graph || running) return render();
     const out = graph.withShape(shape, render);
@@ -251,7 +258,7 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
       shaped(
         STEREO,
         () => {
-          const bytes = call("renderAudio", ms) as Uint8Array;
+          const bytes = pumped(call("renderAudio", ms) as Uint8Array);
           // Raw interleaved f32; slice() copies to a fresh 4-byte-aligned ArrayBuffer at offset 0.
           return new Float32Array(bytes.slice().buffer);
         },
@@ -261,7 +268,7 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
       shaped(
         { kind: "perSystem" },
         () => {
-          const bufs = call("renderAudioPerSystem", ms) as Uint8Array[];
+          const bufs = pumped(call("renderAudioPerSystem", ms) as Uint8Array[]);
           // One interleaved-f32 buffer per system; slice() 4-byte-aligns each like the mixed path above.
           return bufs.map((b) => new Float32Array(b.slice().buffer));
         },
@@ -271,7 +278,7 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
       shaped(
         { kind: "perChannel" },
         () => {
-          const bufs = (call("renderAudioPerChannel", id, ms) as Uint8Array[] | null) ?? [];
+          const bufs = pumped((call("renderAudioPerChannel", id, ms) as Uint8Array[] | null) ?? []);
           // One interleaved-f32 buffer per channel stream; slice() 4-byte-aligns each.
           return bufs.map((b) => new Float32Array(b.slice().buffer));
         },
@@ -298,7 +305,7 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
       // Refused here as native refuses it (renderBlocksRefusal), before the shape is touched: a count native
       // never renders would otherwise plan a throwaway document, or fail as a shape that did not plan.
       if (!RENDER_BLOCKS_OUTPUTS.includes(outputs)) throw new Error("renderBlocks: outputs must be 2, 4, 6 or 8");
-      return shaped({ kind: "multi", channels: outputs }, () => renderBlocks(outputs, blocks), () => {
+      return shaped({ kind: "multi", channels: outputs }, () => pumped(renderBlocks(outputs, blocks)), () => {
         throw new Error(`renderBlocks: the ${outputs}-output host shape did not plan`);
       });
     },
@@ -310,18 +317,27 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
     dspTraceReset: (arm) => call("dspTraceReset", arm) as boolean,
     dspTrace: () => call("dspTrace") as DspTraceSpan[],
     dspTraceNames: () => call("dspTraceNames") as string[],
+    // While the thread runs, a capability job completes at a block boundary nobody else pumps for here: a submission
+    // waits through a native sleep until its job settles, and the calls that let time pass pump (src/capability.ts).
     startAudio: () => {
       if (graph && !running && !graph.setShape(STEREO)) return false;
       const ok = call("startAudio") as boolean;
-      if (ok) running = true;
+      if (ok) {
+        running = true;
+        setJobWait((ms) => call("sleepMs", ms));
+      }
       return ok;
     },
     stopAudio: () => {
       const ok = call("stopAudio") as boolean;
-      if (ok) running = false;
+      if (ok) {
+        running = false;
+        setJobWait(null);
+      }
+      pumpAllJobs();
       return ok;
     },
-    sleepMs: (ms) => call("sleepMs", ms) as boolean,
+    sleepMs: (ms) => pumped(call("sleepMs", ms) as boolean),
     audioCaptured: () => call("audioCaptured") as { energy: number; frames: number },
     systemCount: () => call("systemCount") as number,
     drainReleased: () => call("drainReleased") as number,

@@ -225,9 +225,11 @@ outputs before the handoff.
 Producer methods pack a command and push. Lightweight commands are pure POD: `stageMidi` (a message
 of up to 4 bytes rides inline), `stageControllerMidi`, `setBpm`, `setTransport`, `setPpq`,
 `pressButton`; if the ring is full they are simply dropped (a lost edge, never a leak), as is a
-`setParam`'s, which answers false then. Heavy commands carry an **owning heap payload**: `writeRam`,
-and a `stageMidi` / `stageSystemMidi` longer than 4 bytes, box a `new`-ed buffer (deleted after apply
-or, if the push fails, immediately). `stageControllerMidi` is inline only: a message longer than 4 bytes is refused
+`setParam`'s, which answers false then. Heavy commands carry an **owning heap payload**: a `stageMidi` /
+`stageSystemMidi` longer than 4 bytes boxes a `new`-ed buffer (deleted after apply or, if the push fails,
+immediately). A `writeRam`, like any capability job's write, carries a pointer to a job record the control thread
+owns and frees once the block thread has marked it finished (`host/engine/CapabilityJobs.hpp`), so applying one
+allocates and frees nothing. `stageControllerMidi` is inline only: a message longer than 4 bytes is refused
 before it is pushed. A staged message lands in the engine's staging at drain, where the plan's
 `rp.host.midi-in` / `controller-in` take it at the top of the next block.
 

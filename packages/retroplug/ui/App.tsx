@@ -22,6 +22,7 @@ import { useFileBrowser } from "./app/useFileBrowser";
 import { useSongImport } from "./app/useSongImport";
 import { useSongWatch } from "./app/useSongWatch";
 import { useSramAutoSave } from "./app/useSramAutoSave";
+import { useJobPump } from "./app/useJobPump";
 import { useN8SdWatch } from "./app/useN8SdWatch";
 import { useLaunchpadScanWatch } from "./app/useLaunchpadScanWatch";
 import { topOverlay } from "./app/overlay";
@@ -64,6 +65,7 @@ export function App() {
   const songImport = useSongImport(stores);
   useSongWatch(stores); // records the focused cart's song in Recent when it changes (incl. loads made inside the cart)
   useSramAutoSave(stores); // mirrors each battery to its .sav under the Continuous preference (no-op otherwise)
+  useJobPump(stores); // settles capability jobs as their completions arrive (no native call while none is pending)
   useN8SdWatch(); // re-renders the Settings > N8 Pro progress row while a native SD job (ROM/SRAM) runs
   useLaunchpadScanWatch(); // watches a control-surface scan and records what answered (Settings > MIDI)
   const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title

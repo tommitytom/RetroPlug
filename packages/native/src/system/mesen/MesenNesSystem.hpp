@@ -7,6 +7,7 @@
 
 #include "system/InputCapacity.hpp"
 #include "system/SystemBase.hpp"
+#include "system/SystemCapabilities.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "util/ExpSmoother.hpp"
@@ -99,6 +100,11 @@ public:
     // MemoryType → Mesen MemoryType. Maps to Nes* regions; returns invalid
     // for IORegisters / HRam / ExtWorkRam (GB / GBA only).
     rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
+    // The control plane's capabilities (SystemCapabilities.hpp): the work RAM, a battery dumped from the registry, and
+    // the ROM this core keeps.
+    rp::MemoryCapability* memory() override { return &memoryCap_; }
+    rp::SramCapability*   sram() override { return &sramCap_; }
+    rp::RomCapability*    rom() override { return &romCap_; }
 
     // -- CPU state (SystemBase virtuals) -------------------------------------
     //
@@ -200,6 +206,11 @@ private:
 
     MesenNesConfig                       config_;
     std::vector<std::uint8_t>         rom_;
+    // rom_ is never changed after construction, which is what lets romCap_ hand its bytes to any thread. Its title:
+    // none: an iNES header carries no title.
+    rp::CoreMemory         memoryCap_{*this};
+    rp::CoreSram           sramCap_;
+    rp::CoreRom            romCap_{rom_, 0, 0};
     std::unique_ptr<Emulator>         emu_;
     std::shared_ptr<MesenAudioDevice> audioDevice_;
     std::shared_ptr<MesenVideoDevice> videoDevice_;

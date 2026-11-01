@@ -189,8 +189,33 @@ bool EngineRpcService::writeRam(std::uint32_t id, std::uint32_t offset, rfl::Byt
     const std::size_t ram = engine_.ramSize(id);
     if (ram == 0 || static_cast<std::size_t>(offset) + bytes.size() > ram) return false;
     const auto* p = reinterpret_cast<const std::uint8_t*>(bytes.data());
-    invoker_.writeRam(id, offset, std::vector<std::uint8_t>(p, p + bytes.size()));
-    return true;
+    return invoker_.writeRam(id, offset, std::vector<std::uint8_t>(p, p + bytes.size()));
+}
+
+RpcJobSubmitResult EngineRpcService::submitJob(RpcJobRequest request) {
+    rp::host::JobRequest r;
+    r.nodeId = std::move(request.nodeId);
+    r.capability = std::move(request.capability);
+    r.op = std::move(request.op);
+    r.region = request.region.value_or("");
+    r.offset = request.offset.value_or(0);
+    r.length = request.length.value_or(0);
+    if (request.bytes) {
+        const auto* p = reinterpret_cast<const std::uint8_t*>(request.bytes->data());
+        r.bytes.assign(p, p + request.bytes->size());
+    }
+    const rp::host::JobSubmit submitted = engine_.submitJob(std::move(r));
+    RpcJobSubmitResult out;
+    if (submitted.id != 0) out.id = submitted.id;
+    else out.error = submitted.error;
+    return out;
+}
+
+std::vector<RpcJobCompletion> EngineRpcService::drainJobs() {
+    std::vector<RpcJobCompletion> out;
+    for (auto& c : engine_.drainJobs())
+        out.push_back({c.id, c.done, c.ok, std::move(c.error), toBytestring(c.bytes), c.progress, c.total});
+    return out;
 }
 
 bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {

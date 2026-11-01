@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -15,6 +17,7 @@
 #include "system/SystemTypes.hpp"
 
 #include "graph/rp_node.h"  // rp_queue
+#include "host/engine/CapabilityJobs.hpp"
 #include "host/engine/HostSyncTrace.hpp"
 #include "host/engine/SnapshotRegistry.hpp"
 #include "host/script/ScriptHost.hpp"
@@ -25,7 +28,7 @@ class ChannelTap;
 struct DspCommand;
 struct SystemBuildRequest;
 namespace rp::graph { struct HostCommand; }
-namespace rp::host { class CartLink; class SurfaceLink; struct SystemTable; }
+namespace rp::host { class CartLink; class SurfaceLink; struct SystemEntry; struct SystemTable; }
 
 // One message of the host MIDI out (Engine::midiOut), tagged with the system that emitted it.
 struct EngineMidiOut {
@@ -175,6 +178,37 @@ public:
     // The system's latest video frame (raw XRGB8888). Reads the concurrent FrameBufferTriple, so it is
     // safe while the audio thread writes; width/height are 0 (published false) for an unknown system.
     EngineFrame getFrame(SystemId id);
+
+    // --- capability jobs (host/engine/CapabilityJobs.hpp, docs/modular-graph-phase-c5-design.md section 6), control
+    // thread ---
+    // How many jobs may be outstanding at once: taken and not yet finished, or finished and not yet drained. A
+    // submission past it is refused (busy), so every job taken has room for its completion and none is ever dropped.
+    static constexpr std::size_t kMaxJobs = 64;
+    // Take a job for a node of the last published plan, or refuse it (id 0, the reason in `error`): a node the plan
+    // does not have, one that does not present the capability (a node that is not a system node, or whose core returns
+    // null), an operation the capability does not have or does not perform here (an emulated battery's restore, which
+    // is a rebuild), arguments refusable from the published copy (a region the core does not list or the registry does
+    // not publish, a range past its end, an empty write), a full job count, and a full command ring. Every read of an
+    // emulated system completes before this returns, its completion queued; a write completes once the block after the
+    // drain that applies it has published the region, or, while no audio thread runs, its state is final before this
+    // returns and its completion is queued by the next drain. A system node is named sys-<id>
+    // (publishGraph refuses any other id for one), so the plan's table maps the node to its core.
+    rp::host::JobSubmit submitJob(rp::host::JobRequest request);
+    // The record of a job a device runs on its own thread (CapabilityJobs.hpp: progress, then the result or the error,
+    // then the final state, stored last with release): counted against kMaxJobs, given the next id and kept until a
+    // drain collects it. The seam a device node's accepted job comes through (submitDeviceJob); a TEST / HARNESS
+    // caller today, which plays the device. Refused, the record dropped, when kMaxJobs are outstanding.
+    rp::host::JobSubmit adoptJob(std::unique_ptr<rp::host::Job> job);
+    // The completions since the last drain, oldest first, and a progress entry for each running job that reported
+    // progress since then. A write still in the ring is not here: it is collected by a later drain.
+    std::vector<rp::host::JobCompletion> drainJobs();
+    // Jobs outstanding: taken and not yet drained. The old writes below are not among them: nobody collects one.
+    std::size_t jobsOutstanding() const;
+    // A write into system `id`'s work RAM at `offset`, the region readRam returns, on the job path with no completion:
+    // the old system-id write (EngineRpcService::writeRam, QueuedInvoker::writeRam). False, queuing nothing, for an
+    // empty write, a system the last published plan does not place, and a full command ring; a write past the region is
+    // dropped where it applies, as the RPC refuses one first from the published size.
+    bool writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
 
     // The owned snapshot store the control plane reads through. Claim a slot at build, release it
     // when the core is deleted; processBlock publishes into it.
@@ -390,14 +424,26 @@ private:
     // routes musical MIDI. See DspCommand::stageSystemMidi. `toCart`: `sys` is the system a physical N8 mirrors
     // (the plan's rp.n8.cart-mirror), so the cart gets the message too.
     bool stageSystemMidi(SystemBase* sys, const std::uint8_t* bytes, std::size_t len, bool toCart);
-    // Poke bytes into a system's work RAM. `offset` indexes the SAME region readRam returns, so
-    // read-modify-write round-trips without a coordinate conversion. Applied between blocks via the
-    // invoker, never from the calling thread - which is what separates it from the debug facet's writeCpu
-    // (a live-core write, valid only when the audio thread is stopped).
-    //
-    // Deliberately unguarded beyond bounds: writing a running core's RAM CAN confuse it, because the
-    // emulated program has its own invariants over those bytes. That is the point of the feature.
-    bool writeRam(SystemBase* sys, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
+    // Apply a capability write to the core `table` names (the plan current at this point of the drain), never from the
+    // calling thread of submitJob - which is what separates it from the debug facet's writeCpu (a live-core write, valid
+    // only when the audio thread is stopped). Deliberately unguarded beyond bounds: writing a running core's RAM CAN
+    // confuse it, because the emulated program has its own invariants over those bytes. That is the point of the
+    // feature. Stores the job's state and touches it no more once that state is final; allocates and frees nothing.
+    void applyJob(rp::host::Job& job, const rp::host::SystemTable& table);
+    // The block's end, after the publish: each write applied since the last block that ran is done if `ran` (the table
+    // of the plan that ran it) still has its system, so its region is published, and failed (removed) if not.
+    void confirmApplied(const rp::host::SystemTable& ran);
+    // While no audio thread runs, the control thread owns the cores: republish what the inline flush applied and
+    // finish those writes there and then, as confirmApplied would at a block's end. Nothing while one runs.
+    void settleQuiescent();
+    // Move every finished job to the completions (an old write to none) and free its record.
+    void sweepJobs();
+    // A job for a node of the plan that is not a system node: a device's node, asked through the node for the
+    // capability, would accept it here or refuse it busy or not connected. No node type presents one yet, so every such
+    // job is refused (the node presents none of the interfaces).
+    rp::host::JobSubmit submitDeviceJob(const rp::host::JobRequest& request);
+    // The system node `nodeId` names in the last published plan, or null for a node id that is not sys-<id> of one.
+    const rp::host::SystemEntry* publishedSystem(const std::string& nodeId) const;
 
     // The tap syncTap() armed, and what its export mode was BEFORE we touched it. Restored before every
     // re-resolve so leaving a split mode (or gaining a second system) puts the core back exactly as found. Scoped
@@ -459,6 +505,20 @@ private:
     std::uint32_t                                   hostWidth_ = 2;
     // The request setGraph last published (the empty document's, from construction), which a reload replans.
     std::optional<GraphRequest>                     lastRequest_;
+
+    // The table of the last plan publishGraph published, which a job's node id is resolved against on the control
+    // thread while the audio thread may still run the one before it.
+    std::shared_ptr<const rp::host::SystemTable>    publishedTable_;
+    // The capability jobs (CapabilityJobs.hpp): the records not yet collected, the control thread's, and the
+    // completions not yet drained. Before graph_, so a queued write the graph discards as it goes still has its record.
+    std::vector<std::unique_ptr<rp::host::Job>>     jobs_;
+    std::deque<rp::host::JobCompletion>             completions_;
+    std::uint32_t                                   nextJobId_ = 1;
+    // The writes applied and not yet published: the block thread's, or the control thread's while no audio thread
+    // runs. Fixed, never grown: every job in it is one of at most kMaxJobs outstanding (an old write, which nobody
+    // collects, finishes as it applies and never enters it).
+    std::array<rp::host::Job*, kMaxJobs>            applied_{};
+    std::size_t                                     appliedCount_ = 0;
 
     // Last, so it goes first: its system nodes release their snapshot slots into registry_ (and leave
     // liveCores_) as they go.

@@ -20,7 +20,7 @@ void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes, std::uint32_t fra
         push(c);
     } else {
         // Too long for the inline slot (a SysEx, or several messages staged as one run): ship it as an
-        // owning payload, freed by the audio thread after applying - the writeRam pattern.
+        // owning payload, freed by the audio thread after applying.
         c.stageMidi.len = 0;
         c.stageMidi.ext = new std::vector<std::uint8_t>(std::move(bytes));
         if (!push(c)) delete c.stageMidi.ext;  // full ring: drop the message, never leak it
@@ -84,11 +84,9 @@ void QueuedInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {
     push(c);  // no heap payload: dropped on a full ring (a lost key edge, not a leak)
 }
 
-void QueuedInvoker::writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes) {
-    DspCommand c;
-    c.kind = DspCommand::Kind::WriteRam;
-    c.writeRam = { static_cast<std::uint32_t>(id), offset, new std::vector<std::uint8_t>(std::move(bytes)) };
-    if (!push(c)) delete c.writeRam.bytes;  // full ring: drop the poke, never leak it
+bool QueuedInvoker::writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes) {
+    // A capability write that nobody collects (Engine::writeRam): its record and bytes stay the control thread's.
+    return engine_->writeRam(id, offset, std::move(bytes));
 }
 
 // --- consumer half: apply every queued command into the Engine (audio loop, or the inline flush) -----

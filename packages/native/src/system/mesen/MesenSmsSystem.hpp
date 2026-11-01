@@ -8,6 +8,7 @@
 
 #include "system/InputCapacity.hpp"
 #include "system/SystemBase.hpp"
+#include "system/SystemCapabilities.hpp"
 #include "system/mesen/MesenSmsConfig.hpp"
 #include "system/mesen/roles/SmsSyncRole.hpp"
 #include "transport/FrameBufferTriple.hpp"
@@ -138,6 +139,11 @@ public:
     // ExtWorkRam. Colour RAM and the boot ROM have no rp::MemoryType tag - see
     // the matrix comment in system/MemoryType.hpp.
     rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
+    // The control plane's capabilities (SystemCapabilities.hpp): the work RAM, a battery dumped from the registry, and
+    // the ROM this core keeps.
+    rp::MemoryCapability* memory() override { return &memoryCap_; }
+    rp::SramCapability*   sram() override { return &sramCap_; }
+    rp::RomCapability*    rom() override { return &romCap_; }
 
     // Side-effect-free reads/writes of the Z80 address space, via SmsMemoryManager's DebugRead /
     // DebugWrite - the same banking-aware pair MesenNesSystem uses on the 6502 side. The base returns
@@ -196,6 +202,11 @@ private:
 
     MesenSmsConfig                    config_;
     std::vector<std::uint8_t>         rom_;
+    // rom_ is never changed after construction, which is what lets romCap_ hand its bytes to any thread. Its title:
+    // none: a Sega header carries no title.
+    rp::CoreMemory         memoryCap_{*this};
+    rp::CoreSram           sramCap_;
+    rp::CoreRom            romCap_{rom_, 0, 0};
     std::unique_ptr<Emulator>         emu_;
     std::shared_ptr<MesenAudioDevice> audioDevice_;
     std::shared_ptr<MesenVideoDevice> videoDevice_;

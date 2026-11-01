@@ -140,3 +140,34 @@ struct RpcLoadScriptPackResult {
     std::vector<RpcGraphError>     errors;
     std::vector<RpcScriptPackType> types;
 };
+
+// A capability job (docs/modular-graph-phase-c5-design.md section 6, Engine::submitJob): the node it is for, the
+// interface ("rp.system.memory/1", "rp.system.sram/1", "rp.system.rom/1") and its operation, and the arguments that
+// operation reads. memory: `region` by name, `offset`, and `length` for a read (absent or 0: to the region's end) or
+// `bytes` for a write; sram: `bytes` for a restore; rom: `length` for a header (absent or 0: the whole image).
+struct RpcJobRequest {
+    std::string                    nodeId;
+    std::string                    capability;
+    std::string                    op;
+    std::optional<std::string>     region;
+    std::optional<std::uint32_t>   offset;
+    std::optional<std::uint32_t>   length;
+    std::optional<rfl::Bytestring> bytes;
+};
+// Its answer: `id` (the job was taken; its completion comes through drainJobs) or `error` (it was refused, and
+// why). Exactly one is present.
+struct RpcJobSubmitResult {
+    std::optional<std::uint32_t> id;
+    std::optional<std::string>   error;
+};
+// One entry drainJobs hands back: a job that finished (`done`, then `ok` with its result in `bytes`, or `error`), or
+// one still running that reported progress (`done` false, `progress` of `total`).
+struct RpcJobCompletion {
+    std::uint32_t   id;
+    bool            done;
+    bool            ok;
+    std::string     error;
+    rfl::Bytestring bytes;
+    std::uint32_t   progress;
+    std::uint32_t   total;
+};

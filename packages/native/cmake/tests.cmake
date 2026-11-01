@@ -97,6 +97,7 @@ retroplug_add_test_binary(
              test/engine-graph/SlurpFile.test.cpp     # the file reader putResource reads a `path` resource with
              test/engine-graph/HostIo.test.cpp
              test/engine-graph/Devices.test.cpp        # rp.host.devices/1: the links a hardware node binds by name
+             test/engine-graph/Capabilities.test.cpp   # rp.system.memory/1, sram/1, rom/1 as asynchronous jobs
              test/engine-graph/ScriptNodes.test.cpp
              test/engine-graph/ScriptPacks.test.cpp
              test/engine-graph/ProtocolNodes.test.cpp

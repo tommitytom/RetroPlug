@@ -124,11 +124,7 @@ void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, d
     // coarse savestate below. The slot carries a length prefix + headroom, so a live model switch that
     // RESIZES the region (SameBoy DMG 8 KB ↔ CGB 32 KB) republishes at its NEW size instead of freezing;
     // only a region that would overflow the capacity is skipped.
-    if (s->ram) {
-        rp::MemoryAccessor ram = system.getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
-        if (ram.valid() && ram.size() + kRamLenPrefix <= s->ram->size())
-            writeSized(*s->ram, ram.data(), ram.size());
-    }
+    publishRamFor(*s, system);
 
     // State + SRAM on the coarse interval: the core only republishes its savestate every ~0.5s,
     // so per-block copies would be redundant. Matches publishStateSnapshot's cadence.
@@ -168,6 +164,17 @@ void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, d
             s->sram->publish();
         }
     }
+}
+
+void SnapshotRegistry::publishRamFor(Slot& s, SystemBase& system) {
+    if (!s.ram) return;
+    rp::MemoryAccessor ram = system.getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
+    if (ram.valid() && ram.size() + kRamLenPrefix <= s.ram->size())
+        writeSized(*s.ram, ram.data(), ram.size());
+}
+
+void SnapshotRegistry::publishRam(SystemBase& system) {
+    if (Slot* s = find(system.id())) publishRamFor(*s, system);
 }
 
 SnapshotRegistry::Frame SnapshotRegistry::readFrame(SystemId id) {

@@ -722,6 +722,8 @@ export class SystemsStore {
    *  (a load builds its systems only after their predecessors are gone, so it never holds both), but no
    *  onChange: the caller notifies once it is done. Every system's resources go once that document has planned. */
   clear(): void {
+    // Every node a capability job named goes with this project's graph: what is still pending learns so now.
+    this.backend.rejectPendingJobs("the project closed");
     const had = this.entries.length > 0;
     for (const e of this.entries) this.flushBeforeDrop(e);
     const dropped = this.entries.flatMap((e) => systemHandles(e.resources));

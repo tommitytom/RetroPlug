@@ -17,6 +17,7 @@ import type { ApuState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult,
 import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transport";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 import { makeCall } from "./rpcClient";
+import { CapabilityJobs, type JobCompletion, type JobRequest, type JobSubmitResult } from "./capability";
 
 
 // --- file dialog (async, UI-direct) ------------------------------------------------------------------
@@ -101,6 +102,10 @@ const resourceParams = (spec: ResourceSpec): Record<string, unknown> => {
 /** The emulator lifecycle / live params / input / snapshot-reads facet. Throws if no RPC surface is bound. */
 export function createEmulatorClient(): EmulatorBackend {
   const call = makeCall();
+  const jobs = new CapabilityJobs({
+    submitJob: (request: JobRequest) => call("submitJob", request) as JobSubmitResult,
+    drainJobs: () => call("drainJobs") as JobCompletion[],
+  });
   return {
     // Native answers { id } or { error }: one optional each way, so a refused put has no id to name.
     putResource: (spec: ResourceSpec): PutResourceResult => {
@@ -118,6 +123,9 @@ export function createEmulatorClient(): EmulatorBackend {
     readSram: (id) => bytesOrNull(call("readSram", id)),
     readRam: (id) => bytesOrNull(call("readRam", id)),
     writeRam: (id, offset, bytes) => call("writeRam", id, offset, bytes) as boolean,
+    capability: (nodeId, op, args, onProgress) => jobs.run(nodeId, op, args, onProgress),
+    pumpJobs: () => jobs.pump(),
+    rejectPendingJobs: (reason) => jobs.rejectAll(reason),
     getFrame: (id): FrameData | null => {
       const r = call("getFrame", id) as { width: number; height: number; published: boolean; data?: Uint8Array } | null;
       if (r == null || r.width === 0) return null; // no such system / no framebuffer
