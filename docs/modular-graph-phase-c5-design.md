@@ -149,12 +149,11 @@ the cart's config block on the link's worker thread, between MIDI chunks, the ex
 turn quiet for the read (an ack landing inside it would be taken for the reply's first bytes): one with nothing
 outstanding on the reliable link, or once the cart has said nothing for 250 ms since its oldest outstanding frame
 first went out, as one at its menu does. The three transfers run at the menu only, so a job a running game will refuse
-(or a cart
-whose block does not answer, or whose link keeps acknowledging for the probe's whole second) is refused there, and the
-stream never pauses for it. A job that is taken then runs on that thread: streaming pauses, `connected` reads false for
-the duration and pushes are dropped and counted, the transfer runs, streaming resumes, the completion is posted. One
-job at a time per device (a second is refused busy); a job while disconnected fails "not connected". A cart's
-`rom.header` and `rom.title` answer at once from the image and name this host last booted, with no transfer. A
+(or a cart whose block does not answer, or whose link keeps acknowledging for the probe's whole second) is refused
+there, and the stream never pauses for it. A job that is taken then runs on that thread: streaming pauses, `connected`
+reads false for the duration and pushes are dropped and counted, the transfer runs, streaming resumes, the completion
+is posted. One job at a time per device (a second is refused busy); a job while disconnected fails "not connected". A
+cart's `rom.header` and `rom.title` answer at once from the image and name this host last booted, with no transfer. A
 `rom.upload` is the one job that does not resume streaming: it writes the image, installs and boots it through the
 cart's menu, and closes the port, so the link reads disconnected and its result says streaming stopped. A node removed
 while its job runs abandons it at reclaim, and the device stops at its next safe point.
@@ -457,17 +456,17 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   volume through the interface, acquire and release across a reactivate and a teardown, a handover to a new node that
   never leaves the link with no holder, a warmed block allocating nothing), `[capability]` (`Capabilities.test.cpp`:
   each emulated console against the system-id RPCs and the ROM file, the ROM title's printable-ASCII stop, a node that
-  presents no capability, a battery dump that is not a `readSram`, block-boundary completion (or in the call while no
-  audio thread runs), removal and discard, the 64 bound, a real device thread's progress, a warmed block with writes
-  in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion cannot leave the
-  engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`, the expansion
-  volume, owed note-offs, the jobs and their refusals, abandonment, `threads`, `unique`, a warmed block), `[launchpad]`
-  (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the first-block discard, uniqueness,
-  `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a staged message
+  presents no capability, a battery dump holding what `readSram` answers, block-boundary completion (or in the call
+  while no audio thread runs), removal and discard, the 64 bound, a real device thread's progress, a warmed block with
+  writes in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion cannot leave
+  the engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`, the
+  expansion volume, owed note-offs, the jobs and their refusals, abandonment, `threads`, `unique`, a warmed block),
+  `[launchpad]` (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the first-block discard,
+  uniqueness, `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a staged message
   reaching the node the running plan places under the id, in both orders relative to the swap that changes which plan
   runs, and one added later). The protocol cases run the surface wiring and hold their recorded digests; the goldens'
   documents moved with the fan-out and the surface nodes, and their driven runs hold each cart node's pushes to what
-  the system it drives had fed its own FIFO, byte for byte.
+  the system it drives had fed its own FIFO, byte for byte, one cart per document as the compare requires.
 - `retroplug-n8-test` gained `[cart-jobs]` (`N8CartJobs.test.cpp`: the pause and its ack bound, battery file dumps and
   restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws),
   a game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a cart reset
