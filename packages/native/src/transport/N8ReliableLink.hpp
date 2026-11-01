@@ -86,7 +86,11 @@ public:
     // The frame `seq` has gone out at nowNs.
     void onSent(int seq, std::int64_t nowNs) {
         for (auto& f : window_)
-            if (f.seq == seq && f.sentNs < 0) { f.sentNs = nowNs; return; }
+            if (f.seq == seq && f.sentNs < 0) {
+                f.sentNs = nowNs;
+                if (f.firstSentNs < 0) f.firstSentNs = nowNs;
+                return;
+            }
     }
 
     // Back-channel bytes from the cart: the ROM's `F5 <next>` acks (anything else is ignored).
@@ -125,6 +129,14 @@ public:
     }
 
     std::size_t outstanding() const { return window_.size(); }
+    // When the cart last said anything on the back-channel (an ack or not), and when the oldest outstanding frame first
+    // went out (a re-send does not move it): with both far enough behind, a cart is not acknowledging anything, so a
+    // transport may read a reply off the same channel. kNever while nothing is outstanding or that frame has not left;
+    // lastHeardNs is the int64 minimum until the cart has said something.
+    std::int64_t lastHeardNs() const { return lastAckNs_; }
+    std::int64_t oldestFirstSentNs() const {
+        return window_.empty() || window_.front().firstSentNs < 0 ? kNever : window_.front().firstSentNs;
+    }
     // Round trips (frame out -> the ack that covered it): the fastest, and the latest. -1 until one is measured.
     std::int64_t rttMinNs() const { return rttMinNs_; }
     std::int64_t lastRttNs() const { return lastRttNs_; }
@@ -140,6 +152,7 @@ private:
     struct Frame {
         std::uint8_t seq;
         std::int64_t sentNs;                    // -1 = not on its way yet
+        std::int64_t firstSentNs;               // its first send, which a re-send keeps; -1 = not sent yet
         std::uint32_t size;
         std::uint8_t  bytes[3 + kMaxMessage];   // F5 seq message... sum
     };
@@ -204,6 +217,7 @@ private:
         Frame f{};
         f.seq = nextSeq_;
         f.sentNs = -1;
+        f.firstSentNs = -1;
         f.size = 3 + static_cast<std::uint32_t>(msgLen_);
         f.bytes[0] = FRAME;
         f.bytes[1] = nextSeq_;

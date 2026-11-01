@@ -61,8 +61,11 @@ int runningMapper(Edio& edio) {
 // way touches neither the cart's bus nor a running game's FIFO.
 constexpr int kMenuMapper = 255;
 
-// What N8Host::probeMenu answers when the link went down while the probe was on its way to the serial thread.
+// What N8Host::probeMenu answers when the link went down while the probe was on its way to the serial thread, and when
+// its deadline passed with the reliable link still busy (a cart acknowledging the stream, so no turn was quiet for the
+// read).
 constexpr int kProbeLinkDown = -2;
+constexpr int kProbeLinkBusy = -3;
 
 // How long a submission waits for the serial thread's answer to its menu probe: a config-block read is one USB round
 // trip, taken between two MIDI chunks. A cart that has stopped answering gets its refusal either way, and this keeps
@@ -175,13 +178,14 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
     link_.setOnControl([this](Edio& edio, bool backChannelQuiet) {
         // The config block a submission's refusal reads (probeMenu). Taken here, between chunks, for the reason the
         // volume is: a system-region read on the thread that owns the port, putting no byte in a running game's FIFO.
-        // Ahead of the volume, and a submission asks the link for a turn of its own (N8Link::wakeControl), so a config
-        // write that keeps failing does not hold it up.
+        // Ahead of the volume, and a submission asks the link for a quiet turn of its own (N8Link::wakeControl), so a
+        // config write that keeps failing does not hold it up.
         //
-        // Both reads below wait for a turn with nothing outstanding on the reliable link: an ack answering one of
-        // those frames can arrive inside a read, and would be taken for the reply's first bytes while the reply's tail
-        // was left in the input to be parsed as link traffic. N8Link services the link before this turn and passes
-        // whether it is quiet; the probe's own deadline covers a cart that never goes quiet.
+        // Both reads below wait for a quiet turn (N8Link::OnControl): an ack for an outstanding frame can arrive
+        // inside a read, and would be taken for the reply's first bytes while the reply's tail was left in the input
+        // to be parsed as link traffic. N8Link services the link before this turn and passes whether it is quiet,
+        // which a cart that has acknowledged nothing for a while (one at its menu) is too; the probe's own deadline
+        // covers a cart that keeps acknowledging.
         const unsigned probe = menuProbeGeneration_.load(std::memory_order_acquire);
         if (backChannelQuiet && probe != menuProbeApplied_.load(std::memory_order_relaxed)) {
             menuProbeIndex_.store(runningMapper(edio), std::memory_order_relaxed);
@@ -270,7 +274,7 @@ int N8Host::probeMenu() {
     const auto     deadline   = std::chrono::steady_clock::now() + std::chrono::milliseconds(kMenuProbeMs);
     while (menuProbeApplied_.load(std::memory_order_acquire) < generation) {
         if (!link_.isConnected()) return kProbeLinkDown;
-        if (std::chrono::steady_clock::now() >= deadline) return -1;
+        if (std::chrono::steady_clock::now() >= deadline) return link_.backChannelQuiet() ? -1 : kProbeLinkBusy;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     return menuProbeIndex_.load(std::memory_order_relaxed);
@@ -373,6 +377,9 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
     // are owed, note-ons are not). The job checks again at its first step, for a cart that changed in between.
     const int mapper = probeMenu();
     if (mapper == kProbeLinkDown) return refuse("not connected");
+    if (mapper == kProbeLinkBusy)
+        return refuse("the reliable link never went quiet for the cart's config read: a running game is still "
+                      "acknowledging the stream");
     if (mapper < 0) return refuse("the cart's config block did not answer");
     if (mapper != kMenuMapper) return refuse(dump || restore ? kBatteryAtGame : kUploadAtGame);
     if (!cartJob_.claim(job, owner)) return refuse("busy: the cart is running another job");

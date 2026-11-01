@@ -132,10 +132,12 @@ public:
     // One job at a time ("busy: ..."), and none while the link is down ("not connected"). Every transfer first reads
     // the cart's FPGA config block - the map_idx that tells the menu (255) from a running game - on the serial thread
     // between MIDI chunks, the expansion volume's path, and refuses there: a job a running game will not have pauses
-    // nothing, so the notes the block pushes meanwhile reach the cart. The read waits for a turn where the reliable
-    // link has nothing outstanding (N8Link::OnControl), so an ack cannot land inside it. A probe that will not answer
-    // is refused the same way ("the cart's config block did not answer"); the job checks again at its first step, for
-    // a cart that changed in between.
+    // nothing, so the notes the block pushes meanwhile reach the cart. The read waits for a turn quiet for it
+    // (N8Link::OnControl: nothing outstanding on the reliable link, or a cart silent for a while, as one at its menu
+    // is), so an ack for an outstanding frame cannot land inside it. Within a second: a link that keeps acknowledging
+    // the whole time is refused for that ("the reliable link never went quiet ..."), and a read that does not answer
+    // as such ("the cart's config block did not answer"); the job checks again at its first step, for a cart that
+    // changed in between.
     // [control], like abandonCartJobs: the node submitting is the job's owner, and a node leaving the plan abandons its
     // job, which fails at once (Removed) and stops at its next safe point.
     bool submitCartJob(const rp::host::JobRequest& request, rp::host::Job& job, const void* owner, std::string* error);
@@ -148,8 +150,9 @@ private:
     void save();
 
     // The cart's running map_idx, read on the serial thread that owns the port (a config-block read, between two MIDI
-    // chunks) and answered here: the map_idx, or -1 when the block did not answer, or -2 when the link went down while
-    // the probe was asked. Each call asks afresh, since a game can boot between two jobs.
+    // chunks) and answered here: the map_idx, or -1 when the block did not answer, -2 when the link went down while
+    // the probe was asked, or -3 when its deadline passed with the link never quiet for the read. Each call asks
+    // afresh, since a game can boot between two jobs.
     int probeMenu();
 
     // Write the expansion-audio master volume `value` through `edio` (see EXP_VOL_AUTO). `mapperHint` is the iNES

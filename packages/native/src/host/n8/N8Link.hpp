@@ -35,15 +35,22 @@ public:
     // expansion-audio master volume off it (N8Host::applyExpVol). A throw is caught and ignored: a config
     // write must never fail a working MIDI link.
     using OnConnected = std::function<void(Edio&)>;
-    // Ran on the serial thread at the top of every turn, while the link is up: where a setting whose value lives in an
-    // atomic (N8Host's expansion volume and its config-block probe) reaches the device without the caller taking a lock
-    // or building a std::function. Set once before any connect, like OnConnected, so it is never mutated while the
-    // thread reads it. `backChannelQuiet` is false while the reliable link still has frames the cart may be about to
-    // acknowledge: anything that reads a reply off the port must wait for a quiet turn, since an ack landing inside
-    // that read is taken for the reply's first bytes and the reply's tail is then parsed as link traffic. A throw is
-    // caught and ignored, so a config write never takes the MIDI link down; the next turn is then a second later, not
-    // the next 200 us, so a port that keeps refusing a write cannot take the link's turns from the MIDI stream (a
-    // caller that cannot wait that out, a submission's probe, asks for a turn of its own through wakeControl).
+    // Ran on the serial thread each turn while the link is up, once the reliable link's acks are read and its re-sends
+    // written: where a setting whose value lives in an atomic (N8Host's expansion volume and its config-block probe)
+    // reaches the device without the caller taking a lock or building a std::function. Set once before any connect,
+    // like OnConnected, so it is never mutated while the thread reads it. `backChannelQuiet` is false while the cart
+    // may be about to acknowledge an outstanding frame: anything that reads a reply off the port must wait for a quiet
+    // turn, since an ack landing inside that read is taken for the reply's first bytes and the reply's tail is then
+    // parsed as link traffic. A turn is quiet with nothing outstanding, or once the cart has said nothing for the
+    // pause's ack bound (250 ms) since the oldest outstanding frame first went out: a cart at its menu acknowledges
+    // nothing, and would otherwise never give a read a turn. What it does not cover is an ack for no outstanding frame:
+    // on a lossy link the ROM acknowledges each copy of a frame the host sent twice, and the second copy's ack can come
+    // after the first has emptied the window. A read that meets one misreads a few bytes (an Auto that sees no
+    // expansion mapper writes nothing; a probe that sees no menu refuses the job) and leaves the reply's last bytes in
+    // the input, which the link parses as an ack only if they spell one. A throw is caught and ignored, so a config
+    // write never takes the MIDI link down; the callback then waits a second, not the next 200 us turn, so a port that
+    // keeps refusing a write cannot take the link's turns from the MIDI stream (a caller that cannot wait that out, a
+    // submission's probe, asks for a quiet turn of its own through wakeControl).
     using OnControl = std::function<void(Edio&, bool backChannelQuiet)>;
 
     // What a paused job tells the link once it has run: resume streaming, or stop it (a ROM boot: the old stream is
@@ -79,10 +86,14 @@ public:
     // thing on the port.
     void          setOnConnected(OnConnected fn) { onConnected_ = std::move(fn); }
     void          setOnControl(OnControl fn) { onControl_ = std::move(fn); }
-    // [any] Run OnControl at the next turn, whatever the wait a failed config write armed. A submission's menu probe
-    // is why this exists: it is bounded by its own deadline, and a volume write that keeps failing must not be what it
-    // waits behind.
+    // [any] Run OnControl at the next quiet turn, whatever the wait a failed config write armed: the wake stands
+    // through turns that are not quiet, and is spent by the first that is. A submission's menu probe is why this
+    // exists: it is bounded by its own deadline, and a volume write that keeps failing must not be what it waits
+    // behind.
     void          wakeControl() { controlWanted_.store(true, std::memory_order_release); }
+    // [any] Whether the serial thread's last turn was quiet for a read (see OnControl): what tells a probe that timed
+    // out on a link that kept acknowledging from one whose read never answered.
+    bool          backChannelQuiet() const { return backChannelQuiet_.load(std::memory_order_relaxed); }
     // Hand the serial thread a job to run with streaming paused (see PausedJob). False, and nothing runs, while the
     // link is down or another job is pending. From the moment the thread takes it until it is done, isConnected()
     // reads false and push() drops (and counts) what it is given.
@@ -153,6 +164,7 @@ private:
     void stopStreaming();                                // serial thread: stop and close the port (AfterJob::Stop)
     void probeLink();                                    // serial thread: sync + listen for an ack
     void serviceLink();                                  // serial thread: read acks, send re-sends
+    bool quietForRead(std::int64_t now) const;           // serial thread: may a reply be read now (see OnControl)
     void writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>& seqs, std::int64_t now, bool resend);
     void setError(const std::string& msg);
 
@@ -167,9 +179,10 @@ private:
     std::atomic<std::uint64_t> pushesDropped_{0};
     std::atomic<std::uint64_t> chunksDiscarded_{0};
     // The earliest moment OnControl runs again after a throw (see the loop in streamLoop), and a wake a caller asked
-    // for since the last turn: the first is serial-thread state, the second is stored from any thread.
+    // for since the last quiet turn: the first is serial-thread state, the second is stored from any thread.
     std::int64_t               controlRetryAtNs_ = 0;
     std::atomic<bool>          controlWanted_{false};
+    std::atomic<bool>          backChannelQuiet_{true};  // the last turn's quietForRead, for other threads
 
     // The paused job (runPaused): handed over under jobMutex_, which also orders a submission against the serial
     // thread's exit, so a job taken is always run (with null, if the link went down first). jobPending_ is the flag the

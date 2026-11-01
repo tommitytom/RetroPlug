@@ -7,10 +7,11 @@
 //
 // The fake device below is a model of the cart's USB side, enough for these: it parses Edio's command frames as they
 // are written (status, memory reads and writes, the SD directory and file API, with a failure it can inject into a
-// directory load, a file write or a file read), counts the files open on the card, keeps a 64 KB battery (logged if
-// anything touches it) and the FPGA config block (map_idx 255 while the menu shows), answers the menu's '*' commands
-// while the menu is showing, and plays BlipToaster's end of the reliable link while a game that speaks it runs. Every
-// event (a FIFO write, a battery read, a file block) lands in one ordered log.
+// directory load, a file write, a file read or an expansion-volume write), counts the files open on the card, keeps a
+// 64 KB battery (logged if anything touches it) and the FPGA config block (map_idx 255 while the menu shows), answers
+// the menu's '*' commands while the menu is showing, and plays BlipToaster's end of the reliable link while a game
+// that speaks it runs (its acks late, never, or reporting every frame damaged, when a case asks). Every event (a FIFO
+// write, a battery read, a file block) lands in one ordered log.
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -54,6 +55,9 @@ struct FakeN8 {
     bool                     linkRom = false;       // the running game answers the reliable link (BlipToaster)
     bool                     linkDeaf = false;      // ... until it stops answering (it read no frame and acks nothing)
     int                      linkAckDelayMs = 0;    // how long the game takes to write a frame's ack back
+    bool                     linkDamaged = false;   // every frame reaches the game damaged, and it says so each time
+    int                      refuseExpVolWrites = 0; // the next N expansion-volume writes throw (a refusing port)
+    int                      expVolAttempts = 0;    // every expansion-volume write the host made
     int                      fileDelayMs = 0;       // likewise each SD file write
     int                      fileReadDelayMs = 0;   // likewise each SD file read block
     bool                     failNextWrite = false; // the next SD file write answers its first block with an error
@@ -147,7 +151,9 @@ private:
                          std::deque<std::uint8_t>(bytes)});
     }
     // Hand the host the acks the game has written: only those now due, or everything it still owes - what a command
-    // arriving first sees, since the cart answers it behind what its queue holds.
+    // arriving first sees, since the cart answers it behind what its queue holds. Any write releases them all, a FIFO
+    // write included, which a real cart does not do (its ack waits for the game, not for the host): harmless where an
+    // owed ack is all a case is after, but a case that measures a round trip across a write would measure a short one.
     void releaseAcks(bool dueOnly) {
         const auto now = std::chrono::steady_clock::now();
         for (auto it = acks_.begin(); it != acks_.end();) {
@@ -242,6 +248,13 @@ private:
             } else if (cmd == Edio::CMD_MEM_WR) {
                 const std::uint32_t addr = le32(c, 4), size = le32(c, 8);
                 const std::uint8_t* data = c.data() + 13;
+                if (addr == static_cast<std::uint32_t>(Edio::ADDR_EXP_VOL)) {
+                    ++dev_.expVolAttempts;
+                    if (dev_.refuseExpVolWrites > 0) {
+                        --dev_.refuseExpVolWrites;
+                        throw std::runtime_error("fake port: the config write was refused");
+                    }
+                }
                 if (addr == static_cast<std::uint32_t>(Edio::ADDR_FIFO)) {
                     dev_.log.push_back("fifo:" + hex(data, size));
                     for (std::uint32_t i = 0; i < size; ++i) fifoByte(data[i]);
@@ -348,6 +361,10 @@ private:
                 unsigned sum = seq_;
                 for (auto m : msg_) sum += m;
                 link_ = Idle;
+                if (dev_.linkDamaged) {  // a damaged frame is reported as the one the game expected, which it was not
+                    replyAck({0xF5, next_, next_});
+                    return;
+                }
                 if (b != (sum & 0x7F)) return;
                 dev_.frameSeqs.push_back(seq_);
                 if (seq_ == next_) {
@@ -771,7 +788,6 @@ TEST_CASE("the menu probe waits out an ack the game still owes, so its config re
         CHECK(job.state.load() == Job::Done);
         CHECK(job.result == saveOf(1024, 3));
         CHECK(rig.host.link().linkOutstanding() == 0);
-        CHECK(rig.host.link().linkRttMinNs() >= 0);  // the link measured the round trip: the ack was its own
         std::lock_guard<std::mutex> l(rig.dev.mu);
         // The frame went once. An ack the read had swallowed would leave it outstanding, and a tail parsed as an ack
         // would point the link past it: either way the frame is sent again and the game reads its seq a second time.
@@ -1013,11 +1029,10 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
             std::lock_guard<std::mutex> l(rig.dev.mu);
             rig.dev.linkDeaf = true;
         }
-        // The probe reads a quiet link, so the frame the drain has to wait for is one the drain itself writes: pushed
-        // ahead of its release time, it is still in the ring when the submission's read comes.
-        rig.host.link().setLookaheadMs(20);
+        // A frame the cart never acknowledges, outstanding before the submission: the probe's read waits only until
+        // the cart has been silent for the drain's bound, since a cart that silent is not acknowledging anything.
         rig.push({0x90, 0x3C, 0x7F});
-        rig.host.link().setLookaheadMs(0);
+        REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
         Job job;
         const auto t0 = Clock::now();
         REQUIRE(rig.submit(battery("dump"), job));
@@ -1039,9 +1054,8 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
             std::lock_guard<std::mutex> l(rig.dev.mu);
             rig.dev.linkDeaf = true;
         }
-        rig.host.link().setLookaheadMs(20);
         rig.push({0x90, 0x3C, 0x7F});
-        rig.host.link().setLookaheadMs(0);
+        REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
         Job job;
         REQUIRE(rig.submit(battery("dump"), job));
         std::this_thread::sleep_for(std::chrono::milliseconds(60));  // inside the 250 ms the drain waits for acks
@@ -1052,6 +1066,106 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
         CHECK(job.error == "the link went down before the job ran");
         CHECK_FALSE(rig.host.cartJobBusy());
     }
+}
+
+TEST_CASE("a cart reset to its menu with a frame its game never acknowledged still takes a job", "[n8][cart-jobs]") {
+    using Clock = std::chrono::steady_clock;
+    Rig rig;
+    rig.dev.menu = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0] = 69;
+    rig.dev.cfg[2] = 0;
+    rig.dev.files[kGameBattery] = saveOf(1024, 5);
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.applied.size() == 1;  // the game read it and has acknowledged it
+    }));
+
+    // The console's reset button: the N8 goes back to its menu with USB still up, so the link and its sequence state
+    // stay, and the menu acknowledges nothing (it skips every byte that is not one of its commands). The next frame is
+    // outstanding for good, re-sent whenever the cart says nothing for the link's timeout.
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.menu = true;
+    }
+    rig.push({0x80, 0x3C, 0x00});
+    REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
+    // The probe reads once the cart has been silent for the drain's bound since that frame went out, the menu answers,
+    // and the job runs after the pause's own bounded wait for the same ack.
+    Job job;
+    std::string why;
+    const auto t0 = Clock::now();
+    REQUIRE(rig.submit(battery("dump"), job, &why));
+    CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() < 1000);
+    REQUIRE(waitUntil([&] { return job.finished(); }));
+    CHECK(job.state.load() == Job::Done);
+    CHECK(job.result == saveOf(1024, 5));
+    REQUIRE(waitUntil([&] { return rig.cart.connected(); }));  // streaming resumed to the menu
+    CHECK(rig.host.link().linkOutstanding() == 1);              // still owed: the menu will never acknowledge it
+}
+
+TEST_CASE("a probe on a link that never goes quiet is refused for that, not as a config block that did not answer",
+          "[n8][cart-jobs]") {
+    using Clock = std::chrono::steady_clock;
+    Rig rig;
+    rig.dev.menu = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0] = 69;
+    rig.dev.cfg[2] = 0;
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        rig.dev.linkDamaged = true;
+    }
+    // Every copy of the frame reaches the game damaged and is reported at once, so it is re-sent at once: the cart
+    // never stops acknowledging and the frame never stops being outstanding, so no turn is quiet for a read.
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] { return rig.host.link().linkResends() >= 3; }));
+    Job job;
+    std::string why;
+    const auto t0 = Clock::now();
+    CHECK_FALSE(rig.submit(battery("dump"), job, &why));
+    CHECK(why == "the reliable link never went quiet for the cart's config read: a running game is still acknowledging "
+                 "the stream");
+    CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() >= 900);  // its deadline
+    CHECK(rig.cart.connected());  // nothing paused
+    CHECK(rig.dev.count("file-") == 0);
+}
+
+TEST_CASE("a submission's wake outlasts a turn the link is busy on, so a failing config write's wait cannot refuse "
+          "it", "[n8][cart-jobs]") {
+    using Clock = std::chrono::steady_clock;
+    Rig rig;
+    rig.dev.menu = false;
+    rig.dev.linkRom = true;
+    rig.dev.cfg[0] = 69;  // a game: the probe's answer refuses the job, quickly when it is read in time
+    rig.dev.cfg[2] = 0;
+    rig.dev.linkAckDelayMs = 60;
+    rig.dev.refuseExpVolWrites = 1'000'000;  // a port that is open but refuses every config write
+    rig.cart.setExpansionVolume(64);
+    rig.connect();
+    REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
+    // The connect-time write is refused, and so is the serial thread's first, which arms the second-long retry wait.
+    REQUIRE(waitUntil([&] {
+        std::lock_guard<std::mutex> l(rig.dev.mu);
+        return rig.dev.expVolAttempts >= 2;
+    }));
+    rig.push({0x90, 0x3C, 0x7F});
+    REQUIRE(waitUntil([&] { return rig.host.link().linkOutstanding() == 1; }));
+    // The frame's ack is 60 ms out, so the turn the submission wakes is a busy one and the probe waits. The wake must
+    // still stand when the link goes quiet: spent on the busy turn, whose write re-arms the wait, it would leave the
+    // probe a second behind it and refused at its deadline ("the cart's config block did not answer").
+    Job job;
+    std::string why;
+    const auto t0 = Clock::now();
+    CHECK_FALSE(rig.submit(battery("dump"), job, &why));
+    CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+    CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0).count() < 500);
+    CHECK(rig.cart.connected());
 }
 
 TEST_CASE("a paused job whose run throws is run once, its completion is still posted, and the link stops with the "

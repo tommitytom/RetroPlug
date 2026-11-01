@@ -18,6 +18,9 @@ bool traceOn() {
 std::int64_t nowNs() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(steady::now().time_since_epoch()).count();
 }
+// How long a cart may say nothing while a frame is outstanding before it is taken for one acknowledging nothing: the
+// pause's bounded wait for acks, and the silence after which a config read may go ahead of an outstanding frame.
+constexpr std::int64_t kAckWaitNs = 250'000'000;
 }  // namespace
 
 N8Link::N8Link(PortFactory factory) : factory_(std::move(factory)) {}
@@ -74,6 +77,7 @@ bool N8Link::connect(const std::string& port) {
     { TimedChunk drop; while (ring_.tryPop(drop)) {} }
     bytesForwarded_.store(0, std::memory_order_relaxed);
     controlRetryAtNs_ = 0;  // a prior connection's failed control write does not hold this one's first turn back
+    backChannelQuiet_.store(true, std::memory_order_relaxed);
     running_.store(true, std::memory_order_release);
     {
         std::lock_guard<std::mutex> l(jobMutex_);
@@ -206,6 +210,16 @@ void N8Link::serviceLink() {
     linkRttMinNs_.store(rel_->rttMinNs(), std::memory_order_relaxed);
 }
 
+bool N8Link::quietForRead(std::int64_t now) const {
+    // Nothing outstanding, so no ack is owed (an ack the ROM repeats for a frame it already acknowledged is the one
+    // exception, see OnControl). Or a cart that has said nothing for the pause's ack bound since the oldest outstanding
+    // frame first went out: one at its menu (a console reset keeps USB and the link up, and the menu acknowledges
+    // nothing), or a game that has stopped answering, the same risk the pause's drain takes when it gives up waiting.
+    if (!rel_ || rel_->outstanding() == 0) return true;
+    const std::int64_t spoke = std::max(rel_->lastHeardNs(), rel_->oldestFirstSentNs());
+    return spoke != rp::N8ReliableSender::kNever && now - spoke >= kAckWaitNs;
+}
+
 void N8Link::serialLoop() {
     streamLoop();
     // The thread is going (a disconnect, a write that failed, a job that stopped streaming): no job is taken from here
@@ -246,19 +260,23 @@ void N8Link::streamLoop() {
             // Acks in, re-sends out, before anything else this turn: the control turn below can read a reply, and an
             // ack that answered an outstanding frame must be behind us before it does.
             if (rel_) serviceLink();
+            const std::int64_t turnNs = nowNs();
+            const bool         quiet  = quietForRead(turnNs);
+            backChannelQuiet_.store(quiet, std::memory_order_relaxed);
             // A setting that lives in an atomic (see OnControl) is applied between chunks, on the thread that owns the
-            // port. Best-effort, like the connect-time write: a config register must not take the MIDI link down.
-            const bool woken = controlWanted_.exchange(false, std::memory_order_acquire);
-            if (onControl_ && (woken || nowNs() >= controlRetryAtNs_)) {
-                const std::int64_t now = nowNs();
+            // port. Best-effort, like the connect-time write: a config register must not take the MIDI link down. A
+            // wake is spent only on a quiet turn, the only kind its caller's read can use: a busy turn whose write
+            // re-armed the retry wait would otherwise leave that read a second behind it.
+            const bool woken = quiet && controlWanted_.exchange(false, std::memory_order_acquire);
+            if (onControl_ && (woken || turnNs >= controlRetryAtNs_)) {
                 try {
-                    onControl_(*edio_, !rel_ || rel_->outstanding() == 0);
+                    onControl_(*edio_, quiet);
                     controlRetryAtNs_ = 0;
                 } catch (const std::exception&) {
                     // A write that keeps failing is retried once a second, not once a turn: a wedged-but-open port
                     // would otherwise spend the link's turns on a register write, and the volume's Auto answer is a
                     // config read on top of it, which the MIDI stream would wait behind.
-                    controlRetryAtNs_ = now + 1'000'000'000;
+                    controlRetryAtNs_ = turnNs + 1'000'000'000;
                 }
             }
             if (jobPending_.load(std::memory_order_acquire)) {
@@ -323,7 +341,7 @@ void N8Link::drainForJob(TimedChunk& chunk, bool& have) {
     // DMC-DMA halt ate and only a re-send would deliver. Bounded: a cart that has stopped answering gets its re-sends
     // after the job, from the sequence state the pause kept.
     if (!rel_) return;
-    const std::int64_t until = nowNs() + 250'000'000;
+    const std::int64_t until = nowNs() + kAckWaitNs;
     while (running_.load(std::memory_order_acquire) && rel_->outstanding() > 0 && nowNs() < until) {
         serviceLink();
         std::this_thread::sleep_for(std::chrono::microseconds(200));

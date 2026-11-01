@@ -146,16 +146,17 @@ and gets a job id; completions drain from a queue TS polls. On an emulated core 
 registry and completes at once, and a write goes through the command ring and completes at the next block boundary, as
 `readSram` / `writeRam` do today (those system-id RPCs stay as thin wrappers). On the N8 node a submission first reads
 the cart's config block on the link's worker thread, between MIDI chunks, the expansion volume's path, and only on a
-turn where the reliable link has nothing outstanding (an ack landing inside the read would be taken for the reply's
-first bytes): the three transfers run at the menu only, so a job a running game will refuse (or a cart whose block does
-not answer) is refused there, and the stream never pauses for it. A job that is taken then runs on that thread:
-streaming pauses, `connected` reads false for the duration and pushes are dropped and counted, the transfer runs,
-streaming resumes, the completion is posted. One job at a time per device (a second is refused busy); a job while
-disconnected fails "not connected". A cart's `rom.header` and `rom.title` answer at once from the image and name this
-host last booted, with no transfer. A `rom.upload` is the one job that does not resume streaming: it writes the image,
-installs and boots it through the cart's menu, and closes the port, so the link reads disconnected and its result says
-streaming stopped. A node removed while its job runs abandons it at reclaim, and the device stops at its next safe
-point.
+turn quiet for the read (an ack landing inside it would be taken for the reply's first bytes): one with nothing
+outstanding on the reliable link, or once the cart has said nothing for 250 ms since its oldest outstanding frame went
+out, as one at its menu does. The three transfers run at the menu only, so a job a running game will refuse (or a cart
+whose block does not answer, or whose link keeps acknowledging for the probe's whole second) is refused there, and the
+stream never pauses for it. A job that is taken then runs on that thread: streaming pauses, `connected` reads false for
+the duration and pushes are dropped and counted, the transfer runs, streaming resumes, the completion is posted. One
+job at a time per device (a second is refused busy); a job while disconnected fails "not connected". A cart's
+`rom.header` and `rom.title` answer at once from the image and name this host last booted, with no transfer. A
+`rom.upload` is the one job that does not resume streaming: it writes the image, installs and boots it through the
+cart's menu, and closes the port, so the link reads disconnected and its result says streaming stopped. A node removed
+while its job runs abandons it at reclaim, and the device stops at its next safe point.
 
 **TS**: `backend.capability(nodeId, op, args)`, a promise over submit and poll, the same for emulated and real. The UI's
 cart menu (back up and restore the cart's SRAM, load a ROM to the cart) moves onto it, and the `__rp_n8LoadRom` /
@@ -378,11 +379,12 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   takes about a minute.
 - **`postControl` was not needed, and neither is any call from the block into the link's thread** (section 4). The
   expansion volume is a value the host holds with a generation counter: the block only clamps, stores and bumps, and
-  the serial thread applies the standing value at the top of its turn, so a failed write retries and no lock or
+  the serial thread applies the standing value on its next turn, so a failed write retries and no lock or
   `std::function` is on the audio path. A write that keeps failing is retried once a second rather than every turn, so
   a wedged-but-open port cannot take the stream's turns for a config register; the menu probe is behind no such wait,
-  since a submission asks the link for a turn of its own (`N8Link::wakeControl`) and its read waits only for a turn the
-  reliable link has nothing outstanding on, with its own 1 s deadline as the bound.
+  since a submission asks the link for a quiet turn of its own (`N8Link::wakeControl`, a wake that stands through busy
+  turns and is spent by the first quiet one, so a busy turn's failed write cannot re-arm the wait in front of it), with
+  its own 1 s deadline as the bound.
 - **A project with no NES no longer forwards DAW MIDI to the cart** (section 4). The fallback existed for "no emulated
   NES to mirror"; the cart is placed by a setting now, a raw copy beside the fan-out would arrive twice, and a user who
   drove a MIDI cart with no NES system in the project (a MENU or debug pattern) loses that. Restoring it would be a rule
@@ -408,8 +410,17 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   before a job's own reply), and a game whose link is up owes an ack for every frame it has not answered: one arriving
   inside the read is taken for the reply's first bytes, and the reply's tail is then parsed as link traffic, which can
   mark a frame delivered that was not. The serial thread services the link before a control turn and tells the read
-  whether anything is still outstanding, with the probe's 1 s deadline as the bound for a cart that never goes quiet;
-  the volume's Auto read has the same exposure and takes the same guard.
+  whether the turn is quiet: nothing outstanding, or a cart that has said nothing for the pause's 250 ms ack bound
+  since the oldest outstanding frame first went out. The second half is not optional: the sender never gives a frame
+  up by time, so a cart that stops acknowledging with a frame outstanding (one a console reset returned to its menu
+  with USB still up, which acknowledges nothing) would otherwise never give the read a turn, and every job would be
+  refused until a reconnect; a cart that silent is the risk the pause's drain already takes. A probe whose second
+  passes on a link that kept acknowledging is refused for that, not as a block that did not answer. The volume's Auto
+  read has the same exposure and takes the same guard. One residue is left: an ack for no outstanding frame, which the
+  ROM writes for each copy of a frame a lossy link made the host send twice, the second after the first has emptied
+  the window. It costs a misread (an Auto that sees no expansion mapper writes nothing, a probe that sees no menu
+  refuses) and the reply's last bytes parsed as an ack only if they spell one; closing it would need a bound on when
+  the ROM writes that ack, which follows its FIFO running empty, so it is described here rather than guessed.
 - **The hardware smoke, on the real NES and N8 Pro.** Recorded on the prototype, before the probe moved to submission:
   then a job paused a playing ROM, which a submission now refuses instead of pausing for. A pause over a playing ROM
   kept the reliable link continuous (resends 0, outstanding 0, no re-sync) and the note before and after it sounded (A4
@@ -423,21 +434,22 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
 
 - `retroplug-engine-graph-test` gained `[devices]` (`Devices.test.cpp`: both links over fake devices, a host with no
   device, acquire and release across a reactivate and a teardown, a handover to a new node that never leaves the link
-  with no holder, a warmed block allocating nothing), `[capability]`
-  (`Capabilities.test.cpp`: each emulated console against the system-id RPCs and the ROM file, block-boundary completion,
-  removal and discard, the 64 bound, a real device thread's progress, a warmed block with writes in flight), `[n8-node]`
-  (`N8Node.test.cpp`: the fan-out, `connected`, the expansion volume, owed note-offs, the jobs and their refusals,
-  abandonment, `threads`, a warmed block), `[launchpad]` (`Surface.test.cpp`: the drain, the output, `connected`, the
-  queue's bound, the first-block discard, uniqueness, `threads`, acquire balance, a warmed block) and `[stage]`
-  (`StageNode.test.cpp`: a staged message reaching the node the running plan places under the id, and one added later).
-  The protocol cases run the surface wiring and hold their recorded digests; the goldens' documents moved with the
-  fan-out and the surface nodes.
+  with no holder, a warmed block allocating nothing), `[capability]` (`Capabilities.test.cpp`: each emulated console
+  against the system-id RPCs and the ROM file, block-boundary completion, removal and discard, the 64 bound, a real
+  device thread's progress, a warmed block with writes in flight), `[n8-node]` (`N8Node.test.cpp`: the fan-out,
+  `connected`, the expansion volume, owed note-offs, the jobs and their refusals, abandonment, `threads`, a warmed
+  block), `[launchpad]` (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the first-block
+  discard, uniqueness, `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a staged
+  message reaching the node the running plan places under the id, and one added later). The protocol cases run the
+  surface wiring and hold their recorded digests; the goldens' documents moved with the fan-out and the surface nodes.
 - `retroplug-n8-test` gained `[cart-jobs]` (`N8CartJobs.test.cpp`: the pause and its ack bound, battery file dumps and
-  restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws), a
-  game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a port that
-  throws at a job's start and after it ran, the JSON a name reaches, an abandoned dump), and the two link adapters have
-  their own files: `N8CartLink.test.cpp` (the volume's retry, its once-a-second bound, the probe's turn of its own, the
-  last release's AUTO) and `LaunchpadSurfaceLink.test.cpp`.
+  restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws),
+  a game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a cart reset
+  to its menu with a frame its game never acknowledged still taking a job, a link that never goes quiet refused for
+  that, a probe's wake outlasting a busy turn, a port that throws at a job's start and after it ran, a job whose `run`
+  throws run once, the JSON a name reaches, an abandoned dump), and the two link adapters have their own files:
+  `N8CartLink.test.cpp` (the volume's retry, its once-a-second bound, the probe's turn of its own, the last release's
+  AUTO) and `LaunchpadSurfaceLink.test.cpp`.
 - TS: `test/capability/capability.test.ts` (the promises, the refusals, a close rejecting pending, progress), and on
   the real host `test-native/capability.test.ts` and `test-native/stage-node-midi.test.ts`;
   `test/graph/build-graph.test.ts` holds the placement and the fan-out,
