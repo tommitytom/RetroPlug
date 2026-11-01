@@ -162,5 +162,21 @@ TEST_CASE("a staged id resolves against the plan that runs, not the one that ran
     invoker.drainInto(e);
     CHECK(cart.pushes.empty());
     CHECK(e.faultCount() == 0);
+
+    // The other order, which is what separates the plan that runs from the control thread's map: the message is pushed
+    // first and the swap after it, so the drain applies the stage against the plan that still runs - the one placing
+    // the cart - and only then adopts the plan that removes it. An engine reading the control thread's map, already
+    // the new document by now, would drop a message the running plan takes.
+    REQUIRE(e.setGraph(document(systems, true)).ok);
+    invoker.stageNodeMidi("cart", kSysEx);
+    REQUIRE(e.setGraph(document(systems, false)).ok);
+    invoker.drainInto(e);
+    REQUIRE(cart.pushes.size() == 1);
+    CHECK(cart.pushes[0].data == kSysEx);
+    CHECK(e.faultCount() == 0);
+    // And the plan without the cart runs from here, so the same stage takes nothing again.
+    invoker.stageNodeMidi("cart", kSysEx);
+    invoker.drainInto(e);
+    CHECK(cart.pushes.size() == 1);
     invoker.setAudioThreadOwns(false);
 }
