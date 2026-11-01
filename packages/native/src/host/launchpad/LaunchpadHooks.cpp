@@ -78,6 +78,7 @@ JSValue jsGetLaunchpadConfig(JSContext* ctx, JSValueConst, int, JSValueConst*, i
         JS_SetPropertyStr(ctx, o, "enabled", JS_NewBool(ctx, c.enabled));
         JS_SetPropertyStr(ctx, o, "sent", JS_NewInt64(ctx, static_cast<std::int64_t>(c.sent)));
         JS_SetPropertyStr(ctx, o, "dropped", JS_NewInt64(ctx, static_cast<std::int64_t>(c.dropped)));
+        JS_SetPropertyStr(ctx, o, "detached", JS_NewInt64(ctx, static_cast<std::int64_t>(c.detached)));
         JS_SetPropertyStr(ctx, o, "error", JS_NewString(ctx, c.error.c_str()));
     }
     return o;

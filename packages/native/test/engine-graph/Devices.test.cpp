@@ -240,6 +240,9 @@ TEST_CASE("a node's cart pushes reach the installed cart link in order, at their
     // settings.
     CHECK(cart.pushes[0].sampleRate == kRate);
     CHECK(script.rate == kRate);
+    // And the registry forwards the expansion volume a node sets through the interface, untouched.
+    CHECK(cart.volume == 42);
+    CHECK(script.cartConnected);
 }
 
 TEST_CASE("the surface link's scripted input arrives in order, and its output is recorded", "[devices]") {

@@ -61,6 +61,7 @@ interface CfgStub {
   enabled: boolean;
   sent: number;
   dropped: number;
+  detached: number;
   error: string;
 }
 
@@ -91,6 +92,7 @@ const DEFAULT_CFG: CfgStub = {
   enabled: false,
   sent: 0,
   dropped: 0,
+  detached: 0,
   error: "",
 };
 
@@ -316,6 +318,10 @@ test("the status row reads what the link is actually doing", () => {
     [{}, "Status: not connected"],
     [{ connected: true, enabled: true }, "Status: connected"],
     [{ connected: true, enabled: true, dropped: 3 }, "Status: connected (3 dropped)"],
+    // Frames the device missed while attached read as a fault; the paint a session pushed while it was unplugged does
+    // not, since a repaint replaces it.
+    [{ connected: true, enabled: true, detached: 4 }, "Status: connected (4 sent while unplugged)"],
+    [{ connected: true, enabled: true, dropped: 2, detached: 4 }, "Status: connected (2 dropped)"],
     [{ enabled: true }, "Status: pick both ports"],
     [{ enabled: true, selectedInput: "a", selectedOutput: "b" }, "Status: not connected"],
     [{ error: "MIDI input port not found: Nope" }, "Status: Error: MIDI input port not found: Nope"],

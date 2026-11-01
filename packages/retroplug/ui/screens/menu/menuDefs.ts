@@ -418,7 +418,11 @@ function cartSyncLabel(mode: "midiMap" | "off", cartSync: string | null): string
 /** The read-only status line: what the link is doing, in the words a player would use. */
 function launchpadStatus(cfg: LaunchpadConfig): string {
   if (cfg.connected) {
+    // `dropped` is what the device never got while it WAS attached (a full send ring, an oversized message): frames
+    // the surface is missing. `detached` is the paint a session kept pushing while the device was unplugged, which a
+    // later repaint replaces, so it never reads as a fault.
     if (cfg.dropped > 0) return `connected (${cfg.dropped} dropped)`;
+    if (cfg.detached > 0) return `connected (${cfg.detached} sent while unplugged)`;
     // The name a scan read off the device, when there is one. Worth the room: it is the difference between
     // "the cable reaches a Launchpad" and "the ports opened", which otherwise read identically here.
     return cfg.deviceLabel ? `connected - ${cfg.deviceLabel}` : "connected";

@@ -1,8 +1,9 @@
 #pragma once
 
-// Stage 1's fake control-surface link, shared by the cases that drive a node over rp.host.devices/1: it scripts what
-// the device sent, records what a node handed it, and counts the nodes holding it. A message it records lives in its
-// own slot, so a case that counts allocations reserves the room it needs before counting.
+// The fake control-surface link, shared by the cases that drive a node over rp.host.devices/1: it scripts what the
+// device sent, records what a node handed it, and counts the nodes holding it. A message it records lives in its own
+// slot, so a case that counts allocations reserves the room it needs before counting. A push it takes nowhere is
+// counted as LaunchpadLink counts one: the device was not there for it.
 
 #include <algorithm>
 #include <cstddef>
@@ -40,8 +41,8 @@ public:
         return n;
     }
     void pushOutput(const std::uint8_t* data, std::size_t size) override {
-        if (!attached) {
-            ++drops;
+        if (!attached) {  // the device is not there to take it: counted apart, as LaunchpadLink counts it
+            ++detached;
             return;
         }
         Out m;
@@ -50,12 +51,13 @@ public:
         outputs.push_back(m);
     }
     bool connected() const override { return attached; }
-    std::uint64_t dropped() const override { return drops; }
+    // The pushes that went nowhere: this fake has no send ring, so a link that is down is the only way to lose one.
+    std::uint64_t dropped() const override { return detached; }
     void acquire() override { ++acquires; }
     void release() override { ++releases; }
 
     bool                       attached = true;
-    std::uint64_t              drops    = 0;
+    std::uint64_t              detached = 0;  // pushed while there was no device
     int                        acquires = 0;
     int                        releases = 0;
     std::vector<DeviceMessage> input;    // scripted: what the device sent, drained oldest first

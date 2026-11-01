@@ -21,7 +21,10 @@ struct LaunchpadConfigDto {
     bool                     connected = false;
     bool                     enabled   = false;
     std::uint64_t            sent      = 0;
+    // Frames the device never got while it was attached (a full send ring, an oversized message), and the paint a
+    // session pushed while nothing was connected. Counted apart so the status line can keep meaning lost frames.
     std::uint64_t            dropped   = 0;
+    std::uint64_t            detached  = 0;
     std::string              error;
 };
 

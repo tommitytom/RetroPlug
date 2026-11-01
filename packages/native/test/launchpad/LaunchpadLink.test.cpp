@@ -304,15 +304,24 @@ TEST_CASE("LaunchpadLink drops rather than overruns an oversized message", "[lau
     REQUIRE(log.written[0].size() == LaunchpadLink::kMaxOutMessage);
 }
 
-TEST_CASE("LaunchpadLink drops and counts output while disconnected", "[launchpad]") {
+TEST_CASE("LaunchpadLink counts a push while disconnected apart from a frame it lost", "[launchpad]") {
     PortLog       log;
     LaunchpadLink link(factoryFor(log));
     const std::uint8_t led[3] = {0x90, 0x51, 0x15};
     link.pushOutput(led, 3);
     link.pump();
     REQUIRE(log.written.empty());
-    // Nowhere to send it is a push that went nowhere, which the host reads as the device's drops.
-    REQUIRE(link.messagesDropped() == 1);
+    // Nowhere to send it is a push the device was never there for: counted on its own, so `dropped` keeps meaning a
+    // frame the surface lost while the device was attached (a full send ring, an oversized message).
+    REQUIRE(link.messagesDetached() == 1);
+    REQUIRE(link.messagesDropped() == 0);
+
+    // A connected push the ring has no room for is a lost frame, and stays in dropped.
+    REQUIRE(link.connect("in", "out"));
+    const std::uint8_t m[2] = {0x90, 0x51};
+    for (std::size_t i = 0; i < 64; ++i) link.pushOutput(m, sizeof m);  // the send ring holds 32, and nothing pumps
+    REQUIRE(link.messagesDropped() > 0);
+    CHECK(link.messagesDetached() == 1);
 }
 
 TEST_CASE("LaunchpadHost connects only with BOTH ports chosen", "[launchpad]") {

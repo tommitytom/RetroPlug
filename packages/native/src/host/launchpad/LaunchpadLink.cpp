@@ -89,7 +89,7 @@ std::size_t LaunchpadLink::drainInput(rp::host::DeviceMessage* out, std::size_t 
 void LaunchpadLink::pushOutput(const std::uint8_t* data, std::size_t n) {
     if (!data || n == 0) return;  // nothing to send: not a push that went nowhere
     if (!connected_.load(std::memory_order_acquire)) {  // the device is not there to take it
-        dropped_.fetch_add(1, std::memory_order_relaxed);
+        detached_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     if (n > kMaxOutMessage) {  // longer than any message the protocol can produce - a bug upstream, not a cap

@@ -35,6 +35,7 @@ LaunchpadConfigDto LaunchpadHost::getConfig() {
     c.enabled        = enabled_;
     c.sent           = link_.messagesSent();
     c.dropped        = link_.messagesDropped();
+    c.detached       = link_.messagesDetached();
     c.error          = link_.lastError();
     return c;
 }

@@ -42,7 +42,10 @@ export interface LaunchpadConfig {
   connected: boolean; // the in/out pair is claimed
   enabled: boolean; // the user's "use a control surface" toggle
   sent: number; // LED messages written since connect (status)
-  dropped: number; // messages lost to a full ring / an oversized message (status)
+  // Frames the device never got while attached (a full send ring, an oversized message), and the paint pushed while
+  // nothing was connected - counted apart so `dropped` keeps meaning a frame the surface lost. Both are status.
+  dropped: number;
+  detached: number;
   error: string; // last error, or "" (status)
 }
 
@@ -141,6 +144,7 @@ export function getLaunchpadConfig(): LaunchpadConfig | null {
     enabled: !!c.enabled,
     sent: typeof c.sent === "number" ? c.sent : 0,
     dropped: typeof c.dropped === "number" ? c.dropped : 0,
+    detached: typeof c.detached === "number" ? c.detached : 0,
     error: typeof c.error === "string" ? c.error : "",
   };
 }
