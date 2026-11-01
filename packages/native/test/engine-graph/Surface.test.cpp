@@ -289,15 +289,8 @@ TEST_CASE("a plan holds one surface input node and one surface output node", "[l
         CHECK(two.errors.at(0).message.find(id) != std::string::npos);
     }
 
-    // rp.n8.nes carries the same rule (the design's own device, placed by stage 5's setting), so a document that
-    // drives the cart twice is refused for the same reason, naming the second.
-    const auto carts = rig.set(plainDocument({docNode("cart-a", "rp.n8.nes"), docNode("cart-b", "rp.n8.nes")}));
-    REQUIRE_FALSE(carts.ok);
-    CHECK(carts.errors.at(0).code == "unique");
-    CHECK(carts.errors.at(0).nodeId == "cart-b");
-    CHECK(carts.errors.at(0).message.find("rp.n8.nes") != std::string::npos);
-
-    // One of each is the plan buildGraph makes when both settings are on.
+    // One of each is the plan buildGraph makes when both settings are on (rp.n8.nes declares the same rule, and
+    // N8Node.test.cpp holds its refusal).
     CHECK(rig.set(plainDocument({docNode("surface-in", "rp.launchpad.surface-in"),
                                  docNode("surface-out", "rp.launchpad.surface-out"), docNode("cart", "rp.n8.nes")}))
               .ok);

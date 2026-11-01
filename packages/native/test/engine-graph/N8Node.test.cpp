@@ -567,3 +567,23 @@ TEST_CASE("rp.n8.nes declares threads, so a target with none refuses the type", 
     NodeRig desktop(kRate);
     CHECK(desktop.set(R"({"nodes":[{"id":"cart","type":"rp.n8.nes"}],"wires":[]})").ok);
 }
+
+TEST_CASE("rp.n8.nes is unique: a plan holds one cart node", "[engine-graph][n8-node]") {
+    // One cart, one link: a second node would push at the one device's ring while its twin pushed too, so the type
+    // declares itself unique and the planner refuses the document, naming the second.
+    const rp_package* pkg = rp::host::n8Package();
+    const rp_node_type* cart = nullptr;
+    for (std::uint32_t i = 0; i < pkg->node_type_count; ++i)
+        if (std::string(pkg->node_types[i]->id) == "rp.n8.nes") cart = pkg->node_types[i];
+    REQUIRE(cart != nullptr);
+    CHECK(std::string(cart->descriptor(cart)).find(R"("unique":true)") != std::string::npos);
+
+    NodeRig rig(kRate);
+    const auto refused = rig.set(R"({"nodes":[{"id":"cart-a","type":"rp.n8.nes"},
+                                                {"id":"cart-b","type":"rp.n8.nes"}],"wires":[]})");
+    REQUIRE_FALSE(refused.ok);
+    CHECK(refused.errors.at(0).code == "unique");
+    CHECK(refused.errors.at(0).nodeId == "cart-b");
+    CHECK(refused.errors.at(0).message.find("rp.n8.nes") != std::string::npos);
+    CHECK(rig.set(R"({"nodes":[{"id":"cart","type":"rp.n8.nes"}],"wires":[]})").ok);
+}
