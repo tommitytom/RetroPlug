@@ -22,9 +22,9 @@ struct ResampleNodeSettings {
     // resampler has to be built for the buffer's rate and building it allocates. A buffer on a port is first seen on
     // the block thread, where nothing may allocate; a buffer the settings name is pinned at create, on the control
     // thread, and a ref that moves is a rebuild (node.hpp's resource_ref), whose fresh instance builds its resamplers
-    // in activate, on the control thread as well. What that buys costs ordering, and the cost is not covered: a
-    // recorder (rp.core.buffer-recorder) and a resampler on the same buffer in one plan are unsupported. The planner
-    // orders a port's reader after its writer and orders nothing for a settings ref, so this node resamples whichever
+    // in activate, on the control thread as well. What that buys costs ordering, and the cost is not covered: the
+    // planner refuses a resource bound to a port reader when the same resource has a port writer (a reader must take
+    // the writer's output on a wire), and a settings ref is not a binding it sees, so this node resamples whichever
     // prefix of the buffer the block schedule has written when it runs: a silently truncated stream, with no
     // diagnostic. D2's driver fills a buffer before the plan that plays it, never in the same plan as the resampler.
     rp::resource_ref<"audio-buffer"> buffer;
@@ -53,11 +53,12 @@ using namespace dsp;
 //
 // A re-activation at the same rate (a new block size) keeps the stream as it is. One at a new rate rebuilds the
 // resamplers for it and carries on from the buffer frame the output had reached, not from the buffer's start: an
-// activate preserves state (rp_node.h). That frame is the output's length in buffer time, and the frame the resampler
-// has consumed trails it by the part of a chunk it is still gathering plus r8brain's filter delay, so a rate change
-// mid-run repeats up to one input chunk of the buffer - 1023 frames, 46 ms at 22.05 kHz - where skipping it would
-// gap instead. The resume uses the `loop` the last commit left, so a loop toggled before a rate change wraps where the
-// stream would have clamped, or clamps where it would have wrapped.
+// activate preserves state (rp_node.h). That frame is the output's length in buffer time, to within one frame, and
+// what is heard from there is a fresh r8brain run-in: r8brain compensates its own latency (`getLatency()` is 0), so a
+// stream started at buffer frame `from` places its output at `from` to within that frame, and the input the old
+// resamplers had consumed beyond it is fed again rather than heard twice. The resume uses the `loop` the last commit
+// left, so a loop toggled before a rate change wraps where the stream would have clamped, or clamps where it would
+// have wrapped.
 struct Resample {
     static constexpr const char* id = "rp.dsp.resample";
     static constexpr const char* name = "Resample";
@@ -93,9 +94,10 @@ struct Resample {
     }
 
     void activate(double sampleRate, std::uint32_t) {
-        // ResourceTable::createAudioBuffer refuses a buffer of no frames, but rp_audio_buffer is a public ABI struct,
-        // and this is the one place its frame count divides.
-        if (!buffer || buffer->frames == 0) return;  // nothing to resample: every block is silence
+        // ResourceTable::createAudioBuffer refuses a buffer of no frames and a rate that is not positive, but
+        // rp_audio_buffer is a public ABI struct: this is the one place its frame count divides and its rate reaches
+        // r8brain's constructor and the resume's arithmetic.
+        if (!buffer || buffer->frames == 0 || !(buffer->sample_rate > 0.0)) return;  // nothing to resample: silence
         if (sampleRate == rate) return;
         std::uint32_t from = 0;
         if (rate > 0.0) {

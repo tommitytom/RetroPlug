@@ -301,7 +301,38 @@ TEST_CASE("rp.dsp.resample re-activated at a new plan rate carries on where its 
     CHECK(firstDifference(rig.render(1024, {512}, 1)[0], std::vector<float>(after.begin() + 2048, after.end())) == -1);
 }
 
-TEST_CASE("a warmed rp.dsp.resample plan block allocates and frees nothing", "[dsp-resample]") {
+TEST_CASE("rp.dsp.resample re-activated past the buffer's end wraps a loop and clamps without one", "[dsp-resample]") {
+    // The resume frame is the output's length in buffer time, modulo the buffer when looping and clamped to its end
+    // otherwise. 4096 output frames at 48 kHz are 1881 frames of a 1500-frame 22.05 kHz buffer, which is one pass and
+    // 381 frames into the second: the loop resumes at 381, the non-loop stream at the buffer's end and so in silence.
+    constexpr std::size_t    kOut = 4096;
+    const std::vector<float> source = signal(1500, 11);
+    const auto               elapsed = static_cast<std::size_t>(kOut * (22050.0 / 48000.0));
+    REQUIRE(elapsed == 1881);
+    REQUIRE(elapsed > source.size());
+
+    ResampleRig rig(48000.0);
+    const auto  buffer = rig.buffer({source}, 22050.0);
+    REQUIRE(rig.play(ResampleRig::ref(buffer) + R"(,"loop":true)", 1).ok);
+    CHECK(firstDifference(rig.render(kOut, {64}, 1)[0], kernelStream(source, 22050.0, 48000.0, kOut, true)) == -1);
+
+    std::string why;
+    REQUIRE(rig.host->reactivate(44100.0, kMaxBlock, &why));
+    const std::vector<float> resumed = rig.render(kOut, {64}, 1)[0];
+    CHECK(firstDifference(resumed, kernelStream(source, 22050.0, 44100.0, kOut, true, elapsed % source.size())) == -1);
+
+    // The same two runs without `loop`, on a plan of its own: the resume is the buffer's end, so it is pure silence.
+    ResampleRig once(48000.0);
+    const auto  plain = once.buffer({source}, 22050.0);
+    REQUIRE(once.play(ResampleRig::ref(plain), 1).ok);
+    CHECK(firstDifference(once.render(kOut, {64}, 1)[0], kernelStream(source, 22050.0, 48000.0, kOut)) == -1);
+    REQUIRE(once.host->reactivate(44100.0, kMaxBlock, &why));
+    const std::vector<float> silent = once.render(kOut, {64}, 1)[0];
+    CHECK(firstDifference(silent, kernelStream(source, 22050.0, 44100.0, kOut, false, source.size())) == -1);
+    for (const float v : silent) CHECK(v == 0.0f);  // zeros, whatever sign r8brain gives them
+}
+
+TEST_CASE("rp.dsp.resample's plan allocates and frees nothing, counted from its first block", "[dsp-resample]") {
     ResampleRig rig(48000.0);
     const auto  buffer = rig.buffer({signal(2048), signal(2048, 1)}, 22050.0);
     REQUIRE(rig.play(ResampleRig::ref(buffer), 2).ok);

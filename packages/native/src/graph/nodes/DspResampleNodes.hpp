@@ -17,8 +17,8 @@ namespace rp::graph {
 //
 // The buffer is a settings ref rather than a resource port, because the resamplers are built in activate and building
 // one allocates; DspResampleNodes.cpp has the threading argument. What that buys costs ordering, and the cost is not
-// covered: a recorder (rp.core.buffer-recorder) and a resampler on the same buffer in one plan are unsupported. The
-// planner orders a port's reader after its writer and orders nothing for a settings ref, so the node resamples
+// covered: the planner refuses a resource bound to a port reader when the same resource has a port writer (a reader
+// must take the writer's output on a wire), and a settings ref is not a binding it sees, so the node resamples
 // whichever prefix of the buffer the block schedule has written when it runs: a silently truncated stream, with no
 // diagnostic. D2's driver fills a buffer before the plan that plays it, never in the same plan as the resampler.
 //
