@@ -346,6 +346,26 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     refused for a link that never went quiet.
   - **A retained generation of a script pack, the 0.5 s state publish and the N8 firmware's SD path** are the
     allocations left on the block thread, as C1/C4 list them above; C5 added none.
+- **D1 built: the kit baseline and the DSP library**
+  ([modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md), six commits): the kit path's DSP is
+  `src/dsp/` as block-streaming kernels (`retroplug-dsp-kernels`, plus `retroplug-dsp-resample` for r8brain), and
+  `lsdj/Effects`, `KitUtil` and `RisaDmcCodec` run those kernels. The graph has them as `rp.dsp.gain`, `.biquad`,
+  `.dither` and `rp.dsp.resample` (`retroplug-dsp-nodes` / `retroplug-dsp-resample-nodes`, the resampler a package and
+  target of its own so a Pico build can leave it and r8brain out). TPDF dither is seeded from a hash of the sample it
+  sees, so a kit compiles to the same bytes, and `retroplug-audio-test`'s `[kit-baseline]` holds 31 compiled banks to
+  a golden. Strict parity held bit for bit at every commit, and the baseline did not move by a hash through the kernel
+  move. What it leaves:
+  - **D2**: audio buffers in and out of a document, a run-to-completion driver over `GraphHost`, normalise in a graph,
+    the two-rate kit chain, and kit compiles as graphs behind `compileKit` / `compileDmc`, byte-identical to the
+    baseline. D1's build fixes the seed rule (hash the whole pre-trim buffer and pass `rp::dsp::inputSeed` in the
+    node's `seed`), normalise (call `normalizedGain`, a reciprocal multiply), and the order (effects at the source
+    rate, resample, quantise, `frameAlign`, nibble pack).
+  - **D3**: the CLI `render` and the UI background renders on the offline driver, keeping their block-size sequence
+    and per-block side effects or re-scoping their byte-identity claim; D1 changed neither path.
+  - **Residuals.** The kit baseline is a 4-bit view and nearly blind to a one-ulp move in Sierra Lite or JJN (the
+    `[dsp]` cases carry that). `rp.dsp.resample` and a recorder on one buffer in one plan are unsupported, and a
+    mid-run rate change repeats up to one input chunk. Dither's per-channel state is about 5 KB. The plugin still
+    cannot compile a kit (the RPCs remain harness-only), which D2 owns.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

@@ -96,6 +96,13 @@ The rules below are the parts that don't fit those.
   A hidden bench times a script node per block, and the protocol nodes' plan, at 1, 64 and 512 frames
   (`build/bin/retroplug-engine-graph-test "[bench]"`), and a profile build adds eight `[profile]` cases
   (`tools/run-profile.sh unit`).
+  `retroplug-graph-test` holds the DSP library and its nodes: the kernels are chunk-exact and allocation-free in
+  `process` once warmed, the resampler from its first chunk, the padded Sierra Lite and JJN references included
+  (`[dsp]`); each `rp.dsp` node matches its kernel through a real plan, a block counted from the plan's first block
+  allocating nothing, a descriptor golden per type, and gain/biquad/dither all plan on the Pico (`[dsp-nodes]`);
+  and `rp.dsp.resample` plays a 22.05 kHz buffer into a 48 kHz plan and a 48 kHz one into the kit rate, at six splits,
+  takes a loop committed after its buffer ran out, carries on after a rate change and is refused on the Pico
+  (`[dsp-resample]`).
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive
   `PluginExporter::reinitParameters` over a toy plugin.
@@ -409,6 +416,14 @@ own change with a re-record, as the LSDj master-sync fix and the narrow-host NES
 `RETROPLUG_RESOURCES_DIR` pointed at the sibling resources tree, and CI runs only the 152 fixture-free cases
 (every LSDj case, its MIDI-out and link-cable ones among them, and every controller, risa and GBA case is
 fixture-only), so a Phase B step is accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.
+
+**The kit baseline** (`build/bin/retroplug-audio-test "[kit-baseline]"`, [spec/06-build-test.md](spec/06-build-test.md))
+holds the kit compilers' bytes: 31 synthesised cases through `KitCompiler` and the two codecs, each bank's FNV-1a-64,
+size and slot length against `packages/native/test/audio/golden/kit-baseline.json`. Exact bytes are compared only on
+`linux-x64-gnu13` (CI's linux-x64 job sets `RP_KIT_GOLDEN_REQUIRE_TARGET=1`), elsewhere a case must agree with itself,
+and a re-record (`RP_KIT_GOLDEN_UPDATE=1`) is refused off that host and for a case that disagrees with itself. Unlike
+parity it is a 4-bit view: a one-ulp change in a dither can leave all 31 hashes matching, which is what `[dsp]`'s
+16-bit references are for.
 
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
 `retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one

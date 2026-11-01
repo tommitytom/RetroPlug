@@ -1087,6 +1087,7 @@ its **runtime** classes:
 | [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; its node gives it its knobs through value-guarded setters (`setModel`, `setHighpass`, the display group, `setSerialOutCapture`); its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
 | [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap and build check name no console: it forward-declares `ChannelTap` and includes no core header, and with C5's cart node it has no console check at all |
 | the LSDj kit/sample pipeline (`KitCompiler` / `KitUtil` / `SampleCache` / `Effects`), `util/MinizZip`, `EmbeddedRoms` | backing kit patching, `zip`/`unzip`, and embedded-ROM resolution |
+| the DSP library (`src/dsp/`: gain and peak, the biquads, dither and quantise, the r8brain resampler) | the kit path's effect and resample arithmetic as block-streaming kernels, and the same kernels the `rp.dsp` nodes wrap |
 | `SpscRing` / `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the command/release rings and the snapshot registry are built on |
 
 The graph the engine runs on is not in `retroplug-core`: the executor, planner and
@@ -1098,6 +1099,33 @@ and the control surface's two) and the script host (`src/host/script/`) compile 
 
 ROM classification (the legacy build's C++ `RomSniffer`) and the LSDj sav codec are TS-owned - neither is in
 the C++ tree.
+
+### The DSP targets and the `rp.dsp` packages
+
+The kit path's DSP and the graph's DSP nodes are the same kernels, in `src/dsp/`, split across four targets:
+`retroplug-dsp-kernels` (gain and peak, the eight RBJ biquads, dither and quantise; the C++ standard library alone),
+`retroplug-dsp-resample` (the r8brain resampler, which brings the heap, pthreads and RTTI), and the two node packages
+`retroplug-dsp-nodes` (`rp.dsp.gain`, `.biquad`, `.dither`) and `retroplug-dsp-resample-nodes` (`rp.dsp.resample`), in
+[cmake/graph.cmake](../packages/native/cmake/graph.cmake). `retroplug-core` links both kernel libraries for
+`KitCompiler`, `KitUtil` and `RisaDmcCodec`; `retroplug-graph` links none of them; `retroplug-backend` links both
+packages and `Engine.cpp` registers them beside the other static packages. The split is load-bearing: `rp.dsp` never
+reaches r8brain, so a Pico build links `retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone, leaves
+`dspResamplePackage()` out of its registration, and has neither the resampler nor r8brain in its binary, where the
+planner's `heap` refusal is only the second line. `rp.dsp.resample` reads an `audio-buffer` resource named by its
+settings at that buffer's rate and outputs at the plan's; a recorder and a resampler on one buffer in one plan are
+unsupported (a plan orders a reader of a mutable resource only through a wire from its writer, and a settings ref has
+neither), so a driver fills a buffer before the plan that plays it.
+
+### Kit reproducibility
+
+A kit compiles to the same bytes every time. The two TPDF dither algorithms seed their `std::mt19937` from
+`rp::dsp::inputSeed` over the resampled, pre-trim sample the dither receives, salted with a per-algorithm constant, and
+the other three algorithms are deterministic already. `retroplug-audio-test`'s `[kit-baseline]` suite
+([KitBaseline.test.cpp](../packages/native/test/audio/KitBaseline.test.cpp)) compiles a fixed matrix of synthesised
+sources through `KitCompiler` and the two codecs and holds each bank's FNV-1a-64, size and slot length to
+[golden/kit-baseline.json](../packages/native/test/audio/golden/kit-baseline.json): exact bytes on `linux-x64-gnu13`,
+self-agreement and the layout facts elsewhere, with `RP_KIT_GOLDEN_REQUIRE_TARGET=1` on CI's linux-x64 job and
+`RP_KIT_GOLDEN_UPDATE=1` re-recording on that target only. [06-build-test.md](06-build-test.md) has the suite's rules.
 
 The txiki host `TjsHostRuntime` comes from
 [`deps/dpf.js`](../deps/dpf.js), not the shared core.
