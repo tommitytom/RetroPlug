@@ -455,7 +455,10 @@ takes: a request for a node of the last published plan, answered with an id or a
 core's immutable image, both at once, a write rides the command ring and completes once the block after its apply has
 published the region, and an emulated `sram.restore` is refused (a battery is a seed on a rebuild). A device node's
 job goes to its link, on the device's own thread: one at a time ("busy"), none while the device is not attached ("not
-connected"), progress reported per drain, and a node leaving the plan abandons the job it still runs. The engine keeps
+connected"), progress reported per drain, and a node leaving the plan abandons the job it still runs. The cart reads
+its FPGA config block at submission (on that thread, between MIDI chunks, as the expansion volume reaches it), so a
+transfer a running game will refuse is refused without pausing the stream and dropping the block's notes. The engine
+keeps
 at most `kMaxJobs` (64) outstanding, engine-wide back-pressure that leaves room for every completion, and a request
 names a capability from the one reserved id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`), so the
 engine asks a node only by an id it knows and never casts an answer.

@@ -520,20 +520,28 @@ TEST_CASE("a restore job writes the battery file, creating the folder, for the g
     CHECK(none.state.load() == Job::Queued);
 }
 
-TEST_CASE("battery jobs refuse a running game, and a dump finds no file a game never saved", "[n8][cart-jobs]") {
+TEST_CASE("battery jobs refuse a running game before the stream pauses, so the game keeps its notes, and a dump "
+          "finds no file a game never saved", "[n8][cart-jobs]") {
     Rig rig;
     rig.dev.menu = false;  // a game runs
     rig.dev.files[kGameBattery] = saveOf(512, 3);
     rig.connect();
+    // Refused at submission, from the config block read between chunks: the stream never pauses, so a note pushed
+    // afterwards reaches the cart instead of being dropped for a job that was going to refuse anyway.
     for (const char* op : {"dump", "restore"}) {
         auto r = battery(op);
         r.bytes = Bytes(16, 1);
         Job job;
-        REQUIRE(rig.submit(r, job));
-        REQUIRE(waitUntil([&] { return job.finished() && !rig.host.cartJobBusy(); }));
-        CHECK(job.state.load() == Job::Failed);
-        CHECK(job.error == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+        std::string why;
+        CHECK_FALSE(rig.submit(r, job, &why));
+        CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+        CHECK(job.state.load() == Job::Queued);  // the record is untouched
+        CHECK_FALSE(rig.host.cartJobBusy());
+        CHECK(rig.cart.connected());
+        rig.push({static_cast<std::uint8_t>(op[0] == 'd' ? 0x90 : 0x91), 0x3C, 0x7F});
     }
+    CHECK(rig.cart.dropped() == 0);
+    REQUIRE(waitUntil([&] { return rig.dev.count("fifo:90 3C 7F") == 1 && rig.dev.count("fifo:91 3C 7F") == 1; }));
     CHECK(rig.dev.count("file-") == 0);
     CHECK(rig.dev.count("srm-") == 0);
     {
@@ -629,18 +637,20 @@ TEST_CASE("a ROM upload boots through the menu, stops streaming and clears the e
     REQUIRE(rig.submit(header, kept));
     CHECK(kept.result == Bytes(rom.begin(), rom.begin() + 16));
 
-    // An upload with no menu to load it fails before a byte reaches the game's FIFO, and leaves the cart streaming.
+    // An upload with no menu to load it is refused before it pauses anything, so no byte (the menu's own commands
+    // included) reaches the game's FIFO, and the cart keeps streaming to it.
     const std::size_t menuCommands = rig.dev.count("fifo:2A");  // the first upload's *t, *n and *s
     Job again;
-    REQUIRE(rig.submit(r, again));
-    REQUIRE(waitUntil([&] { return again.finished(); }));
-    CHECK(again.state.load() == Job::Failed);
-    CHECK(again.error.rfind("the cart is running a game", 0) == 0);
+    std::string why;
+    CHECK_FALSE(rig.submit(r, again, &why));
+    CHECK(why ==
+          "the cart is running a game, which has no menu to load a ROM: power-cycle the console to its menu first");
+    CHECK(again.state.load() == Job::Queued);
     CHECK(rig.dev.count("fifo:2A") == menuCommands);
     CHECK(rig.cart.connected());
     CHECK(rig.host.getConfig().enabled);
+    CHECK_FALSE(rig.host.cartJobBusy());
 
-    std::string why;
     auto unnamed = r;
     unnamed.name = "../x.nes";
     CHECK_FALSE(rig.submit(unnamed, again, &why));
@@ -652,17 +662,22 @@ TEST_CASE("the reliable link keeps its sequence across a pause: no new sync, the
     Rig rig;
     rig.dev.menu = false;
     rig.dev.linkRom = true;  // BlipToaster, which answers the probe
+    rig.dev.files[kGameBattery] = saveOf(1024, 3);
+    // The fake answers the config block as the menu does while a game runs. That is the one combination which takes a
+    // job with the reliable link up (a real cart's link belongs to a game, and a running game is refused before the
+    // pause), and it is what this case pins: the pause keeps the sequence state.
+    rig.dev.cfg[0] = 0xFF;  // map_idx 255: the menu, which the job's own first step checks again
+    rig.dev.cfg[2] = 0;
     rig.connect();
     REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
 
     rig.push({0x90, 0x3C, 0x7F});
     REQUIRE(waitUntil([&] { return rig.dev.count("fifo:F4") + rig.dev.count("fifo:F5") >= 2; }));
-    // Every job pauses the stream before it looks at the cart: this one then finds a game running and fails, which
-    // is all the pause needs to have happened.
     Job job;
     REQUIRE(rig.submit(battery("dump"), job));
     REQUIRE(waitUntil([&] { return job.finished(); }));
-    REQUIRE(job.state.load() == Job::Failed);
+    REQUIRE(job.state.load() == Job::Done);
+    CHECK(job.result == saveOf(1024, 3));
     REQUIRE(rig.cart.connected());
     rig.push({0x80, 0x3C, 0x00});
     REQUIRE(waitUntil([&] {
@@ -811,6 +826,10 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
         Rig rig;
         rig.dev.menu = false;
         rig.dev.linkRom = true;
+        // The config block says the menu shows, so the job is taken and the pause's ack wait runs (see the sequence
+        // case for why that combination is the fake's, not a real cart's).
+        rig.dev.cfg[0] = 0xFF;
+        rig.dev.cfg[2] = 0;
         rig.connect();
         REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
         {
@@ -825,13 +844,15 @@ TEST_CASE("the pause waits a bounded time for acks a silent cart never sends, an
         REQUIRE(waitUntil([&] { return job.finished(); }));
         const auto took = ms(t0);
         CHECK(took >= 250);  // it waited for the ack...
-        CHECK(took < 2000);  // ...a bounded time, then ran the job (which found a game running)
-        CHECK(job.error == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+        CHECK(took < 2000);  // ...a bounded time, then ran the job (which found no battery file)
+        CHECK(job.error == "no battery file for game.nes (EDN8/gamedata/game.nes/bram.srm)");
     }
     SECTION("a disconnect inside the wait") {
         Rig rig;
         rig.dev.menu = false;
         rig.dev.linkRom = true;
+        rig.dev.cfg[0] = 0xFF;
+        rig.dev.cfg[2] = 0;
         rig.connect();
         REQUIRE(waitUntil([&] { return rig.host.link().reliable(); }));
         {

@@ -143,15 +143,17 @@ loading it at its next boot.
 
 **The job model**: the control thread submits a job (node id, capability, operation, arguments) through one engine RPC
 and gets a job id; completions drain from a queue TS polls. On an emulated core a read is served from the snapshot
-registry and completes at once, and a write goes through the command ring and completes at the next block boundary,
-as `readSram` / `writeRam` do today (those system-id RPCs stay as thin wrappers). On the N8 node a job runs on the
-link's worker thread: streaming pauses, `connected` reads false for the duration and pushes are dropped and counted,
-the transfer runs, streaming resumes, the completion is posted. One job at a time per device (a second is refused
-busy); a job while disconnected fails "not connected". A cart's `rom.header` and `rom.title` answer at once from the
-image and name this host last booted, with no transfer. A `rom.upload` is the one job that does not resume streaming:
-it writes the image, installs and boots it through the cart's menu, and closes the port, so the link reads disconnected
-and its result says streaming stopped. A node removed while its job runs abandons it at reclaim, and the device stops at
-its next safe point.
+registry and completes at once, and a write goes through the command ring and completes at the next block boundary, as
+`readSram` / `writeRam` do today (those system-id RPCs stay as thin wrappers). On the N8 node a submission first reads
+the cart's config block on the link's worker thread, between MIDI chunks, the expansion volume's path: the three
+transfers run at the menu only, so a job a running game will refuse (or a cart whose block does not answer) is refused
+there, and the stream never pauses for it. A job that is taken then runs on that thread: streaming pauses, `connected`
+reads false for the duration and pushes are dropped and counted, the transfer runs, streaming resumes, the completion
+is posted. One job at a time per device (a second is refused busy); a job while disconnected fails "not connected". A
+cart's `rom.header` and `rom.title` answer at once from the image and name this host last booted, with no transfer. A
+`rom.upload` is the one job that does not resume streaming: it writes the image, installs and boots it through the
+cart's menu, and closes the port, so the link reads disconnected and its result says streaming stopped. A node removed
+while its job runs abandons it at reclaim, and the device stops at its next safe point.
 
 **TS**: `backend.capability(nodeId, op, args)`, a promise over submit and poll, the same for emulated and real. The UI's
 cart menu (back up and restore the cart's SRAM, load a ROM to the cart) moves onto it, and the `__rp_n8LoadRom` /
@@ -383,6 +385,11 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
 - **A package's version never gates** (stage 6). `rp.n8` keeps `1.0.0` after losing `rp.n8.cart-mirror`, and
   `rp.host.io` keeps `1.0.0` after losing two node types: the planner refuses a removed type as `unknown-type` at any
   version.
+- **A job that will be refused must not pause the stream** (sections 4 and 6). The three transfers run at the menu only,
+  so for a running game every pause was spent delivering the drain, waiting out the ack bound and then refusing, while
+  the block's note-ons during it were dropped (note-offs are owed and re-sent, note-ons are not). The config block read
+  needs no pause at all, and reading it at submission is what makes the refusal free; the volume's own config writes
+  already ran there, between chunks.
 - **The hardware smoke, on the real NES and N8 Pro.** A pause over a playing ROM kept the reliable link continuous
   (resends 0, outstanding 0, no re-sync) and the note before and after it sounded (A4 at 440.30 Hz, E5 at 657.66 Hz,
   silent after the note-off); a battery dump, restore and dump round-tripped byte for byte through the card's file; a

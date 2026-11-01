@@ -302,7 +302,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The CLI's n8 tools keep their own raw serial path**, the battery dump among them: it is the one cart-memory
     read left, and the capabilities deliberately offer no peek, poke, sniffer or FIFO reads.
   - **A cart job pauses streaming**: pushes during it are dropped and counted, the node re-sends the note-offs it
-    lost, and a `rom.upload` leaves streaming stopped until the host reconnects.
+    lost, and a `rom.upload` leaves streaming stopped until the host reconnects. A job that a running game will refuse
+    never pauses: its submission reads the cart's config block first, so a game's notes keep flowing.
   - **A retained generation of a script pack, the 0.5 s state publish and the N8 firmware's SD path** are the
     allocations left on the block thread, as C1/C4 list them above; C5 added none.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):

@@ -88,8 +88,9 @@ public:
     // through its cart link (N8CartLink). The transfers run on the link's serial thread with streaming PAUSED rather
     // than disconnected (N8Link::PausedJob): the port, the reliable link's sequence state and the expansion volume are
     // kept, what was pushed before the pause is delivered first, and the job completes once streaming has resumed.
-    // Each first reads the cart's FPGA config block (a system-region read, off the cart's bus): map_idx 255 is the
-    // menu.
+    // A submission first reads the cart's FPGA config block (a system-region read, off the cart's bus; map_idx 255 is
+    // the menu) on the serial thread between MIDI chunks, so a job a running game will not have is refused before the
+    // pause; the job reads the block again at its first step.
     //
     //   The battery jobs go through the SD card's save file, EDN8/gamedata/<rom>/bram.srm, which the N8 OS writes
     //   back from the cart's SRAM when the console returns to the menu and loads into it when the game next boots. The
@@ -131,7 +132,12 @@ public:
     //                              this host booted is running" then; another game of the same mapper is what it
     //                              cannot tell.
     //
-    // One job at a time ("busy: ..."), and none while the link is down ("not connected").
+    // One job at a time ("busy: ..."), and none while the link is down ("not connected"). Every transfer first reads
+    // the cart's FPGA config block - the map_idx that tells the menu (255) from a running game - on the serial thread
+    // between MIDI chunks, the expansion volume's path, and refuses there: a job a running game will not have pauses
+    // nothing, so the notes the block pushes meanwhile reach the cart. A probe that will not answer is refused the same
+    // way ("the cart's config block did not answer"); the job checks again at its first step, for a cart that changed
+    // in between.
     // [control], like abandonCartJobs: the node submitting is the job's owner, and a node leaving the plan abandons its
     // job, which fails at once (Removed) and stops at its next safe point.
     bool submitCartJob(const rp::host::JobRequest& request, rp::host::Job& job, const void* owner, std::string* error);
@@ -142,6 +148,11 @@ public:
 
 private:
     void save();
+
+    // The cart's running map_idx, read on the serial thread that owns the port (a config-block read, between two MIDI
+    // chunks) and answered here: the map_idx, or -1 when the block did not answer, or -2 when the link went down while
+    // the probe was asked. Each call asks afresh, since a game can boot between two jobs.
+    int probeMenu();
 
     // Write the configured expansion-audio master volume through `edio` (see EXP_VOL_AUTO). `mapperHint` is
     // the iNES mapper when the caller knows it (a ROM we just uploaded), or -1 to ask the running cart.
@@ -161,6 +172,12 @@ private:
     // re-arm.
     std::atomic<unsigned> expVolGeneration_{0};
     std::atomic<unsigned> expVolApplied_{0};  // serial thread writes, after a successful write
+    // The menu probe (probeMenu): a submission asks the serial thread for the cart's config block, and the answer lands
+    // here with the generation it answered. The serial thread stores the index, then the generation, so a reader that
+    // sees the generation sees the value.
+    std::atomic<unsigned> menuProbeGeneration_{0};
+    std::atomic<unsigned> menuProbeApplied_{0};
+    std::atomic<int>      menuProbeIndex_{-1};
     // The one capability job running on the cart, and what this host last booted there (rom.header / rom.title), which
     // an upload writes on the serial thread and those read on the control thread.
     rp::host::DeviceJobSlot   cartJob_;

@@ -1,12 +1,14 @@
 #include "host/n8/N8Host.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "host/n8/N8Menu.hpp"
@@ -59,11 +61,24 @@ int runningMapper(Edio& edio) {
 // way touches neither the cart's bus nor a running game's FIFO.
 constexpr int kMenuMapper = 255;
 
+// What N8Host::probeMenu answers when the link went down while the probe was on its way to the serial thread.
+constexpr int kProbeLinkDown = -2;
+
+// How long a submission waits for the serial thread's answer to its menu probe: a config-block read is one USB round
+// trip, taken between two MIDI chunks. A cart that has stopped answering gets its refusal either way, and this keeps
+// a control thread (the DAW's) from waiting out the read's own 2 s timeout to learn it.
+constexpr int kMenuProbeMs = 1000;
+
 // Why a battery job refuses a running game: the battery file lives on the SD card, which only the menu's file API
 // reaches (a running game has no menu), and the cart's own battery is never touched over USB (on the real cart one
 // read of it wedged a running BlipToaster, and one at the menu left the menu deaf to its commands).
 constexpr const char* kBatteryAtGame =
     "the battery file can only be reached at the N8 menu: power-cycle to the menu first";
+
+// Why an upload refuses one: the menu's own commands would go into a running game's MIDI stream, and it has no menu to
+// install into.
+constexpr const char* kUploadAtGame =
+    "the cart is running a game, which has no menu to load a ROM: power-cycle the console to its menu first";
 
 // The largest battery file a restore takes: far past any the N8 writes (a 64 KB battery is a 66,560-byte file), so
 // only a mistake is refused.
@@ -137,6 +152,14 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
     // on its own turn, between MIDI chunks, and marks the generation it wrote. A throw leaves the generation behind,
     // so the next turn tries again (N8Link catches it: a config write must not take the MIDI link down).
     link_.setOnControl([this](Edio& edio) {
+        // The config block a submission's refusal reads (probeMenu). Taken here, between chunks, for the reason the
+        // volume is: a system-region read on the thread that owns the port, putting no byte in a running game's FIFO.
+        // Ahead of the volume, so a config write that keeps failing cannot starve it.
+        const unsigned probe = menuProbeGeneration_.load(std::memory_order_acquire);
+        if (probe != menuProbeApplied_.load(std::memory_order_relaxed)) {
+            menuProbeIndex_.store(runningMapper(edio), std::memory_order_relaxed);
+            menuProbeApplied_.store(probe, std::memory_order_release);
+        }
         const unsigned generation = expVolGeneration_.load(std::memory_order_acquire);
         if (generation == expVolApplied_.load(std::memory_order_relaxed)) return;
         applyExpVol(edio, -1);
@@ -204,6 +227,17 @@ void N8Host::setExpVol(int v) {
     // the console straight away without interrupting the MIDI stream. A no-op while disconnected (and while a job
     // holds the link paused): the next connect applies the new value.
     expVolGeneration_.fetch_add(1, std::memory_order_release);
+}
+
+int N8Host::probeMenu() {
+    const unsigned generation = menuProbeGeneration_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    const auto     deadline   = std::chrono::steady_clock::now() + std::chrono::milliseconds(kMenuProbeMs);
+    while (menuProbeApplied_.load(std::memory_order_acquire) < generation) {
+        if (!link_.isConnected()) return kProbeLinkDown;
+        if (std::chrono::steady_clock::now() >= deadline) return -1;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return menuProbeIndex_.load(std::memory_order_relaxed);
 }
 
 void N8Host::applyExpVol(Edio& edio, int mapperHint) {
@@ -299,6 +333,13 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
     }
     if (cartJobBusy()) return refuse("busy: the cart is running another job");
     if (!link_.isConnected()) return refuse("not connected");
+    // Where the cart is, before any pause: the transfers run at the menu only, so one a running game will refuse is
+    // refused here, and the stream never pauses for it (every note-on pushed during such a pause was lost; note-offs
+    // are owed, note-ons are not). The job checks again at its first step, for a cart that changed in between.
+    const int mapper = probeMenu();
+    if (mapper == kProbeLinkDown) return refuse("not connected");
+    if (mapper < 0) return refuse("the cart's config block did not answer");
+    if (mapper != kMenuMapper) return refuse(dump || restore ? kBatteryAtGame : kUploadAtGame);
     if (!cartJob_.claim(job, owner)) return refuse("busy: the cart is running another job");
 
     // The job's outcome, which `run` fills and `done` posts once streaming is back: both on the serial thread, one
@@ -432,10 +473,9 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
             int  mapIndex = -1;
             bool created = false, opened = false;
             try {
+                checkStop();
                 // A running game has no menu, and the menu's own probe would put '*t' into its MIDI stream.
-                if (!atMenu(*edio))
-                    throw std::runtime_error("the cart is running a game, which has no menu to load a ROM: power-cycle "
-                                             "the console to its menu first");
+                if (!atMenu(*edio)) throw std::runtime_error(kUploadAtGame);
                 N8Menu menu(*edio);
                 menu.test();  // clear error if the menu does not answer
                 edio->fileOpen(bootPath, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH);
