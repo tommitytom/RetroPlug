@@ -109,6 +109,31 @@ test("a job that fails rejects with its error, and a long job's progress reaches
   await rejectsWith(jobs.run("sys-1", "video.frame" as never), "unknown capability operation video.frame");
 });
 
+test("a device job's name travels in the request, and its JSON result decodes as UTF-8", async () => {
+  // A scripted port over a cart node: the name a battery or upload job is given (the ROM's file on the card) must reach
+  // native, and the path native answers with is UTF-8 - the card's own encoding - not one byte a character.
+  const queue: JobCompletion[] = [];
+  const requests: JobRequest[] = [];
+  const jobs = new CapabilityJobs({
+    submitJob: (r: JobRequest): JobSubmitResult => {
+      requests.push(r);
+      return { id: requests.length };
+    },
+    drainJobs: () => queue.splice(0),
+  });
+  const upload = jobs.run("cart-1", "rom.upload", { bytes: new Uint8Array([0x4e, 0x45, 0x53]), name: "café.nes" });
+  const restore = jobs.run("cart-1", "sram.restore", { bytes: new Uint8Array([1]), name: "café.nes" });
+  expect(requests.map((r) => r.name)).toEqual(["café.nes", "café.nes"]);
+  const uploadResult = { path: "usb-games/café.nes", mapIndex: 69, streaming: "stopped" as const };
+  const restoreResult = { path: "EDN8/gamedata/café.nes/bram.srm", created: true };
+  const encoded = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
+  queue.push({ id: 1, done: true, ok: true, error: "", bytes: encoded(uploadResult), progress: 3, total: 3 });
+  queue.push({ id: 2, done: true, ok: true, error: "", bytes: encoded(restoreResult), progress: 1, total: 1 });
+  expect(jobs.pump()).toBe(0);
+  expect(await upload).toEqual(uploadResult);
+  expect(await restore).toEqual(restoreResult);
+});
+
 test("a close that leaves native's bound full of owed completions does not wedge the next capability()", async () => {
   const { be, project, node } = cart();
   be.audioRunning = true;

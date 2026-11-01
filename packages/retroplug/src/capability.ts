@@ -114,12 +114,17 @@ const INTERFACES: Record<string, string> = {
 };
 
 function decode<O extends CapabilityOp>(op: O, bytes: Uint8Array): CapabilityResults[O] {
-  if (op === "memory.regions" || op === "rom.upload") return JSON.parse(ascii(bytes)) as CapabilityResults[O];
+  // A JSON result carries the file names a device answered with, which are UTF-8 (the card's own encoding), while a
+  // title is a raw byte field of the image, so one byte is one character there.
+  if (op === "memory.regions" || op === "rom.upload") return JSON.parse(utf8(bytes)) as CapabilityResults[O];
   if (op === "rom.title") return ascii(bytes) as CapabilityResults[O];
-  if (op === "sram.restore")
-    return (bytes.length ? JSON.parse(ascii(bytes)) : undefined) as CapabilityResults[O];
+  if (op === "sram.restore") return (bytes.length ? JSON.parse(utf8(bytes)) : undefined) as CapabilityResults[O];
   if (op === "memory.write") return undefined as CapabilityResults[O];
   return bytes as CapabilityResults[O];
+}
+
+function utf8(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes);
 }
 
 function ascii(bytes: Uint8Array): string {
