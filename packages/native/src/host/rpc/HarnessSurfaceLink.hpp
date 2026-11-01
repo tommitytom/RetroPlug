@@ -14,6 +14,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 
 #include "transport/SpscRing.hpp"
@@ -36,7 +37,7 @@ public:
         DeviceMessage m;
         m.size = static_cast<std::uint16_t>(bytes.size());
         for (std::size_t i = 0; i < bytes.size(); ++i) m.data[i] = bytes[i];
-        if (staged_.tryPush(m)) return true;
+        if (staged_->tryPush(m)) return true;
         dropped_.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
@@ -44,7 +45,7 @@ public:
     // ---- SurfaceLink ----
     std::size_t drainInput(DeviceMessage* out, std::size_t capacity) override {
         std::size_t n = 0;
-        while (n < capacity && staged_.tryPop(out[n])) ++n;
+        while (n < capacity && staged_->tryPop(out[n])) ++n;
         return n;
     }
     void pushOutput(const std::uint8_t* /*data*/, std::size_t /*size*/) override {
@@ -59,7 +60,12 @@ public:
     std::uint64_t pushed() const { return pushed_.load(std::memory_order_relaxed); }
 
 private:
-    SpscRing<DeviceMessage, kStagedMessages> staged_;
+    // 256 slots of one 562-byte message is about 140 KiB, and the test host's link is a local of main (a thread
+    // Windows gives 1 MiB of stack, where every suite here has 8), so the ring is one allocation made when the link is
+    // built, as LaunchpadLink's receive ring is, and never rides a stack. Staging and draining copy in and out of its
+    // fixed slots.
+    std::unique_ptr<SpscRing<DeviceMessage, kStagedMessages>> staged_ =
+        std::make_unique<SpscRing<DeviceMessage, kStagedMessages>>();
     std::atomic<std::uint64_t>                          pushed_{0};
     std::atomic<std::uint64_t>                          dropped_{0};
 };
