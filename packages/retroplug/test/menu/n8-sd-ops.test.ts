@@ -147,7 +147,61 @@ test("N8 Pro (instance menu) shows the card rows when connected, and each browse
       cart.nodeId, "rp.system.sram/1", "restore", "game.nes",
     ]);
     expect(be.cartBattery).toEqual(be.readFile("/saves/in.srm"));
-    expect(getN8CartJob().result.includes("next boot")).toBe(true);
+    // The row says which file it wrote: the card's own path for that ROM, and that no folder had to be made for it.
+    expect(getN8CartJob().result).toBe(
+      "Restored the battery to EDN8/gamedata/game.nes/bram.srm (it loads at the next boot)",
+    );
+  } finally {
+    env.restore();
+  }
+});
+
+test("a restore into a folder the card had to make warns (the ROM's file name on the card may be wrong)", async () => {
+  const env = installN8();
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    n8Submenu(stores, be); // a NES at /roms/a.nes that this session booted nothing on the card for
+    be.seed("/saves/in.srm", new Uint8Array([1, 2, 3]));
+    be.queueBrowse("/saves/in.srm");
+    findItem(n8Submenu(stores, be), "n8-restore-sram")!.onSelect!();
+    await flush();
+    const job = getN8CartJob();
+    expect(job.error).toBe("");
+    expect(job.result.startsWith("Warning:")).toBe(true);
+    expect(job.result.includes("EDN8/gamedata/a.nes/bram.srm")).toBe(true);
+    // The bytes still landed: it is where they landed that the row is warning about.
+    expect(be.cartBattery).toEqual(be.readFile("/saves/in.srm"));
+  } finally {
+    env.restore();
+  }
+});
+
+test("a handover to another NES keeps the ROM this process booted on the card", async () => {
+  const env = installN8();
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    be.seed("/roms/a.nes", nesRom());
+    be.seed("/roms/b.nes", nesRom());
+    const a = stores.project.systems.addSystem("/roms/a.nes")!;
+    const b = stores.project.systems.addSystem("/roms/b.nes")!;
+    // Boot a ROM through the menu: its name is what a later battery job reaches, on the cart, not on a node.
+    be.seed("/roms/game.nes", nesRom());
+    be.queueBrowse("/roms/game.nes");
+    findItem(n8Submenu(stores, be), "n8-load-rom")!.onSelect!();
+    await flush();
+    expect(be.cartRom?.name).toBe("game.nes");
+    // The first NES stops driving: the second drives the cart now, so the document places cart-<b> and cart-<a> is gone.
+    // The ROM booted on the card is still game.nes - the physical cart's state, not the old node's - so a dump after the
+    // handover names it, not the new system's own ROM file.
+    stores.project.systems.setRoleConfig(a, "mesen", { driveRealCart: false });
+    expect(projectCart(stores.project.systems.view())!.nodeId).toBe(`cart-${b}`);
+    be.queueBrowse("/saves/out.srm");
+    findItem(n8Submenu(stores, be), "n8-dump-sram")!.onSelect!();
+    await flush();
+    expect(be.jobRequests[be.jobRequests.length - 1].name).toBe("game.nes");
+    expect(be.readFile("/saves/out.srm")).toEqual(be.cartBattery);
   } finally {
     env.restore();
   }

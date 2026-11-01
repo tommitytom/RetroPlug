@@ -335,10 +335,14 @@ in place there), and the findings worth naming; each stage's own report is the f
   surface nodes and the harness link. So yes: every caller is covered, and the system-addressed RPC could go.
 - **What does the UI's cart menu need from the capability API, and does the ROM load's lifecycle survive as a job?**
   Progress (`onProgress`), a busy state (every row disabled while a job runs, Connect included), the refusal reason
-  verbatim in the row, and the result's own account of what happened: a restore reports the file and whether it created
-  the folder, an upload reports the card path, the mapper index and "streaming: stopped", with `enabled` cleared. Both
-  battery jobs run only at the N8 menu, and a running game refuses them; a restore goes before the `rom.upload` that
-  boots the game, whose rows say the game picks the battery file up at its next boot.
+  verbatim in the row, and the result's own account of what happened: a restore reports the file it wrote and, when the
+  ROM's folder had to be made for it, says so as a warning (a mistyped name is as likely as a game that never saved, so
+  the row does not claim the bytes landed where the game reads), an upload reports the card path, the mapper index and
+  "streaming: stopped", with `enabled` cleared. A battery job names the ROM this process booted on the cart, else the
+  driven system's ROM file: the booted ROM is the physical cart's state, not the node's, so it survives the drive
+  moving to another NES and a UI realm reload. Both battery jobs run only at the N8 menu, and a running game refuses
+  them; a restore goes before the `rom.upload` that boots the game, whose rows say the game picks the battery file up
+  at its next boot.
 - **Does the session's message digest stay identical through the surface, block for block?** Yes, with the two nodes;
   the one-node version was refused as a cycle, and its only way through (a feedback wire) delivered the LEDs a block
   late. Through `surface-in` / `surface-out` the session reads the same input queues, and its per-block LED stream and

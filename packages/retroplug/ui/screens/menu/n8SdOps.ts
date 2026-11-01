@@ -7,8 +7,8 @@
 // then load).
 //
 // Available in BOTH the SDL standalone and the DAW plugin, wherever the project drives a cart (a NES whose "drive the
-// real cart" setting is on places the node); with no such system, or no cart attached, the node's job is refused and the
-// reason shows in the row.
+// real cart" setting is on places the node); with no such system there is no node to address, so the card rows are
+// absent, and with no cart attached the node's job is refused and the reason shows in the row.
 
 import type { ControlPlaneBackend } from "../../../src/backend";
 import type { SystemView } from "../../../src/systemsStore";
@@ -30,9 +30,10 @@ export interface N8CartJob {
 // The snapshot the menu row renders and useN8SdWatch polls: it is replaced, never mutated, and its version moves on
 // every change, so the poll re-renders exactly when something it shows did.
 let job: N8CartJob = { busy: false, op: "", bytesDone: 0, bytesTotal: 0, error: "", result: "", version: 0 };
-// The node whose ROM this session booted through `load`, and the file name it is stored under on the card: the name a
-// dump or a restore after it reaches that ROM's battery file by, without asking.
-let booted: { nodeId: string; name: string } | null = null;
+// The file name of the ROM this process booted on the cart through `load`, and the name a dump or a restore after it
+// reaches that ROM's battery file by without asking. The cart's state, not a node's: the ROM booted on the card outlives
+// the drive moving to another NES and a UI realm reload, so one name serves whichever node is the cart's now.
+let bootedName: string | null = null;
 
 /** The live snapshot, read fresh each poll (the menu and useN8SdWatch). */
 export function getN8CartJob(): N8CartJob {
@@ -51,20 +52,24 @@ export function projectCart(systems: readonly SystemView[]): { system: SystemVie
   return system ? { system, nodeId: cartNodeId(system.id) } : null;
 }
 
-/** The ROM name a card job reaches the cart's files by: the file this session booted on that node, else the driven
+/** The ROM name a card job reaches the cart's files by: the ROM this process booted on the cart, else the driven
  *  system's own ROM file (the card's folder for a game is named after it). Empty when neither is known, which leaves the
  *  choice to the host: it resolves the ROM it last booted, or refuses the job. */
-function romNameFor(cart: { system: SystemView; nodeId: string }): string {
-  return (booted?.nodeId === cart.nodeId ? booted.name : "") || basename(cart.system.romPath);
+function romNameFor(cart: { system: SystemView }): string {
+  return bootedName || basename(cart.system.romPath);
 }
 
 /** Start one job for the menu: no second job at a time, and every way it can end (refused, failed, done) leaves a
- *  snapshot the row can show. */
-function run(op: N8CartJob["op"], start: (onProgress: (done: number, total: number) => void) => Promise<void>): void {
+ *  snapshot the row can show. `start` answers the row's summary where the job's own result is worth showing (a restore
+ *  says where it wrote), and nothing for the operation's plain one. */
+function run(
+  op: N8CartJob["op"],
+  start: (onProgress: (done: number, total: number) => void) => Promise<string | void>,
+): void {
   if (job.busy) return;
   update({ busy: true, op, bytesDone: 0, bytesTotal: 0, error: "", result: "" });
   start((done, total) => update({ bytesDone: done, bytesTotal: total }))
-    .then(() => update({ busy: false, op: "", result: doneLabel(op) }))
+    .then((summary) => update({ busy: false, op: "", result: typeof summary === "string" ? summary : doneLabel(op) }))
     .catch((e: unknown) => update({ busy: false, op: "", error: e instanceof Error ? e.message : String(e) }));
 }
 
@@ -86,7 +91,7 @@ export function n8LoadRom(backend: ControlPlaneBackend, cart: { nodeId: string }
   const name = basename(path);
   run("load", async (onProgress) => {
     await backend.capability(cart.nodeId, "rom.upload", { bytes, name }, (p) => onProgress(p.progress, p.total));
-    booted = { nodeId: cart.nodeId, name };
+    bootedName = name;
   });
 }
 
@@ -115,16 +120,23 @@ export function n8RestoreSram(backend: ControlPlaneBackend, cart: { system: Syst
   }
   const name = romNameFor(cart);
   run("restore", async (onProgress) => {
-    await backend.capability(cart.nodeId, "sram.restore", { bytes, ...(name ? { name } : {}) }, (p) =>
+    const wrote = await backend.capability(cart.nodeId, "sram.restore", { bytes, ...(name ? { name } : {}) }, (p) =>
       onProgress(p.progress, p.total),
     );
+    // The result names the file the cart wrote and whether the ROM's folder had to be made for it, which is how a name
+    // the card has no folder for shows: a mistyped one as often as a game that never saved, and either way the bytes may
+    // land in a folder the game never reads. So the row says where they went instead of that the restore worked.
+    if (!wrote) return;
+    return wrote.created
+      ? `Warning: restored the battery to ${wrote.path}, and made that folder: is that the ROM's file name on the card?`
+      : `Restored the battery to ${wrote.path} (it loads at the next boot)`;
   });
 }
 
-/** Forget the last job's snapshot and the ROM this session booted: a test seam, so one case's job does not colour the
- *  next one's rows. A project close does not need it (a rejected promise clears `busy`, and a booted ROM is remembered
- *  for its own node only). */
+/** Forget the last job's snapshot and the ROM this process booted on the cart: a test seam, so one case's job does not
+ *  colour the next one's rows. A project close does not need it (a rejected promise clears `busy`, and the booted ROM is
+ *  read only as a name a dump or restore reaches by, so keeping it across projects is harmless). */
 export function resetN8CartJob(): void {
-  booted = null;
+  bootedName = null;
   update({ busy: false, op: "", bytesDone: 0, bytesTotal: 0, error: "", result: "" });
 }

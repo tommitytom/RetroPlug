@@ -698,21 +698,32 @@ export class MockBackend implements Backend {
 
   /** A card job on the cart node `request.nodeId`: the battery file's bytes, the ROM upload, the booted ROM's header
    *  and title. `name` names the ROM whose battery file the job reaches; without one the last boot counts, as
-   *  natively. */
+   *  natively. A restore answers native's JSON result, `{"path", "created"}`, so the caller can say where the bytes
+   *  went and whether the ROM's folder had to be made for them. */
   private submitCartJob(request: JobRequest): JobSubmitResult {
     const refuse = (error: string): JobSubmitResult => ({ error });
     if (!this.cartConnected) return refuse("not connected");
     if (this.heldCartJob) return refuse("busy: the cart is running another job");
     const key = `${request.capability} ${request.op}`;
-    const name = request.name ?? this.cartRom?.name ?? "";
+    const name = request.name || this.cartRom?.name || "";
+    const battery = key === "rp.system.sram/1 dump" || key === "rp.system.sram/1 restore";
+    // As native: a battery job reaches the ROM whose file it names, else the one this host last booted through an
+    // upload, and with neither there is no file to reach.
+    if (battery && !name)
+      return refuse("a battery job needs the ROM's file name: name it, or boot the ROM through rom.upload first");
     if (key === "rp.system.sram/1 dump") {
-      if (!this.cartBattery) return refuse(`no battery file for ${name || "the running ROM"}`);
+      if (!this.cartBattery) return refuse(`no battery file for ${name}`);
       return this.cartJob(new Uint8Array(this.cartBattery), () => {});
     }
     if (key === "rp.system.sram/1 restore") {
       const bytes = request.bytes ?? new Uint8Array(0);
       if (!bytes.length) return refuse("a battery restore takes at least one byte");
-      return this.cartJob(new Uint8Array(0), () => {
+      // The card's file for that name, and whether its folder had to be made: one exists for a ROM this host booted on
+      // the card (a game that has run there makes it at its first write-back), and a restore makes one for any other
+      // name, which its result says as native's does.
+      const created = name !== this.cartRom?.name;
+      const result = enc.encode(JSON.stringify({ path: `EDN8/gamedata/${name}/bram.srm`, created }));
+      return this.cartJob(result, () => {
         this.cartBattery = new Uint8Array(bytes);
       });
     }
