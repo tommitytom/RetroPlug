@@ -553,6 +553,8 @@ TEST_CASE("rp.dsp.dither restarts a channel whose input is not finite", "[dsp-no
          rp::dsp::DitherAlgorithm::ShapedTPDF},
         {std::numeric_limits<float>::quiet_NaN(), R"({"channels":1,"algorithm":"error-diffusion","bits":4,"seed":8})",
          rp::dsp::DitherAlgorithm::ErrorDiffusion},
+        {std::numeric_limits<float>::quiet_NaN(), R"({"channels":1,"algorithm":"sierra-lite","bits":4,"seed":8})",
+         rp::dsp::DitherAlgorithm::SierraLite},
         {std::numeric_limits<float>::infinity(), R"({"channels":1,"algorithm":"jjn","bits":4,"seed":8})",
          rp::dsp::DitherAlgorithm::JJN},
         {std::numeric_limits<float>::infinity(), R"({"channels":1,"algorithm":"sierra-lite","bits":4,"seed":8})",
