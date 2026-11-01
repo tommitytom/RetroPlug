@@ -750,8 +750,8 @@ TEST_CASE("the dithers without a padded reference give the old whole-buffer loop
     // (in + 1) * halfScale and in * halfScale + halfScale are both exactly 7.5. The references below are the legacy
     // loops verbatim, seeded from the word the kernel salts, over the padded pair's inputs and splits at three depths:
     // the kit's 4 bits, 8, and 16, where a rounding of `value` one ulp apart reaches a code's boundary often enough to
-    // show (at 4 bits a one-ulp change flips a code about once in ten million samples, which is why the kit baseline
-    // cannot see it).
+    // show. At 4 bits the gap is wide: one ulp of a value near 8 is about a millionth of a code, so a flip is roughly a
+    // one-in-a-million sample (an estimate, not a measurement), which is why the kit baseline cannot see it.
     std::vector<std::vector<float>> inputs;
     for (std::size_t n = 0; n <= 5; ++n) inputs.push_back(noise(n, 1.3f, 0x51e77b00u + static_cast<std::uint32_t>(n)));
     inputs.push_back(noise(kFrames, 1.3f, 0x51e77b10u));

@@ -1,7 +1,7 @@
 // The kit compiler's two TPDF dithers are seeded from the samples they quantise, so two compiles of one sample give
 // one bank. The callers that compile a kit from scratch are the CLI sessions (`cli/sessions/lsdj-rom.ts`), and today
 // that is the only path that reaches the LSDj `compileKit` RPC. (`compileDmc` shares the `KitCompiler` instance, but
-// risa's DMC encode skips the dither, so it is the only path that reaches a dither.)
+// risa's DMC encode skips the dither, so `compileKit` is the only path that reaches a dither.)
 //
 // Everything here goes through the path a session uses (audioDriver.compileKit -> the harness RPC -> KitCompiler ->
 // LsdjKitCodec), not the codec directly, so the case covers the effect descriptor decoding and the slot queue as well.
