@@ -86,9 +86,10 @@ class PluginDSP : public Plugin {
     // The three facets below are ALL this channel mounts — no debug, no audio-driver. See host/
     // HostServices.hpp for why those two are not members here rather than merely unmounted.
     HostServices     svc_;
-    // Physical Everdrive N8 Pro streaming (Settings > N8) - the SAME N8Host the SDL standalone uses. The
-    // core-byte sink (risa host sync) + the run() MIDI tap push to n8Host_.link() on the audio thread; the
-    // config UI drives connect/setPort through bindN8Hooks. svc_.host (above) provides the n8.cfg dir.
+    // Physical Everdrive N8 Pro streaming (Settings > N8) - the SAME N8Host the SDL standalone uses. Nothing in
+    // run() pushes at it: the graph's rp.n8.nes node does, on the audio thread, through n8CartLink_ (below), which
+    // the engine hands the node by name; the config UI drives connect/setPort through bindN8Hooks. svc_.host
+    // (above) provides the n8.cfg dir.
     retroplug::N8Host n8Host_{
         [](const std::string& p) -> std::unique_ptr<retroplug::ISerialPort> {
             return std::make_unique<retroplug::WjwwoodSerialPort>(p);

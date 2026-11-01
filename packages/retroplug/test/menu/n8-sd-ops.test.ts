@@ -234,7 +234,7 @@ test("a picked file that cannot be read shows its error when no job holds the ro
   }
 });
 
-test("a handover to another NES keeps the ROM this process booted on the card", async () => {
+test("a handover to another NES keeps the ROM this runtime booted on the card", async () => {
   const env = installN8();
   try {
     const be = new MockBackend("/cfg");

@@ -38,10 +38,13 @@ let job: N8CartJob = {
   result: "",
   version: 0,
 };
-// The file name of the ROM this process booted on the cart through `load`, and the name a dump or a restore after it
+// The file name of the ROM this runtime booted on the cart through `load`, and the name a dump or a restore after it
 // reaches that ROM's battery file by without asking. The cart's state, not a node's: the ROM booted on the card
 // outlives the drive moving to another NES, an editor close and reopen, and a project load (a fresh UI realm starts
-// with none and falls back to the driven system's ROM file), so one name serves whichever node is the cart's now.
+// with none and falls back to the driven system's ROM file), so one name serves whichever node is the cart's now. One
+// per runtime, not per process: each plugin instance has a runtime and module registry of its own (and an N8Host,
+// whose lastBootedName_ is the native twin), so two instances keep two, which is harmless, since only the instance
+// holding the port can run a job.
 let bootedName: string | null = null;
 
 /** The live snapshot, read fresh each poll (the menu and useN8SdWatch). */
@@ -63,7 +66,7 @@ export function projectCart(systems: readonly SystemView[]): { system: SystemVie
   return cart ? { system: cart.system, nodeId: cartNodeId(cart.system.id) } : null;
 }
 
-/** The ROM name a card job reaches the cart's files by: the ROM this process booted on the cart, else the driven
+/** The ROM name a card job reaches the cart's files by: the ROM this runtime booted on the cart, else the driven
  *  system's own ROM file (the card's folder for a game is named after it). Empty when neither is known, which leaves
  *  the choice to the host: it resolves the ROM it last booted, or refuses the job. */
 function romNameFor(cart: { system: SystemView }): string {
@@ -159,7 +162,7 @@ export function n8RestoreSram(
   });
 }
 
-/** Forget the last job's snapshot and the ROM this process booted on the cart: a test seam, so one case's job does
+/** Forget the last job's snapshot and the ROM this runtime booted on the cart: a test seam, so one case's job does
  *  not colour the next one's rows. A project close does not need it (a rejected promise clears `busy`, and the booted
  *  ROM is read only as a name a dump or restore reaches by, so keeping it across projects is harmless). */
 export function resetN8CartJob(): void {

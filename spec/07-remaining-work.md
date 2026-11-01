@@ -303,7 +303,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     read left, and the capabilities deliberately offer no peek, poke, sniffer or FIFO reads.
   - **A cart job pauses streaming**: pushes during it are dropped and counted, the node re-sends the note-offs it
     lost, and a `rom.upload` leaves streaming stopped until the host reconnects. A job that a running game will refuse
-    never pauses: its submission reads the cart's config block first, so a game's notes keep flowing.
+    never pauses: its submission reads the cart's config block first, so a game's notes keep flowing, and the
+    submitting thread (the DAW's main thread in the plugin) waits for that read, up to 1 s.
   - **A handover can cut a key the new cart node strikes before the old one is reclaimed**: the old node's held notes
     are released behind every byte pushed when its destroy runs, the new node's first blocks among them, so a note the
     new node starts on a key the old one still held, in the block or two before the reclaim, is released with them.

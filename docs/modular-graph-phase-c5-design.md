@@ -153,12 +153,14 @@ registry and completes at once, and a write goes through the command ring and co
 `readSram` / `writeRam` do today (those system-id RPCs stay as thin wrappers). On the N8 node a submission first reads
 the cart's config block on the link's worker thread, between MIDI chunks, the expansion volume's path, and only on a
 turn quiet for the read (an ack landing inside it would be taken for the reply's first bytes): one with nothing
-outstanding on the reliable link, or once the cart has said nothing for 250 ms since its oldest outstanding frame
-first went out, as one at its menu does. The three transfers run at the menu only, so a job a running game will refuse
-(or a cart whose block does not answer, or whose link keeps acknowledging for the probe's whole second) is refused
-there, and the stream never pauses for it. A job that is taken then runs on that thread: streaming pauses, `connected`
-reads false for the duration and pushes are dropped and counted, the transfer runs, streaming resumes, the completion
-is posted. One job at a time per device (a second is refused busy); a job while disconnected fails "not connected". A
+outstanding on the reliable link, or once the cart has said nothing for 250 ms since its oldest outstanding frame first
+went out, as one at its menu does. The three transfers run at the menu only, so a job a running game will refuse (or a
+cart whose block does not answer, or whose link keeps acknowledging for the probe's whole second) is refused there, and
+the stream never pauses for it. A job that is taken then runs on that thread: streaming pauses, `connected` reads false
+for the duration and pushes are dropped and counted, the transfer runs, streaming resumes, the completion is posted. The
+probe waits on the submitting thread, up to its 1 s bound (the DAW's main thread in the plugin, the UI loop in the SDL
+standalone): usually one USB round trip, the whole second for a reliable link that keeps acknowledging before its
+refusal. One job at a time per device (a second is refused busy); a job while disconnected fails "not connected". A
 cart's `rom.header` and `rom.title` answer at once from the image and name this host last booted, with no transfer. A
 `rom.upload` is the one job that does not resume streaming: it writes the image, installs and boots it through the
 cart's menu, and closes the port, so the link reads disconnected and its result says streaming stopped. A node removed
@@ -345,12 +347,12 @@ in place there), and the findings worth naming; each stage's own report is the f
   verbatim in the row, and the result's own account of what happened: a restore reports the file it wrote and, when the
   ROM's folder had to be made for it, says so as a warning (a mistyped name is as likely as a game that never saved, so
   the row does not claim the bytes landed where the game reads), an upload reports the card path, the mapper index and
-  "streaming: stopped", with `enabled` cleared. A battery job names the ROM this process booted on the cart, else the
-  driven system's ROM file: the booted ROM is the physical cart's state, not the node's, so it survives the drive
-  moving to another NES, an editor close and reopen, and a project load (a fresh UI realm starts with none and falls
-  back to the driven system's ROM file). Both battery jobs run only at the N8 menu, and a running game refuses
-  them; a restore goes before the `rom.upload` that boots the game, whose rows say the game picks the battery file up
-  at its next boot.
+  "streaming: stopped", with `enabled` cleared. A battery job names the ROM this runtime (one a plugin instance) booted
+  on the cart, else the driven system's ROM file: the booted ROM is the physical cart's state, not the node's, so it
+  survives the drive moving to another NES, an editor close and reopen, and a project load (a fresh UI realm starts with
+  none and falls back to the driven system's ROM file). Both battery jobs run only at the N8 menu, and a running game
+  refuses them; a restore goes before the `rom.upload` that boots the game, whose rows say the game picks the battery
+  file up at its next boot.
 - **Does the session's message digest stay identical through the surface, block for block?** Yes, with the two nodes;
   the one-node version was refused as a cycle, and its only way through (a feedback wire) delivered the LEDs a block
   late. Through `surface-in` / `surface-out` the session reads the same input queues, and its per-block LED stream and
@@ -508,7 +510,7 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   each other's completions) and `test-native/stage-node-midi.test.ts`; `test/graph/build-graph.test.ts` holds the
   placement and the fan-out, `test/systems/store-graph.test.ts` the setting and the live expansion copy, and
   `test/menu/n8-sd-ops.test.ts` the cart menu over the mock's capability model (the restore's result and its created
-  warning, the per-process booted ROM across a handover, and a picked file that cannot be read).
+  warning, the booted ROM, per runtime, across a handover, and a picked file that cannot be read).
 
 ## 11. Left as it is
 
