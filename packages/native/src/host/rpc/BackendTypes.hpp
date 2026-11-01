@@ -144,7 +144,9 @@ struct RpcLoadScriptPackResult {
 // A capability job (docs/modular-graph-phase-c5-design.md section 6, Engine::submitJob): the node it is for, the
 // interface ("rp.system.memory/1", "rp.system.sram/1", "rp.system.rom/1") and its operation, and the arguments that
 // operation reads. memory: `region` by name, `offset`, and `length` for a read (absent or 0: to the region's end) or
-// `bytes` for a write; sram: `bytes` for a restore; rom: `length` for a header (absent or 0: the whole image).
+// `bytes` for a write; sram: `bytes` for a restore; rom: `length` for a header (absent or 0: the whole image), and
+// `bytes` and `name` (the file it is stored under) for an upload, which only a device's node (rp.n8.nes) performs; on
+// that node `name` also names the ROM whose battery file (on the cart's SD card) an sram job reaches.
 struct RpcJobRequest {
     std::string                    nodeId;
     std::string                    capability;
@@ -153,6 +155,7 @@ struct RpcJobRequest {
     std::optional<std::uint32_t>   offset;
     std::optional<std::uint32_t>   length;
     std::optional<rfl::Bytestring> bytes;
+    std::optional<std::string>     name;
 };
 // Its answer: `id` (the job was taken; its completion comes through drainJobs) or `error` (it was refused, and
 // why). Exactly one is present.

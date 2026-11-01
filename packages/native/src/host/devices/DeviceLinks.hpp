@@ -3,8 +3,9 @@
 // The device links a node binds by name through rp.host.devices/1 (docs/modular-graph-phase-c5-design.md sections 3 to
 // 5). The hosts own the devices - the serial port, the MIDI ports, reconnecting, the farewell - and a link is the whole
 // of what a node may do with one: the streaming rings, the connected state and, for a cart, the expansion-audio
-// register. The two interfaces live here, beside host/n8 and host/launchpad rather than inside either, because a node,
-// a host's adapter and the tests all bind to them, and neither device's own headers are a node's business.
+// register and the capability jobs it runs on its own thread. The two interfaces live here, beside host/n8 and
+// host/launchpad rather than inside either, because a node, a host's adapter and the tests all bind to them, and
+// neither device's own headers are a node's business.
 //
 // The link outlives every plan whose nodes hold a handle: a host tears its plans down while its links are alive, and a
 // reactivate keeps the handle across it. So a node may use its handle in destroy, not only give it back: a job it
@@ -12,6 +13,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+
+#include "host/engine/CapabilityJobs.hpp"  // JobRequest, Job
 
 namespace rp::host {
 
@@ -57,6 +61,23 @@ public:
     // thread's next turn, so a node's param may call this from the block (no lock, no allocation, no std::function on
     // the caller's side), and every connect re-applies the value.
     virtual void setExpansionVolume(int value) = 0;
+    // [control] Run a capability job on the device (docs/modular-graph-phase-c5-design.md section 6): the node that
+    // presents rp.system.sram/1 or rp.system.rom/1 hands each job it is asked for here, with itself as `owner`. True
+    // when the device took it into `job` (it finishes it on its own thread, or at once); false with the reason in
+    // *error, leaving `job` untouched: one job at a time per device ("busy: ..."), and none while the device is not
+    // attached ("not connected"), which is all a link with no device ever answers. While a job runs the link reads
+    // disconnected and drops (and counts) what is pushed, and the job completes once streaming has resumed.
+    virtual bool submitJob(const JobRequest& request, Job& job, const void* owner, std::string* error) {
+        (void)request;
+        (void)job;
+        (void)owner;
+        if (error) *error = "not connected";
+        return false;
+    }
+    // [control] The node `owner` is leaving the plan: a job it submitted that is still running fails now (Removed) and
+    // the device reports into its record no more, stopping at the next point that leaves the device coherent. Nothing
+    // when it holds no job.
+    virtual void abandonJobs(const void* owner) { (void)owner; }
 
     // There is deliberately no error string here: why a cart would not open is the host UI's (it reads N8Host's
     // lastError through Settings > N8), not something a document's node can act on.

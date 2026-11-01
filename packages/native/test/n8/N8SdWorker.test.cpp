@@ -1,9 +1,9 @@
 // Guards the N8 SD / menu control ops (Settings > N8 Pro) without hardware. Two layers:
 //   - N8SdWorker in isolation: the single-in-flight threading (busy / reject-while-busy / done / progress /
 //     error), with trivial jobs that never touch serial.
-//   - N8Host driving real ops (dumpSram / loadRom / restoreSram) over a scripted fake ISerialPort that
-//     IGNORES writes and serves the exact reply bytes each Edio op reads (traced from Edio.cpp), plus the
-//     connection manager that pauses N8Link streaming around a control op and resumes it after.
+//   - N8Host driving the load over a scripted fake ISerialPort that IGNORES writes and serves the exact reply bytes
+//     each Edio op reads (traced from Edio.cpp), the connection manager that pauses N8Link streaming around a control
+//     op and resumes it after, and the battery transfers it refuses (the capability jobs reach the battery file).
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
@@ -84,10 +84,6 @@ void writeFile(const std::string& path, const std::vector<std::uint8_t>& data) {
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     f.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
 }
-std::vector<std::uint8_t> readFile(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-}
 
 }  // namespace
 
@@ -134,27 +130,30 @@ TEST_CASE("N8SdWorker records a thrown job as an error", "[n8sd]") {
     REQUIRE(s.result.empty());
 }
 
-TEST_CASE("N8Host.startDumpSram reads 64 KB and writes the file", "[n8sd]") {
-    // One serial session (no streaming to pause): handshake, then 64 KB of a known pattern for the memRD reads.
-    std::vector<std::uint8_t> pattern(retroplug::Edio::SIZE_SRM_GAME);
-    for (std::size_t i = 0; i < pattern.size(); i++) pattern[i] = static_cast<std::uint8_t>(i & 0xFF);
-    auto queues = std::make_shared<std::deque<std::deque<std::uint8_t>>>();
-    queues->push_back(handshakePlus(std::vector<std::uint8_t>(pattern.begin(), pattern.end())));
-
-    N8Host host(scriptedFactory(queues), listerWith({{"/dev/fake", true}}), tempDir());
+TEST_CASE("N8Host.startDumpSram and startRestoreSram refuse: the cart's own battery is never transferred over USB",
+          "[n8sd]") {
+    // No serial session at all: the refusal comes through the worker's error channel before any port is opened.
+    auto opens = std::make_shared<int>(0);
+    N8Host host([opens](const std::string&) -> std::unique_ptr<ISerialPort> {
+                    ++*opens;
+                    return std::make_unique<ScriptedFake>();
+                },
+                listerWith({{"/dev/fake", true}}), tempDir());
     host.setPort("/dev/fake");
-    const std::string dest = (std::filesystem::path(tempDir()) / "dump.srm").string();
+    const std::string srm = (std::filesystem::path(tempDir()) / "refused.srm").string();
+    writeFile(srm, std::vector<std::uint8_t>(256, 0x11));
 
-    host.startDumpSram(dest);
-    REQUIRE(waitDone(host));
-    const auto s = host.sdStatus();
-    REQUIRE(s.error.empty());
-    REQUIRE(s.op == "dump");
-    REQUIRE(s.bytesDone == retroplug::Edio::SIZE_SRM_GAME);
-
-    const auto out = readFile(dest);
-    REQUIRE(out.size() == pattern.size());
-    REQUIRE(out == pattern);
+    for (const char* op : {"dump", "restore"}) {
+        if (std::string(op) == "dump") host.startDumpSram((std::filesystem::path(tempDir()) / "dump.srm").string());
+        else host.startRestoreSram(srm);
+        REQUIRE(waitDone(host));
+        const auto s = host.sdStatus();
+        CHECK(s.op == op);
+        CHECK(s.error.rfind("the battery file can only be reached at the N8 menu", 0) == 0);
+        CHECK(s.error.find("rp.system.sram/1") != std::string::npos);
+        CHECK(s.result.empty());
+    }
+    CHECK(*opens == 0);
 }
 
 TEST_CASE("N8Host.startLoadRom drives the menu and stops streaming (link + enabled)", "[n8sd]") {
@@ -193,41 +192,21 @@ TEST_CASE("N8Host.startLoadRom drives the menu and stops streaming (link + enabl
     REQUIRE_FALSE(host.getConfig().enabled);
 }
 
-TEST_CASE("N8Host.startRestoreSram writes then verifies the readback", "[n8sd]") {
-    std::vector<std::uint8_t> srm(256);
-    for (std::size_t i = 0; i < srm.size(); i++) srm[i] = static_cast<std::uint8_t>((i * 7) & 0xFF);
-    // handshake, then the verify memRD returns exactly what was written (so the readback matches).
-    auto queues = std::make_shared<std::deque<std::deque<std::uint8_t>>>();
-    queues->push_back(handshakePlus(std::vector<std::uint8_t>(srm.begin(), srm.end())));
-
-    N8Host host(scriptedFactory(queues), listerWith({{"/dev/fake", true}}), tempDir());
-    host.setPort("/dev/fake");
-    const std::string path = (std::filesystem::path(tempDir()) / "restore.srm").string();
-    writeFile(path, srm);
-
-    host.startRestoreSram(path);
-    REQUIRE(waitDone(host));
-    const auto s = host.sdStatus();
-    REQUIRE(s.error.empty());
-    REQUIRE(s.op == "restore");
-    REQUIRE(s.result == "Restored 256 bytes");
-}
-
 TEST_CASE("N8Host pauses streaming for an SD op and resumes it after", "[n8sd]") {
-    std::vector<std::uint8_t> pattern(retroplug::Edio::SIZE_SRM_GAME, 0x00);
-    // Three serial sessions in call order: setup connect, the dump control op, the reconnect.
+    // Three serial sessions in call order: setup connect, the load's control op, the reconnect. A load whose ROM file
+    // cannot be read fails inside the op, after the borrow, and a failed op leaves the link streaming as it found it.
     auto queues = std::make_shared<std::deque<std::deque<std::uint8_t>>>();
-    queues->push_back(HANDSHAKE);                                                                  // connect(true)
-    queues->push_back(handshakePlus(std::vector<std::uint8_t>(pattern.begin(), pattern.end())));   // dump
-    queues->push_back(HANDSHAKE);                                                                  // reconnect
+    queues->push_back(HANDSHAKE);  // connect(true)
+    queues->push_back(HANDSHAKE);  // the load's control op
+    queues->push_back(HANDSHAKE);  // reconnect
 
     N8Host host(scriptedFactory(queues), listerWith({{"/dev/fake", true}}), tempDir());
     host.connect(true);  // start streaming (session 1)
     REQUIRE(host.getConfig().connected);
 
-    const std::string dest = (std::filesystem::path(tempDir()) / "paused.srm").string();
-    host.startDumpSram(dest);
+    host.startLoadRom((std::filesystem::path(tempDir()) / "no-such.nes").string());
     REQUIRE(waitDone(host));
-    REQUIRE(host.sdStatus().error.empty());
+    REQUIRE(host.sdStatus().error.find("cannot open file") != std::string::npos);
     REQUIRE(host.getConfig().connected);  // streaming resumed after the borrow (session 3)
+    REQUIRE(queues->empty());
 }

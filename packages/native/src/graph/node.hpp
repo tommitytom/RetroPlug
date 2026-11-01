@@ -45,6 +45,13 @@
 //   void prepare(const rp::Block&) noexcept / step(std::uint32_t target) noexcept / void finish(const rp::Block&) noexcept
 //       -> rp.step/1 (all three or none; step returns bool - true once the block is produced - or an rp_step_result)
 //   void set_peers(std::span<rp_node* const>) noexcept    -> rp.link/1   (the span lives for the call)
+//   const void* get_interface(std::string_view id) noexcept;   [any] an interface of the node's own beyond the two
+//                                                         above (a device node's capability jobs), or null: what
+//                                                         rp_node_vtable::get_interface answers after rp.step/1 and
+//                                                         rp.link/1, so it may point into the instance. The ABI's
+//                                                         ids are reserved (answered before this is asked), and a
+//                                                         host casts an answer only to the struct of the id it
+//                                                         asked by
 //   static constexpr const char *name, *category, *version;  static constexpr bool heap, threads;
 //   static constexpr bool reshapes;                       keep the instance through a settings change that alters
 //                                                         its layout (ports or params adjust_layout appends): prepare
@@ -630,6 +637,10 @@ constexpr bool checkHooks() {
     if constexpr (requires { requires kIsFunction<decltype(&T::set_peers)>; })
         static_assert(requires(T& t, std::span<rp_node* const> p) { { t.set_peers(p) } noexcept; },
                       "set_peers must be `void set_peers(std::span<rp_node* const>) noexcept`");
+    if constexpr (requires { requires kIsFunction<decltype(&T::get_interface)>; })
+        static_assert(
+            requires(T& t, std::string_view id) { { t.get_interface(id) } noexcept -> std::same_as<const void*>; },
+            "get_interface must be `const void* get_interface(std::string_view) noexcept`");
     constexpr bool anyStep = requires { requires kIsFunction<decltype(&T::prepare)>; } ||
                              requires { requires kIsFunction<decltype(&T::step)>; } ||
                              requires { requires kIsFunction<decltype(&T::finish)>; };
@@ -1004,7 +1015,7 @@ template <class T> void linkSetPeers(rp_node* n, rp_node* const* peers, std::uin
 }
 
 template <class T>
-const void* interfaceFn(rp_node*, const char* id) noexcept {
+const void* interfaceFn([[maybe_unused]] rp_node* n, const char* id) noexcept {
     [[maybe_unused]] const std::string_view want(id);
     if constexpr (requires(T& t, const Block& b, std::uint32_t f) { t.prepare(b); t.step(f); t.finish(b); }) {
         static constexpr rp_step_interface kStep{&stepPrepare<T>, &stepStep<T>, &stepFinish<T>};
@@ -1014,7 +1025,10 @@ const void* interfaceFn(rp_node*, const char* id) noexcept {
         static constexpr rp_link_interface kLink{&linkSetPeers<T>};
         if (want == RP_LINK_INTERFACE) return &kLink;
     }
-    return nullptr;
+    if constexpr (requires(T& t, std::string_view w) { t.get_interface(w); })
+        return self<T>(n)->node.get_interface(want);
+    else
+        return nullptr;
 }
 
 template <class T>

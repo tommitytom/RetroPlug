@@ -192,12 +192,14 @@ public:
     // emulated system completes before this returns, its completion queued; a write completes once the block after the
     // drain that applies it has published the region, or, while no audio thread runs, its state is final before this
     // returns and its completion is queued by the next drain. A system node is named sys-<id>
-    // (publishGraph refuses any other id for one), so the plan's table maps the node to its core.
+    // (publishGraph refuses any other id for one), so the plan's table maps the node to its core. Any other node is
+    // asked itself (submitDeviceJob): a device's node runs the job on its device's thread, or refuses it busy or not
+    // connected.
     rp::host::JobSubmit submitJob(rp::host::JobRequest request);
     // The record of a job a device runs on its own thread (CapabilityJobs.hpp: progress, then the result or the error,
     // then the final state, stored last with release): counted against kMaxJobs, given the next id and kept until a
-    // drain collects it. The seam a device node's accepted job comes through (submitDeviceJob); a TEST / HARNESS
-    // caller today, which plays the device. Refused, the record dropped, when kMaxJobs are outstanding.
+    // drain collects it. A TEST / HARNESS seam, which plays a device: a device node's job comes through its
+    // node instead (submitDeviceJob). Refused, the record dropped, when kMaxJobs are outstanding.
     rp::host::JobSubmit adoptJob(std::unique_ptr<rp::host::Job> job);
     // The completions since the last drain, oldest first, and a progress entry for each running job that reported
     // progress since then. A write still in the ring is not here: it is collected by a later drain.
@@ -438,9 +440,9 @@ private:
     void settleQuiescent();
     // Move every finished job to the completions (an old write to none) and free its record.
     void sweepJobs();
-    // A job for a node of the plan that is not a system node: a device's node, asked through the node for the
-    // capability, would accept it here or refuse it busy or not connected. No node type presents one yet, so every such
-    // job is refused (the node presents none of the interfaces).
+    // A job for a node of the plan that is not a system node: a device's node, asked for the capability through its
+    // rp_node_vtable::get_interface (rp::host::DeviceJobs), takes it into a record kept here or refuses it (busy, not
+    // connected); a node that presents none of the interfaces refuses every job.
     rp::host::JobSubmit submitDeviceJob(const rp::host::JobRequest& request);
     // The system node `nodeId` names in the last published plan, or null for a node id that is not sys-<id> of one.
     const rp::host::SystemEntry* publishedSystem(const std::string& nodeId) const;

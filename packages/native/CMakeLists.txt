@@ -148,7 +148,8 @@ add_library(retroplug-backend STATIC
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
     src/host/engine/EngineInvoker.cpp       # QueuedInvoker - the one mutation path to the Engine
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
-    src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out, controller-in / -out, rp.n8.cart-mirror
+    src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out, controller-in / -out
+    src/host/graph/N8Nodes.cpp              # rp.n8.cart-mirror, rp.n8.nes
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed

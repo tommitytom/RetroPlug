@@ -98,6 +98,7 @@ retroplug_add_test_binary(
              test/engine-graph/HostIo.test.cpp
              test/engine-graph/Devices.test.cpp        # rp.host.devices/1: the links a hardware node binds by name
              test/engine-graph/Capabilities.test.cpp   # rp.system.memory/1, sram/1, rom/1 as asynchronous jobs
+             test/engine-graph/N8Node.test.cpp         # rp.n8.nes: the real cart as a node, its jobs on the link
              test/engine-graph/ScriptNodes.test.cpp
              test/engine-graph/ScriptPacks.test.cpp
              test/engine-graph/ProtocolNodes.test.cpp
@@ -171,6 +172,7 @@ retroplug_add_test_binary(
     SOURCES  test/n8/Edio.test.cpp
              test/n8/N8Host.test.cpp
              test/n8/N8CartLink.test.cpp   # the cart device link over N8Link + N8Host
+             test/n8/N8CartJobs.test.cpp   # the cart's capability jobs, run with streaming paused
              test/n8/N8SdWorker.test.cpp
              src/host/n8/Edio.cpp
              src/host/n8/N8Link.cpp

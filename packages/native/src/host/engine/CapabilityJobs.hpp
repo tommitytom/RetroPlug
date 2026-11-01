@@ -3,7 +3,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "system/SystemTypes.hpp"  // SystemId
@@ -27,7 +29,7 @@ class SystemBase;
 //     bytes or its error, then the terminal state, stored last with release, which is what the control thread acquires
 //     before it reads the rest.
 //
-// A job's record is the control thread's: made by submitJob (or adopted from a device's node, adoptJob), freed once its
+// A job's record is the control thread's: made by submitJob (a device node's included) or adoptJob, freed once its
 // state is terminal by the next sweep (drainJobs, submitJob and Engine::writeRam each sweep first), or by the engine's
 // destruction. Another thread only writes the record's state (and, a device thread, its progress, result and
 // error), never frees it, and never touches it after storing a terminal state. So the block thread allocates and frees
@@ -36,9 +38,10 @@ class SystemBase;
 // Two rules a device's jobs keep, beside the engine's own bound (Engine::kMaxJobs outstanding, engine-wide, the
 // back-pressure that keeps room for every completion):
 //
-//   - One job at a time per device. The device's node refuses a second at submission ("busy"), and one while its device
-//     is not attached ("not connected"), synchronously, before the engine adopts a record; the engine's bound does not
-//     know about devices.
+//   - One job at a time per device. The device's node hands a job to its device link (DeviceJobs, CartLink::submitJob),
+//     which refuses a second at submission ("busy"), and one while the device is not attached ("not connected"),
+//     synchronously, before the engine keeps a record; the engine's bound does not know about devices. A node leaving
+//     the plan abandons its job (DeviceJobSlot::abandon), which fails it at once.
 //   - Progress overwrites. A device thread stores its latest progress in the record, and drainJobs reports a running
 //     job once per drain whose progress changed since the last, with the value it finds then: a job that reports in a
 //     tight loop while nobody drains accumulates nothing, and its listener sees the latest value, not every step.
@@ -53,11 +56,14 @@ namespace rp::host {
 struct JobRequest {
     std::string               nodeId;      // a node of the last published plan
     std::string               capability;  // one of the interface ids above
-    std::string               op;          // memory: regions, read, write; sram: dump, restore; rom: header, title
+    std::string               op;          // memory: regions, read, write; sram: dump, restore; rom: header, title,
+                                           // upload (a device's node only)
     std::string               region;      // memory: the region's name
     std::uint32_t             offset = 0;  // memory: where a read or write starts in the region
     std::uint32_t             length = 0;  // memory read, rom header: how many bytes (0: to the end)
-    std::vector<std::uint8_t> bytes;       // memory write, sram restore
+    std::vector<std::uint8_t> bytes;       // memory write, sram restore, rom upload
+    std::string               name;        // rom upload: the file name the image is stored under on the device;
+                                           // sram on a cart: the ROM file name whose battery file the job reaches
 };
 
 // submitJob's answer: the job's id (counting up from 1, never reused), or 0 with the refusal in `error`.
@@ -120,6 +126,100 @@ struct Job {
         const std::uint8_t s = state.load(std::memory_order_acquire);
         return s == Done || s == Failed;
     }
+};
+
+// What a device's node presents under each capability id it answers (rp.n8.nes: rp.system.sram/1 and rp.system.rom/1),
+// through rp_node_vtable::get_interface; Engine::submitJob hands it every job for that node and capability. [control]
+// `submit` takes the job into `job`, the record the engine keeps once it is taken, or refuses it with the reason in
+// *error ("busy", "not connected", an operation it does not have, arguments it will not take), leaving the record
+// untouched. A job taken is the device's to finish: on its own thread, through a DeviceJobSlot, or at once, by storing
+// the record's terminal state before returning (a read the device's host can answer from what it keeps).
+struct DeviceJobs {
+    void* ctx;
+    bool (*submit)(void* ctx, const JobRequest& request, Job& job, std::string* error);
+};
+
+// The one job a device runs at a time, between the control thread that hands it a record and the device's own thread
+// that reports into it. The record is the engine's, freed once terminal, and the node that submitted the job can leave
+// the plan while the device is still busy (a node removed, a plan torn down), so every touch the device makes goes
+// through here, under a lock the control thread shares: once `abandon` has failed the record, the device's later
+// reports reach nothing, and the record may be freed without waiting for the device to finish. The lock is held for a
+// store or a copy, never across device I/O, and never by the block thread.
+class DeviceJobSlot {
+public:
+    // [control] Take the slot for `job`, submitted by the node `owner`; false while another job holds it.
+    bool claim(Job& job, const void* owner) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (busy_) return false;
+        busy_ = true;
+        job_ = &job;
+        owner_ = owner;
+        abandoned_.store(false, std::memory_order_relaxed);
+        return true;
+    }
+    // [control] Give back a claim whose job never started (the device would not take it after all), the record
+    // untouched.
+    void unclaim() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        clear();
+    }
+    // [device] The progress so far: overwrites, as CapabilityJobs.hpp says.
+    void progress(std::uint32_t done, std::uint32_t total) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!job_) return;
+        job_->total.store(total, std::memory_order_relaxed);
+        job_->progress.store(done, std::memory_order_release);
+    }
+    // [device] Finish the job with its result, or with the reason it failed, and free the slot for the next. The
+    // terminal state is the record's last touch, stored with release.
+    void succeed(std::vector<std::uint8_t> bytes) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (job_) {
+            job_->result = std::move(bytes);
+            job_->state.store(Job::Done, std::memory_order_release);
+        }
+        clear();
+    }
+    void fail(std::string error) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (job_) {
+            job_->error = std::move(error);
+            job_->failure.store(Job::Device, std::memory_order_relaxed);
+            job_->state.store(Job::Failed, std::memory_order_release);
+        }
+        clear();
+    }
+    // [control] The node `owner` is leaving the plan: a job it holds the slot for fails now (Removed), and the device
+    // reports into its record no more. The slot stays busy until the device finishes (succeed or fail), since the
+    // device is still busy; abandoned() tells it to stop at the next point that leaves the device coherent.
+    void abandon(const void* owner) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!busy_ || owner_ != owner) return;
+        abandoned_.store(true, std::memory_order_relaxed);
+        if (!job_) return;
+        job_->failure.store(Job::Removed, std::memory_order_relaxed);
+        job_->state.store(Job::Failed, std::memory_order_release);
+        job_ = nullptr;
+    }
+    // [any] Whether a job holds the slot (taken, not yet finished), and whether its node abandoned it.
+    bool busy() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return busy_;
+    }
+    bool abandoned() const { return abandoned_.load(std::memory_order_relaxed); }
+
+private:
+    void clear() {
+        busy_ = false;
+        job_ = nullptr;
+        owner_ = nullptr;
+    }
+
+    mutable std::mutex mutex_;
+    bool               busy_ = false;
+    Job*               job_ = nullptr;  // null once finished or abandoned: the device touches it no more
+    const void*        owner_ = nullptr;
+    std::atomic<bool>  abandoned_{false};
 };
 
 }  // namespace rp::host

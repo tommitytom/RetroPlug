@@ -253,7 +253,11 @@ typedef struct rp_node_vtable {
     void (*commit_settings)(rp_node* node, void* prepared, void** old);
     /* [control] Free a settings object handed back by commit_settings (or a prepared one never committed). */
     void (*release_settings)(rp_node* node, void* old);
-    /* [any] An optional interface by versioned id ("rp.step/1"), or null. */
+    /* [any] An optional interface by versioned id ("rp.step/1"), or null. One id space for every interface a node
+     * answers: the ABI's own (rp.step/1, rp.link/1) and whatever a host asks for (rp.system.sram/1 on a device
+     * node). The pointer is only meaningful as the struct of the id it was asked by, so a host asks only by an id of
+     * its own and never casts an answer it did not ask for by that id (an id that came from outside, a document or
+     * an RPC, is checked against the host's list first). */
     const void* (*get_interface)(rp_node* node, const char* id);
 } rp_node_vtable;
 

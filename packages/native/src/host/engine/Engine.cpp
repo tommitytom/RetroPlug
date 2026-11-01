@@ -32,6 +32,7 @@
 #include "host/devices/DeviceRegistry.hpp"
 #include "host/engine/DspCommand.hpp"
 #include "host/graph/HostIoNodes.hpp"
+#include "host/graph/N8Nodes.hpp"
 #include "host/graph/HostServices.hpp"
 #include "host/graph/SystemNodes.hpp"
 #include "host/graph/SystemTable.hpp"
@@ -1055,10 +1056,31 @@ rp::host::JobSubmit Engine::submitJob(rp::host::JobRequest r) {
 }
 
 rp::host::JobSubmit Engine::submitDeviceJob(const rp::host::JobRequest& r) {
-    // A node that is no system node. The device nodes (docs/modular-graph-phase-c5-design.md sections 4 and 6) present
-    // their capabilities here: asked through the node for the interface, they accept the job (and the engine adopts its
-    // record, adoptJob) or refuse it synchronously, busy or not connected. No node type presents one yet.
-    return {0, "node " + r.nodeId + " presents no " + r.capability};
+    // A node that is no system node: a device's (docs/modular-graph-phase-c5-design.md sections 4 and 6), asked
+    // through the node for the capability. It takes the job into a record the engine then keeps, or refuses it
+    // synchronously (busy, not connected); the engine's bound was checked by submitJob, so a taken job always has a
+    // place here. The record outlives the node's use of it: a device's node abandons its job as it leaves the plan
+    // (DeviceJobSlot), failing the record and keeping the device off it, so the engine frees only terminal records,
+    // and frees them on this thread whenever a sweep finds them.
+    //
+    // A node is asked only by an id the engine knows: an answer to get_interface is only that id's struct, and the
+    // capability came from outside (the RPC), so an id the node answers for something else (rp.step/1) must never
+    // reach the cast below.
+    if (r.capability != RP_SYSTEM_MEMORY_INTERFACE && r.capability != RP_SYSTEM_SRAM_INTERFACE &&
+        r.capability != RP_SYSTEM_ROM_INTERFACE)
+        return {0, "unknown capability " + r.capability};
+    rp_node* node = graph_->host->node(r.nodeId);
+    const auto* jobs =
+        node ? static_cast<const rp::host::DeviceJobs*>(node->vt->get_interface(node, r.capability.c_str())) : nullptr;
+    if (!jobs) return {0, "node " + r.nodeId + " presents no " + r.capability};
+    auto job = std::make_unique<rp::host::Job>();
+    job->nodeId = r.nodeId;
+    std::string error;
+    if (!jobs->submit(jobs->ctx, r, *job, &error)) return {0, error.empty() ? "the job was refused" : error};
+    job->id = nextJobId_++;
+    const std::uint32_t id = job->id;
+    jobs_.push_back(std::move(job));
+    return {id, {}};
 }
 
 rp::host::JobSubmit Engine::adoptJob(std::unique_ptr<rp::host::Job> job) {

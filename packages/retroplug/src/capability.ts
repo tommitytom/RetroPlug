@@ -21,16 +21,35 @@ export type CapabilityOp =
   | "sram.dump"
   | "sram.restore"
   | "rom.header"
-  | "rom.title";
+  | "rom.title"
+  | "rom.upload";
 
 /** The arguments an operation reads; the rest are ignored. memory: `region` by name, `offset`, and `length` for a read
  *  (absent or 0: to the region's end) or `bytes` for a write; sram: `bytes` for a restore; rom: `length` for a header
- *  (absent or 0: the whole image). */
+ *  (absent or 0: the whole image), and `bytes` and `name` (the file it is stored under) for an upload, which only a
+ *  device's node (rp.n8.nes) performs. On that node `name` also names the ROM whose battery file (EDN8/gamedata/<rom>/
+ *  bram.srm on its SD card) sram.dump and sram.restore reach, defaulting to the ROM this host last booted. */
 export interface CapabilityArgs {
   region?: string;
   offset?: number;
   length?: number;
   bytes?: Uint8Array;
+  name?: string;
+}
+
+/** What a cart's `sram.restore` wrote: the battery file, and whether the ROM's folder had to be made for it (a ROM that
+ *  never saved on the card, or a mistyped name). Only a device's node restores in place; an emulated system refuses. */
+export interface SramRestore {
+  path: string;
+  created: boolean;
+}
+
+/** What a cart's `rom.upload` booted: where the image went, the mapper core the cart's menu chose, and that streaming
+ *  stopped (a running game has no menu, so the link is reconnected to the new ROM). */
+export interface RomUpload {
+  path: string;
+  mapIndex: number;
+  streaming: "stopped";
 }
 
 /** A region `memory.regions` lists: its name and its published size in bytes. */
@@ -45,9 +64,10 @@ export interface CapabilityResults {
   "memory.read": Uint8Array;
   "memory.write": void;
   "sram.dump": Uint8Array;
-  "sram.restore": void;
+  "sram.restore": SramRestore | undefined;
   "rom.header": Uint8Array;
   "rom.title": string;
+  "rom.upload": RomUpload;
 }
 
 /** A long job's progress: `progress` of `total` (units the job chooses: bytes for a transfer). */
@@ -65,6 +85,7 @@ export interface JobRequest {
   offset?: number;
   length?: number;
   bytes?: Uint8Array;
+  name?: string;
 }
 export interface JobSubmitResult {
   id?: number | null;
@@ -93,9 +114,11 @@ const INTERFACES: Record<string, string> = {
 };
 
 function decode<O extends CapabilityOp>(op: O, bytes: Uint8Array): CapabilityResults[O] {
-  if (op === "memory.regions") return JSON.parse(ascii(bytes)) as CapabilityResults[O];
+  if (op === "memory.regions" || op === "rom.upload") return JSON.parse(ascii(bytes)) as CapabilityResults[O];
   if (op === "rom.title") return ascii(bytes) as CapabilityResults[O];
-  if (op === "memory.write" || op === "sram.restore") return undefined as CapabilityResults[O];
+  if (op === "sram.restore")
+    return (bytes.length ? JSON.parse(ascii(bytes)) : undefined) as CapabilityResults[O];
+  if (op === "memory.write") return undefined as CapabilityResults[O];
   return bytes as CapabilityResults[O];
 }
 
@@ -163,6 +186,7 @@ export class CapabilityJobs {
     if (args.offset !== undefined) request.offset = args.offset;
     if (args.length !== undefined) request.length = args.length;
     if (args.bytes !== undefined) request.bytes = args.bytes;
+    if (args.name !== undefined) request.name = args.name;
     // What a close left behind first, so its completions cannot hold native's bound full against this submission.
     if (this.orphans.size) this.pump();
     const submitted = this.port.submitJob(request);

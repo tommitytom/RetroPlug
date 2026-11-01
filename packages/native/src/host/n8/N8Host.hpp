@@ -3,12 +3,14 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
 #include "host/n8/Edio.hpp"        // Edio (control-op protocol), ISerialPort
 #include "host/n8/N8Link.hpp"
 #include "host/n8/N8SdWorker.hpp"
+#include "host/engine/CapabilityJobs.hpp"  // the capability jobs rp.n8.nes hands the cart (N8CartLink)
 
 namespace retroplug {
 
@@ -92,12 +94,70 @@ public:
     // Upload a local ROM to usb-games/<name> and boot it via the on-device menu (needs the cart at its menu).
     // Leaves streaming stopped (a new ROM is now running).
     void startLoadRom(const std::string& romPath);
-    // Read the 64 KB cart battery and write it to destPath. Works on a running game; resumes streaming after.
+    // Refused, through the worker's error channel (the job fails at once and touches nothing): the cart's own battery
+    // is never transferred over USB, since on the real cart one read of it wedged a running game and one at the menu
+    // left the menu deaf. The battery is reached through its file on the SD card instead, by the cart node's
+    // rp.system.sram/1 jobs (submitCartJob, below). Kept as entry points only until the SD worker goes.
     void startDumpSram(const std::string& destPath);
-    // Write a local .srm straight to cart SRAM (running game) + verify. Resumes streaming after.
     void startRestoreSram(const std::string& srmPath);
 
     N8SdStatusDto sdStatus() { return sdWorker_.status(); }
+
+    // --- The cart's capability jobs (docs/modular-graph-phase-c5-design.md section 6), which rp.n8.nes hands over
+    // through its cart link (N8CartLink). The transfers run on the link's serial thread with streaming PAUSED rather
+    // than disconnected (N8Link::PausedJob): the port, the reliable link's sequence state and the expansion volume are
+    // kept, what was pushed before the pause is delivered first, and the job completes once streaming has resumed.
+    // Each first reads the cart's FPGA config block (a system-region read, off the cart's bus): map_idx 255 is the
+    // menu.
+    //
+    //   The battery jobs go through the SD card's save file, EDN8/gamedata/<rom>/bram.srm, which the N8 OS writes
+    //   back from the cart's SRAM when the console returns to the menu and loads into it when the game next boots. The
+    //   cart's own battery is never touched over USB: on the real cart one read of it wedged a running BlipToaster,
+    //   and one at the menu left the menu deaf to its commands until a power-cycle. So both run at the menu only (a
+    //   running game is refused: "the battery file can only be reached at the N8 menu"), and <rom> is the job's `name`
+    //   (the ROM's file name on the card), else the file name this host last booted through rom.upload. That fallback
+    //   is the host's own memory, kept across connects (at the menu the game no longer runs) and cleared by a port
+    //   change: a game booted from the cart's own browser since then makes it the wrong ROM, so a caller that knows
+    //   the ROM names it. With neither the job is refused. Both directions keep one bound: 1 byte to 1 MB.
+    //
+    //   rp.system.sram/1 dump      the file, read in 512-byte blocks (the menu's file read moves about a kilobyte a
+    //                              second, whatever the block: a 64 KB battery takes about a minute), each a progress
+    //                              report in bytes and a point the job may stop at. Fails when the file is missing,
+    //                              empty or past the bound, and names the card's problem when the folder will not list.
+    //   rp.system.sram/1 restore   `bytes` written as the file for the game to load at its next boot (progress in
+    //                              bytes; the menu writes about 100 KB a second). The ROM's folder is made when it is
+    //                              not there (a game that never saved has none), and the result, JSON, says which file
+    //                              it wrote and whether it made the folder: {"path":..., "created":true|false}, so a
+    //                              mistyped name shows as a folder made. Success means the cart acknowledged every
+    //                              block; nothing is read back. The Edio subset has no rename, so the file is replaced
+    //                              in place: the job may stop until the file is opened, and from then on the write runs
+    //                              to the end, so a Removed (an abandon) after the open does not mean nothing was
+    //                              written. A write that FAILS after the open leaves the file replaced and incomplete,
+    //                              the old save already gone: the job says so ("restore again") and closes the file.
+    //
+    //   rp.system.rom/1 upload     `bytes` (an iNES image) to usb-games/<name> in 8 KB chunks (progress in bytes), then
+    //                              installed and booted by the cart's menu, which must be showing (a running game is
+    //                              refused before any byte reaches its FIFO). A boot STOPS streaming and clears the
+    //                              enabled toggle (a running game has no menu, so the old stream is stale; the user
+    //                              reconnects to the new ROM), as startLoadRom does, and the result, JSON, says so:
+    //                              {"path":..., "mapIndex":N, "streaming":"stopped"}. Abandoned or failed before the
+    //                              boot, it boots nothing, deletes the file it created and resumes streaming.
+    //   rp.system.rom/1 header     the first `length` bytes (0: all) of the image this host last booted on the cart,
+    //   rp.system.rom/1 title      and the name it booted it under: answered at once from what the host kept, with no
+    //                              transfer, whatever the link is doing. Every connect reads the running map_idx and
+    //                              forgets the image when it differs from the one the menu answered for it (a
+    //                              power-cycle, a game booted from the cart's own browser), so both refuse "nothing
+    //                              this host booted is running" then; another game of the same mapper is what it
+    //                              cannot tell.
+    //
+    // One job at a time, an SD worker op included ("busy: ..."), and none while the link is down ("not connected").
+    // [control], like abandonCartJobs: the node submitting is the job's owner, and a node leaving the plan abandons its
+    // job, which fails at once (Removed) and stops at its next safe point.
+    bool submitCartJob(const rp::host::JobRequest& request, rp::host::Job& job, const void* owner, std::string* error);
+    void abandonCartJobs(const void* owner) { cartJob_.abandon(owner); }
+    // A capability job holds the cart: taken, and not yet done (streaming not yet resumed, or its completion not
+    // posted).
+    bool cartJobBusy() const { return cartJob_.busy() || link_.jobPending(); }
 
 private:
     void save();
@@ -124,6 +184,16 @@ private:
     // re-arm.
     std::atomic<unsigned> expVolGeneration_{0};
     std::atomic<unsigned> expVolApplied_{0};  // serial thread writes, after a successful write
+    // The one capability job running on the cart, and what this host last booted there (rom.header / rom.title), which
+    // an upload writes on the serial thread and those read on the control thread.
+    rp::host::DeviceJobSlot   cartJob_;
+    mutable std::mutex        loadedMutex_;
+    std::vector<std::uint8_t> loadedRom_;
+    std::string               loadedName_;
+    int                       loadedMapIndex_ = -1;  // what the menu answered for it: the map_idx a connect checks
+    // The file name this host last booted on the cart, which a connect does not forget (the battery jobs' default ROM,
+    // reached at the menu, where the game is no longer running) and a port change does (another cart, another card).
+    std::string               lastBootedName_;
     N8SdWorker          sdWorker_;   // LAST: destroyed first, so its thread joins while link_ + factory_ are alive
 };
 

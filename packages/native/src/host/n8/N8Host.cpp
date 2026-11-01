@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -21,14 +22,6 @@ std::vector<std::uint8_t> readFileBytes(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f) throw std::runtime_error("cannot open file: " + path);
     return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-}
-
-// Write bytes to a local file (the dumped SRAM). Throws on failure.
-void writeFileBytes(const std::string& path, const std::uint8_t* data, std::size_t n) {
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    if (!f) throw std::runtime_error("cannot write file: " + path);
-    f.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(n));
-    if (!f) throw std::runtime_error("write failed: " + path);
 }
 
 // The final path component (basename) of a local or SD path.
@@ -76,6 +69,64 @@ int runningMapper(Edio& edio) {
     return ((cfg[2] >> 4) << 8) | cfg[0];
 }
 
+// The mapper the N8 OS runs its own file browser on: the config block's map_idx while the menu shows (read on an N8
+// Pro; mapConfig.ts: "the OS clears it to force map 255"). A system-region read, so telling the menu from a game this
+// way touches neither the cart's bus nor a running game's FIFO.
+constexpr int kMenuMapper = 255;
+
+// Why a battery job refuses a running game: the battery file lives on the SD card, which only the menu's file API
+// reaches (a running game has no menu), and the cart's own battery is never touched over USB (on the real cart one
+// read of it wedged a running BlipToaster, and one at the menu left the menu deaf to its commands).
+constexpr const char* kBatteryAtGame =
+    "the battery file can only be reached at the N8 menu: power-cycle to the menu first";
+
+// Why the SD worker's battery transfers (startDumpSram, startRestoreSram) are refused: they would move the cart's own
+// battery over USB, which the battery jobs never do.
+constexpr const char* kBatteryDirect =
+    "the battery file can only be reached at the N8 menu: power-cycle to the menu first, and use the cart node's "
+    "rp.system.sram/1 jobs (sram.dump, sram.restore); the cart's own battery is never transferred over USB";
+
+// The largest battery file a restore takes: far past any the N8 writes (a 64 KB battery is a 66,560-byte file), so
+// only a mistake is refused.
+constexpr std::size_t kMaxBatteryFile = 1u << 20;
+
+// What the card holds for `rom`'s battery: whether its folder exists, and the size of its bram.srm when there is one. A
+// folder that is not there (FatFs FR_NO_FILE / FR_NO_PATH, which Edio reports as operation error 0x04 / 0x05) is the
+// one failure taken as an answer; any other is the card's or the link's, and is reported as that.
+struct BatteryFolder {
+    bool                         exists = false;
+    std::optional<std::uint32_t> size;
+};
+BatteryFolder listBatteryFolder(Edio& edio, const std::string& rom) {
+    BatteryFolder folder;
+    try {
+        const auto entries = edio.listDir("EDN8/gamedata/" + rom);
+        folder.exists = true;
+        for (const N8DirEntry& e : entries)
+            if (!e.isDir && e.name == "bram.srm") folder.size = e.size;
+    } catch (const std::exception& e) {
+        const std::string what = e.what();
+        const bool absent = what.find("operation error 0x04") != std::string::npos ||
+                            what.find("operation error 0x05") != std::string::npos;
+        if (!absent)
+            throw std::runtime_error("the battery folder EDN8/gamedata/" + rom + " could not be listed: " + what);
+    }
+    return folder;
+}
+
+// Where the N8 OS keeps a game's battery between boots: written back from the cart's SRAM when the console returns to
+// the menu, and loaded into it when the game next boots.
+std::string batteryFilePath(const std::string& rom) { return "EDN8/gamedata/" + rom + "/bram.srm"; }
+
+// A name a job may put in an SD path: a plain file name, at most FatFs's 255 units, with no separator and no control
+// byte (a NUL from the RPC would cut the path short at the device, so "a\0b" would reach ROM a's folder).
+bool plainFileName(const std::string& name) {
+    if (name.empty() || name.size() > 255 || name == "." || name == "..") return false;
+    for (const char c : name)
+        if (c == '/' || c == '\\' || static_cast<unsigned char>(c) <= 0x1F) return false;
+    return true;
+}
+
 }  // namespace
 
 N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string configDir)
@@ -87,7 +138,20 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
         // Read the generation first: a change made after this read is applied again on the serial thread's next turn,
         // never marked applied without having been written.
         const unsigned generation = expVolGeneration_.load(std::memory_order_acquire);
-        applyExpVol(edio, -1);
+        // What the cart runs now, which rom.header / rom.title answer for: the image this host booted is forgotten
+        // unless the cart still runs its mapper (a power-cycle leaves the menu's, a game booted from the cart's own
+        // browser its own; one of the same mapper is the case this cannot tell), and an unreadable block forgets it
+        // too.
+        const int mapper = runningMapper(edio);
+        {
+            std::lock_guard<std::mutex> l(loadedMutex_);
+            if (!loadedRom_.empty() && mapper != loadedMapIndex_) {
+                loadedRom_.clear();
+                loadedName_.clear();
+                loadedMapIndex_ = -1;
+            }
+        }
+        applyExpVol(edio, mapper);
         expVolApplied_.store(generation, std::memory_order_relaxed);
     });
     // A value a param changed while the link is up: the serial thread owns the port, so it writes the standing value
@@ -116,8 +180,14 @@ N8ConfigDto N8Host::getConfig() {
 }
 
 void N8Host::setPort(const std::string& port) {
-    if (sdWorker_.busy()) return;  // an SD op owns the port; don't race link_ connect/disconnect
+    if (sdWorker_.busy() || cartJobBusy()) return;  // an SD op or a cart job owns the port; don't race link_ connect
     const bool wasStreaming = link_.isConnected();
+    if (port != port_) {
+        // Another port may be another cart, with another SD card: what this host booted on the last one names nothing
+        // here.
+        std::lock_guard<std::mutex> l(loadedMutex_);
+        lastBootedName_.clear();
+    }
     port_ = port;
     if (wasStreaming) {
         link_.disconnect();
@@ -127,7 +197,7 @@ void N8Host::setPort(const std::string& port) {
 }
 
 void N8Host::connect(bool enable) {
-    if (sdWorker_.busy()) return;  // an SD op owns the port; the menu also disables this row while busy
+    if (sdWorker_.busy() || cartJobBusy()) return;  // a job owns the port; the menu also disables this row while busy
     if (enable) {
         if (port_.empty()) {  // auto-pick the first attached N8 (USB VID:PID 38df:0017)
             for (const N8PortDto& p : (lister_ ? lister_() : std::vector<N8PortDto>{}))
@@ -143,7 +213,7 @@ void N8Host::connect(bool enable) {
 }
 
 void N8Host::setLookahead(int ms) {
-    if (sdWorker_.busy()) return;
+    if (sdWorker_.busy() || cartJobBusy()) return;
     link_.setLookaheadMs(ms < 0 ? 0 : ms);
     save();
 }
@@ -226,7 +296,7 @@ N8SdWorker::Job N8Host::controlJob(bool reconnectAfter, std::function<void(Edio&
 }
 
 void N8Host::startLoadRom(const std::string& romPath) {
-    if (sdWorker_.busy()) return;
+    if (sdWorker_.busy() || cartJobBusy()) return;
     // reconnectAfter=false: a successful load boots a NEW ROM, so the old stream is stale - leave it stopped.
     sdWorker_.start("load", controlJob(false, [this, romPath](Edio& edio, N8SdWorker::Progress& p) {
         p.phase("Reading ROM");
@@ -266,45 +336,274 @@ void N8Host::startLoadRom(const std::string& romPath) {
 }
 
 void N8Host::startDumpSram(const std::string& destPath) {
-    if (sdWorker_.busy()) return;
-    sdWorker_.start("dump", controlJob(true, [destPath](Edio& edio, N8SdWorker::Progress& p) {
-        p.phase("Reading SRAM");
-        p.total(Edio::SIZE_SRM_GAME);
-        std::vector<std::uint8_t> buf(Edio::SIZE_SRM_GAME);
-        constexpr std::size_t CHUNK = 4096;
-        for (std::size_t off = 0; off < buf.size(); off += CHUNK) {
-            const std::size_t n = std::min(CHUNK, buf.size() - off);
-            edio.memRD(Edio::ADDR_SRM + static_cast<std::int32_t>(off), buf.data() + off, n);
-            p.advance(n);
-        }
-        p.phase("Saving");
-        writeFileBytes(destPath, buf.data(), buf.size());
-        p.result("Dumped 64 KB to " + baseNameOf(destPath));
-    }));
+    (void)destPath;
+    if (sdWorker_.busy() || cartJobBusy()) return;
+    sdWorker_.start("dump", [](N8SdWorker::Progress&) { throw std::runtime_error(kBatteryDirect); });
 }
 
 void N8Host::startRestoreSram(const std::string& srmPath) {
-    if (sdWorker_.busy()) return;
-    sdWorker_.start("restore", controlJob(true, [srmPath](Edio& edio, N8SdWorker::Progress& p) {
-        p.phase("Reading file");
-        const std::vector<std::uint8_t> srm = readFileBytes(srmPath);
-        const std::size_t n = std::min(srm.size(), Edio::SIZE_SRM_GAME);
-        if (n == 0) throw std::runtime_error("save file is empty: " + srmPath);
-        p.phase("Writing SRAM");
-        edio.memWR(Edio::ADDR_SRM, srm.data(), n);  // straight to cart SRAM (a running game); menu would corrupt
-        p.phase("Verifying");
-        p.total(n);
-        std::vector<std::uint8_t> check(n);
-        constexpr std::size_t CHUNK = 4096;
-        for (std::size_t off = 0; off < n; off += CHUNK) {
-            const std::size_t c = std::min(CHUNK, n - off);
-            edio.memRD(Edio::ADDR_SRM + static_cast<std::int32_t>(off), check.data() + off, c);
-            p.advance(c);
+    (void)srmPath;
+    if (sdWorker_.busy() || cartJobBusy()) return;
+    sdWorker_.start("restore", [](N8SdWorker::Progress&) { throw std::runtime_error(kBatteryDirect); });
+}
+
+bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, const void* owner, std::string* error) {
+    using rp::host::Job;
+    const auto refuse = [error](std::string why) {
+        if (error) *error = std::move(why);
+        return false;
+    };
+    const bool sram = r.capability == RP_SYSTEM_SRAM_INTERFACE;
+    const bool rom  = r.capability == RP_SYSTEM_ROM_INTERFACE;
+    if (!sram && !rom) return refuse("the cart presents no " + r.capability);
+
+    // What this host booted on the cart: kept here, so answered at once, with no transfer, whatever the link is doing.
+    // Every connect checks it against the mapper the cart says it runs, and forgets it on a mismatch (a power-cycle,
+    // a game booted from the cart's own browser), so an answer is never a stale image.
+    if (rom && (r.op == "header" || r.op == "title")) {
+        std::lock_guard<std::mutex> l(loadedMutex_);
+        if (loadedRom_.empty()) return refuse("nothing this host booted is running");
+        if (r.op == "header") {
+            const std::size_t n =
+                r.length != 0 ? std::min<std::size_t>(r.length, loadedRom_.size()) : loadedRom_.size();
+            job.result.assign(loadedRom_.begin(), loadedRom_.begin() + static_cast<std::ptrdiff_t>(n));
+        } else {
+            job.result.assign(loadedName_.begin(), loadedName_.end());
         }
-        for (std::size_t i = 0; i < n; i++)
-            if (check[i] != srm[i]) throw std::runtime_error("cart SRAM verify failed (readback != save)");
-        p.result("Restored " + std::to_string(n) + " bytes");
-    }));
+        job.state.store(Job::Done, std::memory_order_release);
+        return true;
+    }
+
+    const bool dump    = sram && r.op == "dump";
+    const bool restore = sram && r.op == "restore";
+    const bool upload  = rom && r.op == "upload";
+    if (!dump && !restore && !upload) return refuse(r.capability + " has no operation '" + r.op + "'");
+    if (restore && (r.bytes.empty() || r.bytes.size() > kMaxBatteryFile))
+        return refuse("a battery restore takes 1 to " + std::to_string(kMaxBatteryFile) + " bytes");
+    if (upload && inesMapper(r.bytes) < 0) return refuse("the upload is not an iNES image");
+    if (upload && !plainFileName(r.name))
+        return refuse("an upload names the file it is stored under, a plain file name");
+    // The ROM whose battery file a battery job reaches: the one it names, else the one this host last booted.
+    std::string batteryRom;
+    if (dump || restore) {
+        if (!r.name.empty() && !plainFileName(r.name))
+            return refuse("a battery job names the ROM's file, a plain file name");
+        if (!r.name.empty()) {
+            batteryRom = r.name;
+        } else {
+            std::lock_guard<std::mutex> l(loadedMutex_);
+            batteryRom = lastBootedName_;
+        }
+        if (batteryRom.empty())
+            return refuse("a battery job needs the ROM's file name: name it, or boot the ROM through rom.upload first");
+    }
+    if (sdWorker_.busy() || cartJobBusy()) return refuse("busy: the cart is running another job");
+    if (!link_.isConnected()) return refuse("not connected");
+    if (!cartJob_.claim(job, owner)) return refuse("busy: the cart is running another job");
+
+    // The job's outcome, which `run` fills and `done` posts once streaming is back: both on the serial thread, one
+    // after the other, so it needs no lock of its own.
+    struct Outcome {
+        bool                      ok = false;
+        std::vector<std::uint8_t> bytes;
+        std::string               error;
+    };
+    auto outcome = std::make_shared<Outcome>();
+    // Between steps: the job's node left the plan (its record already failed), or a disconnect was asked for.
+    const auto checkStop = [this] {
+        if (cartJob_.abandoned()) throw std::runtime_error("the job's node left the plan");
+        if (link_.stopRequested()) throw std::runtime_error("the link was disconnected during the job");
+    };
+    // The cart's state, read off its FPGA config block (a system-region read, which never touches the cart's bus and
+    // puts no byte in a running game's FIFO): the OS runs on its own mapper, 255, so that is the menu.
+    const auto atMenu = [](Edio& edio) {
+        const int mapper = runningMapper(edio);
+        if (mapper < 0) throw std::runtime_error("the cart's config block did not answer");
+        return mapper == kMenuMapper;
+    };
+    using AfterJob = N8Link::AfterJob;
+    N8Link::PausedJob paused;
+    if (dump) {
+        paused.run = [this, outcome, checkStop, atMenu, rom = batteryRom](Edio* edio) {
+            if (!edio) {
+                outcome->error = "the link went down before the job ran";
+                return AfterJob::Resume;
+            }
+            bool open = false;
+            try {
+                checkStop();
+                if (!atMenu(*edio)) throw std::runtime_error(kBatteryAtGame);
+                const std::string   path   = batteryFilePath(rom);
+                const BatteryFolder folder = listBatteryFolder(*edio, rom);
+                if (!folder.size) throw std::runtime_error("no battery file for " + rom + " (" + path + ")");
+                // The card's word for the size is checked against the one bound both directions keep, so a corrupt
+                // directory entry neither allocates gigabytes nor pauses the stream for days.
+                const std::uint32_t size = *folder.size;
+                if (size == 0 || size > kMaxBatteryFile)
+                    throw std::runtime_error("the battery file " + path + " holds " + std::to_string(size) +
+                                             " bytes: a battery file is 1 to " + std::to_string(kMaxBatteryFile));
+                // The menu's file read moves about a kilobyte a second whatever the block (measured on an N8 Pro: 512
+                // bytes in 476 ms, 256 in 209 ms), so a 64 KB file takes about a minute: a block a step, each one a
+                // progress report and a point the job may stop at (reading changes nothing on the card).
+                std::vector<std::uint8_t> buf(size);
+                edio->fileOpen(path, Edio::FA_READ);
+                open = true;
+                cartJob_.progress(0, size);
+                constexpr std::size_t kBlock = static_cast<std::size_t>(Edio::RD_BLOCK_SIZE);
+                for (std::size_t off = 0; off < size; off += kBlock) {
+                    checkStop();
+                    const std::size_t n = std::min<std::size_t>(kBlock, size - off);
+                    edio->fileRead(buf.data() + off, n);
+                    cartJob_.progress(static_cast<std::uint32_t>(off + n), size);
+                }
+                edio->fileClose();
+                open = false;
+                outcome->bytes = std::move(buf);
+                outcome->ok    = true;
+            } catch (const std::exception& e) {
+                outcome->error = e.what();
+                if (open) {
+                    try {
+                        edio->fileClose();
+                    } catch (const std::exception&) {
+                    }
+                }
+            }
+            return AfterJob::Resume;
+        };
+    } else if (restore) {
+        paused.run = [this, outcome, checkStop, atMenu, rom = batteryRom, srm = r.bytes](Edio* edio) {
+            if (!edio) {
+                outcome->error = "the link went down before the job ran";
+                return AfterJob::Resume;
+            }
+            const std::string path = batteryFilePath(rom);
+            bool open = false;
+            try {
+                checkStop();
+                if (!atMenu(*edio)) throw std::runtime_error(kBatteryAtGame);
+                // Whether the ROM's folder is there yet: a game that never saved on this card has none (the N8 OS makes
+                // it at the first write-back), and a restore ahead of the first boot is the way to give it a save, so
+                // the folder is made rather than refused; the result says it was, which is how a caller tells a new
+                // ROM from a mistyped name.
+                const bool created = !listBatteryFolder(*edio, rom).exists;
+                checkStop();  // the last point it may stop at: the open below empties the file there was
+                // The Edio subset has no rename, so there is no writing to a temporary name: the file is replaced in
+                // place, and a write once started runs to the end (the menu writes about 100 KB a second: an upload of
+                // 288 KB took 2.8 s on the real cart, so a battery takes well under a second).
+                const std::uint32_t n = static_cast<std::uint32_t>(srm.size());
+                edio->fileOpen(path, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH);
+                open = true;
+                constexpr std::size_t CHUNK = 4096;
+                cartJob_.progress(0, n);
+                for (std::size_t off = 0; off < n; off += CHUNK) {
+                    const std::size_t c = std::min<std::size_t>(CHUNK, n - off);
+                    edio->fileWrite(srm.data() + off, c);  // each 1 KB acknowledged by the cart, then its status
+                    cartJob_.progress(static_cast<std::uint32_t>(off + c), n);
+                }
+                edio->fileClose();
+                open = false;
+                const std::string json =
+                    "{\"path\":\"" + path + "\",\"created\":" + (created ? "true" : "false") + "}";
+                outcome->bytes.assign(json.begin(), json.end());
+                outcome->ok = true;
+            } catch (const std::exception& e) {
+                outcome->error = e.what();
+                if (open) {
+                    // The open emptied the file there was: what is on the card now is neither save. Closed best-effort,
+                    // so the cart does not keep the handle.
+                    outcome->error = "the battery file " + path + " was replaced and is incomplete: restore again (" +
+                                     e.what() + ")";
+                    try {
+                        edio->fileClose();
+                    } catch (const std::exception&) {
+                    }
+                }
+            }
+            return AfterJob::Resume;
+        };
+    } else {
+        paused.run = [this, outcome, checkStop, atMenu, image = r.bytes, name = r.name](Edio* edio) {
+            if (!edio) {
+                outcome->error = "the link went down before the job ran";
+                return AfterJob::Resume;
+            }
+            const std::string bootPath = "usb-games/" + name;
+            int  mapIndex = -1;
+            bool created = false, opened = false;
+            try {
+                // A running game has no menu, and the menu's own probe would put '*t' into its MIDI stream.
+                if (!atMenu(*edio))
+                    throw std::runtime_error("the cart is running a game, which has no menu to load a ROM: power-cycle "
+                                             "the console to its menu first");
+                N8Menu menu(*edio);
+                menu.test();  // clear error if the menu does not answer
+                edio->fileOpen(bootPath, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH);
+                created = opened = true;
+                constexpr std::size_t CHUNK = 8192;
+                for (std::size_t off = 0; off < image.size(); off += CHUNK) {
+                    checkStop();
+                    const std::size_t n = std::min(CHUNK, image.size() - off);
+                    edio->fileWrite(image.data() + off, n);
+                    cartJob_.progress(static_cast<std::uint32_t>(off + n), static_cast<std::uint32_t>(image.size()));
+                }
+                checkStop();  // the last point that leaves the cart as it was: past it, the cart boots the image
+                edio->fileClose();
+                opened = false;
+                mapIndex = menu.appInstall(bootPath);  // the menu parses iNES and sources the mapper core from SD
+                menu.appStart();
+            } catch (const std::exception& e) {
+                // Nothing booted: the cart is as it was, and streaming resumes to it, as a failed SD op leaves it. A
+                // file this job created goes with it, so the cart's browser never lists a partial image (best-effort).
+                outcome->error = e.what();
+                if (opened) {
+                    try {
+                        edio->fileClose();
+                    } catch (const std::exception&) {
+                    }
+                }
+                if (created) {
+                    try {
+                        edio->fileDelete(bootPath);
+                    } catch (const std::exception&) {
+                    }
+                }
+                return AfterJob::Resume;
+            }
+            // The game runs. The mapload reloaded the OS's stored master_vol, so set ours on the ROM we hold, whose
+            // header names the mapper outright; best-effort, as every expansion-volume write is.
+            try {
+                applyExpVol(*edio, inesMapper(image));
+            } catch (const std::exception&) {
+            }
+            {
+                std::lock_guard<std::mutex> l(loadedMutex_);
+                loadedRom_      = image;
+                loadedName_     = name;
+                loadedMapIndex_ = mapIndex;
+                lastBootedName_ = name;
+            }
+            // The old stream died with the previous ROM, so streaming stops here and the enabled toggle clears and is
+            // persisted, as startLoadRom does. save() reads port_ on this thread: no config writer runs while a job
+            // holds the cart (setPort, connect and setLookahead refuse while cartJobBusy()), so it cannot move here.
+            enabled_.store(false, std::memory_order_relaxed);
+            save();
+            const std::string json = "{\"path\":\"" + bootPath + "\",\"mapIndex\":" + std::to_string(mapIndex) +
+                                     ",\"streaming\":\"stopped\"}";
+            outcome->bytes.assign(json.begin(), json.end());
+            outcome->ok = true;
+            return AfterJob::Stop;
+        };
+    }
+    paused.done = [this, outcome] {
+        if (outcome->ok) cartJob_.succeed(std::move(outcome->bytes));
+        else cartJob_.fail(std::move(outcome->error));
+    };
+    if (!link_.runPaused(std::move(paused))) {
+        cartJob_.unclaim();  // the link went down between the check and the hand-over
+        return refuse("not connected");
+    }
+    return true;
 }
 
 }  // namespace retroplug

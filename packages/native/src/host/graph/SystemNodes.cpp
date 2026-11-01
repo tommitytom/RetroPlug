@@ -295,11 +295,9 @@ constexpr std::size_t kMaxOutputs = 16;
 // is one constant, used by the param's declaration and by the node's own clamp of a wire-driven value.
 constexpr double kGainMinDb = -90.0;
 constexpr double kGainMaxDb = 12.0;
-constexpr int    kExpansionVolumeMin = 0;
-constexpr int    kExpansionVolumeMax = 200;
 using GainParam = rp::float_param<"Gain", rp::range{kGainMinDb, kGainMaxDb, 0}, "dB">;
 using ExpansionVolumeParam =
-    rp::int_param<"Expansion volume", rp::range{kExpansionVolumeMin, kExpansionVolumeMax, 100}, "%">;
+    rp::int_param<"Expansion volume", rp::range{kExpansionVolumeMin, kExpansionVolumeMax, kExpansionVolumeDefault}, "%">;
 
 // What a param's last-applied value holds before the core has been given any: no value equals it, NaN included.
 constexpr double kUnapplied = std::numeric_limits<double>::quiet_NaN();

@@ -55,7 +55,8 @@ public:
 
 private:
     // What a host that owns no cart answers with: never connected, taking every push nowhere and counting it (a node
-    // reads that count as its device's drops), and an expansion volume it has nowhere to send.
+    // reads that count as its device's drops), an expansion volume it has nowhere to send, and every job refused "not
+    // connected" (CartLink's own answer).
     class NoCart final : public CartLink {
     public:
         void push(std::uint32_t, const std::uint8_t*, std::size_t size, bool, double) override {

@@ -74,6 +74,10 @@ bool N8Link::connect(const std::string& port) {
     { TimedChunk drop; while (ring_.tryPop(drop)) {} }
     bytesForwarded_.store(0, std::memory_order_relaxed);
     running_.store(true, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> l(jobMutex_);
+        acceptingJobs_ = true;
+    }
     thread_ = std::thread(&N8Link::serialLoop, this);
     connected_.store(true, std::memory_order_release);  // now the audio thread may push
     return true;
@@ -110,6 +114,16 @@ bool N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::siz
         }
         i += take;
     }
+    return true;
+}
+
+bool N8Link::runPaused(PausedJob job) {
+    if (!job.run || !job.done) return false;
+    std::lock_guard<std::mutex> l(jobMutex_);
+    if (!acceptingJobs_ || jobPending_.load(std::memory_order_relaxed) || !connected_.load(std::memory_order_acquire))
+        return false;
+    job_ = std::move(job);
+    jobPending_.store(true, std::memory_order_release);
     return true;
 }
 
@@ -192,6 +206,30 @@ void N8Link::serviceLink() {
 }
 
 void N8Link::serialLoop() {
+    streamLoop();
+    // The thread is going (a disconnect, a write that failed, a job that stopped streaming): no job is taken from here
+    // on, and one taken that never ran is run now with no port, so its node hears it failed rather than waiting
+    // forever.
+    PausedJob orphan;
+    {
+        std::lock_guard<std::mutex> l(jobMutex_);
+        acceptingJobs_ = false;
+        if (jobPending_.load(std::memory_order_relaxed)) orphan = std::move(job_);
+    }
+    if (orphan.run) {
+        try {
+            orphan.run(nullptr);
+        } catch (const std::exception&) {
+        }
+        jobPending_.store(false, std::memory_order_release);
+        try {
+            orphan.done();
+        } catch (const std::exception&) {
+        }
+    }
+}
+
+void N8Link::streamLoop() {
     try {
         if (linkAllowed_) probeLink();
     } catch (const std::exception& e) {
@@ -211,6 +249,10 @@ void N8Link::serialLoop() {
             } catch (const std::exception&) {
             }
         }
+        if (jobPending_.load(std::memory_order_acquire)) {
+            runJob(chunk, have);
+            continue;
+        }
         try {
             if (rel_) serviceLink();   // acks in, re-sends out - between every chunk and while waiting for one
             if (!have) have = ring_.tryPop(chunk);
@@ -226,19 +268,7 @@ void N8Link::serialLoop() {
                 continue;
             }
             have = false;
-            if (rel_) {
-                std::vector<std::uint8_t> out;
-                std::vector<int> seqs;
-                rel_->send(chunk.data, chunk.len, [&](const std::uint8_t* d, std::size_t k, int seq) {
-                    if (seq >= 0) seqs.push_back(seq);
-                    out.insert(out.end(), d, d + k);
-                });
-                writeFramed(out, seqs, nowNs(), false);
-            } else {
-                if (writeLog_) writeLog_(chunk.data, chunk.len, nowNs(), false);
-                edio_->fifoWR(chunk.data, chunk.len);
-                bytesForwarded_.fetch_add(chunk.len, std::memory_order_relaxed);
-            }
+            writeChunk(chunk);
         } catch (const std::exception& e) {
             setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
             connected_.store(false, std::memory_order_release);
@@ -246,6 +276,116 @@ void N8Link::serialLoop() {
             break;
         }
     }
+}
+
+void N8Link::writeChunk(const TimedChunk& chunk) {
+    if (rel_) {
+        std::vector<std::uint8_t> out;
+        std::vector<int> seqs;
+        rel_->send(chunk.data, chunk.len, [&](const std::uint8_t* d, std::size_t k, int seq) {
+            if (seq >= 0) seqs.push_back(seq);
+            out.insert(out.end(), d, d + k);
+        });
+        writeFramed(out, seqs, nowNs(), false);
+    } else {
+        if (writeLog_) writeLog_(chunk.data, chunk.len, nowNs(), false);
+        edio_->fifoWR(chunk.data, chunk.len);
+        bytesForwarded_.fetch_add(chunk.len, std::memory_order_relaxed);
+    }
+}
+
+void N8Link::drainForJob(TimedChunk& chunk, bool& have) {
+    // What was pushed before the pause goes out first, each chunk at its own release time: at most the lookahead and a
+    // block away, and a note-off among it must reach the cart.
+    while (running_.load(std::memory_order_acquire)) {
+        if (rel_) serviceLink();
+        if (!have) have = ring_.tryPop(chunk);
+        if (!have) break;
+        const std::int64_t now = nowNs();
+        if (now < chunk.targetNs) {
+            std::this_thread::sleep_for(std::chrono::nanoseconds(std::min<std::int64_t>(chunk.targetNs - now, 200'000)));
+            continue;
+        }
+        have = false;
+        writeChunk(chunk);
+    }
+    // And with the reliable link, until the ROM has acknowledged every frame, so the job does not sit on a frame a
+    // DMC-DMA halt ate and only a re-send would deliver. Bounded: a cart that has stopped answering gets its re-sends
+    // after the job, from the sequence state the pause kept.
+    if (!rel_) return;
+    const std::int64_t until = nowNs() + 250'000'000;
+    while (running_.load(std::memory_order_acquire) && rel_->outstanding() > 0 && nowNs() < until) {
+        serviceLink();
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
+    }
+}
+
+void N8Link::runJob(TimedChunk& chunk, bool& have) {
+    PausedJob job;
+    {
+        std::lock_guard<std::mutex> l(jobMutex_);
+        job = std::move(job_);
+    }
+    // From here the job owns the port: a producer drops (and counts) what it pushes until streaming resumes. A push
+    // that read the flag just before this store can still land in the ring after the drain below; it goes out late,
+    // after the job, which for a note-off is the better of the two.
+    connected_.store(false, std::memory_order_release);
+    bool portOk = true;
+    try {
+        drainForJob(chunk, have);
+    } catch (const std::exception& e) {
+        setError(std::string("serial write failed (N8 unplugged?): ") + e.what());
+        portOk = false;
+    }
+    AfterJob after = AfterJob::Stop;
+    if (portOk && running_.load(std::memory_order_acquire)) {
+        try {
+            // Whatever the back-channel still holds (a late ack) would read as the first bytes of the job's reply.
+            serialPort_->flushInput();
+            after = job.run(edio_.get());
+            serialPort_->flushInput();
+            edio_->setReadTimeout(2000);  // a menu command raises it; streaming's own reads never wait on it
+        } catch (const std::exception&) {
+            // The job reports its own failure; one that escapes it leaves the link as a failed op does: streaming.
+        }
+    } else {
+        try {
+            job.run(nullptr);
+        } catch (const std::exception&) {
+        }
+    }
+    if (after == AfterJob::Resume && portOk && running_.load(std::memory_order_acquire)) {
+        connected_.store(true, std::memory_order_release);
+    } else if (portOk) {
+        stopStreaming();
+    } else {
+        running_.store(false, std::memory_order_release);  // a failed write, as streamLoop's: the UI can reconnect
+    }
+    jobPending_.store(false, std::memory_order_release);
+    try {
+        job.done();
+    } catch (const std::exception&) {
+        // A throw here would end the serial thread through its entry point, taking the process with it.
+    }
+}
+
+void N8Link::stopStreaming() {
+    // The job asked for streaming to stop (a ROM boot), or a disconnect came during it: the thread ends here, and
+    // closes the port itself, so another process (the CLI's tools) can open it while nothing streams. disconnect()
+    // joins and finds it closed.
+    running_.store(false, std::memory_order_release);
+    connected_.store(false, std::memory_order_release);
+    // A push that read `connected` just before the pause began reached the ring after its drain; the stream it was for
+    // is gone, so it is thrown away here, and counted (the next connect would clear it uncounted).
+    TimedChunk left;
+    while (ring_.tryPop(left)) {
+        chunksDiscarded_.fetch_add(1, std::memory_order_relaxed);
+        pushesDropped_.fetch_add(1, std::memory_order_relaxed);
+    }
+    rel_.reset();
+    reliable_.store(false, std::memory_order_release);
+    edio_.reset();
+    serialPort_.reset();
 }
 
 }  // namespace retroplug

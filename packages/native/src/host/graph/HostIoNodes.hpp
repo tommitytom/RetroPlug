@@ -1,8 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <optional>
-#include <string_view>
 
 #include "graph/rp_node.h"
 
@@ -29,15 +27,6 @@ namespace rp::host {
 // should wire it. A document holds one rp.host.midi-out at most too (Engine::setGraph refuses a second), which keeps
 // Engine::midiOut frame-sorted: a second would append its own merge behind the first's.
 const rp_package* hostIoPackage();
-
-// rp.n8.cart-mirror (section 3.5), {"system": <id>}: everything on its midi input, then everything on its bytes
-// input (each with its flush flag), handed to the physical N8 the engine feeds, in queue order. The system it names
-// is the one the cart mirrors, which the engine reads off the plan: a NES of the document's, one mirror at most.
-const rp_package* n8Package();
-
-// The system a cart mirror's settings (JSON) name, read as the node reads them, so the engine and the node accept
-// the same settings: a field the node does not know is ignored, a missing or out-of-range system refused (nullopt).
-std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings);
 
 // The most inputs rp.host.midi-out's systems form takes: it copies their ids into a fixed array at each commit, which
 // must not allocate. A host MIDI out producer for every system an engine holds (SnapshotRegistry::kMaxSlots, 64) and

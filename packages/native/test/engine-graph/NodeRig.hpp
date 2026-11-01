@@ -3,7 +3,8 @@
 // A GraphHost carrying the system node packages, the host I/O nodes and the test nodes (TestNodes.hpp), with
 // stand-ins for the engine's services: a node naming a `system` and a `rom` resource builds its core through the rig's
 // factory and the rig's resource table, as the Engine's rp.host.systems/1 and putResource would; what the host MIDI out,
-// the cart mirror and the sync trace would hand the engine is recorded instead.
+// the cart mirror and the sync trace would hand the engine is recorded instead; the device links are the ones a case
+// installs.
 
 #include <algorithm>
 #include <cstdio>
@@ -20,7 +21,9 @@
 #include "graph/GraphHost.hpp"
 #include "graph/HostNodes.hpp"
 #include "graph/nodes/CoreNodes.hpp"
+#include "host/devices/DeviceRegistry.hpp"
 #include "host/graph/HostIoNodes.hpp"
+#include "host/graph/N8Nodes.hpp"
 #include "host/graph/HostServices.hpp"
 #include "host/graph/SystemNodes.hpp"
 #include "system/CoreBackends.hpp"
@@ -85,6 +88,11 @@ struct NodeRig {
     EngineHostIo                                         hostIo{this, &takeNothing, &takeNothing, &isConnected, &recordMidiOut,
                                                                 &ignoreControllerOut, &recordCart};
     EngineSyncTrace                                      trace{this, &recordTrace};
+    // rp.host.devices/1: the links a case installs (devices.install), each name with none answering never connected, as
+    // an Engine's registry does.
+    DeviceRegistry                                       devices;
+    HostDevices                                          hostDevices{this, &acquireCart, &releaseCart, &acquireSurface,
+                                                                     &releaseSurface};
     // The `rom` resource each console's fixture was put under, by node type: one per rig, as one per Engine.
     std::map<std::string, std::uint32_t>                 roms;
     // Last, so it is destroyed first: its nodes free their cores through the host's destroySystem into `released`.
@@ -92,7 +100,8 @@ struct NodeRig {
 
     // `maxFrames` is the plan's maximum block, as an Engine's is: a node builds its core for it, so a rig can hold what
     // a small host block sizes a core to.
-    explicit NodeRig(double sampleRate, std::uint32_t maxFrames = 8192) {
+    explicit NodeRig(double sampleRate, std::uint32_t maxFrames = 8192,
+                     rp::graph::Target target = rp::graph::Target::Desktop) {
         rate = sampleRate;
         registerCoreBackends(factory);
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), sameboyPackage(), mesenPackage(),
@@ -101,12 +110,14 @@ struct NodeRig {
         rp::graph::HostConfig config;
         config.sampleRate = sampleRate;
         config.maxFrames = maxFrames;
+        config.target = target;
         config.interfaces = [](void* ctx, const char* id) -> const void* {
             auto* rig = static_cast<NodeRig*>(ctx);
             const std::string want(id);
             if (want == RP_HOST_SYSTEMS_INTERFACE) return &rig->systems;
             if (want == RP_ENGINE_HOST_IO_INTERFACE) return &rig->hostIo;
             if (want == RP_ENGINE_SYNC_TRACE_INTERFACE) return &rig->trace;
+            if (want == RP_HOST_DEVICES_INTERFACE) return &rig->hostDevices;
             return nullptr;
         };
         config.interfacesCtx = this;
@@ -198,6 +209,14 @@ struct NodeRig {
     static void recordTrace(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
         static_cast<NodeRig*>(ctx)->traced.push_back({frame, bytesOf(data, size), false});
     }
+    static CartLink* acquireCart(void* ctx, const char* name) {
+        return static_cast<NodeRig*>(ctx)->devices.acquireCart(name);
+    }
+    static void releaseCart(void* ctx, CartLink* link) { static_cast<NodeRig*>(ctx)->devices.release(link); }
+    static SurfaceLink* acquireSurface(void* ctx, const char* name) {
+        return static_cast<NodeRig*>(ctx)->devices.acquireSurface(name);
+    }
+    static void releaseSurface(void* ctx, SurfaceLink* link) { static_cast<NodeRig*>(ctx)->devices.release(link); }
 };
 
 }  // namespace rp::host::test

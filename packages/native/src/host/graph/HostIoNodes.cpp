@@ -14,16 +14,11 @@
 
 namespace rp::host {
 
-// Named, so their JSON Schema $defs keys are the same under every compiler.
+// Named, so its JSON Schema $defs key is the same under every compiler.
 struct MidiOutSettings {
     // The system each input's messages go out as, an input per entry: in1 takes the first's. Empty (the default):
     // no inputs.
     std::vector<std::uint32_t> systems;
-};
-
-struct CartMirrorSettings {
-    // The system the cart mirrors (a system id, as a system node's {"system": <id>}).
-    std::uint64_t system = 0;
 };
 
 namespace {
@@ -162,38 +157,6 @@ struct ControllerOut : HostIoNode {
     }
 };
 
-// What the cart mirror's system's FIFO is fed, in the order the kernel stage the kernel node replaced fed it: its MIDI,
-// then its bytes, each in queue order. An empty message is skipped, as that stage skipped it.
-struct CartMirror : HostIoNode {
-    static constexpr const char* id = "rp.n8.cart-mirror";
-    static constexpr const char* name = "N8 Cart Mirror";
-    static constexpr const char* category = "host";
-    using Settings = CartMirrorSettings;
-    // Its settings change nothing it does (the engine reads them off the document), so a change is a swap, and its
-    // prepare reads nothing a commit writes.
-    static constexpr bool stateless_prepare = true;
-    struct {
-        rp::events_in midi;
-        rp::bytes_in  bytes;
-    } inputs;
-
-    static std::optional<std::string> validate(const Settings& s) {
-        if (s.system == 0 || s.system > UINT32_MAX) return "system names the system the cart mirrors: 1 to 4294967295";
-        return std::nullopt;
-    }
-
-    void process(const rp::Block&) noexcept {
-        for (const rp_message& m : inputs.midi.messages()) {
-            const auto data = inputs.midi.data(m);
-            if (!data.empty()) io->cartBytes(io->ctx, m.frame, data.data(), data.size(), false);
-        }
-        for (const rp_message& m : inputs.bytes.messages()) {
-            const auto data = inputs.bytes.data(m);
-            if (!data.empty()) io->cartBytes(io->ctx, m.frame, data.data(), data.size(), (m.flags & RP_MESSAGE_FLUSH) != 0);
-        }
-    }
-};
-
 }  // namespace
 
 const rp_package* hostIoPackage() {
@@ -202,20 +165,6 @@ const rp_package* hostIoPackage() {
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.host.io","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;
-}
-
-const rp_package* n8Package() {
-    static const rp_node_type* const kTypes[] = {rp::node_type<CartMirror>()};
-    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.n8","version":"1.0.0"})",
-                                     static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
-    return &kPackage;
-}
-
-std::optional<std::uint32_t> cartMirrorSystem(std::string_view settings) {
-    const rp_settings s{settings.data(), settings.size(), RP_SETTINGS_JSON};
-    const auto parsed = rp::detail::parseSettings<CartMirror>(&s);
-    if (!parsed) return std::nullopt;
-    return static_cast<std::uint32_t>(parsed->system);  // validate kept it to 1..UINT32_MAX
 }
 
 }  // namespace rp::host

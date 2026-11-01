@@ -200,6 +200,7 @@ RpcJobSubmitResult EngineRpcService::submitJob(RpcJobRequest request) {
     r.region = request.region.value_or("");
     r.offset = request.offset.value_or(0);
     r.length = request.length.value_or(0);
+    r.name = request.name.value_or("");
     if (request.bytes) {
         const auto* p = reinterpret_cast<const std::uint8_t*>(request.bytes->data());
         r.bytes.assign(p, p + request.bytes->size());

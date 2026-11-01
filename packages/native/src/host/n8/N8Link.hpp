@@ -41,6 +41,25 @@ public:
     // a throw is caught and ignored, so a config write never takes the MIDI link down.
     using OnControl = std::function<void(Edio&)>;
 
+    // What a paused job tells the link once it has run: resume streaming, or stop it (a ROM boot: the old stream is
+    // stale, and a running game has no menu to come back to). Stop closes the port, as a disconnect does.
+    enum class AfterJob { Resume, Stop };
+    // A job the serial thread runs with streaming paused (docs/modular-graph-phase-c5-design.md section 6). The pause
+    // keeps the port, the reliable link's sequence state and the expansion volume: everything already pushed goes out
+    // first, each chunk at its own release time, and the reliable link waits until the ROM has acknowledged every frame
+    // (bounded), so a note-off already on its way is not lost; the job then has the port's Edio to itself, and
+    // streaming picks up where it was. `run` gets the link's own Edio, or null when the link went down before the job
+    // could run (it then only says so); `done` runs once streaming has resumed or stopped. Each runs exactly once, on
+    // the serial thread, so a job's completion is posted after the link is back. A job checks stopRequested() between
+    // its steps, and those are its only stop points: a disconnect() (or the owner's destructor) that lands inside a
+    // step waits for it: a 512-byte block of a file read (about half a second on the real cart), a battery file's whole
+    // write once it has begun (under a second), an upload's 8 KB chunk, up to the Edio timeout (2 s) for a cart that
+    // stops answering, plus the drain's bounded wait for acks.
+    struct PausedJob {
+        std::function<AfterJob(Edio*)> run;
+        std::function<void()>          done;
+    };
+
     explicit N8Link(PortFactory factory);
     ~N8Link();
     N8Link(const N8Link&)            = delete;
@@ -51,8 +70,22 @@ public:
     // run it too).
     void          setOnConnected(OnConnected fn) { onConnected_ = std::move(fn); }
     void          setOnControl(OnControl fn) { onControl_ = std::move(fn); }
+    // Hand the serial thread a job to run with streaming paused (see PausedJob). False, and nothing runs, while the
+    // link is down or another job is pending. From the moment the thread takes it until it is done, isConnected()
+    // reads false and push() drops (and counts) what it is given.
+    bool          runPaused(PausedJob job);
+    // A job was handed over and is not done yet (its `done` has not returned).
+    bool          jobPending() const { return jobPending_.load(std::memory_order_acquire); }
+    // [any] A disconnect has been asked for: a paused job checks this between its steps and stops early.
+    bool          stopRequested() const { return !running_.load(std::memory_order_acquire); }
+    // Chunks a stream that stopped after a job (AfterJob::Stop) found in its ring and threw away: pushes that raced the
+    // pause's start, and so reached the ring after its drain. Counted in pushesDropped() too.
+    std::uint64_t chunksDiscarded() const { return chunksDiscarded_.load(std::memory_order_relaxed); }
     bool          connect(const std::string& port);  // open + handshake + spawn the serial thread
-    void          disconnect();                       // stop + join the serial thread, close the port
+    // Stop + join the serial thread, close the port. With a paused job running the join waits for the job's current
+    // step to end (see PausedJob): a caller on a UI thread (Settings > N8's Connect and port rows) should not offer it
+    // while a job holds the cart, as N8Host refuses its config writes then.
+    void          disconnect();
     bool          isConnected() const { return connected_.load(std::memory_order_acquire); }
     std::string   portName() const;
     std::uint64_t bytesForwarded() const { return bytesForwarded_.load(std::memory_order_relaxed); }
@@ -96,6 +129,11 @@ private:
     };
 
     void serialLoop();
+    void streamLoop();                                   // serial thread: the probe, then stream until stopped
+    void writeChunk(const TimedChunk& chunk);            // serial thread: one chunk out, framed when reliable
+    void runJob(TimedChunk& chunk, bool& have);          // serial thread: pause, run the pending job, resume
+    void drainForJob(TimedChunk& chunk, bool& have);     // serial thread: what was pushed before the pause goes out
+    void stopStreaming();                                // serial thread: stop and close the port (AfterJob::Stop)
     void probeLink();                                    // serial thread: sync + listen for an ack
     void serviceLink();                                  // serial thread: read acks, send re-sends
     void writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>& seqs, std::int64_t now, bool resend);
@@ -110,6 +148,16 @@ private:
     std::atomic<bool>          running_{false};
     std::atomic<std::uint64_t> bytesForwarded_{0};
     std::atomic<std::uint64_t> pushesDropped_{0};
+    std::atomic<std::uint64_t> chunksDiscarded_{0};
+
+    // The paused job (runPaused): handed over under jobMutex_, which also orders a submission against the serial
+    // thread's exit, so a job taken is always run (with null, if the link went down first). jobPending_ is the flag the
+    // serial thread polls; it clears just before the job's `done` runs, so a completion `done` posts is never refused
+    // busy by the link (the owner's own slot is what holds a second job off until then).
+    std::mutex                 jobMutex_;
+    PausedJob                  job_;
+    bool                       acceptingJobs_ = false;  // under jobMutex_: the serial thread is running and will poll
+    std::atomic<bool>          jobPending_{false};
 
     mutable std::mutex meta_;      // guards portName_ + error_ (set on connect/disconnect/error, read by status)
     std::string        portName_;
