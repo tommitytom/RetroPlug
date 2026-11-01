@@ -434,19 +434,33 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   table read off the screen against the save; and a ROM uploaded through the job booted in 2.8 s with the header
   matching the file. The rig was left at a fresh menu with every scratch file deleted. The probe's quiet-turn read has
   not been run on a cart.
+- **The surface link's receive ring rode a host's stack** (stage 1). 256 slots of one 562-byte message is 140 KiB, and
+  the link is a member of the SDL standalone's `AppState`, which is a local of `main`: Windows gives that thread 1 MiB
+  of stack, and every suite in this tree runs where it is 8, so nothing here would have caught it. The ring is one
+  allocation made when the link is built, and the drain still copies out of fixed slots and frees nothing. The same
+  pass moved the standalone's plan teardown ahead of the surface's farewell, so a surface node's destroy reaches a
+  link that is still open, as the plugin's already did (section 3).
+- **A detached Launchpad's paint inflated the status line's fault count** (stage 4). The link counts a push while
+  nothing is connected apart from a frame it lost while attached (a full send ring, an oversized message), and the
+  handle a node holds answers their sum; the status line keeps `dropped` for the frames the device is missing and names
+  the detached traffic as such, so one unplugged cable does not mark the device as faulting for the rest of the run.
 
 ### The suite, as built
 
 - `retroplug-engine-graph-test` gained `[devices]` (`Devices.test.cpp`: both links over fake devices, a host with no
-  device, acquire and release across a reactivate and a teardown, a handover to a new node that never leaves the link
-  with no holder, a warmed block allocating nothing), `[capability]` (`Capabilities.test.cpp`: each emulated console
-  against the system-id RPCs and the ROM file, block-boundary completion, removal and discard, the 64 bound, a real
-  device thread's progress, a warmed block with writes in flight), `[n8-node]` (`N8Node.test.cpp`: the fan-out,
-  `connected`, the expansion volume, owed note-offs, the jobs and their refusals, abandonment, `threads`, a warmed
-  block), `[launchpad]` (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the first-block
-  discard, uniqueness, `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a staged
-  message reaching the node the running plan places under the id, and one added later). The protocol cases run the
-  surface wiring and hold their recorded digests; the goldens' documents moved with the fan-out and the surface nodes.
+  device and the state its handles answer, the expansion volume through the interface, acquire and release across a
+  reactivate and a teardown, a handover to a new node that never leaves the link with no holder, a warmed block
+  allocating nothing), `[capability]` (`Capabilities.test.cpp`: each emulated console against the system-id RPCs and
+  the ROM file, block-boundary completion, removal and discard, the 64 bound, a real device thread's progress, a warmed
+  block with writes in flight, and the audio-thread ownership bit held by one guard per case so a failed assertion
+  cannot leave the engine believing a thread still runs it), `[n8-node]` (`N8Node.test.cpp`: the fan-out, `connected`,
+  the expansion volume, owed note-offs, the jobs and their refusals, abandonment, `threads`, `unique`, a warmed block),
+  `[launchpad]` (`Surface.test.cpp`: the drain, the output, `connected`, the queue's bound, the first-block discard,
+  uniqueness, `threads`, acquire balance, a warmed block) and `[stage]` (`StageNode.test.cpp`: a staged message
+  reaching the node the running plan places under the id, in both orders relative to the swap that changes which plan
+  runs, and one added later). The protocol cases run the surface wiring and hold their recorded digests; the goldens'
+  documents moved with the fan-out and the surface nodes, and their driven runs hold each cart node's pushes to what
+  the system it drives had fed its own FIFO, byte for byte.
 - `retroplug-n8-test` gained `[cart-jobs]` (`N8CartJobs.test.cpp`: the pause and its ack bound, battery file dumps and
   restores with their refusals, the upload and its `Stop` (which frees the port even when its trailing flush throws),
   a game's refusals at submission (which drop no push), the probe waiting out an ack the link still owes, a cart reset
