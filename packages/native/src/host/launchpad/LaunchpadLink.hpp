@@ -124,7 +124,7 @@ private:
 
     // device -> audio. Fixed-capacity SPSC ring of fixed slots: the producer (backend callback) copies the bytes into
     // a slot, the consumer (audio thread) copies them out, so neither end of the block thread's path allocates or
-    // frees. Overflow, and a message wider than a slot, drop and count.
+    // frees. Overflow, and a message wider than a slot, drop and count in inboundDropped_.
     std::unique_ptr<rp::host::DeviceMessage[]> inRing_;
     std::atomic<std::size_t>         inHead_{0};  // consumer index (audio thread)
     std::atomic<std::size_t>         inTail_{0};  // producer index (callback thread)
