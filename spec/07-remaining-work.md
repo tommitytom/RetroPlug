@@ -367,8 +367,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     refuses a port reader beside a writer, and a settings ref is a binding it does not see), and a rate change resumes
     where the output had reached, so a fresh r8brain run-in is heard from there rather than a gap. Dither's per-channel
     state is about 5 KB, and two `rp.dsp.dither` nodes with the same settings draw the same noise: the seed step
-    separates one node's channels, not two nodes. The plugin still cannot compile a kit (the RPCs remain harness-only),
-    which D2 owns.
+    separates one node's channels, not two nodes. An above-Nyquist kit filter compiles to constant codes today (the
+    biquad's state goes NaN and the quantiser reads every NaN as code 0), where `rp.dsp.biquad` recovers, so D2 has to
+    decide between the kernel call and the node for such a kit. The plugin still cannot compile a kit (the RPCs remain
+    harness-only), which D2 owns.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

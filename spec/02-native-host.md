@@ -1102,10 +1102,11 @@ the C++ tree.
 
 ### The DSP targets and the `rp.dsp` packages
 
-The kit path's DSP and the graph's DSP nodes are the same kernels, in `src/dsp/`, split across four targets:
+The kit path's DSP and the graph's DSP nodes are the same kernels, in `src/dsp/`, split across five targets:
 `retroplug-dsp-kernels` (gain and peak, the eight RBJ biquads, dither and quantise; the C++ standard library alone),
-`retroplug-dsp-resample` (the r8brain resampler, which brings the heap, pthreads and RTTI; it compiles r8brain's own
-`r8bbase.cpp` on an allocator that throws instead of linking the vendored library), and the two node packages
+`retroplug-dsp-resample` (the r8brain resampler, which brings the heap, pthreads and RTTI), `retroplug-r8brain-base`
+(r8brain's static members, one vendored translation unit compiled on an allocator that throws instead of linking the
+vendored library; kept off RetroPlug's own warning level), and the two node packages
 `retroplug-dsp-nodes` (`rp.dsp.gain`, `.biquad`, `.dither`) and `retroplug-dsp-resample-nodes` (`rp.dsp.resample`), in
 [cmake/graph.cmake](../packages/native/cmake/graph.cmake). `retroplug-core` links both kernel libraries for
 `KitCompiler`, `KitUtil` and `RisaDmcCodec`; `retroplug-graph` links none of them; `retroplug-backend` links both
@@ -1124,10 +1125,13 @@ Two of the nodes guard their state, because nothing between a plan and the host 
 (a frequency above the plan rate's Nyquist makes the RBJ poles unstable, and the kernel's output clamp passes a NaN
 straight through), and `rp.dsp.dither` restarts a channel whose state came out non-finite (a non-finite input sample
 would latch its error terms for the rest of the stream). The guards are on state, not on a document's values: the
-biquad hands the kernel the frequency it is given, because a clamp would be a different kit byte. A dither node's
-channels each draw their own noise, channel `c` from the setting's seed plus `c` times a golden-ratio step, so a
-stereo patch's dither is decorrelated and channel 0 is the setting's own seed (a mono patch is unchanged); the kit
-path calls the kernel directly, so none of this moves a kit byte.
+biquad hands the kernel the frequency it is given, because a clamp would be a different kit byte. The biquad's guard
+is also the one place the node differs from the kernel run directly in a way a kit could see: a kit filter above its
+source rate's Nyquist compiles to constant codes today, where the node recovers, and D2 has to decide between the
+kernel call and the node for such a kit. A dither node's channels each draw their own noise, channel `c` from the
+setting's seed plus `c` times a golden-ratio step, so a stereo patch's dither is decorrelated and channel 0 is the
+setting's own seed (a mono patch is unchanged); the kit path calls the kernel directly, so none of this moves a kit
+byte.
 
 ### Kit reproducibility
 

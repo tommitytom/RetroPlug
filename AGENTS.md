@@ -99,9 +99,10 @@ The rules below are the parts that don't fit those.
   `retroplug-graph-test` holds the DSP library and its nodes: the kernels are chunk-exact and allocation-free in
   `process` once warmed, the resampler from its first chunk, the verbatim references of every dither algorithm and of
   both padded error diffusions included (`[dsp]`); each `rp.dsp` node matches its kernel through a real plan, a block
-  counted from the plan's first block allocating nothing, a descriptor golden per type, a biquad whose filter a sweep
-  past Nyquist poisons reset and recovering, a dither's channels drawing their own noise and a non-finite input
-  restarting a channel, and gain/biquad/dither all plan on the Pico (`[dsp-nodes]`); and `rp.dsp.resample` plays a
+  counted from the plan's first block allocating nothing, a descriptor golden per type, a biquad reset when a sweep
+  past Nyquist poisons it, and recovering, a dither's channels drawing their own noise and a non-finite input
+  (a NaN, or an infinity the diffusion forms latch) restarting a channel, and gain/biquad/dither all plan on the Pico
+  (`[dsp-nodes]`); and `rp.dsp.resample` plays a
   22.05 kHz buffer into a 48 kHz plan and a 48 kHz one into the kit rate, at six splits, takes a loop committed after
   its buffer ran out, carries on after a rate change, wraps a loop and clamps to silence past the buffer's end when
   re-activated and is refused on the Pico (`[dsp-resample]`).
@@ -149,7 +150,10 @@ The rules below are the parts that don't fit those.
     warning `D9025`, which is itself un-suppressable.
   - **A vendored `.cpp` compiled straight into one of our targets** (lodepng, dpf-widgets
     `LVGL.cpp`) takes a per-source `/wd` list via `set_source_files_properties` —
-    per-source options are appended after the target's, so they win over `/W4`.
+    per-source options are appended after the target's, so they win over `/W4`. A whole
+    vendored translation unit with no reason to sit under our level gets a target of its own
+    instead, kept off `_rp_werror_targets` and given the deps' `-w` on GNU/Clang
+    (`retroplug-r8brain-base`, which builds r8brain's `r8bbase.cpp`).
   - **Both windows CI jobs run `windows-2025-vs2026`** (VS 2026, MSVC 14.51) to match the
     dev box. That is deliberate: plain `windows-2025` ships the same VS 2022 17.14 /
     MSVC 14.44 as `windows-2022`, and 14.44 vs 14.51 disagree about which warnings
