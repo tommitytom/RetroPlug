@@ -311,7 +311,10 @@ public:
     std::vector<rp::host::ScriptHost::PackInfo> scriptPacks() const;
     // TEST / HARNESS: one more native node package beside the built-in ones, which is how the engine-graph suite puts
     // its probe nodes on the real engine. Control thread; a document may place its types from the next setGraph on.
-    // False, with the reason in *why (or on stderr when `why` is null), for a package the registry refuses.
+    // `package` must outlive the engine, as the built-in packages do: the registry keeps the pointer as the identity
+    // of the version it registers, so a package with a shorter life would be compared against freed memory. Every
+    // caller today is a function-local `static`. False, with the reason in *why (or on stderr when `why` is null),
+    // for a package the registry refuses.
     bool addNodePackage(const rp_package* package, std::string* why = nullptr);
     // The node types a document can name: the registry's, native and script.
     std::size_t nodeTypeCount() const;

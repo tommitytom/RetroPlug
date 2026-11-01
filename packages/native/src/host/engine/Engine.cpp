@@ -580,7 +580,9 @@ bool Engine::addNodePackage(const rp_package* package, std::string* why) {
 }
 
 void Engine::setDeviceLinks(rp::host::CartLink* cart, rp::host::SurfaceLink* surface) {
-    graph_->devices.install(cart, surface);
+    // Both back at once is the host uninstalling its links, which is what the registry calls `clear`.
+    if (cart == nullptr && surface == nullptr) graph_->devices.clear();
+    else graph_->devices.install(cart, surface);
 }
 
 void Engine::clearGraph() {
@@ -592,6 +594,10 @@ void Engine::clearGraph() {
         for (const auto& e : empty.errors)
             std::fprintf(stderr, "[engine] the empty graph was refused (%s) at %s%s%s: %s\n", e.code.c_str(),
                          e.nodeId.c_str(), e.port.empty() ? "" : ".", e.port.c_str(), e.message.c_str());
+    // The constructor published this same document and nothing can remove a type from the registry, so a refusal
+    // cannot happen here. Every caller assumes it did not: the hosts uninstall their links on the next line, and the
+    // plan a refused clear left alive would then hand its nodes' releases to objects that are already gone.
+    assert(empty.ok && "clearGraph's empty document was refused: a plan outlived the links it uses");
     // The plan the publish replaced is in the release ring: freeing it here destroys its nodes, whose device handles
     // this engine still holds.
     reclaim();
