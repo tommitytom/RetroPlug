@@ -36,6 +36,30 @@ endif()
 # The shape shared by every native test binary (see the file for why).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-binary.cmake)
 
+# --- retroplug-dsp-kernels: the DSP the kit compilers run, as block-streaming kernels (src/dsp/,
+# docs/modular-graph-phase-d1-design.md section 4): gain and peak, the RBJ biquads, dither / quantise, and the
+# r8brain resampler. Core-free on purpose: it links the C++ standard library and, for the resampler alone,
+# r8brain, so retroplug-graph-test and the rp.dsp node package can use it with no core, txiki or backend.
+# (Not `retroplug-dsp`: dpf_add_plugin(retroplug) already names the plugin's own DSP library that.) r8brain is
+# PRIVATE because no header here includes it (Resample.hpp holds it behind a pointer); a static library still
+# hands it to whatever links this one.
+# Threads is found before the target because the resampler object alone brings pthreads and RTTI through r8brain: its
+# filter cache is a std::mutex and its resampler classes are virtual. On a libc that does not fold pthreads into libc
+# this library would otherwise fail to link for a consumer that links nothing else thread-related. It is also why a
+# Pico build wants a source list without Resample.cpp.
+find_package(Threads REQUIRED)
+add_library(retroplug-dsp-kernels STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Gain.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Biquad.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Dither.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Resample.cpp)
+target_include_directories(retroplug-dsp-kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(retroplug-dsp-kernels PRIVATE r8brain Threads::Threads)
+set_target_properties(retroplug-dsp-kernels PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through retroplug-core
+
 # --- retroplug-core: the shared emulator core, as a neutrally-named static lib. Extracted out of
 # packages/native/cli (which also compiled the CLI-only HarnessRpcService) so the host links ONLY the
 # shared core, never a CLI RPC surface it doesn't use. The legacy `retroplug-cli-core` is now a thin
@@ -58,7 +82,7 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/LsdjKitCodec.cpp
-    # risa NES-DPCM (DMC) codec — reuses the generic kit pipeline (r8brain resample + enkiTS), swaps the
+    # risa NES-DPCM (DMC) codec: reuses the generic kit pipeline (the dsp kernels + enkiTS), swaps the
     # pack stage for 1-bit delta DPCM + an 8 KB kit bank.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/risa/RisaDmcCodec.cpp
     # NOTE: the LSDj sav codec + model were removed — they are now pure TS
@@ -97,7 +121,7 @@ target_link_libraries(retroplug-core PUBLIC
     sameboy
     mesen
     rpcpp     # transitively pulls reflectcpp
-    r8brain   # used by KitUtil for resampling
+    retroplug-dsp-kernels  # the kit path's gain, biquad, dither and r8brain resample (src/dsp/)
     enkiTS    # used by KitCompiler for per-sample parallel compile
     miniaudio # header-only audio decoder used by SampleCache
     miniz     # used by projectConfigToZip for --save-rplg

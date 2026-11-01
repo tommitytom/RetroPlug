@@ -241,8 +241,8 @@ retroplug_add_test_binary(
 # Guards the node-graph engine (docs/modular-graph-design.md, Phase A): the executor over raw C-ABI
 # nodes, the canonical JSON C++ and TS share, descriptors, the C++ authoring layer, the planner's
 # validation codes, plan swaps that keep node state, a node reshaped across a layout change, queues sized
-# by their ports and the drops they report, the rp.core nodes, and a no-heap check of the block path.
-# Self-contained: no core, no txiki, no backend.
+# by their ports and the drops they report, the rp.core nodes, a no-heap check of the block path, and the rp::dsp
+# kernels. Self-contained: no core, no txiki, no backend.
 retroplug_add_test_binary(
     NAME     retroplug-graph-test
     SOURCES  test/graph/Executor.test.cpp
@@ -262,6 +262,9 @@ retroplug_add_test_binary(
              test/graph/Resources.test.cpp            # a node that reads a resource its settings name
              test/graph/QueueCapacity.test.cpp
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
+             test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's arithmetic
     LIBS     retroplug-graph
+             retroplug-dsp-kernels                     # core-free: the standard library and r8brain
+             r8brain                                   # Dsp.test.cpp's reference copy of the kit path's resample
              Threads::Threads                          # SwapStress runs a real audio thread
     DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden")

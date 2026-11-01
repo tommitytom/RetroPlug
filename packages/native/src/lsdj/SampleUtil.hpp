@@ -71,20 +71,20 @@ inline void convertNibblesToF32WithRotation(const std::vector<std::uint8_t>& inp
     }
 }
 
-// Encode float32 input pre-scaled to [0, 15] (caller responsible for clamp +
-// scale + round) into packed nibbles WITH rotation. Sample i goes to
+// Encode 4-bit codes (0..15: the quantise pass's, KitUtil::compileSample) into
+// packed nibbles WITH rotation. Sample i goes to
 // position (i+1) % 32 inside its frame; values are inverted (stored = 0xF -
 // amp). Both quirks are needed for byte-exact compatibility with kits built
 // by the LSDJ project's own kit tool.
 // `rotate` applies the LSDJ 9.2.0+ rightward frame rotation; pass false for a pre-9.2.0 target ROM (whose
 // playback engine expects un-rotated frames), so import is byte-correct for the actual LSDj version.
-inline void convertScaledF32ToNibbles(const std::vector<float>& input,
-                                      std::vector<std::uint8_t>& output,
-                                      bool rotate = true) {
+inline void convertCodesToNibbles(const std::vector<std::uint16_t>& input,
+                                  std::vector<std::uint8_t>& output,
+                                  bool rotate = true) {
     const std::size_t numChunks = input.size() / SAMPLES_PER_FRAME;
     output.resize(numChunks * BYTES_PER_FRAME);
 
-    const float* src = input.data();
+    const std::uint16_t* src = input.data();
     std::uint8_t* dst = output.data();
 
     for (std::size_t chunk = 0; chunk < numChunks; ++chunk) {

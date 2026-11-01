@@ -6,64 +6,10 @@
 #include <cmath>
 #include <cstring>
 
-#include <CDSPResampler.h>
-
+#include "dsp/Resample.hpp"
 #include "lsdj/SampleUtil.hpp"
 
 namespace rp::lsdj::KitUtil {
-
-void convertSamplerate(double inputSampleRate,
-                       double outputSampleRate,
-                       const std::vector<float>& buffer,
-                       std::vector<float>& target) {
-    if (buffer.empty()) {
-        target.clear();
-        return;
-    }
-
-    constexpr std::size_t kInBufCapacity = 1024;
-    r8b::CFixedBuffer<double> inBuf;
-    // Sized to the fixed chunk, NOT the source length: the loop always fills/processes kInBufCapacity
-    // doubles (zero-padding a short tail), so a source shorter than one chunk would otherwise overflow.
-    inBuf.alloc(static_cast<int>(kInBufCapacity));
-
-    // MaxInLen MUST match the fixed block we actually feed (kInBufCapacity), not the source length: the
-    // loop always hands process() a full kInBufCapacity block (zero-padded), so a shorter MaxInLen would
-    // overflow r8brain's internal buffers on a source under one chunk.
-    r8b::CPtrKeeper<r8b::CDSPResampler24*> resampler =
-        new r8b::CDSPResampler24(inputSampleRate, outputSampleRate,
-                                 static_cast<int>(kInBufCapacity));
-
-    const std::size_t targetSize =
-        static_cast<std::size_t>(buffer.size() * (outputSampleRate / inputSampleRate));
-    target.resize(targetSize);
-
-    std::size_t sourcePos = 0;
-    std::size_t targetPos = 0;
-
-    while (targetPos < targetSize) {
-        std::fill_n(inBuf.getPtr(), kInBufCapacity, 0.0);
-
-        const std::size_t chunkSize =
-            std::min(kInBufCapacity, buffer.size() - sourcePos);
-        for (std::size_t i = 0; i < chunkSize; ++i) {
-            inBuf[i] = static_cast<double>(buffer[sourcePos++]);
-        }
-
-        double* targetBuffer = nullptr;
-        std::size_t writeCount = static_cast<std::size_t>(
-            resampler->process(inBuf.getPtr(),
-                               static_cast<int>(kInBufCapacity),
-                               targetBuffer));
-
-        if (targetPos + writeCount > targetSize) {
-            writeCount = targetSize - targetPos;
-        }
-        for (std::size_t i = 0; i < writeCount; ++i) {
-            target[targetPos++] = static_cast<float>(targetBuffer[i]);
-        }
-    }
-}
 
 namespace {
 
@@ -122,28 +68,19 @@ std::vector<std::uint8_t> compileSample(const SampleInput& sample) {
 
     // Resample to the GB target rate.
     std::vector<float> resampled;
-    convertSamplerate(static_cast<double>(sample.sampleRate),
+    rp::dsp::resample(static_cast<double>(sample.sampleRate),
                       static_cast<double>(kGameboySampleRate),
-                      window, resampled);
+                      window.data(), window.size(), resampled);
 
-    if (pendingDither) {
-        processEffect(*pendingDither, resampled,
-                      static_cast<float>(kGameboySampleRate));
-        // dither outputs [0, 15] already.
-    } else {
-        // Manual clamp + scale + round so the buffer matches the dither
-        // path's [0, 15] convention before nibble packing.
-        for (float& v : resampled) {
-            v = (std::clamp(v, -1.0f, 1.0f) + 1.0f) * 0.5f;
-            v = std::round(v * 15.0f);
-        }
-    }
+    // Quantise to 4-bit codes at the GB rate: through the dither when one is
+    // set, plain rounding otherwise. The dither sees (and is seeded from) the
+    // whole resampled sample, before the trim below.
+    std::vector<std::uint16_t> codes = quantise(resampled, pendingDither);
 
     // Trim to whole 32-sample frames so the packer can pack them flush.
-    const std::size_t aligned = frameAlign(resampled.size());
-    resampled.resize(aligned);
+    codes.resize(frameAlign(codes.size()));
 
-    SampleUtil::convertScaledF32ToNibbles(resampled, out, sample.rotate);
+    SampleUtil::convertCodesToNibbles(codes, out, sample.rotate);
     return out;
 }
 

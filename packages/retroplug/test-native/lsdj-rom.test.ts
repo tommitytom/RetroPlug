@@ -133,7 +133,7 @@ test("import-sample splice: compile one sample + rebuild a kit around the existi
   if (!be.fileExists(LSDJ)) skip(`lsdj-rom import: LSDj ROM not found at ${LSDJ}`);
   const audio = createAudioDriver();
   const wav = "/tmp/rp-kit-short.wav";
-  writeTestWav(be, wav, 600); // < 1024 source frames → exercises the convertSamplerate overflow fix
+  writeTestWav(be, wav, 600); // < 1024 source frames → a source shorter than one resampler chunk (rp::dsp::Resampler)
 
   // Compile the one sample (a throwaway 1-sample bank) and pull its nibble bytes.
   const oneBank = audio.compileKit({ name: "", samples: [{ path: wav, name: "NEW", effects: [] }] });

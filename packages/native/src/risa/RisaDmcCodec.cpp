@@ -6,7 +6,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "lsdj/KitUtil.hpp" // convertSamplerate (r8brain)
+#include "dsp/Resample.hpp"
 
 namespace rp::risa {
 namespace {
@@ -147,7 +147,7 @@ std::vector<std::uint8_t> RisaDmcCodec::encode(std::size_t i, const rp::kit::Sam
     }
 
     std::vector<float> resampled;
-    rp::lsdj::KitUtil::convertSamplerate(srcRate, targetRate, window, resampled);
+    rp::dsp::resample(srcRate, targetRate, window.data(), window.size(), resampled);
 
     std::vector<std::uint8_t> dmc = convertF32ToDpcm(resampled, spec.normalize);
     if (dmc.size() > kDmcMaxBytes) dmc.resize(kDmcMaxBytes); // 4081 = 16*255+1 (still a legal length)

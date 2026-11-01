@@ -1,9 +1,11 @@
 #pragma once
 
+// Neither <algorithm> nor <cmath> has a user in this header any more: the gain fold and the filter set-up moved into
+// src/dsp/, and kPi's only remaining caller is test/audio/Dither.test.cpp. They stay because host/rpc/BackendTypes.hpp
+// re-exports this header across the plugin's DSP surface, and a transitive include is not worth removing blind.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <random>
 #include <vector>
 
 #include <rfl/Literal.hpp>
@@ -13,10 +15,13 @@
 // the legacy build's Effects.h + AudioDithering.h.
 //
 // Each effect is a plain-data struct that round-trips via reflectcpp; the
-// `LsdjEffect` TaggedUnion below is the serialized effect descriptor. The
-// per-effect `processEffect(...)` overloads run in `KitUtil::compileKit`
-// against a float buffer in [-1, 1] (or, for dither, expect [-1, 1] and
-// output samples pre-quantized into [0, 2^bitDepth - 1]).
+// `LsdjEffect` TaggedUnion below is the serialized effect descriptor, which the
+// compileKit / compileDmc RPCs decode. The per-effect `processEffect(...)`
+// overloads run in `KitUtil::compileSample` and `RisaDmcCodec::encode` against a
+// float buffer in [-1, 1] (or, for dither, expect [-1, 1] and output samples
+// pre-quantized into [0, 2^bitDepth - 1]). They are whole-buffer loops over the
+// rp::dsp kernels (src/dsp/), which hold the arithmetic; this file only maps an
+// effect's fields onto a kernel's.
 
 namespace rp::lsdj {
 
@@ -32,17 +37,11 @@ struct GainEffect {
     float gain      = 1.0f;
 };
 
-inline void processEffect(const GainEffect& effect,
-                          std::vector<float>& target,
-                          float /*sampleRate*/) {
-    float gain = effect.gain;
-    if (effect.normalize) {
-        float maxAmp = 0.0f;
-        for (float v : target) maxAmp = std::max(maxAmp, std::abs(v));
-        if (maxAmp > 0.0f) gain *= 1.0f / maxAmp;
-    }
-    for (float& v : target) v *= gain;
-}
+// With `normalize`, the whole buffer's peak is measured first and folded into
+// the gain (rp::dsp::peak, rp::dsp::normalizedGain); then one multiply.
+void processEffect(const GainEffect& effect,
+                   std::vector<float>& target,
+                   float sampleRate);
 
 // -----------------------------------------------------------------------
 // FilterEffect — RBJ-cookbook biquads.
@@ -75,9 +74,8 @@ void processEffect(const FilterEffect& effect,
 // DitherEffect — bit-depth reduction with noise shaping.
 //
 // Input  : samples in [-1, 1].
-// Output : samples already quantised into [0, 2^bitDepth - 1] floats — the
-//          kit-compile pipeline passes the buffer straight to
-//          SampleUtil::convertScaledF32ToNibbles after the dither pass.
+// Output : samples already quantised into [0, 2^bitDepth - 1] floats (the
+//          codes `quantise` below gives, as floats).
 //
 // Five algorithms preserved verbatim from the legacy AudioDithering helpers.
 // `HighPassTPDF` is the LSDJ legacy default.
@@ -99,6 +97,13 @@ struct DitherEffect {
 void processEffect(const DitherEffect& effect,
                    std::vector<float>& target,
                    float sampleRate);
+
+// LSDj's 4-bit sample codes (0..15) for a whole buffer at the kit rate: through
+// `dither`'s algorithm, or plain rounding when there is none. The TPDF
+// algorithms are seeded from the whole buffer (rp::dsp::inputSeed), so the
+// codes are a function of the buffer and the effect alone.
+std::vector<std::uint16_t> quantise(const std::vector<float>& buffer,
+                                    const DitherEffect* dither);
 
 // `LsdjEffect` is the on-disk variant; serialised under the discriminator
 // key `"type"` to match the legacy spelling.

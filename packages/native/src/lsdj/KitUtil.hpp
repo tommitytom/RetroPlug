@@ -41,14 +41,6 @@ struct Kit {
 
 namespace KitUtil {
 
-// Resample one sample buffer from `inputSampleRate` to `outputSampleRate`
-// using r8brain's CDSPResampler24. Output length is rounded down from
-// `buffer.size() * (outputSampleRate / inputSampleRate)`.
-void convertSamplerate(double inputSampleRate,
-                       double outputSampleRate,
-                       const std::vector<float>& buffer,
-                       std::vector<float>& target);
-
 // A single sample's input to the kit compiler.
 struct SampleInput {
     std::string             name;      // up to 3 chars; uppercased + '-' padded
@@ -63,10 +55,11 @@ struct SampleInput {
 // Resample + apply effects + 4-bit nibble-pack one sample. Output is the
 // raw byte stream destined for the kit bank's sample-data region (no
 // offset-table or naming concerns). Effect ordering matches legacy:
-// non-dither effects run first at the *input* sample rate; dither runs
-// after resampling, on the scaled-to-[0,15] domain. Manual scaling +
-// rounding is performed in the no-dither branch so the path always feeds
-// nibble-packing the same way.
+// non-dither effects run first at the *input* sample rate; the sample is
+// resampled to the GB rate (rp::dsp::resample); then it is quantised to 4-bit
+// codes there, through the dither when one is set and by plain rounding when
+// not (`quantise`, Effects.hpp), so the path always feeds nibble-packing the
+// same way.
 //
 // Returns the compressed bytes. Caller decides how to slot them into a
 // kit (KitUtil::buildKit below).
