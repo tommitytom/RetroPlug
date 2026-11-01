@@ -316,6 +316,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     a DAW's `setState` replaced while the transport plays keeps its nodes (a cart node and the notes it holds on the
     cart, a core, the resources they pin) until the next publish, the editor opening or a deactivate. The harness hosts
     (test host, CLI, Node addon) reclaim when their session calls `drainReleased` or `stopAudio`.
+  - **The DPF JACK standalone can reclaim on two threads** (pre-C5): a JACK buffer-size change runs
+    `PluginDSP::deactivate` on JACK's notification thread, which drains and reclaims the release ring there, beside the
+    main thread's own reclaim (`setGraph`'s, and since C5 the editor's per-frame one). The ring has one reader by
+    design, so the two can race while a buffer-size change lands; that is rare and manual, but the per-frame reclaim
+    widens the window from an edit to any frame. The fix is to route the deactivate's reclaim to the main thread.
   - **MIDI streamed to a cart at its menu reaches the menu's own command parser** (pre-C5, unverified on hardware):
     the menu takes commands over the same FIFO, so a MIDI data pair such as `0x2A 0x73` (`*s`) sent while the menu
     shows can ask it to start an app. It holds for raw MIDI after a connect at the menu and for framed MIDI after a
