@@ -101,6 +101,37 @@ struct Rig {
     }
 };
 
+// The engine's audio-thread ownership bit, taken for a case's scope: the set and the clear a case that plays the audio
+// thread (or runs one) must both do, even when a REQUIRE throws between them. A Rig destroyed while the bit is still
+// set tears down a GraphHost that asserts an audio thread owns it, which aborts the whole run instead of reporting one
+// failed case. A case with a real block thread hands it over too, so the bit is cleared only once that thread is
+// joined.
+struct AudioThreadOwner {
+    QueuedInvoker&    invoker;
+    std::atomic<bool> stop{false};
+    std::thread       thread;  // empty unless the case runs its blocks on one
+    bool              stopped = false;
+
+    explicit AudioThreadOwner(QueuedInvoker& inv) : invoker(inv) { invoker.setAudioThreadOwns(true); }
+    ~AudioThreadOwner() { stopNow(); }
+    AudioThreadOwner(const AudioThreadOwner&)            = delete;
+    AudioThreadOwner& operator=(const AudioThreadOwner&) = delete;
+
+    // A block thread of the case's own, on `body`, which stopNow stops through `stop` and joins.
+    template <class F>
+    void run(F body) {
+        thread = std::thread(std::move(body));
+    }
+    // The end of the case's use of the engine: stop the block thread when there is one, join it, then clear the bit.
+    void stopNow() {
+        if (stopped) return;
+        stopped = true;
+        stop.store(true, std::memory_order_release);
+        if (thread.joinable()) thread.join();
+        invoker.setAudioThreadOwns(false);
+    }
+};
+
 // The bytes of a fixture the resources tree holds, or empty when it is not there (as CI runs).
 std::vector<std::uint8_t> resourceFixture(const char* relative) {
     const char* root = std::getenv("RETROPLUG_RESOURCES_DIR");
@@ -207,7 +238,8 @@ TEST_CASE("a write completes once the block after its drain has published it, an
     const std::vector<std::uint8_t> written = {0xde, 0xad, 0xbe, 0xef, 0x01, 0x23, 0x45, 0x67};
     const auto before = rig.now(rig.submit("sys-1", kMemory, "read", "ram", 0x40, 8));
     REQUIRE(before != written);
-    rig.invoker.setAudioThreadOwns(true);  // pushes queue for the block thread, which this thread is now
+    // Pushes queue for the block thread, which this thread now plays.
+    AudioThreadOwner audio{rig.invoker};
     const auto write = rig.submit("sys-1", kMemory, "write", "ram", 0x40, 0, written);
     REQUIRE(write.id != 0);
     CHECK(rig.e.drainJobs().empty());  // in the ring
@@ -222,7 +254,6 @@ TEST_CASE("a write completes once the block after its drain has published it, an
     // The system-id read agrees, at the same offset of the same region.
     const auto ram = bytesOf(*rig.rpc.readRam(1));
     CHECK(std::vector<std::uint8_t>(ram.begin() + 0x40, ram.begin() + 0x48) == written);
-    rig.invoker.setAudioThreadOwns(false);
 }
 
 TEST_CASE("writes submitted while a real audio thread runs blocks complete, each visible to the read after it",
@@ -232,35 +263,19 @@ TEST_CASE("writes submitted while a real audio thread runs blocks complete, each
     Rig rig;
     REQUIRE(rig.plan({{1, rp::host::test::kGbType}}));
     rig.block();
-    rig.invoker.setAudioThreadOwns(true);
-    std::atomic<bool> stop{false};
-    std::thread audio([&] {
+    // A failing REQUIRE below throws: the guard stops and joins the block thread on the way out (std::thread's
+    // destructor would call std::terminate and the failure would never be reported) and only then clears the engine's
+    // ownership bit, so the passing and the failing path tear the engine down alike.
+    AudioThreadOwner audio{rig.invoker};
+    audio.run([&] {
         std::vector<float> l(256), r(256);
         float* outs[2] = {l.data(), r.data()};
-        while (!stop.load(std::memory_order_acquire)) {
+        while (!audio.stop.load(std::memory_order_acquire)) {
             rig.invoker.drainInto(rig.e);
             rig.e.processBlock(256, outs, 2);
             std::this_thread::sleep_for(std::chrono::microseconds(200));
         }
     });
-    // A failing REQUIRE below throws: the thread must be stopped and joined on the way out, or std::thread's destructor
-    // calls std::terminate and the failure is never reported, and only then is the engine's ownership bit cleared, or
-    // the Rig destroys a GraphHost that believes an audio thread still owns it. `stopNow` is the same three steps the
-    // end of the case takes, so the passing and the failing path tear down alike.
-    struct StopOnExit {
-        std::atomic<bool>& stop;
-        std::thread&        thread;
-        QueuedInvoker&      invoker;
-        bool                stopped = false;
-        void stopNow() {
-            if (stopped) return;
-            stopped = true;
-            stop.store(true, std::memory_order_release);
-            if (thread.joinable()) thread.join();
-            invoker.setAudioThreadOwns(false);
-        }
-        ~StopOnExit() { stopNow(); }
-    } stopOnExit{stop, audio, rig.invoker};
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
     for (std::uint8_t k = 1; k <= 16; ++k) {
         const std::vector<std::uint8_t> written = {k, static_cast<std::uint8_t>(k * 3), static_cast<std::uint8_t>(~k)};
@@ -279,7 +294,7 @@ TEST_CASE("writes submitted while a real audio thread runs blocks complete, each
         REQUIRE(done);
         CHECK(rig.now(rig.submit("sys-1", kMemory, "read", "ram", 0x100 + k * 4, 3)) == written);
     }
-    stopOnExit.stopNow();
+    audio.stopNow();
     CHECK(rig.now(rig.submit("sys-1", kMemory, "read", "ram", 0x201, 1)) == std::vector<std::uint8_t>{1});
     CHECK(rig.e.jobsOutstanding() == 0);
 }
@@ -313,7 +328,7 @@ TEST_CASE("a write whose node leaves the plan before it is published, or that th
     SECTION("the node removed") {
         REQUIRE(rig.plan({{1, gb}, {2, gb}}));
         rig.block();
-        rig.invoker.setAudioThreadOwns(true);
+        AudioThreadOwner audio{rig.invoker};
         const auto write = rig.submit("sys-1", kMemory, "write", "ram", 0, 0, written);
         REQUIRE(write.id != 0);
         // Published behind the write, so the drain applies the write to system 1's core (alive: its plan is not yet
@@ -324,26 +339,24 @@ TEST_CASE("a write whose node leaves the plan before it is published, or that th
         const auto c = rig.completion(write.id);
         CHECK_FALSE(c.ok);
         CHECK(c.error == "node sys-1 left the plan before the job completed");
-        rig.invoker.setAudioThreadOwns(false);
         rig.e.reclaim();
         CHECK_FALSE(rig.e.coreLive(1));
     }
     SECTION("the plan replaced by one that rebuilds the system under a new id") {
         REQUIRE(rig.plan({{1, gb}}));
         rig.block();
-        rig.invoker.setAudioThreadOwns(true);
+        AudioThreadOwner audio{rig.invoker};
         const auto write = rig.submit("sys-1", kMemory, "write", "ram", 0, 0, written);
         REQUIRE(write.id != 0);
         REQUIRE(rig.plan({{3, gb}}));  // a rebuild, as the stores make one: the same ROM under a fresh id
         rig.invoker.drainInto(rig.e);
         rig.block();
         CHECK(rig.completion(write.id).error == "node sys-1 left the plan before the job completed");
-        rig.invoker.setAudioThreadOwns(false);
     }
     SECTION("the plan replaced by one that keeps the node: the write completes") {
         REQUIRE(rig.plan({{1, gb}}));
         rig.block();
-        rig.invoker.setAudioThreadOwns(true);
+        AudioThreadOwner audio{rig.invoker};
         const auto write = rig.submit("sys-1", kMemory, "write", "ram", 0, 0, written);
         REQUIRE(write.id != 0);
         REQUIRE(rig.plan({{1, gb}, {2, gb}}));
@@ -351,17 +364,16 @@ TEST_CASE("a write whose node leaves the plan before it is published, or that th
         rig.block();
         CHECK(rig.completion(write.id).ok);
         CHECK(rig.now(rig.submit("sys-1", kMemory, "read", "ram", 0, 2)) == written);
-        rig.invoker.setAudioThreadOwns(false);
     }
     SECTION("discarded at teardown") {
         REQUIRE(rig.plan({{1, gb}}));
         rig.block();
-        rig.invoker.setAudioThreadOwns(true);
+        AudioThreadOwner audio{rig.invoker};
         const auto write = rig.submit("sys-1", kMemory, "write", "ram", 0, 0, written);
         REQUIRE(write.id != 0);
         REQUIRE(rig.plan({{2, gb}}));
         rig.invoker.freePending();  // the audio thread stopped: the plan is adopted, the write dropped
-        rig.invoker.setAudioThreadOwns(false);
+        audio.stopNow();
         CHECK(rig.completion(write.id).error == "the engine stopped before the job ran");
     }
     CHECK(rig.e.jobsOutstanding() == 0);
@@ -371,7 +383,7 @@ TEST_CASE("the jobs outstanding are bounded: a submission past the bound is refu
           "[engine-graph][capability]") {
     Rig rig;
     REQUIRE(rig.plan({{1, rp::host::test::kGbType}}));
-    rig.invoker.setAudioThreadOwns(true);
+    AudioThreadOwner audio{rig.invoker};
     // Reads completed and writes still in the ring count alike: each holds room for its completion.
     const auto write = rig.submit("sys-1", kMemory, "write", "ram", 0, 0, {1});
     REQUIRE(write.id != 0);
@@ -388,7 +400,7 @@ TEST_CASE("the jobs outstanding are bounded: a submission past the bound is refu
     REQUIRE(rest.size() == 2);
     CHECK(rest[0].done);
     CHECK(rest[1].done);
-    rig.invoker.setAudioThreadOwns(false);
+    audio.stopNow();
     CHECK(rig.e.jobsOutstanding() == 0);
 }
 
@@ -432,7 +444,7 @@ TEST_CASE("a warmed block with capability writes in flight allocates and frees n
     Rig rig;
     REQUIRE(rig.plan({{1, rp::host::test::kGbType}}));
     for (int b = 0; b < 4; ++b) rig.block(256);
-    rig.invoker.setAudioThreadOwns(true);
+    AudioThreadOwner audio{rig.invoker};
     const auto write = rig.submit("sys-1", kMemory, "write", "ram", 0x20, 0, {1, 2, 3, 4});
     REQUIRE(write.id != 0);
     REQUIRE(rig.invoker.writeRam(1, 0x30, {5, 6, 7, 8}));
@@ -443,7 +455,7 @@ TEST_CASE("a warmed block with capability writes in flight allocates and frees n
     CHECK(counted.allocations == 0);
     CHECK(counted.frees == 0);
     CHECK(rig.completion(write.id).ok);
-    rig.invoker.setAudioThreadOwns(false);
+    audio.stopNow();
     CHECK(rig.now(rig.submit("sys-1", kMemory, "read", "ram", 0x20, 4)) == std::vector<std::uint8_t>{1, 2, 3, 4});
     CHECK(rig.now(rig.submit("sys-1", kMemory, "read", "ram", 0x30, 4)) == std::vector<std::uint8_t>{5, 6, 7, 8});
 }
@@ -454,12 +466,12 @@ TEST_CASE("writes the audio thread's stop flushes complete at the next drain, pu
     Rig rig;
     REQUIRE(rig.plan({{1, rp::host::test::kGbType}}));
     rig.block();
-    rig.invoker.setAudioThreadOwns(true);
+    AudioThreadOwner audio{rig.invoker};
     const auto a = rig.submit("sys-1", kMemory, "write", "ram", 0x50, 0, {0x11, 0x22});
     const auto b = rig.submit("sys-1", kMemory, "write", "ram", 0x60, 0, {0x33});
     REQUIRE(a.id != 0);
     REQUIRE(b.id != 0);
-    rig.invoker.setAudioThreadOwns(false);
+    audio.stopNow();
     const auto done = rig.e.drainJobs();
     REQUIRE(done.size() == 2);
     CHECK(done[0].id == a.id);
@@ -475,7 +487,7 @@ TEST_CASE("a write a block that runs nothing leaves unpublished completes at the
     Rig rig;
     REQUIRE(rig.plan({{1, rp::host::test::kGbType}}));
     rig.block();
-    rig.invoker.setAudioThreadOwns(true);
+    AudioThreadOwner audio{rig.invoker};
     const auto write = rig.submit("sys-1", kMemory, "write", "ram", 0x70, 0, {0x44, 0x55});
     REQUIRE(write.id != 0);
     rig.invoker.drainInto(rig.e);
@@ -489,7 +501,7 @@ TEST_CASE("a write a block that runs nothing leaves unpublished completes at the
     rig.block();
     CHECK(rig.completion(write.id).ok);
     CHECK(rig.now(rig.submit("sys-1", kMemory, "read", "ram", 0x70, 2)) == std::vector<std::uint8_t>{0x44, 0x55});
-    rig.invoker.setAudioThreadOwns(false);
+    audio.stopNow();
     rig.e.reclaim();  // reports the oversized block, once
 }
 
@@ -497,7 +509,7 @@ TEST_CASE("a full command ring refuses a write, the job's and the system-id one 
     Rig rig;
     REQUIRE(rig.plan({{1, rp::host::test::kGbType}}));
     rig.block();
-    rig.invoker.setAudioThreadOwns(true);
+    AudioThreadOwner audio{rig.invoker};
     DspCommand bpm;
     bpm.kind = DspCommand::Kind::SetBpm;
     bpm.setBpm = {120.0};
@@ -514,7 +526,6 @@ TEST_CASE("a full command ring refuses a write, the job's and the system-id one 
     rig.invoker.drainInto(rig.e);
     rig.block();
     CHECK(rig.completion(write.id).ok);
-    rig.invoker.setAudioThreadOwns(false);
 }
 
 TEST_CASE("a job a device thread runs reports its progress once per change, then its result or its error",
