@@ -271,4 +271,7 @@ retroplug_add_test_binary(
              retroplug-dsp-kernels                    # core-free: the standard library
              retroplug-dsp-resample                   # Dsp.test.cpp's resampler
              Threads::Threads                          # SwapStress runs a real audio thread
-    DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden")
+    DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden"
+    # Dsp.test.cpp includes dsp/R8bAllocator.hpp first, and that header includes r8brain's CDSPResampler.h. The dep's
+    # include directory is private to the resampler target, so the one test that reads it asks for it here.
+    INCLUDES ${CMAKE_SOURCE_DIR}/deps/r8brain)

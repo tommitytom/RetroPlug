@@ -61,8 +61,8 @@ set_target_properties(retroplug-dsp-kernels PROPERTIES
 # /W4 /WX is scoped to RetroPlug's own targets (cmake/warnings.cmake), which this one is deliberately not on, and
 # GNU/Clang get the same `-w` a vendored dep gets (retroplug_silence_dep_warnings). Its one source includes r8brain's
 # r8bbase.cpp through dsp/R8bAllocator.hpp, so every r8brain class in the program is built on the throwing allocator;
-# one translation unit in one target means there is no second definition of those classes to keep, and the root
-# CMakeLists' retroplug_forbid_linking(r8brain) refuses the vendored library at configure time.
+# one translation unit in one target means there is no second definition of those classes to keep, and the tree
+# declares no target for the vendored library, so there is none to link.
 add_library(retroplug-r8brain-base STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/R8bBase.cpp)
 target_include_directories(retroplug-r8brain-base PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -77,15 +77,16 @@ retroplug_silence_dep_warnings(retroplug-r8brain-base)
 # shared lib only), and the Launchpad scan thread and N8Link's serial thread do too. Found once, for this directory.
 find_package(Threads REQUIRED)
 add_library(retroplug-dsp-resample STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Resample.cpp)
-target_include_directories(retroplug-dsp-resample PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    # r8brain's headers, all this build takes from the vendored dep: dsp/R8bAllocator.hpp includes CDSPResampler.h, so
-    # every consumer of this library's headers needs the directory too.
-    ${CMAKE_SOURCE_DIR}/deps/r8brain)
-# The vendored `r8brain` library is deliberately NOT linked. Its r8bbase.cpp would build r8brain's static members on
-# r8brain's own malloc hooks, where src/dsp/R8bBase.cpp (in retroplug-r8brain-base) builds them on the throwing
+target_include_directories(retroplug-dsp-resample
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
+    # r8brain's headers, all this build takes from the vendored dep, stay private to the translation units that include
+    # dsp/R8bAllocator.hpp first: that header is what puts r8brain's classes on the throwing allocator, and a TU that
+    # read them without it would build them on r8brain's defaults.
+    PRIVATE ${CMAKE_SOURCE_DIR}/deps/r8brain)
+# The tree declares no target for the vendored `r8brain` library. Its r8bbase.cpp would build r8brain's static members
+# on r8brain's own malloc hooks, where src/dsp/R8bBase.cpp (in retroplug-r8brain-base) builds them on the throwing
 # allocator the rest of this tree uses, and the linker would keep one copy of every r8brain class with no diagnostic
-# saying which. The root CMakeLists' retroplug_forbid_linking(r8brain) turns linking it again into a configure error.
+# saying which.
 target_link_libraries(retroplug-dsp-resample PRIVATE Threads::Threads retroplug-r8brain-base)
 set_target_properties(retroplug-dsp-resample PROPERTIES
     CXX_STANDARD 20

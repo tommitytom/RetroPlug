@@ -7,8 +7,7 @@
 // definitions of each class in one program, of which the linker keeps one copy per symbol and no diagnostic says which.
 // Including it after that header puts these statics on the allocator too, and neither this file's target
 // (`retroplug-r8brain-base`) nor `retroplug-dsp-resample`, which links it, links the vendored library, so there is no
-// second copy to keep. `retroplug_forbid_linking(r8brain)` in the root CMakeLists refuses a build that links it
-// again.
+// second copy to keep. The tree declares no target for the vendored library, so there is none to link.
 #include "dsp/R8bAllocator.hpp"  // the memory hooks, which must be defined before r8brain's headers are read
 
 #include <r8bbase.cpp>

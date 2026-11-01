@@ -9,9 +9,10 @@
 // `std::bad_alloc` out of `Resampler::init` (leaving `ready()` false) instead of a crash in a later block.
 //
 // Every r8brain class in this program is built on this allocator, its static members included: `R8bBase.cpp` compiles
-// r8brain's own `r8bbase.cpp` through this header, and nothing links the vendored `r8brain` target (the root
-// CMakeLists' `retroplug_forbid_linking` fails the configure if any target does), so there is no second definition of a
-// class for the linker to keep. The free side has to stay malloc/free-compatible whatever this struct grows into,
+// r8brain's own `r8bbase.cpp` through this header, the tree declares no target for the vendored library (so there is
+// none to link), and the dep's headers are on the include path only for the translation units that include this header
+// first, so there is no second definition of a class for the linker to keep. The free side has to stay
+// malloc/free-compatible whatever this struct grows into,
 // because r8brain's static caches (`CDSPFIRFilterCache`, `CDSPRealFFTKeeper`, the frac-bank lists) free what it
 // allocated from a static destructor at exit, where a throw would end the process, and its `reallocmem` expects a block
 // `malloc` handed out.
