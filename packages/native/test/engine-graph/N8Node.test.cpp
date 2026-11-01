@@ -1,6 +1,6 @@
 // rp.n8.nes, the real cart as a node (docs/modular-graph-phase-c5-design.md section 4): the same inputs an emulated NES
 // takes, pushed at the host's cart link; a `connected` control output; the `expansionVolume` param on the cart's
-// master-volume register; and the cart's battery and ROM as capability jobs the link runs on its own thread
+// master-volume register; and its battery file and ROM as capability jobs the link runs on its own thread
 // (section 6), which pause its streaming.
 //
 // The cart link here is a fake: it records what reaches the device, reads connected while it is attached and no job

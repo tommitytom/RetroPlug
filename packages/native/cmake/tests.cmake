@@ -67,7 +67,7 @@ retroplug_add_test_binary(
              test/audio/MesenBlockOps.test.cpp         # the shared drain tail blanks a short ring
              test/audio/NesTeardown.test.cpp           # the NES twin of SMS's construct/destruct guard
              test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
-             test/audio/EngineInvoker.test.cpp         # the command ring's inline slot + teardown payload frees
+             test/audio/EngineInvoker.test.cpp         # the teardown discards a staged-message payload
              test/graph/CountingAllocator.cpp          # replaces operator new / delete: the N8 FIFO's [alloc] case
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
@@ -78,11 +78,11 @@ retroplug_add_test_binary(
 
 # Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md, -b3b-design.md,
 # -c2-design.md): each system node renders exactly what its core renders driven directly, its inputs and its settings'
-# knobs included, the engine places, re-arms and frees what the documents TS builds say, the host I/O nodes and the
-# cart mirror move what the hosts stage and drain, TS nodes run behind the C ABI in the script host, a script node
-# pack loads beside the built-in one into runtimes of its own and reloads, the generation it replaced freed off the
-# audio thread, the protocol script nodes send what the DSP kernel they replaced was recorded sending, and every
-# document in buildGraph's goldens, its role goldens among them, plans on it.
+# knobs included, the engine places, re-arms and frees what the documents TS builds say, the host MIDI I/O nodes move
+# what the hosts stage and drain and the hardware nodes drive their fake device links, TS nodes run behind the C ABI in
+# the script host, a script node pack loads beside the built-in one into runtimes of its own and reloads, the
+# generation it replaced freed off the audio thread, the protocol script nodes send what the DSP kernel they replaced
+# was recorded sending, and every document in buildGraph's goldens, its role goldens among them, plans on it.
 # A hidden bench times a script node per block.
 # Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
 # CountingAllocator.cpp is shared with retroplug-graph-test, for the no-allocation checks. The script tests' bundle

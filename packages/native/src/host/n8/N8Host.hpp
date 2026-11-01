@@ -123,7 +123,7 @@ public:
     //                              enabled toggle (a running game has no menu, so the old stream is stale; the user
     //                              reconnects to the new ROM), and the result, JSON, says so:
     //                              {"path":..., "mapIndex":N, "streaming":"stopped"}. Abandoned or failed before the
-    //                              boot, it boots nothing, deletes the file it created and resumes streaming.
+    //                              boot, it boots nothing, deletes the file it opened and resumes streaming.
     //   rp.system.rom/1 header     the first `length` bytes (0: all) of the image this host last booted on the cart,
     //   rp.system.rom/1 title      and the name it booted it under: answered at once from what the host kept, with no
     //                              transfer, whatever the link is doing. Every connect reads the running map_idx and

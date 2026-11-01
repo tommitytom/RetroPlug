@@ -1,23 +1,26 @@
-// n8-sd-hwtest - a manual hardware harness for the cart's capability jobs (Settings > N8 Pro). It constructs the
-// SAME native N8Host the cart node hands a job to, but against a real /dev/ttyACM0, and brings its link up as the
-// Settings > N8 row would (a job is refused while the link is down), so a hardware pass exercises exactly the code
-// path the UI does (not the CLI's TS stack). EXCLUDE_FROM_ALL, built by name
-// (retroplug-n8-hwtest); NOT a CI target. Needs a real N8 plugged in.
+// n8-sd-hwtest - a manual hardware harness for the cart's capability jobs (the UI drives the same jobs from its cart
+// menu, under Settings > N8 Pro). It constructs the SAME native N8Host the cart node hands a job to, but against a real
+// /dev/ttyACM0, and brings its link up as Settings > N8's Connect row would (a job is refused while the link is down),
+// so a hardware pass exercises the same N8Host job path the cart node reaches (not the CLI's TS stack).
+// EXCLUDE_FROM_ALL, built by name (retroplug-n8-hwtest); NOT a CI target. Needs a real N8 plugged in and at its menu
+// for the battery jobs and the upload.
 //
-//   retroplug-n8-hwtest dump    <rom-name> <dest.srm>  [port]  # read the battery file to a local file (non-destructive)
-//   retroplug-n8-hwtest load    <rom.nes>         [port]   # upload + boot a ROM (cart must be at its menu)
-//   retroplug-n8-hwtest restore <rom-name> <save.srm> [port] # write a .srm as the battery file the game loads next
+//   retroplug-n8-hwtest dump    <rom-name> <dest.srm>  [port]  # the battery file to a local file (non-destructive)
+//   retroplug-n8-hwtest load    <rom.nes>              [port]  # upload + boot a ROM (the cart must be at its menu)
+//   retroplug-n8-hwtest restore <rom-name> <save.srm>  [port]  # write a .srm as the battery file the game loads next
 //
-// A battery job's <rom-name> is a bare file name, not a path: it names the ROM whose folder under EDN8/gamedata/ holds the
-// battery file, which is why `dump /roms/mGB.nes out.srm` is refused.
-//   retroplug-n8-hwtest peek    <addr-hex> <len> [port]   # CMD_MEM_RD: read bytes from a device address
-//   retroplug-n8-hwtest poke    <addr-hex> <byte>[port]   # CMD_MEM_WR: write one byte to a device address
-//   retroplug-n8-hwtest read    <sd-path> <local-dest> [port]  # CMD_F_FRD: read an SD file over USB
-//   retroplug-n8-hwtest write   <local-src> <sd-path>  [port]  # CMD_F_FWR: write a local file to the SD card
-//   retroplug-n8-hwtest fiford  <count> [timeout-ms]   [port]  # read the cart's USB back-channel (CMD_USB_WR)
-//   retroplug-n8-hwtest link    <steps> [loss-permille] [port] # BlipToaster's reliable link via N8Link (the plugin's path)
-//   retroplug-n8-hwtest linkdbg [port]                        # the link step by hand: sync, frames, acks, APU mirror
-//   retroplug-n8-hwtest timing  <idle|busy> [steps] [--raw]    # latency / jitter / load on the real console (n8-timing.cpp)
+// A battery job's <rom-name> is a bare file name, not a path: it names the ROM whose folder under EDN8/gamedata/ holds
+// the battery file, which is why `dump /roms/mGB.nes out.srm` is refused.
+//
+// The rest drive a bare Edio (no N8Host / streaming thread):
+//   retroplug-n8-hwtest peek     <addr-hex> <len> [port]       # CMD_MEM_RD: read bytes from a device address
+//   retroplug-n8-hwtest poke     <addr-hex> <byte> [port]      # CMD_MEM_WR: write one byte to a device address
+//   retroplug-n8-hwtest read     <sd-path> <local-dest> [port] # CMD_F_FRD: read an SD file over USB
+//   retroplug-n8-hwtest write    <local-src> <sd-path> [port]  # CMD_F_FWR: write a local file to the SD card
+//   retroplug-n8-hwtest fiford   <count> [timeout-ms] [port]   # read the cart's USB back-channel (CMD_USB_WR)
+//   retroplug-n8-hwtest link     <steps> [loss-permille] [port] # BlipToaster's reliable link, over N8Link
+//   retroplug-n8-hwtest linkdbg  [port]                        # the link step by hand: sync, frames, acks, APU mirror
+//   retroplug-n8-hwtest timing   <idle|busy> [steps] [--raw]   # latency / jitter / load on the real console
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
 //   retroplug-n8-hwtest sniff    [port]                        # memRD ADDR_SSR: a running game's live APU/PPU/OAM
 //   retroplug-n8-hwtest memwr    <addr-hex> <file> [port]      # block memWR + verify (live-patch CHR/PRG)
@@ -28,10 +31,10 @@
 // flushInput, which would throw away bytes a running ROM had already queued. So it opens the port and reads,
 // and a wrong/absent port simply times out rather than reporting "no device".
 //
-// peek/poke/read/write/vramdump/sniff/memwr/info/fstest drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
-// the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
-// edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read pulls a whole
-// SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
+// peek/poke reach FPGA config regs like the expansion-audio master volume at 0x1800023 (MapConfig.master_vol =
+// scfg[3]; see
+// krikzz edn8-pro-pub edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read
+// pulls a whole SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
 //
 // Exit 0 on success, 1 on the op's error, 2 on a usage / no-device problem.
 #include <chrono>
@@ -79,8 +82,12 @@ int main(int argc, char** argv) {
         const std::string a1 = argc >= 2 ? argv[1] : "";
         if (!(argc == 2 && (a1 == "sniff" || a1 == "info" || a1 == "fstest" || a1 == "linkdbg"))) {
             std::fprintf(stderr,
-                         "usage: %s <dump|load|restore|peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|linkdbg|timing|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
-                         argv[0]);
+                         "usage: %s dump <rom-name> <dest.srm> [port]\n"
+                         "       %s load <rom.nes> [port]\n"
+                         "       %s restore <rom-name> <save.srm> [port]\n"
+                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|linkdbg|timing|info|"
+                         "fstest> <path|addr|count> [len|byte|dest] [port]\n",
+                         argv[0], argv[0], argv[0], argv[0]);
             return 2;
         }
     }
@@ -567,7 +574,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "no Everdrive N8 found (VID:PID 38df:0017); pass a port explicitly\n");
         return 2;
     }
-    std::printf("N8 SD hw-test: op=%s file=%s port=%s\n", op.c_str(), path.c_str(), port.c_str());
+    std::printf("N8 SD hw-test: op=%s file=%s rom=%s port=%s\n", op.c_str(), path.c_str(),
+                battery ? romName.c_str() : "-", port.c_str());
 
     N8Host host(
         [](const std::string& p) -> std::unique_ptr<ISerialPort> { return std::make_unique<WjwwoodSerialPort>(p); },

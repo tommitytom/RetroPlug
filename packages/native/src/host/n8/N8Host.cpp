@@ -514,8 +514,9 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
                 mapIndex = menu.appInstall(bootPath);  // the menu parses iNES and sources the mapper core from SD
                 menu.appStart();
             } catch (const std::exception& e) {
-                // Nothing booted: the cart is as it was, and streaming resumes to it, as a failed SD op leaves it. A
-                // file this job created goes with it, so the cart's browser never lists a partial image (best-effort).
+                // Nothing booted: the cart is as it was, and streaming resumes to it, as a job that failed before its
+                // first chunk leaves it. The file the open made (or emptied) goes with it, so the cart's browser never
+                // lists a partial image (best-effort).
                 outcome->error = e.what();
                 if (opened) {
                     try {

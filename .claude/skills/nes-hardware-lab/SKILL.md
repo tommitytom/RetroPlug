@@ -132,6 +132,9 @@ A game must be running for these (the sniffer is off at the menu).
 ### Low-level access (`retroplug-n8-hwtest`)
 
 `$RPBIN/retroplug-n8-hwtest <dump|load|restore|peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|info|fstest> <addr|path|count> [len|byte|dest] [port]`
+- `dump <rom-name> <dest.srm>` / `restore <rom-name> <save.srm>` - the cart's battery file through the same
+  `N8Host` job path the cart node reaches (the UI's cart menu does this), so the cart must be at its menu.
+  `<rom-name>` is a bare file name, not a path: it names the ROM whose `EDN8/gamedata/<name>/bram.srm` is the file.
 
 Direct device memory + FIFO. Key N8 addresses: PRG `0x0000000`, CHR `0x0800000` (CHR-**RAM** carts:
 `0x0C00000`), cart battery RAM `0x1000000`, mapper-config block `0x1800020` (16 B, read/write),

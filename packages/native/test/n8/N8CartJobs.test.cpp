@@ -2,8 +2,8 @@
 // pause they run in (N8Link::PausedJob): a job runs on the link's serial thread over the port the link already holds,
 // what was pushed before the pause is delivered first, a push during it is dropped and counted, and the job completes
 // once streaming has resumed, on the same port and with the reliable link's sequence state intact. A ROM upload boots
-// through the cart's menu and stops streaming, as the SD worker's load does; the battery jobs read and write the
-// battery file the N8 OS keeps on the SD card, at the menu only, and never the cart's own battery.
+// through the cart's menu and stops streaming; the battery jobs read and write the battery file the N8 OS keeps on the
+// SD card, at the menu only, and never the cart's own battery.
 //
 // The fake device below is a model of the cart's USB side, enough for these: it parses Edio's command frames as they
 // are written (status, memory reads and writes, the SD directory and file API, with a failure it can inject into a

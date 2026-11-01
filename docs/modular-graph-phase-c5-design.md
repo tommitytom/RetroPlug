@@ -415,8 +415,10 @@ upload's stopped streaming in section 6. The ones worth naming on their own:
   The protocol cases run the surface wiring and hold their recorded digests; the goldens' documents moved with the
   fan-out and the surface nodes.
 - `retroplug-n8-test` gained `[cart-jobs]` (`N8CartJobs.test.cpp`: the pause and its ack bound, battery file dumps and
-  restores with their refusals, the upload and its `Stop`, a game's refusals, an abandoned dump), and the two link
-  adapters have their own files (`N8CartLink.test.cpp`, `LaunchpadSurfaceLink.test.cpp`).
+  restores with their refusals, the upload and its `Stop`, a game's refusals at submission (which drop no push), a port
+  that throws at a job's start and after it ran, the JSON a name reaches, an abandoned dump), and the two link adapters
+  have their own files (`N8CartLink.test.cpp`: the volume's retry, its once-a-second bound, the last release's AUTO, and
+  `LaunchpadSurfaceLink.test.cpp`).
 - TS: `test/capability/capability.test.ts` (the promises, the refusals, a close rejecting pending, progress), and on
   the real host `test-native/capability.test.ts` and `test-native/stage-node-midi.test.ts`;
   `test/graph/build-graph.test.ts` holds the placement and the fan-out,
