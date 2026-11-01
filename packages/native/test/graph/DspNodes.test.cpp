@@ -493,6 +493,53 @@ TEST_CASE("rp.dsp.dither's output is audio on the kernel's levels", "[dsp-nodes]
     CHECK(std::any_of(out.begin(), out.end(), [](float v) { return v > 0.9f; }));   // outermost levels
 }
 
+TEST_CASE("rp.dsp.dither gives each channel its own noise", "[dsp-nodes]") {
+    // Every channel seeded from the one setting would add the same TPDF sequence to left and right: correlated noise
+    // sums coherently, up to 6 dB louder than decorrelated dither and dead centre instead of spread. Identical input
+    // on both channels leaves the difference the noise, and channel 0 keeps the setting's own seed.
+    const std::vector<float> in = signal(512);
+    DspRig                   rig;
+    const auto               sample = rig.buffer(in, 2);
+    REQUIRE(rig.play(sample, "rp.dsp.dither",
+                     R"({"channels":2,"algorithm":"high-pass-tpdf","bits":8,"seed":12345})", 2));
+    const auto out = rig.render(512, {64});
+
+    rp::dsp::Dither first;
+    first.init(rp::dsp::DitherAlgorithm::HighPassTPDF, 8, 12345);
+    std::vector<float> reference(512);
+    first.processLevels(in.data(), reference.data(), 512);
+    CHECK(firstDifference(reference, out[0]) == -1);
+
+    // The second channel is its own stream, not the first one's. Two independent TPDF noises move a sample's code
+    // apart only when they straddle a rounding boundary, which is about a quarter of them; two channels seeded alike
+    // move it apart on none.
+    std::size_t differing = 0;
+    for (std::size_t i = 0; i < out[0].size(); ++i)
+        if (std::memcmp(&out[0][i], &out[1][i], sizeof(float)) != 0) ++differing;
+    CHECK(differing > 64);
+}
+
+TEST_CASE("rp.dsp.dither restarts a channel whose input is not finite", "[dsp-nodes]") {
+    // A non-finite input sample latches the stateful algorithms' error terms (a NaN error is a NaN error for the rest
+    // of the stream, and the kernel reads a NaN code as 0, so the channel would sit at -1 for good). The node restarts
+    // such a channel's state from the settings after the block it appeared in, so one bad sample costs one block.
+    std::vector<float> in = signal(512);
+    in[200] = std::numeric_limits<float>::quiet_NaN();
+    DspRig     rig;
+    const auto sample = rig.buffer(in, 1);
+    REQUIRE(rig.play(sample, "rp.dsp.dither", R"({"channels":1,"algorithm":"high-pass-tpdf","bits":4,"seed":8})"));
+    const std::vector<float> out = rig.render(512, {64})[0];
+    for (const float v : out) CHECK(std::isfinite(v));  // the levels are finite whatever the input is
+
+    // The NaN is in block 3 (frames 192..255), so block 4 on is a fresh kernel's stream over the input from there. A
+    // state left latched gives -1 there for the rest of the plan.
+    rp::dsp::Dither fresh;
+    fresh.init(rp::dsp::DitherAlgorithm::HighPassTPDF, 4, 8);
+    std::vector<float> reference(256);
+    fresh.processLevels(in.data() + 256, reference.data(), 256);
+    CHECK(firstDifference(reference, std::vector<float>(out.begin() + 256, out.end())) == -1);
+}
+
 TEST_CASE("rp.dsp.dither's seed setting is its noise: a new seed restarts the stream", "[dsp-nodes]") {
     DspRig     rig;
     const std::vector<float> in = signal(kFrames);

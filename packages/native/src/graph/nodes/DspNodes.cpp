@@ -63,6 +63,10 @@ static_assert(DitherAlgorithm::value_of<"none">() == static_cast<std::uint32_t>(
 // algorithm's own constant, so the two do not draw the same noise from it.
 constexpr std::uint32_t kDefaultDitherSeed = 0x9e3779b9u;
 
+// What one channel's noise is offset from the next channel's by: an odd constant from the golden ratio, so channels 0
+// and 1 of a patch draw unrelated streams rather than two streams one seed apart.
+constexpr std::uint32_t kChannelSeedStep = 0x9e3779b9u;
+
 // A label as the kernel's enumerator: a cast, since the static_asserts above hold the two in step.
 static rp::dsp::BiquadType biquadTypeOf(const BiquadType& t) noexcept {
     return static_cast<rp::dsp::BiquadType>(t.value());
@@ -273,7 +277,19 @@ struct Biquad {
 //
 // A settings commit restarts the noise: a new algorithm, depth or seed is a new stream from the first sample of the
 // next block. A fresh activation restarts it too, so a plan that has just started gives the stream a fresh kernel
-// gives, whatever the plan it replaced left in the state.
+// gives, whatever the plan it replaced left in the state. So does a re-activation, which `GraphHost::reactivate` runs
+// as a deactivate and an activate over every live instance: a new plan rate, or a host's first larger block, restarts
+// the noise and snaps a gain that was mid-ramp.
+//
+// Each channel's noise is its own: the kernel's `init` salts its seed with the algorithm's constant, so a channel's
+// seed is the setting's plus its index times a golden-ratio step. Every channel seeded from the one setting would add
+// the same TPDF sequence to every channel, which sums coherently (6 dB louder than decorrelated noise, and dead
+// centre) instead of spreading. Channel 0 keeps the setting's own seed, so a mono patch is unchanged. The error
+// diffusion forms draw no noise and are unaffected.
+//
+// A block whose input is not finite would latch the error terms (a NaN error is a NaN error for the rest of the
+// stream, and `toCode` reads a NaN as code 0), so a channel that comes out of a block with any of its state not
+// finite has its state restarted from the settings: the latch lasts one block rather than the stream.
 struct Dither {
     static constexpr const char* id = "rp.dsp.dither";
     static constexpr const char* name = "Dither";
@@ -324,13 +340,24 @@ struct Dither {
 
     void activate(double, std::uint32_t) noexcept { restart = true; }
 
+    void seedState(rp::dsp::Dither& state, std::uint32_t channel) const noexcept {
+        state.init(algorithm, bits, seed + channel * kChannelSeedStep);
+    }
+
     void process(const rp::Block& b) noexcept {
         if (restart) {
-            for (auto& state : states) state.init(algorithm, bits, seed);
+            for (std::uint32_t c = 0; c < states.size(); ++c) seedState(states[c], c);
             restart = false;
         }
-        for (std::uint32_t c = 0; c < outputs.out.channel_count && c < states.size(); ++c)
-            states[c].processLevels(inputs.in[c], outputs.out[c], b.frames());
+        for (std::uint32_t c = 0; c < outputs.out.channel_count && c < states.size(); ++c) {
+            rp::dsp::Dither& state = states[c];
+            state.processLevels(inputs.in[c], outputs.out[c], b.frames());
+            if (!std::isfinite(state.prevDither) || !std::isfinite(state.shapingState) ||
+                !std::isfinite(state.err1) || !std::isfinite(state.err2) || !std::isfinite(state.error) ||
+                !std::isfinite(state.past[0]) || !std::isfinite(state.past[1]) || !std::isfinite(state.past[2]) ||
+                !std::isfinite(state.past[3]))
+                seedState(state, c);
+        }
     }
 };
 
