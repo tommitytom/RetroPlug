@@ -536,10 +536,10 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
                        std::to_string(req.outputs);
         return result;
     }
-    // A run is a session of its own: what an earlier run (or a stageControllerIn with no surface node in the plan) left
-    // in the harness's link was never read, and replaying it would act on a press this run did not make. Cleared before
-    // the first block, so only this run's own controller messages wait in it.
-    if (harnessSurface_) harnessSurface_->clearInput();
+    // A run is a session of its own, and nothing is cleared here to make it one: a press an earlier run staged while
+    // no plan placed the surface waits in the link, and the surface-in node of a plan that does place it drains what the
+    // link held on its first block after it bound the link, forwarding none of it. A press staged while the surface is
+    // bound is delivered at the next block - renderBlocks' first included - as stageControllerIn promises.
     std::uint64_t total = 0;
     for (const RpcRenderBlock& b : req.blocks) total += b.frames;
     // Whole-run planar lanes, zero-filled; each block renders straight into its slice of the result.

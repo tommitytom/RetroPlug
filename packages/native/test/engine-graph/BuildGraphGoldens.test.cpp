@@ -17,10 +17,13 @@
 // message: a document can plan and still wedge a linked group or a node's process, and the script host catches a
 // script node's throw, counts it and runs the node again next block, rather than faulting. A build-graph.json plan runs
 // one quiet block. A build-graph-roles.json plan runs twenty, with the transport playing, host MIDI on four channels
-// and a control surface attached and pressed, so its protocol nodes send into the system inputs they feed and its
-// controller launches into its cart or out of the host. What reaches a system input the engine does not hand back, so
-// only the host's side has a floor: a controller sends its surface something, and one driving a real Game Boy sends
-// the host its launch under the system it resolved. A Game Boy captures its serial out as its node's settings say
+// and a control surface attached and pressed: a press waits in its link before block 0 (the node's first block, which
+// discards what the link held) and another is staged for block 1, so the case holds both that no press from before the
+// plan launches and that one staged after the surface settled does, and its protocol nodes send into the system inputs
+// they feed while its controller launches into its cart or out of the host. What reaches a system input the engine does
+// not hand back, so only the host's side has a floor: a controller sends its surface something, and one driving a real
+// Game Boy sends the host its launch under the system it resolved. A Game Boy captures its serial out as its node's
+// settings say
 // (an LSDj in a MIDI-out mode, docs/modular-graph-phase-c2-design.md section 5), but every core here runs mGB, which
 // never plays the serial master, so a decoder's host MIDI is not counted on, and host MIDI under the controller's
 // system is the controller's. The thirty-three systems under perSystem give rp.host.audio-out 33 buses, past the 32 it
@@ -29,6 +32,7 @@
 //
 // Run via `pnpm test:plugin engine-graph`.
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -287,8 +291,9 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
                                       : controller->systemId ? controller->systemId
                                       : c.slots.empty()      ? 0xffffffffu
                                                              : c.slots.front();
-    bool        enteredProgrammerMode = false;
-    bool        launchedOut = false;
+    const bool launchesOut = driven && controller && controller->target == "midiOut";
+    bool       enteredProgrammerMode = false;
+    bool       launchedOut = false;
     for (int b = 0; b < (driven ? kDrivenBlocks : 1); ++b) {
         if (driven) {
             for (std::uint8_t ch = 0; ch < 4; ++ch) {
@@ -296,6 +301,11 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
                 e.stageMidi(16u * ch, std::vector<std::uint8_t>{static_cast<std::uint8_t>(0x90 | ch), key, 100});
                 e.stageMidi(128u + 16u * ch, std::vector<std::uint8_t>{static_cast<std::uint8_t>(0x80 | ch), key, 0});
             }
+            // A press waits in the link before the first block, as one sent before the controller was enabled (or in the
+            // few milliseconds between the publish that places the session and the block) does, and the surface node's
+            // first block discards it. The one staged at the second block is delivered. Production places the surface
+            // and the session in one document, so this is the combination that is a real project's first blocks.
+            if (b == 0) surface.input.push_back(rp::host::test::deviceMessage(kPadPress));
             if (b == 1) surface.input.push_back(rp::host::test::deviceMessage(kPadPress));
         }
         e.processBlock(kBlockFrames, outs.data(), outs.size());
@@ -303,7 +313,15 @@ std::optional<std::string> plan(const GoldenCase& c, const std::string& document
             enteredProgrammerMode =
                 enteredProgrammerMode ||
                 std::equal(m.data, m.data + m.size, kEnterProgrammerMode.begin(), kEnterProgrammerMode.end());
-        for (const EngineMidiOut& m : e.midiOut()) launchedOut = launchedOut || m.system == controllerSystem;
+        // The press the link held at the first block is gone and the one staged after it is not: a session that launched
+        // the first block's press is a first-block discard that did not happen.
+        const bool launchedThisBlock = std::any_of(e.midiOut().begin(), e.midiOut().end(), [&](const EngineMidiOut& m) {
+            return m.system == controllerSystem;
+        });
+        if (launchesOut && b == 0 && launchedThisBlock)
+            return "the press the surface link held at the run's first block launched: a fresh surface discards what it "
+                   "finds, so no press staged before the plan can reach the session";
+        launchedOut = launchedOut || launchedThisBlock;
         const std::string when = driven ? " by block " + std::to_string(b + 1) : " in its first block";
         if (e.faultCount() != 0) return std::to_string(e.faultCount()) + " node(s) faulted" + when;
         // The script host catches a script node's throw, counts it and runs the node again next block (design section

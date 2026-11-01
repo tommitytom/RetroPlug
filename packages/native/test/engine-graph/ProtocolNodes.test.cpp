@@ -513,6 +513,11 @@ struct ProtocolRig {
         // project had a controller), and this rig stages its pad traffic per block, as the device sends it. So the
         // surface nodes bind on a plan of their own first, whose block drops what is there; the case's plan then keeps
         // those two instances (same ids and types) with the surface settled, and its session is as fresh as before.
+        // A real project places the surface and the session in one document, so there its first block is also the
+        // node's first with the link, and it discards whatever the link holds: a press sent before the controller was
+        // enabled, or in the few milliseconds between the publish and the block, never reaches the session. What this
+        // rig keeps is the session's response to a per-block stream; BuildGraphGoldens pins the production combination,
+        // where a press waiting at block 0 does not launch and one staged at block 1 does.
         if (structure.surface) {
             REQUIRE(host->setGraph(R"({"nodes":[{"id":"surface-in","type":"rp.launchpad.surface-in"},
                                                 {"id":"surface-out","type":"rp.launchpad.surface-out"}],

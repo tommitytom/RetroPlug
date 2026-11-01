@@ -108,7 +108,9 @@ public:
     // The control-surface twin: staged as `controllerIn` rather than musical MIDI, so a headless test
     // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn. It waits in the harness's
     // own surface link (setHarnessSurface), which the document's rp.launchpad.surface-in node drains at its next block
-    // as it would a real device's input; false, staging nothing, when this host has no such link.
+    // as it would a real device's input; false, staging nothing, when this host has no such link. A plan places that
+    // node by its controller setting, and the node discards what the link held when it bound it (a press staged while
+    // no plan placed the surface), so a message staged against no surface node is dropped rather than delivered.
     bool            stageControllerIn(std::vector<std::uint8_t> bytes);
     // TEST / HARNESS: the surface a headless host stages into (the test host's, retroplug-host). A host that owns a
     // real surface installs its link on the Engine (setDeviceLinks) and leaves this null; the two are alternatives, not

@@ -292,7 +292,8 @@ in place there), and the findings worth naming; each stage's own report is the f
   flag (`"unique":true`) the planner checks, not a type name in the engine: a plan holds one node of a unique type,
   and the engine's own refusals stay for `rp.host.midi-in` / `-out`. `surface-in` discards what the link held when it
   bound it, so a press from before the plan is not replayed (a reactivate keeps the handle and does not discard again),
-  and the test host's harness link clears its own input per run.
+  which is also why the test host's harness link needs no per-run clearing: a press it holds against no surface node is
+  dropped by the first block of the plan that places one, and one staged while the surface is bound is delivered.
 - **5, the TS switch-over.** "Drive the real cart" is a NES role setting defaulting ON (additive, so a saved project
   keeps its behaviour and no migration exists) and places at most one `rp.n8.nes`, for the first NES in slot order that
   drives one, its id `cart-<system>` so the UI can derive it from the document; the fan-out wires what feeds that

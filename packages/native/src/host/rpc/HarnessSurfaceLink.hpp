@@ -23,12 +23,13 @@ namespace rp::host {
 
 class HarnessSurfaceLink final : public SurfaceLink {
 public:
-    // The messages one host may stage before a block drains them, and the bytes each may hold: the node's own drain
-    // batch and the message bound (kMaxDeviceMessage) are what a real link's ring holds too.
+    // The messages one host may stage before a block drains them, and the bytes each may hold: the surface link's own
+    // receive ring depth and the message bound (kMaxDeviceMessage) are what a real link holds too.
     static constexpr std::size_t kStagedMessages = 256;
 
-    // [control] Stage one message as the device would have sent it, at frame 0 of the next block. False (and the
-    // message dropped, and counted in dropped()) for an empty one, one wider than kMaxDeviceMessage, or a full ring.
+    // [control] Stage one message as the device would have sent it, at frame 0 of the next block. False, and nothing
+    // staged, for an empty one, one wider than kMaxDeviceMessage, or a full ring - the last of which is the one counted
+    // in dropped(), as a real link counts only what its ring had no room for.
     bool queueInput(std::span<const std::uint8_t> bytes) {
         if (bytes.empty() || bytes.size() > kMaxDeviceMessage) return false;
         DeviceMessage m;
@@ -37,14 +38,6 @@ public:
         if (staged_.tryPush(m)) return true;
         dropped_.fetch_add(1, std::memory_order_relaxed);
         return false;
-    }
-
-    // [control] Discard everything waiting: a render run starts from an empty ring, so a press staged by an earlier run
-    // (or with no surface node in the plan to read it) is never replayed as one this run's session pressed.
-    void clearInput() {
-        DeviceMessage m;
-        while (staged_.tryPop(m)) {
-        }
     }
 
     // ---- SurfaceLink ----

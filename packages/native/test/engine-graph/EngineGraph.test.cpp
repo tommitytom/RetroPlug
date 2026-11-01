@@ -301,7 +301,7 @@ TEST_CASE("a render into buffers the planned graph does not write is refused", "
     CHECK(svc.renderBlocks(blocks).error.empty());
 }
 
-TEST_CASE("a render run starts from the harness surface's empty ring, so an earlier run's press is not replayed",
+TEST_CASE("a press the harness link held before a surface node bound it is never replayed, and one staged after it is",
           "[engine-graph][launchpad]") {
     Engine                      e(kRate);
     QueuedInvoker               invoker(e);
@@ -321,7 +321,7 @@ TEST_CASE("a render run starts from the harness surface's empty ring, so an earl
     CHECK(first.midiOut.empty());
 
     // A plan that places the surface, its `in` going out as host MIDI where a case can read it. The stale press must
-    // not appear: renderBlocks clears the ring before the run's first block, so only its own messages wait in it.
+    // not appear: the node's first block after it binds the link drains what the link holds and forwards none of it.
     Engine::GraphRequest withSurface;
     withSurface.document = R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}},
                                          {"id":"surface-in","type":"rp.launchpad.surface-in"},
@@ -332,6 +332,17 @@ TEST_CASE("a render run starts from the harness surface's empty ring, so an earl
         RpcRenderBlocksRequest{2, {RpcRenderBlock{64, {}, {}, std::nullopt, std::nullopt, std::nullopt}}});
     REQUIRE(stale.error.empty());
     CHECK(stale.midiOut.empty());
+
+    // The same seam the other way: a press staged by hand while the surface is bound (the node past its first block) is
+    // delivered at the next block a run renders, as stageControllerIn promises. A run that started from an empty link
+    // would drop it, and that is the difference from a press staged before the node bound it.
+    CHECK(rpc.stageControllerIn(std::vector<std::uint8_t>{0x90, 0x36, 100}));
+    const auto staged = rpc.renderBlocks(
+        RpcRenderBlocksRequest{2, {RpcRenderBlock{64, {}, {}, std::nullopt, std::nullopt, std::nullopt}}});
+    REQUIRE(staged.error.empty());
+    REQUIRE(staged.midiOut.size() == 1);
+    CHECK(staged.midiOut[0].system == 0);
+    CHECK(staged.midiOut[0].frame == 0);
 
     // A press the run stages itself is delivered: it waits in the ring until the surface-in node drains its block.
     const std::vector<std::uint8_t> live{0x90, 0x34, 100};
