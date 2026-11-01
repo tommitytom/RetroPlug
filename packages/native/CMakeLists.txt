@@ -216,6 +216,7 @@ target_link_libraries(retroplug-backend PUBLIC
     retroplug-core      # SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
     retroplug-graph     # the graph executor, planner and GraphHost the engine runs on
     retroplug-dsp-nodes # the rp.dsp package (gain, biquad, dither), which the engine registers
+    retroplug-dsp-resample-nodes # and the rp.dsp.resample package beside it
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
     efsw-static         # NativeFileWatcher's filesystem watcher (PUBLIC-brings efsw/efsw.hpp include dir)
     Threads::Threads

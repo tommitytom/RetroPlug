@@ -118,15 +118,6 @@ std::uint32_t sumOf(const std::vector<std::uint32_t>& v) {  // validated: at mos
     return n;
 }
 
-std::optional<std::string> checkLayout(std::string_view layout, std::uint32_t channels) {
-    const auto n = layoutChannels(layout);
-    if (!n) return "unknown layout " + jsonString(layout);
-    if (*n != channels)
-        return "layout " + jsonString(layout) + " is " + std::to_string(*n) + " channels, not " +
-               std::to_string(channels);
-    return std::nullopt;
-}
-
 // Emit a control value at a frame, skipping one equal to what the stream already holds.
 struct ControlWriter {
     rp_control_queue& out;

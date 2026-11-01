@@ -146,7 +146,7 @@ Goldens readGoldens(const char* path) {
 }
 
 // The settings fields each system node type reads, from its descriptor's schema: the properties of the $defs entry
-// that is the settings struct itself (the others are the resource refs its fields name).
+// that is the settings struct itself, the one entry with properties (a resource ref's schema is a string inline).
 const std::map<std::string, std::set<std::string>>& systemSettingsFields() {
     static const std::map<std::string, std::set<std::string>> fields = [] {
         std::map<std::string, std::set<std::string>> out;
@@ -162,7 +162,7 @@ const std::map<std::string, std::set<std::string>>& systemSettingsFields() {
                 std::optional<rfl::Generic> settingsDef;
                 for (const auto& [name, def] : *defs)
                     if (const auto entry = def.to_object(); entry && entry->get("properties")) {
-                        REQUIRE_FALSE(settingsDef);  // one struct has properties; the rest are the refs it names
+                        REQUIRE_FALSE(settingsDef);  // one entry has properties: the settings struct
                         settingsDef = def;
                     }
                 REQUIRE(settingsDef);

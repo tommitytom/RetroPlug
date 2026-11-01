@@ -1,7 +1,7 @@
 #pragma once
 
-// A GraphHost wired to the core, dsp, host and test packages, plus host output buffers, for the graph-core
-// tests. Quiescent by default, so setGraph flushes inline and run() is the block driver.
+// A GraphHost wired to the core, dsp, dsp.resample, host and test packages, plus host output buffers, for the
+// graph-core tests. Quiescent by default, so setGraph flushes inline and run() is the block driver.
 
 #include <memory>
 #include <string>
@@ -14,6 +14,7 @@
 #include "graph/HostNodes.hpp"
 #include "graph/nodes/CoreNodes.hpp"
 #include "graph/nodes/DspNodes.hpp"
+#include "graph/nodes/DspResampleNodes.hpp"
 
 namespace rp::graph::test {
 
@@ -35,7 +36,7 @@ struct GraphRig {
         // A package the registry refuses leaves the plan with fewer types than the test thinks it has, which shows up
         // as an unrelated case failing; assert the registrations instead.
         std::string why;
-        for (const rp_package* p : {corePackage(), dspPackage(), hostPackage(), testPackage()}) {
+        for (const rp_package* p : {corePackage(), dspPackage(), dspResamplePackage(), hostPackage(), testPackage()}) {
             const bool added = registry.addPackage(p, &why);
             INFO(why);
             REQUIRE(added);

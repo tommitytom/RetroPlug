@@ -264,8 +264,10 @@ retroplug_add_test_binary(
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
              test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's arithmetic
              test/graph/DspNodes.test.cpp             # the rp.dsp nodes, through real plans, against those kernels
+             test/graph/DspResample.test.cpp          # rp.dsp.resample, through real plans, against its kernel
     LIBS     retroplug-graph
              retroplug-dsp-nodes                      # the rp.dsp package under test
+             retroplug-dsp-resample-nodes             # and the rp.dsp.resample package
              retroplug-dsp-kernels                    # core-free: the standard library
              retroplug-dsp-resample                   # Dsp.test.cpp's resampler
              r8brain                                   # Dsp.test.cpp's reference copy of the kit path's resample

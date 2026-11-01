@@ -38,6 +38,7 @@
 #include "dsp/Gain.hpp"
 #include "graph/Descriptor.hpp"
 #include "graph/nodes/DspNodes.hpp"
+#include "graph/nodes/DspResampleNodes.hpp"
 
 namespace {
 
@@ -46,9 +47,9 @@ using rp::graph::test::GraphRig;
 constexpr std::size_t kFrames = 4096;
 
 // The packages whose types this file's descriptor goldens are. A package id registers once, so the resampler's type is a
-// second package of its own (`rp.dsp.resample`) rather than more types in this one; the package that adds it is
-// appended here, and this list is what a case walking "every rp.dsp type's descriptor" walks.
-std::vector<const rp_package*> dspPackages() { return {rp::graph::dspPackage()}; }
+// second package of its own (`rp.dsp.resample`) rather than more types in this one, and this list is what a case
+// walking "every rp.dsp type's descriptor" walks.
+std::vector<const rp_package*> dspPackages() { return {rp::graph::dspPackage(), rp::graph::dspResamplePackage()}; }
 
 // The block sizes a stream is split into, as Dsp.test.cpp's: one call, the usual host block, an odd size, one frame,
 // the resampler's chunk and a ragged sequence that cycles.
@@ -470,16 +471,17 @@ TEST_CASE("a warmed rp.dsp plan block allocates and frees nothing", "[dsp-nodes]
                     "wires":[{"from":"p.out","to":"g.in"},{"from":"g.out","to":"b.in"},
                              {"from":"b.out","to":"d.in"},{"from":"d.out","to":"out.out.1-2"}]})";
     REQUIRE(rig.set(doc).ok);
-    rig.run(64);  // no warm-up beyond the first block, where the dither seeds its noise: that must not allocate either
 
+    // Counted from the plan's first block, which is where a node that built rather than seeded something on the block
+    // thread would allocate: the dither seeds its noise there, and that must not allocate either.
     rp::test::beginCountingAllocations();
-    rig.run(64, 4);
+    rig.run(64, 5);
     const rp::test::AllocationCount m = rp::test::endCountingAllocations();
     CHECK(m.allocations == 0);
     CHECK(m.frees == 0);
 }
 
-TEST_CASE("each rp.dsp type's descriptor is its golden", "[dsp-nodes]") {
+TEST_CASE("each rp.dsp type's descriptor is its golden", "[dsp-nodes][dsp-resample]") {
     const char* update = std::getenv("RP_GRAPH_GOLDEN_UPDATE");
     for (const rp_package* pkg : dspPackages()) {
         REQUIRE(pkg);

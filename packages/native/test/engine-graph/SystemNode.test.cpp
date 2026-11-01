@@ -901,8 +901,8 @@ std::vector<std::string> tsValues(const std::string& name) {
     return values;
 }
 
-// The settings schema of a registered type, at its $defs entry: the one that is the settings struct (the rest are the
-// resource refs its fields name).
+// The settings schema of a registered type, at its $defs entry: the one entry with properties, the settings struct (a
+// resource ref's schema is a string inline, node.hpp).
 rfl::Generic::Object settingsSchema(NodeRig& rig, const char* type) {
     const auto descriptor = rp::graph::parseJson(rig.registry.find(type)->type->descriptor(rig.registry.find(type)->type));
     REQUIRE(descriptor);
@@ -913,7 +913,7 @@ rfl::Generic::Object settingsSchema(NodeRig& rig, const char* type) {
     std::optional<rfl::Generic::Object> settingsDef;
     for (const auto& [name, def] : *defs)
         if (const auto entry = def.to_object(); entry && entry->get("properties")) {
-            REQUIRE_FALSE(settingsDef);  // one struct has properties; the rest are the refs it names
+            REQUIRE_FALSE(settingsDef);  // one entry has properties: the settings struct
             settingsDef = *entry;
         }
     REQUIRE(settingsDef);

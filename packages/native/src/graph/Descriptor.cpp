@@ -567,6 +567,15 @@ std::optional<std::string> checkChannels(std::uint64_t n, std::string_view what)
     return std::nullopt;
 }
 
+std::optional<std::string> checkLayout(std::string_view layout, std::uint32_t channels) {
+    const auto n = layoutChannels(layout);
+    if (!n) return "unknown layout " + jsonString(layout);
+    if (*n != channels)
+        return "layout " + jsonString(layout) + " is " + std::to_string(*n) + " channels, not " +
+               std::to_string(channels);
+    return std::nullopt;
+}
+
 std::optional<std::string> checkCapacity(const PortDesc& port) {
     const QueueCapacity& c = port.capacity;
     if (!c.messages && !c.bytes) return std::nullopt;

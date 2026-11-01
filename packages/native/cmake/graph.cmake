@@ -49,3 +49,16 @@ set_target_properties(retroplug-dsp-nodes PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through retroplug-backend
+
+# retroplug-dsp-resample-nodes: the rp.dsp.resample package (src/graph/nodes/DspResampleNodes.cpp), the resampler as a
+# node, apart from retroplug-dsp-nodes because its kernel is retroplug-dsp-resample: r8brain, and with it the heap,
+# pthreads and RTTI. A build for a target that cannot take those (the Pico's) links retroplug-dsp-nodes and
+# retroplug-dsp-kernels alone and leaves dspResamplePackage() out of its registration list, so neither this node nor
+# r8brain reaches its binary; the planner's refusal of a `heap` node there is the second line, not the only one.
+add_library(retroplug-dsp-resample-nodes STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/nodes/DspResampleNodes.cpp)
+target_link_libraries(retroplug-dsp-resample-nodes PUBLIC retroplug-graph PRIVATE retroplug-dsp-resample)
+set_target_properties(retroplug-dsp-resample-nodes PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through retroplug-backend

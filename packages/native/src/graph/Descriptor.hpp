@@ -127,6 +127,10 @@ bool matchesPattern(std::string_view pattern, std::string_view portId);
 // or an unknown name.
 std::optional<std::uint32_t> layoutChannels(std::string_view layout);
 
+// Why a layout name cannot carry `channels` channels (an unknown name, or one that means another count), or nullopt.
+// The settings refusal of every node that names its output's layout beside a channel count.
+std::optional<std::string> checkLayout(std::string_view layout, std::uint32_t channels);
+
 // The layout name a bare channel count (at least 1) gets: mono, stereo, else discrete(n).
 std::string layoutForCount(std::uint32_t channels);
 

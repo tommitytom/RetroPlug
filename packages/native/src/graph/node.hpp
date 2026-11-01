@@ -77,6 +77,7 @@
 #include <cstring>
 #include <exception>
 #include <limits>
+#include <map>
 #include <new>
 #include <optional>
 #include <span>
@@ -253,8 +254,8 @@ struct link {
 // Create pins before any hook that sees the instance's settings runs, so `on_settings`, `activate`, `process`, `step` and
 // `finish` read a resolved handle (and a prepare that keeps the refs copies the instance's pins into the settings object
 // it installs). The hooks that run before create has pinned anything (`validate`, `adjust_layout`, `rebuild_key`,
-// `extra_memory`, `query_memory`) see only `ref`: a node must not read `bytes()` there. `needs_rebuild` sees handles in
-// both objects, and is skipped for a ref that moved, which is a rebuild on its own.
+// `extra_memory`, `query_memory`) see only `ref`: a node must not read `bytes()` or `audio()` there. `needs_rebuild`
+// sees handles in both objects, and is skipped for a ref that moved, which is a rebuild on its own.
 //
 //   struct Settings { rp::resource_ref<"rom"> rom; };   // JSON: {"rom": "res:7"}; absent: the node names none
 //
@@ -262,19 +263,23 @@ struct link {
 // of another type, an unknown or dropped id, or a host with no table refuses the create with the field's name.
 template <fixed_string Type>
 struct resource_ref {
-    // rfl reads and writes the ref as the plain string the document carries, never the handle it resolves to.
-    using ReflectionType = std::string;
-
+    // rfl reads and writes the ref as the plain string the document carries, never the handle it resolves to, and its
+    // schema is that string inline (the rfl::parsing::Parser specialization at the end of this file).
     static constexpr std::string_view resource_type() { return Type.view(); }
 
     std::string        ref;                 // "res:N" as the document names it (empty: none)
     const rp_resource* resource = nullptr;  // resolved by the host layer at create, and again at each prepare
 
-    std::string reflection() const { return ref; }
     // The payload of a bytes resource (every type but "audio-buffer"), or null when the field names none.
     const rp_bytes* bytes() const {
         return resource && resource->payload && std::strcmp(resource->type, "audio-buffer") != 0
                    ? static_cast<const rp_bytes*>(resource->payload)
+                   : nullptr;
+    }
+    // The payload of an "audio-buffer" resource, or null when the field names none or names another type.
+    const rp_audio_buffer* audio() const {
+        return resource && resource->payload && std::strcmp(resource->type, "audio-buffer") == 0
+                   ? static_cast<const rp_audio_buffer*>(resource->payload)
                    : nullptr;
     }
 };
@@ -1190,3 +1195,26 @@ T* peer_as(rp_node* n) {
 }
 
 }  // namespace rp
+
+// A resource_ref is the plain string the document carries, read and written as one, and its schema is a string
+// INLINE rather than a $defs entry. rfl names a $defs entry after the C++ type, and a class template over a
+// fixed_string has no spelling compilers agree on (GCC writes the argument's type, Clang drops it), so the default
+// would put a different key into the descriptor under each compiler; a Settings struct is a named type for the same
+// reason (the hook list above).
+template <class R, class W, rp::fixed_string Type, class ProcessorsType>
+    requires rfl::parsing::AreReaderAndWriter<R, W, rp::resource_ref<Type>>
+struct rfl::parsing::Parser<R, W, rp::resource_ref<Type>, ProcessorsType> {
+    using InputVarType = typename R::InputVarType;
+    using String = Parser<R, W, std::string, ProcessorsType>;
+
+    static Result<rp::resource_ref<Type>> read(const R& r, const InputVarType& var) noexcept {
+        return String::read(r, var).transform([](std::string ref) { return rp::resource_ref<Type>{std::move(ref)}; });
+    }
+    template <class P>
+    static void write(const W& w, const rp::resource_ref<Type>& field, const P& parent) {
+        String::write(w, field.ref, parent);
+    }
+    static schema::Type to_schema(std::map<std::string, schema::Type>* definitions) {
+        return String::to_schema(definitions);
+    }
+};
