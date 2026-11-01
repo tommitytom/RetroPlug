@@ -114,9 +114,12 @@ public:
     // [control] Send each of `notes` a note-off (0x8n, note, 0) from the serial thread: after every chunk pushed before
     // this call has gone out, so a note-on still waiting for its release time cannot follow its own release, framed
     // when the link is reliable, never during a job's pause (the next streaming turn writes them), and on a disconnect
-    // before the port closes. Dropped when no serial thread runs (the link is down) and when the stream stops by
-    // itself (a failed write, an upload's boot: a fresh ROM holds no notes). How a cart node leaving the plan releases
-    // what it held: its destroy runs on the control thread, which may not push into the audio thread's ring.
+    // before the port closes. Dropped when no serial thread runs (the link is down), when a chunk write throws (the
+    // stream stops there, and a port that just failed a write cannot carry them; a reconnect does not replay them), and
+    // when an upload's boot stops the stream (the port is closed, and the ROM it booted holds none). A port that throws
+    // inside a job stops the stream with the port still open, so the stream's end still tries them. How a cart node
+    // leaving the plan releases what it held: its destroy runs on the control thread, which may not push into the audio
+    // thread's ring.
     void          releaseNotes(const NoteSet& notes);
     bool          connect(const std::string& port);  // open + handshake + spawn the serial thread
     // Stop + join the serial thread, close the port. With a paused job running the join waits for the job's current
