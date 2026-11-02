@@ -9,18 +9,28 @@
 //   notification allocates nothing once its depth has been reached. These hold what that copy must keep true: a
 //   listener destroyed while the notification runs is not called after it, and a listener that sends a notification of
 //   its own does not disturb the one being iterated.
+// - Two lazy initialisations of process statics (the NES game database, the GBA CPU's dispatch tables) are taken from
+//   two threads at once, as two cores built at once on the engine's offline pool and its control thread would. Their
+//   double-checked flags are atomics (acquire before the unlocked check, release after the build); as plain bools
+//   ThreadSanitizer reports the unlocked read racing the locked write. Each initialises once per process, so the cases
+//   prove that only as the process's first of each: run the tag alone, `"[mesen-statics]"`, in build-tsan.
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "../graph/CountingAllocator.hpp"
+#include "GBA/GbaConsole.h"
+#include "NES/GameDatabase.h"
 #include "NES/Input/BarcodeBattlerReader.h"
 #include "NES/Input/FourScore.h"
 #include "Shared/NotificationManager.h"
+#include "system/mesen/MesenGlobalInit.hpp"
 
 namespace {
 
@@ -41,6 +51,20 @@ std::shared_ptr<NamedListener> listener(std::string name, std::vector<std::strin
     l->name = std::move(name);
     l->seen = seen;
     return l;
+}
+
+// Runs `body` on two threads released together, so both reach a lazy initialisation's unlocked check at about once.
+void onTwoThreadsAtOnce(const std::function<void()>& body) {
+    std::atomic<int> ready{0};
+    auto run = [&] {
+        ready.fetch_add(1);
+        while (ready.load() < 2) std::this_thread::yield();
+        body();
+    };
+    std::thread a(run);
+    std::thread b(run);
+    a.join();
+    b.join();
 }
 
 }  // namespace
@@ -162,4 +186,30 @@ TEST_CASE("a send hands its listener references back, so the next manager's send
     CHECK(counted.allocations == 0);  // the pool's buffer and its capacity are the ones the first send left
     CHECK(counted.frees == 0);        // and the dead listener's control block was NOT freed here
     CHECK(seen == std::vector<std::string>{"live"});
+}
+
+TEST_CASE("the NES game database's first lookup can be taken from two threads at once",
+          "[engine-graph][mesen][mesen-statics]") {
+    // Every iNES load looks its cart up here. With no MesenNesDB.txt in Mesen's home folder the database is empty, so
+    // the lookup misses; what is held is the initialisation's flag, which ThreadSanitizer sees. The home folder it
+    // reads the file from is the one every Mesen core sets up first.
+    mesenGlobalInit();
+    std::atomic<int> found{0};
+    onTwoThreadsAtOnce([&] {
+        uint32_t prg = 0, chr = 0;
+        if (GameDatabase::GetDbRomSize(0x12345678u, prg, chr)) found.fetch_add(1);
+    });
+    CHECK(found.load() == 0);
+}
+
+TEST_CASE("two GBA consoles can be built on two threads at once, the first in the process",
+          "[engine-graph][mesen][mesen-statics]") {
+    // A console's constructor builds the CPU's dispatch tables on the first construction in the process and only
+    // stores its emulator otherwise, so a console with none is enough to take the initialisation.
+    std::atomic<int> built{0};
+    onTwoThreadsAtOnce([&] {
+        GbaConsole console(nullptr);
+        built.fetch_add(1);
+    });
+    CHECK(built.load() == 2);
 }

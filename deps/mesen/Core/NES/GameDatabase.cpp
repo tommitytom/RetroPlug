@@ -11,7 +11,7 @@
 
 std::unordered_map<uint32_t, GameInfo> GameDatabase::_gameDatabase;
 bool GameDatabase::_enabled = true;
-bool GameDatabase::_initialized = false;
+std::atomic<bool> GameDatabase::_initialized{false};
 SimpleLock GameDatabase::_loadLock;
 
 template<typename T> 
@@ -79,13 +79,13 @@ void GameDatabase::LoadGameDb(std::istream &db)
 
 void GameDatabase::InitDatabase()
 {
-	if(!_initialized) {
+	if(!_initialized.load(std::memory_order_acquire)) {
 		auto lock = _loadLock.AcquireSafe();
-		if(!_initialized) {
+		if(!_initialized.load(std::memory_order_relaxed)) {
 			string dbPath = FolderUtilities::CombinePath(FolderUtilities::GetHomeFolder(), "MesenNesDB.txt");
 			ifstream db(dbPath, ios::in | ios::binary);
 			LoadGameDb(db);
-			_initialized = true;
+			_initialized.store(true, std::memory_order_release);
 		}
 	}
 }

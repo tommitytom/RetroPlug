@@ -237,9 +237,15 @@ made them false (chunking, the worker budget, the carry's rules).
   camera's noise seed and the SGB's lazily built `fm_sin` table are process statics a second Game Boy core raced on:
   `cmake/patches/sameboy-process-statics.patch` (the second tracked SameBoy patch, applied by `cmake/sameboy.cmake`
   after the per-channel one, with the same idempotent and fail-loudly rules) makes the first two relaxed atomics and the
-  third a load-time constructor, as `apu.c`'s own tables are. Nothing else is shared: QuickJS keeps no per-thread
-  state, Mesen's scratch paths are numbered by atomic counters, `SnapshotRegistry` is per `Engine`, and r8brain's
-  statics outlive every pool. The pool header lists this explicitly.
+  third a load-time constructor, as `apu.c`'s own tables are. Mesen's two double-checked lazy builds, the NES game
+  database (every iNES load) and the GBA CPU's dispatch tables, published their tables through a plain `bool`, which
+  ThreadSanitizer reports when two cores are the process's first of their kind at once; both flags are atomics now,
+  acquire before the unlocked check and release after the build (`"[mesen-statics]"`, which proves it only run alone,
+  as each table is built once per process). One is known and left: emu2413's VRC7 tables are built by the first
+  `OPLL_new` behind a plain flag with no lock, so two VRC7 carts built at once as the process's first race on it.
+  Nothing else is shared: QuickJS keeps no per-thread state, Mesen's scratch paths are numbered by atomic counters,
+  `SnapshotRegistry` is per `Engine`, and r8brain's statics outlive every pool. The pool header lists this
+  explicitly.
 - **Teardown mid-render and editor reopen** (design question 5). An engine's destruction cancels at the next chunk and
   joins; completions not drained go with the pool; a render cancelled mid-render has its WAV removed (commit 3). With
   the editor

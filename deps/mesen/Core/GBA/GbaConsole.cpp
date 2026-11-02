@@ -1,4 +1,5 @@
 #include "pch.h"
+#include <atomic>
 #include "GBA/GbaConsole.h"
 #include "GBA/GbaCpu.h"
 #include "GBA/GbaPpu.h"
@@ -24,19 +25,23 @@
 #include "Utilities/Serializer.h"
 #include "Utilities/StringUtilities.h"
 
-static bool _needStaticInit = true;
+// RetroPlug: an atomic, stored with release once the CPU's dispatch tables are built and loaded with acquire before
+// the unlocked check, so a core that sees it clear also sees the tables (on ARM a plain bool published them to a second
+// thread unordered): two GBA cores can be built on two threads at once (the engine's offline pool, beside the live
+// engine).
+static std::atomic<bool> _needStaticInit{true};
 static SimpleLock _staticInitLock;
 
 GbaConsole::GbaConsole(Emulator* emu)
 {
 	_emu = emu;
 
-	if(_needStaticInit) {
+	if(_needStaticInit.load(std::memory_order_acquire)) {
 		auto lock = _staticInitLock.AcquireSafe();
-		if(_needStaticInit) {
+		if(_needStaticInit.load(std::memory_order_relaxed)) {
 			GbaCpu::StaticInit();
 			DummyGbaCpu::StaticInit();
-			_needStaticInit = false;
+			_needStaticInit.store(false, std::memory_order_release);
 		}
 	}
 }
