@@ -1192,15 +1192,16 @@ and everything is destroyed on that worker before the completion is published. T
 run whole 1024-frame blocks and carry the surplus to the next call of the same shape, system, stream count and rate.
 Progress (rendered milliseconds, a running maximum) and the script's console lines go into a per-job
 `EngineJobRecord`, bounded to 256 lines and 64 KiB between drains. Engine jobs run on at most `engineBudget()` workers,
-all but one of the pool's size (one for a pool of one, whose `maxWorkers()` of 2 lets a graph job start beside it); a
-worker takes the oldest job its kind's limit allows. The pool is the `Engine`'s, made at the first submission and
-reset before the engine's other members go. A graph job runs on one worker thread from start to end, which is the job
-host's control thread and block thread at once (quiescent: no audio thread, so `setGraph` flushes inline and
-`GraphHost::processBlock` is the block driver, draining then running), in blocks of 1024 frames, the last partial,
-checking for a cancel between blocks (an engine job's blocks are continuous and its cancel is polled per chunk). The
-pool starts workers on demand while a runnable job is queued and every started one is busy, at most `maxWorkers()`:
-the pool's size, clamp(hardware_concurrency, 1, 8), or 2 for a pool of one. A render held back by the engine budget
-starts no thread. A worker is never retired: an engine that ran a kit keeps up to eight parked threads
+all but one of the pool's size (one for a pool of one, whose `maxWorkers()` of 2 lets a graph job start beside a
+render, or a render beside a graph job); a worker takes the oldest job its kind's limit allows. The pool is the
+`Engine`'s, made at the first submission and reset before the engine's other members go. A graph job runs on one
+worker thread from start to end, which is the job host's control thread and block thread at once (quiescent: no audio
+thread, so `setGraph` flushes inline and `GraphHost::processBlock` is the block driver, draining then running), in
+blocks of 1024 frames, the last partial, checking for a cancel between blocks (an engine job's blocks are continuous
+and its cancel is polled per chunk). The pool starts workers on demand while a runnable job is queued and every
+started one is busy, at most `maxWorkers()`: the pool's size, clamp(hardware_concurrency, 1, 8), or 2 for a pool of
+one. A render held back by the engine budget starts no thread. A worker is never retired: an engine that ran a kit
+keeps up to eight parked threads
 for the rest of its life (a parked wait, costing no CPU). At most 64 jobs are outstanding at once (queued, running, or
 finished and not yet drained), so every taken job has room for its completion. Handles are known before a job runs:
 input i is `res:(i + 1)`, output j is `res:(inputs + j + 1)`. An input of no frames is accepted and reported but names

@@ -73,8 +73,9 @@ polled per chunk; an engine's teardown cancels its engine jobs and joins them.
 
 **Sharing the pool.** A render is a full emulator running flat out for seconds or minutes; a kit compile takes
 milliseconds. Engine jobs hold at most all but one of the pool's workers at once (one, for a pool of one), the rest
-queue first in, first out, so a kit compile always finds a worker: a pool of one starts a second thread for a graph job
-that arrives while a render holds the first. Both kinds count toward the one bound on outstanding jobs.
+queue first in, first out, so a kit compile always finds a worker: a pool of one starts a second thread for a job of
+either kind that arrives while one of the other holds the first, a graph job beside a render or a render beside a graph
+job. Both kinds count toward the one bound on outstanding jobs.
 
 **Ownership.** A render belongs to its plugin instance's `Engine`, not to the process: it survives the editor closing,
 as today, and an instance's teardown cancels it, where `RenderJobRegistry`'s threads ran on into static teardown.

@@ -48,9 +48,8 @@
 // The workers are started as jobs need them, up to maxWorkers() (the pool's size, which is the machine's hardware
 // threads, at least one, at most kMaxWorkers, unless a test gives another; see engine jobs below for a size of 1), so a
 // host that never submits has no thread at all; jobs past that wait, in the order "Sharing the pool" below gives. A
-// worker never retires on its
-// own: once started it stays parked between jobs until the pool goes, so an engine that ran one kit compile keeps up to
-// kMaxWorkers idle threads for the rest of its life (each a parked wait, costing no CPU).
+// worker never retires on its own: once started it stays parked between jobs until the pool goes, so an engine that ran
+// one kit compile keeps up to kMaxWorkers idle threads for the rest of its life (each a parked wait, costing no CPU).
 // At most kMaxJobs are outstanding at once, queued, running, or finished and not yet drained, so every job taken has
 // room for its completion and none is ever dropped.
 //
@@ -100,16 +99,18 @@
 // its stack). A record is bounded between drains (EngineJobRecord::kMaxLines, kMaxBytes), because a plugin whose
 // editor is closed drains nothing for as long as a render runs; a line past either bound is dropped and counted, and
 // the count is reported (and reset) with the lines. A cancel is the render's own cooperative check, polled once per
-// chunk the render library pulls (100 ms of audio), so a running render stops within a chunk of the cancel, or once
-// its system has booted if the cancel lands during the boot.
+// chunk the render library pulls (100 ms of audio), so a running render stops within a chunk of the cancel, or before
+// its first chunk if the cancel lands while it starts: its system's boot, the settle after it and the presses that
+// start its playback (a song's load steps among them) all run first, a fraction of a second of wall time.
 //
 // Sharing the pool. A render runs a full emulator flat out for seconds or minutes, where a kit compile's graph jobs
 // take milliseconds, so engine jobs run on at most engineBudget() workers at once, all but one of size(), and further
 // engine jobs wait, in submission order, while graph jobs start past them: a worker takes the oldest job it may run.
 // Graph jobs run on at most size() workers. A pool of size 1 cannot leave a worker free and still run a render at
-// all, so its budget is 1, and it starts a second thread (maxWorkers() is 2) for a graph job that arrives while a
-// render holds the first: a kit compile then shares the machine's one hardware thread with the render rather than
-// waiting minutes behind it. So a graph job always finds a worker, as long as the OS can start a thread when the pool
+// all, so its budget is 1, and it starts a second thread (maxWorkers() is 2) for whichever kind arrives while the other
+// holds the first: a graph job while a render runs, so a kit compile shares the machine's one hardware thread with the
+// render rather than waiting minutes behind it, and a render while a graph job runs, so it starts without waiting
+// behind a kit. So a graph job always finds a worker, as long as the OS can start a thread when the pool
 // needs one: a worker that cannot be started leaves the job queued for the workers there are (enqueue), which may all
 // be rendering. Both kinds count toward kMaxJobs.
 namespace rp::host {
@@ -192,8 +193,8 @@ public:
     unsigned size() const { return size_; }
     // Engine jobs run on at most this many workers at once: all but one of size(), and 1 for a pool of 1.
     unsigned engineBudget() const { return size_ > 1 ? size_ - 1 : 1; }
-    // The threads the pool starts at most: size(), or 2 for a pool of 1, whose second thread a graph job takes while a
-    // render holds the first.
+    // The threads the pool starts at most: size(), or 2 for a pool of 1, whose second thread a job of one kind takes
+    // while one of the other holds the first (a graph job beside a render, or a render beside a graph job).
     unsigned maxWorkers() const { return size_ > 1 ? size_ : 2; }
 
     // ---- any thread (the engine calls them on its control thread) ----
