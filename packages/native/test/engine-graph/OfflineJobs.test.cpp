@@ -1121,8 +1121,8 @@ TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit
     constexpr int           kBlocks = 240;
     // Counted from the first block after a short warm-up, as C4's whole-block cases are: eight blocks let the plan
     // settle and the jobs start, and the window then runs through the rest of the run, which carries every one of the
-    // engine's periodic state publishes after the first (about block 46 of a booting Game Boy, and every 24 k frames
-    // after that) inside it, so the publish path is counted too rather than skipped past.
+    // engine's periodic state publishes, the first (about block 46 of a booting Game Boy) and each 24 k frames after
+    // it, so the publish path is counted too rather than skipped past.
     constexpr int           kWarm = 8;
     constexpr std::uint32_t kFrames = 512;
     const auto play = [&](bool withJobs, rp::test::AllocationCount& counted) {

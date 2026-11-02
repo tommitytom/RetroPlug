@@ -3241,17 +3241,18 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
     }
     SECTION("Game Boy, through the engine, across its state publishes") {
         // The publish path's own promise, which every section above stays under: the registry republishes a core's
-        // savestate every 0.5 s, and the read that goes through - the core's snapshot read, then the registry's copy -
-        // is what a block of a warmed core must not grow either. The window starts at the first block after warm-up and
-        // runs two intervals, so the FIRST periodic publish and a later one both land inside it. (A core's first block
-        // publishes its boot capture, which is discounted there; the registry's own accumulator starts at claim, so its
-        // first publish here is the 16th counted block and its second the 39th.) Each publish is proved by the blob the
-        // control plane reads changing; the read itself is between blocks, outside every window.
+        // savestate every 0.5 s, reading the core's snapshot slot straight into its own, and that read is what a block
+        // of a warmed core must not grow either. The window starts at the first block after warm-up and runs two
+        // intervals, so the FIRST periodic publish and a later one both land inside it. (A core's first block publishes
+        // its boot capture, which is discounted there; the registry's own accumulator starts at claim, so its publishes
+        // here are counted indices 15 and 39.) Each publish is proved by the blob the control plane reads changing; the
+        // read itself is between blocks, outside every window.
         //
-        // A Game Boy is the console this can be held on: its capture writes into the scratch it sized at its first
-        // block, where a Mesen core's periodic capture allocates inside its serializer by nature - which is why the NES
-        // section above charges a whole interval outside its window instead of counting one. Host input is the sections
-        // above's subject, so this one stages none.
+        // A Game Boy holds the core's periodic capture too: it writes into the scratch the core sized at its first
+        // block, and at 1024 frames the core's captures land at counted indices 16 and 40, inside the window. A Mesen
+        // core's capture allocates inside its serializer by nature, which is why the NES section above charges a whole
+        // interval outside its window, and why the next section holds a NES's publish alone. Host input is the
+        // sections above's subject, so this one stages none.
         Engine e(kRate);
         rp::host::test::Roms roms;
         auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kGbType}};
@@ -3278,6 +3279,39 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
             REQUIRE(counted.frees == 0);
         }
         CHECK(publishes == 2);
+    }
+    SECTION("NES, through the engine, its state publish") {
+        // The registry's publish of a Mesen core, without the core's own capture: the registry counts its interval
+        // from claim and the core from its first block, so at 1024 frames the registry's first periodic publish is
+        // block 24 and the core's next capture block 25. The window runs from the first block after warm-up to block
+        // 24, counted index 15, with no interval charged outside it, and holds the read a NES's publish goes through
+        // to nothing, as the Game Boy section above holds a Game Boy's. The publish is proved by the blob the control
+        // plane reads changing, at that block and no other.
+        Engine e(kRate);
+        rp::host::test::Roms roms;
+        auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kNesType}};
+        rp::host::test::withRoms(e, systems, roms);
+        REQUIRE(e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1})).ok);
+        Lanes lanes(2);
+        constexpr std::uint32_t kFrames = 1024;
+        for (int b = 0; b < 8; ++b) e.processBlock(kFrames, lanes.ptrs.data(), 2);  // warm
+        auto published = e.registry().readState(1);
+        REQUIRE(published.has_value());
+        std::vector<int> publishedAt;
+        for (int b = 0; b < 16; ++b) {
+            std::fill_n(lanes.ptrs[0], kFrames, 0.0f);
+            std::fill_n(lanes.ptrs[1], kFrames, 0.0f);
+            rp::test::beginCountingAllocations(true);
+            e.processBlock(kFrames, lanes.ptrs.data(), 2);
+            const auto counted = rp::test::endCountingAllocations();
+            auto now = e.registry().readState(1);
+            if (now && *now != *published) publishedAt.push_back(b);
+            published = std::move(now);
+            INFO(b << ": " << counted.allocations << " allocations, " << counted.frees << " frees");
+            REQUIRE(counted.allocations == 0);
+            REQUIRE(counted.frees == 0);
+        }
+        CHECK(publishedAt == std::vector<int>{15});
     }
     SECTION("GBA") {
         // A sibling fixture, so this SKIPs, counted, on a run without one (as CI's) rather than passing silently.
