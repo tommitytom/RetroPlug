@@ -270,7 +270,7 @@ jobs:
           path: dist/*.zip
 
   macos:
-    runs-on: macos-14   # arm64 host; produces a universal arm64+x86_64 binary
+    runs-on: macos-15   # arm64 host; produces a universal arm64+x86_64 binary
     # Job-level env can read secrets (step `if:` cannot). HAS_SIGNING drives the
     # optional codesign/notarize steps; everything else runs regardless.
     env:
