@@ -212,8 +212,12 @@ side effects or re-scoping their byte-identity claim. What the seam hands them, 
   the offline poll's native wait, which would block the frame the compile settles on.
 - User-authored sample graphs on the same seam. A script runtime for jobs is not one: a job's document may name only
   the built-in C++ packages, so a user graph of script nodes needs a job-side script host of its own.
-- The `deps/enkiTS` submodule, kept but unbuilt: no RetroPlug code links it since the native compile retired, so a
-  later cleanup decides whether the submodule goes.
+- The `deps/enkiTS` directory, vendored but unbuilt: no RetroPlug code links it since the native compile retired, so a
+  later cleanup decides whether it goes.
+- A kit patcher UI, whose knob-to-ear latency D2's compile does not meet: about 23 ms typical and 83 ms worst for a
+  15-slot kit (native was 1.7 and 4.9 ms), nearly all of it buffers crossing the JS thread between passes. The lever is
+  chaining a slot's passes inside one job or keeping the intermediates native behind handles, so only the final buffer
+  crosses, and recompiling only the slot a knob touched.
 
 ## 10. Prototype questions
 
@@ -284,9 +288,10 @@ moved a kit byte or a parity baseline either.
   rather than the RPC's decode message, and reads an explicit null there as absent, as native's optional does. Follow-up
   S's review pass gave those cases the reach they claimed: the throwing submit is held behind runs staggered so most
   are still pending when it throws, with one more held behind it and one made straight from `run()`; the live-plan
-  case's control thread drains the pool beside the running blocks; the guard case reads the caller's MXCSR rounding
-  bits, which `fegetround` does not on glibc; and a drain throw leaving native's jobs uncounted by the queue until they
-  are drained is said where the queue's bound is.
+  case's control thread drains the pool beside the running blocks, and the case records that a drain did run while
+  blocks were still playing; the guard case reads MXCSR's rounding bits inside the guard, which `fegetround` does not
+  see on glibc; and a drain throw leaving native's jobs uncounted by the queue until they are drained is said where the
+  queue's bound is.
 - **3, the nodes.** `rp.dsp.normalize`, `rp.dsp.dpcm` and dither's `seedFrom` are all in `rp.dsp`, in the existing
   `retroplug-dsp-nodes` target, so the pool's registry planned them unchanged; `rp.dsp.dpcm` declares `heap`, the
   package's first such type, which shows a `heap` type stays here while rp.dsp.resample's split is about r8brain at
@@ -297,10 +302,11 @@ moved a kit byte or a parity baseline either.
   `[dsp-nodes]` seed case caught that). The DPCM kernel writes one unpacked bit per byte and needs no scratch (two
   passes over the input); the node encodes at activate into storage it owns and declares `normalize` its `rebuild_key`,
   so a toggle rebuilds and re-encodes on the control thread rather than running a whole-buffer pass in a block-thread
-  commit. "No buffer named" is a `settings-invalid` refusal for both new nodes, and `rp.dsp.dpcm` refuses a
-  multi-channel buffer at activate. The review's fix pass moved the DPCM re-encode off the block thread, gave each node
-  a commit case, and made normalize's peak the channels it plays. Its descriptor goldens: dither's re-recorded for
-  `seedFrom`, and `normalize`'s and `dpcm`'s added.
+  commit, and a re-activation whose buffer is the length it already encoded keeps those bits. "No buffer named" is a
+  `settings-invalid` refusal for both new nodes, and `rp.dsp.dpcm` refuses a multi-channel buffer at activate. The
+  review's fix pass moved the DPCM re-encode off the block thread, gave each node a commit case, and made normalize's
+  peak the channels it plays. Its descriptor goldens: dither's re-recorded for `seedFrom`, and `normalize`'s and
+  `dpcm`'s added.
 - **4, the compiler.** `src/kit/` is three files: `pack.ts` (the integer half and the three assemblers' constants),
   `chain.ts` (validation, the refusals and the documents) and `compile.ts` (the two entry points). A slot's chain
   starts with a document-less load job whose file input carries the cap, so native hands back the windowed samples and
@@ -327,15 +333,18 @@ moved a kit byte or a parity baseline either.
   new block drives the real binary's async exit path: the bank is on disk when `build-kit` exits 0, and a missing
   source exits 1 with its reason on stderr. This stage also exposed a latent bug: the CLI's `--filter` left `gain` out
   of the effect, so the old RPC had thrown `Field named 'gain' not found` for every such kit and the flag never
-  worked; the TypeScript compiler fills the 0 dB default and the flag now compiles.
+  worked; the TypeScript compiler fills the 0 dB default and the flag now compiles, which a fix pass pinned there along
+  with the clipped-slot warning (a filter flag's bank differs from the same spec's without it, and a partly placed
+  sample's reason is read back from stderr).
 - **6, native retires.** `KitCompiler`, `KitCodec.hpp`, `LsdjKitCodec`, `RisaDmcCodec`, `KitUtil`, `SampleUtil`, the
   harness `compileKit` / `compileDmc` RPCs, their DTOs, the `LsdjEffect` tagged union and the C++ baseline suite are
-  gone. What tests and the seam still name of the LSDj bank moved to `src/lsdj/KitBank.hpp` (the rate, `0x3fa0` and
-  its frame count), documented as the format the TypeScript compiler packs. `retroplug-core` compiles only
+  gone. What tests still name of the LSDj bank moved to `src/lsdj/KitBank.hpp` (the rate, `0x3fa0` and its frame
+  count), whose comment documents it as the format the TypeScript compiler packs. `retroplug-core` compiles only
   `SampleCache.cpp` from the kit path and links neither DSP library nor enkiTS any more; `retroplug-audio-test` and
   `retroplug-graph-test` compile `src/lsdj/Effects.cpp` themselves, as the kit path's reference. The harness facet is
   20 methods and the union 90 (was 22 and 92). enkiTS leaves the build entirely (the `add_subdirectory`, the warning
-  suppression and the third-party credit), since no shipped binary can contain it now; the submodule stays. CI's
+  suppression and the third-party credit), since no shipped binary can contain it now; the vendored directory
+  stays. CI's
   Catch2 step drops `RP_KIT_GOLDEN_REQUIRE_TARGET` with the suite it guarded, and the `test:native` step keeps it,
   because the TypeScript goldens still compare exact bytes there. The C++ seam test no longer holds the compiler's side
   of an empty window: `kit-compile`'s EMP slots and the edges golden do.
@@ -448,8 +457,8 @@ decides, and nothing fails on them.
   only a failed one, carries a reason.
 - **Section 6**: the C++ suite's second watch on the same file ends with the compiler it watched; `kit-edges.json`
   records the edge banks; the teardown case asserts abandonment; and the suite gained the guard, non-finite and
-  FP-environment cases, the FP one reading the caller's MXCSR rounding bits since `fegetround` sees only the x87 control
-  word where the kernels compute in SSE.
+  FP-environment cases, the FP one reading MXCSR's rounding bits inside the guard since `fegetround` sees only the x87
+  control word where the kernels compute in SSE.
 
 ### Found while building
 
@@ -484,14 +493,16 @@ decides, and nothing fails on them.
 - **The plugin test had to settle through the plugin's own path.** A case that made an audio driver settled through
   the native wait, which the plugin never uses; it now settles from the frame tick and proves the wait is off.
 - **enkiTS was building nothing.** `add_subdirectory` still compiled the static library into `all` though nothing
-  linked it; it is out of the build now, and the submodule remains for a later cleanup to judge.
+  linked it; it is out of the build now, and the vendored directory remains for a later cleanup to judge.
 - **The compiler reached the CLI and render bundles, not the UI's.** `audioDriver` imports `src/kit` and
   `realBackend.offlineRunner`, so `cli-bundle.js` and the render worker's session path grew; `ui/main.tsx` and the
   plugin control plane import neither.
 - **Not yet compiled with MSVC.** This box builds Linux, and the prototype's commits are local, so the Windows build
   has not seen this tree; stage 6 also removed transitive includes (`lsdj/Effects.hpp` -> `BackendTypes.hpp` among
   them), so "confirm the removed transitive includes build under MSVC" is a residual in
-  [07-remaining-work.md](../spec/07-remaining-work.md).
+  [07-remaining-work.md](../spec/07-remaining-work.md). The floating-point guard's inside mode is the other half only
+  MSVC sees: if the Windows job goes red on that assertion, the class wants MXCSR's rounding field set explicitly
+  rather than trusting `fesetenv(FE_DFL_ENV)` to carry it.
 
 ### The suite, as built
 
@@ -508,8 +519,9 @@ decides, and nothing fails on them.
 - `retroplug-graph-test` gained `[dsp-buffer-nodes]` (`test/graph/DspBufferNodes.test.cpp`, 12 cases: normalize whole
   and split, its peak, its committed gain, `seedFrom`'s channel 0 and the other channels, a committed seed, the DPCM's
   bits, its `normalize` rebuild, a block counted from the plan's first block allocating nothing, the refusals, and the
-  Pico plan) and `[dsp][dpcm]` (the kernel against a verbatim copy of the retired codec), the binary going from 259
-  cases to 272: these 13 and stage 1's two `[dsp-nodes]` clamp cases.
+  Pico plan) and `[dsp][dpcm]` (the kernel against a verbatim copy of the retired encoder), the binary going from 259
+  cases to 272: these 13 and stage 1's two `[dsp-nodes]` clamp cases. A fix pass added a re-activation case, so
+  `[dsp-buffer-nodes]` is 13 cases and the binary 273.
 - `retroplug-audio-test` lost `[kit-baseline]` with the compiler (109 cases and 1 235 263 assertions to 108 and
   1 234 835); `[dither]` and the rest are unchanged. `retroplug-audio-test "[kit-baseline]"` is now a Catch2 failure
   ("No tests ran"), so a stale script fails loudly.
@@ -521,7 +533,8 @@ decides, and nothing fails on them.
   new `kit-edges.json` (12 banks, `{hash, size}`), both read through defines `run-native-tests.mjs` sets. The
   TypeScript runner carries the baseline's rules: size and slot everywhere, the hash only on `linux-x64-gnu13`, a
   second compile agreeing with itself elsewhere, `RP_KIT_GOLDEN_REQUIRE_TARGET=1` turning that into a failure, and
-  `RP_KIT_GOLDEN_UPDATE=1` refused off the target and for a case that disagrees with itself.
+  `RP_KIT_GOLDEN_UPDATE=1` refused off the target, for a case that disagrees with itself and for a run whose source
+  check failed.
 - Both sanitizers are clean over the new tags (TSan with 25 jobs beside a live audio thread; ASan with leak detection
   on), the consumer suites pass from scratch copies (BlipToaster 57 files, NESVJ 19), and the only count that differs
   between the two sanitizer builds is the existing device-thread progress case, whose progress publishes depend on

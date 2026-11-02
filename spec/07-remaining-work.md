@@ -418,11 +418,19 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     (nothing includes it) and a candidate for the same cleanup as enkiTS. Nothing in production calls
     `rp::lsdj::processEffect`, so do not wire a caller back to it thinking it is the kit path. A
     job's document may name only the built-in C++ packages (no script nodes), and a user graph of script nodes would
-    need a job-side script host. `deps/enkiTS` is a submodule nothing adds or links; a later cleanup decides whether it
-    goes. The compiler's intermediate buffers cross the RPC (about 1 MB a slot for a 1 s source, 15 MB a kit, for a
-    22 ms compile against native's 1.8 ms), so keeping them native is the lever if it ever matters. Off
-    `linux-x64-gnu13` the kit banks are held only by self-agreement and the structural asserts, since the native
-    comparison that used to make the edge banks exact everywhere went with the compiler.
+    need a job-side script host. `deps/enkiTS` is vendored under `deps/` and nothing builds or links it; a later cleanup
+    decides whether it goes. Off `linux-x64-gnu13` the kit banks are held only by self-agreement and the structural
+    asserts, since the native comparison that used to make the edge banks exact everywhere went with the compiler.
+  - **Interactive kit patching has a latency budget it does not meet** (user, 2026-11-02). A kit patcher UI must let a
+    knob change be heard in the running emulator almost at once, as the user's earlier LSDj patcher did. The TypeScript
+    compile over offline jobs costs about 23 ms typical and 83 ms worst for a 15-slot kit where native was 1.7 and
+    4.9 ms, nearly all of it buffers crossing the JS thread between passes (about 1 MB a slot for a 1 s source, 15 MB a
+    kit). When a patcher UI lands, the fix is to chain a slot's passes inside one job or keep the intermediates native
+    behind handles so only the final buffer crosses, and to recompile only the slot a knob touched.
+  - **Engine-level threaded cases are weak race detectors.** Through a real `Engine`, ThreadSanitizer sees a
+    happens-before edge between the control and block threads somewhere in `setGraph` (around `GraphHost::reclaim` and
+    planning) that hides a shared-buffer race, so a case driving the engine from two threads can pass with the race
+    present; the registry-level cases are what caught the state publish's. Worth an investigation.
   - **Confirm the removed transitive includes build under MSVC.** The tree has not been built with MSVC since D2
     deleted headers that used to arrive through `BackendTypes.hpp` and `retroplug-core`; run `build.bat` (or the
     Windows CI job) before trusting the platform that has not run here.

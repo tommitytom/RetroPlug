@@ -27,7 +27,7 @@ The rules below are the parts that don't fit those.
   also run `pnpm install` in `deps/dpf.js/deps/lv_binding_js`, or the UI bundle
   can't resolve `react`. Don't bump any submodule pointer (in either repo) without
   checking — they're managed deliberately. RetroPlug also keeps `deps/sameboy` +
-  `deps/mesen` / `deps/r8brain` (the shared core; `deps/enkiTS` is still a submodule, but no
+  `deps/mesen` / `deps/r8brain` (the shared core; `deps/enkiTS` is vendored under `deps/`, but no
   target adds or links it since the native kit compile retired), and `deps/efsw`
   (the file-watcher — `NativeFileWatcher` behind `HostRpcService::drainChangedPaths`
   — now uses it: `add_subdirectory`'d `EXCLUDE_FROM_ALL` at the root, `efsw-static`

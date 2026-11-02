@@ -84,8 +84,8 @@ option(RETROPLUG_MESEN_LTO "LTO the Mesen NES core (~10% faster, much slower lin
 set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/packages/native/src/lv_conf.h" CACHE PATH "")
 
 # <windows.h> defines min()/max() macros that break std::numeric_limits<T>::max()
-# and std::min/max. NOMINMAX suppresses them - safe and
-# standard; unlike WIN32_LEAN_AND_MEAN it removes no headers, so it's global.
+# and std::min/max. NOMINMAX suppresses them - safe and standard; unlike
+# WIN32_LEAN_AND_MEAN it removes no headers, so it's global.
 # (The earlier /FI cpp_stdlib_preinclude.h workaround for the extern "C" / STL
 # C2894 issue is gone — tommitytom/txiki.js's self-guarding headers + dropping
 # lv_binding_js's external extern "C" wraps fix it at the root.)
@@ -280,8 +280,8 @@ add_subdirectory(deps/mesen)
 # Headers only: packages/native/src/dsp/R8bBase.cpp compiles its one source (r8bbase.cpp) on the throwing allocator, so
 # the tree declares no target for the vendored library and there is none to link.
 
-# --- enkiTS: a task scheduler, vendored but not built. No RetroPlug code uses it, so the tree adds no target for it
-# and links none; the submodule is kept.
+# --- enkiTS: a task scheduler, vendored under deps/enkiTS but not built. No RetroPlug code uses it, so the tree adds
+# no target for it and links none; the directory stays for a later cleanup to judge.
 
 # --- miniaudio: single-header audio file decoder (WAV / MP3 / FLAC).
 # Used by SampleCache, the decode an offline job's file input takes.

@@ -11,8 +11,9 @@ The root [CMakeLists.txt](../CMakeLists.txt) declares the project as
 `NAME retroplug` and pulls in the native build with a single
 `add_subdirectory(packages/native native)` ([CMakeLists.txt](../CMakeLists.txt)), after the
 `deps/dpf.js` submodule and the vendored cores (SameBoy, Mesen, efsw, catch2); r8brain
-supplies headers only, so it is not added as a subdirectory, and `deps/enkiTS` is a submodule that nothing adds or
-links since the native kit compile retired. A full build produces the plugin (all formats) + the standalone.
+supplies headers only, so it is not added as a subdirectory, and `deps/enkiTS` is vendored
+under `deps/` with nothing adding or linking it since the native kit compile retired. A full
+build produces the plugin (all formats) + the standalone.
 
 - `build.sh` (Linux/macOS) and `build.bat` (Windows) are the canonical entry points and have
   **zero build-specific special-casing** — a bare `./build.sh` builds every `ALL` target. See
@@ -230,19 +231,18 @@ through real offline jobs before any caller moved, and they are still the oracle
   TypeScript cuts the buffers, packs the codes and bits and assembles the bank.
 - **Matrix.** The kit baseline
   ([kit-baseline.test.ts](../packages/retroplug/test-native/kit-baseline.test.ts), run by `pnpm test:native`)
-  synthesises every source in the test (two sines, a quiet sine, a chirp,
-  seeded noise and silence at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk), writes
-  each as a 32-bit float WAV in a temp dir, and compiles it through real offline jobs, so `SampleCache` and miniaudio's
-  decode are in the loop and the suite needs no fixtures. 39 cases: LSDj has no
-  effect, gain, normalise (a silent source too), a quiet source normalised at every rate and through a dither, a
-  negative gain, each of the eight filters, a 10 Hz high-pass at Q 20 and a 30 dB shelf, each of the five dithers,
-  rotate on and off, a filter-gain-dither chain, the short source and a two-slot bank; risa has five DMC rate indices,
-  normalise off, loop on, a silent normalise at two rates, the short source and a two-slot bank. The two-slot banks
-  add a second sample
-  named SNR with its own effects (on risa, a rate index of its own too) and, on the LSDj one, a lowercase over-long
-  bank name, so the assembler's offset accumulation past slot 0, a second sample name and `writeString`'s uppercase
-  and truncation are held by a hash too (the 15-slot loop is in every case already). `SOURCE_HASHES` binds the
-  synthesised sources to the ones the retired C++ suite wrote, on the target where their `sin` values were recorded.
+  synthesises every source in the test (two sines, a quiet sine, a chirp, seeded noise and silence at 22.05, 44.1 and
+  48 kHz, plus a 600-frame source shorter than one resampler chunk), writes each as a 32-bit float WAV in a temp dir,
+  and compiles it through real offline jobs, so `SampleCache` and miniaudio's decode are in the loop and the suite
+  needs no fixtures. 39 cases: LSDj has no effect, gain, normalise (a silent source too), a quiet source normalised at
+  every rate and through a dither, a negative gain, each of the eight filters, a 10 Hz high-pass at Q 20 and a 30 dB
+  shelf, each of the five dithers, rotate on and off, a filter-gain-dither chain, the short source and a two-slot
+  bank; risa has five DMC rate indices, normalise off, loop on, a silent normalise at two rates, the short source and
+  a two-slot bank. The two-slot banks add a second sample named SNR with its own effects (on risa, a rate index of its
+  own too) and, on the LSDj one, a lowercase over-long bank name, so the assembler's offset accumulation past slot 0, a
+  second sample name and `writeString`'s uppercase and truncation are held by a hash too (the 15-slot loop is in every
+  case already). `SOURCE_HASHES` binds the synthesised sources to the ones the retired C++ suite wrote, on the target
+  where their `sin` values were recorded.
 - **The edge banks.** [kit-compile.test.ts](../packages/retroplug/test-native/kit-compile.test.ts) holds a second
   golden, [kit-edges.json](../packages/native/test/audio/golden/kit-edges.json), 12 banks past the baseline's matrix:
   a full 15-slot and a 16-slot kit, samples past the slot count, clipped and empty slots, filled defaults, rotate on,
