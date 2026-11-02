@@ -6,7 +6,7 @@
 import { test, expect, ui, navTo, Key } from "ui-harness";
 import { installScriptedStores } from "./scriptedRenders";
 
-test("a real render settles from frame pumps alone: the badge shows, the job ends done, the WAV is written", async () => {
+test("a real render settles from frame pumps alone: the badge shows, the job ends done, the WAV is there", async () => {
   const scripted = installScriptedStores(true);
   const { stores } = scripted;
   expect(ui.boot()).toBeTruthy();

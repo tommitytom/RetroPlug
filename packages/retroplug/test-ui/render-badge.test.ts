@@ -6,7 +6,7 @@
 import { test, expect, ui, navTo, Key } from "ui-harness";
 import { installScriptedStores } from "./scriptedRenders";
 
-test("the render badge shows the duration / error on a tile, cancels on a tap, and clears when the job finishes", () => {
+test("the render badge shows the duration / error on a tile, cancels on a tap, clears when the job finishes", () => {
   const scripted = installScriptedStores();
   const { stores, renders } = scripted;
 

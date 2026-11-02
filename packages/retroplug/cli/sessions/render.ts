@@ -55,8 +55,8 @@ async function runRender(s: Session, args: string[]): Promise<void> {
   // A render is a minutes-long job in a host with timers: the launcher's bounded pump would give up on it, so run the
   // unbounded pump, and let the job's poll yield to it between waits (src/offline.ts setOfflineYield). The first
   // Ctrl-C cancels the job, which ends cancelled at its next chunk and removes its partial files (the library's
-  // discard; an export already at the path stays), so the command fails with "render: cancelled" below rather than reporting success over a cut-short
-  // export; a second Ctrl-C is the default action, for a job that does not stop.
+  // discard; an export already at the path stays), so the command fails with "render: cancelled" below rather than
+  // reporting success over a cut-short export; a second Ctrl-C is the default action, for a job that does not stop.
   keepAlive();
   setOfflineYield((resume) => void setTimeout(resume, 0));
   try {

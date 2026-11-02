@@ -81,8 +81,8 @@ For end users, `retroplug-cli` also carries **named subcommands whose session is
 binary** (tjsc bytecode, exactly like the plugin's control-plane/UI bundles) — no loose `.js`, no Node,
 just the executable. The first is `render`, which takes a ROM + its battery `.sav` (or a savestate)
 straight to WAV. It runs as an engine job on the CLI's own engine ([11-ui-rendering.md](11-ui-rendering.md)); the
-first Ctrl-C cancels it (`ERROR: render: cancelled`, exit 1, no WAV from a cancel that lands mid-render, and an export already at the path left as it was) and a second
-kills the process:
+first Ctrl-C cancels it (`ERROR: render: cancelled`, exit 1, no WAV from a cancel that lands mid-render, and an
+export already at the path left as it was) and a second kills the process:
 
 ```
 retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--duration t] [--max-duration t]

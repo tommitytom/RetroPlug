@@ -343,9 +343,10 @@ made them false (chunking, the worker budget, the carry's rules).
   and `setContinuousBlocks(false)` stay for the in-process render tests and parity.
 - **The systems signal has observers.** `ProjectStore.addOnSystemsChange` appends; the control plane (also the SDL
   host's) adds its watched-ROM refresh beside the store graph's own notify and `renders.prune()` instead of replacing
-  them, which had left finished renders of a removed system listed in those hosts. `RenderOpts.pullMs` must be at
-  least one frame at the render's rate (a smaller pull rendered no audio and never ended), and a chunk with no frames
-  is an error.
+  them, which had left finished renders of a removed system listed in those hosts. One observer's throw is caught and
+  warned, so the ones after it still run and the edit that signalled still completes.
+- **A pull is at least one frame.** `RenderOpts.pullMs` must come to at least one frame at the render's rate (a
+  smaller pull rendered no audio and never ended), and a chunk with no frames is an error.
 - **`retroplug-render-host-test`** is three legs on engine jobs: `<job-json>` runs one job on a pool (the production
   path, so "byte-identical to `retroplug-cli render`" holds because it is the same code, and is still checked by `cmp`),
   `--parallel <j>...` runs N jobs on a pool sized so all can run, asserts its engine budget covers `min(N,

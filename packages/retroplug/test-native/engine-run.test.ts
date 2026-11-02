@@ -124,7 +124,11 @@ test("a cancelled render leaves the export that was at its path as it was, and n
   expect(be.writeFile(mix, earlier("mix"))).toBe(true);
   stemPaths.forEach((p) => expect(be.writeFile(p, earlier(p))).toBe(true));
   let mixHandle: EngineRunHandle | null = null;
-  mixHandle = be.engineRun("render", { rom: MGB, out: mix, durationMs: 600000 }, { onProgress: () => mixHandle?.cancel() });
+  mixHandle = be.engineRun(
+    "render",
+    { rom: MGB, out: mix, durationMs: 600000 },
+    { onProgress: () => mixHandle?.cancel() },
+  );
   expect((await mixHandle).status).toBe("cancelled");
   expect(text(be.readFile(mix))).toBe("an earlier export mix");
   expect(be.fileExists(`${mix}.part`)).toBe(false);

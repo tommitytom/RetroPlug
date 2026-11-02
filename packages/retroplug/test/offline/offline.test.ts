@@ -37,11 +37,11 @@ import {
 // once), a drain that waits advances the clock to the next job's end when none has finished, a drain that does not
 // wait never moves it, at most OFFLINE_MAX_JOBS are outstanding (submitted and not yet drained) and one past that is
 // refused busy. A job echoes its first input's samples, or fails for a document of "fail". An engine job's spec is
-// {"ms": n, "out": path, "endMs"?: m, "drop"?: d}: it runs n time units, each drain reporting the units elapsed as its rendered
-// milliseconds, writes one line as it starts and one as it ends, and completes "done" with `out` as its output (and
-// `endMs` as its final length when given, as a render that detected its song's end lowers its count), or "error" for
-// a spec with no out; its first report says `drop` console lines were dropped, as a record that overflowed would. A cancel ends a job at the next drain, a graph job's error and an engine job's status
-// "cancelled".
+// {"ms": n, "out": path, "endMs"?: m, "drop"?: d}: it runs n time units, each drain reporting the units elapsed as its
+// rendered milliseconds, writes one line as it starts and one as it ends, and completes "done" with `out` as its output
+// (and `endMs` as its final length when given, as a render that detected its song's end lowers its count), or "error"
+// for a spec with no out; its first report says `drop` console lines were dropped, as a record that overflowed would.
+// A cancel ends a job at the next drain, a graph job's error and an engine job's status "cancelled".
 function clockPort() {
   let now = 0;
   let next = 1;
@@ -101,7 +101,7 @@ function clockPort() {
       for (const j of jobs.filter((x) => x.engine)) {
         const e = j.engine!;
         const lines = e.started ? [] : [{ stream: "stdout" as const, text: `rendering ${e.out ?? ""}` }];
-        const droppedLines = e.started ? 0 : (e.drop ?? 0); // the first report carries the count a bounded record dropped
+        const droppedLines = e.started ? 0 : (e.drop ?? 0); // the first report carries what a bounded record dropped
         e.started = true;
         const renderedMs = Math.min(now, j.end) - e.start;
         if (j.end > now) {

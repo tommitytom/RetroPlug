@@ -498,7 +498,7 @@ interface StopMarkers {
 
 /** A render target: how to pull the next chunk, where each chunk's frames go (one interleaved buffer per
  *  stream — mix=1, split=N), and how to close the files. Writers are created lazily on the first chunk. */
-interface RenderSink {
+export interface RenderSink {
   renderChunk(ms: number): Float32Array[];
   emit(chunk: Float32Array[], takeFrames: number): void; // commit the first `takeFrames` frames of a chunk
   finishAll(): string[]; // patch every writer's header, move each file to its path, log + return the output paths
@@ -607,8 +607,8 @@ function buildSink(
  *  ms / pull; on an exact-blocks engine (the in-process tests) only while no node consumes the transport or MIDI
  *  block by block (a sync node such as rp.sms.sync), whose clock then follows the pulls' splits. `leadIn` is the
  *  captured play-gesture audio (the song's opening frames) — committed first so the recording's head isn't
- *  lost, trimmed against the target like any other chunk. */
-function driveFixed(
+ *  lost, trimmed against the target like any other chunk. Exported for tests. */
+export function driveFixed(
   sink: RenderSink, targetFrames: number, sr: number, hooks: RenderHooks, pullMs: number, leadIn: Float32Array[][] = [],
 ): void {
   let done = 0;
@@ -793,7 +793,9 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     throw new Error(`render: could not set sample rate to ${o.sampleRate}Hz`);
   // A pull under one frame renders no audio at all, so a fixed render would never reach its length.
   const rate = ctx.audio.sampleRate();
-  if (Math.floor((pullMs * rate) / 1000) < 1) throw new Error(`render: pullMs ${pullMs} is under one frame at ${rate}Hz`);
+  if (Math.floor((pullMs * rate) / 1000) < 1) {
+    throw new Error(`render: pullMs ${pullMs} is under one frame at ${rate}Hz`);
+  }
 
   const seed = resolveSongSeed(ctx, o, log, warn);
   // smsggdj resolves its song here rather than through the seed, because its working song is not in the
@@ -846,7 +848,8 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     if (!autoDetect && o.durationMs === undefined && isSmsggdjRom(ctx, o)) {
       warn(
         `render: smsggdj songs loop forever (no HFF-style stop exists on this console), so song-length ` +
-          `auto-detect is not possible — rendering the full ${o.maxDurationMs}ms cap; pass --duration to pin a length`,
+          `auto-detect is not possible — rendering the full ${o.maxDurationMs}ms cap; ` +
+          `pass --duration to pin a length`,
       );
     }
 
