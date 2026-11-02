@@ -7,7 +7,8 @@
 //                                                   once; assert every one is done and that min(N, the most a pool
 //                                                   may run) ran side by side at some drain (exits 0)
 //   retroplug-render-host-test --cancel <job-json>  submit a render, cancel it once it has rendered audio, assert it
-//                                                   completes "cancelled" with no outputs and no file left (exits 0)
+//                                                   completes "cancelled" with no outputs and its files as they were
+//                                                   before it ran, no new one or `.part` left (exits 0)
 //
 // Not shipped; built by name for the render checks (and under the sanitizers, in build-tsan/ and build-asan/, for the
 // pool's threads). The [engine-jobs] cases of retroplug-engine-graph-test are the automated guard.
@@ -131,42 +132,65 @@ struct SpecFiles {
     std::optional<std::string> split;
 };
 
-// The files a cancelled render left that it must not have: a mix spec's `out`, or any `<prefix>_<stream>.wav` of a
-// split one, whose `out` is a prefix (a trailing .wav, in any case, trimmed as render.ts's outBase does). None when the
-// spec names no `out` (the render names its file from the ROM or the song), which this tool does not predict: the check
-// is skipped then, with a note.
-std::vector<std::filesystem::path> leftFiles(const std::string& spec) {
+// A file the render could write, as it was: its size and last write time.
+struct FileState {
+    std::uintmax_t                  size = 0;
+    std::filesystem::file_time_type written{};
+    bool operator==(const FileState&) const = default;
+};
+using Files = std::map<std::filesystem::path, FileState>;
+
+// The files a render of `spec` writes, as they are now: a mix spec's `out`, or any `<prefix>_<stream>.wav` of a split
+// one, whose `out` is a prefix (a trailing .wav, in any case, trimmed as render.ts's outBase does), each with the
+// `.part` file the render streams it to before moving it into place. Nullopt when the spec names no readable `out` (it
+// names none, the render then naming its file from the ROM or the song, which this tool does not predict, or it is not
+// JSON the reader takes).
+std::optional<Files> renderFiles(const std::string& spec) {
     namespace fs = std::filesystem;
     const auto files = rfl::json::read<SpecFiles>(spec);
-    if (!files || !files->out || files->out->empty()) return {};
+    if (!files || !files->out || files->out->empty()) return std::nullopt;
+    Files            found;
+    const auto       note = [&found](const fs::path& p) {
+        std::error_code ec;
+        if (!fs::is_regular_file(p, ec)) return;
+        FileState st;
+        st.size = fs::file_size(p, ec);
+        st.written = fs::last_write_time(p, ec);
+        found.emplace(p, st);
+    };
     const std::string out = *files->out;
     if (!files->split || *files->split == "mix") {
-        if (fs::exists(out)) return {fs::path(out)};
-        return {};
+        note(out);
+        note(out + ".part");
+        return found;
     }
     std::string prefix = out;
     std::string ext = prefix.size() >= 4 ? prefix.substr(prefix.size() - 4) : std::string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
     if (ext == ".wav") prefix.resize(prefix.size() - 4);
-    const fs::path base(prefix);
-    const fs::path dir = base.has_parent_path() ? base.parent_path() : fs::path(".");
+    const fs::path    base(prefix);
+    const fs::path    dir = base.has_parent_path() ? base.parent_path() : fs::path(".");
     const std::string stem = base.filename().string() + "_";
-    std::vector<fs::path> left;
-    std::error_code       ec;
+    const auto        endsWith = [](const std::string& name, const char* tail) {
+        const std::size_t n = std::strlen(tail);
+        return name.size() >= n && name.compare(name.size() - n, n, tail) == 0;
+    };
+    std::error_code ec;
     for (const auto& e : fs::directory_iterator(dir, ec)) {
         const std::string name = e.path().filename().string();
-        if (name.size() > stem.size() + 4 && name.compare(0, stem.size(), stem) == 0 &&
-            name.compare(name.size() - 4, 4, ".wav") == 0)
-            left.push_back(e.path());
+        if (name.size() > stem.size() && name.compare(0, stem.size(), stem) == 0 &&
+            (endsWith(name, ".wav") || endsWith(name, ".wav.part")))
+            note(e.path());
     }
-    return left;
+    return found;
 }
 
 // Submit one (long) job, cancel it once a drain shows it has rendered audio, and assert it completes "cancelled",
-// mid-render (its rendered length above zero), with no outputs and none of its files left behind.
+// mid-render (its rendered length above zero), with no outputs, and with the files its spec names as they were before
+// it ran: none new, a leftover `.part` among them, and none changed, so an earlier export at the same paths stays.
 int runCancel(const std::string& spec) {
-    if (const auto files = rfl::json::read<SpecFiles>(spec); !files || !files->out || files->out->empty())
-        std::fprintf(stderr, "cancel: the spec names no \"out\", so no file check\n");
+    const std::optional<Files> before = renderFiles(spec);
+    if (!before) std::fprintf(stderr, "cancel: the spec names no readable \"out\", so no file check\n");
     OfflineJobs         pool;
     const std::uint32_t id = submit(pool, spec);
     if (id == 0) return 1;
@@ -218,9 +242,27 @@ int runCancel(const std::string& spec) {
                      c.outputs.size());
         return 1;
     }
-    if (const auto left = leftFiles(spec); !left.empty()) {
-        for (const auto& f : left) std::fprintf(stderr, "cancel: %s was left behind\n", f.string().c_str());
-        return 1;
+    if (before) {
+        int changed = 0;
+        for (const auto& [path, now] : renderFiles(spec).value_or(Files{})) {
+            const auto was = before->find(path);
+            if (was == before->end()) {
+                std::fprintf(stderr, "cancel: %s was left behind\n", path.string().c_str());
+                ++changed;
+            } else if (!(was->second == now)) {
+                std::fprintf(stderr, "cancel: %s, there before the render, was changed\n", path.string().c_str());
+                ++changed;
+            }
+        }
+        for (const auto& entry : *before) {
+            std::error_code ec;
+            if (!std::filesystem::exists(entry.first, ec)) {
+                std::fprintf(stderr, "cancel: %s, there before the render, was deleted\n",
+                             entry.first.string().c_str());
+                ++changed;
+            }
+        }
+        if (changed != 0) return 1;
     }
     return 0;
 }
