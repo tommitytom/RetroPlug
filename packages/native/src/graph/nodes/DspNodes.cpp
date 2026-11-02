@@ -223,10 +223,10 @@ struct Gain {
 // the host output rejects a non-finite sample. The growth is slow enough to be heard: about 700 samples from a cleared
 // state at 12 kHz on a 22.05 kHz plan, and the kernel's clamp writes rail-to-rail output in every block until the
 // guard fires, so a held above-Nyquist setting is full-scale bursts with the silent blocks the guard writes between
-// the silent blocks the guard writes between them rather than silence. So the node guards the state and leaves the
-// coefficients alone: a channel whose filter came out of a block with any of its four state values not finite has that
-// filter reset and its block written as silence, so a sweep past Nyquist cannot poison the stream, and a frequency that
-// comes back into range is a fresh filter's from the next block on.
+// them rather than silence. So the node guards the state and leaves the coefficients alone: a channel whose filter
+// came out of a block with any of its four state values not finite has that filter reset and its block written as
+// silence, so a sweep past Nyquist cannot poison the stream, and a frequency that comes back into range is a fresh
+// filter's from the next block on.
 //
 // That guard differs from the kernel run directly in two regimes, and it is byte-visible in both: a kit filter whose
 // frequency is above its source rate's Nyquist produces constant codes today (the state goes NaN, and the quantiser
@@ -234,7 +234,11 @@ struct Gain {
 // WAV can carry (nothing between the sample cache and the kit compiler checks), latches the kernel for good, where this
 // node resets. No case in the kit baseline is in either regime, so none of its bytes moved. A kit compile refuses both
 // rather than choosing between the kernel call and this node: a source with a non-finite sample and a filter at or
-// above its source rate's Nyquist are errors, so it never asks this node to match the kernel there.
+// above its source rate's Nyquist are errors, so it never asks this node to match the kernel there. A finite source
+// can still reach the regime (a filter whose gain overflows on huge samples, a non-finite value an earlier node in the
+// same pass made), so the node reports every reset through the host's rp.host.guards/1 when the host offers it: an
+// offline job counts the reports in its completion and a kit compile refuses the pass, so a kit that compiles never
+// carried a reset; a live host offers nothing, and the guard works as it always has.
 struct Biquad {
     static constexpr const char* id = "rp.dsp.biquad";
     static constexpr const char* name = "Biquad";
@@ -261,11 +265,17 @@ struct Biquad {
 
     std::span<rp::dsp::Biquad> filters;  // one per channel, in the instance's tail memory
 
+    const rp_host_guards* guards = nullptr;  // where a reset is reported, when the host offers it
     double               rate = 48000.0;  // as activate gave it
     rp::dsp::BiquadType  type = rp::dsp::BiquadType::LowPass;
     bool                 clear = true;  // the next block computes coefficients and clears the state
     // What the coefficients were last computed for, so a block that changed none of it does no trigonometry.
     float frequency = 0.0f, q = 0.0f, gainDb = 0.0f;
+
+    // The host's guard report, taken once at create: null on a host that offers none, the live engine's included.
+    void bind_host(const rp_host* host) noexcept {
+        guards = static_cast<const rp_host_guards*>(host->get_interface(host, RP_HOST_GUARDS_INTERFACE));
+    }
 
     void attach(std::span<std::byte> mem) noexcept {
         // The host builds these once per instance and never destroys them (node.hpp's hook list), which is sound only
@@ -316,6 +326,7 @@ struct Biquad {
                 // and the block may already hold the NaNs it wrote, which the clamp passed through.
                 filter.reset();
                 std::fill(y, y + b.frames(), 0.0f);
+                if (guards) guards->fired(guards->ctx, "rp.dsp.biquad reset a filter whose state went non-finite");
             }
         }
     }
@@ -353,7 +364,9 @@ struct Biquad {
 // nothing between `SampleCache` and the kit compile checks a sample for finiteness, so a 32-bit float WAV carrying a
 // NaN or an infinity latches the kernel for the rest of the slot where this node recovers at the next block. No
 // baseline case carries one, so no kit byte moved; a kit compile refuses a source with a non-finite sample, so it
-// never asks this node to match the kernel there.
+// never asks this node to match the kernel there. A finite input can still overflow the state (a sample near the
+// float range's top, scaled and fed back), so the node reports every restart through the host's rp.host.guards/1 when
+// the host offers it, as the biquad reports its resets: an offline job counts it, a live host hears nothing.
 struct Dither {
     static constexpr const char* id = "rp.dsp.dither";
     static constexpr const char* name = "Dither";
@@ -389,6 +402,12 @@ struct Dither {
     // The buffer a `seedFrom` names, pinned by the instance (so it outlives every block) and read only at activate.
     const rp_audio_buffer* seedFrom = nullptr;
     bool                   restart = true;  // the next block seeds the noise from the fields above
+    const rp_host_guards*  guards = nullptr;  // where a restart is reported, when the host offers it
+
+    // The host's guard report, taken once at create: null on a host that offers none, the live engine's included.
+    void bind_host(const rp_host* host) noexcept {
+        guards = static_cast<const rp_host_guards*>(host->get_interface(host, RP_HOST_GUARDS_INTERFACE));
+    }
 
     void attach(std::span<std::byte> mem) noexcept {
         // Never destroyed, like the biquad's states above; the static_assert holds that Dither is trivially
@@ -436,8 +455,10 @@ struct Dither {
             if (!std::isfinite(state.prevDither) || !std::isfinite(state.shapingState) ||
                 !std::isfinite(state.err1) || !std::isfinite(state.err2) || !std::isfinite(state.error) ||
                 !std::isfinite(state.past[0]) || !std::isfinite(state.past[1]) || !std::isfinite(state.past[2]) ||
-                !std::isfinite(state.past[3]))
+                !std::isfinite(state.past[3])) {
                 seedState(state, c);
+                if (guards) guards->fired(guards->ctx, "rp.dsp.dither restarted a channel whose state went non-finite");
+            }
         }
     }
 };

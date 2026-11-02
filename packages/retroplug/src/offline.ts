@@ -75,13 +75,15 @@ export interface OfflineRunRequest {
   rate: number;
 }
 
-/** A returned buffer: interleaved, `channels` x `frames` at `rate`. */
+/** A returned buffer: interleaved, `channels` x `frames` at `rate`, and whether any sample is not finite (native reads
+ *  it as it copies the samples out, which is far cheaper than a scan here). */
 export interface OfflineBuffer {
   handle: number;
   channels: number;
   frames: number;
   rate: number;
   samples: Float32Array;
+  nonFinite: boolean;
 }
 
 /** What a file input decoded to and kept: the decoded rate and length, the window's length (0: an empty window, an
@@ -98,6 +100,11 @@ export interface OfflineInputReport {
 export interface OfflineRunResult {
   buffers: OfflineBuffer[];
   inputs: OfflineInputReport[];
+  /** How many times a node's guard replaced what its kernel would have computed during the run (a biquad reset, a
+   *  dither restart; native's rp.host.guards/1), and the first one's reason ("" for none). The job completed either
+   *  way: whether a guard's output is acceptable is the caller's call (a kit compile refuses it). */
+  guardsFired: number;
+  guardReason: string;
 }
 
 /** A job that failed: native's reason, and the reports of the file inputs it decoded before it stopped. */
@@ -141,12 +148,22 @@ export interface OfflineSubmitResult {
   id?: number | null;
   error?: string | null;
 }
+export interface OfflineWireBuffer {
+  handle: number;
+  channels: number;
+  frames: number;
+  rate: number;
+  samples: Uint8Array;
+  nonFinite: boolean;
+}
 export interface OfflineWireCompletion {
   id: number;
   ok: boolean;
   error: string;
-  buffers: { handle: number; channels: number; frames: number; rate: number; samples: Uint8Array }[];
+  buffers: OfflineWireBuffer[];
   inputs: OfflineInputReport[];
+  guardsFired: number;
+  guardReason: string;
 }
 
 /** What drainOfflineJobs answers: the completions, and how many of the engine's jobs are still queued or running. */
@@ -281,8 +298,11 @@ export class OfflineJobs implements JobQueue {
           frames: b.frames,
           rate: b.rate,
           samples: floats(b.samples),
+          nonFinite: b.nonFinite,
         })),
         inputs: c.inputs,
+        guardsFired: c.guardsFired,
+        guardReason: c.guardReason,
       });
     }
     // A promise whose job native no longer holds (none came back, and nothing is in flight) would otherwise be polled

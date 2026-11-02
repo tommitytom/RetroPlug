@@ -124,13 +124,16 @@ struct OfflineSubmit {
     std::string   error;
 };
 
-// A buffer a completion returns: interleaved, `channels` x `frames`.
+// A buffer a completion returns: interleaved, `channels` x `frames`, and whether any sample is not finite (read as the
+// samples are copied out, so a caller that refuses a non-finite recording, as a kit compile does, need not scan them
+// itself, which in a script runtime costs more than the job).
 struct OfflineBuffer {
     std::uint32_t      handle = 0;
     std::uint32_t      channels = 0;
     std::uint32_t      frames = 0;
     double             rate = 0.0;
     std::vector<float> samples;
+    bool               nonFinite = false;
 };
 
 // What a file input decoded to and kept: the decoded rate and length, the window's length, and whether any sample the
@@ -144,13 +147,19 @@ struct OfflineInputReport {
 };
 
 // A finished job: ok with the buffers `returns` named, or the reason it failed. `inputs` reports each file input
-// decoded before the job ended, a failed job's included.
+// decoded before the job ended, a failed job's included. `guardsFired` counts the times a node's guard replaced what
+// its kernel would have computed during the run (rp.host.guards/1, which each job's host offers its nodes), and
+// `guardReason` is the first one's reason, empty when none fired: a job a guard stepped into still completes, and what
+// it means is the caller's to decide (a kit compile refuses the pass, since its bytes are the kernels'; a render can
+// accept a recovering filter).
 struct OfflineCompletion {
     std::uint32_t                   id = 0;
     bool                            ok = false;
     std::string                     error;
     std::vector<OfflineBuffer>      buffers;
     std::vector<OfflineInputReport> inputs;
+    std::uint32_t                   guardsFired = 0;
+    std::string                     guardReason;
 };
 
 class OfflineJobs {

@@ -1,0 +1,17 @@
+{
+  "target": "linux-x64-gnu13",
+  "cases": {
+    "lsdj/defaults": { "hash": "d7675b3b7dce86e9", "size": 16384 },
+    "lsdj/edges-rotate-off": { "hash": "d4b4cc0f98d4ed5e", "size": 16384 },
+    "lsdj/edges-rotate-on": { "hash": "3f961c8916423483", "size": 16384 },
+    "lsdj/full": { "hash": "a372b194ae8e3845", "size": 16384 },
+    "lsdj/overflow": { "hash": "f073fc123cb93d36", "size": 16384 },
+    "lsdj/refused": { "hash": "a85b8e9f069a5fb0", "size": 16384 },
+    "lsdj/sixteen": { "hash": "d02047595046f2c6", "size": 16384 },
+    "risa/defaults": { "hash": "39395a29c0efcc37", "size": 8192 },
+    "risa/edges": { "hash": "8ce2632d43b623da", "size": 8192 },
+    "risa/refusal-over-empty-window": { "hash": "7bc0c884920bafc4", "size": 8192 },
+    "risa/refused": { "hash": "7ae41ed559b334c7", "size": 8192 },
+    "risa/seventeen": { "hash": "da1afe7f0ef6060c", "size": 8192 }
+  }
+}

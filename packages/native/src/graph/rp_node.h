@@ -169,6 +169,19 @@ typedef struct rp_host_resources {
     bool (*release)(void* ctx, uint32_t id);
 } rp_host_resources;
 
+/* Where a node reports that one of its guards replaced what its kernel would have computed: a biquad whose state ran
+ * away is reset and its block silenced, a dither whose state went non-finite is restarted. The guard is the node's own
+ * recovery and acts the same whether or not a host takes the report; the report only tells a host that asks (see
+ * docs/modular-graph-phase-d2-design.md). A host that offers no such service answers null, and the node reports
+ * nothing. `fired` is [audio]: it must not block or allocate. The node's `reason` stays valid while the reporting
+ * instance lives (a literal of its own does, for as long as its code is loaded); a host that keeps it longer copies it
+ * first. A node takes the interface in bind_host. */
+#define RP_HOST_GUARDS_INTERFACE "rp.host.guards/1"
+typedef struct rp_host_guards {
+    void* ctx;
+    void (*fired)(void* ctx, const char* reason);
+} rp_host_guards;
+
 typedef enum rp_port_kind {
     RP_PORT_AUDIO    = 0,
     RP_PORT_EVENTS   = 1,

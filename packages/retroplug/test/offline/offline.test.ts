@@ -58,7 +58,8 @@ function clockPort() {
       for (const j of jobs.filter((x) => x.end <= now)) {
         const report = { handle: 1, decodedRate: 22050, decodedFrames: 10, frames: 4, nonFinite: true };
         if (j.request.document === "fail") {
-          done.push({ id: j.id, ok: false, error: "a node faulted: f", buffers: [], inputs: [report] });
+          const failed = { id: j.id, ok: false, error: "a node faulted: f", buffers: [], inputs: [report] };
+          done.push({ ...failed, guardsFired: 0, guardReason: "" });
           continue;
         }
         const echoed = j.request.inputs[0]?.samples ?? new Uint8Array(0);
@@ -67,8 +68,12 @@ function clockPort() {
           id: j.id,
           ok: true,
           error: "",
-          buffers: [{ handle: 1, channels: 1, frames: echoed.byteLength / 4, rate: 48000, samples: echoed }],
+          buffers: [
+            { handle: 1, channels: 1, frames: echoed.byteLength / 4, rate: 48000, samples: echoed, nonFinite: false },
+          ],
           inputs: [],
+          guardsFired: 0,
+          guardReason: "",
         });
       }
       for (const d of done) jobs.splice(jobs.findIndex((j) => j.id === d.id), 1);

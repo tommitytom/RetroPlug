@@ -1,8 +1,11 @@
 #include "host/engine/OfflineJobs.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <cfenv>
 #include <exception>
 #include <string_view>
 #include <system_error>
@@ -15,6 +18,13 @@
 #include "graph/nodes/DspNodes.hpp"
 #include "graph/nodes/DspResampleNodes.hpp"
 #include "kit/SampleCache.hpp"
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <xmmintrin.h>
+#define RP_OFFLINE_FP_MXCSR 1
+#elif defined(__aarch64__) && (defined(__GNUC__) || defined(__clang__))
+#define RP_OFFLINE_FP_FPCR 1
+#endif
 
 namespace rp::host {
 
@@ -49,6 +59,74 @@ graph::ResourceTable::Id reservePlaceholder(graph::ResourceTable& table) {
     table.drop(id);
     return id;
 }
+
+// The default floating-point environment, held for a job's run and the caller's put back after: round to nearest, no
+// exception trapping, and subnormals kept (no flush-to-zero, no denormals-are-zero). A worker thread starts with the
+// environment of the thread that submitted the job which started it, and an audio host commonly sets flush-to-zero on
+// its threads; a job's floats are a kit's bytes, which the kernels compute in the default mode (a biquad's and the
+// resampler's tails pass through subnormals, and a normalise over a quiet source divides by one), so a job must not
+// compute them in whatever mode its submitter happened to run in. fesetenv(FE_DFL_ENV) gives the standard part; the
+// flush bits are set explicitly as well, since not every C library's default environment clears them (x86's MXCSR
+// FTZ and DAZ, AArch64's FPCR FZ and FZ16).
+class DefaultFloatEnvironment {
+public:
+    DefaultFloatEnvironment() {
+        std::fegetenv(&saved_);
+        std::fesetenv(FE_DFL_ENV);
+#if defined(RP_OFFLINE_FP_MXCSR)
+        savedMxcsr_ = _mm_getcsr();
+        _mm_setcsr(savedMxcsr_ & ~(kFtz | kDaz));
+#elif defined(RP_OFFLINE_FP_FPCR)
+        asm volatile("mrs %0, fpcr" : "=r"(savedFpcr_));
+        const std::uint64_t fpcr = savedFpcr_ & ~(kFz | kFz16);
+        asm volatile("msr fpcr, %0" : : "r"(fpcr));
+#endif
+    }
+    ~DefaultFloatEnvironment() {
+        std::fesetenv(&saved_);
+#if defined(RP_OFFLINE_FP_MXCSR)
+        _mm_setcsr(savedMxcsr_);
+#elif defined(RP_OFFLINE_FP_FPCR)
+        asm volatile("msr fpcr, %0" : : "r"(savedFpcr_));
+#endif
+    }
+    DefaultFloatEnvironment(const DefaultFloatEnvironment&) = delete;
+    DefaultFloatEnvironment& operator=(const DefaultFloatEnvironment&) = delete;
+
+private:
+    std::fenv_t saved_{};
+#if defined(RP_OFFLINE_FP_MXCSR)
+    static constexpr unsigned kFtz = 0x8000u;  // MXCSR bit 15, flush-to-zero
+    static constexpr unsigned kDaz = 0x0040u;  // MXCSR bit 6, denormals-are-zero
+    unsigned savedMxcsr_ = 0;
+#elif defined(RP_OFFLINE_FP_FPCR)
+    static constexpr std::uint64_t kFz = std::uint64_t(1) << 24;    // FPCR.FZ
+    static constexpr std::uint64_t kFz16 = std::uint64_t(1) << 19;  // FPCR.FZ16
+    std::uint64_t savedFpcr_ = 0;
+#endif
+};
+
+// The guard report a job's host offers its nodes (rp.host.guards/1): how many guards fired, and the first one's reason.
+// A node whose guard replaces what its kernel would have computed reports it, and the completion carries the count
+// and the reason on an ok result, as each returned buffer carries whether it holds a non-finite sample: native
+// reports, the caller decides (a kit compile refuses the pass; a render can accept a recovering filter). Nodes report
+// on the block thread, which for a job is its worker; the counters are atomic so that stays true of any driver.
+struct GuardReport {
+    std::atomic<std::uint32_t> count{0};
+    std::atomic<const char*>   first{nullptr};
+    rp_host_guards             service{this, &GuardReport::fired};
+
+    static void fired(void* ctx, const char* reason) {
+        auto* const self = static_cast<GuardReport*>(ctx);
+        const char* none = nullptr;
+        self->first.compare_exchange_strong(none, reason, std::memory_order_relaxed);
+        self->count.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    static const void* interfaces(void* ctx, const char* id) {
+        return std::strcmp(id, RP_HOST_GUARDS_INTERFACE) == 0 ? &static_cast<GuardReport*>(ctx)->service : nullptr;
+    }
+};
 
 }  // namespace
 
@@ -241,6 +319,7 @@ OfflineCompletion OfflineJobs::run(Job& job) {
         return std::move(out);
     };
     const auto cancelled = [&job] { return job.cancelled.load(std::memory_order_acquire); };
+    const DefaultFloatEnvironment floatEnvironment;  // the whole run, decode to copy-out, in the default mode
     OfflineRequest& req = job.request;
     try {
         if (cancelled()) return fail("cancelled");
@@ -315,9 +394,12 @@ OfflineCompletion OfflineJobs::run(Job& job) {
             if (cancelled()) return fail("cancelled");
             auto doc = graph::parseGraphDocument(req.document);
             if (!doc) return fail(std::string("not a graph document: ") + doc.error().what());
+            GuardReport       guards;  // before the host, whose nodes report into it until they go with it
             graph::HostConfig config;
             config.sampleRate = req.rate;
             config.maxFrames = kBlockFrames;
+            config.interfaces = &GuardReport::interfaces;
+            config.interfacesCtx = &guards;
             graph::GraphHost host(registry_, resources, config);
             const graph::SetGraphResult planned = host.setGraph(*doc);
             if (!planned.ok) return fail("the document was refused: " + describe(planned.errors));
@@ -335,6 +417,9 @@ OfflineCompletion OfflineJobs::run(Job& job) {
                     if (host.isFaulted(n.id)) faulted += (faulted.empty() ? "" : ", ") + n.id;
                 return fail("a node faulted: " + faulted);
             }
+            // Copied while the nodes that own the reason are still alive: the host and they go at this scope's end.
+            out.guardsFired = guards.count.load(std::memory_order_relaxed);
+            if (out.guardsFired != 0) out.guardReason = guards.first.load(std::memory_order_relaxed);
         }  // the host goes here, on this thread, and every node it built with it
 
         for (const std::uint32_t h : req.returns) {
@@ -350,6 +435,8 @@ OfflineCompletion OfflineJobs::run(Job& job) {
                 for (std::uint32_t f = 0; f < b->frames; ++f)
                     for (std::uint32_t c = 0; c < b->channels; ++c)
                         buffer.samples[std::size_t(f) * b->channels + c] = b->data[c][f];
+                buffer.nonFinite = std::any_of(buffer.samples.begin(), buffer.samples.end(),
+                                               [](float v) { return !std::isfinite(v); });
             }
             out.buffers.push_back(std::move(buffer));
         }

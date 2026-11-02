@@ -292,14 +292,14 @@ RpcOfflineDrain EngineRpcService::drainOfflineJobs(double waitMs) {
     RpcOfflineDrain out{{}, 0};
     std::size_t     inFlight = 0;
     for (auto& c : engine_.drainOfflineJobs(std::chrono::milliseconds(static_cast<std::int64_t>(ms)), &inFlight)) {
-        RpcOfflineCompletion rc{c.id, c.ok, std::move(c.error), {}, {}};
+        RpcOfflineCompletion rc{c.id, c.ok, std::move(c.error), {}, {}, c.guardsFired, std::move(c.guardReason)};
         for (auto& b : c.buffers) {
             rfl::Bytestring bytes;
             if (!b.samples.empty()) {
                 const auto* p = reinterpret_cast<const std::byte*>(b.samples.data());
                 bytes = rfl::Bytestring(p, p + b.samples.size() * sizeof(float));
             }
-            rc.buffers.push_back({b.handle, b.channels, b.frames, b.rate, std::move(bytes)});
+            rc.buffers.push_back({b.handle, b.channels, b.frames, b.rate, std::move(bytes), b.nonFinite});
         }
         for (const auto& i : c.inputs)
             rc.inputs.push_back({i.handle, i.decodedRate, i.decodedFrames, i.frames, i.nonFinite});

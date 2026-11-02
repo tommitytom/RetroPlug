@@ -1,7 +1,7 @@
-// Pure-TS kit-bank assembly — the port of native KitUtil::buildKit, used to SPLICE a kit (single-sample
-// import / remove) without re-encoding untouched samples: read existing samples as raw nibble bytes
-// (KitView.samplesRaw), mutate the list, and rebuild the 16 KB bank here. Whole-kit builds go through the
-// native compileKit instead (it does resample + assembly in parallel). Layout matches kit.ts / KitUtil:
+// Pure-TS kit-bank assembly: the port of native KitUtil::buildKit, byte for byte, used to SPLICE a kit
+// (single-sample import / remove) without re-encoding untouched samples: read existing samples as raw nibble
+// bytes (KitView.samplesRaw), mutate the list, and rebuild the 16 KB bank here. The TypeScript kit compiler
+// (src/kit/) assembles its banks here too. Layout matches kit.ts / KitUtil:
 // a 16-entry u16le offset table (entry 0 = 0x4060; entries i+1 = each sample's end GB-addr; 0 terminates),
 // 15 × 3-char sample names at 0x22, a 6-char kit name at 0x52, sample data from 0x60 (≤ 0x3fa0 bytes).
 import {
@@ -21,12 +21,18 @@ export interface KitSample {
   bytes: Uint8Array; // raw 4-bit nibble stream (already frame-aligned by the compiler)
 }
 
-// Write a fixed-width name: uppercase ASCII, truncated to `size`, padded with `fill` to the end.
+const utf8 = new TextEncoder();
+
+// Write a fixed-width name as native KitUtil::buildKit's writeString does: the name's bytes (its UTF-8, which is what
+// a native string of it holds), each a-z uppercased and every other byte as it is, truncated to `size` and padded with
+// `fill`. Byte for byte, so this assembler and native's give one bank for one name: a name of printable ASCII (all a
+// kit read back from a ROM can have, KitView's readName) is the same under any rule, and for anything else native is
+// the reference the kit compiler is held to, so its bytes are copied rather than "corrected" here.
 function writeField(bank: Uint8Array, off: number, size: number, name: string, fill: number): void {
-  const up = name.toUpperCase();
+  const bytes = utf8.encode(name);
   for (let i = 0; i < size; i++) {
-    const c = i < up.length ? up.charCodeAt(i) : fill;
-    bank[off + i] = c >= 0x20 && c <= 0x7e ? c : fill;
+    const c = i < bytes.length ? bytes[i] : fill;
+    bank[off + i] = c >= 0x61 && c <= 0x7a ? c - 0x20 : c;
   }
 }
 
@@ -35,10 +41,25 @@ export function kitSampleSpace(samples: readonly KitSample[]): number {
   return samples.slice(0, KIT_MAX_SAMPLES).reduce((n, s) => n + s.bytes.length, 0);
 }
 
+/** A bank and where each sample landed in it: `written[i]` is how many of sample i's bytes the bank holds (fewer
+ *  than it has when the 0x3fa0-byte budget ran out part way through it), or null for a sample that found no room at
+ *  all and got the empty-slot marker. A sample past the 15 slots is not in `written`. */
+export interface PlacedKitBank {
+  bank: Uint8Array;
+  written: (number | null)[];
+}
+
 /** Assemble a 16 KB kit bank from a kit name + samples (≤15 honored). Sample data past the 0x3fa0 budget
  *  is clipped (matches native KitUtil::buildKit) — callers pre-check with kitSampleSpace to fail loudly. */
 export function buildKitBank(kitName: string, samples: readonly KitSample[]): Uint8Array {
+  return buildKitBankPlaced(kitName, samples).bank;
+}
+
+/** buildKitBank, saying where each sample landed: the kit compiler's per-slot reason for a sample the bank does not
+ *  hold whole comes from here, so it cannot drift from the assembler's own fit rule. */
+export function buildKitBankPlaced(kitName: string, samples: readonly KitSample[]): PlacedKitBank {
   const bank = new Uint8Array(BANK_SIZE);
+  const written: (number | null)[] = [];
   writeField(bank, KIT_NAME_OFFSET, KIT_NAME_SIZE, kitName, 0x20); // kit name, space-padded
 
   const setEntry = (i: number, gbAddr: number): void => {
@@ -59,14 +80,16 @@ export function buildKitBank(kitName: string, samples: readonly KitSample[]): Ui
       bank.set(src.subarray(0, writeSize), KIT_SAMPLE_DATA_OFFSET + cursor);
       cursor += writeSize;
       setEntry(i + 1, KIT_VALID_MAGIC + cursor); // end GB-addr
+      written.push(writeSize);
     } else {
       bank[nameOff] = 0; // empty-slot sentinel: name[0]=0, then '--'
       bank[nameOff + 1] = 0x2d;
       bank[nameOff + 2] = 0x2d;
       setEntry(i + 1, 0);
+      if (i < samples.length) written.push(null);
     }
   }
-  return bank;
+  return { bank, written };
 }
 
 /** Extract sample `i`'s raw nibble bytes from a standalone 16 KB bank (base 0) — e.g. a 1-sample bank

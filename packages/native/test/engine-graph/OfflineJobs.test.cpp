@@ -12,6 +12,7 @@
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[offline]"`; the hidden
 // "[offline-bench]" times a trivial job and a one-second resample.
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -28,6 +29,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <xmmintrin.h>
+#endif
+
 #include "../graph/CountingAllocator.hpp"
 #include "../graph/GraphRig.hpp"
 #include "GraphDocs.hpp"
@@ -39,6 +44,7 @@
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/engine/OfflineJobs.hpp"
+#include "host/graph/HostServices.hpp"
 #include "host/rpc/EngineRpcService.hpp"
 #include "kit/SampleCache.hpp"
 #include "lsdj/KitUtil.hpp"
@@ -175,6 +181,22 @@ OfflineCompletion one(OfflineJobs& jobs, std::uint32_t id) {
     auto done = collect([&](auto w) { return jobs.drain(w); }, {id});
     REQUIRE(done.count(id) == 1);
     return std::move(done[id]);
+}
+
+// Sets flush-to-zero and denormals-are-zero on the calling thread, where the target has them; false where it does not.
+bool setFlushToZero() {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+    _mm_setcsr(_mm_getcsr() | 0x8040u);  // MXCSR FTZ (bit 15) and DAZ (bit 6)
+    return true;
+#elif defined(__aarch64__) && (defined(__GNUC__) || defined(__clang__))
+    std::uint64_t fpcr = 0;
+    asm volatile("mrs %0, fpcr" : "=r"(fpcr));
+    fpcr |= std::uint64_t(1) << 24;  // FPCR.FZ
+    asm volatile("msr fpcr, %0" : : "r"(fpcr));
+    return true;
+#else
+    return false;
+#endif
 }
 
 // The thread count of this process, from /proc on Linux; -1 elsewhere.
@@ -418,6 +440,129 @@ TEST_CASE("a kit-shaped job names one buffer twice and runs the buffer-reading n
     for (std::size_t i = 0; i < frames; ++i) dpcm[i] = bits[i] ? 1.0f : -1.0f;
     CHECK(c.buffers[2].samples == dpcm);
     CHECK(jobs.outstanding() == 0);
+}
+
+TEST_CASE("a guard that fires in an offline job is counted in its completion; a non-finite recording is flagged",
+          "[engine-graph][offline]") {
+    // rp.dsp.biquad resets a filter whose state went non-finite and rp.dsp.dither restarts a channel whose state did,
+    // where the kernels latch. A job's host takes their reports (rp.host.guards/1), and the job still completes, ok,
+    // carrying how many fired and the first one's reason: native reports, the caller decides (a kit compile refuses
+    // the pass, a render can accept a filter that recovered). Each route here starts from finite samples, which a kit
+    // compile's own refusals let through: a +96 dB peak over samples near the top of the float range overflows the
+    // filter's state, a filter above the plan's Nyquist runs away on an ordinary signal, and an error diffusion (JJN's)
+    // over samples near the top of the range overflows the scaled value its fed-back errors are taken from. The same
+    // jobs with the guard's trigger taken away count none, so the count is the guard's. A live host offers no report
+    // (checked against the engine below) and its nodes recover as before. A value no guard touches is the recording's,
+    // and a returned buffer says whether it holds one.
+    OfflineJobs jobs;
+    const std::uint32_t frames = 4096;
+    const auto run = [&](const char* node, const std::vector<float>& input) {
+        OfflineRequest r;
+        r.document = std::string(R"({"nodes":[{"id":"p","type":"rp.core.buffer-player","settings":{"channels":1,
+            "layout":"mono","loop":false},"resources":{"sample":"res:1"}},)") + node +
+                     R"(,{"id":"rec","type":"rp.core.buffer-recorder","settings":{"channels":1},
+            "resources":{"target":"res:2"}}],"wires":[{"from":"p.out","to":"x.in"},{"from":"x.out","to":"rec.in"}]})";
+        r.inputs.emplace_back(OfflineSamples{input, 1, 48000.0});
+        r.outputs.push_back({1, frames, 48000.0});
+        r.returns = {2};
+        r.frames = frames;
+        r.rate = 48000.0;
+        const auto s = jobs.submit(r);
+        INFO(s.error);
+        REQUIRE(s.id != 0);
+        return one(jobs, s.id);
+    };
+    std::vector<float> huge = signal(frames, 1, 3);
+    for (float& v : huge) v *= 3.0e38f;  // every sample finite, the loudest near FLT_MAX
+    const std::vector<float> ordinary = signal(frames, 1, 4);
+
+    const char* peak = R"({"id":"x","type":"rp.dsp.biquad","settings":{"channels":1,"type":"peak"},
+                           "params":{"frequency":1000,"q":1,"gainDb":96}})";
+    const char* runaway = R"({"id":"x","type":"rp.dsp.biquad","settings":{"channels":1,"type":"low-pass"},
+                              "params":{"frequency":30000,"q":1}})";
+    const char* diffusion = R"({"id":"x","type":"rp.dsp.dither","settings":{"channels":1,
+                                "algorithm":"jjn","bits":4}})";
+    const std::string biquadReason = "rp.dsp.biquad reset a filter whose state went non-finite";
+    const std::string ditherReason = "rp.dsp.dither restarted a channel whose state went non-finite";
+
+    const auto guarded = [](const OfflineCompletion& c, const std::string& reason) {
+        INFO(c.error);
+        REQUIRE(c.ok);
+        CHECK(c.guardsFired > 0);
+        CHECK(c.guardReason == reason);
+        REQUIRE(c.buffers.size() == 1);  // the recording comes back too: what to make of it is the caller's
+    };
+    guarded(run(peak, huge), biquadReason);
+    guarded(run(runaway, ordinary), biquadReason);
+    guarded(run(diffusion, huge), ditherReason);
+
+    // The triggers taken away: the +96 dB peak and the error diffusion over ordinary samples.
+    const auto peakOrdinary = run(peak, ordinary);
+    INFO(peakOrdinary.error);
+    CHECK(peakOrdinary.ok);
+    CHECK(peakOrdinary.guardsFired == 0);
+    CHECK(peakOrdinary.guardReason.empty());
+    REQUIRE(peakOrdinary.buffers.size() == 1);
+    CHECK_FALSE(peakOrdinary.buffers[0].nonFinite);
+
+    // A value no guard touches reaches the recording, and the returned buffer says so: a plain gain over the huge
+    // samples overflows to infinities, which the job completes with (nothing in it misbehaved) and reports.
+    const char* loudGain = R"({"id":"x","type":"rp.dsp.gain","settings":{"channels":1},"params":{"gain":50}})";
+    const auto  overflowed = run(loudGain, huge);
+    INFO(overflowed.error);
+    REQUIRE(overflowed.ok);
+    REQUIRE(overflowed.buffers.size() == 1);
+    CHECK(overflowed.buffers[0].nonFinite);
+    CHECK(std::any_of(overflowed.buffers[0].samples.begin(), overflowed.buffers[0].samples.end(),
+                      [](float v) { return std::isinf(v); }));
+    const auto ditherOrdinary = run(diffusion, ordinary);
+    INFO(ditherOrdinary.error);
+    CHECK(ditherOrdinary.ok);
+    CHECK(ditherOrdinary.guardsFired == 0);
+    CHECK(jobs.outstanding() == 0);
+
+    // The live engine offers its nodes no guard report, so a live guard recovers with nobody told; the systems service
+    // answers, so the null is the engine's answer for this id and not a lookup that reaches nothing.
+    Engine engine(48000.0);
+    CHECK(engine.graphService(RP_HOST_GUARDS_INTERFACE) == nullptr);
+    CHECK(engine.graphService(RP_HOST_SYSTEMS_INTERFACE) != nullptr);
+}
+
+TEST_CASE("an offline job computes in the default floating-point mode whatever its submitter's mode",
+          "[engine-graph][offline]") {
+    // A worker starts with the floating-point environment of the thread whose submission started it, and an audio host
+    // commonly sets flush-to-zero on its threads. A job pins the default mode for its run, so a buffer of subnormals
+    // through a unity gain comes back as it went in, where under denormals-are-zero it would come back zeros.
+    std::vector<float> subnormal(1024);
+    for (std::size_t i = 0; i < subnormal.size(); ++i) subnormal[i] = 1.0e-39f * static_cast<float>(i % 7 + 1);
+    REQUIRE(std::fpclassify(subnormal[0]) == FP_SUBNORMAL);
+    OfflineRequest r;
+    r.document = R"({"nodes":[{"id":"p","type":"rp.core.buffer-player","settings":{"channels":1,"layout":"mono",
+        "loop":false},"resources":{"sample":"res:1"}},{"id":"g","type":"rp.dsp.gain","settings":{"channels":1},
+        "params":{"gain":1}},{"id":"rec","type":"rp.core.buffer-recorder","settings":{"channels":1},
+        "resources":{"target":"res:2"}}],"wires":[{"from":"p.out","to":"g.in"},{"from":"g.out","to":"rec.in"}]})";
+    r.inputs.emplace_back(OfflineSamples{subnormal, 1, 48000.0});
+    r.outputs.push_back({1, 1024, 48000.0});
+    r.returns = {2};
+    r.frames = 1024;
+    r.rate = 48000.0;
+
+    // The pool and its first worker are made from a thread that flushes subnormals, so the worker inherits that mode.
+    OfflineJobs              jobs;
+    OfflineCompletion        c;
+    bool                     flushing = false;
+    std::thread submitter([&] {
+        flushing = setFlushToZero();
+        const auto s = jobs.submit(r);
+        REQUIRE(s.id != 0);
+        c = one(jobs, s.id);
+    });
+    submitter.join();
+    if (!flushing) SKIP("this target has no flush-to-zero mode this test knows how to set");
+    INFO(c.error);
+    REQUIRE(c.ok);
+    REQUIRE(c.buffers.size() == 1);
+    CHECK(c.buffers[0].samples == subnormal);
 }
 
 TEST_CASE("offline jobs past the pool's concurrency queue, and each returns its own result", "[engine-graph][offline]") {

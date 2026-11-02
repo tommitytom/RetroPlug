@@ -1,5 +1,6 @@
-// risa DPCM kit-bank codec (read side) + the metadata-mirror derivation + the DMC decoder. The 8 KB kit
-// bank is produced natively (audioDriver.compileDmc); this reads one back (bankToModel), derives the
+// risa DPCM kit-bank codec (read side) + the metadata-mirror derivation + the DMC decoder + the bank
+// assembler. The 8 KB kit bank is produced natively (audioDriver.compileDmc) or by the TypeScript kit
+// compiler (src/kit/, through assembleKitBank); this reads one back (bankToModel), derives the
 // resident-mirror rows from a bank's own bytes (deriveMetaFromBank — the model-free path from risa's
 // rom_upgrade.js), and decodes a DPCM stream to audio (dpcmDecode) for round-trip verification. Ported
 // from risa's tools/rom_patcher/src/{kit_bank_parser.js, kit_editor/decoder.js, rom_upgrade.js}.
@@ -108,12 +109,20 @@ export interface AssembleSlot {
   name: string; // 3-char sample name
 }
 
+const utf8 = new TextEncoder();
+
+// A name's bytes as native holds them (its UTF-8), with a-z uppercased and every other byte left as it is: the
+// ASCII-only uppercase RisaDmcCodec applies, byte by byte, so one name gives native's bank bytes here.
+function upperAsciiBytes(name: string): Uint8Array {
+  const bytes = utf8.encode(name);
+  for (let i = 0; i < bytes.length; i++) if (bytes[i] >= 0x61 && bytes[i] <= 0x7a) bytes[i] -= 0x20;
+  return bytes;
+}
+
 // A 3-char, uppercased, right-space-padded sample name (native RisaDmcCodec writeSampleName).
 function writeSampleName(bank: Uint8Array, off: number, name: string): void {
-  for (let i = 0; i < KIT_SAMPLE_NAME_LEN; i++) {
-    const c = (i < name.length ? name[i] : " ").toUpperCase();
-    bank[off + i] = c.charCodeAt(0) & 0xff;
-  }
+  const bytes = upperAsciiBytes(name);
+  for (let i = 0; i < KIT_SAMPLE_NAME_LEN; i++) bank[off + i] = i < bytes.length ? bytes[i] : 0x20;
 }
 
 /** Pack DPCM slots into an 8 KB kit bank — the TS port of native `RisaDmcCodec::assemble`. Greedy 64-byte-
@@ -123,6 +132,20 @@ function writeSampleName(bank: Uint8Array, off: number, name: string): void {
  *  the native per-sample encode carries no cross-sample state, this is byte-identical to compiling the same
  *  samples together via compileDmc — so it losslessly re-packs existing slots' DPCM alongside a new one. */
 export function assembleKitBank(kitName: string, slots: (AssembleSlot | null)[]): Uint8Array {
+  return assembleKitBankPlaced(kitName, slots).bank;
+}
+
+/** A bank and which slots landed in it: `placed[i]` is false for a slot given no bytes (null or empty) and for one
+ *  that did not fit the sample region after the slots before it. Only the first KIT_SLOT_COUNT slots are listed. */
+export interface PlacedRisaKitBank {
+  bank: Uint8Array;
+  placed: boolean[];
+}
+
+/** assembleKitBank, saying which slots landed: the kit compiler's per-slot reason for a slot that did not fit comes
+ *  from here, so it cannot drift from the assembler's own fit rule. */
+export function assembleKitBankPlaced(kitName: string, slots: (AssembleSlot | null)[]): PlacedRisaKitBank {
+  const placed: boolean[] = [];
   const bank = new Uint8Array(KIT_BANK_SIZE);
   // Sample-name region defaults to spaces (kit_bank_parser modelToBank).
   bank.fill(0x20, KIT_SAMPLE_NAMES, KIT_SAMPLE_NAMES + KIT_SLOT_COUNT * KIT_SAMPLE_NAME_LEN);
@@ -133,10 +156,12 @@ export function assembleKitBank(kitName: string, slots: (AssembleSlot | null)[])
     bank[idx] = KIT_SLOT_EMPTY; // default: empty entry [0xFF, 0, 0, 0]
 
     const s = slot < slots.length ? slots[slot] : null;
+    if (slot < slots.length) placed.push(false);
     if (!s || s.dpcm.length === 0) continue;
 
     if (cursor % SAMPLE_ALIGN) cursor += SAMPLE_ALIGN - (cursor % SAMPLE_ALIGN);
     if (cursor + s.dpcm.length > KIT_SAMPLE_REGION) continue; // doesn't fit — leave the slot empty
+    placed[slot] = true;
 
     bank.set(s.dpcm, cursor);
     bank[idx] = Math.floor(cursor / SAMPLE_ALIGN) & 0xff; // $4012 address
@@ -147,17 +172,17 @@ export function assembleKitBank(kitName: string, slots: (AssembleSlot | null)[])
     cursor += s.dpcm.length;
   }
 
-  // Kit name: uppercased, keep A-Z 0-9 '-', up to 6 chars, NUL-padded to KIT_NAME_SIZE.
+  // Kit name: uppercased, keep A-Z 0-9 '-', up to 6 chars, NUL-padded to KIT_NAME_SIZE. Byte by byte over the
+  // name's UTF-8, as native filters it, so a non-ASCII character is dropped whole rather than uppercased into a letter.
   let w = 0;
-  for (const ch of kitName) {
+  for (const c of upperAsciiBytes(kitName)) {
     if (w >= KIT_NAME_MAX_CHARS) break;
-    const c = ch.toUpperCase();
-    if (/[A-Z0-9-]/.test(c)) bank[KIT_NAME_OFFSET + w++] = c.charCodeAt(0);
+    if ((c >= 0x41 && c <= 0x5a) || (c >= 0x30 && c <= 0x39) || c === 0x2d) bank[KIT_NAME_OFFSET + w++] = c;
   }
   void KIT_NAME_SIZE;
 
   bank[KIT_MAGIC_OFFSET] = KIT_MAGIC; // populated marker, stamped last
-  return bank;
+  return { bank, placed };
 }
 
 /** Decode a DPCM byte stream to float32 audio in ~[-1, 1] — the exact inverse of the native ±2 delta

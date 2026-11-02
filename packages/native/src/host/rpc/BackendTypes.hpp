@@ -209,14 +209,15 @@ struct RpcOfflineSubmitResult {
     std::optional<std::uint32_t> id;
     std::optional<std::string>   error;
 };
-// A returned buffer, `samples` interleaved float32 as an input's are; and a file input's report: the decoded rate and
-// length, the window's length, and whether a sample the window kept is not finite.
+// A returned buffer, `samples` interleaved float32 as an input's are, and whether any of them is not finite; and a file
+// input's report: the decoded rate and length, the window's length, and whether a sample the window kept is not finite.
 struct RpcOfflineBuffer {
     std::uint32_t   handle;
     std::uint32_t   channels;
     std::uint32_t   frames;
     double          rate;
     rfl::Bytestring samples;
+    bool            nonFinite;
 };
 struct RpcOfflineInputReport {
     std::uint32_t handle;
@@ -225,13 +226,17 @@ struct RpcOfflineInputReport {
     std::uint32_t frames;
     bool          nonFinite;
 };
-// A finished job: `ok` with its `buffers`, or `error`; `inputs` reports every file input decoded before it ended.
+// A finished job: `ok` with its `buffers`, or `error`; `inputs` reports every file input decoded before it ended;
+// `guardsFired` counts the node guards that stepped in during the run, `guardReason` the first one's reason (empty for
+// none).
 struct RpcOfflineCompletion {
     std::uint32_t                      id;
     bool                               ok;
     std::string                        error;
     std::vector<RpcOfflineBuffer>      buffers;
     std::vector<RpcOfflineInputReport> inputs;
+    std::uint32_t                      guardsFired;
+    std::string                        guardReason;
 };
 // What drainOfflineJobs answers: the completions, and how many of the engine's jobs are still queued or running after
 // them (so a caller holding a promise for a job native no longer holds learns so, rather than poll for it forever).

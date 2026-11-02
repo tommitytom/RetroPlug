@@ -192,6 +192,11 @@ public:
     // Offline jobs queued, running, or finished and not yet drained.
     std::size_t offlineJobsOutstanding() const;
 
+    // The host service the live graph's nodes get for `id` from this engine (what rp_host.get_interface answers past
+    // GraphHost's own ids), or null for one it does not offer. A guard report (rp.host.guards/1) is one it does not:
+    // live nodes recover from their guards with nobody told.
+    const void* graphService(const char* id) { return graphInterface(this, id); }
+
     // The owned snapshot store the control plane reads through. Claim a slot at build, release it
     // when the core is deleted; processBlock publishes into it.
     SnapshotRegistry& registry() { return registry_; }

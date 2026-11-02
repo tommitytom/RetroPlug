@@ -5,7 +5,14 @@ export * from "./types";
 export * from "./constants";
 export { LsdjRom } from "./rom";
 export { KitView, decodeNibbles } from "./kit";
-export { buildKitBank, sampleBytesFromBank, kitSampleSpace, type KitSample } from "./buildKit";
+export {
+  buildKitBank,
+  buildKitBankPlaced,
+  sampleBytesFromBank,
+  kitSampleSpace,
+  type KitSample,
+  type PlacedKitBank,
+} from "./buildKit";
 export { PaletteView, findPaletteBase, unpackRgb555, packRgb555, decodeLsdpal, encodeLsdpal } from "./palette";
 export { FontView, findFontBase } from "./font";
 export { findGrayscaleNames, paletteCount, paletteNames, fontNames, setPaletteName, setFontName } from "./names";

@@ -102,6 +102,15 @@ async function runOne({ file, slug }) {
         // The parity suite's baselines live beside its cases; a recording re-runs its own bundle per case.
         __PARITY_DIR__: JSON.stringify(join(TEST_DIR, "parity").replaceAll("\\", "/")),
         __SELF_BUNDLE__: JSON.stringify(outFile.replaceAll("\\", "/")),
+        // The kit compilers' byte baseline, shared with retroplug-audio-test's "[kit-baseline]" (one record, two
+        // compilers held to it); kit-baseline.test.ts reads it and, under RP_KIT_GOLDEN_UPDATE=1, records it.
+        __KIT_GOLDEN__: JSON.stringify(
+          join(REPO, "packages/native/test/audio/golden/kit-baseline.json").replaceAll("\\", "/"),
+        ),
+        // The edge banks kit-compile.test.ts holds the compiler to, recorded beside the baseline under its rules.
+        __KIT_EDGES_GOLDEN__: JSON.stringify(
+          join(REPO, "packages/native/test/audio/golden/kit-edges.json").replaceAll("\\", "/"),
+        ),
       },
     });
   } catch (e) {
