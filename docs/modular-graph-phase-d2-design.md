@@ -273,7 +273,15 @@ moved a kit byte or a parity baseline either.
   one whose job is gone. Stage 2's fix pass made the TypeScript poll drain without waiting while its chain is busy
   (blocking only after eight quiet steps, so a chain that awaits through async layers reaches its next submission),
   held runs past the 64-job bound in a FIFO instead of refusing them busy, started a worker when the only parked one
-  was claimed, and rejected a pending promise native no longer holds.
+  was claimed, and rejected a pending promise native no longer holds. Follow-up S made a port call that throws fail the
+  run it belonged to rather than the queue: a submit throw rejects that run, held or not, a drain throw rejects every
+  run the queue was holding, and the poll's `polling` flag is cleared on every exit; in a host with no UI tick one
+  `host.pump()` still does not return until nothing is pending, which D3's minute-long renders will need to yield
+  around. The live-plan case now runs long jobs through its whole counted window and records the outstanding count at
+  the first and the last counted block, a cancel that arrives after a job's last block is held to `cancelled`, and a
+  cap whose scaled frame count is not finite or is past `size_t`'s range fails its job rather than being cast. `src/kit`
+  refuses a spec's `offset` / `length` that is not a whole frame count as that slot's error, so a bad spec never
+  reaches the RPC.
 - **3, the nodes.** `rp.dsp.normalize`, `rp.dsp.dpcm` and dither's `seedFrom` are all in `rp.dsp`, in the existing
   `retroplug-dsp-nodes` target, so the pool's registry planned them unchanged; `rp.dsp.dpcm` declares `heap`, the
   package's first such type, which shows a `heap` type stays here while rp.dsp.resample's split is about r8brain at
@@ -344,7 +352,9 @@ moved a kit byte or a parity baseline either.
   window (not an error), a zero length means "to the end", and the cap is scaled to the decoded rate. The cap's
   arithmetic is part of the bytes: LSDj's is `ceil(float(32576) * (float(rate) / float(11468)))`, all in float with the
   ratio first, and risa's `ceil(double(32648) * double(rate) / palRate)`, in double with the product first; computing
-  LSDj's in double moves the cap at 464 of the integer rates 1000..96000 (the mutation the test made). What the
+  LSDj's in double moves the cap at 464 of the integer rates 1000..96000 (the mutation the test made). A cap whose
+  scaled frame count is not finite or is past `size_t`'s range has no window: the job fails with the cap named rather
+  than casting (only a nonsense cap reaches it, and the job could not carry that many frames anyway). What the
   compilers make of an empty window is settled in TypeScript rather than run: LSDj has no bytes (its assembler still
   names the slot, with length 0), risa is its one-byte `{0}`. A window that resamples to fewer than 32 frames is LSDj
   empty bytes too, and one that resamples to 0 is risa `{0}`.
@@ -398,10 +408,12 @@ whole:
   non-finite value no guard touches (a normalising gain over a subnormal peak, a plain gain over samples near
   `FLT_MAX`) lands in the recording, and this flag is how a caller sees it without scanning the samples (a TypeScript
   scan put the 15-slot worst case at 467 ms, against 83 ms with native's flag).
-- **The default floating-point environment** is held for a job's whole run, decode to copy-out, and restored after:
-  round to nearest, no trapping, and the flush bits cleared explicitly (x86 MXCSR FTZ and DAZ, AArch64 FPCR FZ and
-  FZ16), because a worker inherits its submitter's mode and audio hosts commonly flush. Without it a job submitted from
-  an audio thread with flush-to-zero on would compile a different bank from the kernels'.
+- **The default floating-point environment** is held for a job's whole run, decode to copy-out, with the caller's
+  environment saved before the default is pinned and put back after (rounding mode and the flush bits included): round
+  to nearest, no trapping, and the flush bits cleared explicitly (x86 MXCSR FTZ and DAZ, AArch64 FPCR FZ and FZ16),
+  because a worker inherits its submitter's mode under glibc (a Windows thread starts in the default mode) and audio
+  hosts commonly flush. Without it a job submitted from an audio thread with flush-to-zero on would compile a different
+  bank from the kernels', and a job run inline on a caller thread would leave that thread flushing.
 
 Together they make "every kit that compiles is byte-identical to the kernels" exact rather than a hope: every pass's
 input is finite (a checked window or a checked recording); a gain or a normalise has neither guard nor clamp, so a
@@ -417,12 +429,15 @@ decides, and nothing fails on them.
 
 - **Section 3**: a completion reports guards and a per-buffer non-finite flag, a node fault fails a job, and teardown
   abandons jobs in flight rather than completing them with an error; the pool's 64-job bound, its 8-worker ceiling,
-  its 1024-frame blocks, its handles and its `inFlight` count are the seam's contract; the FP environment is pinned.
+  its 1024-frame blocks, its handles and its `inFlight` count are the seam's contract; the FP environment is pinned and
+  the caller's put back; a cap that scales to no frame count fails the job; and a throwing port call fails the runs it
+  belongs to, not the queue.
 - **Section 4**: normalize's peak is over the channels it plays; a missing buffer is a refusal for both new nodes and
   a multi-channel buffer a refusal for `rp.dsp.dpcm`; the DPCM's encode is a rebuild key; and `rp.host.guards/1` is the
   service both guards report into.
 - **Section 5**: the entry points take a runner and return `{bytes, errors}`; a pass a guard stepped into or a
-  non-finite recording refuses the slot; missing spec fields take native's defaults; and every empty or short slot,
+  non-finite recording refuses the slot; missing spec fields take native's defaults; a spec's `offset` and `length`
+  must be whole frame counts, refused as that slot's reason before a job is submitted; and every empty or short slot,
   not only a failed one, carries a reason.
 - **Section 6**: the C++ suite's second watch on the same file ends with the compiler it watched; `kit-edges.json`
   records the edge banks; the teardown case asserts abandonment; and the suite gained the guard, non-finite and
@@ -467,11 +482,13 @@ decides, and nothing fails on them.
 
 - `retroplug-engine-graph-test` gained `[offline]` (`test/engine-graph/OfflineJobs.test.cpp`): a job returns what the
   same nodes give run directly, a kit-shaped job naming one buffer twice, two jobs on two workers, the pool's
-  concurrency and bound, a cancel queued and running, a teardown that abandons, every refusal's reason, the RPC's
-  sample bytes, both windows and the cap's arithmetic against copies of each formula, the file input against
-  `SampleCache`'s decode, the live plan compared bit for bit with a job beside it, the guard count and the non-finite
-  flag, the FP environment across a flushing submitter, and a hidden `[offline-bench]`. It went from 268 cases to 282
-  (273 passed and 9 skipped without fixtures; with the fixtures present the whole suite passes).
+  concurrency and bound, a cancel queued and running (and one that arrives after a job's last block), a teardown that
+  abandons, every refusal's reason, the RPC's sample bytes, both windows and the cap's arithmetic against copies of
+  each formula (and a cap that scales to no frame count refused rather than cast), the file input against
+  `SampleCache`'s decode, the live plan compared bit for bit with long jobs outstanding at both ends of its counted
+  window, the guard count and the non-finite flag, the FP environment across a flushing submitter and the caller's mode
+  put back, and a hidden `[offline-bench]`. It went from 268 cases to 284 (275 passed and 9 skipped without fixtures;
+  with the fixtures present the whole suite passes).
 - `retroplug-graph-test` gained `[dsp-buffer-nodes]` (`test/graph/DspBufferNodes.test.cpp`, 12 cases: normalize whole
   and split, its peak, its committed gain, `seedFrom`'s channel 0 and the other channels, a committed seed, the DPCM's
   bits, its `normalize` rebuild, a block counted from the plan's first block allocating nothing, the refusals, and the

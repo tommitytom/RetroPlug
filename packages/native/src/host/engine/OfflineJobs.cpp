@@ -3,10 +3,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <cfenv>
 #include <exception>
+#include <limits>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -17,14 +18,8 @@
 #include "graph/nodes/CoreNodes.hpp"
 #include "graph/nodes/DspNodes.hpp"
 #include "graph/nodes/DspResampleNodes.hpp"
+#include "host/engine/DefaultFloatEnvironment.hpp"
 #include "kit/SampleCache.hpp"
-
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-#include <xmmintrin.h>
-#define RP_OFFLINE_FP_MXCSR 1
-#elif defined(__aarch64__) && (defined(__GNUC__) || defined(__clang__))
-#define RP_OFFLINE_FP_FPCR 1
-#endif
 
 namespace rp::host {
 
@@ -60,51 +55,25 @@ graph::ResourceTable::Id reservePlaceholder(graph::ResourceTable& table) {
     return id;
 }
 
-// The default floating-point environment, held for a job's run and the caller's put back after: round to nearest, no
-// exception trapping, and subnormals kept (no flush-to-zero, no denormals-are-zero). A worker thread starts with the
-// environment of the thread that submitted the job which started it, and an audio host commonly sets flush-to-zero on
-// its threads; a job's floats are a kit's bytes, which the kernels compute in the default mode (a biquad's and the
-// resampler's tails pass through subnormals, and a normalise over a quiet source divides by one), so a job must not
-// compute them in whatever mode its submitter happened to run in. fesetenv(FE_DFL_ENV) gives the standard part; the
-// flush bits are set explicitly as well, since not every C library's default environment clears them (x86's MXCSR
-// FTZ and DAZ, AArch64's FPCR FZ and FZ16).
-class DefaultFloatEnvironment {
-public:
-    DefaultFloatEnvironment() {
-        std::fegetenv(&saved_);
-        std::fesetenv(FE_DFL_ENV);
-#if defined(RP_OFFLINE_FP_MXCSR)
-        savedMxcsr_ = _mm_getcsr();
-        _mm_setcsr(savedMxcsr_ & ~(kFtz | kDaz));
-#elif defined(RP_OFFLINE_FP_FPCR)
-        asm volatile("mrs %0, fpcr" : "=r"(savedFpcr_));
-        const std::uint64_t fpcr = savedFpcr_ & ~(kFz | kFz16);
-        asm volatile("msr fpcr, %0" : : "r"(fpcr));
-#endif
+// The cap's frames at the decoded rate, as the two kit windows spell it; nullopt when that is not a frame count (a
+// non-finite result, or one past size_t's range), which a job refuses rather than casting.
+std::optional<std::size_t> capFrames(std::uint32_t decodedRate, const OfflineCap& cap) {
+    double scaled = 0.0;
+    if (cap.arithmetic == OfflineCapArithmetic::FloatRatio) {
+        const float ratio = static_cast<float>(decodedRate) / static_cast<float>(cap.rate);
+        scaled = static_cast<double>(std::ceil(static_cast<float>(cap.frames) * ratio));
+    } else {
+        scaled = std::ceil(static_cast<double>(cap.frames) * static_cast<double>(decodedRate) / cap.rate);
     }
-    ~DefaultFloatEnvironment() {
-        std::fesetenv(&saved_);
-#if defined(RP_OFFLINE_FP_MXCSR)
-        _mm_setcsr(savedMxcsr_);
-#elif defined(RP_OFFLINE_FP_FPCR)
-        asm volatile("msr fpcr, %0" : : "r"(savedFpcr_));
-#endif
-    }
-    DefaultFloatEnvironment(const DefaultFloatEnvironment&) = delete;
-    DefaultFloatEnvironment& operator=(const DefaultFloatEnvironment&) = delete;
-
-private:
-    std::fenv_t saved_{};
-#if defined(RP_OFFLINE_FP_MXCSR)
-    static constexpr unsigned kFtz = 0x8000u;  // MXCSR bit 15, flush-to-zero
-    static constexpr unsigned kDaz = 0x0040u;  // MXCSR bit 6, denormals-are-zero
-    unsigned savedMxcsr_ = 0;
-#elif defined(RP_OFFLINE_FP_FPCR)
-    static constexpr std::uint64_t kFz = std::uint64_t(1) << 24;    // FPCR.FZ
-    static constexpr std::uint64_t kFz16 = std::uint64_t(1) << 19;  // FPCR.FZ16
-    std::uint64_t savedFpcr_ = 0;
-#endif
-};
+    if (!std::isfinite(scaled) || scaled < 0.0) return std::nullopt;
+    const double max = static_cast<double>(std::numeric_limits<std::size_t>::max());
+    if (scaled > max) return std::nullopt;
+    // A 64-bit size_t's max is 2^64 - 1, which a double rounds up to 2^64: a scaled value at that magnitude is past
+    // the range even though it compares equal.
+    if constexpr (sizeof(std::size_t) >= sizeof(double))
+        if (scaled == max) return std::nullopt;
+    return static_cast<std::size_t>(scaled);
+}
 
 // The guard report a job's host offers its nodes (rp.host.guards/1): how many guards fired, and the first one's reason.
 // A node whose guard replaces what its kernel would have computed reports it, and the completion carries the count
@@ -130,23 +99,20 @@ struct GuardReport {
 
 }  // namespace
 
-OfflineWindow offlineWindow(std::size_t decodedFrames, std::uint32_t decodedRate, std::uint32_t offset,
-                            std::uint32_t length, const std::optional<OfflineCap>& cap) {
+std::optional<OfflineWindow> offlineWindow(std::size_t decodedFrames, std::uint32_t decodedRate,
+                                           std::uint32_t offset, std::uint32_t length,
+                                           const std::optional<OfflineCap>& cap) {
     // Each step as the two kit windows spell it, the casts included: the cap is the one place their arithmetic differs,
     // and a different rounding there is a different frame count (test/engine-graph/OfflineJobs.test.cpp's refs).
     std::size_t maxFrames = decodedFrames;
     if (cap) {
-        if (cap->arithmetic == OfflineCapArithmetic::FloatRatio) {
-            const float ratio = static_cast<float>(decodedRate) / static_cast<float>(cap->rate);
-            maxFrames = static_cast<std::size_t>(std::ceil(static_cast<float>(cap->frames) * ratio));
-        } else {
-            maxFrames = static_cast<std::size_t>(
-                std::ceil(static_cast<double>(cap->frames) * static_cast<double>(decodedRate) / cap->rate));
-        }
+        const auto frames = capFrames(decodedRate, *cap);
+        if (!frames) return std::nullopt;
+        maxFrames = *frames;
     }
     const std::size_t length0 = length == 0 ? decodedFrames : length;
     const std::size_t start = std::min<std::size_t>(offset, decodedFrames);
-    return {start, std::min(maxFrames, std::min(length0, decodedFrames - start))};
+    return OfflineWindow{start, std::min(maxFrames, std::min(length0, decodedFrames - start))};
 }
 
 OfflineJobs::OfflineJobs(std::span<const rp_package* const> extra) {
@@ -358,7 +324,11 @@ OfflineCompletion OfflineJobs::run(Job& job) {
                 kit::SampleCache cache;
                 const kit::SampleData* d = cache.getOrLoad(f.path);
                 if (!d) return fail(name + ": " + f.path + " could not be read or decoded");
-                const OfflineWindow w = offlineWindow(d->buffer.size(), d->sampleRate, f.offset, f.length, f.cap);
+                const auto maybeWindow = offlineWindow(d->buffer.size(), d->sampleRate, f.offset, f.length, f.cap);
+                if (!maybeWindow)
+                    return fail(name + ": the cap's frames do not scale to a frame count at the file's " +
+                                std::to_string(d->sampleRate) + " Hz");
+                const OfflineWindow w = *maybeWindow;
                 OfflineInputReport report;
                 report.handle = static_cast<std::uint32_t>(i + 1);
                 report.decodedRate = d->sampleRate;
@@ -444,6 +414,8 @@ OfflineCompletion OfflineJobs::run(Job& job) {
         return out;
     } catch (const std::exception& e) {
         return fail(std::string("the job failed: ") + e.what());
+    } catch (...) {
+        return fail("the job failed");
     }
 }
 

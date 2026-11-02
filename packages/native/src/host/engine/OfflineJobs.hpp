@@ -111,13 +111,16 @@ struct OfflineRequest {
 
 // The frames a window keeps of a decoded buffer, as the kit compilers cut it: `start` is the offset clamped to the
 // end, and `frames` the least of the length (all of what is left when 0), what is left, and the cap at
-// `decodedRate`. An offset at or past the end, or a cap of 0 frames, keeps nothing; a zero length is no limit.
+// `decodedRate`. An offset at or past the end, or a cap of 0 frames, keeps nothing; a zero length is no limit. A cap
+// whose scaled frame count is not finite or is past size_t's range has no window: the job refuses it rather than
+// casting.
 struct OfflineWindow {
     std::size_t start = 0;
     std::size_t frames = 0;
 };
-OfflineWindow offlineWindow(std::size_t decodedFrames, std::uint32_t decodedRate, std::uint32_t offset,
-                            std::uint32_t length, const std::optional<OfflineCap>& cap);
+std::optional<OfflineWindow> offlineWindow(std::size_t decodedFrames, std::uint32_t decodedRate,
+                                           std::uint32_t offset, std::uint32_t length,
+                                           const std::optional<OfflineCap>& cap);
 
 // submit's answer: the job's id (counting up from 1, never reused), or 0 with the refusal in `error`.
 struct OfflineSubmit {
@@ -197,9 +200,10 @@ public:
     // `inFlight`, when given, is set to the jobs still queued or running after it, read under the same lock.
     std::vector<OfflineCompletion> drain(std::chrono::milliseconds wait = std::chrono::milliseconds(0),
                                          std::size_t* inFlight = nullptr);
-    // Cancel job `id`: a queued one completes now, unrun; a running one stops at its next block boundary (or as it
-    // finishes, if it is past its last). Either completes with the reason "cancelled". False for an id that is
-    // neither queued nor running (finished, or never taken).
+    // Cancel job `id`: a queued one completes now, unrun; a running one stops at its next block boundary, or as it
+    // finishes when it is already past its last (a job still decoding its files or planning finishes that first).
+    // Either completes with the reason "cancelled". False for an id that is neither queued nor running (finished, or
+    // never taken).
     bool cancel(std::uint32_t id);
     // Jobs outstanding: queued, running, or finished and not yet drained.
     std::size_t outstanding() const;

@@ -1179,19 +1179,24 @@ no resource, and an output of no frames is refused. A file input is decoded thro
 (so a path rewritten between two jobs decodes as it is now) and windowed by
 [`offlineWindow`](../packages/native/src/host/engine/OfflineJobs.cpp), which reproduces the two kit windows
 exactly: an offset clamped to the end, a zero length meaning "to the end", and a frame cap scaled to the decoded rate
-in the window's own arithmetic (`float-ratio` for LSDj, `double-scale` for risa).
+in the window's own arithmetic (`float-ratio` for LSDj, `double-scale` for risa). A cap whose scaled frame count is not
+finite or is past `size_t`'s range fails the job, naming the cap, rather than being cast.
 
 A job's node registry is the pool's own, filled in its constructor with rp.core, rp.dsp and rp.dsp.resample before any
 worker exists and never changed, so the workers share it read-only; a script, system or host I/O node in a document is
 `unknown-type`, a node fault fails the job, and a guard report does not: the completion carries `guardsFired` and the
 first `guardReason`, each buffer carries `nonFinite`, and a caller decides (a kit compile refuses the pass). The whole
-run is held in the default floating-point environment, so a worker that inherited its submitter's flush-to-zero mode
-still computes what the kernels do. Cancelling completes a queued job unrun and stops a running one at its next block
-boundary; tearing the engine down abandons every job in flight, joins the workers and discards undrained completions,
-so no resampler outlives the engine (D1's r8brain teardown rule). The TypeScript side
+run is held in the default floating-point environment, with the caller's environment saved before the default is
+pinned and put back after (rounding mode and the flush bits included), so a worker that inherited its submitter's
+flush-to-zero mode still computes what the kernels do. Cancelling completes a queued job unrun and stops a running one
+at its next block boundary, or as it finishes when it is past its last (a job still decoding its files or planning
+finishes that first); tearing the engine down abandons every job in flight, joins the workers and discards undrained
+completions, so no resampler outlives the engine (D1's r8brain teardown rule). The TypeScript side
 ([`src/offline.ts`](../packages/retroplug/src/offline.ts)) turns submit-and-drain into a promise: the queue joins the
 capability jobs' live set so one pump settles both, the native wait is turned on by `createAudioDriver` for hosts with
-no UI tick, and runs past the 64-job bound wait in a FIFO rather than being refused busy.
+no UI tick, and runs past the 64-job bound wait in a FIFO rather than being refused busy. A port call that throws fails
+the runs it belongs to, never the queue: a submit throw rejects that run, a drain throw rejects every run the queue was
+holding, and the poll always clears its flag.
 
 The txiki host `TjsHostRuntime` comes from
 [`deps/dpf.js`](../deps/dpf.js), not the shared core.

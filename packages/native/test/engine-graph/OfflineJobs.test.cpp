@@ -14,8 +14,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cfenv>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -41,6 +43,7 @@
 #include "dsp/Gain.hpp"
 #include "dsp/Resample.hpp"
 #include "graph/node.hpp"
+#include "host/engine/DefaultFloatEnvironment.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/engine/OfflineJobs.hpp"
@@ -71,6 +74,27 @@ struct Unready {
 const rp_package* unreadyPackage() {
     static const rp_node_type* const kTypes[] = {rp::node_type<Unready>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.offline","version":"1.0.0"})",
+                                     static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
+    return &kPackage;
+}
+
+// A node that holds its block until the test releases it, so a cancel can reach a running job after the job's own last
+// cancel check (a one-block job's): the worker still sees the flag and makes the cancel the outcome.
+struct Gate {
+    static constexpr const char* id = "rp.test.gate";
+    static inline std::atomic<bool> entered{false};
+    static inline std::atomic<bool> release{false};
+    struct { rp::audio_out<rp::mono> out; } outputs;
+    void process(const rp::Block& b) noexcept {
+        entered.store(true, std::memory_order_release);
+        while (!release.load(std::memory_order_acquire)) std::this_thread::yield();
+        for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = 0.5f;
+    }
+};
+
+const rp_package* gatePackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<Gate>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.gate","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;
 }
@@ -111,7 +135,8 @@ std::string chainDocument(bool resample, double gain, std::uint32_t channels) {
 std::vector<float> rigReference(const std::vector<float>& input, std::uint32_t channels, double inputRate,
                                 double planRate, bool resample, double gain, std::uint32_t outFrames,
                                 std::uint32_t block = OfflineJobs::kBlockFrames) {
-    rp::graph::test::GraphRig rig(rp::graph::HostConfig{planRate, block, rp::graph::Target::Desktop}, 0, nullptr, block);
+    rp::graph::test::GraphRig rig(rp::graph::HostConfig{planRate, block, rp::graph::Target::Desktop}, 0, nullptr,
+                                   block);
     const std::uint32_t frames = static_cast<std::uint32_t>(input.size() / channels);
     const auto in = rig.resources.createAudioBuffer(channels, frames, inputRate);
     const auto out = rig.resources.createAudioBuffer(channels, outFrames, planRate);
@@ -294,7 +319,9 @@ std::pair<std::size_t, std::size_t> risaWindow(std::size_t size, std::uint32_t s
     return {start, std::min(maxOutFrames, std::min(length0, size - start))};
 }
 
-OfflineCap lsdjCap() { return {kLsdjCapFrames, double(rp::lsdj::kGameboySampleRate), OfflineCapArithmetic::FloatRatio}; }
+OfflineCap lsdjCap() {
+    return {kLsdjCapFrames, double(rp::lsdj::kGameboySampleRate), OfflineCapArithmetic::FloatRatio};
+}
 OfflineCap risaCap(int index) { return {kRisaCapFrames, kPalRates[index], OfflineCapArithmetic::DoubleScale}; }
 
 OfflineRequest fileRequest(const std::filesystem::path& path, std::uint32_t offset, std::uint32_t length,
@@ -303,6 +330,15 @@ OfflineRequest fileRequest(const std::filesystem::path& path, std::uint32_t offs
     r.inputs.emplace_back(OfflineFile{path.string(), offset, length, cap});
     r.returns = {1};
     return r;
+}
+
+// offlineWindow's value for a cap the window arithmetic can carry (a job refuses one it cannot, so no case here asks
+// for that).
+rp::host::OfflineWindow checkedWindow(std::size_t decodedFrames, std::uint32_t decodedRate, std::uint32_t offset,
+                                      std::uint32_t length, const std::optional<OfflineCap>& cap) {
+    const auto window = rp::host::offlineWindow(decodedFrames, decodedRate, offset, length, cap);
+    REQUIRE(window.has_value());
+    return *window;
 }
 
 }  // namespace
@@ -529,9 +565,10 @@ TEST_CASE("a guard that fires in an offline job is counted in its completion; a 
 
 TEST_CASE("an offline job computes in the default floating-point mode whatever its submitter's mode",
           "[engine-graph][offline]") {
-    // A worker starts with the floating-point environment of the thread whose submission started it, and an audio host
-    // commonly sets flush-to-zero on its threads. A job pins the default mode for its run, so a buffer of subnormals
-    // through a unity gain comes back as it went in, where under denormals-are-zero it would come back zeros.
+    // A worker starts with the environment of the thread whose submission started it under glibc (its documented
+    // pthread_create behaviour; a Windows thread starts in the default mode), and an audio host commonly sets
+    // flush-to-zero on its threads. A job pins the default mode for its run, so a buffer of subnormals through a unity
+    // gain comes back as it went in, where under denormals-are-zero it would come back zeros.
     std::vector<float> subnormal(1024);
     for (std::size_t i = 0; i < subnormal.size(); ++i) subnormal[i] = 1.0e-39f * static_cast<float>(i % 7 + 1);
     REQUIRE(std::fpclassify(subnormal[0]) == FP_SUBNORMAL);
@@ -546,25 +583,82 @@ TEST_CASE("an offline job computes in the default floating-point mode whatever i
     r.frames = 1024;
     r.rate = 48000.0;
 
-    // The pool and its first worker are made from a thread that flushes subnormals, so the worker inherits that mode.
-    OfflineJobs              jobs;
-    OfflineCompletion        c;
-    bool                     flushing = false;
-    std::thread submitter([&] {
-        flushing = setFlushToZero();
+    // The pool and its first worker are made from a thread that flushes subnormals, so on glibc the worker inherits
+    // that mode. The probe is a thread of that submitter's own: on a platform whose threads start in the default mode
+    // the job would pass vacuously, so that is where this case skips.
+    OfflineJobs       jobs;
+    OfflineCompletion c;
+    bool              inherited = false;
+    bool              submitted = false;
+    std::thread       submitter([&] {
+        if (!setFlushToZero()) return;
+        inherited = true;
+        std::thread probe([&] {
+            volatile float tiny = 1.0e-39f;
+            volatile float one = 1.0f;
+            inherited = std::fpclassify(tiny * one) == FP_ZERO;
+        });
+        probe.join();
+        if (!inherited) return;
         const auto s = jobs.submit(r);
-        REQUIRE(s.id != 0);
-        c = one(jobs, s.id);
+        submitted = s.id != 0;
+        if (submitted) c = one(jobs, s.id);
     });
     submitter.join();
-    if (!flushing) SKIP("this target has no flush-to-zero mode this test knows how to set");
+    if (!inherited) SKIP("a new thread does not inherit the submitter's flush-to-zero mode on this platform");
+    REQUIRE(submitted);
     INFO(c.error);
     REQUIRE(c.ok);
     REQUIRE(c.buffers.size() == 1);
     CHECK(c.buffers[0].samples == subnormal);
 }
 
-TEST_CASE("offline jobs past the pool's concurrency queue, and each returns its own result", "[engine-graph][offline]") {
+TEST_CASE("the floating-point guard puts the caller's environment back", "[engine-graph][offline]") {
+#if defined(RP_OFFLINE_FP_MXCSR)
+    const unsigned originalMxcsr = _mm_getcsr();
+    const int      originalRound = std::fegetround();
+    std::fesetround(FE_UPWARD);
+    _mm_setcsr(_mm_getcsr() | 0x8040u);  // MXCSR FTZ (bit 15) and DAZ (bit 6) set before the guard saves them
+    const unsigned flushing = _mm_getcsr();
+    {
+        const rp::host::DefaultFloatEnvironment environment;
+        CHECK((_mm_getcsr() & 0x8040u) == 0);
+        CHECK(std::fegetround() == FE_TONEAREST);
+    }
+    CHECK(_mm_getcsr() == flushing);
+    CHECK(std::fegetround() == FE_UPWARD);
+    _mm_setcsr(originalMxcsr);
+    std::fesetround(originalRound);
+#elif defined(RP_OFFLINE_FP_FPCR)
+    std::uint64_t originalFpcr = 0;
+    asm volatile("mrs %0, fpcr" : "=r"(originalFpcr));
+    const int originalRound = std::fegetround();
+    std::fesetround(FE_UPWARD);
+    constexpr std::uint64_t kFlush = (std::uint64_t(1) << 24) | (std::uint64_t(1) << 19);  // FPCR.FZ and FZ16
+    std::uint64_t flushing = 0;
+    asm volatile("mrs %0, fpcr" : "=r"(flushing));
+    flushing |= kFlush;
+    asm volatile("msr fpcr, %0" : : "r"(flushing));
+    {
+        const rp::host::DefaultFloatEnvironment environment;
+        std::uint64_t inside = 0;
+        asm volatile("mrs %0, fpcr" : "=r"(inside));
+        CHECK((inside & kFlush) == 0);
+        CHECK(std::fegetround() == FE_TONEAREST);
+    }
+    std::uint64_t after = 0;
+    asm volatile("mrs %0, fpcr" : "=r"(after));
+    CHECK(after == flushing);
+    CHECK(std::fegetround() == FE_UPWARD);
+    asm volatile("msr fpcr, %0" : : "r"(originalFpcr));
+    std::fesetround(originalRound);
+#else
+    SKIP("this target has no flush-to-zero bit this test knows how to inspect");
+#endif
+}
+
+TEST_CASE("offline jobs past the pool's concurrency queue, and each returns its own result",
+          "[engine-graph][offline]") {
     OfflineJobs jobs;
     const std::size_t count = std::min<std::size_t>(3 * OfflineJobs::concurrency() + 1, OfflineJobs::kMaxJobs);
     const auto input = signal(6000, 1, 11);
@@ -622,7 +716,7 @@ TEST_CASE("a cancel stops an offline job, queued or running, with the cancel rea
     CHECK_FALSE(first[0].ok);
     CHECK(first[0].error == "cancelled");
     CHECK_FALSE(jobs.cancel(queued));  // finished: nothing to cancel
-    // The running ones stop at their next block: ten minutes of audio each, cut short within seconds.
+    // The running ones stop at their next block: a day of audio each, cut short within seconds.
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     const auto t0 = std::chrono::steady_clock::now();
     for (const auto id : running) CHECK(jobs.cancel(id));
@@ -638,6 +732,29 @@ TEST_CASE("a cancel stops an offline job, queued or running, with the cancel rea
     CHECK(jobs.outstanding() == 0);
 }
 
+TEST_CASE("a cancel that arrives after a job's last block still completes cancelled", "[engine-graph][offline]") {
+    const rp_package* extra[] = {gatePackage()};
+    OfflineJobs       jobs(extra);
+    Gate::entered.store(false, std::memory_order_release);
+    Gate::release.store(false, std::memory_order_release);
+    OfflineRequest r;
+    r.document = R"({"nodes":[{"id":"g","type":"rp.test.gate"}],"wires":[]})";
+    r.frames = 10;  // one partial block, and the run checks for a cancel only before it
+    r.rate = 48000.0;
+    const auto s = jobs.submit(r);
+    REQUIRE(s.id != 0);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!Gate::entered.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    const bool entered = Gate::entered.load(std::memory_order_acquire);
+    CHECK(entered);
+    if (entered) CHECK(jobs.cancel(s.id));  // the run is past its last check; the worker still makes this the outcome
+    Gate::release.store(true, std::memory_order_release);
+    const auto c = one(jobs, s.id);
+    CHECK_FALSE(c.ok);
+    CHECK(c.error == "cancelled");
+}
+
 TEST_CASE("an engine destroyed with offline jobs in flight abandons them and joins every worker",
           "[engine-graph][offline]") {
     const int before = threadCount();
@@ -648,7 +765,8 @@ TEST_CASE("an engine destroyed with offline jobs in flight abandons them and joi
         CHECK(e.drainOfflineJobs().empty());
         CHECK_FALSE(e.cancelOfflineJob(1));
         // Running and queued long jobs, a short one that may have finished undrained.
-        for (unsigned i = 0; i < OfflineJobs::concurrency() + 2; ++i) REQUIRE(e.submitOfflineJob(longRequest()).id != 0);
+        for (unsigned i = 0; i < OfflineJobs::concurrency() + 2; ++i)
+            REQUIRE(e.submitOfflineJob(longRequest()).id != 0);
         REQUIRE(e.submitOfflineJob(chainRequest(signal(500, 1, 1), 1, 48000.0, 48000.0, false, 1.0, 500)).id != 0);
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
         if (before >= 0) CHECK(threadCount() > before);  // the workers are there
@@ -836,7 +954,8 @@ TEST_CASE("the offline RPCs carry a job's samples as float32 bytes, and refuse a
     CHECK(e.offlineJobsOutstanding() == 0);
 }
 
-TEST_CASE("the offline window is each kit compiler's window, the cap's arithmetic included", "[engine-graph][offline]") {
+TEST_CASE("the offline window is each kit compiler's window, the cap's arithmetic included",
+          "[engine-graph][offline]") {
     // Directly, over rates and lengths where the two arithmetics' roundings matter: every PAL rate for risa's, LSDj's
     // kit rate for its own, at decoded rates a file carries, with offsets at, past and before the end and the zero
     // length, against the windows as their homes compute them.
@@ -846,17 +965,17 @@ TEST_CASE("the offline window is each kit compiler's window, the cap's arithmeti
             for (const std::uint32_t offset : {0u, 1u, 5000u, 399999u, 400000u, 400001u}) {
                 for (const std::uint32_t length : {0u, 1u, 30000u}) {
                     INFO(rate << " Hz, " << size << " frames, offset " << offset << ", length " << length);
-                    const auto w = rp::host::offlineWindow(size, rate, offset, length, lsdjCap());
+                    const auto w = checkedWindow(size, rate, offset, length, lsdjCap());
                     const auto [ls, lf] = lsdjWindow(size, rate, offset, length);
                     CHECK(w.start == ls);
                     CHECK(w.frames == lf);
                     for (int i = 0; i < 16; ++i) {
-                        const auto r = rp::host::offlineWindow(size, rate, offset, length, risaCap(i));
+                        const auto r = checkedWindow(size, rate, offset, length, risaCap(i));
                         const auto [rs, rf] = risaWindow(size, rate, offset, length, kPalRates[i]);
                         CHECK(r.start == rs);
                         CHECK(r.frames == rf);
                     }
-                    const auto none = rp::host::offlineWindow(size, rate, offset, length, std::nullopt);
+                    const auto none = checkedWindow(size, rate, offset, length, std::nullopt);
                     const std::size_t left = size - std::min<std::size_t>(offset, size);
                     CHECK(none.frames == std::min<std::size_t>(length ? length : size, left));
                 }
@@ -867,10 +986,10 @@ TEST_CASE("the offline window is each kit compiler's window, the cap's arithmeti
     // each one, LSDj's and all sixteen of risa's.
     int lsdjMismatches = 0, risaMismatches = 0;
     for (std::uint32_t rate = 1000; rate <= 96000; ++rate) {
-        if (rp::host::offlineWindow(1u << 22, rate, 0, 0, lsdjCap()).frames != lsdjWindow(1u << 22, rate, 0, 0).second)
+        if (checkedWindow(1u << 22, rate, 0, 0, lsdjCap()).frames != lsdjWindow(1u << 22, rate, 0, 0).second)
             ++lsdjMismatches;
         for (int i = 0; i < 16; ++i)
-            if (rp::host::offlineWindow(1u << 22, rate, 0, 0, risaCap(i)).frames !=
+            if (checkedWindow(1u << 22, rate, 0, 0, risaCap(i)).frames !=
                 risaWindow(1u << 22, rate, 0, 0, kPalRates[i]).second)
                 ++risaMismatches;
     }
@@ -879,9 +998,9 @@ TEST_CASE("the offline window is each kit compiler's window, the cap's arithmeti
     // The two arithmetics really differ somewhere a kit reaches: the same cap through the other one moves a frame.
     bool differs = false;
     for (std::uint32_t rate = 8000; rate <= 96000 && !differs; rate += 1)
-        differs = rp::host::offlineWindow(1u << 20, rate, 0, 0, lsdjCap()).frames !=
-                  rp::host::offlineWindow(1u << 20, rate, 0, 0,
-                                          OfflineCap{kLsdjCapFrames, 11468.0, OfflineCapArithmetic::DoubleScale}).frames;
+        differs = checkedWindow(1u << 20, rate, 0, 0, lsdjCap()).frames !=
+                  checkedWindow(1u << 20, rate, 0, 0,
+                                OfflineCap{kLsdjCapFrames, 11468.0, OfflineCapArithmetic::DoubleScale}).frames;
     CHECK(differs);
 }
 
@@ -969,8 +1088,8 @@ TEST_CASE("a file input is SampleCache's decode, windowed as the two kit windows
     REQUIRE(cut.ok);
     CHECK_FALSE(cut.inputs[0].nonFinite);
 
-    // An empty window is an input of no frames: reported, returned as a buffer of none at the decoded rate, and named by
-    // no resource. The kit compiler makes of it an LSDj slot of no bytes and a one-byte risa slot (a legal 16k+1
+    // An empty window is an input of no frames: reported, returned as a buffer of none at the decoded rate, and named
+    // by no resource. The kit compiler makes of it an LSDj slot of no bytes and a one-byte risa slot (a legal 16k+1
     // length) from that report; test-native/kit-compile.test.ts holds both banks (its "EMP" slots).
     const auto empty = one(jobs, jobs.submit(fileRequest(nanPath, 5000, 0, lsdjCap())).id);
     REQUIRE(empty.ok);
@@ -979,9 +1098,17 @@ TEST_CASE("a file input is SampleCache's decode, windowed as the two kit windows
     CHECK(empty.buffers[0].frames == 0);
     CHECK(empty.buffers[0].samples.empty());
     CHECK(empty.buffers[0].rate == 32000.0);
+
+    // A cap whose scaled frame count is infinite is refused, naming the cap, rather than cast to size_t.
+    for (const auto arithmetic : {OfflineCapArithmetic::FloatRatio, OfflineCapArithmetic::DoubleScale}) {
+        const auto c = one(jobs, jobs.submit(fileRequest(nanPath, 0, 0, OfflineCap{1, 1.0e-300, arithmetic})).id);
+        CHECK_FALSE(c.ok);
+        CHECK(c.error.find("the cap's frames do not scale to a frame count") != std::string::npos);
+    }
+    CHECK(one(jobs, jobs.submit(fileRequest(nanPath, 0, 0, std::nullopt)).id).ok);
 }
 
-TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit, and its warmed blocks allocate nothing",
+TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit, its warmed blocks allocating nothing",
           "[engine-graph][offline]") {
     // Two engines play the same live plan, a Game Boy booting mGB, block for block on an audio thread of their own; one
     // of them has offline jobs running (resampling, the costliest node) the whole time. Every block's output is the
@@ -1000,37 +1127,44 @@ TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit
         REQUIRE(e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1})).ok);
         std::vector<float> out;
         out.reserve(std::size_t(kBlocks) * kFrames * 2);
-        std::atomic<int> blocks{0};
+        // Long jobs, one per worker, run until cancelled after the audio thread joins, so something is in flight
+        // through the whole counted window; the audio thread records how many at its first counted block and at its
+        // last.
+        std::vector<std::uint32_t> ids;
+        if (withJobs)
+            for (unsigned i = 0; i < OfflineJobs::concurrency(); ++i) {
+                const auto s = e.submitOfflineJob(longRequest());
+                if (s.id) ids.push_back(s.id);
+            }
+        std::atomic<std::size_t> atWarm{0}, atLast{0};
         e.setAudioThreadOwns(true);
         std::thread audio([&] {
             std::vector<float> l(kFrames), r(kFrames);
             float*             outs[2] = {l.data(), r.data()};
             for (int b = 0; b < kBlocks; ++b) {
-                if (b == kWarm) rp::test::beginCountingAllocations();
+                if (b == kWarm) {
+                    atWarm.store(e.offlineJobsOutstanding(), std::memory_order_release);
+                    rp::test::beginCountingAllocations();
+                }
+                if (b == kBlocks - 1) atLast.store(e.offlineJobsOutstanding(), std::memory_order_release);
                 e.drainCommands();
                 e.processBlock(kFrames, outs, 2);
                 for (std::uint32_t i = 0; i < kFrames; ++i) {
                     out.push_back(l[i]);
                     out.push_back(r[i]);
                 }
-                blocks.store(b + 1, std::memory_order_release);
             }
             counted = rp::test::endCountingAllocations();
         });
-        std::vector<std::uint32_t> ids;
-        if (withJobs) {
-            const auto input = signal(44100, 2, 6);
-            while (blocks.load(std::memory_order_acquire) < kBlocks) {
-                for (unsigned i = 0; i < OfflineJobs::concurrency() && ids.size() < 48; ++i) {
-                    const auto s = e.submitOfflineJob(chainRequest(input, 2, 44100.0, 11468.0, true, 0.5, 11468));
-                    if (s.id) ids.push_back(s.id);
-                }
-                e.drainOfflineJobs(std::chrono::milliseconds(5));
-            }
-        }
         audio.join();
         e.setAudioThreadOwns(false);
-        if (withJobs) CHECK_FALSE(ids.empty());
+        if (withJobs) {
+            CHECK_FALSE(ids.empty());
+            CHECK(atWarm.load(std::memory_order_acquire) > 0);
+            CHECK(atLast.load(std::memory_order_acquire) > 0);
+            for (const auto id : ids) CHECK(e.cancelOfflineJob(id));
+            CHECK(collect([&](auto w) { return e.drainOfflineJobs(w); }, ids).size() == ids.size());
+        }
         return out;
     };
     rp::test::AllocationCount quiet, busy;
