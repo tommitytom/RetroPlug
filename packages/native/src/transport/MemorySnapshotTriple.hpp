@@ -7,6 +7,8 @@
 #include <cstring>
 #include <vector>
 
+#include "transport/SeqlockCopy.hpp"
+
 // Lock-free triple-buffer of one emulator memory region. Same seqlock +
 // reader-hint discipline as FrameBufferTriple, but the slot type is a
 // fixed-size std::vector<std::uint8_t> sized at construction.
@@ -77,7 +79,7 @@ public:
 
             readingHint_.store(idx, std::memory_order_release);
 
-            std::memcpy(dst, slots_[idx].data(), size_);
+            rp::seqlockCopy(dst, slots_[idx].data(), size_);  // the slot read races the writer by design
 
             // Order the memcpy's loads BEFORE the re-read of `seq_`. An acquire
             // *load* doesn't stop the preceding memcpy from sinking below it, so

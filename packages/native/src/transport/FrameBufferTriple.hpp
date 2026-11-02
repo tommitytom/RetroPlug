@@ -6,6 +6,8 @@
 #include <cstring>
 #include <vector>
 
+#include "transport/SeqlockCopy.hpp"
+
 // Lock-free triple-buffer of XRGB8888 frames sized at construction. One
 // DSP-thread writer (the emulator's pixel-output callback) and one UI-thread
 // reader.
@@ -82,8 +84,8 @@ public:
 
             readingHint.store(idx, std::memory_order_release);
 
-            std::memcpy(dst, frames[idx].data(),
-                        static_cast<std::size_t>(w) * h * sizeof(std::uint32_t));
+            rp::seqlockCopy(dst, frames[idx].data(),  // the slot read races the writer by design
+                            static_cast<std::size_t>(w) * h * sizeof(std::uint32_t));
 
             // Order the memcpy's loads BEFORE the re-read of `seq`. An acquire
             // *load* only stops later ops hoisting above it — it does NOT stop

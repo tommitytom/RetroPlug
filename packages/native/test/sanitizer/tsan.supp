@@ -6,14 +6,11 @@
 # Referenced via TSAN_OPTIONS=suppressions=... by tools/run-sanitizer.sh +
 # tools/run-sanitizers.sh. Entries are added below as the actual TSan output requires them.
 
-# Triple-buffer seqlock (MemorySnapshotTriple / FrameBufferTriple). The reader
-# memcpy's a slot that the writer may be concurrently overwriting; the reader
-# then re-reads the seqlock counter and DISCARDS the copy on mismatch (the
-# stress tests assert zero torn reads). This is the standard seqlock pattern —
-# UB on paper, benign in practice — so the non-atomic slot read is expected.
-# Any real race elsewhere still surfaces; these only cover the readInto memcpy.
-race:MemorySnapshotTriple::readInto
-race:FrameBufferTriple::readInto
+# The triple-buffer seqlock (MemorySnapshotTriple / FrameBufferTriple) needs no entry: its reader's
+# slot copy races the writer by design and is discarded on a sequence mismatch, so
+# transport/SeqlockCopy.hpp ignores that copy's accesses under TSan and records the write of the
+# caller's destination explicitly. A `race:...::readInto` entry here would also hide a race on the
+# destination (a registry slot the block thread fills), which is a real bug.
 
 # efsw (vendored, deps/efsw) internal teardown race: FileWatcherInotify's destructor
 # reads a status flag that its own watcher thread writes in handleAction as the thread

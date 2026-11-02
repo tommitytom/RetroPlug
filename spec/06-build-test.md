@@ -400,8 +400,10 @@ Pick the cheapest tier that actually exercises the code you touched. Trust-but-v
 directly: `tools/run-sanitizer.sh <thread|address> [slug]`. It configures a separate
 `build-tsan/` / `build-asan/` with `-DRETROPLUG_SANITIZE=…`, builds the instrumented host, then
 drives it via `run-native-tests.mjs` with `RETROPLUG_HOST` pointed at the instrumented
-binary. Default slugs are `dsp-threaded` + `dsp-lifecycle`. Thread mode reuses the Catch2 seqlock
-suppression file ([tsan.supp](../packages/native/test/sanitizer/tsan.supp)); a clean run **is** the
+binary. Default slugs are `dsp-threaded` + `dsp-lifecycle`. Thread mode reuses the Catch2
+suppression file ([tsan.supp](../packages/native/test/sanitizer/tsan.supp)), which names only efsw's teardown: the
+triple-buffer seqlock needs no entry, since its reader's copy ignores its own racing read under TSan and records the
+write of its destination ([SeqlockCopy.hpp](../packages/native/src/transport/SeqlockCopy.hpp)); a clean run **is** the
 proof that the cores and the built-in script pack's audio runtime are touched only by the thread that runs
 blocks. It loads no other pack: a loaded pack's runtimes are made, loaded and freed on the control thread
 while an audio thread runs blocks in the others, which those slugs never do. The Catch2 cases that do,
