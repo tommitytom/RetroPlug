@@ -161,16 +161,19 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 | `stageNodeMidi` | `(string nodeId, vector<uint8> bytes) → bool` | the UI's staged message, at the node the running plan places under `nodeId` (`rp.stage/1`): a system node hands it to its core's ingress, the cart node pushes it at its link. False for an empty message; the id resolves at the drain against the plan that runs, and a message no node there takes (an id the plan does not place, a node that stages nothing) is dropped there |
 | `submitJob` | `(RpcJobRequest) → RpcJobSubmitResult` | a capability job for a node of the last published plan: `{id}` when it was taken, `{error}` when it was refused (a capability the node does not present, an operation it does not have, a device's "busy" or "not connected", the engine's 64-outstanding bound, an emulated restore). A read or a ROM header completes before it returns; a write at the next block boundary, or at once while no audio thread runs (the CLI between renders); a device's job on its own thread, after a cart submission has waited on the calling thread (the DAW's main thread in the plugin) up to the probe's 1 s bound for the cart's menu check, usually one USB round trip |
 | `drainJobs` | `→ vector<RpcJobCompletion>` | what finished since the last drain (`done`, `ok`, the result's bytes or the error) and every running job whose progress changed, with `progress` of `total` |
+| `submitOfflineJob` | `(RpcOfflineRequest) → RpcOfflineSubmitResult` | a graph document run to completion on a host of the engine's offline pool (`Engine::submitOfflineJob`): `{id}`, or `{error}` for a rate a `GraphHost` refuses, more than 64 inputs and outputs, an input that is neither samples nor a file, an output of no frames, a return naming no handle, or 64 jobs outstanding. A document may name only the built-in C++ packages. What fails once it runs (a file that will not decode, a planner refusal, an activate error, a node fault, a cancel) is the completion's error |
+| `drainOfflineJobs` | `(double waitMs) → RpcOfflineDrain` | the completions finished since the last drain, oldest first (each buffer's samples, rate, channels and `nonFinite`, the file inputs' reports, `guardsFired` / `guardReason`), plus `inFlight`, the jobs still queued or running. With `waitMs` it blocks up to that (at most 1000 ms) when nothing has finished, and returns at once when no job is queued or running |
+| `cancelOfflineJob` | `(uint32 id) → bool` | stop job `id`: a queued one completes now, unrun, a running one at its next block boundary (or as it finishes), both with the reason `cancelled`. False for an id neither queued nor running |
 | `drainMidiOut` | `→ vector<RpcMidiOut>` | the host MIDI out (`Engine::midiOut`, which `rp.host.midi-out` fills each block) gathered over the `renderAudio*` renders since the last drain, each message with its system and frame (`renderBlocks` returns its own) |
 | `droppedMessages` | `→ uint32` | messages dropped so far (`Engine::droppedMessages`) by the plan's full output queues; never reset, and it wraps, so a test compares two reads |
 
 The table is a selection. The facets
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 19
-`host` methods, 15 `emulator` (the resources, the graph and script packs, the snapshot reads and writes, the
-capability jobs and the node staging), 22 `harness` (the renders, transport and sample rate, staged MIDI in and
-MIDI out, `droppedMessages`, `buildTarget`, the kit compiles and the audio runtimes' profiling calls),
+`host` methods, 18 `emulator` (the resources, the graph and script packs, the snapshot reads and writes, the
+capability jobs, the offline jobs and the node staging), 20 `harness` (the renders, transport and sample rate, staged
+MIDI in and MIDI out, `droppedMessages`, `buildTarget`, and the audio runtimes' profiling calls),
 27 `debug` and
-6 `driver`: 89 in the union. There is no call for what the roles do on the audio thread: their protocol
+6 `driver`: 90 in the union. There is no call for what the roles do on the audio thread: their protocol
 nodes are script node types every Engine embeds, and each node's settings ride the documents `setGraph`
 plans. Nor is there one for a system's knobs: they are its system node's settings, in the same documents,
 and its params, whose live edits are `setParam`
@@ -1086,8 +1089,7 @@ its **runtime** classes:
 | [`SystemBase`](../packages/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn`/`reserveAudio`. Its surface is what the engine and the nodes call: no battery-path accessors, no `fastBoot()` getter, no `clearSram`, no sub-block MIDI out, and no memory-snapshot arming (C4). The capabilities beside `debugTarget()` are `channelTap()` and, since C5, the nullable `memory()` / `sram()` / `rom()` accessors a system node presents to the capability job model (`system/SystemCapabilities.hpp`), and the per-block contract is `reserveAudio` plus `kDefaultBlockFrames`; its ingress queues report `inputAccepted()` / `inputDropped()` |
 | [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; its node gives it its knobs through value-guarded setters (`setModel`, `setHighpass`, the display group, `setSerialOutCapture`); its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
 | [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap and build check name no console: it forward-declares `ChannelTap` and includes no core header, and with C5's cart node it has no console check at all |
-| the LSDj kit/sample pipeline (`KitCompiler` / `KitUtil` / `SampleCache` / `Effects`), `util/MinizZip`, `EmbeddedRoms` | backing kit patching, `zip`/`unzip`, and embedded-ROM resolution |
-| the DSP library (`src/dsp/`: gain and peak, the biquads, dither and quantise, the r8brain resampler) | the kit path's effect and resample arithmetic as block-streaming kernels, and the same kernels the `rp.dsp` nodes wrap |
+| `SampleCache`, `util/MinizZip`, `EmbeddedRoms` | the offline seam's file decode (miniaudio, mono float at the file's own rate, the decode a kit compile reads its sources through), `zip`/`unzip`, and embedded-ROM resolution. `lsdj/Effects` is the kit path's reference arithmetic now, compiled into the two test binaries that hold the DSP nodes to it, not into the core |
 | `SpscRing` / `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the command/release rings and the snapshot registry are built on |
 
 The graph the engine runs on is not in `retroplug-core`: the executor, planner and
@@ -1103,22 +1105,27 @@ the C++ tree.
 ### The DSP targets and the `rp.dsp` packages
 
 The kit path's DSP and the graph's DSP nodes are the same kernels, in `src/dsp/`, split across five targets:
-`retroplug-dsp-kernels` (gain and peak, the eight RBJ biquads, dither and quantise; the C++ standard library alone),
-`retroplug-dsp-resample` (the r8brain resampler, which brings the heap, pthreads and RTTI), `retroplug-r8brain-base`
-(r8brain's static members, one vendored translation unit compiled on an allocator that throws, with no target declared
-for the vendored library; kept off RetroPlug's own warning level), and the two node packages
-`retroplug-dsp-nodes` (`rp.dsp.gain`, `.biquad`, `.dither`) and `retroplug-dsp-resample-nodes` (`rp.dsp.resample`), in
-[cmake/graph.cmake](../packages/native/cmake/graph.cmake). `retroplug-core` links both kernel libraries for
-`KitCompiler`, `KitUtil` and `RisaDmcCodec`; `retroplug-graph` links none of them; `retroplug-backend` links both
-packages and `Engine.cpp` registers them beside the other static packages. The split is load-bearing: `rp.dsp` never
+`retroplug-dsp-kernels` (gain and peak, the eight RBJ biquads, dither and quantise, the DMC encode; the C++ standard
+library alone), `retroplug-dsp-resample` (the r8brain resampler, which brings the heap, pthreads and RTTI),
+`retroplug-r8brain-base` (r8brain's static members, one vendored translation unit compiled on an allocator that throws,
+with no target declared for the vendored library; kept off RetroPlug's own warning level), and the two node packages
+`retroplug-dsp-nodes` (`rp.dsp.gain`, `.biquad`, `.dither`, `.normalize`, `.dpcm`) and `retroplug-dsp-resample-nodes`
+(`rp.dsp.resample`), in [cmake/graph.cmake](../packages/native/cmake/graph.cmake). `retroplug-core` links neither
+(nothing of the core calls a kernel), and `retroplug-graph` links neither; `retroplug-backend` links both packages
+and `Engine.cpp` registers them beside the other static packages, the offline job pool registering them in its own
+registry too. The split is load-bearing: `rp.dsp` never
 reaches r8brain, so a Pico build links `retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone, leaves
 `dspResamplePackage()` out of its registration, and has neither the resampler nor r8brain in its binary, where the
-planner's `heap` refusal is only the second line. `rp.dsp.resample` reads an `audio-buffer` resource named by its
+planner's `heap` refusal is only the second line (`rp.dsp.dpcm` declares `heap` and stays in the package, so the split
+is r8brain's link-time cost, not allocation). `rp.dsp.resample` reads an `audio-buffer` resource named by its
 settings at that buffer's rate and outputs at the plan's; a recorder and a resampler on one buffer in one plan are
 unsupported (the planner refuses a resource bound to a port reader when the same resource has a port writer, and a
-settings ref is not a binding it sees), so a driver fills a buffer before the plan that plays it. A rate change
+settings ref is not a binding it sees), so a driver fills a buffer before the plan that plays it. `rp.dsp.normalize`
+and `rp.dsp.dpcm` read a buffer the same way, and the dither's `seedFrom` names one too, so a kit-shaped document can
+name one buffer twice (the player's port and the settings ref). A rate change
 resumes where the output had reached, to within one frame, so a fresh r8brain run-in is heard from there rather than a
-gap.
+gap. `rp.dsp.normalize` measures its peak over the channels it plays (the loudest of each played channel's peak), and
+`rp.dsp.dpcm` refuses a multi-channel buffer rather than mixing one.
 
 Two of the nodes guard their state, because nothing between a plan and the host output rejects a non-finite sample:
 `rp.dsp.biquad` resets a channel's filter and writes that block as silence when the filter comes out of it non-finite
@@ -1127,27 +1134,64 @@ straight through), and `rp.dsp.dither` restarts a channel whose state came out n
 would latch its error terms for the rest of the stream). The guards are on state, not on a document's values: a node
 hands its kernel the values it reads, because a clamp would be a different kit byte (the planner and `setParam` clamp
 a document's value into a param's range with no diagnostic, and a wired value is not clamped at all). The param ranges
-are also narrower than a kit spec's (gain 0..4, frequency 20 Hz to 20 kHz, Q 0.1 to 10, -24..24 dB), so a kit's values
-cannot reach the kernels through them unclamped; D2 carries that work. Both guards differ from the kernel run directly
-in a way a kit could see: a kit filter above its source rate's Nyquist compiles to constant codes today, where the node
-recovers, and a decoded 32-bit float WAV can carry a NaN or an infinity (nothing between `SampleCache` and
-`KitCompiler` checks `isfinite`), which latches either kernel where its node restarts, so D2 has to decide for both.
-Until the biquad's guard fires its kernel writes rail-to-rail output, so a held above-Nyquist setting is full-scale
-bursts between the guard's silent blocks. A dither node's channels each draw their own noise, channel `c` from the
-setting's seed plus `c` times a golden-ratio step, so a stereo patch's dither is decorrelated and channel 0 is the
-setting's own seed (a mono patch is unchanged); the kit path calls the kernel directly, so none of this moves a kit
-byte.
+cover any sane kit value (gain -100..100, frequency 1 Hz to 96 kHz, Q 0.001 to 1000, -96..96 dB), so a kit's values
+reach the kernels through them whole; the planner cannot see the plan's rate, so a kit compile refuses a frequency at
+or above its source rate's Nyquist itself. Each guard reports into `rp.host.guards/1` when the host offers it: the
+offline job pool does, and counts the reports into its job's completion. Both guards differ from the kernel run
+directly in a way a kit could see, so the compiler refuses the regimes rather than choosing between them: a filter at
+or above its source's Nyquist, a source with a non-finite sample, a pass that records a non-finite sample and a pass a
+guard stepped into each refuse that slot ([modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md)
+section 11). A dither node's channels each draw their own noise, channel `c` from the setting's seed plus `c` times a
+golden-ratio step, so a stereo patch's dither is decorrelated and channel 0 is the setting's own seed (a mono patch is
+unchanged), unless `seedFrom` names a buffer, whose first channel's hash seeds the stream instead; a kit compile is
+byte-identical because it refuses rather than recovers. No kit byte moves either way: the nodes are held to those
+kernels by their own tests.
 
 ### Kit reproducibility
 
-A kit compiles to the same bytes every time. The two TPDF dither algorithms seed their `std::mt19937` from
-`rp::dsp::inputSeed` over the resampled, pre-trim sample the dither receives, salted with a per-algorithm constant, and
-the other three algorithms are deterministic already. The kit baseline suite
+A kit compiles to the same bytes every time. The compiler is TypeScript (`packages/retroplug/src/kit/`): it builds
+each pass of a slot's chain as a graph document and packs the bank, and native does every float the bytes depend on,
+through the `rp.dsp` nodes in offline jobs (the seam below). The two TPDF dither algorithms seed their `std::mt19937`
+from `rp::dsp::inputSeed` over the resampled, pre-trim sample the dither receives, salted with a per-algorithm constant,
+and the other three algorithms are deterministic already. The kit baseline
 ([kit-baseline.test.ts](../packages/retroplug/test-native/kit-baseline.test.ts)) compiles a fixed matrix of synthesised
-sources through `KitCompiler` and the two codecs and holds each bank's FNV-1a-64, size and slot length to
+sources through that compiler and holds each bank's FNV-1a-64, size and slot length to
 [golden/kit-baseline.json](../packages/native/test/audio/golden/kit-baseline.json): exact bytes on `linux-x64-gnu13`,
 self-agreement and the layout facts elsewhere, with `RP_KIT_GOLDEN_REQUIRE_TARGET=1` on CI's linux-x64 job and
-`RP_KIT_GOLDEN_UPDATE=1` re-recording on that target only. [06-build-test.md](06-build-test.md) has the suite's rules.
+`RP_KIT_GOLDEN_UPDATE=1` re-recording on that target only. A second golden,
+[kit-edges.json](../packages/native/test/audio/golden/kit-edges.json), holds the edge banks (`kit-compile.test.ts`)
+under the same rules. [06-build-test.md](06-build-test.md) has both suites' rules. A pass that records a non-finite
+sample, or one a node's guard stepped into, refuses its slot, which is how a compiled bank stays the kernels' bytes
+when a finite source overflows somewhere in the chain.
+
+### The offline job pool
+
+[`OfflineJobs`](../packages/native/src/host/engine/OfflineJobs.hpp) is the `Engine`'s, made at the first submission and
+reset before the engine's other members go. It runs every job on one worker thread from start to end, which is the job
+host's control thread and block thread at once (quiescent: no audio thread, so `setGraph` flushes inline and
+`GraphHost::processBlock` is the block driver, draining then running), in blocks of 1024 frames, the last partial,
+checking for a cancel between blocks. It starts workers on demand while every started one is busy, at most
+clamp(hardware_concurrency, 1, 8), and never retires one: an engine that ran a kit keeps up to eight parked threads
+for the rest of its life (a parked wait, costing no CPU). At most 64 jobs are outstanding at once (queued, running, or
+finished and not yet drained), so every taken job has room for its completion. Handles are known before a job runs:
+input i is `res:(i + 1)`, output j is `res:(inputs + j + 1)`. An input of no frames is accepted and reported but names
+no resource, and an output of no frames is refused. A file input is decoded through a `SampleCache` of the job's own
+(so a path rewritten between two jobs decodes as it is now) and windowed by
+[`offlineWindow`](../packages/native/src/host/engine/OfflineJobs.cpp), which reproduces the two kit windows
+exactly: an offset clamped to the end, a zero length meaning "to the end", and a frame cap scaled to the decoded rate
+in the window's own arithmetic (`float-ratio` for LSDj, `double-scale` for risa).
+
+A job's node registry is the pool's own, filled in its constructor with rp.core, rp.dsp and rp.dsp.resample before any
+worker exists and never changed, so the workers share it read-only; a script, system or host I/O node in a document is
+`unknown-type`, a node fault fails the job, and a guard report does not: the completion carries `guardsFired` and the
+first `guardReason`, each buffer carries `nonFinite`, and a caller decides (a kit compile refuses the pass). The whole
+run is held in the default floating-point environment, so a worker that inherited its submitter's flush-to-zero mode
+still computes what the kernels do. Cancelling completes a queued job unrun and stops a running one at its next block
+boundary; tearing the engine down abandons every job in flight, joins the workers and discards undrained completions,
+so no resampler outlives the engine (D1's r8brain teardown rule). The TypeScript side
+([`src/offline.ts`](../packages/retroplug/src/offline.ts)) turns submit-and-drain into a promise: the queue joins the
+capability jobs' live set so one pump settles both, the native wait is turned on by `createAudioDriver` for hosts with
+no UI tick, and runs past the 64-job bound wait in a FIFO rather than being refused busy.
 
 The txiki host `TjsHostRuntime` comes from
 [`deps/dpf.js`](../deps/dpf.js), not the shared core.
@@ -1190,7 +1234,7 @@ is one automatable parameter applied post-render across all 8 channels
 
 - [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) — mounts the capability facets onto a server; the single source of truth for the wire surface.
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
-- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs and the registry; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, the command handler, `SyncTap`.
+- [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp), [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs, the registry and the offline job pool; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, `submitOfflineJob`, `drainOfflineJobs`, `cancelOfflineJob`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
 - [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes), [`N8Nodes.cpp`](../packages/native/src/host/graph/N8Nodes.cpp) (the cart's node), [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) (the control surface's two), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).

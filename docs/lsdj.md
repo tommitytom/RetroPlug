@@ -228,16 +228,20 @@ backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
   Both decode (`kit.sampleData()`) and encode (`compileKit`'s `rotate`) gate on the ROM version, so import
   is byte-correct for any version — `LsdjRom.rotatesSamples` (true for 9.2.0+) drives both. Byte-exact with
   the LSDj tool's own kits.
-- **Sample import = native.** Resample (r8brain, anti-aliased), effects (gain/normalize, RBJ filter, TPDF dither),
-  and 4-bit pack happen in **C++**: `packages/native/src/lsdj/KitCompiler` (`KitUtil` / `SampleUtil`) over the
-  block-streaming kernels in `packages/native/src/dsp/`, which the `rp.dsp` graph nodes wrap too, fanned across an
-  enkiTS pool per sample, decoding WAV/MP3/FLAC via miniaudio. The two TPDF dithers seed from a hash of the sample the
-  dither receives (salted by algorithm), so a kit compiles to the same bytes every time, and the other three
-  algorithms are deterministic already; `retroplug-audio-test`'s `[kit-baseline]` holds every compiled bank to a golden
-  (D1, [modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md)). Exposed as the **harness-facet** RPC
-  `compileKit` (CLI/test-host only, never the plugin) on `AudioDriver`. The pure-TS `rom` module orchestrates: whole-kit
+- **Sample import = the kit compiler, TypeScript over native DSP nodes.** Resample (r8brain, anti-aliased), effects
+  (gain/normalize, RBJ filter, TPDF dither) and the DMC encode run as `rp.dsp` graph nodes inside offline jobs, and
+  TypeScript (`packages/retroplug/src/kit/`) builds each pass's document, cuts the buffers and packs the 4-bit
+  nibbles into the bank. The two TPDF dithers seed from a hash of the sample the dither receives (salted by
+  algorithm), so a kit compiles to the same bytes every time, and the other three
+  algorithms are deterministic already; `test-native`'s `kit-baseline` and `kit-compile` hold every compiled bank to a
+  golden (D1 and D2, [modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md) and
+  [modular-graph-phase-d2-design.md](modular-graph-phase-d2-design.md) section 11). The CLI and the harness hosts
+  compile through `AudioDriver`'s `compileKit` / `compileDmc` (settled by the driver's native wait); a host with a UI
+  tick, the plugin included, calls `src/kit`'s entry points on its backend, settled by the job pump. The pure-TS `rom`
+  module orchestrates: whole-kit
   builds take the returned 16 KB bank directly; single-sample imports splice the compiled bytes beside existing
-  samples' **raw** bytes and rebuild the offset table (`buildKitBank`), budget-checked against `0x3fa0`.
+  samples' **raw** bytes and rebuild the offset table (`buildKitBank`), budget-checked against `0x3fa0`. A slot that
+  does not compile is left empty and the result's `errors[i]` says why; the CLI's read-back prints it.
 - **Asset files (community formats, lsdpatch-compatible).** Whole assets interchange as the standard
   files: **`.lsdpal`** palettes (4-char name + the 40-byte palette body), **`.png`** fonts (an 8-tile-wide
   greyscale image — 64×72 for the 71 main tiles, 64×120 for the **extended** layout that also carries the

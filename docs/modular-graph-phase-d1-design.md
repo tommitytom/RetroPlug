@@ -4,10 +4,11 @@
 build and sections 3 to 5 are corrected in place.
 
 Phase D gives the graph DSP of its own ([modular-graph-design.md](modular-graph-design.md) section 8): library nodes
-(gain, biquad, dither, resample), kit compiles as offline graphs held byte-identical to today's `KitCompiler`, and
-renders on the offline executor. It is split in three. D1 (this design) makes kit output reproducible, records it as a
-baseline, moves the kit path's DSP into a core-free library of block-streaming kernels, and puts that library in the
-graph as `rp.dsp` nodes. D2 builds the offline driver (audio buffers in and out of a document, a run to completion,
+(gain, biquad, dither, resample), kit compiles as offline graphs held byte-identical to native `KitCompiler` (retired in
+D2; its [section 11](modular-graph-phase-d2-design.md#11-as-built) has the build), and renders on the offline executor.
+It is split in three. D1 (this design) makes kit output reproducible, records it as a baseline, moves the kit path's DSP
+into a core-free library of block-streaming kernels, and puts that library in
+the graph as `rp.dsp` nodes. D2 builds the offline driver (audio buffers in and out of a document, a run to completion,
 normalise and the two-rate kit chain) and compiles kits as graphs, held to D1's baseline. D3 moves the CLI and
 background renders onto that driver.
 
@@ -71,7 +72,8 @@ Each case's bank is recorded in a golden JSON beside the test as its hash, size 
 re-recorded only with `RP_KIT_GOLDEN_UPDATE=1`. Exact bytes are compared on `linux-x64-gnu13` (as parity does), off it
 a case must agree with itself across two runs while its size and slot length are still held, and
 `RP_KIT_GOLDEN_REQUIRE_TARGET=1` turns the fallback into a failure on CI's linux-x64 job. From then on a change that
-moves a kit byte fails this suite.
+moves a kit byte fails this suite. D2 retired this suite with the compiler it drove: the matrix and the golden are
+unchanged, and `test-native/kit-baseline.test.ts` is their runner now (D2 design section 11).
 
 ## 4. The DSP library
 
@@ -196,7 +198,8 @@ beside it, so only a build that wants the resampler reaches r8brain.
   tags under both sanitizers. The tags as built are `[dsp]`, `[dsp-nodes]` and `[dsp-resample]` in
   `retroplug-graph-test`, `[kit-baseline]` and `[dither]` in `retroplug-audio-test` (both carry `[kit]` too, so one
   run covers the kit path's whole byte surface), and `kit-dither` in
-  `test-native`.
+  `test-native`. (`[kit-baseline]` and its suite went with the compiler in D2; the other tags stand, and D2 added
+  `[dsp-buffer-nodes]` and `[offline]`.)
 
 ## 7. Landing
 
@@ -243,8 +246,10 @@ implementers and follow-ups, Opus code reviews of tasks 3 and 5, a DeepSeek acce
     filter r8brain is FIR, so an isolated NaN poisons a few blocks of its output and the dither kernel latches (a NaN's
     code is 0 for the rest of the slot), where `rp.dsp.dither` restarts and recovers; with a filter the biquad kernel
     latches for good, where `rp.dsp.biquad` resets. A kit's byte identity is at stake in both regimes, so D2 decides
-    for both. Above Nyquist the biquad's guard also only bounds the damage: until it fires the kernel's clamp writes
-    rail-to-rail output, so a held above-Nyquist setting is full-scale bursts between the guard's silent blocks.
+    for both (as built: a source with a non-finite sample is refused, and a pass a guard stepped into refuses its
+    slot; D2 design section 11). Above Nyquist the biquad's guard also only bounds the damage: until it fires the
+    kernel's clamp writes rail-to-rail output, so a held above-Nyquist setting is full-scale bursts between the
+    guard's silent blocks.
   - **A resampler must not outlive r8brain's static members.** `rp.dsp.resample` keeps its `rp::dsp::Resampler`s as
     instance members, and a `Resampler`'s destructor calls r8brain's `unref`, which locks a static mutex and writes into
     cache-owned objects (`CDSPFIRFilter`, `CDSPFracDelayFilterBank`): destroyed after `R8bBase.cpp`'s statics, it is a

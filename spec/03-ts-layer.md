@@ -20,7 +20,9 @@ it:
   `projectStore.ts`, `recentStore.ts`, `userConfigStore.ts`, `bindingsStore.ts`, plus the
   store-adjacent services `fileSelection.ts`, `fileWatcher.ts`, `sramAutoSave.ts`.
 - **Runtime / host seams** — `backend.ts` / `realBackend.ts` (control-plane RPC),
-  `audioDriver.ts` (the harness's render and profiling client), the composition roots
+  `audioDriver.ts` (the harness's render and profiling client, and the kit compiler's caller),
+  `capability.ts` / `offline.ts` (the two promise-based job seams: a node's capability job, and a graph
+  document run to completion on an engine-owned offline pool), the composition roots
   `pluginControlPlane.ts` / `appStores.ts` / `appHost.ts`, and the React/LVGL `ui/` tree.
 
 Roles and the protocol nodes that run them are their own subject: **doc 04** covers them end to end;
@@ -37,8 +39,8 @@ contract the application calls. It is deliberately narrow and deliberately grown
 thing can be done in pure TS, it belongs in the application layer, not here.* It is
 **synchronous** on purpose — in the real plugin these are in-process calls over the
 txiki↔C++ bridge — which keeps application logic straight-line and trivially testable
-against an in-memory mock. The **one** async method is `openFileBrowser`, which waits on
-human input.
+against an in-memory mock. The exceptions are `openFileBrowser` (it waits on human input) and the job seams'
+promises (`capability`, `offlineRun`), which settle from a pump or a native wait rather than a timer.
 
 The methods, grouped by concern:
 
@@ -47,7 +49,8 @@ The methods, grouped by concern:
 | **Filesystem** | `readFile` · `writeFile` · `writeFileAtomic` · `fileExists` · `rename` · `listDir` · `deleteFile` · `drainChangedPaths` · `setWatchedRoms` | `std::filesystem` bytes; atomic temp+rename; a generic non-recursive readdir; the pull-drain of the native efsw file watcher + the ROM-set registration that feeds it |
 | **Paths** | `canonicalize` · `readFilePrefix` · `configDir` | `weakly_canonical` (the dedupe key); a header-only prefix read (ROM sniff without marshalling MBs); the per-OS config dir |
 | **Emulator lifecycle** | `putResource(spec)` · `releaseResource(id)` · `setGraph(request)` · `loadScriptPack(request)` | Put an immutable byte block in the engine's `ResourceTable` (a ROM, a battery, a savestate) or drop the owner's hold on one; plan a graph document TS built (which systems run, in what order and wired how, each system node naming the resources its core boots from). No `remove`/`duplicate`/`reload` primitive: those are TS orchestration over these and the snapshot reads. Load a pack of script node types beside the built-in ones, or reload one, while audio runs ([modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)): `{ ok, error, errors, types }`, the pack's types with their descriptors, or why not (the planner's `errors` when a reload's replan refused). Nothing in the app calls it yet, and the mock refuses it |
-| **File dialog** | `openFileBrowser(opts)` → `Promise` | Open the OS browser, resolve the picked path (the one async method) |
+| **Job seams** | `capability(nodeId,op,args)` · `pumpJobs()` · `rejectPendingJobs(reason)` · `offlineRun(request)` | Promise-based jobs over the RPC's capability and offline job calls: a node's capability (C5) and a graph document run to completion on an engine-owned pool (D2), both settled by the one `pumpJobs` the UI's frame tick calls. `offlineRun`'s document may name only the built-in C++ packages (no script, system or host I/O node), and its promise settles from the tick or, in a host with none (the CLI, the Node addon, the test host), the native wait `createAudioDriver` turns on ([modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md) sections 3 and 11) |
+| **File dialog** | `openFileBrowser(opts)` → `Promise` | Open the OS browser, resolve the picked path |
 | **Live params** | `setParam(nodeId,paramId,value)` | Set a param of a node the last published plan places, at the start of the next block, clamped to its range: the store's live gain and a NES's expansion volume, on the system's node `sys-<id>`. A system's other knobs are its node's settings in the document `setGraph` plans, and the audio routing is the graph's wiring, so neither is a call ([modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md)) |
 | **Live input** | `pressButton(id,button,down)` | Queue a joypad edge to the core's audio-thread button sink |
 | **Live reads** | `readState(id)` · `readSram(id)` · `getFrame(id)` | Pull the latest tear-free snapshot from the `SnapshotRegistry` (see doc 01) — never touches a live core |
@@ -693,7 +696,8 @@ and how `buildGraph` places and wires them.
   [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts). The keyboard/gamepad
   bindings editor, Open Settings Folder, and the LSDj Mode submenu are all built.
 - The `ui?` field on a `RoleType` (a role's own settings render descriptor) is present in the
-  model but not yet consumed — it is the seam the deferred kit-patch UI will use.
+  model but not yet consumed: it is the seam a role-owned settings UI will use (kit patching does not need it;
+  `lsdj-assets` splices at construct).
 
 The store graph is now **unified**: the plugin's control-plane bundle composes the one
 `composeAppStores` graph and publishes it on `globalThis[Symbol.for("plugin")]`, and the editor's

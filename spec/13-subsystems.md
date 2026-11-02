@@ -27,11 +27,13 @@ import/export paths are written once:
 - **`TRACKER_INTEGRATIONS`** — the registry that maps a system to its catalogs.
 - **`liveSav`** — reads the battery out of the *running* core rather than off disk, which is why
   the Songs menu acts on what the cart currently has.
-- **Kit compiles** are native: `KitCompiler` over `LsdjKitCodec` / `RisaDmcCodec`, with the effects and resample from
-  `src/dsp/` (the same block-streaming kernels the `rp.dsp` graph nodes wrap), exposed as the harness-facet
-  `compileKit` / `compileDmc` RPCs. TPDF dither seeds from a hash of its input, so a kit compiles to the same bytes
-  every time, and `retroplug-audio-test`'s `[kit-baseline]` holds the compiled banks (D1,
-  [modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md)).
+- **Kit compiles** are TypeScript ([`src/kit/`](../packages/retroplug/src/kit)): each slot is a chain of offline
+  graph jobs whose passes are `rp.dsp` documents (the effects and resample kernels in `src/dsp/`, which those nodes
+  wrap), and TypeScript packs the codes and bits and assembles the bank. TPDF dither seeds from a hash of its input, so
+  a kit compiles to the same bytes every time, and `test-native`'s `kit-baseline` and `kit-compile` hold the compiled
+  banks to their goldens (D1 and D2, [modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md),
+  [modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md) section 11). Every host compiles a kit,
+  the plugin included; the native compiler and its harness-facet RPCs are gone.
 
 What it does **not** abstract is role registration; each console registers its own roles in
 [romProviders.ts](../packages/retroplug/src/romProviders.ts).
@@ -46,8 +48,8 @@ the `risa-sync` role turns transport into risa's arm / start / 24-PPQN clock / s
 the emulated EverDrive N8 FIFO. Layout support covers risa 2.3.0.
 
 - Code: `src/risa/` (codec + ROM + runtime), `src/risaRole.ts`, `src/risaSync.ts`,
-  `src/tracker/risa*Catalog.ts`. The DMC kit codec is native (`src/risa/RisaDmcCodec.cpp`) and shares the `src/dsp/`
-  effects and resampler with LSDj's kit path.
+  `src/tracker/risa*Catalog.ts`. The DMC kit encode is `rp.dsp.dpcm` in the kit chain, and the bank packer is
+  `src/risa/rom/kit.ts`; there is no native risa codec.
 - **Prove a change:** `pnpm test risa` / `pnpm test:native risa`, and `pnpm reaper:risa-sync` for
   the real-DAW drift render (not in CI).
 - Deeper: [docs/risa-integration-plan.md](../docs/risa-integration-plan.md) (design rationale; the

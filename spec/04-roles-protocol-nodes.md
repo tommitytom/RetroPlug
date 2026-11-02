@@ -466,10 +466,10 @@ inventory of remaining work.
   decoded to host MIDI) and **MasterSync**. Raw **Keyboard** (mode 4) still sends nothing: it needs a
   per-block `keys` feed, an input on `rp.lsdj.sync` that nothing in the running host would feed yet, and
   per-block host `buttons` the same.
-- **kit-patch UI-thread behaviour.** LSDj kit-patch runs entirely on the UI / control thread: it
-  compiles the kit (over the native `KitCompiler` primitives) and the `lsdj-assets` role folds it into the
-  ROM in memory. It has **no protocol node** and never reaches the audio thread. A role-owned settings UI
-  would need the deferred `ui?` render seam.
+- **kit-patch UI-thread behaviour.** LSDj kit-patch is orchestrated on the UI / control thread: the `lsdj-assets` role
+  splices a pre-built kit file into the ROM in memory (its construct hook), and it compiles nothing. It has **no
+  protocol node** and never reaches the audio thread. A plugin kit row could compile through `src/kit` on the stores'
+  backend (design section 9), but no row does it; a role-owned settings UI would need the deferred `ui?` render seam.
 - **`ui?` render descriptor + extension model.** The `ui?` field on `RoleType` is a labelled-deferred
   seam (a role's own settings UI), and the third-party extension model (registering `RoleType`s, ROM
   providers, and node types from outside the built-ins) is future work.

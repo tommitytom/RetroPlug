@@ -27,7 +27,8 @@ The rules below are the parts that don't fit those.
   also run `pnpm install` in `deps/dpf.js/deps/lv_binding_js`, or the UI bundle
   can't resolve `react`. Don't bump any submodule pointer (in either repo) without
   checking — they're managed deliberately. RetroPlug also keeps `deps/sameboy` +
-  `deps/mesen` / `deps/r8brain` / `deps/enkiTS` (the shared core), and `deps/efsw`
+  `deps/mesen` / `deps/r8brain` (the shared core; `deps/enkiTS` is still a submodule, but no
+  target adds or links it since the native kit compile retired), and `deps/efsw`
   (the file-watcher — `NativeFileWatcher` behind `HostRpcService::drainChangedPaths`
   — now uses it: `add_subdirectory`'d `EXCLUDE_FROM_ALL` at the root, `efsw-static`
   linked into `retroplug-backend`; the watcher is opt-in via `enableWatching`, which
@@ -64,7 +65,14 @@ The rules below are the parts that don't fit those.
   jobs' busy and not-connected refusals, an abandoned job and its `threads`, and the same node behind a real Engine
   driving the production cart adapters to a fake serial port (`[n8-adapters]`), a host's teardown included; the
   surface's two nodes (a frame-0 drain, the queue's bound, the first-block discard, uniqueness, one link each); and
-  the UI's staged message reaching the node the running plan places under its id;
+  the UI's staged message reaching the node the running plan places under its id; the offline job pool (D2,
+  [docs/modular-graph-phase-d2-design.md](docs/modular-graph-phase-d2-design.md) sections 3 and 11,
+  `test/engine-graph/OfflineJobs.test.cpp`): a document run to completion on a host of its own held to the same nodes
+  run directly, the pool's workers and 64-job bound, a cancel queued or running, a teardown that abandons jobs in
+  flight, every refusal's reason, the RPC's samples, both kit windows and the cap's arithmetic against copies of each
+  formula, the file input against `SampleCache`'s decode, the live plan unchanged beside a job and its warmed blocks
+  allocating nothing, a guard count and a per-buffer non-finite flag, and a job's own floating-point environment
+  (`[offline]`, with a hidden `[offline-bench]`);
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
   creation and release on the block thread, throws, a node's promise jobs charged to it; script node packs beside the
@@ -98,14 +106,18 @@ The rules below are the parts that don't fit those.
   (`tools/run-profile.sh unit`).
   `retroplug-graph-test` holds the DSP library and its nodes: the kernels are chunk-exact and allocation-free in
   `process` once warmed, the resampler from its first chunk, the verbatim references of every dither algorithm and of
-  both padded error diffusions included (`[dsp]`); each `rp.dsp` node matches its kernel through a real plan, a block
-  counted from the plan's first block allocating nothing, a descriptor golden per type, a biquad reset when a sweep
-  past Nyquist poisons it, and recovering, a dither's channels drawing their own noise and a non-finite input
-  (a NaN, or an infinity the diffusion forms latch) restarting a channel, and gain/biquad/dither all plan on the Pico
-  (`[dsp-nodes]`); and `rp.dsp.resample` plays a
-  22.05 kHz buffer into a 48 kHz plan and a 48 kHz one into the kit rate, at six splits, takes a loop committed after
+  both padded error diffusions, and the DPCM kernel against a verbatim copy of the retired codec (`[dsp][dpcm]`), all
+  in `[dsp]`; each `rp.dsp` node matches its kernel through a real plan, a block counted from the plan's first block
+  allocating nothing, a descriptor golden per type, the clamp at each widened bound with the asked value's stream
+  proved different, a biquad reset when a sweep past Nyquist poisons it, and recovering, a dither's channels drawing
+  their own noise and a non-finite input (a NaN, or an infinity the diffusion forms latch) restarting a channel, and
+  gain/biquad/dither all plan on the Pico (`[dsp-nodes]`); and `rp.dsp.resample` plays a 22.05 kHz buffer into a
+  48 kHz plan and a 48 kHz one into the kit rate, at six splits, takes a loop committed after
   its buffer ran out, carries on after a rate change, wraps a loop and clamps to silence past the buffer's end when
-  re-activated and is refused on the Pico (`[dsp-resample]`).
+  re-activated and is refused on the Pico (`[dsp-resample]`), and `[dsp-buffer-nodes]` holds the three
+  buffer-reading nodes to the kit arithmetic: normalize whole and split, its peak and a committed gain, a dither's
+  `seedFrom` and a committed seed, the DPCM's bits and its `normalize` rebuild, a block counted from the plan's first
+  block, the refusals, and the Pico plan.
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive
   `PluginExporter::reinitParameters` over a toy plugin.
@@ -423,13 +435,16 @@ own change with a re-record, as the LSDj master-sync fix and the narrow-host NES
 (every LSDj case, its MIDI-out and link-cable ones among them, and every controller, risa and GBA case is
 fixture-only), so a Phase B step is accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.
 
-**The kit baseline** (`build/bin/retroplug-audio-test "[kit-baseline]"`, [spec/06-build-test.md](spec/06-build-test.md))
-holds the kit compilers' bytes: 39 synthesised cases through `KitCompiler` and the two codecs, each bank's FNV-1a-64,
-size and slot length against `packages/native/test/audio/golden/kit-baseline.json`. Exact bytes are compared only on
-`linux-x64-gnu13` (CI's linux-x64 job sets `RP_KIT_GOLDEN_REQUIRE_TARGET=1`), elsewhere a case must agree with itself,
-and a re-record (`RP_KIT_GOLDEN_UPDATE=1`) is refused off that host and for a case that disagrees with itself. Unlike
-parity it is a 4-bit view: a one-ulp change in a dither can leave every hash matching, which is what `[dsp]`'s
-16-bit references are for.
+**The kit baselines** (`pnpm test:native kit`, [spec/06-build-test.md](spec/06-build-test.md)) hold the kit compiler's
+bytes: `packages/retroplug/src/kit` compiles each case as chains of offline graph jobs, and the 39 synthesised cases'
+banks (and 12 edge banks) are compared as FNV-1a-64 and size (and, for the 39, slot length) against
+`packages/native/test/audio/golden/kit-baseline.json` and `.../kit-edges.json` (the edge records carry no slot).
+Exact bytes are compared only on `linux-x64-gnu13` (CI's linux-x64 job sets `RP_KIT_GOLDEN_REQUIRE_TARGET=1` on its
+`test:native` step), elsewhere a
+case must agree with itself and the layout facts are still compared, and a re-record (`RP_KIT_GOLDEN_UPDATE=1`) is
+refused off that host and for a case that disagrees with itself. Unlike parity it is a 4-bit view: a one-ulp change in
+a dither can leave every hash matching, which is what `[dsp]`'s and `[dsp-buffer-nodes]`' references are for. The C++
+`[kit-baseline]` suite went with native's compiler; that tag now exits 2 in `retroplug-audio-test`.
 
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
 `retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one

@@ -263,9 +263,9 @@ The model is a **standalone module** (`packages/retroplug/src/lsdj/model.ts`), *
 `KitInstrument` (song metadata) is **in scope**; the kit/sample *compiler* is not (§ scope).
 
 **Scope boundary.** In scope: `model/*` + `codec/*` + `SavSerialization.hpp`. Out of scope:
-the kit/sample pipeline (`Effects`, `KitUtil`, `KitCompiler`, `SampleCache`, `SampleUtil`,
-`OffsetLookup`) — compiled-but-dead, no model dependency, heavy native deps
-(r8brain/miniaudio/enkiTS). Only the word "kit" is shared.
+the kit/sample pipeline (`Effects`, `SampleCache`, `OffsetLookup`; native at the time, the compiler itself TypeScript
+since D2, [modular-graph-phase-d2-design.md](modular-graph-phase-d2-design.md) section 11): no model dependency, heavy
+native deps (r8brain/miniaudio). Only the word "kit" is shared.
 
 ---
 

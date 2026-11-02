@@ -428,14 +428,32 @@ without the frame).
 the heap, pthreads and RTTI, so a build with no resampler omits it). r8brain's static members are a third target,
 `retroplug-r8brain-base`, beside the resampler: its one translation unit is vendored code (`R8bBase.cpp` includes
 r8brain's own `r8bbase.cpp`, on a throwing allocator), so it is kept off RetroPlug's own warning level.
-`retroplug-core` links both for the kit compilers,
-and the graph has them as `rp.dsp` (`rp.dsp.gain`, `.biquad`, `.dither`) and `rp.dsp.resample`, in targets of their own
-(`retroplug-dsp-nodes`, `retroplug-dsp-resample-nodes`) so `retroplug-graph` carries neither and a Pico build links
-`retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone. The kit compilers and the nodes run the same arithmetic, so a
-patched kit and a rendered patch share one DSP. `rp.dsp.resample` takes an `audio-buffer` resource at that buffer's own
-rate and outputs at the plan's; every other node's ports carry the plan's one rate. The kit compilers' output is
-reproducible: the TPDF dither seeds from a hash of the input it sees, held by the kit baseline
-([06-build-test.md](06-build-test.md), [02-native-host.md](02-native-host.md), D1 design sections 4 and 5).
+`retroplug-core` links neither (nothing of the core calls a kernel),
+and the graph has them as `rp.dsp` (`rp.dsp.gain`, `.biquad`, `.dither`, `.normalize`, `.dpcm`) and `rp.dsp.resample`,
+in targets of their own (`retroplug-dsp-nodes`, `retroplug-dsp-resample-nodes`) so `retroplug-graph` carries neither and
+a Pico build links `retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone. A kit compile and a rendered patch run the
+same arithmetic through those nodes, so a patched kit and a rendered patch share one DSP. `rp.dsp.resample` takes an
+`audio-buffer` resource at that buffer's own rate and outputs at the plan's; every other node's ports carry the plan's
+one rate. A kit compile's output is reproducible: the TPDF dither seeds from a hash of the input it sees, held by the
+kit baseline ([06-build-test.md](06-build-test.md), [02-native-host.md](02-native-host.md), D1 design sections 4 and 5,
+D2 design section 11).
+
+### The offline job pool
+
+A graph document also runs to completion off the audio thread. `submitOfflineJob` (the emulator facet) takes a
+document, its inputs (interleaved float samples, or file paths native decodes and windows), the empty buffers it
+records into and the frames to run; a later `drainOfflineJobs` hands back its completion, a bounded queue the control
+plane polls as capability jobs' completions are. An `Engine` owns the pool, made at the first submission, of up to
+clamp(hardware_concurrency, 1, 8) worker threads, with at most 64 jobs outstanding. Each job gets a `GraphHost` and a
+resource table of its own on its worker, which is that host's control thread and block thread at once (the quiescent
+path: no audio thread, 1024-frame blocks), and is destroyed there with the host. The pool has a node registry of its
+own, filled before any worker exists with the built-in C++ packages, so a job's document may name rp.core, rp.dsp and
+rp.dsp.resample and nothing else, and a script pack's load or reload cannot race a job's planning. A completion carries
+the returned buffers (interleaved, each with a non-finite flag), the file inputs' reports, and the count and first
+reason of any node guard that fired (`rp.host.guards/1`, a host service the live engine does not offer). Cancelling
+stops a job at its next block boundary, and destroying the engine abandons jobs in flight. The kit compiler is the
+seam's first user: TypeScript builds each pass's document and packs the bank, and native does every float the bytes
+depend on ([modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md) sections 3 to 5 and 11).
 
 ---
 
@@ -507,6 +525,13 @@ lost mutation.
    Cores are built bare (no default roles baked into C++); feature behaviour lives in TS, the audio
    thread's part in the protocol script nodes.
 
+9. **An offline job shares nothing with the engine.** A job's host, resource table and node instances are made and
+   destroyed on its own worker, which is the two threads that host has; the only state it shares with the engine is the
+   pool's queue and completion deque, under the pool's mutex, the pool's registry, filled before any worker starts and
+   never changed, and r8brain's static, internally locked filter cache (shared by every job's resampler and the live
+   engine's). So a job never touches the live plan, the command ring, the engine's resource table or the audio thread,
+   and a script pack's reload (which swaps the engine's registry) can never reach a job's planning.
+
 ### Not yet built / deferred
 
 - **The registry double-copy** (§4) stands until the shared `SystemBase` can publish directly into
@@ -532,8 +557,9 @@ lost mutation.
 | [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), its one `SystemFactory`, the staged host MIDI, the host outputs and the registry; `buildSystem` / `destroySystem` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
 | [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in packs, each two bare QuickJS runtimes of its own (the built-in pack first, more loaded and reloaded at runtime), and the audio runtimes' profiling |
 | [`nodes/`](../packages/retroplug/src/script/nodes) / [`bundle.ts`](../packages/retroplug/src/script/bundle.ts) | the script nodes buildGraph places (the MIDI routing, each role's protocol node, the controller session), and the script-node bundle every Engine embeds |
-| [`src/dsp/`](../packages/native/src/dsp) | the core-free DSP kernels the kit compilers and the `rp.dsp` nodes share: gain and peak, the RBJ biquads, dither and quantise, and the r8brain resampler |
-| [`DspNodes.cpp`](../packages/native/src/graph/nodes/DspNodes.cpp) / [`DspResampleNodes.cpp`](../packages/native/src/graph/nodes/DspResampleNodes.cpp) | the `rp.dsp` package (gain, biquad, dither) and the `rp.dsp.resample` package beside it |
+| [`src/dsp/`](../packages/native/src/dsp) | the `rp.dsp` nodes' kernels, core-free: gain and peak, the normalising gain, the RBJ biquads, dither and quantise, the DMC encode, and the r8brain resampler |
+| [`DspNodes.cpp`](../packages/native/src/graph/nodes/DspNodes.cpp) / [`DspResampleNodes.cpp`](../packages/native/src/graph/nodes/DspResampleNodes.cpp) | the `rp.dsp` package (gain, biquad, dither, normalize, dpcm) and the `rp.dsp.resample` package beside it |
+| [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp) | the offline job pool: a document run to completion on a host of its own, its inputs, outputs and completion |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
 | [`PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |
 | [`main.cpp`](../packages/native/src/main.cpp) | the standalone / native test host |

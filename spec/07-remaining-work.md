@@ -352,12 +352,13 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `lsdj/Effects`, `KitUtil` and `RisaDmcCodec` run those kernels. The graph has them as `rp.dsp.gain`, `.biquad`,
   `.dither` and `rp.dsp.resample` (`retroplug-dsp-nodes` / `retroplug-dsp-resample-nodes`, the resampler a package and
   target of its own so a Pico build can leave it and r8brain out). TPDF dither is seeded from a hash of the sample it
-  sees, so a kit compiles to the same bytes, and `retroplug-audio-test`'s `[kit-baseline]` holds 39 compiled banks to
-  a golden. Strict parity held bit for bit at every commit, and the baseline did not move by a hash through the kernel
-  move. What it leaves:
+  sees, so a kit compiles to the same bytes, and `retroplug-audio-test`'s `[kit-baseline]` held 39 compiled banks to
+  a golden (the test-native runners hold them now; the next bullet). Strict parity held bit for bit at every commit,
+  and the baseline did not move by a hash through the kernel move. What it leaves:
   - **D2**: audio buffers in and out of a document, a run-to-completion driver over `GraphHost`, normalise in a graph,
     the two-rate kit chain, and kit compiles as graphs behind `compileKit` / `compileDmc`, byte-identical to the
-    baseline. D1's build fixes the seed rule (hash the whole pre-trim buffer and pass `rp::dsp::inputSeed` in the
+    baseline (as built, the TypeScript entry points of those names; the harness RPCs went with native's compiler, the
+    next bullet). D1's build fixes the seed rule (hash the whole pre-trim buffer and pass `rp::dsp::inputSeed` in the
     node's `seed`), normalise (call `normalizedGain`, a reciprocal multiply), and the order (effects at the source
     rate, resample, quantise, `frameAlign`, nibble pack).
   - **D2 has to widen the nodes or wire around them.** The nodes' param ranges are narrower than a kit spec can be
@@ -378,13 +379,44 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     codes today (the biquad's state goes NaN and the quantiser reads every NaN as code 0), where `rp.dsp.biquad`
     recovers, so D2 has to decide between the kernel call and the node for such a kit. Both guards also differ from the
     kernel on any non-finite sample a decoded 32-bit float WAV can carry (nothing between `SampleCache` and
-    `KitCompiler` checks `isfinite`): a NaN or an infinity latches a kernel where its node restarts, so D2 decides for
-    both rules. Before the biquad's guard fires its kernel writes rail-to-rail output, so a held above-Nyquist setting
+    `KitCompiler` checked `isfinite`): a NaN or an infinity latches a kernel where its node restarts, so D2 decides
+    for both rules (as built, its compiler refuses such a source and any pass a guard stepped into; the next bullet).
+    Before the biquad's guard fires its kernel writes rail-to-rail output, so a held above-Nyquist setting
     is full-scale bursts between the guard's silent blocks, not silence. A `rp::dsp::Resampler` destroyed after
     `R8bBase.cpp`'s statics is a use-after-free in r8brain's `unref` (it locks a static mutex and writes into
     cache-owned objects), so D2's driver and D3's renders keep every resampler inside an `Engine`'s life, as D1's hosts
-    do by tearing every Engine down before exit. The plugin still cannot compile a kit (the RPCs remain harness-only),
-    which D2 owns.
+    do by tearing every Engine down before exit. The plugin still could not compile a kit then (the RPCs were
+    harness-only), which D2 owned and did: the next bullet.
+- **D2 built: kit compiles as offline graphs**
+  ([modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md), seven commits): an offline job
+  seam runs a graph document to completion on a host of its own, on an engine-owned worker pool (`[offline]`);
+  `rp.dsp.normalize`, dither's `seedFrom` and `rp.dsp.dpcm` join `rp.dsp`; and `src/kit/` compiles LSDj and risa kits
+  as chains of those jobs, packing the banks in TypeScript. The 39 baseline banks and 12 edge banks are the
+  compiler's, held by `test-native/kit-baseline.test.ts` and `kit-compile.test.ts`; native `KitCompiler`, the two
+  codecs, `KitUtil`, `SampleUtil` and the harness `compileKit` / `compileDmc` RPCs are gone, so the plugin compiles
+  kits too. Strict parity held bit for bit at every commit, and no parity or kit golden was re-recorded (the `rp.dsp`
+  descriptor goldens were, in stages 1 and 3). What it leaves:
+  - **D3**: the CLI `render` and the UI background renders on the seam, keeping their block-size sequence and
+    per-block side effects or re-scoping their byte-identity claim. A render sees a completion's `guardsFired` /
+    `guardReason` and each buffer's `nonFinite` and decides; nothing fails on them, and a byte-exact caller refuses a
+    guard count above 0. The seam's block is a fixed 1024 frames, and its jobs are bounded (64 outstanding, up to 8
+    workers). D3 must also extend or decide what a render needs and the seam lacks: system nodes and a script host in a
+    job (its registry is rp.core, rp.dsp and rp.dsp.resample only), a TypeScript cancel, completions that stream
+    rather than return at the fixed `frames`, and a rejection at project close.
+  - **A plugin kit row** is possible and not built: it imports `src/kit` and runs it on the stores' backend, not
+    `audioDriver` (the driver's compile would turn on the offline poll's native wait and block the UI frame).
+  - **Residuals.** `src/lsdj/` is test-reference code only now (`Effects`, `KitBank.hpp`); `OffsetLookup.hpp` is dead
+    (nothing includes it) and a candidate for the same cleanup as enkiTS. Nothing in production calls
+    `rp::lsdj::processEffect`, so do not wire a caller back to it thinking it is the kit path. A
+    job's document may name only the built-in C++ packages (no script nodes), and a user graph of script nodes would
+    need a job-side script host. `deps/enkiTS` is a submodule nothing adds or links; a later cleanup decides whether it
+    goes. The compiler's intermediate buffers cross the RPC (about 1 MB a slot for a 1 s source, 15 MB a kit, for a
+    22 ms compile against native's 1.8 ms), so keeping them native is the lever if it ever matters. Off
+    `linux-x64-gnu13` the kit banks are held only by self-agreement and the structural asserts, since the native
+    comparison that used to make the edge banks exact everywhere went with the compiler.
+  - **Confirm the removed transitive includes build under MSVC.** The tree has not been built with MSVC since D2
+    deleted headers that used to arrive through `BackendTypes.hpp` and `retroplug-core`; run `build.bat` (or the
+    Windows CI job) before trusting the platform that has not run here.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype
