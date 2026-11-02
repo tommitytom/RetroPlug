@@ -45,8 +45,9 @@ function normalize(spec: RenderJobSpec): RenderOpts {
   };
 }
 
-/** What the RenderHost puts on globalThis[Symbol.for("plugin")]: the job spec. */
-type PluginNamespace = { args?: string[] };
+/** What the RenderHost puts on globalThis[Symbol.for("plugin")]: the job spec, and its run's serial, which no other run
+ *  in the process has. */
+type PluginNamespace = { args?: string[]; renderSerial?: number };
 function pluginNamespace(): PluginNamespace | undefined {
   return (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as PluginNamespace | undefined;
 }
@@ -68,6 +69,7 @@ function main(): void {
     return;
   }
 
+  const serial = pluginNamespace()?.renderSerial;
   const session = bootSession(); // structurally satisfies RenderContext (backend / project / audio)
   // A render is an EXPORT. It builds systems, may load a savestate into one, and drops them again, so the
   // before-teardown battery flush would turn an export into a write in the user's save folder.
@@ -77,6 +79,7 @@ function main(): void {
     const result = runRenderJob(ctx, opts, {
       onRendered: (ms) => __rp_reportRenderedMs?.(ms),
       isCancelled: () => __rp_isRenderCancelled?.() ?? false,
+      partTag: serial !== undefined ? `r${serial}` : undefined,
     });
     __rp_renderResult?.("done", "", result.outputs);
   } catch (e) {

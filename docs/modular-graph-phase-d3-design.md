@@ -339,24 +339,27 @@ made them false (chunking, the worker budget, the carry's rules).
   `ERROR: render: cancelled`, exit 1 (one rule for every cancel, not 130), and restores the default handler so a
   second kills a wedged job. A cancelled render, or one that fails mid-render, leaves no WAV: the sink streams each
   output to a `.part` of the render's own, `<path>.<token>.part` (the token from the clock, the runtime's
-  `Math.random` and a count, drawn again while a name is on disk), moves each over its path only when the whole render
-  has been written, and `discard()` deletes its own `.part` files (with any name "If Exists: Rename" reserved), so an
-  export that was already at the path stays as it was. Since no two renders share a `.part`, two overlapping
-  "overwrite" renders of one target each write a whole WAV and the last to end is the one left there, and a render
-  never opens, truncates or deletes another's `.part`. A failed move into place is the one error that keeps them:
-  every `.part` is then a finished render, possibly minutes of work (on Windows a DAW holding the previous export open
-  is enough to refuse the move), so none is deleted and the error says where the render is ("could not replace X; the
-  render is at X.<token>.part"), and for a split render which stems were moved and which are left as `.part` files; a
-  later render of X leaves that file alone. The backend has no fsync, so a power loss just after a move can leave the
-  new file short on a filesystem that does not order data before a rename. "If Exists: Rename" counts any `.part` of
-  an output (found by listing its directory) as taken and reserves the chosen name with the render's own empty `.part`
-  where it is chosen, so a render started while another runs takes the next name (two choosing in the same instant
-  could still tie: the backend has no exclusive create). A `.part` left by a process that died mid-render (a second
-  Ctrl-C, a crashed DAW) is never removed, as nothing tells it from a live render's: it makes every later "rename"
-  render of that name take the next one, with no `X.wav` there, until it is deleted by hand. Printed paths are as the
-  user typed them; messages and exit codes are otherwise as before. The cores' own stdout (Mesen's load log) goes
-  straight to fd 1 while the library's lines arrive through the drain about 100 ms later, so the two can interleave
-  differently.
+  `Math.random`, the job's `RenderHost` serial, which no other render in the process has, and a count, drawn again
+  while a name is on disk), syncs each to the disk (the host facet's `syncFile`, `rp::fsyncPath`) and moves it over
+  its path only when the whole render has been written, and `discard()` deletes its own `.part` files (with any name
+  "If Exists: Rename" reserved), so an export that was already at the path stays as it was. Since no two renders share
+  a `.part`, two overlapping "overwrite" renders of one target each write a whole WAV and the last to end is the one
+  left there, and a render never opens, truncates or deletes another's `.part`. A failed sync or move into place is
+  the one error that keeps them: every `.part` is then a finished render, possibly minutes of work (on Windows a DAW
+  holding the previous export open is enough to refuse the move), so none is deleted and the error says where the
+  render is ("could not replace X; the render is at X.<token>.part"), and for a split render which stems were moved
+  and which are left as `.part` files; a later render of X leaves that file alone. The sync before the move is what
+  keeps a power loss just after it from leaving the new name over a short file. "If Exists: Rename" counts any `.part`
+  of an output (found by listing its directory, and matched without regard to case where the filesystem matches names
+  so, which a listed entry asked for with its letters' case swapped shows) as taken and reserves the chosen name with
+  the render's own empty `.part` where it is chosen, so a render started while another runs takes the next name (two
+  choosing in the same instant could still tie: the backend has no exclusive create). On Windows a name the ANSI code
+  page cannot hold is left out of a listing, where it used to fail the whole listing. A `.part` left by a process that
+  died mid-render (a second Ctrl-C, a crashed DAW) is never removed, as nothing tells it from a live render's: it
+  makes every later "rename" render of that name take the next one, with no `X.wav` there, until it is deleted by
+  hand. Printed paths are as the user typed them; messages and exit codes are otherwise as before. The cores' own
+  stdout (Mesen's load log) goes straight to fd 1 while the library's lines arrive through the drain about 100 ms
+  later, so the two can interleave differently.
 - **The UI.** `RenderJobs` (`src/renderJobs.ts`) is kept in the store graph (`AppStores.renders`), not in a UI module:
   in a DAW that graph is the control plane's, which outlives the editor and owns the `OfflineJobs` queue that submitted,
   so a completion is drained by the queue that owns it and no adopt path is needed. `startSystemRender` submits through
@@ -383,14 +386,15 @@ made them false (chunking, the worker budget, the carry's rules).
   `min(N, kMaxWorkers - 1)` before submitting and that some drain's progress showed that many running at once (a
   completion is not counted: its worker may already have taken the next job, so counting both saw overlap in jobs run
   back to back), and `--cancel <j>` cancels once a drain shows the job rendering and asserts `cancelled`, a rendered
-  length above zero, no outputs, and the files its spec names as they were before it ran (a mix spec's `out` and
-  `<stem>_N.wav`, a split one's `<prefix>_<stream>.wav` and `<prefix>_N_<stream>.wav`, so "onExists":"rename" is
-  covered, each with every `.part` of it, read with the backend's JSON reader and listed before the job is submitted):
-  none new, a leftover `.part` among them, and none changed or deleted, so an earlier export stays, and so does a
-  `.part` another render left. Each job's console lines are labelled `[job N]`. It is a manual smoke; `[engine-jobs]`
-  carries the coverage CI runs. `--registry` is gone. There is no render leg in `run-sanitizer.sh` (the script only
-  runs the host's `dsp-threaded` and `dsp-lifecycle` slugs); the thread and address checks are `[engine-jobs]` built
-  in `build-tsan` and `build-asan`, and the tool's three legs run by hand in both.
+  length above zero, no outputs, and the files its spec names as they were before it ran (a mix spec's `out`,
+  `<stem>.wav` and `<stem>_N.wav`, a split one's `<prefix>_<stream>.wav` and `<prefix>_N_<stream>.wav`, so
+  "onExists":"rename" is covered, each with every `.part` of it, read with the backend's JSON reader and listed before
+  the job is submitted): none new, a leftover `.part` among them, and none changed or deleted, so an earlier export
+  stays, and so does a `.part` another render left. Each job's console lines are labelled `[job N]`. It is a manual
+  smoke; `[engine-jobs]` carries the coverage CI runs. `--registry` is gone. There is no render leg in
+  `run-sanitizer.sh` (the script only runs the host's `dsp-threaded` and `dsp-lifecycle` slugs); the thread and
+  address checks are `[engine-jobs]` built in `build-tsan` and `build-asan`, and the tool's three legs run by hand in
+  both.
 
 ### Found while building
 

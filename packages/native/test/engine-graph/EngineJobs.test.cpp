@@ -9,7 +9,7 @@
 // on one reused worker and in parallel on several, each giving the bytes a direct run gives; a render's JS stack fits
 // a 512 KiB thread, a recursion past it ending the render in an error; a script that never sees its cancel is
 // interrupted once the cancel has waited RenderHost::kCancelGrace, one that sees it ends on its own, and an engine
-// destroyed with a wedged render does not hang on it; the console
+// destroyed with a wedged render does not hang on it; each run of a render host has a serial of its own; the console
 // record keeps its bounds; the RPCs carry all of it; and a kind that is not "render" is refused. Continuous blocks
 // themselves (design section 4, EngineRpcService::setContinuousBlocks), over an mGB that MIDI plays: a render's bytes
 // do not depend on the lengths its calls ask for, a message staged between two calls landing where the block they end
@@ -730,6 +730,26 @@ TEST_CASE("an engine destroyed with a wedged render ends it at the grace rather 
     const auto took = std::chrono::steady_clock::now() - t0;
     INFO("took " << std::chrono::duration_cast<std::chrono::milliseconds>(took).count() << " ms");
     CHECK(took < retroplug::RenderHost::kCancelGrace + std::chrono::seconds(10));
+}
+
+TEST_CASE("each run of a render host has a serial no other run in the process has", "[engine-graph][engine-jobs]") {
+    // The render library folds it into the names of the .part files a render streams to, so two renders in one process
+    // never draw one name.
+    const std::string source =
+        "__rp_renderResult('done', '', [String(globalThis[Symbol.for('plugin')].renderSerial)]);";
+    std::vector<std::string> serials;
+    for (int i = 0; i < 3; ++i) {
+        retroplug::RenderHost host;
+        const auto r = host.runScript(source, "{}", {}, {}, [](bool, const char*) {});
+        REQUIRE(r.status == "done");
+        REQUIRE(r.outputs.size() == 1);
+        serials.push_back(r.outputs[0]);
+    }
+    CHECK(serials[0] != "undefined");
+    CHECK(std::stoull(serials[0]) > 0);
+    CHECK(serials[0] != serials[1]);
+    CHECK(serials[1] != serials[2]);
+    CHECK(serials[0] != serials[2]);
 }
 
 TEST_CASE("a cancel taken after a job's body finished still ends it cancelled, keeping the files it wrote",

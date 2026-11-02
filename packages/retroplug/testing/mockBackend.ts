@@ -283,6 +283,11 @@ export class MockBackend implements Backend {
     return true;
   }
 
+  syncFile(path: string): boolean {
+    this.log.push("syncFile");
+    return this.files.has(this.canonicalize(path)); // a file on the fake disk is as durable as it gets
+  }
+
   listDir(dir: string): string[] {
     this.log.push("listDir");
     const parent = this.canonicalize(dir);

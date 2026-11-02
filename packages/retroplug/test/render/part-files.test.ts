@@ -2,9 +2,10 @@
 // render never opens, truncates or deletes another's. Two overwrite renders of one target that overlap each write a
 // whole WAV and the target is one of them; a `.part` a failed move kept, the only copy of a finished render, survives
 // a later render of the same target that is cancelled; a rename render stopped before its first chunk gives back the
-// name it reserved; and a render cancelled while it boots stops at its next boot step, before it has a file at all.
-// The renders nest (the second runs inside one of the first's pulls), so the overlap is exact rather than timed; the
-// engine jobs' overlap is engine-run's.
+// name it reserved; a render cancelled while it boots stops at its next boot step, before it has a file at all; a
+// rename render sees another's `.part` of its name in any case on a filesystem that folds case; and each `.part` is
+// synced to the disk before it is moved into place. The renders nest (the second runs inside one of the first's
+// pulls), so the overlap is exact rather than timed; the engine jobs' overlap is engine-run's.
 // It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
@@ -13,8 +14,8 @@ import { runRenderJob, decodeWav, type RenderContext, type RenderOpts } from "..
 const SR = 44100;
 
 /** A driver answering a constant `level`, calling `onPull` (with the pull's index, the boot settle's being 0) before
- *  each chunk it renders. */
-const levelAudio = (level: number, onPull: (n: number) => void = () => {}): RenderContext["audio"] => {
+ *  each chunk it renders; a per-channel pull answers `streams` streams. */
+const levelAudio = (level: number, onPull: (n: number) => void = () => {}, streams = 1): RenderContext["audio"] => {
   let pulls = 0;
   const chunk = (ms: number): Float32Array => {
     onPull(pulls++);
@@ -22,7 +23,10 @@ const levelAudio = (level: number, onPull: (n: number) => void = () => {}): Rend
   };
   return {
     renderAudio: chunk,
-    renderAudioPerChannel: (_id: number, ms: number) => [chunk(ms)],
+    renderAudioPerChannel: (_id: number, ms: number) => {
+      const c = chunk(ms);
+      return Array.from({ length: streams }, () => c.slice());
+    },
     sampleRate: () => SR,
     setSampleRate: () => true,
     setBpm: () => true,
@@ -182,4 +186,64 @@ test("a render cancelled while it boots stops at its next boot step, before it r
   }
   expect(message).toBe("render: cancelled");
   expect(pulled).toBe(0);
+});
+
+/** A backend over a filesystem that matches names without regard to case, as Windows and a default macOS volume do:
+ *  a name is found under any spelling, and a listing shows each entry as it was created. */
+class CaseFolding extends MockBackend {
+  override fileExists(path: string): boolean {
+    return this.paths().some((p) => p.toLowerCase() === this.canonicalize(path).toLowerCase());
+  }
+}
+
+test("a rename render counts another's .part of its name as taken, in any case where the filesystem folds case", () => {
+  // Another render of song.wav is running (its .part is there); this one asks for Song.wav, which on a folding
+  // filesystem is the same file, so it takes the next name. On a case-sensitive one they are two files.
+  const run = (be: MockBackend): string[] => {
+    be.seed("/out/song.wav.abc-1.part", "another render's");
+    return runRenderJob(ctxOf(be, levelAudio(0.25)), opts({ out: "/out/Song.wav", onExists: "rename" }), quiet).outputs;
+  };
+  expect(run(new CaseFolding("/config"))).toEqual(["/out/Song_2.wav"]);
+  expect(run(new MockBackend("/config"))).toEqual(["/out/Song.wav"]);
+});
+
+/** A backend recording each sync and move, whose syncs fail when `failSync`, as a disk error would make them. */
+class SyncLog extends MockBackend {
+  readonly calls: string[] = [];
+  constructor(private failSync = false) {
+    super("/config");
+  }
+  override syncFile(path: string): boolean {
+    this.calls.push(`sync ${path}`);
+    return this.failSync ? false : super.syncFile(path);
+  }
+  override rename(from: string, to: string): boolean {
+    this.calls.push(`move ${from}`);
+    return super.rename(from, to);
+  }
+}
+
+test("each finished .part is synced to the disk before it is moved into place, and one that cannot be is kept", () => {
+  // A move puts the new name over the old file at once, and a filesystem need not have written the data by then, so a
+  // power loss just after could leave a short file where a whole export was.
+  const be = new SyncLog();
+  runRenderJob(ctxOf(be, levelAudio(0.25, () => {}, 4)), opts({ split: "channels", out: "/out/song" }), quiet);
+  const parts = be.calls.filter((c) => c.startsWith("move ")).map((c) => c.slice("move ".length));
+  expect(parts.length).toBe(4); // the Game Boy's four stems
+  expect(be.calls).toEqual(parts.flatMap((p) => [`sync ${p}`, `move ${p}`]));
+
+  // A .part that cannot be synced is not moved over its path: it is a finished render, kept as a failed move keeps it.
+  const failing = new SyncLog(true);
+  failing.seed("/out/song.wav", "an earlier export");
+  let message = "";
+  try {
+    runRenderJob(ctxOf(failing, levelAudio(0.25)), opts(), quiet);
+  } catch (e) {
+    message = (e as Error).message;
+  }
+  const kept = /the render is at (\S+\.part)$/.exec(message)?.[1] ?? "";
+  expect(kept.startsWith("/out/song.wav."), `the failed sync names its .part: ${message}`).toBe(true);
+  expect(failing.calls.filter((c) => c.startsWith("move "))).toEqual([]);
+  expect(failing.readText("/out/song.wav")).toBe("an earlier export");
+  expect(decodeWav(failing.readFile(kept)!).pcm.length).toBe(frames(200) * 2);
 });

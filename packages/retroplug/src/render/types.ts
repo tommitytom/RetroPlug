@@ -72,6 +72,10 @@ export interface RenderContext {
 export interface RenderHooks {
   onRendered?(ms: number): void; // audio duration rendered so far (ms), called per rendered chunk
   isCancelled?(): boolean; // polled between boot steps and per chunk; when true the render aborts with RenderCancelled
+  // A value no other render running in the process has, folded into the names of the files the render streams to
+  // (render.ts's partToken): an engine job's is its RenderHost's serial. Absent in-process, where a count separates
+  // the renders one runtime runs.
+  partTag?: string;
   log?(msg: string): void; // informational output (defaults to console.log)
   warn?(msg: string): void; // warnings (defaults to console.warn)
 }

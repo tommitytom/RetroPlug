@@ -33,6 +33,10 @@ public:
     bool writeFileAt(std::string path, std::uint32_t offset, rfl::Bytestring bytes);
     bool fileExists(std::string path);
     bool rename(std::string from, std::string to);
+    // Force `path`'s written contents to the storage device (rp::fsyncPath): a streamed file synced before it is
+    // renamed over another cannot be found short or empty there after a power loss. False if it cannot be opened or
+    // the flush fails.
+    bool syncFile(std::string path);
     std::vector<std::string> listDir(std::string dir);
     bool deleteFile(std::string path);
     // The native side of the file watcher (spec/07). drainChangedPaths pulls the paths the efsw watcher

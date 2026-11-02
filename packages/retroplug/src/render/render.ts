@@ -444,18 +444,38 @@ function currentSongName(ctx: RenderContext, o: RenderOpts, platform: Platform):
  *  `.part` another left. */
 const partPath = (path: string, token: string): string => `${path}.${token}.part`;
 
-/** Whether the directory entry `name` is a `.part` of the file named `file`, any render's. */
-const isPartOf = (name: string, file: string): boolean => name.startsWith(`${file}.`) && name.endsWith(".part");
+/** Whether the directory entry `name` is a `.part` of the file named `file`, any render's; `folds` compares them as a
+ *  filesystem that matches names without regard to case does (foldsCase). */
+const isPartOf = (name: string, file: string, folds: boolean): boolean => {
+  const [n, f] = folds ? [name.toLowerCase(), file.toLowerCase()] : [name, file];
+  return n.startsWith(`${f}.`) && n.endsWith(".part");
+};
+
+/** Whether the filesystem holding `dir` matches names without regard to case (Windows, a default macOS volume), as
+ *  fileExists then does: asked for one of `names` (the directory's entries) with the case of each letter swapped, such
+ *  a filesystem answers it and a case-sensitive one does not, unless the directory also holds that spelling, which its
+ *  listing then shows. A directory with no entry to ask about holds no `.part` to match either. */
+function foldsCase(ctx: RenderContext, dir: string, names: string[]): boolean {
+  const plain = names.map((n) => n.replace(/\/$/, ""));
+  const probe = plain.find((n) => n.toLowerCase() !== n.toUpperCase());
+  if (probe === undefined) return false;
+  const swapped = [...probe].map((c) => (c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase())).join("");
+  return !plain.includes(swapped) && ctx.backend.fileExists(joinPath(dir, swapped));
+}
 
 let partTokens = 0; // the tokens this runtime drew: one runtime can run several renders (the in-process tests)
 
 /** A part token no other render's shares: the clock (ms), the runtime's Math.random (seeded from the microsecond clock
- *  when the runtime was created, and each engine job's render has a runtime of its own) and a count of this runtime's
- *  tokens. Two renders of one target would need all three equal to tie, and a token is drawn again while any of its
- *  part names for `outputs` is on disk. */
-function partToken(ctx: RenderContext, outputs: string[]): string {
+ *  when the runtime was created), the render's `tag` when its host gives one, and a count of this runtime's tokens. An
+ *  engine job's tag is its RenderHost's serial, which no other render in the process has, so two renders in one
+ *  process never tie, whatever the clock and the draw; the count separates the renders one runtime runs (the
+ *  in-process tests, which have no tag). Renders in two processes would need the same millisecond and the same draw,
+ *  and a token is drawn again while any of its part names for `outputs` is on disk. */
+function partToken(ctx: RenderContext, outputs: string[], tag: string | undefined): string {
   for (;;) {
-    const token = `${Date.now().toString(36)}-${Math.floor(Math.random() * 2 ** 32).toString(36)}-${partTokens++}`;
+    const parts = [Date.now().toString(36), Math.floor(Math.random() * 2 ** 32).toString(36)];
+    if (tag !== undefined) parts.push(tag);
+    const token = [...parts, partTokens++].join("-");
     if (!outputs.some((p) => ctx.backend.fileExists(partPath(p, token)))) return token;
   }
 }
@@ -487,31 +507,39 @@ function renderOutputPaths(o: RenderOpts, platform: Platform, prefix: string): s
  *  write). A `.part` of an output, any render's, counts as taken, since a render's file appears only when it ends, and
  *  the chosen name is reserved on the spot (the render's own empty `.part` per output, which the sink's writers then
  *  truncate and fill) so a render started while this one runs picks the next name instead of writing the same file.
- *  The `.part` files are found by listing the outputs' directory, as their tokens are the other renders' own. The
+ *  The `.part` files are found by listing the outputs' directory, as their tokens are the other renders' own, and are
+ *  matched without regard to case where the filesystem matches names so (foldsCase), as fileExists then does. The
  *  reservation is made where the name is chosen; two renders choosing in the same instant could still tie, as the
  *  backend has no exclusive create. A `.part` left by a process that died mid-render (a second Ctrl-C, a crashed DAW)
  *  is never removed by a later render, which cannot tell it from a live one's: it makes every later "rename" render of
  *  that name take the next one, with no `<name>.wav` there, until it is deleted by hand. */
 function resolveOnExists(
-  ctx: RenderContext, o: RenderOpts, platform: Platform, base: string,
+  ctx: RenderContext, o: RenderOpts, platform: Platform, base: string, tag: string | undefined,
 ): { base: string; token: string; reserved: string[] } {
   if (o.onExists !== "rename") {
     const outputs = o.split === "mix" ? [base] : renderOutputPaths(o, platform, base);
-    return { base, token: partToken(ctx, outputs), reserved: [] };
+    return { base, token: partToken(ctx, outputs, tag), reserved: [] };
   }
   const isMix = o.split === "mix";
   const prefix = isMix && base.toLowerCase().endsWith(".wav") ? base.slice(0, -4) : base;
-  const listed = new Map<string, string[]>(); // a directory's entries, listed once per resolve
-  const entries = (dir: string): string[] => {
-    let names = listed.get(dir);
-    if (!names) listed.set(dir, (names = ctx.backend.listDir(dir || ".")));
-    return names;
+  // A directory's entries, and whether its filesystem folds case, worked out once per resolve.
+  const listed = new Map<string, { names: string[]; folds: boolean }>();
+  const entries = (dir: string): { names: string[]; folds: boolean } => {
+    let e = listed.get(dir);
+    if (!e) {
+      const names = ctx.backend.listDir(dir || ".");
+      listed.set(dir, (e = { names, folds: foldsCase(ctx, dir || ".", names) }));
+    }
+    return e;
   };
-  const taken = (f: string) =>
-    ctx.backend.fileExists(f) || entries(dirname(f)).some((n) => isPartOf(n, basename(f)));
+  const taken = (f: string) => {
+    if (ctx.backend.fileExists(f)) return true;
+    const { names, folds } = entries(dirname(f));
+    return names.some((n) => isPartOf(n, basename(f), folds));
+  };
   const unique = uniqueBase(prefix, (p) => renderOutputPaths(o, platform, p).some(taken));
   const outputs = renderOutputPaths(o, platform, unique);
-  const token = partToken(ctx, outputs);
+  const token = partToken(ctx, outputs, tag);
   const reserved = outputs.map((p) => partPath(p, token));
   for (const r of reserved) {
     if (!ctx.backend.writeFile(r, new Uint8Array(0))) {
@@ -605,11 +633,12 @@ function buildSink(
       if (!writers) throw new Error("render: no audio was rendered");
       writers.forEach((w) => w.finish());
       finished = true;
-      // The backend has no fsync, so a power loss just after a move can leave the new file short on a filesystem that
-      // does not order the data before the rename (writeFileAtomic, which does, is not a streaming write).
+      // Each .part is synced to the disk before it is moved over its path: a move replaces the name at once, and a
+      // filesystem need not have written the data by then, so a power loss just after an unsynced move could leave a
+      // short file where a whole export was. One that cannot be synced is not moved, as one that cannot be moved.
       const moved: string[] = [];
       for (const p of paths) {
-        if (ctx.backend.rename(partial(p), p)) { moved.push(p); continue; }
+        if (ctx.backend.syncFile(partial(p)) && ctx.backend.rename(partial(p), p)) { moved.push(p); continue; }
         // Every .part is a whole render by now, possibly minutes of work and the only copy: none is deleted, and the
         // error says which were moved and which are left.
         const left = paths.filter((q) => q !== p && !moved.includes(q)).map(partial);
@@ -873,7 +902,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // Default the filename to the SONG: the selected song when --song/--song-index is used, else the sav's
   // working song. --out overrides both, so skip the sav read then.
   const songName = o.out ? null : seed ? seed.name : smsSong ? smsSong.name : currentSongName(ctx, o, platform);
-  const { base, token, reserved } = resolveOnExists(ctx, o, platform, outBase(o, songName));
+  const { base, token, reserved } = resolveOnExists(ctx, o, platform, outBase(o, songName), hooks.partTag);
 
   // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
   const sink = buildSink(ctx, o, id, platform, sr, base, token, reserved, log);

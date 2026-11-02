@@ -79,6 +79,7 @@ export function createHostClient(): HostBackend {
     writeFileAt: (path, offset, bytes) => call("writeFileAt", path, offset, bytes) as boolean,
     fileExists: (path) => call("fileExists", path) as boolean,
     rename: (from, to) => call("rename", from, to) as boolean,
+    syncFile: (path) => call("syncFile", path) as boolean,
     listDir: (dir) => call("listDir", dir) as string[],
     deleteFile: (path) => call("deleteFile", path) as boolean,
     drainChangedPaths: () => call("drainChangedPaths") as string[],

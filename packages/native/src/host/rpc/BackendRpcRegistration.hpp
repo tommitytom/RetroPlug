@@ -21,6 +21,7 @@ void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::writeFileAt>(h);
     s.template addMethod<&HostRpcService::fileExists>(h);
     s.template addMethod<&HostRpcService::rename>(h);
+    s.template addMethod<&HostRpcService::syncFile>(h);
     s.template addMethod<&HostRpcService::listDir>(h);
     s.template addMethod<&HostRpcService::deleteFile>(h);
     s.template addMethod<&HostRpcService::drainChangedPaths>(h);

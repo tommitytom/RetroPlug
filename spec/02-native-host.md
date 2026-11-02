@@ -113,12 +113,13 @@ see [05-data-persistence.md](05-data-persistence.md).)
 | `writeFile` | `(string, Bytestring) → bool` | creates parent dirs on demand ([`:89`](../packages/native/src/host/rpc/HostRpcService.cpp#L89)) |
 | `writeFileAtomic` | `(string, Bytestring) → bool` | tmp + rename ([`:106`](../packages/native/src/host/rpc/HostRpcService.cpp#L106)) |
 | `fileExists` / `rename` / `deleteFile` | `→ bool` | |
-| `listDir` | `(string dir) → vector<string>` | filenames only |
-| `drainChangedPaths` | `→ vector<string>` | pull-drain of the efsw watcher (`NativeFileWatcher`); empty until a host calls `enableWatching` (the plugin does; this test host / CLI don't) ([`:197`](../packages/native/src/host/rpc/HostRpcService.cpp#L197)) |
+| `syncFile` | `(string) → bool` | `rp::fsyncPath`: a streamed file's data to the device before it is renamed into place (a render's `.part`) |
+| `listDir` | `(string dir) → vector<string>` | filenames only (on Windows, one the ANSI code page cannot hold is left out: no path in that code page names it) |
+| `drainChangedPaths` | `→ vector<string>` | pull-drain of the efsw watcher (`NativeFileWatcher`); empty until a host calls `enableWatching` (the plugin does; this test host / CLI don't) ([`:210`](../packages/native/src/host/rpc/HostRpcService.cpp#L210)) |
 | `setWatchedRoms` | `(vector<string>) → bool` | register the ROM files to watch (parent dirs); recomputed by TS on every systems-list change. Config dir + `bindings/` are always watched |
 | `canonicalize` | `(string) → string` | `weakly_canonical`, falls back to input |
 | `configDir` | `→ string` | per-OS config path, computed in this TU (no config-persistence link) ([`:23`](../packages/native/src/host/rpc/HostRpcService.cpp#L23)) |
-| `zip` | `(vector<BackendZipInput>) → Bytestring` | miniz, no-copy add ([`:226`](../packages/native/src/host/rpc/HostRpcService.cpp#L226)) |
+| `zip` | `(vector<BackendZipInput>) → Bytestring` | miniz, no-copy add ([`:239`](../packages/native/src/host/rpc/HostRpcService.cpp#L239)) |
 | `unzip` | `(Bytestring) → vector<BackendZipEntry>` | |
 
 `configDir` is computed per-OS directly in this service, so the host links no config-persistence
@@ -169,13 +170,13 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 | `droppedMessages` | `→ uint32` | messages dropped so far (`Engine::droppedMessages`) by the plan's full output queues; never reset, and it wraps, so a test compares two reads |
 
 The table is a selection. The facets
-([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 19
+([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 20
 `host` methods, 19 `emulator` (the resources, the graph and script packs, the snapshot reads and writes, the
 capability jobs, the offline and engine jobs and the node staging), 20 `harness` (the renders, transport
 and sample rate, staged
 MIDI in and MIDI out, `droppedMessages`, `buildTarget`, and the audio runtimes' profiling calls),
 27 `debug` and
-6 `driver`: 91 in the union. There is no call for what the roles do on the audio thread: their protocol
+6 `driver`: 92 in the union. There is no call for what the roles do on the audio thread: their protocol
 nodes are script node types every Engine embeds, and each node's settings ride the documents `setGraph`
 plans. Nor is there one for a system's knobs: they are its system node's settings, in the same documents,
 and its params, whose live edits are `setParam`

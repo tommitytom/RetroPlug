@@ -2,6 +2,7 @@
 
 #include "quickjs.h"
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -27,6 +28,10 @@ namespace retroplug {
 namespace {
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
+
+// Counts the runs in the process, every RenderHost's: each run's is its renderSerial (one per engine job, as each job
+// builds a host of its own and runs it once).
+std::atomic<std::uint64_t> g_renderSerials{0};
 
 // The __rpcSend dispatch closure, carried into JS func-data as a pointer (mirrors TjsHostRuntime).
 using RpcSendFn = std::function<JSValue(JSContext*, JSValueConst)>;
@@ -263,14 +268,17 @@ RenderHost::Result RenderHost::runWith(const std::string* source, const std::str
     // kStackBytes limit counts down from here.
     JS_UpdateStackTop(rt_);
 
-    // globalThis[Symbol.for("plugin")] = { __rpcSend, args: [jobJson] }: the worker reads args[0].
+    // globalThis[Symbol.for("plugin")] = { __rpcSend, args: [jobJson], renderSerial }: the worker reads args[0], and
+    // folds renderSerial, a number no other run in the process has, into the names of the files it streams to.
     // bindRpcSend here is the bare-runtime one (this host has no TjsHostRuntime), which is why
     // installPluginNamespace takes a callback rather than a runtime.
+    const std::uint64_t serial = g_renderSerials.fetch_add(1, std::memory_order_relaxed) + 1;
     installPluginNamespace(ctx_, [&](JSValue ns) {
         bindRpcSend(ctx_, ns, &dispatch);
         JSValue args = JS_NewArray(ctx_);
         JS_SetPropertyUint32(ctx_, args, 0, JS_NewStringLen(ctx_, jobJson.data(), jobJson.size()));
         JS_SetPropertyStr(ctx_, ns, "args", args);
+        JS_SetPropertyStr(ctx_, ns, "renderSerial", JS_NewInt64(ctx_, static_cast<std::int64_t>(serial)));
     });
 
     // Run the worker bundle as global-code bytecode. Its top-level main() reads the spec, renders, and

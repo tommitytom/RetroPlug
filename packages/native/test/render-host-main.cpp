@@ -141,12 +141,14 @@ struct FileState {
 };
 using Files = std::map<std::filesystem::path, FileState>;
 
-// The files a render of `spec` could write, as they are now. Its `out`, a trailing .wav (in any case) trimmed as
-// render.ts's outBase does, gives a stem: a mix spec writes `out`, or `<stem>_N.wav` under "onExists":"rename", and a
-// split one `<stem>_<stream>.wav`, or `<stem>_N_<stream>.wav` under rename. Each is streamed to a `.part` of the
-// render's own (`<file>.<token>.part`) before it is moved into place, so every `.part` of those names is listed too,
-// the render's or one there before it ran. Nullopt when the spec names no readable `out` (it names none, the render
-// then naming its file from the ROM or the song, which this tool does not predict, or it is not JSON the reader takes).
+// The files a render of `spec` could write, as they are now. Its `out` with a trailing .wav (in any case) trimmed
+// gives a stem. A mix spec writes `out`, or under "onExists":"rename" `<stem>.wav` or `<stem>_N.wav` (render.ts's
+// resolveOnExists trims the .wav and puts a lower-case one back, so an `out` with none is renamed to `<out>.wav`
+// first); a split one, whose stem outBase trims the same way, writes `<stem>_<stream>.wav`, or
+// `<stem>_N_<stream>.wav` under rename. Each is streamed to a `.part` of the render's own (`<file>.<token>.part`)
+// before it is moved into place, so every `.part` of those names is listed too, the render's or one there before it
+// ran. Nullopt when the spec names no readable `out` (it names none, the render then naming its file from the ROM or
+// the song, which this tool does not predict, or it is not JSON the reader takes).
 std::optional<Files> renderFiles(const std::string& spec) {
     namespace fs = std::filesystem;
     const auto files = rfl::json::read<SpecFiles>(spec);
@@ -170,6 +172,7 @@ std::optional<Files> renderFiles(const std::string& spec) {
     const fs::path    dir = base.has_parent_path() ? base.parent_path() : fs::path(".");
     const std::string stem = base.filename().string() + "_";
     const std::string own = fs::path(out).filename().string(); // a mix spec's file, its `.part` files `<own>.*.part`
+    const std::string renamed = base.filename().string() + ".wav"; // a mix spec's first name under rename
     const auto        startsWith = [](const std::string& name, const std::string& head) {
         return name.size() > head.size() && name.compare(0, head.size(), head) == 0;
     };
@@ -181,7 +184,10 @@ std::optional<Files> renderFiles(const std::string& spec) {
     for (const auto& e : fs::directory_iterator(dir, ec)) {
         const std::string name = e.path().filename().string();
         const bool        part = endsWith(name, ".part");
-        if ((mix && (name == own || (startsWith(name, own + ".") && part))) ||
+        const auto mixFile = [&](const std::string& file) {
+            return name == file || (startsWith(name, file + ".") && part);
+        };
+        if ((mix && (mixFile(own) || mixFile(renamed))) ||
             (startsWith(name, stem) && (part || endsWith(name, ".wav"))))
             note(e.path());
     }

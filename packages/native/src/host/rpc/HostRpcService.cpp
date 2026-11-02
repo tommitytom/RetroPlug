@@ -173,12 +173,25 @@ bool HostRpcService::rename(std::string from, std::string to) {
     return !ec;
 }
 
+bool HostRpcService::syncFile(std::string path) {
+    return rp::fsyncPath(path);
+}
+
 std::vector<std::string> HostRpcService::listDir(std::string dir) {
     std::vector<std::string> out;
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(dir, ec)) {
         if (ec) break;
-        std::string name = entry.path().filename().string();
+        // On Windows a path's string() is in the process's ANSI code page, and MSVC's conversion throws for a name it
+        // cannot represent there, which took the whole listing with it (the file browser's, and a "rename" render's
+        // look for other renders' .part files). Such an entry is left out: no path this backend is handed can name
+        // it either, as every one is read in that code page. Elsewhere string() is the native name and never throws.
+        std::string name;
+        try {
+            name = entry.path().filename().string();
+        } catch (const std::system_error&) {
+            continue;
+        }
         // Mark directories with a trailing '/' so callers can distinguish them without a second stat (the
         // file browser needs this). std::error_code overload → a broken symlink just reads as a file.
         std::error_code dec;

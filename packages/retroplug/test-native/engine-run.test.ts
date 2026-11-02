@@ -185,6 +185,8 @@ test("a render whose move into place fails keeps the whole render as its .part a
   expect(partsOf(out).length).toBe(1);
   const [kept] = partsOf(out);
   expect(result.message.endsWith(`the render is at ${kept}`)).toBe(true);
+  // Its token carries the job's RenderHost serial, which no other render in the process has.
+  expect(/\.[0-9a-z]+-[0-9a-z]+-r[0-9]+-[0-9]+\.part$/.test(kept), `a serial in the token: ${kept}`).toBe(true);
   const part = be.readFile(kept);
   expect(part != null).toBe(true);
   const wav = decodeWav(part!);

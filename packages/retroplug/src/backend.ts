@@ -50,6 +50,12 @@ export interface Backend {
   /** Move/rename `from` to `to`. Returns false on failure. */
   rename(from: string, to: string): boolean;
 
+  /** Force `path`'s written contents out to the storage device (an fsync). A file streamed with appendFile /
+   *  writeFileAt and then renamed over another is synced first, so a power loss cannot leave the name pointing at a
+   *  short or empty file (writeFileAtomic does this itself). Returns false when the file cannot be opened or the
+   *  flush fails. */
+  syncFile(path: string): boolean;
+
   /** The entry names directly under `dir` (not recursive), or an empty list when `dir` is absent.
    *  Subdirectories carry a trailing `/` (so a caller — the file browser — can tell them from files
    *  without a second stat); files do not. Generic readdir — filtering (e.g. `.json` profiles) is the
@@ -463,8 +469,8 @@ export interface Backend {
 /** Filesystem / config / codec / sav authoring + the OS file dialog — the facet every host binds. */
 export type HostBackend = Pick<
   Backend,
-  | "readFile" | "writeFile" | "writeFileAtomic" | "appendFile" | "writeFileAt" | "fileExists" | "rename" | "listDir"
-  | "deleteFile"
+  | "readFile" | "writeFile" | "writeFileAtomic" | "appendFile" | "writeFileAt" | "fileExists" | "rename" | "syncFile"
+  | "listDir" | "deleteFile"
   | "drainChangedPaths" | "setWatchedRoms" | "canonicalize" | "readFilePrefix" | "configDir" | "version"
   | "zip" | "unzip" | "pngEncode" | "pngDecode" | "savFromJson" | "openFileBrowser"
 >;
