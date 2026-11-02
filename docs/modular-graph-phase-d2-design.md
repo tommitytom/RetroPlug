@@ -280,8 +280,13 @@ moved a kit byte or a parity baseline either.
   around. The live-plan case now runs long jobs through its whole counted window and records the outstanding count at
   the first and the last counted block, a cancel that arrives after a job's last block is held to `cancelled`, and a
   cap whose scaled frame count is not finite or is past `size_t`'s range fails its job rather than being cast. `src/kit`
-  refuses a spec's `offset` / `length` that is not a whole frame count as that slot's error, so a bad spec never
-  reaches the RPC.
+  refuses a spec's `offset` / `length` that is not a whole frame count as that slot's error, in the spec's own words
+  rather than the RPC's decode message, and reads an explicit null there as absent, as native's optional does. Follow-up
+  S's review pass gave those cases the reach they claimed: the throwing submit is held behind runs staggered so most
+  are still pending when it throws, with one more held behind it and one made straight from `run()`; the live-plan
+  case's control thread drains the pool beside the running blocks; the guard case reads the caller's MXCSR rounding
+  bits, which `fegetround` does not on glibc; and a drain throw leaving native's jobs uncounted by the queue until they
+  are drained is said where the queue's bound is.
 - **3, the nodes.** `rp.dsp.normalize`, `rp.dsp.dpcm` and dither's `seedFrom` are all in `rp.dsp`, in the existing
   `retroplug-dsp-nodes` target, so the pool's registry planned them unchanged; `rp.dsp.dpcm` declares `heap`, the
   package's first such type, which shows a `heap` type stays here while rp.dsp.resample's split is about r8brain at
@@ -413,7 +418,8 @@ whole:
   to nearest, no trapping, and the flush bits cleared explicitly (x86 MXCSR FTZ and DAZ, AArch64 FPCR FZ and FZ16),
   because a worker inherits its submitter's mode under glibc (a Windows thread starts in the default mode) and audio
   hosts commonly flush. Without it a job submitted from an audio thread with flush-to-zero on would compile a different
-  bank from the kernels', and a job run inline on a caller thread would leave that thread flushing.
+  bank from the kernels', and without putting the caller's back, a job run inline on a caller thread would leave that
+  thread in the default mode, its flush-to-zero lost.
 
 Together they make "every kit that compiles is byte-identical to the kernels" exact rather than a hope: every pass's
 input is finite (a checked window or a checked recording); a gain or a normalise has neither guard nor clamp, so a
@@ -436,12 +442,14 @@ decides, and nothing fails on them.
   a multi-channel buffer a refusal for `rp.dsp.dpcm`; the DPCM's encode is a rebuild key; and `rp.host.guards/1` is the
   service both guards report into.
 - **Section 5**: the entry points take a runner and return `{bytes, errors}`; a pass a guard stepped into or a
-  non-finite recording refuses the slot; missing spec fields take native's defaults; a spec's `offset` and `length`
-  must be whole frame counts, refused as that slot's reason before a job is submitted; and every empty or short slot,
-  not only a failed one, carries a reason.
+  non-finite recording refuses the slot; missing spec fields take native's defaults, an explicit null for `offset` or
+  `length` among them (native's optional reads it as absent, so it is 0); a spec's `offset` and `length` must otherwise
+  be whole frame counts, refused as that slot's reason before a job is submitted; and every empty or short slot, not
+  only a failed one, carries a reason.
 - **Section 6**: the C++ suite's second watch on the same file ends with the compiler it watched; `kit-edges.json`
   records the edge banks; the teardown case asserts abandonment; and the suite gained the guard, non-finite and
-  FP-environment cases.
+  FP-environment cases, the FP one reading the caller's MXCSR rounding bits since `fegetround` sees only the x87 control
+  word where the kernels compute in SSE.
 
 ### Found while building
 
@@ -488,10 +496,10 @@ decides, and nothing fails on them.
   abandons, every refusal's reason, the RPC's sample bytes, both windows and the cap's arithmetic against copies of
   each formula (and a cap that scales to no frame count refused rather than cast), the file input against
   `SampleCache`'s decode, the live plan compared bit for bit with long jobs outstanding at both ends of its counted
-  window (which starts at the first block after warm-up and so spans every state publish it carries), the guard count
-  and the non-finite flag, the FP environment across a flushing submitter and the caller's mode put back, and a hidden
-  `[offline-bench]`. It went from 268 cases to 284 (275 passed and 9 skipped without fixtures;
-  with the fixtures present the whole suite passes).
+  window (which starts at the first block after warm-up and so spans every state publish it carries) and its control
+  thread draining the pool beside it, the guard count and the non-finite flag, the FP environment across a flushing
+  submitter and the caller's mode put back, and a hidden `[offline-bench]`. It went from 268 cases to 284 (275 passed
+  and 9 skipped without fixtures; with the fixtures present the whole suite passes).
 - `retroplug-graph-test` gained `[dsp-buffer-nodes]` (`test/graph/DspBufferNodes.test.cpp`, 12 cases: normalize whole
   and split, its peak, its committed gain, `seedFrom`'s channel 0 and the other channels, a committed seed, the DPCM's
   bits, its `normalize` rebuild, a block counted from the plan's first block allocating nothing, the refusals, and the
