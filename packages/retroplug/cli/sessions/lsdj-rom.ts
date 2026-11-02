@@ -430,6 +430,7 @@ const LSDJ_ROM_HELP = [
   "import-sample / build-kit effect flags: --gain X  --no-normalize",
   "                     --dither HighPassTPDF|ShapedTPDF|ErrorDiffusion|JJN|SierraLite  --no-dither",
   "                     --filter LowPass|HighPass|…  --cutoff HZ  --q Q",
+  "                     (--cutoff defaults to 5734 Hz; a source at or below 11468 Hz is refused without a lower --cutoff)",
   "",
   "ONE schema for patch (whole ROM) and build-kit (a single, slotless kit entry). Every entry",
   "either BUILDS/IMPORTS from a file or TWEAKS metadata; `slot` = the asset index.",

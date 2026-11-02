@@ -230,6 +230,22 @@ else
 	echo "ok   - the filter flag reached the chain (the bank moved)"
 fi
 
+#     --filter without --cutoff takes the compiler's 5734 Hz, the kit rate's own Nyquist, so a source at or below
+#     11468 Hz is refused with a Nyquist reason: the CLI does not know the rate and the refusal is the user's call, so
+#     it is documented on the --cutoff help line rather than papered over with a source-relative default. The same 8000
+#     Hz source compiles once --cutoff names a frequency under its Nyquist.
+low="$TMP/low.wav"
+{
+	printf 'RIFF\x84\x22\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x40\x1f\x00\x00\x80\x3e\x00\x00\x02\x00\x10\x00data\x60\x22\x00\x00'
+	head -c 8800 /dev/zero
+} >"$low"
+echo '{ "name": "LOW", "build": [{ "file": "low.wav", "name": "LO" }] }' >"$TMP/kit-low.json"
+"$CLI" lsdj-rom build-kit "$TMP/kit-low.json" "$TMP/low-nocut.kit" --filter LowPass >"$TMP/build-low.out" 2>"$TMP/build-low.err"
+check "a --filter with no --cutoff on an 8000 Hz source is refused" 1 $?
+contains "the refusal names the Nyquist frequency" "$TMP/build-low.err" "Nyquist frequency"
+"$CLI" lsdj-rom build-kit "$TMP/kit-low.json" "$TMP/low-cut.kit" --filter LowPass --cutoff 2000 >"$TMP/build-lowcut.log" 2>&1
+check "the same source compiles with a --cutoff under its Nyquist" 0 $?
+
 # 7. Stripping is position-preserving: output length must equal input length, so a stack trace from the
 #    emitted .js points at the right line of the .ts.
 for f in pass.test fail.test helper; do
