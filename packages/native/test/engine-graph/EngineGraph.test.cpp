@@ -1180,10 +1180,11 @@ TEST_CASE("a larger core joins and leaves beside a running Game Boy while the au
     // claimed publishes the Game Boy's state after the claim and before the new plan is adopted.
     //
     // This is the whole path, the join and the leave beside a publishing plan and the running core's state reading
-    // whole after both. It is not what catches a claim that touches the publish's memory: through the engine the
-    // thread sanitizer does not see such a buffer (it reports nothing here against a registry that shares one across
-    // slots), and the use-after-free one allows needs a tighter interleaving than a plan gives. The next case drives
-    // the registry alone and fails on it.
+    // whole after both: a smoke run of it, not the case that catches a claim touching the publish's memory. Against a
+    // registry that shared one buffer across slots it reported nothing in three runs under the thread sanitizer and
+    // three under the address sanitizer, because the interleaving that bug needs is too narrow for a plan's blocks to
+    // hit reliably (ad hoc runs at 256-frame blocks did catch the block thread writing through a stale pointer). The
+    // next case drives the registry alone and fails on it.
     const char* const kGba = "rp.mesen.gba";
     {
         Engine quiet(kRate);
@@ -1243,9 +1244,10 @@ TEST_CASE("a snapshot claim touches nothing the block thread's state publish wri
     // The registry half of the case above, without an engine around it: a thread publishes a small core's state at
     // every call, as a block thread does every half second, while this thread claims a slot for a larger core beside
     // it, as a setGraph that builds one does. The two follow each other through a relaxed counter only, so nothing
-    // orders a publish against the claim: a buffer both touch is a race the thread sanitizer reports, and one the claim
-    // frees under the publish is a use-after-free. A fresh registry per round, so each round's larger claim is the
-    // largest that registry has seen.
+    // orders a publish against the claim: a buffer both touch is a race the thread sanitizer reports, the slot bytes
+    // the publish copies into included (the seqlock's copy records its destination write, transport/SeqlockCopy.hpp),
+    // and one the claim frees under the publish is a use-after-free. A fresh registry per round, so each round's larger
+    // claim is the largest that registry has seen.
     constexpr std::uint32_t kFrames = static_cast<std::uint32_t>(kRate / 2);  // the registry's publish interval
     constexpr std::size_t   kSmall = 32 * 1024, kLarge = 256 * 1024;
     for (int round = 0; round < 8; ++round) {

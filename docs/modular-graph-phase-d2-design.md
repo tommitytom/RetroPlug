@@ -514,8 +514,9 @@ decides, and nothing fails on them.
   `SampleCache`'s decode, the live plan compared bit for bit with long jobs outstanding at both ends of its counted
   window (which starts at the first block after warm-up and so spans every state publish it carries) and its control
   thread draining the pool beside it, the guard count and the non-finite flag, the FP environment across a flushing
-  submitter and the caller's mode put back, and a hidden `[offline-bench]`. It went from 268 cases to 284 (275 passed
-  and 9 skipped without fixtures; with the fixtures present the whole suite passes).
+  submitter and the caller's mode put back, and a hidden `[offline-bench]`. It went from 268 cases to 284, and the two
+  threaded snapshot cases the claim fix added (section 11) make it 286 (277 passed and 9 skipped without fixtures; with
+  the fixtures present the whole suite passes).
 - `retroplug-graph-test` gained `[dsp-buffer-nodes]` (`test/graph/DspBufferNodes.test.cpp`, 12 cases: normalize whole
   and split, its peak, its committed gain, `seedFrom`'s channel 0 and the other channels, a committed seed, the DPCM's
   bits, its `normalize` rebuild, a block counted from the plan's first block allocating nothing, the refusals, and the

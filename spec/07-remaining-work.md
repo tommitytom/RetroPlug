@@ -264,6 +264,15 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     copies. A Game Boy's publish of the same model (whose capture reuses its scratch) allocates nothing at all, and a
     model switch's restart block also grows that scratch by the state delta; C4's `[alloc]` suite counts two of a Game
     Boy's publishes and a NES's registry publish through an Engine.
+  - **The engine-level threaded cases are smoke runs, not race detectors.** A system joining and leaving while an
+    audio thread runs blocks (`EngineGraph.test.cpp`'s C3 case, and the D2 follow-up's GBA beside a publishing Game
+    Boy) reported nothing under either sanitizer against a snapshot registry whose claim freed a buffer the publish
+    wrote, in three runs each; two ad hoc runs at 256-frame blocks did catch it. Why is unproven: the thread
+    sanitizer sees ordering between the setGraph path and the block thread there (a probe written each block stopped
+    racing at `GraphHost::reclaim`), and the pairing release was not found, so "an Engine hides the race" is a
+    reading, not a finding. What holds the claim is the registry driven from two threads alone (`a snapshot claim
+    touches nothing the block thread's state publish writes`), which fails under the thread sanitizer when the claim
+    and the publish share memory, the slot bytes the seqlock copy writes included (`transport/SeqlockCopy.hpp`).
   - **A thread's first nested notification send allocates**: the top-level dispatch copy is a `thread_local` object,
     so a console's first frame allocates nothing, but a listener that sends its own notification takes a pool entry on
     first use. This host registers no listeners.

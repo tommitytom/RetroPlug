@@ -314,8 +314,9 @@ public:
     // The block thread, from the registry's publish (SnapshotRegistry::publishSystem): copy the latest published
     // snapshot slot whole, its [len:4 LE] prefix and the savestate after it, into `dst`, which must hold the triple's
     // whole size (stateSnapshotCapacity() plus the prefix: the registry's state slot, sized from it at claim). Returns
-    // the savestate's length, 0 if nothing has been published yet or `dst` is too small (and `dst` is then scribbled).
-    // One copy, into memory the caller owns, so it allocates nothing and keeps no buffer of its own.
+    // the savestate's length, or 0 if nothing has been published, `dst` is too small, or the slot's length is invalid;
+    // on 0, `dst`'s contents are unspecified. One copy, into memory the caller owns, so it allocates nothing and keeps
+    // no buffer of its own.
     std::size_t readStateSnapshot(std::uint8_t* dst, std::size_t dstCapacity);
 
     // Region table for slicing SRAM/RAM/VRAM out of a snapshot read via readStateSnapshot(). A region
