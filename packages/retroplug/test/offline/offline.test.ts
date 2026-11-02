@@ -272,6 +272,22 @@ test("a submit that throws rejects its own run, held or not, and the rest still 
   expect(jobs.pendingCount()).toBe(0);
 });
 
+test("a held run native refuses for another reason rejects with that reason", async () => {
+  const port = clockPort();
+  const jobs = new OfflineJobs(port);
+  let message = "";
+  await waiting(async () => {
+    // The refusal is reached from the poll's held-run loop, once a completion makes room, not from run().
+    const held = Array.from({ length: OFFLINE_MAX_JOBS }, (_, i) => jobs.run(job("hold", 2, i)));
+    const refused = jobs.run({ ...job("refused", 1, 0), rate: 0 });
+    expect(jobs.pendingCount()).toBe(OFFLINE_MAX_JOBS + 1);
+    await refused.catch((e: Error) => (message = e.message));
+    expect((await Promise.all(held)).length).toBe(OFFLINE_MAX_JOBS);
+  });
+  expect(message).toBe("the job's sample rate must be a positive number");
+  expect(jobs.pendingCount()).toBe(0);
+});
+
 test("a drain that throws rejects every pending run, not just the one that saw it", async () => {
   let next = 1;
   let broken = false;
