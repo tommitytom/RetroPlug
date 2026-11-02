@@ -215,7 +215,8 @@ made them false (chunking, the worker budget, the carry's rules).
   `RenderHost`'s runtime is held to 256 KiB as `ScriptHost`'s are (`RenderHost::kStackBytes`), leaving the engine and
   its cores, which run below the render's JS on the same stack, the other half. A recursion past it is a RangeError the
   job reports as its error, where QuickJS's default limit of 1 MiB ran off a macOS worker's stack; an `[engine-jobs]`
-  case parses a spec nested a hundred thousand deep on a 512 KiB thread.
+  case parses a spec nested a hundred thousand deep on a 512 KiB thread. Measured over the baseline's LSDj, risa and
+  smsggdj renders, the JS needs about 68 KiB of it (116 under ASan) and the whole thread peaks at 117 KiB (186).
 - **Console and progress.** The job's script console routes into a per-job `EngineJobRecord`, bounded between drains
   (256 lines, 64 KiB; past either a line is dropped and counted, and the count rides the next report, which TypeScript
   prints as `[N console lines dropped]`). A line is one console write, which can hold newlines. Native diagnostics
