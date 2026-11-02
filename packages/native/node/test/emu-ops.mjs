@@ -63,7 +63,8 @@ export function runEmu(sdk, nesRom) {
     // It does NOT reach the audio or the battery - across five widely separated forced seeds the
     // rendered PCM and readSram were byte-identical, which is why the hashes below are safe to assert
     // and why SRAM auto-save does not spuriously dirty. Only whole-savestate and whole-WRAM reads
-    // carry the randomness, so never hash those in a regression test.
+    // carry the randomness, so never hash those in a regression test. A NES's random power-on RAM is another
+    // matter: it does reach this ROM's PCM, which is why emu-parity.test.mjs powers both hosts on deterministic.
     const gbState = s.backend.readState(gb);
     rec("gb:stateLen", gbState ? gbState.length : null);
 

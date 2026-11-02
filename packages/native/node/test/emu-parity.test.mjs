@@ -13,6 +13,13 @@
 // that packages/retroplug/src runs UNMODIFIED on Node and produces the same emulator output as the
 // shipping QuickJS host. Both sides import the same built SDK bundle, so the only variables are the
 // codec and the JS runtime.
+//
+// Both hosts power their cores on in the fixed state (RETROPLUG_DETERMINISTIC=1), since the two are
+// separate processes and each would otherwise draw a power-on state of its own. Mesen powers a NES's RAM
+// on random, and this ROM's boot reads $0020 as the first byte of its warm-reboot magic: when it powers
+// on as $A5 (one draw in 256) the boot takes a few CPU cycles longer, which moves every later register
+// write against the APU, and so the PCM, though its RAM 500 ms in is byte for byte the same. Two random
+// draws therefore disagree on mix:pcmHash about one run in 128.
 
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
@@ -49,6 +56,8 @@ async function runNode(scratch) {
   const cfg = join(scratch, "cfg-node");
   mkdirSync(cfg, { recursive: true });
   process.env.RETROPLUG_USER_CONFIG_DIR = cfg;
+  // Before the addon loads: the cores read it once per process (src/util/Determinism.hpp).
+  process.env.RETROPLUG_DETERMINISTIC = "1";
 
   const addon = require(ADDON);
   globalThis[Symbol.for("plugin")] = { __rpcSend: addon.rpcSend, args: [] };
@@ -85,7 +94,7 @@ async function runQuickJs(scratch) {
   const res = spawnSync(CLI, [bundle, NES_ROM], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
-    env: { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfg },
+    env: { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfg, RETROPLUG_DETERMINISTIC: "1" },
   });
   const lines = (res.stdout || "").split("\n");
   const err = lines.find((l) => l.startsWith("__EMU_PARITY_ERROR__"));
