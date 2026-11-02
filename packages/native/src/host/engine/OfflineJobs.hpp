@@ -78,8 +78,9 @@
 //     two threads at once raced on them as plain members);
 //   - Mesen's two lazily built process tables behind a double-checked flag, the NES game database (GameDatabase, which
 //     every iNES load reaches) and the GBA CPU's dispatch tables (GbaConsole's constructor): each flag is an atomic,
-//     loaded with acquire before its unlocked check and stored with release after the build, so a core that sees it
-//     set also sees the table (MesenShared.test.cpp's "[mesen-statics]", red as plain bools under ThreadSanitizer);
+//     loaded with acquire before its unlocked check and stored with release after the build, so a core that sees the
+//     build published also sees the table (MesenShared.test.cpp's "[mesen-statics]", red as plain bools under
+//     ThreadSanitizer);
 //   - Mesen's VRC7 sound chip tables (emu2413.cpp, built by the first OPLL_new behind a plain flag and no lock), the
 //     one known to be unsynchronised: two VRC7 carts built at once as the process's first would race on it;
 //   - SameBoy's core statics, made safe by cmake/patches/sameboy-process-statics.patch: its random generator

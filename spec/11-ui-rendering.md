@@ -112,8 +112,10 @@ SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
   under `configDir` (`.render-src-<key>.sav` / `.ss0`) and calls `renders.start`, which deletes them once the job has
   settled. The worker reads them only when it boots the render, which can be minutes later behind the worker budget,
   so a shared name would boot a later edit's (or another instance's) state. A snapshot that cannot be written refuses
-  the render, listed as an error, rather than boot the sibling `.sav` on disk. A process that dies with a render
-  queued leaves its snapshot behind. `pickActiveRenderJob` selects a tile's badge job and `renderBadgeLabel` writes
+  the render, listed as an error, rather than boot the sibling `.sav` on disk. An instance or process that ends before the job
+  settles (a closed DAW project or a removed plugin with a render queued or running, a render finished while the editor
+  was closed and the project then closed, a crash) leaves its snapshot behind; the worker deleting its own snapshot once
+  the system is built is the cheaper fix, left. `pickActiveRenderJob` selects a tile's badge job and `renderBadgeLabel` writes
   its text.
 - **The instance's CONFIGURATION rides along** — `spec.roles` (the live system's roles, configs included)
   and `spec.gainDb`. The job boots a fresh core from the ROM on disk, so without them it would take each

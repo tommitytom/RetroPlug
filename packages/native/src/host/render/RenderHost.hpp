@@ -10,10 +10,9 @@
 // not depend on how much each call pulls (docs/modular-graph-phase-d3-design.md section 4).
 //
 // One-shot: construct, run() once, destroy. run() blocks for the whole render; a cancel the script does not see within
-// kCancelGrace interrupts it. Only console +
-// TextEncoder/TextDecoder + the RPC / rendered / cancel / result thunks are bound (the render path needs
-// nothing else from the runtime). See ClassIdSpace note: bare QuickJS with no fresh native-class
-// registration, so the multi-txiki-runtime class-id hazard does not apply here.
+// kCancelGrace interrupts it. Only console + TextEncoder/TextDecoder + the RPC / rendered / cancel / result
+// thunks are bound (the render path needs nothing else from the runtime). See ClassIdSpace note: bare QuickJS with
+// no fresh native-class registration, so the multi-txiki-runtime class-id hazard does not apply here.
 
 #include <chrono>
 #include <cstddef>

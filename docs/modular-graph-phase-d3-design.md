@@ -210,8 +210,7 @@ made them false (chunking, the worker budget, the carry's rules).
   and in-process server, evaluates the embedded render bundle synchronously and returns; everything dies on the worker
   before it takes the pool's lock to publish. Teardown sets `stopping_`, drops queued jobs, cancels running ones and
   joins; a running render sees the cancel at its next boot step or chunk (or is interrupted, below), so nothing a
-  render touches outlives the pool, which is
-  reset before any other `Engine` member. Lock order is the pool's mutex, then a record's lock; no lock is held across
+  render touches outlives the pool, which is reset before any other `Engine` member. Lock order is the pool's mutex, then a record's lock; no lock is held across
   `RenderHost::run`.
 - **A render's JS stack.** A pool worker is a plain `std::thread` (512 KiB of stack on macOS, 1 MiB on Windows), so a
   `RenderHost`'s runtime is held to 256 KiB as `ScriptHost`'s are (`RenderHost::kStackBytes`), leaving the engine and
@@ -432,8 +431,12 @@ made them false (chunking, the worker budget, the carry's rules).
 - **One of Mesen's lazy inits is still unsynchronised.** emu2413's VRC7 tables are built by the first `OPLL_new` behind
   a plain flag with no lock, so two VRC7 carts built at once as the process's first would race on it (the pool
   header lists it).
-- **A UI render's snapshot outlives a crash.** Each queued render's `.render-src-<key>.sav` / `.ss0` is deleted when
-  its job settles, so one whose process died first stays in the config directory.
+- **A UI render's snapshot outlives an instance or process that ends before the job settles.** Each queued render's
+  `.render-src-<key>.sav` / `.ss0` is deleted when its job settles, so one whose instance or process ended first stays
+  in the config directory: a closed DAW project or a removed plugin with a render queued or running, or a render
+  finished while the editor was closed and the project then closed, as well as a crash. The cheaper real fix is left:
+  the worker deleting its own snapshot once the system is built, the settle hook then covering only jobs that never
+  booted.
 - **A GBA render case** needs a BIOS to make sound.
 - **Windows and the other platforms** have not built this tree; the new cross-platform pieces are the SameBoy patch (GNU
   `__atomic` builtins, so GCC and Clang only, which is all that builds the core), `SimpleLock`'s atomics and the

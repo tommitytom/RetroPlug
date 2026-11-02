@@ -177,7 +177,7 @@ test("a render cancelled while it boots stops at its next boot step, before it r
   expect(be.log.filter((m) => m === "writeFile" || m === "appendFile")).toEqual([]);
   expect(be.listDir("/out")).toEqual([]);
 
-  // One cancelled before it starts builds nothing and renders nothing.
+  // One cancelled before it starts pulls no audio from the job.
   let pulled = 0;
   try {
     runRenderJob(ctxOf(be, levelAudio(0.25, () => pulled++)), opts(), { ...quiet, isCancelled: () => true });

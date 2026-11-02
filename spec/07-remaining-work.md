@@ -463,6 +463,22 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **An auto-detect render's length is quantised to its 100 ms poll**, and acts between the library's calls (presses,
     smsggdj's load, detection reads) land at the next block boundary after the call. Block-granular probes or an
     autonomous recipe (the D3 design's section 8) would remove both.
+  - **An interrupt that lands in a pending job** (`RenderHost.cpp`, the job loop's `r < 0` branch) is also printed as a
+    script error before the loop re-checks `interrupted_`; today's worker is synchronous, so only a script working in
+    promise jobs reaches it.
+  - **An interrupt after the script reported `done`** keeps its `outputs` under `cancelled` (only `message` is cleared);
+    reachable only if the cancel has waited its grace by the time the worker's post-result JS runs.
+  - **A failed `.part` sync reads as a failed move** in `render.ts`'s error ("could not replace X"), which points at a
+    locked target rather than a disk error.
+  - **`foldsCase` trusts a single probe** (the first listed entry with a cased letter): a broken symlink or a name whose
+    case swap is not a simple fold reads a folding filesystem as case-sensitive, the pre-F behaviour.
+  - **A battery cart whose live SRAM reads null** still boots the sibling `.sav` silently in `ui/host/render.ts`; a
+    running battery core should always answer `readSram`, so refusing as the unwritable-snapshot case does is open.
+  - **`tools/author-*-rplg.js` default their ROMs to `../resources`** relative to the repo root, so a plain
+    `pnpm reaper:all` fails in a worktree (honour `RETROPLUG_RESOURCES_DIR`); until then author the fixtures with
+    explicit paths and run `RP_SUITE_NO_BUILD=1 pnpm reaper:all`.
+  - **`retroplug-host` swallows a top-level throw**, reporting only "tests did not complete (tjs.exit never called)",
+    which hides a fixture script's real error.
   - **`tools/run-sanitizer.sh` has no render leg.** The thread and address checks of the pool are `[engine-jobs]` built
     in `build-tsan` / `build-asan` by hand (`retroplug-render-host-test`'s three legs also run clean there); a script
     leg would make them routine. `retroplug-render-host-test` is a manual smoke, not a CI step.
@@ -478,8 +494,12 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     `engine-run`.
   - **emu2413's VRC7 tables** are a lazily built process static behind a plain flag (the one left; the NES database's
     and the GBA dispatch tables' flags are acquire/release): two VRC7 carts built at once as the process's first race.
-  - **A UI render's snapshot** (`.render-src-<key>.*` in the config directory) is deleted when its job settles, so a
-    process that dies with a render queued leaves it behind.
+  - **A UI render's snapshot** (`.render-src-<key>.*` in the config directory) is deleted when its job settles, so an
+    instance or process that ends before the job settles leaves it behind: a closed DAW project or a removed plugin
+    with a render queued or running, or a render finished while the editor was closed and the project then closed
+    (nothing drains then), as well as a crash. Nothing removes them. The cheaper real fix is left: the worker deleting
+    its own snapshot once the system is built (a spec flag only the UI sets), the settle hook then covering only jobs
+    that never booted.
   - **The SameBoy camera half of the statics patch has no red-green test** (no Game Boy Camera ROM exists in the repo or
     the fixtures), and the exact render bytes are held only on `linux-x64-gnu13`. The patch uses GNU `__atomic`
     builtins, which GCC and Clang (clang-cl on Windows) have; the tree has not been built with MSVC since D2.
