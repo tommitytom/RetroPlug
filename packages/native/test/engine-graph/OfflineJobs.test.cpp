@@ -234,6 +234,19 @@ int threadCount() {
 #endif
 }
 
+// threadCount() once it reads `want`, or what it reads after ten seconds. A thread pthread_join has returned for can be
+// listed a moment longer: the kernel wakes the joiner as the exiting thread clears its id, before its task is released,
+// and on a loaded machine that gap is long enough to count it. A thread never joined stays listed past the deadline.
+int threadCountSettled(int want) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    int        n = threadCount();
+    while (n != want && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        n = threadCount();
+    }
+    return n;
+}
+
 // A WAV file, little-endian byte by byte: 16-bit PCM (`floatSamples` false), whose decode converts, or 32-bit float.
 void writeWav(const std::filesystem::path& path, const std::vector<float>& samples, std::uint32_t rate,
               bool floatSamples) {
@@ -810,13 +823,13 @@ TEST_CASE("an engine destroyed with offline jobs in flight abandons them and joi
         if (before >= 0) CHECK(threadCount() > before);  // the workers are there
     }
     CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(10));
-    if (before >= 0) CHECK(threadCount() == before);  // and joined, every one
+    if (before >= 0) CHECK(threadCountSettled(before) == before);  // and joined, every one
     // The pool alone, the same way.
     {
         OfflineJobs jobs;
         for (unsigned i = 0; i < OfflineJobs::concurrency() + 2; ++i) REQUIRE(jobs.submit(longRequest()).id != 0);
     }
-    if (before >= 0) CHECK(threadCount() == before);
+    if (before >= 0) CHECK(threadCountSettled(before) == before);
 }
 
 TEST_CASE("the offline job bound refuses past it, and takes again once a drain makes room", "[engine-graph][offline]") {

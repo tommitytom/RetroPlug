@@ -105,6 +105,19 @@ int threadCount() {
 #endif
 }
 
+// threadCount() once it reads `want`, or what it reads after ten seconds. A thread pthread_join has returned for can be
+// listed a moment longer: the kernel wakes the joiner as the exiting thread clears its id, before its task is released,
+// and on a loaded machine that gap is long enough to count it. A thread never joined stays listed past the deadline.
+int threadCountSettled(int want) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    int        n = threadCount();
+    while (n != want && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        n = threadCount();
+    }
+    return n;
+}
+
 // A render job's spec: `rom` rendered for `durationMs` into `out`, plus `extra` fields (a leading comma each).
 std::string renderSpec(const std::string& rom, const std::string& out, int durationMs, const std::string& extra = "") {
     return R"({"rom":")" + rom + R"(","out":")" + out + R"(","durationMs":)" + std::to_string(durationMs) + extra + "}";
@@ -457,7 +470,8 @@ TEST_CASE("an engine destroyed with renders in flight cancels them and joins eve
         if (before >= 0) CHECK(threadCount() > before);
     }
     CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(60));
-    if (before >= 0) CHECK(threadCount() == before);  // every worker joined, every render's runtime gone with it
+    // Every worker joined, every render's runtime gone with it.
+    if (before >= 0) CHECK(threadCountSettled(before) == before);
 }
 
 TEST_CASE("renders hold all but one of the pool's workers, so a graph job still runs beside them",
