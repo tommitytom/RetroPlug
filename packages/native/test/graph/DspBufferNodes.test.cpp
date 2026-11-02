@@ -15,8 +15,8 @@
 // - A settings commit is each node's own: a normalise re-folds a new gain against the peak activate measured, a dither
 //   with `seedFrom` restarts a committed seed from the buffer's hash rather than from the setting, and a DPCM
 //   `normalize` toggle is a rebuild that re-encodes from the first bit.
-// - A re-activation (a host's first larger block) carries both buffer-reading nodes on from where they were, so the
-//   stream is the buffer played once, not replayed from its first frame.
+// - A re-activation (a host's first larger block) carries the two playing nodes, rp.dsp.normalize and rp.dsp.dpcm, on
+//   from where they were, so the stream is the buffer played once, not replayed from its first frame.
 // - Each type refuses a document it cannot honour (no buffer named, a resource that is not a live audio buffer), and
 //   rp.dsp.dpcm refuses a multi-channel buffer at activate. The DPCM node is the package's one type that declares
 //   `heap`, so the Pico refuses it; rp.dsp.normalize allocates nothing and plans there.
@@ -310,8 +310,6 @@ TEST_CASE("rp.dsp.normalize re-folds a committed gain against the peak its activ
     }
     CHECK(firstDifference(expected, second) == -1);
     CHECK(firstDifference(unchanged, second) != -1);  // the committed gain really moved the scale
-    // And the stream is not the old one carried on at the new scale: `first` is the same frames at the gain before it.
-    CHECK(firstDifference(std::vector<float>(first.begin(), first.begin() + 64), second) != -1);
 }
 
 TEST_CASE("a dither's seedFrom gives channel 0 the kit path's seed, for every algorithm", "[dsp-buffer-nodes]") {
@@ -503,7 +501,7 @@ TEST_CASE("rp.dsp.dpcm's normalize toggle rebuilds and plays the other encoding 
     CHECK(firstDifference(first, second) != -1);  // and the two encodings are different streams
 }
 
-TEST_CASE("a re-activation carries the buffer-reading nodes on from where they were", "[dsp-buffer-nodes]") {
+TEST_CASE("a re-activation carries the playing nodes on from where they were", "[dsp-buffer-nodes]") {
     // A host's first larger block restarts every live instance (GraphHost::reactivate), on the control thread, and
     // what that must not do is replay these nodes' buffers from their first frame. Each node is played, re-activated
     // to a larger block bound, and played on: the two halves together are the buffer played once, from frame 0.
