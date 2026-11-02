@@ -1194,9 +1194,10 @@ first `guardReason`, each buffer carries `nonFinite`, and a caller decides (a ki
 run is held in the default floating-point environment, with the caller's environment saved before the default is
 pinned and put back after (rounding mode and the flush bits included), so a worker that inherited its submitter's
 flush-to-zero mode still computes what the kernels do. Cancelling completes a queued job unrun and stops a running one
-at its next block boundary, or as it finishes when it is past its last (a job decoding a file or planning finishes
-that decode or that plan first, and stops before the next input); tearing the engine down abandons every job in flight, joins the workers and discards undrained
-completions, so no resampler outlives the engine (D1's r8brain teardown rule). The TypeScript side
+at its next block boundary, or as it finishes when it is past its last (a job decoding a file finishes that decode
+and stops before its next input; one planning finishes the plan and stops before its first block); tearing the engine
+down abandons every job in flight, joins the workers and discards undrained completions, so no resampler outlives the
+engine (D1's r8brain teardown rule). The TypeScript side
 ([`src/offline.ts`](../packages/retroplug/src/offline.ts)) turns submit-and-drain into a promise: the queue joins the
 capability jobs' live set so one pump settles both, the native wait is turned on by `createAudioDriver` for hosts with
 no UI tick, and runs past the 64-job bound wait in a FIFO rather than being refused busy. A port call that throws fails

@@ -8,16 +8,14 @@
 #include <deque>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <span>
 #include <string>
 #include <thread>
-#include <variant>
 #include <vector>
 
 #include "graph/NodeRegistry.hpp"
-#include "host/engine/OfflineTypes.hpp"
 #include "graph/rp_node.h"
+#include "host/engine/OfflineTypes.hpp"
 
 // Offline jobs (docs/modular-graph-phase-d2-design.md section 3): a graph document run to completion on a host of its
 // own, apart from the live engine, with the buffers it recorded handed back. A job is submitted with its inputs (audio
@@ -73,8 +71,8 @@ public:
     // The node types a job's document may name: the built-in C++ packages, then `extra` (a test's own), registered
     // here, before any worker runs, and never changed. A package the registry refuses is logged and left out.
     explicit OfflineJobs(std::span<const rp_package* const> extra = {});
-    // Cancels every job: the queued ones are dropped unrun, the running ones stop at their next block boundary; then
-    // joins every worker. Completions not yet drained go with the pool.
+    // Cancels every job: the queued ones are dropped unrun, the running ones stop at their next block boundary or
+    // before their next input; then joins every worker. Completions not yet drained go with the pool.
     ~OfflineJobs();
     OfflineJobs(const OfflineJobs&) = delete;
     OfflineJobs& operator=(const OfflineJobs&) = delete;
@@ -96,9 +94,9 @@ public:
     std::vector<OfflineCompletion> drain(std::chrono::milliseconds wait = std::chrono::milliseconds(0),
                                          std::size_t* inFlight = nullptr);
     // Cancel job `id`: a queued one completes now, unrun; a running one stops at its next block boundary, or as it
-    // finishes when it is already past its last (a job decoding a file or planning finishes that decode or that plan first, and stops before the next input).
-    // Either completes with the reason "cancelled". False for an id that is neither queued nor running (finished, or
-    // never taken).
+    // finishes when it is already past its last (a job decoding a file finishes that decode and stops before its next
+    // input; one planning finishes the plan and stops before its first block). Either completes with the reason
+    // "cancelled". False for an id that is neither queued nor running (finished, or never taken).
     bool cancel(std::uint32_t id);
     // Jobs outstanding: queued, running, or finished and not yet drained.
     std::size_t outstanding() const;

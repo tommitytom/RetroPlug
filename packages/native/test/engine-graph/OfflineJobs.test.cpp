@@ -1,9 +1,9 @@
 // Offline jobs (docs/modular-graph-phase-d2-design.md section 3, host/engine/OfflineJobs.hpp): a graph document run to
 // completion on a host of its own, on a worker of the engine's offline pool. A job returns exactly what the same nodes
 // give through a GraphRig run directly; jobs past the pool's concurrency queue and each returns its own result; a
-// cancel stops a queued job at once and a running one at its next block, with the cancel reason; an engine destroyed
-// with jobs in flight abandons them and joins every worker; the outstanding bound refuses; every refusal says why, at
-// submission or in the completion; a file input is SampleCache's decode, windowed exactly as the two kit windows
+// cancel stops a queued job at once and a running one at its next block or before its next input, with the cancel
+// reason; an engine destroyed with jobs in flight abandons them and joins every worker; the outstanding bound refuses;
+// every refusal says why, at submission or in the completion; a file input is SampleCache's decode, windowed exactly as the two kit windows
 // spell it (LSDj's and risa's), the cap's two arithmetics and every edge included, with its report; a kit-shaped job
 // names one buffer twice - as the normalising source's and as the dither's `seedFrom` - beside the DPCM encode, and
 // gives the kit arithmetic for all three; and a job run while an audio thread plays the live plan leaves that plan's
@@ -782,10 +782,10 @@ TEST_CASE("a cancel reaches a job between its file decodes", "[engine-graph][off
     for (std::size_t i = 0; i < kFiles; ++i) r.inputs.emplace_back(OfflineFile{path.string(), 0, 0, std::nullopt});
     const auto s = jobs.submit(r);
     REQUIRE(s.id != 0);
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (jobs.workers() == 0 && std::chrono::steady_clock::now() < deadline)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));  // into the first decode
+    // The sleep is what puts the cancel into a decode, and the case relies on the 16 decodes outlasting it: a cancel
+    // that lands while the job is still queued completes it unrun and passes without exercising the check, and a
+    // sleep that outlasts every decode lets the job finish first, so the cancel returns false.
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
     CHECK(jobs.cancel(s.id));
     const auto c = one(jobs, s.id);
     CHECK_FALSE(c.ok);

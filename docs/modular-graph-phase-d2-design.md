@@ -349,8 +349,8 @@ moved a kit byte or a parity baseline either.
   count), whose comment documents it as the format the TypeScript compiler packs. `retroplug-core` compiles only
   `SampleCache.cpp` from the kit path and links neither DSP library nor enkiTS any more; `retroplug-audio-test` and
   `retroplug-graph-test` compile `src/lsdj/Effects.cpp` themselves, as the kit path's reference. The harness facet is
-  20 methods and the union 90 (was 22 and 89: 89 - 2 + 3, the registration file's own count at
-  391f13982 and at this commit). enkiTS leaves the build entirely (the `add_subdirectory`, the warning
+  20 methods and the union 90 (was 22 and 89, the registration file's own count at 391f13982; 89 - 2 + 3 = 90, its
+  count now). enkiTS leaves the build entirely (the `add_subdirectory`, the warning
   suppression and the third-party credit), since no shipped binary can contain it now; the vendored directory
   stays. CI's Catch2 step drops `RP_KIT_GOLDEN_REQUIRE_TARGET` with the suite it guarded, and the `test:native` step
   keeps it, because the TypeScript goldens still compare exact bytes there. The C++ seam test no longer holds the
