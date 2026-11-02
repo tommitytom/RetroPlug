@@ -72,7 +72,12 @@ The rules below are the parts that don't fit those.
   flight, every refusal's reason, the RPC's samples, both kit windows and the cap's arithmetic against copies of each
   formula, the file input against `SampleCache`'s decode, the live plan unchanged beside a job and its warmed blocks
   allocating nothing, a guard count and a per-buffer non-finite flag, and a job's own floating-point environment
-  (`[offline]`, with a hidden `[offline-bench]`);
+  (`[offline]`, with a hidden `[offline-bench]`); engine jobs, a render run on a pool worker by a `RenderHost` and an
+  `Engine` of its own (D3, [docs/modular-graph-phase-d3-design.md](docs/modular-graph-phase-d3-design.md),
+  `test/engine-graph/EngineJobs.test.cpp`): a job's WAV against the same render run directly, the worker budget and its
+  first-in-first-out order, a cancel at boot, mid-render and after the body, an engine destroyed with renders in flight,
+  a flush-to-zero submitter, continuous blocks and the carry's keys, and per-channel stems (`[engine-jobs]`, with the
+  fixture-gated `[engine-jobs-hff]`; the pool's sanitizer checks are this tag built in `build-tsan` / `build-asan`);
   TS nodes run behind the C ABI in the script host (B3a,
   [docs/modular-graph-phase-b3a-design.md](docs/modular-graph-phase-b3a-design.md)): marshalling, reshape,
   creation and release on the block thread, throws, a node's promise jobs charged to it; script node packs beside the
@@ -135,7 +140,8 @@ The rules below are the parts that don't fit those.
   `Core/camera.c` / `Core/sgb.c` (all five expected): **don't
   reset / stash / commit that, and don't bump the pointer to "absorb" it.** A
   submodule bump that invalidates a patch fails LOUDLY at configure (rather than
-  silently dropping what it adds); regenerate the patch if that happens.
+  silently dropping what it adds); regenerate the patch if that happens. (Mesen is vendored in-tree, so its one
+  parallel-cores fix, `Utilities/SimpleLock.{h,cpp}`'s atomic holder id and count, is a plain source change.)
 - **Don't `rm -rf build` to "fix" CMake** — investigate first. The configured
   `build/` is load-bearing for the dev loop.
 - **Build via `build.sh` (Linux/macOS) / `build.bat` (Windows)** — the canonical
@@ -449,6 +455,16 @@ refused off that host and for a case that disagrees with itself. Unlike parity i
 a dither can leave every hash matching, which is what `[dsp]`'s and `[dsp-buffer-nodes]`' references are for. The C++
 `[kit-baseline]` suite went with native's compiler; that tag now exits 2 in `retroplug-audio-test`.
 
+**The render baseline** (`pnpm test:native render-baseline`, [spec/06-build-test.md](spec/06-build-test.md)) holds the
+bytes of renders run as engine jobs: 13 cases (smsggdj playing authored songs, mGB as a Super Game Boy, LSDj, risa),
+each output WAV's FNV-1a-64 and size against `packages/retroplug/test-native/golden/render-baseline.json`. Exact bytes
+are compared only on `linux-x64-gnu13` (CI's linux-x64 job sets `RP_RENDER_GOLDEN_REQUIRE_TARGET=1`), elsewhere a case
+renders twice and must agree with itself, and a re-record (`RP_RENDER_GOLDEN_UPDATE=1`) is refused off that host, for a
+case that disagrees with itself and for a run missing a case. The test-native runner gives `render-baseline`,
+`render-chunks` and `render-cli` `RETROPLUG_DETERMINISTIC=1` (`DETERMINISTIC_FILES`), as it does `parity/`. The LSDj and
+risa cases need fixtures, so CI runs 5 of the 13 (smsggdj and the SGB jingle): accept a render-path change only on a
+run with fixtures and `RP_FAIL_ON_SKIP=1`. `render-chunks` holds the sample stream to every pull length.
+
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
 `retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one
 file - so a consumer repo (BlipToaster) needs **no Node, npm, esbuild or node_modules**. Its kit is the
@@ -485,9 +501,11 @@ JavaScript. (`@swc/wasm-typescript` was tried first and rejected: under the WAMR
 on 3 of 7 real test files and silently emitted EMPTY output on 2 more, which makes a test file "pass".)
 
 **UI/background rendering** (the `System > Render` menu; [spec/11-ui-rendering.md](spec/11-ui-rendering.md)):
-the CLI `render` command and the UI render share one library (`packages/retroplug/src/render/`), run offline
-by a bare-QuickJS `RenderHost` (own `Engine`) on a per-job thread (`RenderJobRegistry`). Verify with
-`retroplug-render-host-test` (built by name — `cmake --build build --target retroplug-render-host-test`): a
-`<job-json>` render is byte-identical to `retroplug-cli render`; `--registry <j>...` runs jobs concurrently;
-`--cancel <j>` aborts mid-render — build it in `build-tsan/` for the ThreadSanitizer pass. The UI-seam logic
-is `pnpm test render`; the tile badge is `pnpm test:ui render-badge`.
+the CLI `render` command and the UI render are one engine job (D3): both submit `backend.engineRun("render", spec)`,
+and a pool worker runs the shared library (`packages/retroplug/src/render/`) in a bare-QuickJS `RenderHost` with an
+`Engine` of its own, in continuous 1024-frame blocks. The UI keeps its list of renders in `AppStores.renders`
+(`src/renderJobs.ts`). Verify with the render tests (`pnpm test:native render`, `pnpm test render`,
+`pnpm test:ui render-badge`), `[engine-jobs]`, and `retroplug-render-host-test` (built by name - `cmake --build build
+--target retroplug-render-host-test`), a manual smoke that CI does not run: `<job-json>` runs one render as an engine
+job (`cmp`-identical to `retroplug-cli render`, the same code); `--parallel <j>...` runs jobs concurrently on one pool;
+`--cancel <j>` cancels mid-render. Build it in `build-tsan/` for a ThreadSanitizer pass.

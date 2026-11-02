@@ -7,9 +7,9 @@ D1 ([modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md)) made k
 a byte baseline, moved the kit DSP into core-free kernels and put those kernels in the graph as `rp.dsp` nodes. D2 runs
 the kit compile itself as graphs: a generic offline job seam runs a graph document to completion on its own host and
 returns the buffers it recorded, TypeScript builds the kit chain's documents and packs the bank, and native
-`KitCompiler` retires. Every kit that compiles stays byte-identical to D1's baseline. The same seam later serves D3's
-renders and user-built sample graphs, and because it runs in every host, the plugin gains kit compiles. Phase D's
-outline is the main design's section 8 ([modular-graph-design.md](modular-graph-design.md)).
+`KitCompiler` retires. Every kit that compiles stays byte-identical to D1's baseline. The same pool later serves D3's
+renders (as a second kind of job) and user-built sample graphs, and because it runs in every host, the plugin gains
+kit compiles. Phase D's outline is the main design's section 8 ([modular-graph-design.md](modular-graph-design.md)).
 
 ## 1. Before D2
 
@@ -181,6 +181,19 @@ and fixed after its review; the plan generated from the prototype and replayed, 
 implementers and follow-ups, Opus code reviews of tasks 2, 4 and 6, a DeepSeek acceptance run, an Opus final review.
 
 ## 8. Left for D3
+
+D3 built this ([modular-graph-phase-d3-design.md](modular-graph-phase-d3-design.md), section 10). It did not extend the
+graph job: renders became a second kind of job on the same pool, the engine job, which builds a bare QuickJS runtime
+and an `Engine` of its own on a worker, so the list below is closed as follows. The pool's 1024-frame block was
+accepted (an engine job's engine runs continuous blocks, so the render library's chunking no longer reaches the bytes,
+and a render baseline records them once). System nodes, a script host, a playing transport and per-block MIDI are the
+job's own `Engine`'s, not the graph job's registry, which is unchanged. TypeScript cancel exists for both kinds
+(`engineRun` and `offlineRun` return handles with `cancel()`). A render's completion streams in the sense that matters:
+the library writes its WAV per chunk on the worker, and the drain reports progress and console lines meanwhile.
+Rejection at project close was not added, since a render boots from files on disk. `host.pump()` yields through
+`setOfflineYield` in the CLI's render. A graph job's fixed transport and its lack of MIDI input remain, and MIDI-driven
+renders are D3's own left item. The graph job's guard reports (`guardsFired`, `guardReason`) never reach a render,
+which runs no graph job. The text below is what D2 knew when it was written.
 
 The CLI `render` and the UI's background renders on the offline jobs, keeping their block-size sequence and per-block
 side effects or re-scoping their byte-identity claim. What the seam hands them, and what D2's build settled about it:
@@ -445,7 +458,7 @@ neither, so what it makes is recorded; and the quantise and DMC encode only ever
 reporting any restart. So a node departs from its kernel only where a guard reported it, and every other non-finite
 value is flagged. The compiler refuses a slot on either (guard count above 0, or a flagged recording), so a compiled
 bank is the kernels' bytes. D3 inherits the reports rather than a policy: a render sees the count and the flags and
-decides, and nothing fails on them.
+decides, and nothing fails on them (D3's renders run no graph job, so the reports never reach one).
 
 ### What building it changed in sections 3 to 6
 

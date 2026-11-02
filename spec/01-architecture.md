@@ -360,8 +360,8 @@ A host runs one control-plane runtime, and every `Engine` it holds has a **scrip
 with two more for each **script node pack** it holds: the built-in one, and any loaded beside it
 ([`ScriptHost`](../packages/native/src/host/script/ScriptHost.hpp),
 [modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md) section 2,
-[modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)). (A UI
-render job adds a bare QuickJS `RenderHost` with an Engine, so a script host, of its own,
+[modular-graph-phase-c1-design.md](../docs/modular-graph-phase-c1-design.md)). (A render, an
+engine job on the offline pool, adds a bare QuickJS `RenderHost` with an Engine, so a script host, of its own,
 [11-ui-rendering.md](11-ui-rendering.md); the Node-API host runs its control plane in V8.) None is
 shared, and no JS value passes between any two:
 
@@ -440,11 +440,21 @@ D2 design section 11).
 
 ### The offline job pool
 
+The pool runs two kinds of job. A **graph job** runs a graph document to completion off the audio thread; an **engine
+job** (D3, [modular-graph-phase-d3-design.md](../docs/modular-graph-phase-d3-design.md)) runs a render: a worker builds
+a bare QuickJS `RenderHost` with an `Engine` of its own, runs the render library to the end in continuous 1024-frame
+blocks and destroys both on the same thread, so the CLI's `render` and the UI's background renders are one code path.
+`submitEngineJob` (kind `"render"`, a spec) shares `drainOfflineJobs` and `cancelOfflineJob`; a drain also carries
+each running engine job's progress and the console lines it wrote. Engine jobs hold at most all but one of the pool's
+workers (one for a pool of one), so a kit compile always finds a worker, and both kinds count toward the 64-job bound.
+The rest of this section is the graph job.
+
 A graph document also runs to completion off the audio thread. `submitOfflineJob` (the emulator facet) takes a
 document, its inputs (interleaved float samples, or file paths native decodes and windows), the empty buffers it
 records into and the frames to run; a later `drainOfflineJobs` hands back its completion, a bounded queue the control
 plane polls as capability jobs' completions are. An `Engine` owns the pool, made at the first submission, of up to
-clamp(hardware_concurrency, 1, 8) worker threads, with at most 64 jobs outstanding. Each job gets a `GraphHost` and a
+`maxWorkers()` worker threads (clamp(hardware_concurrency, 1, 8), or 2 for a pool of one), with at most 64 jobs
+outstanding. Each job gets a `GraphHost` and a
 resource table of its own on its worker, which is that host's control thread and block thread at once (the quiescent
 path: no audio thread, 1024-frame blocks), and is destroyed there with the host. The pool has a node registry of its
 own, filled before any worker exists with the built-in C++ packages, so a job's document may name rp.core, rp.dsp and
@@ -525,7 +535,9 @@ lost mutation.
    Cores are built bare (no default roles baked into C++); feature behaviour lives in TS, the audio
    thread's part in the protocol script nodes.
 
-9. **An offline job shares nothing with the engine.** A job's host, resource table and node instances are made and
+9. **An offline job shares nothing with the engine.** (An engine job's whole `Engine` is its own too; what parallel
+   cores share is process-wide state made safe: Mesen's setup and `SimpleLock`, SameBoy's patched statics.) A job's
+   host, resource table and node instances are made and
    destroyed on its own worker, which is the two threads that host has; the only state it shares with the engine is the
    pool's queue and completion deque, under the pool's mutex, the pool's registry, filled before any worker starts and
    never changed, and r8brain's static, internally locked filter cache (shared by every job's resampler and the live
@@ -559,7 +571,7 @@ lost mutation.
 | [`nodes/`](../packages/retroplug/src/script/nodes) / [`bundle.ts`](../packages/retroplug/src/script/bundle.ts) | the script nodes buildGraph places (the MIDI routing, each role's protocol node, the controller session), and the script-node bundle every Engine embeds |
 | [`src/dsp/`](../packages/native/src/dsp) | the `rp.dsp` nodes' kernels, core-free: gain and peak, the normalising gain, the RBJ biquads, dither and quantise, the DMC encode, and the r8brain resampler |
 | [`DspNodes.cpp`](../packages/native/src/graph/nodes/DspNodes.cpp) / [`DspResampleNodes.cpp`](../packages/native/src/graph/nodes/DspResampleNodes.cpp) | the `rp.dsp` package (gain, biquad, dither, normalize, dpcm) and the `rp.dsp.resample` package beside it |
-| [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp) | the offline job pool: a document run to completion on a host of its own, its inputs, outputs and completion (the request and completion types are in [`OfflineTypes.hpp`](../packages/native/src/host/engine/OfflineTypes.hpp), which `Engine.hpp` includes in place of the pool) |
+| [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp) | the offline job pool: a document run to completion on a host of its own, or a render (an engine job: a `RenderHost` and `Engine` of its own), its inputs, outputs and completion (the request and completion types are in [`OfflineTypes.hpp`](../packages/native/src/host/engine/OfflineTypes.hpp), which `Engine.hpp` includes in place of the pool) |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
 | [`PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |
 | [`main.cpp`](../packages/native/src/main.cpp) | the standalone / native test host |

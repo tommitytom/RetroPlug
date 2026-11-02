@@ -841,8 +841,10 @@ filter -> dither -> `buffer-recorder`, run as fast as possible, with the same DS
 uses. This is how one sample patcher serves LSDj, risa and BlipToaster: the generic chain plus a
 per-cart profile (sample rate, bit depth, slot layout, codec) contributed by each cart's package. D2 built
 the seam (a document run to completion on an offline host of its own) and
-`packages/retroplug/src/kit/`, which builds each pass's document and packs the bank; D3 moves the CLI's and
-the UI's renders onto it.
+`packages/retroplug/src/kit/`, which builds each pass's document and packs the bank. D3 moved the CLI's and the UI's
+renders onto the same pool as a second kind of job, the engine job: a bare QuickJS runtime and an `Engine` of their
+own on a pool worker running the render library, not a graph document (a render is interactive, which a fixed document
+is not; [modular-graph-phase-d3-design.md](modular-graph-phase-d3-design.md)).
 
 ### 5.8 The Pico runtime
 
@@ -1239,7 +1241,7 @@ leaves (its section 11): P7's remainder, and a cart's battery reachable only at 
 - Library nodes: gain, biquad, dither, resample (porting `lsdj/Effects` and the r8brain path).
 - Kit compiles as offline graphs; proof is **byte-identical kit output** against the native compiler they replaced
   (`KitCompiler`, retired with its RPCs in D2; the goldens it seeded are still the oracle).
-- CLI `render` and background renders on the offline executor.
+- CLI `render` and background renders on the offline pool (as engine jobs; D3).
 
 D1 is built ([modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md), six commits): the kit path's DSP is a
 core-free library of block-streaming kernels (`src/dsp/`, `retroplug-dsp-kernels` + `retroplug-dsp-resample`), the kit
@@ -1248,8 +1250,11 @@ seeded from the sample it receives, so a kit compiles to the same bytes, and the
 banks. D2 is built too ([modular-graph-phase-d2-design.md](modular-graph-phase-d2-design.md), seven commits): the
 offline job seam, `rp.dsp.normalize`, dither's `seedFrom` and `rp.dsp.dpcm`, and `packages/retroplug/src/kit/`, whose
 TypeScript compiler builds each pass as a document and packs the bank, held byte for byte to those 39 banks; native's
-compiler retired with its RPCs, and every host, the plugin included, compiles kits. D3 (the CLI `render` and the
-background renders on that driver) is left.
+compiler retired with its RPCs, and every host, the plugin included, compiles kits. D3 is built too
+([modular-graph-phase-d3-design.md](modular-graph-phase-d3-design.md), five commits): the CLI's `render` and the UI's
+background renders are engine jobs on the same pool, `RenderJobRegistry` and the `__rp_*Render` hooks are gone, an
+engine job's engine runs continuous 1024-frame blocks, and a render baseline records the bytes (a render's bits moved
+once, deliberately).
 
 ### Phase E: the Pico runtime
 

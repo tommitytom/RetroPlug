@@ -80,7 +80,9 @@ bundled by the `retroplug-example-session` CMake target via
 For end users, `retroplug-cli` also carries **named subcommands whose session is compiled into the
 binary** (tjsc bytecode, exactly like the plugin's control-plane/UI bundles) — no loose `.js`, no Node,
 just the executable. The first is `render`, which takes a ROM + its battery `.sav` (or a savestate)
-straight to WAV:
+straight to WAV. It runs as an engine job on the CLI's own engine ([11-ui-rendering.md](11-ui-rendering.md)); the
+first Ctrl-C cancels it (`ERROR: render: cancelled`, exit 1, no WAV from a cancel that lands mid-render) and a second
+kills the process:
 
 ```
 retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--duration t] [--max-duration t]

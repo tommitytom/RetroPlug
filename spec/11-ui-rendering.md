@@ -4,7 +4,7 @@
 `retroplug-cli render` does — full mix or per-channel/per-pin stems — but as a **background job** inside
 the plugin, so the menu can close while it runs and several systems can render at once. It builds on
 [10-multichannel-audio-out.md](10-multichannel-audio-out.md) (the split modes / `renderAudioPerChannel`),
-[09-cli-debugging.md](09-cli-debugging.md) (the CLI `render` pipeline it now shares), and
+[09-cli-debugging.md](09-cli-debugging.md) (the CLI `render` it shares a job path with), and
 [01-architecture.md](01-architecture.md) (the control plane / audio-thread split it must not violate).
 
 ## Thesis
@@ -16,35 +16,44 @@ improving one improves both.
 
 ## The shape
 
+A render is an **engine job**: a second kind of job on the engine's offline pool, beside the kit compile's graph jobs
+([modular-graph-phase-d3-design.md](../docs/modular-graph-phase-d3-design.md), built on D2's
+[pool](01-architecture.md)). The CLI and the UI submit the same job through the same RPCs.
+
 ```
-System > Render menu ─▶ startSystemRender (ui/host/render.ts)
-   │  browseThen → out path      │  snapshot live SRAM/savestate → temp file
-   ▼                             ▼
-__rp_startRender(sysId, specJson)  ──▶  PluginUI  ──▶  RenderJobRegistry (process-global)
-                                                          │  one std::thread per job
+System > Render menu ─▶ startSystemRender (ui/host/render.ts)     retroplug-cli render (cli/sessions/render.ts)
+   │  browseThen → out path      │  snapshot live SRAM/savestate → temp file        │  parse argv → spec
+   ▼                             ▼                                                   ▼
+RenderJobs.start (src/renderJobs.ts)  ──────────────▶  backend.engineRun("render", spec, {onProgress, onLog})
+                                                          │  submitEngineJob / drainOfflineJobs / cancelOfflineJob
                                                           ▼
-                                                     RenderHost  (bare-QuickJS + own Engine)
-                                                          │  runs the render-worker bundle
+                                       OfflineJobs (the Engine's pool): a worker runs the job to the end
+                                                          │  RenderHost (bare QuickJS + the job's own Engine)
                                                           ▼
-                                       src/render/  shared library  ◀── also the CLI `render` command
-EmulatorTile badge ◀── __rp_getRenderJobs (per-frame poll) ◀── RenderJobRegistry::snapshot(owner)
+                                       src/render/  shared library  (runRenderJob, in the render-worker bundle)
+EmulatorTile badge ◀── renders.list() (the list RenderJobs keeps from the job's progress and promise)
 ```
 
 ## The shared render library — `packages/retroplug/src/render/`
 
-Host-neutral TypeScript, consumed by **both** the CLI `render` command and the background worker:
+Host-neutral TypeScript, run by every render: the engine job's worker bundle (`worker.ts`) is its only production
+caller, and the in-process library tests call `runRenderJob` directly:
 
 - `render.ts` — `runRenderJob(ctx, opts, hooks)`: builds the system, resolves the length (LSDj HFF
   auto-detect via NR52, or a fixed duration), streams per-chunk PCM to WAV (mix / channels / pins).
-- `types.ts`: `RenderOpts` (the request), `RenderContext` (`{ backend, project, audio }`: the CLI's
-  `Session` satisfies it structurally, and the system's roles reach their protocol nodes in the graph its
-  `project` publishes), `RenderHooks` (`onRendered` / `isCancelled` / `log` / `warn`, all
-  optional so the CLI passes none), `RenderCancelled`.
+- `types.ts`: `RenderOpts` (the request; `pullMs` is a test knob for the stream's pull length, default 100),
+  `RenderContext` (`{ backend, project, audio }`: a CLI `Session` satisfies it structurally, and the system's roles
+  reach their protocol nodes in the graph its `project` publishes), `RenderHooks` (`onRendered` / `isCancelled` /
+  `log` / `warn`, all optional), `RenderCancelled`. A cancelled render's sink `discard()`s the files it opened.
 - `wav.ts` — the streaming RIFF/PCM16 codec (moved from `cli/wav.ts`, which now re-exports it).
 - `worker.ts` — the background session entry (below).
 
-The CLI `render` command ([cli/sessions/render.ts](../packages/retroplug/cli/sessions/render.ts)) is now a
-thin `parseRenderArgs → runRenderJob` wrapper (`--list-songs` stays CLI-only).
+The CLI `render` command ([cli/sessions/render.ts](../packages/retroplug/cli/sessions/render.ts)) parses its
+arguments into the job spec, submits `backend.engineRun("render", spec, {onLog})` to its own engine and awaits it,
+printing the job's console lines as they arrive (`--list-songs` stays in-process). It sets `keepAlive()` and
+`setOfflineYield` so a minute-long render pumps without exhausting the launcher's bounded loop, and registers
+`onInterrupt` so the first Ctrl-C cancels the job (it ends `ERROR: render: cancelled`, exit 1, and a cancel that
+lands mid-render leaves no WAV).
 
 ## RenderHost — the offline render environment (`packages/native/src/host/render/RenderHost.*`)
 
@@ -58,27 +67,40 @@ needed. Beyond the ES standard library the only shims are `console` + a minimal 
 `__rpcSend` + rendered/cancel/result thunks the worker reports through. Bare QuickJS also sidesteps the
 multi-txiki-runtime class-id hazard entirely.
 
-`run(jobJson, onRendered, isCancelled)` blocks for the whole render on the calling thread; ROM is loaded
-by path, SRAM/savestate ride as bytes. Output is **byte-identical** to `retroplug-cli render`.
+`run(jobJson, onRendered, isCancelled, onConsole)` blocks for the whole render on the calling thread, which is a
+pool worker; ROM is loaded by path, SRAM/savestate ride as bytes. The job's engine runs **continuous blocks**
+(`EngineRpcService::setContinuousBlocks`): whole 1024-frame blocks whatever each call asks for, the surplus carried to
+the next call of the same shape, so a render's sample stream does not depend on the library's chunking. Console writes
+go to `onConsole` (with none, to the process's stdout and stderr).
 
-## RenderJobRegistry — concurrent, cancellable jobs (`.../RenderJobRegistry.*`)
+## Engine jobs - the pool (`.../engine/OfflineJobs.*`)
 
-Owns the in-flight jobs, one dedicated `std::thread` each. **Process-global** (a static in
-[PluginUI.cpp](../packages/native/plugin/PluginUI.cpp)) so a render survives its editor window closing —
-each job spins its own `RenderHost`+`Engine`, referencing nothing on the live plugin. Thread-safe status
-for the UI poll; cooperative cancel via an atomic the worker polls between chunks; jobs are tagged with the
-editor (`owner`) that started them so a multi-instance host only shows its own. Mesen's process-global
-setup is guarded by `std::call_once` ([MesenGlobalInit](../packages/native/src/system/mesen/MesenGlobalInit.cpp))
-so concurrent core construction can't race.
+A render is submitted with `submitEngineJob({kind: "render", spec})` (the emulator facet) and settled by the same
+`drainOfflineJobs` / `cancelOfflineJob` as a kit compile. The pool is the `Engine`'s, so a render belongs to its plugin
+instance: it outlives the editor window, and the instance's teardown cancels it (at the next 100 ms chunk) and joins
+the worker. Each job builds its `RenderHost` and `Engine` on its worker and destroys them there, referencing nothing on
+the live plugin. A drain reports every running job's progress and the console lines written since the last one
+(bounded: 256 lines and 64 KiB per job between drains); a completion is `done`, `cancelled` or `error`, with the files
+written. Engine jobs hold at most all but one of the pool's workers (one for a pool of one), queue first in, first out,
+and share the 64-job bound with graph jobs, so a kit compile always finds a worker. Process-wide state that parallel
+cores touch is made safe: Mesen's setup is a function-local static,
+initialised once whichever thread builds the first core
+([MesenGlobalInit](../packages/native/src/system/mesen/MesenGlobalInit.cpp)), its `SimpleLock` is atomic, and
+SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
+([06-build-test.md](06-build-test.md)).
 
 ## The UI seam
 
-- **Hooks** (bound in `installWindowSizeHooks`, per-context routed): `__rp_startRender(sysId, specJson)`,
-  `__rp_cancelRender(jobId)`, `__rp_dismissRenderJob(jobId)`, `__rp_getRenderJobs()`. See
-  [03-ts-layer.md](03-ts-layer.md) for the `__rp_*` pattern.
+- **No hooks.** Renders need no `__rp_*` window hook: the UI submits through the stores' backend
+  (`stores.backend.engineRun`), so every host that mounts the emulator facet renders, the SDL standalone included.
+- **`src/renderJobs.ts`** - `RenderJobs` (`start(systemId, spec)`, `list()`, `cancel(id)`, `dismiss(id)`, `prune()`)
+  keeps what each job's progress callback and promise report, plus its handle. It belongs to the store graph
+  (`AppStores.renders`), which in a DAW is the control plane's, so it outlives the editor and a completion settles
+  through the same queue that submitted the job (nothing drains with the editor closed; the WAV is on disk either
+  way, and the badge catches up at the next pump).
 - **`ui/host/render.ts`** — `startSystemRender` snapshots the live `readSram`/`readState` to a temp file
-  under `configDir` and calls `__rp_startRender`; `pickActiveRenderJob` selects a tile's badge job and
-  `renderBadgeLabel` writes its text. Inert in the headless harness (no hooks bound).
+  under `configDir` and calls `renders.start`; `pickActiveRenderJob` selects a tile's badge job and
+  `renderBadgeLabel` writes its text.
 - **The instance's CONFIGURATION rides along** — `spec.roles` (the live system's roles, configs included)
   and `spec.gainDb`. The job boots a fresh core from the ROM on disk, so without them it would take each
   role's schema DEFAULTS and render a PAL project at NTSC, a Game Boy as the wrong model, a replaced DMC kit
@@ -97,25 +119,35 @@ so concurrent core construction can't race.
   menu; Page keys aren't LVGL-translated so they arrive there without stealing focus). "Max Duration" bounds
   every render — `runRenderJob`'s fixed fallback is now `durationMs ?? maxDurationMs` (default 300000, so
   default CLI output is unchanged).
-- **Tile** — [EmulatorTile.tsx](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx) polls
-  `__rp_getRenderJobs()` on the existing per-frame event and draws a bottom badge counting the audio
+- **Tile** - [EmulatorTile.tsx](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx) samples
+  `renders.list()` on the existing per-frame event and draws a bottom badge counting the audio
   rendered so far (`rendering 0:42 (tap to cancel)`); finished jobs are auto-dismissed. Deliberately **not**
   a percentage: an auto-detect render ends at the song's HFF stop, so the only bound available up front is
   `maxDurationMs` - a safety cap usually far longer than the song, which made the old fill bar creep to ~10%
-  and finish. The reported number is therefore rendered milliseconds end to end (`onRendered` ->
-  `__rp_reportRenderedMs` -> `RenderJobRegistry::Status::renderedMs`), settling on the length written.
+  and finish. The reported number is therefore rendered milliseconds end to end (`onRendered` -> the job's
+  `EngineJobRecord` -> the drain's progress -> `onProgress`, a running maximum), settling on the length written (the
+  result's `renderedMs`). A tap on a rendering
+  badge calls `renders.cancel`; a finished job whose system has no tile is dropped as it settles.
 
 ## Verification
 
-- **Native parity/concurrency/cancel:** `retroplug-render-host-test` (built by name) — `<job-json>` proves
-  byte-identity vs `retroplug-cli render`; `--registry <j>...` runs jobs concurrently; `--cancel <j>` aborts
-  mid-render. Clean under ThreadSanitizer (`tools/run-sanitizer.sh thread`, built in `build-tsan/`).
+- **The seam:** the `[engine-jobs]` Catch2 cases in `retroplug-engine-graph-test` (the pool's threading, the budget,
+  cancel, teardown, continuous blocks and the carry), run under ThreadSanitizer and AddressSanitizer from `build-tsan` /
+  `build-asan` (`tools/run-sanitizer.sh` does not run them); `pnpm test:native engine-run` (the promise side over the
+  real host).
+- **The render baseline** (`pnpm test:native render-baseline`): 13 renders through engine jobs hashed against
+  `test-native/golden/render-baseline.json`, exact on `linux-x64-gnu13` (`RP_RENDER_GOLDEN_REQUIRE_TARGET=1` in CI),
+  with `render-chunks` holding the chunk independence and `render-cli` the CLI's tool against the same golden
+  ([06-build-test.md](06-build-test.md)).
+- **A manual smoke:** `retroplug-render-host-test` (built by name) - `<job-json>` runs one engine job and is
+  `cmp`-identical to `retroplug-cli render` (the same code); `--parallel <j>...` runs jobs concurrently on one pool;
+  `--cancel <j>` cancels mid-render. The coverage CI runs is `[engine-jobs]`; the tool is not a CI step.
 - **UI-seam logic:** `pnpm test render` — `startSystemRender` spec/snapshot, `pickActiveRenderJob`,
   `renderBadgeLabel`, `validSplits`/`formatDuration`, the `userConfig.render` setters/clamps, and (in
   `risa-autodetect`) that `onRendered` reports real audio time: monotonic, stepping by the render chunk,
   settling on the length written.
 - **Badge + menu:** `pnpm test:ui render-badge` (tile badge) and `pnpm test:ui render-menu` (the Split /
-  Sample Rate / Max-Duration selectors + PageUp/PageDown coarse step + Render… → `__rp_startRender`), both on
+  Sample Rate / Max-Duration selectors + PageUp/PageDown coarse step + Render… → a submitted engine job), both on
   the real LVGL display via a file-dropped ROM.
 - **Carried configuration:** `pnpm test:native risa-render` — a carried `region` moves the DETECTED song
   length (PAL 59000 ms → NTSC 49800 ms, the 50/60 clock ratio), and a carried `gainDb` / role knob lands on
@@ -127,11 +159,12 @@ so concurrent core construction can't race.
 
 ## Not yet built / deferred
 
-- **Project-level render** (all instances at once) — the registry + per-job-thread model already supports N
-  concurrent jobs; only the "render the whole project" entry point is missing.
+- **Project-level render** (all instances at once) - the pool already runs N engine jobs concurrently; only the
+  "render the whole project" entry point is missing.
 - **Tempo / transport UI** — no BPM/transport control in the menu (split, sample rate, and max duration are
   now selectable; a pinned *fixed* duration separate from the max cap is not).
 - **Embedded-ROM render** (mGB with no on-disk path) — gated out; would need the `embeddedRom` marker
   threaded through the worker spec.
-- **Multi-instance-in-DAW badge on editor reopen** — a job's owner is the editor session, so a close/reopen
-  loses the badge (the render still completes + writes its file).
+- **MIDI-driven renders** - a render sends no MIDI, so mGB and BlipToaster render silence; with them, CI would cover
+  SameBoy's stems and the NES fixture-free. The render baseline's LSDj and risa cases need fixtures, so CI's coverage of
+  the continuous path is smsggdj and the SGB jingle only.

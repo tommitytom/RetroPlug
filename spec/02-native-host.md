@@ -162,18 +162,20 @@ read of a core's state routes through the `SnapshotRegistry`. No method walks a 
 | `submitJob` | `(RpcJobRequest) → RpcJobSubmitResult` | a capability job for a node of the last published plan: `{id}` when it was taken, `{error}` when it was refused (a capability the node does not present, an operation it does not have, a device's "busy" or "not connected", the engine's 64-outstanding bound, an emulated restore). A read or a ROM header completes before it returns; a write at the next block boundary, or at once while no audio thread runs (the CLI between renders); a device's job on its own thread, after a cart submission has waited on the calling thread (the DAW's main thread in the plugin) up to the probe's 1 s bound for the cart's menu check, usually one USB round trip |
 | `drainJobs` | `→ vector<RpcJobCompletion>` | what finished since the last drain (`done`, `ok`, the result's bytes or the error) and every running job whose progress changed, with `progress` of `total` |
 | `submitOfflineJob` | `(RpcOfflineRequest) → RpcOfflineSubmitResult` | a graph document run to completion on a host of the engine's offline pool (`Engine::submitOfflineJob`): `{id}`, or `{error}` for a rate a `GraphHost` refuses, more than 64 inputs and outputs, an input that is neither samples nor a file, an output of no frames, a return naming no handle, or 64 jobs outstanding. A document may name only the built-in C++ packages. What fails once it runs (a file that will not decode, a planner refusal, an activate error, a node fault, a cancel) is the completion's error |
-| `drainOfflineJobs` | `(double waitMs) → RpcOfflineDrain` | the completions finished since the last drain, oldest first (each buffer's samples, rate, channels and `nonFinite`, the file inputs' reports, `guardsFired` / `guardReason`), plus `inFlight`, the jobs still queued or running. With `waitMs` it blocks up to that (at most 1000 ms) when nothing has finished, and returns at once when no job is queued or running |
-| `cancelOfflineJob` | `(uint32 id) → bool` | stop job `id`: a queued one completes now, unrun, a running one at its next block boundary (or as it finishes), both with the reason `cancelled`. False for an id neither queued nor running |
+| `submitEngineJob` | `(RpcEngineJobRequest) → RpcOfflineSubmitResult` | an engine job (D3): `{kind, spec}` with `kind` exactly `"render"` and `spec` the render job JSON, run on a pool worker by a `RenderHost` and an `Engine` of its own (`Engine::submitEngineJob`). `{id}`, or `{error}` for an unknown kind (naming it) or 64 jobs outstanding; a bad spec is the job's own error. Ids are shared with graph jobs |
+| `drainOfflineJobs` | `(double waitMs) → RpcOfflineDrain` | the completions finished since the last drain, oldest first (each buffer's samples, rate, channels and `nonFinite`, the file inputs' reports, `guardsFired` / `guardReason`), plus `inFlight`, the jobs still queued or running. A drain also fills `engineCompletions` (`{id, status "done"/"cancelled"/"error", message, outputs, renderedMs, lines, droppedLines}`) and `engineProgress` (every running engine job's rendered milliseconds and its console lines since the last drain, each a stream and text). With `waitMs` it blocks up to that (at most 1000 ms) when nothing has finished, and returns at once when no job is queued or running |
+| `cancelOfflineJob` | `(uint32 id) → bool` | stop job `id` of either kind: a queued one completes now, unrun, a running graph job at its next block boundary (or as it finishes), a running render at its next 100 ms chunk, both with the reason `cancelled` (a render's cancel wins over its finishing first). False for an id neither queued nor running |
 | `drainMidiOut` | `→ vector<RpcMidiOut>` | the host MIDI out (`Engine::midiOut`, which `rp.host.midi-out` fills each block) gathered over the `renderAudio*` renders since the last drain, each message with its system and frame (`renderBlocks` returns its own) |
 | `droppedMessages` | `→ uint32` | messages dropped so far (`Engine::droppedMessages`) by the plan's full output queues; never reset, and it wraps, so a test compares two reads |
 
 The table is a selection. The facets
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) hold 19
-`host` methods, 18 `emulator` (the resources, the graph and script packs, the snapshot reads and writes, the
-capability jobs, the offline jobs and the node staging), 20 `harness` (the renders, transport and sample rate, staged
+`host` methods, 19 `emulator` (the resources, the graph and script packs, the snapshot reads and writes, the
+capability jobs, the offline and engine jobs and the node staging), 20 `harness` (the renders, transport
+and sample rate, staged
 MIDI in and MIDI out, `droppedMessages`, `buildTarget`, and the audio runtimes' profiling calls),
 27 `debug` and
-6 `driver`: 90 in the union. There is no call for what the roles do on the audio thread: their protocol
+6 `driver`: 91 in the union. There is no call for what the roles do on the audio thread: their protocol
 nodes are script node types every Engine embeds, and each node's settings ride the documents `setGraph`
 plans. Nor is there one for a system's knobs: they are its system node's settings, in the same documents,
 and its params, whose live edits are `setParam`
@@ -869,6 +871,14 @@ bound makes it unreachable; a debug build asserts). The ring grows only, keeping
 its block size through `setMaxBlockFrames` never loses a queued frame. The NES's per-channel tap rings
 (`NesSoundMixer::_streamBuf`, one a stream) and its blips are sized and made with the same reserve.
 
+Mesen is vendored in-tree (`deps/mesen`, not a submodule), so RetroPlug's edits to it are plain source changes, each
+marked
+`// RetroPlug:` where they are small. One matters to parallel cores: `Utilities/SimpleLock.{h,cpp}` keeps its holder
+thread id and re-entrancy count as relaxed atomics, because `MessageManager`'s process-wide lock is taken by every
+core build and a render builds cores on pool workers beside the live engine's; ThreadSanitizer found the plain-integer
+read racing (a count changes by a relaxed load and store, never a locked read-modify-write, and the ids are asserted
+lock-free).
+
 ## `ScriptHost` + `ScriptCompiler`: the script-node runtime
 
 Native runs the TypeScript script nodes (the MIDI routing, the controller session and each role's
@@ -1171,12 +1181,26 @@ when a finite source overflows somewhere in the chain.
 
 ### The offline job pool
 
-[`OfflineJobs`](../packages/native/src/host/engine/OfflineJobs.hpp) is the `Engine`'s, made at the first submission and
-reset before the engine's other members go. It runs every job on one worker thread from start to end, which is the job
+[`OfflineJobs`](../packages/native/src/host/engine/OfflineJobs.hpp) runs two kinds of job. A **graph job** is the
+document run described below. An **engine job** (D3,
+[modular-graph-phase-d3-design.md](../docs/modular-graph-phase-d3-design.md))
+is a render: the worker pins the default floating-point environment, builds a
+[`RenderHost`](../packages/native/src/host/render/RenderHost.hpp) (a bare QuickJS runtime) whose `run()` builds the
+job's own `Engine`, in-process RPC services and server, evaluates the embedded render bundle synchronously and returns,
+and everything is destroyed on that worker before the completion is published. The job's engine runs continuous blocks
+(`EngineRpcService::setContinuousBlocks`, C++ only): `renderAudio`, `renderAudioPerSystem` and `renderAudioPerChannel`
+run whole 1024-frame blocks and carry the surplus to the next call of the same shape, system, stream count and rate.
+Progress (rendered milliseconds, a running maximum) and the script's console lines go into a per-job
+`EngineJobRecord`, bounded to 256 lines and 64 KiB between drains. Engine jobs run on at most `engineBudget()` workers,
+all but one of the pool's size (one for a pool of one, whose `maxWorkers()` of 2 lets a graph job start beside it); a
+worker takes the oldest job its kind's limit allows. The pool is the `Engine`'s, made at the first submission and
+reset before the engine's other members go. A graph job runs on one worker thread from start to end, which is the job
 host's control thread and block thread at once (quiescent: no audio thread, so `setGraph` flushes inline and
 `GraphHost::processBlock` is the block driver, draining then running), in blocks of 1024 frames, the last partial,
-checking for a cancel between blocks. It starts workers on demand while every started one is busy, at most
-clamp(hardware_concurrency, 1, 8), and never retires one: an engine that ran a kit keeps up to eight parked threads
+checking for a cancel between blocks (an engine job's blocks are continuous and its cancel is polled per chunk). The
+pool starts workers on demand while a runnable job is queued and every started one is busy, at most `maxWorkers()`:
+the pool's size, clamp(hardware_concurrency, 1, 8), or 2 for a pool of one. A render held back by the engine budget
+starts no thread. A worker is never retired: an engine that ran a kit keeps up to eight parked threads
 for the rest of its life (a parked wait, costing no CPU). At most 64 jobs are outstanding at once (queued, running, or
 finished and not yet drained), so every taken job has room for its completion. Handles are known before a job runs:
 input i is `res:(i + 1)`, output j is `res:(inputs + j + 1)`. An input of no frames is accepted and reported but names

@@ -388,8 +388,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     wired param is not clamped. D2 needs wider ranges, settings-level values or a control wire, and the baseline now
     carries the cases to hold it to: a quiet source normalised at all three rates (and through a dither), a negative
     gain, a 10 Hz high-pass at Q 20, and a 30 dB high shelf.
-  - **D3**: the CLI `render` and the UI background renders on the offline driver, keeping their block-size sequence
-    and per-block side effects or re-scoping their byte-identity claim; D1 changed neither path.
+  - **D3** (built since: the D3 bullet below): the CLI `render` and the UI background renders moved to engine jobs on
+    the offline pool; D1 changed neither path.
   - **Residuals.** The kit baseline is a 4-bit view and nearly blind to a one-ulp move in Sierra Lite or JJN (the
     `[dsp]` cases carry that). `rp.dsp.resample` and a recorder on one buffer in one plan are unsupported (the planner
     refuses a port reader beside a writer, and a settings ref is a binding it does not see), and a rate change resumes
@@ -416,14 +416,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   codecs, `KitUtil`, `SampleUtil` and the harness `compileKit` / `compileDmc` RPCs are gone, so the plugin compiles
   kits too. Strict parity held bit for bit at every commit, and no parity or kit golden was re-recorded (the `rp.dsp`
   descriptor goldens were, in stages 1 and 3). What it leaves:
-  - **D3**: the CLI `render` and the UI background renders on the seam, keeping their block-size sequence and
-    per-block side effects or re-scoping their byte-identity claim. A render sees a completion's `guardsFired` /
-    `guardReason` and each buffer's `nonFinite` and decides; nothing fails on them, and a byte-exact caller refuses a
-    guard count above 0. The seam's block is a fixed 1024 frames, and its jobs are bounded (64 outstanding, up to 8
-    workers). D3 must also extend or decide what a render needs and the seam lacks: system nodes and a script host in a
-    job (its registry is rp.core, rp.dsp and rp.dsp.resample only), a TypeScript cancel, completions that stream
-    rather than return at the fixed `frames`, a rejection at project close, a playing and advancing transport (a job's
-    is fixed at 120 bpm, ppq 0, not playing) and per-block MIDI or other event input (a job has none).
+  - **D3** (built since: the next bullet): the CLI `render` and the UI background renders on the pool as engine jobs
+    (kind `render`: a bare QuickJS runtime and an `Engine` of their own on a worker), not as graph jobs, so a job's
+    registry, transport and MIDI input needed no extension. A graph job's transport stays fixed at 120 bpm, ppq 0, not
+    playing, and takes no MIDI.
   - **A plugin kit row** is possible and not built: it imports `src/kit` and runs it on the stores' backend, not
     `audioDriver` (the driver's compile would turn on the offline poll's native wait and block the UI frame).
   - **Residuals.** `src/lsdj/` is test-reference code only now (`Effects`, `KitBank.hpp`); `OffsetLookup.hpp` is dead
@@ -449,6 +445,36 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Confirm the removed transitive includes build under MSVC.** The tree has not been built with MSVC since D2
     deleted headers that used to arrive through `BackendTypes.hpp` and `retroplug-core`; run `build.bat` (or the
     Windows CI job) before trusting the platform that has not run here.
+- **D3 built: renders as engine jobs**
+  ([modular-graph-phase-d3-design.md](../docs/modular-graph-phase-d3-design.md), five commits): the pool runs a second
+  kind of job, a render, on a `RenderHost` and an `Engine` of its own, with progress and console lines in the drain,
+  TypeScript cancel for both kinds (`engineRun` / `offlineRun` handles) and a worker budget that keeps one worker for
+  kit compiles; an engine job's engine runs continuous 1024-frame blocks, so a render's samples do not depend on how
+  the library chunks its pulls; `retroplug-cli render` and the UI's System > Render submit the same job, and
+  `RenderJobRegistry`, the `__rp_*Render` hooks and the CLI's in-process render path are gone. The render baseline
+  (`render-baseline`, 13 cases) records the bytes; no parity or kit golden was re-recorded. Two vendored fixes for
+  parallel cores came with it: Mesen's `SimpleLock` atomics and `cmake/patches/sameboy-process-statics.patch`. What it
+  leaves:
+  - **CI cannot see most of the render path.** The only fixture-free sounding renders are smsggdj with an authored song
+    (4 cases) and mGB as a Super Game Boy (its boot jingle), so CI holds 5 of the baseline's 13 cases and nothing of a
+    NES, a split render or a Game Boy's stems; the LSDj and risa cases run only with fixtures. MIDI-driven renders (an
+    mGB or BlipToaster render fed a MIDI file) would close it and are not built. The C++ `[engine-jobs]` cases are the
+    only fixture-free per-channel coverage today (mGB through `rp.mgb.midi`).
+  - **An auto-detect render's length is quantised to its 100 ms poll**, and acts between the library's calls (presses,
+    smsggdj's load, detection reads) land at the next block boundary after the call. Block-granular probes or an
+    autonomous recipe (the D3 design's section 8) would remove both.
+  - **`tools/run-sanitizer.sh` has no render leg.** The thread and address checks of the pool are `[engine-jobs]` built
+    in `build-tsan` / `build-asan` by hand (`retroplug-render-host-test`'s three legs also run clean there); a script
+    leg would make them routine. `retroplug-render-host-test` is a manual smoke, not a CI step.
+  - **Wedged jobs.** A render that never settles hangs the CLI where the old bounded loop gave up (a second Ctrl-C kills
+    it); with the editor closed nothing drains, so a render that finished then is listed as rendering until the editor
+    pumps again (its WAV is on disk).
+  - **The SameBoy camera half of the statics patch has no red-green test** (no Game Boy Camera ROM exists in the repo or
+    the fixtures), and the exact render bytes are held only on `linux-x64-gnu13`. The patch uses GNU `__atomic`
+    builtins, which GCC and Clang (clang-cl on Windows) have; the tree has not been built with MSVC since D2.
+  - **A GBA render case** is missing: without a BIOS the repo's GBA ROM renders exact silence.
+  - **Cores print straight to the process.** Mesen's load log goes to fd 1 while the job's console lines arrive through
+    the drain, so in the CLI the two can interleave differently than before.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

@@ -151,7 +151,9 @@ SameBoy is a **pinned vendored submodule**, so the tap ships as a tracked patch
 (`cmake/patches/sameboy-per-channel-audio.patch`) applied idempotently at configure by
 `cmake/sameboy.cmake` — no submodule-pointer bump, durable on a fresh clone, and a future bump that
 invalidates the patch fails loudly at configure rather than silently dropping per-channel output
-(resolved, §8/§9).
+(resolved, §8/§9). A second tracked patch, `cmake/patches/sameboy-process-statics.patch`, is applied after it and for a
+different reason: it makes SameBoy's process-wide statics (the power-on random seed, the camera's noise seed, the SGB's
+`fm_sin` table) safe for parallel cores ([02-native-host.md](02-native-host.md)).
 
 ## 3. NES design (Mesen) — secondary, CLI-first
 
