@@ -583,16 +583,17 @@ TEST_CASE("an offline job computes in the default floating-point mode whatever i
     r.frames = 1024;
     r.rate = 48000.0;
 
-    // The pool and its first worker are made from a thread that flushes subnormals, so on glibc the worker inherits
-    // that mode. The probe is a thread of that submitter's own: on a platform whose threads start in the default mode
-    // the job would pass vacuously, so that is where this case skips.
+    // The job's worker is made by the submitter's submit, on a thread that flushes subnormals, so on glibc the worker
+    // inherits that mode. The probe is a thread of that submitter's own: on a platform whose threads start in the
+    // default mode the job would pass vacuously, so that is where this case skips.
     OfflineJobs       jobs;
     OfflineCompletion c;
+    bool              flushable = false;
     bool              inherited = false;
     bool              submitted = false;
     std::thread       submitter([&] {
         if (!setFlushToZero()) return;
-        inherited = true;
+        flushable = true;
         std::thread probe([&] {
             volatile float tiny = 1.0e-39f;
             volatile float one = 1.0f;
@@ -605,6 +606,7 @@ TEST_CASE("an offline job computes in the default floating-point mode whatever i
         if (submitted) c = one(jobs, s.id);
     });
     submitter.join();
+    if (!flushable) SKIP("this target has no flush-to-zero mode this test knows how to set");
     if (!inherited) SKIP("a new thread does not inherit the submitter's flush-to-zero mode on this platform");
     REQUIRE(submitted);
     INFO(c.error);
@@ -623,6 +625,9 @@ TEST_CASE("the floating-point guard puts the caller's environment back", "[engin
     {
         const rp::host::DefaultFloatEnvironment environment;
         CHECK((_mm_getcsr() & 0x8040u) == 0);
+        // MXCSR's own rounding bits (13-14), not just the x87 control word fegetround reads: a guard that re-applied
+        // the caller's SSE rounding would pass every other check here, and the kernels compute in SSE.
+        CHECK((_mm_getcsr() & 0x6000u) == 0);
         CHECK(std::fegetround() == FE_TONEAREST);
     }
     CHECK(_mm_getcsr() == flushing);
@@ -1138,6 +1143,7 @@ TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit
                 if (s.id) ids.push_back(s.id);
             }
         std::atomic<std::size_t> atWarm{0}, atLast{0};
+        std::atomic<bool>        playing{true};
         e.setAudioThreadOwns(true);
         std::thread audio([&] {
             std::vector<float> l(kFrames), r(kFrames);
@@ -1155,8 +1161,14 @@ TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit
                     out.push_back(r[i]);
                 }
             }
+            playing.store(false, std::memory_order_release);
             counted = rp::test::endCountingAllocations();
         });
+        // The main thread drains the pool beside the running blocks, as a host's control thread does, so this case is
+        // the one that watches a drain and a processBlock interleave. The long jobs never complete, so the drains find
+        // nothing and change nothing else.
+        if (withJobs)
+            while (playing.load(std::memory_order_acquire)) e.drainOfflineJobs(std::chrono::milliseconds(5));
         audio.join();
         e.setAudioThreadOwns(false);
         if (withJobs) {
