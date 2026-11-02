@@ -200,7 +200,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     ([02-native-host.md](02-native-host.md)). A warmed block itself allocates nothing since C4, Mesen's emulation
     included, and since the input-queue stage a block carrying host input does too: the ingress queues are bounded and
     sized when the core is built. The exceptions are a Mesen core's 0.5 s state publish and the N8 firmware's SD path,
-    listed under C4 below; a Game Boy's publish allocates nothing.
+    listed under C4 below; a Game Boy's publish of the same model allocates nothing (a model switch's restart block
+    also grows its capture scratch).
   - **A system node ignores a settings field it does not know**, as every C++ node does: a misspelt knob plans and
     does nothing. `BuildGraphGoldens.test.cpp` holds the goldens' system nodes to their schemas' fields; a strict
     reader would refuse it at plan time instead.
@@ -258,10 +259,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     counted case reaches the SRAM one, since every NES fixture cart is battery-less.
     The same capture is what a freshly built core's first block pays: `enableStateSnapshot` arms it, and it cannot move
     to activation without moving `NesApu::EndFrame` and parity, so the first block is pinned to exactly one capture
-    (C4's section 12). The publish's own read path is free: `SnapshotRegistry::claim` sizes the core's read scratch and
-    the registry's from the triple's capacity on the control thread, so a warmed publish only copies, and a Game Boy's
-    publish (whose capture reuses its scratch) allocates nothing at all; C4's `[alloc]` suite counts two of them through
-    an Engine.
+    (C4's section 12). The publish's own read path is free: it reads the core's snapshot slot straight into the
+    registry's own, which `SnapshotRegistry::claim` sized to match on the control thread, so a warmed publish only
+    copies. A Game Boy's publish of the same model (whose capture reuses its scratch) allocates nothing at all, and a
+    model switch's restart block also grows that scratch by the state delta; C4's `[alloc]` suite counts two of a Game
+    Boy's publishes and a NES's registry publish through an Engine.
   - **A thread's first nested notification send allocates**: the top-level dispatch copy is a `thread_local` object,
     so a console's first frame allocates nothing, but a listener that sends its own notification takes a pool entry on
     first use. This host registers no listeners.

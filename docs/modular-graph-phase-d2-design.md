@@ -469,10 +469,15 @@ decides, and nothing fails on them.
   allocations, with or without offline jobs). It is the 0.5 s state publish
   [07-remaining-work.md](../spec/07-remaining-work.md) listed among the allocations left on the block thread, seen here
   on a Game Boy's `readStateSnapshot` rather than Mesen's serializer: the read scratch it sized on first use and the
-  registry's publish scratch it grew. `SnapshotRegistry::claim` now sizes both from the triple's capacity on the
-  control thread, so the block thread's publish only copies and 07 no longer lists it. C4's whole-block cases never
-  reached the first publish, so the hole was theirs as much as this seam's: they now count a Game Boy through the
-  Engine across two publishes, and this case counts from the first block after warm-up rather than past block 60.
+  registry's publish scratch it grew. The publish now reads the core's snapshot slot straight into the registry's own
+  slot, which `SnapshotRegistry::claim` sizes to match on the control thread, so the block thread copies once into
+  memory no claim touches and 07 no longer lists it. (Sizing the two scratches at claim instead, tried first, let a
+  larger core's claim inside a setGraph free the shared publish scratch under a running plan's publish; a
+  `[sanitizer]` case driving the registry from two threads holds that.) A Game Boy's publish of the same model
+  allocates nothing; a model switch's restart block also grows its capture scratch by the state delta. C4's
+  whole-block cases never reached the first publish, so the hole was theirs as much as this seam's: they now count a
+  Game Boy through the Engine across two publishes and a NES to its registry publish, and this case counts from the
+  first block after warm-up rather than past block 60.
 - **`SampleCache`'s native behaviour differed from the seam's.** The old RPC kept one cache for the engine's life,
   keyed by path and never invalidated, so a path rewritten in one session compiled the old audio; a job decodes fresh,
   so a compile sees the file as it is now.

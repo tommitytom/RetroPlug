@@ -778,9 +778,11 @@ The ordering guarantees are the load-bearing detail:
 - **`publishSystem(system, frames, sampleRate)`**, which `processBlock` calls for each of the
   running plan's systems in slot order: `find(id)`; copy the framebuffer **every block** (cheap); on
   the coarse interval (`kStateIntervalSec = 0.5`, matching the core's own snapshot cadence via
-  `sampleAccum`) `readStateSnapshot` into `state` and slice `sram` out of it, publishing both. That
-  read copies through two buffers (the core's read scratch and the registry's), and `claim` sizes both
-  from the core's snapshot capacity on the control thread, so a warmed publish only copies.
+  `sampleAccum`) `readStateSnapshot` the core's published slot straight into `state`'s next write
+  slot and slice `sram` out of it, publishing both. The two triples match in size and in their
+  `[len:4][savestate]` layout (`claim` sizes `state` from the core's snapshot capacity), so that read is
+  the one copy and needs no scratch: a warmed publish only copies, and a claim, which writes only the
+  slot it claims, shares no buffer with a running plan's publish.
 - **`release(id)`**: clear `id` **FIRST** so a stray block-thread scan can't match, THEN free the
   buffers. Idempotent; it runs when a system node destroys its core at reclaim, once no running
   plan holds the system.
