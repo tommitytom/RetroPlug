@@ -333,9 +333,12 @@ made them false (chunking, the worker budget, the carry's rules).
   and `setContinuousBlocks(false)` stay for the in-process render tests and parity.
 - **`retroplug-render-host-test`** is three legs on engine jobs: `<job-json>` runs one job on a pool (the production
   path, so "byte-identical to `retroplug-cli render`" holds because it is the same code, and is still checked by `cmp`),
-  `--parallel <j>...` runs N jobs on a pool sized so all can run and asserts that at least `min(N, engineBudget())`
-  ran at
-  once, and `--cancel <j>` cancels after 300 ms and asserts `cancelled`, no outputs and no file. It is a manual smoke;
+  `--parallel <j>...` runs N jobs on a pool sized so all can run, asserts its engine budget covers `min(N,
+  kMaxWorkers - 1)` before submitting and that some drain's progress showed that many running at once (a completion is
+  not counted: its worker may already have taken the next job, so counting both saw overlap in jobs run back to back),
+  and `--cancel <j>` cancels once a drain shows the job rendering and asserts `cancelled`, a rendered length above
+  zero, no outputs and none of its files left (a mix spec's `out`, a split one's `<prefix>_<stream>.wav`, read with
+  the backend's JSON reader). Each job's console lines are labelled `[job N]`. It is a manual smoke;
   `[engine-jobs]` carries the coverage CI runs. `--registry` is gone. There is no render leg in `run-sanitizer.sh`
   (the script only runs the host's `dsp-threaded` and `dsp-lifecycle` slugs); the thread and address checks are
   `[engine-jobs]` built in `build-tsan` and `build-asan`, and the tool's three legs run by hand in both.
