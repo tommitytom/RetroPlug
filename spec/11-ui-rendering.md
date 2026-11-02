@@ -22,7 +22,7 @@ A render is an **engine job**: a second kind of job on the engine's offline pool
 
 ```
 System > Render menu ─▶ startSystemRender (ui/host/render.ts)     retroplug-cli render (cli/sessions/render.ts)
-   │  browseThen → out path      │  snapshot live SRAM/savestate → temp file        │  parse argv → spec
+   │  browseThen → out path      │  snapshot live SRAM/savestate → job's own files  │  parse argv → spec
    ▼                             ▼                                                   ▼
 RenderJobs.start (src/renderJobs.ts)  ──────────────▶  backend.engineRun("render", spec, {onProgress, onLog})
                                                           │  submitEngineJob / drainOfflineJobs / cancelOfflineJob
@@ -99,14 +99,19 @@ SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
 
 - **No hooks.** Renders need no `__rp_*` window hook: the UI submits through the stores' backend
   (`stores.backend.engineRun`), so every host that mounts the emulator facet renders, the SDL standalone included.
-- **`src/renderJobs.ts`** - `RenderJobs` (`start(systemId, spec)`, `list()`, `cancel(id)`, `dismiss(id)`, `prune()`)
-  keeps what each job's progress callback and promise report, plus its handle. It belongs to the store graph
-  (`AppStores.renders`), which in a DAW is the control plane's, so it outlives the editor and a completion settles
-  through the same queue that submitted the job (nothing drains with the editor closed; the WAV is on disk either
-  way, and the badge catches up at the next pump).
-- **`ui/host/render.ts`** — `startSystemRender` snapshots the live `readSram`/`readState` to a temp file
-  under `configDir` and calls `renders.start`; `pickActiveRenderJob` selects a tile's badge job and
-  `renderBadgeLabel` writes its text.
+- **`src/renderJobs.ts`** - `RenderJobs` (`start(systemId, spec, onSettled)`, `list()`, `cancel(id)`, `dismiss(id)`,
+  `prune()`) keeps what each job's progress callback and promise report, plus its handle. `spec` can be a function of
+  the job's key (a per-list token and the job's id, so unique across instances too), and `onSettled` runs once the job
+  has ended, however it ended. It belongs to the store graph (`AppStores.renders`), which in a DAW is the control
+  plane's, so it outlives the editor and a completion settles through the same queue that submitted the job (nothing
+  drains with the editor closed; the WAV is on disk either way, and the badge catches up at the next pump).
+- **`ui/host/render.ts`** - `startSystemRender` snapshots the live `readSram`/`readState` to files of the job's own
+  under `configDir` (`.render-src-<key>.sav` / `.ss0`) and calls `renders.start`, which deletes them once the job has
+  settled. The worker reads them only when it boots the render, which can be minutes later behind the worker budget,
+  so a shared name would boot a later edit's (or another instance's) state. A snapshot that cannot be written refuses
+  the render, listed as an error, rather than boot the sibling `.sav` on disk. A process that dies with a render
+  queued leaves its snapshot behind. `pickActiveRenderJob` selects a tile's badge job and `renderBadgeLabel` writes
+  its text.
 - **The instance's CONFIGURATION rides along** — `spec.roles` (the live system's roles, configs included)
   and `spec.gainDb`. The job boots a fresh core from the ROM on disk, so without them it would take each
   role's schema DEFAULTS and render a PAL project at NTSC, a Game Boy as the wrong model, a replaced DMC kit
@@ -148,9 +153,10 @@ SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
 - **A manual smoke:** `retroplug-render-host-test` (built by name) - `<job-json>` runs one engine job and is
   `cmp`-identical to `retroplug-cli render` (the same code); `--parallel <j>...` runs jobs concurrently on one pool;
   `--cancel <j>` cancels mid-render. The coverage CI runs is `[engine-jobs]`; the tool is not a CI step.
-- **UI-seam logic:** `pnpm test render` — `startSystemRender` spec/snapshot, `pickActiveRenderJob`,
-  `renderBadgeLabel`, `validSplits`/`formatDuration`, the `userConfig.render` setters/clamps, and (in
-  `risa-autodetect`) that `onRendered` reports real audio time: monotonic, stepping by the render chunk,
+- **UI-seam logic:** `pnpm test render` - `startSystemRender` spec/snapshot (two queued renders of one system each
+  boot their own snapshot, gone once settled; a snapshot that cannot be written refuses the render),
+  `pickActiveRenderJob`, `renderBadgeLabel`, `validSplits`/`formatDuration`, the `userConfig.render` setters/clamps,
+  and (in `risa-autodetect`) that `onRendered` reports real audio time: monotonic, stepping by the render chunk,
   settling on the length written.
 - **Badge + menu:** `pnpm test:ui render-badge` (tile badge) and `pnpm test:ui render-menu` (the Split /
   Sample Rate / Max-Duration selectors + PageUp/PageDown coarse step + Render… → a submitted engine job), both on

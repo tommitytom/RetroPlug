@@ -1,8 +1,8 @@
 // The renders the UI has started (src/renderJobs.ts): a job is listed rendering with the system it came from, its
 // progress moves renderedMs, and its result settles it done, cancelled or error; a refusal or a throw at submission is
-// listed as an error; cancel() is the job handle's; a dismissed job stays gone when it settles; and the engine's
-// console lines reach this runtime's console. The jobs here are scripted promises: the engine side is
-// test-native/engine-run and the C++ [engine-jobs] cases.
+// listed as an error; cancel() is the job handle's; a dismissed job stays gone when it settles; the engine's console
+// lines reach this runtime's console; and a job's key and settle hook, which the UI's snapshot files hang on. The jobs
+// here are scripted promises: the engine side is test-native/engine-run and the C++ [engine-jobs] cases.
 import { test, expect } from "../../testing/harness";
 import { RenderJobs } from "../../src/renderJobs";
 import { jobHandle, type EngineRunOptions, type EngineRunResult } from "../../src/offline";
@@ -143,4 +143,34 @@ test("a finished job whose system has no tile is dropped as it settles, and when
   live = [2]; // system 1 is removed: its done job goes with it, system 2's error stays for its tile
   renders.prune();
   expect(renders.list().map((j) => [j.systemId, j.state])).toEqual([[2, "error"]]);
+});
+
+test("a job's spec can name its files by the job's key, and onSettled runs once however the job ends", async () => {
+  const { backend, jobs } = scripted();
+  const renders = new RenderJobs(backend);
+  const other = new RenderJobs(backend); // a second instance's list: its ids also count from 1
+  const keys: string[] = [];
+  const ended: number[] = [];
+  const spec = (key: string) => (keys.push(key), { sav: `/config/.render-src-${key}.sav` });
+  const a = renders.start(1, spec, () => ended.push(1));
+  other.start(1, spec, () => ended.push(2));
+  const c = renders.start(1, spec, () => ended.push(3));
+  expect(new Set(keys).size).toBe(3); // no two jobs share a key, across lists too
+  expect(jobs[0].spec).toEqual({ sav: `/config/.render-src-${keys[0]}.sav` });
+  renders.dismiss(a); // dismissed before it settles: its files are still the job's until then
+  jobs[0].settle(done(100));
+  jobs[1].settle({ status: "cancelled", message: "", outputs: [], renderedMs: 0 });
+  jobs[2].fail(new Error("refused"));
+  await later();
+  await later();
+  expect(ended.sort()).toEqual([1, 2, 3]);
+  expect(renders.list().find((j) => j.id === c)?.state).toBe("error");
+
+  // A spec that throws submits nothing, is the job's error, and still settles.
+  const id = renders.start(2, () => {
+    throw new Error("render: could not snapshot");
+  }, () => ended.push(4));
+  expect(jobs.length).toBe(3);
+  expect(renders.list().find((j) => j.id === id)?.message).toBe("render: could not snapshot");
+  expect(ended.includes(4)).toBeTruthy();
 });

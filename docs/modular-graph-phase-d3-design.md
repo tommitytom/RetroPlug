@@ -346,7 +346,12 @@ made them false (chunking, the worker budget, the carry's rules).
   so a completion is drained by the queue that owns it and no adopt path is needed. `startSystemRender` submits through
   `stores.backend`; the tile badge samples `renders.list()` instead of polling a hook and a tap calls `renders.cancel`;
   finished jobs auto-dismiss, and one whose system has no tile is dropped as it settles and whenever the systems list
-  changes. The SDL standalone gains renders (it had no `__rp_startRender`) through the same facet.
+  changes. A render's snapshot of the live battery or savestate is a file of its own (`.render-src-<key>.sav` / `.ss0`
+  under the config directory, the key a per-list token and the job's id), deleted when its job settles: the worker
+  reads it only when it boots the render, so with renders queued behind the budget a shared name booted a later edit's
+  state, or another instance's (both number their systems and jobs from 1 and share the directory). One that cannot be
+  written refuses the render, listed as an error, where the field used to be dropped and the render booted the sibling
+  `.sav` on disk. The SDL standalone gains renders (it had no `__rp_startRender`) through the same facet.
 - **Retired.** `RenderJobRegistry`, the four `__rp_*Render` hooks (and their declarations), `g_renderJobs`, the CLI's
   in-process render path, `RenderHost`'s exact-blocks mode and `RenderContext.blocks`. The library's exact-blocks engine
   and `setContinuousBlocks(false)` stay for the in-process render tests and parity.

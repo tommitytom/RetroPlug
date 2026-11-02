@@ -1,5 +1,5 @@
-// The UI render seam (ui/host/render.ts), pure-TS: startSystemRender snapshots the live system's state to a
-// temp file and starts the render in the store graph's RenderJobs with the right spec; pickActiveRenderJob chooses
+// The UI render seam (ui/host/render.ts), pure-TS: startSystemRender snapshots the live system's state to files of
+// the job's own and starts the render in the store graph's RenderJobs with the right spec; pickActiveRenderJob chooses
 // the tile's badge job. The render itself (an engine job) is proven separately, in C++ and in test-native.
 
 import { test, expect } from "../../testing/harness";
@@ -10,6 +10,8 @@ import { UserConfigStore } from "../../src/userConfigStore";
 import { RENDER_MAX_DURATION_MAX_SEC, RENDER_MAX_DURATION_MIN_SEC } from "../../src/userConfig";
 import { savFrom, type SavInput } from "../../src/lsdjSav";
 import type { SystemView } from "../../src/systemsStore";
+import { RenderJobs } from "../../src/renderJobs";
+import { jobHandle, type EngineRunResult } from "../../src/offline";
 
 /** A minimal SystemView carrying only the fields startSystemRender reads. */
 function sysView(over: Partial<SystemView>): SystemView {
@@ -28,13 +30,14 @@ interface Captured {
 }
 
 /** A RenderJobs stand-in recording each start; `box.last` holds the most recent capture. */
-function spyStartRender(returnId = 7): { box: { last: Captured | null }; renders: { start(id: number, spec: object): number } } {
+function spyStartRender(returnId = 7): { box: { last: Captured | null }; renders: Pick<RenderJobs, "start"> } {
   const box: { last: Captured | null } = { last: null };
   return {
     box,
     renders: {
       start: (systemId, spec) => {
-        box.last = { systemId, spec: JSON.parse(JSON.stringify(spec)) };
+        const body = typeof spec === "function" ? spec("job-key") : spec;
+        box.last = { systemId, spec: JSON.parse(JSON.stringify(body)) };
         return returnId;
       },
     },
@@ -64,7 +67,7 @@ test("startSystemRender: battery cart → snapshots live SRAM to a temp file and
   expect(cap.spec.split).toBe("mix");
   expect(cap.spec.sampleRate).toBe(48000); // carried from the render request
   expect(cap.spec.maxDurationMs).toBe(90000);
-  expect(cap.spec.sav).toBe("/config/.render-src-sys1.sav"); // the temp snapshot, under configDir
+  expect(cap.spec.sav).toBe("/config/.render-src-job-key.sav"); // the temp snapshot, under configDir, named by the job
   expect(cap.spec.state).toBe(undefined);
 });
 
@@ -112,6 +115,87 @@ test("startSystemRender: no on-disk ROM → no-op (returns null, nothing started
   expect(jobId).toBe(null);
   expect(spy.box.last).toBe(null);
   expect(backend.readSramCalls.length).toBe(0);
+});
+
+/** A RenderJobs over a backend whose engineRun holds every job until the test settles it, as an engine queues a render
+ *  behind the worker budget: `specs` lists what each submission carried, `settle(i)` ends job i. */
+function queuedRenders(): { renders: RenderJobs; specs: Captured["spec"][]; settle(i: number): void } {
+  const specs: Captured["spec"][] = [];
+  const resolvers: ((r: EngineRunResult) => void)[] = [];
+  const renders = new RenderJobs({
+    engineRun: (_kind, spec) => {
+      specs.push(spec as Captured["spec"]);
+      return jobHandle(new Promise<EngineRunResult>((res) => resolvers.push(res)), () => true);
+    },
+  });
+  const settle = (i: number) => resolvers[i]({ status: "done", message: "", outputs: [], renderedMs: 1 });
+  return { renders, specs, settle };
+}
+
+const later = (): Promise<void> => new Promise((r) => void Promise.resolve().then(() => r()));
+
+test("startSystemRender: two queued renders of one system boot their own snapshots, gone once settled", async () => {
+  // A render reads its snapshot when a worker boots it, which can be minutes after the submission when renders queue
+  // behind the engine's budget. A render, an edit and a second render must leave the first booting the state it was
+  // started on: each snapshot is a file of its own, and it goes when its job settles.
+  const backend = new MockBackend("/config");
+  const q = queuedRenders();
+  const sys = sysView({ id: 1, battery: true });
+  backend.setSram(1, new Uint8Array([1, 1, 1]));
+  startSystemRender(backend, q.renders, sys, { split: "mix" }, "/out/a.wav");
+  backend.setSram(1, new Uint8Array([2, 2, 2])); // an edit while the first render is queued
+  startSystemRender(backend, q.renders, sys, { split: "mix" }, "/out/b.wav");
+
+  const [first, second] = q.specs;
+  expect(first.sav !== undefined && second.sav !== undefined && first.sav !== second.sav).toBeTruthy();
+  expect(Array.from(backend.readFile(first.sav!) ?? [])).toEqual([1, 1, 1]);
+  expect(Array.from(backend.readFile(second.sav!) ?? [])).toEqual([2, 2, 2]);
+
+  q.settle(0);
+  await later();
+  expect(backend.fileExists(first.sav!)).toBe(false);
+  expect(backend.fileExists(second.sav!)).toBe(true); // still queued: its snapshot stays
+  q.settle(1);
+  await later();
+  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([]);
+});
+
+test("startSystemRender: a cart whose song is outside the battery snapshots its state too, of its own", async () => {
+  class Live extends MockBackend {
+    override readState(): Uint8Array | null {
+      return new Uint8Array([9]);
+    }
+  }
+  const backend = new Live("/config");
+  const q = queuedRenders();
+  const roles = [{ kind: "sms-sync", config: {} }];
+  const sys = sysView({ id: 4, romPath: "/roms/smsggdj.sms", battery: true, roles });
+  backend.setSram(4, new Uint8Array([7]));
+  startSystemRender(backend, q.renders, sys, { split: "mix" }, "/out/a.wav");
+  startSystemRender(backend, q.renders, sys, { split: "mix" }, "/out/b.wav");
+  const [first, second] = q.specs;
+  expect(first.state !== undefined && second.state !== undefined && first.state !== second.state).toBeTruthy();
+  expect(first.sav !== second.sav).toBeTruthy();
+  q.settle(0);
+  q.settle(1);
+  await later();
+  expect(backend.paths().filter((p) => p.startsWith("/config/"))).toEqual([]);
+});
+
+test("startSystemRender: a snapshot that cannot be written refuses the render, not boot the on-disk .sav", async () => {
+  class FullDisk extends MockBackend {
+    override writeFileAtomic(): boolean {
+      return false;
+    }
+  }
+  const backend = new FullDisk("/config");
+  backend.setSram(1, new Uint8Array([1]));
+  const q = queuedRenders();
+  const id = startSystemRender(backend, q.renders, sysView({ id: 1, battery: true }), { split: "mix" }, "/out/a.wav");
+  expect(q.specs.length).toBe(0); // nothing submitted
+  const job = q.renders.list().find((j) => j.id === id);
+  expect(job?.state).toBe("error");
+  expect(job!.message.includes("could not snapshot")).toBeTruthy();
 });
 
 test("renderBaseName: song name → SAV basename → ROM stem, in priority order", () => {

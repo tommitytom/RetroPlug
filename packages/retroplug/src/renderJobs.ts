@@ -33,6 +33,9 @@ interface Entry {
 export class RenderJobs {
   private readonly entries = new Map<number, Entry>();
   private nextId = 1;
+  /** Drawn once per list, so a job's key (`<token>-<id>`) differs from every other list's: two plugin instances in one
+   *  DAW each have a list of their own, both numbering from 1, and share the user's config directory. */
+  private readonly token = `${Date.now().toString(36)}-${Math.floor(Math.random() * 2 ** 32).toString(36)}`;
 
   /** `liveSystems` names the systems that have a tile now; without it every job is kept until dismissed. */
   constructor(
@@ -41,11 +44,21 @@ export class RenderJobs {
   ) {}
 
   /** Start rendering `spec` (a render job spec) for system `systemId`, and return the job's id here. A render the
-   *  engine refuses, or that cannot be submitted, is listed as an error. */
-  start(systemId: number, spec: object): number {
+   *  engine refuses, or that cannot be submitted, is listed as an error. `spec` can be a function of the job's key, a
+   *  name no other job of any list shares (the caller's files for this job carry it), and a throw from it is listed as
+   *  the job's error with nothing submitted. `onSettled` runs once the job has ended however it ended (listed or
+   *  dismissed, a throw from `spec` included): the engine has let go of the job's files by then. */
+  start(systemId: number, spec: object | ((key: string) => object), onSettled?: () => void): number {
     const status: RenderJobStatus = { id: this.nextId++, systemId, state: "rendering", renderedMs: 0, message: "" };
     const entry: Entry = { status, handle: null };
     this.entries.set(status.id, entry);
+    const settled = (): void => {
+      try {
+        onSettled?.();
+      } catch (e) {
+        console.warn(`render job ${status.id}: ${(e as Error)?.message ?? String(e)}`);
+      }
+    };
     const update = (change: Partial<RenderJobStatus>): void => {
       // A job the badge dismissed is no longer listed, and what it reports after is dropped.
       if (this.entries.get(status.id) !== entry) return;
@@ -53,12 +66,14 @@ export class RenderJobs {
       if (entry.status.state !== "rendering") this.prune();
     };
     try {
-      entry.handle = this.backend.engineRun("render", spec, {
+      const body = typeof spec === "function" ? spec(`${this.token}-${status.id}`) : spec;
+      entry.handle = this.backend.engineRun("render", body, {
         onProgress: (renderedMs) => update({ renderedMs }),
         onLog: echoJobLog,
       });
     } catch (e) {
       update({ state: "error", message: (e as Error)?.message ?? String(e) });
+      settled();
       return status.id;
     }
     entry.handle.then(
@@ -66,8 +81,12 @@ export class RenderJobs {
         if (result.status === "done") update({ state: "done", renderedMs: result.renderedMs });
         else if (result.status === "cancelled") update({ state: "cancelled" });
         else update({ state: "error", message: result.message });
+        settled();
       },
-      (e: unknown) => update({ state: "error", message: (e as Error)?.message ?? String(e) }),
+      (e: unknown) => {
+        update({ state: "error", message: (e as Error)?.message ?? String(e) });
+        settled();
+      },
     );
     return status.id;
   }
