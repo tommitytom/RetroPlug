@@ -466,9 +466,20 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **`tools/run-sanitizer.sh` has no render leg.** The thread and address checks of the pool are `[engine-jobs]` built
     in `build-tsan` / `build-asan` by hand (`retroplug-render-host-test`'s three legs also run clean there); a script
     leg would make them routine. `retroplug-render-host-test` is a manual smoke, not a CI step.
-  - **Wedged jobs.** A render that never settles hangs the CLI where the old bounded loop gave up (a second Ctrl-C kills
-    it); with the editor closed nothing drains, so a render that finished then is listed as rendering until the editor
-    pumps again (its WAV is on disk).
+  - **Wedged jobs.** A render's script that misses its cancel is interrupted after two seconds
+    (`RenderHost::kCancelGrace`, possibly leaving its `.part` files), but a core wedged inside one native call is not:
+    it hangs the CLI where the old bounded loop gave up (a second Ctrl-C kills it), and an instance's teardown, which
+    joins its engine's renders on the thread that removes the instance or quits the host, waits for it. With the
+    editor closed nothing drains, so a render that finished then is listed as rendering until the editor pumps again
+    (its WAV is on disk).
+  - **The behavioural render tests run the in-process library.** `audio-render`, `risa-render`, `sms-render`,
+    `start-truncation`, `risa-autodetect` and `render-guard` call `runRenderJob` on an exact-blocks engine, a path no
+    production caller uses; for engine jobs their assertions reach users only through the render baseline's hashes and
+    `engine-run`.
+  - **emu2413's VRC7 tables** are a lazily built process static behind a plain flag (the one left; the NES database's
+    and the GBA dispatch tables' flags are acquire/release): two VRC7 carts built at once as the process's first race.
+  - **A UI render's snapshot** (`.render-src-<key>.*` in the config directory) is deleted when its job settles, so a
+    process that dies with a render queued leaves it behind.
   - **The SameBoy camera half of the statics patch has no red-green test** (no Game Boy Camera ROM exists in the repo or
     the fixtures), and the exact render bytes are held only on `linux-x64-gnu13`. The patch uses GNU `__atomic`
     builtins, which GCC and Clang (clang-cl on Windows) have; the tree has not been built with MSVC since D2.

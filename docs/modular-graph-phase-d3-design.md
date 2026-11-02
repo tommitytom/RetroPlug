@@ -419,8 +419,21 @@ made them false (chunking, the worker budget, the carry's rules).
   the tag run alone they are the process's first jingles, which guards the SGB table's load-time build under TSan.
 - **Detection is quantised to the poll.** Block-granular probes (or an autonomous recipe) would make an auto-detect
   render's length pull-independent.
-- **A cancel can hang a wedged job.** A render that never settles hangs the CLI where the old bounded loop gave up; the
-  second Ctrl-C is the way out. A closed editor leaves a finished render listed as rendering until the next pump.
+- **A wedged core hangs a cancel, and an instance's teardown with it.** A script that misses its cancel is interrupted
+  after two seconds (and may leave its `.part` files), but a core wedged inside one native call is not: the CLI's
+  second Ctrl-C is the way out there, and an instance's teardown, on the thread that removes it or quits the host,
+  waits for it as it waits for any running render to reach its next check. A closed editor leaves a finished render
+  listed as rendering until the next pump.
+- **The behavioural render tests hold a path no production caller uses.** `audio-render`, `risa-render` (the carried
+  region and `gainDb`), `sms-render`, `start-truncation`, `risa-autodetect` and `render-guard` run `runRenderJob`
+  in-process on an exact-blocks engine, as each says in its header; for engine jobs their assertions reach users only
+  through the render baseline's 13 hashes and `engine-run`'s cases. Moving them onto `engineRun` would hold the
+  production path to them.
+- **One of Mesen's lazy inits is still unsynchronised.** emu2413's VRC7 tables are built by the first `OPLL_new` behind
+  a plain flag with no lock, so two VRC7 carts built at once as the process's first would race on it (the pool
+  header lists it).
+- **A UI render's snapshot outlives a crash.** Each queued render's `.render-src-<key>.sav` / `.ss0` is deleted when
+  its job settles, so one whose process died first stays in the config directory.
 - **A GBA render case** needs a BIOS to make sound.
 - **Windows and the other platforms** have not built this tree; the new cross-platform pieces are the SameBoy patch (GNU
   `__atomic` builtins, so GCC and Clang only, which is all that builds the core), `SimpleLock`'s atomics and the

@@ -281,7 +281,8 @@ Master System (`.sms`) or Game Gear (`.gg`) ROM and writes its audio to a WAV fi
 a saved tracker song it presses play so the song begins (pass `--no-start` to capture
 raw boot audio); mGB needs no such press, as it plays from incoming MIDI. A sibling
 `<rom>.sav` is loaded automatically if present. The render runs as an engine job; the first Ctrl-C cancels it (exit 1,
-no WAV), a second kills it. Highlights:
+and no WAV unless the render had already finished: a cancel that lands as it ends still exits 1, the whole WAV in
+place), a second kills it. Highlights:
 
 - **Automatic length** - with a loaded LSDj or risa `.sav` the song length is detected
   if the song ends with an `HFF` command, and the render trimmed to it. Otherwise pin a
