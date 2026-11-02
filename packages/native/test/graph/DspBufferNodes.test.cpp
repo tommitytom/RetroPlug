@@ -15,6 +15,8 @@
 // - A settings commit is each node's own: a normalise re-folds a new gain against the peak activate measured, a dither
 //   with `seedFrom` restarts a committed seed from the buffer's hash rather than from the setting, and a DPCM
 //   `normalize` toggle is a rebuild that re-encodes from the first bit.
+// - A re-activation (a host's first larger block) carries both buffer-reading nodes on from where they were, so the
+//   stream is the buffer played once, not replayed from its first frame.
 // - Each type refuses a document it cannot honour (no buffer named, a resource that is not a live audio buffer), and
 //   rp.dsp.dpcm refuses a multi-channel buffer at activate. The DPCM node is the package's one type that declares
 //   `heap`, so the Pico refuses it; rp.dsp.normalize allocates nothing and plans there.
