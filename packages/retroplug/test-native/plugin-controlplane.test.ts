@@ -93,9 +93,15 @@ test("the latency the plugin reports follows the lsdj-sync its pipeline places: 
 });
 
 test("a render listed for a system leaves the list when the plugin's own wiring removes that system", () => {
-  // composeAppStores prunes the render list on a systems change, and the control plane layers its own observer
-  // (the watched ROMs, the editor's notify) on the same signal: it must not replace the prune.
-  const stores = ((globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as { stores: AppStores }).stores;
+  // composeAppStores prunes the render list and notifies the editor on a systems change, and the control plane adds its
+  // own observer (the watched ROMs) to the same signal: it must replace neither, and the editor hears it once.
+  const ns = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as {
+    stores: AppStores;
+    setUiNotify: (fn: ((channel: string) => void) | null) => void;
+  };
+  const stores = ns.stores;
+  const heard: string[] = [];
+  ns.setUiNotify((channel) => void heard.push(channel));
   const backend = stores.backend as { engineRun: unknown };
   const real = backend.engineRun;
   backend.engineRun = () => {
@@ -106,9 +112,12 @@ test("a render listed for a system leaves the list when the plugin's own wiring 
     const systemId = stores.project.systems.view()[0].id;
     stores.renders.start(systemId, {});
     expect(stores.renders.list().map((r) => r.systemId)).toEqual([systemId]); // its system has a tile: kept
+    heard.length = 0;
     stores.project.newProject(); // the system goes, through the signal the control plane observes
     expect(stores.renders.list().length).toBe(0);
+    expect(heard.filter((c) => c === "systems").length).toBe(1);
   } finally {
+    ns.setUiNotify(null);
     backend.engineRun = real;
   }
 });

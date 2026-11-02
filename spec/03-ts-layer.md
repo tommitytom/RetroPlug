@@ -243,8 +243,9 @@ The top-level source of truth. It **owns** the `SystemsStore` (wiring its `onCha
 settings (`ProjectSettings` = `{ layout, midiRouting, audioRouting, zoom, controller }`,
 [projectConfig.ts:37](../packages/retroplug/src/projectConfig.ts#L37)), the
 `currentPath`, `dirty`, and a `pendingLoad` latch. It exposes **three** change signals:
-`setOnSystemsChange` (structural, or a setting the graph's script nodes read: the UI and the
-plugin's watched ROMs observe it), `setOnChange` (any state: settings, dirty), and the transient focus
+`addOnSystemsChange` (structural, or a setting the graph's script nodes read: an observer list, kept in order
+and isolated from each other's throws; composeAppStores' observer prunes the render list and notifies the editor, and
+the plugin's control plane adds the watched-ROM refresh), `setOnChange` (any state: settings, dirty), and the transient focus
 signal via `systems.setOnFocusChange` (re-renders tiles without dirtying or publishing the graph).
 
 Project I/O is doc 05's territory, but the store surface is: `newProject`, `save(path)` (a
@@ -435,8 +436,9 @@ host builds the *same* graph the *same* way.
 evaluated once by the plugin host in its txiki context. It composes the whole store graph through
 `composeAppStores()` (backend + registry + recent + userConfig + bindings + project +
 fileSelection). It loads nothing for the audio thread: the script nodes are types every Engine has,
-and the graph the project publishes carries them and their settings. Its structure hook (`setOnSystemsChange`) refreshes
-the watched ROMs and re-renders the editor.
+and the graph the project publishes carries them and their settings. Its structure observer (`addOnSystemsChange`)
+refreshes the watched ROMs; the editor's re-render and the render list's prune are composeAppStores' own observer on
+the same signal.
 
 It then exposes the **string-only C++→JS surface** for project I/O — the plugin drives these
 directly with no further RPC:

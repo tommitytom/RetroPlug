@@ -346,6 +346,26 @@ test("a load where one system does not build publishes once, with the rest", () 
   ]);
 });
 
+test("one throwing systems observer does not skip the ones after it, nor fail the edit", () => {
+  const { p, sys } = project();
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...a: unknown[]) => void warned.push(a.join(" "));
+  let heard = 0;
+  try {
+    p.addOnSystemsChange(() => {
+      throw new Error("an observer died");
+    });
+    p.addOnSystemsChange(() => void heard++);
+    expect(sys.addSystem("/roms/a.gb") !== null).toBe(true); // the edit itself completes
+  } finally {
+    console.warn = warn;
+  }
+  expect(heard).toBe(1);
+  expect(warned.length).toBe(1);
+  expect(warned[0].includes("an observer died")).toBe(true);
+});
+
 test("a load that throws partway places what it adopted, and the edits after it plan", () => {
   const { be, p, sys } = project();
   sys.addSystem("/roms/a.gb");

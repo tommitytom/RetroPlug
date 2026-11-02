@@ -219,7 +219,15 @@ export class ProjectStore {
   }
 
   private notifySystemsChange(): void {
-    for (const fn of this.systemsObservers) fn();
+    // One observer's throw must not skip the ones after it (the UI's notify, the plugin's watched ROMs), nor fail the
+    // edit that signalled: each is isolated, as the load failure paths isolate their own notify.
+    for (const fn of this.systemsObservers) {
+      try {
+        fn();
+      } catch (e) {
+        console.warn(`[project] a systems observer threw: ${String(e)}`);
+      }
+    }
   }
 
   /** Install a hook fired on ANY project-state change — settings edits (setLayout / setZoom / …) and
