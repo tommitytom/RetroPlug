@@ -117,7 +117,7 @@ std::string fixture(const char* relative) {
 }
 
 // What a RenderHost run directly on this thread gives for `spec`: its result, and its console lines, collected rather
-// than printed. In continuous blocks, as an engine job runs its RenderHost.
+// than printed, run as an engine job runs its RenderHost.
 struct Direct {
     retroplug::RenderHost::Result result;
     std::vector<std::string>      lines;
@@ -125,8 +125,7 @@ struct Direct {
 Direct renderDirectly(const std::string& spec) {
     Direct                d;
     retroplug::RenderHost host;
-    d.result = host.run(spec, {}, {}, [&d](bool, const char* text) { d.lines.emplace_back(text); },
-                        retroplug::RenderHost::Blocks::Continuous);
+    d.result = host.run(spec, {}, {}, [&d](bool, const char* text) { d.lines.emplace_back(text); });
     return d;
 }
 

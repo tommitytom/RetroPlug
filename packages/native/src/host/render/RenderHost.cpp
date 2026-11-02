@@ -212,7 +212,7 @@ RenderHost::~RenderHost() {
 }
 
 RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRendered, CancelFn isCancelled,
-                                   ConsoleFn onConsole, Blocks blocks) {
+                                   ConsoleFn onConsole) {
     renderedFn_ = std::move(onRendered);
     cancelFn_ = std::move(isCancelled);
     consoleFn_ = std::move(onConsole);
@@ -225,7 +225,7 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
     QueuedInvoker invoker{engine};
     HostRpcService hostSvc;
     EngineRpcService engineSvc{engine, invoker};
-    engineSvc.setContinuousBlocks(blocks == Blocks::Continuous);
+    engineSvc.setContinuousBlocks(true);
     DebugRpcService debugSvc{engine};
     AudioDriverRpcService driver{engine, invoker};
 
@@ -243,8 +243,7 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
     // and driven on the same (worker) thread, but re-anchor before entering JS to be safe (as ScriptHost does).
     JS_UpdateStackTop(rt_);
 
-    // globalThis[Symbol.for("plugin")] = { __rpcSend, args: [jobJson], blocks }: the worker reads args[0], and
-    // `blocks` ("exact" or "continuous") tells the render library which way its calls run.
+    // globalThis[Symbol.for("plugin")] = { __rpcSend, args: [jobJson] }: the worker reads args[0].
     // bindRpcSend here is the bare-runtime one (this host has no TjsHostRuntime), which is why
     // installPluginNamespace takes a callback rather than a runtime.
     installPluginNamespace(ctx_, [&](JSValue ns) {
@@ -252,8 +251,6 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
         JSValue args = JS_NewArray(ctx_);
         JS_SetPropertyUint32(ctx_, args, 0, JS_NewStringLen(ctx_, jobJson.data(), jobJson.size()));
         JS_SetPropertyStr(ctx_, ns, "args", args);
-        const char* mode = blocks == Blocks::Continuous ? "continuous" : "exact";
-        JS_SetPropertyStr(ctx_, ns, "blocks", JS_NewString(ctx_, mode));
     });
 
     // Run the worker bundle as global-code bytecode. Its top-level main() reads the spec, renders, and

@@ -46,8 +46,8 @@ function normalize(spec: RenderJobSpec): RenderOpts {
   };
 }
 
-/** What the RenderHost puts on globalThis[Symbol.for("plugin")]: the job spec, and how its engine runs blocks. */
-type PluginNamespace = { args?: string[]; blocks?: string };
+/** What the RenderHost puts on globalThis[Symbol.for("plugin")]: the job spec. */
+type PluginNamespace = { args?: string[] };
 function pluginNamespace(): PluginNamespace | undefined {
   return (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as PluginNamespace | undefined;
 }
@@ -70,13 +70,11 @@ function main(): void {
   }
 
   const session = bootSession(); // structurally satisfies RenderContext (backend / project / audio)
-  // An engine job's host runs whole blocks (RenderHost::Blocks), which the settle follows (runRenderJob).
-  const blocks = pluginNamespace()?.blocks === "continuous" ? "continuous" : "exact";
   // A render is an EXPORT. It builds systems, may load a savestate into one, and drops them again, so the
   // before-teardown battery flush would turn an export into a write in the user's save folder.
   session.project.systems.setBatteryFlush(false);
   try {
-    const ctx = { backend: session.backend, project: session.project, audio: session.audio, blocks } as const;
+    const ctx = { backend: session.backend, project: session.project, audio: session.audio } as const;
     const result = runRenderJob(ctx, opts, {
       onRendered: (ms) => __rp_reportRenderedMs?.(ms),
       isCancelled: () => __rp_isRenderCancelled?.() ?? false,

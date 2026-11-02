@@ -411,7 +411,7 @@ void setHostOutputs(AppState& a) {
 
 // ---- __rp_* window hooks (PluginUI's window-op seam, single-instance) ------------------------------
 // The UI optional-chains these, so anything we omit is simply inert. We provide the handful a handheld
-// standalone needs; the render-job hooks are left to a later milestone.
+// standalone needs; renders need no hook here, they are engine jobs through the shared backend's RPCs.
 
 JSValue jsQuitWindow(JSContext*, JSValueConst, int, JSValueConst*) {
     if (g_app) g_app->running = false;

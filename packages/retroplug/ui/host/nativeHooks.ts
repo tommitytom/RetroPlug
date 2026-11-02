@@ -10,7 +10,6 @@
 // `native` is globalThis itself, not a snapshot - a hook bound (or a test fake installed) after import is seen.
 
 import type { AppStores, StoreChannel } from "../../src/appStores";
-import type { RenderJobStatus } from "../../src/renderJobs";
 import type { NativeAudioConfig } from "../screens/menu/audioDraft";
 import type { MidiConfig } from "../screens/menu/midiDevices";
 import type { TransportState } from "../screens/menu/transport";
@@ -46,12 +45,6 @@ export interface RpHooks {
     directory: boolean,
   ) => void;
   __rp_onFileBrowserResult?: (path: string | null) => void;
-
-  // --- background rendering (plugin editor) -----------------------------------------------------------------
-  __rp_startRender?: (systemId: number, specJson: string) => number;
-  __rp_cancelRender?: (jobId: number) => void;
-  __rp_dismissRenderJob?: (jobId: number) => void;
-  __rp_getRenderJobs?: () => RenderJobStatus[];
 
   // --- audio device / MIDI devices / transport (SDL standalone) -------------------------------------------
   __rp_getAudioConfig?: () => NativeAudioConfig;

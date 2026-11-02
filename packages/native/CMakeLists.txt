@@ -206,7 +206,6 @@ add_library(retroplug-backend STATIC
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (script packs' source, the tests' toys)
     src/host/script/ScriptHost.cpp          # the script-node runtimes: TS nodes behind the C ABI, a pair per pack
     src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
-    src/host/render/RenderJobRegistry.cpp   # background render jobs — one worker thread each, cancellable
     ${RENDER_WORKER_BUNDLE_C}               # embedded render-worker bytecode (rp_render_worker_bundle)
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
 )
@@ -251,9 +250,9 @@ set_target_properties(retroplug-host PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# retroplug-render-host-test: drives one RenderHost render from a JSON job spec, so a background/UI render
-# can be proven byte-identical to `retroplug-cli render`. EXCLUDE_FROM_ALL — built by name for the parity
-# check, not part of a normal build.
+# retroplug-render-host-test: submits renders from JSON job specs as engine jobs on an OfflineJobs pool (one,
+# several in parallel, or one cancelled), a manual smoke beside the [engine-jobs] cases and a binary to build in
+# build-tsan/ and build-asan/. EXCLUDE_FROM_ALL: built by name, not part of a normal build.
 add_executable(retroplug-render-host-test EXCLUDE_FROM_ALL test/render-host-main.cpp)
 target_link_libraries(retroplug-render-host-test PRIVATE retroplug-backend)
 set_target_properties(retroplug-render-host-test PROPERTIES

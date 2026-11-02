@@ -3,10 +3,11 @@
 // RenderHost — a self-contained, headless audio-render environment: a BARE QuickJS runtime (no txiki, no
 // libuv) + its own Engine + the in-process RPC bridge, running the render-worker bundle
 // (packages/retroplug/src/render/worker.ts) as global-code bytecode. It is the "retroplug-cli render"
-// pipeline, but embeddable and driven synchronously on the calling thread, designed to run on a worker
-// thread (a dedicated one per job in RenderJobRegistry; a pool worker in an engine job, host/engine/OfflineJobs.hpp),
-// so the plugin can render a fresh system to disk without touching the live audio-thread cores. Built, run and
-// destroyed on the one thread.
+// pipeline, driven synchronously on the calling thread: the body of an engine job, run on a pool worker
+// (host/engine/OfflineJobs.hpp), so a fresh system renders to disk without touching the live audio-thread cores.
+// Built, run and destroyed on the one thread. The job's engine runs whole blocks whatever each of the render's calls
+// asks for, the frames past a call carried to the next (EngineRpcService::setContinuousBlocks), so a render's bytes do
+// not depend on how much each call pulls (docs/modular-graph-phase-d3-design.md section 4).
 //
 // One-shot: construct, run() once, destroy. run() blocks for the whole render. Only console +
 // TextEncoder/TextDecoder + the RPC / rendered / cancel / result thunks are bound (the render path needs
@@ -31,12 +32,6 @@ public:
     // ones (console.warn / error / trace) and for a script exception's report.
     using ConsoleFn  = std::function<void(bool error, const char* text)>;
 
-    // How the job's engine runs the blocks the worker's render calls pull. Exact: each call as whole blocks and then
-    // one of the remainder, as the CLI's in-process render runs them. Continuous: whole blocks only, the frames past a
-    // call carried to the next (EngineRpcService::setContinuousBlocks), so a render's bytes do not depend on how much
-    // each call asks for; an engine job runs this way (docs/modular-graph-phase-d3-design.md section 4).
-    enum class Blocks { Exact, Continuous };
-
     struct Result {
         std::string status;                // "done" | "cancelled" | "error"; empty if the worker never reported
         std::string message;               // error detail (when status == "error")
@@ -54,7 +49,7 @@ public:
     // onConsole the worker's console writes go to the process's stdout and stderr. Returns the worker's reported
     // result (status "error" with a message on any internal failure).
     Result run(const std::string& jobJson, RenderedFn onRendered = {}, CancelFn isCancelled = {},
-               ConsoleFn onConsole = {}, Blocks blocks = Blocks::Exact);
+               ConsoleFn onConsole = {});
 
     // Called by the bound JS thunks (which recover the host via the JS context opaque). Public so the
     // free-function thunks in the .cpp can reach them; not part of the external API.

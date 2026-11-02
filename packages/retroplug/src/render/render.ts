@@ -559,10 +559,10 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
   };
 }
 
-/** Fixed-duration render: stream exactly `targetFrames` frames (trim the last chunk). In continuous blocks
- *  (RenderContext.blocks, an engine job) the output is byte-identical to a single renderAudio(ms) of the same length
- *  for any sample rate / ms / pull; in exact blocks only while no node consumes the transport or MIDI block by block
- *  (a sync node such as rp.sms.sync), whose clock then follows the pulls' splits. `leadIn` is the
+/** Fixed-duration render: stream exactly `targetFrames` frames (trim the last chunk). On the continuous-blocks engine
+ *  of an engine job the output is byte-identical to a single renderAudio(ms) of the same length for any sample rate /
+ *  ms / pull; on an exact-blocks engine (the in-process tests) only while no node consumes the transport or MIDI
+ *  block by block (a sync node such as rp.sms.sync), whose clock then follows the pulls' splits. `leadIn` is the
  *  captured play-gesture audio (the song's opening frames) — committed first so the recording's head isn't
  *  lost, trimmed against the target like any other chunk. */
 function driveFixed(
@@ -757,13 +757,12 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
       : undefined;
   const id = buildSystem(ctx, o, platform, seed?.seed);
 
-  // Settle boot (past the mGB/LSDj splash) before driving playback. Discarded, but in continuous blocks it runs in
-  // the shape the render streams in: the frames past a call in its last block go to the next call only if that call
-  // is of the same shape (EngineRpcService::setContinuousBlocks), so a split render settling in the mix would start
-  // its stems up to a block later than the same render's mix starts, and its detected length would differ by as
-  // much. Exact blocks settle in the mix: there the stems start where the mix does either way, and the shape a NES
-  // settles in moves its stems' bytes.
-  if (o.split === "mix" || ctx.blocks !== "continuous") ctx.audio.renderAudio(1500);
+  // Settle boot (past the mGB/LSDj splash) before driving playback. Discarded, but it runs in the shape the render
+  // streams in: on a continuous-blocks engine (an engine job's) the frames past a call in its last block go to the
+  // next call only if that call is of the same shape (EngineRpcService::setContinuousBlocks), so a split render
+  // settling in the mix would start its stems up to a block later than the same render's mix starts, and its detected
+  // length would differ by as much. An exact-blocks engine carries nothing, so there the shape is only a choice.
+  if (o.split === "mix") ctx.audio.renderAudio(1500);
   else ctx.audio.renderAudioPerChannel(id, 1500);
   if (o.bpm) ctx.audio.setBpm(o.bpm);
   if (o.transport) ctx.audio.setTransport(true);
@@ -814,7 +813,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
       const outputs = sink.finishAll();
       const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
       log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);
-      if (!m.hff) warn(`no HFF stop within ${o.maxDurationMs}ms — add an HFF to the song end for exact length`);
+      if (!m.hff) warn(`no HFF stop within ${o.maxDurationMs}ms - add an HFF to the song end for exact length`);
       hooks.onRendered?.(lengthMs); // settle on the length actually written (the held tail is trimmed off)
       return { outputs, lengthMs, frames: m.endFrame - m.startFrame, hff: m.hff };
     }

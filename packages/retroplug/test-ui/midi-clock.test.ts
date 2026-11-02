@@ -1,6 +1,5 @@
 // The Instance menu's MIDI Clock submenu on the headless display. The editor binds __rp_getTransport
-// natively; the harness doesn't, so (like render-badge.test.ts stubbing __rp_getRenderJobs) we stub the
-// seam and drive it.
+// natively; the harness doesn't, so we stub the seam and drive it.
 //
 // The case that matters is the one that shipped broken: while an EXTERNAL master is running, its tempo
 // changes on its own — the user drags a fader in their DAW — and a menu built once sat there showing the
