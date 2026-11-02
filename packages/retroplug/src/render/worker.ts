@@ -4,7 +4,7 @@
 // globalThis[Symbol.for("plugin")].args[0]; the worker boots a control plane, runs the shared render library, and
 // reports progress / cancellation / completion back through native thunks the RenderHost binds:
 //   __rp_reportRenderedMs(ms)            - audio rendered so far, per rendered chunk
-//   __rp_isRenderCancelled(): boolean    - polled per chunk; true aborts the render
+//   __rp_isRenderCancelled(): boolean    - polled between boot steps and per chunk; true aborts the render
 //   __rp_renderResult(status, message, outputsJson) - "done" | "cancelled" | "error"
 // (all optional-chained so the same bundle stays runnable under a plain host that binds none of them).
 

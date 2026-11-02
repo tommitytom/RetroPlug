@@ -77,6 +77,11 @@ JSValue renderedThunk(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     return JS_UNDEFINED;
 }
 
+// The runtime's interrupt handler, which QuickJS polls while JS runs: true stops the script.
+int interruptThunk(JSRuntime*, void* opaque) {
+    return static_cast<RenderHost*>(opaque)->onInterruptPoll() ? 1 : 0;
+}
+
 JSValue cancelThunk(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     RenderHost* h = hostOf(ctx);
     return JS_NewBool(ctx, h && h->onCancelQuery());
@@ -189,6 +194,7 @@ const char kBootstrap[] = R"JS(
 RenderHost::RenderHost() {
     rt_ = JS_NewRuntime();
     JS_SetMaxStackSize(rt_, kStackBytes);
+    JS_SetInterruptHandler(rt_, interruptThunk, this);
     ctx_ = JS_NewContext(rt_);
     JS_SetContextOpaque(ctx_, this); // the opaque-routed thunks recover the host from ctx
 
@@ -214,10 +220,22 @@ RenderHost::~RenderHost() {
 
 RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRendered, CancelFn isCancelled,
                                    ConsoleFn onConsole) {
+    return runWith(nullptr, jobJson, std::move(onRendered), std::move(isCancelled), std::move(onConsole));
+}
+
+RenderHost::Result RenderHost::runScript(const std::string& source, const std::string& jobJson, RenderedFn onRendered,
+                                         CancelFn isCancelled, ConsoleFn onConsole) {
+    return runWith(&source, jobJson, std::move(onRendered), std::move(isCancelled), std::move(onConsole));
+}
+
+RenderHost::Result RenderHost::runWith(const std::string* source, const std::string& jobJson, RenderedFn onRendered,
+                                       CancelFn isCancelled, ConsoleFn onConsole) {
     renderedFn_ = std::move(onRendered);
     cancelFn_ = std::move(isCancelled);
     consoleFn_ = std::move(onConsole);
     result_ = Result{};
+    cancelSince_ = {};
+    interrupted_ = false;
 
     // The Engine service graph — one per host (mirrors cli/main.cpp), minus TjsHostRuntime. No audio thread
     // is started, so the QueuedInvoker flushes inline on this thread. registerAllBackendRpc mounts the full
@@ -257,16 +275,28 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
 
     // Run the worker bundle as global-code bytecode. Its top-level main() reads the spec, renders, and
     // reports back through the result thunk — all synchronously on this thread.
-    JSValue obj = JS_ReadObject(ctx_, rp_render_worker_bundle, rp_render_worker_bundle_size, JS_READ_OBJ_BYTECODE);
-    if (JS_IsException(obj)) {
-        dumpError(ctx_);
-        JS_FreeValue(ctx_, obj);
-        result_.status = "error";
-        result_.message = "render worker bytecode read failed";
-        return result_;
+    JSValue res = JS_UNDEFINED;
+    // The interrupt's InternalError is reported here, as the cancel it is, rather than as a script error (dumpError).
+    const auto failed = [this](JSValue v) {
+        if (!JS_IsException(v)) return false;
+        if (!interrupted_) return true;
+        JS_FreeValue(ctx_, JS_GetException(ctx_));
+        return false;
+    };
+    if (source) {
+        res = JS_Eval(ctx_, source->c_str(), source->size(), "<render-host-script>", JS_EVAL_TYPE_GLOBAL);
+    } else {
+        JSValue obj = JS_ReadObject(ctx_, rp_render_worker_bundle, rp_render_worker_bundle_size, JS_READ_OBJ_BYTECODE);
+        if (JS_IsException(obj)) {
+            dumpError(ctx_);
+            JS_FreeValue(ctx_, obj);
+            result_.status = "error";
+            result_.message = "render worker bytecode read failed";
+            return result_;
+        }
+        res = JS_EvalFunction(ctx_, obj);
     }
-    JSValue res = JS_EvalFunction(ctx_, obj);
-    if (JS_IsException(res)) {
+    if (failed(res)) {
         dumpError(ctx_);
         if (result_.status.empty()) {
             result_.status = "error";
@@ -275,12 +305,18 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
     }
     JS_FreeValue(ctx_, res);
 
-    // Drain any pending promise jobs. The render path is synchronous, but keep the runtime quiescent.
+    // Drain any pending promise jobs. The render path is synchronous, but keep the runtime quiescent. An interrupted
+    // script's are left to the runtime's teardown, which frees them: the handler would stop each one again.
     JSContext* jc = nullptr;
-    for (;;) {
+    while (!interrupted_) {
         int r = JS_ExecutePendingJob(rt_, &jc);
         if (r == 0) break;
         if (r < 0) { dumpError(jc ? jc : ctx_); break; }
+    }
+
+    if (interrupted_) {
+        result_.status = "cancelled";
+        result_.message.clear();
     }
 
     if (result_.status.empty()) {
@@ -296,6 +332,19 @@ void RenderHost::onRendered(double ms) {
 
 bool RenderHost::onCancelQuery() {
     return cancelFn_ ? cancelFn_() : false;
+}
+
+bool RenderHost::onInterruptPoll() {
+    if (interrupted_) return true;
+    if (!cancelFn_ || !cancelFn_()) return false;
+    const auto now = std::chrono::steady_clock::now();
+    if (cancelSince_ == std::chrono::steady_clock::time_point{}) cancelSince_ = now;
+    if (now - cancelSince_ < kCancelGrace) return false;
+    interrupted_ = true;
+    const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(kCancelGrace).count();
+    onStderr(("render-host: the render did not see its cancel within " + std::to_string(seconds) +
+              " s and was interrupted; a .part file it was writing may be left\n").c_str());
+    return true;
 }
 
 void RenderHost::onResult(std::string status, std::string message, std::vector<std::string> outputs) {

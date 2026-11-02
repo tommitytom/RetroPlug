@@ -1,9 +1,10 @@
 // The files a render streams to before it moves them into place (render.ts's buildSink): each render's own, so one
 // render never opens, truncates or deletes another's. Two overwrite renders of one target that overlap each write a
-// whole WAV and the target is one of them; a `.part` a failed move kept, the only copy of a finished render, survives a
-// later render of the same target that is cancelled; and a rename render stopped before its first chunk gives back the
-// name it reserved. The renders nest (the second runs inside one of the first's pulls), so the overlap is exact rather
-// than timed; the engine jobs' overlap is engine-run's.
+// whole WAV and the target is one of them; a `.part` a failed move kept, the only copy of a finished render, survives
+// a later render of the same target that is cancelled; a rename render stopped before its first chunk gives back the
+// name it reserved; and a render cancelled while it boots stops at its next boot step, before it has a file at all.
+// The renders nest (the second runs inside one of the first's pulls), so the overlap is exact rather than timed; the
+// engine jobs' overlap is engine-run's.
 // It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
@@ -60,6 +61,8 @@ test("two overlapping overwrite renders of one target each write a whole WAV, th
   const nested = (n: number) => {
     // The first render's writer is open by its third pull (the settle, the Start press's lead-in, then the loop).
     if (n !== 2) return;
+    const open = be.listDir("/out").some((f) => /^song\.wav\..+\.part$/.test(f));
+    expect(open, "the first render's .part is open").toBe(true);
     second = runRenderJob(ctxOf(be, levelAudio(0.5)), opts({ durationMs: 100 }), quiet).outputs;
   };
   const first = runRenderJob(ctxOf(be, levelAudio(0.25, nested)), opts(), quiet).outputs;
@@ -75,8 +78,13 @@ test("two overlapping overwrite renders of one target each write a whole WAV, th
 
 /** A backend whose next move onto `blocked` fails, as a DAW holding the file open makes it fail on Windows. */
 class BlockedMove extends MockBackend {
+  readonly created: string[] = []; // every path a writeFile created or truncated, in order
   constructor(private blocked: string | null) {
     super("/config");
+  }
+  override writeFile(path: string, bytes: Uint8Array): boolean {
+    this.created.push(path);
+    return super.writeFile(path, bytes);
   }
   override rename(from: string, to: string): boolean {
     if (to === this.blocked) {
@@ -101,14 +109,18 @@ test("a .part a failed move kept survives a later overwrite render of the target
   expect(keptBytes !== null).toBe(true);
   expect(decodeWav(keptBytes!).pcm.length).toBe(frames(200) * 2);
 
-  // The second render opens its writer with the Start press's lead-in, then is cancelled at its first poll.
+  // The second render is cancelled once it has a .part of its own open (its writer opens with the Start press's
+  // lead-in), so it has a file of its own to discard.
+  const before = be.created.length;
+  const ownPart = () => be.created.slice(before).filter((p) => p.endsWith(".part") && p !== kept);
   let message2 = "";
   try {
-    runRenderJob(ctxOf(be, levelAudio(0.5)), opts(), { ...quiet, isCancelled: () => true });
+    runRenderJob(ctxOf(be, levelAudio(0.5)), opts(), { ...quiet, isCancelled: () => ownPart().length > 0 });
   } catch (e) {
     message2 = (e as Error).message;
   }
   expect(message2).toBe("render: cancelled");
+  expect(ownPart().length, "the cancelled render wrote a .part of its own").toBe(1);
   const now = be.readFile(kept);
   expect(now !== null && now.length === keptBytes!.length && now.every((b, i) => b === keptBytes![i]), "kept as it was")
     .toBe(true);
@@ -116,20 +128,58 @@ test("a .part a failed move kept survives a later overwrite render of the target
 });
 
 test("a rename render cancelled before its first chunk gives back the name it reserved", () => {
-  // With no Start press there is no lead-in, so the cancel lands at the first poll, before any writer opened: what is
-  // left to remove is only the reservation.
+  // With no Start press there is no lead-in, so a cancel taken once the name is reserved lands at the stream's first
+  // poll, before any writer opened: what is left to remove is only the reservation, which is still empty then.
   const be = new MockBackend("/config");
   be.seed("/out/song.wav", "an earlier export");
   let cancelled = false;
+  let atCancel: number[] = [];
+  const reserved = () => be.paths().filter((p) => p.endsWith(".part"));
   try {
     runRenderJob(ctxOf(be, levelAudio(0.25)), opts({ onExists: "rename", start: false }), {
       ...quiet,
-      isCancelled: () => true,
+      isCancelled: () => {
+        if (reserved().length === 0) return false;
+        atCancel = reserved().map((p) => be.readFile(p)!.length);
+        return true;
+      },
     });
   } catch (e) {
     cancelled = (e as Error).message === "render: cancelled";
   }
   expect(cancelled).toBe(true);
+  expect(atCancel, "cancelled holding only its empty reservation").toEqual([0]);
   expect(be.listDir("/out")).toEqual(["song.wav"]);
   expect(be.readText("/out/song.wav")).toBe("an earlier export");
+});
+
+test("a render cancelled while it boots stops at its next boot step, before it reserves or writes a file", () => {
+  // The cancel lands during the boot settle (the first pull): the render ends there, rather than run its Start press
+  // and open its writer before its stream's first poll sees it.
+  const be = new MockBackend("/config");
+  let pulls = 0;
+  let cancel = false;
+  let message = "";
+  try {
+    runRenderJob(ctxOf(be, levelAudio(0.25, () => ((cancel = true), pulls++))), opts({ onExists: "rename" }), {
+      ...quiet,
+      isCancelled: () => cancel,
+    });
+  } catch (e) {
+    message = (e as Error).message;
+  }
+  expect(message).toBe("render: cancelled");
+  expect(pulls, "only the settle ran").toBe(1);
+  expect(be.log.filter((m) => m === "writeFile" || m === "appendFile")).toEqual([]);
+  expect(be.listDir("/out")).toEqual([]);
+
+  // One cancelled before it starts builds nothing and renders nothing.
+  let pulled = 0;
+  try {
+    runRenderJob(ctxOf(be, levelAudio(0.25, () => pulled++)), opts(), { ...quiet, isCancelled: () => true });
+  } catch (e) {
+    message = (e as Error).message;
+  }
+  expect(message).toBe("render: cancelled");
+  expect(pulled).toBe(0);
 });

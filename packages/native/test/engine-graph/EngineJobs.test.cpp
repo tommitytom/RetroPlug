@@ -1,19 +1,21 @@
-// Engine jobs (docs/modular-graph-phase-d3-design.md section 3, host/engine/OfflineJobs.hpp): a render run on a worker
-// of the engine's offline pool by a RenderHost the worker builds, runs and destroys. A render job writes the WAV a
-// RenderHost run directly in continuous blocks writes for the same spec, byte for byte, reporting its progress (rising
-// chunk by chunk to the rendered length on a fixed-length render) and its console lines as it goes; a cancel stops it,
-// queued, starting or running, and one taken after its body finished still wins, keeping the files written; an engine
-// destroyed with renders in flight cancels and joins them; renders hold at most all but one of the pool's workers, so a
-// graph job still runs beside them (a pool of 1 starting its second thread for one), and the ones held back start in
-// submission order; an engine job computes in the default floating-point mode; renders run back to back on one reused
-// worker and in parallel on several, each giving the bytes a direct run gives; a render's JS stack fits a 512 KiB
-// thread, a recursion past it ending the render in an error; the console record keeps its bounds; the RPCs carry all of
-// it; and a kind that is not "render" is refused. Continuous blocks themselves (design section 4,
-// EngineRpcService::setContinuousBlocks), over an mGB that MIDI plays: a render's bytes do not depend on the lengths
-// its calls ask for, a message staged between two calls landing where the block they end in ends, where exact blocks
-// land it where the call ended; a carried tail goes only to a call of its own shape (a per-channel render's across its
-// calls, on an eight-lane host), and a call of another shape, a renderBlocks run or a rate change drops it; exact
-// blocks carry nothing.
+// Engine jobs (docs/modular-graph-phase-d3-design.md section 3, host/engine/OfflineJobs.hpp): a render run on a
+// worker of the engine's offline pool by a RenderHost the worker builds, runs and destroys. A render job writes the
+// WAV a RenderHost run directly in continuous blocks writes for the same spec, byte for byte, reporting its progress
+// (rising chunk by chunk to the rendered length on a fixed-length render) and its console lines as it goes; a cancel
+// stops it, queued, starting or running, and one taken after its body finished still wins, keeping the files written;
+// an engine destroyed with renders in flight cancels and joins them; renders hold at most all but one of the pool's
+// workers, so a graph job still runs beside them (a pool of 1 starting its second thread for one), and the ones held
+// back start in submission order; an engine job computes in the default floating-point mode; renders run back to back
+// on one reused worker and in parallel on several, each giving the bytes a direct run gives; a render's JS stack fits
+// a 512 KiB thread, a recursion past it ending the render in an error; a script that never sees its cancel is
+// interrupted once the cancel has waited RenderHost::kCancelGrace, one that sees it ends on its own, and an engine
+// destroyed with a wedged render does not hang on it; the console
+// record keeps its bounds; the RPCs carry all of it; and a kind that is not "render" is refused. Continuous blocks
+// themselves (design section 4, EngineRpcService::setContinuousBlocks), over an mGB that MIDI plays: a render's bytes
+// do not depend on the lengths its calls ask for, a message staged between two calls landing where the block they end
+// in ends, where exact blocks land it where the call ended; a carried tail goes only to a call of its own shape (a
+// per-channel render's across its calls, on an eight-lane host), and a call of another shape, a renderBlocks run or a
+// rate change drops it; exact blocks carry nothing.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[engine-jobs]"`. The ROMs are the
 // repo's own (resources/roms), which render silence through the render library with no song or MIDI but for an mGB
@@ -660,6 +662,74 @@ TEST_CASE("a cancel that lands as a render starts ends it within a chunk of the 
     CHECK(c.outputs.empty());
     CHECK(c.renderedMs <= atCancel + 100.0);  // at most the one chunk under way when the cancel landed
     CHECK(c.renderedMs < 600000.0);
+}
+
+// A render's script run on a RenderHost of the test's own, with a cancel that turns true `after` the run starts: the
+// result, the console lines and how long the run took.
+struct Interrupted {
+    retroplug::RenderHost::Result result;
+    std::vector<std::string>      lines;
+    std::chrono::milliseconds     took{};
+};
+Interrupted runCancelled(const std::string& source, std::chrono::milliseconds after) {
+    Interrupted                 r;
+    retroplug::RenderHost       host;
+    const auto                  t0 = std::chrono::steady_clock::now();
+    const auto                  cancelled = [t0, after] { return std::chrono::steady_clock::now() - t0 >= after; };
+    const auto                  console = [&r](bool, const char* text) { r.lines.emplace_back(text); };
+    r.result = host.runScript(source, "{}", {}, cancelled, console);
+    r.took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0);
+    return r;
+}
+
+bool anyLineHas(const std::vector<std::string>& lines, const char* text) {
+    return std::any_of(lines.begin(), lines.end(),
+                       [text](const std::string& l) { return l.find(text) != std::string::npos; });
+}
+
+TEST_CASE("a render's script that never sees its cancel is interrupted once the cancel has waited the grace",
+          "[engine-graph][engine-jobs]") {
+    // A script wedged in a loop polls nothing, so without the runtime's interrupt handler a cancel never ended it, and
+    // an engine's teardown, which joins its renders, hung on it.
+    const auto r = runCancelled("for (;;) {}", std::chrono::milliseconds(100));
+    INFO("took " << r.took.count() << " ms");
+    CHECK(r.result.status == "cancelled");
+    CHECK(r.result.message.empty());
+    CHECK(r.took >= retroplug::RenderHost::kCancelGrace);
+    CHECK(r.took < retroplug::RenderHost::kCancelGrace + std::chrono::seconds(10));
+    CHECK(anyLineHas(r.lines, "interrupted"));
+}
+
+TEST_CASE("a render's script that polls its cancel ends on its own, uninterrupted", "[engine-graph][engine-jobs]") {
+    // The grace is the script's: one that sees the cancel (a render does between its boot steps and its chunks) unwinds
+    // through its own catch, which removes its files, and reports its own result.
+    const auto r = runCancelled(
+        "while (!__rp_isRenderCancelled()) {} __rp_renderResult('cancelled', 'seen by the script', []);",
+        std::chrono::milliseconds(100));
+    CHECK(r.result.status == "cancelled");
+    CHECK(r.result.message == "seen by the script");
+    CHECK(r.took < retroplug::RenderHost::kCancelGrace);
+    CHECK_FALSE(anyLineHas(r.lines, "interrupted"));
+}
+
+TEST_CASE("an engine destroyed with a wedged render ends it at the grace rather than hang",
+          "[engine-graph][engine-jobs]") {
+    std::atomic<bool>   started{false};
+    const EngineJobBody body = [&](const EngineJobRequest& request, const EngineJobHooks& hooks) {
+        retroplug::RenderHost host;
+        started.store(true, std::memory_order_release);
+        const auto r = host.runScript("for (;;) {}", request.spec, hooks.rendered, hooks.cancelled, hooks.console);
+        return EngineJobOutcome{r.status, r.message, r.outputs};
+    };
+    const auto t0 = std::chrono::steady_clock::now();
+    {
+        OfflineJobs jobs({}, 2, body);
+        REQUIRE(jobs.submitEngine({"render", "{}"}).id != 0);
+        REQUIRE(waitFor(started));
+    }  // the teardown cancels the job and joins its worker
+    const auto took = std::chrono::steady_clock::now() - t0;
+    INFO("took " << std::chrono::duration_cast<std::chrono::milliseconds>(took).count() << " ms");
+    CHECK(took < retroplug::RenderHost::kCancelGrace + std::chrono::seconds(10));
 }
 
 TEST_CASE("a cancel taken after a job's body finished still ends it cancelled, keeping the files it wrote",

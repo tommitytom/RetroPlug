@@ -71,7 +71,7 @@ export interface RenderContext {
  *  The worker wires onRendered/isCancelled to native thunks and routes log/warn to the host. */
 export interface RenderHooks {
   onRendered?(ms: number): void; // audio duration rendered so far (ms), called per rendered chunk
-  isCancelled?(): boolean; // polled per chunk; when true the render aborts with RenderCancelled
+  isCancelled?(): boolean; // polled between boot steps and per chunk; when true the render aborts with RenderCancelled
   log?(msg: string): void; // informational output (defaults to console.log)
   warn?(msg: string): void; // warnings (defaults to console.warn)
 }

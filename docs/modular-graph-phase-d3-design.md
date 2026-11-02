@@ -69,7 +69,8 @@ and the lines the job's script wrote to its console since the last drain.
 
 **Running.** A pool worker builds a `RenderHost` on its own thread, runs the job in the default floating-point
 environment (as graph jobs do) and tears the host down on that thread. Cancel is the existing cooperative check,
-polled per chunk; an engine's teardown cancels its engine jobs and joins them.
+polled between the boot's steps and per chunk, with the runtime's interrupt handler stopping a script that has not
+seen a cancel within two seconds; an engine's teardown cancels its engine jobs and joins them.
 
 **Sharing the pool.** A render is a full emulator running flat out for seconds or minutes; a kit compile takes
 milliseconds. Engine jobs hold at most all but one of the pool's workers at once (one, for a pool of one), the rest
@@ -208,7 +209,8 @@ made them false (chunking, the worker budget, the carry's rules).
   `RenderHost` (a bare QuickJS runtime), whose `run()` builds the job's own `Engine`, `QueuedInvoker`, four RPC services
   and in-process server, evaluates the embedded render bundle synchronously and returns; everything dies on the worker
   before it takes the pool's lock to publish. Teardown sets `stopping_`, drops queued jobs, cancels running ones and
-  joins; a running render sees the cancel at its next chunk, so nothing a render touches outlives the pool, which is
+  joins; a running render sees the cancel at its next boot step or chunk (or is interrupted, below), so nothing a
+  render touches outlives the pool, which is
   reset before any other `Engine` member. Lock order is the pool's mutex, then a record's lock; no lock is held across
   `RenderHost::run`.
 - **A render's JS stack.** A pool worker is a plain `std::thread` (512 KiB of stack on macOS, 1 MiB on Windows), so a
@@ -246,11 +248,17 @@ made them false (chunking, the worker budget, the carry's rules).
   Nothing else is shared: QuickJS keeps no per-thread state, Mesen's scratch paths are numbered by atomic counters,
   `SnapshotRegistry` is per `Engine`, and r8brain's statics outlive every pool. The pool header lists this
   explicitly.
-- **Teardown mid-render and editor reopen** (design question 5). An engine's destruction cancels at the next chunk and
-  joins; completions not drained go with the pool; a render cancelled mid-render has its WAV removed (commit 3). With
-  the editor
-  closed, completions wait in native's queue (counting toward the 64) and the record bound caps the lines; the
-  control-plane runtime's queue still holds the promise, so the next pump after the editor reopens settles it.
+- **Teardown mid-render and editor reopen** (design question 5). An engine's destruction cancels and joins, on the
+  thread that removes the instance or quits the host, so it waits for each running render to stop: a render checks
+  for a cancel between the steps of its boot (the song's promotion, the build, the settle, smsggdj's load, all before
+  it has a file) and before each chunk, and `RenderHost` sets the runtime's interrupt handler, which stops a script
+  that has not seen a cancel within `RenderHost::kCancelGrace` (two seconds) the next time it runs JS, so a script
+  wedged in a loop cannot hang the teardown. Its run ends cancelled and says so on its console; QuickJS's interrupt is
+  caught by no `catch` or `finally`, so such a render may leave the `.part` files it was writing. A core wedged inside
+  one native call is beyond it. Completions not drained go with the pool; a render cancelled mid-render has its WAV
+  removed (commit 3). With the editor closed, completions wait in native's queue (counting toward the 64) and the
+  record bound caps the lines; the control-plane runtime's queue still holds the promise, so the next pump after the
+  editor reopens settles it.
 
 ### Continuous blocks and the render baseline (commit 2)
 

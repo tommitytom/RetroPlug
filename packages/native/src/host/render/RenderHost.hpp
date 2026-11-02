@@ -9,11 +9,13 @@
 // asks for, the frames past a call carried to the next (EngineRpcService::setContinuousBlocks), so a render's bytes do
 // not depend on how much each call pulls (docs/modular-graph-phase-d3-design.md section 4).
 //
-// One-shot: construct, run() once, destroy. run() blocks for the whole render. Only console +
+// One-shot: construct, run() once, destroy. run() blocks for the whole render; a cancel the script does not see within
+// kCancelGrace interrupts it. Only console +
 // TextEncoder/TextDecoder + the RPC / rendered / cancel / result thunks are bound (the render path needs
 // nothing else from the runtime). See ClassIdSpace note: bare QuickJS with no fresh native-class
 // registration, so the multi-txiki-runtime class-id hazard does not apply here.
 
+#include <chrono>
 #include <cstddef>
 #include <functional>
 #include <string>
@@ -28,7 +30,7 @@ namespace retroplug {
 class RenderHost {
 public:
     using RenderedFn = std::function<void(double)>;  // audio rendered so far, in milliseconds
-    using CancelFn   = std::function<bool()>;         // polled per chunk; true aborts the render
+    using CancelFn   = std::function<bool()>;         // polled between boot steps and per chunk; true aborts the render
     // One console write the worker made (console.log and the rest, each ending in a newline), `error` for the stderr
     // ones (console.warn / error / trace) and for a script exception's report.
     using ConsoleFn  = std::function<void(bool error, const char* text)>;
@@ -39,6 +41,15 @@ public:
         std::vector<std::string> outputs;  // WAV paths written (when status == "done")
         bool ok() const { return status == "done"; }
     };
+
+    // How long a cancel waits for the script to see it before the runtime's interrupt handler stops the script. A
+    // render checks for a cancel between the steps of its boot and before each chunk, and unwinds through its own
+    // catch, which removes the files it opened; a script that does not see one (wedged in a loop, or in a step longer
+    // than this) is interrupted the next time it runs JS past the grace: its run ends cancelled, says so on its
+    // console, and may leave the `.part` files it was writing, as QuickJS's interrupt is caught by no catch or
+    // finally. A core wedged inside one native call is out of its reach. Two seconds is many chunks: a chunk is 100
+    // ms of audio, rendered in a fraction of that.
+    static constexpr std::chrono::milliseconds kCancelGrace{2000};
 
     RenderHost();
     ~RenderHost();
@@ -52,10 +63,16 @@ public:
     // reported result (status "error" with a message on any internal failure).
     Result run(const std::string& jobJson, RenderedFn onRendered, CancelFn isCancelled, ConsoleFn onConsole);
 
+    // run(), evaluating `source` (global code) in place of the render-worker bundle, in the same runtime, thunks and
+    // Engine: for the host's own tests, which need a script the bundle is not (one that never polls its cancel).
+    Result runScript(const std::string& source, const std::string& jobJson, RenderedFn onRendered,
+                     CancelFn isCancelled, ConsoleFn onConsole);
+
     // Called by the bound JS thunks (which recover the host via the JS context opaque). Public so the
     // free-function thunks in the .cpp can reach them; not part of the external API.
     void onRendered(double ms);
     bool onCancelQuery();
+    bool onInterruptPoll();
     void onResult(std::string status, std::string message, std::vector<std::string> outputs);
     void onStdout(const char* text);
     void onStderr(const char* text);
@@ -74,6 +91,9 @@ private:
     // build, whose interpreter frames are larger, is unmeasured.
     static constexpr std::size_t kStackBytes = 256 * 1024;
 
+    Result runWith(const std::string* source, const std::string& jobJson, RenderedFn onRendered, CancelFn isCancelled,
+                   ConsoleFn onConsole);
+
     JSRuntime* rt_ = nullptr;
     JSContext* ctx_ = nullptr;
 
@@ -81,6 +101,10 @@ private:
     CancelFn   cancelFn_;
     ConsoleFn  consoleFn_;
     Result     result_;
+    // When the interrupt handler first saw the cancel (the epoch while it has not), and whether it then stopped the
+    // script.
+    std::chrono::steady_clock::time_point cancelSince_{};
+    bool                                  interrupted_ = false;
 };
 
 } // namespace retroplug

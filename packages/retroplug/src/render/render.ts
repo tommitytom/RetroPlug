@@ -833,6 +833,14 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     throw new Error(`render: pullMs ${pullMs} is under one frame at ${rate}Hz`);
   }
 
+  // The boot (the song's promotion, the system's build, the settle, smsggdj's song load) is checked for a cancel
+  // between its steps, as the stream is between its chunks: a cancel taken while it boots ends the render at its next
+  // step rather than after its Start press, and before it has reserved or opened a file, so there is nothing to
+  // discard.
+  const cancelPoint = () => {
+    if (hooks.isCancelled?.()) throw new RenderCancelled();
+  };
+  cancelPoint();
   const seed = resolveSongSeed(ctx, o, log, warn);
   // smsggdj resolves its song here rather than through the seed, because its working song is not in the
   // battery — see resolveSmsggdjSong. Resolved BEFORE the boot so a bad --song fails fast.
@@ -840,7 +848,9 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     (platform === "sms" || platform === "gg") && (o.song !== undefined || o.songIndex !== undefined)
       ? resolveSmsggdjSong(ctx, o, log, warn)
       : undefined;
+  cancelPoint();
   const id = buildSystem(ctx, o, platform, seed?.seed);
+  cancelPoint();
 
   // Settle boot (past the mGB/LSDj splash) before driving playback. Discarded, but it runs in the shape the render
   // streams in: on a continuous-blocks engine (an engine job's) the frames past a call in its last block go to the
@@ -850,12 +860,14 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // bytes (a settle per channel emulates it differently from one in the mix), and no in-process caller renders split.
   if (o.split === "mix") ctx.audio.renderAudio(1500);
   else ctx.audio.renderAudioPerChannel(id, 1500);
+  cancelPoint();
   if (o.bpm) ctx.audio.setBpm(o.bpm);
   if (o.transport) ctx.audio.setTransport(true);
 
   // AFTER the settle: the cart's boot blanks the song block, so an earlier write would be wiped.
   if (smsSong) loadSmsggdjSongLive(ctx, o, id, smsSong.index);
   else warnIfSmsggdjHasNoSong(ctx, o, platform, warn);
+  cancelPoint();
 
   const sr = ctx.audio.sampleRate();
   // Default the filename to the SONG: the selected song when --song/--song-index is used, else the sav's

@@ -155,7 +155,8 @@ private:
 };
 
 // What an engine job's body hears from the pool and reports through: the rendered milliseconds and the console writes
-// go into the job's record, and `cancelled` is the job's cancel flag, which the body polls (a render once per chunk).
+// go into the job's record, and `cancelled` is the job's cancel flag, which the body polls (a render between its boot
+// steps and once per chunk, and its runtime's interrupt handler past RenderHost::kCancelGrace).
 struct EngineJobHooks {
     std::function<void(double ms)>                      rendered;
     std::function<bool()>                               cancelled;
@@ -187,7 +188,8 @@ public:
     // what an engine job runs, the RenderHost body when empty (a test gives its own).
     explicit OfflineJobs(std::span<const rp_package* const> extra = {}, unsigned size = 0, EngineJobBody body = {});
     // Cancels every job: the queued ones are dropped unrun, the running ones stop at their next block boundary or
-    // before their next input (a graph job) or at their next chunk (an engine job); then joins every worker.
+    // before their next input (a graph job) or at their next boot step or chunk (an engine job, whose script is
+    // interrupted if it has not seen the cancel within RenderHost::kCancelGrace); then joins every worker.
     // Completions not yet drained go with the pool.
     ~OfflineJobs();
     OfflineJobs(const OfflineJobs&) = delete;
