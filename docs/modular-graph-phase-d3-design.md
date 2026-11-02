@@ -108,8 +108,8 @@ Outside engine jobs `renderAudio` keeps its exact splits, so parity, which drive
 
 **The promise side.** `backend.engineRun("render", spec, { onLog, onProgress })` is a promise of `{ status,
 message, outputs, renderedMs }`, settled through D2's shared pump: the native wait in a host with no UI tick (the CLI,
-the Node addon, the
-test hosts), the UI frame tick in the plugin and the SDL standalone. Its handle has `cancel()`, and `offlineRun`'s
+the Node addon, the test hosts), the UI frame tick in the plugin and the SDL standalone. On Node the wait yields to the
+event loop after each step that waited (section 10). Its handle has `cancel()`, and `offlineRun`'s
 gains the same (D2 left TypeScript cancel out). A job's console lines arrive with its progress, and the CLI prints
 them as they come, as it does today.
 
@@ -324,8 +324,10 @@ made them false (chunking, the worker budget, the carry's rules).
   the job's lines as they arrive (stdout lines to stdout, stderr to stderr). `--list-songs` stays in-process. Its pump
   is `keepAlive()` plus `setOfflineYield` (the next poll step after a native wait runs as a macrotask): without the
   yield a minute-long render exhausts the launcher's bounded loop of 20000 pumps, and the hook is not unconditional
-  because the native test host fires no timers. SIGINT is `__rp_onInterrupt` (`cli/main.cpp`), exposed as
-  `onInterrupt` in `cli/session.ts`: the first Ctrl-C cancels the job, which ends cancelled and prints
+  because the native test host fires no timers. On Node, whose timers fire for any caller, `createAudioDriver` sets
+  the same yield, so an awaited render or kit compile there leaves Node's timers and I/O running rather than holding
+  them until it ends (`offline-yield.test.mjs` in `pnpm test:node`). SIGINT is `__rp_onInterrupt` (`cli/main.cpp`),
+  exposed as `onInterrupt` in `cli/session.ts`: the first Ctrl-C cancels the job, which ends cancelled and prints
   `ERROR: render: cancelled`, exit 1 (one rule for every cancel, not 130), and restores the default handler so a
   second kills a wedged job. A cancelled render, or one that fails mid-render, leaves no WAV: the sink streams each
   output to a `.part` of the render's own, `<path>.<token>.part` (the token from the clock, the runtime's

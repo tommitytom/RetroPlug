@@ -29,7 +29,8 @@
 // no timer at all. A host whose UI tick pumps never turns the wait on, so no step ever blocks its UI thread. In a host
 // with no tick, one `host.pump()` does not return until nothing is pending: libuv timers and I/O do not run meanwhile,
 // and a CLI's Ctrl-C between pumps is not seen. That is milliseconds for a kit; a minute-long render yields to the
-// host's loop after each waited step where the host has timers (setOfflineYield, which the CLI's render sets).
+// host's loop after each waited step where the host has timers (setOfflineYield, which the CLI's render sets, and the
+// audio driver on Node, so an awaited job there leaves Node's timers and I/O running).
 //
 // Native holds at most OFFLINE_MAX_JOBS outstanding per engine and refuses a submission past that as busy. The queue
 // surfaces that only after a drain that threw: one runtime's pending promises are exactly its engine's outstanding jobs

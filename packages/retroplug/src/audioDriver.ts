@@ -7,7 +7,7 @@
 
 import { pumpAllJobs, setJobWait } from "./capability";
 import { compileDmc, compileKit, type KitCompileResult } from "./kit";
-import { setOfflineWait } from "./offline";
+import { setOfflineWait, setOfflineYield } from "./offline";
 import { makeCall } from "./rpcClient";
 import { offlineRunner } from "./realBackend";
 import type { EngineGraph } from "./engineGraph";
@@ -250,6 +250,12 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
   // A host that makes an audio driver has no UI tick to pump offline jobs (the CLI, the Node addon, the test host), so
   // their promises settle through the poll's native wait (src/offline.ts) instead.
   setOfflineWait(OFFLINE_WAIT_MS);
+  // On Node the poll also yields to the event loop after each step that waited in native, so an awaited render or kit
+  // compile does not hold Node's timers and I/O until it ends. Node's timers fire for any caller; txiki's do not in the
+  // native test host, which is why the CLI sets the yield for its render alone rather than here.
+  const node = globalThis as { process?: { versions?: { node?: unknown } }; setTimeout?: (fn: () => void) => unknown };
+  const setTimer = node.setTimeout;
+  if (typeof node.process?.versions?.node === "string" && setTimer) setOfflineYield((resume) => void setTimer(resume));
   // The kit compiles run on the runtime's one offline queue, the emulator client's, so a compile and a live host never
   // drain each other's completions (realBackend's offlineRunner).
   const kitRunner = offlineRunner();

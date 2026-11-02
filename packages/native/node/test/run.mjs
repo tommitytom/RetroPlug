@@ -45,6 +45,6 @@ run("node", [join(REPO, "tools/build-cli-sdk.mjs"), join(BUILD, "cli-sdk")], "bu
 
 run(
     "node",
-    ["--test", join(HERE, "parity.test.mjs"), join(HERE, "emu-parity.test.mjs")],
+    ["--test", join(HERE, "parity.test.mjs"), join(HERE, "emu-parity.test.mjs"), join(HERE, "offline-yield.test.mjs")],
     "running the Node-API host tests",
 );
