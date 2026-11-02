@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 
+#include "host/engine/OfflineJobs.hpp"  // the pool Engine holds behind a forward declaration
 #include "system/ChannelTap.hpp"  // the capability SyncTap arms
 #include "system/SystemBase.hpp"
 #include "system/SystemCapabilities.hpp"

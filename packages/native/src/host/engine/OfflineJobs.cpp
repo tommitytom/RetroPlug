@@ -299,6 +299,7 @@ OfflineCompletion OfflineJobs::run(Job& job) {
         std::vector<Slot> slots;  // by handle - 1
         std::string       why;
         for (std::size_t i = 0; i < req.inputs.size(); ++i) {
+            if (cancelled()) return fail("cancelled");  // between decodes, so a many-file job stops at the next one
             const std::string name = "input " + std::to_string(i);
             graph::ResourceTable::Id id = 0;
             if (auto* s = std::get_if<OfflineSamples>(&req.inputs[i])) {

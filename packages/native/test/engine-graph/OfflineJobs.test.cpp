@@ -768,6 +768,31 @@ TEST_CASE("a cancel that arrives after a job's last block still completes cancel
     CHECK(c.error == "cancelled");
 }
 
+TEST_CASE("a cancel reaches a job between its file decodes", "[engine-graph][offline]") {
+    TempDir     dir;
+    OfflineJobs jobs;
+    // Several long sources: the worker is decoding when the cancel lands, and a job that went on decoding after it
+    // would report every one of them, where one that checks between decodes stops at the next.
+    const auto path = dir.path / "long.wav";
+    writeWav(path, signal(std::size_t(48000) * 60, 1, 5, 48000.0), 48000, true);
+    constexpr std::size_t kFiles = 16;
+    OfflineRequest        r;
+    r.frames = 10;
+    r.rate = 48000.0;
+    for (std::size_t i = 0; i < kFiles; ++i) r.inputs.emplace_back(OfflineFile{path.string(), 0, 0, std::nullopt});
+    const auto s = jobs.submit(r);
+    REQUIRE(s.id != 0);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (jobs.workers() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));  // into the first decode
+    CHECK(jobs.cancel(s.id));
+    const auto c = one(jobs, s.id);
+    CHECK_FALSE(c.ok);
+    CHECK(c.error == "cancelled");
+    CHECK(c.inputs.size() < kFiles);  // the decodes after the cancel never ran
+}
+
 TEST_CASE("an engine destroyed with offline jobs in flight abandons them and joins every worker",
           "[engine-graph][offline]") {
     const int before = threadCount();

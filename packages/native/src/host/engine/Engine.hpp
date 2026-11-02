@@ -18,7 +18,7 @@
 #include "graph/rp_node.h"  // rp_queue
 #include "host/engine/CapabilityJobs.hpp"
 #include "host/engine/HostSyncTrace.hpp"
-#include "host/engine/OfflineJobs.hpp"
+#include "host/engine/OfflineTypes.hpp"
 #include "host/engine/SnapshotRegistry.hpp"
 #include "host/script/ScriptHost.hpp"
 
@@ -28,7 +28,7 @@ class ChannelTap;
 struct DspCommand;
 struct SystemBuildRequest;
 namespace rp::graph { struct HostCommand; }
-namespace rp::host { class CartLink; class SurfaceLink; struct SystemEntry; struct SystemTable; }
+namespace rp::host { class CartLink; class OfflineJobs; class SurfaceLink; struct SystemEntry; struct SystemTable; }
 
 // One message of the host MIDI out (Engine::midiOut), tagged with the system that emitted it.
 struct EngineMidiOut {
