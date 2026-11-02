@@ -1,6 +1,6 @@
 // The UI render seam (ui/host/render.ts), pure-TS: startSystemRender snapshots the live system's state to a
-// temp file and calls the __rp_startRender hook with the right spec; pickActiveRenderJob chooses the tile's
-// badge job. The native render itself (RenderHost/RenderJobRegistry) is proven separately in C++.
+// temp file and starts the render in the store graph's RenderJobs with the right spec; pickActiveRenderJob chooses
+// the tile's badge job. The render itself (an engine job) is proven separately, in C++ and in test-native.
 
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
@@ -27,16 +27,18 @@ interface Captured {
   };
 }
 
-/** Install a __rp_startRender spy; `box.last` holds the most recent capture. */
-function spyStartRender(returnId = 7): { box: { last: Captured | null }; restore: () => void } {
-  const g = globalThis as { __rp_startRender?: (id: number, spec: string) => number };
-  const prev = g.__rp_startRender;
+/** A RenderJobs stand-in recording each start; `box.last` holds the most recent capture. */
+function spyStartRender(returnId = 7): { box: { last: Captured | null }; renders: { start(id: number, spec: object): number } } {
   const box: { last: Captured | null } = { last: null };
-  g.__rp_startRender = (systemId, spec) => {
-    box.last = { systemId, spec: JSON.parse(spec) };
-    return returnId;
+  return {
+    box,
+    renders: {
+      start: (systemId, spec) => {
+        box.last = { systemId, spec: JSON.parse(JSON.stringify(spec)) };
+        return returnId;
+      },
+    },
   };
-  return { box, restore: () => { g.__rp_startRender = prev; } };
 }
 
 test("startSystemRender: battery cart → snapshots live SRAM to a temp file and calls the hook with a mix spec", () => {
@@ -46,6 +48,7 @@ test("startSystemRender: battery cart → snapshots live SRAM to a temp file and
 
   const jobId = startSystemRender(
     backend,
+    spy.renders,
     sysView({ id: 1, romPath: "/roms/song.gb", battery: true }),
     { split: "mix", sampleRate: 48000, maxDurationMs: 90000 },
     "/out/song.wav",
@@ -63,17 +66,15 @@ test("startSystemRender: battery cart → snapshots live SRAM to a temp file and
   expect(cap.spec.maxDurationMs).toBe(90000);
   expect(cap.spec.sav).toBe("/config/.render-src-sys1.sav"); // the temp snapshot, under configDir
   expect(cap.spec.state).toBe(undefined);
-  spy.restore();
 });
 
 test("startSystemRender: channels split threads the split mode through", () => {
   const backend = new MockBackend("/config");
   backend.setSram(2, new Uint8Array([9]));
   const spy = spyStartRender();
-  startSystemRender(backend, sysView({ id: 2, battery: true }), { split: "channels" }, "/out/x");
+  startSystemRender(backend, spy.renders, sysView({ id: 2, battery: true }), { split: "channels" }, "/out/x");
   expect(spy.box.last!.spec.split).toBe("channels");
   expect(spy.box.last!.spec.sampleRate).toBe(undefined); // omitted → worker uses the engine default
-  spy.restore();
 });
 
 test("startSystemRender: the instance's configuration rides along, so the offline core is not built at defaults", () => {
@@ -87,11 +88,10 @@ test("startSystemRender: the instance's configuration rides along, so the offlin
     { kind: "mesen", config: { region: "pal", expansionVolume: 50 } },
     { kind: "bliptoaster-assets", config: { overrides: [{ type: "kit", slot: 1, path: "/kits/mine.rkit" }] } },
   ];
-  startSystemRender(backend, sysView({ id: 3, romPath: "/roms/a.nes", battery: true, roles, settings: { gainDb: -6, reloadOnRomChange: false } }), { split: "mix" }, "/out/x.wav");
+  startSystemRender(backend, spy.renders, sysView({ id: 3, romPath: "/roms/a.nes", battery: true, roles, settings: { gainDb: -6, reloadOnRomChange: false } }), { split: "mix" }, "/out/x.wav");
 
   expect(spy.box.last!.spec.roles).toEqual(roles); // verbatim, configs and all
   expect(spy.box.last!.spec.gainDb).toBe(-6);
-  spy.restore();
 });
 
 test("startSystemRender: a default-configured instance sends no roles/gain, so a render stays a plain boot", () => {
@@ -100,30 +100,18 @@ test("startSystemRender: a default-configured instance sends no roles/gain, so a
   const backend = new MockBackend("/config");
   backend.setSram(1, new Uint8Array([1]));
   const spy = spyStartRender();
-  startSystemRender(backend, sysView({ id: 1, battery: true }), { split: "mix" }, "/out/x.wav");
+  startSystemRender(backend, spy.renders, sysView({ id: 1, battery: true }), { split: "mix" }, "/out/x.wav");
   expect(spy.box.last!.spec.roles).toBe(undefined);
   expect(spy.box.last!.spec.gainDb).toBe(undefined);
-  spy.restore();
 });
 
-test("startSystemRender: no on-disk ROM → no-op (returns null, hook not called)", () => {
+test("startSystemRender: no on-disk ROM → no-op (returns null, nothing started)", () => {
   const backend = new MockBackend("/config");
   const spy = spyStartRender();
-  const jobId = startSystemRender(backend, sysView({ id: 1, romPath: "", battery: true }), { split: "mix" }, "/out/x.wav");
+  const jobId = startSystemRender(backend, spy.renders, sysView({ id: 1, romPath: "", battery: true }), { split: "mix" }, "/out/x.wav");
   expect(jobId).toBe(null);
   expect(spy.box.last).toBe(null);
   expect(backend.readSramCalls.length).toBe(0);
-  spy.restore();
-});
-
-test("startSystemRender: no hook bound (headless) → inert null", () => {
-  const g = globalThis as { __rp_startRender?: unknown };
-  const prev = g.__rp_startRender;
-  delete g.__rp_startRender;
-  const backend = new MockBackend("/config");
-  backend.setSram(1, new Uint8Array([1]));
-  expect(startSystemRender(backend, sysView({ id: 1 }), { split: "mix" }, "/out/x.wav")).toBe(null);
-  g.__rp_startRender = prev;
 });
 
 test("renderBaseName: song name → SAV basename → ROM stem, in priority order", () => {

@@ -22,6 +22,7 @@ import {
   offlineInputRef,
   offlineOutputRef,
   setOfflineWait,
+  setOfflineYield,
   type EngineWireCompletion,
   type EngineWireProgress,
   type EngineWireRequest,
@@ -507,4 +508,35 @@ test("a drain that throws rejects every pending run, not just the one that saw i
   expect(messages).toEqual(["the drain broke", "the drain broke", "the drain broke"]);
   expect(jobs.pendingCount()).toBe(0);
   expect(liveJobCount()).toBe(0);
+});
+
+test("a host with timers: the poll resumes through the yield after a waited step, never by itself", async () => {
+  const port = clockPort();
+  const queue = new OfflineJobs(port);
+  const resumes: (() => void)[] = [];
+  setOfflineWait(7);
+  setOfflineYield((resume) => void resumes.push(resume));
+  try {
+    let result: { status: string } | null = null;
+    // Two jobs, so the first waited drain settles one and leaves the other for a further step.
+    void queue.engine("render", { ms: 5, out: "/a.wav" });
+    void queue.engine("render", { ms: 50, out: "/o.wav" }).then((r) => (result = r));
+    // The quiet steps drain without waiting, as microtasks; the first step that waits hands the poll to the yield.
+    for (let i = 0; i < 40 && resumes.length === 0; i++) await Promise.resolve();
+    expect(resumes.length, "the waited step handed the poll to the yield").toBe(1);
+    expect(port.waits.some((w) => w > 0)).toBe(true);
+    const drains = port.waits.length;
+    // Left alone, the poll takes no further step: it resumes only when the host's loop calls the yield's resume.
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(port.waits.length, "no drain until the host resumes the poll").toBe(drains);
+    expect(result).toBe(null);
+    for (let i = 0; i < 20 && result === null; i++) {
+      resumes.splice(0).forEach((r) => r());
+      for (let k = 0; k < 40; k++) await Promise.resolve();
+    }
+    expect(result!.status).toBe("done");
+  } finally {
+    setOfflineYield(null);
+    setOfflineWait(0);
+  }
 });

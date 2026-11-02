@@ -28,8 +28,8 @@
 // in one synchronous run is in flight at once, a chain of jobs keeps moving, and `await offlineRun(...)` settles with
 // no timer at all. A host whose UI tick pumps never turns the wait on, so no step ever blocks its UI thread. In a host
 // with no tick, one `host.pump()` does not return until nothing is pending: libuv timers and I/O do not run meanwhile,
-// and a CLI's Ctrl-C between pumps is not seen. That is milliseconds for a kit; D3's minute-long renders will need a
-// macrotask yield once a waited step returns in a host with timers.
+// and a CLI's Ctrl-C between pumps is not seen. That is milliseconds for a kit; a minute-long render yields to the
+// host's loop after each waited step where the host has timers (setOfflineYield, which the CLI's render sets).
 //
 // Native holds at most OFFLINE_MAX_JOBS outstanding per engine and refuses a submission past that as busy. The queue
 // surfaces that only after a drain that threw: one runtime's pending promises are exactly its engine's outstanding jobs
@@ -280,6 +280,17 @@ let offlineWaitMs = 0;
  *  with no UI tick. */
 export function setOfflineWait(ms: number): void {
   offlineWaitMs = ms > 0 ? ms : 0;
+}
+
+// How a host with timers lets its event loop run between waited steps, or null for a pure microtask chain.
+let offlineYield: ((resume: () => void) => void) | null = null;
+
+/** Make the poll hand control back to the host's event loop after each step that waited in native: `yieldTo(resume)`
+ *  must call `resume` from a later macrotask (a CLI passes setTimeout(resume, 0)). Without it, one `host.pump()`
+ *  does not return until nothing is pending, so a minute-long render holds libuv's timers, I/O and a Ctrl-C. A host
+ *  with no timers (the native test host never fires setTimeout) must not set it, or the poll would never resume. */
+export function setOfflineYield(yieldTo: ((resume: () => void) => void) | null): void {
+  offlineYield = yieldTo;
 }
 
 function toWire(request: OfflineRunRequest): OfflineWireRequest {
@@ -557,10 +568,12 @@ export class OfflineJobs implements JobQueue {
         return;
       }
       let again = false;
+      let waited = false;
       try {
         const wait = this.submitted || this.quiet < QUIET_STEPS ? 0 : offlineWaitMs;
         const before = this.pending.size;
         this.submitted = false;
+        waited = wait > 0;
         const left = this.settle(wait);
         if (left > 0) {
           if (wait > 0 || this.submitted || this.pending.size !== before) this.quiet = 0;
@@ -572,7 +585,9 @@ export class OfflineJobs implements JobQueue {
         // every later submission.
         if (!again) this.polling = false;
       }
-      if (again) void Promise.resolve().then(step);
+      if (!again) return;
+      if (waited && offlineYield) offlineYield(step);
+      else void Promise.resolve().then(step);
     };
     void Promise.resolve().then(step);
   }

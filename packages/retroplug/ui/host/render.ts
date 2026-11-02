@@ -1,14 +1,16 @@
-// UI-side seam for background audio rendering. The render itself runs natively (a RenderHost on its own
-// worker thread; see packages/native/src/host/render) — this module only snapshots the live system's state
-// and drives the __rp_* hooks the editor binds (PluginUI.cpp). Inert (no-ops / empty) in the headless
-// harness where the hooks are absent, exactly like openPath / the file browser.
+// UI-side seam for background audio rendering. The render itself is an engine job (backend.engineRun, run by
+// the render library on a worker of the engine's offline pool) - this module only snapshots the live system's
+// state, submits the job through the store graph's RenderJobs list, and holds the pure helpers the Render menu and
+// the tile badge share.
 
 import type { SystemView } from "../../src/systemsStore";
 import type { SplitMode, OnExists } from "../../src/render";
 import { resolveSongCatalog } from "../../src/tracker";
 import { stem } from "../../src/pathUtil";
 import { resolveSavPath } from "../../src/savPaths";
-import { native } from "./nativeHooks";
+import type { RenderJobs, RenderJobStatus } from "../../src/renderJobs";
+
+export type { RenderJobStatus };
 
 /** The backend methods startSystemRender needs — all on the plugin's control-plane channel (host +
  *  emulator facets), so it accepts either Backend or the narrower ControlPlaneBackend structurally. */
@@ -17,15 +19,6 @@ interface RenderBackend {
   readSram(id: number): Uint8Array | null;
   readState(id: number): Uint8Array | null;
   writeFileAtomic(path: string, bytes: Uint8Array): boolean;
-}
-
-/** One background render job's status, as __rp_getRenderJobs reports it (mirrors RenderJobRegistry::Status). */
-export interface RenderJobStatus {
-  id: number;
-  systemId: number;
-  state: "rendering" | "done" | "error" | "cancelled";
-  renderedMs: number; // audio rendered so far (ms); on a finished job, the length written
-  message: string; // error detail (state === "error")
 }
 
 /** The render-menu selections carried into a render (from the persisted userConfig.render). */
@@ -37,13 +30,19 @@ export interface RenderRequest {
 }
 
 /** Snapshot the live system's persisted state (its battery SRAM, or a savestate if the cart has no battery)
- *  to a temp file, then start a background render of a FRESH instance built from it — never the running core.
+ *  to a temp file, then start a background render (an engine job, listed in `renders`) of a FRESH instance built
+ *  from it, never the running core.
  *  The instance's CONFIGURATION (its roles + gain) rides along, so "fresh" means a new core set up the way
  *  this one is, not one at the format's defaults. `outPath` is the chosen WAV path (a prefix for split modes,
- *  matching the CLI). Returns the job id, or null if it couldn't start (no on-disk ROM, or the hook is absent
- *  in the headless harness). */
-export function startSystemRender(backend: RenderBackend, sys: SystemView, req: RenderRequest, outPath: string): number | null {
-  if (!native.__rp_startRender || !sys.romPath) return null;
+ *  matching the CLI). Returns the job's id in `renders`, or null if it couldn't start (no on-disk ROM). */
+export function startSystemRender(
+  backend: RenderBackend,
+  renders: Pick<RenderJobs, "start">,
+  sys: SystemView,
+  req: RenderRequest,
+  outPath: string,
+): number | null {
+  if (!sys.romPath) return null;
   const spec: Record<string, unknown> = { rom: sys.romPath, out: outPath, split: req.split };
   if (req.sampleRate !== undefined) spec.sampleRate = req.sampleRate;
   if (req.maxDurationMs !== undefined) spec.maxDurationMs = req.maxDurationMs;
@@ -87,8 +86,7 @@ export function startSystemRender(backend: RenderBackend, sys: SystemView, req: 
     }
   }
 
-  const id = native.__rp_startRender(sys.id, JSON.stringify(spec));
-  return id > 0 ? id : null;
+  return renders.start(sys.id, spec);
 }
 
 /** The base filename a render should default to, in priority order: the loaded tracker cart's WORKING song
@@ -101,21 +99,6 @@ export function renderBaseName(backend: Pick<RenderBackend, "readSram">, sys: Sy
   const song = sram ? catalog!.workingName(sram) : null; // pure byte parse of the header name
   const savName = sys.battery ? stem(resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath)) : null;
   return song || savName || stem(sys.romPath) || "render";
-}
-
-/** Request cancellation of a running render (cooperative — aborts at the next chunk). */
-export function cancelRender(jobId: number): void {
-  native.__rp_cancelRender?.(jobId);
-}
-
-/** Drop a finished job (the tile dismisses a completed/errored badge). */
-export function dismissRenderJob(jobId: number): void {
-  native.__rp_dismissRenderJob?.(jobId);
-}
-
-/** This editor's background render jobs (for the per-frame tile poll). Empty in the headless harness. */
-export function getRenderJobs(): RenderJobStatus[] {
-  return native.__rp_getRenderJobs?.() ?? [];
 }
 
 /** The split modes valid for a system's platform: mix always; channels on GB/NES; pins on NES only. Used to

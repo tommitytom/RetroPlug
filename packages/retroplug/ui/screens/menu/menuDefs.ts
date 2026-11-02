@@ -812,6 +812,7 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
       () =>
         void startSystemRender(
           ctx.stores.backend,
+          ctx.stores.renders,
           sys,
           { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000, onExists: r.onExists },
           joinPath(effectiveDir, `${curName}.wav`),

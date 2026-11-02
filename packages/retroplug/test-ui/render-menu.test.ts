@@ -4,13 +4,10 @@
 //   Split / Sample Rate / Max Duration, and a dialog-less "Render".
 // The file browser is stubbed; we assert the Output Dir opens in DIRECTORY mode and that "Render" writes
 // to <outputDir>/<filename>.wav with the chosen routing / rate / on-exists policy — no dialog at render time.
+// "Render" submits an engine job through the store graph's backend (test-ui/scriptedRenders.ts scripts the job).
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
-
-interface Captured {
-  systemId: number;
-  spec: { split: string; sampleRate?: number; maxDurationMs?: number; onExists?: string; out: string };
-}
+import { installScriptedStores } from "./scriptedRenders";
 
 interface BrowseOpen {
   title: string;
@@ -20,15 +17,10 @@ interface BrowseOpen {
 
 test("render submenu: Output Dir folder-picks, and Render writes <dir>/<name>.wav (no dialog)", () => {
   const g = globalThis as {
-    __rp_startRender?: (id: number, spec: string) => number;
     __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string, sd: string, dir: boolean) => void;
     __rp_onFileBrowserResult?: (path: string | null) => void;
   };
-  let captured: Captured | null = null;
-  g.__rp_startRender = (systemId, spec) => {
-    captured = { systemId, spec: JSON.parse(spec) };
-    return 1;
-  };
+  const scripted = installScriptedStores();
   // Stub the native browser: record each open (title / directory-mode / startDir), then resolve a folder.
   const opens: BrowseOpen[] = [];
   g.__rp_openFileBrowser = (title, _p, _s, _d, sd, dir) => {
@@ -89,7 +81,7 @@ test("render submenu: Output Dir folder-picks, and Render writes <dir>/<name>.wa
   ui.pump(6);
   expect(ui.findByTextContaining("Sample Rate: 48000 Hz") != null).toBeTruthy();
 
-  // Render → dialog-less; __rp_startRender fires with the composed path + the chosen options. No extra
+  // Render → dialog-less; an engine job is submitted with the composed path + the chosen options. No extra
   // browser open (still just the one Output Dir dialog). Focus is on Sample Rate (above the Render action),
   // so this down-only navTo lands on the child action, not the parent "Render" submenu row above it.
   expect(navTo("Render")).toBeTruthy();
@@ -97,13 +89,16 @@ test("render submenu: Output Dir folder-picks, and Render writes <dir>/<name>.wa
   ui.pump(10);
 
   expect(opens.length).toBe(1); // Render opened NO dialog
-  expect(captured != null).toBeTruthy();
-  const cap = captured!;
-  expect(cap.spec.out).toBe("/tmp/renders/mGB.wav"); // <Output Dir>/<Filename>.wav
-  expect(cap.spec.split).toBe("channels");
-  expect(cap.spec.sampleRate).toBe(48000);
-  expect(cap.spec.onExists).toBe("rename");
+  expect(scripted.renders.length).toBe(1);
+  const spec = scripted.renders[0].spec;
+  expect(spec.out).toBe("/tmp/renders/mGB.wav"); // <Output Dir>/<Filename>.wav
+  expect(spec.split).toBe("channels");
+  expect(spec.sampleRate).toBe(48000);
+  expect(spec.onExists).toBe("rename");
+  // The job is listed against the system the menu came from, for that tile's badge.
+  const sysId = scripted.stores.project.systems.view()[0].id;
+  expect(scripted.stores.renders.list().map((j) => [j.systemId, j.state])).toEqual([[sysId, "rendering"]]);
 
-  delete g.__rp_startRender;
+  scripted.restore();
   delete g.__rp_openFileBrowser;
 });

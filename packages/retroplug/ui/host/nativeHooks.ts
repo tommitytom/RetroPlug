@@ -10,7 +10,7 @@
 // `native` is globalThis itself, not a snapshot - a hook bound (or a test fake installed) after import is seen.
 
 import type { AppStores, StoreChannel } from "../../src/appStores";
-import type { RenderJobStatus } from "./render";
+import type { RenderJobStatus } from "../../src/renderJobs";
 import type { NativeAudioConfig } from "../screens/menu/audioDraft";
 import type { MidiConfig } from "../screens/menu/midiDevices";
 import type { TransportState } from "../screens/menu/transport";

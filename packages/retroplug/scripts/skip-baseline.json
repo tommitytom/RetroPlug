@@ -192,6 +192,10 @@
    "skipped": 3,
    "total": 5
   },
+  "render-cli": {
+   "skipped": 1,
+   "total": 6
+  },
   "risa-220-layout": {
    "skipped": 1,
    "total": 1

@@ -24,6 +24,7 @@ import { UserConfigStore } from "./userConfigStore";
 import { BindingsStore } from "./bindingsStore";
 import { ProjectStore } from "./projectStore";
 import { FileSelection } from "./fileSelection";
+import { RenderJobs } from "./renderJobs";
 
 /** The categories of store change a consumer can observe. `project` = project settings / dirty;
  *  `systems` = the systems-structure list; the rest name their store. */
@@ -39,6 +40,8 @@ export interface AppStores {
   project: ProjectStore;
   /** Turns a user's file pick (ROM / .sav) into the right systems op — the menu's Load / Add items. */
   fileSelection: FileSelection;
+  /** The renders started from System > Render, which the tile badge lists. */
+  renders: RenderJobs;
 }
 
 export interface ComposeOptions {
@@ -69,12 +72,16 @@ export function composeAppStores({ backend = createRealBackend({ debug: false })
   bindings.ensureDefaults();
 
   const project = new ProjectStore(backend, recent, registry);
-  project.setOnSystemsChange(() => notify("systems"));
+  const renders = new RenderJobs(backend, () => project.systems.view().map((s) => s.id));
+  project.setOnSystemsChange(() => {
+    renders.prune();
+    notify("systems");
+  });
   project.setOnChange(() => notify("project"));
   // Focus is transient: re-render the tiles on the systems channel, but bypass dirty + the graph publish.
   project.systems.setOnFocusChange(() => notify("systems"));
 
   const fileSelection = new FileSelection(backend, project.systems);
 
-  return { backend, registry, recent, userConfig, bindings, project, fileSelection };
+  return { backend, registry, recent, userConfig, bindings, project, fileSelection, renders };
 }

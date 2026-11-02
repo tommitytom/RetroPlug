@@ -65,6 +65,13 @@ export function keepAlive(): void {
   (globalThis as { __rp_keepAlive?: () => void }).__rp_keepAlive?.();
 }
 
+/** Hear the first Ctrl-C instead of being stopped by it: the launcher (in its unbounded keepAlive loop) calls `fn` on
+ *  the first interrupt, then restores the default action so a second one kills the process. The session decides how
+ *  it ends (a batch export cancels its job and exits non-zero). No-op if the host didn't bind the hook. */
+export function onInterrupt(fn: () => void): void {
+  (globalThis as { __rp_onInterrupt?: (fn: () => void) => void }).__rp_onInterrupt?.(fn);
+}
+
 /** Boot a session and run `main` WITHOUT auto-exiting on success — for a long-running tool that sets up an
  *  event-driven poll loop (setInterval) + keepAlive() and returns, leaving the native pump to run it until
  *  tjs.exit / Ctrl-C. Any throw during setup is reported and exits 1 (mirrors runSession's catch). */

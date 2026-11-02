@@ -94,6 +94,18 @@ JSValue jsKeepAlive(JSContext*, JSValueConst, int, JSValueConst*) {
     return JS_UNDEFINED;
 }
 
+// globalThis.__rp_onInterrupt(fn) - a session asks to hear Ctrl-C instead of being stopped by it. Only the unbounded
+// (keepAlive) loop honours it: the FIRST SIGINT calls fn on the JS thread, restores the default disposition so a
+// second one kills the process (a job wedged in native would otherwise hang the exit), and the loop carries on until
+// the session calls tjs.exit. A batch export uses it to cancel its job and exit non-zero; a bridge, whose normal end is
+// Ctrl-C, registers nothing and keeps the clean exit 0.
+JSValue g_onInterrupt = JS_UNDEFINED;
+JSValue jsOnInterrupt(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    JS_FreeValue(ctx, g_onInterrupt);
+    g_onInterrupt = (argc >= 1 && JS_IsFunction(ctx, argv[0])) ? JS_DupValue(ctx, argv[0]) : JS_UNDEFINED;
+    return JS_UNDEFINED;
+}
+
 // globalThis.__rp_loadTsStripper() — evaluate the compiled-in type stripper into this context, defining
 // globalThis.__stripTypes(source, filename). Called ONCE, lazily, by cli/tsStrip.ts when a `test` / `run`
 // command actually has TypeScript to strip; every other command never pays the ~4 MB. Global-code
@@ -236,6 +248,9 @@ int main(int argc, char** argv) try {
     // bounded batch backstop to run-until-exit (see the pump loop below).
     JS_SetPropertyStr(ctx, global, "__rp_keepAlive", JS_NewCFunction(ctx, jsKeepAlive, "__rp_keepAlive", 0));
 
+    // globalThis.__rp_onInterrupt: a session hears the first Ctrl-C (see jsOnInterrupt).
+    JS_SetPropertyStr(ctx, global, "__rp_onInterrupt", JS_NewCFunction(ctx, jsOnInterrupt, "__rp_onInterrupt", 1));
+
     // globalThis.__rp_loadTsStripper — cli/tsStrip.ts calls it lazily to install __stripTypes.
     JS_SetPropertyStr(ctx, global, "__rp_loadTsStripper",
                       JS_NewCFunction(ctx, jsLoadTsStripper, "__rp_loadTsStripper", 0));
@@ -273,10 +288,23 @@ int main(int argc, char** argv) try {
     if (g_keepAlive) {
         // Long-running session (e.g. a live MIDI bridge): pump until it exits or Ctrl-C. The 250us cadence
         // matches the native bridge loop; the session's own setInterval poll fires as the loop pumps.
-        while (!g_exit.set && !g_sigint) {
+        while (!g_exit.set) {
+            if (g_sigint) {
+                if (JS_IsUndefined(g_onInterrupt)) break;
+                // Hand the first Ctrl-C to the session; a second one gets the default action.
+                g_sigint = 0;
+                std::signal(SIGINT, SIG_DFL);
+                JSValue r = JS_Call(ctx, g_onInterrupt, JS_UNDEFINED, 0, nullptr);
+                if (JS_IsException(r)) tjs_dump_error(ctx);
+                JS_FreeValue(ctx, r);
+                JS_FreeValue(ctx, g_onInterrupt);
+                g_onInterrupt = JS_UNDEFINED;
+            }
             host.pump();
             std::this_thread::sleep_for(std::chrono::microseconds(250));
         }
+        JS_FreeValue(ctx, g_onInterrupt);
+        g_onInterrupt = JS_UNDEFINED;
     } else if (!g_exit.set && !g_sigint) {
         std::fprintf(stderr, "session did not complete (tjs.exit never called)\n");
         return 1;

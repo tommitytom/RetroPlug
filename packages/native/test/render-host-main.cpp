@@ -29,7 +29,7 @@ int runOne(const char* jobJson) {
     retroplug::RenderHost::Result r = host.run(
         jobJson,
         [&lastRenderedMs](double ms) { lastRenderedMs = ms; },
-        [] { return false; });
+        [] { return false; }, {}, retroplug::RenderHost::Blocks::Continuous);
     std::fprintf(stderr, "render-host-test: status=%s rendered=%.0fms message=%s outputs=%zu\n",
                  r.status.c_str(), lastRenderedMs, r.message.c_str(), r.outputs.size());
     for (const std::string& p : r.outputs) std::fprintf(stderr, "  out: %s\n", p.c_str());

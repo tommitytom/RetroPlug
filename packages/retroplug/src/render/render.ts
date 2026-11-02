@@ -1,8 +1,8 @@
 // The shared render orchestration: boot a fresh system from a ROM (+ its battery .sav / a savestate) and
 // stream its audio to WAV — full mix or per-channel/per-pin stems, with tracker song-length auto-detection.
-// Host-neutral: it drives a RenderContext (the CLI's Session or the worker's control plane) and reports
-// through RenderHooks. The CLI `render` command (cli/sessions/render.ts) and the background render worker
-// both call runRenderJob; improving this file improves both.
+// Host-neutral: it drives a RenderContext (a booted control plane) and reports through RenderHooks. The render
+// worker (worker.ts) calls runRenderJob inside every engine job, and the CLI `render` command (cli/sessions/render.ts)
+// and the UI's System > Render both submit one; improving this file improves both.
 //
 // Song-length auto-detect: when a supported tracker is loaded (and no fixed duration is pinned), render to
 // the song's HFF stop, report the length, and trim the output to it. LSDj (GB) detects the stop via the APU
@@ -485,6 +485,7 @@ interface RenderSink {
   renderChunk(ms: number): Float32Array[];
   emit(chunk: Float32Array[], takeFrames: number): void; // commit the first `takeFrames` frames of a chunk
   finishAll(): string[]; // patch every writer's header, log + return the output paths
+  discard(): void; // delete the files opened so far: a cancelled render leaves no WAV whose header says it is empty
 }
 
 /** Left channel of an interleaved-stereo buffer, first `frames` frames (NES streams are mono in the L lane). */
@@ -548,6 +549,12 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
       paths.forEach((p) => log(p));
       log(summary);
       return paths.slice();
+    },
+    discard() {
+      // A writer patches its header only in finish(), so a render stopped part way would leave PCM behind a header
+      // that claims none. A cancelled export is not an export: remove what it opened rather than leave a file that
+      // looks usable (the job's status says cancelled, and a shell sees a non-zero exit).
+      for (const p of paths) ctx.backend.deleteFile(p);
     },
   };
 }
@@ -799,20 +806,25 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
 
   // Auto-start playback, capturing the song's opening frames as the recording's head (see pressPlay). The
   // sink exists first so the button-hold render is captured in the right mix/split shape, not discarded.
-  const leadIn = pressPlay(ctx, sink, o, id, platform);
+  try {
+    const leadIn = pressPlay(ctx, sink, o, id, platform);
 
-  if (autoDetect) {
-    const m = driveAutoDetect(sink, isPlaying!, o.maxDurationMs, sr, hooks, pullMs, leadIn);
+    if (autoDetect) {
+      const m = driveAutoDetect(sink, isPlaying!, o.maxDurationMs, sr, hooks, pullMs, leadIn);
+      const outputs = sink.finishAll();
+      const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
+      log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);
+      if (!m.hff) warn(`no HFF stop within ${o.maxDurationMs}ms — add an HFF to the song end for exact length`);
+      hooks.onRendered?.(lengthMs); // settle on the length actually written (the held tail is trimmed off)
+      return { outputs, lengthMs, frames: m.endFrame - m.startFrame, hff: m.hff };
+    }
+    const targetFrames = Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000); // exact target frame count
+    driveFixed(sink, targetFrames, sr, hooks, pullMs, leadIn);
     const outputs = sink.finishAll();
-    const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
-    log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);
-    if (!m.hff) warn(`no HFF stop within ${o.maxDurationMs}ms — add an HFF to the song end for exact length`);
-    hooks.onRendered?.(lengthMs); // settle on the length actually written (the held tail is trimmed off)
-    return { outputs, lengthMs, frames: m.endFrame - m.startFrame, hff: m.hff };
+    hooks.onRendered?.(Math.round((targetFrames / sr) * 1000));
+    return { outputs };
+  } catch (e) {
+    if (e instanceof RenderCancelled) sink.discard();
+    throw e;
   }
-  const targetFrames = Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000); // exact target frame count
-  driveFixed(sink, targetFrames, sr, hooks, pullMs, leadIn);
-  const outputs = sink.finishAll();
-  hooks.onRendered?.(Math.round((targetFrames / sr) * 1000));
-  return { outputs };
 }

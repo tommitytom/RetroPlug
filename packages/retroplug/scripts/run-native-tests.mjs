@@ -33,8 +33,9 @@ const REPO_RESOURCES_DIR = join(REPO, "resources");
 // unnoticed. Same env override scripts/gen-risa-symbols.mjs already uses.
 const RISA_SRC = process.env.RISA_SRC || "/workspaces/risa-v2.2.1-source";
 
-// Files outside parity/ whose cores power on in a fixed state (below): the render baseline and its chunk test.
-const DETERMINISTIC_FILES = new Set(["render-baseline", "render-chunks"]);
+// Files outside parity/ whose cores power on in a fixed state (below): the render baseline, its chunk test and the
+// CLI check.
+const DETERMINISTIC_FILES = new Set(["render-baseline", "render-chunks", "render-cli"]);
 
 const HOST =
   process.env.RETROPLUG_HOST ||

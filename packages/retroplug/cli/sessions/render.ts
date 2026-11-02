@@ -6,14 +6,18 @@
 //   retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--duration t] [--sample-rate hz]
 //                              [--split mix|channels|pins] [--bpm n] [--transport] [--no-start]
 //
-// This is a thin CLI front: parseRenderArgs turns argv into a RenderOpts, then the shared render library
-// (src/render) does the work — the same code the UI/background render worker runs, so improvements land in
-// both. --list-songs is handled here (it's a query, not a render). See RENDER_HELP in renderArgs.ts for the
-// full flag reference and src/render/render.ts for the render semantics (LSDj auto-length, song selection).
+// This is a thin CLI front: parseRenderArgs turns argv into a RenderOpts, which goes to the engine as a render
+// job (backend.engineRun) - the same job the UI's System > Render submits, run by the render library on a worker
+// of the engine's offline pool. The tool prints the job's console lines as they arrive and maps its result onto
+// the exit code. --list-songs is handled here (it's a query, not a render). See RENDER_HELP in renderArgs.ts for
+// the full flag reference and src/render/render.ts for the render semantics (LSDj auto-length, song selection).
 import { parseRenderArgs, RENDER_SUMMARY, RENDER_HELP, type RenderOpts } from "../renderArgs";
 import type { CliTool } from "../tools";
-import type { Session } from "../session";
-import { platformOf, readSav, readRisaSongs, readSmsggdjSongs, runRenderJob } from "../../src/render";
+import { keepAlive, onInterrupt, type Session } from "../session";
+import { setOfflineYield } from "../../src/offline";
+import { platformOf, readSav, readRisaSongs, readSmsggdjSongs } from "../../src/render";
+
+declare function setTimeout(fn: () => void, ms: number): unknown; // txiki's timers
 
 /** --list-songs: print the sav's populated song slots and exit (renders nothing). GB (LSDj), NES (risa),
  *  SMS/GG (smsggdj). */
@@ -45,13 +49,27 @@ function listSongs(s: Session, o: RenderOpts): void {
   );
 }
 
-function runRender(s: Session, args: string[]): void {
+async function runRender(s: Session, args: string[]): Promise<void> {
   const o = parseRenderArgs(args);
   if (o.listSongs) { listSongs(s, o); return; }
-  // Default hooks: logging → console, no progress/cancel. The Session structurally satisfies RenderContext.
-  // Exporting must not write the user's .sav: see the same call in render/worker.ts.
-  s.project.systems.setBatteryFlush(false);
-  runRenderJob(s, o);
+  // A render is a minutes-long job in a host with timers: the launcher's bounded pump would give up on it, so run the
+  // unbounded pump, and let the job's poll yield to it between waits (src/offline.ts setOfflineYield). The first
+  // Ctrl-C cancels the job, which ends cancelled at its next chunk and removes its partial files (the library's
+  // discard), so the command fails with "render: cancelled" below rather than reporting success over a cut-short
+  // export; a second Ctrl-C is the default action, for a job that does not stop.
+  keepAlive();
+  setOfflineYield((resume) => void setTimeout(resume, 0));
+  try {
+    const handle = s.backend.engineRun("render", o, {
+      onLog: (line) => (line.stream === "stderr" ? console.error(line.text) : console.log(line.text)),
+    });
+    onInterrupt(() => void handle.cancel());
+    const result = await handle;
+    if (result.status === "error") throw new Error(result.message);
+    if (result.status === "cancelled") throw new Error("render: cancelled");
+  } finally {
+    setOfflineYield(null);
+  }
 }
 
 /** The `render` CLI tool: name + summary for the top-level index, detailed --help, and the render body.

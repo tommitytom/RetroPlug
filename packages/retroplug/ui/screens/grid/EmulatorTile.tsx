@@ -18,7 +18,7 @@ import type { CanvasHandle } from "../../lvgl/lv";
 import { tagTestId } from "../../lvgl/StableSlot";
 import { LsdjOverlay } from "./LsdjOverlay";
 import { RisaOverlay } from "./RisaOverlay";
-import { getRenderJobs, cancelRender, dismissRenderJob, pickActiveRenderJob, renderBadgeLabel, type RenderJobStatus } from "../../host/render";
+import { pickActiveRenderJob, renderBadgeLabel, type RenderJobStatus } from "../../host/render";
 
 export function EmulatorTile({
   systemId,
@@ -40,19 +40,20 @@ export function EmulatorTile({
   /** Test tag for the dim overlay — present only while the tile is unfocused (a live focus signal). */
   dimTestId?: string;
 }) {
-  const { backend } = useStores();
+  const { backend, renders } = useStores();
   const canvasRef = useRef<CanvasHandle | null>(null);
 
   // The active background render badge for this system (or null): poll this system's jobs, auto-dismiss the
   // finished ones, and surface the active render (or a lingering error). Re-renders only when the LABEL
-  // changes (so once a second while rendering). getRenderJobs() is inert (empty) in the headless harness.
+  // changes (so once a second while rendering). The list is the store graph's (src/renderJobs.ts), kept from the
+  // job pump's progress.
   const sampleRenderJob = useCallback((): RenderJobStatus | null => {
-    const jobs = getRenderJobs();
+    const jobs = renders.list();
     for (const j of jobs)
       if (j.systemId === systemId && (j.state === "done" || j.state === "cancelled"))
-        dismissRenderJob(j.id); // the render finished (file written) — drop the job, vanish the badge
+        renders.dismiss(j.id); // the render finished (file written): drop the job, vanish the badge
     return pickActiveRenderJob(jobs, systemId);
-  }, [systemId]);
+  }, [renders, systemId]);
   const renderJob = useFrameSampled(sampleRenderJob, renderJobKey);
 
   useNativeEvent("frame", () => {
@@ -102,7 +103,7 @@ export function EmulatorTile({
         // Background-render badge along the tile's bottom: how much audio has been rendered so far. Tap while
         // rendering to cancel; tap an error to dismiss. (The click also bubbles to focus the tile — harmless.)
         <Box
-          onClick={() => (renderJob.state === "rendering" ? cancelRender(renderJob.id) : dismissRenderJob(renderJob.id))}
+          onClick={() => (renderJob.state === "rendering" ? renders.cancel(renderJob.id) : renders.dismiss(renderJob.id))}
           align={{ type: EAlignType.ALIGN_BOTTOM_MID, pos: [0, 0] }}
           style={{
             width,

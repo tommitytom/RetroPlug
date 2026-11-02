@@ -66,7 +66,8 @@ export interface RenderContext {
   audio: RenderAudioDriver;
   // How the engine runs the render's calls: "continuous" in an engine job, whose engine runs whole blocks and carries
   // the rest of a call's last block to the next call of the same shape (docs/modular-graph-phase-d3-design.md
-  // section 4); "exact" (or absent) where each call runs its own length, as the CLI's in-process render does.
+  // section 4); "exact" (or absent) where each call runs its own length, as the in-process callers (the render
+  // tests) run it.
   blocks?: "exact" | "continuous";
 }
 

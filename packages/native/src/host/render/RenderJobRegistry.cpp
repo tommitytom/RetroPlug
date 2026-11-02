@@ -92,7 +92,11 @@ void RenderJobRegistry::runJob(Job* job) {
             std::lock_guard<std::mutex> lk(mutex_);
             job->status.renderedMs = ms;
         },
-        [job] { return job->cancelRequested.load(std::memory_order_relaxed); });
+        [job] { return job->cancelRequested.load(std::memory_order_relaxed); },
+        {},
+        // As an engine job renders (OfflineJobs::renderBody), so its bytes are the CLI's and System > Render's; no
+        // caller of this registry is left but retroplug-render-host-test.
+        RenderHost::Blocks::Continuous);
 
     {
         std::lock_guard<std::mutex> lk(mutex_);
