@@ -159,7 +159,10 @@ or a raw message is refused and counted rather than grown. It is a *warmed* core
 block pays one more thing, the boot savestate capture `enableStateSnapshot` arms, which is a whole savestate through
 Mesen's serializer and cannot move to activation without moving `NesApu::EndFrame` with it (section 12). What still
 allocates inside a long run is Mesen's periodic savestate capture (0.5 s, its streaming serializer, charged outside
-every test window) and the N8 firmware's SD-command path (section 9).
+every test window) and the N8 firmware's SD-command path (section 9). The publish's own read path is not among them:
+`SnapshotRegistry::claim` sizes both buffers a republish reads through, the core's read scratch and the registry's, from
+the triple's capacity on the control thread, so a warmed publish only copies, and a Game Boy's publish allocates
+nothing at all (section 6 counts two of them through an Engine).
 
 ## 5. P5 and P6, as built: the tap a capability, and the build check
 
@@ -233,22 +236,27 @@ mode bound 1 to 3 is the other console name `Engine` keeps (section 12).
     audio and in work RAM.
   - *the whole block*: a warmed core's whole block allocates and frees nothing, emulation included: NES mixed, NES with
     its tap armed, NES through the Engine (the whole graph block, so the system node's per-block work is inside the
-    window), SMS, Game Boy (the mix and the four stem pairs) and GBA. Each direct-core section warms through the real
-    triad with a button press (a device's state capacity is its constructor's, so no poll sizes one), and **each of
-    their counted windows stages a block's host input inside it**, the way a node applies its inputs before the core's
-    `prepareForBlock`: notes, clocks, a raw run and a settings-length SysEx into a NES (and a section with the reliable
-    link on, whose ROM capability byte is flipped so the framing path really runs), the transport's levels into a SMS,
-    MIDI runs and a press burst into a Game Boy in both stream shapes, and presses into every console. The Engine
-    section warms through eight graph blocks with no press and stages its bytes between blocks through the invoker,
-    which applies a push inline while the audio thread owns nothing, so its counted window carries the node's
-    application of what the host staged rather than the staging, and the accepted byte count read after the window is
-    what holds that the staging reached the core. The press counts and run lengths are past what a library deque
-    allocates its first node for, so a queue that grew on the block thread shows in a window even when it would not
-    grow every block. Each counted window proves it emulated (the node-level ones by the frames the capture holds, by
-    the same measure the step loop gates on, or SameBoy's audio frame count; the Engine one by its work RAM moving at
-    the plan's largest size), so a window whose step loop stopped cannot be vacuously free, and each holds that what it
-    staged landed: `inputDropped()` unchanged, and the non-press door's own count exact (a NES's 12 x 271 bytes, a
-    SMS's 12 x 4 levels, a Game Boy's 12 x 72 serial bytes, a GBA's 2 + 12 x 12 presses).
+    window), a Game Boy through the Engine counted across two state publishes, SMS, Game Boy (the mix and the four stem
+    pairs) and GBA. Each direct-core section warms through the real triad with a button press (a device's state capacity
+    is its constructor's, so no poll sizes one), and **each of their counted windows stages a block's host input inside
+    it**, the way a node applies its inputs before the core's `prepareForBlock`: notes, clocks, a raw run and a
+    settings-length SysEx into a NES (and a section with the reliable link on, whose ROM capability byte is flipped so
+    the framing path really runs), the transport's levels into a SMS, MIDI runs and a press burst into a Game Boy in
+    both stream shapes, and presses into every console. The Engine section warms through eight graph blocks with no
+    press and stages its bytes between blocks through the invoker, which applies a push inline while the audio thread
+    owns nothing, so its counted window carries the node's application of what the host staged rather than the staging,
+    and the accepted byte count read after the window is what holds that the staging reached the core. The press counts
+    and run lengths are past what a library deque allocates its first node for, so a queue that grew on the block
+    thread shows in a window even when it would not grow every block. Each counted window proves it emulated (the
+    node-level ones by the frames the capture holds, by the same measure the step loop gates on, or SameBoy's audio
+    frame count; the Engine one by its work RAM moving at the plan's largest size), so a window whose step loop stopped
+    cannot be vacuously free, and each holds that what it staged landed: `inputDropped()` unchanged, and the non-press
+    door's own count exact (a NES's 12 x 271 bytes, a SMS's 12 x 4 levels, a Game Boy's 12 x 72 serial bytes, a GBA's
+    2 + 12 x 12 presses). The Game Boy publish section counts block by block from the first block after warm-up through
+    48 x 1024 frames, so the registry's first periodic publish and a later one both land inside a window, and each
+    publish is proved by the blob the control plane reads changing. Only a Game Boy can be held that way: a Mesen
+    console's periodic capture allocates in its serializer by nature (the NES section above charges a whole interval
+    outside its window instead), while a Game Boy's capture writes into the scratch it sized at its first block.
   - *a freshly built core's first block* (`[alloc]`): the block the warmed cases above deliberately skip, with no
     warm-up before it, for a core built directly and for one the Engine builds through the backend, at
     `MesenBackend`'s and `SameBoyBackend`'s own activation path. A core built directly has no state snapshot enabled,
@@ -728,9 +736,14 @@ the core itself (section 12).
 - **The N8 firmware's SD path still allocates** (section 9): `std::string` and `std::filesystem` in the command
   handlers, a bigger directory listing, and `_txQueue`'s unbounded growth. Bounding the queue would change the "never
   drop a byte the device would deliver" contract, and a case that drove SD commands would have to account for the rest.
-- **The 0.5 s state publish allocates** inside Mesen's streaming serializer, on the block thread, every 24 k frames at
-  48 kHz. It is the one allocation a long run of an Engine-built core makes that neither a ROM command nor an armed
-  serial-out capture triggers, and it is why every `[alloc]` case on such a core charges an interval first.
+- **A Mesen core's 0.5 s state publish allocates** inside its streaming serializer, on the block thread, every 24 k
+  frames at 48 kHz, and a Mesen cart with a battery adds a fresh vector for its SRAM read on the same cadence
+  (`SnapshotRegistry::publishSystem`'s `sramScratch_ = saveSramBytes()`, a battery read straight off the core because
+  Mesen publishes no region table). Those are the allocations a long run of an Engine-built Mesen core makes that
+  neither a ROM command nor an armed serial-out capture triggers, and they are why every `[alloc]` case on one charges
+  an interval first; no counted case reaches the SRAM one, since every NES fixture cart is battery-less and a GBA is
+  only built directly here. The publish's read path is free (section 4): both buffers it copies through are sized at
+  claim, on the control thread.
 - **The cores this fork does not run** (PCE, SNES, WS) still copy a frame's snapshot once more per emulated frame;
   `RenderedFrame`'s by-value constructor says so. Only the NES, SMS / Game Gear and GBA paths are copy-free.
 - **The tap's mode bound is `Engine`'s, not the capability's** (sections 5 and 10): the later move is `maxMode()` on
@@ -746,10 +759,11 @@ the core itself (section 12).
   Mesen's streaming serializer, which allocates by nature. It cannot be warmed at activation instead:
   `NesApu::Serialize` calls `EndFrame`, so the capture's point is emulation state, and moving it moves parity (a tried
   first attempt did, one byte of work RAM). A Game Boy's capture is not a streaming serializer: it is one `resize` of
-  the scratch it reuses, so its first block pays one allocation and every later capture is free. The first block's
-  case therefore pins the block to exactly one capture's allocations on the platform it runs on, measured on a twin
-  that ran the same block; everything else in a fresh first block is warmed at activation. The periodic capture
-  (below) is the same cost recurring on a Mesen console.
+  the scratch it reuses, so its first block pays one allocation and every later capture of the same model is free (a
+  model switch grows that scratch by the state delta at the next capture, inside the restart's own allocations). The
+  first block's case therefore pins the block to exactly one capture's allocations on the platform it runs on, measured
+  on a twin that ran the same block; everything else in a fresh first block is warmed at activation. The periodic
+  capture (below) is the same cost recurring on a Mesen console.
 - **A thread's first NESTED notification send still allocates** (section 9): the top-level copy is a `thread_local`
   object now, so a console's first frame on a thread allocates nothing, but a listener that sends a notification of its
   own takes a pool entry on first use, and a thread whose first send has a non-empty listener list grows the copy's

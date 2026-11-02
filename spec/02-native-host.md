@@ -569,7 +569,8 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   boot savestate capture for the first block (`enableStateSnapshot`). A Mesen console's capture is a whole savestate
   through Mesen's serializer, which allocates by nature, and it cannot move to activation without moving
   `NesApu::EndFrame` with it; a Game Boy has none of that plumbing, and its capture is one `resize` of the scratch it
-  reuses, so its first block pays that one allocation and its periodic captures are free. Either way the first-block
+  reuses, so its first block pays that one allocation and its periodic captures of the same model are free (a model
+  switch grows that scratch by the state delta, inside the restart's own allocations). Either way the first-block
   case pins that block to exactly one capture and nothing else.
 - **A refused document** can still have given knobs to a node it reuses, since activation runs while it plans: a
   reused node's core keeps them, and the next document in the app carries the same. A core a refused plan's new node
@@ -777,7 +778,9 @@ The ordering guarantees are the load-bearing detail:
 - **`publishSystem(system, frames, sampleRate)`**, which `processBlock` calls for each of the
   running plan's systems in slot order: `find(id)`; copy the framebuffer **every block** (cheap); on
   the coarse interval (`kStateIntervalSec = 0.5`, matching the core's own snapshot cadence via
-  `sampleAccum`) `readStateSnapshot` into `state` and slice `sram` out of it, publishing both.
+  `sampleAccum`) `readStateSnapshot` into `state` and slice `sram` out of it, publishing both. That
+  read copies through two buffers (the core's read scratch and the registry's), and `claim` sizes both
+  from the core's snapshot capacity on the control thread, so a warmed publish only copies.
 - **`release(id)`**: clear `id` **FIRST** so a stray block-thread scan can't match, THEN free the
   buffers. Idempotent; it runs when a system node destroys its core at reclaim, once no running
   plan holds the system.

@@ -199,8 +199,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     holds for a Game Boy's knobs, the ones it applies in place, a NES's setters but its region, and every node's params
     ([02-native-host.md](02-native-host.md)). A warmed block itself allocates nothing since C4, Mesen's emulation
     included, and since the input-queue stage a block carrying host input does too: the ingress queues are bounded and
-    sized when the core is built. The exceptions are the 0.5 s state publish and the N8 firmware's SD path, listed
-    under C4 below.
+    sized when the core is built. The exceptions are a Mesen core's 0.5 s state publish and the N8 firmware's SD path,
+    listed under C4 below; a Game Boy's publish allocates nothing.
   - **A system node ignores a settings field it does not know**, as every C++ node does: a misspelt knob plans and
     does nothing. `BuildGraphGoldens.test.cpp` holds the goldens' system nodes to their schemas' fields; a strict
     reader would refuse it at plan time instead.
@@ -250,11 +250,18 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     bigger directory listing, and `_txQueue`'s unbounded growth when a ROM writes CMD_USB_WR and no host drains it.
     Bounding the queue would change the "never drop a byte the device would deliver" contract. Nothing in the block
     tests drives an SD command, so it is ROM-dependent.
-  - **The 0.5 s state publish allocates** inside Mesen's streaming serializer on the block thread (every 24 k frames at
-    48 kHz). It is the one allocation a long run makes that neither a ROM command nor an armed serial-out capture
-    triggers, so every `[alloc]` case on an Engine-built core charges a whole interval uncounted first. The same capture
-    is what a freshly built core's first block pays: `enableStateSnapshot` arms it, and it cannot move to activation
-    without moving `NesApu::EndFrame` and parity, so the first block is pinned to exactly one capture (C4's section 12).
+  - **A Mesen core's 0.5 s state publish allocates** inside its streaming serializer on the block thread (every 24 k
+    frames at 48 kHz), and a Mesen cart with a battery adds a fresh vector for its SRAM read at the same cadence
+    (`SnapshotRegistry::publishSystem`'s `sramScratch_ = saveSramBytes()`, which would become a fill into a buffer sized
+    at claim). Those are the allocations a long run makes that neither a ROM command nor an armed serial-out capture
+    triggers, so every `[alloc]` case on an Engine-built Mesen core charges a whole interval uncounted first; no
+    counted case reaches the SRAM one, since every NES fixture cart is battery-less.
+    The same capture is what a freshly built core's first block pays: `enableStateSnapshot` arms it, and it cannot move
+    to activation without moving `NesApu::EndFrame` and parity, so the first block is pinned to exactly one capture
+    (C4's section 12). The publish's own read path is free: `SnapshotRegistry::claim` sizes the core's read scratch and
+    the registry's from the triple's capacity on the control thread, so a warmed publish only copies, and a Game Boy's
+    publish (whose capture reuses its scratch) allocates nothing at all; C4's `[alloc]` suite counts two of them through
+    an Engine.
   - **A thread's first nested notification send allocates**: the top-level dispatch copy is a `thread_local` object,
     so a console's first frame allocates nothing, but a listener that sends its own notification takes a pool entry on
     first use. This host registers no listeners.
@@ -344,8 +351,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **A heavy stream into a menu can starve the probe**: the window's 48-frame re-sync re-stamps the oldest frame's
     first send, so past about 190 messages a second (48 per 250 ms) into a menu no turn is quiet and a submission is
     refused for a link that never went quiet.
-  - **A retained generation of a script pack, the 0.5 s state publish and the N8 firmware's SD path** are the
-    allocations left on the block thread, as C1/C4 list them above; C5 added none.
+  - **A retained generation of a script pack, a Mesen core's 0.5 s state publish and the N8 firmware's SD path** are
+    the allocations left on the block thread, as C1/C4 list them above; C5 added none.
 - **D1 built: the kit baseline and the DSP library**
   ([modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md), six commits): the kit path's DSP is
   `src/dsp/` as block-streaming kernels (`retroplug-dsp-kernels`, plus `retroplug-dsp-resample` for r8brain), and

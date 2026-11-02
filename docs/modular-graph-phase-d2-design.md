@@ -457,12 +457,14 @@ decides, and nothing fails on them.
 - **`retroplug-graph-test` can hold a node to `rp::lsdj::processEffect`** by compiling `src/lsdj/Effects.cpp` into it
   (it needs the kernels only), which is how "bit for bit with the kit path" is tested rather than "bit for bit with a
   kernel the kit path also calls".
-- **The live engine's first periodic state snapshot allocates** (about block 46 of a booting Game Boy, two
+- **The live engine's first periodic state snapshot allocated** (about block 46 of a booting Game Boy, two
   allocations, with or without offline jobs). It is the 0.5 s state publish
-  [07-remaining-work.md](../spec/07-remaining-work.md) already lists among the allocations left on the block thread,
-  seen here on a Game Boy's `readStateSnapshot` rather than Mesen's serializer. Pre-existing, found by the live-plan
-  case, which now warms past it; C4's "a warmed core's whole block allocates nothing" excludes that publish, so this
-  is not a new C4 gap.
+  [07-remaining-work.md](../spec/07-remaining-work.md) listed among the allocations left on the block thread, seen here
+  on a Game Boy's `readStateSnapshot` rather than Mesen's serializer: the read scratch it sized on first use and the
+  registry's publish scratch it grew. `SnapshotRegistry::claim` now sizes both from the triple's capacity on the
+  control thread, so the block thread's publish only copies and 07 no longer lists it. C4's whole-block cases never
+  reached the first publish, so the hole was theirs as much as this seam's: they now count a Game Boy through the
+  Engine across two publishes, and this case counts from the first block after warm-up rather than past block 60.
 - **`SampleCache`'s native behaviour differed from the seam's.** The old RPC kept one cache for the engine's life,
   keyed by path and never invalidated, so a path rewritten in one session compiled the old audio; a job decodes fresh,
   so a compile sees the file as it is now.
@@ -486,8 +488,9 @@ decides, and nothing fails on them.
   abandons, every refusal's reason, the RPC's sample bytes, both windows and the cap's arithmetic against copies of
   each formula (and a cap that scales to no frame count refused rather than cast), the file input against
   `SampleCache`'s decode, the live plan compared bit for bit with long jobs outstanding at both ends of its counted
-  window, the guard count and the non-finite flag, the FP environment across a flushing submitter and the caller's mode
-  put back, and a hidden `[offline-bench]`. It went from 268 cases to 284 (275 passed and 9 skipped without fixtures;
+  window (which starts at the first block after warm-up and so spans every state publish it carries), the guard count
+  and the non-finite flag, the FP environment across a flushing submitter and the caller's mode put back, and a hidden
+  `[offline-bench]`. It went from 268 cases to 284 (275 passed and 9 skipped without fixtures;
   with the fixtures present the whole suite passes).
 - `retroplug-graph-test` gained `[dsp-buffer-nodes]` (`test/graph/DspBufferNodes.test.cpp`, 12 cases: normalize whole
   and split, its peak, its committed gain, `seedFrom`'s channel 0 and the other channels, a committed seed, the DPCM's
