@@ -4,11 +4,17 @@
 import { test, expect } from "../../testing/harness";
 import { driveFixed, type RenderSink } from "../../src/render/render";
 
+/** A sink answering `chunks` in turn, then the last for ever. A driver that never reaches its target would pull for
+ *  ever, so the sink throws after PULL_LIMIT pulls: a missing guard fails with that message rather than hanging. */
+const PULL_LIMIT = 1000;
 const sinkOf = (chunks: Float32Array[][]): RenderSink & { emitted: number } => {
   let next = 0;
   const sink = {
     emitted: 0,
-    renderChunk: () => chunks[Math.min(next++, chunks.length - 1)],
+    renderChunk: () => {
+      if (next >= PULL_LIMIT) throw new Error(`pulled for ever (${PULL_LIMIT} pulls)`);
+      return chunks[Math.min(next++, chunks.length - 1)];
+    },
     emit: (_chunk: Float32Array[], take: number) => void (sink.emitted += take),
     finishAll: () => [],
     discard: () => {},

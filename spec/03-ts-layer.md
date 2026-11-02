@@ -245,8 +245,8 @@ settings (`ProjectSettings` = `{ layout, midiRouting, audioRouting, zoom, contro
 `currentPath`, `dirty`, and a `pendingLoad` latch. It exposes **three** change signals:
 `addOnSystemsChange` (structural, or a setting the graph's script nodes read: an observer list, kept in order
 and isolated from each other's throws; composeAppStores' observer prunes the render list and notifies the editor, and
-the plugin's control plane adds the watched-ROM refresh), `setOnChange` (any state: settings, dirty), and the transient focus
-signal via `systems.setOnFocusChange` (re-renders tiles without dirtying or publishing the graph).
+the plugin's control plane adds the watched-ROM refresh), `setOnChange` (any state: settings, dirty), and the
+transient focus signal via `systems.setOnFocusChange` (re-renders tiles without dirtying or publishing the graph).
 
 Project I/O is doc 05's territory, but the store surface is: `newProject`, `save(path)` (a
 thin `.rplg` — raw JSON, paths only), `export(path)` (an export `.rplg.zip` — PKZIP of

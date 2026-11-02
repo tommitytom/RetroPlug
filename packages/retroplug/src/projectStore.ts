@@ -220,7 +220,8 @@ export class ProjectStore {
 
   private notifySystemsChange(): void {
     // One observer's throw must not skip the ones after it (the UI's notify, the plugin's watched ROMs), nor fail the
-    // edit that signalled: each is isolated, as the load failure paths isolate their own notify.
+    // edit that signalled, nor replace a failed load's own error, which its failure paths throw after notifying: each
+    // observer is isolated, and its throw logged.
     for (const fn of this.systemsObservers) {
       try {
         fn();
@@ -756,8 +757,8 @@ export class ProjectStore {
       // their protocol nodes: a graph left at the clear's would free their cores under the store, and refuse
       // every later edit. (A throw in the clear's own publish lists none, and this places none, as it tried to.)
       // Then tell the structure's observers, which the quiet clear and adopts have not: the UI would keep the
-      // previous project's tiles, and the plugin would watch that project's ROMs. Either step's throw is logged, so
-      // the load's own error is the one that propagates.
+      // previous project's tiles, and the plugin would watch that project's ROMs. A throw placing them is logged here,
+      // and an observer's by notifySystemsChange, so the load's own error is the one that propagates.
       this.holdGraph = false;
       // Placed the way the success path places them, drop-and-retry included: a document the engine refuses here
       // would otherwise leave the store listing systems the engine does not run.
@@ -766,11 +767,7 @@ export class ProjectStore {
       } catch (pe) {
         console.warn(`[project] placing the systems a failed load adopted threw: ${String(pe)}`);
       }
-      try {
-        this.notifySystemsChange();
-      } catch (se) {
-        console.warn(`[project] notifying the observers of the systems a failed load adopted threw: ${String(se)}`);
-      }
+      this.notifySystemsChange();
       throw e;
     } finally {
       this.holdGraph = false;
@@ -781,11 +778,7 @@ export class ProjectStore {
     } catch (e) {
       // Every system is adopted by now, so the observers hear of them as the rebuild's failure path tells them:
       // once, here, as the success path below is not reached.
-      try {
-        this.notifySystemsChange();
-      } catch (se) {
-        console.warn(`[project] notifying the observers of the systems a failed load adopted threw: ${String(se)}`);
-      }
+      this.notifySystemsChange();
       throw e;
     }
     this.projectName = cfg.name ?? ""; // only a name the user gave the project is stored; blank = unnamed
