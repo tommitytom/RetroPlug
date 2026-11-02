@@ -260,16 +260,24 @@ test("a submit that throws rejects its own run, held or not, and the rest still 
   });
   let message = "";
   await waiting(async () => {
-    // One throwing run held behind the whole bound, so it reaches the port from the poll's own submit loop rather
-    // than from run(). Its rejection must not strand the sixty-four ahead of it, or the poll after them.
-    const held = Array.from({ length: OFFLINE_MAX_JOBS }, (_, i) => jobs.run(job("hold", 2, i)));
+    // One throwing run held behind the whole bound, so it reaches the port from the poll's held-run loop rather than
+    // from run(). The held runs are staggered (`frames: i + 1`), so most of them are still pending when it is
+    // submitted: the throw must not strand them, nor the poll that is carrying them.
+    const held = Array.from({ length: OFFLINE_MAX_JOBS }, (_, i) => jobs.run(job("hold", i + 1, i)));
     const boom = jobs.run(job("boom", 1, 0));
-    expect(jobs.pendingCount()).toBe(OFFLINE_MAX_JOBS + 1);
+    // One more held behind the throwing one, so the loop it was in carries on and the queue still takes work, and a
+    // thinned run still pending when everything else has settled.
+    const behind = jobs.run(job("hold", 1, 0));
+    expect(jobs.pendingCount()).toBe(OFFLINE_MAX_JOBS + 2);
     await boom.catch((e: Error) => (message = e.message));
     expect((await Promise.all(held)).length).toBe(OFFLINE_MAX_JOBS);
+    await behind;
+    // And the same throw straight from run(), which never reaches the queue's maps at all.
+    await jobs.run(job("boom", 1, 0)).catch((e: Error) => (message += `; ${e.message}`));
   });
-  expect(message).toBe("the port refused a field");
+  expect(message).toBe("the port refused a field; the port refused a field");
   expect(jobs.pendingCount()).toBe(0);
+  expect(liveJobCount()).toBe(0);
 });
 
 test("a held run native refuses for another reason rejects with that reason", async () => {
