@@ -20,8 +20,8 @@ class SystemBase;
 // SystemBase. That severs the control plane from the cores: reads never touch the DSP's structure.
 //
 // (The DSP still copies from each core's own tear-free triple, because the shared SystemBase can't
-// be made to publish straight into the registry without changing it. When that core publishes
-// straight into the registry the second copy collapses; the read-side contract here is unaffected.)
+// be made to publish straight into the registry without changing it. The savestate is that one copy:
+// the core's triple slot is read straight into the registry's, whose size and layout match it.)
 //
 // Threading: claim()/readFrame()/readState()/readSram()/release() run on the control thread;
 // publishSystem() on whichever thread drives the block (the audio thread while running, the control
@@ -30,7 +30,10 @@ class SystemBase;
 // before the system is handed off) and freed at release (control thread, after the audio thread has
 // dropped the system), never on the audio thread. publishSystem only ever writes a slot whose system
 // is still in the running plan, which is exactly the window before its release, so a published-to
-// slot is never concurrently freed.
+// slot is never concurrently freed. A claim writes only the slot it claims, before its id is published,
+// and publishSystem only the slot it matched by id plus sramScratch_, which nothing else touches: no
+// buffer is shared between the two threads, so a claim inside a setGraph cannot move memory a running
+// plan's publish is writing.
 //
 // That allocation rule is why the state slot is sized to a CEILING rather than to the live savestate:
 // a SameBoy model switch arrives on the audio thread (its system node applies its settings there) and resizes the
@@ -115,12 +118,11 @@ private:
     Slot* findFree();
 
     // Write [len:4 LE][payload] into a triple's next slot and publish it (prefix + len must fit the
-    // triple; callers check). The one place the len-prefixed slot layout is written — the state slot
-    // (claim + publishSystem) and the WRAM slot (claim + every-block publishSystem) share it.
+    // triple; callers check): the state slot's seed (claim) and the WRAM slot (claim + every-block
+    // publishSystem). publishSystem's state republish reads the core's slot, already in this layout.
     static void writeSized(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len);
 
     std::array<Slot, kMaxSlots> slots_;
-    std::vector<std::uint8_t>   publishScratch_;    // block-thread reuse for readStateSnapshot; reserved at claim
     std::vector<std::uint8_t>   sramScratch_;       // block-thread reuse for a live saveSramBytes() copy
     std::vector<std::uint8_t>   stateReadScratch_;  // control-thread reuse for readState (strips the prefix)
     std::vector<std::uint8_t>   ramReadScratch_;    // control-thread reuse for readRam (strips the prefix)

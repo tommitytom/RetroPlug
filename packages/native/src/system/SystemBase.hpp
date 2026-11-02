@@ -312,9 +312,11 @@ public:
     void publishStateSnapshot(std::uint32_t frames, double sampleRate);
 
     // The block thread, from the registry's publish (SnapshotRegistry::publishSystem): copy the latest published
-    // savestate into `out` (length-prefix stripped). False if no snapshot has been published yet, or if the read
-    // buffer was never sized at claim (sizeStateReadScratch): this runs where a block does, so it never grows it.
-    bool readStateSnapshot(std::vector<std::uint8_t>& out);
+    // snapshot slot whole, its [len:4 LE] prefix and the savestate after it, into `dst`, which must hold the triple's
+    // whole size (stateSnapshotCapacity() plus the prefix: the registry's state slot, sized from it at claim). Returns
+    // the savestate's length, 0 if nothing has been published yet or `dst` is too small (and `dst` is then scribbled).
+    // One copy, into memory the caller owns, so it allocates nothing and keeps no buffer of its own.
+    std::size_t readStateSnapshot(std::uint8_t* dst, std::size_t dstCapacity);
 
     // Region table for slicing SRAM/RAM/VRAM out of a snapshot read via readStateSnapshot(). A region
     // with size 0 is absent.
@@ -337,13 +339,6 @@ public:
     // SameBoy model switch can overflow it, mirroring the headroom this triple was allocated with
     // (stateSnapshotSize() is the backend's ceiling).
     std::size_t stateSnapshotCapacity() const;
-
-    // Control thread, at claim: size the buffer readStateSnapshot() reads through, so the block thread's read (the
-    // registry republishing from the publish) only copies. Sized from the triple, which a backend builds to a ceiling and
-    // nothing resizes, so it is a ceiling too and no later call can need to grow it: a SameBoy model switch moves the
-    // live state within it, and a core rebuilt under a new id is a new system, claimed and sized again. Resized rather
-    // than merely reserved because readStateSnapshot hands the buffer's size down as the read capacity.
-    void sizeStateReadScratch();
 
 protected:
     /** Seed a freshly-built core from its construct spec: cartridge battery first, then a savestate over
@@ -406,8 +401,6 @@ private:
     std::unique_ptr<MemorySnapshotTriple>  stateSnapshot_;
     StateRegionTable                       stateRegions_{};
     std::vector<std::uint8_t>              stateScratch_;       // DSP-thread capture buffer
-    std::vector<std::uint8_t>              stateReadScratch_;   // the registry's read buffer, sized at claim (control
-                                                                // thread), read by the block thread's publish
     std::uint64_t                          stateSnapSamples_ = 0;
     bool                                   stateSnapshotEnabled_ = false;
     // Latches the "capture too large" warning so a capture that keeps overflowing logs once per arming

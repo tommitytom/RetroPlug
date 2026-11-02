@@ -53,22 +53,15 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
 
     // State + SRAM: seed from the live savestate so a read right after construct (no block yet)
     // returns real bytes. The slot is sized to the live snapshot triple's PAYLOAD CAPACITY (which
-    // carries per-core headroom — Mesen savestates grow within a session, and a SameBoy model switch
-    // resizes the core's state outright) plus the length prefix, so the republish never overflows it. `sys` must already have enableStateSnapshot()'d.
+    // carries per-core headroom: Mesen savestates grow within a session, and a SameBoy model switch
+    // resizes the core's state outright) plus the length prefix, so it is exactly the core's triple in
+    // size and layout, [len:4 LE][savestate][tail], and the block thread's publish reads the core's
+    // triple straight into it. `sys` must already have enableStateSnapshot()'d.
     const std::vector<std::uint8_t> savestate = sys.saveStateBytes();
     const std::size_t bootLen = savestate.size();
     const std::size_t cap     = sys.stateSnapshotCapacity();
     if (bootLen > 0 && cap >= bootLen && cap <= kMaxStateBytes) {
         s->state = std::make_unique<MemorySnapshotTriple>(kStateLenPrefix + cap);
-        // Both buffers the block thread's publish reads through are sized HERE, on the control thread, so the publish
-        // itself only copies: the core's own read scratch and the registry's. Sized to the CAPACITY, not the boot
-        // length, because both grow within it in a session (a Mesen savestate as the cart runs, a Game Boy's state
-        // across a model switch), and never resized after this: the core's triple is fixed (a model switch moves the
-        // live size within the headroom it was built with) and a rebuilt core is a new id with a claim of its own, so
-        // nothing can need to grow either buffer later, on any thread. One buffer serves every slot, so a later claim
-        // reserves only if its core's capacity is larger (reserve keeps what is there and never shrinks).
-        sys.sizeStateReadScratch();
-        publishScratch_.reserve(cap);
         writeSized(*s->state, savestate.data(), bootLen);
     }
 
@@ -141,24 +134,29 @@ void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, d
     if (interval == 0 || s->sampleAccum < interval) return;
     s->sampleAccum = 0;
 
-    if (s->state && system.readStateSnapshot(publishScratch_) && !publishScratch_.empty()) {
-        // Republish the fresh savestate. The slot carries headroom (prefix + capacity), so a
-        // grown Mesen savestate still fits; only a capture that would overflow it is skipped,
-        // NOT the old exact-size (==) match, which froze every variable-size republish.
-        if (publishScratch_.size() + kStateLenPrefix <= s->state->size())
-            writeSized(*s->state, publishScratch_.data(), publishScratch_.size());
-        // SameBoy SRAM slice. The offset comes from the region table the core refreshed alongside
-        // THIS blob, never from a claim-time cache: a model switch rebuilds the core, and an HLE-SGB
-        // state carries a ~74 KB section ahead of the cart RAM, so a cached offset would slice the
-        // wrong bytes and hand them to the TS auto-save mirror as the user's battery. The size is
-        // compared for EQUALITY, not fit: this triple has no length prefix, so a changed size cannot
-        // be represented and a partial write would publish half a battery. (It cannot change, as the
-        // cart header fixes it, but the guard says so rather than relying on it silently.)
-        const auto& reg = system.stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
-        if (s->sram && !s->sramFromCore && reg.size == s->sram->size() &&
-            static_cast<std::size_t>(reg.offset) + reg.size <= publishScratch_.size()) {
-            std::memcpy(s->sram->writeSlot(), publishScratch_.data() + reg.offset, reg.size);
-            s->sram->publish();
+    // The core's latest published snapshot, read straight into this slot's next write slot: the two triples are the
+    // same size and layout (claim), so the read is the one copy and the slot needs no scratch. Only this slot's own
+    // memory is written, which a claim of another slot never touches. A read that fails (nothing published yet) leaves
+    // the write slot unpublished, so readers keep the last blob.
+    if (s->state) {
+        std::uint8_t* blob = s->state->writeSlot();
+        const std::size_t len = system.readStateSnapshot(blob, s->state->size());
+        if (len > 0) {
+            // SameBoy SRAM slice. The offset comes from the region table the core refreshed alongside
+            // THIS blob, never from a claim-time cache: a model switch rebuilds the core, and an HLE-SGB
+            // state carries a ~74 KB section ahead of the cart RAM, so a cached offset would slice the
+            // wrong bytes and hand them to the TS auto-save mirror as the user's battery. The size is
+            // compared for EQUALITY, not fit: this triple has no length prefix, so a changed size cannot
+            // be represented and a partial write would publish half a battery. (It cannot change, as the
+            // cart header fixes it, but the guard says so rather than relying on it silently.)
+            const std::uint8_t* payload = blob + kStateLenPrefix;
+            const auto& reg = system.stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
+            if (s->sram && !s->sramFromCore && reg.size == s->sram->size() &&
+                static_cast<std::size_t>(reg.offset) + reg.size <= len) {
+                std::memcpy(s->sram->writeSlot(), payload + reg.offset, reg.size);
+                s->sram->publish();
+            }
+            s->state->publish();
         }
     }
 

@@ -1,6 +1,5 @@
 #include "system/SystemBase.hpp"
 
-#include <cassert>
 #include <cstdio>
 #include <cstring>
 
@@ -100,25 +99,12 @@ std::size_t SystemBase::stateSnapshotCapacity() const {
     return stateSnapshot_ ? stateSnapshot_->size() - kStateLenPrefix : 0;
 }
 
-void SystemBase::sizeStateReadScratch() {
-    // The triple's whole size, the prefix included, is what a read copies through it, so the ceiling is that.
-    stateReadScratch_.resize(stateSnapshot_ ? stateSnapshot_->size() : 0);
-}
-
-bool SystemBase::readStateSnapshot(std::vector<std::uint8_t>& out) {
-    if (!stateSnapshot_) return false;
-    const std::size_t cap = stateSnapshot_->size();
-    // Sized at claim, on the control thread (sizeStateReadScratch): the caller is the registry's block-thread publish,
-    // where growing this buffer is an allocation on the audio thread. A read of a snapshot no slot claimed is refused
-    // rather than sized, leaving the caller's blob where it was instead of putting that allocation back in a block.
-    assert(stateReadScratch_.size() >= cap);
-    if (stateReadScratch_.size() < cap) return false;
-    if (!stateSnapshot_->readInto(stateReadScratch_.data(), stateReadScratch_.size()))
-        return false;
+std::size_t SystemBase::readStateSnapshot(std::uint8_t* dst, std::size_t dstCapacity) {
+    if (!stateSnapshot_) return 0;
+    // readInto copies the triple's whole slot, so it refuses a `dst` smaller than that rather than truncating.
+    if (!stateSnapshot_->readInto(dst, dstCapacity)) return 0;
     std::uint32_t len = 0;
-    std::memcpy(&len, stateReadScratch_.data(), sizeof(len));
-    if (len == 0 || static_cast<std::size_t>(len) + kStateLenPrefix > cap) return false;
-    out.assign(stateReadScratch_.begin() + kStateLenPrefix,
-               stateReadScratch_.begin() + kStateLenPrefix + len);
-    return true;
+    std::memcpy(&len, dst, sizeof(len));
+    if (len == 0 || static_cast<std::size_t>(len) + kStateLenPrefix > stateSnapshot_->size()) return 0;
+    return len;
 }

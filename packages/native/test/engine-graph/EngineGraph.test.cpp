@@ -812,6 +812,29 @@ public:
     void onSampleRateChanged(double) override {}
 };
 
+// A core whose savestate is `size` bytes, changed at every capture: all a snapshot claim sizes from and a publish
+// copies, with no emulation and nothing else in it, so two threads driving the registry meet only where it has them
+// meet.
+class StateCore final : public SystemBase {
+public:
+    StateCore(SystemId id, std::size_t size) : SystemBase(id), state_(size, 0) {}
+    SystemKind kind() const override { return SystemKind::SameBoy; }
+    void onActivate(double) override {}
+    void onSampleRateChanged(double) override {}
+    std::vector<std::uint8_t> saveStateBytes() const override { return state_; }
+
+protected:
+    std::size_t stateSnapshotSize() const override { return state_.size(); }
+    bool captureStateSnapshot(std::vector<std::uint8_t>& dst) override {
+        ++state_[0];
+        dst.assign(state_.begin(), state_.end());
+        return true;
+    }
+
+private:
+    std::vector<std::uint8_t> state_;
+};
+
 }  // namespace
 
 TEST_CASE("a system node builds its core from its system and ROM resource, and gives it all back at reclaim",
@@ -1145,6 +1168,119 @@ TEST_CASE("a system built from resources joins and leaves while an audio thread 
     CHECK(e.liveSystemCount() == 0);
     CHECK(e.registry().liveCount() == 0);
     CHECK(e.resourcePinCount(rom) == 0);
+}
+
+TEST_CASE("a larger core joins and leaves beside a running Game Boy while the audio thread publishes its state",
+          "[engine-graph][b2][systems][sanitizer]") {
+    // The snapshot registry's claim runs on the control thread, inside the setGraph that builds a core, while the
+    // audio thread runs the old plan and republishes each of its systems' state. A claim may touch nothing that
+    // publish reads or writes. A GBA's state ceiling is larger than a Game Boy's (its model-switch headroom included),
+    // so its claim is the largest a round's fresh registry has seen: the one that would grow a buffer the publishes
+    // shared. Blocks of half a second make every block a state publish, so the block in flight while the GBA is
+    // claimed publishes the Game Boy's state after the claim and before the new plan is adopted.
+    //
+    // This is the whole path, the join and the leave beside a publishing plan and the running core's state reading
+    // whole after both. It is not what catches a claim that touches the publish's memory: through the engine the
+    // thread sanitizer does not see such a buffer (it reports nothing here against a registry that shares one across
+    // slots), and the use-after-free one allows needs a tighter interleaving than a plan gives. The next case drives
+    // the registry alone and fails on it.
+    const char* const kGba = "rp.mesen.gba";
+    {
+        Engine quiet(kRate);
+        rp::host::test::Roms roms;
+        REQUIRE(quiet.setGraph(request(quiet, roms, {{1, kGb}, {2, kGba}})).ok);
+        REQUIRE(quiet.findSystem(2)->stateSnapshotCapacity() > quiet.findSystem(1)->stateSnapshotCapacity());
+    }
+    constexpr std::uint32_t kFrames = static_cast<std::uint32_t>(kRate / 2);  // the registry's publish interval
+    for (int round = 0; round < 4; ++round) {
+        Engine e(kRate);
+        e.setMaxBlockFrames(kFrames);
+        rp::host::test::Roms roms;
+        REQUIRE(e.setGraph(request(e, roms, {{1, kGb}})).ok);
+        e.setAudioThreadOwns(true);
+        std::atomic<bool> running{true};
+        std::atomic<int>  blocks{0};
+        std::thread       audio([&] {
+            std::vector<std::vector<float>> lanes(2, std::vector<float>(kFrames, 0.0f));
+            float* outs[2] = {lanes[0].data(), lanes[1].data()};
+            while (running.load(std::memory_order_acquire)) {
+                e.drainCommands();
+                e.processBlock(kFrames, outs, 2);
+                blocks.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+        // Followed through a relaxed counter only, so waiting on it orders nothing.
+        auto waitBlocks = [&](int n) {
+            const int seen = blocks.load(std::memory_order_relaxed);
+            while (blocks.load(std::memory_order_relaxed) < seen + n) std::this_thread::yield();
+        };
+        waitBlocks(2);
+        REQUIRE(e.setGraph(request(e, roms, {{1, kGb}, {2, kGba}})).ok);
+        CHECK(e.coreLive(2));
+        waitBlocks(2);
+        REQUIRE(e.setGraph(request(e, roms, {{1, kGb}})).ok);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (e.coreLive(2) && std::chrono::steady_clock::now() < deadline) {
+            e.reclaim();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK_FALSE(e.coreLive(2));
+        running.store(false, std::memory_order_release);
+        audio.join();
+        e.setAudioThreadOwns(false);
+        e.reclaim();
+        CHECK(e.coreLive(1));
+        CHECK(e.registry().liveCount() == 1);
+        // The Game Boy's state still reads whole after the claim and the release beside it.
+        const auto state = e.registry().readState(1);
+        REQUIRE(state.has_value());
+        CHECK(state->size() > 0);
+    }
+}
+
+TEST_CASE("a snapshot claim touches nothing the block thread's state publish writes",
+          "[engine-graph][systems][sanitizer]") {
+    // The registry half of the case above, without an engine around it: a thread publishes a small core's state at
+    // every call, as a block thread does every half second, while this thread claims a slot for a larger core beside
+    // it, as a setGraph that builds one does. The two follow each other through a relaxed counter only, so nothing
+    // orders a publish against the claim: a buffer both touch is a race the thread sanitizer reports, and one the claim
+    // frees under the publish is a use-after-free. A fresh registry per round, so each round's larger claim is the
+    // largest that registry has seen.
+    constexpr std::uint32_t kFrames = static_cast<std::uint32_t>(kRate / 2);  // the registry's publish interval
+    constexpr std::size_t   kSmall = 32 * 1024, kLarge = 256 * 1024;
+    for (int round = 0; round < 8; ++round) {
+        auto registry = std::make_unique<SnapshotRegistry>();
+        StateCore small(1, kSmall), large(2, kLarge);
+        REQUIRE(small.enableStateSnapshot());
+        REQUIRE(large.enableStateSnapshot());
+        REQUIRE(registry->claim(1, small));
+        std::atomic<bool> running{true};
+        std::atomic<int>  publishes{0};
+        std::thread       block([&] {
+            while (running.load(std::memory_order_acquire)) {
+                small.publishStateSnapshot(kFrames, kRate);
+                registry->publishSystem(small, kFrames, kRate);
+                publishes.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+        auto waitPublishes = [&](int n) {
+            const int seen = publishes.load(std::memory_order_relaxed);
+            while (publishes.load(std::memory_order_relaxed) < seen + n) std::this_thread::yield();
+        };
+        waitPublishes(4);
+        REQUIRE(registry->claim(2, large));
+        waitPublishes(4);
+        running.store(false, std::memory_order_release);
+        block.join();
+        const auto smallState = registry->readState(1), largeState = registry->readState(2);
+        REQUIRE(smallState.has_value());
+        REQUIRE(largeState.has_value());
+        CHECK(smallState->size() == kSmall);
+        CHECK(largeState->size() == kLarge);
+        registry->release(2);
+        registry->release(1);
+        CHECK(registry->liveCount() == 0);
+    }
 }
 
 TEST_CASE("the engine registers both DSP packages, so a document naming every type plans", "[engine-graph][dsp]") {
