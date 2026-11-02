@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -87,6 +88,21 @@ public:
     // id resolves against the plan running when it drains. The contract is optimistic: refuse only what can never be
     // delivered, an empty message (a node the plan does not place takes nothing, silently).
     bool            stageNodeMidi(std::string nodeId, std::vector<std::uint8_t> bytes);
+    // Continuous blocks (docs/modular-graph-phase-d3-design.md section 4), which only an engine job's render turns on
+    // (RenderHost): renderAudio, renderAudioPerSystem and renderAudioPerChannel then run whole kBlockSize blocks and
+    // nothing else. A call returns the frames it asks for; the rest of its last block waits for the next call, so the
+    // engine's blocks fall where they would whatever lengths the calls ask for. Those carried frames belong to the
+    // shape that rendered them (the mix, the per-system lanes, or one system's channels, with its stream count) and to
+    // the rate: a call of another shape, or after the rate changed, drops them rather than hand one shape's lanes out
+    // as another's or one rate's frames out at another, and so does renderBlocks, whose blocks come after them in
+    // time. The emulation behind dropped frames is not undone: the next call's audio starts where the last block
+    // ended. A block's host MIDI out is gathered whole (drainMidiOut), so out of a block whose tail is carried it can
+    // be drained before that tail's audio is handed out; its frames stay block-relative. Off, as every other host runs
+    // it, a call renders whole blocks and then one of the remainder: the splits parity records. Not an RPC: the host
+    // that builds this service sets it before any script runs.
+    void            setContinuousBlocks(bool on);
+    // The frames the last render call in continuous blocks left for the next one (none in exact blocks): for tests.
+    std::size_t     carriedFrames() const { return carry_.frames; }
     rfl::Bytestring renderAudio(double ms);
     // Per-system audio: each live system's interleaved-stereo PCM, in slot order (marshals to
     // Uint8Array[]). Isolates each core so LSDj link-cable sync is provable (a follower's own RMS).
@@ -153,6 +169,16 @@ public:
     std::vector<std::string>            dspTraceNames();
 
 private:
+    // Which render call a carried block came from (setContinuousBlocks): a carry is handed only to a call of its shape.
+    enum class Shape : std::uint8_t { None, Mix, PerSystem, PerChannel };
+    // One block of `frames` into the call's lanes, each stream's L then R (L0, R0, L1, R1, ...), of kBlockSize floats.
+    using BlockFn = std::function<void(std::uint32_t frames, float* const* lanes)>;
+    // The frames `ms` asks for at the engine's rate, in `streams` interleaved-stereo outputs (L,R,L,R...), rendered by
+    // `block`: in exact splits, or in whole blocks with the carry setContinuousBlocks describes. `id` is the system a
+    // PerChannel call fans, 0 for the others.
+    std::vector<std::vector<float>> pull(Shape shape, std::uint32_t id, std::size_t streams, double ms,
+                                         const BlockFn& block);
+    void dropCarry();
     bool rendersInto(std::size_t channels) const;
     // Append the block's host MIDI out (Engine::midiOut(), cleared each block) to accumMidiOut_.
     // Called after each processBlock in the render loops so drainMidiOut() sees the whole window.
@@ -162,8 +188,16 @@ private:
     QueuedInvoker& invoker_;   // the one mutation path (push; flushes inline when quiescent)
 
     static constexpr std::uint32_t kBlockSize = 1024;
-    std::vector<float>       scratchL_;  // renderAudio pull-path scratch (control thread)
-    std::vector<float>       scratchR_;
+    // The frames past the last call's in its last block, in continuous blocks; empty otherwise.
+    struct Carry {
+        Shape                           shape = Shape::None;
+        std::uint32_t                   id = 0;
+        double                          rate = 0.0;
+        std::size_t                     frames = 0;
+        std::vector<std::vector<float>> streams;  // per stream: interleaved L,R... not yet handed out
+    };
+    bool                     continuous_ = false;
+    Carry                    carry_;
     std::vector<RpcMidiOut> accumMidiOut_;  // host MIDI out gathered across a render window (drainMidiOut)
     rp::host::HarnessSurfaceLink* harnessSurface_ = nullptr;  // the headless host's own surface, if it has one
 };

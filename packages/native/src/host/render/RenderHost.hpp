@@ -31,6 +31,12 @@ public:
     // ones (console.warn / error / trace) and for a script exception's report.
     using ConsoleFn  = std::function<void(bool error, const char* text)>;
 
+    // How the job's engine runs the blocks the worker's render calls pull. Exact: each call as whole blocks and then
+    // one of the remainder, as the CLI's in-process render runs them. Continuous: whole blocks only, the frames past a
+    // call carried to the next (EngineRpcService::setContinuousBlocks), so a render's bytes do not depend on how much
+    // each call asks for; an engine job runs this way (docs/modular-graph-phase-d3-design.md section 4).
+    enum class Blocks { Exact, Continuous };
+
     struct Result {
         std::string status;                // "done" | "cancelled" | "error"; empty if the worker never reported
         std::string message;               // error detail (when status == "error")
@@ -48,7 +54,7 @@ public:
     // onConsole the worker's console writes go to the process's stdout and stderr. Returns the worker's reported
     // result (status "error" with a message on any internal failure).
     Result run(const std::string& jobJson, RenderedFn onRendered = {}, CancelFn isCancelled = {},
-               ConsoleFn onConsole = {});
+               ConsoleFn onConsole = {}, Blocks blocks = Blocks::Exact);
 
     // Called by the bound JS thunks (which recover the host via the JS context opaque). Public so the
     // free-function thunks in the .cpp can reach them; not part of the external API.

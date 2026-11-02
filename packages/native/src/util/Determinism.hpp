@@ -4,9 +4,11 @@
 // GB_random() returns 0 (it otherwise seeds from time(NULL), filling WRAM / HRAM / OAM / wave RAM at
 // reset), Mesen NES RAM powers on as all zeros (NesConfig defaults to Random), and the SMS/GG VDP starts
 // at scanline 0 (SmsConfig::RandomizeVdpStartScanline, a field RetroPlug adds to the vendored Mesen).
-// Real hardware powers on unpredictably, which is what the app keeps; only the parity suite (test-native/parity) sets this, so
-// a recorded hash cannot depend on the wall clock. Carts with a real-time clock (MBC3 timer, HuC3, TPP1)
-// still read the host clock in SameBoy's default RTC mode, and no parity case uses one.
+// Real hardware powers on unpredictably, which is what the app keeps. The test-native runner sets this for the
+// parity suite (test-native/parity) and for render-baseline and render-chunks (its DETERMINISTIC_FILES), and so for
+// every engine job's Engine in those processes, so a recorded hash cannot depend on the wall clock; the C++
+// engine-graph binary sets it for itself (test/engine-graph/Deterministic.cpp). Carts with a real-time clock (MBC3
+// timer, HuC3, TPP1) still read the host clock in SameBoy's default RTC mode, and no parity or render case uses one.
 
 #include <cstdlib>
 #include <cstring>

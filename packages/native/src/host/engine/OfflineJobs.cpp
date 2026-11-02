@@ -427,9 +427,12 @@ EngineJobCompletion OfflineJobs::runEngine(Job& job) {
 
 EngineJobOutcome OfflineJobs::renderBody(const EngineJobRequest& request, const EngineJobHooks& hooks) {
     // Built, run and destroyed on this thread: the runtime anchors its stack check to the thread that makes it, and
-    // the job's Engine, its cores and its plan's nodes go before this worker takes another job.
+    // the job's Engine, its cores and its plan's nodes go before this worker takes another job. In continuous blocks:
+    // the engine runs whole blocks whatever each of the render's calls asks for (docs/modular-graph-phase-d3-design.md
+    // section 4).
     retroplug::RenderHost         host;
-    retroplug::RenderHost::Result r = host.run(request.spec, hooks.rendered, hooks.cancelled, hooks.console);
+    retroplug::RenderHost::Result r = host.run(request.spec, hooks.rendered, hooks.cancelled, hooks.console,
+                                               retroplug::RenderHost::Blocks::Continuous);
     return {std::move(r.status), std::move(r.message), std::move(r.outputs)};
 }
 

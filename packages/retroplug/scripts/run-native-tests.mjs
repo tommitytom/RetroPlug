@@ -33,6 +33,9 @@ const REPO_RESOURCES_DIR = join(REPO, "resources");
 // unnoticed. Same env override scripts/gen-risa-symbols.mjs already uses.
 const RISA_SRC = process.env.RISA_SRC || "/workspaces/risa-v2.2.1-source";
 
+// Files outside parity/ whose cores power on in a fixed state (below): the render baseline and its chunk test.
+const DETERMINISTIC_FILES = new Set(["render-baseline", "render-chunks"]);
+
 const HOST =
   process.env.RETROPLUG_HOST ||
   join(REPO, "build/bin/retroplug-host" + (process.platform === "win32" ? ".exe" : ""));
@@ -111,6 +114,9 @@ async function runOne({ file, slug }) {
         __KIT_EDGES_GOLDEN__: JSON.stringify(
           join(REPO, "packages/native/test/audio/golden/kit-edges.json").replaceAll("\\", "/"),
         ),
+        // The render baseline, the WAVs engine jobs write (render-baseline.test.ts reads it and, under
+        // RP_RENDER_GOLDEN_UPDATE=1, records it).
+        __RENDER_GOLDEN__: JSON.stringify(join(TEST_DIR, "golden/render-baseline.json").replaceAll("\\", "/")),
       },
     });
   } catch (e) {
@@ -119,10 +125,11 @@ async function runOne({ file, slug }) {
     return false;
   }
 
-  // The parity suite hashes exact output, so its cores power on in a fixed state (util/Determinism.hpp).
-  // Every other file keeps the random power-on the app has.
+  // The parity suite and the render baseline hash exact output, so their cores power on in a fixed state
+  // (util/Determinism.hpp): the process's, so an engine job's own Engine too. Every other file keeps the random
+  // power-on the app has.
   const env = { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfgDir };
-  if (slug.startsWith("parity/")) env.RETROPLUG_DETERMINISTIC = "1";
+  if (slug.startsWith("parity/") || DETERMINISTIC_FILES.has(slug)) env.RETROPLUG_DETERMINISTIC = "1";
   else delete env.RETROPLUG_DETERMINISTIC;
   const run = await spawnBuffered(HOST, [outFile], { cwd: PKG, env });
   flush(slug, run.output);

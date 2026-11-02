@@ -1,13 +1,18 @@
-// Engine jobs (docs/modular-graph-phase-d3-design.md section 3, host/engine/OfflineJobs.hpp): a render run on a
-// worker of the engine's offline pool by a RenderHost the worker builds, runs and destroys. A render job writes the
-// WAV a RenderHost run directly writes for the same spec, byte for byte, reporting its progress (rising chunk by
-// chunk to the rendered length on a fixed-length render) and its console lines as it goes; a cancel stops it, queued,
-// starting or running, and one taken after its body finished still wins, keeping the files written; an engine
-// destroyed with renders in flight cancels and joins them; renders hold at most all but one of the pool's workers, so
-// a graph job still runs beside them (a pool of 1 starting its second thread for one), and the ones held back start
-// in submission order; an engine job computes in the default floating-point mode; renders run back to back on one
-// reused worker and in parallel on several, each giving the bytes a direct run gives; the console record keeps its
-// bounds; the RPCs carry all of it; and a kind that is not "render" is refused.
+// Engine jobs (docs/modular-graph-phase-d3-design.md section 3, host/engine/OfflineJobs.hpp): a render run on a worker
+// of the engine's offline pool by a RenderHost the worker builds, runs and destroys. A render job writes the WAV a
+// RenderHost run directly in continuous blocks writes for the same spec, byte for byte, reporting its progress (rising
+// chunk by chunk to the rendered length on a fixed-length render) and its console lines as it goes; a cancel stops it,
+// queued, starting or running, and one taken after its body finished still wins, keeping the files written; an engine
+// destroyed with renders in flight cancels and joins them; renders hold at most all but one of the pool's workers, so a
+// graph job still runs beside them (a pool of 1 starting its second thread for one), and the ones held back start in
+// submission order; an engine job computes in the default floating-point mode; renders run back to back on one reused
+// worker and in parallel on several, each giving the bytes a direct run gives; the console record keeps its bounds; the
+// RPCs carry all of it; and a kind that is not "render" is refused. Continuous blocks themselves (design section 4,
+// EngineRpcService::setContinuousBlocks), over an mGB that MIDI plays: a render's bytes do not depend on the lengths
+// its calls ask for, a message staged between two calls landing where the block they end in ends, where exact blocks
+// land it where the call ended; a carried tail goes only to a call of its own shape (a per-channel render's across
+// its calls, on an eight-lane host), and a call of another shape, a renderBlocks run or a rate change drops it; exact
+// blocks carry nothing.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[engine-jobs]"`. The ROMs are
 // the repo's own (resources/roms), which render silence through the render library with no song or MIDI, so on CI the
@@ -22,6 +27,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -43,6 +49,8 @@
 #include "host/engine/OfflineJobs.hpp"
 #include "host/render/RenderHost.hpp"
 #include "host/rpc/EngineRpcService.hpp"
+
+#include "GraphDocs.hpp"
 
 using rp::host::EngineJobBody;
 using rp::host::EngineJobCompletion;
@@ -109,7 +117,7 @@ std::string fixture(const char* relative) {
 }
 
 // What a RenderHost run directly on this thread gives for `spec`: its result, and its console lines, collected rather
-// than printed.
+// than printed. In continuous blocks, as an engine job runs its RenderHost.
 struct Direct {
     retroplug::RenderHost::Result result;
     std::vector<std::string>      lines;
@@ -117,7 +125,8 @@ struct Direct {
 Direct renderDirectly(const std::string& spec) {
     Direct                d;
     retroplug::RenderHost host;
-    d.result = host.run(spec, {}, {}, [&d](bool, const char* text) { d.lines.emplace_back(text); });
+    d.result = host.run(spec, {}, {}, [&d](bool, const char* text) { d.lines.emplace_back(text); },
+                        retroplug::RenderHost::Blocks::Continuous);
     return d;
 }
 
@@ -743,4 +752,191 @@ TEST_CASE("the engine job RPCs carry a render's progress, lines and completion, 
     }));
     CHECK(rpc.drainOfflineJobs(0).inFlight == 0);
     CHECK(e.offlineJobsOutstanding() == 0);
+}
+
+// ---- continuous blocks: the engine side of an engine job's render (EngineRpcService::setContinuousBlocks) ----------
+
+namespace {
+
+constexpr double kBlocksRate = 48000.0;  // 48 frames a millisecond, so every length below is a whole frame count
+
+// An mGB placed alone on a host, booted for 2048 ms (96 whole blocks, so nothing is carried), then sent a note to
+// sound: mGB is silent until MIDI plays it, and ignores MIDI for its first second and a half. The host is stereo, or,
+// for `perChannel`, its four stems on a pair each (8 lanes), as buildGraph places a perChannel render.
+struct BlocksRig {
+    Engine                                 engine{kBlocksRate};
+    QueuedInvoker                          invoker{engine};
+    EngineRpcService                       svc{engine, invoker};
+    rp::host::test::Roms                   roms;
+    std::vector<rp::host::test::DocSystem> systems{{1, rp::host::test::kGbType}};
+
+    explicit BlocksRig(bool continuous, bool perChannel = false) {
+        svc.setContinuousBlocks(continuous);
+        rp::host::test::withRoms(engine, systems, roms);
+        REQUIRE(place(perChannel));
+        const std::size_t boot =
+            perChannel ? svc.renderAudioPerChannel(1, 2048.0).at(0).size() : svc.renderAudio(2048.0).size();
+        REQUIRE(boot == 98304 * 2 * sizeof(float));
+        REQUIRE(svc.carriedFrames() == 0);
+        REQUIRE(svc.stageMidiIn({0x90, 60, 100}, 0));
+    }
+
+    // Plan the stereo or the per-channel document, as audioDriver's withShape swaps them around a render call.
+    bool place(bool perChannel) {
+        using namespace rp::host::test;
+        namespace d = docs_detail;
+        // The host's MIDI reaches mGB as buildGraph wires it: through its protocol node, onto the link port.
+        std::vector<std::string> nodes{docNode("midi-in", "rp.host.midi-in"), docNode("sys-1/mgb", "rp.mgb.midi")};
+        std::vector<std::string> wires{docWire("midi-in.midi", "sys-1/mgb.midi"),
+                                       docWire("sys-1/mgb.serialIn", "sys-1.serialIn")};
+        if (!perChannel) return engine.setGraph(graphRequest(stereoDocument(systems, DocExtras{nodes, wires}), {1})).ok;
+        nodes.push_back(d::sys(systems[0]));
+        for (std::uint32_t k = 0; k < 4; ++k)
+            wires.push_back(d::wire("sys-1.ch" + std::to_string(k + 1), d::out(2 * k, 2)));
+        nodes.push_back(d::node("out", "rp.host.audio-out", d::buses({2, 2, 2, 2})));
+        return engine.setGraph(graphRequest(d::document(nodes, wires), {1})).ok;
+    }
+};
+
+std::vector<std::byte> concat(std::vector<std::byte> a, const rfl::Bytestring& b) {
+    a.insert(a.end(), b.begin(), b.end());
+    return a;
+}
+
+bool sounds(const std::vector<std::byte>& pcm) {
+    for (std::size_t i = 0; i + sizeof(float) <= pcm.size(); i += sizeof(float)) {
+        float v;
+        std::memcpy(&v, pcm.data() + i, sizeof v);
+        if (v != 0.0f) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+namespace {
+
+// A second of the note pulled in calls of the lengths `ms`, a second note (an octave up) staged after call `offAfter`.
+struct Split {
+    std::vector<double> ms;
+    std::size_t         offAfter;
+};
+
+std::vector<std::byte> pullSplit(bool continuous, const Split& split) {
+    BlocksRig              rig(continuous);
+    std::vector<std::byte> out;
+    for (std::size_t k = 0; k < split.ms.size(); ++k) {
+        const rfl::Bytestring pcm = rig.svc.renderAudio(split.ms[k]);
+        CHECK(pcm.size() == static_cast<std::size_t>(split.ms[k] * 48) * 2 * sizeof(float));
+        out = concat(std::move(out), pcm);
+        if (k == split.offAfter) REQUIRE(rig.svc.stageMidiIn({0x90, 72, 100}, 0));
+    }
+    CHECK(out.size() == 48000 * 2 * sizeof(float));
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("in continuous blocks a render's bytes do not depend on the lengths its calls ask for",
+          "[engine-graph][engine-jobs]") {
+    // The second note is staged after a call ending at 470, 480 or 490 ms: all inside the 23rd block after the boot
+    // (469.33 to 490.67 ms), so in continuous blocks it lands where that block ends whichever it is, and a call the
+    // carry satisfies (the 10 ms after 470) renders no block for it to land in. In exact blocks it lands where the call
+    // ended, so there the splits differ: the control that shows the comparison can fail.
+    const std::vector<Split> splits{{{480.0, 520.0}, 0},
+                                    {{100.0, 370.0, 530.0}, 1},
+                                    {{37.0, 453.0, 250.0, 260.0}, 1},
+                                    {{470.0, 10.0, 13.0, 507.0}, 0}};
+    std::vector<std::vector<std::byte>> continuous, exact;
+    for (const Split& split : splits) {
+        continuous.push_back(pullSplit(true, split));
+        exact.push_back(pullSplit(false, split));
+    }
+    CHECK(sounds(continuous[0]));
+    for (std::size_t k = 1; k < splits.size(); ++k) CHECK(continuous[k] == continuous[0]);
+    CHECK(exact[1] != exact[0]);  // the second note at 470 ms against 480
+    CHECK(exact[2] != exact[0]);  // at 490 ms
+}
+
+TEST_CASE("in continuous blocks a carried tail goes only to a call of its shape, and a renderBlocks or a rate change "
+          "drops it",
+          "[engine-graph][engine-jobs]") {
+    // 50 ms is 2400 frames: three blocks run and 672 frames (14 ms) are carried. A per-system call (the same two lanes
+    // on this host, another shape) drops them and starts at the next block; the control drains them first.
+    BlocksRig dropped(true);
+    CHECK(dropped.svc.renderAudio(50.0).size() == 2400 * 2 * sizeof(float));
+    CHECK(dropped.svc.carriedFrames() == 672);
+    const auto viaDrop = dropped.svc.renderAudioPerSystem(100.0);
+    CHECK(dropped.svc.carriedFrames() == 5120 - 4800);
+
+    BlocksRig drained(true);
+    CHECK(drained.svc.renderAudio(50.0).size() == 2400 * 2 * sizeof(float));
+    CHECK(drained.svc.renderAudio(14.0).size() == 672 * 2 * sizeof(float));
+    CHECK(drained.svc.carriedFrames() == 0);
+    const auto viaDrain = drained.svc.renderAudioPerSystem(100.0);
+    REQUIRE(viaDrop.size() == 1);
+    REQUIRE(viaDrain.size() == 1);
+    CHECK(viaDrop[0].size() == 4800 * 2 * sizeof(float));
+    CHECK(sounds(std::vector<std::byte>(viaDrop[0].begin(), viaDrop[0].end())));
+    CHECK(viaDrop[0] == viaDrain[0]);
+
+    // A renderBlocks run's blocks come after the carried frames, which it drops.
+    CHECK(dropped.svc.carriedFrames() == 320);
+    RpcRenderBlocksRequest blocks{2, {RpcRenderBlock{256, {}, {}, std::nullopt, std::nullopt, std::nullopt}}};
+    CHECK(dropped.svc.renderBlocks(blocks).error.empty());
+    CHECK(dropped.svc.carriedFrames() == 0);
+
+    // A rate change (which needs an engine with no systems) drops the frames carried at the old rate: 10 ms at 44.1 kHz
+    // then runs a new block and carries 583, where handing out the 544 frames 10 ms carried at 48 kHz would carry 103.
+    Engine           engine(kBlocksRate);
+    QueuedInvoker    invoker(engine);
+    EngineRpcService svc(engine, invoker);
+    svc.setContinuousBlocks(true);
+    REQUIRE(engine.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument({}), {})).ok);
+    CHECK(svc.renderAudio(10.0).size() == 480 * 2 * sizeof(float));
+    CHECK(svc.carriedFrames() == 544);
+    REQUIRE(svc.setSampleRate(44100.0));
+    CHECK(svc.renderAudio(10.0).size() == 441 * 2 * sizeof(float));
+    CHECK(svc.carriedFrames() == 583);
+}
+
+TEST_CASE("in continuous blocks a per-channel render carries its tail to its next call, and a mix call drops it",
+          "[engine-graph][engine-jobs]") {
+    // The shape every split render streams in: mGB's four stems, eight lanes. 50 then 100 ms (the 672 frames 50 ms
+    // carries going to the second call) against one call of 150 ms: the same stems, and both carry 992 frames.
+    BlocksRig split(true, true);
+    auto      first = split.svc.renderAudioPerChannel(1, 50.0);
+    CHECK(split.svc.carriedFrames() == 672);
+    const auto second = split.svc.renderAudioPerChannel(1, 100.0);
+    CHECK(split.svc.carriedFrames() == 992);
+    BlocksRig whole(true, true);
+    const auto once = whole.svc.renderAudioPerChannel(1, 150.0);
+    CHECK(whole.svc.carriedFrames() == 992);
+    REQUIRE(first.size() == 4);
+    REQUIRE(second.size() == 4);
+    REQUIRE(once.size() == 4);
+    for (std::size_t k = 0; k < 4; ++k) {
+        const auto joined = concat(std::vector<std::byte>(first[k].begin(), first[k].end()), second[k]);
+        CHECK(joined.size() == 7200 * 2 * sizeof(float));
+        CHECK(joined == std::vector<std::byte>(once[k].begin(), once[k].end()));
+    }
+    CHECK(sounds(std::vector<std::byte>(once[0].begin(), once[0].end())));  // the note, on the first pulse stem
+
+    // A mix call between (the stereo document planned for it, as withShape does) drops the stems' 992 frames and
+    // carries its own: 10 ms takes 480 frames of a new block and carries 544, where handing out the stems' frames would
+    // carry 512. Back on the stems, the mix's 544 are dropped in turn: another new block, 544 carried, not 64.
+    REQUIRE(split.place(false));
+    CHECK(split.svc.renderAudio(10.0).size() == 480 * 2 * sizeof(float));
+    CHECK(split.svc.carriedFrames() == 544);
+    REQUIRE(split.place(true));
+    CHECK(split.svc.renderAudioPerChannel(1, 10.0).at(0).size() == 480 * 2 * sizeof(float));
+    CHECK(split.svc.carriedFrames() == 544);
+}
+
+TEST_CASE("exact blocks carry nothing: each call renders its own length", "[engine-graph][engine-jobs]") {
+    BlocksRig rig(false);
+    CHECK(rig.svc.renderAudio(50.0).size() == 2400 * 2 * sizeof(float));
+    CHECK(rig.svc.carriedFrames() == 0);
+    CHECK(rig.svc.renderAudioPerSystem(10.0)[0].size() == 480 * 2 * sizeof(float));
+    CHECK(rig.svc.carriedFrames() == 0);
 }

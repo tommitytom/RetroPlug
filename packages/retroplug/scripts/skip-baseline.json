@@ -184,6 +184,14 @@
    "skipped": 2,
    "total": 3
   },
+  "render-baseline": {
+   "skipped": 3,
+   "total": 5
+  },
+  "render-chunks": {
+   "skipped": 3,
+   "total": 5
+  },
   "risa-220-layout": {
    "skipped": 1,
    "total": 1

@@ -83,10 +83,12 @@ jobs:
       - name: Native tests (real host + emulator cores)
         # This job is the parity baseline's target: exact audio checking must run here, not fall back. It is the kit
         # baselines' target too: test-native's kit-baseline and kit-compile compare exact bank bytes only on the host
-        # that recorded them, so this job demands that it is that host rather than falling back to self-agreement.
+        # that recorded them, so this job demands that it is that host rather than falling back to self-agreement. The
+        # render baseline (render-baseline, its fixture-free cases here) is held the same way.
         env:
           RP_PARITY_REQUIRE_TARGET: "1"
           RP_KIT_GOLDEN_REQUIRE_TARGET: "1"
+          RP_RENDER_GOLDEN_REQUIRE_TARGET: "1"
         run: pnpm test:native
 
       - name: Plugin unit tests (Catch2)

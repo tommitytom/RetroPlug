@@ -54,7 +54,7 @@ const SMS_START = 7; // SmsButton::Start -> SmsController::Buttons::Pause. smsgg
 // high→low edge (the technique lsdpack uses). Hardware-level, so version-independent + tempo/hop-agnostic.
 const NR52_ADDR = 0xff26;
 const NR52_ON = 0x80; // bit 7 = all-sound-on
-const DETECT_CHUNK_MS = 100; // poll granularity (≈ detection precision)
+const DETECT_CHUNK_MS = 100; // the play gestures' hold, and the pull (so the poll granularity) unless pullMs says
 const DETECT_OFF_CHUNKS = 2; // NR52 must read off this many consecutive chunks to count as the HFF stop
 
 
@@ -552,11 +552,15 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
   };
 }
 
-/** Fixed-duration render: stream exactly `targetFrames` frames (trim the last chunk), so the output is
- *  byte-identical to a single renderAudio(ms) of the same length for any sample rate / ms. `leadIn` is the
+/** Fixed-duration render: stream exactly `targetFrames` frames (trim the last chunk). In continuous blocks
+ *  (RenderContext.blocks, an engine job) the output is byte-identical to a single renderAudio(ms) of the same length
+ *  for any sample rate / ms / pull; in exact blocks only while no node consumes the transport or MIDI block by block
+ *  (a sync node such as rp.sms.sync), whose clock then follows the pulls' splits. `leadIn` is the
  *  captured play-gesture audio (the song's opening frames) — committed first so the recording's head isn't
  *  lost, trimmed against the target like any other chunk. */
-function driveFixed(sink: RenderSink, targetFrames: number, sr: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): void {
+function driveFixed(
+  sink: RenderSink, targetFrames: number, sr: number, hooks: RenderHooks, pullMs: number, leadIn: Float32Array[][] = [],
+): void {
   let done = 0;
   const emit = (chunk: Float32Array[]) => {
     if (chunk.length === 0) throw new Error("render: chunk render returned no streams");
@@ -566,7 +570,7 @@ function driveFixed(sink: RenderSink, targetFrames: number, sr: number, hooks: R
   for (const chunk of leadIn) { if (done >= targetFrames) break; emit(chunk); }
   while (done < targetFrames) {
     if (hooks.isCancelled?.()) throw new RenderCancelled();
-    emit(sink.renderChunk(DETECT_CHUNK_MS));
+    emit(sink.renderChunk(pullMs));
     hooks.onRendered?.((done / sr) * 1000); // committed audio so far (the last chunk is trimmed to the target)
   }
 }
@@ -574,8 +578,12 @@ function driveFixed(sink: RenderSink, targetFrames: number, sr: number, hooks: R
 /** Length auto-detect render: stream chunk-by-chunk, polling `isPlaying` (LSDj's NR52 / risa's seq_mode),
  *  and stop at the HFF (the probe going true→false, sustained ≥DETECT_OFF_CHUNKS). Holds back the current
  *  contiguous off-streak (≤DETECT_OFF_CHUNKS whole chunks) so committed frames end exactly at the stop; a
- *  reset flushes them in order. Caps at maxMs (no-HFF fallback → keep everything). */
-function driveAutoDetect(sink: RenderSink, isPlaying: () => boolean, maxMs: number, sr: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): StopMarkers {
+ *  reset flushes them in order. Caps at maxMs (no-HFF fallback → keep everything). Each chunk is `pullMs` long,
+ *  so the poll, and with it where the render can end, follows it. */
+function driveAutoDetect(
+  sink: RenderSink, isPlaying: () => boolean, maxMs: number, sr: number, hooks: RenderHooks, pullMs: number,
+  leadIn: Float32Array[][] = [],
+): StopMarkers {
   let total = 0; // frames rendered (committed + held)
   let committed = 0; // frames streamed to disk
   let elapsed = 0;
@@ -601,11 +609,11 @@ function driveAutoDetect(sink: RenderSink, isPlaying: () => boolean, maxMs: numb
 
   while (elapsed < maxMs) {
     if (hooks.isCancelled?.()) throw new RenderCancelled();
-    const chunk = sink.renderChunk(DETECT_CHUNK_MS);
+    const chunk = sink.renderChunk(pullMs);
     if (chunk.length === 0) throw new Error("render: chunk render returned no streams");
     const frameBefore = total;
     total += chunk[0].length / 2;
-    elapsed += DETECT_CHUNK_MS;
+    elapsed += pullMs;
     // Rendered audio so far, counting the held off-streak: monotonic, and at most DETECT_OFF_CHUNKS ahead
     // of what lands on disk (a confirmed HFF stop discards those held chunks).
     hooks.onRendered?.((total / sr) * 1000);
@@ -725,6 +733,9 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   const platform = platformOf(o.rom);
 
   validateRenderOpts(o, platform);
+  const pullMs = o.pullMs ?? DETECT_CHUNK_MS;
+  if (!(Number.isFinite(pullMs) && pullMs > 0))
+    throw new Error(`render: pullMs must be a positive number of ms (got ${o.pullMs})`);
 
   // The sample rate is baked into each core at construct, so it MUST be set before buildSystem.
   if (o.sampleRate !== undefined && !ctx.audio.setSampleRate(o.sampleRate))
@@ -739,7 +750,14 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
       : undefined;
   const id = buildSystem(ctx, o, platform, seed?.seed);
 
-  ctx.audio.renderAudio(1500); // settle boot (past the mGB/LSDj splash) before driving playback
+  // Settle boot (past the mGB/LSDj splash) before driving playback. Discarded, but in continuous blocks it runs in
+  // the shape the render streams in: the frames past a call in its last block go to the next call only if that call
+  // is of the same shape (EngineRpcService::setContinuousBlocks), so a split render settling in the mix would start
+  // its stems up to a block later than the same render's mix starts, and its detected length would differ by as
+  // much. Exact blocks settle in the mix: there the stems start where the mix does either way, and the shape a NES
+  // settles in moves its stems' bytes.
+  if (o.split === "mix" || ctx.blocks !== "continuous") ctx.audio.renderAudio(1500);
+  else ctx.audio.renderAudioPerChannel(id, 1500);
   if (o.bpm) ctx.audio.setBpm(o.bpm);
   if (o.transport) ctx.audio.setTransport(true);
 
@@ -784,7 +802,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   const leadIn = pressPlay(ctx, sink, o, id, platform);
 
   if (autoDetect) {
-    const m = driveAutoDetect(sink, isPlaying!, o.maxDurationMs, sr, hooks, leadIn);
+    const m = driveAutoDetect(sink, isPlaying!, o.maxDurationMs, sr, hooks, pullMs, leadIn);
     const outputs = sink.finishAll();
     const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
     log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);
@@ -793,7 +811,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     return { outputs, lengthMs, frames: m.endFrame - m.startFrame, hff: m.hff };
   }
   const targetFrames = Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000); // exact target frame count
-  driveFixed(sink, targetFrames, sr, hooks, leadIn);
+  driveFixed(sink, targetFrames, sr, hooks, pullMs, leadIn);
   const outputs = sink.finishAll();
   hooks.onRendered?.(Math.round((targetFrames / sr) * 1000));
   return { outputs };

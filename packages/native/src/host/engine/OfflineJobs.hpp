@@ -65,12 +65,13 @@
 // Engine jobs (docs/modular-graph-phase-d3-design.md section 3). The pool runs a second kind of job: a script bundle
 // run with a QuickJS runtime and an Engine of its own, which carries everything a graph job's host does not (system
 // nodes, ROM and battery resources, the protocol script packs, an advancing transport). The one kind is "render": the
-// worker builds a retroplug::RenderHost (host/render/RenderHost.hpp), runs the job's spec through it and destroys it,
-// all on that worker and inside the job's floating-point pin, so the runtime, the job's Engine, every core it boots
-// and every node and resampler its plan builds are made and freed on the one thread, before the worker takes its next
-// job. Nothing a render job touches belongs to the engine that owns this pool: the RenderHost's Engine is its own, as
-// are its resource table, snapshot registry and script host. What it shares with other jobs, and with the live engine
-// building cores on its control thread and running them on its audio thread, is the process's:
+// worker builds a retroplug::RenderHost (host/render/RenderHost.hpp), runs the job's spec through it in continuous
+// blocks (whole blocks whatever each render call asks for, design section 4) and destroys it, all on that worker and
+// inside the job's floating-point pin, so the runtime, the job's Engine, every core it boots and every node and
+// resampler its plan builds are made and freed on the one thread, before the worker takes its next job. Nothing a
+// render job touches belongs to the engine that owns this pool: the RenderHost's Engine is its own, as are its resource
+// table, snapshot registry and script host. What it shares with other jobs, and with the live engine building cores on
+// its control thread and running them on its audio thread, is the process's:
 //   - Mesen's per-process home folder, under which each core's scratch paths (the SMS staged ROM, the GBA BIOS, the
 //     NES SD card) are numbered per core by atomic counters rather than by system id, which every job's Engine starts
 //     at 1;
@@ -256,7 +257,8 @@ private:
     OfflineCompletion run(Job& job);
     // Runs an engine job's body on this thread, inside the floating-point pin.
     EngineJobCompletion runEngine(Job& job);
-    // The pool's own engine job body: builds a RenderHost on this thread, runs the spec, and destroys it here.
+    // The pool's own engine job body: builds a RenderHost on this thread, runs the spec in continuous blocks, and
+    // destroys it here.
     static EngineJobOutcome renderBody(const EngineJobRequest& request, const EngineJobHooks& hooks);
 
     // Filled by the constructor and never changed: the workers read it without the lock.

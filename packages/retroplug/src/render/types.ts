@@ -42,6 +42,12 @@ export interface RenderOpts {
   // take them from and correctly boots the ROM as it ships.
   roles?: RoleInstance[]; // the live system's roles (system + feature), configs included
   gainDb?: number; // the instance's own gain (CommonSettings.gainDb); 0 / absent = unity
+  // How much audio each pull of the render's stream asks for, in ms: 100 when absent, as every caller but
+  // render-chunks.test.ts leaves it. A test knob: only in an engine job (continuous blocks) does the engine run whole
+  // blocks whatever a pull asks for, so there a render's samples do not depend on it (its play gestures and song load
+  // keep lengths of their own); an auto-detect render's pull is also its detection poll, though, so the length it
+  // ends at moves with it. In exact blocks (the UI's RenderJobRegistry) a render with a sync node moves with it.
+  pullMs?: number;
 }
 
 /** The driver calls a render makes: the subset of `AudioDriver` a `RenderContext` needs. Naming it is what keeps a
@@ -58,6 +64,10 @@ export interface RenderContext {
   backend: Backend; // readFile / readCpu + the WavBackend writers (writeFile / appendFile / writeFileAt)
   project: ProjectStore;
   audio: RenderAudioDriver;
+  // How the engine runs the render's calls: "continuous" in an engine job, whose engine runs whole blocks and carries
+  // the rest of a call's last block to the next call of the same shape (docs/modular-graph-phase-d3-design.md
+  // section 4); "exact" (or absent) where each call runs its own length, as the CLI's in-process render does.
+  blocks?: "exact" | "continuous";
 }
 
 /** Host callbacks. All optional so the CLI passes none (logging defaults to console, no progress/cancel).

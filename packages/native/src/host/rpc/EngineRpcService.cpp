@@ -366,115 +366,136 @@ bool EngineRpcService::stageNodeMidi(std::string nodeId, std::vector<std::uint8_
     return true;
 }
 
+void EngineRpcService::setContinuousBlocks(bool on) {
+    continuous_ = on;
+    dropCarry();
+}
+
+void EngineRpcService::dropCarry() {
+    carry_.shape = Shape::None;
+    carry_.frames = 0;
+    carry_.streams.clear();
+}
+
+std::vector<std::vector<float>> EngineRpcService::pull(Shape shape, std::uint32_t id, std::size_t streams, double ms,
+                                                       const BlockFn& block) {
+    const double                    rate = engine_.sampleRate();
+    const std::uint64_t             total = static_cast<std::uint64_t>(ms * rate / 1000.0);
+    std::vector<std::vector<float>> out(streams);  // per stream: interleaved L,R,L,R...
+    for (auto& o : out) o.reserve(total * 2);
+
+    std::uint64_t done = 0;
+    if (continuous_) {
+        // A carry of another shape, stream count or rate is not this call's audio (setContinuousBlocks).
+        if (carry_.shape != shape || carry_.id != id || carry_.rate != rate || carry_.streams.size() != streams)
+            dropCarry();
+        const std::uint64_t take = std::min<std::uint64_t>(carry_.frames, total);
+        for (std::size_t i = 0; i < carry_.streams.size() && take > 0; ++i) {
+            auto&      c = carry_.streams[i];
+            const auto end = c.begin() + static_cast<std::ptrdiff_t>(take * 2);
+            out[i].insert(out[i].end(), c.begin(), end);
+            c.erase(c.begin(), end);
+        }
+        carry_.frames -= take;
+        done = take;
+    }
+    if (done == total) return out;
+
+    // One persistent L/R block buffer per stream, listed as the lanes a block renders into (L0, R0, L1, R1, ...).
+    std::vector<std::vector<float>> lanes(streams * 2, std::vector<float>(kBlockSize));
+    std::vector<float*>             ptrs(streams * 2);
+    for (std::size_t k = 0; k < ptrs.size(); ++k) ptrs[k] = lanes[k].data();
+
+    // The Engine owns transport + the ppq clock and consumes any host MIDI staged via stageMidiIn on the first block
+    // it renders. Every carried frame was handed out before this point, so a block's frames follow the call's in time.
+    while (done < total) {
+        const std::uint64_t want = total - done;
+        const auto frames =
+            continuous_ ? kBlockSize : static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, want));
+        block(frames, ptrs.data());
+        accumulateMidiOut();  // gather this block's host MIDI out before the next block clears it
+        const auto give = static_cast<std::uint32_t>(std::min<std::uint64_t>(frames, want));
+        for (std::size_t i = 0; i < streams; ++i) {
+            const float* l = ptrs[i * 2];
+            const float* r = ptrs[i * 2 + 1];
+            for (std::uint32_t f = 0; f < give; ++f) {
+                out[i].push_back(l[f]);  // interleave L,R,L,R…
+                out[i].push_back(r[f]);
+            }
+        }
+        if (give < frames) {
+            // Continuous blocks only: the rest of the block is the next call's, if that call is of this shape.
+            carry_.shape = shape;
+            carry_.id = id;
+            carry_.rate = rate;
+            carry_.frames = frames - give;
+            carry_.streams.assign(streams, {});
+            for (std::size_t i = 0; i < streams; ++i) {
+                carry_.streams[i].reserve(carry_.frames * 2);
+                for (std::uint32_t f = give; f < frames; ++f) {
+                    carry_.streams[i].push_back(ptrs[i * 2][f]);
+                    carry_.streams[i].push_back(ptrs[i * 2 + 1][f]);
+                }
+            }
+        }
+        done += give;
+    }
+    return out;
+}
+
+namespace {
+
+std::vector<rfl::Bytestring> toBytestrings(std::vector<std::vector<float>>&& streams) {
+    std::vector<rfl::Bytestring> result;
+    result.reserve(streams.size());
+    for (const auto& s : streams) {
+        const auto* p = reinterpret_cast<const std::byte*>(s.data());
+        result.emplace_back(p, p + s.size() * sizeof(float));
+    }
+    return result;
+}
+
+} // namespace
+
 rfl::Bytestring EngineRpcService::renderAudio(double ms) {
     // This thread calls processBlock itself, which only the Engine's owning thread may do.
     if (ms <= 0.0 || invoker_.audioThreadOwns()) return {};
     if (!rendersInto(2)) return {};
-    scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
-    scratchR_.resize(kBlockSize);
-
-    const std::uint64_t total = static_cast<std::uint64_t>(ms * engine_.sampleRate() / 1000.0);
-    std::vector<float> out;
-    out.reserve(total * 2);
-    // The Engine owns transport + the ppq clock and consumes any host MIDI staged via stageMidiIn on
-    // the first block it renders.
-    for (std::uint64_t s = 0; s < total; s += kBlockSize) {
-        const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
-        engine_.processBlock(frames, scratchL_.data(), scratchR_.data());
-        accumulateMidiOut();  // gather this block's host MIDI out before the next block clears it
-        for (std::uint32_t f = 0; f < frames; ++f) {
-            out.push_back(scratchL_[f]);  // interleave L,R,L,R…
-            out.push_back(scratchR_[f]);
-        }
-    }
-    const auto* p = reinterpret_cast<const std::byte*>(out.data());
-    return rfl::Bytestring(p, p + out.size() * sizeof(float));
+    auto out = pull(Shape::Mix, 0, 1, ms, [this](std::uint32_t frames, float* const* lanes) {
+        engine_.processBlock(frames, lanes[0], lanes[1]);
+    });
+    const auto* p = reinterpret_cast<const std::byte*>(out[0].data());
+    return rfl::Bytestring(p, p + out[0].size() * sizeof(float));
 }
 
 std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
-    std::vector<rfl::Bytestring> result;
-    if (ms <= 0.0 || invoker_.audioThreadOwns()) return result;  // as renderAudio
+    if (ms <= 0.0 || invoker_.audioThreadOwns()) return {};  // as renderAudio
     const std::size_t n = engine_.systemCount();
-    if (n == 0) return result;
-    if (!rendersInto(2 * n)) return result;
-
-    // One persistent L/R block buffer per system; the PerSystem shape routes each core into its own pair,
-    // so linked systems interleave exactly as they do in the mixed path.
-    std::vector<std::vector<float>> bl(n, std::vector<float>(kBlockSize));
-    std::vector<std::vector<float>> br(n, std::vector<float>(kBlockSize));
-    std::vector<float*> ls(n), rs(n), lanes;  // lanes: the pairs as one channel list (L0, R0, L1, R1, …)
-    std::vector<std::vector<float>> out(n);  // per system: interleaved L,R,L,R…
-    const std::uint64_t total = static_cast<std::uint64_t>(ms * engine_.sampleRate() / 1000.0);
-    for (std::size_t i = 0; i < n; ++i) {
-        ls[i] = bl[i].data();
-        rs[i] = br[i].data();
-        lanes.insert(lanes.end(), {ls[i], rs[i]});
-        out[i].reserve(total * 2);
-    }
-
-    for (std::uint64_t s = 0; s < total; s += kBlockSize) {
-        const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
-        engine_.processBlock(frames, lanes.data(), lanes.size());
-        accumulateMidiOut();  // gather this block's host MIDI out before the next block clears it
-        for (std::size_t i = 0; i < n; ++i)
-            for (std::uint32_t f = 0; f < frames; ++f) {
-                out[i].push_back(ls[i][f]);  // interleave L,R,L,R…
-                out[i].push_back(rs[i][f]);
-            }
-    }
-
-    result.reserve(n);
-    for (std::size_t i = 0; i < n; ++i) {
-        const auto* p = reinterpret_cast<const std::byte*>(out[i].data());
-        result.emplace_back(p, p + out[i].size() * sizeof(float));
-    }
-    return result;
+    if (n == 0) return {};
+    if (!rendersInto(2 * n)) return {};
+    // The PerSystem shape routes each core into its own pair, so linked systems interleave exactly as they do in the
+    // mixed path.
+    return toBytestrings(pull(Shape::PerSystem, 0, n, ms, [this, n](std::uint32_t frames, float* const* lanes) {
+        engine_.processBlock(frames, lanes, 2 * n);
+    }));
 }
 
 std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32_t id, double ms) {
-    std::vector<rfl::Bytestring> result;
-    if (invoker_.audioThreadOwns()) return result;  // as renderAudio
+    if (invoker_.audioThreadOwns()) return {};  // as renderAudio
     // Single-system only: the PerChannel shape fans one system's streams, so a second system's would collide
     // into these buffers. The mixed/per-system paths are the multi-system routes.
-    if (ms <= 0.0 || engine_.systemCount() != 1) return result;
+    if (ms <= 0.0 || engine_.systemCount() != 1) return {};
     SystemBase* sys = engine_.findSystem(id);
-    if (sys == nullptr) return result;
+    if (sys == nullptr) return {};
 
     // The target's output streams (Game Boy = 4 stereo: Pulse 1/Pulse 2/Wave/Noise; default = 1 "Mix").
     const std::size_t n = sys->channelLayout().size();
-    if (n == 0) return result;
-    if (!rendersInto(2 * n)) return result;
-
-    // One persistent L/R block buffer per stream; the PerChannel shape routes each stream into its own pair.
-    std::vector<std::vector<float>> bl(n, std::vector<float>(kBlockSize));
-    std::vector<std::vector<float>> br(n, std::vector<float>(kBlockSize));
-    std::vector<float*> ls(n), rs(n), lanes;  // lanes: the pairs as one channel list (L0, R0, L1, R1, …)
-    std::vector<std::vector<float>> out(n);  // per stream: interleaved L,R,L,R…
-    const std::uint64_t total = static_cast<std::uint64_t>(ms * engine_.sampleRate() / 1000.0);
-    for (std::size_t i = 0; i < n; ++i) {
-        ls[i] = bl[i].data();
-        rs[i] = br[i].data();
-        lanes.insert(lanes.end(), {ls[i], rs[i]});
-        out[i].reserve(total * 2);
-    }
-
-    for (std::uint64_t s = 0; s < total; s += kBlockSize) {
-        const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
-        engine_.processBlock(frames, lanes.data(), lanes.size());
-        accumulateMidiOut();  // gather this block's host MIDI out before the next block clears it
-        for (std::size_t i = 0; i < n; ++i)
-            for (std::uint32_t f = 0; f < frames; ++f) {
-                out[i].push_back(ls[i][f]);  // interleave L,R,L,R…
-                out[i].push_back(rs[i][f]);
-            }
-    }
-
-    result.reserve(n);
-    for (std::size_t i = 0; i < n; ++i) {
-        const auto* p = reinterpret_cast<const std::byte*>(out[i].data());
-        result.emplace_back(p, p + out[i].size() * sizeof(float));
-    }
-    return result;
+    if (n == 0) return {};
+    if (!rendersInto(2 * n)) return {};
+    // The PerChannel shape routes each stream into its own pair.
+    return toBytestrings(pull(Shape::PerChannel, id, n, ms, [this, n](std::uint32_t frames, float* const* lanes) {
+        engine_.processBlock(frames, lanes, 2 * n);
+    }));
 }
 
 double EngineRpcService::sampleRate() const {
@@ -602,6 +623,8 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
     // no plan placed the surface waits in the link, and the surface-in node of a plan that does place it drains what the
     // link held on its first block after it bound the link, forwarding none of it. A press staged while the surface is
     // bound is delivered at the next block - renderBlocks' first included - as stageControllerIn promises.
+    // Blocks of the caller's own lengths: frames a continuous render carried would come after them, out of order.
+    dropCarry();
     std::uint64_t total = 0;
     for (const RpcRenderBlock& b : req.blocks) total += b.frames;
     // Whole-run planar lanes, zero-filled; each block renders straight into its slice of the result.

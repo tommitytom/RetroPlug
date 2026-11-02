@@ -1,0 +1,95 @@
+{
+  "target": "linux-x64-gnu13",
+  "cases": {
+    "lsdj/telemelt/hff/index-3/channels": {
+      "ms": 191700,
+      "files": [
+        { "file": "_pulse1", "hash": "2e27d16400c632f7", "size": 33815924 },
+        { "file": "_pulse2", "hash": "616a44128428ac84", "size": 33815924 },
+        { "file": "_wave", "hash": "d6e2ec339da8d2f3", "size": 33815924 },
+        { "file": "_noise", "hash": "e1e159951a72f58d", "size": 33815924 }
+      ]
+    },
+    "lsdj/telemelt/hff/name-machete/mix": {
+      "ms": 191700,
+      "files": [
+        { "file": "", "hash": "9923f649c18aa81a", "size": 33815924 }
+      ]
+    },
+    "lsdj/tripledipper/fixed-5s/channels": {
+      "ms": 5000,
+      "files": [
+        { "file": "_pulse1", "hash": "03e66ee500bc0cde", "size": 882044 },
+        { "file": "_pulse2", "hash": "77d5c1269162273e", "size": 882044 },
+        { "file": "_wave", "hash": "8795fe44009c5656", "size": 882044 },
+        { "file": "_noise", "hash": "03f386d0e8436596", "size": 882044 }
+      ]
+    },
+    "lsdj/tripledipper/fixed-5s/mix": {
+      "ms": 5000,
+      "files": [
+        { "file": "", "hash": "c24700eaccee81f6", "size": 882044 }
+      ]
+    },
+    "risa/blumarbl/fixed-3s/channels": {
+      "ms": 3000,
+      "files": [
+        { "file": "_square1", "hash": "6889b817fb4b0293", "size": 264644 },
+        { "file": "_square2", "hash": "1495186248745402", "size": 264644 },
+        { "file": "_triangle", "hash": "6889b817fb4b0293", "size": 264644 },
+        { "file": "_noise", "hash": "7137025070f57c16", "size": 264644 },
+        { "file": "_dmc", "hash": "6889b817fb4b0293", "size": 264644 }
+      ]
+    },
+    "risa/blumarbl/fixed-3s/pins": {
+      "ms": 3000,
+      "files": [
+        { "file": "_pulse", "hash": "e63a67eb0bcb53ff", "size": 264644 },
+        { "file": "_tnd", "hash": "62382a9f18d719cc", "size": 264644 },
+        { "file": "_expansion", "hash": "2137fd9ca19c14f5", "size": 264644 }
+      ]
+    },
+    "risa/ecoli/hff/mix": {
+      "ms": 59000,
+      "files": [
+        { "file": "", "hash": "54393a15fcb680bb", "size": 5203844 }
+      ]
+    },
+    "risa/ecoli/hff/region-ntsc/mix": {
+      "ms": 49800,
+      "files": [
+        { "file": "", "hash": "63124a2bc55afbcb", "size": 4392404 }
+      ]
+    },
+    "sameboy/mgb-sgb/no-start/mix": {
+      "ms": 4000,
+      "files": [
+        { "file": "", "hash": "ab268313917fac4e", "size": 705644 }
+      ]
+    },
+    "smsggdj/gg/index-1/mix": {
+      "ms": 3000,
+      "files": [
+        { "file": "", "hash": "0404a43ce8216dfe", "size": 529244 }
+      ]
+    },
+    "smsggdj/sms/index-0/mix": {
+      "ms": 4000,
+      "files": [
+        { "file": "", "hash": "c309fbacf1c2803a", "size": 705644 }
+      ]
+    },
+    "smsggdj/sms/name-chord/mix-48000": {
+      "ms": 3000,
+      "files": [
+        { "file": "", "hash": "e418e50d3668e64a", "size": 576044 }
+      ]
+    },
+    "smsggdj/sms/sync-in24/transport-120bpm": {
+      "ms": 4000,
+      "files": [
+        { "file": "", "hash": "751568bed2d8e02e", "size": 705644 }
+      ]
+    }
+  }
+}
