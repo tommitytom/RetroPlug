@@ -206,9 +206,43 @@ struct RpcOfflineCompletion {
     std::uint32_t                      guardsFired;
     std::string                        guardReason;
 };
-// What drainOfflineJobs answers: the completions, and how many of the engine's jobs are still queued or running after
-// them (so a caller holding a promise for a job native no longer holds learns so, rather than poll for it forever).
+// An engine job (docs/modular-graph-phase-d3-design.md section 3, Engine::submitEngineJob): a script bundle of `kind`
+// run on a worker of the same pool with a runtime and an Engine of its own; the one kind is "render", whose `spec` is
+// the render job JSON (a RenderOpts the render worker reads). Its answer is a graph job's, RpcOfflineSubmitResult.
+struct RpcEngineJobRequest {
+    std::string kind;
+    std::string spec;
+};
+// One console write a job's script made, without its newline, and its stream: "stdout" or "stderr".
+struct RpcEngineJobLine {
+    std::string stream;
+    std::string text;
+};
+// A running engine job at a drain: the milliseconds of audio rendered, the lines written since the drain before, and
+// how many were dropped past the job's record bound in that time.
+struct RpcEngineJobProgress {
+    std::uint32_t                 id;
+    double                        renderedMs;
+    std::vector<RpcEngineJobLine> lines;
+    std::uint32_t                 droppedLines;
+};
+// A finished engine job: `status` "done", "cancelled" or "error", the error's `message`, the files written, and its
+// final progress fields.
+struct RpcEngineJobCompletion {
+    std::uint32_t                 id;
+    std::string                   status;
+    std::string                   message;
+    std::vector<std::string>      outputs;
+    double                        renderedMs;
+    std::vector<RpcEngineJobLine> lines;
+    std::uint32_t                 droppedLines;
+};
+// What drainOfflineJobs answers: the graph jobs' completions, how many of the engine's jobs (of both kinds) are still
+// queued or running after them (so a caller holding a promise for a job native no longer holds learns so, rather than
+// poll for it forever), the engine jobs' completions, and every running engine job's progress.
 struct RpcOfflineDrain {
-    std::vector<RpcOfflineCompletion> completions;
-    std::uint32_t                     inFlight;
+    std::vector<RpcOfflineCompletion>   completions;
+    std::uint32_t                       inFlight;
+    std::vector<RpcEngineJobCompletion> engineCompletions;
+    std::vector<RpcEngineJobProgress>   engineProgress;
 };

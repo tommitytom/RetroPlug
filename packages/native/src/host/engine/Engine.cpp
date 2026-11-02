@@ -259,7 +259,8 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
 }
 
 // The offline pool first: it cancels its jobs and joins its workers, so no job thread outlives the engine, and each
-// job's host and nodes (a resampler among them) are gone before the engine's own members start to go.
+// job's host and nodes (a resampler among them), and each render's runtime, Engine and cores, are gone before the
+// engine's own members start to go.
 Engine::~Engine() { offline_.reset(); }
 
 rp::host::OfflineSubmit Engine::submitOfflineJob(rp::host::OfflineRequest request) {
@@ -267,9 +268,15 @@ rp::host::OfflineSubmit Engine::submitOfflineJob(rp::host::OfflineRequest reques
     return offline_->submit(std::move(request));
 }
 
-std::vector<rp::host::OfflineCompletion> Engine::drainOfflineJobs(std::chrono::milliseconds wait,
-                                                                  std::size_t*              inFlight) {
-    if (offline_) return offline_->drain(wait, inFlight);
+rp::host::OfflineSubmit Engine::submitEngineJob(rp::host::EngineJobRequest request) {
+    if (!offline_) offline_ = std::make_unique<rp::host::OfflineJobs>();
+    return offline_->submitEngine(std::move(request));
+}
+
+std::vector<rp::host::OfflineCompletion> Engine::drainOfflineJobs(std::chrono::milliseconds  wait,
+                                                                  std::size_t*               inFlight,
+                                                                  rp::host::EngineJobsDrain* engine) {
+    if (offline_) return offline_->drain(wait, inFlight, engine);
     if (inFlight) *inFlight = 0;
     return {};
 }

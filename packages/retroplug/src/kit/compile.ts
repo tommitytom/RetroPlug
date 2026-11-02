@@ -27,8 +27,7 @@
 // empty slot, and has none.
 
 import type { KitCompileSpec, KitSampleSpec, RisaKitCompileSpec, RisaDmcSampleSpec } from "../audioDriver";
-import type { Backend } from "../backend";
-import { OfflineRunError, type OfflineCap, type OfflineRunRequest } from "../offline";
+import { OfflineRunError, type OfflineCap, type OfflineRunRequest, type OfflineRunResult } from "../offline";
 import { buildKitBankPlaced } from "../lsdj/rom/buildKit";
 import { KIT_MAX_SAMPLES, KIT_MAX_SAMPLE_SPACE } from "../lsdj/rom/constants";
 import { assembleKitBankPlaced, type AssembleSlot } from "../risa/rom/kit";
@@ -56,11 +55,14 @@ import {
   trimToFrames,
 } from "./pack";
 
-/** What the compilers run their jobs on: a backend's offline jobs (every native host has them; the mock rejects).
+/** What the compilers run their jobs on: a backend's offline jobs (every native host has them; the mock rejects), of
+ *  which the compilers need only the promise, not the handle's cancel.
  *  The promises settle only in a host that pumps or waits for its offline jobs (src/offline.ts): one with a UI tick
  *  pumps from it, and one without needs the poll's native wait, which createAudioDriver turns on as it is made (or
  *  setOfflineWait). In a host with neither, a compile never settles. */
-export type KitJobRunner = Pick<Backend, "offlineRun">;
+export interface KitJobRunner {
+  offlineRun(request: OfflineRunRequest): Promise<OfflineRunResult>;
+}
 
 /** A compiled kit: the bank, and each spec sample's reason in spec order, null exactly when the bank holds that
  *  sample whole. A reason is a failure (the slot is empty), or why a slot that compiled is still empty or short (an

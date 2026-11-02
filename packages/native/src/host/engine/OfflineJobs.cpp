@@ -19,6 +19,7 @@
 #include "graph/nodes/DspNodes.hpp"
 #include "graph/nodes/DspResampleNodes.hpp"
 #include "host/engine/DefaultFloatEnvironment.hpp"
+#include "host/render/RenderHost.hpp"
 #include "kit/SampleCache.hpp"
 
 namespace rp::host {
@@ -115,7 +116,10 @@ std::optional<OfflineWindow> offlineWindow(std::size_t decodedFrames, std::uint3
     return OfflineWindow{start, std::min(maxFrames, std::min(length0, decodedFrames - start))};
 }
 
-OfflineJobs::OfflineJobs(std::span<const rp_package* const> extra) {
+OfflineJobs::OfflineJobs(std::span<const rp_package* const> extra, unsigned size, EngineJobBody body)
+    : size_(size == 0 ? concurrency() : std::min(size, kMaxWorkers)), body_(std::move(body)) {
+    // Room for every worker up front, so starting one never grows the vector under a submission.
+    workers_.reserve(maxWorkers());
     const auto add = [this](const rp_package* p) {
         std::string why;
         if (!registry_.addPackage(p, &why))
@@ -178,35 +182,76 @@ OfflineSubmit OfflineJobs::submit(OfflineRequest request) {
         if (h == 0 || h > handles)
             return refuse("a return names res:" + std::to_string(h) + ", which is no input or output of the job");
 
+    auto job = std::make_unique<Job>();
+    job->kind = Kind::Graph;
+    job->request = std::move(request);
+    return enqueue(std::move(job));
+}
+
+OfflineSubmit OfflineJobs::submitEngine(EngineJobRequest request) {
+    // The kinds are the embedded bundles a job can run; D3 embeds one.
+    if (request.kind != "render")
+        return OfflineSubmit{0, "unknown engine job kind \"" + request.kind + "\": the one kind is \"render\""};
+    auto job = std::make_unique<Job>();
+    job->kind = Kind::Engine;
+    job->engine = std::move(request);
+    return enqueue(std::move(job));
+}
+
+bool OfflineJobs::runnable(const Job& job) const {
+    return job.kind == Kind::Graph ? runningGraph_ < size_ : runningEngine_ < engineBudget();
+}
+
+std::size_t OfflineJobs::runnableQueued() const {
+    std::size_t graph = 0, engine = 0;
+    for (const auto& job : queue_) (job->kind == Kind::Graph ? graph : engine)++;
+    return std::min<std::size_t>(graph, size_ - runningGraph_) +
+           std::min<std::size_t>(engine, engineBudget() - runningEngine_);
+}
+
+OfflineSubmit OfflineJobs::enqueue(std::unique_ptr<Job> job) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (stopping_) return refuse("the engine is going");
-    if (outstanding_ >= kMaxJobs)
-        return refuse("busy: " + std::to_string(kMaxJobs) + " offline jobs are outstanding");
-    // One more worker unless more are parked than jobs already wait for one (a parked worker a notify has woken stays
-    // counted until it takes the lock, so the jobs queued since have claimed it), while there is room; made here, under
-    // the lock it starts by taking.
-    if (idle_ <= queue_.size() && workers_.size() < concurrency()) {
+    if (stopping_) return {0, "the engine is going"};
+    if (outstanding_ >= kMaxJobs) return {0, "busy: " + std::to_string(kMaxJobs) + " offline jobs are outstanding"};
+    job->id = nextId_;
+    queue_.push_back(std::move(job));
+    // One more worker when the jobs that could start now outnumber the workers not running one (a parked worker a
+    // notify has woken stays counted until it claims a job, and a worker just started counts from its start, so the
+    // jobs queued since have claimed them), while there is room; made here, under the lock it starts by taking. A job
+    // its kind's limit holds back starts no worker: a worker that finishes a job of that kind takes it.
+    if (runnableQueued() > idle_ && workers_.size() < maxWorkers()) {
+        // A thread that cannot be started (std::system_error, or std::bad_alloc for its state) leaves the job queued
+        // for the workers there are; with none, it is refused and leaves nothing behind, its id not taken.
+        bool        failed = false;
+        std::string why;
         try {
             workers_.emplace_back([this] { workerLoop(); });
-        } catch (const std::system_error& e) {
-            if (workers_.empty()) return refuse(std::string("no worker thread could be started: ") + e.what());
+            ++idle_;
+        } catch (const std::exception& e) {
+            failed = true;
+            why = e.what();
+        } catch (...) {
+            failed = true;
+            why = "an unknown error";
+        }
+        if (failed && workers_.empty()) {
+            queue_.pop_back();
+            return {0, "no worker thread could be started: " + why};
         }
     }
-    auto job = std::make_unique<Job>();
-    job->id = nextId_++;
-    job->request = std::move(request);
-    const std::uint32_t id = job->id;
-    queue_.push_back(std::move(job));
+    const std::uint32_t id = nextId_++;
     ++outstanding_;
     work_.notify_one();
     return {id, {}};
 }
 
-std::vector<OfflineCompletion> OfflineJobs::drain(std::chrono::milliseconds wait, std::size_t* inFlight) {
+std::vector<OfflineCompletion> OfflineJobs::drain(std::chrono::milliseconds wait, std::size_t* inFlight,
+                                                  EngineJobsDrain* engine) {
     std::unique_lock<std::mutex> lock(mutex_);
-    if (completions_.empty() && wait.count() > 0) {
-        finished_.wait_for(lock, std::min(wait, kMaxDrainWait), [this] {
-            return stopping_ || !completions_.empty() || outstanding_ == 0;
+    const auto ready = [&] { return !completions_.empty() || (engine && !engineCompletions_.empty()); };
+    if (!ready() && wait.count() > 0) {
+        finished_.wait_for(lock, std::min(wait, kMaxDrainWait), [&] {
+            return stopping_ || ready() || (queue_.empty() && running_.empty());
         });
     }
     std::vector<OfflineCompletion> out;
@@ -214,7 +259,21 @@ std::vector<OfflineCompletion> OfflineJobs::drain(std::chrono::milliseconds wait
     for (auto& c : completions_) out.push_back(std::move(c));
     outstanding_ -= completions_.size();
     completions_.clear();
-    if (inFlight) *inFlight = outstanding_;  // what is left is queued or running: every completion was just taken
+    if (engine) {
+        for (auto& c : engineCompletions_) engine->completions.push_back(std::move(c));
+        outstanding_ -= engineCompletions_.size();
+        engineCompletions_.clear();
+        // Every running engine job's progress, its lines since the drain before taken from its record. A job in
+        // running_ is alive while this lock is held: its worker takes the lock to take it out before it frees it.
+        for (Job* job : running_) {
+            if (job->kind != Kind::Engine) continue;
+            EngineJobProgress p;
+            p.id = job->id;
+            job->record.take(p);
+            engine->progress.push_back(std::move(p));
+        }
+    }
+    if (inFlight) *inFlight = queue_.size() + running_.size();
     return out;
 }
 
@@ -222,12 +281,18 @@ bool OfflineJobs::cancel(std::uint32_t id) {
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto it = queue_.begin(); it != queue_.end(); ++it) {
         if ((*it)->id != id) continue;
+        std::unique_ptr<Job> job = std::move(*it);
         queue_.erase(it);
-        OfflineCompletion c;
-        c.id = id;
-        c.error = "cancelled";
-        completions_.push_back(std::move(c));
+        if (job->kind == Kind::Engine) {
+            engineCompletions_.push_back(engineCompletion(*job, "cancelled"));
+        } else {
+            OfflineCompletion c;
+            c.id = id;
+            c.error = "cancelled";
+            completions_.push_back(std::move(c));
+        }
         finished_.notify_all();
+        // A queued job holds no worker, so cancelling it frees none for another job to take.
         return true;
     }
     for (Job* job : running_) {
@@ -251,28 +316,121 @@ std::size_t OfflineJobs::workers() const {
 void OfflineJobs::workerLoop() {
     std::unique_lock<std::mutex> lock(mutex_);
     for (;;) {
-        ++idle_;
-        work_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
-        --idle_;
+        // Counted idle by whoever made this worker so: the submission that started it, or the end of its last job.
+        auto next = queue_.end();
+        work_.wait(lock, [&] {
+            if (stopping_) return true;
+            next = std::find_if(queue_.begin(), queue_.end(), [&](const auto& j) { return runnable(*j); });
+            return next != queue_.end();
+        });
         if (stopping_) return;
-        std::unique_ptr<Job> job = std::move(queue_.front());
-        queue_.pop_front();
+        --idle_;
+        std::unique_ptr<Job> job = std::move(*next);
+        queue_.erase(next);
         running_.push_back(job.get());
+        (job->kind == Kind::Graph ? runningGraph_ : runningEngine_)++;
         lock.unlock();
-        OfflineCompletion done = run(*job);
+        OfflineCompletion   done;
+        EngineJobCompletion engineDone;
+        if (job->kind == Kind::Graph) done = run(*job);
+        else engineDone = runEngine(*job);
         lock.lock();
         running_.erase(std::find(running_.begin(), running_.end(), job.get()));
+        (job->kind == Kind::Graph ? runningGraph_ : runningEngine_)--;
+        ++idle_;
         // A cancel taken while the job ran wins, even over a run that got to its end first: cancel() answered true,
-        // and the caller holds that answer as the job's outcome.
-        if (job->cancelled.load(std::memory_order_acquire)) {
-            done.ok = false;
-            done.error = "cancelled";
-            done.buffers.clear();
-        }
+        // and the caller holds that answer as the job's outcome. A render that finished before its cancel was seen
+        // keeps the files it wrote in its outputs: they are whole, and on disk either way.
+        const bool cancelled = job->cancelled.load(std::memory_order_acquire);
         if (stopping_) return;  // the pool is going, and its completions with it
-        completions_.push_back(std::move(done));
+        if (job->kind == Kind::Graph) {
+            if (cancelled) {
+                done.ok = false;
+                done.error = "cancelled";
+                done.buffers.clear();
+            }
+            completions_.push_back(std::move(done));
+        } else {
+            EngineJobCompletion c = engineCompletion(*job, cancelled ? "cancelled" : std::move(engineDone.status));
+            if (!cancelled) c.message = std::move(engineDone.message);
+            c.outputs = std::move(engineDone.outputs);
+            engineCompletions_.push_back(std::move(c));
+        }
         finished_.notify_all();
+        // The job's slot is free: a job its kind's limit held back may start now, which this worker takes as it loops
+        // if nothing older is runnable; the others re-check in case that leaves one for them.
+        if (!queue_.empty()) work_.notify_all();
     }
+}
+
+EngineJobCompletion OfflineJobs::engineCompletion(Job& job, std::string status) {
+    EngineJobCompletion c;
+    c.id = job.id;
+    c.status = std::move(status);
+    job.record.take(c);
+    return c;
+}
+
+void EngineJobRecord::rendered(double ms) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    renderedMs_ = ms;
+}
+
+void EngineJobRecord::write(EngineJobStream stream, std::string_view text) {
+    if (!text.empty() && text.back() == '\n') text.remove_suffix(1);  // the console ends every write with one
+    if (text.size() > kMaxBytes) {
+        // Cut at a UTF-8 boundary: back off any continuation bytes the cut would split from their lead byte.
+        std::size_t cut = kMaxBytes;
+        while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) --cut;
+        text = text.substr(0, cut);
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (lines_.size() >= kMaxLines || bytes_ + text.size() > kMaxBytes) {
+        ++dropped_;
+        return;
+    }
+    bytes_ += text.size();
+    lines_.push_back({stream, std::string(text)});
+}
+
+EngineJobCompletion OfflineJobs::runEngine(Job& job) {
+    EngineJobCompletion out;
+    const auto cancelled = [&job] { return job.cancelled.load(std::memory_order_acquire); };
+    // The whole run in the default mode, as a graph job's: a render's arithmetic is then the CLI's, whatever the
+    // submitting thread's mode (a worker inherits it under glibc).
+    const DefaultFloatEnvironment floatEnvironment;
+    if (cancelled()) {
+        out.status = "cancelled";
+        return out;
+    }
+    try {
+        const EngineJobHooks hooks{
+            [&job](double ms) { job.record.rendered(ms); },
+            cancelled,
+            [&job](bool error, const char* text) {
+                job.record.write(error ? EngineJobStream::Err : EngineJobStream::Out, text);
+            },
+        };
+        EngineJobOutcome r = body_ ? body_(job.engine, hooks) : renderBody(job.engine, hooks);
+        out.status = std::move(r.status);
+        out.message = std::move(r.message);
+        out.outputs = std::move(r.outputs);
+    } catch (const std::exception& e) {
+        out.status = "error";
+        out.message = std::string("the engine job failed: ") + e.what();
+    } catch (...) {
+        out.status = "error";
+        out.message = "the engine job failed";
+    }
+    return out;
+}
+
+EngineJobOutcome OfflineJobs::renderBody(const EngineJobRequest& request, const EngineJobHooks& hooks) {
+    // Built, run and destroyed on this thread: the runtime anchors its stack check to the thread that makes it, and
+    // the job's Engine, its cores and its plan's nodes go before this worker takes another job.
+    retroplug::RenderHost         host;
+    retroplug::RenderHost::Result r = host.run(request.spec, hooks.rendered, hooks.cancelled, hooks.console);
+    return {std::move(r.status), std::move(r.message), std::move(r.outputs)};
 }
 
 OfflineCompletion OfflineJobs::run(Job& job) {

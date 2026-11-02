@@ -48,6 +48,10 @@
    "skipped": 1,
    "total": 1
   },
+  "engine-run": {
+   "skipped": 1,
+   "total": 5
+  },
   "lsdj-arduinoboy-slave": {
    "skipped": 1,
    "total": 1
@@ -110,7 +114,7 @@
   },
   "lsdj-rom": {
    "skipped": 8,
-   "total": 10
+   "total": 11
   },
   "lsdj-runtime": {
    "skipped": 1,

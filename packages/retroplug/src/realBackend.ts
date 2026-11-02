@@ -18,7 +18,13 @@ import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transpor
 import { savFromJson as savFromJsonTs } from "./lsdj";
 import { makeCall } from "./rpcClient";
 import { CapabilityJobs, type JobCompletion, type JobRequest, type JobSubmitResult } from "./capability";
-import { OfflineJobs, type OfflineSubmitResult, type OfflineWireDrain, type OfflineWireRequest } from "./offline";
+import {
+  OfflineJobs,
+  type EngineWireRequest,
+  type OfflineSubmitResult,
+  type OfflineWireDrain,
+  type OfflineWireRequest,
+} from "./offline";
 
 
 // --- file dialog (async, UI-direct) ------------------------------------------------------------------
@@ -117,14 +123,16 @@ function sharedJobs(): CapabilityJobs {
   return realJobs;
 }
 
-// The offline jobs' queue, shared by every emulator client of a runtime for the capability jobs' reason: native's
-// completion queue is one per engine.
+// The offline jobs' queue, graph and engine jobs alike, shared by every emulator client of a runtime for the capability
+// jobs' reason: native's completion queue is one per engine, and one drain hands back both kinds.
 let realOffline: OfflineJobs | null = null;
 
 function sharedOffline(): OfflineJobs {
   realOffline ??= new OfflineJobs({
     submitOfflineJob: (request: OfflineWireRequest) => makeCall()("submitOfflineJob", request) as OfflineSubmitResult,
+    submitEngineJob: (request: EngineWireRequest) => makeCall()("submitEngineJob", request) as OfflineSubmitResult,
     drainOfflineJobs: (waitMs: number) => makeCall()("drainOfflineJobs", waitMs) as OfflineWireDrain,
+    cancelOfflineJob: (id: number) => makeCall()("cancelOfflineJob", id) as boolean,
   });
   return realOffline;
 }
@@ -165,6 +173,7 @@ export function createEmulatorClient(): EmulatorBackend {
     // One pump for both kinds: the UI tick's, and the one after each submission.
     pumpJobs: () => jobs.pump() + offline.pump(),
     offlineRun: (request) => offline.run(request),
+    engineRun: (kind, spec, options) => offline.engine(kind, spec, options),
     rejectPendingJobs: (reason) => jobs.rejectAll(reason),
     getFrame: (id): FrameData | null => {
       const r = call("getFrame", id) as { width: number; height: number; published: boolean; data?: Uint8Array } | null;

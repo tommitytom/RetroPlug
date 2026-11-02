@@ -124,15 +124,18 @@ The rules below are the parts that don't fit those.
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
   EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
   in `Core/apu.{c,h}` and ships as a tracked patch
-  ([cmake/patches/sameboy-per-channel-audio.patch](cmake/patches/sameboy-per-channel-audio.patch)),
-  applied idempotently at configure by
+  ([cmake/patches/sameboy-per-channel-audio.patch](cmake/patches/sameboy-per-channel-audio.patch));
+  a second, [cmake/patches/sameboy-process-statics.patch](cmake/patches/sameboy-process-statics.patch),
+  makes the core's process-wide statics safe for cores on several threads at once
+  (`Core/random.c`, `Core/camera.c`, `Core/sgb.c`). Both are applied idempotently at configure by
   [cmake/sameboy.cmake](cmake/sameboy.cmake) via `git apply` (it uses
   `git apply --reverse --check` to no-op when already present). The parent repo
   tracks only the pinned submodule pointer, so after any configure `git status`
-  shows `deps/sameboy` with modified `Core/apu.c` / `Core/apu.h` — **don't
+  shows `deps/sameboy` with modified `Core/apu.c` / `Core/apu.h` / `Core/random.c` /
+  `Core/camera.c` / `Core/sgb.c` (all five expected): **don't
   reset / stash / commit that, and don't bump the pointer to "absorb" it.** A
-  submodule bump that invalidates the patch fails LOUDLY at configure (rather than
-  silently dropping per-channel output); regenerate the patch if that happens.
+  submodule bump that invalidates a patch fails LOUDLY at configure (rather than
+  silently dropping what it adds); regenerate the patch if that happens.
 - **Don't `rm -rf build` to "fix" CMake** — investigate first. The configured
   `build/` is load-bearing for the dev loop.
 - **Build via `build.sh` (Linux/macOS) / `build.bat` (Windows)** — the canonical

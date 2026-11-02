@@ -18,7 +18,7 @@
 // belongs in the application layer, not here.
 
 import type { CapabilityArgs, CapabilityOp, CapabilityProgress, CapabilityResults } from "./capability";
-import type { OfflineRunRequest, OfflineRunResult } from "./offline";
+import type { EngineJobKind, EngineRunHandle, EngineRunOptions, OfflineRunHandle, OfflineRunRequest } from "./offline";
 import type { Platform, Core } from "./platform";
 import type { TapArm } from "./graph/buildGraph";
 
@@ -258,8 +258,22 @@ export interface Backend {
    *  Zero frames: an input whose window comes out empty is accepted (its report says `frames: 0`, its buffer comes back
    *  empty) but names no resource, so a document cannot bind it; an output of no frames is refused. A caller whose
    *  chain meets an empty buffer (an empty window, a resample whose length comes out 0) submits nothing after it and
-   *  makes what those jobs would have made itself. */
-  offlineRun(request: OfflineRunRequest): Promise<OfflineRunResult>;
+   *  makes what those jobs would have made itself.
+   *
+   *  The handle's `cancel()` cancels the job: one held in TS settles at once, a submitted one when a later pump or
+   *  wait drains its completion, rejecting with an OfflineRunError whose message is "cancelled". */
+  offlineRun(request: OfflineRunRequest): OfflineRunHandle;
+
+  /** Run an engine job (docs/modular-graph-phase-d3-design.md section 3) on the same pool and the same pump: a script
+   *  bundle of `kind` with a runtime and an Engine of its own, given `spec` (a value is sent as its JSON). The one kind
+   *  is "render", whose spec is the render job the render worker reads (src/render/worker.ts). Settles with
+   *  `{ status, message, outputs, renderedMs }`, "done", "cancelled" or "error", rather than rejecting on a failure;
+   *  rejects only when native refuses the job (a kind it does not run) or the port throws. `onProgress` hears the
+   *  milliseconds of audio rendered, as a running maximum (`renderedMs` is the length the render ended at, which for
+   *  an auto-detected song end can be below it), and `onLog` each console write the job's script made, both delivered
+   *  by the pump that drains them. What settles it is what settles offlineRun; the two kinds share native's bound. The
+   *  mock rejects every job: only a native host has an engine to run one on. */
+  engineRun(kind: EngineJobKind, spec: object | string, options?: EngineRunOptions): EngineRunHandle;
 
   /** Reject every pending capability promise with `reason`: the project closed, and the nodes they named with it. A
    *  real client's queue is its engine's, shared by every emulator client of a runtime, so this reaches theirs too. */
@@ -461,7 +475,7 @@ export type EmulatorBackend = Pick<
   | "putResource" | "releaseResource"
   | "setGraph" | "loadScriptPack" | "setParam"
   | "pressButton" | "stageNodeMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
-  | "capability" | "pumpJobs" | "rejectPendingJobs" | "offlineRun"
+  | "capability" | "pumpJobs" | "rejectPendingJobs" | "offlineRun" | "engineRun"
 >;
 
 /** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */

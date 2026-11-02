@@ -8,8 +8,9 @@
 #include <vector>
 
 // The value types of an offline job's seam (docs/modular-graph-phase-d2-design.md section 3): a submission, a window
-// and a completion. They sit apart from the pool (OfflineJobs.hpp, which documents the jobs) so the engine's header
-// names them without dragging in the pool's threads, queue and node registry.
+// and a completion, for a graph job and for an engine job (docs/modular-graph-phase-d3-design.md section 3). They sit
+// apart from the pool (OfflineJobs.hpp, which documents the jobs) so the engine's header names them without dragging
+// in the pool's threads, queue and node registry.
 namespace rp::host {
 
 // How a file input's frame cap scales a frame count at a kit rate back to the decoded rate, reproducing the two kit
@@ -115,6 +116,55 @@ struct OfflineCompletion {
     std::vector<OfflineInputReport> inputs;
     std::uint32_t                   guardsFired = 0;
     std::string                     guardReason;
+};
+
+// An engine job (docs/modular-graph-phase-d3-design.md section 3): a script bundle of `kind` run on a pool worker with
+// a QuickJS runtime and an Engine of its own, given `spec`. D3 has one kind, "render", the render-worker bundle
+// (RenderHost), whose spec is the render job JSON it reads; the pool refuses any other kind at submission.
+struct EngineJobRequest {
+    std::string kind;
+    std::string spec;
+};
+
+// One console write a job's script made (console.log, console.warn and the rest), without the newline the console
+// ends each with, and which stream it went to. A write can hold newlines of its own: a multi-line string, or a script
+// exception's report with its stack.
+enum class EngineJobStream : std::uint8_t { Out, Err };
+struct EngineJobLine {
+    EngineJobStream stream = EngineJobStream::Out;
+    std::string     text;
+};
+
+// A running engine job's state at a drain: how much audio it has rendered (its last report, in milliseconds), the
+// console lines it wrote since the drain before, and how many lines it wrote past the record's bound in that time,
+// which were dropped (EngineJobRecord, in OfflineJobs.hpp). A render raises its report chunk by chunk; one that
+// detects a song's end lowers it once, at its end, to the length it wrote.
+struct EngineJobProgress {
+    std::uint32_t              id = 0;
+    double                     renderedMs = 0.0;
+    std::vector<EngineJobLine> lines;
+    std::uint32_t              droppedLines = 0;
+};
+
+// A finished engine job: `status` "done", "cancelled" or "error", `message` the error's (empty otherwise), `outputs`
+// the files it wrote, and the progress fields as a drain reports them, which here are its final ones: the rendered
+// length it ended at (for a render that detected its song's end, the length it wrote, which can be below its earlier
+// reports), and the lines it wrote since its last progress report.
+struct EngineJobCompletion {
+    std::uint32_t              id = 0;
+    std::string                status;
+    std::string                message;
+    std::vector<std::string>   outputs;
+    double                     renderedMs = 0.0;
+    std::vector<EngineJobLine> lines;
+    std::uint32_t              droppedLines = 0;
+};
+
+// The engine jobs' part of a drain: the completions since the last drain, oldest first, and every running engine
+// job's progress.
+struct EngineJobsDrain {
+    std::vector<EngineJobCompletion> completions;
+    std::vector<EngineJobProgress>   progress;
 };
 
 }  // namespace rp::host

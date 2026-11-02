@@ -181,13 +181,20 @@ public:
     // that never submits starts no thread, and joined first as the engine goes. Taken or refused at once
     // (OfflineJobs::submit); its completion comes through a later drain.
     rp::host::OfflineSubmit submitOfflineJob(rp::host::OfflineRequest request);
-    // The completions since the last drain, oldest first; with `wait`, waits up to it for one while a job is in
-    // flight (OfflineJobs::drain), which a host with no UI tick does between pumps. `inFlight`, when given, is set to
-    // the jobs still queued or running after it.
+    // An engine job (docs/modular-graph-phase-d3-design.md section 3) on the same pool: a script bundle of `kind` (the
+    // one is "render") run with a QuickJS runtime and an Engine of its own, which is not this one. It belongs to this
+    // engine all the same: a render survives its editor closing, and this engine's teardown cancels it and joins its
+    // worker. Taken or refused at once (OfflineJobs::submitEngine).
+    rp::host::OfflineSubmit submitEngineJob(rp::host::EngineJobRequest request);
+    // The graph jobs' completions since the last drain, oldest first; with `engine`, the engine jobs' completions and
+    // every running one's progress too (OfflineJobs::drain). With `wait`, waits up to it for one while a job is in
+    // flight, which a host with no UI tick does between pumps. `inFlight`, when given, is set to the jobs still queued
+    // or running after it.
     std::vector<rp::host::OfflineCompletion> drainOfflineJobs(
-        std::chrono::milliseconds wait = std::chrono::milliseconds(0), std::size_t* inFlight = nullptr);
-    // Cancel a queued or running job: it completes with the reason "cancelled". False for one neither queued nor
-    // running.
+        std::chrono::milliseconds wait = std::chrono::milliseconds(0), std::size_t* inFlight = nullptr,
+        rp::host::EngineJobsDrain* engine = nullptr);
+    // Cancel a queued or running job of either kind: it completes with the reason "cancelled". False for one neither
+    // queued nor running.
     bool        cancelOfflineJob(std::uint32_t id);
     // Offline jobs queued, running, or finished and not yet drained.
     std::size_t offlineJobsOutstanding() const;
@@ -507,10 +514,10 @@ private:
     std::array<rp::host::Job*, kMaxJobs>            applied_{};
     std::size_t                                     appliedCount_ = 0;
 
-    // The offline job pool, made at the first submission. It uses nothing of the engine's (its registry, its jobs'
-    // tables and hosts are its own), so where it sits among the members does not matter for what it touches; the
-    // destructor still resets it first, so every worker is joined, and every node a job built destroyed, before any
-    // other member goes.
+    // The offline job pool, made at the first submission. It uses nothing of the engine's (its registry, its graph
+    // jobs' tables and hosts, and its engine jobs' runtimes and Engines are its own), so where it sits among the
+    // members does not matter for what it touches; the destructor still resets it first, so every worker is joined,
+    // and every node, core and runtime a job built destroyed, before any other member goes.
     std::unique_ptr<rp::host::OfflineJobs>          offline_;
 
     // Last, so it goes first: its system nodes release their snapshot slots into registry_ (and leave

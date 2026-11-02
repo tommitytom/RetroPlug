@@ -4,6 +4,16 @@
 // later (drainOfflineJobs, from a bounded queue). This is the promise side of that; only the real backend has it, since
 // only a native host runs graphs (the mock rejects).
 //
+// Engine jobs (docs/modular-graph-phase-d3-design.md section 3) ride the same queue: a script bundle of a kind (the
+// one is "render") run on a worker of the same pool with a runtime and an Engine of its own (submitEngineJob).
+// Native's one drain hands back both kinds' completions, and every running engine job's progress and console lines,
+// so one queue here holds both kinds' promises. An engine job's promise settles with its status ("done", "cancelled"
+// or "error") rather than rejecting on a failure: a render that fails has written nothing, and says why in its
+// message, and only a refusal (or a port that throws) rejects it. Each handle, of either kind, can cancel its job: a
+// run still held here settles at once, and a submitted one through native's cancel, settled by a later drain like any
+// completion (a graph job's promise then rejects with the reason "cancelled", an engine job's resolves with that
+// status).
+//
 // The poll follows the capability jobs' (src/capability.ts), whose live set it joins, so one pump settles both kinds:
 // once right after each submission, from the UI's frame tick (ui/app/useJobPump.ts, through backend.pumpJobs) while
 // anything is pending, and after each audio-driver call that lets time pass (pumpAllJobs). What it cannot share is the
@@ -170,16 +180,88 @@ export interface OfflineWireCompletion {
   guardReason: string;
 }
 
-/** What drainOfflineJobs answers: the completions, and how many of the engine's jobs are still queued or running. */
+/** The kinds of engine job: the embedded script bundles a job can run. */
+export type EngineJobKind = "render";
+
+/** How an engine job ended: it ran to its end ("done"), was cancelled, or failed ("error", with its message). */
+export type EngineRunStatus = "done" | "cancelled" | "error";
+
+/** A finished engine job: its status, the error's message ("" otherwise), the files it wrote, and the milliseconds of
+ *  audio it ended at: for a render, the length it wrote, which for one that detected its song's end can be below the
+ *  most onProgress reported (that count included the chunks held back past the stop). */
+export interface EngineRunResult {
+  status: EngineRunStatus;
+  message: string;
+  outputs: string[];
+  renderedMs: number;
+}
+
+/** One console write a job's script made (console.log and the rest), without its final newline, and its stream. A
+ *  write can hold newlines of its own: a multi-line string, or a script exception's report with its stack. */
+export interface EngineLogLine {
+  stream: "stdout" | "stderr";
+  text: string;
+}
+
+/** What an engine job reports while it runs, delivered from the pump that drains it. */
+export interface EngineRunOptions {
+  /** The milliseconds of audio rendered so far, each time it has risen since the last report: a running maximum,
+   *  never going back. A render that detects its song's end lowers its own count once, at the end, to the length it
+   *  wrote; that length is the result's `renderedMs`, not a last call here. */
+  onProgress?: (renderedMs: number) => void;
+  /** Each console write the job's script made, in order. Native keeps a bounded record between drains
+   *  (EngineJobRecord: 256 lines, 64 KiB); writes past it were dropped, and arrive as one stderr line saying how
+   *  many. */
+  onLog?: (line: EngineLogLine) => void;
+}
+
+/** A job's promise, with a way to cancel the job. `cancel()` answers whether there was a job to cancel: true for one
+ *  held here or queued or running in native, which then ends cancelled (a graph job's promise rejects with the reason
+ *  "cancelled", an engine job's resolves with that status); false once it has finished. */
+export interface JobHandle<T> extends Promise<T> {
+  cancel(): boolean;
+}
+export type OfflineRunHandle = JobHandle<OfflineRunResult>;
+export type EngineRunHandle = JobHandle<EngineRunResult>;
+
+/** `promise` as a handle whose cancel is `cancel`. */
+export function jobHandle<T>(promise: Promise<T>, cancel: () => boolean): JobHandle<T> {
+  return Object.assign(promise, { cancel });
+}
+
+// The engine job wire shapes (native BackendTypes.hpp: RpcEngineJobRequest, RpcEngineJobProgress,
+// RpcEngineJobCompletion).
+export interface EngineWireRequest {
+  kind: string;
+  spec: string;
+}
+export interface EngineWireProgress {
+  id: number;
+  renderedMs: number;
+  lines: EngineLogLine[];
+  droppedLines: number;
+}
+export interface EngineWireCompletion extends EngineWireProgress {
+  status: string;
+  message: string;
+  outputs: string[];
+}
+
+/** What drainOfflineJobs answers: the graph jobs' completions, how many of the engine's jobs (of both kinds) are
+ *  still queued or running, the engine jobs' completions, and every running engine job's progress. */
 export interface OfflineWireDrain {
   completions: OfflineWireCompletion[];
   inFlight: number;
+  engineCompletions?: EngineWireCompletion[];
+  engineProgress?: EngineWireProgress[];
 }
 
-/** The two native calls the jobs ride: what a backend hands OfflineJobs. */
+/** The native calls the jobs ride: what a backend hands OfflineJobs. */
 export interface OfflinePort {
   submitOfflineJob(request: OfflineWireRequest): OfflineSubmitResult;
+  submitEngineJob(request: EngineWireRequest): OfflineSubmitResult;
   drainOfflineJobs(waitMs: number): OfflineWireDrain;
+  cancelOfflineJob(id: number): boolean;
 }
 
 /** Native's bound on one engine's outstanding offline jobs (OfflineJobs::kMaxJobs): past it the queue holds runs
@@ -234,37 +316,60 @@ function asError(e: unknown): Error {
   return e instanceof Error ? e : new Error(String(e));
 }
 
-interface Pending {
-  resolve: (value: OfflineRunResult) => void;
+type Waiter = (
+  | { kind: "graph"; resolve: (value: OfflineRunResult) => void }
+  | { kind: "engine"; resolve: (value: EngineRunResult) => void; options: EngineRunOptions; renderedMs: number }
+) & {
   reject: (error: Error) => void;
+  id: number | null; // native's id once submitted
+};
+
+type Submission = { kind: "graph"; wire: OfflineWireRequest } | { kind: "engine"; wire: EngineWireRequest };
+
+// A caller's callback that throws is the caller's bug, and must not strand the other promises the drain settles.
+function report(callback: () => void): void {
+  try {
+    callback();
+  } catch (e) {
+    console.error(`an engine job's callback threw: ${asError(e).message}`);
+  }
 }
 
-/** The promises over one queue of offline jobs: native's, which is one per engine. */
+/** The promises over one queue of offline jobs, graph and engine: native's, which is one per engine. */
 export class OfflineJobs implements JobQueue {
-  private readonly pending = new Map<number, Pending>();
+  private readonly pending = new Map<number, Waiter>();
   // Runs made while OFFLINE_MAX_JOBS were pending, oldest first, submitted as completions make room.
-  private readonly held: { wire: OfflineWireRequest; waiter: Pending }[] = [];
+  private readonly held: { submission: Submission; waiter: Waiter }[] = [];
   private polling = false;
+  private settling = false;   // a drain's results are being settled: an engine job's callback runs inside it
   private quiet = 0;          // the poll's steps in a row that settled nothing and saw no submission
   private submitted = false;  // a submission since the poll's last step
 
   constructor(private readonly port: OfflinePort) {}
 
-  /** Run a job. Rejects with native's reason when it is refused (at once, or when a held run is submitted); otherwise
-   *  settles with its completion, or rejects with an OfflineRunError carrying native's reason. Never rejects because
-   *  native's bound is full: the run waits here for room instead. A drain that threw (settle) is the one exception: the
-   *  jobs native still holds are no longer counted here, so a run submitted before they are drained can be refused
-   *  busy. */
-  run(request: OfflineRunRequest): Promise<OfflineRunResult> {
-    const wire = toWire(request);
-    let waiter: Pending | null = null;
-    const promise = new Promise<OfflineRunResult>((resolve, reject) => (waiter = { resolve, reject }));
-    if (this.pending.size >= OFFLINE_MAX_JOBS) this.held.push({ wire, waiter: waiter! });
-    else this.submit(wire, waiter!);
-    if (this.outstanding() > 0) setQueueLive(this, true);
-    this.pump();
-    this.poll();
-    return promise;
+  /** Run a graph job. Rejects with native's reason when it is refused (at once, or when a held run is submitted);
+   *  otherwise settles with its completion, or rejects with an OfflineRunError carrying native's reason ("cancelled"
+   *  for a cancel). Never rejects because native's bound is full: the run waits here for room instead. A drain that
+   *  threw (settle) is the one exception: the jobs native still holds are no longer counted here, so a run submitted
+   *  before they are drained can be refused busy. */
+  run(request: OfflineRunRequest): OfflineRunHandle {
+    let waiter: Waiter | null = null;
+    const promise = new Promise<OfflineRunResult>(
+      (resolve, reject) => (waiter = { kind: "graph", resolve, reject, id: null }),
+    );
+    return jobHandle(promise, this.start({ kind: "graph", wire: toWire(request) }, waiter!));
+  }
+
+  /** Run an engine job of `kind` over `spec` (a value is sent as its JSON). Rejects with native's reason when it is
+   *  refused; otherwise settles with its status, message and outputs, a failure and a cancel included. Held here past
+   *  native's bound like a graph job, the two kinds sharing it. */
+  engine(kind: EngineJobKind, spec: object | string, options: EngineRunOptions = {}): EngineRunHandle {
+    let waiter: Waiter | null = null;
+    const promise = new Promise<EngineRunResult>(
+      (resolve, reject) => (waiter = { kind: "engine", resolve, reject, id: null, options, renderedMs: 0 }),
+    );
+    const wire = { kind, spec: typeof spec === "string" ? spec : JSON.stringify(spec) };
+    return jobHandle(promise, this.start({ kind: "engine", wire }, waiter!));
   }
 
   /** Drain native's completions without waiting and settle their promises; nothing (no native call) while none is
@@ -282,22 +387,91 @@ export class OfflineJobs implements JobQueue {
     return this.pending.size + this.held.length;
   }
 
-  private submit(wire: OfflineWireRequest, waiter: Pending): void {
+  // Submit (or hold) a run, start the poll, and answer its handle's cancel.
+  private start(submission: Submission, waiter: Waiter): () => boolean {
+    if (this.pending.size >= OFFLINE_MAX_JOBS) this.held.push({ submission, waiter });
+    else this.submit(submission, waiter);
+    if (this.outstanding() > 0) setQueueLive(this, true);
+    this.pump();
+    this.poll();
+    return () => this.cancel(waiter);
+  }
+
+  private cancel(waiter: Waiter): boolean {
+    const at = this.held.findIndex((h) => h.waiter === waiter);
+    if (at >= 0) {
+      // Never submitted: it settles here, as native would settle a queued job it cancelled.
+      this.held.splice(at, 1);
+      if (waiter.kind === "graph") waiter.reject(new OfflineRunError("cancelled", []));
+      else waiter.resolve({ status: "cancelled", message: "", outputs: [], renderedMs: 0 });
+      if (this.outstanding() === 0) setQueueLive(this, false);
+      return true;
+    }
+    if (waiter.id == null || this.pending.get(waiter.id) !== waiter) return false;
+    // Native completes it cancelled (a queued job at once, a running one at its next block or chunk), and the next
+    // drain settles it, a pump's or the poll's.
+    try {
+      return this.port.cancelOfflineJob(waiter.id);
+    } catch {
+      return false;
+    }
+  }
+
+  private submit(submission: Submission, waiter: Waiter): void {
     this.submitted = true;
     let submitted: OfflineSubmitResult;
     try {
-      submitted = this.port.submitOfflineJob(wire);
+      submitted =
+        submission.kind === "graph"
+          ? this.port.submitOfflineJob(submission.wire)
+          : this.port.submitEngineJob(submission.wire);
     } catch (e) {
       // A request the port throws on (an RPC error, say) fails that run, never the queue: a held run reaches this from
       // settle's loop, where a throw would otherwise strand the rest of the promises.
       waiter.reject(asError(e));
       return;
     }
-    if (submitted.id == null) waiter.reject(new Error(submitted.error ?? "the offline job was refused"));
-    else this.pending.set(submitted.id, waiter);
+    if (submitted.id == null) {
+      const what = submission.kind === "graph" ? "offline" : "engine";
+      waiter.reject(new Error(submitted.error ?? `the ${what} job was refused`));
+    } else {
+      waiter.id = submitted.id;
+      this.pending.set(submitted.id, waiter);
+    }
+  }
+
+  // An engine job's lines and progress, as a drain reports them, to its callbacks.
+  private progress(waiter: Waiter & { kind: "engine" }, p: EngineWireProgress): void {
+    const { onLog, onProgress } = waiter.options;
+    if (onLog) {
+      for (const line of p.lines) report(() => onLog(line));
+      if (p.droppedLines > 0) {
+        const text = `[${p.droppedLines} console line${p.droppedLines === 1 ? "" : "s"} dropped]`;
+        report(() => onLog({ stream: "stderr", text }));
+      }
+    }
+    // A running maximum: a render's own count drops once, at its end, to the length it wrote (the result carries it).
+    if (p.renderedMs > waiter.renderedMs) {
+      waiter.renderedMs = p.renderedMs;
+      if (onProgress) report(() => onProgress(p.renderedMs));
+    }
   }
 
   private settle(waitMs: number): number {
+    // An engine job's callbacks run synchronously inside a settle, and one may submit or pump (a progress callback
+    // that starts a job, say): it submits, but the drain is left to this settle's caller, so one drain's results are
+    // never interleaved with another's (a nested drain would find nothing in flight and take the jobs this one has
+    // still to settle for lost).
+    if (this.settling) return this.outstanding();
+    this.settling = true;
+    try {
+      return this.drainAndSettle(waitMs);
+    } finally {
+      this.settling = false;
+    }
+  }
+
+  private drainAndSettle(waitMs: number): number {
     if (this.pending.size === 0) {
       if (this.held.length === 0) setQueueLive(this, false);
       return this.outstanding();
@@ -318,9 +492,11 @@ export class OfflineJobs implements JobQueue {
       setQueueLive(this, false);
       return 0;
     }
+    // The jobs this drain answered for: one an engine job's callback submits below is not among them.
+    const asked = new Set(this.pending.keys());
     for (const c of drained.completions) {
       const p = this.pending.get(c.id);
-      if (!p) continue;
+      if (!p || p.kind !== "graph") continue;
       this.pending.delete(c.id);
       if (!c.ok) {
         p.reject(new OfflineRunError(c.error, c.inputs));
@@ -340,16 +516,28 @@ export class OfflineJobs implements JobQueue {
         guardReason: c.guardReason,
       });
     }
+    for (const p of drained.engineProgress ?? []) {
+      const w = this.pending.get(p.id);
+      if (w?.kind === "engine") this.progress(w, p);
+    }
+    for (const c of drained.engineCompletions ?? []) {
+      const w = this.pending.get(c.id);
+      if (w?.kind !== "engine") continue;
+      this.pending.delete(c.id);
+      this.progress(w, c); // its last lines, and the length it ended at
+      const status = c.status as EngineRunStatus;
+      w.resolve({ status, message: c.message, outputs: c.outputs, renderedMs: c.renderedMs });
+    }
     // A promise whose job native no longer holds (none came back, and nothing is in flight) would otherwise be polled
     // forever: it cannot complete, so it fails. One runtime binding one engine never gets here.
-    if (this.pending.size > 0 && drained.inFlight === 0) {
-      const lost = [...this.pending.values()];
-      this.pending.clear();
-      for (const p of lost) p.reject(new Error("the engine holds no record of this offline job"));
+    if (drained.inFlight === 0) {
+      const lost = [...this.pending].filter(([id]) => asked.has(id));
+      for (const [id] of lost) this.pending.delete(id);
+      for (const [, p] of lost) p.reject(new Error("the engine holds no record of this offline job"));
     }
     while (this.held.length && this.pending.size < OFFLINE_MAX_JOBS) {
       const next = this.held.shift()!;
-      this.submit(next.wire, next.waiter);
+      this.submit(next.submission, next.waiter);
     }
     if (this.outstanding() === 0) setQueueLive(this, false);
     return this.outstanding();

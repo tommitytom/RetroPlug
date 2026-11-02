@@ -1,12 +1,17 @@
-// Offline jobs as promises (src/offline.ts, docs/modular-graph-phase-d2-design.md section 3): the mock backend rejects
-// every job, since the mock tier runs no graph; and the promise side over a virtual-time port: a refusal rejects at
-// once with native's reason, a failure with an OfflineRunError carrying the inputs' reports, several jobs submitted in
-// one run are all in flight at once and settle through the poll's native wait with no timer, a chain of jobs (direct,
-// or through extra async layers) keeps moving while a long job runs, a fan-out past native's bound is held back rather
-// than refused, a job native no longer holds rejects rather than being polled forever, a port call that throws fails
-// its own run rather than the queue, the shared pump (pumpAllJobs, as the UI tick's pumpJobs) settles them with the
-// wait off, and the wire request carries the handles and the default returns.
-// The native half is held by retroplug-engine-graph-test "[offline]" and test-native/offline-run.
+// Offline jobs as promises (src/offline.ts, docs/modular-graph-phase-d2-design.md section 3, and the engine jobs of
+// docs/modular-graph-phase-d3-design.md section 3): the mock backend rejects every job of either kind, since the mock
+// tier runs no graph and has no engine, and hands back a handle with nothing to cancel; an engine job settles with its
+// status and length, its progress (a running maximum) and console lines delivered as the drains report them, a job
+// one of its callbacks submits included, even when two jobs end in the drain it runs in; a cancel settles a held run
+// at once and a submitted one through native's cancel, for both kinds; and the promise side over a virtual-time port:
+// a refusal rejects at once with native's reason, a failure with an OfflineRunError carrying the inputs' reports,
+// several jobs submitted in one run are all in flight at once and settle through the poll's native wait with no timer,
+// a chain of jobs (direct, or through extra async layers) keeps moving while a long job runs, a fan-out past native's
+// bound is held back rather than refused, a job native no longer holds rejects rather than being polled forever, a port
+// call that throws fails its own run rather than the queue, the shared pump (pumpAllJobs, as the UI tick's pumpJobs)
+// settles them with the wait off, and the wire request carries the handles and the default returns.
+// The native half is held by retroplug-engine-graph-test "[offline]" and "[engine-jobs]", and test-native/offline-run
+// and engine-run.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { liveJobCount, pumpAllJobs } from "../../src/capability";
@@ -17,6 +22,9 @@ import {
   offlineInputRef,
   offlineOutputRef,
   setOfflineWait,
+  type EngineWireCompletion,
+  type EngineWireProgress,
+  type EngineWireRequest,
   type OfflineRunRequest,
   type OfflineSubmitResult,
   type OfflineWireCompletion,
@@ -27,11 +35,22 @@ import {
 // A port over a virtual clock, as native behaves: a job runs for `frames` time units from its submission (0: done at
 // once), a drain that waits advances the clock to the next job's end when none has finished, a drain that does not
 // wait never moves it, at most OFFLINE_MAX_JOBS are outstanding (submitted and not yet drained) and one past that is
-// refused busy. A job echoes its first input's samples, or fails for a document of "fail".
+// refused busy. A job echoes its first input's samples, or fails for a document of "fail". An engine job's spec is
+// {"ms": n, "out": path, "endMs"?: m}: it runs n time units, each drain reporting the units elapsed as its rendered
+// milliseconds, writes one line as it starts and one as it ends, and completes "done" with `out` as its output (and
+// `endMs` as its final length when given, as a render that detected its song's end lowers its count), or "error" for
+// a spec with no out. A cancel ends a job at the next drain, a graph job's error and an engine job's status
+// "cancelled".
 function clockPort() {
   let now = 0;
   let next = 1;
-  const jobs: { id: number; request: OfflineWireRequest; end: number }[] = [];
+  const jobs: {
+    id: number;
+    request: OfflineWireRequest;
+    engine?: { ms: number; out?: string; endMs?: number; start: number; started: boolean };
+    end: number;
+    cancelled?: boolean;
+  }[] = [];
   const log: string[] = [];
   const waits: number[] = [];
   const submitted: OfflineWireRequest[] = [];
@@ -53,11 +72,53 @@ function clockPort() {
       most = Math.max(most, jobs.length);
       return { id: next++, error: null };
     },
+    submitEngineJob(request: EngineWireRequest): OfflineSubmitResult {
+      if (request.kind !== "render") return { id: null, error: `unknown engine job kind "${request.kind}"` };
+      if (jobs.length >= OFFLINE_MAX_JOBS)
+        return { id: null, error: `busy: ${OFFLINE_MAX_JOBS} offline jobs are outstanding` };
+      const spec = JSON.parse(request.spec) as { ms: number; out?: string; endMs?: number };
+      const engine = { ms: spec.ms, out: spec.out, endMs: spec.endMs, start: now, started: false };
+      const request0: OfflineWireRequest = { inputs: [], outputs: [], returns: [], frames: 0, rate: 1 };
+      jobs.push({ id: next, request: request0, engine, end: now + spec.ms });
+      log.push(`t=${now} submit engine ${spec.out ?? ""}`);
+      most = Math.max(most, jobs.length);
+      return { id: next++, error: null };
+    },
+    cancelOfflineJob(id: number): boolean {
+      const j = jobs.find((x) => x.id === id);
+      if (!j || j.cancelled) return false;
+      j.cancelled = true;
+      j.end = now;
+      return true;
+    },
     drainOfflineJobs(waitMs: number): OfflineWireDrain {
       waits.push(waitMs);
       if (waitMs > 0 && jobs.length && !jobs.some((j) => j.end <= now)) now = Math.min(...jobs.map((j) => j.end));
       const done: OfflineWireCompletion[] = [];
-      for (const j of jobs.filter((x) => x.end <= now)) {
+      const engineDone: EngineWireCompletion[] = [];
+      const engineProgress: EngineWireProgress[] = [];
+      for (const j of jobs.filter((x) => x.engine)) {
+        const e = j.engine!;
+        const lines = e.started ? [] : [{ stream: "stdout" as const, text: `rendering ${e.out ?? ""}` }];
+        e.started = true;
+        const renderedMs = Math.min(now, j.end) - e.start;
+        if (j.end > now) {
+          engineProgress.push({ id: j.id, renderedMs, lines, droppedLines: 0 });
+          continue;
+        }
+        const status = j.cancelled ? "cancelled" : e.out ? "done" : "error";
+        if (status === "done") lines.push({ stream: "stdout", text: e.out! });
+        const message = status === "error" ? "the spec names no out" : "";
+        const outputs = status === "done" ? [e.out!] : [];
+        const finalMs = status === "done" && e.endMs !== undefined ? e.endMs : renderedMs;
+        engineDone.push({ id: j.id, status, message, outputs, renderedMs: finalMs, lines, droppedLines: 0 });
+      }
+      for (const j of jobs.filter((x) => !x.engine && x.end <= now)) {
+        if (j.cancelled) {
+          const none = { buffers: [], inputs: [], guardsFired: 0, guardReason: "" };
+          done.push({ id: j.id, ok: false, error: "cancelled", ...none });
+          continue;
+        }
         const report = { handle: 1, decodedRate: 22050, decodedFrames: 10, frames: 4, nonFinite: true };
         if (j.request.document === "fail") {
           const failed = { id: j.id, ok: false, error: "a node faulted: f", buffers: [], inputs: [report] };
@@ -78,8 +139,8 @@ function clockPort() {
           guardReason: "",
         });
       }
-      for (const d of done) jobs.splice(jobs.findIndex((j) => j.id === d.id), 1);
-      return { completions: done, inFlight: jobs.length };
+      for (const d of [...done, ...engineDone]) jobs.splice(jobs.findIndex((j) => j.id === d.id), 1);
+      return { completions: done, inFlight: jobs.length, engineCompletions: engineDone, engineProgress };
     },
   };
   return port;
@@ -109,6 +170,132 @@ test("the mock backend rejects every offline job: only a native host runs graphs
   await be.offlineRun({ frames: 64, rate: 48000 }).catch((e: Error) => (message = e.message));
   expect(message).toBe("offline jobs need a native host: the mock backend cannot run graphs");
   expect(be.pumpJobs()).toBe(0);
+});
+
+test("the mock backend rejects every engine job, and its handles have nothing to cancel", async () => {
+  const be = new MockBackend("/cfg");
+  const handle = be.engineRun("render", { rom: "/x.gb", out: "/x.wav" });
+  expect(typeof handle.cancel).toBe("function");
+  expect(handle.cancel()).toBe(false);
+  let message = "";
+  await handle.catch((e: Error) => (message = e.message));
+  expect(message).toBe("engine jobs need a native host: the mock backend has no engine to run them on");
+  const graph = be.offlineRun({ frames: 64, rate: 48000 });
+  expect(graph.cancel()).toBe(false);
+  await graph.catch(() => {});
+  expect(be.pumpJobs()).toBe(0);
+});
+
+test("an engine job settles with its status, its progress and console lines arriving as the drains report them",
+  async () => {
+    const port = clockPort();
+    const jobs = new OfflineJobs(port);
+    const progress: number[] = [];
+    const lines: string[] = [];
+    const onProgress = (ms: number) => progress.push(ms);
+    const onLog = (l: { stream: string; text: string }) => lines.push(`${l.stream}: ${l.text}`);
+    // With the wait off a pump drains; the clock moves only as the test moves it.
+    const h = jobs.engine("render", { ms: 3, out: "/o.wav" }, { onProgress, onLog });
+    expect(port.log).toEqual(["t=0 submit engine /o.wav"]);
+    for (let t = 0; t < 3; t++) {
+      port.advance(1);
+      jobs.pump();
+    }
+    const result = await h;
+    expect(result).toEqual({ status: "done", message: "", outputs: ["/o.wav"], renderedMs: 3 });
+    expect(progress).toEqual([1, 2, 3]);
+    expect(lines).toEqual(["stdout: rendering /o.wav", "stdout: /o.wav"]);
+    // A failure resolves with its status and message rather than rejecting; a refusal rejects.
+    const failed = await waiting(() => jobs.engine("render", JSON.stringify({ ms: 1 })));
+    expect(failed).toEqual({ status: "error", message: "the spec names no out", outputs: [], renderedMs: 1 });
+    // A render that detects its song's end lowers its count at the end: onProgress holds its maximum, and the length
+    // it wrote comes with the result.
+    const hff: number[] = [];
+    const h2 = jobs.engine("render", { ms: 5, out: "/hff.wav", endMs: 3 }, { onProgress: (ms) => hff.push(ms) });
+    for (let t = 0; t < 5; t++) {
+      port.advance(1);
+      jobs.pump();
+    }
+    expect((await h2).renderedMs).toBe(3);
+    expect(hff).toEqual([1, 2, 3, 4]); // the completion's lower count is not a call
+    let refused = "";
+    await jobs.engine("bake" as "render", {}).catch((e: Error) => (refused = e.message));
+    expect(refused).toBe('unknown engine job kind "bake"');
+    expect(jobs.pendingCount()).toBe(0);
+    expect(liveJobCount()).toBe(0);
+  });
+
+test("a job an engine job's callback submits as the last job ends is submitted, and settles", async () => {
+  const port = clockPort();
+  const jobs = new OfflineJobs(port);
+  await waiting(async () => {
+    let next: Promise<number[]> | null = null;
+    const onProgress = () => {
+      // Inside the drain that ended the render, with nothing else in flight: not a job native lost.
+      next ??= jobs.run(job("after", 2, 4)).then((r) => Array.from(r.buffers[0].samples));
+    };
+    expect((await jobs.engine("render", { ms: 1, out: "/a.wav" }, { onProgress })).status).toBe("done");
+    expect(await next!).toEqual([4]);
+  });
+  expect(jobs.pendingCount()).toBe(0);
+});
+
+test("a job a callback submits while two engine jobs end in one drain leaves the second to settle as it ended",
+  async () => {
+    // Both renders end in the same drain. The first one's progress callback submits a job that completes at once,
+    // which pumps; a drain nested inside the one still settling would find nothing in flight and take the second
+    // render, whose completion the outer drain has yet to reach, for lost.
+    const port = clockPort();
+    const jobs = new OfflineJobs(port);
+    await waiting(async () => {
+      let next: Promise<number[]> | null = null;
+      const onProgress = (ms: number) => {
+        if (ms >= 2) next ??= jobs.run(job("now", 0, 6)).then((r) => Array.from(r.buffers[0].samples));
+      };
+      const first = jobs.engine("render", { ms: 2, out: "/1.wav" }, { onProgress });
+      const second = jobs.engine("render", { ms: 2, out: "/2.wav" });
+      expect((await first).status).toBe("done");
+      expect(await second).toEqual({ status: "done", message: "", outputs: ["/2.wav"], renderedMs: 2 });
+      expect(await next!).toEqual([6]);
+    });
+    expect(jobs.pendingCount()).toBe(0);
+  });
+
+test("a cancel settles a held run at once, and a submitted one of either kind through native's cancel", async () => {
+  const port = clockPort();
+  const jobs = new OfflineJobs(port);
+  await waiting(async () => {
+    // Submitted: the graph job rejects "cancelled", the engine job resolves with that status, both at a drain.
+    const graph = jobs.run(job("long", 100, 1));
+    const render = jobs.engine("render", { ms: 100, out: "/r.wav" });
+    expect(graph.cancel()).toBe(true);
+    expect(render.cancel()).toBe(true);
+    let error: OfflineRunError | null = null;
+    await graph.catch((e: OfflineRunError) => (error = e));
+    expect(error! instanceof OfflineRunError).toBe(true);
+    expect(error!.message).toBe("cancelled");
+    expect(await render).toEqual({ status: "cancelled", message: "", outputs: [], renderedMs: 0 });
+    expect(port.now()).toBe(0); // neither ran to its end
+    // Settled: nothing left to cancel.
+    expect(graph.cancel()).toBe(false);
+    expect(render.cancel()).toBe(false);
+    // Held past native's bound: settled here, never submitted.
+    const fill = Array.from({ length: OFFLINE_MAX_JOBS }, (_, k) => jobs.run(job(`f${k}`, 5, k)));
+    const heldGraph = jobs.run(job("held", 1, 7));
+    const heldRender = jobs.engine("render", { ms: 1, out: "/h.wav" });
+    expect(port.mostInFlight()).toBe(OFFLINE_MAX_JOBS);
+    expect(heldGraph.cancel()).toBe(true);
+    expect(heldRender.cancel()).toBe(true);
+    let heldError = "";
+    await heldGraph.catch((e: Error) => (heldError = e.message));
+    expect(heldError).toBe("cancelled");
+    expect(await heldRender).toEqual({ status: "cancelled", message: "", outputs: [], renderedMs: 0 });
+    await Promise.all(fill);
+    expect(port.submitted.some((r) => r.document === "held")).toBe(false);
+    expect(port.log.some((l) => l.includes("/h.wav"))).toBe(false);
+  });
+  expect(jobs.pendingCount()).toBe(0);
+  expect(liveJobCount()).toBe(0);
 });
 
 test("a refusal rejects at once, and a failure rejects with its reason and the inputs' reports", async () => {
@@ -199,7 +386,9 @@ test("a job native no longer holds rejects, rather than being polled forever", a
   // A port that takes a job and then holds no record of it: nothing comes back and nothing is in flight.
   const jobs = new OfflineJobs({
     submitOfflineJob: () => ({ id: 1, error: null }),
+    submitEngineJob: () => ({ id: 1, error: null }),
     drainOfflineJobs: () => ({ completions: [], inFlight: 0 }),
+    cancelOfflineJob: () => false,
   });
   let message = "";
   await waiting(() => jobs.run(job("lost", 1)).catch((e: Error) => (message = e.message)));
@@ -256,7 +445,9 @@ test("a submit that throws rejects its own run, held or not, and the rest still 
       if (request.document === "boom") throw new Error("the port refused a field");
       return port.submitOfflineJob(request);
     },
+    submitEngineJob: (request) => port.submitEngineJob(request),
     drainOfflineJobs: (waitMs) => port.drainOfflineJobs(waitMs),
+    cancelOfflineJob: (id) => port.cancelOfflineJob(id),
   });
   let message = "";
   await waiting(async () => {
@@ -301,10 +492,12 @@ test("a drain that throws rejects every pending run, not just the one that saw i
   let broken = false;
   const jobs = new OfflineJobs({
     submitOfflineJob: () => ({ id: next++, error: null }),
+    submitEngineJob: () => ({ id: next++, error: null }),
     drainOfflineJobs: () => {
       if (broken) throw new Error("the drain broke");
       return { completions: [], inFlight: next - 1 };
     },
+    cancelOfflineJob: () => false,
   });
   const runs = [jobs.run(job("a", 1)), jobs.run(job("b", 1))];
   broken = true;

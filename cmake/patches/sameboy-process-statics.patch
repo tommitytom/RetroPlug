@@ -1,0 +1,135 @@
+diff --git a/Core/camera.c b/Core/camera.c
+index d6e6144..b51c8f9 100644
+--- a/Core/camera.c
++++ b/Core/camera.c
+@@ -1,5 +1,7 @@
+ #include "gb.h"
+ 
++/* RetroPlug: process-wide, and written on a shoot while another thread's camera may read it, so every access is a
++   relaxed atomic (it is noise: a lost update only repeats a pattern). */
+ static uint32_t noise_seed = 0;
+ 
+ /* This is not a complete emulation of the camera chip. Only the features used by the Game Boy Camera ROMs are supported.
+@@ -7,7 +9,7 @@ static uint32_t noise_seed = 0;
+ 
+ static uint8_t generate_noise(uint8_t x, uint8_t y)
+ {
+-    uint32_t value = (x * 151 + y * 149) ^ noise_seed;
++    uint32_t value = (x * 151 + y * 149) ^ __atomic_load_n(&noise_seed, __ATOMIC_RELAXED);
+     uint32_t hash = 0;
+ 
+     while (value) {
+@@ -140,7 +142,7 @@ void GB_camera_write_register(GB_gameboy_t *gb, uint16_t addr, uint8_t value)
+     addr &= 0x7F;
+     if (addr == GB_CAMERA_SHOOT_AND_1D_FLAGS) {
+         value &= 0x7;
+-        noise_seed = GB_random();
++        __atomic_store_n(&noise_seed, GB_random(), __ATOMIC_RELAXED);
+         if ((value & 1) && !(gb->camera_registers[GB_CAMERA_SHOOT_AND_1D_FLAGS] & 1)) {
+             if (gb->camera_update_request_callback) {
+                 gb->camera_update_request_callback(gb);
+diff --git a/Core/random.c b/Core/random.c
+index cc4d4d3..e31d5d2 100644
+--- a/Core/random.c
++++ b/Core/random.c
+@@ -1,37 +1,45 @@
+ #include "random.h"
+ #include <time.h>
+ 
++/* RetroPlug: the generator is process-wide, and a host runs Game Boys on several threads at once (an engine job's
++   render beside another, or beside the live engine's control and audio threads), so every access to it is a relaxed
++   atomic. It runs at every reset (power-on RAM) and during play too (the Super Game Boy jingle's noise, a camera
++   shoot). Two callers racing may lose an update or draw the same value, which only makes the noise less random; what
++   they must not do is race as plain memory, which is undefined behaviour. The core is built by GCC or Clang (clang-cl
++   on Windows), so the GNU __atomic builtins are available everywhere it compiles. */
+ static uint64_t seed;
+ static bool enabled = true;
+ 
+ uint8_t GB_random(void)
+ {
+-    if (!enabled) return 0;
++    if (!__atomic_load_n(&enabled, __ATOMIC_RELAXED)) return 0;
+     
+-    seed *= 0x27BB2EE687B0B0FDL;
+-    seed += 0xB504F32D;
+-    return seed >> 56;
++    uint64_t next = __atomic_load_n(&seed, __ATOMIC_RELAXED);
++    next *= 0x27BB2EE687B0B0FDL;
++    next += 0xB504F32D;
++    __atomic_store_n(&seed, next, __ATOMIC_RELAXED);
++    return next >> 56;
+ }
+ 
+ uint32_t GB_random32(void)
+ {
+     GB_random();
+-    return seed >> 32;
++    return __atomic_load_n(&seed, __ATOMIC_RELAXED) >> 32;
+ }
+ 
+ void GB_random_seed(uint64_t new_seed)
+ {
+-    seed = new_seed;
++    __atomic_store_n(&seed, new_seed, __ATOMIC_RELAXED);
+ }
+ 
+ void GB_random_set_enabled(bool enable)
+ {
+-    enabled = enable;
++    __atomic_store_n(&enabled, enable, __ATOMIC_RELAXED);
+ }
+ 
+ static void __attribute__((constructor)) init_seed(void)
+ {
+-    seed = time(NULL);
++    __atomic_store_n(&seed, (uint64_t)time(NULL), __ATOMIC_RELAXED);
+     for (unsigned i = 64; i--;) {
+         GB_random();
+     }
+diff --git a/Core/sgb.c b/Core/sgb.c
+index 61ad2c5..359379e 100644
+--- a/Core/sgb.c
++++ b/Core/sgb.c
+@@ -831,9 +831,21 @@ void GB_sgb_load_default_data(GB_gameboy_t *gb)
+     gb->sgb->effective_palettes[3] = LE16(built_in_palettes[3]);
+ }
+ 
++/* RetroPlug: the quarter-wave table fm_sin reads is built once, at load, as apu.c's band_limited_init builds its
++   steps, rather than on first use: a host runs Super Game Boy cores on several threads at once, and two first jingles
++   filling a lazily built table would race on it. The values are the ones the lazy fill computed. */
++#define SIN_TABLE_LENGTH 128
++static double fm_sin_table[SIN_TABLE_LENGTH + 1];
++
++static void __attribute__((constructor)) fm_sin_init(void)
++{
++    for (unsigned i = 0; i < SIN_TABLE_LENGTH + 1; i++) {
++        fm_sin_table[i] = sin(i * M_PI / 2 / SIN_TABLE_LENGTH);
++    }
++}
++
+ static double fm_sin(double phase)
+ {
+-#define SIN_TABLE_LENGTH 128
+     phase /= 2 * M_PI;
+     phase = fabs(phase);
+     phase -= floor(phase);
+@@ -844,18 +856,9 @@ static double fm_sin(double phase)
+         return fm_sin(0.5 - phase);
+     }
+     
+-    static bool once = false;
+-    static double table[SIN_TABLE_LENGTH + 1];
+-    if (!once) {
+-        for (unsigned i = 0; i < SIN_TABLE_LENGTH + 1; i++) {
+-            table[i] = sin(i * M_PI / 2 / SIN_TABLE_LENGTH);
+-        }
+-        once = true;
+-    }
+-    
+     phase *= 4 * SIN_TABLE_LENGTH;
+     double fraction = phase - floor(phase);
+-    return table[(unsigned)floor(phase)] * (1 - fraction) + table[(unsigned)ceil(phase)] * (fraction);
++    return fm_sin_table[(unsigned)floor(phase)] * (1 - fraction) + fm_sin_table[(unsigned)ceil(phase)] * (fraction);
+ }
+ 
+ static double fm_synth(double phase)

@@ -6,7 +6,14 @@
 
 import type { ApuState, ApuSquareState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, ResourceType, TraceLine, ZipEntry } from "../src/backend";
 import { savFromJson } from "../src/lsdj";
-import type { OfflineRunRequest, OfflineRunResult } from "../src/offline";
+import {
+  jobHandle,
+  type EngineJobKind,
+  type EngineRunHandle,
+  type EngineRunOptions,
+  type OfflineRunHandle,
+  type OfflineRunRequest,
+} from "../src/offline";
 import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
 import { rebuildKeyOf } from "../src/graph/buildGraph";
 import { canonicalJson } from "../src/graph/canonicalJson";
@@ -804,10 +811,18 @@ export class MockBackend implements Backend {
   }
 
   // The mock tier has no graph executor, so it runs no offline job: a caller learns so rather than getting buffers no
-  // graph produced.
-  offlineRun(_request: OfflineRunRequest): Promise<OfflineRunResult> {
+  // graph produced. Its handle has nothing to cancel.
+  offlineRun(_request: OfflineRunRequest): OfflineRunHandle {
     this.log.push("offlineRun");
-    return Promise.reject(new Error("offline jobs need a native host: the mock backend cannot run graphs"));
+    const error = new Error("offline jobs need a native host: the mock backend cannot run graphs");
+    return jobHandle(Promise.reject(error), () => false);
+  }
+
+  // Nor an engine to run an engine job's runtime on (a render boots a real core), so every engine job rejects.
+  engineRun(_kind: EngineJobKind, _spec: object | string, _options?: EngineRunOptions): EngineRunHandle {
+    this.log.push("engineRun");
+    const error = new Error("engine jobs need a native host: the mock backend has no engine to run them on");
+    return jobHandle(Promise.reject(error), () => false);
   }
 
   getFrame(id: number): FrameData | null {

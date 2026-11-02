@@ -279,12 +279,35 @@ RpcOfflineSubmitResult EngineRpcService::submitOfflineJob(RpcOfflineRequest requ
     return out;
 }
 
+RpcOfflineSubmitResult EngineRpcService::submitEngineJob(RpcEngineJobRequest request) {
+    RpcOfflineSubmitResult  out{std::nullopt, std::nullopt};
+    rp::host::OfflineSubmit submitted =
+        engine_.submitEngineJob({std::move(request.kind), std::move(request.spec)});
+    if (submitted.id != 0) out.id = submitted.id;
+    else out.error = std::move(submitted.error);
+    return out;
+}
+
+namespace {
+
+std::vector<RpcEngineJobLine> toRpcLines(std::vector<rp::host::EngineJobLine>& lines) {
+    std::vector<RpcEngineJobLine> out;
+    out.reserve(lines.size());
+    for (auto& l : lines)
+        out.push_back({l.stream == rp::host::EngineJobStream::Err ? "stderr" : "stdout", std::move(l.text)});
+    return out;
+}
+
+}  // namespace
+
 RpcOfflineDrain EngineRpcService::drainOfflineJobs(double waitMs) {
     // A NaN or a negative wait waits not at all; the engine bounds a long one.
     const double ms = std::isfinite(waitMs) ? std::clamp(waitMs, 0.0, 1000.0) : (waitMs > 0 ? 1000.0 : 0.0);
-    RpcOfflineDrain out{{}, 0};
-    std::size_t     inFlight = 0;
-    for (auto& c : engine_.drainOfflineJobs(std::chrono::milliseconds(static_cast<std::int64_t>(ms)), &inFlight)) {
+    RpcOfflineDrain           out{{}, 0, {}, {}};
+    std::size_t               inFlight = 0;
+    rp::host::EngineJobsDrain engine;
+    for (auto& c : engine_.drainOfflineJobs(std::chrono::milliseconds(static_cast<std::int64_t>(ms)), &inFlight,
+                                            &engine)) {
         RpcOfflineCompletion rc{c.id, c.ok, std::move(c.error), {}, {}, c.guardsFired, std::move(c.guardReason)};
         for (auto& b : c.buffers) {
             rfl::Bytestring bytes;
@@ -298,6 +321,11 @@ RpcOfflineDrain EngineRpcService::drainOfflineJobs(double waitMs) {
             rc.inputs.push_back({i.handle, i.decodedRate, i.decodedFrames, i.frames, i.nonFinite});
         out.completions.push_back(std::move(rc));
     }
+    for (auto& c : engine.completions)
+        out.engineCompletions.push_back({c.id, std::move(c.status), std::move(c.message), std::move(c.outputs),
+                                         c.renderedMs, toRpcLines(c.lines), c.droppedLines});
+    for (auto& p : engine.progress)
+        out.engineProgress.push_back({p.id, p.renderedMs, toRpcLines(p.lines), p.droppedLines});
     out.inFlight = static_cast<std::uint32_t>(inFlight);
     return out;
 }

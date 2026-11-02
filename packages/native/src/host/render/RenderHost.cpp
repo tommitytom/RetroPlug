@@ -42,14 +42,16 @@ std::string toStr(JSContext* ctx, JSValueConst v) {
     return out;
 }
 
+// A script exception's report goes where the worker's console.error would: the host's console sink when it has one.
 void dumpError(JSContext* ctx) {
     JSValue exc = JS_GetException(ctx);
-    std::fprintf(stderr, "render-host: %s\n", toStr(ctx, exc).c_str());
+    std::string report = "render-host: " + toStr(ctx, exc) + "\n";
     JSValue stack = JS_GetPropertyStr(ctx, exc, "stack");
-    if (!JS_IsUndefined(stack) && !JS_IsNull(stack))
-        std::fprintf(stderr, "%s\n", toStr(ctx, stack).c_str());
+    if (!JS_IsUndefined(stack) && !JS_IsNull(stack)) report += toStr(ctx, stack) + "\n";
     JS_FreeValue(ctx, stack);
     JS_FreeValue(ctx, exc);
+    if (RenderHost* h = hostOf(ctx)) h->onStderr(report.c_str());
+    else std::fputs(report.c_str(), stderr);
 }
 
 // __rpcSend(request) -> response | null. The RpcSendFn* rides in funcData[0] (an ArrayBuffer of the pointer
@@ -209,9 +211,11 @@ RenderHost::~RenderHost() {
     }
 }
 
-RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRendered, CancelFn isCancelled) {
+RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRendered, CancelFn isCancelled,
+                                   ConsoleFn onConsole) {
     renderedFn_ = std::move(onRendered);
     cancelFn_ = std::move(isCancelled);
+    consoleFn_ = std::move(onConsole);
     result_ = Result{};
 
     // The Engine service graph — one per host (mirrors cli/main.cpp), minus TjsHostRuntime. No audio thread
@@ -298,11 +302,13 @@ void RenderHost::onResult(std::string status, std::string message, std::vector<s
 }
 
 void RenderHost::onStdout(const char* text) {
-    std::fputs(text, stdout);
+    if (consoleFn_) consoleFn_(false, text);
+    else std::fputs(text, stdout);
 }
 
 void RenderHost::onStderr(const char* text) {
-    std::fputs(text, stderr);
+    if (consoleFn_) consoleFn_(true, text);
+    else std::fputs(text, stderr);
 }
 
 } // namespace retroplug
