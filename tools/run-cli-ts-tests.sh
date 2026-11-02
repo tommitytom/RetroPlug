@@ -334,12 +334,13 @@ TS
 		"ERROR: render: --split must be one of mix|channels|pins (got sideways)"
 
 	# Ctrl-C mid-render cancels the job: prompt, exit 1 (not 130, a signal death, or 0), and no WAV left behind (the
-	# library streams to cut.wav.part and removes it). A 600 s cap is ~30 s of work, so it is still running.
+	# library streams to a cut.wav.<token>.part of its own and removes it). A 600 s cap is ~30 s of work, so it is still
+	# running.
 	(cd "$RD" && exec "$CLI" render smsggdj.sms --sav metro.sav --song-index 0 --duration 600s --out cut.wav \
 		>"$TMP/render-int.out" 2>"$TMP/render-int.err") &
 	pid=$!
 	for _ in $(seq 1 100); do
-		[ -f "$RD/cut.wav.part" ] && break
+		compgen -G "$RD/cut.wav.*.part" >/dev/null && break
 		sleep 0.1
 	done
 	sleep 1
@@ -360,8 +361,8 @@ TS
 		fails=$((fails + 1))
 	fi
 	contains "an interrupted render reports it was cancelled" "$TMP/render-int.err" "ERROR: render: cancelled"
-	if [ -e "$RD/cut.wav" ] || [ -e "$RD/cut.wav.part" ]; then
-		echo "FAIL - an interrupted render left cut.wav or cut.wav.part behind"
+	if [ -e "$RD/cut.wav" ] || compgen -G "$RD/cut.wav.*.part" >/dev/null; then
+		echo "FAIL - an interrupted render left cut.wav or a cut.wav.*.part behind"
 		fails=$((fails + 1))
 	else
 		echo "ok   - an interrupted render left no WAV whose header claims no audio"

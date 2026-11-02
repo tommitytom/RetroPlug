@@ -44,10 +44,13 @@ caller, and the in-process library tests call `runRenderJob` directly:
 - `types.ts`: `RenderOpts` (the request; `pullMs` is a test knob for the stream's pull length, default 100),
   `RenderContext` (`{ backend, project, audio }`: a CLI `Session` satisfies it structurally, and the system's roles
   reach their protocol nodes in the graph its `project` publishes), `RenderHooks` (`onRendered` / `isCancelled` /
-  `log` / `warn`, all optional), `RenderCancelled`. The sink streams each output to `<path>.part` and moves it over `<path>` only when the render has
-  been written whole; a render that is cancelled or fails `discard()`s the `.part` files (and any name "If Exists:
-  Rename" reserved with an empty one), so no WAV claims no audio and an export already at the path stays; a failed move
-  into place keeps the finished `.part` files and the error names them.
+  `log` / `warn`, all optional), `RenderCancelled`. The sink streams each output to a `.part` of the render's own,
+  `<path>.<token>.part`, and moves it over `<path>` only when the render has been written whole; a render that is
+  cancelled or fails `discard()`s its own `.part` files (and any name "If Exists: Rename" reserved with an empty one),
+  so no WAV claims no audio, an export already at the path stays, and so does any other render's `.part` of it (two
+  overlapping renders of one target each write a whole file); a failed move into place keeps the finished `.part`
+  files and the error names them. Rename counts any `.part` of a name as taken, so one left by a process that died
+  mid-render moves every later rename render of that name to the next until it is deleted by hand.
 - `wav.ts` — the streaming RIFF/PCM16 codec (moved from `cli/wav.ts`, which now re-exports it).
 - `worker.ts` — the background session entry (below).
 

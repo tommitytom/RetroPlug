@@ -8,7 +8,8 @@
 //                                                   may run) ran side by side at some drain (exits 0)
 //   retroplug-render-host-test --cancel <job-json>  submit a render, cancel it once it has rendered audio, assert it
 //                                                   completes "cancelled" with no outputs and its files as they were
-//                                                   before it ran, no new one or `.part` left (exits 0)
+//                                                   before it ran (a `.part` already there included), no new one or
+//                                                   `.part` left (exits 0)
 //
 // Not shipped; built by name for the render checks (and under the sanitizers, in build-tsan/ and build-asan/, for the
 // pool's threads). The [engine-jobs] cases of retroplug-engine-graph-test are the automated guard.
@@ -140,11 +141,12 @@ struct FileState {
 };
 using Files = std::map<std::filesystem::path, FileState>;
 
-// The files a render of `spec` writes, as they are now: a mix spec's `out`, or any `<prefix>_<stream>.wav` of a split
-// one, whose `out` is a prefix (a trailing .wav, in any case, trimmed as render.ts's outBase does), each with the
-// `.part` file the render streams it to before moving it into place. Nullopt when the spec names no readable `out` (it
-// names none, the render then naming its file from the ROM or the song, which this tool does not predict, or it is not
-// JSON the reader takes).
+// The files a render of `spec` could write, as they are now. Its `out`, a trailing .wav (in any case) trimmed as
+// render.ts's outBase does, gives a stem: a mix spec writes `out`, or `<stem>_N.wav` under "onExists":"rename", and a
+// split one `<stem>_<stream>.wav`, or `<stem>_N_<stream>.wav` under rename. Each is streamed to a `.part` of the
+// render's own (`<file>.<token>.part`) before it is moved into place, so every `.part` of those names is listed too,
+// the render's or one there before it ran. Nullopt when the spec names no readable `out` (it names none, the render
+// then naming its file from the ROM or the song, which this tool does not predict, or it is not JSON the reader takes).
 std::optional<Files> renderFiles(const std::string& spec) {
     namespace fs = std::filesystem;
     const auto files = rfl::json::read<SpecFiles>(spec);
@@ -159,27 +161,28 @@ std::optional<Files> renderFiles(const std::string& spec) {
         found.emplace(p, st);
     };
     const std::string out = *files->out;
-    if (!files->split || *files->split == "mix") {
-        note(out);
-        note(out + ".part");
-        return found;
-    }
-    std::string prefix = out;
+    const bool        mix = !files->split || *files->split == "mix";
+    std::string       prefix = out;
     std::string ext = prefix.size() >= 4 ? prefix.substr(prefix.size() - 4) : std::string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
     if (ext == ".wav") prefix.resize(prefix.size() - 4);
     const fs::path    base(prefix);
     const fs::path    dir = base.has_parent_path() ? base.parent_path() : fs::path(".");
     const std::string stem = base.filename().string() + "_";
-    const auto        endsWith = [](const std::string& name, const char* tail) {
+    const std::string own = fs::path(out).filename().string(); // a mix spec's file, its `.part` files `<own>.*.part`
+    const auto        startsWith = [](const std::string& name, const std::string& head) {
+        return name.size() > head.size() && name.compare(0, head.size(), head) == 0;
+    };
+    const auto endsWith = [](const std::string& name, const char* tail) {
         const std::size_t n = std::strlen(tail);
         return name.size() >= n && name.compare(name.size() - n, n, tail) == 0;
     };
     std::error_code ec;
     for (const auto& e : fs::directory_iterator(dir, ec)) {
         const std::string name = e.path().filename().string();
-        if (name.size() > stem.size() && name.compare(0, stem.size(), stem) == 0 &&
-            (endsWith(name, ".wav") || endsWith(name, ".wav.part")))
+        const bool        part = endsWith(name, ".part");
+        if ((mix && (name == own || (startsWith(name, own + ".") && part))) ||
+            (startsWith(name, stem) && (part || endsWith(name, ".wav"))))
             note(e.path());
     }
     return found;
@@ -187,7 +190,8 @@ std::optional<Files> renderFiles(const std::string& spec) {
 
 // Submit one (long) job, cancel it once a drain shows it has rendered audio, and assert it completes "cancelled",
 // mid-render (its rendered length above zero), with no outputs, and with the files its spec names as they were before
-// it ran: none new, a leftover `.part` among them, and none changed, so an earlier export at the same paths stays.
+// it ran: none new, a leftover `.part` among them, and none changed or deleted, so an earlier export at the same paths
+// stays, and so does a `.part` another render left there.
 int runCancel(const std::string& spec) {
     const std::optional<Files> before = renderFiles(spec);
     if (!before) std::fprintf(stderr, "cancel: the spec names no readable \"out\", so no file check\n");

@@ -14,7 +14,7 @@
 // boot, so song / songIndex promote a chosen project to the working song before booting (decode → assign →
 // re-encode → seed the fresh system).
 import { createWavWriter, type WavWriter } from "./wav";
-import { extensionLower, dirname, stem, joinPath, uniqueBase } from "../pathUtil";
+import { extensionLower, basename, dirname, stem, joinPath, uniqueBase } from "../pathUtil";
 import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
 import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
@@ -439,8 +439,26 @@ function currentSongName(ctx: RenderContext, o: RenderOpts, platform: Platform):
   return null;
 }
 
-/** The file a render streams to before it is moved over `path`. */
-const partPath = (path: string): string => `${path}.part`;
+/** The file a render streams `path` to before it is moved over `path`: `<path>.<token>.part`, the token the render's
+ *  own (partToken), so two renders of one target never share one and a render never opens, truncates or deletes a
+ *  `.part` another left. */
+const partPath = (path: string, token: string): string => `${path}.${token}.part`;
+
+/** Whether the directory entry `name` is a `.part` of the file named `file`, any render's. */
+const isPartOf = (name: string, file: string): boolean => name.startsWith(`${file}.`) && name.endsWith(".part");
+
+let partTokens = 0; // the tokens this runtime drew: one runtime can run several renders (the in-process tests)
+
+/** A part token no other render's shares: the clock (ms), the runtime's Math.random (seeded from the microsecond clock
+ *  when the runtime was created, and each engine job's render has a runtime of its own) and a count of this runtime's
+ *  tokens. Two renders of one target would need all three equal to tie, and a token is drawn again while any of its
+ *  part names for `outputs` is on disk. */
+function partToken(ctx: RenderContext, outputs: string[]): string {
+  for (;;) {
+    const token = `${Date.now().toString(36)}-${Math.floor(Math.random() * 2 ** 32).toString(36)}-${partTokens++}`;
+    if (!outputs.some((p) => ctx.backend.fileExists(partPath(p, token)))) return token;
+  }
+}
 
 // A safe filename fragment for a song-derived output name (mirrors the CLI sanitize in lsdj-rom/risa-rom).
 const sanitizeRenderName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
@@ -464,28 +482,44 @@ function renderOutputPaths(o: RenderOpts, platform: Platform, prefix: string): s
   return names.map((n) => `${prefix}_${n}.wav`);
 }
 
-/** Apply the "If Exists" policy to a resolved base. "overwrite" (default) clobbers; "rename" bumps to the
- *  first `<name>_N` whose outputs don't yet exist (checking every file the mode would write). A `.part` counts as
- *  taken, since a render's file appears only when it ends, and the chosen name is reserved on the spot (an empty
- *  `.part` per output, which the sink's writers then truncate and fill) so a render started while this one runs picks
- *  the next name instead of streaming into the same file. The reservation is made where the name is chosen; two
- *  renders choosing in the same instant could still tie, as the backend has no exclusive create. */
+/** Apply the "If Exists" policy to a resolved base, and draw the render's part token. "overwrite" (default)
+ *  clobbers; "rename" bumps to the first `<name>_N` whose outputs don't yet exist (checking every file the mode would
+ *  write). A `.part` of an output, any render's, counts as taken, since a render's file appears only when it ends, and
+ *  the chosen name is reserved on the spot (the render's own empty `.part` per output, which the sink's writers then
+ *  truncate and fill) so a render started while this one runs picks the next name instead of writing the same file.
+ *  The `.part` files are found by listing the outputs' directory, as their tokens are the other renders' own. The
+ *  reservation is made where the name is chosen; two renders choosing in the same instant could still tie, as the
+ *  backend has no exclusive create. A `.part` left by a process that died mid-render (a second Ctrl-C, a crashed DAW)
+ *  is never removed by a later render, which cannot tell it from a live one's: it makes every later "rename" render of
+ *  that name take the next one, with no `<name>.wav` there, until it is deleted by hand. */
 function resolveOnExists(
   ctx: RenderContext, o: RenderOpts, platform: Platform, base: string,
-): { base: string; reserved: string[] } {
-  if (o.onExists !== "rename") return { base, reserved: [] };
+): { base: string; token: string; reserved: string[] } {
+  if (o.onExists !== "rename") {
+    const outputs = o.split === "mix" ? [base] : renderOutputPaths(o, platform, base);
+    return { base, token: partToken(ctx, outputs), reserved: [] };
+  }
   const isMix = o.split === "mix";
   const prefix = isMix && base.toLowerCase().endsWith(".wav") ? base.slice(0, -4) : base;
-  const taken = (f: string) => ctx.backend.fileExists(f) || ctx.backend.fileExists(partPath(f));
+  const listed = new Map<string, string[]>(); // a directory's entries, listed once per resolve
+  const entries = (dir: string): string[] => {
+    let names = listed.get(dir);
+    if (!names) listed.set(dir, (names = ctx.backend.listDir(dir || ".")));
+    return names;
+  };
+  const taken = (f: string) =>
+    ctx.backend.fileExists(f) || entries(dirname(f)).some((n) => isPartOf(n, basename(f)));
   const unique = uniqueBase(prefix, (p) => renderOutputPaths(o, platform, p).some(taken));
-  const reserved = renderOutputPaths(o, platform, unique).map(partPath);
+  const outputs = renderOutputPaths(o, platform, unique);
+  const token = partToken(ctx, outputs);
+  const reserved = outputs.map((p) => partPath(p, token));
   for (const r of reserved) {
     if (!ctx.backend.writeFile(r, new Uint8Array(0))) {
       reserved.forEach((p) => ctx.backend.deleteFile(p));
       throw new Error(`render: could not create ${r}`);
     }
   }
-  return { base: isMix ? `${unique}.wav` : unique, reserved };
+  return { base: isMix ? `${unique}.wav` : unique, token, reserved };
 }
 
 // --- streaming render: pump 100 ms chunks straight into per-output WavWriters (no whole-song buffer) ---
@@ -513,15 +547,16 @@ function leftLane(b: Float32Array, frames: number): Float32Array {
 }
 
 /** Build the sink for the requested output shape. Writers open on the first chunk once the stream count is
- *  known (from chunk.length). Each writer streams to `<path>.part` and finishAll moves it over `<path>`, so a render
- *  that stops part way (cancelled, or failed) leaves an export that was already at `<path>` as it was.
+ *  known (from chunk.length). Each writer streams to `<path>.<token>.part` (partPath) and finishAll moves it over
+ *  `<path>`, so a render that stops part way (cancelled, or failed) leaves an export that was already at `<path>` as
+ *  it was, and any other render's `.part` of it too.
  *    mix       → 1 WAV: GB/GBA stereo, NES mono (its lanes are identical, so the left lane is lossless)
  *    channels  → GB 4 stereo stems; NES 5 mono core channels
  *    pins      → NES 3 mono analog pins
  *  (No combined multi-channel WAV — split modes write per-stream files only.) */
 function buildSink(
-  ctx: RenderContext, o: RenderOpts, id: number, platform: Platform, sr: number, base: string, reserved: string[],
-  log: Logger,
+  ctx: RenderContext, o: RenderOpts, id: number, platform: Platform, sr: number, base: string, token: string,
+  reserved: string[], log: Logger,
 ): RenderSink {
   const renderChunk = o.split === "mix"
     ? (ms: number) => [ctx.audio.renderAudio(ms)]
@@ -530,7 +565,7 @@ function buildSink(
   const nesMono = platform === "nes"; // NES streams (mix + per-channel) are mono in the left lane
   let writers: WavWriter[] | null = null; // per stream (mix=1; GB channels=N stereo; NES=N mono)
   const paths: string[] = [];
-  const partial = partPath;
+  const partial = (path: string) => partPath(path, token);
   let finished = false; // every file is whole: what is left as a .part from here on is a render, not a partial
   let summary = "";
 
@@ -577,11 +612,12 @@ function buildSink(
         if (ctx.backend.rename(partial(p), p)) { moved.push(p); continue; }
         // Every .part is a whole render by now, possibly minutes of work and the only copy: none is deleted, and the
         // error says which were moved and which are left.
-        const left = paths.filter((q) => !moved.includes(q)).map(partial);
+        const left = paths.filter((q) => q !== p && !moved.includes(q)).map(partial);
+        const leftAs = left.length > 1 ? "are left as .part files" : "is left as a .part file";
         throw new Error(
           `render: could not replace ${p}; the render is at ${partial(p)}` +
             (moved.length ? `; ${moved.join(", ")} ${moved.length > 1 ? "were" : "was"} moved into place` : "") +
-            (left.length > 1 ? `, and ${left.join(", ")} are left as .part files` : ""),
+            (left.length ? `, and ${left.join(", ")} ${leftAs}` : ""),
         );
       }
       paths.forEach((p) => log(p));
@@ -592,9 +628,9 @@ function buildSink(
       // A writer patches its header only in finish(), so a render stopped part way would leave PCM behind a header
       // that claims none. A stopped export is not an export: remove what it opened (and the names it reserved) rather
       // than leave a file that looks usable (the job's status says cancelled or error, and a shell sees a non-zero
-      // exit). The files are the writers' `.part` ones, so what was at the output paths before stays. Once the render
-      // is whole (finishAll got that far) nothing is removed: a file already moved into place is an export, and a
-      // `.part` whose move failed is the finished render.
+      // exit). The files are this render's own `.part` ones, so what was at the output paths before stays, and so does
+      // another render's `.part` of them. Once the render is whole (finishAll got that far) nothing is removed: a file
+      // already moved into place is an export, and a `.part` whose move failed is the finished render.
       if (finished) return;
       for (const p of paths) ctx.backend.deleteFile(partial(p));
       for (const r of reserved) ctx.backend.deleteFile(r);
@@ -825,10 +861,10 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // Default the filename to the SONG: the selected song when --song/--song-index is used, else the sav's
   // working song. --out overrides both, so skip the sav read then.
   const songName = o.out ? null : seed ? seed.name : smsSong ? smsSong.name : currentSongName(ctx, o, platform);
-  const { base, reserved } = resolveOnExists(ctx, o, platform, outBase(o, songName));
+  const { base, token, reserved } = resolveOnExists(ctx, o, platform, outBase(o, songName));
 
   // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
-  const sink = buildSink(ctx, o, id, platform, sr, base, reserved, log);
+  const sink = buildSink(ctx, o, id, platform, sr, base, token, reserved, log);
 
   // Auto-start playback, capturing the song's opening frames as the recording's head (see pressPlay). The
   // sink exists first so the button-hold render is captured in the right mix/split shape, not discarded.
@@ -837,7 +873,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     // didn't pin a duration, render to the HFF stop instead of a fixed window, report the length, and trim
     // the silent tail. buildPlayingProbe returns null for anything else → a fixed render.
     const isPlaying = buildPlayingProbe(ctx, o, id, platform, warn);
-    // Auto-detect applies to both mix and split (GB channels) — split just renders per-channel chunks.
+    // Auto-detect applies to both mix and split (GB channels) - split just renders per-channel chunks.
     const autoDetect = isPlaying !== null && o.start && o.durationMs === undefined;
 
     // smsggdj has no song end to detect, so a render with no --duration silently ran for the whole 10-minute
@@ -848,7 +884,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     if (!autoDetect && o.durationMs === undefined && isSmsggdjRom(ctx, o)) {
       warn(
         `render: smsggdj songs loop forever (no HFF-style stop exists on this console), so song-length ` +
-          `auto-detect is not possible — rendering the full ${o.maxDurationMs}ms cap; ` +
+          `auto-detect is not possible - rendering the full ${o.maxDurationMs}ms cap; ` +
           `pass --duration to pin a length`,
       );
     }

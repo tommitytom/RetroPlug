@@ -135,7 +135,7 @@ test("a cancelled render ends cancelled and leaves no WAV behind (its header wou
   let started = false;
   const handle = be.engineRun("render", { ...c.spec(SCRATCH), durationMs: 120000, out }, {
     onProgress: () => {
-      // The first chunk is rendered, so `<out>.part` is open with its placeholder header.
+      // The first chunk is rendered, so the render's `<out>.<token>.part` is open with its placeholder header.
       if (!started) {
         started = true;
         handle.cancel();
@@ -145,7 +145,10 @@ test("a cancelled render ends cancelled and leaves no WAV behind (its header wou
   const result = await handle;
   expect(result.status).toBe("cancelled");
   expect(be.fileExists(out), "no WAV was moved into place").toBe(false);
-  expect(be.fileExists(`${out}.part`), "the partial WAV was removed").toBe(false);
+  const slash = out.lastIndexOf("/");
+  const name = out.slice(slash + 1);
+  const left = be.listDir(out.slice(0, slash)).filter((n) => n.startsWith(`${name}.`) && n.endsWith(".part"));
+  expect(left, "the partial WAV was removed").toEqual([]);
 });
 
 test("tools/fixtures/render-smsggdj.sav, which test:cli-ts renders, is the baseline's smsggdj cases' battery", () => {
