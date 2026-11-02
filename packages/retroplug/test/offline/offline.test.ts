@@ -1,10 +1,11 @@
 // Offline jobs as promises (src/offline.ts, docs/modular-graph-phase-d2-design.md section 3): the mock backend rejects
 // every job, since the mock tier runs no graph; and the promise side over a virtual-time port: a refusal rejects at
 // once with native's reason, a failure with an OfflineRunError carrying the inputs' reports, several jobs submitted in
-// one run are all in flight at once and settle through the poll's native wait with no timer, a chain of jobs (direct, or
-// through extra async layers) keeps moving while a long job runs, a fan-out past native's bound is held back rather than
-// refused, a job native no longer holds rejects rather than being polled forever, the shared pump (pumpAllJobs, as the
-// UI tick's pumpJobs) settles them with the wait off, and the wire request carries the handles and the default returns.
+// one run are all in flight at once and settle through the poll's native wait with no timer, a chain of jobs (direct,
+// or through extra async layers) keeps moving while a long job runs, a fan-out past native's bound is held back rather
+// than refused, a job native no longer holds rejects rather than being polled forever, a port call that throws fails
+// its own run rather than the queue, the shared pump (pumpAllJobs, as the UI tick's pumpJobs) settles them with the
+// wait off, and the wire request carries the handles and the default returns.
 // The native half is held by retroplug-engine-graph-test "[offline]" and test-native/offline-run.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
@@ -44,7 +45,8 @@ function clockPort() {
     mostInFlight: () => most,
     submitOfflineJob(request: OfflineWireRequest): OfflineSubmitResult {
       if (request.rate <= 0) return { id: null, error: "the job's sample rate must be a positive number" };
-      if (jobs.length >= OFFLINE_MAX_JOBS) return { id: null, error: `busy: ${OFFLINE_MAX_JOBS} offline jobs are outstanding` };
+      if (jobs.length >= OFFLINE_MAX_JOBS)
+        return { id: null, error: `busy: ${OFFLINE_MAX_JOBS} offline jobs are outstanding` };
       submitted.push(request);
       jobs.push({ id: next, request, end: now + request.frames });
       log.push(`t=${now} submit ${request.document ?? ""}`);
@@ -125,7 +127,7 @@ test("a refusal rejects at once, and a failure rejects with its reason and the i
   expect(jobs.pendingCount()).toBe(0);
 });
 
-test("jobs submitted together are all in flight at once, and settle through the poll's wait with no timer", async () => {
+test("jobs submitted together are all in flight at once, and settle with no timer", async () => {
   const port = clockPort();
   const jobs = new OfflineJobs(port);
   await waiting(async () => {
@@ -237,8 +239,55 @@ test("a request names its inputs then its outputs, and returns every output by d
   expect(jobs.pump()).toBe(0); // settled, so no queue is left live after the last case
   await settled;
   expect(wire.returns).toEqual([3, 4]);
-  expect(wire.inputs[1]).toEqual({ path: "/a.wav", offset: 3, cap: { frames: 32576, rate: 11468, arithmetic: "float-ratio" } });
+  expect(wire.inputs[1]).toEqual({
+    path: "/a.wav",
+    offset: 3,
+    cap: { frames: 32576, rate: 11468, arithmetic: "float-ratio" },
+  });
   expect(wire.inputs[0].channels).toBe(1);
   expect(offlineInputRef(1)).toBe("res:2");
   expect(offlineOutputRef(2, 1)).toBe("res:4");
+});
+
+test("a submit that throws rejects its own run, held or not, and the rest still settle", async () => {
+  const port = clockPort();
+  const jobs = new OfflineJobs({
+    submitOfflineJob: (request) => {
+      if (request.document === "boom") throw new Error("the port refused a field");
+      return port.submitOfflineJob(request);
+    },
+    drainOfflineJobs: (waitMs) => port.drainOfflineJobs(waitMs),
+  });
+  let message = "";
+  await waiting(async () => {
+    // One throwing run held behind the whole bound, so it reaches the port from the poll's own submit loop rather
+    // than from run(). Its rejection must not strand the sixty-four ahead of it, or the poll after them.
+    const held = Array.from({ length: OFFLINE_MAX_JOBS }, (_, i) => jobs.run(job("hold", 2, i)));
+    const boom = jobs.run(job("boom", 1, 0));
+    expect(jobs.pendingCount()).toBe(OFFLINE_MAX_JOBS + 1);
+    await boom.catch((e: Error) => (message = e.message));
+    expect((await Promise.all(held)).length).toBe(OFFLINE_MAX_JOBS);
+  });
+  expect(message).toBe("the port refused a field");
+  expect(jobs.pendingCount()).toBe(0);
+});
+
+test("a drain that throws rejects every pending run, not just the one that saw it", async () => {
+  let next = 1;
+  let broken = false;
+  const jobs = new OfflineJobs({
+    submitOfflineJob: () => ({ id: next++, error: null }),
+    drainOfflineJobs: () => {
+      if (broken) throw new Error("the drain broke");
+      return { completions: [], inFlight: next - 1 };
+    },
+  });
+  const runs = [jobs.run(job("a", 1)), jobs.run(job("b", 1))];
+  broken = true;
+  runs.push(jobs.run(job("c", 1)));
+  const messages: string[] = [];
+  for (const run of runs) await run.catch((e: Error) => messages.push(e.message));
+  expect(messages).toEqual(["the drain broke", "the drain broke", "the drain broke"]);
+  expect(jobs.pendingCount()).toBe(0);
+  expect(liveJobCount()).toBe(0);
 });

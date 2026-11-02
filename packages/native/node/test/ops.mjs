@@ -129,7 +129,12 @@ export function runOps(send, tmp) {
     for (let i = 0; i < floats.length; i++) floats[i] = ((i * 37) % 101) / 101 - 0.5;
     const doc = JSON.stringify({
         nodes: [
-            { id: "p", type: "rp.core.buffer-player", settings: { channels: 1, layout: "mono", loop: false }, resources: { sample: "res:1" } },
+            {
+                id: "p",
+                type: "rp.core.buffer-player",
+                settings: { channels: 1, layout: "mono", loop: false },
+                resources: { sample: "res:1" },
+            },
             { id: "g", type: "rp.dsp.gain", settings: { channels: 1 }, params: { gain: 0.25 } },
             { id: "rec", type: "rp.core.buffer-recorder", settings: { channels: 1 }, resources: { target: "res:3" } },
         ],

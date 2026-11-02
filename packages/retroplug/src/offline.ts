@@ -16,7 +16,10 @@
 // flight): a caller that awaits through a few async layers before submitting its next job reaches the submission in
 // those quiet steps, rather than finding the chain already asleep until some other job completes. Everything submitted
 // in one synchronous run is in flight at once, a chain of jobs keeps moving, and `await offlineRun(...)` settles with
-// no timer at all. A host whose UI tick pumps never turns the wait on, so no step ever blocks its UI thread.
+// no timer at all. A host whose UI tick pumps never turns the wait on, so no step ever blocks its UI thread. In a host
+// with no tick, one `host.pump()` does not return until nothing is pending: libuv timers and I/O do not run meanwhile,
+// and a CLI's Ctrl-C between pumps is not seen. That is milliseconds for a kit; D3's minute-long renders will need a
+// macrotask yield once a waited step returns in a host with timers.
 //
 // Native holds at most OFFLINE_MAX_JOBS outstanding per engine and refuses a submission past that as busy. The queue
 // never surfaces that: one runtime's pending promises are exactly its engine's outstanding jobs (each pending id is one
@@ -182,7 +185,9 @@ export interface OfflinePort {
  *  back. */
 export const OFFLINE_MAX_JOBS = 64;
 
-// How many quiet steps in a row (nothing settled, nothing submitted) the poll takes before one waits in native.
+// How many quiet steps in a row (nothing settled, nothing submitted) the poll takes before one waits in native. Each
+// step gives a chain one more microtask hop, so a chain whose next submission comes more than about this many hops
+// after its completion falls back to waiting for the next completion, or for the wait itself.
 const QUIET_STEPS = 8;
 
 // How long one poll step may wait in native for a completion, or 0 for no poll at all (a host whose UI tick pumps).
@@ -222,6 +227,10 @@ function toWire(request: OfflineRunRequest): OfflineWireRequest {
 function floats(bytes: Uint8Array): Float32Array {
   // A copy, so the floats sit on a 4-byte boundary whatever offset the bytes arrived at.
   return bytes.byteLength ? new Float32Array(bytes.slice().buffer) : new Float32Array(0);
+}
+
+function asError(e: unknown): Error {
+  return e instanceof Error ? e : new Error(String(e));
 }
 
 interface Pending {
@@ -272,7 +281,15 @@ export class OfflineJobs implements JobQueue {
 
   private submit(wire: OfflineWireRequest, waiter: Pending): void {
     this.submitted = true;
-    const submitted = this.port.submitOfflineJob(wire);
+    let submitted: OfflineSubmitResult;
+    try {
+      submitted = this.port.submitOfflineJob(wire);
+    } catch (e) {
+      // A request the port throws on (an RPC error, say) fails that run, never the queue: a held run reaches this from
+      // settle's loop, where a throw would otherwise strand the rest of the promises.
+      waiter.reject(asError(e));
+      return;
+    }
     if (submitted.id == null) waiter.reject(new Error(submitted.error ?? "the offline job was refused"));
     else this.pending.set(submitted.id, waiter);
   }
@@ -282,7 +299,20 @@ export class OfflineJobs implements JobQueue {
       if (this.held.length === 0) setQueueLive(this, false);
       return this.outstanding();
     }
-    const drained = this.port.drainOfflineJobs(waitMs);
+    let drained: OfflineWireDrain;
+    try {
+      drained = this.port.drainOfflineJobs(waitMs);
+    } catch (e) {
+      // The queue can no longer learn what happened to anything it holds: every waiting run fails with the port's
+      // reason rather than being polled forever.
+      const error = asError(e);
+      const waiting = [...this.pending.values(), ...this.held.map((h) => h.waiter)];
+      this.pending.clear();
+      this.held.length = 0;
+      for (const p of waiting) p.reject(error);
+      setQueueLive(this, false);
+      return 0;
+    }
     for (const c of drained.completions) {
       const p = this.pending.get(c.id);
       if (!p) continue;
@@ -333,17 +363,23 @@ export class OfflineJobs implements JobQueue {
         this.polling = false;
         return;
       }
-      const wait = this.submitted || this.quiet < QUIET_STEPS ? 0 : offlineWaitMs;
-      const before = this.pending.size;
-      this.submitted = false;
-      const left = this.settle(wait);
-      if (left === 0) {
-        this.polling = false;
-        return;
+      let again = false;
+      try {
+        const wait = this.submitted || this.quiet < QUIET_STEPS ? 0 : offlineWaitMs;
+        const before = this.pending.size;
+        this.submitted = false;
+        const left = this.settle(wait);
+        if (left > 0) {
+          if (wait > 0 || this.submitted || this.pending.size !== before) this.quiet = 0;
+          else this.quiet++;
+          again = true;
+        }
+      } finally {
+        // Any exit that is not a requeue clears the flag, so a throw cannot leave the queue's poll switched off for
+        // every later submission.
+        if (!again) this.polling = false;
       }
-      if (wait > 0 || this.submitted || this.pending.size !== before) this.quiet = 0;
-      else this.quiet++;
-      void Promise.resolve().then(step);
+      if (again) void Promise.resolve().then(step);
     };
     void Promise.resolve().then(step);
   }

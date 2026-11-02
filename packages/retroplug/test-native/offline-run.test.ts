@@ -19,9 +19,19 @@ function gainDocument(gain: number, channels: number, loop = false): string {
   const layout = channels === 1 ? "mono" : "stereo";
   return JSON.stringify({
     nodes: [
-      { id: "p", type: "rp.core.buffer-player", settings: { channels, layout, loop }, resources: { sample: offlineInputRef(0) } },
+      {
+        id: "p",
+        type: "rp.core.buffer-player",
+        settings: { channels, layout, loop },
+        resources: { sample: offlineInputRef(0) },
+      },
       { id: "g", type: "rp.dsp.gain", settings: { channels }, params: { gain } },
-      { id: "rec", type: "rp.core.buffer-recorder", settings: { channels }, resources: { target: offlineOutputRef(1, 0) } },
+      {
+        id: "rec",
+        type: "rp.core.buffer-recorder",
+        settings: { channels },
+        resources: { target: offlineOutputRef(1, 0) },
+      },
     ],
     wires: [
       { from: "p.out", to: "g.in" },
@@ -99,8 +109,15 @@ test("a file input comes back decoded and windowed, with its report", async () =
   const path = be.configDir() + "/offline-run.wav";
   const pcm = Array.from({ length: 3000 }, (_, i) => Math.round(12000 * Math.sin(i * 0.05)));
   expect(be.writeFile(path, wav(pcm, 22050))).toBeTruthy();
-  const result = await be.offlineRun({ inputs: [{ path, offset: 1000, length: 500 }], returns: [1], frames: 0, rate: 22050 });
-  expect(result.inputs).toEqual([{ handle: 1, decodedRate: 22050, decodedFrames: 3000, frames: 500, nonFinite: false }]);
+  const result = await be.offlineRun({
+    inputs: [{ path, offset: 1000, length: 500 }],
+    returns: [1],
+    frames: 0,
+    rate: 22050,
+  });
+  expect(result.inputs).toEqual([
+    { handle: 1, decodedRate: 22050, decodedFrames: 3000, frames: 500, nonFinite: false },
+  ]);
   const [buffer] = result.buffers;
   expect(buffer.frames).toBe(500);
   expect(buffer.rate).toBe(22050);
@@ -121,10 +138,16 @@ test("a file input comes back decoded and windowed, with its report", async () =
 });
 
 test("a refusal and a failure reject with native's reason", async () => {
-  const refused = await rejection(be.offlineRun({ outputs: [{ channels: 1, frames: 0, rate: 48000 }], frames: 1, rate: 48000 }));
+  const refused = await rejection(
+    be.offlineRun({ outputs: [{ channels: 1, frames: 0, rate: 48000 }], frames: 1, rate: 48000 }),
+  );
   expect(refused.message).toBe("output 0 needs at least one channel and one frame");
   const failed = await rejection(
-    be.offlineRun({ document: JSON.stringify({ nodes: [{ id: "gb", type: "rp.sameboy.gb" }], wires: [] }), frames: 64, rate: 48000 }),
+    be.offlineRun({
+      document: JSON.stringify({ nodes: [{ id: "gb", type: "rp.sameboy.gb" }], wires: [] }),
+      frames: 64,
+      rate: 48000,
+    }),
   );
   expect(failed instanceof OfflineRunError).toBe(true);
   expect(failed.message).toBe('the document was refused: gb: unknown-type: no node type "rp.sameboy.gb" is registered');
@@ -139,7 +162,8 @@ test("several jobs run at once, and a chain of them one after another", async ()
   const results = await Promise.all(gains.map((g) => be.offlineRun(gainJob(input, 1, g))));
   results.forEach((r, k) => {
     let mismatches = 0;
-    for (let i = 0; i < input.length; i++) if (r.buffers[0].samples[i] !== Math.fround(input[i] * gains[k])) mismatches++;
+    for (let i = 0; i < input.length; i++)
+      if (r.buffers[0].samples[i] !== Math.fround(input[i] * gains[k])) mismatches++;
     expect(mismatches).toBe(0);
   });
   // Each job's output the next one's input: three halvings.
@@ -164,7 +188,8 @@ test("a fan-out past the engine's bound of outstanding jobs is held back, and ev
   expect(results.length).toBe(count);
   let mismatches = 0;
   results.forEach((r, k) => {
-    for (let i = 0; i < input.length; i++) if (r.buffers[0].samples[i] !== Math.fround(input[i] * Math.fround(k / 64))) mismatches++;
+    for (let i = 0; i < input.length; i++)
+      if (r.buffers[0].samples[i] !== Math.fround(input[i] * Math.fround(k / 64))) mismatches++;
   });
   expect(mismatches).toBe(0);
   expect(be.pumpJobs()).toBe(0);
