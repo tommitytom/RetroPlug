@@ -531,6 +531,29 @@ test("a failed slot is left empty with its reason, and the rest of the kit compi
   expect([dmc.bytes[0x1f00], dmc.bytes[0x1f04]]).toEqual([0xff, 0]);
 });
 
+test("a spec's window is a whole frame count, refused as its slot's reason before any job is submitted", async () => {
+  const ok = Float32Array.from({ length: 4410 }, (_, i) => levelOf(i % 16));
+  const runner = scriptedRunner({ files: { "/ok.wav": { samples: ok, rate: 44100 } } });
+  const kit = await compileKit(runner, {
+    name: "K",
+    samples: [
+      { path: "/ok.wav", name: "N", offset: -1, effects: [] },
+      { path: "/ok.wav", name: "F", length: 2.5, effects: [] },
+      { path: "/ok.wav", name: "H", offset: 0x1_0000_0000, effects: [] },
+      { path: "/ok.wav", name: "OK", effects: [] },
+    ],
+  });
+  expect(kit.errors).toEqual([
+    "offset -1 is not a frame count (a whole number from 0 to 4294967295)",
+    "length 2.5 is not a frame count (a whole number from 0 to 4294967295)",
+    "offset 4294967296 is not a frame count (a whole number from 0 to 4294967295)",
+    null,
+  ]);
+  // Only the good slot reached the runner: a value native's decoder would refuse is its slot's error, not an RPC throw
+  // that fails the whole kit.
+  expect(runner.requests.length).toBe(3);  // load, resample, quantise
+});
+
 test("a pass that records a non-finite sample, or that a node's guard stepped into, refuses its slot", async () => {
   const ok = Float32Array.from({ length: 4410 }, (_, i) => levelOf(i % 16));
   const base = scriptedRunner({ files: { "/ok.wav": { samples: ok, rate: 44100 } } });

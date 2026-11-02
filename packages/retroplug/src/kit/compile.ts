@@ -41,6 +41,7 @@ import {
   quantiseJob,
   resampleJob,
   resolveEffects,
+  windowFrames,
   type SlotChain,
 } from "./chain";
 import {
@@ -87,7 +88,9 @@ interface Source {
 async function load(runner: KitJobRunner, spec: KitSampleSpec, cap: OfflineCap): Promise<Source> {
   let result;
   try {
-    result = await runner.offlineRun(loadJob(spec.path, spec.offset ?? 0, spec.length ?? 0, cap));
+    result = await runner.offlineRun(
+      loadJob(spec.path, windowFrames(spec, "offset"), windowFrames(spec, "length"), cap),
+    );
   } catch (e) {
     if (e instanceof OfflineRunError) throw new Error(e.message.replace(/^input 0: /, ""));
     throw e;

@@ -257,6 +257,20 @@ export function dpcmDocument(normalize: boolean): string {
 
 // ---- the jobs -----------------------------------------------------------------------------------------------------
 
+/** A spec's window field (`offset` or `length`) as native's OfflineFile carries it: a whole frame count from 0 to
+ *  2^32 - 1. A value no request can carry is the slot's error here, rather than an RPC throw that fails the whole
+ *  compile. */
+export function windowFrames(spec: { offset?: number; length?: number }, key: "offset" | "length"): number {
+  const value = (spec as unknown as Record<string, unknown>)[key];
+  if (value === undefined) return 0;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 0xffffffff)
+    throw new KitSpecError(
+      `${key} ${typeof value === "number" ? value : JSON.stringify(value)} is not a frame count ` +
+        "(a whole number from 0 to 4294967295)",
+    );
+  return value;
+}
+
 /** A slot's source decoded and windowed natively, returned with no document run: the window's buffer comes back with
  *  its decoded rate, and the input's report says how long the window is and whether it holds a non-finite sample. */
 export function loadJob(path: string, offset: number, length: number, cap: OfflineCap): OfflineRunRequest {
