@@ -466,8 +466,8 @@ std::vector<float> streamResample(double inRate, double outRate, const std::vect
 }
 
 // ---- risa's DMC encoder as it was before the kernel ---------------------------------------------------------------
-// The codec's whole-buffer function, verbatim, with the byte packing and the pad it did around the bits. The kernel
-// outputs one bit per sample instead, so a case packs its bits the same way before comparing the two.
+// The retired whole-buffer encoder function, verbatim, with the byte packing and the pad it did around the bits. The
+// kernel outputs one bit per sample instead, so a case packs its bits the same way before comparing the two.
 
 constexpr std::size_t kDmcLengthStep = 16;
 
@@ -543,7 +543,7 @@ std::vector<std::uint8_t> referenceConvertF32ToDpcm(const std::vector<float>& f3
     return referencePadToDmcLength(std::move(out));
 }
 
-/** The kernel's one-byte-per-bit output packed and padded the way the codec packs and pads it. */
+/** The kernel's one-byte-per-bit output packed and padded the way the retired encoder packed and padded it. */
 std::vector<std::uint8_t> packDpcmBits(const std::vector<std::uint8_t>& bits) {
     std::vector<std::uint8_t> out((bits.size() + 7) / 8, 0);
     for (std::size_t i = 0; i < bits.size(); ++i)
@@ -880,7 +880,7 @@ TEST_CASE("the dithers without a padded reference give the old whole-buffer loop
     }
 }
 
-TEST_CASE("the DPCM kernel's bits are the kit codec's bytes", "[dsp][dpcm]") {
+TEST_CASE("the DPCM kernel's bits, packed, are the pre-kernel encoder's bytes", "[dsp][dpcm]") {
     // A short buffer; one longer than any kit slot resamples to; an overdriven source, where the DC blocker's clamp and
     // the delta counter's ends both do work; and silence, which pins the peak floor of 1 and the sign of every step.
     const std::vector<std::vector<float>> sources = {signal(37), signal(20000), noise(1000, 4.0f, 0x51ee7u),
@@ -895,7 +895,7 @@ TEST_CASE("the DPCM kernel's bits are the kit codec's bytes", "[dsp][dpcm]") {
         }
     }
 
-    // No samples: no bits, and the one-byte slot the codec's pad gives an empty stream.
+    // No samples: no bits, and the one-byte slot the retired encoder's pad gives an empty stream.
     CHECK(packDpcmBits({}) == std::vector<std::uint8_t>{0});
     CHECK(referenceConvertF32ToDpcm({}, true) == std::vector<std::uint8_t>{0});
 }

@@ -250,10 +250,18 @@ TEST_CASE("rp.dsp.gain carries a kit's gain whole, and still clamps at its bound
     // the kernel's stream at that bound rather than the value asked for: the clamp the wider range must keep.
     for (const auto& [asked, bound] : {std::pair{150.0f, 100.0f}, std::pair{-150.0f, -100.0f}}) {
         INFO("gain " << asked << " clamped to " << bound);
+        rp::dsp::Gain askedKernel;
+        askedKernel.init(asked);
+        std::vector<float> askedStream(kFrames);
+        askedKernel.process(in.data(), askedStream.data(), kFrames);
+
         rp::dsp::Gain kernel;
         kernel.init(bound);
         std::vector<float> reference(kFrames);
         kernel.process(in.data(), reference.data(), kFrames);
+
+        // The case would fail without the clamp: the asked value's own stream differs from the bound's.
+        CHECK(firstDifference(askedStream, reference) != -1);
 
         DspRig     rig;
         const auto sample = rig.buffer(in, 1);
@@ -326,9 +334,10 @@ TEST_CASE("rp.dsp.biquad carries a kit's filter whole, and still clamps at its b
     }
 
     // A document's value outside a range is clamped to the bound (the planner does it, silently), so each param asked
-    // beyond its range gives the kernel's stream at the bound: the clamp the wider ranges must keep. Every bound is
-    // under the 48 kHz plan's Nyquist, where the node and the kernel agree (the guard never fires). Each case also runs
-    // the kernel at the value asked, so it fails unless the bound and the asked value really do give different streams.
+    // beyond its range gives the kernel's stream at the bound: the clamp the wider ranges must keep. Every bound these
+    // cases exercise is under the 48 kHz plan's Nyquist, where the node and the kernel agree (the guard never fires).
+    // Each case also runs the kernel at the value asked, so it fails unless the bound and the asked value really do
+    // give different streams.
     struct Clamped {
         float frequency, q, gainDb;
         float boundFrequency, boundQ, boundGainDb;
