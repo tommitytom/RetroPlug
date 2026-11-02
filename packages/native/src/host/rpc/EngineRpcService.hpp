@@ -62,6 +62,18 @@ public:
     std::vector<RpcJobCompletion> drainJobs();
     bool screenshot(std::uint32_t id, std::string path);
     RpcFrame getFrame(std::uint32_t id);
+    // An offline job (Engine::submitOfflineJob, docs/modular-graph-phase-d2-design.md section 3): its id, whose
+    // completion a later drainOfflineJobs hands back, or why it was refused. Refused here too for an input that is not
+    // exactly one kind (samples, channels and rate; or a path, with its window), samples that are not whole float32
+    // values, and a cap arithmetic that is neither "float-ratio" nor "double-scale".
+    RpcOfflineSubmitResult            submitOfflineJob(RpcOfflineRequest request);
+    // The completions since the last drain, oldest first, and the jobs still queued or running after them. `waitMs`
+    // above 0 waits up to that long (at most a second) for one while a job is in flight: what a host with no UI tick
+    // does between pumps (src/offline.ts). A host that pumps from its UI tick passes 0, and never blocks the thread its
+    // UI runs on.
+    RpcOfflineDrain                   drainOfflineJobs(double waitMs);
+    // Cancel a queued or running offline job; it completes with the reason "cancelled". False for one that is neither.
+    bool                              cancelOfflineJob(std::uint32_t id);
 
     // (Live-core debug/inspection — getApuState/readCpu/breakpoints/trace/profiler/… — moved to
     // DebugRpcService; only the CLI binds that facet.)

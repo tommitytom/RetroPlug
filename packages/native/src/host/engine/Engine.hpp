@@ -18,6 +18,7 @@
 #include "graph/rp_node.h"  // rp_queue
 #include "host/engine/CapabilityJobs.hpp"
 #include "host/engine/HostSyncTrace.hpp"
+#include "host/engine/OfflineJobs.hpp"
 #include "host/engine/SnapshotRegistry.hpp"
 #include "host/script/ScriptHost.hpp"
 
@@ -171,6 +172,25 @@ public:
     // empty write, a system the last published plan does not place, and a full command ring; a write past the region is
     // dropped where it applies, as the RPC refuses one first from the published size.
     bool writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
+
+    // --- offline jobs (host/engine/OfflineJobs.hpp, docs/modular-graph-phase-d2-design.md section 3), control
+    // thread ---
+    // A graph document run to completion on a host of its own, on a worker thread of the engine's offline pool, apart
+    // from everything above: its own node registry (the built-in C++ packages only), its own resource table, no audio
+    // thread, and nothing of this engine's plan, ring or resources. The pool is made at the first submission, so a host
+    // that never submits starts no thread, and joined first as the engine goes. Taken or refused at once
+    // (OfflineJobs::submit); its completion comes through a later drain.
+    rp::host::OfflineSubmit submitOfflineJob(rp::host::OfflineRequest request);
+    // The completions since the last drain, oldest first; with `wait`, waits up to it for one while a job is in
+    // flight (OfflineJobs::drain), which a host with no UI tick does between pumps. `inFlight`, when given, is set to
+    // the jobs still queued or running after it.
+    std::vector<rp::host::OfflineCompletion> drainOfflineJobs(
+        std::chrono::milliseconds wait = std::chrono::milliseconds(0), std::size_t* inFlight = nullptr);
+    // Cancel a queued or running job: it completes with the reason "cancelled". False for one neither queued nor
+    // running.
+    bool        cancelOfflineJob(std::uint32_t id);
+    // Offline jobs queued, running, or finished and not yet drained.
+    std::size_t offlineJobsOutstanding() const;
 
     // The owned snapshot store the control plane reads through. Claim a slot at build, release it
     // when the core is deleted; processBlock publishes into it.
@@ -481,6 +501,12 @@ private:
     // collects, finishes as it applies and never enters it).
     std::array<rp::host::Job*, kMaxJobs>            applied_{};
     std::size_t                                     appliedCount_ = 0;
+
+    // The offline job pool, made at the first submission. It uses nothing of the engine's (its registry, its jobs'
+    // tables and hosts are its own), so where it sits among the members does not matter for what it touches; the
+    // destructor still resets it first, so every worker is joined, and every node a job built destroyed, before any
+    // other member goes.
+    std::unique_ptr<rp::host::OfflineJobs>          offline_;
 
     // Last, so it goes first: its system nodes release their snapshot slots into registry_ (and leave
     // liveCores_) as they go.

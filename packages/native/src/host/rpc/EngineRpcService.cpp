@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstddef>
+#include <cstring>
+#include <chrono>
 #include <span>
 #include <string>
 #include <utility>
@@ -219,6 +221,95 @@ std::vector<RpcJobCompletion> EngineRpcService::drainJobs() {
         out.push_back({c.id, c.done, c.ok, std::move(c.error), toBytestring(c.bytes), c.progress, c.total});
     return out;
 }
+
+RpcOfflineSubmitResult EngineRpcService::submitOfflineJob(RpcOfflineRequest request) {
+    RpcOfflineSubmitResult out{std::nullopt, std::nullopt};
+    rp::host::OfflineRequest r;
+    r.document = request.document.value_or("");
+    r.frames = request.frames;
+    r.rate = request.rate;
+    r.returns = std::move(request.returns);
+    for (std::size_t i = 0; i < request.inputs.size(); ++i) {
+        RpcOfflineInput& in = request.inputs[i];
+        const std::string name = "input " + std::to_string(i);
+        const bool samples = in.samples || in.channels || in.rate;
+        const bool file = in.path || in.offset || in.length || in.cap;
+        if (samples == file) {
+            out.error = name + " must be samples (samples, channels and rate) or a file (a path and its window)";
+            return out;
+        }
+        if (samples) {
+            if (!in.samples || !in.channels || !in.rate) {
+                out.error = name + " needs samples, channels and a rate";
+                return out;
+            }
+            if (in.samples->size() % sizeof(float) != 0) {
+                out.error = name + "'s samples are " + std::to_string(in.samples->size()) +
+                            " bytes, not a whole number of float32 values";
+                return out;
+            }
+            rp::host::OfflineSamples s;
+            s.samples.resize(in.samples->size() / sizeof(float));
+            if (!s.samples.empty()) std::memcpy(s.samples.data(), in.samples->data(), in.samples->size());
+            s.channels = *in.channels;
+            s.rate = *in.rate;
+            r.inputs.emplace_back(std::move(s));
+            continue;
+        }
+        if (!in.path) {
+            out.error = name + " needs a path";
+            return out;
+        }
+        rp::host::OfflineFile f;
+        f.path = std::move(*in.path);
+        f.offset = in.offset.value_or(0);
+        f.length = in.length.value_or(0);
+        if (in.cap) {
+            rp::host::OfflineCap cap;
+            cap.frames = in.cap->frames;
+            cap.rate = in.cap->rate;
+            if (in.cap->arithmetic == "float-ratio") cap.arithmetic = rp::host::OfflineCapArithmetic::FloatRatio;
+            else if (in.cap->arithmetic == "double-scale") cap.arithmetic = rp::host::OfflineCapArithmetic::DoubleScale;
+            else {
+                out.error = name + "'s cap arithmetic \"" + in.cap->arithmetic +
+                            "\" is neither \"float-ratio\" nor \"double-scale\"";
+                return out;
+            }
+            f.cap = cap;
+        }
+        r.inputs.emplace_back(std::move(f));
+    }
+    for (const RpcOfflineOutput& o : request.outputs) r.outputs.push_back({o.channels, o.frames, o.rate});
+    rp::host::OfflineSubmit submitted = engine_.submitOfflineJob(std::move(r));
+    if (submitted.id != 0) out.id = submitted.id;
+    else out.error = std::move(submitted.error);
+    return out;
+}
+
+RpcOfflineDrain EngineRpcService::drainOfflineJobs(double waitMs) {
+    // A NaN or a negative wait waits not at all; the engine bounds a long one.
+    const double ms = std::isfinite(waitMs) ? std::clamp(waitMs, 0.0, 1000.0) : (waitMs > 0 ? 1000.0 : 0.0);
+    RpcOfflineDrain out{{}, 0};
+    std::size_t     inFlight = 0;
+    for (auto& c : engine_.drainOfflineJobs(std::chrono::milliseconds(static_cast<std::int64_t>(ms)), &inFlight)) {
+        RpcOfflineCompletion rc{c.id, c.ok, std::move(c.error), {}, {}};
+        for (auto& b : c.buffers) {
+            rfl::Bytestring bytes;
+            if (!b.samples.empty()) {
+                const auto* p = reinterpret_cast<const std::byte*>(b.samples.data());
+                bytes = rfl::Bytestring(p, p + b.samples.size() * sizeof(float));
+            }
+            rc.buffers.push_back({b.handle, b.channels, b.frames, b.rate, std::move(bytes)});
+        }
+        for (const auto& i : c.inputs)
+            rc.inputs.push_back({i.handle, i.decodedRate, i.decodedFrames, i.frames, i.nonFinite});
+        out.completions.push_back(std::move(rc));
+    }
+    out.inFlight = static_cast<std::uint32_t>(inFlight);
+    return out;
+}
+
+bool EngineRpcService::cancelOfflineJob(std::uint32_t id) { return engine_.cancelOfflineJob(id); }
 
 bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {
     // Encodes the owned registry frame (a published copy) — safe while the audio thread runs, no guard.

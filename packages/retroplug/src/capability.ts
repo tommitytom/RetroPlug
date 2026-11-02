@@ -141,11 +141,23 @@ interface Pending {
   onProgress?: (p: CapabilityProgress) => void;
 }
 
-// Every CapabilityJobs a time-advancing pump should visit: the ones with a promise waiting, or a completion a close
-// left owed. A queue that owes nothing leaves the set, so a runtime that makes backends repeatedly bounds it; one real
-// client's queue serves every client of a runtime, since native's completion queue is one per engine and a runtime
-// binds one engine (realBackend.ts), while the mock has one per mock, over its own model.
-const liveJobs = new Set<CapabilityJobs>();
+/** A queue of jobs a time-advancing pump visits: the capability jobs here, and the offline jobs (src/offline.ts), so
+ *  one pump settles both kinds. `pump` drains what has completed and answers how many are still pending. */
+export interface JobQueue {
+  pump(): number;
+}
+
+// Every queue a time-advancing pump should visit: the ones with a promise waiting, or a completion a close left owed.
+// A queue that owes nothing leaves the set, so a runtime that makes backends repeatedly bounds it; one real client's
+// queue serves every client of a runtime, since native's completion queue is one per engine and a runtime binds one
+// engine (realBackend.ts), while the mock has one per mock, over its own model.
+const liveJobs = new Set<JobQueue>();
+
+/** Put a queue in, or take it out of, the set pumpAllJobs visits: a queue joins while it has a promise waiting. */
+export function setQueueLive(queue: JobQueue, live: boolean): void {
+  if (live) liveJobs.add(queue);
+  else liveJobs.delete(queue);
+}
 
 // How to let time pass while a submitted job waits, or null to return its promise pending: the audio driver installs
 // a native sleep while its audio thread runs (startAudio to stopAudio), where nothing else would pump, and clears it on
@@ -157,8 +169,8 @@ export function setJobWait(wait: ((ms: number) => void) | null): void {
   jobWait = wait;
 }
 
-/** Pump every live job queue: the audio driver calls it after the calls that advance time. A real client's queue is its
- *  engine's, so one visit can settle more than one backend's promises. */
+/** Pump every live job queue, capability and offline: the audio driver calls it after the calls that advance time. A
+ *  real client's queue is its engine's, so one visit can settle more than one backend's promises. */
 export function pumpAllJobs(): void {
   for (const jobs of liveJobs) jobs.pump();
 }

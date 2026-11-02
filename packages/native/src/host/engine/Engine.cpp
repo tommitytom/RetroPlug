@@ -257,7 +257,25 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
                          e.nodeId.c_str(), e.port.empty() ? "" : ".", e.port.c_str(), e.message.c_str());
 }
 
-Engine::~Engine() = default;
+// The offline pool first: it cancels its jobs and joins its workers, so no job thread outlives the engine, and each
+// job's host and nodes (a resampler among them) are gone before the engine's own members start to go.
+Engine::~Engine() { offline_.reset(); }
+
+rp::host::OfflineSubmit Engine::submitOfflineJob(rp::host::OfflineRequest request) {
+    if (!offline_) offline_ = std::make_unique<rp::host::OfflineJobs>();
+    return offline_->submit(std::move(request));
+}
+
+std::vector<rp::host::OfflineCompletion> Engine::drainOfflineJobs(std::chrono::milliseconds wait,
+                                                                  std::size_t*              inFlight) {
+    if (offline_) return offline_->drain(wait, inFlight);
+    if (inFlight) *inFlight = 0;
+    return {};
+}
+
+bool Engine::cancelOfflineJob(std::uint32_t id) { return offline_ && offline_->cancel(id); }
+
+std::size_t Engine::offlineJobsOutstanding() const { return offline_ ? offline_->outstanding() : 0; }
 
 const void* Engine::graphInterface(void* ctx, const char* id) {
     auto* self = static_cast<Engine*>(ctx);

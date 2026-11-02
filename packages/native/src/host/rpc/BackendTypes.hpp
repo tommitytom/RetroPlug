@@ -174,3 +174,68 @@ struct RpcJobCompletion {
     std::uint32_t   progress;
     std::uint32_t   total;
 };
+
+// An offline job (docs/modular-graph-phase-d2-design.md section 3, Engine::submitOfflineJob,
+// host/engine/OfflineJobs.hpp): a graph document run to completion on a host of its own. Its resources are its inputs
+// then its outputs, in order, named in the document as res:1, res:2 and on; `returns` names the handles whose buffers
+// the completion carries. An input is EITHER audio the call carries (`samples`, interleaved float32 in the host's byte
+// order, little-endian on every target, `channels` wide, at `rate`) OR a file native decodes (`path`, through the kit
+// compiler's SampleCache decode, mono at the file's rate) and windows (`offset`, `length`, 0 or absent for all of it,
+// and a `cap`); a field of the other kind is refused. A cap is `frames` at `rate` scaled to the decoded rate by
+// `arithmetic`: "float-ratio" (LSDj's compileSample) or "double-scale" (risa's DMC encode). `document` absent or empty
+// runs no graph, so the job returns its inputs (a file's window, and its report).
+struct RpcOfflineCap { std::uint32_t frames; double rate; std::string arithmetic; };
+struct RpcOfflineInput {
+    std::optional<rfl::Bytestring> samples;
+    std::optional<std::uint32_t>   channels;
+    std::optional<double>          rate;
+    std::optional<std::string>     path;
+    std::optional<std::uint32_t>   offset;
+    std::optional<std::uint32_t>   length;
+    std::optional<RpcOfflineCap>   cap;
+};
+struct RpcOfflineOutput { std::uint32_t channels; std::uint32_t frames; double rate; };
+struct RpcOfflineRequest {
+    std::optional<std::string>    document;
+    std::vector<RpcOfflineInput>  inputs;
+    std::vector<RpcOfflineOutput> outputs;
+    std::vector<std::uint32_t>    returns;
+    std::uint32_t                 frames;
+    double                        rate;
+};
+// Its answer: `id` (taken; its completion comes through drainOfflineJobs) or `error` (refused, and why). Exactly one is
+// present.
+struct RpcOfflineSubmitResult {
+    std::optional<std::uint32_t> id;
+    std::optional<std::string>   error;
+};
+// A returned buffer, `samples` interleaved float32 as an input's are; and a file input's report: the decoded rate and
+// length, the window's length, and whether a sample the window kept is not finite.
+struct RpcOfflineBuffer {
+    std::uint32_t   handle;
+    std::uint32_t   channels;
+    std::uint32_t   frames;
+    double          rate;
+    rfl::Bytestring samples;
+};
+struct RpcOfflineInputReport {
+    std::uint32_t handle;
+    std::uint32_t decodedRate;
+    std::uint32_t decodedFrames;
+    std::uint32_t frames;
+    bool          nonFinite;
+};
+// A finished job: `ok` with its `buffers`, or `error`; `inputs` reports every file input decoded before it ended.
+struct RpcOfflineCompletion {
+    std::uint32_t                      id;
+    bool                               ok;
+    std::string                        error;
+    std::vector<RpcOfflineBuffer>      buffers;
+    std::vector<RpcOfflineInputReport> inputs;
+};
+// What drainOfflineJobs answers: the completions, and how many of the engine's jobs are still queued or running after
+// them (so a caller holding a promise for a job native no longer holds learns so, rather than poll for it forever).
+struct RpcOfflineDrain {
+    std::vector<RpcOfflineCompletion> completions;
+    std::uint32_t                     inFlight;
+};

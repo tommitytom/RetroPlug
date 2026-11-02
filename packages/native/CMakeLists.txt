@@ -205,6 +205,7 @@ add_library(retroplug-backend STATIC
     src/host/engine/Engine.cpp              # the engine: the graph + the script host + the staged MIDI, runs blocks
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
     src/host/engine/EngineInvoker.cpp       # QueuedInvoker - the one mutation path to the Engine
+    src/host/engine/OfflineJobs.cpp         # offline jobs: a document run to completion on a worker host of its own
     src/host/IdleReclaimProbe.cpp           # hosts' idle-tick self-test (HostServices::reclaimOnIdle), smoke-driven
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
     src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out

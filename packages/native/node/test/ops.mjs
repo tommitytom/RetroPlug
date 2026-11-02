@@ -39,12 +39,13 @@ export function payload() {
 }
 
 /**
- * Run the host-facet operation matrix against `send` (a synchronous __rpcSend) using `tmp` as a
- * scratch directory. Returns [label, canonicalResult] pairs in a fixed order.
+ * Run the operation matrix (the host facet, and an offline job on the emulator facet) against `send` (a synchronous
+ * __rpcSend) using `tmp` as a scratch directory. Returns [label, canonicalResult] pairs in a fixed order.
  *
  * Coverage, in codec terms: string/int/bool scalars, an empty std::optional, rfl::Bytestring in BOTH
  * directions, std::vector<std::string>, std::vector<struct> with a nested Bytestring, a struct
- * parameter with a nested Bytestring, and the JSON-RPC error envelope.
+ * parameter with a nested Bytestring, a struct of vectors of structs with absent optionals and a nested optional
+ * struct (an offline job's request) and its completion's nested vectors of structs, and the JSON-RPC error envelope.
  */
 export function runOps(send, tmp) {
     let id = 0;
@@ -103,6 +104,71 @@ export function runOps(send, tmp) {
     const emptyPath = tmp + "/empty.bin";
     rec("writeFile:empty", call("writeFile", emptyPath, new Uint8Array(0)));
     rec("readFile:empty", call("readFile", emptyPath));
+
+    // An offline job: a struct of vectors of structs IN (optional fields absent, a nested optional struct, interleaved
+    // float32 as a Bytestring) -> an optional-field answer OUT -> vectors of structs with nested Bytestrings OUT. A
+    // samples input through rp.dsp.gain into a recorder, beside a windowed file input (a 16-bit WAV written here).
+    const wav = new Uint8Array(44 + 64 * 2);
+    const dv = new DataView(wav.buffer);
+    [..."RIFF"].forEach((c, i) => dv.setUint8(i, c.charCodeAt(0)));
+    dv.setUint32(4, 36 + 128, true);
+    [..."WAVEfmt "].forEach((c, i) => dv.setUint8(8 + i, c.charCodeAt(0)));
+    dv.setUint32(16, 16, true);
+    dv.setUint16(20, 1, true);
+    dv.setUint16(22, 1, true);
+    dv.setUint32(24, 22050, true);
+    dv.setUint32(28, 44100, true);
+    dv.setUint16(32, 2, true);
+    dv.setUint16(34, 16, true);
+    [..."data"].forEach((c, i) => dv.setUint8(36 + i, c.charCodeAt(0)));
+    dv.setUint32(40, 128, true);
+    for (let i = 0; i < 64; i++) dv.setInt16(44 + 2 * i, (i * 997) % 20000 - 10000, true);
+    const wavPath = tmp + "/offline.wav";
+    call("writeFile", wavPath, wav);
+    const floats = new Float32Array(256);
+    for (let i = 0; i < floats.length; i++) floats[i] = ((i * 37) % 101) / 101 - 0.5;
+    const doc = JSON.stringify({
+        nodes: [
+            { id: "p", type: "rp.core.buffer-player", settings: { channels: 1, layout: "mono", loop: false }, resources: { sample: "res:1" } },
+            { id: "g", type: "rp.dsp.gain", settings: { channels: 1 }, params: { gain: 0.25 } },
+            { id: "rec", type: "rp.core.buffer-recorder", settings: { channels: 1 }, resources: { target: "res:3" } },
+        ],
+        wires: [{ from: "p.out", to: "g.in" }, { from: "g.out", to: "rec.in" }],
+    });
+    const submitted = call("submitOfflineJob", {
+        document: doc,
+        inputs: [
+            { samples: new Uint8Array(floats.buffer), channels: 1, rate: 48000 },
+            { path: wavPath, offset: 8, length: 0, cap: { frames: 40, rate: 11468, arithmetic: "float-ratio" } },
+        ],
+        outputs: [{ channels: 1, frames: 256, rate: 48000 }],
+        returns: [3, 2],
+        frames: 256,
+        rate: 48000,
+    });
+    rec("submitOfflineJob", { taken: typeof submitted.id === "number", error: submitted.error });
+    // How many drains it takes is timing, so only what holds on every host is recorded: the job was in flight until
+    // it came back, and nothing was after.
+    let completions = [];
+    const inFlight = [];
+    for (let i = 0; i < 100 && completions.length === 0; i++) {
+        const drained = call("drainOfflineJobs", 100);
+        inFlight.push(drained.inFlight);
+        completions = drained.completions;
+    }
+    rec("drainOfflineJobs", completions.map((c) => ({ ...c, id: c.id === submitted.id })));
+    rec("drainOfflineJobs:inFlight", {
+        last: inFlight[inFlight.length - 1],
+        before: inFlight.slice(0, -1).every((n) => n === 1),
+    });
+    rec("submitOfflineJob:refused", call("submitOfflineJob", {
+        inputs: [{ path: wavPath, cap: { frames: 1, rate: 1, arithmetic: "nope" } }],
+        outputs: [],
+        returns: [],
+        frames: 0,
+        rate: 48000,
+    }));
+    rec("cancelOfflineJob:none", call("cancelOfflineJob", 12345));
 
     // error envelope
     rec("error:unknownMethod", raw("noSuchMethod"));

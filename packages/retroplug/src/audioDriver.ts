@@ -6,6 +6,7 @@
 
 
 import { pumpAllJobs, setJobWait } from "./capability";
+import { setOfflineWait } from "./offline";
 import { makeCall } from "./rpcClient";
 import type { EngineGraph } from "./engineGraph";
 import type { HostShape } from "./graph/buildGraph";
@@ -231,6 +232,10 @@ export interface AudioDriver {
   drainReleased(): number;
 }
 
+// How long one offline poll step waits in native for a completion before the next microtask turn: long enough that a
+// waiting chain costs nothing, short enough that a step never holds a turn for long.
+const OFFLINE_WAIT_MS = 100;
+
 /** Build an audio driver backed by the native host. Throws if no RPC surface is bound.
  *
  *  `graph` is the engine's graph whoever builds the systems publishes (docs/modular-graph-phase-b2-design.md
@@ -239,6 +244,9 @@ export interface AudioDriver {
  *  the calls render whatever shape is planned, and native refuses buffers that do not match it. */
 export function createAudioDriver(graph?: EngineGraph): AudioDriver {
   const call = makeCall();
+  // A host that makes an audio driver has no UI tick to pump offline jobs (the CLI, the Node addon, the test host), so
+  // their promises settle through the poll's native wait (src/offline.ts) instead.
+  setOfflineWait(OFFLINE_WAIT_MS);
 
   const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
   const STEREO: HostShape = { kind: "multi", channels: 2 };

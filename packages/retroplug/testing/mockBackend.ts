@@ -6,6 +6,7 @@
 
 import type { ApuState, ApuSquareState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, ResourceType, TraceLine, ZipEntry } from "../src/backend";
 import { savFromJson } from "../src/lsdj";
+import type { OfflineRunRequest, OfflineRunResult } from "../src/offline";
 import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
 import { rebuildKeyOf } from "../src/graph/buildGraph";
 import { canonicalJson } from "../src/graph/canonicalJson";
@@ -800,6 +801,13 @@ export class MockBackend implements Backend {
 
   rejectPendingJobs(reason: string): void {
     this.jobs.rejectAll(reason);
+  }
+
+  // The mock tier has no graph executor, so it runs no offline job: a caller learns so rather than getting buffers no
+  // graph produced.
+  offlineRun(_request: OfflineRunRequest): Promise<OfflineRunResult> {
+    this.log.push("offlineRun");
+    return Promise.reject(new Error("offline jobs need a native host: the mock backend cannot run graphs"));
   }
 
   getFrame(id: number): FrameData | null {

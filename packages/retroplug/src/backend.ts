@@ -18,6 +18,7 @@
 // belongs in the application layer, not here.
 
 import type { CapabilityArgs, CapabilityOp, CapabilityProgress, CapabilityResults } from "./capability";
+import type { OfflineRunRequest, OfflineRunResult } from "./offline";
 import type { Platform, Core } from "./platform";
 import type { TapArm } from "./graph/buildGraph";
 
@@ -237,10 +238,28 @@ export interface Backend {
     onProgress?: (p: CapabilityProgress) => void,
   ): Promise<CapabilityResults[O]>;
 
-  /** Settle what has completed since the last look: the control plane's tick calls it, and it still drains the
-   *  completions a close left owed (a no-op only when nothing is pending and nothing is owed). Returns how many are
-   *  still pending. */
+  /** Settle what has completed since the last look, capability and offline jobs both: the control plane's tick calls
+   *  it, and it still drains the completions a close left owed (a no-op only when nothing is pending and nothing is
+   *  owed). Returns how many are still pending. */
   pumpJobs(): number;
+
+  // --- Offline jobs (src/offline.ts, docs/modular-graph-phase-d2-design.md section 3) ------------------------------
+
+  /** Run a graph document to completion on a host of its own, apart from the running graph: its inputs (audio, or a
+   *  file native decodes and windows) then its outputs are the document's res:1, res:2 and on, and the buffers
+   *  `returns` names come back. Rejects with native's reason when the job is refused or fails (an OfflineRunError,
+   *  carrying the file inputs' reports, for a failure); never for native's bound on outstanding jobs, past which runs
+   *  wait in TS for room. The mock rejects every job: only a native host runs graphs.
+   *
+   *  What settles it: in a host with a UI tick, the tick's pumpJobs. In a host with none (the CLI, the Node addon, the
+   *  test host) the poll's native wait, which the audio driver turns on as it is made (createAudioDriver, or
+   *  setOfflineWait): a host of that kind that makes no audio driver and calls no pump leaves the promise pending.
+   *
+   *  Zero frames: an input whose window comes out empty is accepted (its report says `frames: 0`, its buffer comes back
+   *  empty) but names no resource, so a document cannot bind it; an output of no frames is refused. A caller whose
+   *  chain meets an empty buffer (an empty window, a resample whose length comes out 0) submits nothing after it and
+   *  makes what those jobs would have made itself. */
+  offlineRun(request: OfflineRunRequest): Promise<OfflineRunResult>;
 
   /** Reject every pending capability promise with `reason`: the project closed, and the nodes they named with it. A
    *  real client's queue is its engine's, shared by every emulator client of a runtime, so this reaches theirs too. */
@@ -442,7 +461,7 @@ export type EmulatorBackend = Pick<
   | "putResource" | "releaseResource"
   | "setGraph" | "loadScriptPack" | "setParam"
   | "pressButton" | "stageNodeMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
-  | "capability" | "pumpJobs" | "rejectPendingJobs"
+  | "capability" | "pumpJobs" | "rejectPendingJobs" | "offlineRun"
 >;
 
 /** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */

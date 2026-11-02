@@ -86,8 +86,9 @@ retroplug_add_test_binary(
 # adapters, down to test/n8/FakeN8.hpp's serial port), TS nodes run behind the C ABI in the script host, a script
 # node pack loads beside the built-in one into runtimes of its own and reloads, the generation it replaced freed off
 # the audio thread, the protocol script nodes send what the DSP kernel they replaced
-# was recorded sending, and every document in buildGraph's goldens, its role goldens among them, plans on it.
-# A hidden bench times a script node per block.
+# was recorded sending, every document in buildGraph's goldens, its role goldens among them, plans on it, and an
+# offline job (docs/modular-graph-phase-d2-design.md section 3) runs a document to completion on a worker host of its
+# own, apart from the live plan. A hidden bench times a script node per block, another an offline job.
 # Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
 # CountingAllocator.cpp is shared with retroplug-graph-test, for the no-allocation checks. The script tests' bundle
 # (the authoring layer for their toy nodes) is embedded here alone: cmake/bundles.cmake, retroplug-script-test-bundle.
@@ -101,6 +102,7 @@ retroplug_add_test_binary(
              test/engine-graph/HostIo.test.cpp
              test/engine-graph/Devices.test.cpp        # rp.host.devices/1: the links a hardware node binds by name
              test/engine-graph/Capabilities.test.cpp   # rp.system.memory/1, sram/1, rom/1 as asynchronous jobs
+             test/engine-graph/OfflineJobs.test.cpp    # a document run to completion on a worker host of its own
              test/engine-graph/N8Node.test.cpp         # rp.n8.nes: the real cart as a node, its jobs on the link
              test/engine-graph/N8Adapters.test.cpp     # rp.n8.nes through N8CartLink / N8Host to a fake serial port
              test/engine-graph/Surface.test.cpp        # rp.launchpad.surface-in / -out: the control surface as nodes

@@ -18,6 +18,7 @@ import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transpor
 import { savFromJson as savFromJsonTs } from "./lsdj";
 import { makeCall } from "./rpcClient";
 import { CapabilityJobs, type JobCompletion, type JobRequest, type JobSubmitResult } from "./capability";
+import { OfflineJobs, type OfflineSubmitResult, type OfflineWireDrain, type OfflineWireRequest } from "./offline";
 
 
 // --- file dialog (async, UI-direct) ------------------------------------------------------------------
@@ -116,10 +117,23 @@ function sharedJobs(): CapabilityJobs {
   return realJobs;
 }
 
+// The offline jobs' queue, shared by every emulator client of a runtime for the capability jobs' reason: native's
+// completion queue is one per engine.
+let realOffline: OfflineJobs | null = null;
+
+function sharedOffline(): OfflineJobs {
+  realOffline ??= new OfflineJobs({
+    submitOfflineJob: (request: OfflineWireRequest) => makeCall()("submitOfflineJob", request) as OfflineSubmitResult,
+    drainOfflineJobs: (waitMs: number) => makeCall()("drainOfflineJobs", waitMs) as OfflineWireDrain,
+  });
+  return realOffline;
+}
+
 /** The emulator lifecycle / live params / input / snapshot-reads facet. Throws if no RPC surface is bound. */
 export function createEmulatorClient(): EmulatorBackend {
   const call = makeCall();
   const jobs = sharedJobs();
+  const offline = sharedOffline();
   return {
     // Native answers { id } or { error }: one optional each way, so a refused put has no id to name.
     putResource: (spec: ResourceSpec): PutResourceResult => {
@@ -138,7 +152,9 @@ export function createEmulatorClient(): EmulatorBackend {
     readRam: (id) => bytesOrNull(call("readRam", id)),
     writeRam: (id, offset, bytes) => call("writeRam", id, offset, bytes) as boolean,
     capability: (nodeId, op, args, onProgress) => jobs.run(nodeId, op, args, onProgress),
-    pumpJobs: () => jobs.pump(),
+    // One pump for both kinds: the UI tick's, and the one after each submission.
+    pumpJobs: () => jobs.pump() + offline.pump(),
+    offlineRun: (request) => offline.run(request),
     rejectPendingJobs: (reason) => jobs.rejectAll(reason),
     getFrame: (id): FrameData | null => {
       const r = call("getFrame", id) as { width: number; height: number; published: boolean; data?: Uint8Array } | null;
