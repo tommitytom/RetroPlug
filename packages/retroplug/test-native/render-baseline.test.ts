@@ -165,6 +165,11 @@ test("the fixture-free renders (smsggdj songs, the SGB jingle) write the files t
   await holdCases("none");
 });
 
+// What the two checks below prove about a recording: a run in which either failed would bake the misalignment into the
+// golden it writes, so the recording writes only when both held (as kit-baseline's sourcesProven).
+let lsdjEndsProven = false;
+let stemsAligned = false;
+
 test("LSDj renders to the files the golden records", async () => {
   const rendered = await holdCases("lsdj");
   // A song detected to its HFF stop ends at one frame whether it renders as a mix or as stems. Coarse: the end is
@@ -173,6 +178,7 @@ test("LSDj renders to the files the golden records", async () => {
   const stems = rendered.get("lsdj/telemelt/hff/index-3/channels")!;
   expect(stems.frames, "the stems' HFF end").toBe(mix.frames);
   expect(stems.result.renderedMs).toBe(mix.result.renderedMs);
+  lsdjEndsProven = true;
 });
 
 // The left lane of a 16-bit stereo WAV's samples.
@@ -225,6 +231,7 @@ test("an LSDj split render's stems line up with its mix: their sum matches it at
   const at = first + 2048; // a window inside the song, with room for the lags either side
   expect(at + 8192 + 1024 < m.length, "the mix sounds early enough to compare").toBe(true);
   expect(bestLag(m, sum, at, 8192, 1024), "the summed stems' lag against the mix").toBe(0);
+  stemsAligned = true;
 });
 
 test("risa renders to the files the golden records", async () => {
@@ -236,6 +243,9 @@ if (UPDATE)
     const missing = CASES.filter((c) => recorded[c.name] === undefined).map((c) => c.name);
     if (missing.length)
       throw new Error(`a recording holds every case, and these were not rendered: ${missing.join(", ")}`);
+    // The case runs even after an earlier one failed, so a run whose stems or ends were not held records nothing.
+    if (!lsdjEndsProven || !stemsAligned)
+      throw new Error("a recording needs the LSDj stems to end where the mix does and to line up with it at lag 0");
     const text = new TextEncoder().encode(goldenText({ target: BASELINE_TARGET, cases: recorded }));
     expect(be.writeFileAtomic(__RENDER_GOLDEN__, text), `write ${__RENDER_GOLDEN__}`).toBe(true);
     console.log(`# recorded ${CASES.length} renders to ${__RENDER_GOLDEN__}`);
