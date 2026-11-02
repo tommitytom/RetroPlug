@@ -201,6 +201,35 @@ echo '{ "name": "TST", "build": [{ "file": "nope.wav", "name": "SQR" }] }' >"$TM
 check "a rejected compile exits 1" 1 $?
 contains "the refusal carries the slot's reason" "$TMP/build-kit-missing.err" "did not compile"
 
+#     A sample the bank holds only in part keeps the bytes that fit, so the read-back check cannot see it; the CLI
+#     renders the compiler's reason on stderr instead. Two copies of one 123000-frame silent source (about 32000
+#     frames at the kit rate, 15984 of the sample space's 16288 bytes) leave a few hundred bytes for the second.
+big="$TMP/big.wav"
+{
+	printf 'RIFF\x14\xc1\x03\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\xf0\xc0\x03\x00'
+	head -c 246000 /dev/zero # 123000 mono 16-bit frames, all zero
+} >"$big"
+echo '{ "name": "CLIP", "build": [{ "file": "big.wav", "name": "A" }, { "file": "big.wav", "name": "B" }] }' >"$TMP/kit-clip.json"
+"$CLI" lsdj-rom build-kit "$TMP/kit-clip.json" "$TMP/clip.kit" >"$TMP/build-kit-clip.out" 2>"$TMP/build-kit-clip.err"
+check "a partly placed sample still builds the kit" 0 $?
+contains "the clipped slot is warned about, with the compiler's reason" "$TMP/build-kit-clip.err" \
+	"warning: sample 1 (big.wav): the kit's sample space ran out"
+
+#     A filter flag with no --gain is the case the old RPC refused outright (`Field named 'gain' not found`), so it is
+#     driven here through the real flags: the build exits 0, and the bank differs from the same spec's without the flag,
+#     which is what proves the effect reached the chain rather than being dropped.
+echo '{ "name": "TST", "build": [{ "file": "tone.wav", "name": "SQR" }] }' >"$TMP/kit-filter.json"
+"$CLI" lsdj-rom build-kit "$TMP/kit-filter.json" "$TMP/flat.kit" >"$TMP/build-flat.log" 2>&1
+check "the filter case's plain build exits 0" 0 $?
+"$CLI" lsdj-rom build-kit "$TMP/kit-filter.json" "$TMP/filtered.kit" --filter LowPass --cutoff 2000 >"$TMP/build-filtered.log" 2>&1
+check "lsdj-rom build-kit compiles a --filter with no --gain" 0 $?
+if cmp -s "$TMP/flat.kit" "$TMP/filtered.kit"; then
+	echo "FAIL - the filter flag changed no byte of the bank"
+	fails=$((fails + 1))
+else
+	echo "ok   - the filter flag reached the chain (the bank moved)"
+fi
+
 # 7. Stripping is position-preserving: output length must equal input length, so a stack trace from the
 #    emitted .js points at the right line of the .ts.
 for f in pass.test fail.test helper; do

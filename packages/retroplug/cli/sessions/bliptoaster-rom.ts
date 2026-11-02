@@ -22,6 +22,7 @@
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import type { KitEffect, RisaDmcSampleSpec } from "../../src/audioDriver";
+import { NO_SLOT_REASON } from "../../src/kit";
 import { encodeWav } from "../wav";
 import {
   BlipToasterRom,
@@ -46,10 +47,6 @@ import {
   CHR_BANK_SIZE,
   type AssembleSlot,
 } from "../../src/risa/rom";
-
-// What a slot the compiler left empty with no reason is: the compile result's contract makes that a compiler bug,
-// not a full bank, so the message says so instead of guessing at a cause.
-const NO_SLOT_REASON = "the compiler left the slot empty without saying why";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -103,7 +100,7 @@ function readOrThrow(s: Session, path: string, what: string): Uint8Array {
 
 // --- kit compile (the TypeScript kit compiler, s.audio.compileDmc) ----------------------------------------
 
-// Per-sample shaping. The DMC codec skips dither (1-bit only) — so gain/filter only. --no-normalize maps
+// Per-sample shaping. The DMC compile skips dither (1-bit only), so gain/filter only. --no-normalize maps
 // to the DMC 7-bit normalize (spec.normalize) rather than a gain effect, so there's no double-normalize.
 function effectsFromFlags(args: string[]): KitEffect[] {
   const fx: KitEffect[] = [];

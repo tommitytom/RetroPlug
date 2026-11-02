@@ -18,16 +18,13 @@
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import type { KitEffect } from "../../src/audioDriver";
+import { NO_SLOT_REASON } from "../../src/kit";
 import { encodeWav } from "../wav";
 import { LsdjRom, buildKitBank, sampleBytesFromBank, kitSampleSpace, KIT_MAX_SAMPLE_SPACE, type KitSample } from "../../src/lsdj/rom";
 
 // LSDj kit samples carry no intrinsic rate (pitch is set by the note played); export at a nominal
 // reference rate — overridable with --rate. 11468 Hz is LSDj's middle-note playback rate.
 const DEFAULT_SAMPLE_RATE = 11468;
-
-// What a slot the compiler left empty with no reason is: the compile result's contract makes that a compiler bug,
-// not a full bank, so the message says so instead of guessing at a cause.
-const NO_SLOT_REASON = "the compiler left the slot empty without saying why";
 
 const enc = new TextEncoder();
 const sanitize = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") || "_";

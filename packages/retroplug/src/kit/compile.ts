@@ -71,6 +71,10 @@ export interface KitCompileResult {
   errors: (string | null)[];
 }
 
+/** What a slot the compiler left empty with no reason is: the compile result's contract makes that a compiler bug, not
+ *  a full bank, so a caller's message says so instead of guessing at a cause. */
+export const NO_SLOT_REASON = "the compiler left the slot empty without saying why";
+
 // The window caps: at most a kit's worth of frames at the kit rate, scaled to the decoded rate in each compiler's own
 // arithmetic (LSDj in float with the ratio first, risa in double with the product first: OfflineJobs' offlineWindow).
 const LSDJ_CAP: OfflineCap = { frames: LSDJ_MAX_SAMPLE_FRAMES, rate: LSDJ_KIT_RATE, arithmetic: "float-ratio" };
