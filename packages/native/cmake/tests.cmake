@@ -121,7 +121,9 @@ retroplug_add_test_binary(
              src/host/n8/N8Host.cpp                    # them; the hosts that own an N8Host compile their own)
              src/host/n8/N8Menu.cpp
              ${SCRIPT_TEST_BUNDLE_C}                    # rp_script_test_bundle
-    LIBS     retroplug-backend
+    LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
+             retroplug-dsp-kernels                     # OfflineJobs.test.cpp holds a job's buffers to the kernels
+             retroplug-dsp-resample                    # and to resampledLength, which the resample's node wraps
     INCLUDES ${RP_QUICKJS_INCLUDE}
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
@@ -269,7 +271,7 @@ retroplug_add_test_binary(
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
              test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's math
              test/graph/DspNodes.test.cpp             # the rp.dsp nodes, through real plans, against those kernels
-             test/graph/DspBufferNodes.test.cpp       # the rp.dsp nodes that read a whole buffer: normalize, DPCM, seedFrom
+             test/graph/DspBufferNodes.test.cpp       # the rp.dsp buffer-reading nodes: normalize, DPCM, seedFrom
              test/graph/DspResample.test.cpp          # rp.dsp.resample, through real plans, against its kernel
              # The kit path's effect wrappers, so the two buffer-reading nodes are held to what
              # rp::lsdj::processEffect does to a buffer, not only to the kernels underneath it. They need the kernels,

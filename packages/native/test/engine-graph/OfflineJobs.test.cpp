@@ -468,7 +468,7 @@ TEST_CASE("a kit-shaped job names one buffer twice and runs the buffer-reading n
     for (std::size_t i = 0; i < frames; ++i) levels[i] = rp::dsp::codeToLevel(codes[i], 4);
     CHECK(c.buffers[1].samples == levels);
 
-    // The DMC bits as levels, the same encode the codec's bytes come from.
+    // The DMC bits as levels, the encode a risa slot's DMC bytes are packed from.
     std::vector<std::uint8_t> bits(frames);
     rp::dsp::encodeDpcm(input.data(), input.size(), true, bits.data());
     std::vector<float> dpcm(frames);
@@ -531,7 +531,8 @@ TEST_CASE("a guard that fires in an offline job is counted in its completion; a 
     guarded(run(runaway, ordinary), biquadReason);
     guarded(run(diffusion, huge), ditherReason);
 
-    // The triggers taken away: the +96 dB peak and the error diffusion over ordinary samples.
+    // The triggers taken away: the +96 dB peak, the above-Nyquist filter and the error diffusion, each over ordinary
+    // samples. The low-pass inside Nyquist is the last route's own control: the runaway is the setting, not the signal.
     const auto peakOrdinary = run(peak, ordinary);
     INFO(peakOrdinary.error);
     CHECK(peakOrdinary.ok);
@@ -539,6 +540,13 @@ TEST_CASE("a guard that fires in an offline job is counted in its completion; a 
     CHECK(peakOrdinary.guardReason.empty());
     REQUIRE(peakOrdinary.buffers.size() == 1);
     CHECK_FALSE(peakOrdinary.buffers[0].nonFinite);
+    const char* settled = R"({"id":"x","type":"rp.dsp.biquad","settings":{"channels":1,"type":"low-pass"},
+                             "params":{"frequency":20000,"q":1}})";
+    const auto  settledOrdinary = run(settled, ordinary);
+    INFO(settledOrdinary.error);
+    CHECK(settledOrdinary.ok);
+    CHECK(settledOrdinary.guardsFired == 0);
+    CHECK(settledOrdinary.guardReason.empty());
 
     // A value no guard touches reaches the recording, and the returned buffer says so: a plain gain over the huge
     // samples overflows to infinities, which the job completes with (nothing in it misbehaved) and reports.
@@ -1144,6 +1152,8 @@ TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit
             }
         std::atomic<std::size_t> atWarm{0}, atLast{0};
         std::atomic<bool>        playing{true};
+        std::atomic<int>         blocks{0};          // how many the audio thread has finished
+        std::atomic<bool>        drainBesideBlocks{false};  // a drain ran while it was still playing
         e.setAudioThreadOwns(true);
         std::thread audio([&] {
             std::vector<float> l(kFrames), r(kFrames);
@@ -1156,6 +1166,7 @@ TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit
                 if (b == kBlocks - 1) atLast.store(e.offlineJobsOutstanding(), std::memory_order_release);
                 e.drainCommands();
                 e.processBlock(kFrames, outs, 2);
+                blocks.store(b + 1, std::memory_order_release);
                 for (std::uint32_t i = 0; i < kFrames; ++i) {
                     out.push_back(l[i]);
                     out.push_back(r[i]);
@@ -1165,16 +1176,22 @@ TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit
             counted = rp::test::endCountingAllocations();
         });
         // The main thread drains the pool beside the running blocks, as a host's control thread does, so this case is
-        // the one that watches a drain and a processBlock interleave. The long jobs never complete, so the drains find
-        // nothing and change nothing else.
+        // the one that watches a drain and a `processBlock` interleave, and it records that it did rather than trusting
+        // the schedule: a drain that ran while the audio thread had blocks left. The long jobs never complete, so the
+        // drains find nothing and change nothing else.
         if (withJobs)
-            while (playing.load(std::memory_order_acquire)) e.drainOfflineJobs(std::chrono::milliseconds(5));
+            while (playing.load(std::memory_order_acquire)) {
+                e.drainOfflineJobs(std::chrono::milliseconds(5));
+                if (blocks.load(std::memory_order_acquire) < kBlocks)
+                    drainBesideBlocks.store(true, std::memory_order_release);
+            }
         audio.join();
         e.setAudioThreadOwns(false);
         if (withJobs) {
             CHECK_FALSE(ids.empty());
             CHECK(atWarm.load(std::memory_order_acquire) > 0);
             CHECK(atLast.load(std::memory_order_acquire) > 0);
+            CHECK(drainBesideBlocks.load(std::memory_order_acquire));
             for (const auto id : ids) CHECK(e.cancelOfflineJob(id));
             CHECK(collect([&](auto w) { return e.drainOfflineJobs(w); }, ids).size() == ids.size());
         }

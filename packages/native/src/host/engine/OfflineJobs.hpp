@@ -64,8 +64,7 @@ namespace rp::host {
 // windows exactly, both of which depend on the decoded rate a submission cannot know:
 //   - FloatRatio, the LSDj window's: ceil(float(frames) * (float(decodedRate) / float(rate))), every step in float,
 //     the ratio first;
-//   - DoubleScale, risa's DMC window: ceil(double(frames) * double(decodedRate) / rate), in double, the product
-//     first.
+//   - DoubleScale, risa's DMC window: ceil(double(frames) * double(decodedRate) / rate), in double, the product first.
 enum class OfflineCapArithmetic : std::uint8_t { FloatRatio, DoubleScale };
 
 struct OfflineCap {
