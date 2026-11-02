@@ -129,10 +129,11 @@ function sharedOffline(): OfflineJobs {
   return realOffline;
 }
 
-/** This runtime's offline queue as the `offlineRun` runner the kit compiles take. It is the queue of the emulator
- *  client above, not a second one over the same engine: native's completion queue is one per engine, so two queues
- *  would each drain the other's completions. Nothing throws here with no RPC surface bound: the channel is resolved
- *  inside the queue's port lambdas, so it is the first run's submission that fails, not this call. */
+/** This runtime's offline queue as the `offlineRun` runner the kit compiles take. It is the shared queue
+ *  `createEmulatorClient` below uses, not a second one over the same engine: native's completion queue is one per
+ *  engine, so two queues would each drain the other's completions. Nothing throws here with no RPC surface bound: the
+ *  channel is resolved inside the queue's port lambdas, so the first run rejects with the channel's error rather than
+ *  this call throwing. */
 export function offlineRunner(): Pick<Backend, "offlineRun"> {
   const offline = sharedOffline();
   return { offlineRun: (request) => offline.run(request) };

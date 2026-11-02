@@ -1202,7 +1202,7 @@ capability jobs' live set so one pump settles both, the native wait is turned on
 no UI tick, and runs past the 64-job bound wait in a FIFO rather than being refused busy. A port call that throws fails
 the runs it belongs to, never the queue: a submit throw rejects that run, a drain throw rejects every run the queue was
 holding, and the poll always clears its flag. The jobs native still holds after a drain threw are no longer counted by
-the queue, so a fan-out submitted before they are drained is refused busy rather than held.
+the queue, so a fan-out past the bound submitted before they are drained is refused busy rather than held.
 
 The txiki host `TjsHostRuntime` comes from
 [`deps/dpf.js`](../deps/dpf.js), not the shared core.

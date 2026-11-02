@@ -22,9 +22,9 @@
 // macrotask yield once a waited step returns in a host with timers.
 //
 // Native holds at most OFFLINE_MAX_JOBS outstanding per engine and refuses a submission past that as busy. The queue
-// never surfaces that: one runtime's pending promises are exactly its engine's outstanding jobs (each pending id is one
-// job native holds until a drain hands it back; a drain that threw is the exception, and the jobs native still holds
-// are then no longer counted here), so a run made while OFFLINE_MAX_JOBS are pending is held here, in submission
+// surfaces that only after a drain that threw: one runtime's pending promises are exactly its engine's outstanding jobs
+// (each pending id is one job native holds until a drain hands it back; after a drain that threw, the jobs native still
+// holds are no longer counted here), so a run made while OFFLINE_MAX_JOBS are pending is held here, in submission
 // order, and submitted as completions make room. A held job is refused (its other refusals) only when it is
 // submitted.
 
@@ -253,7 +253,8 @@ export class OfflineJobs implements JobQueue {
   /** Run a job. Rejects with native's reason when it is refused (at once, or when a held run is submitted); otherwise
    *  settles with its completion, or rejects with an OfflineRunError carrying native's reason. Never rejects because
    *  native's bound is full: the run waits here for room instead. A drain that threw (settle) is the one exception: the
-   *  jobs native still holds are no longer counted here, so a run submitted before they are drained is refused. */
+   *  jobs native still holds are no longer counted here, so a run submitted before they are drained can be refused
+   *  busy. */
   run(request: OfflineRunRequest): Promise<OfflineRunResult> {
     const wire = toWire(request);
     let waiter: Pending | null = null;
