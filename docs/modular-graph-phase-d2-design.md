@@ -95,8 +95,8 @@ with the pool.
   `rp::dsp::inputSeed` over that whole buffer, so channel 0 matches the kit path's seed. The kit graph points it at the
   resampled buffer the dither plays, at its full pre-trim length.
 - **`rp.dsp.dpcm`**: risa's DMC encoder as a buffer-reading node. `convertF32ToDpcm`'s whole-buffer DC blocker, peak
-  normalise and 1-bit delta move into a kernel in `retroplug-dsp-kernels`; the node runs the kernel over its bound buffer
-  at activate into storage it owns, then streams the delta bits as audio levels of plus and minus one.
+  normalise and 1-bit delta move into a kernel in `retroplug-dsp-kernels`; the node runs the kernel over its bound
+  buffer at activate into storage it owns, then streams the delta bits as audio levels of plus and minus one.
 - **`rp.host.guards/1`**: a host service (`rp_node.h`) a node reports into when one of its guards replaces what its
   kernel would have computed, with a string-literal reason, called on the block thread and never blocking or
   allocating. The biquad's reset-and-silence and the dither's restart report there; the live engine offers no service,

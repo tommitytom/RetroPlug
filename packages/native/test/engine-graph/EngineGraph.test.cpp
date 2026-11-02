@@ -1182,9 +1182,9 @@ TEST_CASE("a larger core joins and leaves beside a running Game Boy while the au
     // This is the whole path, the join and the leave beside a publishing plan and the running core's state reading
     // whole after both: a smoke run of it, not the case that catches a claim touching the publish's memory. Against a
     // registry that shared one buffer across slots it reported nothing in three runs under the thread sanitizer and
-    // three under the address sanitizer, because the interleaving that bug needs is too narrow for a plan's blocks to
-    // hit reliably (ad hoc runs at 256-frame blocks did catch the block thread writing through a stale pointer). The
-    // next case drives the registry alone and fails on it.
+    // three under the address sanitizer (why is open: spec/07 records it as unproven), while ad hoc runs at 256-frame
+    // blocks did catch the block thread writing through a stale pointer. The next case drives the registry alone and
+    // fails on it.
     const char* const kGba = "rp.mesen.gba";
     {
         Engine quiet(kRate);

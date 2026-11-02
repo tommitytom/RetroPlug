@@ -24,11 +24,11 @@
 extern "C" {
 void __tsan_ignore_thread_begin();
 void __tsan_ignore_thread_end();
-// GCC declares __tsan_write_range itself under -fsanitize=thread, as (void*, long); Clang leaves it to the runtime's
-// interface, whose size is an unsigned long, so only Clang is given a declaration.
-#if defined(__clang__)
-void __tsan_write_range(void* addr, unsigned long size);
-#endif
+// Declared with GCC's builtin type, (void*, long), for every compiler: GCC accepts a matching redeclaration in either
+// dialect and needs one under -std=c++20, where its builtin is not visible (an unsigned long size would clash with the
+// builtin under gnu++20); Clang has no builtin. The runtime's symbol is extern "C", so long against its uptr is the
+// same ABI.
+void __tsan_write_range(void* addr, long size);
 }
 #endif
 
@@ -39,10 +39,12 @@ inline void seqlockCopy(void* dst, const void* src, std::size_t n) {
     __tsan_ignore_thread_begin();
     std::memcpy(dst, src, n);
     __tsan_ignore_thread_end();
-    __tsan_write_range(dst, n);  // converts to either declaration's size type
+    __tsan_write_range(dst, static_cast<long>(n));
 #else
     std::memcpy(dst, src, n);
 #endif
 }
 
 }  // namespace rp
+
+#undef RP_SEQLOCK_TSAN  // private to this header: the copy above is all that reads it

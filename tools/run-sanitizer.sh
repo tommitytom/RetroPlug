@@ -40,7 +40,8 @@ echo "==> building retroplug-host (instrumented)"
 cmake --build "$builddir" -j"$(nproc)" --target retroplug-host
 
 # Any finding aborts the host -> nonzero exit -> the runner reports the file failed. Thread mode
-# reuses the Catch2 seqlock suppressions (the seam is expected to need none). Address mode
+# reuses the Catch2 suppression file (efsw's teardown only; the seqlock is annotated in
+# transport/SeqlockCopy.hpp rather than suppressed). Address mode
 # detects leaks at exit — the cross-thread new/delete handoff is exactly what it guards.
 if [ "$san" = thread ]; then
     export TSAN_OPTIONS="suppressions=$repo/packages/native/test/sanitizer/tsan.supp halt_on_error=1 second_deadlock_stack=1"
