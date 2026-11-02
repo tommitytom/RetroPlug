@@ -105,13 +105,25 @@ int threadCount() {
 #endif
 }
 
-// threadCount() once it reads `want`, or what it reads after ten seconds. A thread pthread_join has returned for can be
-// listed a moment longer: the kernel wakes the joiner as the exiting thread clears its id, before its task is released,
-// and on a loaded machine that gap is long enough to count it. A thread never joined stays listed past the deadline.
-int threadCountSettled(int want) {
+// A thread pthread_join has returned for can be listed in /proc/self/task a moment longer: the kernel wakes the joiner
+// as the exiting thread clears its id, before its task is released, and on a loaded machine that gap is long enough to
+// count it. Both sides of a joined-workers check allow for it: the count before is the least read over 200 ms (the
+// case before may have just joined its own workers), and the count after is read until it is no more than that, for
+// up to ten seconds. A thread still running stays listed past either.
+int threadCountBaseline() {
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    int        least = threadCount();
+    while (std::chrono::steady_clock::now() < until) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        least = std::min(least, threadCount());
+    }
+    return least;
+}
+
+int threadCountSettled(int atMost) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     int        n = threadCount();
-    while (n != want && std::chrono::steady_clock::now() < deadline) {
+    while (n > atMost && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         n = threadCount();
     }
@@ -452,7 +464,7 @@ TEST_CASE("a cancel stops an engine job, queued at once and running at its next 
 TEST_CASE("an engine destroyed with renders in flight cancels them and joins every worker",
           "[engine-graph][engine-jobs]") {
     TempDir    dir;
-    const int  before = threadCount();
+    const int  before = threadCountBaseline();
     const auto t0 = std::chrono::steady_clock::now();
     {
         Engine e(48000.0);
@@ -470,8 +482,8 @@ TEST_CASE("an engine destroyed with renders in flight cancels them and joins eve
         if (before >= 0) CHECK(threadCount() > before);
     }
     CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(60));
-    // Every worker joined, every render's runtime gone with it.
-    if (before >= 0) CHECK(threadCountSettled(before) == before);
+    // Every worker gone (the pool's destructor joins them), every render's runtime with it.
+    if (before >= 0) CHECK(threadCountSettled(before) <= before);
 }
 
 TEST_CASE("renders hold all but one of the pool's workers, so a graph job still runs beside them",
