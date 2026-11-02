@@ -250,7 +250,9 @@ made them false (chunking, the worker budget, the carry's rules).
   share one private `pull` loop; the carry (`{shape, id, rate, frames, streams}`) is dropped by `renderBlocks` and by a
   call of another key. The emulation behind dropped frames is not undone: the next audio starts at the next block.
   Exact mode runs the old splits, so parity is untouched. `RenderHost` always sets continuous (commit 4); the exact path
-  stays for the in-process library tests.
+  stays for the in-process library tests. A render assumes nothing else advances its engine between calls: the audio
+  driver's thread and the debug facet's stepping run the cores outside them and keep the carry, and no render uses
+  either.
 - **The settle shape.** The library settles 1500 ms with a mix call and then streams a split render per channel. Under
   the drop rule that would start a split render's stems up to a block after its own mix, so a split render settles in
   the stream's shape. Making that unconditional moved the CLI's NES stems byte for byte, which is why commit 2 gated it

@@ -869,7 +869,8 @@ bool sounds(const std::vector<std::byte>& pcm) {
 
 namespace {
 
-// A second of the note pulled in calls of the lengths `ms`, a second note (an octave up) staged after call `offAfter`.
+// A second of the note pulled in calls of the lengths `ms`, a second note (an octave up) staged after call `offAfter`
+// (none when that is past the last call).
 struct Split {
     std::vector<double> ms;
     std::size_t         offAfter;
@@ -907,6 +908,9 @@ TEST_CASE("in continuous blocks a render's bytes do not depend on the lengths it
     }
     CHECK(sounds(continuous[0]));
     for (std::size_t k = 1; k < splits.size(); ++k) CHECK(continuous[k] == continuous[0]);
+    // And the second note is in them: a continuous run that never stages it differs, so the splits agree because each
+    // landed it at the one block end, not because every one of them lost it.
+    CHECK(pullSplit(true, {{480.0, 520.0}, 2}) != continuous[0]);
     CHECK(exact[1] != exact[0]);  // the second note at 470 ms against 480
     CHECK(exact[2] != exact[0]);  // at 490 ms
 }
