@@ -297,6 +297,7 @@ PY
 	fi
 	# Exact bytes are compared only on the golden's own build target, which the binary names (the same string the
 	# test-native suites key on); a Linux x86_64 build by another compiler agrees on the size and not on a hash.
+	# RP_RENDER_GOLDEN_REQUIRE_TARGET=1 (CI's linux-x64 job) turns that skip into a failure.
 	cat >"$TMP/build-target.ts" <<'TS'
 import { bootSession } from "retroplug-cli";
 console.log("build-target " + bootSession().audio.buildTarget());
@@ -304,15 +305,22 @@ console.log("build-target " + bootSession().audio.buildTarget());
 TS
 	have_target="$("$CLI" run "$TMP/build-target.ts" --out "$TMP/build-target" 2>/dev/null | sed -n 's/^build-target //p')"
 	want_target="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["target"])' "$GOLDEN")"
-	if [ "$have_target" = "$want_target" ]; then
+	if [ -z "$have_target" ]; then
+		# The binary always names its target, so a probe that printed none is a broken probe, not a foreign build.
+		echo "FAIL - the CLI's WAV hash: the binary did not name its build target"
+		fails=$((fails + 1))
+	elif [ "$have_target" = "$want_target" ]; then
 		if [ "${got%% *}" = "${want%% *}" ]; then
 			echo "ok   - the CLI's WAV hashes to the golden's (${got%% *})"
 		else
 			echo "FAIL - the CLI's WAV hashes to ${got%% *}, the golden's is ${want%% *}"
 			fails=$((fails + 1))
 		fi
+	elif [ "${RP_RENDER_GOLDEN_REQUIRE_TARGET:-}" = "1" ]; then
+		echo "FAIL - the CLI's WAV hash: this build is $have_target, the golden's target is $want_target"
+		fails=$((fails + 1))
 	else
-		echo "skip - the CLI's WAV hash: this build is ${have_target:-unknown}, the golden's target is $want_target"
+		echo "skip - the CLI's WAV hash: this build is $have_target, the golden's target is $want_target"
 	fi
 
 	# A failed render and a usage error exit 1 with their messages, naming the path as typed.

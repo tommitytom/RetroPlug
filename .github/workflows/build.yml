@@ -106,6 +106,10 @@ jobs:
         run: pnpm sdl:smoke
 
       - name: CLI TypeScript harness
+        # The render leg compares the CLI's WAV hash to the golden's only on the golden's build target; this job is
+        # that target, so a foreign build fails here instead of skipping.
+        env:
+          RP_RENDER_GOLDEN_REQUIRE_TARGET: "1"
         run: pnpm test:cli-ts
 
       # retroplug-sdl is in the default `all` target, so the Build step compiles and links it on
