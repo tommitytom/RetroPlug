@@ -8,14 +8,17 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 #include <rfl/Literal.hpp>
 
 #include "dsp/Biquad.hpp"
 #include "dsp/Dither.hpp"
+#include "dsp/Dpcm.hpp"
 #include "dsp/Gain.hpp"
 #include "graph/node.hpp"
 
@@ -91,6 +94,35 @@ struct DitherNodeSettings {
     DitherAlgorithm algorithm = DitherAlgorithm::make<"none">();
     int             bits = 4;  // 1 .. 16, the kernel's range
     std::uint32_t   seed = kDefaultDitherSeed;
+    // A buffer whose hash is the seed instead: the kit path's, `rp::dsp::inputSeed` over the whole buffer the dither
+    // quantises (a kit's resampled sample at the bank rate, before it is trimmed to whole frames). Empty, the seed
+    // above is used and nothing about the node changes. A settings ref rather than a port, for the reason
+    // rp.dsp.resample's buffer is one (DspResampleNodes.cpp has the threading argument): the hash is taken at activate,
+    // on the control thread, from a resource create has pinned. What that costs is ordering: an rp.core.buffer-recorder
+    // writing this buffer in the same plan is not ordered before this node, so the hash is of whatever the buffer held
+    // when activate ran. D2's driver records a buffer in one job and reads it in the next.
+    rp::resource_ref<"audio-buffer"> seedFrom;
+};
+
+struct NormalizeNodeSettings {
+    // The buffer is a settings ref, as rp.dsp.resample's is: the peak is measured at activate, on the control thread,
+    // over a resource create has pinned, and the node streams that buffer rather than reading a handle on the block
+    // thread. Empty names none, which a document is refused for: a normalise without a buffer is silence with no
+    // reason to play it.
+    rp::resource_ref<"audio-buffer"> buffer;
+    // The kit spec's gain, a setting and not a param. A normalising gain is `gain / peak` (the kit's `GainEffect`
+    // folds the peak in exactly that way): about 7.4 for a source peaking at -26 dBFS, and negative for a phase flip,
+    // where a param's range would clamp a document's value silently. A setting carries any float the spec has.
+    float                            gain = 1.0f;
+    std::uint32_t                    channels = 2;
+};
+
+struct DpcmNodeSettings {
+    rp::resource_ref<"audio-buffer"> buffer;
+    // The 7-bit map's peak normalisation, risa's per-sample flag: on, the buffer's DC-blocked peak divides a 45 swing
+    // (its loudest sample lands near full scale); off, the map is a plain 63 / 32768 scale. A setting, so no param
+    // range clamps it.
+    bool normalize = true;
 };
 
 }  // namespace dsp
@@ -313,7 +345,9 @@ struct Biquad {
 // their state from it, so an infinity there only quantises that one sample to full scale). A channel that comes out of
 // a block with any of its state not finite therefore has its state restarted from the settings: the latch lasts one
 // block rather than the stream. The block itself is left as the kernel quantised it, which is finite and at worst full
-// scale, so only the state is restarted and the click is one block's.
+// scale, so only the state is restarted and the click is one block's. A `seedFrom` buffer restarts it from the word
+// the stream started from: the buffer's hash, not a live patch's seed, so a recovered channel draws that seed's
+// sequence again from its first draw where the kit kernel would still be latching.
 //
 // That restart is a second place the node differs from the kernel run directly, and a kit source can carry the regime:
 // nothing between `SampleCache` and the kit compile checks a sample for finiteness, so a 32-bit float WAV carrying a
@@ -349,8 +383,12 @@ struct Dither {
 
     rp::dsp::DitherAlgorithm algorithm = rp::dsp::DitherAlgorithm::None;
     int                      bits = 4;
-    std::uint32_t            seed = kDefaultDitherSeed;
-    bool                     restart = true;  // the next block seeds the noise from the three fields above
+    std::uint32_t            seed = kDefaultDitherSeed;        // the setting, when `seedFrom` names nothing
+    std::uint32_t            hashedSeed = kDefaultDitherSeed;  // `seedFrom`'s hash, taken at activate
+    std::uint32_t            activeSeed = kDefaultDitherSeed;  // what the noise is seeded from: the hash, or `seed`
+    // The buffer a `seedFrom` names, pinned by the instance (so it outlives every block) and read only at activate.
+    const rp_audio_buffer* seedFrom = nullptr;
+    bool                   restart = true;  // the next block seeds the noise from the fields above
 
     void attach(std::span<std::byte> mem) noexcept {
         // Never destroyed, like the biquad's states above; the static_assert holds that Dither is trivially
@@ -365,13 +403,26 @@ struct Dither {
         algorithm = ditherAlgorithmOf(s.algorithm);
         bits = s.bits;
         seed = s.seed;
+        seedFrom = s.seedFrom.audio();
+        // A commit restarts the noise, from whichever word the stream was seeded by: a `seedFrom` buffer's hash is
+        // taken once, at activate, so a commit that changes `seed` while one is named changes nothing about the noise
+        // (the hash replaces the setting), and a commit without one takes the new value.
+        activeSeed = seedFrom ? hashedSeed : seed;
         restart = true;
     }
 
-    void activate(double, std::uint32_t) noexcept { restart = true; }
+    // The seed the noise starts from is settled here, on the control thread: a `seedFrom` buffer is hashed whole
+    // (`rp::dsp::inputSeed`), and without one the `seed` setting stands. The hash is the kit path's: over the first
+    // channel's samples, which are all a kit's mono buffer has, and over every one of them (the trimmed input would be
+    // a different word). A re-activation hashes the buffer again, which is the same word.
+    void activate(double, std::uint32_t) noexcept {
+        if (seedFrom) hashedSeed = rp::dsp::inputSeed(seedFrom->data[0], seedFrom->frames);
+        activeSeed = seedFrom ? hashedSeed : seed;
+        restart = true;
+    }
 
     void seedState(rp::dsp::Dither& state, std::uint32_t channel) const noexcept {
-        state.init(algorithm, bits, seed + channel * kChannelSeedStep);
+        state.init(algorithm, bits, activeSeed + channel * kChannelSeedStep);
     }
 
     void process(const rp::Block& b) noexcept {
@@ -391,6 +442,170 @@ struct Dither {
     }
 };
 
+// ---- rp.dsp.normalize ---------------------------------------------------------------------------------------------
+
+// A buffer player that normalises, for a kit chain's normalising gain (`GainEffect{normalize: true}`): the whole
+// buffer's peak is measured at activate, `normalizedGain(gain, peak)` folds it into the gain exactly as
+// lsdj/Effects.cpp does, and the buffer is streamed times that gain, from its first frame, silence past its end. It
+// plays frames rather than seconds: the plan's rate is the buffer's in a kit job, and a buffer player's position is a
+// buffer frame.
+//
+// The peak is measured across the channels this node plays: each played channel's `rp::dsp::peak`, then the greatest
+// of those, which is the same fold the mono path makes, continued across the channels. A channel past the buffer's
+// last is silence and contributes nothing, so `channels: 1` over a stereo buffer is normalised by the channel it
+// plays and the unplayed one never scales it. One gain scales every channel, as the kit path's single multiply does
+// to its mono buffer, and no channel is normalised on its own. Kit sources are mono, so a kit compile never asks the
+// question.
+//
+// The peak is read where activation finds the buffer. An rp.core.buffer-recorder writing that buffer in the same plan
+// is not ordered before this node (a settings ref is not a binding the planner sees), so the peak is taken over
+// whatever the buffer held then, silence for a fresh one, and a normalise of zeros is the bare gain, with no
+// diagnostic. D2's driver records a buffer in one job and reads it in the next.
+//
+// Nothing is allocated, here or in `process`: the buffer is read where the resource table holds it, and the only state
+// is the scale and the position. So the node declares no `heap` and the planner plans it on the Pico, unlike
+// rp.dsp.resample, whose buffer needs r8brain built at activate.
+struct Normalize {
+    static constexpr const char* id = "rp.dsp.normalize";
+    static constexpr const char* name = "Normalize";
+    static constexpr const char* category = "dsp/source";
+    using Settings = NormalizeNodeSettings;
+
+    struct { rp::audio_out<rp::channels<2, "any">> out; } outputs;
+
+    static std::optional<std::string> validate(const Settings& s) {
+        if (auto e = checkChannels(s.channels, "a normalise")) return e;
+        if (s.buffer.ref.empty()) return "a normalise names an audio buffer";
+        return std::nullopt;
+    }
+    static void adjust_layout(Layout& l, const Settings& s) {
+        l.ports[0].channels = ChannelSpec::fixed(s.channels, "any");
+    }
+
+    const rp_audio_buffer* buffer = nullptr;  // pinned by the instance, so it outlives every block
+    float                  gain = 1.0f;       // the setting, as the last commit left it
+    std::uint32_t          channels = 2;      // the output's, which is how many of the buffer's the peak folds
+    float                  peak = 0.0f;       // the played channels', measured at activate
+    float                  scale = 1.0f;      // normalizedGain(gain, peak)
+    std::uint32_t          position = 0;      // the next buffer frame to play, 0 .. frames
+
+    // A commit never moves the buffer (a ref that moved is a rebuild) and never changes the channel count (a new
+    // layout rebuilds), and the peak is the last activate's, so a gain that changed takes effect from the next block
+    // with no block-thread work beyond the multiply.
+    void on_settings(const Settings& s) noexcept {
+        buffer = s.buffer.audio();
+        gain = s.gain;
+        channels = s.channels;
+        scale = rp::dsp::normalizedGain(gain, peak);
+    }
+
+    // The peak is measured here, on the control thread. The position is not reset: a re-activation (a new block size,
+    // a new plan) carries the stream on, as the player does, where a fresh instance starts at the buffer's first frame.
+    void activate(double, std::uint32_t) noexcept {
+        peak = 0.0f;
+        if (buffer)
+            for (std::uint32_t c = 0; c < channels && c < buffer->channels; ++c)
+                peak = std::max(peak, rp::dsp::peak(buffer->data[c], buffer->frames));
+        scale = rp::dsp::normalizedGain(gain, peak);
+    }
+
+    void process(const rp::Block& b) noexcept {
+        const std::uint32_t n = b.frames();
+        const std::uint32_t frames = buffer ? buffer->frames : 0;
+        const std::uint32_t at = position < frames ? position : frames;
+        const std::uint32_t available = frames - at;
+        for (std::uint32_t c = 0; c < outputs.out.channel_count; ++c) {
+            float* const y = outputs.out[c];
+            if (!buffer || c >= buffer->channels) {
+                std::fill(y, y + n, 0.0f);  // a layout channel the buffer lacks, as the player's
+                continue;
+            }
+            const float* const x = buffer->data[c];
+            for (std::uint32_t i = 0; i < n; ++i) y[i] = i < available ? x[at + i] * scale : 0.0f;
+        }
+        position = n < available ? at + n : frames;
+    }
+};
+
+// ---- rp.dsp.dpcm --------------------------------------------------------------------------------------------------
+
+// risa's DMC encoder as a node: at activate, on the control thread, the kernel (src/dsp/Dpcm.hpp) runs over the whole
+// bound buffer into storage this instance owns, and every block after that streams one delta bit per frame as an audio
+// level: +1 for a one, -1 for a zero, silence past the buffer's end. The bits are the risa bank's payload rather than
+// audio, so a document records them through rp.core.buffer-recorder and the packer that turns each level back into
+// its bit (`level > 0`) runs in TypeScript.
+//
+// Mono, with no `channels` setting: the encoder is the NES's single DMC channel, and a multi-channel buffer has no
+// meaning it could define without mixing or dropping a channel nobody asked it to. A buffer of another channel count
+// therefore fails the activation with a reason, rather than being silently taken apart; a kit chain is mono.
+//
+// The storage is a member, built at activate and freed with the instance on the control thread, as rp.dsp.resample's
+// resamplers are, which is why the type declares `heap` and the planner refuses it on the Pico.
+//
+// `normalize` is the type's rebuild key, and it is one because re-encoding is a whole-buffer pass: a settings commit
+// runs on the block thread, where a node may do no more than copy, and a re-encode there would cost the buffer's
+// length in the middle of a block. A commit that changed it therefore builds a fresh instance, which encodes in
+// activate on the control thread; the stream restarts at the first bit, which is what a newly encoded stream means
+// anyway. Every other setting is a copy in `on_settings`.
+//
+// The bits are read where activation finds the buffer. An rp.core.buffer-recorder writing it in the same plan is not
+// ordered before this node (a settings ref is not a binding the planner sees), so a DMC encode of a fresh buffer is
+// the encode of silence, with no diagnostic. D2's driver records a buffer in one job and reads it in the next.
+struct Dpcm {
+    static constexpr const char* id = "rp.dsp.dpcm";
+    static constexpr const char* name = "DPCM";
+    static constexpr const char* category = "dsp/codec";
+    static constexpr bool        heap = true;  // the bit storage is built at activate
+    using Settings = DpcmNodeSettings;
+
+    struct { rp::audio_out<rp::mono> out; } outputs;
+
+    static std::optional<std::string> validate(const Settings& s) {
+        if (s.buffer.ref.empty()) return "a DPCM node names an audio buffer";
+        return std::nullopt;
+    }
+
+    // A change of `normalize` re-encodes, so it is a rebuild rather than a commit (the comment above says why).
+    static bool rebuild_key(const Settings& s) noexcept { return s.normalize; }
+
+    const rp_audio_buffer*    buffer = nullptr;  // pinned by the instance, so it outlives every block
+    bool                      normalize = true;  // the setting, as activate read it
+    std::vector<std::uint8_t> bits;              // one per buffer frame, built at activate
+    std::uint32_t             position = 0;      // the next bit to play, 0 .. bits.size()
+
+    void on_settings(const Settings& s) noexcept {
+        buffer = s.buffer.audio();
+        normalize = s.normalize;
+    }
+
+    // The encode is here, on the control thread: a fresh instance, or the one a re-activation keeps, builds its bits
+    // before the first block.
+    void activate(double, std::uint32_t) {
+        if (!buffer) {
+            bits.clear();
+            position = 0;
+            return;
+        }
+        if (buffer->channels != 1)
+            throw std::runtime_error("a DPCM node takes a mono buffer, and this one has " +
+                                     std::to_string(buffer->channels) + " channels");
+        // Built aside and moved in, so a failed allocation leaves the previous stream's bits as they were.
+        std::vector<std::uint8_t> encoded(buffer->frames);
+        rp::dsp::encodeDpcm(buffer->data[0], buffer->frames, normalize, encoded.data());
+        bits = std::move(encoded);
+    }
+
+    void process(const rp::Block& b) noexcept {
+        const std::uint32_t n = b.frames();
+        const std::uint32_t total = static_cast<std::uint32_t>(bits.size());
+        const std::uint32_t at = position < total ? position : total;
+        const std::uint32_t available = total - at;
+        float* const        y = outputs.out[0];
+        for (std::uint32_t i = 0; i < n; ++i) y[i] = i < available ? (bits[at + i] ? 1.0f : -1.0f) : 0.0f;
+        position = n < available ? at + n : total;
+    }
+};
+
 }  // namespace
 
 const rp_package* dspPackage() {
@@ -398,6 +613,8 @@ const rp_package* dspPackage() {
         rp::node_type<Gain>(),
         rp::node_type<Biquad>(),
         rp::node_type<Dither>(),
+        rp::node_type<Normalize>(),
+        rp::node_type<Dpcm>(),
     };
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.dsp","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};

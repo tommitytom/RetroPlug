@@ -35,13 +35,13 @@ set_target_properties(retroplug-graph PROPERTIES
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON)
 
-# retroplug-dsp-nodes: the rp.dsp package (src/graph/nodes/DspNodes.cpp) - gain, biquad and dither, each a node
-# around a kernel of src/dsp/ (docs/modular-graph-phase-d1-design.md section 5). A target of its own rather than a
-# source of retroplug-graph: retroplug-graph is what every consumer of the engine links (the plugin, the CLI, the test
-# hosts), and the package brings the DSP library with it, which retroplug-graph has no business carrying. It links
-# retroplug-dsp-kernels alone, never retroplug-dsp-resample, so nothing here reaches r8brain, pthreads or RTTI, and it
-# stays core-free like the other packages (no core, txiki, efsw or LVGL): retroplug-graph-test plans and runs these
-# nodes with only the graph library and the kernels.
+# retroplug-dsp-nodes: the rp.dsp package (src/graph/nodes/DspNodes.cpp) - gain, biquad, dither, normalize and dpcm,
+# each a node around the kernels of src/dsp/ (docs/modular-graph-phase-d1-design.md section 5). A target of its own
+# rather than a source of retroplug-graph: retroplug-graph is what every consumer of the engine links (the plugin, the
+# CLI, the test hosts), and the package brings the DSP library with it, which retroplug-graph has no business carrying.
+# It links retroplug-dsp-kernels alone, never retroplug-dsp-resample, so nothing here reaches r8brain, pthreads or
+# RTTI, and it stays core-free like the other packages (no core, txiki, efsw or LVGL): retroplug-graph-test plans and
+# runs these nodes with only the graph library and the kernels.
 add_library(retroplug-dsp-nodes STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/nodes/DspNodes.cpp)
 target_link_libraries(retroplug-dsp-nodes PUBLIC retroplug-graph PRIVATE retroplug-dsp-kernels)

@@ -4,8 +4,10 @@
 // cancel stops a queued job at once and a running one at its next block, with the cancel reason; an engine destroyed with
 // jobs in flight abandons them and joins every worker; the outstanding bound refuses; every refusal says why, at
 // submission or in the completion; a file input is SampleCache's decode, windowed exactly as the two kit compilers
-// window today, the cap's two arithmetics and every edge included, with its report; and a job run while an audio thread
-// plays the live plan leaves that plan's output bit for bit, its warmed blocks allocating nothing.
+// window today, the cap's two arithmetics and every edge included, with its report; a kit-shaped job names one buffer
+// twice - as the normalising source's and as the dither's `seedFrom` - beside the DPCM encode, and gives the kit
+// arithmetic for all three; and a job run while an audio thread plays the live plan leaves that plan's output bit for
+// bit, its warmed blocks allocating nothing.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[offline]"`; the hidden
 // "[offline-bench]" times a trivial job and a one-second resample.
@@ -29,6 +31,9 @@
 #include "../graph/CountingAllocator.hpp"
 #include "../graph/GraphRig.hpp"
 #include "GraphDocs.hpp"
+#include "dsp/Dither.hpp"
+#include "dsp/Dpcm.hpp"
+#include "dsp/Gain.hpp"
 #include "dsp/Resample.hpp"
 #include "graph/node.hpp"
 #include "host/engine/Engine.hpp"
@@ -345,6 +350,73 @@ TEST_CASE("an offline job runs a document to completion and returns what the sam
     CHECK(e.buffers[1].channels == 2);
     CHECK(e.buffers[1].rate == 32000.0);
     CHECK(e.buffers[1].samples == std::get<OfflineSamples>(echo.inputs[0]).samples);
+    CHECK(jobs.outstanding() == 0);
+}
+
+TEST_CASE("a kit-shaped job names one buffer twice and runs the buffer-reading nodes on its worker",
+          "[engine-graph][offline]") {
+    // The shape a kit compile submits: one input named by a normalising source and by the dither's `seedFrom`, and the
+    // same buffer encoded to DMC bits. The worker is the job's control and block thread at once, so this is where the
+    // DPCM node's storage is allocated and the dither's hash is taken; the pool's own registry has to hold every
+    // rp.dsp type, and one handle named twice has to resolve to the one resource.
+    const std::vector<float> input = signal(2048, 1, 5);
+    const std::uint32_t      frames = static_cast<std::uint32_t>(input.size());
+    OfflineJobs              jobs;
+    OfflineRequest           r;
+    r.document = R"({"nodes":[
+        {"id":"n","type":"rp.dsp.normalize","settings":{"buffer":"res:1","gain":-0.7,"channels":1}},
+        {"id":"p","type":"rp.core.buffer-player","settings":{"channels":1,"layout":"mono","loop":false},
+         "resources":{"sample":"res:1"}},
+        {"id":"d","type":"rp.dsp.dither","settings":{"channels":1,"algorithm":"high-pass-tpdf","bits":4,
+         "seedFrom":"res:1"}},
+        {"id":"c","type":"rp.dsp.dpcm","settings":{"buffer":"res:1","normalize":true}},
+        {"id":"rn","type":"rp.core.buffer-recorder","settings":{"channels":1},"resources":{"target":"res:2"}},
+        {"id":"rd","type":"rp.core.buffer-recorder","settings":{"channels":1},"resources":{"target":"res:3"}},
+        {"id":"rc","type":"rp.core.buffer-recorder","settings":{"channels":1},"resources":{"target":"res:4"}}],
+        "wires":[{"from":"n.out","to":"rn.in"},{"from":"p.out","to":"d.in"},{"from":"d.out","to":"rd.in"},
+                 {"from":"c.out","to":"rc.in"}]})";
+    r.inputs.emplace_back(OfflineSamples{input, 1, 48000.0});
+    for (int i = 0; i < 3; ++i) r.outputs.push_back({1, frames, 48000.0});
+    r.returns = {2, 3, 4};
+    r.frames = frames;
+    r.rate = 48000.0;
+    const auto s = jobs.submit(r);
+    INFO(s.error);
+    REQUIRE(s.id != 0);
+    const auto c = one(jobs, s.id);
+    INFO(c.error);
+    REQUIRE(c.ok);
+    REQUIRE(c.buffers.size() == 3);
+    CHECK(c.buffers[0].handle == 2);
+    CHECK(c.buffers[1].handle == 3);
+    CHECK(c.buffers[2].handle == 4);
+
+    // The normalising gain, as the kit path folds it.
+    std::vector<float> normalised(frames);
+    {
+        rp::dsp::Gain gain;
+        gain.init(rp::dsp::normalizedGain(-0.7f, rp::dsp::peak(input.data(), input.size())));
+        gain.process(input.data(), normalised.data(), input.size());
+    }
+    CHECK(c.buffers[0].samples == normalised);
+
+    // The dither's levels, from the hash of the whole buffer the job hands both the player and `seedFrom`.
+    std::vector<std::uint16_t> codes(frames);
+    {
+        rp::dsp::Dither dither;
+        dither.init(rp::dsp::DitherAlgorithm::HighPassTPDF, 4, rp::dsp::inputSeed(input.data(), input.size()));
+        dither.process(input.data(), codes.data(), frames);
+    }
+    std::vector<float> levels(frames);
+    for (std::size_t i = 0; i < frames; ++i) levels[i] = rp::dsp::codeToLevel(codes[i], 4);
+    CHECK(c.buffers[1].samples == levels);
+
+    // The DMC bits as levels, the same encode the codec's bytes come from.
+    std::vector<std::uint8_t> bits(frames);
+    rp::dsp::encodeDpcm(input.data(), input.size(), true, bits.data());
+    std::vector<float> dpcm(frames);
+    for (std::size_t i = 0; i < frames; ++i) dpcm[i] = bits[i] ? 1.0f : -1.0f;
+    CHECK(c.buffers[2].samples == dpcm);
     CHECK(jobs.outstanding() == 0);
 }
 

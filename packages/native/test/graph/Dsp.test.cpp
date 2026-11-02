@@ -17,6 +17,9 @@
 // - Resample: the output stream is independent of how the input arrives (a source shorter than one chunk included),
 //   and equals a direct fixed-chunk feed of r8brain, written out here as a reference; a failed allocation in `init`
 //   throws and leaves the resampler unbuilt.
+// - DPCM: the kernel's one bit per sample, packed the way the risa codec packs them, is the codec's old whole-buffer
+//   function's bytes, written out here verbatim: normalising or not, a short buffer, a long one, an overdriven one and
+//   silence.
 //
 // The kit baseline (test/audio/KitBaseline.test.cpp) holds the same kernels to whole kit banks' bytes.
 #include <catch2/catch_test_macros.hpp>
@@ -31,11 +34,13 @@
 #include <random>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "CountingAllocator.hpp"
 #include "dsp/Biquad.hpp"
 #include "dsp/Dither.hpp"
+#include "dsp/Dpcm.hpp"
 #include "dsp/Gain.hpp"
 #include "dsp/R8bAllocator.hpp"  // r8brain, for the reference resample below
 #include "dsp/Resample.hpp"
@@ -459,6 +464,92 @@ std::vector<float> streamResample(double inRate, double outRate, const std::vect
     return out;
 }
 
+// ---- risa's DMC encoder as it was before the kernel ---------------------------------------------------------------
+// The codec's whole-buffer function, verbatim, with the byte packing and the pad it did around the bits. The kernel
+// outputs one bit per sample instead, so a case packs its bits the same way before comparing the two.
+
+constexpr std::size_t kDmcLengthStep = 16;
+
+// Floor-division toward -infinity (b > 0). C integer division truncates toward zero, which diverges from wav2dmc's
+// Python `//` on negative numerators: load-bearing for the 7-bit map.
+long referenceFloorDiv(long a, long b) {
+    long q = a / b;
+    if ((a % b != 0) && ((a < 0) != (b < 0))) --q;
+    return q;
+}
+
+// Pad a bit-packed DMC stream to a legal 16k+1 length with 0x00 bytes.
+std::vector<std::uint8_t> referencePadToDmcLength(std::vector<std::uint8_t> data) {
+    if (data.empty()) return { 0 };
+    const std::size_t rem = (data.size() - 1) % kDmcLengthStep;
+    if (rem != 0) data.resize(data.size() + (kDmcLengthStep - rem), 0);
+    return data;
+}
+
+// Encode resampled float audio into NES DMC bytes: wav2dmc.py's post-resample pipeline (DC blocker, 7-bit map centered
+// on 64, 1-bit plus/minus 2 delta, LSB-first packing, pad), in the int16 domain.
+std::vector<std::uint8_t> referenceConvertF32ToDpcm(const std::vector<float>& f32, bool normalize) {
+    const std::size_t n = f32.size();
+    if (n == 0) return { 0 };
+
+    std::vector<std::int32_t> s(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const float v = std::clamp(f32[i] * 32767.0f, -32768.0f, 32767.0f);
+        s[i] = static_cast<std::int32_t>(std::lround(v));
+    }
+
+    // DC blocker: one-pole, R = 255/256, truncate toward zero, clamp int16. State x1 = y1 = 0.
+    const double R = 255.0 / 256.0;
+    double x1 = 0.0, y1 = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const double x = static_cast<double>(s[i]);
+        const double y = x - x1 + R * y1;
+        x1 = x;
+        y1 = y;
+        long v = static_cast<long>(y); // truncates toward zero
+        v = std::clamp(v, -32768L, 32767L);
+        s[i] = static_cast<std::int32_t>(v);
+    }
+
+    // int16 -> 7-bit unsigned centered on 64.
+    std::vector<std::uint8_t> u7(n);
+    if (normalize) {
+        long peak = 1;
+        for (auto v : s) peak = std::max(peak, static_cast<long>(std::abs(v)));
+        for (std::size_t i = 0; i < n; ++i) {
+            const long q = 64 + referenceFloorDiv(static_cast<long>(s[i]) * 45, peak);
+            u7[i] = static_cast<std::uint8_t>(std::clamp(q, 0L, 127L));
+        }
+    } else {
+        for (std::size_t i = 0; i < n; ++i) {
+            const long q = 64 + referenceFloorDiv(static_cast<long>(s[i]) * 63, 32768);
+            u7[i] = static_cast<std::uint8_t>(std::clamp(q, 0L, 127L));
+        }
+    }
+
+    // 1-bit plus/minus 2 delta encode, LSB-first packing. Counter starts 64; guards <127 / >0 (the deliberate
+    // plus/minus 2 clamp quirk the decoder mirrors, NOT a clamp(0,127)).
+    std::vector<std::uint8_t> out((n + 7) / 8, 0);
+    int counter = 64;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (static_cast<int>(u7[i]) >= counter) {
+            out[i >> 3] |= static_cast<std::uint8_t>(1u << (i & 7));
+            if (counter < 127) counter += 2;
+        } else {
+            if (counter > 0) counter -= 2;
+        }
+    }
+    return referencePadToDmcLength(std::move(out));
+}
+
+/** The kernel's one-byte-per-bit output packed and padded the way the codec packs and pads it. */
+std::vector<std::uint8_t> packDpcmBits(const std::vector<std::uint8_t>& bits) {
+    std::vector<std::uint8_t> out((bits.size() + 7) / 8, 0);
+    for (std::size_t i = 0; i < bits.size(); ++i)
+        if (bits[i]) out[i >> 3] |= static_cast<std::uint8_t>(1u << (i & 7));
+    return referencePadToDmcLength(std::move(out));
+}
+
 } // namespace
 
 TEST_CASE("the gain kernel multiplies exactly and a block split changes nothing", "[dsp][gain]") {
@@ -788,6 +879,26 @@ TEST_CASE("the dithers without a padded reference give the old whole-buffer loop
     }
 }
 
+TEST_CASE("the DPCM kernel's bits are the kit codec's bytes", "[dsp][dpcm]") {
+    // A short buffer; one longer than any kit slot resamples to; an overdriven source, where the DC blocker's clamp and
+    // the delta counter's ends both do work; and silence, which pins the peak floor of 1 and the sign of every step.
+    const std::vector<std::vector<float>> sources = {signal(37), signal(20000), noise(1000, 4.0f, 0x51ee7u),
+                                                     std::vector<float>(500, 0.0f)};
+    for (const auto& source : sources) {
+        for (const bool normalize : {false, true}) {
+            INFO(source.size() << " frames, normalize " << normalize);
+            std::vector<std::uint8_t> bits(source.size());
+            rp::dsp::encodeDpcm(source.data(), source.size(), normalize, bits.data());
+            for (const auto bit : bits) REQUIRE((bit == 0 || bit == 1));
+            CHECK(packDpcmBits(bits) == referenceConvertF32ToDpcm(source, normalize));
+        }
+    }
+
+    // No samples: no bits, and the one-byte slot the codec's pad gives an empty stream.
+    CHECK(packDpcmBits({}) == std::vector<std::uint8_t>{0});
+    CHECK(referenceConvertF32ToDpcm({}, true) == std::vector<std::uint8_t>{0});
+}
+
 TEST_CASE("the resampler's output stream is independent of how its input arrives", "[dsp][resample]") {
     struct Case {
         double inRate, outRate;
@@ -968,6 +1079,7 @@ TEST_CASE("an initialised kernel processes without allocating or freeing", "[dsp
     biquad.init({BiquadType::Peak, 48000.0f, 1000.0f, 1.0f, 6.0f});
     rp::dsp::Dither dithers[std::size(kAlgorithms)];
     for (std::size_t a = 0; a < std::size(kAlgorithms); ++a) dithers[a].init(kAlgorithms[a], 4, 99);
+    std::vector<std::uint8_t> dpcmBits(1024);
     // The resampler is counted from its first chunk, not warmed: r8brain sizes every buffer it uses in its
     // constructor, which `init` runs, so not even the first `process` may allocate.
     rp::dsp::Resampler resampler;
@@ -984,6 +1096,8 @@ TEST_CASE("an initialised kernel processes without allocating or freeing", "[dsp
             d.processLevels(src, out.data(), 1024);
         }
         (void)rp::dsp::inputSeed(src, 1024);
+        rp::dsp::encodeDpcm(src, 1024, true, dpcmBits.data());
+        rp::dsp::encodeDpcm(src, 1024, false, dpcmBits.data());
         std::size_t taken = 0;
         while (taken < 1024) {
             taken += resampler.push(src + taken, 1024 - taken);

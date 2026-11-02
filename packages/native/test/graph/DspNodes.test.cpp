@@ -13,8 +13,10 @@
 // - A dither's settings are its stream's: a new seed restarts the noise, and the node's output is the kernel's
 //   quantised levels, so a live patch and a kit compile run the same arithmetic.
 // - A plan block allocates and frees nothing counted from the plan's first block (the suite's counting allocator), and
-//   all three types plan on the Pico: they declare neither heap nor threads, and their extra memory is requested for
-//   the settings' channel count (the request's size is the assertion), never for the descriptor's maximum.
+//   gain, biquad and dither plan on the Pico: they declare neither heap nor threads, and their extra memory is
+//   requested for the settings' channel count (the request's size is the assertion), never for the descriptor's
+//   maximum. (The package's two buffer-reading types are DspBufferNodes.test.cpp's, which also holds the DPCM node's
+//   `heap` and the Pico's refusal of it.)
 // - Each type's descriptor is a golden beside golden/rp.test.gain.descriptor.json, recorded with
 //   RP_GRAPH_GOLDEN_UPDATE=1.
 #include <catch2/catch_test_macros.hpp>
@@ -772,7 +774,9 @@ TEST_CASE("the three rp.dsp nodes plan on the Pico", "[dsp-nodes]") {
         INFO(type->id);
         auto parsed = rp::graph::parseDescriptor(type->descriptor(type));
         REQUIRE(parsed);
-        CHECK_FALSE(parsed->heap);
+        // rp.dsp.dpcm builds its bit storage at activate, so it is this package's one type the Pico refuses;
+        // DspBufferNodes.test.cpp plans it there for the refusal.
+        CHECK(parsed->heap == (std::string(type->id) == "rp.dsp.dpcm"));
         CHECK_FALSE(parsed->threads);
     }
 

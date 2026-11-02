@@ -266,7 +266,12 @@ retroplug_add_test_binary(
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
              test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's math
              test/graph/DspNodes.test.cpp             # the rp.dsp nodes, through real plans, against those kernels
+             test/graph/DspBufferNodes.test.cpp       # the rp.dsp nodes that read a whole buffer: normalize, DPCM, seedFrom
              test/graph/DspResample.test.cpp          # rp.dsp.resample, through real plans, against its kernel
+             # The kit path's effect wrappers, so the two buffer-reading nodes are held to what
+             # rp::lsdj::processEffect does to a buffer, not only to the kernels underneath it. They need the kernels
+             # and reflect-cpp (through retroplug-graph), nothing of the core.
+             ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     LIBS     retroplug-graph
              retroplug-dsp-nodes                      # the rp.dsp package under test
              retroplug-dsp-resample-nodes             # and the rp.dsp.resample package

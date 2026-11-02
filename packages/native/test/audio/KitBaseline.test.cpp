@@ -354,7 +354,7 @@ std::vector<KitCase> kitCases() {
         // `loop.value_or(false)`): the non-normalising 7-bit map and the loop flag in the index entry's byte 3.
         {"risa/no-normalize-rate-12", KitCodec::Risa, Signal::Noise, 44100, {}, true, 12, false},
         {"risa/loop-rate-4", KitCodec::Risa, Signal::Sine440, 44100, {}, true, 4, true, true},
-        // A silent source pins `convertF32ToDpcm`'s peak floor of 1 at both remaining rates, and with it the
+        // A silent source pins the DPCM kernel's peak floor of 1 at both remaining rates, and with it the
         // no-peak branch of the DMC normalise.
         {"risa/normalize-silence-rate-12", KitCodec::Risa, Signal::Silence, 22050, {}, true, 12},
         {"risa/normalize-silence-rate-4", KitCodec::Risa, Signal::Silence, 48000, {}, true, 4},

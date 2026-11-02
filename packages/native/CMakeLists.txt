@@ -36,21 +36,23 @@ endif()
 # The shape shared by every native test binary (see the file for why).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-binary.cmake)
 
-# --- retroplug-dsp-kernels: the DSP the kit compilers run, as block-streaming kernels (src/dsp/,
-# docs/modular-graph-phase-d1-design.md section 4): gain and peak, the RBJ biquads, and dither / quantise. Core-free
-# on purpose: it links the C++ standard library and nothing else, so retroplug-graph-test and the rp.dsp node package
-# can use it with no core, txiki, backend or r8brain. (Not `retroplug-dsp`: dpf_add_plugin(retroplug) already names
-# the plugin's own DSP library that.)
+# --- retroplug-dsp-kernels: the DSP the kit compilers run, as kernels (src/dsp/,
+# docs/modular-graph-phase-d1-design.md section 4): gain and peak, the RBJ biquads, dither / quantise, and risa's DMC
+# encoder (a whole-buffer kernel, Dpcm.hpp says why; the others stream a block at a time). Core-free on purpose: it
+# links the C++ standard library and nothing else, so retroplug-graph-test and the rp.dsp node package can use it with
+# no core, txiki, backend or r8brain.
+# (Not `retroplug-dsp`: dpf_add_plugin(retroplug) already names the plugin's own DSP library that.)
 #
 # The resampler is its own target on purpose, because its kernel is the one that is not freestanding: r8brain brings
 # the heap, pthreads (its filter cache is a std::mutex) and RTTI (its resamplers are virtual). A build that has no use
-# for it - the Pico's, which runs rp.dsp's gain / biquad / dither alone - omits the target and never sees any of that,
-# and the rp.dsp package's resample node, which is the only node that needs it, is a target of its own for the same
-# reason.
+# for it - the Pico's, which runs rp.dsp's gain / biquad / dither / normalize alone - omits the target and never sees
+# any of that, and the rp.dsp package's resample node, which is the only node that needs it, is a target of its own for
+# the same reason.
 add_library(retroplug-dsp-kernels STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Gain.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Biquad.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Dither.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Dither.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Dpcm.cpp)
 target_include_directories(retroplug-dsp-kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set_target_properties(retroplug-dsp-kernels PROPERTIES
     CXX_STANDARD 20

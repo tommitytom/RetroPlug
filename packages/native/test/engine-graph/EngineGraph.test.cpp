@@ -1151,8 +1151,9 @@ TEST_CASE("the engine registers both DSP packages, so a document naming every ty
     // A package the engine refuses is a stderr line at construction and nothing else, and every `[dsp-nodes]` and
     // `[dsp-resample]` case runs on the graph rig, which registers its own copy: without this, a registration that
     // broke would leave the types unplannable on the one host that has them and fail no test. One document names all
-    // four, chained from a resampler with no buffer (silence) to the host output, so planning it is the proof; the
-    // inputs are all silence, so the only thing to hold the block to is that it runs with no fault.
+    // four of the nodes that need no buffer, chained from a resampler with no buffer (silence) to the host output, so
+    // planning it is the proof; the inputs are all silence, so the only thing to hold the block to is that it runs
+    // with no fault.
     Engine e(kRate);
     const std::string document =
         R"({"nodes":[)"
@@ -1175,6 +1176,20 @@ TEST_CASE("the engine registers both DSP packages, so a document naming every ty
     float*             outs[2] = {&lanes[0], &lanes[256]};
     e.processBlock(256, outs, 2);
     CHECK(e.faultCount() == 0);
+
+    // The two types that read a whole buffer are in the same packages, but their nodes cannot plan here: an
+    // "audio-buffer" resource is a resource table's createAudioBuffer, which only a job's table does, so these
+    // documents name none. They are still the proof of registration: each is refused by its own settings check, where
+    // a type the engine did not register is refused as unknown-type.
+    for (const char* type : {"rp.dsp.normalize", "rp.dsp.dpcm"}) {
+        INFO(type);
+        const auto r = e.setGraph(rp::host::test::graphRequest(
+            R"({"nodes":[{"id":"x","type":")" + std::string(type) + R"(","settings":{}}],"wires":[]})", {}));
+        REQUIRE_FALSE(r.ok);
+        REQUIRE_FALSE(r.errors.empty());
+        CHECK(r.errors[0].code == "settings-invalid");
+        CHECK(r.errors[0].message.find("names an audio buffer") != std::string::npos);
+    }
 }
 
 TEST_CASE("the idle probe a host's smoke arms publishes a plan and the one that replaces it, and reports the idle tick "
