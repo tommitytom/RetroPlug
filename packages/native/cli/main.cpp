@@ -154,7 +154,8 @@ JSValue jsSdkAsset(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
 }
 
 // Ctrl-C stops a long-running session (and any batch command). The handler must be async-signal-safe, so it
-// only flips a sig_atomic_t; the pump loop checks it and exits 0.
+// only flips a sig_atomic_t; the pump loop checks it and exits 0, or hands it to a session that asked to hear it
+// (jsOnInterrupt), which then ends the process itself.
 volatile std::sig_atomic_t g_sigint = 0;
 void onSigint(int) { g_sigint = 1; }
 
@@ -309,7 +310,9 @@ int main(int argc, char** argv) try {
         std::fprintf(stderr, "session did not complete (tjs.exit never called)\n");
         return 1;
     }
-    return g_exit.set ? g_exit.code : 0;  // a Ctrl-C (g_sigint) without tjs.exit is a clean exit 0
+    // A Ctrl-C (g_sigint) without tjs.exit is a clean exit 0 for a session that registered no interrupt hook; one
+    // that did ends the process itself (the render tool exits 1).
+    return g_exit.set ? g_exit.code : 0;
 } catch (const std::exception& e) {
     std::fprintf(stderr, "error: %s\n", e.what());
     return 1;

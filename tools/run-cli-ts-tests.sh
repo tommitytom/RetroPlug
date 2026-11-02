@@ -250,7 +250,7 @@ check "the same source compiles with a --cutoff under its Nyquist" 0 $?
 #     reach: the launcher's unbounded pump, the exit codes, the output streams and Ctrl-C. A render is an engine job
 #     (docs/modular-graph-phase-d3-design.md), so this is also the check that the binary's files are the render
 #     baseline's: the fixture-free smsggdj case, run from a RELATIVE working directory with relative arguments, must
-#     write the golden's bytes (the hash on the baseline's host, Linux x86_64 here; the size anywhere).
+#     write the golden's bytes (the hash on the golden's build target, which the binary names; the size anywhere).
 REPO_ROM="$REPO/resources/roms/smsggdj_v0_45.sms"
 GOLDEN="$REPO/packages/retroplug/test-native/golden/render-baseline.json"
 if [ -f "$REPO_ROM" ] && [ -f "$GOLDEN" ]; then
@@ -260,7 +260,8 @@ if [ -f "$REPO_ROM" ] && [ -f "$GOLDEN" ]; then
 	cp "$FIX/render-smsggdj.sav" "$RD/metro.sav"
 	out="$TMP/render.out"
 	err="$TMP/render.err"
-	(cd "$RD" && RETROPLUG_DETERMINISTIC=1 "$CLI" render smsggdj.sms --sav metro.sav --song-index 0 --duration 4s --out metro.wav >"$out" 2>"$err")
+	(cd "$RD" && RETROPLUG_DETERMINISTIC=1 "$CLI" render smsggdj.sms --sav metro.sav --song-index 0 --duration 4s \
+		--out metro.wav >"$out" 2>"$err")
 	check "render of a relative path exits 0" 0 $?
 	contains "render prints the song it loaded" "$out" 'song "METRO" (slot 0)'
 	contains "render prints its announcement with the paths as typed" "$out" "rendering smsggdj.sms → metro.wav (4000ms)…"
@@ -294,29 +295,43 @@ PY
 		echo "FAIL - the CLI's WAV is ${got#* } B, the golden's is ${want#* } B"
 		fails=$((fails + 1))
 	fi
-	if [ "$(uname -sm)" = "Linux x86_64" ]; then
+	# Exact bytes are compared only on the golden's own build target, which the binary names (the same string the
+	# test-native suites key on); a Linux x86_64 build by another compiler agrees on the size and not on a hash.
+	cat >"$TMP/build-target.ts" <<'TS'
+import { bootSession } from "retroplug-cli";
+console.log("build-target " + bootSession().audio.buildTarget());
+(globalThis as unknown as { tjs: { exit(code: number): void } }).tjs.exit(0);
+TS
+	have_target="$("$CLI" run "$TMP/build-target.ts" --out "$TMP/build-target" 2>/dev/null | sed -n 's/^build-target //p')"
+	want_target="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["target"])' "$GOLDEN")"
+	if [ "$have_target" = "$want_target" ]; then
 		if [ "${got%% *}" = "${want%% *}" ]; then
 			echo "ok   - the CLI's WAV hashes to the golden's (${got%% *})"
 		else
 			echo "FAIL - the CLI's WAV hashes to ${got%% *}, the golden's is ${want%% *}"
 			fails=$((fails + 1))
 		fi
+	else
+		echo "skip - the CLI's WAV hash: this build is ${have_target:-unknown}, the golden's target is $want_target"
 	fi
 
 	# A failed render and a usage error exit 1 with their messages, naming the path as typed.
 	(cd "$RD" && "$CLI" render nope.sms --duration 1s >"$TMP/render-bad.out" 2>"$TMP/render-bad.err")
 	check "render of a missing ROM exits 1" 1 $?
-	contains "the missing-ROM message names the path as typed" "$TMP/render-bad.err" "ERROR: render: could not load ROM: nope.sms"
+	contains "the missing-ROM message names the path as typed" "$TMP/render-bad.err" \
+		"ERROR: render: could not load ROM: nope.sms"
 	(cd "$RD" && "$CLI" render smsggdj.sms --split sideways >"$TMP/render-use.out" 2>"$TMP/render-use.err")
 	check "render with a bad flag value exits 1" 1 $?
-	contains "the usage message says what was wrong" "$TMP/render-use.err" "ERROR: render: --split must be one of mix|channels|pins (got sideways)"
+	contains "the usage message says what was wrong" "$TMP/render-use.err" \
+		"ERROR: render: --split must be one of mix|channels|pins (got sideways)"
 
-	# Ctrl-C mid-render cancels the job: prompt, non-zero, and no WAV left behind (a cancelled render's header would
-	# claim no audio, so the library removes what it opened). A 600 s cap is ~30 s of work, so it is still running.
-	(cd "$RD" && exec "$CLI" render smsggdj.sms --sav metro.sav --song-index 0 --duration 600s --out cut.wav >"$TMP/render-int.out" 2>"$TMP/render-int.err") &
+	# Ctrl-C mid-render cancels the job: prompt, exit 1 (not 130, a signal death, or 0), and no WAV left behind (the
+	# library streams to cut.wav.part and removes it). A 600 s cap is ~30 s of work, so it is still running.
+	(cd "$RD" && exec "$CLI" render smsggdj.sms --sav metro.sav --song-index 0 --duration 600s --out cut.wav \
+		>"$TMP/render-int.out" 2>"$TMP/render-int.err") &
 	pid=$!
 	for _ in $(seq 1 100); do
-		[ -f "$RD/cut.wav" ] && break
+		[ -f "$RD/cut.wav.part" ] && break
 		sleep 0.1
 	done
 	sleep 1
@@ -324,10 +339,10 @@ PY
 	kill -INT "$pid" 2>/dev/null
 	wait "$pid"
 	code=$?
-	if [ "$code" != "0" ] && [ "$code" != "" ]; then
-		echo "ok   - an interrupted render exits non-zero ($code)"
+	if [ "$code" = "1" ]; then
+		echo "ok   - an interrupted render exits 1"
 	else
-		echo "FAIL - an interrupted render exited $code"
+		echo "FAIL - an interrupted render exited $code, not 1"
 		fails=$((fails + 1))
 	fi
 	if [ $((SECONDS - started)) -le 10 ]; then
@@ -337,8 +352,8 @@ PY
 		fails=$((fails + 1))
 	fi
 	contains "an interrupted render reports it was cancelled" "$TMP/render-int.err" "ERROR: render: cancelled"
-	if [ -e "$RD/cut.wav" ]; then
-		echo "FAIL - an interrupted render left $RD/cut.wav behind"
+	if [ -e "$RD/cut.wav" ] || [ -e "$RD/cut.wav.part" ]; then
+		echo "FAIL - an interrupted render left cut.wav or cut.wav.part behind"
 		fails=$((fails + 1))
 	else
 		echo "ok   - an interrupted render left no WAV whose header claims no audio"
