@@ -484,8 +484,8 @@ interface StopMarkers {
 interface RenderSink {
   renderChunk(ms: number): Float32Array[];
   emit(chunk: Float32Array[], takeFrames: number): void; // commit the first `takeFrames` frames of a chunk
-  finishAll(): string[]; // patch every writer's header, log + return the output paths
-  discard(): void; // delete the files opened so far: a cancelled render leaves no WAV whose header says it is empty
+  finishAll(): string[]; // patch every writer's header, move each file to its path, log + return the output paths
+  discard(): void; // delete the files opened so far: a render stopped part way leaves no WAV claiming it is empty
 }
 
 /** Left channel of an interleaved-stereo buffer, first `frames` frames (NES streams are mono in the L lane). */
@@ -496,7 +496,8 @@ function leftLane(b: Float32Array, frames: number): Float32Array {
 }
 
 /** Build the sink for the requested output shape. Writers open on the first chunk once the stream count is
- *  known (from chunk.length) — opening truncates, so a re-render clobbers any stale file.
+ *  known (from chunk.length). Each writer streams to `<path>.part` and finishAll moves it over `<path>`, so a render
+ *  that stops part way (cancelled, or failed) leaves an export that was already at `<path>` as it was.
  *    mix       → 1 WAV: GB/GBA stereo, NES mono (its lanes are identical, so the left lane is lossless)
  *    channels  → GB 4 stereo stems; NES 5 mono core channels
  *    pins      → NES 3 mono analog pins
@@ -509,11 +510,12 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
   const nesMono = platform === "nes"; // NES streams (mix + per-channel) are mono in the left lane
   let writers: WavWriter[] | null = null; // per stream (mix=1; GB channels=N stereo; NES=N mono)
   const paths: string[] = [];
+  const partial = (path: string): string => `${path}.part`;
   let summary = "";
 
   const open = (path: string, channels: number): WavWriter => {
     paths.push(path);
-    return createWavWriter(ctx.backend, path, sr, channels);
+    return createWavWriter(ctx.backend, partial(path), sr, channels);
   };
 
   const ensure = (streamCount: number) => {
@@ -546,15 +548,20 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
     finishAll() {
       if (!writers) throw new Error("render: no audio was rendered");
       writers.forEach((w) => w.finish());
+      for (const p of paths) {
+        if (!ctx.backend.rename(partial(p), p)) throw new Error(`render: could not move ${partial(p)} to ${p}`);
+      }
       paths.forEach((p) => log(p));
       log(summary);
       return paths.slice();
     },
     discard() {
       // A writer patches its header only in finish(), so a render stopped part way would leave PCM behind a header
-      // that claims none. A cancelled export is not an export: remove what it opened rather than leave a file that
-      // looks usable (the job's status says cancelled, and a shell sees a non-zero exit).
-      for (const p of paths) ctx.backend.deleteFile(p);
+      // that claims none. A stopped export is not an export: remove what it opened rather than leave a file that
+      // looks usable (the job's status says cancelled or error, and a shell sees a non-zero exit). The files are
+      // the writers' `.part` ones, so what was at the output paths before stays; one already moved into place
+      // (finishAll got that far) is a whole export and stays too.
+      for (const p of paths) ctx.backend.deleteFile(partial(p));
     },
   };
 }
@@ -571,6 +578,7 @@ function driveFixed(
   let done = 0;
   const emit = (chunk: Float32Array[]) => {
     if (chunk.length === 0) throw new Error("render: chunk render returned no streams");
+    if (chunk[0].length === 0) throw new Error("render: chunk render returned no frames");
     const take = Math.min(chunk[0].length / 2, targetFrames - done);
     if (take > 0) { sink.emit(chunk, take); done += take; }
   };
@@ -747,6 +755,9 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // The sample rate is baked into each core at construct, so it MUST be set before buildSystem.
   if (o.sampleRate !== undefined && !ctx.audio.setSampleRate(o.sampleRate))
     throw new Error(`render: could not set sample rate to ${o.sampleRate}Hz`);
+  // A pull under one frame renders no audio at all, so a fixed render would never reach its length.
+  const rate = ctx.audio.sampleRate();
+  if (Math.floor((pullMs * rate) / 1000) < 1) throw new Error(`render: pullMs ${pullMs} is under one frame at ${rate}Hz`);
 
   const seed = resolveSongSeed(ctx, o, log, warn);
   // smsggdj resolves its song here rather than through the seed, because its working song is not in the
@@ -761,7 +772,8 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // streams in: on a continuous-blocks engine (an engine job's) the frames past a call in its last block go to the
   // next call only if that call is of the same shape (EngineRpcService::setContinuousBlocks), so a split render
   // settling in the mix would start its stems up to a block later than the same render's mix starts, and its detected
-  // length would differ by as much. An exact-blocks engine carries nothing, so there the shape is only a choice.
+  // length would differ by as much. An exact-blocks engine carries nothing; there the shape still moves a NES's stem
+  // bytes (a settle per channel emulates it differently from one in the mix), and no in-process caller renders split.
   if (o.split === "mix") ctx.audio.renderAudio(1500);
   else ctx.audio.renderAudioPerChannel(id, 1500);
   if (o.bpm) ctx.audio.setBpm(o.bpm);
@@ -823,7 +835,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     hooks.onRendered?.(Math.round((targetFrames / sr) * 1000));
     return { outputs };
   } catch (e) {
-    if (e instanceof RenderCancelled) sink.discard();
+    sink.discard();
     throw e;
   }
 }

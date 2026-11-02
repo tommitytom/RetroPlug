@@ -14,7 +14,7 @@
 // list changes (prune).
 
 import type { Backend } from "./backend";
-import type { EngineRunHandle } from "./offline";
+import { echoJobLog, type EngineRunHandle } from "./offline";
 
 /** One render's status, as the tile badge reads it. */
 export interface RenderJobStatus {
@@ -55,7 +55,7 @@ export class RenderJobs {
     try {
       entry.handle = this.backend.engineRun("render", spec, {
         onProgress: (renderedMs) => update({ renderedMs }),
-        onLog: (line) => (line.stream === "stderr" ? console.error(line.text) : console.log(line.text)),
+        onLog: echoJobLog,
       });
     } catch (e) {
       update({ state: "error", message: (e as Error)?.message ?? String(e) });

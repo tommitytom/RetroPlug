@@ -319,7 +319,9 @@ made them false (chunking, the worker budget, the carry's rules).
   native test host fires no timers. SIGINT is `__rp_onInterrupt` (`cli/main.cpp`), exposed as `onInterrupt` in
   `cli/session.ts`: the first Ctrl-C cancels the job, which ends cancelled and prints `ERROR: render: cancelled`, exit 1
   (one rule for every cancel, not 130), and restores the default handler so a second kills a wedged job. A cancelled
-  render's files are deleted (`discard()` on the library's sink, on every cancel path). Printed paths are as the user
+  render, or one that fails after its first chunk, leaves no file: the sink streams to `<path>.part`, moves each over its
+  path only when the whole render has been written, and `discard()` deletes the `.part` files on any throw, so an export
+  that was already at the path stays as it was. Printed paths are as the user
   typed them; messages and exit codes are otherwise as before. The cores' own stdout (Mesen's load log) goes straight to
   fd 1 while the library's lines arrive through the drain about 100 ms later, so the two can interleave differently.
 - **The UI.** `RenderJobs` (`src/renderJobs.ts`) is kept in the store graph (`AppStores.renders`), not in a UI module:
@@ -331,6 +333,11 @@ made them false (chunking, the worker budget, the carry's rules).
 - **Retired.** `RenderJobRegistry`, the four `__rp_*Render` hooks (and their declarations), `g_renderJobs`, the CLI's
   in-process render path, `RenderHost`'s exact-blocks mode and `RenderContext.blocks`. The library's exact-blocks engine
   and `setContinuousBlocks(false)` stay for the in-process render tests and parity.
+- **The systems signal has observers.** `ProjectStore.addOnSystemsChange` appends; the control plane (also the SDL
+  host's) adds its watched-ROM refresh beside the store graph's own notify and `renders.prune()` instead of replacing
+  them, which had left finished renders of a removed system listed in those hosts. `RenderOpts.pullMs` must be at
+  least one frame at the render's rate (a smaller pull rendered no audio and never ended), and a chunk with no frames
+  is an error.
 - **`retroplug-render-host-test`** is three legs on engine jobs: `<job-json>` runs one job on a pool (the production
   path, so "byte-identical to `retroplug-cli render`" holds because it is the same code, and is still checked by `cmp`),
   `--parallel <j>...` runs N jobs on a pool sized so all can run, asserts its engine budget covers `min(N,

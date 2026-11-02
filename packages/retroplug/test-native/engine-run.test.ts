@@ -3,8 +3,9 @@
 // in this host, which fires no timer and has no frame tick, through the poll's native wait the audio driver turns on.
 // A render settles "done" with the WAV it wrote and its length, reporting its progress (a running maximum) and its
 // console lines on the way; an auto-detected LSDj render (a fixture) ends below its progress, at the length written;
-// cancel() stops a running render, which settles "cancelled", after a graph job completed while it ran; and
-// offlineRun's handle cancels a graph job, which rejects with the reason "cancelled".
+// cancel() stops a running render, which settles "cancelled", after a graph job completed while it ran; a render that
+// stops part way, cancelled or failed, leaves what was at its output paths as it was; and offlineRun's handle cancels
+// a graph job just submitted, which rejects with the reason "cancelled".
 // The pool, the threading, the budget, the bytes against a direct RenderHost run and teardown are held by
 // retroplug-engine-graph-test "[engine-jobs]".
 import { test, expect, skip } from "../testing/harness";
@@ -109,6 +110,62 @@ test("cancel() stops a running render, which settles cancelled, and a graph job 
   be.deleteFile(outPath("cancel"));
 });
 
+/** `bytes` of a marker file: what an earlier export would have left at a path. */
+const earlier = (name: string): Uint8Array => new TextEncoder().encode(`an earlier export ${name}`);
+const text = (b: Uint8Array | null): string | null => (b ? new TextDecoder().decode(b) : null);
+
+test("a cancelled render leaves the export that was at its path as it was, and no partial file", async () => {
+  // The writer streams to <path>.part and moves it into place only when the render ends, so a cancel (or an error)
+  // after the first chunk removes the partial and touches nothing else: not the mix export, and not the stems a
+  // split render would have written.
+  const mix = outPath("keep-mix");
+  const stem = outPath("keep-stems");
+  const stemPaths = ["pulse1", "pulse2", "wave", "noise"].map((c) => `${stem.replace(/\.wav$/, "")}_${c}.wav`);
+  expect(be.writeFile(mix, earlier("mix"))).toBe(true);
+  stemPaths.forEach((p) => expect(be.writeFile(p, earlier(p))).toBe(true));
+  let mixHandle: EngineRunHandle | null = null;
+  mixHandle = be.engineRun("render", { rom: MGB, out: mix, durationMs: 600000 }, { onProgress: () => mixHandle?.cancel() });
+  expect((await mixHandle).status).toBe("cancelled");
+  expect(text(be.readFile(mix))).toBe("an earlier export mix");
+  expect(be.fileExists(`${mix}.part`)).toBe(false);
+
+  let stemHandle: EngineRunHandle | null = null;
+  stemHandle = be.engineRun(
+    "render",
+    { rom: MGB, out: stem.replace(/\.wav$/, ""), durationMs: 600000, split: "channels" },
+    { onProgress: () => stemHandle?.cancel() },
+  );
+  expect((await stemHandle).status).toBe("cancelled");
+  stemPaths.forEach((p) => {
+    expect(text(be.readFile(p))).toBe(`an earlier export ${p}`);
+    expect(be.fileExists(`${p}.part`)).toBe(false);
+  });
+  expect(be.pumpJobs()).toBe(0);
+  [mix, ...stemPaths].forEach((p) => be.deleteFile(p));
+});
+
+test("a render that fails after its first chunk leaves no partial file", async () => {
+  // The output path is a directory holding a file, so the move into place fails once the whole render is written.
+  const out = outPath("blocked");
+  const inside = `${out}/keep.txt`;
+  expect(be.writeFile(inside, earlier("inside"))).toBe(true);
+  const result = await be.engineRun("render", { rom: MGB, out, durationMs: 500 });
+  expect(result.status).toBe("error");
+  expect(result.message.includes(`${out}.part`)).toBe(true);
+  expect(be.fileExists(`${out}.part`)).toBe(false);
+  expect(text(be.readFile(inside))).toBe("an earlier export inside");
+  expect(be.pumpJobs()).toBe(0);
+  be.deleteFile(inside);
+  be.deleteFile(out);
+});
+
+test("a render pulled in less than one frame is refused, rather than hanging for ever on empty chunks", async () => {
+  const result = await be.engineRun("render", { rom: MGB, out: outPath("tiny-pull"), durationMs: 500, pullMs: 0.01 });
+  expect(result.status).toBe("error");
+  expect(result.message.includes("pullMs 0.01 is under one frame")).toBe(true);
+  expect(be.pumpJobs()).toBe(0);
+});
+
 test("an auto-detected render's progress is a running maximum, and its result carries the length it wrote",
   async () => {
     // An LSDj song that ends in an HFF: the render counts the chunks it holds back past the stop as it goes, then
@@ -137,7 +194,9 @@ test("an auto-detected render's progress is a running maximum, and its result ca
   });
 
 test("offlineRun's handle cancels a graph job, which rejects with the reason cancelled", async () => {
-  // A looping player recorded for its first frames over ten minutes of blocks: long enough to be cancelled mid-run.
+  // A looping player recorded for its first frames over ten minutes of blocks, cancelled as soon as it is submitted: it
+  // is queued or planning, or just started, and the cancel ends it in any of those. A graph job cancelled while it runs
+  // blocks is the C++ [offline] cases'.
   const document = JSON.stringify({
     nodes: [
       {

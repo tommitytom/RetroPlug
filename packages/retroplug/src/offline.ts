@@ -215,6 +215,12 @@ export interface EngineRunOptions {
   onLog?: (line: EngineLogLine) => void;
 }
 
+/** An engine job's console lines on this runtime's own: stderr to console.error, the rest to console.log. */
+export function echoJobLog(line: EngineLogLine): void {
+  if (line.stream === "stderr") console.error(line.text);
+  else console.log(line.text);
+}
+
 /** A job's promise, with a way to cancel the job. `cancel()` answers whether there was a job to cancel: true for one
  *  held here or queued or running in native, which then ends cancelled (a graph job's promise rejects with the reason
  *  "cancelled", an engine job's resolves with that status); false once it has finished. */

@@ -1,12 +1,11 @@
-// The background render worker session. Compiled to a self-contained global-code bundle
-// (rp_render_worker_bundle) and run by the native RenderHost on a bare-QuickJS runtime with its own Engine
-// — a headless equivalent of `retroplug-cli render`, but driven in-process on a worker thread. The job
-// request arrives as JSON in globalThis[Symbol.for("plugin")].args[0]; the worker boots a control plane,
-// runs the shared render library, and reports progress / cancellation / completion back through native
-// thunks the RenderHost binds:
+// The render job's body: the session an engine job's worker (the RenderHost, on a pool thread of the engine) runs,
+// which is also `retroplug-cli render`'s render path. It is compiled to a self-contained global-code bundle
+// (rp_render_worker_bundle) and run on a bare-QuickJS runtime with its own Engine. The job request arrives as JSON in
+// globalThis[Symbol.for("plugin")].args[0]; the worker boots a control plane, runs the shared render library, and
+// reports progress / cancellation / completion back through native thunks the RenderHost binds:
 //   __rp_reportRenderedMs(ms)            - audio rendered so far, per rendered chunk
-//   __rp_isRenderCancelled(): boolean    — polled per chunk; true aborts the render
-//   __rp_renderResult(status, message, outputsJson) — "done" | "cancelled" | "error"
+//   __rp_isRenderCancelled(): boolean    - polled per chunk; true aborts the render
+//   __rp_renderResult(status, message, outputsJson) - "done" | "cancelled" | "error"
 // (all optional-chained so the same bundle stays runnable under a plain host that binds none of them).
 
 import { bootSession } from "../bootSession";
@@ -74,7 +73,7 @@ function main(): void {
   // before-teardown battery flush would turn an export into a write in the user's save folder.
   session.project.systems.setBatteryFlush(false);
   try {
-    const ctx = { backend: session.backend, project: session.project, audio: session.audio } as const;
+    const ctx = { backend: session.backend, project: session.project, audio: session.audio };
     const result = runRenderJob(ctx, opts, {
       onRendered: (ms) => __rp_reportRenderedMs?.(ms),
       isCancelled: () => __rp_isRenderCancelled?.() ?? false,
