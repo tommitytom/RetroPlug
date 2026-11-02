@@ -210,6 +210,11 @@ made them false (chunking, the worker budget, the carry's rules).
   joins; a running render sees the cancel at its next chunk, so nothing a render touches outlives the pool, which is
   reset before any other `Engine` member. Lock order is the pool's mutex, then a record's lock; no lock is held across
   `RenderHost::run`.
+- **A render's JS stack.** A pool worker is a plain `std::thread` (512 KiB of stack on macOS, 1 MiB on Windows), so a
+  `RenderHost`'s runtime is held to 256 KiB as `ScriptHost`'s are (`RenderHost::kStackBytes`), leaving the engine and
+  its cores, which run below the render's JS on the same stack, the other half. A recursion past it is a RangeError the
+  job reports as its error, where QuickJS's default limit of 1 MiB ran off a macOS worker's stack; an `[engine-jobs]`
+  case parses a spec nested a hundred thousand deep on a 512 KiB thread.
 - **Console and progress.** The job's script console routes into a per-job `EngineJobRecord`, bounded between drains
   (256 lines, 64 KiB; past either a line is dropped and counted, and the count rides the next report, which TypeScript
   prints as `[N console lines dropped]`). A line is one console write, which can hold newlines. Native diagnostics

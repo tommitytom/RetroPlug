@@ -188,6 +188,7 @@ const char kBootstrap[] = R"JS(
 
 RenderHost::RenderHost() {
     rt_ = JS_NewRuntime();
+    JS_SetMaxStackSize(rt_, kStackBytes);
     ctx_ = JS_NewContext(rt_);
     JS_SetContextOpaque(ctx_, this); // the opaque-routed thunks recover the host from ctx
 
@@ -240,7 +241,8 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
     };
 
     // QuickJS's stack-overflow guard is calibrated to the runtime's creating thread. RenderHost is created
-    // and driven on the same (worker) thread, but re-anchor before entering JS to be safe (as ScriptHost does).
+    // and driven on the same (worker) thread, but re-anchor before entering JS to be safe (as ScriptHost does): the
+    // kStackBytes limit counts down from here.
     JS_UpdateStackTop(rt_);
 
     // globalThis[Symbol.for("plugin")] = { __rpcSend, args: [jobJson] }: the worker reads args[0].

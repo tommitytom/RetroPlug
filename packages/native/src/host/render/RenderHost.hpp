@@ -14,6 +14,7 @@
 // nothing else from the runtime). See ClassIdSpace note: bare QuickJS with no fresh native-class
 // registration, so the multi-txiki-runtime class-id hazard does not apply here.
 
+#include <cstddef>
 #include <functional>
 #include <string>
 #include <vector>
@@ -45,11 +46,11 @@ public:
     RenderHost& operator=(const RenderHost&) = delete;
 
     // Render one job. `jobJson` is a RenderOpts-shaped spec (at least {"rom":"...","out":"..."}); the worker
-    // fills the CLI defaults for anything omitted. onRendered / isCancelled / onConsole are optional; with no
-    // onConsole the worker's console writes go to the process's stdout and stderr. Returns the worker's reported
-    // result (status "error" with a message on any internal failure).
-    Result run(const std::string& jobJson, RenderedFn onRendered = {}, CancelFn isCancelled = {},
-               ConsoleFn onConsole = {});
+    // fills the CLI defaults for anything omitted. onRendered and isCancelled may be empty; onConsole takes every
+    // console write the worker makes and every script error's report (only a report before run, the constructor's
+    // bootstrap failing, goes to the process's stderr). Returns the worker's reported result (status "error" with a
+    // message on any internal failure).
+    Result run(const std::string& jobJson, RenderedFn onRendered, CancelFn isCancelled, ConsoleFn onConsole);
 
     // Called by the bound JS thunks (which recover the host via the JS context opaque). Public so the
     // free-function thunks in the .cpp can reach them; not part of the external API.
@@ -60,6 +61,12 @@ public:
     void onStderr(const char* text);
 
 private:
+    // The runtime's JS stack, held under the smallest thread a pool worker may be: a plain std::thread, 512 KiB on
+    // macOS and 1 MiB on Windows, so 256 KiB leaves the engine, its cores and the RPC bridge, which run on the same
+    // stack below the render's JS, the other half (as ScriptHost::kStackBytes). A recursion past it throws a RangeError
+    // the worker reports as the render's error, where QuickJS's default of 1 MiB would run off a macOS worker's stack.
+    static constexpr std::size_t kStackBytes = 256 * 1024;
+
     JSRuntime* rt_ = nullptr;
     JSContext* ctx_ = nullptr;
 

@@ -6,12 +6,13 @@
 // destroyed with renders in flight cancels and joins them; renders hold at most all but one of the pool's workers, so a
 // graph job still runs beside them (a pool of 1 starting its second thread for one), and the ones held back start in
 // submission order; an engine job computes in the default floating-point mode; renders run back to back on one reused
-// worker and in parallel on several, each giving the bytes a direct run gives; the console record keeps its bounds; the
-// RPCs carry all of it; and a kind that is not "render" is refused. Continuous blocks themselves (design section 4,
+// worker and in parallel on several, each giving the bytes a direct run gives; a render's JS stack fits a 512 KiB
+// thread, a recursion past it ending the render in an error; the console record keeps its bounds; the RPCs carry all of
+// it; and a kind that is not "render" is refused. Continuous blocks themselves (design section 4,
 // EngineRpcService::setContinuousBlocks), over an mGB that MIDI plays: a render's bytes do not depend on the lengths
 // its calls ask for, a message staged between two calls landing where the block they end in ends, where exact blocks
-// land it where the call ended; a carried tail goes only to a call of its own shape (a per-channel render's across
-// its calls, on an eight-lane host), and a call of another shape, a renderBlocks run or a rate change drops it; exact
+// land it where the call ended; a carried tail goes only to a call of its own shape (a per-channel render's across its
+// calls, on an eight-lane host), and a call of another shape, a renderBlocks run or a rate change drops it; exact
 // blocks carry nothing.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[engine-jobs]"`. The ROMs are
@@ -42,6 +43,10 @@
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <xmmintrin.h>
+#endif
+
+#if !defined(_WIN32)
+#include <pthread.h>
 #endif
 
 #include "host/engine/Engine.hpp"
@@ -322,6 +327,37 @@ TEST_CASE("a sounding render as an engine job is the direct run's, byte for byte
     bool sound = false;
     for (std::size_t i = 44; i + 1 < bytes.size() && !sound; i += 2) sound = bytes[i] != 0 || bytes[i + 1] != 0;
     CHECK(sound);
+}
+
+TEST_CASE("a render's JS stack fits the smallest thread a pool worker may be, so a recursion past it is an error",
+          "[engine-graph][engine-jobs]") {
+    // A pool worker is a plain std::thread, whose stack is 512 KiB on macOS and 1 MiB on Windows. A spec nested a
+    // hundred thousand deep recurses JSON.parse far past either, so a RenderHost must stop it with a RangeError the
+    // worker reports, where QuickJS's default 1 MiB limit let it run off the end of the stack. Run where it is
+    // smallest: a 512 KiB thread on POSIX, and Windows' default one there.
+    const std::string spec = R"({"rom":"x","deep":)" + std::string(100000, '[') + std::string(100000, ']') + "}";
+    retroplug::RenderHost::Result result;
+    const auto body = [&] {
+        retroplug::RenderHost host;
+        result = host.run(spec, {}, {}, [](bool, const char*) {});
+    };
+#if defined(_WIN32)
+    std::thread(body).join();
+#else
+    pthread_attr_t attr;
+    REQUIRE(pthread_attr_init(&attr) == 0);
+    REQUIRE(pthread_attr_setstacksize(&attr, 512 * 1024) == 0);
+    pthread_t thread;
+    const auto trampoline = [](void* fn) -> void* {
+        (*static_cast<decltype(body)*>(fn))();
+        return nullptr;
+    };
+    REQUIRE(pthread_create(&thread, &attr, trampoline, const_cast<void*>(static_cast<const void*>(&body))) == 0);
+    pthread_attr_destroy(&attr);
+    pthread_join(thread, nullptr);
+#endif
+    CHECK(result.status == "error");
+    CHECK(result.message == "Maximum call stack size exceeded");
 }
 
 TEST_CASE("an auto-detected render lowers its count once, at its end, to the length it wrote",
