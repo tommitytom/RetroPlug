@@ -359,7 +359,7 @@ test("a load that throws partway places what it adopted, and the edits after it 
   };
   const n = be.graphRequests.length;
   let notified = 0;
-  p.setOnSystemsChange(() => notified++);
+  p.addOnSystemsChange(() => notified++);
   expect(() => p.loadBytes(bytes, "/")).toThrow("the putResource RPC died");
   be.putResource = putResource;
   const adopted = sys.systems().map((e) => e.id);
@@ -510,7 +510,7 @@ test("a load whose final publish throws still tells the observers once", () => {
     return setGraph(...args);
   };
   let notified = 0;
-  p.setOnSystemsChange(() => notified++);
+  p.addOnSystemsChange(() => notified++);
   expect(() => p.loadBytes(bytes, "/")).toThrow("the setGraph RPC died");
   be.putResource = putResource;
   be.setGraph = setGraph;
@@ -531,7 +531,7 @@ test("a load whose clear's publish throws still tells the observers once", () =>
     return setGraph(...args);
   };
   let notified = 0;
-  p.setOnSystemsChange(() => notified++);
+  p.addOnSystemsChange(() => notified++);
   expect(() => p.loadBytes(bytes, "/")).toThrow("the setGraph RPC died");
   be.setGraph = setGraph;
   expect(sys.systems().length).toBe(0);

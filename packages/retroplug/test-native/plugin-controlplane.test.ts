@@ -10,6 +10,7 @@ import { buildAppRegistry } from "../src/appHost";
 import { createAudioDriver } from "../src/audioDriver";
 import "../src/pluginControlPlane"; // side-effect: compose the control plane + define the __rp_* globals
 import { lsdjRom } from "../test/systems/fixtures";
+import type { AppStores } from "../src/appStores";
 
 declare const __CONFIG_DIR__: string;
 
@@ -89,4 +90,25 @@ test("the latency the plugin reports follows the lsdj-sync its pipeline places: 
   expect(loadPath(project("cp_latency_left_out.rplg", { embeddedRom: "mgb" }))).toBeTruthy();
   expect(latency()).toBe("0");
   (g.__rp_newProject as () => void)(); // the cores go, so nothing later in this host emulates them
+});
+
+test("a render listed for a system leaves the list when the plugin's own wiring removes that system", () => {
+  // composeAppStores prunes the render list on a systems change, and the control plane layers its own observer
+  // (the watched ROMs, the editor's notify) on the same signal: it must not replace the prune.
+  const stores = ((globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as { stores: AppStores }).stores;
+  const backend = stores.backend as { engineRun: unknown };
+  const real = backend.engineRun;
+  backend.engineRun = () => {
+    throw new Error("no engine in this test"); // a submission that cannot be made is listed as an error, at once
+  };
+  try {
+    stores.project.systems.loadMgb();
+    const systemId = stores.project.systems.view()[0].id;
+    stores.renders.start(systemId, {});
+    expect(stores.renders.list().map((r) => r.systemId)).toEqual([systemId]); // its system has a tile: kept
+    stores.project.newProject(); // the system goes, through the signal the control plane observes
+    expect(stores.renders.list().length).toBe(0);
+  } finally {
+    backend.engineRun = real;
+  }
 });

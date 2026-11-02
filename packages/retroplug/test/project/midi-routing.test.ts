@@ -23,7 +23,7 @@ test("setMidiRouting publishes the routing node with the new mode", () => {
 test("a refused MIDI-routing value publishes nothing", () => {
   const { be, project } = newProject();
   let notified = 0;
-  project.setOnSystemsChange(() => void notified++);
+  project.addOnSystemsChange(() => void notified++);
   expect(project.setMidiRouting("everywhere" as never)).toBeFalsy();
   expect(be.graphRequests.length).toBe(0);
   expect(notified).toBe(0);

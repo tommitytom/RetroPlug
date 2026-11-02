@@ -129,7 +129,7 @@ export class ProjectStore {
   private controllerWasPlaying = false; // edge detector for the above
   private controllerReaderPath = ""; // the ROM the cached reader was built from
   private controllerReaderCache: LsdjReader | null = null;
-  private onSystemsChange: () => void = () => {};
+  private systemsObservers: Array<() => void> = [];
   private onChangeCb: () => void = () => {};
   private holdGraph = false; // a load's adopts: the graph is published once they are all built
 
@@ -150,7 +150,7 @@ export class ProjectStore {
       backend,
       () => {
         this.markDirty();
-        this.onSystemsChange();
+        this.notifySystemsChange();
       },
       registry,
     );
@@ -208,17 +208,22 @@ export class ProjectStore {
     };
   }
 
-  /** Install the hook fired whenever the systems structure changes (a user edit, or a load / new; the quiet
+  /** Add an observer of the systems structure, called whenever it changes (a user edit, or a load / new; the quiet
    *  rebuild path notifies at the end of commit/newProject), or when a setting the graph's script nodes read
-   *  changes (MIDI routing, the controller, the controller cart's song). For the structure's observers (the UI,
-   *  the plugin's watched ROMs): the audio side needs no hook, since the graph this store publishes carries all of
-   *  it. */
-  setOnSystemsChange(fn: () => void): void {
-    this.onSystemsChange = fn;
+   *  changes (MIDI routing, the controller, the controller cart's song). Observers are kept, in the order they were
+   *  added: the store graph's own (the render list's prune, the UI notify) and a host's (the plugin's watched ROMs)
+   *  each see every change, and none replaces another. The audio side needs no observer, since the graph this
+   *  store publishes carries all of it. */
+  addOnSystemsChange(fn: () => void): void {
+    this.systemsObservers.push(fn);
+  }
+
+  private notifySystemsChange(): void {
+    for (const fn of this.systemsObservers) fn();
   }
 
   /** Install a hook fired on ANY project-state change — settings edits (setLayout / setZoom / …) and
-   *  dirty transitions (mutation, save, export, new, load). Distinct from setOnSystemsChange, which fires on
+   *  dirty transitions (mutation, save, export, new, load). Distinct from addOnSystemsChange, which fires on
    *  a systems-structure change or a change to a setting the graph's script nodes read (MIDI routing, the
    *  controller). A UI multiplexer wires this to re-render the settings / dirty views, which would otherwise
    *  never be notified. */
@@ -454,7 +459,7 @@ export class ProjectStore {
     this.controllerSongSig = sig;
     if (!songMoved && !anchored) return false;
     this.publishGraph(false);
-    this.onSystemsChange();
+    this.notifySystemsChange();
     return true;
   }
 
@@ -515,7 +520,7 @@ export class ProjectStore {
     // The routing node is placed from this setting at each publish, so publish: otherwise the audio thread keeps
     // routing by the old mode until an unrelated structural edit.
     this.publishGraph(false);
-    this.onSystemsChange();
+    this.notifySystemsChange();
     return true;
   }
   setAudioRouting(v: AudioRouting): boolean {
@@ -544,7 +549,7 @@ export class ProjectStore {
     };
     this.markDirty();
     this.publishGraph(false);
-    this.onSystemsChange();
+    this.notifySystemsChange();
   }
 
   /** Empty project: tear down systems, reset settings/path, mark clean. */
@@ -557,7 +562,7 @@ export class ProjectStore {
     this.dirty = false;
     this.songRequest = null; // whatever was waiting was for a cart that no longer exists
     this.recentPending = false;
-    this.onSystemsChange(); // its observers: there are no systems now
+    this.notifySystemsChange(); // its observers: there are no systems now
     this.onChangeCb();
   }
 
@@ -754,7 +759,7 @@ export class ProjectStore {
         console.warn(`[project] placing the systems a failed load adopted threw: ${String(pe)}`);
       }
       try {
-        this.onSystemsChange();
+        this.notifySystemsChange();
       } catch (se) {
         console.warn(`[project] notifying the observers of the systems a failed load adopted threw: ${String(se)}`);
       }
@@ -769,7 +774,7 @@ export class ProjectStore {
       // Every system is adopted by now, so the observers hear of them as the rebuild's failure path tells them:
       // once, here, as the success path below is not reached.
       try {
-        this.onSystemsChange();
+        this.notifySystemsChange();
       } catch (se) {
         console.warn(`[project] notifying the observers of the systems a failed load adopted threw: ${String(se)}`);
       }
@@ -781,7 +786,7 @@ export class ProjectStore {
     if (path) this.recordProjectRow(path); // in-memory loads (plugin state chunk) pass "" - no recents entry
     this.path = path;
     this.dirty = false;
-    this.onSystemsChange(); // its observers: the rebuilt systems (the adopt path is quiet)
+    this.notifySystemsChange(); // its observers: the rebuilt systems (the adopt path is quiet)
     this.onChangeCb();
     return { kind: "loaded", systems: this.systems.systems().length };
   }

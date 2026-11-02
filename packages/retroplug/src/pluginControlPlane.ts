@@ -31,10 +31,6 @@ const uiNotify: { fn: (channel: StoreChannel) => void } = { fn: () => {} };
 const stores: AppStores = composeAppStores({ notify: (channel) => uiNotify.fn(channel) });
 const project = stores.project;
 
-// A structural systems edit (load / new / role change) refreshes the watched ROMs AND re-renders the
-// editor. composeAppStores already routed onChange / onFocusChange to the UI notify; layer the watch-list
-// refresh onto the structure signal without dropping that notify (focus changes, wired to onFocusChange,
-// re-render only).
 // The file watcher's TS policy half: drains native's changed paths and reacts (reload config, refresh
 // bindings, cold-boot a ROM-changed system with reloadOnRomChange on). A bindings change re-renders the
 // editor via the "bindings" notify. Driven from the UI idle loop through __rp_pumpWatcher below.
@@ -47,10 +43,9 @@ const refreshWatchedRoms = (): void => {
   stores.backend.setWatchedRoms(roms);
 };
 
-project.setOnSystemsChange(() => {
-  refreshWatchedRoms();
-  uiNotify.fn("systems");
-});
+// composeAppStores already routed the same signal to the editor's notify and the render list's prune; this
+// observer is added beside those, not in place of them.
+project.addOnSystemsChange(refreshWatchedRoms);
 
 // Publish the graph + the editor's notify hook on the shared plugin namespace (globalThis[Symbol.for(
 // "plugin")], where __rpcSend already lives) for the UI bundle to reuse.

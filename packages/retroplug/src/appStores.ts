@@ -73,7 +73,7 @@ export function composeAppStores({ backend = createRealBackend({ debug: false })
 
   const project = new ProjectStore(backend, recent, registry);
   const renders = new RenderJobs(backend, () => project.systems.view().map((s) => s.id));
-  project.setOnSystemsChange(() => {
+  project.addOnSystemsChange(() => {
     renders.prune();
     notify("systems");
   });
