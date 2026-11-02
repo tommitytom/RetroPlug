@@ -8,7 +8,7 @@
 // The constants the chain needs to cut and cap a slot live here too, spelled as the formats spell them: the kit rates,
 // the frame caps and the PAL DPCM rate table, whose literals are wav2dmc.py's digit for digit.
 
-/** LSDj's kit rate: the Game Boy wave channel's, which every kit sample is resampled to. */
+/** The rate LSDj plays kit samples at on the Game Boy wave channel, which every kit sample is resampled to. */
 export const LSDJ_KIT_RATE = 11468;
 
 /** The 4-bit depth an LSDj kit sample is quantised to. */

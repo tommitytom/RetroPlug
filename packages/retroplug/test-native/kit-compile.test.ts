@@ -1,11 +1,11 @@
 // The TypeScript kit compiler (src/kit/) past what the 39-case baseline covers (test-native/kit-baseline holds those),
 // on this host's real engine. A slot it refuses (a source with a NaN, a filter at Nyquist, a gain or a Q outside its
-// node's range, a pass that overflows a finite source to a value that is not finite, a job a node's guard fails)
-// leaves the rest of the kit compiling, says why, and leaves a slot of no bytes, the shape a slot whose file fails to
-// load has. Every edge a slot has - an empty window, a window cut by offset and length, a window that resamples to less
-// than one wave frame or to nothing, a silent source, a source past the frame cap, a bank whose space runs out, a DMC
-// slot that does not fit, samples past the slot count, the defaults a spec leaves out - is recorded, in full 15- and
-// 16-slot kits; and a slot the bank does not hold whole says why.
+// node's range, a pass that overflows a finite source to a value that is not finite, a job whose completion carries a
+// node's guard count) leaves the rest of the kit compiling, says why, and leaves a slot of no bytes, the shape a slot
+// whose file fails to load has. Every edge a slot has - an empty window, a window cut by offset and length, a window
+// that resamples to less than one wave frame or to nothing, a silent source, a source past the frame cap, a bank whose
+// space runs out, a DMC slot that does not fit, samples past the slot count, the defaults a spec leaves out - is
+// recorded, in full 15- and 16-slot kits; and a slot the bank does not hold whole says why.
 //
 // Every bank is held to kit-edges.json (beside kit-baseline.json), recorded from this compiler on the target under the
 // baseline's rules: its hash on the target (`linux-x64-gnu13`), and elsewhere a second compile agreeing with the first;
@@ -288,9 +288,10 @@ edgeCase("a full risa kit of every DMC slot edge is the bank kit-edges.json reco
 edgeCase("a finite source the chain overflows refuses its slot with the reason, the rest compiling", async () => {
   // Each route reaches a value that is not finite from a source that is: a normalise over a subnormal peak and a plain
   // gain over samples near the float range's top make one the pass records; a +96 dB peak over those samples overflows
-  // the filter, whose guard resets it and fails the job; a dither (JJN) over loud samples overflows its scaled value,
-  // whose guard restarts it and fails the job. A live plan streams on through both guards; the kit compile refuses the
-  // slot, so no kit it builds carries a guard's output or a non-finite intermediate.
+  // the filter, whose guard resets it and whose job completes carrying the count; a dither (JJN) over loud samples
+  // overflows its scaled value, whose guard restarts it and whose job completes the same way. A live plan streams on
+  // through both guards; the kit compile refuses the slot, so no kit it builds carries a guard's output or a non-finite
+  // intermediate.
   const samples = [
     lsdj(SUBNORMAL, "SUB", [gain(0.9)]),
     lsdj(SINE, "A", [filter("LowPass", 2000, 0.9)]),
@@ -328,7 +329,7 @@ edgeCase("samples past the slot count are dropped, each saying so", async () => 
   expect(dmc.errors[16]).toBe("the risa kit bank holds 16 samples, so this one is dropped");
 });
 
-edgeCase("a refusal beats an empty window: a refused slot is empty, an empty window's {0}", async () => {
+edgeCase("a refusal beats an empty window: a refused slot is empty where its window alone places {0}", async () => {
   const samples: RisaDmcSampleSpec[] = [
     { path: SINE, name: "A", effects: [], rate: 12 },
     { path: SINE, name: "REF", effects: [gain(150, false)], rate: 12, offset: 9000 },

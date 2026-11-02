@@ -580,8 +580,8 @@ test("a null window field is absent, which native's optional reads as zero", asy
 test("a pass that records a non-finite sample, or that a node's guard stepped into, refuses its slot", async () => {
   const ok = Float32Array.from({ length: 4410 }, (_, i) => levelOf(i % 16));
   const base = scriptedRunner({ files: { "/ok.wav": { samples: ok, rate: 44100 } } });
-  // The effects pass's recording carries an infinity (a normalise over a subnormal peak, say), or its job fails with
-  // the count and first reason the offline host gives when guards fire; every other job is the scripted one.
+  // The effects pass's recording carries an infinity (a normalise over a subnormal peak, say), or its job completes
+  // carrying the count and first reason the offline host gives when guards fire; every other job is the scripted one.
   const runner = (fault: "infinity" | "guard"): KitJobRunner => ({
     async offlineRun(request: OfflineRunRequest): Promise<OfflineRunResult> {
       const result = await base.offlineRun(request);

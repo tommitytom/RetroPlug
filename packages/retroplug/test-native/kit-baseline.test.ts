@@ -20,9 +20,9 @@
 // and RP_KIT_GOLDEN_REQUIRE_TARGET=1 makes a foreign host fail instead (CI's linux-x64 job sets it on its test:native
 // step). The case names must be the golden's keys exactly, none missing and none extra.
 //
-// RP_KIT_GOLDEN_UPDATE=1 re-records the golden from this compiler, refused anywhere but the target and for any case
-// whose two compiles disagree, and written through a sibling temp file. Without the variable the file is only ever
-// read.
+// RP_KIT_GOLDEN_UPDATE=1 re-records the golden from this compiler, refused anywhere but the target, for any case whose
+// two compiles disagree and for a run whose source check did not hold, and written through a sibling temp file. Without
+// the variable the file is only ever read.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver, type KitEffect } from "../src/audioDriver";
@@ -48,8 +48,10 @@ const BASELINE_TARGET = "linux-x64-gnu13";
 const env = tjs.env;
 const UPDATE = env.RP_KIT_GOLDEN_UPDATE === "1";
 const REQUIRE_TARGET = env.RP_KIT_GOLDEN_REQUIRE_TARGET === "1";
+// Whether the source check held: a recording is the recorded input compiled, so it waits for that proof.
+let sourcesProven = false;
 
-// ---- the matrix (the golden's cases, in its order) ------------------------------------------------------------------
+// ---- the matrix (the golden's cases, listed in the order they were recorded) ----------------------------------------
 
 type Codec = "lsdj" | "risa";
 
@@ -393,6 +395,7 @@ test("every source decodes through a job to the samples written, and on the targ
     expect(r.buffers[0].frames, key).toBe(source.samples.length);
     expect(firstDifference(floatBytes(r.buffers[0].samples), floatBytes(source.samples)), `${key} decoded`).toBe(-1);
   }
+  sourcesProven = true;
 });
 
 const COMPILE_CASE = UPDATE
@@ -413,6 +416,10 @@ test(COMPILE_CASE, async () => {
         `a recording only happens on ${BASELINE_TARGET}, and this host is ${host}; ` +
           "a digest recorded here would be a fallback, not the baseline",
       );
+    // The case runs even after an earlier one failed, so a run whose sources were not held to SOURCE_HASHES records
+    // nothing: a recording of inputs nothing proved is not the baseline either.
+    if (!sourcesProven)
+      throw new Error("the sources did not decode to SOURCE_HASHES, so a recording would not be the recorded input");
     const recorded: Golden = { target: BASELINE_TARGET, cases: {} };
     CASES.forEach((c, k) => {
       const kit = first[k];

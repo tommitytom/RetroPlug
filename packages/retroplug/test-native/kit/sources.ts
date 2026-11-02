@@ -1,8 +1,8 @@
-// The kit baseline's synthesised sources, and what writing and hashing them takes. Every expression is at the kit
-// path's precision: the double arithmetic is JavaScript's own (both are IEEE doubles, and Math.sin on this host is the
-// C library's sin), and every place the kit path rounds to float is a Math.fround here. A binary32 product rounded once
-// is exactly binary32 multiplication (the double product of two floats is exact), and a double difference of two floats
-// rounded once is binary32 subtraction, so each fround below is one float operation.
+// The kit baseline's synthesised sources, and what writing and hashing them takes. Every expression is the retired C++
+// suite's signal generator, transcribed: its double arithmetic is JavaScript's own (both are IEEE doubles, and
+// Math.sin on this host is the C library's sin), and each place it rounded to float is a Math.fround here. A binary32
+// product rounded once is exactly binary32 multiplication (the double product of two floats is exact), and a double
+// difference of two floats rounded once is binary32 subtraction, so each fround below is one float operation.
 //
 // The proof that these are the sources the baseline was recorded from is SOURCE_HASHES: each source's FNV-1a-64 over
 // its float bytes, recorded from the retired C++ suite, which kit-baseline.test.ts holds every source to on the target
