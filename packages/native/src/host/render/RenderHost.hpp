@@ -66,12 +66,12 @@ private:
     // stack below the render's JS, the other half (as ScriptHost::kStackBytes). A recursion past it throws a RangeError
     // the worker reports as the render's error, where QuickJS's default of 1 MiB would run off a macOS worker's stack.
     // Measured on Linux x64 (GCC 13), by the least limit each render still finishes under and by a painted thread
-    // stack, over the render baseline's LSDj (telemelt to its HFF, picked by name, and by index split), risa
-    // (ecoli_soul to its HFF, with a region role) and smsggdj cases and the SGB jingle with a model role: the JS needs
-    // 68 KiB (68.5 for smsggdj), about the same for every render, so its peak is in what they share rather than in a
-    // song, and 114.5 KiB (116) under ASan. The whole thread, cores included, peaks at 82 to 117 KiB (risa the most),
-    // and at 186 KiB under ASan. So 256 KiB is 3.7 times what the JS uses, 2.2 times under ASan. An MSVC Debug build,
-    // whose interpreter frames are larger, is unmeasured.
+    // stack, over the render baseline's LSDj (telemelt to its HFF, picked by name, and by index split) and risa
+    // (ecoli_soul to its HFF, with a region role) cases, an smsggdj song and the SGB jingle with a model role: the JS
+    // needs 68 KiB (68.5 for smsggdj), about the same for every render, so its peak is in what they share rather than
+    // in a song, and 114.5 KiB (116) under ASan. The whole thread, cores included, peaks at 82 to 117 KiB (risa the
+    // most), and at 186 KiB under ASan. So 256 KiB is 3.7 times what the JS uses, 2.2 times under ASan. An MSVC Debug
+    // build, whose interpreter frames are larger, is unmeasured.
     static constexpr std::size_t kStackBytes = 256 * 1024;
 
     JSRuntime* rt_ = nullptr;

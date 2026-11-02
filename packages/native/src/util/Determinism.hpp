@@ -9,8 +9,8 @@
 // and so for every engine job's Engine in those processes, so a recorded hash cannot depend on the wall clock; the C++
 // engine-graph binary sets it for itself (test/engine-graph/Deterministic.cpp); and the Node host's parity test
 // (packages/native/node/test/emu-parity.test.mjs) sets it for both hosts it compares, which are two processes that
-// would otherwise each draw a power-on state of their own. Carts with a real-time clock (MBC3
-// timer, HuC3, TPP1) still read the host clock in SameBoy's default RTC mode, and no parity or render case uses one.
+// would otherwise each draw a power-on state of their own. Carts with a real-time clock (MBC3 timer, HuC3, TPP1)
+// still read the host clock in SameBoy's default RTC mode, and no parity or render case uses one.
 
 #include <cstdlib>
 #include <cstring>

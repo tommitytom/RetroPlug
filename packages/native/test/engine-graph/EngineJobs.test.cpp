@@ -105,15 +105,14 @@ int threadCount() {
 #endif
 }
 
-// The thread count once it holds still: the same on every read for 50 ms, or the last read after ten seconds. Two
+// The thread count once it holds still: the same on every read for 50 ms, or the last read at `deadline`. Two
 // things make one read wrong while threads come and go. A thread pthread_join has returned for can be listed a moment
 // longer (the kernel wakes the joiner as the exiting thread clears its id, before its task is released), and a listing
 // taken while a thread exits can skip one that is still there (/proc's task listing walks by position). On a loaded
 // machine either is long enough to count, so a count is taken only once nothing changes.
-int threadCountSteady() {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    int        n = threadCount();
-    auto       since = std::chrono::steady_clock::now();
+int threadCountSteady(std::chrono::steady_clock::time_point deadline) {
+    int  n = threadCount();
+    auto since = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         const int m = threadCount();
@@ -127,6 +126,9 @@ int threadCountSteady() {
     return n;
 }
 
+// The same, given ten seconds.
+int threadCountSteady() { return threadCountSteady(std::chrono::steady_clock::now() + std::chrono::seconds(10)); }
+
 // The count a joined-workers check starts from. A thread is started and joined first: a runtime that starts a helper
 // thread of its own at the process's first thread (ThreadSanitizer's background thread) then has it before the count,
 // rather than during the case, where it would read as a worker never joined.
@@ -135,12 +137,12 @@ int threadCountBaseline() {
     return threadCountSteady();
 }
 
-// The steady count once it is no more than `atMost`, or what it reads after ten seconds: a thread still running stays
-// counted past the deadline.
+// The steady count once it is no more than `atMost`, or what it reads at ten seconds, the steady reads sharing that
+// deadline (so ten seconds is the most it takes): a thread still running stays counted past it.
 int threadCountSettled(int atMost) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    int        n = threadCountSteady();
-    while (n > atMost && std::chrono::steady_clock::now() < deadline) n = threadCountSteady();
+    int        n = threadCountSteady(deadline);
+    while (n > atMost && std::chrono::steady_clock::now() < deadline) n = threadCountSteady(deadline);
     return n;
 }
 
