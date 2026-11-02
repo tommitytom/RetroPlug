@@ -121,8 +121,11 @@ struct Gain {
     struct { rp::audio_in<rp::channels<2, "any">> in; } inputs;
     struct { rp::audio_out<rp::match<"in">> out; } outputs;
     // A linear multiply, because that is what the kernel is and what the kit path's bytes depend on: a level in dB
-    // would need a conversion the kit path does not do, and a held value would no longer be the exact multiply.
-    struct { rp::float_param<"Gain", rp::range{0.0, 4.0, 1.0}> gain; } params;
+    // would need a conversion the kit path does not do, and a held value would no longer be the exact multiply. The
+    // range covers any sane kit spec's plain gain, a phase flip or a boost or cut; a normalising gain is
+    // rp.dsp.normalize's, computed from the buffer at activate and never this param's. A kit compile refuses a plain
+    // gain outside the range rather than letting the planner clamp it silently.
+    struct { rp::float_param<"Gain", rp::range{-100.0, 100.0, 1.0}> gain; } params;
 
     static std::optional<std::string> validate(const Settings& s) { return checkChannels(s.channels, "a gain"); }
 
@@ -172,21 +175,22 @@ struct Gain {
 // instance or a fresh activation starts from cleared state (what `init` does). The kernel's output clamp is part of its
 // arithmetic, so the node's output is clamped to [-1, 1] as the kit path's is.
 //
-// A frequency or Q beyond the project's range is not refused: the params' ranges are the node's, not the kernel's,
-// and they are narrower than a kit spec can be (20 Hz to 20 kHz, Q 0.1 to 10, -24 to 24 dB, where a kit's
-// `FilterEffect` is four plain floats). A document's or `setParam`'s value outside one is clamped silently by the
-// planner and the host, and a wired value is not clamped at all, so the kernel computes the coefficients the RBJ
-// formulas give for whatever it reads. The node clamps nothing of its own, a frequency above Nyquist included, because
-// the kit path hands the spec's frequency straight to the kernel and a clamp here would be a different byte for the
-// same kit. A kit compile therefore cannot send its spec through these params as they are: D2's design has to widen
-// them, carry the spec in settings or wire it (the D1 design, section 8).
+// A frequency or Q beyond the node's range is not refused: the params' ranges are the node's, not the kernel's. A
+// document's or `setParam`'s value outside one is clamped silently by the planner and the host, and a wired value is
+// not clamped at all, so the kernel computes the coefficients the RBJ formulas give for whatever it reads. The node
+// clamps nothing of its own, a frequency above Nyquist included, because the kit path hands the spec's frequency
+// straight to the kernel and a clamp here would be a different byte for the same kit. So the ranges cover any sane kit
+// value (1 Hz to 96 kHz, Q 0.001 to 1000, -96 to 96 dB, where a kit's `FilterEffect` is four plain floats), and a kit
+// compile refuses a spec outside them itself rather than letting the planner clamp it. It refuses a frequency at or
+// above its source rate's Nyquist too, which the planner cannot see: it knows neither the plan's rate nor the source's.
 //
 // Above Nyquist the RBJ formulas put the poles outside the unit circle, so the kernel's unclamped feedback grows until
 // the state is infinite and then NaN, and the clamp writes a NaN through (`std::clamp` of a NaN is the NaN). That is
-// reachable at the 22050 and 32000 Hz rates the standalone offers, where the frequency knob's top half is above
-// Nyquist, and nothing between the node and the host output rejects a non-finite sample. The growth is slow enough to
-// be heard: about 700 samples from a cleared state at 12 kHz on a 22.05 kHz plan, and the kernel's clamp writes
-// rail-to-rail output in every block until the guard fires, so a held above-Nyquist setting is full-scale bursts with
+// reachable at every plan rate under 192 kHz, from a document or `setParam` as well as a wire (at 48 kHz most of the
+// range is above Nyquist, at the standalone's 22050 and 32000 Hz nearly all of it), and nothing between the node and
+// the host output rejects a non-finite sample. The growth is slow enough to be heard: about 700 samples from a cleared
+// state at 12 kHz on a 22.05 kHz plan, and the kernel's clamp writes rail-to-rail output in every block until the
+// guard fires, so a held above-Nyquist setting is full-scale bursts with the silent blocks the guard writes between
 // the silent blocks the guard writes between them rather than silence. So the node guards the state and leaves the
 // coefficients alone: a channel whose filter came out of a block with any of its four state values not finite has that
 // filter reset and its block written as silence, so a sweep past Nyquist cannot poison the stream, and a frequency that
@@ -196,8 +200,9 @@ struct Gain {
 // frequency is above its source rate's Nyquist produces constant codes today (the state goes NaN, and the quantiser
 // reads every NaN as code 0), where this node recovers; and any non-finite input sample, which a decoded 32-bit float
 // WAV can carry (nothing between the sample cache and the kit compiler checks), latches the kernel for good, where this
-// node resets. No case in the kit baseline is in either regime, so none of its bytes moved; D2, whose contract is byte
-// identity, has to decide between the kernel call and this node for both.
+// node resets. No case in the kit baseline is in either regime, so none of its bytes moved. A kit compile refuses both
+// rather than choosing between the kernel call and this node: a source with a non-finite sample and a filter at or
+// above its source rate's Nyquist are errors, so it never asks this node to match the kernel there.
 struct Biquad {
     static constexpr const char* id = "rp.dsp.biquad";
     static constexpr const char* name = "Biquad";
@@ -207,9 +212,9 @@ struct Biquad {
     struct { rp::audio_in<rp::channels<2, "any">> in; } inputs;
     struct { rp::audio_out<rp::match<"in">> out; } outputs;
     struct {
-        rp::float_param<"Frequency", rp::range{20.0, 20000.0, 1000.0}, "Hz"> frequency;
-        rp::float_param<"Q", rp::range{0.1, 10.0, 1.0}>                       q;
-        rp::float_param<"Gain", rp::range{-24.0, 24.0, 0.0}, "dB">            gainDb;  // Peak and the shelves only
+        rp::float_param<"Frequency", rp::range{1.0, 96000.0, 1000.0}, "Hz"> frequency;
+        rp::float_param<"Q", rp::range{0.001, 1000.0, 1.0}>                  q;
+        rp::float_param<"Gain", rp::range{-96.0, 96.0, 0.0}, "dB">           gainDb;  // Peak and the shelves only
     } params;
 
     static std::optional<std::string> validate(const Settings& s) { return checkChannels(s.channels, "a biquad"); }
@@ -310,10 +315,11 @@ struct Biquad {
 // block rather than the stream. The block itself is left as the kernel quantised it, which is finite and at worst full
 // scale, so only the state is restarted and the click is one block's.
 //
-// That restart is a second place the node differs from the kernel run directly, and a kit can reach it: nothing
-// between `SampleCache` and `KitCompiler` rejects a non-finite sample, so a 32-bit float WAV carrying a NaN or an
-// infinity latches the kernel for the rest of the slot where this node recovers at the next block. No baseline case
-// carries one, so no kit byte moved; D2 has to decide for both this and the biquad's guard.
+// That restart is a second place the node differs from the kernel run directly, and a kit source can carry the regime:
+// nothing between `SampleCache` and the kit compile checks a sample for finiteness, so a 32-bit float WAV carrying a
+// NaN or an infinity latches the kernel for the rest of the slot where this node recovers at the next block. No
+// baseline case carries one, so no kit byte moved; a kit compile refuses a source with a non-finite sample, so it
+// never asks this node to match the kernel there.
 struct Dither {
     static constexpr const char* id = "rp.dsp.dither";
     static constexpr const char* name = "Dither";

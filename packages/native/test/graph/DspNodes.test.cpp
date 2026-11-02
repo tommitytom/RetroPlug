@@ -4,6 +4,8 @@
 // - Each node's output through a plan equals the kernel run directly over the same signal, bit for bit, and any split
 //   of the stream into blocks (1, 7, 64, 1024 frames and a ragged mix) gives the same stream: a node carries its
 //   kernel's state across blocks exactly as the kernel does.
+// - The params' ranges carry any sane kit value (a phase-flip or large plain gain, a 10 Hz high-pass at Q 20, a
+//   +30 dB shelf), and a value outside a range is still clamped to its bound, silently.
 // - A gain that moved ramps across one block and lands on the new value; a held one is the kernel's exact multiply,
 //   from the plan's first block on. The biquad's coefficients follow a sweep at the next block while its state, which
 //   is what a reset would throw away, is kept: a change of type recomputes them and clears the state, which is a fresh
@@ -221,6 +223,44 @@ TEST_CASE("rp.dsp.gain ramps a moved value across one block and multiplies a hel
     CHECK(late[63] == 1.0f);
 }
 
+TEST_CASE("rp.dsp.gain carries a kit's gain whole, and still clamps at its bounds", "[dsp-nodes]") {
+    const std::vector<float> in = signal(kFrames);
+    // A phase flip and a large plain gain: both are legal kit values, and both were outside the range D1 shipped, where
+    // the planner clamped them silently. Neither is the normalising gain rp.dsp.normalize computes from its buffer.
+    for (const float gain : {-1.0f, 7.4f}) {
+        INFO("gain " << gain);
+        rp::dsp::Gain kernel;
+        kernel.init(gain);
+        std::vector<float> reference(kFrames);
+        kernel.process(in.data(), reference.data(), kFrames);
+
+        const std::string params = R"({"channels":1},"params":{"gain":)" + std::to_string(gain) + "}";
+        for (const auto& split : kSplits) {
+            INFO("split starting " << split[0]);
+            DspRig     rig;
+            const auto sample = rig.buffer(in, 1);
+            REQUIRE(rig.play(sample, "rp.dsp.gain", params));
+            CHECK(firstDifference(reference, rig.render(kFrames, split)[0]) == -1);
+        }
+    }
+
+    // A document's value outside the range is clamped to the bound (the planner does it, silently), so the node gives
+    // the kernel's stream at that bound rather than the value asked for: the clamp the wider range must keep.
+    for (const auto& [asked, bound] : {std::pair{150.0f, 100.0f}, std::pair{-150.0f, -100.0f}}) {
+        INFO("gain " << asked << " clamped to " << bound);
+        rp::dsp::Gain kernel;
+        kernel.init(bound);
+        std::vector<float> reference(kFrames);
+        kernel.process(in.data(), reference.data(), kFrames);
+
+        DspRig     rig;
+        const auto sample = rig.buffer(in, 1);
+        REQUIRE(rig.play(sample, "rp.dsp.gain",
+                         R"({"channels":1},"params":{"gain":)" + std::to_string(asked) + "}"));
+        CHECK(firstDifference(reference, rig.render(kFrames, {4096})[0]) == -1);
+    }
+}
+
 TEST_CASE("rp.dsp.biquad through a plan is its kernel, whole or split any way", "[dsp-nodes]") {
     const std::vector<float>      in = signal(kFrames);
     const rp::dsp::BiquadSettings settings{rp::dsp::BiquadType::Peak, 48000.0f, 1000.0f, 1.0f, 6.0f};
@@ -248,6 +288,77 @@ TEST_CASE("rp.dsp.biquad through a plan is its kernel, whole or split any way", 
         // puts it there.
         for (const float v : out[0]) CHECK(std::abs(v) <= 1.0f);
         CHECK(std::any_of(out[0].begin(), out[0].end(), [](float v) { return std::abs(v) == 1.0f; }));
+    }
+}
+
+TEST_CASE("rp.dsp.biquad carries a kit's filter whole, and still clamps at its bounds", "[dsp-nodes]") {
+    const std::vector<float> in = signal(kFrames);
+    // A 10 Hz high-pass at Q 20 and a 3 kHz high shelf at +30 dB: legal kit specs outside the ranges D1 shipped, where
+    // the planner clamped them silently.
+    struct Spec {
+        const char*         type;
+        rp::dsp::BiquadType kernelType;
+        float               frequency, q, gainDb;
+    };
+    for (const Spec& spec : {Spec{"high-pass", rp::dsp::BiquadType::HighPass, 10.0f, 20.0f, 0.0f},
+                             Spec{"high-shelf", rp::dsp::BiquadType::HighShelf, 3000.0f, 0.7f, 30.0f}}) {
+        INFO(spec.type << " at " << spec.frequency << " Hz, Q " << spec.q << ", " << spec.gainDb << " dB");
+        rp::dsp::Biquad kernel;
+        kernel.init({spec.kernelType, 48000.0f, spec.frequency, spec.q, spec.gainDb});
+        std::vector<float> reference(kFrames);
+        kernel.process(in.data(), reference.data(), kFrames);
+
+        const std::string settings = R"({"channels":2,"type":")" + std::string(spec.type) +
+                                     R"("},"params":{"frequency":)" + std::to_string(spec.frequency) +
+                                     R"(,"q":)" + std::to_string(spec.q) +
+                                     R"(,"gainDb":)" + std::to_string(spec.gainDb) + "}";
+        for (const auto& split : kSplits) {
+            INFO("split starting " << split[0]);
+            DspRig     rig;
+            const auto sample = rig.buffer(in, 2);
+            REQUIRE(rig.play(sample, "rp.dsp.biquad", settings, 2));
+            const auto out = rig.render(kFrames, split);
+            CHECK(firstDifference(reference, out[0]) == -1);
+            CHECK(firstDifference(reference, out[1]) == -1);
+        }
+    }
+
+    // A document's value outside a range is clamped to the bound (the planner does it, silently), so each param asked
+    // beyond its range gives the kernel's stream at the bound: the clamp the wider ranges must keep. Every bound is
+    // under the 48 kHz plan's Nyquist, where the node and the kernel agree (the guard never fires). Each case also runs
+    // the kernel at the value asked, so it fails unless the bound and the asked value really do give different streams.
+    struct Clamped {
+        float frequency, q, gainDb;
+        float boundFrequency, boundQ, boundGainDb;
+    };
+    for (const Clamped& c : {Clamped{0.5f, 1.0f, 12.0f, 1.0f, 1.0f, 12.0f},
+                             Clamped{1000.0f, 0.0005f, 12.0f, 1000.0f, 0.001f, 12.0f},
+                             Clamped{1000.0f, 2000.0f, 12.0f, 1000.0f, 1000.0f, 12.0f},
+                             Clamped{1000.0f, 1.0f, 120.0f, 1000.0f, 1.0f, 96.0f},
+                             Clamped{1000.0f, 1.0f, -120.0f, 1000.0f, 1.0f, -96.0f}}) {
+        INFO("high-shelf clamped to " << c.boundFrequency << " Hz, Q " << c.boundQ << ", " << c.boundGainDb
+                                      << " dB");
+        rp::dsp::Biquad askedKernel;
+        askedKernel.init({rp::dsp::BiquadType::HighShelf, 48000.0f, c.frequency, c.q, c.gainDb});
+        std::vector<float> asked(kFrames);
+        askedKernel.process(in.data(), asked.data(), kFrames);
+
+        rp::dsp::Biquad kernel;
+        kernel.init({rp::dsp::BiquadType::HighShelf, 48000.0f, c.boundFrequency, c.boundQ, c.boundGainDb});
+        std::vector<float> reference(kFrames);
+        kernel.process(in.data(), reference.data(), kFrames);
+
+        // The case would fail without the clamp: the asked value's own stream differs from the bound's.
+        CHECK(firstDifference(asked, reference) != -1);
+
+        DspRig     rig;
+        const auto sample = rig.buffer(in, 1);
+        REQUIRE(rig.play(sample, "rp.dsp.biquad",
+                         R"({"channels":1,"type":"high-shelf"},"params":{"frequency":)" +
+                             std::to_string(c.frequency) +
+                             R"(,"q":)" + std::to_string(c.q) +
+                             R"(,"gainDb":)" + std::to_string(c.gainDb) + "}"));
+        CHECK(firstDifference(reference, rig.render(kFrames, {4096})[0]) == -1);
     }
 }
 
