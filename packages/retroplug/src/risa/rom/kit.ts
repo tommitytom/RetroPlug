@@ -1,9 +1,10 @@
 // risa DPCM kit-bank codec (read side) + the metadata-mirror derivation + the DMC decoder + the bank
-// assembler. The 8 KB kit bank is produced natively (audioDriver.compileDmc) or by the TypeScript kit
-// compiler (src/kit/, through assembleKitBank); this reads one back (bankToModel), derives the
-// resident-mirror rows from a bank's own bytes (deriveMetaFromBank — the model-free path from risa's
-// rom_upgrade.js), and decodes a DPCM stream to audio (dpcmDecode) for round-trip verification. Ported
-// from risa's tools/rom_patcher/src/{kit_bank_parser.js, kit_editor/decoder.js, rom_upgrade.js}.
+// assembler. The 8 KB kit bank is produced by the TypeScript kit compiler (src/kit/, through
+// audioDriver.compileDmc over the offline jobs) or re-packed by assembleKitBank; this reads one back
+// (bankToModel), derives the resident-mirror rows from a bank's own bytes (deriveMetaFromBank, the
+// model-free path from risa's rom_upgrade.js), and decodes a DPCM stream to audio (dpcmDecode) for
+// round-trip verification. Ported from risa's tools/rom_patcher/src/{kit_bank_parser.js, kit_editor/decoder.js,
+// rom_upgrade.js}.
 
 import {
   KIT_BANK_SIZE,
@@ -129,8 +130,8 @@ function writeSampleName(bank: Uint8Array, off: number, name: string): void {
  *  aligned packing into the 7872 B sample region, a 4-byte index entry per slot ([addr, lenReg, rate, flags]),
  *  3-char sample names, the ≤6-char kit name, and the 0xA5 populated magic. A null slot stays EMPTY with its
  *  index preserved (NOT compacted); a slot whose DPCM won't fit the remaining region is left empty. Because
- *  the native per-sample encode carries no cross-sample state, this is byte-identical to compiling the same
- *  samples together via compileDmc — so it losslessly re-packs existing slots' DPCM alongside a new one. */
+ *  a slot's encode carries no cross-sample state, this is byte-identical to compiling the same samples together
+ *  via compileDmc - so it losslessly re-packs existing slots' DPCM alongside a new one. */
 export function assembleKitBank(kitName: string, slots: (AssembleSlot | null)[]): Uint8Array {
   return assembleKitBankPlaced(kitName, slots).bank;
 }

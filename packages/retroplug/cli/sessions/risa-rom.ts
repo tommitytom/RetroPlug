@@ -1,8 +1,8 @@
 // `retroplug-cli risa-rom` — inspect, extract and edit the static assets (DPCM sample kits, themes, fonts)
 // inside a risa (NES/MMC5) `.nes` ROM, headlessly. The risa twin of ./lsdj-rom.ts, backed by the pure-TS
 // src/risa/rom module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile
-// is native (s.audio.compileDmc — the risa analog of compileKit); sample splicing re-packs existing DPCM +
-// a freshly-compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
+// is the TypeScript kit compiler (s.audio.compileDmc - the risa analog of compileKit); sample splicing
+// re-packs existing DPCM + a freshly-compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
 //
 // ONE JSON schema drives the editing verbs (see RISA_ROM_HELP): a manifest of kit/theme/font entries, each
 // of which BUILDS/IMPORTS from a file or TWEAKS metadata; `build-kit` reads a single, slotless kit entry.
@@ -10,7 +10,7 @@
 //   retroplug-cli risa-rom info          <rom> [--json]
 //   retroplug-cli risa-rom extract       <rom> <outDir> [--rate N]
 //   retroplug-cli risa-rom patch         <rom> <manifest.json> <out>       (the whole-ROM manifest)
-//   retroplug-cli risa-rom build-kit     <kit.json> <out.rkit> [flags]     (native compile → .rkit file)
+//   retroplug-cli risa-rom build-kit     <kit.json> <out.rkit> [flags]     (compile → .rkit file)
 //   retroplug-cli risa-rom import-sample <rom> <kit> <audio> [flags]       (compile one + splice)
 //   retroplug-cli risa-rom remove-sample <rom> <kit> <slot> [--out rom]
 //   retroplug-cli risa-rom export-theme  / import-theme   (.rit palette-role JSON)
@@ -38,6 +38,10 @@ import {
   CHR_BANK_SIZE,
   type AssembleSlot,
 } from "../../src/risa/rom";
+
+// What a slot the compiler left empty with no reason is: the compile result's contract makes that a compiler bug,
+// not a full bank, so the message says so instead of guessing at a cause.
+const NO_SLOT_REASON = "the compiler left the slot empty without saying why";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -77,7 +81,7 @@ function readOrThrow(s: Session, path: string, what: string): Uint8Array {
   return data;
 }
 
-// --- kit compile (native compileDmc) --------------------------------------------------------------------
+// --- kit compile (the TypeScript kit compiler, s.audio.compileDmc) ---------------------------------------
 
 // Per-sample shaping. risa's DMC codec skips dither (4-bit only) — so gain/filter only. --no-normalize maps
 // to the DMC 7-bit normalize (spec.normalize) rather than a gain effect, so there's no double-normalize.
@@ -126,9 +130,10 @@ function normalizeBuild(build: BuildSource[]): Exclude<BuildSource, string>[] {
   return build.map((b) => (typeof b === "string" ? { file: b } : b));
 }
 
-// Compile a whole 8 KB DPCM bank from `build` sources, asserting every source landed (a bad path silently
-// leaves an empty slot natively). Shared by build-kit + patch.
-function compileKitBank(s: Session, name: string, build: BuildSource[], baseFile: string, fb: Fallbacks): Uint8Array {
+// Compile a whole 8 KB DPCM bank from `build` sources, asserting every source landed. Shared by build-kit +
+// patch. The compiler leaves a refused slot empty and says why, so a slot that did not land is reported with
+// its reason rather than a generic failure.
+async function compileKitBank(s: Session, name: string, build: BuildSource[], baseFile: string, fb: Fallbacks): Promise<Uint8Array> {
   const sources = normalizeBuild(build);
   const samples: RisaDmcSampleSpec[] = sources.map((sm) => ({
     path: resolvePath(baseFile, sm.file),
@@ -140,11 +145,14 @@ function compileKitBank(s: Session, name: string, build: BuildSource[], baseFile
     loop: sm.loop ?? fb.loop,
     normalize: sm.normalize ?? fb.normalize,
   }));
-  const bank = s.audio.compileDmc({ name, samples });
-  if (bank.length !== KIT_BANK_SIZE) throw new Error("compileDmc returned an unexpected bank size");
+  const { bytes: bank, errors } = await s.audio.compileDmc({ name, samples });
+  if (bank.length !== KIT_BANK_SIZE) throw new Error("the kit compiler returned an unexpected bank size");
   const model = bankToModel(bank);
   sources.forEach((sm, i) => {
-    if (!model.slots[i]) throw new Error(`sample ${i} (${sm.file}) failed to compile — check the path/format`);
+    if (!model.slots[i])
+      throw new Error(
+        `sample ${i} (${sm.file}) did not compile: ${errors[i] ?? NO_SLOT_REASON}`,
+      );
   });
   return bank;
 }
@@ -251,17 +259,17 @@ function extract(s: Session, args: string[]): void {
   console.log(`extracted ${wavs} sample WAVs + ${rom.themes().length} themes + ${rom.fonts().length} fonts + rom.json to ${outDir}`);
 }
 
-function buildKit(s: Session, args: string[]): void {
+async function buildKit(s: Session, args: string[]): Promise<void> {
   const [specPath, outKit] = positionals(args);
   if (!specPath || !outKit) throw new Error("usage: risa-rom build-kit <kit.json> <out.rkit> [effect flags]");
   const spec = JSON.parse(dec.decode(readOrThrow(s, specPath, "kit spec"))) as KitEntry;
   if (!spec.build || spec.build.length === 0) throw new Error('kit spec needs a "build" array of source audio files');
-  const bank = compileKitBank(s, spec.name ?? "", spec.build, specPath, fallbacks(args));
+  const bank = await compileKitBank(s, spec.name ?? "", spec.build, specPath, fallbacks(args));
   if (!s.backend.writeFile(outKit, bank)) throw new Error(`write failed: ${outKit}`);
   console.log(`built kit "${spec.name ?? ""}" (${spec.build.length} samples); wrote ${outKit}`);
 }
 
-function importSample(s: Session, args: string[]): void {
+async function importSample(s: Session, args: string[]): Promise<void> {
   const [romPath, kitStr, audio] = positionals(args);
   if (!romPath || kitStr == null || !audio) throw new Error("usage: risa-rom import-sample <rom> <kit> <audio> [--slot N] [--name X] [--out rom] [flags]");
   const kitIndex = parseInt(kitStr, 10);
@@ -269,10 +277,13 @@ function importSample(s: Session, args: string[]): void {
   const name = flag(args, "--name") ?? sampleName(audio);
   const fb = fallbacks(args);
 
-  // Compile the one sample natively (a throwaway 1-sample bank) and pull its DPCM back out.
-  const oneBank = s.audio.compileDmc({ name: "", samples: [{ path: audio, name, effects: fb.effects, rate: fb.rate, loop: fb.loop, normalize: fb.normalize }] });
-  const one = bankToModel(oneBank).slots[0];
-  if (!one) throw new Error(`failed to compile ${audio} — check the path/format`);
+  // Compile the one sample (a throwaway 1-sample bank) and pull its DPCM back out.
+  const one = await s.audio.compileDmc({
+    name: "",
+    samples: [{ path: audio, name, effects: fb.effects, rate: fb.rate, loop: fb.loop, normalize: fb.normalize }],
+  });
+  const compiled = bankToModel(one.bytes).slots[0];
+  if (!compiled) throw new Error(`failed to compile ${audio}: ${one.errors[0] ?? NO_SLOT_REASON}`);
 
   const { name: kitName, slots } = kitSlots(rom, kitIndex);
   const slotStr = flag(args, "--slot");
@@ -284,7 +295,7 @@ function importSample(s: Session, args: string[]): void {
     slot = parseInt(slotStr, 10);
     if (slot < 0 || slot >= KIT_SLOT_COUNT) throw new Error(`--slot ${slot} out of range (0..${KIT_SLOT_COUNT - 1})`);
   }
-  slots[slot] = { dpcm: one.dpcm, rate: one.rate, loop: one.loop, name };
+  slots[slot] = { dpcm: compiled.dpcm, rate: compiled.rate, loop: compiled.loop, name };
 
   rom.setKit(kitIndex, assembleKitBank(kitName, slots));
   const out = flag(args, "--out") ?? romPath;
@@ -374,7 +385,7 @@ function importKit(s: Session, args: string[]): void {
   console.log(`imported ${file} into kit ${idxStr}; wrote ${out}`);
 }
 
-function patchManifest(s: Session, args: string[]): void {
+async function patchManifest(s: Session, args: string[]): Promise<void> {
   const [romPath, manifestPath, outRom] = positionals(args);
   if (!romPath || !manifestPath || !outRom) throw new Error("usage: risa-rom patch <rom> <manifest.json> <out>");
   const rom = openRom(s, romPath);
@@ -385,7 +396,8 @@ function patchManifest(s: Session, args: string[]): void {
   for (const ke of m.kits ?? []) {
     if (ke.slot == null) throw new Error('a manifest kit entry needs a "slot"');
     if (ke.build) {
-      rom.setKit(ke.slot, compileKitBank(s, ke.name ?? "", ke.build, manifestPath, fb));
+      const bank = await compileKitBank(s, ke.name ?? "", ke.build, manifestPath, fb);
+      rom.setKit(ke.slot, bank);
     } else if (ke.file) {
       const bank = readOrThrow(s, resolvePath(manifestPath, ke.file), "kit");
       if (bank.length !== KIT_BANK_SIZE || !isBankPopulated(bank)) throw new Error(`kit file ${ke.file}: not a populated 8 KB .rkit`);
@@ -455,7 +467,7 @@ export const risaRomTool: CliTool = {
   name: "risa-rom",
   summary: "inspect / extract / metadata-patch risa ROM kits, themes and fonts",
   help: RISA_ROM_HELP,
-  run(s: Session, args: string[]): void {
+  run(s: Session, args: string[]): void | Promise<void> {
     const sub = args[0];
     const rest = args.slice(1);
     if (sub === "info") return info(s, rest);

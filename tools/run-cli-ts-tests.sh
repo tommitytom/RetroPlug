@@ -170,6 +170,37 @@ check "run under an unwritable sibling still exits 0" 0 $code
 contains "the fallback is announced" "$out" "sibling build dir is not writable"
 contains "the session ran from the fallback" "$out" "a stripped sibling helper is importable"
 
+# 6c. The kit sessions' async exit. A kit verb awaits its compile (offline graph jobs, settled by the launcher's
+#     job loop), so the process must exit 0 only AFTER the bank is on disk, and a rejected compile must still exit 1
+#     with the reason. Both go through the REAL binary and its runSession, which a direct tool call in test-native
+#     does not: if runSession exited before the await settled, the exit-0 case would race the file and the rejected
+#     case would exit 0 with nothing on stderr.
+#
+#     The source is a canonical 16-bit mono WAV written here rather than committed: a 4400-frame square wave at
+#     44100 Hz, so 8800 data bytes after a fixed 44-byte header.
+wav="$TMP/tone.wav"
+{
+	printf 'RIFF\x84\x22\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x60\x22\x00\x00'
+	for ((i = 0; i < 44; i++)); do
+		printf '\x40\x1f%.0s' {1..50} # 50 frames at about +8000
+		printf '\xc0\xe0%.0s' {1..50} # 50 frames at about -8000
+	done
+} >"$wav"
+echo '{ "name": "TST", "build": [{ "file": "tone.wav", "name": "SQR" }] }' >"$TMP/kit.json"
+out="$TMP/build-kit.log"
+"$CLI" lsdj-rom build-kit "$TMP/kit.json" "$TMP/out.kit" >"$out" 2>&1
+check "lsdj-rom build-kit exits 0 once its compile settled" 0 $?
+if [ "$(wc -c <"$TMP/out.kit" 2>/dev/null)" = "16384" ]; then
+	echo "ok   - the bank was on disk when the process exited (16384 B)"
+else
+	echo "FAIL - no 16384-byte bank after build-kit exited 0"
+	fails=$((fails + 1))
+fi
+echo '{ "name": "TST", "build": [{ "file": "nope.wav", "name": "SQR" }] }' >"$TMP/kit-missing.json"
+"$CLI" lsdj-rom build-kit "$TMP/kit-missing.json" "$TMP/out-missing.kit" >"$TMP/build-kit-missing.out" 2>"$TMP/build-kit-missing.err"
+check "a rejected compile exits 1" 1 $?
+contains "the refusal carries the slot's reason" "$TMP/build-kit-missing.err" "did not compile"
+
 # 7. Stripping is position-preserving: output length must equal input length, so a stack trace from the
 #    emitted .js points at the right line of the .ts.
 for f in pass.test fail.test helper; do

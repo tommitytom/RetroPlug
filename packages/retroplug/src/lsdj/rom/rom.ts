@@ -54,8 +54,8 @@ function versionRotatesSamples(v: LsdjVersion | null): boolean {
 
 export class LsdjRom {
   readonly version: LsdjVersion | null;
-  /** Whether this ROM's LSDj version (9.2.0+) uses the per-frame sample rotation — for both decoding its
-   *  kits (kit.ts) and encoding imported samples to match (pass to compileKit's `rotate`). */
+  /** Whether this ROM's LSDj version (9.2.0+) uses the per-frame sample rotation - for both decoding its
+   *  kits (kit.ts) and encoding imported samples to match (the `rotate` a kit compile takes). */
   readonly rotatesSamples: boolean;
 
   private constructor(private readonly rom: Uint8Array) {
@@ -86,7 +86,7 @@ export class LsdjRom {
     return Array.from({ length: KIT_COUNT }, (_, i) => new KitView(this.rom, i, this.rotatesSamples));
   }
 
-  /** Overwrite a kit slot with a whole 16 KB bank (e.g. from compileKit / buildKitBank). */
+  /** Overwrite a kit slot with a whole 16 KB bank (the bank a kit compile returns, or buildKitBank's). */
   setKitBank(index: number, bank: Uint8Array): void {
     if (index < 0 || index >= KIT_COUNT || bank.length !== BANK_SIZE) return;
     this.rom.set(bank, KIT_LOOKUP[index] * BANK_SIZE);

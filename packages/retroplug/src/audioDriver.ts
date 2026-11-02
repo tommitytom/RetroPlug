@@ -6,8 +6,10 @@
 
 
 import { pumpAllJobs, setJobWait } from "./capability";
+import { compileDmc, compileKit, type KitCompileResult } from "./kit";
 import { setOfflineWait } from "./offline";
 import { makeCall } from "./rpcClient";
+import { offlineRunner } from "./realBackend";
 import type { EngineGraph } from "./engineGraph";
 import type { HostShape } from "./graph/buildGraph";
 
@@ -43,9 +45,9 @@ export interface DspTraceSpan {
   t1: number;
 }
 
-// LSDJ kit-compile effects (mirror the native rp::lsdj tagged union; discriminated on `type`). Applied
-// per sample: gain (normalize/scale) + filter (RBJ biquad) run before resampling, dither after — matching
-// the native ordering. Passed verbatim to the compileKit RPC where reflect-cpp decodes the tagged union.
+// LSDJ kit-compile effects (the kit chain's rp.dsp nodes' settings; discriminated on `type`). Applied
+// per sample: gain (normalize/scale) + filter (RBJ biquad) run before resampling, dither after - matching
+// the compile order. A field a spec leaves out takes the node's default (src/kit/chain.ts).
 export type KitGainEffect = { type: "gain"; normalize?: boolean; gain?: number };
 export type KitFilterEffect = {
   type: "filter";
@@ -136,14 +138,15 @@ export interface AudioDriver {
    *  buffer per stream in its `channelLayout()` (Game Boy = 4: Pulse 1, Pulse 2, Wave, Noise). Empty
    *  unless the project holds exactly ONE system (the PerChannel shape fans a single core's channels). */
   renderAudioPerChannel(id: number, ms: number): Float32Array[];
-  /** Compile an LSDJ sample kit from source audio files into a 16 KB kit bank (resample to the GB rate +
-   *  effects + 4-bit pack, per-sample in parallel natively). A per-sample load failure leaves that slot
-   *  empty rather than failing the whole kit — the caller validates by reading the bank back. */
-  compileKit(spec: KitCompileSpec): Uint8Array;
-  /** Compile a risa NES-DPCM sample kit into an 8 KB kit bank (resample to the PAL DPCM rate + effects +
-   *  1-bit ±2 delta pack, per-sample in parallel natively). Same behaviour as compileKit — an unloadable
-   *  slot is left empty; the caller validates by reading the bank back. */
-  compileDmc(spec: RisaKitCompileSpec): Uint8Array;
+  /** Compile an LSDJ sample kit from source audio files into a 16 KB kit bank: the TypeScript compiler's chain of
+   *  offline graph jobs per slot, slots in parallel (src/kit/). The promise settles where this host pumps or waits
+   *  for offline jobs: createAudioDriver turns the wait on, and a host with a UI tick pumps from it. A per-sample
+   *  failure leaves that slot empty rather than failing the whole kit, and the slot's reason comes back beside the
+   *  bank - the caller validates by reading the bank back, and can say why a slot did not land. */
+  compileKit(spec: KitCompileSpec): Promise<KitCompileResult>;
+  /** Compile a risa NES-DPCM sample kit into an 8 KB kit bank (the same chain, resampled to the PAL DPCM rate and
+   *  encoded by rp.dsp.dpcm). Same settling and failure behaviour as compileKit. */
+  compileDmc(spec: RisaKitCompileSpec): Promise<KitCompileResult>;
   /** The engine's audio sample rate (Hz) — thread into encodeWav so WAV headers are labelled correctly. */
   sampleRate(): number;
   /** Set the host sample rate (Hz). Baked into cores at construct, so it only takes effect BEFORE any
@@ -247,6 +250,9 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
   // A host that makes an audio driver has no UI tick to pump offline jobs (the CLI, the Node addon, the test host), so
   // their promises settle through the poll's native wait (src/offline.ts) instead.
   setOfflineWait(OFFLINE_WAIT_MS);
+  // The kit compiles run on the runtime's one offline queue, the emulator client's, so a compile and a live host never
+  // drain each other's completions (realBackend's offlineRunner).
+  const kitRunner = offlineRunner();
 
   const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
   const STEREO: HostShape = { kind: "multi", channels: 2 };
@@ -305,8 +311,8 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
         },
         () => [],
       ),
-    compileKit: (spec) => call("compileKit", spec) as Uint8Array, // the 16 KB kit bank, straight through
-    compileDmc: (spec) => call("compileDmc", spec) as Uint8Array, // the 8 KB risa DMC kit bank
+    compileKit: (spec) => compileKit(kitRunner, spec), // the 16 KB kit bank and each slot's reason
+    compileDmc: (spec) => compileDmc(kitRunner, spec), // the 8 KB risa DMC kit bank, and each slot's reason
     sampleRate: () => call("sampleRate") as number,
     setSampleRate: (sampleRate) => call("setSampleRate", sampleRate) as boolean,
     setTransport: (running) => call("setTransport", running) as boolean,

@@ -32,19 +32,30 @@ export function hostArgs(): string[] {
 }
 
 /** Boot a session, run `main` against it, and exit 0. Any throw is reported and exits 1. This is the
- *  entry every session file wraps its body in. */
-export function runSession(main: (s: Session) => void): void {
-  try {
-    main(bootSession());
-    tjs.exit(0);
-  } catch (e) {
-    // Report just the message — these are user-facing usage / IO errors (bad flags, missing ROM, unreadable
+ *  entry every session file wraps its body in. A `main` that awaits (a kit compile's offline jobs, say)
+ *  returns a promise: the exit then happens when it settles, and a rejection is reported as a throw is.
+ *  The launcher keeps pumping the JS job loop until `tjs.exit`, which is what advances those awaits. */
+export function runSession(main: (s: Session) => void | Promise<void>): void {
+  const fail = (e: unknown): void => {
+    // Report just the message - these are user-facing usage / IO errors (bad flags, missing ROM, unreadable
     // file), not crashes to debug, so no stack trace. (QuickJS's Error.stack omits the message anyway, so we
     // read err.message directly rather than printing `.stack`.)
     const err = e as Error;
     console.error(`ERROR: ${err?.message ?? e}`);
     tjs.exit(1);
+  };
+  let out: void | Promise<void>;
+  try {
+    out = main(bootSession());
+  } catch (e) {
+    fail(e);
+    return;
   }
+  if (out && typeof (out as Promise<void>).then === "function") {
+    (out as Promise<void>).then(() => tjs.exit(0), fail);
+    return;
+  }
+  tjs.exit(0);
 }
 
 /** Opt this session out of the bounded batch pump: the native launcher then pumps until tjs.exit / Ctrl-C.
@@ -57,9 +68,16 @@ export function keepAlive(): void {
 /** Boot a session and run `main` WITHOUT auto-exiting on success — for a long-running tool that sets up an
  *  event-driven poll loop (setInterval) + keepAlive() and returns, leaving the native pump to run it until
  *  tjs.exit / Ctrl-C. Any throw during setup is reported and exits 1 (mirrors runSession's catch). */
-export function runLongSession(main: (s: Session) => void): void {
+export function runLongSession(main: (s: Session) => void | Promise<void>): void {
   try {
-    main(bootSession());
+    const out = main(bootSession());
+    // A long-running session sets up and returns; if its setup is async, a rejection is still a setup failure.
+    if (out && typeof (out as Promise<void>).then === "function") {
+      (out as Promise<void>).catch((e: unknown) => {
+        console.error(`ERROR: ${(e as Error)?.message ?? e}`);
+        tjs.exit(1);
+      });
+    }
     // No tjs.exit here: the native keep-alive loop pumps until the tool exits or the user hits Ctrl-C.
   } catch (e) {
     const err = e as Error;

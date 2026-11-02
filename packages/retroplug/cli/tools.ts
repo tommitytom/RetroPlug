@@ -17,8 +17,10 @@ export interface CliTool {
    *  returns, and the dispatcher does NOT auto-exit it (runLongSession) — the native pump runs it until
    *  tjs.exit / Ctrl-C. Omit / false for a normal batch command. */
   longRunning?: boolean;
-  /** Run the tool against a booted control plane, given its own args (everything after the command name). */
-  run(s: Session, args: string[]): void;
+  /** Run the tool against a booted control plane, given its own args (everything after the command name). A tool
+   *  that awaits (a kit compile's offline jobs) returns a promise; the dispatcher's runSession waits for it before
+   *  exiting, so a rejection is still reported as a failed command. */
+  run(s: Session, args: string[]): void | Promise<void>;
 }
 
 import { testTool } from "./sessions/test";

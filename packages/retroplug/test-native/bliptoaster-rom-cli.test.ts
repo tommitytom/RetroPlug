@@ -1,7 +1,7 @@
 // End-to-end for the `retroplug-cli bliptoaster-rom` verbs, driven through the real tool against a real backend +
-// audio driver (mirrors test-native/risa-rom-cli.test.ts). The compile path (build-kit) uses the REAL native
-// compileDmc RPC and needs no ROM, so it always runs; the ROM-splice verbs are gated on the built FME-7
-// banking ROM (16 kit banks) and SKIP when absent. The tool only touches s.backend + s.audio, so a minimal
+// audio driver (mirrors test-native/risa-rom-cli.test.ts). The compile path (build-kit) runs the TypeScript kit
+// compiler over the real backend and needs no ROM, so it always runs; the ROM-splice verbs are gated on the built
+// FME-7 banking ROM (16 kit banks) and SKIP when absent. The tool only touches s.backend + s.audio, so a minimal
 // Session over the real backend/driver suffices.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
@@ -42,12 +42,12 @@ const requireRom = (be: ReturnType<typeof createRealBackend>, what: string): voi
   if (!be.fileExists(BLIPTOASTER_ROM)) skip(`bliptoaster-rom ${what}: no ROM at ${BLIPTOASTER_ROM}`);
 };
 
-test("bliptoaster-rom build-kit compiles a WAV into a populated 8 KB .rkit (no ROM needed)", () => {
+test("bliptoaster-rom build-kit compiles a WAV into a populated 8 KB .rkit (no ROM needed)", async () => {
   const { be, s } = toolSession();
   writeSine(be, "/tmp/rp-em-src.wav", 220);
   expect(be.writeFile("/tmp/rp-em-spec.json", jenc({ name: "MYDR", build: [{ file: "/tmp/rp-em-src.wav", name: "BD" }] }))).toBeTruthy();
 
-  blipToasterRomTool.run(s, ["build-kit", "/tmp/rp-em-spec.json", "/tmp/rp-em.rkit"]);
+  await blipToasterRomTool.run(s, ["build-kit", "/tmp/rp-em-spec.json", "/tmp/rp-em.rkit"]);
   const kit = be.readFile("/tmp/rp-em.rkit")!;
   expect(kit.length).toBe(0x2000); // a raw 8 KB bank, not a ROM
   expect(isBankPopulated(kit)).toBe(true);
@@ -57,12 +57,12 @@ test("bliptoaster-rom build-kit compiles a WAV into a populated 8 KB .rkit (no R
   console.log(`[bliptoaster-rom] build-kit compiled WAV → 8 KB .rkit (MYDR/BD)`);
 });
 
-test("bliptoaster-rom import-kit replaces one bank and leaves the other 15 byte-identical; the ROM boots", () => {
+test("bliptoaster-rom import-kit replaces one bank and leaves the other 15 byte-identical; the ROM boots", async () => {
   const { be, audio, s } = toolSession();
   requireRom(be, "import-kit");
   writeSine(be, "/tmp/rp-em-ik.wav", 300);
   expect(be.writeFile("/tmp/rp-em-ik-spec.json", jenc({ name: "HATS", build: [{ file: "/tmp/rp-em-ik.wav", name: "HH" }] }))).toBeTruthy();
-  blipToasterRomTool.run(s, ["build-kit", "/tmp/rp-em-ik-spec.json", "/tmp/rp-em-ik.rkit"]);
+  await blipToasterRomTool.run(s, ["build-kit", "/tmp/rp-em-ik-spec.json", "/tmp/rp-em-ik.rkit"]);
 
   // Every one of the 16 banks ships POPULATED (the cart bakes all 16 of its .rkit assets), so an import is a
   // replace, not a fill. It used to assume slot 3 was reserved and empty - true of an earlier build.
@@ -74,7 +74,7 @@ test("bliptoaster-rom import-kit replaces one bank and leaves the other 15 byte-
   expect(before === "HATS").toBe(false); // the baked kit must not already be the one we import
 
   const nes = copyRom(be, "/tmp/rp-em-ik.nes");
-  blipToasterRomTool.run(s, ["import-kit", nes, "/tmp/rp-em-ik.rkit", String(SLOT), "--out", nes]);
+  await blipToasterRomTool.run(s, ["import-kit", nes, "/tmp/rp-em-ik.rkit", String(SLOT), "--out", nes]);
 
   const rom = BlipToasterRom.fromBytes(be.readFile(nes)!);
   expect(rom.isKitPopulated(SLOT)).toBe(true);
@@ -92,24 +92,24 @@ test("bliptoaster-rom import-kit replaces one bank and leaves the other 15 byte-
   console.log(`[bliptoaster-rom] import-kit replaced bank ${SLOT} (${before} -> HATS); patched ROM boots`);
 });
 
-test("bliptoaster-rom import-sample splices into a kit, remove-sample empties a slot (index preserved)", () => {
+test("bliptoaster-rom import-sample splices into a kit, remove-sample empties a slot (index preserved)", async () => {
   const { be, s } = toolSession();
   requireRom(be, "import-sample");
   writeSine(be, "/tmp/rp-em-a.wav", 200);
   writeSine(be, "/tmp/rp-em-b.wav", 500);
   expect(be.writeFile("/tmp/rp-em-is-spec.json", jenc({ name: "KT", build: [{ file: "/tmp/rp-em-a.wav", name: "AAA" }] }))).toBeTruthy();
-  blipToasterRomTool.run(s, ["build-kit", "/tmp/rp-em-is-spec.json", "/tmp/rp-em-is.rkit"]);
+  await blipToasterRomTool.run(s, ["build-kit", "/tmp/rp-em-is-spec.json", "/tmp/rp-em-is.rkit"]);
   const nes = copyRom(be, "/tmp/rp-em-is.nes");
-  blipToasterRomTool.run(s, ["import-kit", nes, "/tmp/rp-em-is.rkit", "2", "--out", nes]);
+  await blipToasterRomTool.run(s, ["import-kit", nes, "/tmp/rp-em-is.rkit", "2", "--out", nes]);
 
   // import-sample lands in the first empty slot (1).
-  blipToasterRomTool.run(s, ["import-sample", nes, "2", "/tmp/rp-em-b.wav", "--name", "BBB", "--out", nes]);
+  await blipToasterRomTool.run(s, ["import-sample", nes, "2", "/tmp/rp-em-b.wav", "--name", "BBB", "--out", nes]);
   let model = bankToModel(BlipToasterRom.fromBytes(be.readFile(nes)!).getKitBank(2)!);
   expect(model.slots[0]?.name).toBe("AAA");
   expect(model.slots[1]?.name).toBe("BBB");
 
   // remove-sample empties slot 0; slot 1 stays put (index preserved).
-  blipToasterRomTool.run(s, ["remove-sample", nes, "2", "0", "--out", nes]);
+  await blipToasterRomTool.run(s, ["remove-sample", nes, "2", "0", "--out", nes]);
   model = bankToModel(BlipToasterRom.fromBytes(be.readFile(nes)!).getKitBank(2)!);
   expect(model.slots[0]).toBe(null);
   expect(model.slots[1]?.name).toBe("BBB");
@@ -309,12 +309,12 @@ test("the baked font byte reaches the screen: two ROMs differing only in it rend
   expect(pixDiff).toBeGreaterThan(0);
 });
 
-test("bliptoaster-rom patch realizes a mixed manifest (build kit + import theme + font) and boots", () => {
+test("bliptoaster-rom patch realizes a mixed manifest (build kit + import theme + font) and boots", async () => {
   const { be, audio, s } = toolSession();
   requireRom(be, "patch");
   writeSine(be, "/tmp/rp-em-pt.wav", 300);
-  blipToasterRomTool.run(s, ["export-theme", BLIPTOASTER_ROM, "0", "/tmp/rp-em-pt.rit"]);
-  blipToasterRomTool.run(s, ["export-font", BLIPTOASTER_ROM, "0", "/tmp/rp-em-pt.chr"]);
+  await blipToasterRomTool.run(s, ["export-theme", BLIPTOASTER_ROM, "0", "/tmp/rp-em-pt.rit"]);
+  await blipToasterRomTool.run(s, ["export-font", BLIPTOASTER_ROM, "0", "/tmp/rp-em-pt.chr"]);
   const manifest = {
     kits: [{ slot: 4, name: "PT", build: [{ file: "/tmp/rp-em-pt.wav", name: "KIK" }] }],
     themes: [{ slot: 0, file: "/tmp/rp-em-pt.rit" }],
@@ -323,7 +323,7 @@ test("bliptoaster-rom patch realizes a mixed manifest (build kit + import theme 
   expect(be.writeFile("/tmp/rp-em-pt-manifest.json", jenc(manifest))).toBeTruthy();
 
   const src = copyRom(be, "/tmp/rp-em-pt-src.nes");
-  blipToasterRomTool.run(s, ["patch", src, "/tmp/rp-em-pt-manifest.json", "/tmp/rp-em-pt-out.nes"]);
+  await blipToasterRomTool.run(s, ["patch", src, "/tmp/rp-em-pt-manifest.json", "/tmp/rp-em-pt-out.nes"]);
   const rom = BlipToasterRom.fromBytes(be.readFile("/tmp/rp-em-pt-out.nes")!);
   expect(rom.kits().some((k) => k.slot === 4 && k.name === "PT")).toBeTruthy();
 

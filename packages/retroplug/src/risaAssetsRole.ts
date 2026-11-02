@@ -5,9 +5,10 @@
 // manifest is the persisted source of truth (it round-trips through the project's role config). THEMES are
 // just palette indices, so they're stored INLINE as readable JSON (no file, no base64); FONTS are binary,
 // so they LINK to the `.chr` bank file on disk by path (read at construct). KITS are likewise binary, so
-// they LINK a pre-built 8 KB DMC bank (`.rkit`) by path — compilation is offline (the compileDmc RPC is on
-// the harness facet, unreachable from the plugin), so a kit override just splices a ready-made bank with
-// rom.setKit (which dual-writes the resident metadata mirror). Applying reuses the pure-TS patcher (src/risa/rom).
+// they LINK a pre-built 8 KB DMC bank (`.rkit`) by path - risa's Export writes one out of a ROM and the CLI's
+// build-kit compiles one, and a kit override just splices that ready-made bank with rom.setKit (which
+// dual-writes the resident metadata mirror). src/kit can compile a .rkit in the plugin too, though no UI row does.
+// Applying reuses the pure-TS patcher (src/risa/rom).
 import type { RoleRegistry, ConstructCaps } from "./systemRoles";
 import type { ConstructSpec } from "./backend";
 import { z } from "./configSchema";

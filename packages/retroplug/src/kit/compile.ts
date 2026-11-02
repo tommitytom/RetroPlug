@@ -3,21 +3,22 @@
 // engine's offline pool runs them in parallel. Native decodes, windows and does every float the bytes depend on (the
 // effects, the resample, the dither, the DMC encode, each a node in a job's document, chain.ts); TypeScript builds the
 // documents, cuts the buffers to their lengths, packs the codes and bits (pack.ts) and assembles the bank
-// (lsdj/rom/buildKit.ts, risa/rom/kit.ts). A kit compiled here is the bank native KitCompiler builds from the same
-// spec, byte for byte: test-native/kit-baseline.test.ts holds it to kit-baseline.json's 39 banks, and
-// test-native/kit-compile.test.ts to kit-edges.json's banks past them.
+// (lsdj/rom/buildKit.ts, risa/rom/kit.ts). A kit compiled here is the bank those goldens record, byte for byte:
+// test-native/kit-baseline.test.ts holds it to kit-baseline.json's 39 banks and test-native/kit-compile.test.ts to
+// kit-edges.json's banks past them, both under the baseline's rules (the exact bytes only on the host that recorded
+// them, a foreign host demanding each case agree with itself).
 //
-// A slot that fails is left empty and the kit still compiles, as KitCompiler leaves a slot whose file fails to load:
-// a source that cannot be read or decoded, a window with a sample that is not finite, a spec the nodes cannot carry
-// (chain.ts's refusals), a pass that makes a sample that is not finite, or a pass a node's guard stepped into
-// (`recorded` says why those two keep every compiled kit byte-identical). Empty means no bytes: LSDj's assembler still
-// names the slot, with a length of zero; risa's leaves its index entry empty.
+// A slot that fails is left empty and the kit still compiles, never refusing the kit as a whole: a source that cannot
+// be read or decoded, a window with a sample that is not finite, a spec the nodes cannot carry (chain.ts's refusals),
+// a pass that makes a sample that is not finite, or a pass a node's guard stepped into (`recorded` says why that last
+// one keeps every compiled kit byte-identical). Empty means no bytes: LSDj's assembler still names the slot, with a
+// length of zero; risa's leaves its index entry empty.
 //
-// What a slot is when a stage comes out empty is the native compiler's too, found by reading it and reproduced here
-// rather than run, since a job can neither take an input of no frames nor record one: a window that is empty (an
-// offset at or past the source's end) or resamples to fewer frames than one wave frame is an LSDj slot of no bytes,
-// which is also what compileSample's trim makes of it; and a window that resamples to no frames at all is risa's
-// one-byte `{0}`, the encode of nothing padded to its shortest legal length.
+// What a slot is when a chain comes out empty is settled here rather than run, since a job can neither take an input
+// of no frames nor record one: a window that is empty (an offset at or past the source's end) or resamples to fewer
+// frames than one wave frame is an LSDj slot of no bytes, which is also what trimming to whole 32-sample frames leaves
+// of it; and a window that resamples to no frames at all is risa's one-byte `{0}`, the encode of nothing padded to its
+// shortest legal length.
 //
 // Every slot the bank does not hold whole has a reason in the result, a failure or not: the empty LSDj slots above,
 // an LSDj sample the bank's sample space ran out on (clipped, or with no room at all), and a risa sample that does not
@@ -199,8 +200,7 @@ async function compileSlots<S>(samples: readonly S[], capacity: number, compile:
   return { results, dropped: samples.slice(capacity).map(() => why) };
 }
 
-/** An LSDj kit: the 16 KB bank native compileKit builds from `spec` (its 15 slots, the rest dropped), and each
- *  sample's reason. */
+/** An LSDj kit: the 16 KB bank (its 15 slots, the rest dropped), and each sample's reason. */
 export async function compileKit(runner: KitJobRunner, spec: KitCompileSpec): Promise<KitCompileResult> {
   const rotate = spec.rotate ?? true;
   const compile = (s: KitSampleSpec): Promise<Compiled> => lsdjSlot(runner, s, rotate);
@@ -220,8 +220,7 @@ export async function compileKit(runner: KitJobRunner, spec: KitCompileSpec): Pr
   return { bytes: bank, errors: [...errors, ...dropped] };
 }
 
-/** A risa DMC kit: the 8 KB bank native compileDmc builds from `spec` (its 16 slots, the rest dropped), and each
- *  sample's reason. */
+/** A risa DMC kit: the 8 KB bank (its 16 slots, the rest dropped), and each sample's reason. */
 export async function compileDmc(runner: KitJobRunner, spec: RisaKitCompileSpec): Promise<KitCompileResult> {
   const compile = (s: RisaDmcSampleSpec): Promise<Compiled> => dmcSlot(runner, s);
   const { results, dropped } = await compileSlots(spec.samples, KIT_SLOT_COUNT, compile, "risa kit");

@@ -35,19 +35,19 @@ const requireRom = (be: ReturnType<typeof createRealBackend>, what: string): voi
   if (!be.fileExists(RISA_ROM)) skip(`risa-rom ${what}: no ROM at ${RISA_ROM}`);
 };
 
-test("risa-rom build-kit writes a bootable .rkit that import-kit places into a ROM", () => {
+test("risa-rom build-kit writes a bootable .rkit that import-kit places into a ROM", async () => {
   const { be, audio, s } = toolSession();
   requireRom(be, "build-kit");
   writeSine(be, "/tmp/rp-rk-src.wav", 220);
   expect(be.writeFile("/tmp/rp-rk-spec.json", jenc({ name: "MYDR", build: [{ file: "/tmp/rp-rk-src.wav", name: "BD" }] }))).toBeTruthy();
 
-  risaRomTool.run(s, ["build-kit", "/tmp/rp-rk-spec.json", "/tmp/rp-rk.rkit"]);
+  await risaRomTool.run(s, ["build-kit", "/tmp/rp-rk-spec.json", "/tmp/rp-rk.rkit"]);
   const kit = be.readFile("/tmp/rp-rk.rkit")!;
   expect(kit.length).toBe(0x2000); // a raw 8 KB bank, not a ROM
   expect(bankToModel(kit).name).toBe("MYDR");
 
   const rom = copyRom(be, "/tmp/rp-rk.nes");
-  risaRomTool.run(s, ["import-kit", rom, "/tmp/rp-rk.rkit", "0", "--out", rom]);
+  await risaRomTool.run(s, ["import-kit", rom, "/tmp/rp-rk.rkit", "0", "--out", rom]);
   const patched = RisaRom.fromBytes(be.readFile(rom)!);
   expect(patched.isKitPopulated(0)).toBe(true);
   expect(patched.kits().some((k) => k.slot === 0 && k.name === "MYDR")).toBe(true);
@@ -88,38 +88,38 @@ test("risa-rom export-font → import-font round-trips a .chr", () => {
   expect([...RisaRom.fromBytes(be.readFile(nes)!).getChrFontSlot(1)!]).toEqual([...want]);
 });
 
-test("risa-rom import-sample splices a sample into a kit, remove-sample empties a slot", () => {
+test("risa-rom import-sample splices a sample into a kit, remove-sample empties a slot", async () => {
   const { be, s } = toolSession();
   requireRom(be, "import-sample");
   // Start from a 1-sample kit in slot 0.
   writeSine(be, "/tmp/rp-is-a.wav", 200);
   writeSine(be, "/tmp/rp-is-b.wav", 500);
   expect(be.writeFile("/tmp/rp-is-spec.json", jenc({ name: "KT", build: [{ file: "/tmp/rp-is-a.wav", name: "AAA" }] }))).toBeTruthy();
-  risaRomTool.run(s, ["build-kit", "/tmp/rp-is-spec.json", "/tmp/rp-is.rkit"]);
+  await risaRomTool.run(s, ["build-kit", "/tmp/rp-is-spec.json", "/tmp/rp-is.rkit"]);
   const nes = copyRom(be, "/tmp/rp-is.nes");
-  risaRomTool.run(s, ["import-kit", nes, "/tmp/rp-is.rkit", "0", "--out", nes]);
+  await risaRomTool.run(s, ["import-kit", nes, "/tmp/rp-is.rkit", "0", "--out", nes]);
 
   // import-sample lands in the first empty slot (1).
-  risaRomTool.run(s, ["import-sample", nes, "0", "/tmp/rp-is-b.wav", "--name", "BBB", "--out", nes]);
+  await risaRomTool.run(s, ["import-sample", nes, "0", "/tmp/rp-is-b.wav", "--name", "BBB", "--out", nes]);
   let model = bankToModel(RisaRom.fromBytes(be.readFile(nes)!).getKitBank(0)!);
   expect(model.slots[0]?.name).toBe("AAA");
   expect(model.slots[1]?.name).toBe("BBB");
 
   // remove-sample empties slot 0; slot 1 stays put (index preserved).
-  risaRomTool.run(s, ["remove-sample", nes, "0", "0", "--out", nes]);
+  await risaRomTool.run(s, ["remove-sample", nes, "0", "0", "--out", nes]);
   model = bankToModel(RisaRom.fromBytes(be.readFile(nes)!).getKitBank(0)!);
   expect(model.slots[0]).toBe(null);
   expect(model.slots[1]?.name).toBe("BBB");
   console.log(`[risa-rom] import-sample (slot 1) + remove-sample (slot 0) — index-addressed splice`);
 });
 
-test("risa-rom patch realizes a mixed manifest (build kit + import theme + import font) and boots", () => {
+test("risa-rom patch realizes a mixed manifest (build kit + import theme + import font) and boots", async () => {
   const { be, audio, s } = toolSession();
   requireRom(be, "patch");
   writeSine(be, "/tmp/rp-pt.wav", 300);
   // Seed a .rit + .chr by exporting from the base ROM.
-  risaRomTool.run(s, ["export-theme", RISA_ROM, "0", "/tmp/rp-pt.rit"]);
-  risaRomTool.run(s, ["export-font", RISA_ROM, "0", "/tmp/rp-pt.chr"]);
+  await risaRomTool.run(s, ["export-theme", RISA_ROM, "0", "/tmp/rp-pt.rit"]);
+  await risaRomTool.run(s, ["export-font", RISA_ROM, "0", "/tmp/rp-pt.chr"]);
   const manifest = {
     kits: [{ slot: 1, name: "PT", build: [{ file: "/tmp/rp-pt.wav", name: "KIK" }] }],
     themes: [{ slot: 3, file: "/tmp/rp-pt.rit" }],
@@ -128,7 +128,7 @@ test("risa-rom patch realizes a mixed manifest (build kit + import theme + impor
   expect(be.writeFile("/tmp/rp-pt-manifest.json", jenc(manifest))).toBeTruthy();
 
   const src = copyRom(be, "/tmp/rp-pt-src.nes");
-  risaRomTool.run(s, ["patch", src, "/tmp/rp-pt-manifest.json", "/tmp/rp-pt-out.nes"]);
+  await risaRomTool.run(s, ["patch", src, "/tmp/rp-pt-manifest.json", "/tmp/rp-pt-out.nes"]);
   const rom = RisaRom.fromBytes(be.readFile("/tmp/rp-pt-out.nes")!);
   expect(rom.kits().some((k) => k.slot === 1 && k.name === "PT")).toBeTruthy();
 

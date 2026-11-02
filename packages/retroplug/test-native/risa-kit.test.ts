@@ -1,4 +1,4 @@
-// M5 native proof for the risa NES-DPCM (DMC) kit compiler: author a WAV → compileDmc → an 8 KB DMC kit
+// M5 proof for the risa NES-DPCM (DMC) kit compile: author a WAV -> compileDmc -> an 8 KB DMC kit
 // bank → decode the DPCM back to audio (round-trip, the r8brain path is not byte-parity with wav2dmc so we
 // gate on the delta/pack/decode invariants) → splice it into a real risa ROM via setKit (bank + mirror) →
 // the patched ROM boots. SKIPs when the built risa ROM is absent.
@@ -33,13 +33,15 @@ function peakOf(a: Float32Array): number {
   return p;
 }
 
-test("compileDmc renders a WAV into an 8 KB DMC kit bank that decodes back to audio", () => {
+test("compileDmc renders a WAV into an 8 KB DMC kit bank that decodes back to audio", async () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   writeTestWav(be, WAV);
 
-  const bank = audio.compileDmc({ name: "TEST", samples: [{ path: WAV, name: "KIK", rate: 12, effects: [] }] });
+  const spec = { name: "TEST", samples: [{ path: WAV, name: "KIK", rate: 12, effects: [] }] };
+  const { bytes: bank, errors } = await audio.compileDmc(spec);
   expect(bank.length).toBe(0x2000);
+  expect(errors[0]).toBe(null); // the bank holds the whole sample
   expect(isBankPopulated(bank)).toBe(true); // 0xA5 magic
 
   const model = bankToModel(bank);
@@ -60,13 +62,14 @@ test("compileDmc renders a WAV into an 8 KB DMC kit bank that decodes back to au
   expect(peak > 0.1).toBe(true);
 });
 
-test("a compiled DMC kit splices into a real risa ROM (bank + mirror) and the ROM boots", () => {
+test("a compiled DMC kit splices into a real risa ROM (bank + mirror) and the ROM boots", async () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   if (!be.fileExists(RISA_ROM)) skip(`risa-kit boot: no ROM at ${RISA_ROM}`);
   writeTestWav(be, WAV);
 
-  const bank = audio.compileDmc({ name: "DRUMS", samples: [{ path: WAV, name: "KIK", rate: 12, effects: [] }] });
+  const spec = { name: "DRUMS", samples: [{ path: WAV, name: "KIK", rate: 12, effects: [] }] };
+  const bank = (await audio.compileDmc(spec)).bytes;
   const rom = RisaRom.fromBytes(be.readFile(RISA_ROM)!);
   expect(rom.isRisa).toBe(true);
   expect(rom.hasKitMeta).toBe(true); // the mirror is located (needed for the dual-write)
@@ -88,7 +91,7 @@ test("a compiled DMC kit splices into a real risa ROM (bank + mirror) and the RO
   console.log(`[risa-kit] compiled kit spliced into risa ROM; patched image boots; on-disk .nes unchanged`);
 });
 
-test("assembleKitBank re-packs separately-compiled DPCM byte-identically to a whole-kit compileDmc", () => {
+test("assembleKitBank re-packs separately-compiled DPCM byte-identically to a whole-kit compileDmc", async () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   const WAV_A = "/tmp/rp-risa-parity-a.wav";
@@ -96,38 +99,43 @@ test("assembleKitBank re-packs separately-compiled DPCM byte-identically to a wh
   writeSine(be, WAV_A, 220, 6000);
   writeSine(be, WAV_B, 440, 4000);
 
-  // A whole-kit compile of both samples together (native assemble).
-  const both = audio.compileDmc({
+  // A whole-kit compile of both samples together.
+  const both = (await audio.compileDmc({
     name: "DRUMS",
     samples: [
       { path: WAV_A, name: "AAA", rate: 12, effects: [] },
       { path: WAV_B, name: "BBB", rate: 8, loop: true, effects: [] },
     ],
-  });
+  })).bytes;
   expect(both.length).toBe(0x2000);
 
-  // Compile each sample ALONE, pull its DPCM, and re-pack with the TS assembler. Since encode() carries no
-  // cross-sample state, this must be byte-identical to the whole-kit compile above.
-  const a = bankToModel(audio.compileDmc({ name: "", samples: [{ path: WAV_A, name: "AAA", rate: 12, effects: [] }] })).slots[0]!;
-  const b = bankToModel(audio.compileDmc({ name: "", samples: [{ path: WAV_B, name: "BBB", rate: 8, loop: true, effects: [] }] })).slots[0]!;
+  // Compile each sample ALONE, pull its DPCM, and re-pack with the assembler. The DMC encode keeps no cross-sample
+  // state, so re-assembling the two alone-compiled slots must give the whole-kit bank byte for byte. That is the
+  // slots' chains being independent of each other; what the bytes are held to is kit-baseline's and kit-edges'
+  // record.
+  const aSpec = { name: "", samples: [{ path: WAV_A, name: "AAA", rate: 12, effects: [] }] };
+  const bSpec = { name: "", samples: [{ path: WAV_B, name: "BBB", rate: 8, loop: true, effects: [] }] };
+  const a = bankToModel((await audio.compileDmc(aSpec)).bytes).slots[0]!;
+  const b = bankToModel((await audio.compileDmc(bSpec)).bytes).slots[0]!;
   const reassembled = assembleKitBank("DRUMS", [
     { dpcm: a.dpcm, rate: a.rate, loop: a.loop, name: "AAA" },
     { dpcm: b.dpcm, rate: b.rate, loop: b.loop, name: "BBB" },
   ]);
 
-  expect([...reassembled]).toEqual([...both]); // the TS packer matches native RisaDmcCodec::assemble
-  console.log(`[risa-kit] assembleKitBank == compileDmc (${both.length}B, 2 samples) — byte-identical`);
+  expect([...reassembled]).toEqual([...both]); // the slots' chains carry no cross-slot state
+  console.log(`[risa-kit] assembleKitBank == compileDmc (${both.length}B, 2 samples) - byte-identical`);
 });
 
-test("the risa-assets kit override links a pre-built .rkit at construct (offline compile) and boots", () => {
+test("the risa-assets kit override links a pre-built .rkit at construct (offline compile) and boots", async () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   if (!be.fileExists(RISA_ROM)) skip(`risa-kit link: no ROM at ${RISA_ROM}`);
   writeTestWav(be, WAV);
 
-  // Compile a bank OFFLINE (the plugin can't reach compileDmc) and persist it as a .rkit — exactly what the
-  // Kits menu's "Export..." writes and "Replace..." later links.
-  const bank = audio.compileDmc({ name: "DRUMS", samples: [{ path: WAV, name: "KIK", rate: 12, effects: [] }] });
+  // Compile a bank and persist it as a .rkit - exactly what the Kits menu's "Export..." writes and "Replace..."
+  // later links.
+  const spec = { name: "DRUMS", samples: [{ path: WAV, name: "KIK", rate: 12, effects: [] }] };
+  const bank = (await audio.compileDmc(spec)).bytes;
   const KIT = "/tmp/rp-risa-kit.rkit";
   expect(be.writeFileAtomic(KIT, bank)).toBe(true);
 

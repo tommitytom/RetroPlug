@@ -9,15 +9,18 @@
 // whole says why.
 //
 // Each bank is held two ways. Against native's compileKit / compileDmc on this host, while native's compiler exists:
-// both share every kernel, so that comparison is exact on every host. And against kit-edges.json (beside
-// kit-baseline.json), recorded from this compiler on the target when native and it agreed, under the baseline's
-// rules: its hash on the target (`linux-x64-gnu13`), and elsewhere a second compile agreeing with the first;
-// RP_KIT_GOLDEN_REQUIRE_TARGET=1 fails a foreign host, and RP_KIT_GOLDEN_UPDATE=1 re-records it, refused off the
-// target or for a bank whose two compiles disagree. The golden is what keeps these edges pinned once native's compiler
-// retires. The sources are synthesised, so it needs no fixtures.
+// both share every kernel, so that comparison is exact on every host. Those two are the harness RPCs
+// (nativeCompileKit / nativeCompileDmc below), the only callers left that reach native's compiler. And
+// against kit-edges.json (beside kit-baseline.json), recorded from this compiler on the target when native and it
+// agreed, under the baseline's rules: its hash on the target (`linux-x64-gnu13`), and elsewhere a second compile
+// agreeing with the first; RP_KIT_GOLDEN_REQUIRE_TARGET=1 fails a foreign host, and RP_KIT_GOLDEN_UPDATE=1 re-records
+// it, refused off the target or for a bank whose two compiles disagree. The golden is what keeps these edges pinned
+// once native's compiler retires. The sources are synthesised, so it needs no fixtures.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
-import { createAudioDriver, type KitEffect, type KitSampleSpec, type RisaDmcSampleSpec } from "../src/audioDriver";
+import { createAudioDriver, type KitCompileSpec, type KitEffect, type KitSampleSpec } from "../src/audioDriver";
+import type { RisaDmcSampleSpec, RisaKitCompileSpec } from "../src/audioDriver";
+import { makeCall } from "../src/rpcClient";
 import { compileKit, compileDmc, type KitCompileResult } from "../src/kit";
 import { fnv1a64Hex, floatWav, signalSamples } from "./kit/sources";
 
@@ -26,6 +29,13 @@ declare const tjs: { env: Record<string, string> };
 
 const be = createRealBackend();
 const audio = createAudioDriver(); // the offline poll's wait: this host has no UI tick
+
+// Native's compiler, over the harness facet's two RPCs (this host binds it). These go with the two harness RPCs when
+// native's compiler retires; while it is here, this is what makes each bank exact against the compiler the kernels
+// came from.
+const nativeCall = makeCall();
+const nativeCompileKit = (spec: KitCompileSpec): Uint8Array => nativeCall("compileKit", spec) as Uint8Array;
+const nativeCompileDmc = (spec: RisaKitCompileSpec): Uint8Array => nativeCall("compileDmc", spec) as Uint8Array;
 
 const BASELINE_TARGET = "linux-x64-gnu13";
 const UPDATE = tjs.env.RP_KIT_GOLDEN_UPDATE === "1";
@@ -173,7 +183,7 @@ edgeCase("a refused LSDj slot leaves the rest compiling, says why, and is native
   // Each refused slot is empty: no bytes, its name kept, as native's assembler leaves a slot whose file failed to load.
   // So the bank is native's for the same kit with those slots' files missing, and the TypeScript compile of that kit.
   const missing = samples.map((s) => (refused.includes(s) ? { ...s, path: MISSING } : s));
-  const native = audio.compileKit({ name: "REFUSE", samples: missing });
+  const native = nativeCompileKit({ name: "REFUSE", samples: missing });
   expect(firstDifference(kit.bytes, native), "the native bank with the refused slots' files missing").toBe(-1);
   const again = await compileKit(be, { name: "REFUSE", samples: missing });
   expect(again.errors).toEqual([null, UNREADABLE, null, UNREADABLE, UNREADABLE, null, UNREADABLE]);
@@ -198,7 +208,7 @@ edgeCase("a refused risa slot leaves the rest compiling, its entry empty: a miss
   expect(kit.errors).toEqual([null, NONFINITE, null, NYQUIST]);
   expect([kit.bytes[0x1f04], kit.bytes[0x1f0c]]).toEqual([0xff, 0xff]);
   const missing = samples.map((s, i) => (i === 1 || i === 3 ? { ...s, path: MISSING } : s));
-  const native = audio.compileDmc({ name: "REFUSE", samples: missing });
+  const native = nativeCompileDmc({ name: "REFUSE", samples: missing });
   expect(firstDifference(kit.bytes, native), "the native bank with the refused slots' files missing").toBe(-1);
   // risa's assembler leaves an empty slot where it is and moves no cursor, so a refused LAST slot is the kit without
   // it.
@@ -233,7 +243,7 @@ edgeCase("a full LSDj kit of every compileSample edge is native's bank byte for 
   for (const rotate of [true, false]) {
     const spec = { name: "edges", samples, rotate };
     const kit = await held(`lsdj/edges-rotate-${rotate ? "on" : "off"}`, () => compileKit(be, spec));
-    expect(firstDifference(kit.bytes, audio.compileKit(spec)), `rotate ${rotate}`).toBe(-1);
+    expect(firstDifference(kit.bytes, nativeCompileKit(spec)), `rotate ${rotate}`).toBe(-1);
     // Every slot the bank does not hold whole says why: the empty window, the window under one wave frame, the slot
     // the bank's space ran out on part way (the noise, 2128 bytes, before the capped source), and the capped source,
     // which finds none left.
@@ -256,7 +266,7 @@ edgeCase("a full LSDj kit of every compileSample edge is native's bank byte for 
   // marker, which native writes for a slot with no room as for one the spec does not have.
   const full = { name: "FULL", samples: [lsdj(LONG, "LNG"), lsdj(SINE, "AFT")] };
   const kit = await held("lsdj/full", () => compileKit(be, full));
-  expect(firstDifference(kit.bytes, audio.compileKit(full))).toBe(-1);
+  expect(firstDifference(kit.bytes, nativeCompileKit(full))).toBe(-1);
   const noRoom = "the kit's 16288 bytes of sample space are full, so none of this sample's 1056 bytes fit";
   expect(kit.errors).toEqual([null, noRoom]);
   const entry = (i: number): number => kit.bytes[i * 2] | (kit.bytes[i * 2 + 1] << 8);
@@ -286,7 +296,7 @@ edgeCase("a full risa kit of every DMC encode edge is native's bank byte for byt
   // A {0} slot is a placed sample; L15 found no room after L0, and says so.
   const noFit = "this sample's 4081 bytes do not fit the 7872-byte sample region after the slots before it";
   expect(kit.errors).toEqual(samples.map((s) => (s.name === "L15" ? noFit : null)));
-  expect(firstDifference(kit.bytes, audio.compileDmc({ name: "edges-kit", samples }))).toBe(-1);
+  expect(firstDifference(kit.bytes, nativeCompileDmc({ name: "edges-kit", samples }))).toBe(-1);
   // The {0} slots are one byte at their own 64-byte boundary; L0 is the longest legal stream; L15 found no room.
   expect([kit.bytes[0x1f00], kit.bytes[0x1f01], kit.bytes[0x1f04], kit.bytes[0x1f05]]).toEqual([0, 0, 1, 0]);
   expect([kit.bytes[0x1f08], kit.bytes[0x1f09], kit.bytes[0x1f0c]]).toEqual([2, 255, 0xff]);
@@ -317,13 +327,13 @@ edgeCase("a finite source the chain overflows refuses its slot with the reason, 
   expect(guard(kit.errors[4], ditherWords), String(kit.errors[4])).toBe(true);
   // The refused slots are the slots native leaves when their files fail to load.
   const missing = samples.map((s) => (s.name === "A" ? s : { ...s, path: MISSING }));
-  expect(firstDifference(kit.bytes, audio.compileKit({ name: "OVER", samples: missing }))).toBe(-1);
+  expect(firstDifference(kit.bytes, nativeCompileKit({ name: "OVER", samples: missing }))).toBe(-1);
 });
 
 edgeCase("samples past the slot count are dropped as native drops them, each saying so", async () => {
   const sixteen = Array.from({ length: 16 }, (_, i) => lsdj(i % 2 ? SINE : SHORT, `S${i}`, i % 3 ? [] : [gain(0.5)]));
   const kit = await held("lsdj/sixteen", () => compileKit(be, { name: "SIXTEEN", samples: sixteen }));
-  expect(firstDifference(kit.bytes, audio.compileKit({ name: "SIXTEEN", samples: sixteen }))).toBe(-1);
+  expect(firstDifference(kit.bytes, nativeCompileKit({ name: "SIXTEEN", samples: sixteen }))).toBe(-1);
   expect(kit.errors[15]).toBe("the LSDj kit bank holds 15 samples, so this one is dropped");
   const seventeen: RisaDmcSampleSpec[] = Array.from({ length: 17 }, (_, i) => ({
     path: i % 2 ? SINE : SHORT,
@@ -332,7 +342,7 @@ edgeCase("samples past the slot count are dropped as native drops them, each say
     rate: i % 16,
   }));
   const dmc = await held("risa/seventeen", () => compileDmc(be, { name: "SEVENTEEN", samples: seventeen }));
-  expect(firstDifference(dmc.bytes, audio.compileDmc({ name: "SEVENTEEN", samples: seventeen }))).toBe(-1);
+  expect(firstDifference(dmc.bytes, nativeCompileDmc({ name: "SEVENTEEN", samples: seventeen }))).toBe(-1);
   expect(dmc.errors[16]).toBe("the risa kit bank holds 16 samples, so this one is dropped");
 });
 
@@ -346,9 +356,9 @@ edgeCase("a refusal beats an empty window: a refused risa slot is empty, where n
   expect(kit.bytes[0x1f04]).toBe(0xff);
   // Native never refuses: the same spec compiles its empty window to the one-byte {0}, a placed slot. The refused slot
   // is the slot native leaves for a file that fails to load.
-  const native = audio.compileDmc({ name: "R", samples });
+  const native = nativeCompileDmc({ name: "R", samples });
   expect(native[0x1f04] !== 0xff).toBe(true);
-  const missing = audio.compileDmc({ name: "R", samples: [samples[0], { ...samples[1], path: MISSING }] });
+  const missing = nativeCompileDmc({ name: "R", samples: [samples[0], { ...samples[1], path: MISSING }] });
   expect(firstDifference(kit.bytes, missing)).toBe(-1);
 });
 
@@ -359,12 +369,12 @@ edgeCase("a field the spec leaves out takes the native struct's default, the spe
   const spelled: KitEffect[] = [filter("LowPass", 5734, 1, 0), gain(1, true), dither("HighPassTPDF")];
   const kit = await held("lsdj/defaults", () => compileKit(be, { name: "DEF", samples: [lsdj(CHIRP, "SP", sparse)] }));
   expect(kit.errors).toEqual([null]);
-  const native = audio.compileKit({ name: "DEF", samples: [lsdj(CHIRP, "SP", spelled)] });
+  const native = nativeCompileKit({ name: "DEF", samples: [lsdj(CHIRP, "SP", spelled)] });
   expect(firstDifference(kit.bytes, native)).toBe(-1);
   const dmcSparse = [{ path: CHIRP, name: "SP", effects: sparse.slice(0, 2) }];
   const dmc = await held("risa/defaults", () => compileDmc(be, { name: "DEF", samples: dmcSparse }));
   expect(dmc.errors).toEqual([null]);
-  const dmcNative = audio.compileDmc({
+  const dmcNative = nativeCompileDmc({
     name: "DEF",
     samples: [{ path: CHIRP, name: "SP", effects: spelled.slice(0, 2), rate: 12, loop: false, normalize: true }],
   });

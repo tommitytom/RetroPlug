@@ -1267,8 +1267,9 @@ function replaceAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, sl
 
 // --- risa asset file actions (Export/Replace own the .rit/.chr/.rkit formats) -------------------------
 // THEMES are palette indices stored INLINE (readable JSON `.rit`, no file); FONTS LINK a `.chr` bank by path;
-// KITS LINK a pre-built 8 KB `.rkit` DMC bank by path (compilation is offline — the plugin can't reach
-// compileDmc — so a kit override just splices a ready-made bank, as risa's Export produces).
+// KITS LINK a pre-built 8 KB `.rkit` DMC bank by path (risa's Export writes one out of a ROM and the CLI's
+// build-kit compiles one; src/kit can compile one in the plugin, though no row does - so a kit override just
+// splices a ready-made bank).
 
 const readRisaRomFor = (be: HostBackend, romPath: string): RisaRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;

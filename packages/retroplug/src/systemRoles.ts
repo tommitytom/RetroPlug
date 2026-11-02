@@ -62,7 +62,8 @@ export interface RoleType {
    *  role's own config (e.g. an LSDj asset-override list). */
   onConstruct?(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec;
   /** DEFERRED: a role-owned settings UI + its render descriptor. (Kit patching does NOT need this -
-   *  `lsdj-assets` is a role with no protocol node that compiles on the control plane via the compileKit RPC.) */
+   *  `lsdj-assets` is a role with no protocol node that splices pre-built kit, palette and font files into
+   *  the ROM on the control plane.) */
   ui?: unknown;
 }
 

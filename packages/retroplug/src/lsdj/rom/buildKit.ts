@@ -1,7 +1,7 @@
 // Pure-TS kit-bank assembly: the port of native KitUtil::buildKit, byte for byte, used to SPLICE a kit
 // (single-sample import / remove) without re-encoding untouched samples: read existing samples as raw nibble
 // bytes (KitView.samplesRaw), mutate the list, and rebuild the 16 KB bank here. The TypeScript kit compiler
-// (src/kit/) assembles its banks here too. Layout matches kit.ts / KitUtil:
+// (src/kit/) assembles every bank it compiles here too, whatever host it runs in. Layout matches kit.ts / KitUtil:
 // a 16-entry u16le offset table (entry 0 = 0x4060; entries i+1 = each sample's end GB-addr; 0 terminates),
 // 15 × 3-char sample names at 0x22, a 6-char kit name at 0x52, sample data from 0x60 (≤ 0x3fa0 bytes).
 import {
@@ -92,8 +92,8 @@ export function buildKitBankPlaced(kitName: string, samples: readonly KitSample[
   return { bank, written };
 }
 
-/** Extract sample `i`'s raw nibble bytes from a standalone 16 KB bank (base 0) — e.g. a 1-sample bank
- *  returned by compileKit, to splice into an existing kit. Empty when the slot is unused. */
+/** Extract sample `i`'s raw nibble bytes from a standalone 16 KB bank (base 0) - e.g. a 1-sample bank
+ *  from compileKit's result, to splice into an existing kit. Empty when the slot is unused. */
 export function sampleBytesFromBank(bank: Uint8Array, i: number): Uint8Array {
   const entry = (k: number): number => bank[k * 2] | (bank[k * 2 + 1] << 8);
   if (i < 0 || i >= KIT_MAX_SAMPLES) return new Uint8Array(0);

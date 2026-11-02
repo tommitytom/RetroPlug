@@ -1,9 +1,9 @@
 // `retroplug-cli bliptoaster-rom` — inspect, extract and edit the static assets (DPCM sample kits, the theme,
 // the CHR font) inside a BlipToaster `.nes` ROM, headlessly. The BlipToaster twin of ./risa-rom.ts (BlipToaster is
 // also NES/DMC, so it reuses the exact same risa asset codecs), backed by the pure-TS src/bliptoaster/rom
-// module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile is native
-// (s.audio.compileDmc — the generic DMC compiler); sample splicing re-packs existing DPCM + a freshly-
-// compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
+// module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile is the
+// TypeScript kit compiler (s.audio.compileDmc - the generic DMC compiler); sample splicing re-packs existing
+// DPCM + a freshly-compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
 //
 // BlipToaster has up to 16 SWITCHABLE kit banks on the banking builds (VRC6/VRC7/S5B/FME-7/N163) and a single
 // kit on NROM — kit indices are bounded by rom.kitBankCapacity(). It also bakes 16 themes (bounded by
@@ -13,7 +13,7 @@
 //   retroplug-cli bliptoaster-rom info          <rom> [--json]
 //   retroplug-cli bliptoaster-rom extract       <rom> <outDir> [--rate N]
 //   retroplug-cli bliptoaster-rom patch         <rom> <manifest.json> <out>       (the whole-ROM manifest)
-//   retroplug-cli bliptoaster-rom build-kit     <kit.json> <out.rkit> [flags]     (native compile → .rkit file)
+//   retroplug-cli bliptoaster-rom build-kit     <kit.json> <out.rkit> [flags]     (compile → .rkit file)
 //   retroplug-cli bliptoaster-rom import-sample <rom> <kit> <audio> [flags]       (compile one + splice)
 //   retroplug-cli bliptoaster-rom remove-sample <rom> <kit> <slot> [--out rom]
 //   retroplug-cli bliptoaster-rom export-theme  / import-theme   (.rit palette-role JSON)
@@ -46,6 +46,10 @@ import {
   CHR_BANK_SIZE,
   type AssembleSlot,
 } from "../../src/risa/rom";
+
+// What a slot the compiler left empty with no reason is: the compile result's contract makes that a compiler bug,
+// not a full bank, so the message says so instead of guessing at a cause.
+const NO_SLOT_REASON = "the compiler left the slot empty without saying why";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -97,7 +101,7 @@ function readOrThrow(s: Session, path: string, what: string): Uint8Array {
   return data;
 }
 
-// --- kit compile (native compileDmc) --------------------------------------------------------------------
+// --- kit compile (the TypeScript kit compiler, s.audio.compileDmc) ----------------------------------------
 
 // Per-sample shaping. The DMC codec skips dither (1-bit only) — so gain/filter only. --no-normalize maps
 // to the DMC 7-bit normalize (spec.normalize) rather than a gain effect, so there's no double-normalize.
@@ -146,9 +150,10 @@ function normalizeBuild(build: BuildSource[]): Exclude<BuildSource, string>[] {
   return build.map((b) => (typeof b === "string" ? { file: b } : b));
 }
 
-// Compile a whole 8 KB DPCM bank from `build` sources, asserting every source landed (a bad path silently
-// leaves an empty slot natively). Shared by build-kit + patch.
-function compileKitBank(s: Session, name: string, build: BuildSource[], baseFile: string, fb: Fallbacks): Uint8Array {
+// Compile a whole 8 KB DPCM bank from `build` sources, asserting every source landed. Shared by build-kit +
+// patch. The compiler leaves a refused slot empty and says why, so a slot that did not land is reported with
+// its reason rather than a generic failure.
+async function compileKitBank(s: Session, name: string, build: BuildSource[], baseFile: string, fb: Fallbacks): Promise<Uint8Array> {
   const sources = normalizeBuild(build);
   const samples: RisaDmcSampleSpec[] = sources.map((sm) => ({
     path: resolvePath(baseFile, sm.file),
@@ -160,11 +165,14 @@ function compileKitBank(s: Session, name: string, build: BuildSource[], baseFile
     loop: sm.loop ?? fb.loop,
     normalize: sm.normalize ?? fb.normalize,
   }));
-  const bank = s.audio.compileDmc({ name, samples });
-  if (bank.length !== KIT_BANK_SIZE) throw new Error("compileDmc returned an unexpected bank size");
+  const { bytes: bank, errors } = await s.audio.compileDmc({ name, samples });
+  if (bank.length !== KIT_BANK_SIZE) throw new Error("the kit compiler returned an unexpected bank size");
   const model = bankToModel(bank);
   sources.forEach((sm, i) => {
-    if (!model.slots[i]) throw new Error(`sample ${i} (${sm.file}) failed to compile — check the path/format`);
+    if (!model.slots[i])
+      throw new Error(
+        `sample ${i} (${sm.file}) did not compile: ${errors[i] ?? NO_SLOT_REASON}`,
+      );
   });
   return bank;
 }
@@ -377,17 +385,17 @@ function extract(s: Session, args: string[]): void {
   console.log(`extracted ${wavs} sample WAVs + ${rom.themes().length} themes + ${rom.fonts().length} fonts + rom.json to ${outDir}`);
 }
 
-function buildKit(s: Session, args: string[]): void {
+async function buildKit(s: Session, args: string[]): Promise<void> {
   const [specPath, outKit] = positionals(args);
   if (!specPath || !outKit) throw new Error("usage: bliptoaster-rom build-kit <kit.json> <out.rkit> [effect flags]");
   const spec = JSON.parse(dec.decode(readOrThrow(s, specPath, "kit spec"))) as KitEntry;
   if (!spec.build || spec.build.length === 0) throw new Error('kit spec needs a "build" array of source audio files');
-  const bank = compileKitBank(s, spec.name ?? "", spec.build, specPath, fallbacks(args));
+  const bank = await compileKitBank(s, spec.name ?? "", spec.build, specPath, fallbacks(args));
   if (!s.backend.writeFile(outKit, bank)) throw new Error(`write failed: ${outKit}`);
   console.log(`built kit "${spec.name ?? ""}" (${spec.build.length} samples); wrote ${outKit}`);
 }
 
-function importSample(s: Session, args: string[]): void {
+async function importSample(s: Session, args: string[]): Promise<void> {
   const [romPath, kitStr, audio] = positionals(args);
   if (!romPath || kitStr == null || !audio) throw new Error("usage: bliptoaster-rom import-sample <rom> <kit> <audio> [--slot N] [--name X] [--out rom] [flags]");
   const rom = openRom(s, romPath);
@@ -395,10 +403,13 @@ function importSample(s: Session, args: string[]): void {
   const name = flag(args, "--name") ?? sampleName(audio);
   const fb = fallbacks(args);
 
-  // Compile the one sample natively (a throwaway 1-sample bank) and pull its DPCM back out.
-  const oneBank = s.audio.compileDmc({ name: "", samples: [{ path: audio, name, effects: fb.effects, rate: fb.rate, loop: fb.loop, normalize: fb.normalize }] });
-  const one = bankToModel(oneBank).slots[0];
-  if (!one) throw new Error(`failed to compile ${audio} — check the path/format`);
+  // Compile the one sample (a throwaway 1-sample bank) and pull its DPCM back out.
+  const one = await s.audio.compileDmc({
+    name: "",
+    samples: [{ path: audio, name, effects: fb.effects, rate: fb.rate, loop: fb.loop, normalize: fb.normalize }],
+  });
+  const compiled = bankToModel(one.bytes).slots[0];
+  if (!compiled) throw new Error(`failed to compile ${audio}: ${one.errors[0] ?? NO_SLOT_REASON}`);
 
   const { name: kitName, slots } = kitSlots(rom, kitIndex);
   const slotStr = flag(args, "--slot");
@@ -410,7 +421,7 @@ function importSample(s: Session, args: string[]): void {
     slot = parseInt(slotStr, 10);
     if (slot < 0 || slot >= KIT_SLOT_COUNT) throw new Error(`--slot ${slot} out of range (0..${KIT_SLOT_COUNT - 1})`);
   }
-  slots[slot] = { dpcm: one.dpcm, rate: one.rate, loop: one.loop, name };
+  slots[slot] = { dpcm: compiled.dpcm, rate: compiled.rate, loop: compiled.loop, name };
 
   rom.setKit(kitIndex, assembleKitBank(kitName, slots));
   const out = flag(args, "--out") ?? romPath;
@@ -511,7 +522,7 @@ function importKit(s: Session, args: string[]): void {
   console.log(`imported ${file} into kit ${idx}; wrote ${out}`);
 }
 
-function patchManifest(s: Session, args: string[]): void {
+async function patchManifest(s: Session, args: string[]): Promise<void> {
   const [romPath, manifestPath, outRom] = positionals(args);
   if (!romPath || !manifestPath || !outRom) throw new Error("usage: bliptoaster-rom patch <rom> <manifest.json> <out>");
   const rom = openRom(s, romPath);
@@ -523,7 +534,8 @@ function patchManifest(s: Session, args: string[]): void {
     if (ke.slot == null) throw new Error('a manifest kit entry needs a "slot"');
     kitIndexInRange(rom, ke.slot);
     if (ke.build) {
-      rom.setKit(ke.slot, compileKitBank(s, ke.name ?? "", ke.build, manifestPath, fb));
+      const bank = await compileKitBank(s, ke.name ?? "", ke.build, manifestPath, fb);
+      rom.setKit(ke.slot, bank);
     } else if (ke.file) {
       const bank = readOrThrow(s, resolvePath(manifestPath, ke.file), "kit");
       if (bank.length !== KIT_BANK_SIZE || !isBankPopulated(bank)) throw new Error(`kit file ${ke.file}: not a populated 8 KB .rkit`);
@@ -621,7 +633,7 @@ export const blipToasterRomTool: CliTool = {
   name: "bliptoaster-rom",
   summary: "inspect / extract / edit BlipToaster ROM kits, theme and font (+ compile WAV → .rkit)",
   help: BLIPTOASTER_ROM_HELP,
-  run(s: Session, args: string[]): void {
+  run(s: Session, args: string[]): void | Promise<void> {
     const sub = args[0];
     const rest = args.slice(1);
     if (sub === "info") return info(s, rest);

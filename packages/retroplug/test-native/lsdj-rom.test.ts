@@ -102,14 +102,16 @@ test("LsdjRom reads real kit/palette/font assets and round-trips a surgical kit-
   console.log(`[lsdj-rom] TR-606 kit(7 samples) + 6 palettes + 3 fonts read; kit rename round-trips; patched ROM boots`);
 });
 
-test("compileKit renders an authored WAV into a 16 KB kit bank a KitView can read", () => {
+test("compileKit renders an authored WAV into a 16 KB kit bank a KitView can read", async () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   const wav = "/tmp/rp-kit-src.wav";
   writeTestWav(be, wav);
 
-  const bank = audio.compileKit({ name: "TEST", samples: [{ path: wav, name: "SIN", effects: [] }] });
+  const spec = { name: "TEST", samples: [{ path: wav, name: "SIN", effects: [] }] };
+  const { bytes: bank, errors } = await audio.compileKit(spec);
   expect(bank.length).toBe(BANK_SIZE); // a whole 16 KB kit bank
+  expect(errors[0]).toBe(null); // the bank holds the whole sample
 
   // Read it back by dropping the bank into a fresh ROM's slot 0 (bank 8) and using KitView.
   const rom = new Uint8Array(ROM_SIZE);
@@ -128,7 +130,7 @@ test("compileKit renders an authored WAV into a 16 KB kit bank a KitView can rea
   console.log(`[lsdj-rom] compileKit: TEST/SIN → ${bank.length}B bank, sample ${pcm.length} frames, peak ${peak.toFixed(2)}`);
 });
 
-test("import-sample splice: compile one sample + rebuild a kit around the existing raw samples", () => {
+test("import-sample splice: compile one sample + rebuild a kit around the existing raw samples", async () => {
   const be = createRealBackend();
   if (!be.fileExists(LSDJ)) skip(`lsdj-rom import: LSDj ROM not found at ${LSDJ}`);
   const audio = createAudioDriver();
@@ -136,8 +138,8 @@ test("import-sample splice: compile one sample + rebuild a kit around the existi
   writeTestWav(be, wav, 600); // < 1024 source frames → a source shorter than one resampler chunk (rp::dsp::Resampler)
 
   // Compile the one sample (a throwaway 1-sample bank) and pull its nibble bytes.
-  const oneBank = audio.compileKit({ name: "", samples: [{ path: wav, name: "NEW", effects: [] }] });
-  const bytes = sampleBytesFromBank(oneBank, 0);
+  const oneBank = await audio.compileKit({ name: "", samples: [{ path: wav, name: "NEW", effects: [] }] });
+  const bytes = sampleBytesFromBank(oneBank.bytes, 0);
   expect(bytes.length > 0).toBeTruthy(); // short-sample compile no longer crashes / drops
 
   // Splice into the stock TR-606, replacing slot 0 (keeps us within the 0x3fa0 budget).
@@ -171,17 +173,18 @@ test("import-sample splice: compile one sample + rebuild a kit around the existi
   console.log(`[lsdj-rom] import-sample: TR-606 slot0 → NEW (${bytes.length}B), others preserved, ROM boots`);
 });
 
-test("compileKit rotate flag: rotated vs un-rotated banks differ but each round-trips per its mode", () => {
+test("compileKit rotate flag: rotated vs un-rotated banks differ but each round-trips per its mode", async () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   const wav = "/tmp/rp-kit-rot.wav";
   writeTestWav(be, wav, 4000);
 
-  const rotBank = audio.compileKit({ name: "R", rotate: true, samples: [{ path: wav, name: "S", effects: [] }] });
-  const flatBank = audio.compileKit({ name: "F", rotate: false, samples: [{ path: wav, name: "S", effects: [] }] });
+  const rotBank = await audio.compileKit({ name: "R", rotate: true, samples: [{ path: wav, name: "S", effects: [] }] });
+  const flatSpec = { name: "F", rotate: false, samples: [{ path: wav, name: "S", effects: [] }] };
+  const flatBank = await audio.compileKit(flatSpec);
 
-  const rotBytes = sampleBytesFromBank(rotBank, 0);
-  const flatBytes = sampleBytesFromBank(flatBank, 0);
+  const rotBytes = sampleBytesFromBank(rotBank.bytes, 0);
+  const flatBytes = sampleBytesFromBank(flatBank.bytes, 0);
   expect(rotBytes.length).toBe(flatBytes.length);
   expect(rotBytes.length > 0).toBeTruthy();
   // The rotation shifts nibbles within each 32-sample frame → the packed bytes differ.
@@ -196,6 +199,26 @@ test("compileKit rotate flag: rotated vs un-rotated banks differ but each round-
   for (let i = 0; i < decRot.length; i++) maxDiff = Math.max(maxDiff, Math.abs(decRot[i] - decFlat[i]));
   expect(maxDiff).toBe(0); // rotate-encode∘rotate-decode == flat-encode∘flat-decode
   console.log(`[lsdj-rom] rotate flag: rotated≠flat bytes, but matched decode identical (${decRot.length} frames)`);
+});
+
+// A slot the compiler refused reaches the CLI's read-back check as its reason, not as a generic failure: a source
+// file that does not exist is the simplest refusal, and the message names what the compiler said about it.
+test("CLI build-kit reports the compiler's reason for a slot that did not land", async () => {
+  const { be, s } = toolSession();
+  const missing = "/tmp/rp-bk-missing-src.wav";
+  be.deleteFile(missing); // a leftover from an earlier run would make the slot load
+  const spec = { name: "BAD", build: [{ file: missing, name: "BD" }] };
+  expect(be.writeFile("/tmp/rp-bk-bad-spec.json", jenc(spec))).toBeTruthy();
+
+  let message = "";
+  try {
+    await lsdjRomTool.run(s, ["build-kit", "/tmp/rp-bk-bad-spec.json", "/tmp/rp-bk-bad.kit"]);
+  } catch (e) {
+    message = (e as Error).message;
+  }
+  expect(message.includes(`sample 0 (${missing}) did not compile`), message).toBeTruthy();
+  expect(message.includes("could not be read or decoded"), message).toBeTruthy(); // the compiler's own words
+  console.log(`[lsdj-rom] build-kit refused slot: ${message}`);
 });
 
 const TRIP = __RESOURCES_DIR__ + "/roms/tripledipper942.gbc";
@@ -302,14 +325,14 @@ function toolSession(): { be: ReturnType<typeof createRealBackend>; audio: Retur
 }
 const jenc = (o: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(o));
 
-test("CLI build-kit writes a bootable .kit that import-kit places into a ROM", () => {
+test("CLI build-kit writes a bootable .kit that import-kit places into a ROM", async () => {
   const { be, audio, s } = toolSession();
   if (!be.fileExists(LSDJ)) skip(`lsdj-rom build-kit: ROM not found`);
   const wav = "/tmp/rp-bk-src.wav";
   writeTestWav(be, wav);
   expect(be.writeFile("/tmp/rp-bk-spec.json", jenc({ name: "MYDR", build: [{ file: wav, name: "BD" }] }))).toBeTruthy();
 
-  lsdjRomTool.run(s, ["build-kit", "/tmp/rp-bk-spec.json", "/tmp/rp-bk.kit"]);
+  await lsdjRomTool.run(s, ["build-kit", "/tmp/rp-bk-spec.json", "/tmp/rp-bk.kit"]);
   const kitBytes = be.readFile("/tmp/rp-bk.kit")!;
   expect(kitBytes.length).toBe(BANK_SIZE); // a raw 16 KB bank, not a ROM
 
@@ -318,7 +341,7 @@ test("CLI build-kit writes a bootable .kit that import-kit places into a ROM", (
   lsdjRomTool.run(s, ["import-kit", "/tmp/rp-bk.gb", "/tmp/rp-bk.kit", "20", "--out", "/tmp/rp-bk.gb"]);
   const rom = LsdjRom.fromBytes(be.readFile("/tmp/rp-bk.gb")!);
   expect(rom.kit(20).name()).toBe("MYDR");
-  expect(rom.kit(20).sampleName(0)).toBe("BD-"); // the native compiler pads a short name to 3 chars with '-'
+  expect(rom.kit(20).sampleName(0)).toBe("BD-"); // the kit compiler pads a short name to 3 chars with '-'
 
   expect(graph.add({ romPath: "/tmp/rp-bk.gb", platform: "gb", core: "sameboy", embeddedRom: "", savPath: null, statePath: null }, 5)).toBeTruthy();
   audio.renderAudio(300);
@@ -326,7 +349,7 @@ test("CLI build-kit writes a bootable .kit that import-kit places into a ROM", (
   console.log(`[lsdj-rom] build-kit → .kit (16KB) → import-kit slot 20 (MYDR/BD), ROM boots`);
 });
 
-test("CLI patch realizes a mixed manifest (build + .kit + rename + palette + font) and boots", () => {
+test("CLI patch realizes a mixed manifest (build + .kit + rename + palette + font) and boots", async () => {
   const { be, audio, s } = toolSession();
   if (!be.fileExists(LSDJ) || !be.fileExists(KIT_FILE) || !be.fileExists(LSDPAL) || !be.fileExists(FONT_EXT_PNG)) skip(`lsdj-rom patch: ROM or asset files not found`);
   const wav = "/tmp/rp-ap-src.wav";
@@ -346,7 +369,7 @@ test("CLI patch realizes a mixed manifest (build + .kit + rename + palette + fon
   expect(be.writeFile("/tmp/rp-ap-manifest.json", jenc(manifest))).toBeTruthy();
   expect(be.writeFile("/tmp/rp-ap.gb", be.readFile(LSDJ)!)).toBeTruthy();
 
-  lsdjRomTool.run(s, ["patch", "/tmp/rp-ap.gb", "/tmp/rp-ap-manifest.json", "/tmp/rp-ap-out.gb"]);
+  await lsdjRomTool.run(s, ["patch", "/tmp/rp-ap.gb", "/tmp/rp-ap-manifest.json", "/tmp/rp-ap-out.gb"]);
 
   const rom = LsdjRom.fromBytes(be.readFile("/tmp/rp-ap-out.gb")!);
   expect(rom.kit(21).name()).toBe("BILT"); // built

@@ -9,7 +9,7 @@
 //   retroplug-cli lsdj-rom info          <rom> [--json]
 //   retroplug-cli lsdj-rom extract       <rom> <outDir> [--rate N]
 //   retroplug-cli lsdj-rom patch         <rom> <manifest.json> <out>         (the whole-ROM manifest)
-//   retroplug-cli lsdj-rom build-kit     <kit.json> <out.kit> [--no-rotate]  (native compile → .kit file)
+//   retroplug-cli lsdj-rom build-kit     <kit.json> <out.kit> [--no-rotate]  (compile → .kit file)
 //   retroplug-cli lsdj-rom import-sample <rom> <kit> <audio> [flags]         (compile one + splice)
 //   retroplug-cli lsdj-rom remove-sample <rom> <kit> <slot> [--out rom]
 //   retroplug-cli lsdj-rom export-palette / import-palette   (.lsdpal community palette files)
@@ -24,6 +24,10 @@ import { LsdjRom, buildKitBank, sampleBytesFromBank, kitSampleSpace, KIT_MAX_SAM
 // LSDj kit samples carry no intrinsic rate (pitch is set by the note played); export at a nominal
 // reference rate — overridable with --rate. 11468 Hz is LSDj's middle-note playback rate.
 const DEFAULT_SAMPLE_RATE = 11468;
+
+// What a slot the compiler left empty with no reason is: the compile result's contract makes that a compiler bug,
+// not a full bank, so the message says so instead of guessing at a cause.
+const NO_SLOT_REASON = "the compiler left the slot empty without saying why";
 
 const enc = new TextEncoder();
 const sanitize = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") || "_";
@@ -103,7 +107,7 @@ function extract(s: Session, args: string[]): void {
   console.log(`extracted ${wavs} sample WAVs (@${rate}Hz) + rom.json to ${outDir}`);
 }
 
-// --- sample import (native compileKit) ---
+// --- sample import (the TypeScript kit compiler, s.audio.compileKit) ---
 
 const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
@@ -178,26 +182,31 @@ function normalizeBuild(build: BuildSource[]): { file: string; name?: string; of
   return build.map((b) => (typeof b === "string" ? { file: b } : b));
 }
 
-// Compile a kit bank from `build` sources, asserting a 16 KB bank and that every source landed (a bad path
-// silently leaves an empty slot natively). Shared by build-kit + apply. `fallbackEffects` (the CLI effect
-// flags) applies to sources that don't carry their own `effects`.
-function compileKitBank(s: Session, name: string, build: BuildSource[], baseFile: string, rotate: boolean, fallbackEffects: KitEffect[]): Uint8Array {
+// Compile a kit bank from `build` sources, asserting a 16 KB bank and that every source landed. Shared by
+// build-kit + apply. `fallbackEffects` (the CLI effect flags) applies to sources that don't carry their own
+// `effects`. The compiler leaves a refused slot empty and says why, so a slot that did not land is reported
+// with its reason rather than a generic failure; a sample the bank ran out of room for part way keeps its bytes,
+// so it is warned about instead (a read-back cannot see a clipped sample).
+async function compileKitBank(s: Session, name: string, build: BuildSource[], baseFile: string, rotate: boolean, fallbackEffects: KitEffect[]): Promise<Uint8Array> {
   const sources = normalizeBuild(build);
-  const bank = s.audio.compileKit({
+  const { bytes: bank, errors } = await s.audio.compileKit({
     name,
     rotate,
     samples: sources.map((sm) => ({ path: resolvePath(baseFile, sm.file), name: sm.name ?? sampleName(sm.file), offset: sm.offset, length: sm.length, effects: sm.effects ?? fallbackEffects })),
   });
-  if (bank.length !== 0x4000) throw new Error("compileKit returned an unexpected bank size");
+  if (bank.length !== 0x4000) throw new Error("the kit compiler returned an unexpected bank size");
   sources.forEach((sm, i) => {
-    if (sampleBytesFromBank(bank, i).length === 0) throw new Error(`sample ${i} (${sm.file}) failed to compile — check the path`);
+    const reason = errors[i];
+    if (sampleBytesFromBank(bank, i).length === 0)
+      throw new Error(`sample ${i} (${sm.file}) did not compile: ${reason ?? NO_SLOT_REASON}`);
+    if (reason != null) console.error(`warning: sample ${i} (${sm.file}): ${reason}`);
   });
   return bank;
 }
 
 // build-kit reads a single (slotless) kit entry — the same shape as one `kits[]` entry in a manifest — and
 // compiles its `build` sources to a .kit file.
-function buildKit(s: Session, args: string[]): void {
+async function buildKit(s: Session, args: string[]): Promise<void> {
   const [specPath, outKit] = args.filter((a) => !a.startsWith("--"));
   if (!specPath || !outKit) throw new Error("usage: lsdj-rom build-kit <kit.json> <out.kit> [--no-rotate] [effect flags]");
   const spec = JSON.parse(new TextDecoder().decode(readOrThrow(s, specPath, "kit spec"))) as KitEntry;
@@ -206,12 +215,13 @@ function buildKit(s: Session, args: string[]): void {
   // No target ROM here, so rotation is a build-time choice: default ON (LSDj 9.2.0+), --no-rotate for older
   // targets. Importing this .kit into a mismatched-version ROM is the straight-copy caveat (see import-kit).
   const rotate = !has(args, "--no-rotate");
-  const bank = compileKitBank(s, spec.name ?? "", spec.build, specPath, rotate, effectsFromFlags(args));
+  const effects = effectsFromFlags(args);
+  const bank = await compileKitBank(s, spec.name ?? "", spec.build, specPath, rotate, effects);
   if (!s.backend.writeFile(outKit, bank)) throw new Error(`write failed: ${outKit}`);
   console.log(`built kit "${spec.name ?? ""}" (${spec.build.length} samples${rotate ? "" : ", un-rotated"}); wrote ${outKit}`);
 }
 
-function importSample(s: Session, args: string[]): void {
+async function importSample(s: Session, args: string[]): Promise<void> {
   const [romPath, kitStr, audio] = args.filter((a) => !a.startsWith("--"));
   if (!romPath || kitStr == null || !audio) throw new Error("usage: lsdj-rom import-sample <rom> <kitIndex> <audio> [--name X] [--slot N] [--out rom] [effect flags]");
   const kitIndex = parseInt(kitStr, 10);
@@ -220,11 +230,15 @@ function importSample(s: Session, args: string[]): void {
   const name = flag(args, "--name") ?? audio.slice(audio.lastIndexOf("/") + 1).replace(/\.[^.]*$/, "");
   const out = flag(args, "--out") ?? romPath;
 
-  // Compile the one sample natively (a throwaway 1-sample bank) and pull its nibble bytes out. Encode to
+  // Compile the one sample (a throwaway 1-sample bank) and pull its nibble bytes out. Encode to
   // match the target ROM's version so splicing into a pre-9.2.0 kit stays byte-correct.
-  const oneBank = s.audio.compileKit({ name: "", rotate: rom.rotatesSamples, samples: [{ path: audio, name, effects: effectsFromFlags(args) }] });
-  const bytes = sampleBytesFromBank(oneBank, 0);
-  if (bytes.length === 0) throw new Error(`failed to compile ${audio} — check the path/format`);
+  const one = await s.audio.compileKit({
+    name: "",
+    rotate: rom.rotatesSamples,
+    samples: [{ path: audio, name, effects: effectsFromFlags(args) }],
+  });
+  const bytes = sampleBytesFromBank(one.bytes, 0);
+  if (bytes.length === 0) throw new Error(`failed to compile ${audio}: ${one.errors[0] ?? NO_SLOT_REASON}`);
 
   // Splice beside the kit's existing samples (raw, un-re-encoded).
   const samples: KitSample[] = kit.samplesRaw();
@@ -343,7 +357,7 @@ function readOrThrow(s: Session, path: string, what: string): Uint8Array {
   return data;
 }
 
-function patchManifest(s: Session, args: string[]): void {
+async function patchManifest(s: Session, args: string[]): Promise<void> {
   const [romPath, manifestPath, outRom] = args.filter((a) => !a.startsWith("--"));
   if (!romPath || !manifestPath || !outRom) throw new Error("usage: lsdj-rom patch <rom> <manifest.json> <out>");
   const rom = openRom(s, romPath);
@@ -353,7 +367,10 @@ function patchManifest(s: Session, args: string[]): void {
   for (const ke of m.kits ?? []) {
     if (ke.slot == null) throw new Error('a manifest kit entry needs a "slot"');
     if (ke.build) {
-      rom.setKitBank(ke.slot, compileKitBank(s, ke.name ?? "", ke.build, manifestPath, rom.rotatesSamples, effectsFromFlags(args)));
+      const bank = await compileKitBank(
+        s, ke.name ?? "", ke.build, manifestPath, rom.rotatesSamples, effectsFromFlags(args),
+      );
+      rom.setKitBank(ke.slot, bank);
     } else if (ke.file) {
       rom.importKitFile(ke.slot, readOrThrow(s, resolvePath(manifestPath, ke.file), "kit"));
     }
@@ -433,7 +450,7 @@ export const lsdjRomTool: CliTool = {
   name: "lsdj-rom",
   summary: "inspect / extract / metadata-patch LSDj ROM kits, palettes and fonts",
   help: LSDJ_ROM_HELP,
-  run(s: Session, args: string[]): void {
+  run(s: Session, args: string[]): void | Promise<void> {
     const sub = args[0];
     const rest = args.slice(1);
     if (sub === "info") return info(s, rest);
