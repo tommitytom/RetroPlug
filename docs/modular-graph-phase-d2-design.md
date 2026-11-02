@@ -204,6 +204,10 @@ side effects or re-scoping their byte-identity claim. What the seam hands them, 
   - A completion returns its buffers only at the end of its fixed `frames`, where a render streams per-chunk WAV and
     resolves its length mid-run (LSDj HFF auto-detect via NR52).
   - Jobs are not rejected at project close (stage 2), where capability jobs are.
+  - A job's transport is fixed: every block sees 120 bpm, ppq 0, not playing, and ppq never advances
+    (`OfflineJobs.cpp`). LSDj host sync and any tempo-aware node need a playing, advancing transport (tempo and ppq).
+  - There is no way to put MIDI or other events into a job: no staged host MIDI and no `rp.host.midi-in` in its
+    registry. A MIDI-driven ROM render needs per-block event input.
 
 ## 9. Left beyond D2
 
@@ -218,6 +222,9 @@ side effects or re-scoping their byte-identity claim. What the seam hands them, 
   15-slot kit (native was 1.7 and 4.9 ms), nearly all of it buffers crossing the JS thread between passes. The lever is
   chaining a slot's passes inside one job or keeping the intermediates native behind handles, so only the final buffer
   crosses, and recompiling only the slot a knob touched.
+- A thread ceiling for the plugin's kit row. Each `Engine` keeps up to 8 normal-priority workers parked for life once
+  it has compiled anything: N plugin instances can hold 8N threads, and a compile briefly puts 8 busy threads beside the
+  audio thread. The row should lower the ceiling or retire idle workers.
 
 ## 10. Prototype questions
 
@@ -342,7 +349,8 @@ moved a kit byte or a parity baseline either.
   count), whose comment documents it as the format the TypeScript compiler packs. `retroplug-core` compiles only
   `SampleCache.cpp` from the kit path and links neither DSP library nor enkiTS any more; `retroplug-audio-test` and
   `retroplug-graph-test` compile `src/lsdj/Effects.cpp` themselves, as the kit path's reference. The harness facet is
-  20 methods and the union 90 (was 22 and 92). enkiTS leaves the build entirely (the `add_subdirectory`, the warning
+  20 methods and the union 90 (was 22 and 89: 89 - 2 + 3, the registration file's own count at
+  391f13982 and at this commit). enkiTS leaves the build entirely (the `add_subdirectory`, the warning
   suppression and the third-party credit), since no shipped binary can contain it now; the vendored directory
   stays. CI's Catch2 step drops `RP_KIT_GOLDEN_REQUIRE_TARGET` with the suite it guarded, and the `test:native` step
   keeps it, because the TypeScript goldens still compare exact bytes there. The C++ seam test no longer holds the

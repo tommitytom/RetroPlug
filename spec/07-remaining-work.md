@@ -422,7 +422,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     guard count above 0. The seam's block is a fixed 1024 frames, and its jobs are bounded (64 outstanding, up to 8
     workers). D3 must also extend or decide what a render needs and the seam lacks: system nodes and a script host in a
     job (its registry is rp.core, rp.dsp and rp.dsp.resample only), a TypeScript cancel, completions that stream
-    rather than return at the fixed `frames`, and a rejection at project close.
+    rather than return at the fixed `frames`, a rejection at project close, a playing and advancing transport (a job's
+    is fixed at 120 bpm, ppq 0, not playing) and per-block MIDI or other event input (a job has none).
   - **A plugin kit row** is possible and not built: it imports `src/kit` and runs it on the stores' backend, not
     `audioDriver` (the driver's compile would turn on the offline poll's native wait and block the UI frame).
   - **Residuals.** `src/lsdj/` is test-reference code only now (`Effects`, `KitBank.hpp`); `OffsetLookup.hpp` is dead
@@ -438,10 +439,13 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     4.9 ms, nearly all of it buffers crossing the JS thread between passes (about 1 MB a slot for a 1 s source, 15 MB a
     kit). When a patcher UI lands, the fix is to chain a slot's passes inside one job or keep the intermediates native
     behind handles so only the final buffer crosses, and to recompile only the slot a knob touched.
-  - **Engine-level threaded cases are weak race detectors.** Through a real `Engine`, ThreadSanitizer sees a
-    happens-before edge between the control and block threads somewhere in `setGraph` (around `GraphHost::reclaim` and
-    planning) that hides a shared-buffer race, so a case driving the engine from two threads can pass with the race
-    present; the registry-level cases are what caught the state publish's. Worth an investigation.
+  - **Engine-level threaded cases are weak race detectors.** A case driving the `Engine` from two threads passed with
+    a shared-buffer race present, while the registry-level cases caught it; why is open (see the C4 bullet above, where
+    the happens-before edge ThreadSanitizer appears to see in `setGraph` is a reading, not a finding). Worth an
+    investigation.
+  - **Each Engine keeps up to 8 normal-priority offline workers parked for life** once it has compiled anything. In a
+    DAW, N instances can hold 8N threads, and a compile briefly puts 8 busy threads beside the audio thread; a plugin
+    kit row should lower the ceiling or retire idle workers.
   - **Confirm the removed transitive includes build under MSVC.** The tree has not been built with MSVC since D2
     deleted headers that used to arrive through `BackendTypes.hpp` and `retroplug-core`; run `build.bat` (or the
     Windows CI job) before trusting the platform that has not run here.
