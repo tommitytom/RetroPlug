@@ -69,15 +69,18 @@ retroplug_add_test_binary(
              test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
              test/audio/EngineInvoker.test.cpp         # the teardown discards a staged-message payload
              test/audio/Dither.test.cpp                # the kit TPDF dithers are seeded from their input
-             test/audio/KitBaseline.test.cpp           # every kit the compilers build is held to its recorded bank hash
              test/graph/CountingAllocator.cpp          # replaces operator new / delete: the N8 FIFO's [alloc] case
+             # The kit path's effect wrappers, so the dither cases are held to what rp::lsdj::processEffect does to a
+             # buffer, not only to the kernels underneath it (retroplug-graph-test compiles it too, for the two
+             # buffer-reading nodes). It needs the kernels, named in LIBS below.
+             ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
+             retroplug-dsp-kernels                     # Effects.cpp's wrappers call these
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
-             RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg"
-             RP_KIT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/audio/golden")
+             RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
 
 # Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md, -b3b-design.md,
 # -c2-design.md): each system node renders exactly what its core renders driven directly, its inputs and its settings'
@@ -269,8 +272,8 @@ retroplug_add_test_binary(
              test/graph/DspBufferNodes.test.cpp       # the rp.dsp nodes that read a whole buffer: normalize, DPCM, seedFrom
              test/graph/DspResample.test.cpp          # rp.dsp.resample, through real plans, against its kernel
              # The kit path's effect wrappers, so the two buffer-reading nodes are held to what
-             # rp::lsdj::processEffect does to a buffer, not only to the kernels underneath it. They need the kernels
-             # and reflect-cpp (through retroplug-graph), nothing of the core.
+             # rp::lsdj::processEffect does to a buffer, not only to the kernels underneath it. They need the kernels,
+             # named in LIBS below, and nothing of the core.
              ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     LIBS     retroplug-graph
              retroplug-dsp-nodes                      # the rp.dsp package under test

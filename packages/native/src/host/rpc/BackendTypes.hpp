@@ -7,8 +7,6 @@
 
 #include <rfl/Bytestring.hpp>
 
-#include "lsdj/Effects.hpp"  // rp::lsdj::LsdjEffect (tagged union: gain/filter/dither)
-
 // Shared DTOs for the Backend RPC surface (packages/retroplug/src/backend.ts).
 // Binary crosses as rfl::Bytestring in BOTH directions (a JS Uint8Array): the qjs codec decodes a
 // typed byte param straight into rfl::Bytestring (rpcpp's NativeAstCodec path), not a JSON int-array.
@@ -21,36 +19,6 @@ struct BackendZipInput { std::string name; rfl::Bytestring bytes; };  // zip inp
 // width*height*4 bytes. The LSDJ font tile↔pixel mapping lives in TS (src/lsdj/rom); this is just the
 // generic codec crossing so font import/export works from the plugin as well as the CLI.
 struct PngImage { std::uint32_t width; std::uint32_t height; rfl::Bytestring rgba; };
-
-// One source sample for the LSDJ kit compiler (harness-facet compileKit): a source audio file (WAV/MP3/
-// FLAC, decoded natively by SampleCache/miniaudio), a 3-char slot name, an optional source window, and an
-// effect chain (gain/filter/dither) applied during compilation. Mirrors rp::lsdj::CompileSampleSpec.
-struct KitSampleSpec {
-    std::string                       path;
-    std::string                       name;
-    std::optional<std::uint32_t>      offset;
-    std::optional<std::uint32_t>      length;
-    std::vector<rp::lsdj::LsdjEffect> effects;
-};
-// A whole-kit compile request: a 6-char kit name + up to 15 samples (extra dropped). `rotate` is the LSDJ
-// 9.2.0+ frame rotation, derived from the TARGET ROM's version (absent → true). Output = a 16 KB kit bank
-// (rfl::Bytestring) ready to drop into a ROM slot.
-struct KitCompileSpec { std::string name; std::vector<KitSampleSpec> samples; std::optional<bool> rotate; };
-
-// One source sample for the risa NES-DPCM kit compiler (harness-facet compileDmc): the same source/window/
-// effects as a kit sample, plus the DMC playback-rate index (0..15 into the PAL rate table), a loop flag,
-// and a 7-bit peak-normalize flag. Mirrors rp::risa::CompileDmcSampleSpec.
-struct RisaDmcSampleSpec {
-    std::string                       path;
-    std::string                       name;
-    std::optional<std::uint32_t>      offset;
-    std::optional<std::uint32_t>      length;
-    std::vector<rp::lsdj::LsdjEffect> effects;
-    std::optional<std::uint32_t>      rate;      // PAL DPCM rate index 0..15 (default 12)
-    std::optional<bool>               loop;
-    std::optional<bool>               normalize; // 7-bit peak-normalize (default true)
-};
-struct RisaKitCompileSpec { std::string name; std::vector<RisaDmcSampleSpec> samples; };
 
 // Monotonic audio-capture snapshot published by the background audio thread (energy = sum of
 // squared samples, frames = total). A control-thread reader diffs two snapshots for a windowed RMS.
@@ -179,10 +147,10 @@ struct RpcJobCompletion {
 // host/engine/OfflineJobs.hpp): a graph document run to completion on a host of its own. Its resources are its inputs
 // then its outputs, in order, named in the document as res:1, res:2 and on; `returns` names the handles whose buffers
 // the completion carries. An input is EITHER audio the call carries (`samples`, interleaved float32 in the host's byte
-// order, little-endian on every target, `channels` wide, at `rate`) OR a file native decodes (`path`, through the kit
-// compiler's SampleCache decode, mono at the file's rate) and windows (`offset`, `length`, 0 or absent for all of it,
+// order, little-endian on every target, `channels` wide, at `rate`) OR a file native decodes (`path`, through
+// SampleCache's miniaudio decode, mono at the file's rate) and windows (`offset`, `length`, 0 or absent for all of it,
 // and a `cap`); a field of the other kind is refused. A cap is `frames` at `rate` scaled to the decoded rate by
-// `arithmetic`: "float-ratio" (LSDj's compileSample) or "double-scale" (risa's DMC encode). `document` absent or empty
+// `arithmetic`: "float-ratio" (the LSDj window's) or "double-scale" (risa's DMC one). `document` absent or empty
 // runs no graph, so the job returns its inputs (a file's window, and its report).
 struct RpcOfflineCap { std::uint32_t frames; double rate; std::string arithmetic; };
 struct RpcOfflineInput {

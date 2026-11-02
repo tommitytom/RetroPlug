@@ -1142,8 +1142,8 @@ byte.
 
 A kit compiles to the same bytes every time. The two TPDF dither algorithms seed their `std::mt19937` from
 `rp::dsp::inputSeed` over the resampled, pre-trim sample the dither receives, salted with a per-algorithm constant, and
-the other three algorithms are deterministic already. `retroplug-audio-test`'s `[kit-baseline]` suite
-([KitBaseline.test.cpp](../packages/native/test/audio/KitBaseline.test.cpp)) compiles a fixed matrix of synthesised
+the other three algorithms are deterministic already. The kit baseline suite
+([kit-baseline.test.ts](../packages/retroplug/test-native/kit-baseline.test.ts)) compiles a fixed matrix of synthesised
 sources through `KitCompiler` and the two codecs and holds each bank's FNV-1a-64, size and slot length to
 [golden/kit-baseline.json](../packages/native/test/audio/golden/kit-baseline.json): exact bytes on `linux-x64-gnu13`,
 self-agreement and the layout facts elsewhere, with `RP_KIT_GOLDEN_REQUIRE_TARGET=1` on CI's linux-x64 job and

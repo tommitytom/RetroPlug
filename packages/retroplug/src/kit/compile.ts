@@ -191,8 +191,8 @@ async function settle(compile: Promise<Compiled>): Promise<SlotResult> {
   }
 }
 
-// Each honoured slot's chain started at once; a sample past the bank's `capacity` is not compiled (native's assembler
-// drops it too), and its reason says so.
+// Each honoured slot's chain started at once; a sample past the bank's `capacity` is not compiled (the bank layout
+// holds that many), and its reason says so.
 async function compileSlots<S>(samples: readonly S[], capacity: number, compile: (s: S) => Promise<Compiled>,
                                bankName: string): Promise<{ results: SlotResult[]; dropped: string[] }> {
   const results = await Promise.all(samples.slice(0, capacity).map((s) => settle(compile(s))));

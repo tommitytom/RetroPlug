@@ -1,10 +1,10 @@
-// The TypeScript kit compiler's pure parts (src/kit/, docs/modular-graph-phase-d2-design.md section 5), with no native
-// host: the 4-bit level-to-code inversion over every level the dither node produces, the trim, the nibble pack with and
-// without rotate against a transcription of native convertCodesToNibbles, the DMC bit pack, pad and truncation, the
-// spec's refusals and their messages, the segment split at normalising gains and the documents each pass runs, the
-// range constants held to the two descriptor goldens, the bank assemblers' names byte for byte as native writes them,
-// and a slot's chain of jobs over a scripted runner (what it submits, where it stops short, what it does with a
-// failure). The banks themselves are held by test-native/kit-baseline (all 39 golden cases) and
+// The TypeScript kit compiler's pure parts (src/kit/, docs/modular-graph-phase-d2-design.md section 5), with no host:
+// the 4-bit level-to-code inversion over every level the dither node produces, the trim, the nibble pack with and
+// without rotate against an independent transcription of the LSDj nibble format, the DMC bit pack, pad and truncation,
+// the spec's refusals and their messages, the segment split at normalising gains and the documents each pass runs, the
+// range constants held to the two descriptor goldens, the bank assemblers' names byte for byte as the bank layouts
+// store them, and a slot's chain of jobs over a scripted runner (what it submits, where it stops short, what it does
+// with a failure). The banks themselves are held by test-native/kit-baseline (all 39 golden cases) and
 // test-native/kit-compile.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
@@ -44,8 +44,9 @@ const F = Math.fround;
 // quotient rounded once from the double quotient is the binary32 quotient, and so for the multiply and the subtract.
 const levelOf = (code: number): number => F(F(F(code / 15) * 2) - 1);
 
-// Native SampleUtil::convertCodesToNibbles, transcribed.
-function nativeNibbles(codes: number[], rotate: boolean): number[] {
+// The LSDj nibble pack, transcribed independently of src/kit: stored = 0xF - code, and each frame rotated right by
+// one for 9.2.0+.
+function referenceNibbles(codes: number[], rotate: boolean): number[] {
   const out: number[] = [];
   for (let chunk = 0; chunk + 32 <= codes.length; chunk += 32) {
     const s = new Array<number>(32);
@@ -79,7 +80,7 @@ test("every 4-bit level the dither node outputs inverts to its own code, with ro
   expect(levelOf(15)).toBe(1);
 });
 
-test("the trim keeps whole 32-sample frames, and the nibble pack is native's with and without rotate", () => {
+test("the trim keeps whole 32-sample frames, and the nibble pack matches the independent transcription", () => {
   expect([0, 31, 32, 33, 63, 64, 1000].map(trimToFrames)).toEqual([0, 0, 32, 32, 32, 64, 992]);
   for (const n of [0, 5, 31, 32, 33, 64, 96 + 17, 1056 * 2]) {
     const codes = codesOf(n, n + 1);
@@ -87,7 +88,7 @@ test("the trim keeps whole 32-sample frames, and the nibble pack is native's wit
     for (const rotate of [true, false]) {
       const packed = packNibbles(levels, rotate);
       expect(packed.length, `${n} codes`).toBe(trimToFrames(n) / 2);
-      expect([...packed], `${n} codes, rotate ${rotate}`).toEqual(nativeNibbles(codes, rotate));
+      expect([...packed], `${n} codes, rotate ${rotate}`).toEqual(referenceNibbles(codes, rotate));
     }
   }
   // Rotate: a frame's last sample opens it, inverted (stored = 15 - code).
@@ -96,18 +97,18 @@ test("the trim keeps whole 32-sample frames, and the nibble pack is native's wit
   expect(packNibbles(ramp.map(levelOf), false)[0]).toBe(((0xf - 0) << 4) | (0xf - 1));
 });
 
-test("the resampled length is the kit path's floor(frames * (out / in)), and the DMC rates are native's table", () => {
+test("the resampled length is the kit path's floor(frames * (out / in)), and the DMC rates wav2dmc.py's", () => {
   expect(resampledLength(8192, 44100, 11468)).toBe(Math.floor(8192 * (11468 / 44100)));
   expect(resampledLength(600, 44100, 11468)).toBe(156);
   expect(resampledLength(0, 22050, 11468)).toBe(0);
   expect(resampledLength(3, 48000, 4177.4)).toBe(0);
   expect(PAL_DMC_RATES.length).toBe(16);
   expect(palDmcRate(12)).toBe(16965.4); // the compilers' default index
-  expect(palDmcRate(17)).toBe(4696.63); // native masks the index to its low four bits
+  expect(palDmcRate(17)).toBe(4696.63); // the index is masked to its low four bits
   expect(LSDJ_MAX_SAMPLE_FRAMES).toBe(32576);
 });
 
-test("the DMC pack is LSB first, padded to 16k + 1 bytes and cut at 4081, as RisaDmcCodec packs it", () => {
+test("the DMC pack is LSB first, padded to 16k + 1 bytes and cut at 4081, as the risa bank packs it", () => {
   const bitsOf = (bits: number[]): number[] => bits.map((b) => (b ? 1 : -1));
   expect([...packDmc([])]).toEqual([0]); // the encode of nothing: the one-byte legal stream
   expect([...packDmc(bitsOf([1, 0, 0, 0, 0, 0, 0, 0]))]).toEqual([0x01]);
@@ -209,7 +210,7 @@ test("a spec the nodes cannot carry is refused with the reason, checked on its b
   );
   expect(bounds.segments[0].nodes.length).toBe(4);
   expect(resolveEffects([{ type: "gain", normalize: true, gain: 150 }], 44100, true).segments[0].normalize).toBe(150);
-  // risa skips a dither unread, as RisaDmcCodec does.
+  // risa skips a dither unread: DMC is 1-bit, so a 4-bit dither has nothing to apply to.
   const unknownDither = { type: "dither", ditherType: "Floyd" } as unknown as KitEffect;
   expect(resolveEffects([unknownDither], 44100, false).dither).toBe(null);
 });
@@ -316,7 +317,7 @@ test("each pass's document: its buffer in at res:1, a mono chain of nodes, recor
   expect(dpcm.nodes[0]).toEqual({ id: "src", type: "rp.dsp.dpcm", settings: { buffer: "res:1", normalize: false } });
 });
 
-test("the LSDj assembler writes names as native's does: the UTF-8 bytes, a-z uppercased, nothing else changed", () => {
+test("the LSDj assembler writes names by the bank layout's byte rule: the UTF-8 bytes, a-z uppercased", () => {
   const name = (bank: Uint8Array, off: number, n: number): number[] => [...bank.subarray(off, off + n)];
   const bank = buildKitBank("baseline-kit", [
     { name: "kik", bytes: new Uint8Array(16) },
@@ -324,8 +325,8 @@ test("the LSDj assembler writes names as native's does: the UTF-8 bytes, a-z upp
   ]);
   expect(name(bank, 0x52, 6)).toEqual([..."BASELI"].map((c) => c.charCodeAt(0)));
   expect(name(bank, 0x22, 3)).toEqual([..."KIK"].map((c) => c.charCodeAt(0)));
-  // A non-ASCII name is its bytes (0xC3 0xA9), as a native string of it holds, then the fill; native's toupper leaves
-  // bytes past ASCII alone. The slot is present with no bytes: a named, zero-length entry, not the empty-slot marker.
+  // A non-ASCII name is its UTF-8 bytes (0xC3 0xA9), then the fill; the rule uppercases a-z only, so bytes past ASCII
+  // are left alone. The slot is present with no bytes: a named, zero-length entry, not the empty-slot marker.
   expect(name(bank, 0x25, 3)).toEqual([0xc3, 0xa9, 0x2d]);
   expect(bank[2] | (bank[3] << 8)).toBe(0x4060 + 16);
   expect(bank[4] | (bank[5] << 8)).toBe(0x4060 + 16);
@@ -334,9 +335,9 @@ test("the LSDj assembler writes names as native's does: the UTF-8 bytes, a-z upp
   expect(name(buildKitBank("ab", []), 0x52, 6)).toEqual([0x41, 0x42, 0x20, 0x20, 0x20, 0x20]);
 });
 
-test("the risa assembler filters names byte by byte as native does", () => {
+test("the risa assembler filters names byte by byte by the bank layout's rule", () => {
   const bank = assembleKitBank("straße", [{ dpcm: new Uint8Array(17), rate: 12, loop: false, name: "ßk" }]);
-  // Native keeps A-Z, 0-9 and '-' of the name's uppercased bytes, so the two bytes of the eszett are dropped whole
+  // The rule keeps A-Z, 0-9 and '-' of the name's uppercased bytes, so the two bytes of the eszett are dropped whole
   // (JavaScript's toUpperCase would have made it "SS").
   expect([...bank.subarray(0x1ec0, 0x1ec0 + 7)]).toEqual([..."STRAE"].map((c) => c.charCodeAt(0)).concat([0, 0]));
   // A sample name is its first three bytes, a-z uppercased, others as they are.
@@ -457,7 +458,7 @@ test("an LSDj slot that resamples to under one wave frame, or is empty, submits 
     "the window holds no frames (offset 0, at or past the source's 0 frames)",
   ]);
   expect(runner.requests.map(typesOf)).toEqual([["load"], ["load"]]);
-  // Both are named, zero-length slots, as native's compileSample leaves them.
+  // Both are named, zero-length slots: the bank keeps a slot's name with no bytes.
   expect([kit.bytes[2] | (kit.bytes[3] << 8), kit.bytes[4] | (kit.bytes[5] << 8)]).toEqual([0x4060, 0x4060]);
   expect(String.fromCharCode(kit.bytes[0x22], kit.bytes[0x25])).toBe("SE");
 });

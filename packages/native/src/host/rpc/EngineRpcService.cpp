@@ -16,10 +16,6 @@
 
 #include "EmbeddedRoms.hpp"
 #include "system/SystemBase.hpp"
-
-#include "kit/KitCompiler.hpp"       // rp::kit::KitCompiler (generic, compileKit) - heavy, so only in this TU
-#include "lsdj/LsdjKitCodec.hpp"     // rp::lsdj::LsdjKitCodec (the LSDJ nibble/16KB-bank codec)
-#include "risa/RisaDmcCodec.hpp"     // rp::risa::RisaDmcCodec (the risa NES-DPCM/8KB-bank codec)
 #include "util/BuildTarget.hpp"      // rp::buildTarget (shared with the kit baseline's golden)
 #include "util/SlurpFile.hpp"
 
@@ -52,9 +48,6 @@ bool EngineRpcService::rendersInto(std::size_t channels) const {
                  static_cast<unsigned>(engine_.hostWidth()));
     return false;
 }
-
-// Out-of-line so unique_ptr<KitCompiler> can destroy a complete type (fwd-declared in the header).
-EngineRpcService::~EngineRpcService() = default;
 
 RpcPutResourceResult EngineRpcService::putResource(BackendResourceSpec spec) {
     RpcPutResourceResult out{std::nullopt, std::nullopt};
@@ -454,57 +447,6 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32
         result.emplace_back(p, p + out[i].size() * sizeof(float));
     }
     return result;
-}
-
-rfl::Bytestring EngineRpcService::compileKit(KitCompileSpec spec) {
-    // Lazily build the compiler on first use — it spins up an enkiTS pool + a SampleCache, which the
-    // plugin (which also constructs this service) must never pay for.
-    if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::kit::KitCompiler>();
-
-    const bool rotate = spec.rotate.value_or(true);   // per the target ROM's LSDj version (9.2.0+ rotates)
-    std::vector<rp::lsdj::CompileSampleSpec> specs;
-    specs.reserve(spec.samples.size());
-    for (auto& s : spec.samples) {
-        rp::lsdj::CompileSampleSpec cs;
-        cs.path    = s.path;
-        cs.name    = s.name;
-        cs.offset  = s.offset.value_or(0);
-        cs.length  = s.length.value_or(0);
-        cs.effects = s.effects;
-        cs.rotate  = rotate;
-        specs.push_back(std::move(cs));
-    }
-
-    // The generic compiler drives the LSDJ codec (nibble pack + 16 KB bank). Always returns a bank; a
-    // per-sample load failure just leaves that slot empty. The caller (CLI) validates by reading the
-    // bank back, so no exception crosses the RPC boundary here.
-    rp::lsdj::LsdjKitCodec codec(spec.name, std::move(specs));
-    rp::kit::CompiledKit kit = kitCompiler_->compile(codec);
-    return toBytestring(kit.bytes);
-}
-
-rfl::Bytestring EngineRpcService::compileDmc(RisaKitCompileSpec spec) {
-    // Reuse the same lazy compiler as compileKit — it's codec-agnostic (enkiTS pool + SampleCache).
-    if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::kit::KitCompiler>();
-
-    std::vector<rp::risa::CompileDmcSampleSpec> specs;
-    specs.reserve(spec.samples.size());
-    for (auto& s : spec.samples) {
-        rp::risa::CompileDmcSampleSpec cs;
-        cs.path      = s.path;
-        cs.name      = s.name;
-        cs.offset    = s.offset.value_or(0);
-        cs.length    = s.length.value_or(0);
-        cs.effects   = s.effects;
-        cs.rate      = static_cast<std::uint8_t>(s.rate.value_or(12) & 0x0F);
-        cs.loop      = s.loop.value_or(false);
-        cs.normalize = s.normalize.value_or(true);
-        specs.push_back(std::move(cs));
-    }
-
-    rp::risa::RisaDmcCodec codec(spec.name, std::move(specs));
-    rp::kit::CompiledKit kit = kitCompiler_->compile(codec);
-    return toBytestring(kit.bytes);
 }
 
 double EngineRpcService::sampleRate() const {

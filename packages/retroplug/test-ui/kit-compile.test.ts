@@ -6,9 +6,9 @@
 // packages/native/plugin/PluginDSP.cpp does - registerHostRpc + registerEmulatorRpc, nothing else - so it is the
 // narrowest honest host for this: the CLI and the native test host also mount the harness facet, and a Catch2 case
 // composing the plugin's registration could not run TypeScript at all. The offline jobs the compile is made of ride
-// the emulator facet (submitOfflineJob / drainOfflineJobs), which is why the plugin can compile a kit at all; the two
-// harness RPCs that compile a kit on the harness hosts (compileKit / compileDmc) are checked to be absent, since a
-// compile that needed them would pass here only by accident of some other host's registration.
+// the emulator facet (submitOfflineJob / drainOfflineJobs), which is why the plugin can compile a kit at all. The
+// harness facet is checked to be absent (its renderAudio is refused), so a compile that needed one of its methods would
+// pass here only by accident of some other host's registration.
 //
 // The compile is src/kit's entry point over the real backend, never an audio driver: making a driver turns the
 // offline poll's native wait on (src/offline.ts), and that is the settle path of a host with NO UI tick. The plugin
@@ -35,10 +35,7 @@ test("the plugin's facet set compiles a kit, with no harness facet bound", async
   for (let i = 0; i < frames; i++) pcm[i] = Math.sin((i / 44100) * 2 * Math.PI * 220) * Math.exp(-i / 3000);
   expect(be.writeFile(wav, encodeWav(pcm, 44100, 1))).toBeTruthy();
 
-  // The harness facet is NOT bound on this host: the RPCs the harness hosts compile a kit through are refused, and
-  // the render harness beside them is too.
-  expect(() => call("compileKit", { name: "", samples: [] })).toThrow();
-  expect(() => call("compileDmc", { name: "", samples: [] })).toThrow();
+  // The harness facet is NOT bound on this host: its renderAudio is refused.
   expect(() => call("renderAudio", 1)).toThrow();
 
   let result: KitCompileResult | null = null;

@@ -5,14 +5,13 @@
 // it. Each of those is a node that reads its buffer at activate (rp.dsp.normalize, rp.dsp.resample, rp.dsp.dither's
 // `seedFrom`, rp.dsp.dpcm), so each pass records into a buffer the next pass is handed as its input.
 //
-// The order is native KitUtil::compileSample's (and RisaDmcCodec::encode's), because the order is the bytes: the
-// effects at the source rate in list order, the resample, then the quantise (LSDj) or the DMC encode (risa).
+// The order is the kit formats' (and the golden's), because the order is the bytes: the effects at the source rate in
+// list order, the resample, then the quantise (LSDj) or the DMC encode (risa).
 //
-// Every spec value goes into a document as its binary32 value (`Math.fround`), which is what native decodes a spec's
-// float field to and what each node casts its param or setting to, so the node computes on the kit path's float. The
-// checks are on that same value, as a double against the descriptor's double bounds, the comparison the planner
-// clamps with: anything this file accepts reaches its node unclamped, and anything the planner would clamp is refused
-// here with a reason instead of compiling a different spec.
+// Every spec value goes into a document as its binary32 value (`Math.fround`), which is what each node casts its param
+// or setting to, so the node computes on the kit path's float. The checks are on that same value, as a double against
+// the descriptor's double bounds, the comparison the planner clamps with: anything this file accepts reaches its node
+// unclamped, and anything the planner would clamp is refused here with a reason instead of compiling a different spec.
 
 import type { KitEffect } from "../audioDriver";
 import { offlineInputRef, offlineOutputRef, type OfflineCap, type OfflineRunRequest } from "../offline";
@@ -79,10 +78,9 @@ export interface SlotChain {
   dither: string | null;
 }
 
-// A spec field's value: its binary32 value, with the value as the spec wrote it for a message, or the rp::lsdj
-// struct's default when the field is absent (audioDriver.ts's KitEffect declares every field optional; native's RPC
-// decode has no defaults and refuses the whole kit for a field left out, so here is the more lenient of the two). A
-// non-number is refused: native would not decode the spec at all.
+// A spec field's value: its binary32 value, with the value as the spec wrote it for a message, or the effect's
+// documented default when the field is absent (audioDriver.ts's KitEffect declares every field optional). A non-number
+// is refused: no document can carry it.
 interface Field {
   value: number;
   written: number;
@@ -125,7 +123,7 @@ function inRange(f: Field, range: ParamRange, what: string, node: string, where:
  * (the planner cannot see the plan's rate, and a biquad there is unstable, where the node's guard would part from the
  * kernel). A normalising gain is not range-checked: rp.dsp.normalize folds the peak into it as a setting, which no
  * range clamps, so it is refused only when a document cannot carry it (not finite). `withDither` false (risa) skips a
- * dither effect unread, as RisaDmcCodec does.
+ * dither effect unread: DMC is 1-bit, so a 4-bit dither has nothing to apply to.
  *
  * The list is cut at each normalising gain; a pass with nothing to run (the stretch before the first normalising gain,
  * when it holds no node) is dropped, so a list of nothing but dithers has no passes at all.

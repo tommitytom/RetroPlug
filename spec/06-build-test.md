@@ -223,9 +223,9 @@ Exact kit bytes, not structure and audibility. `KitCompiler`'s output is what LS
 compared a compiled bank with anything; the suite is the gate Phase D's graph compiles are held to
 ([modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md)).
 
-- **Matrix.** `[kit-baseline]` ([KitBaseline.test.cpp](../packages/native/test/audio/KitBaseline.test.cpp), in
-  `retroplug-audio-test`; it carries `[kit]` beside the tag, which `[dither]` carries too, so one `"[kit]"` run
-  covers the kit path's whole byte surface) synthesises every source in the test (two sines, a quiet sine, a chirp,
+- **Matrix.** The kit baseline
+  ([kit-baseline.test.ts](../packages/retroplug/test-native/kit-baseline.test.ts), run by `pnpm test:native`)
+  synthesises every source in the test (two sines, a quiet sine, a chirp,
   seeded noise and silence at 22.05, 44.1 and 48 kHz, plus a 600-frame source shorter than one resampler chunk), writes
   each as a 32-bit float WAV in a temp dir, and compiles it through `KitCompiler` over `LsdjKitCodec` / `RisaDmcCodec`,
   so `SampleCache` and miniaudio's decode are in the loop and the suite needs no fixtures. 39 cases: LSDj has no

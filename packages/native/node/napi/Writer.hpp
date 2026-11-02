@@ -196,7 +196,7 @@ class Writer {
         } else if constexpr (std::is_same_v<U, rfl::Bytestring>) {
             // Binary buffers (rfl::Bytestring) cross the bridge as a JS Uint8Array, matching the
             // QuickJS codec's JS_NewUint8ArrayCopy path - NOT a JS array of numbers. This is what
-            // keeps renderAudio / compileKit / readFile off the number-per-byte path.
+            // keeps renderAudio / readSram / readFile off the number-per-byte path.
             napi_value ab   = nullptr;
             void*      dest = nullptr;
             if (napi_create_arraybuffer(env_, _var.size(), &dest, &ab) != napi_ok) {

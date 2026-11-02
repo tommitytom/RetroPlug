@@ -59,7 +59,7 @@ vector and the Writer has no steal-on-attach rule.
 The codec opts into rpcpp's `NativeAstCodec` via `ast_view_t`. That is load-bearing: it lets
 `RpcServer` decode method params straight into their typed tuple instead of through `rfl::Generic`,
 which is what keeps an `rfl::Bytestring` crossing as a live `Uint8Array` rather than degrading to an
-array of numbers. `renderAudio` returns raw interleaved f32 and `compileKit` a 16 KB bank; neither
+array of numbers. `renderAudio` returns raw interleaved f32 and `readSram` a battery dump; neither
 should be serialized.
 
 ## Building

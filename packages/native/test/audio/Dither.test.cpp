@@ -1,14 +1,14 @@
 // The kit path's two TPDF dithers, seeded from the samples they quantise.
 //
-// `KitUtil::compileSample` hands the dither the WINDOWED, POST-EFFECT, RESAMPLED buffer at the Game Boy kit rate
-// (11468 Hz), before `frameAlign` trims it to whole 32-sample frames, so that is the input the seed is drawn from.
-// Every case here calls the effect directly on a buffer at that rate, the way the kit path does, and holds what the
-// seed has to give: a compile gives the same bytes for the same input, two different samples do not share one noise
-// sequence (which a single fixed seed would), and the noise is a specified function of the input and the algorithm,
-// so it is the same on any host whose float arithmetic is IEEE-754 - the draw comes from raw `mt19937` output and the
-// hash reads the floats' bytes little-endian, neither of which depends on the standard library's or the host's choices.
-// A whole kit bank is byte-identical only where the resampler and the filters agree as well, which is why the exact
-// bank bytes are compared on one reference target.
+// The kit compiler hands the dither the WINDOWED, POST-EFFECT, RESAMPLED buffer at the Game Boy kit rate (11468 Hz),
+// before it trims it to whole 32-sample frames, so that is the input the seed is drawn from. Every case here calls the
+// effect directly on a buffer at that rate, the way the kit path does, and holds what the seed has to give: a compile
+// gives the same bytes for the same input, two different samples do not share one noise sequence (which a single fixed
+// seed would), and the noise is a specified function of the input and the algorithm, so it is the same on any host
+// whose float arithmetic is IEEE-754 - the draw comes from raw `mt19937` output and the hash reads the floats' bytes
+// little-endian, neither of which depends on the standard library's or the host's choices. A whole kit bank is
+// byte-identical only where the resampler and the filters agree as well, which is why the exact bank bytes are
+// compared on one reference target (test-native/kit-baseline.test.ts, over the graph jobs).
 //
 // Run via `pnpm test:plugin`.
 
@@ -20,11 +20,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "lsdj/Effects.hpp"
-#include "lsdj/KitUtil.hpp"
+#include "lsdj/KitBank.hpp"
 
 namespace {
 
-// The rate the dither runs at: the kit's target rate, which is also its input rate once `compileSample` has resampled.
+// The rate the dither runs at: the kit's target rate, which is also its input rate once the kit compiler has resampled.
 constexpr float kKitRate = static_cast<float>(rp::lsdj::kGameboySampleRate);
 
 /** A decaying tone as a source sample: something with real 4-bit structure for the dither to quantise. */

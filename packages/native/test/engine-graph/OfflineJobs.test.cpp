@@ -1,13 +1,13 @@
 // Offline jobs (docs/modular-graph-phase-d2-design.md section 3, host/engine/OfflineJobs.hpp): a graph document run to
 // completion on a host of its own, on a worker of the engine's offline pool. A job returns exactly what the same nodes
 // give through a GraphRig run directly; jobs past the pool's concurrency queue and each returns its own result; a
-// cancel stops a queued job at once and a running one at its next block, with the cancel reason; an engine destroyed with
-// jobs in flight abandons them and joins every worker; the outstanding bound refuses; every refusal says why, at
-// submission or in the completion; a file input is SampleCache's decode, windowed exactly as the two kit compilers
-// window today, the cap's two arithmetics and every edge included, with its report; a kit-shaped job names one buffer
-// twice - as the normalising source's and as the dither's `seedFrom` - beside the DPCM encode, and gives the kit
-// arithmetic for all three; and a job run while an audio thread plays the live plan leaves that plan's output bit for
-// bit, its warmed blocks allocating nothing.
+// cancel stops a queued job at once and a running one at its next block, with the cancel reason; an engine destroyed
+// with jobs in flight abandons them and joins every worker; the outstanding bound refuses; every refusal says why, at
+// submission or in the completion; a file input is SampleCache's decode, windowed exactly as the two kit windows
+// spell it (LSDj's and risa's), the cap's two arithmetics and every edge included, with its report; a kit-shaped job
+// names one buffer twice - as the normalising source's and as the dither's `seedFrom` - beside the DPCM encode, and
+// gives the kit arithmetic for all three; and a job run while an audio thread plays the live plan leaves that plan's
+// output bit for bit, its warmed blocks allocating nothing.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[offline]"`; the hidden
 // "[offline-bench]" times a trivial job and a one-second resample.
@@ -47,8 +47,7 @@
 #include "host/graph/HostServices.hpp"
 #include "host/rpc/EngineRpcService.hpp"
 #include "kit/SampleCache.hpp"
-#include "lsdj/KitUtil.hpp"
-#include "risa/RisaDmcCodec.hpp"
+#include "lsdj/KitBank.hpp"
 
 using rp::host::OfflineCap;
 using rp::host::OfflineCapArithmetic;
@@ -264,21 +263,21 @@ struct TempDir {
     }
 };
 
-// The PAL DMC rates (RisaDmcCodec.cpp's table), the risa cap's rate.
+// The PAL DMC rates (wav2dmc.py's table, which the risa kit compiler's rate index picks from), the risa cap's rate.
 constexpr double kPalRates[16] = {
     4177.40,  4696.63,  5261.41,  5579.22,  6023.94,  7044.94,  7917.18,  8397.01,
     9446.63,  11233.80, 12595.50, 14089.89, 16965.40, 21315.52, 25191.00, 33252.09,
 };
-constexpr std::uint32_t kLsdjCapFrames = static_cast<std::uint32_t>(rp::lsdj::Kit::kMaxSampleFrames);
-constexpr std::uint32_t kRisaCapFrames = 4081u * 8u;  // RisaDmcCodec's kDmcMaxBytes in bits
+constexpr std::uint32_t kLsdjCapFrames = static_cast<std::uint32_t>(rp::lsdj::kMaxSampleFrames);
+constexpr std::uint32_t kRisaCapFrames = 4081u * 8u;  // the DMC's longest stream (4081 bytes) in bits
 
-// Today's two windows, copied from their homes as they compute them: what the job's window must reproduce.
+// The two kit windows, written out as references: what the job's window must reproduce.
 std::pair<std::size_t, std::size_t> lsdjWindow(std::size_t size, std::uint32_t sampleRate, std::size_t offset,
                                                std::size_t length) {
-    // KitUtil::compileSample
+    // LSDj's: the cap is 32576 kit frames at 11468 Hz, measured back to the decoded rate in float, ratio first.
     const float srRatio = static_cast<float>(sampleRate) / static_cast<float>(rp::lsdj::kGameboySampleRate);
     const std::size_t maxFrames = static_cast<std::size_t>(
-        std::ceil(static_cast<float>(rp::lsdj::Kit::kMaxSampleFrames) * srRatio));
+        std::ceil(static_cast<float>(rp::lsdj::kMaxSampleFrames) * srRatio));
     const std::size_t length0 = (length == 0) ? size : length;
     const std::size_t startFrame = std::min(offset, size);
     return {startFrame, std::min(maxFrames, std::min(length0, size - startFrame))};
@@ -286,7 +285,7 @@ std::pair<std::size_t, std::size_t> lsdjWindow(std::size_t size, std::uint32_t s
 
 std::pair<std::size_t, std::size_t> risaWindow(std::size_t size, std::uint32_t sampleRate, std::size_t offset,
                                                std::size_t length, double targetRate) {
-    // RisaDmcCodec::encode
+    // risa's: the cap is 4081 DMC bytes (32648 bits) at the slot's PAL rate, measured back in double, product first.
     const double srcRate = static_cast<double>(sampleRate);
     const std::size_t maxOutFrames =
         static_cast<std::size_t>(std::ceil(static_cast<double>(4081 * 8) * srcRate / targetRate));
@@ -886,7 +885,7 @@ TEST_CASE("the offline window is each kit compiler's window, the cap's arithmeti
     CHECK(differs);
 }
 
-TEST_CASE("a file input is SampleCache's decode, windowed as today's kit compilers window it, with its report",
+TEST_CASE("a file input is SampleCache's decode, windowed as the two kit windows spell it, with its report",
           "[engine-graph][offline]") {
     TempDir     dir;
     OfflineJobs jobs;
@@ -971,8 +970,8 @@ TEST_CASE("a file input is SampleCache's decode, windowed as today's kit compile
     CHECK_FALSE(cut.inputs[0].nonFinite);
 
     // An empty window is an input of no frames: reported, returned as a buffer of none at the decoded rate, and named by
-    // no resource. Today's compilers make of it an LSDj slot of no bytes and a one-byte risa slot (a legal 16k+1
-    // length), which a TS compiler reproduces from that report.
+    // no resource. The kit compiler makes of it an LSDj slot of no bytes and a one-byte risa slot (a legal 16k+1
+    // length) from that report; test-native/kit-compile.test.ts holds both banks (its "EMP" slots).
     const auto empty = one(jobs, jobs.submit(fileRequest(nanPath, 5000, 0, lsdjCap())).id);
     REQUIRE(empty.ok);
     CHECK(empty.inputs[0].frames == 0);
@@ -980,18 +979,6 @@ TEST_CASE("a file input is SampleCache's decode, windowed as today's kit compile
     CHECK(empty.buffers[0].frames == 0);
     CHECK(empty.buffers[0].samples.empty());
     CHECK(empty.buffers[0].rate == 32000.0);
-    rp::lsdj::KitUtil::SampleInput lsdj;
-    lsdj.data = withNan;
-    lsdj.sampleRate = 32000;
-    lsdj.offset = 5000;
-    CHECK(rp::lsdj::KitUtil::compileSample(lsdj).empty());
-    rp::risa::CompileDmcSampleSpec spec;
-    spec.offset = 5000;
-    const rp::risa::RisaDmcCodec risa("K", {spec});
-    rp::kit::SampleData data;
-    data.buffer = withNan;
-    data.sampleRate = 32000;
-    CHECK(risa.encode(0, data) == std::vector<std::uint8_t>{0});
 }
 
 TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit, and its warmed blocks allocate nothing",

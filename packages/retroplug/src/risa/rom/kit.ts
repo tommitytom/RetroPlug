@@ -112,26 +112,26 @@ export interface AssembleSlot {
 
 const utf8 = new TextEncoder();
 
-// A name's bytes as native holds them (its UTF-8), with a-z uppercased and every other byte left as it is: the
-// ASCII-only uppercase RisaDmcCodec applies, byte by byte, so one name gives native's bank bytes here.
+// A name's bytes (its UTF-8), with a-z uppercased and every other byte left as it is: the bank's ASCII-only uppercase,
+// byte by byte, so one name gives one bank.
 function upperAsciiBytes(name: string): Uint8Array {
   const bytes = utf8.encode(name);
   for (let i = 0; i < bytes.length; i++) if (bytes[i] >= 0x61 && bytes[i] <= 0x7a) bytes[i] -= 0x20;
   return bytes;
 }
 
-// A 3-char, uppercased, right-space-padded sample name (native RisaDmcCodec writeSampleName).
+// A 3-char, uppercased, right-space-padded sample name, as the bank's sample-name field stores it.
 function writeSampleName(bank: Uint8Array, off: number, name: string): void {
   const bytes = upperAsciiBytes(name);
   for (let i = 0; i < KIT_SAMPLE_NAME_LEN; i++) bank[off + i] = i < bytes.length ? bytes[i] : 0x20;
 }
 
-/** Pack DPCM slots into an 8 KB kit bank — the TS port of native `RisaDmcCodec::assemble`. Greedy 64-byte-
- *  aligned packing into the 7872 B sample region, a 4-byte index entry per slot ([addr, lenReg, rate, flags]),
- *  3-char sample names, the ≤6-char kit name, and the 0xA5 populated magic. A null slot stays EMPTY with its
- *  index preserved (NOT compacted); a slot whose DPCM won't fit the remaining region is left empty. Because
- *  a slot's encode carries no cross-sample state, this is byte-identical to compiling the same samples together
- *  via compileDmc - so it losslessly re-packs existing slots' DPCM alongside a new one. */
+/** Pack DPCM slots into an 8 KB kit bank. Greedy 64-byte-aligned packing into the 7872 B sample region, a 4-byte
+ *  index entry per slot ([addr, lenReg, rate, flags]), 3-char sample names, the ≤6-char kit name, and the 0xA5
+ *  populated magic. A null slot stays EMPTY with its index preserved (NOT compacted); a slot whose DPCM won't fit the
+ *  remaining region is left empty. Because a slot's encode carries no cross-sample state, this is byte-identical to
+ *  compiling the same samples together via compileDmc - so it losslessly re-packs existing slots' DPCM alongside a
+ *  new one. */
 export function assembleKitBank(kitName: string, slots: (AssembleSlot | null)[]): Uint8Array {
   return assembleKitBankPlaced(kitName, slots).bank;
 }
@@ -174,7 +174,7 @@ export function assembleKitBankPlaced(kitName: string, slots: (AssembleSlot | nu
   }
 
   // Kit name: uppercased, keep A-Z 0-9 '-', up to 6 chars, NUL-padded to KIT_NAME_SIZE. Byte by byte over the
-  // name's UTF-8, as native filters it, so a non-ASCII character is dropped whole rather than uppercased into a letter.
+  // name's UTF-8 by that rule, so a non-ASCII character is dropped whole rather than uppercased into a letter.
   let w = 0;
   for (const c of upperAsciiBytes(kitName)) {
     if (w >= KIT_NAME_MAX_CHARS) break;

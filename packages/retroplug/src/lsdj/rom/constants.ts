@@ -32,7 +32,7 @@ export const KIT_OFFSET_ENTRIES = 16;
 export const KIT_VALID_MAGIC = 0x4000 + KIT_SAMPLE_DATA_OFFSET; // 0x4060 (first offset entry, LE 60 40)
 export const KIT_EMPTY_MAGIC = 0xffff; // first offset entry of an empty kit
 
-// Sample nibble encoding (the GB wave format LSDj packs kit audio into; see native SampleUtil.hpp):
+// Sample nibble encoding (the GB wave format LSDj packs kit audio into):
 //  - stored 4-bit value is INVERTED: stored = 0xF - amplitude (decode: amp = 0xF - stored).
 //  - LSDj 9.2.0+ ROTATES each 32-sample frame right by one (encoded position i holds source sample i-1,
 //    position 0 the last) to dodge a GB wave-refresh bug. Older builds store un-rotated.

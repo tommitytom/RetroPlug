@@ -1,14 +1,14 @@
-// The kit baseline's synthesised sources, bit for bit the ones packages/native/test/audio/KitBaseline.test.cpp
-// computes, and what writing and hashing them takes. Every expression is the C++ one in the same order: the double
-// arithmetic is JavaScript's own (both are IEEE doubles, and Math.sin on this host is the C library's sin, which
-// std::sin is too), and every place the C++ rounds to float is a Math.fround here. A binary32 product rounded once is
-// exactly binary32 multiplication (the double product of two floats is exact), and a double difference of two floats
-// rounded once is binary32 subtraction, so each fround below is one C++ float operation.
+// The kit baseline's synthesised sources, and what writing and hashing them takes. Every expression is at the kit
+// path's precision: the double arithmetic is JavaScript's own (both are IEEE doubles, and Math.sin on this host is the
+// C library's sin), and every place the kit path rounds to float is a Math.fround here. A binary32 product rounded once
+// is exactly binary32 multiplication (the double product of two floats is exact), and a double difference of two floats
+// rounded once is binary32 subtraction, so each fround below is one float operation.
 //
-// The proof that these are the C++ sources is SOURCE_HASHES: each source's FNV-1a-64 over its float bytes, recorded
-// from the C++ suite, which kit-baseline.test.ts holds every source to before it compiles anything.
+// The proof that these are the sources the baseline was recorded from is SOURCE_HASHES: each source's FNV-1a-64 over
+// its float bytes, recorded from the retired C++ suite, which kit-baseline.test.ts holds every source to on the target
+// before it compiles anything.
 
-/** The source signals, as the C++ suite names them. */
+/** The source signals the baseline's matrix uses. */
 export type Signal = "sine440" | "sine1200" | "quiet" | "chirp" | "noise" | "silence" | "short";
 
 /** Each signal's length in frames: 8192, and 600 for the source shorter than one resampler chunk. */
@@ -84,7 +84,7 @@ function noise(frames: number): Float32Array {
   return out;
 }
 
-/** A signal's samples at `rate`, as the C++ suite's signalSamples computes them. */
+/** A signal's samples at `rate`, as the baseline's matrix defines them. */
 export function signalSamples(signal: Signal, rate: number): Float32Array {
   const frames = signalFrames(signal);
   switch (signal) {
@@ -108,13 +108,13 @@ export function signalSamples(signal: Signal, rate: number): Float32Array {
   }
 }
 
-/** The C++ suite's file name stem for a source: `<signal>-<rate>`. */
+/** A source's file name stem: `<signal>-<rate>`. */
 export function sourceKey(signal: Signal, rate: number): string {
   return `${signal}-${rate}`;
 }
 
-/** Each source's FNV-1a-64 over its float bytes (little-endian), recorded from KitBaseline.test.cpp's sources on
- *  linux-x64-gnu13. The noise and the silence do not depend on the rate, so their three hashes are one. */
+/** Each source's FNV-1a-64 over its float bytes (little-endian), recorded with the golden on linux-x64-gnu13. The
+ *  noise and the silence do not depend on the rate, so their three hashes are one. */
 export const SOURCE_HASHES: Readonly<Record<string, string>> = {
   "chirp-22050": "0425491f935aed01",
   "chirp-44100": "735870598c6d9d72",
@@ -137,7 +137,7 @@ export const SOURCE_HASHES: Readonly<Record<string, string>> = {
   "sine440-48000": "331dabe7b2984a0a",
 };
 
-/** A 32-bit float, mono WAV (fmt tag 3), every field little-endian: the C++ suite's writeFloatWav, byte for byte. */
+/** A 32-bit float, mono WAV (fmt tag 3), every field little-endian: the layout of the written sources. */
 export function floatWav(samples: Float32Array, rate: number): Uint8Array {
   const bytes = new Uint8Array(44 + samples.length * 4);
   const v = new DataView(bytes.buffer);

@@ -1,28 +1,28 @@
 // The kit compilers' byte baseline through the TypeScript compiler (src/kit/, docs/modular-graph-phase-d2-design.md
 // sections 5 and 6): every case of packages/native/test/audio/golden/kit-baseline.json compiled as chains of offline
-// graph jobs on this host's real engine, its bank held to the record native KitCompiler made. The matrix, its sources
-// and its rules are KitBaseline.test.cpp's (retroplug-audio-test "[kit-baseline]"), transcribed: one record, and two
-// compilers held to it until native's retires, when this file is the one that keeps it.
+// graph jobs on this host's real engine, its bank held to the golden's record. The matrix is this file's CASES and the
+// sources are test-native/kit/sources.ts; this file is the baseline's only runner, and the golden holds the target and
+// each case's record.
 //
 // The sources are synthesised (test-native/kit/sources.ts), written as 32-bit float WAVs into this run's config dir and
-// decoded natively by the offline jobs' file input, which is the native suite's SampleCache decode, so nothing here
+// decoded natively by the offline jobs' file input, which is SampleCache's decode (the seam's own), so nothing here
 // reads a fixture and CI runs it. Before any case compiles, each source is decoded back through a job to the samples
-// written, and on the target held to the C++ suite's own floats (their FNV-1a-64, SOURCE_HASHES), so a bank that
-// matches is the C++ suite's input compiled, not a coincidence of two different inputs. Only on the target: the hashes
-// were recorded from glibc's sin, and Math.sin is the host's own libm (Apple's on macOS, the UCRT on Windows), whose
-// last bit may differ now and then; off the target a case only has to agree with itself, so a source one ulp away
-// there changes no verdict.
+// written, and on the target held to SOURCE_HASHES (each source's FNV-1a-64 over its float bytes, recorded from the
+// retired C++ suite), so a bank that matches is the recorded input compiled, not a coincidence of two different inputs.
+// Only on the target: the hashes were recorded from glibc's sin, and Math.sin is the host's own libm (Apple's on macOS,
+// the UCRT on Windows), whose last bit may differ now and then; off the target a case only has to agree with itself, so
+// a source one ulp away there changes no verdict.
 //
-// The rules are the native suite's. A record is {hash, size, slot}: the bank's FNV-1a-64 in lowercase hex, its size,
-// and slot 0's length as the bank records it. The size and the slot length are compared on every host; the hash only
-// on the host the golden was recorded on (`linux-x64-gnu13`, the engine's buildTarget), because float arithmetic is
-// bit-stable only for one compiler on one architecture. Elsewhere a case compiles twice and must agree with itself,
+// The rules the golden records under. A record is {hash, size, slot}: the bank's FNV-1a-64 in lowercase hex, its
+// size, and slot 0's length as the bank records it. The size and the slot length are compared on every host; the hash
+// only on the host the golden was recorded on (`linux-x64-gnu13`, the engine's buildTarget), because float arithmetic
+// is bit-stable only for one compiler on one architecture. Elsewhere a case compiles twice and must agree with itself,
 // and RP_KIT_GOLDEN_REQUIRE_TARGET=1 makes a foreign host fail instead (CI's linux-x64 job sets it on its test:native
 // step). The case names must be the golden's keys exactly, none missing and none extra.
 //
 // RP_KIT_GOLDEN_UPDATE=1 re-records the golden from this compiler, refused anywhere but the target and for any case
-// whose two compiles disagree, and written through a sibling temp file, the native suite's refusals. Without the
-// variable the file is only ever read.
+// whose two compiles disagree, and written through a sibling temp file. Without the variable the file is only ever
+// read.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver, type KitEffect } from "../src/audioDriver";
@@ -49,7 +49,7 @@ const env = tjs.env;
 const UPDATE = env.RP_KIT_GOLDEN_UPDATE === "1";
 const REQUIRE_TARGET = env.RP_KIT_GOLDEN_REQUIRE_TARGET === "1";
 
-// ---- the matrix (KitBaseline.test.cpp's kitCases, in its order) -----------------------------------------------------
+// ---- the matrix (the golden's cases, in its order) ------------------------------------------------------------------
 
 type Codec = "lsdj" | "risa";
 
@@ -344,8 +344,7 @@ function readGolden(): Golden {
   return JSON.parse(new TextDecoder().decode(bytes)) as Golden;
 }
 
-// The golden as the native suite's writeGolden writes it, keys in byte order, so a recording from either suite gives
-// one file.
+// The golden's format: keys in byte order, so a recording of the same banks is the same file.
 function goldenText(golden: Golden): string {
   const names = Object.keys(golden.cases).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const rows = names.map((n) => {
@@ -376,7 +375,7 @@ test("the matrix is the golden's: sources for every signal at every rate, and it
   expect(CASES.map((c) => c.name).sort()).toEqual(Object.keys(golden.cases).sort());
 });
 
-test("every source decodes through a job to the samples written, and on the target is the C++ suite's", async () => {
+test("every source decodes through a job to the samples written, and on the target matches SOURCE_HASHES", async () => {
   expect(sources.size).toBe(Object.keys(SOURCE_HASHES).length);
   const onTarget = audio.buildTarget() === BASELINE_TARGET;
   for (const [key, source] of sources) {

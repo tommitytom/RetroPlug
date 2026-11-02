@@ -56,12 +56,12 @@ void processEffect(const FilterEffect& effect,
     kernel.process(target.data(), target.data(), target.size());
 }
 
-// The seed is the whole buffer's, hashed before the first code: the input the dither is handed, which for
-// `KitUtil::compileSample` is the windowed, post-effect, resampled sample at the Game Boy kit rate (11468 Hz) BEFORE
-// `frameAlign` trims it to whole frames - not the source-rate window the gain and filter see, and not the trimmed
-// bank. Drawing it from the input is what makes a compile reproducible: a kit bank is a file, and two compiles of the
-// same sample have to be the same file. A whole bank is byte-identical across hosts only where the resampler and the
-// filters agree too, which is why exact kit bytes are compared on one reference target.
+// The seed is the whole buffer's, hashed before the first code: the input the dither is handed, which for the kit path
+// is the windowed, post-effect, resampled sample at the Game Boy kit rate (11468 Hz) BEFORE it is trimmed to whole
+// 32-sample frames - not the source-rate window the gain and filter see, and not the trimmed bank. Drawing it from the
+// input is what makes a compile reproducible: a kit bank is a file, and two compiles of the same sample have to be the
+// same file. A whole bank is byte-identical across hosts only where the resampler and the filters agree too, which is
+// why exact kit bytes are compared on one reference target.
 std::vector<std::uint16_t> quantise(const std::vector<float>& buffer, const DitherEffect* dither) {
     std::vector<std::uint16_t> codes(buffer.size());
     dsp::Dither kernel;

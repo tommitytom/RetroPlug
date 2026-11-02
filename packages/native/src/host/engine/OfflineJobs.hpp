@@ -62,10 +62,10 @@ namespace rp::host {
 
 // How a file input's frame cap scales a frame count at a kit rate back to the decoded rate, reproducing the two kit
 // windows exactly, both of which depend on the decoded rate a submission cannot know:
-//   - FloatRatio, LSDj's (KitUtil::compileSample): ceil(float(frames) * (float(decodedRate) / float(rate))), every
-//     step in float, the ratio first;
-//   - DoubleScale, risa's (RisaDmcCodec::encode): ceil(double(frames) * double(decodedRate) / rate), in double, the
-//     product first.
+//   - FloatRatio, the LSDj window's: ceil(float(frames) * (float(decodedRate) / float(rate))), every step in float,
+//     the ratio first;
+//   - DoubleScale, risa's DMC window: ceil(double(frames) * double(decodedRate) / rate), in double, the product
+//     first.
 enum class OfflineCapArithmetic : std::uint8_t { FloatRatio, DoubleScale };
 
 struct OfflineCap {
@@ -81,8 +81,9 @@ struct OfflineSamples {
     double             rate = 0.0;
 };
 
-// A file decoded through SampleCache (miniaudio, mono float at the file's own rate, the kit compiler's decode) and
-// windowed: from `offset` (clamped to the end), `length` frames (0: to the end), at most the cap's frames.
+// A file decoded through SampleCache (miniaudio, mono float at the file's own rate, the decode a kit compile reads its
+// sources through) and windowed: from `offset` (clamped to the end), `length` frames (0: to the end), at most the
+// cap's frames.
 struct OfflineFile {
     std::string               path;
     std::uint32_t             offset = 0;

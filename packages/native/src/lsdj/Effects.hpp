@@ -1,27 +1,17 @@
 #pragma once
 
-// <algorithm> and <cmath> are kept for whoever reaches them through this header: host/rpc/BackendTypes.hpp re-exports
-// it across the plugin's DSP surface, and kPi's only caller is test/audio/Dither.test.cpp.
-#include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <vector>
 
-#include <rfl/Literal.hpp>
-#include <rfl/TaggedUnion.hpp>
-
-// Sample-processing chain for LSDJ kit compilation. Ported from
-// the legacy build's Effects.h + AudioDithering.h.
+// The kit path's sample-processing effects, as whole-buffer wrappers. Ported from the legacy build's Effects.h +
+// AudioDithering.h.
 //
-// Each effect is a plain-data struct that round-trips via reflectcpp; the
-// `LsdjEffect` TaggedUnion below is the serialized effect descriptor, which the
-// compileKit / compileDmc RPCs decode. The gain and filter `processEffect(...)`
-// overloads run in `KitUtil::compileSample` and `RisaDmcCodec::encode` against a
-// float buffer in [-1, 1]; the dither one is the 4-bit codes as floats, which
-// `KitUtil::compileSample` gets from `quantise` instead, so its only caller is
-// test/audio/Dither.test.cpp. All of them are whole-buffer loops over the
-// rp::dsp kernels (src/dsp/), which hold the arithmetic; this file only maps an
-// effect's fields onto a kernel's.
+// The gain and filter `processEffect(...)` overloads take a float buffer in [-1, 1] at the rate the chain runs them
+// at; the dither one takes the kit rate's buffer and leaves the 4-bit codes as floats, through `quantise` below. All
+// of them are whole-buffer loops over the rp::dsp kernels (src/dsp/), which hold the arithmetic; this file only maps
+// an effect's fields onto a kernel's. Nothing serialises these structs: a kit compile is a chain of `rp.dsp` nodes, and
+// the wrappers are the kit-path reference the tests hold to, bit for bit: test/graph/DspBufferNodes.test.cpp holds the
+// nodes to them, and test/audio/Dither.test.cpp holds the dither effect's seed.
 
 namespace rp::lsdj {
 
@@ -31,8 +21,6 @@ inline constexpr float kPi = 3.14159265358979323846f;
 // GainEffect — uniform amplification with optional peak-normalisation.
 // -----------------------------------------------------------------------
 struct GainEffect {
-    using Tag = rfl::Literal<"gain">;
-
     bool  normalize = true;
     float gain      = 1.0f;
 };
@@ -58,8 +46,6 @@ enum class FilterType : std::uint32_t {
 };
 
 struct FilterEffect {
-    using Tag = rfl::Literal<"filter">;
-
     FilterType filterType = FilterType::LowPass;
     float      frequency  = 5734.0f;   // GAMEBOY_SAMPLE_RATE / 2; nyquist for 11468 Hz
     float      q          = 1.0f;
@@ -89,8 +75,6 @@ enum class DitherType : std::uint32_t {
 };
 
 struct DitherEffect {
-    using Tag = rfl::Literal<"dither">;
-
     DitherType ditherType = DitherType::HighPassTPDF;
 };
 
@@ -104,9 +88,5 @@ void processEffect(const DitherEffect& effect,
 // codes are a function of the buffer and the effect alone.
 std::vector<std::uint16_t> quantise(const std::vector<float>& buffer,
                                     const DitherEffect* dither);
-
-// `LsdjEffect` is the on-disk variant; serialised under the discriminator
-// key `"type"` to match the legacy spelling.
-using LsdjEffect = rfl::TaggedUnion<"type", GainEffect, FilterEffect, DitherEffect>;
 
 } // namespace rp::lsdj

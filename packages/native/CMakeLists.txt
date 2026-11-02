@@ -36,11 +36,11 @@ endif()
 # The shape shared by every native test binary (see the file for why).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-binary.cmake)
 
-# --- retroplug-dsp-kernels: the DSP the kit compilers run, as kernels (src/dsp/,
-# docs/modular-graph-phase-d1-design.md section 4): gain and peak, the RBJ biquads, dither / quantise, and risa's DMC
-# encoder (a whole-buffer kernel, Dpcm.hpp says why; the others stream a block at a time). Core-free on purpose: it
-# links the C++ standard library and nothing else, so retroplug-graph-test and the rp.dsp node package can use it with
-# no core, txiki, backend or r8brain.
+# --- retroplug-dsp-kernels: the DSP the rp.dsp nodes run (src/dsp/, docs/modular-graph-phase-d1-design.md section 4):
+# gain and peak, the RBJ biquads, dither / quantise, and risa's DMC encoder (a whole-buffer kernel, Dpcm.hpp says why;
+# the others stream a block at a time). A kit compile is a chain of those nodes, so it reaches this DSP through them.
+# Core-free on purpose: it links the C++ standard library and nothing else, so retroplug-graph-test and the rp.dsp node
+# package can use it with no core, txiki, backend or r8brain.
 # (Not `retroplug-dsp`: dpf_add_plugin(retroplug) already names the plugin's own DSP library that.)
 #
 # The resampler is its own target on purpose, because its kernel is the one that is not freestanding: r8brain brings
@@ -57,7 +57,7 @@ target_include_directories(retroplug-dsp-kernels PUBLIC ${CMAKE_CURRENT_SOURCE_D
 set_target_properties(retroplug-dsp-kernels PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
-    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through retroplug-core
+    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through the rp.dsp node package
 
 # r8brain's static members are vendored code, so they get a target of their own rather than riding in one of ours:
 # /W4 /WX is scoped to RetroPlug's own targets (cmake/warnings.cmake), which this one is deliberately not on, and
@@ -72,7 +72,7 @@ target_include_directories(retroplug-r8brain-base PRIVATE
 set_target_properties(retroplug-r8brain-base PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
-    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through retroplug-core
+    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through the rp.dsp.resample node package
 retroplug_silence_dep_warnings(retroplug-r8brain-base)
 
 # Threads: r8brain's filter cache is a std::mutex, efsw-static needs pthreads on Linux (its CMake links it to the
@@ -93,7 +93,7 @@ target_link_libraries(retroplug-dsp-resample PRIVATE Threads::Threads retroplug-
 set_target_properties(retroplug-dsp-resample PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
-    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through retroplug-core
+    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through the rp.dsp.resample node package
 
 # --- retroplug-core: the shared emulator core, as a neutrally-named static lib. Extracted out of
 # packages/native/cli (which also compiled the CLI-only HarnessRpcService) so the host links ONLY the
@@ -109,20 +109,9 @@ else()
 endif()
 
 add_library(retroplug-core STATIC
-    # Console-neutral kit pipeline: the async compiler + decoded-audio cache are
-    # codec-agnostic (KitCodec.hpp). Per-console packing lives in a codec (LSDj
-    # below; risa NES-DPCM planned).
+    # The decoded-audio cache: an offline job's file inputs decode through it (host/engine/OfflineJobs.cpp), which is
+    # how every kit compile reads a source. Console- and format-neutral.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/SampleCache.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/KitCompiler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/LsdjKitCodec.cpp
-    # risa NES-DPCM (DMC) codec: reuses the generic kit pipeline (the dsp kernels + enkiTS), swaps the
-    # pack stage for 1-bit delta DPCM + an 8 KB kit bank.
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/risa/RisaDmcCodec.cpp
-    # NOTE: the LSDj sav codec + model were removed — they are now pure TS
-    # (packages/retroplug/src/lsdj), validated by frozen golden vectors. Only the
-    # kit/sample pipeline (kit/* generic + lsdj/{Effects,KitUtil,LsdjKitCodec}) remains in C++.
     # processAlive only, so <windows.h> stays in one TU rather than in every includer of the header
     # (NesEverdriveFifo.hpp pulls it in, which is the whole NES core).
     ${CMAKE_CURRENT_SOURCE_DIR}/src/util/ProcessId.cpp
@@ -156,9 +145,6 @@ target_link_libraries(retroplug-core PUBLIC
     sameboy
     mesen
     rpcpp     # transitively pulls reflectcpp
-    retroplug-dsp-kernels  # the kit path's gain, biquad and dither (src/dsp/)
-    retroplug-dsp-resample # the kit path's r8brain resample
-    enkiTS    # used by KitCompiler for per-sample parallel compile
     miniaudio # header-only audio decoder used by SampleCache
     miniz     # used by projectConfigToZip for --save-rplg
     mgb-rom   # embedded mGB ROM (SameBoyBackend supplies it on load)

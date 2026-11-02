@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,7 +13,6 @@
 
 class Engine;
 class QueuedInvoker;
-namespace rp::kit { class KitCompiler; }  // fwd: lazy, kept out of the header (enkiTS/r8brain heavy)
 
 // The emulator surface (lifecycle / reads / MIDI / transport / profiling) as a THIN RPC layer over
 // (Engine + the one Invoker). No threading branches: every mutation just pushes onto
@@ -23,7 +21,6 @@ namespace rp::kit { class KitCompiler; }  // fwd: lazy, kept out of the header (
 class EngineRpcService {
 public:
     EngineRpcService(Engine& engine, QueuedInvoker& invoker);
-    ~EngineRpcService();   // out-of-line: kitCompiler_ holds a fwd-declared KitCompiler
 
     // --- emulator lifecycle / reads ---
     // (duplicate, reload and remove live in the TS SystemsStore over the resource calls and setGraph.)
@@ -94,14 +91,6 @@ public:
     // PCM (Game Boy = 4: Pulse 1/Pulse 2/Wave/Noise). Single-system only (empty if systemCount() != 1 or
     // `id` is unknown) - the PerChannel shape keys off the stream, not the slot. Marshals to Uint8Array[].
     std::vector<rfl::Bytestring> renderAudioPerChannel(std::uint32_t id, double ms);
-    // Compile an LSDJ sample kit from source audio files → a 16 KB kit bank (harness/tooling only; the
-    // plugin never binds this). Resample (r8brain) + effects + 4-bit nibble-pack per sample, fanned across
-    // an enkiTS pool by the owned KitCompiler; a per-sample load failure just leaves that slot empty.
-    rfl::Bytestring compileKit(KitCompileSpec spec);
-    // Compile a risa NES-DPCM sample kit → an 8 KB kit bank (harness/tooling only). Same generic pipeline
-    // as compileKit (reuses the lazy kitCompiler_) but drives the DMC codec: r8brain resample to the PAL
-    // DPCM rate + 1-bit ±2 delta encode + 64-byte-aligned pack.
-    rfl::Bytestring compileDmc(RisaKitCompileSpec spec);
     // The engine's audio sample rate (Hz), so callers can label WAV output correctly.
     double          sampleRate() const;
     // Set the host sample rate (Hz). Baked into each core at construct, so it only takes effect BEFORE any
@@ -172,6 +161,5 @@ private:
     std::vector<float>       scratchL_;  // renderAudio pull-path scratch (control thread)
     std::vector<float>       scratchR_;
     std::vector<RpcMidiOut> accumMidiOut_;  // host MIDI out gathered across a render window (drainMidiOut)
-    std::unique_ptr<rp::kit::KitCompiler> kitCompiler_;  // lazy: built on first compileKit (enkiTS pool)
     rp::host::HarnessSurfaceLink* harnessSurface_ = nullptr;  // the headless host's own surface, if it has one
 };

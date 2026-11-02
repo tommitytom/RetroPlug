@@ -8,15 +8,12 @@
 #include <unordered_map>
 #include <vector>
 
-// Decoded-audio cache used by the kit compiler. Loads source files via
-// miniaudio (WAV / MP3 / FLAC), keeps them in memory as mono float32, and
-// dedupes by content hash (so two paths to identical bytes share one entry,
+// Decoded-audio cache used by the offline job seam's file inputs. Loads source files via miniaudio (WAV / MP3 / FLAC),
+// keeps them in memory as mono float32, and dedupes by content hash (so two paths to identical bytes share one entry,
 // and editing a file in place re-loads on cache miss).
 //
-// Console-neutral: nothing here is LSDj- or NES-specific. The per-format
-// resample + pack lives behind a `KitCodec` (see KitCodec.hpp); this cache is
-// shared across every codec so a live batch re-patch (moving a slider) only
-// re-decodes sources that actually changed.
+// Console-neutral: nothing here is LSDj- or NES-specific. The per-format resample + pack lives in the TypeScript kit
+// compiler, whose every source is decoded through this cache and whose window native applies at input creation.
 
 namespace rp::kit {
 

@@ -132,8 +132,8 @@ struct GuardReport {
 
 OfflineWindow offlineWindow(std::size_t decodedFrames, std::uint32_t decodedRate, std::uint32_t offset,
                             std::uint32_t length, const std::optional<OfflineCap>& cap) {
-    // Each step as the kit windows spell it (KitUtil::compileSample, RisaDmcCodec::encode), the casts included: the cap
-    // is the one place their arithmetic differs, and a different rounding there is a different frame count.
+    // Each step as the two kit windows spell it, the casts included: the cap is the one place their arithmetic differs,
+    // and a different rounding there is a different frame count (test/engine-graph/OfflineJobs.test.cpp's refs).
     std::size_t maxFrames = decodedFrames;
     if (cap) {
         if (cap->arithmetic == OfflineCapArithmetic::FloatRatio) {
@@ -354,7 +354,7 @@ OfflineCompletion OfflineJobs::run(Job& job) {
             } else {
                 const auto& f = std::get<OfflineFile>(req.inputs[i]);
                 // A cache of the job's own, so a file edited between two jobs decodes as it is now; the decode is
-                // SampleCache's, the kit compiler's, so the samples cannot drift from what it decodes.
+                // SampleCache's, so the samples are what every kit compile reads from this path.
                 kit::SampleCache cache;
                 const kit::SampleData* d = cache.getOrLoad(f.path);
                 if (!d) return fail(name + ": " + f.path + " could not be read or decoded");

@@ -33,8 +33,7 @@ function readName(view: BitView, off: number, size: number): string {
 
 // Decode packed 4-bit kit nibbles → PCM in [-1, 1]. Nibbles are stored INVERTED (amp = 0xF - stored); a
 // byte holds two samples (high nibble first). When `rotate` (LSDj 9.2.0+), each 32-sample frame was
-// stored rotated right by one — undo it by reading encoded position (i+1)%32. Port of native
-// SampleUtil.hpp's convertNibblesToF32 / convertNibblesToF32WithRotation.
+// stored rotated right by one - undo it by reading encoded position (i+1)%32.
 export function decodeNibbles(bytes: Uint8Array, rotate: boolean): Float32Array {
   const amp = (n: number): number => ((0xf - n) / 15) * 2 - 1;
   if (!rotate) {
@@ -131,7 +130,7 @@ export class KitView {
   }
 
   /** The i-th sample's PCM in [-1, 1], decoded from its 4-bit nibbles: inverted (amp = 0xF - stored) and,
-   *  for LSDj 9.2.0+ ROMs, un-rotating each 32-sample frame. Matches native SampleUtil.hpp. */
+   *  for LSDj 9.2.0+ ROMs, each 32-sample frame un-rotated. */
   sampleData(i: number): Float32Array {
     return decodeNibbles(this.rawSampleBytes(i), this.rotate);
   }

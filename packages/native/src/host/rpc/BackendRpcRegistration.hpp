@@ -59,14 +59,12 @@ void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::stageNodeMidi>(e);
 }
 
-// --- harness: audio render / transport / MIDI + DSP profiling + kit compile + graph drops (22; CLI + tests only) ---
+// --- harness: audio render / transport / MIDI + DSP profiling + graph drops (20; CLI + tests only) ---
 template <class Server>
 void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::renderAudio>(e);
     s.template addMethod<&EngineRpcService::renderAudioPerSystem>(e);
     s.template addMethod<&EngineRpcService::renderAudioPerChannel>(e);
-    s.template addMethod<&EngineRpcService::compileKit>(e);
-    s.template addMethod<&EngineRpcService::compileDmc>(e);
     s.template addMethod<&EngineRpcService::sampleRate>(e);
     s.template addMethod<&EngineRpcService::setSampleRate>(e);
     s.template addMethod<&EngineRpcService::setTransport>(e);
@@ -129,7 +127,7 @@ void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
     s.template addMethod<&AudioDriverRpcService::drainReleased>(d);
 }
 
-// The full union (92 methods) + discovery - every facet mounted. Hosts that expose the whole surface
+// The full union (90 methods) + discovery - every facet mounted. Hosts that expose the whole surface
 // (the CLI + test host) use this; scoped hosts call the individual register functions they're allowed to.
 template <class Server>
 void registerAllBackendRpc(Server& s, HostRpcService& host, EngineRpcService& engine,

@@ -1,7 +1,7 @@
-// Pure-TS kit-bank assembly: the port of native KitUtil::buildKit, byte for byte, used to SPLICE a kit
-// (single-sample import / remove) without re-encoding untouched samples: read existing samples as raw nibble
-// bytes (KitView.samplesRaw), mutate the list, and rebuild the 16 KB bank here. The TypeScript kit compiler
-// (src/kit/) assembles every bank it compiles here too, whatever host it runs in. Layout matches kit.ts / KitUtil:
+// Pure-TS kit-bank assembly, used to SPLICE a kit (single-sample import / remove) without re-encoding untouched
+// samples: read existing samples as raw nibble bytes (KitView.samplesRaw), mutate the list, and rebuild the 16 KB bank
+// here. The TypeScript kit compiler (src/kit/) assembles every bank it compiles here too, whatever host it runs in.
+// The layout matches kit.ts's:
 // a 16-entry u16le offset table (entry 0 = 0x4060; entries i+1 = each sample's end GB-addr; 0 terminates),
 // 15 × 3-char sample names at 0x22, a 6-char kit name at 0x52, sample data from 0x60 (≤ 0x3fa0 bytes).
 import {
@@ -23,11 +23,10 @@ export interface KitSample {
 
 const utf8 = new TextEncoder();
 
-// Write a fixed-width name as native KitUtil::buildKit's writeString does: the name's bytes (its UTF-8, which is what
-// a native string of it holds), each a-z uppercased and every other byte as it is, truncated to `size` and padded with
-// `fill`. Byte for byte, so this assembler and native's give one bank for one name: a name of printable ASCII (all a
-// kit read back from a ROM can have, KitView's readName) is the same under any rule, and for anything else native is
-// the reference the kit compiler is held to, so its bytes are copied rather than "corrected" here.
+// Write a fixed-width name: the name's bytes (its UTF-8), each a-z uppercased and every other byte as it is, truncated
+// to `size` and padded with `fill`. The byte rule is the bank layout's, not a locale's, so one name gives one bank: a
+// name of printable ASCII (all a kit read back from a ROM can have, KitView's readName) is the same under any rule, and
+// test/kit/kit.test.ts's non-ASCII case pins what these bytes are for anything else.
 function writeField(bank: Uint8Array, off: number, size: number, name: string, fill: number): void {
   const bytes = utf8.encode(name);
   for (let i = 0; i < size; i++) {
@@ -50,7 +49,7 @@ export interface PlacedKitBank {
 }
 
 /** Assemble a 16 KB kit bank from a kit name + samples (≤15 honored). Sample data past the 0x3fa0 budget
- *  is clipped (matches native KitUtil::buildKit) — callers pre-check with kitSampleSpace to fail loudly. */
+ *  is clipped - callers pre-check with kitSampleSpace to fail loudly. */
 export function buildKitBank(kitName: string, samples: readonly KitSample[]): Uint8Array {
   return buildKitBankPlaced(kitName, samples).bank;
 }

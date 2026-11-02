@@ -6,22 +6,23 @@
 //   whole of it gives, bit for bit: every kernel carries its state across the split.
 // - A warmed process allocates and frees nothing (the counting allocator; the C library's blocks are counted too
 //   where this build can see them, which matters for r8brain, whose own allocator is malloc).
-// - Biquad: the eight coefficient calculators and the loop, written out here from lsdj/Effects.cpp, give the
-//   kernel's coefficients (every field bit for bit) and its filtered buffer sample for sample.
+// - Biquad: the eight coefficient calculators and the loop, written out here from 12905a59's lsdj/Effects.cpp before
+//   the arithmetic moved into src/dsp/, give the kernel's coefficients (every field bit for bit) and its filtered
+//   buffer sample for sample.
 // - Dither: the same seed gives the same codes and a different seed different noise; the four algorithms without a
-//   padded reference (HighPassTPDF, ShapedTPDF, ErrorDiffusion, None) give the old whole-buffer loops' codes; Sierra
-//   Lite and JJN, kept as a few past errors, give the codes their padded whole-buffer arithmetic gives; and the seed
-//   drawn from a buffer gives the codes test/audio/Dither.test.cpp pins through the kit effect. (inputSeed's
+//   padded reference (HighPassTPDF, ShapedTPDF, ErrorDiffusion, None) give the kit path's whole-buffer loops' codes;
+//   Sierra Lite and JJN, kept as a few past errors, give the codes their padded whole-buffer arithmetic gives; and the
+//   seed drawn from a buffer gives the codes test/audio/Dither.test.cpp pins through the kit effect. (inputSeed's
 //   big-endian half cannot be exercised on a little-endian host; the two halves are held to one value by construction,
 //   not by a case here.)
 // - Resample: the output stream is independent of how the input arrives (a source shorter than one chunk included),
 //   and equals a direct fixed-chunk feed of r8brain, written out here as a reference; a failed allocation in `init`
 //   throws and leaves the resampler unbuilt.
-// - DPCM: the kernel's one bit per sample, packed the way the risa codec packs them, is the codec's old whole-buffer
-//   function's bytes, written out here verbatim: normalising or not, a short buffer, a long one, an overdriven one and
-//   silence.
+// - DPCM: the kernel's one bit per sample, packed the way the risa bank packs them, is the whole-buffer encoder's bytes
+//   written out here verbatim: normalising or not, a short buffer, a long one, an overdriven one and silence.
 //
-// The kit baseline (test/audio/KitBaseline.test.cpp) holds the same kernels to whole kit banks' bytes.
+// The kit baseline (test-native/kit-baseline.test.ts) holds the same kernels to whole kit banks' bytes, through the
+// rp.dsp nodes' offline graph jobs.
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -155,11 +156,11 @@ std::vector<float> paddedJjn(std::vector<float> buf, int bitDepth) {
     return buf;
 }
 
-// ---- the kit path's dithers as they were before the kernel ---------------------------------------------------------
-// Verbatim from 12905a59's lsdj/Effects.cpp (the two TPDF algorithms and error diffusion) and KitUtil.cpp's no-dither
-// branch. The RNG is handed in rather than drawn from the buffer here: the kernel salts `inputSeed` itself, so the
-// reference starts from `mt19937(inputSeed ^ salt)`, the word the kernel's `init` seeds. Codes as floats in [0, 2^bits
-// - 1], the same shape the padded references give.
+// ---- the kit path's dithers, written out as independent references --------------------------------------------------
+// The two TPDF algorithms and error diffusion, verbatim from 12905a59's lsdj/Effects.cpp before the arithmetic moved
+// into src/dsp/, with the kit path's no-dither branch beside them. The RNG is handed in rather than drawn from the
+// buffer here: the kernel salts `inputSeed` itself, so the reference starts from `mt19937(inputSeed ^ salt)`, the word
+// the kernel's `init` seeds. Codes as floats in [0, 2^bits - 1], the same shape the padded references give.
 
 constexpr std::uint32_t kHighPassTPDFSalt = 0x8064fcc5u; // fold(fnv1a64("HighPassTPDF"))
 constexpr std::uint32_t kShapedTPDFSalt   = 0x262f0818u; // fold(fnv1a64("ShapedTPDF"))
@@ -234,8 +235,8 @@ std::vector<float> errorDiffusion(std::vector<float>& buf, int bitDepth) {
     return buf;
 }
 
-/** The no-dither branch of the old `KitUtil::compileSample` (clamp, scale to [0, 1], round to the code), with the kit
- *  path's hard-coded 15.0f written as the maximum any depth gives. */
+/** The kit path's no-dither quantiser (clamp, scale to [0, 1], round to the code): rp.dsp.dither's None at 4 bits,
+ *  with the kit's hard-coded 15.0f written as the maximum any depth gives. */
 std::vector<float> noDither(std::vector<float>& buf, int bitDepth) {
     const float maxValue = static_cast<float>((1 << bitDepth) - 1);
     for (float& v : buf) {
@@ -711,8 +712,8 @@ TEST_CASE("codes map back to the quantised levels", "[dsp][dither]") {
     CHECK(rp::dsp::codeToLevel(15, 4) == 1.0f);
     CHECK(rp::dsp::codeToLevel(1, 1) == 1.0f);
     CHECK(rp::dsp::codeToLevel(65535, 16) == 1.0f);
-    // The LSDj kit decoder's level for a 4-bit code (SampleUtil::convertNibblesToF32), so a dither node's audio is
-    // what the Game Boy would play.
+    // The LSDj kit decoder's level for a 4-bit code (code / 15 * 2 - 1), so a dither node's audio is what the Game Boy
+    // would play.
     for (std::uint32_t c = 0; c < 16; ++c) {
         CHECK(rp::dsp::codeToLevel(c, 4) == (static_cast<float>(c) / 15.0f) * 2.0f - 1.0f);
     }
