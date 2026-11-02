@@ -1201,16 +1201,15 @@ blocks of 1024 frames, the last partial, checking for a cancel between blocks (a
 and its cancel is polled per chunk). The pool starts workers on demand while a runnable job is queued and every
 started one is busy, at most `maxWorkers()`: the pool's size, clamp(hardware_concurrency, 1, 8), or 2 for a pool of
 one. A render held back by the engine budget starts no thread. A worker is never retired: an engine that ran a kit
-keeps up to eight parked threads
-for the rest of its life (a parked wait, costing no CPU). At most 64 jobs are outstanding at once (queued, running, or
-finished and not yet drained), so every taken job has room for its completion. Handles are known before a job runs:
-input i is `res:(i + 1)`, output j is `res:(inputs + j + 1)`. An input of no frames is accepted and reported but names
-no resource, and an output of no frames is refused. A file input is decoded through a `SampleCache` of the job's own
-(so a path rewritten between two jobs decodes as it is now) and windowed by
-[`offlineWindow`](../packages/native/src/host/engine/OfflineJobs.cpp), which reproduces the two kit windows
-exactly: an offset clamped to the end, a zero length meaning "to the end", and a frame cap scaled to the decoded rate
-in the window's own arithmetic (`float-ratio` for LSDj, `double-scale` for risa). A cap whose scaled frame count is not
-finite or is past `size_t`'s range fails the job, naming the cap, rather than being cast.
+keeps up to eight parked threads for the rest of its life (a parked wait, costing no CPU). At most 64 jobs are
+outstanding at once (queued, running, or finished and not yet drained), so every taken job has room for its
+completion. Handles are known before a job runs: input i is `res:(i + 1)`, output j is `res:(inputs + j + 1)`. An
+input of no frames is accepted and reported but names no resource, and an output of no frames is refused. A file input
+is decoded through a `SampleCache` of the job's own (so a path rewritten between two jobs decodes as it is now) and
+windowed by [`offlineWindow`](../packages/native/src/host/engine/OfflineJobs.cpp), which reproduces the two kit
+windows exactly: an offset clamped to the end, a zero length meaning "to the end", and a frame cap scaled to the
+decoded rate in the window's own arithmetic (`float-ratio` for LSDj, `double-scale` for risa). A cap whose scaled
+frame count is not finite or is past `size_t`'s range fails the job, naming the cap, rather than being cast.
 
 A job's node registry is the pool's own, filled in its constructor with rp.core, rp.dsp and rp.dsp.resample before any
 worker exists and never changed, so the workers share it read-only; a script, system or host I/O node in a document is

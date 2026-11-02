@@ -98,13 +98,14 @@ public:
     // time. The emulation behind dropped frames is not undone: the next call's audio starts where the last block
     // ended. A block's host MIDI out is gathered whole (drainMidiOut), so out of a block whose tail is carried it can
     // be drained before that tail's audio is handed out; its frames stay block-relative. So can every other read of a
-    // core between two calls (a render's end detection reads NR52, risa's sequencer flag or smsggdj's work RAM): it
-    // sees the state up to kBlockSize - 1 frames past the audio handed back. A render assumes nothing else advances the
-    // engine between its calls: the audio driver's thread (AudioDriverRpcService::startAudio) and the debug facet's
-    // stepping (stepInstruction, runUntilPc, runUntilBreak) run the cores outside these calls and keep the carry, which
-    // the next call would then hand out ahead of audio from after it; no render does either. Off, as every other host
-    // runs it, a call renders whole blocks and then one of the remainder: the splits parity records. Not an RPC: the
-    // host that builds this service sets it before any script runs.
+    // core between two calls (a render's end detection reads NR52 or risa's sequencer flag, and an smsggdj render reads
+    // and writes its work RAM): it sees the state up to kBlockSize - 1 frames past the audio handed back. A render
+    // assumes nothing else advances the engine between its calls: the audio driver's thread
+    // (AudioDriverRpcService::startAudio) and the debug facet's stepping (stepInstruction, runUntilPc, runUntilBreak)
+    // run the cores outside these calls and keep the carry, which the next call would then hand out ahead of audio from
+    // after it; no render does either. Off, as every other host runs it, a call renders whole blocks and then one of
+    // the remainder: the splits parity records. Not an RPC: the host that builds this service sets it before any script
+    // runs.
     void            setContinuousBlocks(bool on);
     // The frames the last render call in continuous blocks left for the next one (none in exact blocks): for tests.
     std::size_t     carriedFrames() const { return carry_.frames; }

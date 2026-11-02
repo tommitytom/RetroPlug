@@ -46,10 +46,10 @@ public:
     RenderHost& operator=(const RenderHost&) = delete;
 
     // Render one job. `jobJson` is a RenderOpts-shaped spec (at least {"rom":"...","out":"..."}); the worker
-    // fills the CLI defaults for anything omitted. onRendered and isCancelled may be empty; onConsole takes every
-    // console write the worker makes and every script error's report (only a report before run, the constructor's
-    // bootstrap failing, goes to the process's stderr). Returns the worker's reported result (status "error" with a
-    // message on any internal failure).
+    // fills the CLI defaults for anything omitted. onRendered and isCancelled may be empty. onConsole takes every
+    // console write the worker makes and every script error's report; an empty one leaves them on the process's stdout
+    // and stderr, where a report before run (the constructor's bootstrap failing) goes too. Returns the worker's
+    // reported result (status "error" with a message on any internal failure).
     Result run(const std::string& jobJson, RenderedFn onRendered, CancelFn isCancelled, ConsoleFn onConsole);
 
     // Called by the bound JS thunks (which recover the host via the JS context opaque). Public so the
