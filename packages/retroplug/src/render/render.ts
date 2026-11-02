@@ -439,6 +439,9 @@ function currentSongName(ctx: RenderContext, o: RenderOpts, platform: Platform):
   return null;
 }
 
+/** The file a render streams to before it is moved over `path`. */
+const partPath = (path: string): string => `${path}.part`;
+
 // A safe filename fragment for a song-derived output name (mirrors the CLI sanitize in lsdj-rom/risa-rom).
 const sanitizeRenderName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
 
@@ -462,13 +465,27 @@ function renderOutputPaths(o: RenderOpts, platform: Platform, prefix: string): s
 }
 
 /** Apply the "If Exists" policy to a resolved base. "overwrite" (default) clobbers; "rename" bumps to the
- *  first `<name>_N` whose outputs don't yet exist (checking every file the mode would write). */
-function resolveOnExists(ctx: RenderContext, o: RenderOpts, platform: Platform, base: string): string {
-  if (o.onExists !== "rename") return base;
+ *  first `<name>_N` whose outputs don't yet exist (checking every file the mode would write). A `.part` counts as
+ *  taken, since a render's file appears only when it ends, and the chosen name is reserved on the spot (an empty
+ *  `.part` per output, which the sink's writers then truncate and fill) so a render started while this one runs picks
+ *  the next name instead of streaming into the same file. The reservation is made where the name is chosen; two
+ *  renders choosing in the same instant could still tie, as the backend has no exclusive create. */
+function resolveOnExists(
+  ctx: RenderContext, o: RenderOpts, platform: Platform, base: string,
+): { base: string; reserved: string[] } {
+  if (o.onExists !== "rename") return { base, reserved: [] };
   const isMix = o.split === "mix";
   const prefix = isMix && base.toLowerCase().endsWith(".wav") ? base.slice(0, -4) : base;
-  const unique = uniqueBase(prefix, (p) => renderOutputPaths(o, platform, p).some((f) => ctx.backend.fileExists(f)));
-  return isMix ? `${unique}.wav` : unique;
+  const taken = (f: string) => ctx.backend.fileExists(f) || ctx.backend.fileExists(partPath(f));
+  const unique = uniqueBase(prefix, (p) => renderOutputPaths(o, platform, p).some(taken));
+  const reserved = renderOutputPaths(o, platform, unique).map(partPath);
+  for (const r of reserved) {
+    if (!ctx.backend.writeFile(r, new Uint8Array(0))) {
+      reserved.forEach((p) => ctx.backend.deleteFile(p));
+      throw new Error(`render: could not create ${r}`);
+    }
+  }
+  return { base: isMix ? `${unique}.wav` : unique, reserved };
 }
 
 // --- streaming render: pump 100 ms chunks straight into per-output WavWriters (no whole-song buffer) ---
@@ -502,7 +519,10 @@ function leftLane(b: Float32Array, frames: number): Float32Array {
  *    channels  → GB 4 stereo stems; NES 5 mono core channels
  *    pins      → NES 3 mono analog pins
  *  (No combined multi-channel WAV — split modes write per-stream files only.) */
-function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Platform, sr: number, base: string, log: Logger): RenderSink {
+function buildSink(
+  ctx: RenderContext, o: RenderOpts, id: number, platform: Platform, sr: number, base: string, reserved: string[],
+  log: Logger,
+): RenderSink {
   const renderChunk = o.split === "mix"
     ? (ms: number) => [ctx.audio.renderAudio(ms)]
     : (ms: number) => ctx.audio.renderAudioPerChannel(id, ms);
@@ -510,7 +530,8 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
   const nesMono = platform === "nes"; // NES streams (mix + per-channel) are mono in the left lane
   let writers: WavWriter[] | null = null; // per stream (mix=1; GB channels=N stereo; NES=N mono)
   const paths: string[] = [];
-  const partial = (path: string): string => `${path}.part`;
+  const partial = partPath;
+  let finished = false; // every file is whole: what is left as a .part from here on is a render, not a partial
   let summary = "";
 
   const open = (path: string, channels: number): WavWriter => {
@@ -548,8 +569,20 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
     finishAll() {
       if (!writers) throw new Error("render: no audio was rendered");
       writers.forEach((w) => w.finish());
+      finished = true;
+      // The backend has no fsync, so a power loss just after a move can leave the new file short on a filesystem that
+      // does not order the data before the rename (writeFileAtomic, which does, is not a streaming write).
+      const moved: string[] = [];
       for (const p of paths) {
-        if (!ctx.backend.rename(partial(p), p)) throw new Error(`render: could not move ${partial(p)} to ${p}`);
+        if (ctx.backend.rename(partial(p), p)) { moved.push(p); continue; }
+        // Every .part is a whole render by now, possibly minutes of work and the only copy: none is deleted, and the
+        // error says which were moved and which are left.
+        const left = paths.filter((q) => !moved.includes(q)).map(partial);
+        throw new Error(
+          `render: could not replace ${p}; the render is at ${partial(p)}` +
+            (moved.length ? `; ${moved.join(", ")} ${moved.length > 1 ? "were" : "was"} moved into place` : "") +
+            (left.length > 1 ? `, and ${left.join(", ")} are left as .part files` : ""),
+        );
       }
       paths.forEach((p) => log(p));
       log(summary);
@@ -557,11 +590,14 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
     },
     discard() {
       // A writer patches its header only in finish(), so a render stopped part way would leave PCM behind a header
-      // that claims none. A stopped export is not an export: remove what it opened rather than leave a file that
-      // looks usable (the job's status says cancelled or error, and a shell sees a non-zero exit). The files are
-      // the writers' `.part` ones, so what was at the output paths before stays; one already moved into place
-      // (finishAll got that far) is a whole export and stays too.
+      // that claims none. A stopped export is not an export: remove what it opened (and the names it reserved) rather
+      // than leave a file that looks usable (the job's status says cancelled or error, and a shell sees a non-zero
+      // exit). The files are the writers' `.part` ones, so what was at the output paths before stays. Once the render
+      // is whole (finishAll got that far) nothing is removed: a file already moved into place is an export, and a
+      // `.part` whose move failed is the finished render.
+      if (finished) return;
       for (const p of paths) ctx.backend.deleteFile(partial(p));
+      for (const r of reserved) ctx.backend.deleteFile(r);
     },
   };
 }
@@ -787,37 +823,39 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // Default the filename to the SONG: the selected song when --song/--song-index is used, else the sav's
   // working song. --out overrides both, so skip the sav read then.
   const songName = o.out ? null : seed ? seed.name : smsSong ? smsSong.name : currentSongName(ctx, o, platform);
-  const base = resolveOnExists(ctx, o, platform, outBase(o, songName));
-
-  // Song-length auto-detect: when the ROM is a supported tracker (LSDj on GB, risa on NES) and the user
-  // didn't pin a duration, render to the HFF stop instead of a fixed window, report the length, and trim
-  // the silent tail. buildPlayingProbe returns null for anything else → a fixed render.
-  const isPlaying = buildPlayingProbe(ctx, o, id, platform, warn);
-  // Auto-detect applies to both mix and split (GB channels) — split just renders per-channel chunks.
-  const autoDetect = isPlaying !== null && o.start && o.durationMs === undefined;
-
-  // smsggdj has no song end to detect, so a render with no --duration silently ran for the whole 10-minute
-  // cap. That is not a missing probe we could add: `H` is a phrase hop, not LSDj's HFF stop, nothing in the
-  // command set touches the transport, and when a chain ends the track loops back to the top of its own
-  // contiguous block (engine.asm at_loopblk) - columns loop independently and forever, by design. Say so
-  // instead of leaving the user to guess why the WAV is exactly the cap long.
-  if (!autoDetect && o.durationMs === undefined && isSmsggdjRom(ctx, o)) {
-    warn(
-      `render: smsggdj songs loop forever (no HFF-style stop exists on this console), so song-length ` +
-        `auto-detect is not possible — rendering the full ${o.maxDurationMs}ms cap; pass --duration to pin a length`,
-    );
-  }
-
-  // Announce before the (possibly multi-minute) render so callers don't look hung while it works.
-  const how = autoDetect ? `detecting length (HFF, cap ${o.maxDurationMs}ms)` : `${o.durationMs ?? o.maxDurationMs}ms`;
-  log(`rendering ${o.rom} → ${base}${o.split === "mix" ? "" : "_*"} (${how})…`);
+  const { base, reserved } = resolveOnExists(ctx, o, platform, outBase(o, songName));
 
   // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
-  const sink = buildSink(ctx, o, id, platform, sr, base, log);
+  const sink = buildSink(ctx, o, id, platform, sr, base, reserved, log);
 
   // Auto-start playback, capturing the song's opening frames as the recording's head (see pressPlay). The
   // sink exists first so the button-hold render is captured in the right mix/split shape, not discarded.
   try {
+    // Song-length auto-detect: when the ROM is a supported tracker (LSDj on GB, risa on NES) and the user
+    // didn't pin a duration, render to the HFF stop instead of a fixed window, report the length, and trim
+    // the silent tail. buildPlayingProbe returns null for anything else → a fixed render.
+    const isPlaying = buildPlayingProbe(ctx, o, id, platform, warn);
+    // Auto-detect applies to both mix and split (GB channels) — split just renders per-channel chunks.
+    const autoDetect = isPlaying !== null && o.start && o.durationMs === undefined;
+
+    // smsggdj has no song end to detect, so a render with no --duration silently ran for the whole 10-minute
+    // cap. That is not a missing probe we could add: `H` is a phrase hop, not LSDj's HFF stop, nothing in the
+    // command set touches the transport, and when a chain ends the track loops back to the top of its own
+    // contiguous block (engine.asm at_loopblk) - columns loop independently and forever, by design. Say so
+    // instead of leaving the user to guess why the WAV is exactly the cap long.
+    if (!autoDetect && o.durationMs === undefined && isSmsggdjRom(ctx, o)) {
+      warn(
+        `render: smsggdj songs loop forever (no HFF-style stop exists on this console), so song-length ` +
+          `auto-detect is not possible — rendering the full ${o.maxDurationMs}ms cap; pass --duration to pin a length`,
+      );
+    }
+
+    // Announce before the (possibly multi-minute) render so callers don't look hung while it works.
+    const how = autoDetect
+      ? `detecting length (HFF, cap ${o.maxDurationMs}ms)`
+      : `${o.durationMs ?? o.maxDurationMs}ms`;
+    log(`rendering ${o.rom} → ${base}${o.split === "mix" ? "" : "_*"} (${how})…`);
+
     const leadIn = pressPlay(ctx, sink, o, id, platform);
 
     if (autoDetect) {

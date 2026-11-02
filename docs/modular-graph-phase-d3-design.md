@@ -320,9 +320,16 @@ made them false (chunking, the worker budget, the carry's rules).
   native test host fires no timers. SIGINT is `__rp_onInterrupt` (`cli/main.cpp`), exposed as `onInterrupt` in
   `cli/session.ts`: the first Ctrl-C cancels the job, which ends cancelled and prints `ERROR: render: cancelled`, exit 1
   (one rule for every cancel, not 130), and restores the default handler so a second kills a wedged job. A cancelled
-  render, or one that fails after its first chunk, leaves no file: the sink streams to `<path>.part`, moves each over its
-  path only when the whole render has been written, and `discard()` deletes the `.part` files on any throw, so an export
-  that was already at the path stays as it was. Printed paths are as the user
+  render, or one that fails mid-render, leaves no WAV: the sink streams to `<path>.part`, moves each over its path only
+  when the whole render has been written, and `discard()` deletes the `.part` files (and any name "If Exists: Rename"
+  reserved), so an export that was already at the path stays as it was. A failed move into place is the one error that
+  keeps them: every `.part` is then a finished render, possibly minutes of work (on Windows a DAW holding the previous
+  export open is enough to refuse the move), so none is deleted and the error says where the render is ("could not
+  replace X; the render is at X.part"), and for a split render which stems were moved and which are left as `.part`
+  files. The backend has no fsync, so a power loss just after a move can leave the new file short on a filesystem that
+  does not order data before a rename. "If Exists: Rename" counts a `.part` as taken and reserves the chosen name with
+  an empty `.part` where it is chosen, so a render started while another runs takes the next name (two choosing in the
+  same instant could still tie: the backend has no exclusive create). Printed paths are as the user
   typed them; messages and exit codes are otherwise as before. The cores' own stdout (Mesen's load log) goes straight to
   fd 1 while the library's lines arrive through the drain about 100 ms later, so the two can interleave differently.
 - **The UI.** `RenderJobs` (`src/renderJobs.ts`) is kept in the store graph (`AppStores.renders`), not in a UI module:

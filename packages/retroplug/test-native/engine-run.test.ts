@@ -144,19 +144,94 @@ test("a cancelled render leaves the export that was at its path as it was, and n
   [mix, ...stemPaths].forEach((p) => be.deleteFile(p));
 });
 
-test("a render that fails after its first chunk leaves no partial file", async () => {
+test("a cancelled render with onExists rename gives back the name it reserved", async () => {
+  const out = outPath("rename-cancel");
+  let handle: EngineRunHandle | null = null;
+  handle = be.engineRun(
+    "render",
+    { rom: MGB, out, durationMs: 600000, onExists: "rename" },
+    { onProgress: () => handle?.cancel() },
+  );
+  expect((await handle).status).toBe("cancelled");
+  expect(be.fileExists(out)).toBe(false);
+  expect(be.fileExists(`${out}.part`)).toBe(false);
+  expect(be.pumpJobs()).toBe(0);
+});
+
+test("a render whose move into place fails keeps the whole render as its .part and names it", async () => {
   // The output path is a directory holding a file, so the move into place fails once the whole render is written.
+  // The .part is then a complete WAV (headers patched), the only copy of a render that may have run for minutes: it
+  // stays, and the error says where it is.
   const out = outPath("blocked");
   const inside = `${out}/keep.txt`;
   expect(be.writeFile(inside, earlier("inside"))).toBe(true);
   const result = await be.engineRun("render", { rom: MGB, out, durationMs: 500 });
   expect(result.status).toBe("error");
-  expect(result.message.includes(`${out}.part`)).toBe(true);
-  expect(be.fileExists(`${out}.part`)).toBe(false);
+  expect(result.message.includes(`could not replace ${out}; the render is at ${out}.part`)).toBe(true);
+  const part = be.readFile(`${out}.part`);
+  expect(part != null).toBe(true);
+  const wav = decodeWav(part!);
+  expect(wav.pcm.length).toBe(22050 * 2); // 500 ms at 44.1 kHz, the header patched to say so
   expect(text(be.readFile(inside))).toBe("an earlier export inside");
   expect(be.pumpJobs()).toBe(0);
+  be.deleteFile(`${out}.part`);
   be.deleteFile(inside);
   be.deleteFile(out);
+});
+
+test("a split render whose second move fails names what moved and what is left as .part", async () => {
+  const prefix = outPath("blocked-split").replace(/\.wav$/, "");
+  const first = `${prefix}_pulse1.wav`;
+  const second = `${prefix}_pulse2.wav`;
+  const inside = `${second}/keep.txt`;
+  expect(be.writeFile(inside, earlier("inside"))).toBe(true);
+  const result = await be.engineRun("render", { rom: MGB, out: prefix, durationMs: 500, split: "channels" });
+  expect(result.status).toBe("error");
+  expect(result.message.includes(`could not replace ${second}; the render is at ${second}.part`)).toBe(true);
+  expect(result.message.includes(`${first} was moved into place`)).toBe(true);
+  expect(result.message.includes(`${prefix}_wave.wav.part`)).toBe(true);
+  expect(be.fileExists(first)).toBe(true);
+  expect(be.fileExists(`${first}.part`)).toBe(false);
+  for (const c of ["pulse2", "wave", "noise"]) expect(be.fileExists(`${prefix}_${c}.wav.part`)).toBe(true);
+  expect(be.pumpJobs()).toBe(0);
+  for (const c of ["pulse1", "pulse2", "wave", "noise"]) be.deleteFile(`${prefix}_${c}.wav.part`);
+  be.deleteFile(first);
+  be.deleteFile(inside);
+  be.deleteFile(second);
+});
+
+test("two overlapping renders of one target with onExists rename end with two whole, distinct files", async () => {
+  // The first render's file appears only when it ends, so the name is claimed by its .part: the second render, started
+  // while the first runs, takes the next name instead of streaming into the same .part.
+  const out = outPath("rename-overlap");
+  const second = out.replace(/\.wav$/, "_2.wav");
+  let sawFirst = false;
+  let secondHandle: EngineRunHandle | null = null;
+  const firstHandle = be.engineRun(
+    "render",
+    { rom: MGB, out, durationMs: 30000, onExists: "rename" },
+    {
+      onProgress: () => {
+        if (sawFirst) return;
+        sawFirst = true;
+        secondHandle = be.engineRun("render", { rom: MGB, out, durationMs: 700, onExists: "rename" });
+      },
+    },
+  );
+  const a = await firstHandle;
+  expect(secondHandle !== null).toBe(true);
+  const b = await secondHandle!;
+  expect(a.status).toBe("done");
+  expect(b.status).toBe("done");
+  expect(a.outputs).toEqual([out]);
+  expect(b.outputs).toEqual([second]);
+  expect(decodeWav(be.readFile(out)!).pcm.length).toBe(1323000 * 2);
+  expect(decodeWav(be.readFile(second)!).pcm.length).toBe(30870 * 2);
+  expect(be.fileExists(`${out}.part`)).toBe(false);
+  expect(be.fileExists(`${second}.part`)).toBe(false);
+  expect(be.pumpJobs()).toBe(0);
+  be.deleteFile(out);
+  be.deleteFile(second);
 });
 
 test("a render pulled in less than one frame is refused, rather than hanging for ever on empty chunks", async () => {
