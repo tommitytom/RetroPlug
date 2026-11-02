@@ -562,6 +562,11 @@ struct Normalize {
 // meaning it could define without mixing or dropping a channel nobody asked it to. A buffer of another channel count
 // therefore fails the activation with a reason, rather than being silently taken apart; a kit chain is mono.
 //
+// A NaN in the buffer is outside the contract: nothing between a resource and the encode checks a sample for finiteness
+// (a kit compile refuses a source or pass that carries one, but a live node's buffer is whatever its document names),
+// and `std::lround` of a NaN is unspecified, so the bits there are not defined. An infinity is clamped like any value
+// out of the int16 range, and encodes at a rail.
+//
 // The storage is a member, built at activate and freed with the instance on the control thread, as rp.dsp.resample's
 // resamplers are, which is why the type declares `heap` and the planner refuses it on the Pico.
 //
@@ -613,8 +618,9 @@ struct Dpcm {
             throw std::runtime_error("a DPCM node takes a mono buffer, and this one has " +
                                      std::to_string(buffer->channels) + " channels");
         // A re-activation (a new block size, a new plan rate) over a buffer of the length already encoded keeps those
-        // bits: the samples are the buffer's, `normalize` is the rebuild key, and the stream carries on where it was,
-        // as the player's position does.
+        // bits, and the stream carries on where it was, as the player's position does. The guard is on the length
+        // because a re-encode of that buffer is the same bits: a moved reference is a rebuild and a kit job's instance
+        // is fresh, so a buffer rewritten in place under a live instance is the one case not re-read.
         if (bits.size() == buffer->frames) return;
         // Built aside and moved in, so a failed allocation leaves the previous stream's bits as they were.
         std::vector<std::uint8_t> encoded(buffer->frames);

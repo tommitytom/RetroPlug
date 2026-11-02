@@ -33,8 +33,9 @@ namespace rp::dsp {
 // swing, so the loudest sample lands near full scale; off, the map is a plain 63 / 32768 scale, and the peak is never
 // measured.
 //
-// A non-finite sample is outside the contract: `in`'s values are the kit path's, whose compile refuses a source that
-// carries one, and `std::lround` of a NaN or an infinity is undefined rather than a defined clamp.
+// A NaN sample is outside the contract: the kit compile refuses a source or pass that carries one, and a live node's
+// buffer is not checked, so a NaN there is an unspecified bit stream rather than a defined clamp. An infinity is
+// clamped like any value out of the int16 range, and encodes at a rail.
 void encodeDpcm(const float* in, std::size_t frames, bool normalize, std::uint8_t* bits) noexcept;
 
 } // namespace rp::dsp
