@@ -4,7 +4,7 @@
 //
 // - rp.dsp.normalize's output is today's normalising `GainEffect` through `rp::lsdj::processEffect`, bit for bit, at
 //   block sizes of 1, 7, 64 and 1024 frames: a sine, a source so quiet its normalised gain is far above any param's
-//   range, a silence (the gain alone) and a negative gain. Its peak is every channel's, and one gain scales them all.
+//   range, a silence (the gain alone) and a negative gain. Its peak is the channels it plays, and one gain scales them.
 // - A dither's `seedFrom` gives channel 0 the seed `rp::lsdj::processEffect(DitherEffect)` hashes out of the same
 //   buffer, for each of the five algorithms, and the other channels their own derivation of it; without one the seed
 //   setting stands as it did.
@@ -99,7 +99,10 @@ struct BufferRig : GraphRig {
     // they play frames).
     rp::graph::ResourceTable::Id buffer(const std::vector<std::vector<float>>& perChannel) {
         const auto channels = static_cast<std::uint32_t>(perChannel.size());
+        // Every channel is `frames` long, as a buffer's are: a longer one would overwrite the next channel's
+        // samples, or write past the last, rather than fail here.
         const auto frames = static_cast<std::uint32_t>(perChannel[0].size());
+        for (const auto& channel : perChannel) REQUIRE(channel.size() == frames);
         const auto id = resources.createAudioBuffer(channels, frames, kRate);
         auto* const b = static_cast<rp_audio_buffer*>(resources.get(id)->payload);
         for (std::uint32_t c = 0; c < channels; ++c) std::copy(perChannel[c].begin(), perChannel[c].end(), b->data[c]);
@@ -205,7 +208,7 @@ TEST_CASE("rp.dsp.normalize is the kit path's normalising GainEffect, whole or s
     CHECK(rp::dsp::normalizedGain(1.0f, rp::dsp::peak(cases[1].in.data(), cases[1].in.size())) > 100.0f);
 }
 
-TEST_CASE("rp.dsp.normalize's peak is every channel's, and one gain scales them alike", "[dsp-buffer-nodes]") {
+TEST_CASE("rp.dsp.normalize's peak is the channels it plays, and one gain scales them alike", "[dsp-buffer-nodes]") {
     const std::vector<float> left = signal(512, 0.2f), right = signal(512, 0.7f);
     const float              peak = std::max(rp::dsp::peak(left.data(), left.size()),
                                              rp::dsp::peak(right.data(), right.size()));
@@ -305,7 +308,8 @@ TEST_CASE("rp.dsp.normalize re-folds a committed gain against the peak its activ
     }
     CHECK(firstDifference(expected, second) == -1);
     CHECK(firstDifference(unchanged, second) != -1);  // the committed gain really moved the scale
-    CHECK(firstDifference(first, second) != -1);
+    // And the stream is not the old one carried on at the new scale: `first` is the same frames at the gain before it.
+    CHECK(firstDifference(std::vector<float>(first.begin(), first.begin() + 64), second) != -1);
 }
 
 TEST_CASE("a dither's seedFrom gives channel 0 the kit path's seed, for every algorithm", "[dsp-buffer-nodes]") {
@@ -495,6 +499,48 @@ TEST_CASE("rp.dsp.dpcm's normalize toggle rebuilds and plays the other encoding 
     for (std::size_t i = 0; i < expected.size(); ++i) expected[i] = bits[i] ? 1.0f : -1.0f;
     CHECK(firstDifference(expected, second) == -1);
     CHECK(firstDifference(first, second) != -1);  // and the two encodings are different streams
+}
+
+TEST_CASE("a re-activation carries the buffer-reading nodes on from where they were", "[dsp-buffer-nodes]") {
+    // A host's first larger block restarts every live instance (GraphHost::reactivate), on the control thread, and
+    // what that must not do is replay these nodes' buffers from their first frame. Each node is played, re-activated
+    // to a larger block bound, and played on: the two halves together are the buffer played once, from frame 0.
+    const std::vector<float> in = signal(512);
+    constexpr std::size_t    kFirst = 100;
+
+    {
+        // normalize: the frames from kFirst on are the kit path's normalising gain over the same frames, so the
+        // position carried on across the re-activation.
+        std::vector<float> reference = in;
+        rp::lsdj::processEffect(rp::lsdj::GainEffect{true, 0.5f}, reference, static_cast<float>(kRate));
+        BufferRig  rig(rp::graph::Target::Desktop, 1024);
+        const auto sample = rig.buffer(in);
+        REQUIRE(rig.source("rp.dsp.normalize",
+                           R"({"buffer":)" + BufferRig::res(sample) + R"(,"gain":0.5,"channels":1})", 1)
+                    .ok);
+        std::vector<float> stream = rig.render(kFirst, {64}, 1)[0];
+        REQUIRE(rig.host->reactivate(kRate, 2048));
+        const auto after = rig.render(in.size() - kFirst, {64}, 1)[0];
+        stream.insert(stream.end(), after.begin(), after.end());
+        CHECK(firstDifference(reference, stream) == -1);
+    }
+
+    {
+        // dpcm: the same, one bit per frame, so its position carried on across the re-activation as well.
+        std::vector<std::uint8_t> bits(in.size());
+        rp::dsp::encodeDpcm(in.data(), in.size(), true, bits.data());
+        std::vector<float> reference(in.size());
+        for (std::size_t i = 0; i < reference.size(); ++i) reference[i] = bits[i] ? 1.0f : -1.0f;
+        BufferRig  rig(rp::graph::Target::Desktop, 1024);
+        const auto sample = rig.buffer(in);
+        REQUIRE(rig.source("rp.dsp.dpcm", R"({"buffer":)" + BufferRig::res(sample) + R"(,"normalize":true})", 1)
+                    .ok);
+        std::vector<float> stream = rig.render(kFirst, {64}, 1)[0];
+        REQUIRE(rig.host->reactivate(kRate, 2048));
+        const auto after = rig.render(in.size() - kFirst, {64}, 1)[0];
+        stream.insert(stream.end(), after.begin(), after.end());
+        CHECK(firstDifference(reference, stream) == -1);
+    }
 }
 
 TEST_CASE("the buffer-reading nodes' plan allocates and frees nothing from its first block", "[dsp-buffer-nodes]") {

@@ -345,19 +345,19 @@ struct Biquad {
 // the noise and snaps a gain that was mid-ramp.
 //
 // Each channel's noise is its own: the kernel's `init` salts its seed with the algorithm's constant, so a channel's
-// seed is the setting's plus its index times a golden-ratio step. Every channel seeded from the one setting would add
-// the same TPDF sequence to every channel, which sums coherently (6 dB louder than decorrelated noise, and dead
-// centre) instead of spreading. Channel 0 keeps the setting's own seed, so a mono patch is unchanged. The error
-// diffusion forms draw no noise and are unaffected.
+// seed is the stream's (the `seedFrom` hash, or `seed`) plus its index times a golden-ratio step. Every channel seeded
+// from the one word would add the same TPDF sequence to every channel, which sums coherently (6 dB louder than
+// decorrelated noise, and dead centre) instead of spreading. Channel 0 keeps that seed itself, so a mono patch is
+// unchanged. The error diffusion forms draw no noise and are unaffected.
 //
 // A block whose input is not finite would latch the state: a NaN error is a NaN error for the rest of the stream
 // (`toCode` reads a NaN as code 0, so the channel sits at -1 for good), and a `+inf` leaves JJN's and Sierra Lite's
 // `past[]` infinite, which pins the output at +1 (the TPDF and error-diffusion forms clamp the value before deriving
 // their state from it, so an infinity there only quantises that one sample to full scale). A channel that comes out of
-// a block with any of its state not finite therefore has its state restarted from the settings: the latch lasts one
-// block rather than the stream. The block itself is left as the kernel quantised it, which is finite and at worst full
-// scale, so only the state is restarted and the click is one block's. A `seedFrom` buffer restarts it from the word
-// the stream started from: the buffer's hash, not a live patch's seed, so a recovered channel draws that seed's
+// a block with any of its state not finite therefore has its state restarted from the stream's seed: the latch lasts
+// one block rather than the stream. The block itself is left as the kernel quantised it, which is finite and at worst
+// full scale, so only the state is restarted and the click is one block's. A `seedFrom` buffer restarts it from the
+// word the stream started from: the buffer's hash, not a live patch's seed, so a recovered channel draws that seed's
 // sequence again from its first draw where the kit kernel would still be latching.
 //
 // That restart is a second place the node differs from the kernel run directly, and a kit source can carry the regime:
@@ -465,8 +465,8 @@ struct Dither {
 
 // ---- rp.dsp.normalize ---------------------------------------------------------------------------------------------
 
-// A buffer player that normalises, for a kit chain's normalising gain (`GainEffect{normalize: true}`): the whole
-// buffer's peak is measured at activate, `normalizedGain(gain, peak)` folds it into the gain exactly as
+// A buffer player that normalises, for a kit chain's normalising gain (`GainEffect{normalize: true}`): the peak of the
+// channels it plays is measured at activate, `normalizedGain(gain, peak)` folds it into the gain exactly as
 // lsdj/Effects.cpp does, and the buffer is streamed times that gain, from its first frame, silence past its end. It
 // plays frames rather than seconds: the plan's rate is the buffer's in a kit job, and a buffer player's position is a
 // buffer frame.
@@ -554,7 +554,9 @@ struct Normalize {
 // bound buffer into storage this instance owns, and every block after that streams one delta bit per frame as an audio
 // level: +1 for a one, -1 for a zero, silence past the buffer's end. The bits are the risa bank's payload rather than
 // audio, so a document records them through rp.core.buffer-recorder and the packer that turns each level back into
-// its bit (`level > 0`) runs in TypeScript.
+// its bit (`level > 0`) runs in TypeScript. Silence past the buffer is 0.0f, which that packer reads as a zero bit
+// rather than as no bit; a recorder longer than the buffer therefore appends real-looking bits, and an unwritten
+// recorder tail is 0.0f too. A kit job records exactly the resampled length, so this cannot move a kit byte.
 //
 // Mono, with no `channels` setting: the encoder is the NES's single DMC channel, and a multi-channel buffer has no
 // meaning it could define without mixing or dropping a channel nobody asked it to. A buffer of another channel count
@@ -569,9 +571,9 @@ struct Normalize {
 // activate on the control thread; the stream restarts at the first bit, which is what a newly encoded stream means
 // anyway. Every other setting is a copy in `on_settings`.
 //
-// The bits are read where activation finds the buffer. An rp.core.buffer-recorder writing it in the same plan is not
-// ordered before this node (a settings ref is not a binding the planner sees), so a DMC encode of a fresh buffer is
-// the encode of silence, with no diagnostic. D2's driver records a buffer in one job and reads it in the next.
+// The bits are read where the first activation finds the buffer. An rp.core.buffer-recorder writing it in the same plan
+// is not ordered before this node (a settings ref is not a binding the planner sees), so a DMC encode of a fresh buffer
+// is the encode of silence, with no diagnostic. D2's driver records a buffer in one job and reads it in the next.
 struct Dpcm {
     static constexpr const char* id = "rp.dsp.dpcm";
     static constexpr const char* name = "DPCM";
@@ -610,6 +612,10 @@ struct Dpcm {
         if (buffer->channels != 1)
             throw std::runtime_error("a DPCM node takes a mono buffer, and this one has " +
                                      std::to_string(buffer->channels) + " channels");
+        // A re-activation (a new block size, a new plan rate) over a buffer of the length already encoded keeps those
+        // bits: the samples are the buffer's, `normalize` is the rebuild key, and the stream carries on where it was,
+        // as the player's position does.
+        if (bits.size() == buffer->frames) return;
         // Built aside and moved in, so a failed allocation leaves the previous stream's bits as they were.
         std::vector<std::uint8_t> encoded(buffer->frames);
         rp::dsp::encodeDpcm(buffer->data[0], buffer->frames, normalize, encoded.data());

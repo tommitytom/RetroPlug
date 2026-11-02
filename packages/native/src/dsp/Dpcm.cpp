@@ -21,7 +21,7 @@ long floorDiv(long a, long b) noexcept {
 }
 
 // The int16 domain sample: the float scaled by 32767, clamped to the int16 range and rounded half away from zero.
-// wav2dmc works on int16 and risa's codec has always converted through this exact expression, so it is the encoder's
+// wav2dmc works on int16 and the encoder has always converted through this exact expression, so it is the encoder's
 // first stage rather than an approximation of it.
 std::int32_t toInt16Domain(float sample) noexcept {
     const float v = std::clamp(sample * 32767.0f, -32768.0f, 32767.0f);
@@ -50,10 +50,11 @@ struct DcBlocker {
 } // namespace
 
 void encodeDpcm(const float* in, std::size_t frames, bool normalize, std::uint8_t* bits) noexcept {
-    // The peak over the DC-blocked samples, which the normalising map divides by. A floor of 1 is the codec's: silence
-    // still divides by something, and by the same 1 on every host.
+    // The peak over the DC-blocked samples, which the normalising map divides by: only a normalising encode reads it,
+    // so only that one pays the pass. A floor of 1 is the encoder's: silence still divides by something, and by the
+    // same 1 on every host.
     long peak = 1;
-    {
+    if (normalize) {
         DcBlocker dc;
         for (std::size_t i = 0; i < frames; ++i) {
             const long v = dc(toInt16Domain(in[i]));

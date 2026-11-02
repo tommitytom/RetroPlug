@@ -25,12 +25,16 @@
 namespace rp::dsp {
 
 // Writes `frames` bytes, one per sample, into caller-owned `bits`: 1 where the delta stepped the counter up, 0 where
-// it stepped it down. `in` and `bits` must not overlap. The bytes agree with the risa codec's whatever the host: the
-// int16 conversion, the 7-bit map and the delta are integer arithmetic, and the DC blocker is one expression evaluated
-// in double, sample for sample.
+// it stepped it down. `in` and `bits` must not overlap. The arithmetic is risa's retired whole-buffer encoder
+// function's, expression for expression, and `[dsp][dpcm]` holds it to a verbatim copy of that function, so the bits
+// are the same on every host. The two-pass shape is Dpcm.cpp's note.
 //
 // `normalize` is risa's per-sample flag: on, the DC-blocked buffer's peak (never below 1) divides the 7-bit map's
-// swing, so the loudest sample lands near full scale; off, the map is a plain 63 / 32768 scale.
+// swing, so the loudest sample lands near full scale; off, the map is a plain 63 / 32768 scale, and the peak is never
+// measured.
+//
+// A non-finite sample is outside the contract: `in`'s values are the kit path's, whose compile refuses a source that
+// carries one, and `std::lround` of a NaN or an infinity is undefined rather than a defined clamp.
 void encodeDpcm(const float* in, std::size_t frames, bool normalize, std::uint8_t* bits) noexcept;
 
 } // namespace rp::dsp
