@@ -1114,10 +1114,11 @@ TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit
     // of them has offline jobs running (resampling, the costliest node) the whole time. Every block's output is the
     // same, and the block thread allocates and frees nothing over its warmed blocks with the jobs in flight.
     constexpr int           kBlocks = 240;
-    // Warmed past the snapshot registry's first periodic state publish (SystemBase::readStateSnapshot sizes its buffer
-    // there, about block 46 of a booting Game Boy: two allocations, in both runs alike), which is the engine's, not
-    // this seam's.
-    constexpr int           kWarm = 60;
+    // Counted from the first block after a short warm-up, as C4's whole-block cases are: eight blocks let the plan
+    // settle and the jobs start, and the window then runs through the rest of the run, which carries every one of the
+    // engine's periodic state publishes after the first (about block 46 of a booting Game Boy, and every 24 k frames
+    // after that) inside it, so the publish path is counted too rather than skipped past.
+    constexpr int           kWarm = 8;
     constexpr std::uint32_t kFrames = 512;
     const auto play = [&](bool withJobs, rp::test::AllocationCount& counted) {
         Engine e(48000.0);

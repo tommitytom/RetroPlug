@@ -120,7 +120,7 @@ private:
     static void writeSized(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len);
 
     std::array<Slot, kMaxSlots> slots_;
-    std::vector<std::uint8_t>   publishScratch_;    // block-thread reuse for readStateSnapshot
+    std::vector<std::uint8_t>   publishScratch_;    // block-thread reuse for readStateSnapshot; reserved at claim
     std::vector<std::uint8_t>   sramScratch_;       // block-thread reuse for a live saveSramBytes() copy
     std::vector<std::uint8_t>   stateReadScratch_;  // control-thread reuse for readState (strips the prefix)
     std::vector<std::uint8_t>   ramReadScratch_;    // control-thread reuse for readRam (strips the prefix)

@@ -301,8 +301,8 @@ public:
     struct StateRegion { std::uint32_t offset = 0; std::uint32_t size = 0; };
     using StateRegionTable = std::array<StateRegion, rp::kMemoryTypeCount>;
 
-    // DSP thread: idempotent. Allocates the snapshot triple sized to
-    // stateSnapshotSize() — a CEILING, not the live size (see the hook below) — plus the length
+    // Control thread, as a core activates (both backends call it there): idempotent. Allocates the snapshot triple
+    // sized to stateSnapshotSize(), a CEILING rather than the live size (see the hook below), plus the length
     // prefix, seeds the region table, and arms an immediate first publish. No-op if already enabled
     // or if the backend doesn't support savestates (stateSnapshotSize() == 0).
     bool enableStateSnapshot();
@@ -311,8 +311,9 @@ public:
     // savestate into the triple and publish. Cheap no-op when disabled.
     void publishStateSnapshot(std::uint32_t frames, double sampleRate);
 
-    // UI thread: copy the latest published savestate into `out` (length-prefix
-    // stripped). False if no snapshot has been published yet.
+    // The block thread, from the registry's publish (SnapshotRegistry::publishSystem): copy the latest published
+    // savestate into `out` (length-prefix stripped). False if no snapshot has been published yet, or if the read
+    // buffer was never sized at claim (sizeStateReadScratch): this runs where a block does, so it never grows it.
     bool readStateSnapshot(std::vector<std::uint8_t>& out);
 
     // Region table for slicing SRAM/RAM/VRAM out of a snapshot read via readStateSnapshot(). A region
@@ -336,6 +337,13 @@ public:
     // SameBoy model switch can overflow it, mirroring the headroom this triple was allocated with
     // (stateSnapshotSize() is the backend's ceiling).
     std::size_t stateSnapshotCapacity() const;
+
+    // Control thread, at claim: size the buffer readStateSnapshot() reads through, so the block thread's read (the
+    // registry republishing from the publish) only copies. Sized from the triple, which a backend builds to a ceiling and
+    // nothing resizes, so it is a ceiling too and no later call can need to grow it: a SameBoy model switch moves the
+    // live state within it, and a core rebuilt under a new id is a new system, claimed and sized again. Resized rather
+    // than merely reserved because readStateSnapshot hands the buffer's size down as the read capacity.
+    void sizeStateReadScratch();
 
 protected:
     /** Seed a freshly-built core from its construct spec: cartridge battery first, then a savestate over
@@ -398,7 +406,8 @@ private:
     std::unique_ptr<MemorySnapshotTriple>  stateSnapshot_;
     StateRegionTable                       stateRegions_{};
     std::vector<std::uint8_t>              stateScratch_;       // DSP-thread capture buffer
-    std::vector<std::uint8_t>              stateReadScratch_;   // read buffer (block thread, via the registry)
+    std::vector<std::uint8_t>              stateReadScratch_;   // the registry's read buffer, sized at claim (control
+                                                                // thread), read by the block thread's publish
     std::uint64_t                          stateSnapSamples_ = 0;
     bool                                   stateSnapshotEnabled_ = false;
     // Latches the "capture too large" warning so a capture that keeps overflowing logs once per arming

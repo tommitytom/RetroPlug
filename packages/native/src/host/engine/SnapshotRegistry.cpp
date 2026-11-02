@@ -60,6 +60,15 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
     const std::size_t cap     = sys.stateSnapshotCapacity();
     if (bootLen > 0 && cap >= bootLen && cap <= kMaxStateBytes) {
         s->state = std::make_unique<MemorySnapshotTriple>(kStateLenPrefix + cap);
+        // Both buffers the block thread's publish reads through are sized HERE, on the control thread, so the publish
+        // itself only copies: the core's own read scratch and the registry's. Sized to the CAPACITY, not the boot
+        // length, because both grow within it in a session (a Mesen savestate as the cart runs, a Game Boy's state
+        // across a model switch), and never resized after this: the core's triple is fixed (a model switch moves the
+        // live size within the headroom it was built with) and a rebuilt core is a new id with a claim of its own, so
+        // nothing can need to grow either buffer later, on any thread. One buffer serves every slot, so a later claim
+        // reserves only if its core's capacity is larger (reserve keeps what is there and never shrinks).
+        sys.sizeStateReadScratch();
+        publishScratch_.reserve(cap);
         writeSized(*s->state, savestate.data(), bootLen);
     }
 

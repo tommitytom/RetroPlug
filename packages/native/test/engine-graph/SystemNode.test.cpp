@@ -3239,6 +3239,46 @@ TEST_CASE("a warmed core's whole block allocates and frees nothing, emulation in
             CHECK(core->inputDropped() == droppedBefore);
         }
     }
+    SECTION("Game Boy, through the engine, across its state publishes") {
+        // The publish path's own promise, which every section above stays under: the registry republishes a core's
+        // savestate every 0.5 s, and the read that goes through - the core's snapshot read, then the registry's copy -
+        // is what a block of a warmed core must not grow either. The window starts at the first block after warm-up and
+        // runs two intervals, so the FIRST periodic publish and a later one both land inside it. (A core's first block
+        // publishes its boot capture, which is discounted there; the registry's own accumulator starts at claim, so its
+        // first publish here is the 16th counted block and its second the 39th.) Each publish is proved by the blob the
+        // control plane reads changing; the read itself is between blocks, outside every window.
+        //
+        // A Game Boy is the console this can be held on: its capture writes into the scratch it sized at its first
+        // block, where a Mesen core's periodic capture allocates inside its serializer by nature - which is why the NES
+        // section above charges a whole interval outside its window instead of counting one. Host input is the sections
+        // above's subject, so this one stages none.
+        Engine e(kRate);
+        rp::host::test::Roms roms;
+        auto systems = std::vector<rp::host::test::DocSystem>{{1, rp::host::test::kGbType}};
+        rp::host::test::withRoms(e, systems, roms);
+        REQUIRE(e.setGraph(rp::host::test::graphRequest(rp::host::test::stereoDocument(systems), {1})).ok);
+        Lanes lanes(2);
+        constexpr std::uint32_t kFrames = 1024;
+        for (int b = 0; b < 8; ++b) e.processBlock(kFrames, lanes.ptrs.data(), 2);  // warm
+        // The claim's boot seed is already published, so a change below is a publish rather than the first read.
+        auto published = e.registry().readState(1);
+        REQUIRE(published.has_value());
+        int publishes = 0;
+        for (int b = 0; b < 48; ++b) {
+            std::fill_n(lanes.ptrs[0], kFrames, 0.0f);
+            std::fill_n(lanes.ptrs[1], kFrames, 0.0f);
+            rp::test::beginCountingAllocations(true);
+            e.processBlock(kFrames, lanes.ptrs.data(), 2);
+            const auto counted = rp::test::endCountingAllocations();
+            auto now = e.registry().readState(1);
+            if (now && *now != *published) ++publishes;
+            published = std::move(now);
+            INFO(b << ": " << counted.allocations << " allocations, " << counted.frees << " frees");
+            REQUIRE(counted.allocations == 0);
+            REQUIRE(counted.frees == 0);
+        }
+        CHECK(publishes == 2);
+    }
     SECTION("GBA") {
         // A sibling fixture, so this SKIPs, counted, on a run without one (as CI's) rather than passing silently.
         const auto rom = resourceFixture("/roms/nanoloop287d.gba");

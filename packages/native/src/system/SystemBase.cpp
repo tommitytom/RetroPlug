@@ -1,5 +1,6 @@
 #include "system/SystemBase.hpp"
 
+#include <cassert>
 #include <cstdio>
 #include <cstring>
 
@@ -99,10 +100,19 @@ std::size_t SystemBase::stateSnapshotCapacity() const {
     return stateSnapshot_ ? stateSnapshot_->size() - kStateLenPrefix : 0;
 }
 
+void SystemBase::sizeStateReadScratch() {
+    // The triple's whole size, the prefix included, is what a read copies through it, so the ceiling is that.
+    stateReadScratch_.resize(stateSnapshot_ ? stateSnapshot_->size() : 0);
+}
+
 bool SystemBase::readStateSnapshot(std::vector<std::uint8_t>& out) {
     if (!stateSnapshot_) return false;
     const std::size_t cap = stateSnapshot_->size();
-    if (stateReadScratch_.size() < cap) stateReadScratch_.resize(cap);
+    // Sized at claim, on the control thread (sizeStateReadScratch): the caller is the registry's block-thread publish,
+    // where growing this buffer is an allocation on the audio thread. A read of a snapshot no slot claimed is refused
+    // rather than sized, leaving the caller's blob where it was instead of putting that allocation back in a block.
+    assert(stateReadScratch_.size() >= cap);
+    if (stateReadScratch_.size() < cap) return false;
     if (!stateSnapshot_->readInto(stateReadScratch_.data(), stateReadScratch_.size()))
         return false;
     std::uint32_t len = 0;
