@@ -1177,13 +1177,13 @@ TEST_CASE("an offline job leaves the live plan an audio thread plays bit for bit
         });
         // The main thread drains the pool beside the running blocks, as a host's control thread does, so this case is
         // the one that watches a drain and a `processBlock` interleave, and it records that it did rather than trusting
-        // the schedule: a drain that ran while the audio thread had blocks left. The long jobs never complete, so the
-        // drains find nothing and change nothing else.
+        // the schedule: a drain that ran with the audio thread between its first block and its last. The long jobs
+        // never complete, so the drains find nothing and change nothing else.
         if (withJobs)
             while (playing.load(std::memory_order_acquire)) {
                 e.drainOfflineJobs(std::chrono::milliseconds(5));
-                if (blocks.load(std::memory_order_acquire) < kBlocks)
-                    drainBesideBlocks.store(true, std::memory_order_release);
+                const int done = blocks.load(std::memory_order_acquire);
+                if (done > 0 && done < kBlocks) drainBesideBlocks.store(true, std::memory_order_release);
             }
         audio.join();
         e.setAudioThreadOwns(false);
