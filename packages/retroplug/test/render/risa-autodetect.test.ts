@@ -8,6 +8,7 @@
 // SELECT+START play gesture, then a tone for SONG_MS, then the sequencer stops (seq_mode → 0). The render
 // must trim at the stop — a length well under the cap, hff true, and a WAV exactly as long as the reported
 // frame count. A real-core version lives in test-native/risa-render.ts. Mirrors start-truncation.test.ts.
+// It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import {

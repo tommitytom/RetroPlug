@@ -13,6 +13,7 @@
 // made this the native suite's longest file by a factor of three. Split, the two run concurrently, and the
 // check is no weaker: a carried role that never reached the core leaves NTSC at the PAL length, i.e. a ratio
 // of exactly 1.000, which is nowhere near the tolerance below.
+// It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob } from "../src/render";

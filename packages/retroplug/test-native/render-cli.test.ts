@@ -1,12 +1,13 @@
-// `retroplug-cli render`'s tool (cli/sessions/render.ts) held to the render baseline: its arguments become an engine job
-// (docs/modular-graph-phase-d3-design.md section 5), so the files it writes are the files the baseline's case of the same
-// spec records, hash for hash on the baseline's host (the sizes anywhere), and the tool's console output is the render
-// library's own lines. A render that fails ends the tool with the job's message, and --list-songs stays in-process.
+// `retroplug-cli render`'s tool (cli/sessions/render.ts) held to the render baseline: its arguments become an engine
+// job (docs/modular-graph-phase-d3-design.md section 5), so the files it writes are the files the baseline's case of
+// the same spec records, hash for hash on the baseline's host (the sizes anywhere), and the tool's console output is
+// the render library's own lines. A render that fails ends the tool with the job's message, and --list-songs stays
+// in-process.
 //
 // The tool runs here against the test host's session, not the launcher: the host fires no timers, so the tool's
 // setTimeout, which it hands the offline poll to yield to a launcher's loop, is given a stand-in that resumes at once.
-// The launcher's own half (an unbounded pump, a Ctrl-C between steps, exit codes, the output streams) is held against the
-// real binary by tools/run-cli-ts-tests.sh (pnpm test:cli-ts).
+// The launcher's own half (an unbounded pump, a Ctrl-C between steps, exit codes, the output streams) is held against
+// the real binary by tools/run-cli-ts-tests.sh (pnpm test:cli-ts).
 import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../src/bootSession";
 import { renderTool } from "../cli/sessions/render";
@@ -146,7 +147,7 @@ test("a cancelled render ends cancelled and leaves no WAV behind (its header wou
   expect(be.fileExists(out), "the partial WAV was removed").toBe(false);
 });
 
-test("tools/fixtures/render-smsggdj.sav, which test:cli-ts renders, is the battery the baseline's smsggdj cases author", () => {
+test("tools/fixtures/render-smsggdj.sav, which test:cli-ts renders, is the baseline's smsggdj cases' battery", () => {
   const committed = be.readFile(`${__REPO_RESOURCES_DIR__}/../tools/fixtures/render-smsggdj.sav`);
   const authored = be.readFile(`${SCRATCH}-smsggdj.sav`);
   expect(committed !== null && authored !== null).toBe(true);

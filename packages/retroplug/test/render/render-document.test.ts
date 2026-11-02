@@ -3,6 +3,7 @@
 // the store's state. This was the UI's System > Render path, which dropped the gain it was handed.
 //
 // A mock backend and a silent driver: the audio is nothing here, only the document the store published.
+// It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { ProjectStore } from "../../src/projectStore";

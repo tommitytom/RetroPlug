@@ -13,6 +13,7 @@
 // block and is wiped 400 ms later, so "write and read it back" is not sufficient on its own. The loader
 // therefore waits for song_new's own footprint (wave_ram's preset waves) before writing, then requires
 // the block to hold. The regression this guards is silence, so every case asserts on audio.
+// It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";

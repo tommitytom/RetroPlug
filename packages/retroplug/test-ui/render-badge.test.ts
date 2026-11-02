@@ -1,12 +1,12 @@
 // The background-render badge on a system tile, end to end on the headless display. The tile lists the store graph's
-// renders (src/renderJobs.ts); a scripted graph (test-ui/scriptedRenders.ts) lets the test start a render for the loaded
-// system and move it through each state, then asserts the badge renders for each. Proves the tile's per-frame poll, the
-// badge JSX (Box/Text/align props) and the tap-to-cancel route actually work - not just typecheck.
+// renders (src/renderJobs.ts); a scripted graph (test-ui/scriptedRenders.ts) lets the test start a render for the
+// loaded system and move it through each state, then asserts the badge renders for each. Proves the tile's per-frame
+// poll, the badge JSX (Box/Text/align props) and the tap-to-cancel route actually work - not just typecheck.
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
 import { installScriptedStores } from "./scriptedRenders";
 
-test("the render badge shows the rendered duration / error on a tile, cancels on a tap, and clears when the job finishes", () => {
+test("the render badge shows the duration / error on a tile, cancels on a tap, and clears when the job finishes", () => {
   const scripted = installScriptedStores();
   const { stores, renders } = scripted;
 

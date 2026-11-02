@@ -103,7 +103,9 @@ export function EmulatorTile({
         // Background-render badge along the tile's bottom: how much audio has been rendered so far. Tap while
         // rendering to cancel; tap an error to dismiss. (The click also bubbles to focus the tile — harmless.)
         <Box
-          onClick={() => (renderJob.state === "rendering" ? renders.cancel(renderJob.id) : renders.dismiss(renderJob.id))}
+          onClick={() =>
+            renderJob.state === "rendering" ? renders.cancel(renderJob.id) : renders.dismiss(renderJob.id)
+          }
           align={{ type: EAlignType.ALIGN_BOTTOM_MID, pos: [0, 0] }}
           style={{
             width,

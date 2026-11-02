@@ -1,12 +1,12 @@
 // A real render settles on the plugin's own path: the editor binds no harness facet and no audio driver, so nothing
 // waits in native, and the only mover of the engine job's promise is useJobPump's backend.pumpJobs on a frame. Like
 // kit-compile.test.ts for graph jobs, this runs the store graph's RenderJobs over the real backend on this harness
-// (registerHostRpc + registerEmulatorRpc, as PluginDSP.cpp and the SDL host mount): the badge appears on the tile of the
-// system the render came from, the job ends done, the badge clears, and the WAV is on disk.
+// (registerHostRpc + registerEmulatorRpc, as PluginDSP.cpp and the SDL host mount): the badge appears on the tile of
+// the system the render came from, the job ends done, the badge clears, and the WAV is on disk.
 import { test, expect, ui, navTo, Key } from "ui-harness";
 import { installScriptedStores } from "./scriptedRenders";
 
-test("a real render settles from frame pumps alone: the badge shows, the job ends done, the file is written", async () => {
+test("a real render settles from frame pumps alone: the badge shows, the job ends done, the WAV is written", async () => {
   const scripted = installScriptedStores(true);
   const { stores } = scripted;
   expect(ui.boot()).toBeTruthy();

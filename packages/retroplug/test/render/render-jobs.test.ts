@@ -1,8 +1,8 @@
 // The renders the UI has started (src/renderJobs.ts): a job is listed rendering with the system it came from, its
 // progress moves renderedMs, and its result settles it done, cancelled or error; a refusal or a throw at submission is
-// listed as an error; cancel() is the job handle's; a dismissed job stays gone when it settles; and the engine's console
-// lines reach this runtime's console. The jobs here are scripted promises: the engine side is test-native/engine-run
-// and the C++ [engine-jobs] cases.
+// listed as an error; cancel() is the job handle's; a dismissed job stays gone when it settles; and the engine's
+// console lines reach this runtime's console. The jobs here are scripted promises: the engine side is
+// test-native/engine-run and the C++ [engine-jobs] cases.
 import { test, expect } from "../../testing/harness";
 import { RenderJobs } from "../../src/renderJobs";
 import { jobHandle, type EngineRunOptions, type EngineRunResult } from "../../src/offline";
@@ -33,7 +33,8 @@ function scripted(): { backend: { engineRun: RenderJobsBackend }; jobs: Scripted
 }
 type RenderJobsBackend = ConstructorParameters<typeof RenderJobs>[0]["engineRun"];
 
-const done = (renderedMs: number): EngineRunResult => ({ status: "done", message: "", outputs: ["/o.wav"], renderedMs });
+const done = (renderedMs: number): EngineRunResult =>
+  ({ status: "done", message: "", outputs: ["/o.wav"], renderedMs });
 const later = (): Promise<void> => new Promise((r) => void Promise.resolve().then(() => r()));
 
 test("a started render is listed rendering for its system, and progress moves its renderedMs", () => {

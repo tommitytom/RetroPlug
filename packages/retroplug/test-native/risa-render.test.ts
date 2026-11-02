@@ -6,6 +6,7 @@
 // The two long-song legs live in sibling files (risa-render-hff / risa-render-region) so they render
 // concurrently instead of serializing behind each other; shared fixtures are in risa-render-lib.ts.
 // Everything here is a short render, so this file stays a few seconds.
+// It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob, readRisaSongs, decodeWav, type RenderOpts } from "../src/render";

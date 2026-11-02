@@ -37,10 +37,10 @@ import {
 // once), a drain that waits advances the clock to the next job's end when none has finished, a drain that does not
 // wait never moves it, at most OFFLINE_MAX_JOBS are outstanding (submitted and not yet drained) and one past that is
 // refused busy. A job echoes its first input's samples, or fails for a document of "fail". An engine job's spec is
-// {"ms": n, "out": path, "endMs"?: m}: it runs n time units, each drain reporting the units elapsed as its rendered
+// {"ms": n, "out": path, "endMs"?: m, "drop"?: d}: it runs n time units, each drain reporting the units elapsed as its rendered
 // milliseconds, writes one line as it starts and one as it ends, and completes "done" with `out` as its output (and
 // `endMs` as its final length when given, as a render that detected its song's end lowers its count), or "error" for
-// a spec with no out. A cancel ends a job at the next drain, a graph job's error and an engine job's status
+// a spec with no out; its first report says `drop` console lines were dropped, as a record that overflowed would. A cancel ends a job at the next drain, a graph job's error and an engine job's status
 // "cancelled".
 function clockPort() {
   let now = 0;
@@ -48,7 +48,7 @@ function clockPort() {
   const jobs: {
     id: number;
     request: OfflineWireRequest;
-    engine?: { ms: number; out?: string; endMs?: number; start: number; started: boolean };
+    engine?: { ms: number; out?: string; endMs?: number; drop?: number; start: number; started: boolean };
     end: number;
     cancelled?: boolean;
   }[] = [];
@@ -77,8 +77,8 @@ function clockPort() {
       if (request.kind !== "render") return { id: null, error: `unknown engine job kind "${request.kind}"` };
       if (jobs.length >= OFFLINE_MAX_JOBS)
         return { id: null, error: `busy: ${OFFLINE_MAX_JOBS} offline jobs are outstanding` };
-      const spec = JSON.parse(request.spec) as { ms: number; out?: string; endMs?: number };
-      const engine = { ms: spec.ms, out: spec.out, endMs: spec.endMs, start: now, started: false };
+      const spec = JSON.parse(request.spec) as { ms: number; out?: string; endMs?: number; drop?: number };
+      const engine = { ms: spec.ms, out: spec.out, endMs: spec.endMs, drop: spec.drop, start: now, started: false };
       const request0: OfflineWireRequest = { inputs: [], outputs: [], returns: [], frames: 0, rate: 1 };
       jobs.push({ id: next, request: request0, engine, end: now + spec.ms });
       log.push(`t=${now} submit engine ${spec.out ?? ""}`);
@@ -101,10 +101,11 @@ function clockPort() {
       for (const j of jobs.filter((x) => x.engine)) {
         const e = j.engine!;
         const lines = e.started ? [] : [{ stream: "stdout" as const, text: `rendering ${e.out ?? ""}` }];
+        const droppedLines = e.started ? 0 : (e.drop ?? 0); // the first report carries the count a bounded record dropped
         e.started = true;
         const renderedMs = Math.min(now, j.end) - e.start;
         if (j.end > now) {
-          engineProgress.push({ id: j.id, renderedMs, lines, droppedLines: 0 });
+          engineProgress.push({ id: j.id, renderedMs, lines, droppedLines });
           continue;
         }
         const status = j.cancelled ? "cancelled" : e.out ? "done" : "error";
@@ -112,7 +113,7 @@ function clockPort() {
         const message = status === "error" ? "the spec names no out" : "";
         const outputs = status === "done" ? [e.out!] : [];
         const finalMs = status === "done" && e.endMs !== undefined ? e.endMs : renderedMs;
-        engineDone.push({ id: j.id, status, message, outputs, renderedMs: finalMs, lines, droppedLines: 0 });
+        engineDone.push({ id: j.id, status, message, outputs, renderedMs: finalMs, lines, droppedLines });
       }
       for (const j of jobs.filter((x) => !x.engine && x.end <= now)) {
         if (j.cancelled) {
@@ -225,6 +226,58 @@ test("an engine job settles with its status, its progress and console lines arri
     expect(jobs.pendingCount()).toBe(0);
     expect(liveJobCount()).toBe(0);
   });
+
+test("lines a bounded record dropped arrive as one stderr line saying how many, after the lines it kept", async () => {
+  const port = clockPort();
+  const jobs = new OfflineJobs(port);
+  const lines: string[] = [];
+  const onLog = (l: { stream: string; text: string }) => lines.push(`${l.stream}: ${l.text}`);
+  const h = jobs.engine("render", { ms: 2, out: "/o.wav", drop: 3 }, { onLog });
+  port.advance(1);
+  jobs.pump();
+  port.advance(1);
+  jobs.pump();
+  await h;
+  expect(lines).toEqual(["stdout: rendering /o.wav", "stderr: [3 console lines dropped]", "stdout: /o.wav"]);
+  // One dropped line reads in the singular; a callback is not owed a line when nothing was dropped.
+  lines.length = 0;
+  const one = jobs.engine("render", { ms: 1, out: "/one.wav", drop: 1 }, { onLog });
+  port.advance(1);
+  jobs.pump();
+  await one;
+  expect(lines).toEqual(["stdout: rendering /one.wav", "stderr: [1 console line dropped]", "stdout: /one.wav"]);
+  expect(liveJobCount()).toBe(0);
+});
+
+test("a callback that throws is reported and does not strand the other jobs the same drain settles", async () => {
+  const port = clockPort();
+  const jobs = new OfflineJobs(port);
+  const reported: string[] = [];
+  const consoleError = console.error;
+  console.error = (m: string) => void reported.push(m);
+  try {
+    const seen: number[] = [];
+    const boom = jobs.engine("render", { ms: 1, out: "/boom.wav" }, {
+      onProgress: () => {
+        throw new Error("progress boom");
+      },
+      onLog: () => {
+        throw new Error("log boom");
+      },
+    });
+    const fine = jobs.engine("render", { ms: 1, out: "/fine.wav" }, { onProgress: (ms) => seen.push(ms) });
+    port.advance(1);
+    jobs.pump(); // both end in this one drain
+    expect(await boom).toEqual({ status: "done", message: "", outputs: ["/boom.wav"], renderedMs: 1 });
+    expect(await fine).toEqual({ status: "done", message: "", outputs: ["/fine.wav"], renderedMs: 1 });
+    expect(seen).toEqual([1]);
+    expect(reported.includes("an engine job's callback threw: progress boom")).toBe(true);
+    expect(reported.includes("an engine job's callback threw: log boom")).toBe(true);
+  } finally {
+    console.error = consoleError;
+  }
+  expect(liveJobCount()).toBe(0);
+});
 
 test("a job an engine job's callback submits as the last job ends is submitted, and settles", async () => {
   const port = clockPort();

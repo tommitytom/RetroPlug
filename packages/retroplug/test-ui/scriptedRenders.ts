@@ -41,7 +41,7 @@ export function installScriptedStores(real = false): ScriptedStores {
       let resolve!: (r: EngineRunResult) => void;
       const promise = new Promise<EngineRunResult>((res) => (resolve = res));
       const job: ScriptedRender = {
-        spec: (typeof spec === "string" ? JSON.parse(spec) : JSON.parse(JSON.stringify(spec))) as Record<string, unknown>,
+        spec: JSON.parse(typeof spec === "string" ? spec : JSON.stringify(spec)) as Record<string, unknown>,
         options,
         cancelled: 0,
         settle: resolve,

@@ -8,6 +8,7 @@
 // first captured WAV sample tells us exactly how many already-playing frames were discarded before capture.
 // A correct render captures from the press → first sample ≈ the song's first sample (≈ BASE, drop ≈ 0).
 // The current code discards the button-hold chunk → first sample is ~100 ms up the ramp (drop ≈ 4410).
+// It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import {

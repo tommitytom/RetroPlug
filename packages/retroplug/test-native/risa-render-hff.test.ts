@@ -4,6 +4,7 @@
 // Its own file because this is a single ~35 s render over the real core — an order of magnitude past the
 // rest of risa-render.test.ts. Sharing a file with the equally long region render (risa-render-region)
 // made one process the native suite's longest pole; as separate files the runner pool overlaps them.
+// It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob, decodeWav } from "../src/render";
