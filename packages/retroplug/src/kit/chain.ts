@@ -258,11 +258,13 @@ export function dpcmDocument(normalize: boolean): string {
 // ---- the jobs -----------------------------------------------------------------------------------------------------
 
 /** A spec's window field (`offset` or `length`) as native's OfflineFile carries it: a whole frame count from 0 to
- *  2^32 - 1. A value no request can carry is the slot's error here, rather than an RPC throw that fails the whole
- *  compile. */
+ *  2^32 - 1, with an absent one 0, as native's optional reads an absent or null value. A value no request can carry is
+ *  the slot's error here, in the spec's own words: left to the RPC it would still be that slot's error (load awaits the
+ *  run inside the per-slot settle), but as `rpc submitOfflineJob: [...]` and reflect-cpp's decode message, whose
+ *  reading of a fractional or out-of-range number is its own. */
 export function windowFrames(spec: { offset?: number; length?: number }, key: "offset" | "length"): number {
   const value = (spec as unknown as Record<string, unknown>)[key];
-  if (value === undefined) return 0;
+  if (value === undefined || value === null) return 0;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 0xffffffff)
     throw new KitSpecError(
       `${key} ${typeof value === "number" ? value : JSON.stringify(value)} is not a frame count ` +

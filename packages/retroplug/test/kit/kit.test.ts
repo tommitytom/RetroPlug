@@ -33,7 +33,7 @@ import {
 import { compileDmc, compileKit, type KitJobRunner } from "../../src/kit";
 import { buildKitBank } from "../../src/lsdj/rom/buildKit";
 import { assembleKitBank } from "../../src/risa/rom/kit";
-import type { KitEffect } from "../../src/audioDriver";
+import type { KitEffect, KitSampleSpec } from "../../src/audioDriver";
 import { OfflineRunError, type OfflineRunRequest, type OfflineRunResult } from "../../src/offline";
 import gainDescriptor from "../../../native/test/graph/golden/rp.dsp.gain.descriptor.json";
 import biquadDescriptor from "../../../native/test/graph/golden/rp.dsp.biquad.descriptor.json";
@@ -549,9 +549,32 @@ test("a spec's window is a whole frame count, refused as its slot's reason befor
     "offset 4294967296 is not a frame count (a whole number from 0 to 4294967295)",
     null,
   ]);
-  // Only the good slot reached the runner: a value native's decoder would refuse is its slot's error, not an RPC throw
-  // that fails the whole kit.
+  // Only the good slot reached the runner: a value no request can carry is refused here, in the spec's own words,
+  // rather than reaching the RPC for reflect-cpp's decode message to explain.
   expect(runner.requests.length).toBe(3);  // load, resample, quantise
+});
+
+test("a null window field is absent, which native's optional reads as zero", async () => {
+  const ok = Float32Array.from({ length: 4410 }, (_, i) => levelOf(i % 16));
+  const runner = scriptedRunner({ files: { "/ok.wav": { samples: ok, rate: 44100 } } });
+  // A kit spec read from a user's JSON (lsdj-rom's build-kit takes one straight from the file) can carry an explicit
+  // null, which the spec's type does not. Native's optional offset and length read null as absent, so the window is
+  // the whole file, as it is for a spec that leaves them out.
+  const kit = await compileKit(runner, {
+    name: "K",
+    samples: [
+      { path: "/ok.wav", name: "N", offset: null, length: null, effects: [] } as unknown as KitSampleSpec,
+    ],
+  });
+  expect(kit.errors).toEqual([null]);
+  expect(runner.requests[0].inputs).toEqual([
+    {
+      path: "/ok.wav",
+      offset: 0,
+      length: 0,
+      cap: { frames: LSDJ_MAX_SAMPLE_FRAMES, rate: 11468, arithmetic: "float-ratio" },
+    },
+  ]);
 });
 
 test("a pass that records a non-finite sample, or that a node's guard stepped into, refuses its slot", async () => {
