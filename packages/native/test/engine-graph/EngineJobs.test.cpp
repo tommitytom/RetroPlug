@@ -15,12 +15,14 @@
 // calls, on an eight-lane host), and a call of another shape, a renderBlocks run or a rate change drops it; exact
 // blocks carry nothing.
 //
-// Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[engine-jobs]"`. The ROMs are
-// the repo's own (resources/roms), which render silence through the render library with no song or MIDI, so on CI the
-// job-against-direct comparison pins the WAV's header and length; the case that needs a sounding render reads an LSDj
-// song from the fixture tree (RETROPLUG_RESOURCES_DIR) and skips without it. A few cases give the pool a body of their
-// own (EngineJobBody) to hold its rules to an exact timeline. Every core in this binary powers on in a fixed state
-// (Deterministic.cpp), so two renders of one spec agree, and SameBoy's power-on generator is off.
+// Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[engine-jobs]"`. The ROMs are the
+// repo's own (resources/roms), which render silence through the render library with no song or MIDI but for an mGB
+// booted as a Super Game Boy with Start unpressed, whose boot jingle sounds: the back-to-back and parallel case renders
+// two, so on CI the job-against-direct comparison holds sound there and the WAV's header and length elsewhere. The case
+// that needs a sounding render of a song reads an LSDj one from the fixture tree (RETROPLUG_RESOURCES_DIR) and skips
+// without it. A few cases give the pool a body of their own (EngineJobBody) to hold its rules to an exact timeline.
+// Every core in this binary powers on in a fixed state (Deterministic.cpp), so two renders of one spec agree, and
+// SameBoy's power-on generator is off.
 
 #include <algorithm>
 #include <atomic>
@@ -516,22 +518,25 @@ TEST_CASE("renders hold all but one of the pool's workers, so a graph job still 
 TEST_CASE("renders run back to back on one reused worker and in parallel on several, each giving a direct run's bytes",
           "[engine-graph][engine-jobs]") {
     TempDir dir;
-    // A Game Boy, a NES and an SMS core, and an LSDj song when the fixtures are here: each core's process-wide and
-    // thread-local state is met by the renders after it on the same thread, and beside it on others.
-    std::vector<std::pair<std::string, std::string>> roms = {
-        {"gb", RP_MGB_ROM_PATH}, {"nes", RP_BLIPTOASTER_ROM_PATH}, {"sms", RP_SMS_ROM_PATH}};
-    std::vector<std::string> extras(roms.size());
+    // A Game Boy, a NES and an SMS core, two Super Game Boys and an LSDj song when the fixtures are here: each core's
+    // process-wide and thread-local state is met by the renders after it on the same thread, and beside it on others.
+    // The Super Game Boy is an mGB with the model set and Start left unpressed, which plays the boot jingle: the one
+    // sound the repo's own ROMs make with no song or MIDI, so the comparison holds sound on CI too. The parallel round
+    // runs first, so with the tag run alone its two jingles are the process's first, side by side: SameBoy's SGB sine
+    // table is built at load, where upstream fills it on the first jingle, which two at once would race on (the TSan
+    // leg's guard).
+    const std::string sgb = R"(,"start":false,"roles":[{"kind":"sameboy","config":{"model":"sgb"}}])";
+    std::vector<std::pair<std::string, std::string>> roms = {{"gb", RP_MGB_ROM_PATH},
+                                                             {"nes", RP_BLIPTOASTER_ROM_PATH},
+                                                             {"sms", RP_SMS_ROM_PATH},
+                                                             {"sgb", RP_MGB_ROM_PATH},
+                                                             {"sgb-2", RP_MGB_ROM_PATH}};
+    std::vector<std::string> extras = {"", "", "", sgb, sgb};
     if (const auto rom = fixture("/roms/lsdj942telemelt_5songs.gbc"); !rom.empty()) {
         if (const auto sav = fixture("/roms/lsdj942telemelt_5songs.sav"); !sav.empty()) {
             roms.push_back({"lsdj", rom});
             extras.push_back(R"(,"sav":")" + sav + R"(","songIndex":0)");
         }
-    }
-    std::vector<std::vector<char>> reference;
-    for (std::size_t i = 0; i < roms.size(); ++i) {
-        const auto out = dir.file("ref-" + roms[i].first + ".wav");
-        REQUIRE(renderDirectly(renderSpec(roms[i].second, out, 2000, extras[i])).result.status == "done");
-        reference.push_back(readBytes(out));
     }
     const auto runAll = [&](OfflineJobs& jobs, const std::string& prefix) {
         std::vector<std::uint32_t> ids;
@@ -546,19 +551,32 @@ TEST_CASE("renders run back to back on one reused worker and in parallel on seve
             REQUIRE(seen.done.count(ids[i]) == 1);
             INFO(seen.done.at(ids[i]).message);
             CHECK(seen.done.at(ids[i]).status == "done");
-            CHECK(readBytes(dir.file(prefix + roms[i].first + ".wav")) == reference[i]);
         }
     };
+    {
+        OfflineJobs jobs({}, static_cast<unsigned>(roms.size() + 1));  // a budget of every render at once
+        runAll(jobs, "parallel-");
+        CHECK(jobs.workers() == roms.size());
+    }
     {
         OfflineJobs jobs({}, 1);
         runAll(jobs, "serial-");
         runAll(jobs, "serial-again-");  // the same worker, its second round
         CHECK(jobs.workers() == 1);     // every render ran on the one thread
     }
-    {
-        OfflineJobs jobs({}, static_cast<unsigned>(roms.size() + 1));  // a budget of every render at once
-        runAll(jobs, "parallel-");
-        CHECK(jobs.workers() == roms.size());
+    for (std::size_t i = 0; i < roms.size(); ++i) {
+        INFO(roms[i].first);
+        const auto ref = dir.file("ref-" + roms[i].first + ".wav");
+        REQUIRE(renderDirectly(renderSpec(roms[i].second, ref, 2000, extras[i])).result.status == "done");
+        const auto reference = readBytes(ref);
+        for (const char* prefix : {"parallel-", "serial-", "serial-again-"})
+            CHECK(readBytes(dir.file(prefix + roms[i].first + ".wav")) == reference);
+        if (extras[i] == sgb) {  // the jingle sounds: some 16-bit sample past the header is not zero
+            bool sound = false;
+            for (std::size_t b = 44; b + 1 < reference.size() && !sound; b += 2)
+                sound = reference[b] != 0 || reference[b + 1] != 0;
+            CHECK(sound);
+        }
     }
 }
 

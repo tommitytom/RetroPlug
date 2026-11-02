@@ -356,7 +356,9 @@ made them false (chunking, the worker budget, the carry's rules).
   and expansion chips) fixture-free sound, and with it CI coverage of SameBoy's per-channel path, the NES and every
   split render (all of which only a fixture run covers today; section 8).
 - **CI's continuous-path coverage is thin.** The render baseline's LSDj and risa cases need fixtures, so on CI only
-  smsggdj and the SGB jingle run through engine jobs against exact bytes.
+  smsggdj and the SGB jingle run through engine jobs against exact bytes. `[engine-jobs]`'s back-to-back and parallel
+  case renders two SGB jingles too, side by side first, so a job against a direct run compares sound on CI, and with
+  the tag run alone they are the process's first jingles, which guards the SGB table's load-time build under TSan.
 - **Detection is quantised to the poll.** Block-granular probes (or an autonomous recipe) would make an auto-detect
   render's length pull-independent.
 - **A cancel can hang a wedged job.** A render that never settles hangs the CLI where the old bounded loop gave up; the
