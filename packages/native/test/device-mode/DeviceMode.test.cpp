@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -153,8 +154,8 @@ const rp_package* rigPackage() {
 
 const rp_package* echoPackageDesktop() {
     static const rp_node_type* const kTypes[] = {rp::node_type<devtest::Echo>(), rp::node_type<devtest::Pair>(),
-                                                 rp::node_type<devtest::Shaper>()};
-    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.devtest","version":"1.0.0"})", 3, kTypes};
+                                                 rp::node_type<devtest::Shaper>(), rp::node_type<devtest::Bare>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.devtest","version":"1.0.0"})", 4, kTypes};
     return &kPackage;
 }
 
@@ -659,6 +660,7 @@ void checkSame(const EchoView& a, const EchoView& b) {
           std::vector<std::uint16_t>(b.counts, b.counts + b.countsSize));
     CHECK(a.rom == b.rom);
     CHECK(a.romResolved == b.romResolved);
+    CHECK(a.mode == b.mode);
 }
 
 // The device's echo made from `json` as msgpack is the desktop's made from `json` as JSON, field for field.
@@ -757,13 +759,14 @@ TEST_CASE("every portable rp.core and rp.dsp type renders, built for the device,
     TwinPackage devtest(echoPackageDesktop(), rp_devtest_package_device_mode(), true);
     compareTable(core, dsp, devtest);
 
-    // Every device-mode type the table places ran (the echo and pair nodes are the direct cases' below), and not one
-    // of its calls allocated or freed.
+    // Every device-mode type the table places ran (the echo, pair and bare nodes are the direct cases' below), and not
+    // one of its calls allocated or freed.
     for (const auto* package : {&core, &dsp, &devtest}) {
         for (const auto& twin : package->twins) {
             INFO(twin->type.id);
             const std::string_view id = twin->type.id;
-            if (id != "rp.devtest.echo" && id != "rp.devtest.pair") CHECK(twin->tally.calls > 0);
+            if (id != "rp.devtest.echo" && id != "rp.devtest.pair" && id != "rp.devtest.bare")
+                CHECK(twin->tally.calls > 0);
             CHECK(twin->tally.allocations == 0);
             CHECK(twin->tally.frees == 0);
         }
@@ -814,6 +817,10 @@ TEST_CASE("the msgpack decode keeps a missing field's default and steps over an 
     checkEcho(R"({"mode":"7"})");
     checkEcho(R"({"mode":" 2 and more"})");
     checkEcho(R"({"mode":"+1"})");
+    // A number that is no enumerator is read as that number, as reflect-cpp's std::stoi reading takes it: leading white
+    // space and a sign skipped, the digits up to the first that is not one.
+    CHECK(Made(deviceEcho(), asSettings(msgpackOf(R"({"mode":" 2 and more"})"))).echo().mode == 2);
+    CHECK(Made(deviceEcho(), asSettings(msgpackOf(R"({"mode":"+1"})"))).echo().mode == 1);
 
     // Empty settings are the empty map; a blob with fields in any order is read by name.
     Made empty(deviceEcho(), rp_settings{nullptr, 0, RP_SETTINGS_MSGPACK});
@@ -859,7 +866,7 @@ TEST_CASE("the msgpack decode refuses what JSON refuses, naming the field", "[de
     for (const char* json : {R"({"name":"123456789"})", R"({"counts":[1,2,3,4,5]})", R"({"u32":-1})",
                              R"({"u32":2.0})", R"({"u8":256})", R"({"flag":1})", R"({"flag":null})",
                              R"({"pick":"four"})", R"({"rom":"res:007"})", R"({"mode":"Medium"})", R"({"mode":3})",
-                             R"({"i32":"1"})", R"({"f":"1"})", R"({"name":5})"}) {
+                             R"({"i32":"1"})", R"({"f":"1"})", R"({"name":5})", R"({"counts":{"a":1}})"}) {
         INFO(json);
         Made desktop(desktopEcho(), asSettings(std::string(json)));
         CHECK_FALSE(desktop.node);
@@ -890,10 +897,36 @@ TEST_CASE("the msgpack decode refuses what JSON refuses, naming the field", "[de
     CHECK(refusal(R"({"mode":"99999999999"})") ==
           "Failed to parse field 'mode': Invalid enum value: '99999999999'. Must be one of [Off, Slow, Fast].");
     CHECK(refusal(R"({"counts":[1,-2]})") == "Failed to parse field 'counts': element 1: Could not cast to uint.");
-    CHECK(refusal(R"({"counts":{"a":1}})") == "Failed to parse field 'counts': Could not cast to array.");
+    CHECK(refusal(R"({"counts":{"a":1}})") == "Failed to parse field 'counts': Could not cast to array!");
     CHECK(refusal(R"({"rom":"res:007"})") ==
           "Failed to parse field 'rom': \"res:007\" is not a resource reference (res:N)");
     CHECK(refusal(R"({"rom":7})") == "Failed to parse field 'rom': Could not cast to string.");
+
+    // The two inputs where the readers part, by choice (settings_msgpack.hpp). An integer above INT64_MAX in a signed
+    // field, which reflect-cpp's JSON reader wraps, the decode refuses as out of range.
+    {
+        Made desktop(desktopEcho(), asSettings(std::string(R"({"i32":18446744073709551615})")));
+        REQUIRE(desktop.node);
+        CHECK(desktop.echo().i32 == -1);
+        CHECK(refusal(R"({"i32":18446744073709551615})") ==
+              "Failed to parse field 'i32': Integer is out of range for the target type.");
+    }
+    {
+        // 2^63, a double canonical JSON spells in integer digits.
+        Made desktop(desktopEcho(), asSettings(std::string(R"({"i64":9223372036854775808})")));
+        REQUIRE(desktop.node);
+        CHECK(desktop.echo().i64 == std::numeric_limits<std::int64_t>::min());
+        CHECK(refusal(R"({"i64":9223372036854775808})") ==
+              "Failed to parse field 'i64': Integer is out of range for the target type.");
+    }
+    {
+        // And -0, an integer literal, is msgpack's 0, which an unsigned field takes; the JSON reader refuses it.
+        Made desktop(desktopEcho(), asSettings(std::string(R"({"u32":-0})")));
+        CHECK(desktop.refusal == "Failed to parse field 'u32': Could not cast to uint.");
+        Made device(deviceEcho(), asSettings(msgpackOf(R"({"u32":-0})")));
+        REQUIRE(device.node);
+        CHECK(device.echo().u32 == 0);
+    }
 
     // A blob that is not one well-formed map is refused whole.
     CHECK(refusal(msgpackOf("[1,2]")) == "settings must be a msgpack map");
@@ -919,6 +952,27 @@ TEST_CASE("the msgpack decode refuses what JSON refuses, naming the field", "[de
     CHECK(refusal(std::vector<std::uint8_t>{0x81, 0xa1, 'z', 0xc5, 0x00, 0x04, 0x01}) ==
           "settings are not valid msgpack");
     CHECK(refusal(std::vector<std::uint8_t>{0x81, 0xa1, 'z', 0xd7, 0x01, 0x02}) == "settings are not valid msgpack");
+
+    // A type with no Settings takes the empty blob and any map, whose keys it ignores (as its JSON side takes any
+    // object), and refuses anything else in the words the decode of a Settings uses, on both builds.
+    const rp_node_type* const deviceBare = rp_devtest_package_device_mode()->node_types[3];
+    const rp_node_type* const desktopBare = echoPackageDesktop()->node_types[3];
+    for (const rp_node_type* bare : {deviceBare, desktopBare}) {
+        INFO((bare == desktopBare ? "desktop" : "device"));
+        REQUIRE(std::string_view(bare->id) == "rp.devtest.bare");
+        for (const auto& bytes :
+             {std::vector<std::uint8_t>{}, msgpackOf("{}"), msgpackOf(R"({"x":1,"y":[{"z":null}]})")}) {
+            Made made(bare, asSettings(bytes));
+            CHECK(made.node);
+        }
+        CHECK(Made(bare, asSettings(msgpackOf("[1,2]"))).refusal == "settings must be a msgpack map");
+        CHECK(Made(bare, asSettings(msgpackOf("7"))).refusal == "settings must be a msgpack map");
+        auto trailing = msgpackOf("{}");
+        trailing.push_back(0xc0);
+        CHECK(Made(bare, asSettings(trailing)).refusal == "settings hold bytes after their map");
+        CHECK(Made(bare, asSettings(std::vector<std::uint8_t>{0x81, 0xa1, 'x'})).refusal ==
+              "settings are not valid msgpack");
+    }
 
     // A device reads msgpack alone.
     Made json(deviceEcho(), asSettings(std::string("{}")));

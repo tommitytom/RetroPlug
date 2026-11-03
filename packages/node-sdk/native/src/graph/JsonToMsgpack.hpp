@@ -17,8 +17,9 @@ namespace rp::graph {
 // A number stays the kind of number the JSON text spells: an integer literal is a msgpack int in its smallest form, and
 // anything with a fraction or an exponent is a float64, 2.0 included. That is what keeps the two encodings refusing
 // the same settings: the JSON reader takes only an integer literal for an integer field (2.0 is refused there), and the
-// msgpack decode takes only an int for one. An integer past 64 bits is the double yyjson reads it as. Strings are str,
-// never bin; null is nil. Refused: text that is not JSON, and nesting deeper than 512 levels.
+// msgpack decode takes only an int for one. (Two inputs part, by choice: an integer above INT64_MAX in a signed field
+// and -0 in an unsigned one, settings_msgpack.hpp says how.) An integer past 64 bits is the double yyjson reads it as.
+// Strings are str, never bin; null is nil. Refused: text that is not JSON, and nesting deeper than 512 levels.
 rfl::Result<std::vector<std::uint8_t>> settingsToMsgpack(std::string_view json);
 
 }  // namespace rp::graph

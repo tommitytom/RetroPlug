@@ -128,14 +128,15 @@ The rules below are the parts that don't fit those.
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive
   `PluginExporter::reinitParameters` over a toy plugin.
   `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp`
-  compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library reached through the C ABI (Catch2
-  itself keeps exceptions), ten cases. A device-mode node created from msgpack settings renders bit for bit what a
-  desktop-mode node renders from the same settings as JSON, with create, process and destroy allocating nothing; the
-  desktop reads msgpack the same; the decode defaults a missing field, skips an unknown one and refuses what JSON
-  refuses in the same words, naming the field; the converter writes each number as the JSON spells it; and four
-  `[device-check]` cases hold the image's cases to the manifests' device entries and run the whole check in its arena
-  with no allocation. Its configure runs three refused-source checks (a heap type, a pointer in `Settings` and a heap
-  header must each fail in device mode with their own reason; libc++ skips the header one).
+  compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library reached through the C ABI
+  (Catch2 itself keeps exceptions), ten cases. A device-mode node created from msgpack settings renders bit for bit
+  what a desktop-mode node renders from the same settings as JSON, with create, process and destroy allocating
+  nothing; the desktop reads msgpack the same; the decode defaults a missing field, skips an unknown one and refuses
+  what JSON refuses in the same words, naming the field (two inputs part by choice, pinned: design section 6); the
+  converter writes each number as the JSON spells it; and four `[device-check]` cases hold the image's cases to the
+  manifests' device entries, run the whole check in its arena with no allocation, and stop it at each of its failure
+  steps. Its configure runs three refused-source checks (a heap type, a pointer in `Settings` and a heap header must
+  each fail in device mode with their own reason; libc++ skips the header one).
 - **The graph libraries are workspace packages, and portable nodes have rules.** `packages/<name>/package.json`'s
   `retroplug` field is the manifest [cmake/packages.cmake](cmake/packages.cmake) reads; each product lists its
   packages (`retroplug_product`) and gets a generated `rp_register_packages()` (the `[packages]` golden holds the type

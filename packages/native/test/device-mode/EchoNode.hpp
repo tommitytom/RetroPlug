@@ -8,6 +8,7 @@
 // - pair: two resource fields, so a create whose second pin fails can be seen releasing the first.
 // - shaper: an enum settings field and an enum_param, both shaping its audio, so the device's enum reading and its
 //   enum_param render what the desktop's do.
+// - bare: no Settings at all, so its blob is read by the settings-less decode, which takes any map and nothing else.
 
 #include <cstdint>
 #include <cstring>
@@ -78,6 +79,14 @@ struct PairSettings {
 struct Pair {
     static constexpr const char* id = "rp.devtest.pair";
     using Settings = PairSettings;
+    struct { rp::audio_out<rp::mono> out; } outputs;
+    void process(const rp::Block& b) noexcept {
+        for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = 0.0f;
+    }
+};
+
+struct Bare {
+    static constexpr const char* id = "rp.devtest.bare";
     struct { rp::audio_out<rp::mono> out; } outputs;
     void process(const rp::Block& b) noexcept {
         for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[0][i] = 0.0f;

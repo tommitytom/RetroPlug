@@ -15,6 +15,12 @@
 // element. A text or list over its bound is refused naming the field, as is a value of the wrong type, and a blob that
 // is not one well-formed map is refused whole. A refusal is worded as the JSON reader words the same one.
 //
+// It refuses what the JSON reader refuses, but for two inputs, where the two part by choice (DeviceMode.test.cpp pins
+// both). An integer above INT64_MAX in a signed field is refused here as out of range, where reflect-cpp's reader
+// wraps it (18446744073709551615 reads as -1 in an int32, 9223372036854775808 as INT64_MIN in an int64); canonical
+// JSON can carry one, since it spells a double below 1e21 in integer digits. And -0, an integer literal, converts to
+// msgpack's 0, which an unsigned field takes here and the JSON reader refuses as negative; canonical JSON writes it 0.
+//
 // What a Settings may hold to be read this way is kPortableSettings's list: numbers, bools, C++ enums with a fixed
 // underlying type and no operator| (enums.hpp reads their names), rp::choice, rp::text, rp::list of those scalars,
 // and rp::resource_ref, in a struct that is trivially copyable. An enum is written by its enumerator's name, as
@@ -101,6 +107,30 @@ consteval bool portableSettings() {
 // Whether S is read from msgpack: the list in this file's header comment.
 template <class S>
 inline constexpr bool kPortableSettings = portableSettings<S>();
+
+// The decode finds a field by the name fields.hpp reads from the compiler's own spelling of a function, and steps over
+// a key it does not know, so a compiler that spelt the names some other way would leave every field at its default with
+// no error. graph-test's [fields] case holds the names to reflect-cpp's on the desktop's compiler; this holds them to
+// the names themselves on every compiler that builds the decode (the desktop's, each <target>-device check's, the
+// device's own), over a field of each kind a portable Settings holds.
+enum class FieldNameProbeKind : std::uint8_t { A };
+struct FieldNameProbe {
+    bool                         flag;
+    std::uint8_t                 small;
+    std::int64_t                 wide;
+    double                       ratio;
+    FieldNameProbeKind           kind;
+    choice<"a", "b">             pick;
+    text<4>                      label;
+    list<std::uint16_t, 2>       sizes;
+    resource_ref<"rom">          rom;
+};
+static_assert(kFieldCount<FieldNameProbe> == 9 && fieldName<FieldNameProbe, 0>() == "flag" &&
+                  fieldName<FieldNameProbe, 1>() == "small" && fieldName<FieldNameProbe, 2>() == "wide" &&
+                  fieldName<FieldNameProbe, 3>() == "ratio" && fieldName<FieldNameProbe, 4>() == "kind" &&
+                  fieldName<FieldNameProbe, 5>() == "pick" && fieldName<FieldNameProbe, 6>() == "label" &&
+                  fieldName<FieldNameProbe, 7>() == "sizes" && fieldName<FieldNameProbe, 8>() == "rom",
+              "this compiler spells a field's name other than fields.hpp reads it: settings would decode as defaults");
 
 // ---- the decode ----------------------------------------------------------------------------------------------------
 
@@ -189,7 +219,7 @@ bool readField(msgpack::Reader& r, F& out, ErrorText& why) {
                         std::uint64_t{F::capacity()}, " the field holds");
     } else if constexpr (IsList<F>::value) {
         std::uint32_t n = 0;
-        if (!r.readArray(n)) return fail(why, "Could not cast to array.");
+        if (!r.readArray(n)) return fail(why, "Could not cast to array!");  // reflect-cpp's "!"
         if (n > F::capacity())
             return fail(why, "an array of ", std::uint64_t{n}, " elements is over the ", std::uint64_t{F::capacity()},
                         " the field holds");
@@ -274,7 +304,7 @@ bool decodeSettings(const void* data, std::size_t size, S& out, ErrorText& why) 
 inline bool decodeNoSettings(const void* data, std::size_t size, ErrorText& why) {
     if (size == 0) return true;
     msgpack::Reader r(static_cast<const std::uint8_t*>(data), size);
-    if (r.peek() != msgpack::Type::Map) return fail(why, r.atEnd() ? kNotMsgpack : "settings must be a msgpack map");
+    if (r.peek() != msgpack::Type::Map) return fail(why, "settings must be a msgpack map");
     if (!r.skip()) return fail(why, kNotMsgpack);
     if (!r.atEnd()) return fail(why, "settings hold bytes after their map");
     return true;

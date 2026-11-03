@@ -41,9 +41,9 @@
 #include "CountingAllocator.hpp"
 #include "dsp/Biquad.hpp"
 #include "dsp/Dither.hpp"
-#include "dsp/Mt19937.hpp"
 #include "dsp/Dpcm.hpp"
 #include "dsp/Gain.hpp"
+#include "dsp/Mt19937.hpp"
 #include "dsp/R8bAllocator.hpp"  // r8brain, for the reference resample below
 #include "dsp/Resample.hpp"
 

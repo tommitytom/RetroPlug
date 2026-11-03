@@ -180,7 +180,10 @@ The device build carries an `#error` (under libstdc++) when the translation unit
 `rfl/json` or yyjson; it sees only what is included before `node.hpp`, and the link trap is the real guard. The field
 walk is reflect-cpp's internal compile-time core (`num_fields`, `bind_to_tuple`) with our own name extraction, since
 its public `to_view` and `named_tuple_t` include heap headers; `rfl::Rename` and `rfl::Flatten` fields are refused at
-compile time, and a graph-test case holds the walk to `rfl::fields<S>()`.
+compile time, and a graph-test case holds the walk to `rfl::fields<S>()`. Since the decode matches by name and steps
+over a key it does not know, a compiler that spelt a field's name otherwise would decode every field as its default:
+a `static_assert` in `settings_msgpack.hpp` holds the names of a probe struct, a field of each portable kind, to their
+spellings on every compiler that builds the decode, the device's included.
 
 **A node author's rules.** A device-capable node's source is not written exactly as before, by the user's decision: it
 wraps its desktop-only hooks, `validate`, `adjust_layout` and the helpers only they use, in one `#ifndef RP_DEVICE`.
@@ -213,7 +216,10 @@ is our own, about 530 lines over the compile-time field list, with no allocation
 msgpack-c and a heap). It matches fields by name, keeps the default for a missing field and steps over an unknown one,
 as `rfl::DefaultIfMissing` does for JSON, so a blob written by a newer desktop still loads its known fields. It mirrors
 the JSON reader's rules (an unsigned field takes only a non-negative integer, a float field takes an integer or a
-float, a repeated key keeps the last) and its refusal wording, naming the field. The desktop's converter,
+float, a repeated key keeps the last) and its refusal wording, naming the field. Two inputs part, by choice: an
+integer above `INT64_MAX` in a signed field, which reflect-cpp's reader wraps (18446744073709551615 reads as -1 in an
+int32) and the decode refuses as out of range, and `-0`, which the converter writes as msgpack's 0 for an unsigned
+field to take where the JSON reader refuses it as negative. The desktop's converter,
 `settingsToMsgpack(json)` in `node-sdk`, writes each number as the JSON spells it (an integer literal in its smallest
 form, anything with a fraction or exponent as float64); E3's `exportPlan` uses it. A desktop-only SDK interface,
 `rp.sdk.settings-json/1`, writes an instance's settings back as JSON, which every `node.hpp` type answers; the device
@@ -263,11 +269,12 @@ the probe, runs the trap proof and prints the sizes by owner. The new desktop ta
   description and never re-plans; for every portable `core` and `dsp` type over a table of settings, a device-mode
   node created from msgpack renders bit for bit what a desktop-mode node renders from the same settings as JSON, with
   create, process and destroy allocating nothing (the counting allocator); the desktop reads msgpack and renders the
-  table as it does from JSON; the decode keeps a missing field's default and steps over an unknown one; it refuses
-  what JSON refuses, naming the field, in the same words; the converter writes each number as the JSON spells it; and
-  four `[device-check]` cases: each manifest device entry's types agree between the two builds, the image's cases list
+  table as it does from JSON; the decode keeps a missing field's default and steps over an unknown one, and a type
+  with no settings takes any map; it refuses what JSON refuses, naming the field, in the same words (the two inputs
+  where the readers part, section 6, pinned); the converter writes each number as the JSON spells it; and four
+  `[device-check]` cases: each manifest device entry's types agree between the two builds, the image's cases list
   exactly those, the run passes in the image's arena with no allocation, and it stops at a type that fails and names
-  it. A `try_compile` triple at every configure (GCC and Clang) requires a heap type, a pointer in `Settings` and a
+  it, at each of its steps (`rp.devtest.fault` fails a create, an activate and a block). A `try_compile` triple at every configure (GCC and Clang) requires a heap type, a pointer in `Settings` and a
   heap header each to fail in device mode with its own reason.
 - **The settings types** in `retroplug-graph-test`: `[settings-types]` (`rp::text` and `rp::list` read and write the
   same JSON as the types they replace, a `resource_ref` round-trips `"res:N"`, every bound is refused with its field),

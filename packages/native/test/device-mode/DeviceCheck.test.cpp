@@ -11,8 +11,8 @@
 //   cases, generated for the entries they name, list exactly those entries' device types, in order.
 // - The check passes, every type created from its defaults as msgpack, activated, run for one block and destroyed, in
 //   the image's arena, with no allocation (the counting allocator stands in for the image's trap).
-// - It is not vacuous: a missing case, a case no type takes, settings a type refuses and an arena too small each stop
-//   it, naming the type.
+// - It is not vacuous: a missing case, a case no type takes, settings a type refuses, an arena too small, and a create,
+//   an activate and a block that fail (a test type, rp.devtest.fault) each stop it at its own step, naming the type.
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -27,6 +27,7 @@
 #include "DeviceModeEntries.hpp"
 #include "graph/CountingAllocator.hpp"
 #include "graph/Descriptor.hpp"
+#include "graph/JsonToMsgpack.hpp"
 
 // Generated (device-entries.cpp): every manifest's `device` entries, with both builds.
 std::vector<DeviceEntry> deviceEntries();
@@ -88,6 +89,20 @@ std::vector<const rp_package*> devicePackages() {
     std::vector<const rp_package*> packages;
     for (const DeviceEntry& e : checkedEntries()) packages.push_back(e.device());
     return packages;
+}
+
+// The check over rp.devtest.fault alone, from `json`: one mono output and no params.
+Result runFault(const char* json) {
+    static constexpr rp::device_check::PortCase kOut{RP_PORT_AUDIO, true, 1, 0, 0};
+    const auto settings = rp::graph::settingsToMsgpack(json);
+    REQUIRE(settings);
+    TypeCase c;
+    c.id = "rp.devtest.fault";
+    c.settings = settings->data();
+    c.settingsSize = static_cast<std::uint32_t>(settings->size());
+    c.ports = &kOut;
+    c.portCount = 1;
+    return runCheck({rp_devtest_fault_package_device_mode()}, {c});
 }
 
 }  // namespace
@@ -183,5 +198,30 @@ TEST_CASE("the device check stops at the type that fails, and names it", "[devic
         const Result r = runCheck(packages, kAllCases, 64);
         CHECK(r.step == Step::Arena);
         CHECK(std::string(r.id) == kAllCases.front().id);
+    }
+    // rp.devtest.fault (DeviceModeNodes.cpp) fails at the step its settings name, and runs clean with none named.
+    SECTION("a type that runs clean") {
+        const Result r = runFault(R"({"at":"none"})");
+        INFO(r.error.message);
+        CHECK(r.step == Step::Ok);
+        CHECK(r.types == 1);
+    }
+    SECTION("a create that fails") {
+        const Result r = runFault(R"({"rom":"res:1"})");  // res:1 is the host's audio buffer, not a "rom"
+        CHECK(r.step == Step::Create);
+        CHECK(std::string(r.id) == "rp.devtest.fault");
+        CHECK(std::string(r.error.message).find("rom") != std::string::npos);
+    }
+    SECTION("an activate that fails") {
+        const Result r = runFault(R"({"at":"activate"})");
+        CHECK(r.step == Step::Activate);
+        CHECK(std::string(r.id) == "rp.devtest.fault");
+        CHECK(std::string(r.error.message) == "activate failed");
+    }
+    SECTION("a block that faults the node") {
+        const Result r = runFault(R"({"at":"process"})");
+        CHECK(r.step == Step::Process);
+        CHECK(std::string(r.id) == "rp.devtest.fault");
+        CHECK(r.types == 0);
     }
 }

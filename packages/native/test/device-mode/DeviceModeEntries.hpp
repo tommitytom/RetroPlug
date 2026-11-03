@@ -13,8 +13,10 @@ extern "C" {
 // (rp_core_package, rp_dsp_package) renamed by the objects' compile definitions so they sit beside the desktop's.
 const rp_package* rp_core_package_device_mode(void);
 const rp_package* rp_dsp_package_device_mode(void);
-// rp.devtest: the echo, pair and shaper nodes (EchoNode.hpp) in device mode.
+// rp.devtest: the echo, pair, shaper and bare nodes (EchoNode.hpp) in device mode.
 const rp_package* rp_devtest_package_device_mode(void);
+// rp.devtest.fault: a node that fails at the step its settings name (DeviceModeNodes.cpp), for the device check.
+const rp_package* rp_devtest_fault_package_device_mode(void);
 }
 
 // A package's `device` entry as its manifest names it, with both builds of it: the desktop's (`desktop`) and the
