@@ -280,8 +280,9 @@ the probe, runs the trap proof and prints the sizes by owner. The new desktop ta
   where the readers part, section 6, pinned); the converter writes each number as the JSON spells it; and four
   `[device-check]` cases: each manifest device entry's types agree between the two builds, the image's cases list
   exactly those, the run passes in the image's arena with no allocation, and it stops at a type that fails and names
-  it, at each of its steps (`rp.devtest.fault` fails a create, an activate and a block). A `try_compile` triple at every configure (GCC and Clang) requires a heap type, a pointer in `Settings` and a
-  heap header each to fail in device mode with its own reason.
+  it, at each of its steps (`rp.devtest.fault` fails a create, an activate and a block). A `try_compile` triple at
+  every configure (GCC and Clang) requires a heap type, a pointer in `Settings` and a heap header each to fail in
+  device mode with its own reason.
 - **The settings types** in `retroplug-graph-test`: `[settings-types]` (`rp::text` and `rp::list` read and write the
   same JSON as the types they replace, a `resource_ref` round-trips `"res:N"`, every bound is refused with its field),
   `[fields]` (the field walk against `rfl::fields<S>()`) and `[enums]` (the enum scan against reflect-cpp's), and the
@@ -312,7 +313,13 @@ Five commits, each building and passing on its own:
 
 ## 10. Left beyond E1
 
-- The N8 pack and the single C++ Edio (E2).
+- The N8 pack and the single C++ Edio (E2). Its firmware builds against the pack, and the box's default USB host,
+  Pico-PIO-USB, allocates once at init: `pio_usb_host_init` makes its SOF alarm pool with `alarm_pool_create(2, 1)`,
+  `malloc` and `calloc`, unless its config sets `skip_alarm_pool`. Under the link trap E2 needs that pool made another
+  way (`skip_alarm_pool` with a repeating timer of its own on the SDK's default pool, which is static, or a pool not
+  made on the heap), or the firmware keeps a heap and a trap scoped to the graph archives, with `rp-device-check` the
+  only image that guards them whole. The TinyUSB host on the chip's own controller with UART MIDI (`RP_NATIVE_USB=ON`)
+  links under the trap as it is (12.5, question 3).
 - `exportPlan`, the blob's format, the arena executor and the box as a graph host (E3); with it a device default for
   `rp.core.delay` or a planner cap on the Pico (12.6), and a measure of the device's stack in `query_memory` and
   `create`.
@@ -443,13 +450,20 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
 2. **The reader is our own.** reflect-cpp's msgpack needs msgpack-c (not in the tree), unpacks into a `msgpack_zone`
    (malloc, 2048-byte chunks), reads `<istream>` and reports through `std::string`. `msgpack_reader.hpp` and
    `settings_msgpack.hpp` are about 530 lines with no allocation or exception.
-3. **Only `pico_malloc` has to go.** It defines the wrapped malloc family, so a call to malloc resolves to the wrapper
-   and the trap fires further down, at newlib's `malloc.o`. Everything else links under the full trap, `pico_stdio`
+3. **For this image, only `pico_malloc` has to go**; for the box's firmware, not only (below). It defines the wrapped
+   malloc family, so a call to malloc resolves to the wrapper and the trap fires further down, at newlib's `malloc.o`.
+   It is taken out of `pico_runtime` in place, not out of a copy of the SDK's targets, as a copy is defeated by any
+   library that links `pico_stdlib` itself (Pico-PIO-USB does). Everything else this image links does under the full
+   trap, `pico_stdio`
    (UART) and `pico_printf` included, because the SDK wraps `puts` and `printf` to its own heap-free implementation; a
    scratch build that also linked `pico_stdio_usb` (TinyUSB) passed too. The first build's failure at newlib's
    `findfp.o` came from the default panic's `puts` in an image with no `pico_stdio`, which is newlib's and allocates
    its buffers; it was not a heap inside stdio. So the image keeps stdio and reports on the UART, and
-   `pico_minimize_runtime` is for size only.
+   `pico_minimize_runtime` is for size only. The box's firmware (`pico/n8-host`), built in the code review's scratch
+   trees under the 78-symbol trap: with TinyUSB host on the chip's own USB controller and UART MIDI
+   (`RP_NATIVE_USB=ON`) it links clean; its default build, Pico-PIO-USB's host, does not, as `pio_usb_host_init`
+   makes its SOF alarm pool with `alarm_pool_create(2, 1)`, which is `malloc` and `calloc` (the SDK's default alarm
+   pool is static). That is an E2 item (section 10).
 4. **The sizes** (RP2350 flags, link map by owner, bytes; stdio over the UART and printf in the image):
 
    | Owner | Flash, Release (-O3) | Flash, MinSizeRel (-Os) | RAM (data / bss, Release) |
@@ -463,7 +477,8 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
    | toolchain (libc, libm, libgcc) | 1,380 | 1,588 | 1,708 / 432 |
    | **total** | **65,156** | **46,167** | 1,844 / 412,742 |
 
-   Release's sections: `.text` 58,248, `.rodata` 4,852, `.data` 1,848, `.bss` 412,472. `core`, `dsp` and the executor
+   Release's sections: `.text` 58,248, `.rodata` 4,848 (4,852 before `pico_malloc` left `pico_runtime` in place, three
+   UART strings now landing in another order), `.data` 1,848, `.bss` 412,472. `core`, `dsp` and the executor
    are 41,857 bytes of flash at -O3 (26,469 at -Os) and **no static RAM**: their RAM is per instance, from
    `query_memory`.
 5. **No portable node reaches a heap type or a throw through a kernel**; the image links `core` and `dsp` under the full

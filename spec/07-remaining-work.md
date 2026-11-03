@@ -517,7 +517,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   and on exceptions, a CI step. Nothing was re-recorded. What is left, in order:
   - **E2: the N8 pack** (`packages/n8`: the nodes, one C++ Edio with an abstract transport, the link and the
     lifecycle; `edio.ts`'s protocol and `pico/n8-host/edio.c` retire), gated on the desktop N8 tests, the real-hardware
-    leg and the Pico baseline.
+    leg and the Pico baseline. The box's default USB host, Pico-PIO-USB, makes its SOF alarm pool on the heap at init
+    (`pio_usb_host_init` -> `alarm_pool_create(2, 1)`), so the firmware links under the device check's trap only with
+    that pool made another way (`skip_alarm_pool` and a repeating timer of its own on the SDK's static default pool, or
+    a pool not made on the heap), or keeps a heap with a trap scoped to the graph archives; TinyUSB host with UART MIDI
+    (`RP_NATIVE_USB=ON`) links under the trap as it is (E1 design 12.5, question 3).
   - **E3: `exportPlan` for `rp2350`, the static-arena executor and the box as a graph host**, gated on the Pico baseline
     and a C++ node in the box's plan. It must also settle `rp.core.delay`'s default, which needs 384 KB an instance
     (74% of the RP2350's RAM) and sizes the check's arena: a device default or a planner cap. The device's stack in
@@ -528,11 +532,14 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     `risa`, `smsggdj`, `bliptoaster` and `launchpad` as packages, the TS halves of `core` and `dsp`, per-product esbuild
     bundles, downloadable packs.
   - **Windows and MSVC have never built E1's targets.** The `<target>-device` object libraries are in the default build
-    under `/W4 /WX`, so a Windows problem breaks `build.bat` itself: a `build.bat` and `test.bat` run is owed. The risks
-    are the inline-namespace reopen for the device SDK, `rp::choice::make<>` and `rp::text`'s literal constructor as
-    consteval in default member initializers, `enums.hpp`'s template-lambda variable templates, `__FUNCSIG__` in a
-    consteval function, the copied `/bigobj`, and `std::strcpy` in `DeviceCheck.cpp`. The device objects keep MSVC's
-    `/EHsc`, so only the GCC and Clang builds prove the no-exceptions build.
+    under `/W4 /WX`, so a Windows problem breaks `build.bat` itself: a `build.bat` and `test.bat` run is owed. Device
+    mode no longer relies on an inline namespace (MSVC does not extend one through a later `namespace rp::graph`, CWG
+    2061); the device-mode test renames its objects' `rp` with `/Drp=rp_devmode` instead. The code review's MSVC
+    snippets compiled `rp::choice::make<>` and `rp::text`'s literal constructor as consteval in default member
+    initializers, `enums.hpp`'s template-lambda variable templates and `__FUNCSIG__` in a consteval function clean
+    under `/W4 /WX`; not built on MSVC: the copied `/bigobj`, `std::strcpy` in `DeviceCheck.cpp` and the rename over
+    the MSVC STL's headers. The device objects keep MSVC's `/EHsc`, so only the GCC and Clang builds prove the
+    no-exceptions build.
   - **libc++ runs two of the three refused-source checks** (the heap-header check reads libstdc++'s include guards and
     is skipped on macOS); there the `static_assert`s and the link trap are the guards.
   - **Enum limits.** An `rfl::config::enum_range<E>` override is not honoured and a custom `rfl::Reflector<E>` is not
