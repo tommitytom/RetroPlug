@@ -6,6 +6,8 @@
 /build-asan/
 # profiling build dir (tools/run-profile.sh)
 /build-prof/
+# the RP2350 device check's build dir (tools/build-device-check.sh)
+/build-device/
 # aarch64 cross-build dirs + sysroot (leftover build artifacts)
 /build-arm/
 /build-arm-prof/

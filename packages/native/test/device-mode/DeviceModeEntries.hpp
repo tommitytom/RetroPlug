@@ -17,6 +17,16 @@ const rp_package* rp_dsp_package_device_mode(void);
 const rp_package* rp_devtest_package_device_mode(void);
 }
 
+// A package's `device` entry as its manifest names it, with both builds of it: the desktop's (`desktop`) and the
+// device-mode objects' (`device`, the entry renamed <entry>_device_mode). The generated device-entries.cpp lists every
+// one (packages/native/cmake/tests.cmake), in the order the packages are added.
+struct DeviceEntry {
+    const char*         package;
+    const char*         entry;
+    rp_package_entry_fn desktop;
+    rp_package_entry_fn device;
+};
+
 // The settings an echo node decoded, as its on_settings copied them: get_interface(kEchoInterface) answers one.
 inline constexpr const char* kEchoInterface = "rp.devtest.echo/1";
 

@@ -21,6 +21,25 @@ retroplug_package_library(retroplug-dsp-kernels
     ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Dpcm.cpp)
 target_include_directories(retroplug-dsp-kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# --- retroplug-dsp-nodes: the rp.dsp package (src/graph/nodes/DspNodes.cpp) - gain, biquad, dither, normalize and dpcm,
+# each a node around the kernels above (docs/modular-graph-phase-d1-design.md section 5). A target of its own rather
+# than a source of retroplug-graph: retroplug-graph is what every consumer of the engine links (the plugin, the CLI, the
+# test hosts), and the package brings the DSP library with it, which retroplug-graph has no business carrying.
+# It links retroplug-dsp-kernels alone, never retroplug-dsp-resample, so nothing here reaches r8brain, pthreads or
+# RTTI, and it stays core-free like the other packages (no core, txiki, efsw or LVGL): retroplug-graph-test plans and
+# runs these nodes with only the graph library and the kernels.
+retroplug_package_library(retroplug-dsp-nodes
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/nodes/DspNodes.cpp)
+target_include_directories(retroplug-dsp-nodes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(retroplug-dsp-nodes PUBLIC retroplug-node-sdk PRIVATE retroplug-dsp-kernels)
+
+# The device build (RP_DEVICE_BUILD, cmake/packages.cmake) stops here: it has no r8brain, so it defines none of the
+# resampler's targets below. rp.dsp.resample's manifest entry is not `device`, and a device product takes the device
+# entries alone.
+if(RP_DEVICE_BUILD)
+    return()
+endif()
+
 # r8brain's static members are vendored code, so they get a target of their own rather than riding in one of ours:
 # /W4 /WX is scoped to RetroPlug's own targets (packages/native/cmake/warnings.cmake), which this one is deliberately
 # not on, and GNU/Clang get the same `-w` a vendored dep gets (retroplug_silence_dep_warnings). Its one source includes
@@ -48,18 +67,6 @@ target_include_directories(retroplug-dsp-resample
 # allocator the rest of this tree uses, and the linker would keep one copy of every r8brain class with no diagnostic
 # saying which.
 target_link_libraries(retroplug-dsp-resample PRIVATE Threads::Threads retroplug-r8brain-base)
-
-# --- retroplug-dsp-nodes: the rp.dsp package (src/graph/nodes/DspNodes.cpp) - gain, biquad, dither, normalize and dpcm,
-# each a node around the kernels above (docs/modular-graph-phase-d1-design.md section 5). A target of its own rather
-# than a source of retroplug-graph: retroplug-graph is what every consumer of the engine links (the plugin, the CLI, the
-# test hosts), and the package brings the DSP library with it, which retroplug-graph has no business carrying.
-# It links retroplug-dsp-kernels alone, never retroplug-dsp-resample, so nothing here reaches r8brain, pthreads or
-# RTTI, and it stays core-free like the other packages (no core, txiki, efsw or LVGL): retroplug-graph-test plans and
-# runs these nodes with only the graph library and the kernels.
-retroplug_package_library(retroplug-dsp-nodes
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/graph/nodes/DspNodes.cpp)
-target_include_directories(retroplug-dsp-nodes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(retroplug-dsp-nodes PUBLIC retroplug-node-sdk PRIVATE retroplug-dsp-kernels)
 
 # --- retroplug-dsp-resample-nodes: the rp.dsp.resample package (src/graph/nodes/DspResampleNodes.cpp), the resampler
 # as a node, apart from retroplug-dsp-nodes because its kernel is retroplug-dsp-resample: r8brain, and with it the

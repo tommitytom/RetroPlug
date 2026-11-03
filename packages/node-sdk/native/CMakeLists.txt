@@ -22,9 +22,24 @@ target_include_directories(retroplug-node-sdk-headers INTERFACE ${CMAKE_CURRENT_
 # nothing. SYSTEM for the reason packages/native/cmake/warnings.cmake marks reflect-cpp so: its templates instantiate
 # in our translation units, and our warning level is not its. The device-mode test's objects and every package's
 # device check (cmake/packages.cmake) take it, and the device build will.
+# The device build (cmake/packages.cmake, RP_DEVICE_BUILD) has no reflectcpp target: it names the include root of the
+# same pinned reflect-cpp in RP_REFLECTCPP_INCLUDE_DIR (packages/graph-runtime/device-check/CMakeLists.txt finds it).
 add_library(retroplug-reflect-headers INTERFACE)
-target_include_directories(retroplug-reflect-headers SYSTEM INTERFACE
-    $<TARGET_PROPERTY:reflectcpp,INTERFACE_INCLUDE_DIRECTORIES>)
+if(RP_DEVICE_BUILD)
+    target_include_directories(retroplug-reflect-headers SYSTEM INTERFACE ${RP_REFLECTCPP_INCLUDE_DIR})
+else()
+    target_include_directories(retroplug-reflect-headers SYSTEM INTERFACE
+        $<TARGET_PROPERTY:reflectcpp,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()
+
+# In the device build retroplug-node-sdk is the device's SDK, which is headers alone: the include root and
+# reflect-cpp's. Every package's library links retroplug-node-sdk, so each builds against the half of the SDK its build
+# compiles.
+if(RP_DEVICE_BUILD)
+    add_library(retroplug-node-sdk INTERFACE)
+    target_link_libraries(retroplug-node-sdk INTERFACE retroplug-node-sdk-headers retroplug-reflect-headers)
+    return()
+endif()
 
 # retroplug-node-sdk: the description library. Links reflect-cpp (settings parsing, JSON Schema), and holds the JSON to
 # msgpack settings converter (graph/JsonToMsgpack.hpp), the desktop half of RP_SETTINGS_MSGPACK.

@@ -20,7 +20,12 @@
 # naming it, but a Linux module links and fails only when it is loaded. So the configure checks it instead, for every
 # binary: retroplug_check_products() refuses one that links the engine's libraries and is not a product.
 
-set(RP_PACKAGES_DIR "${CMAKE_SOURCE_DIR}/packages")
+# The device build (docs/modular-graph-phase-e1-design.md section 7) includes this file too: the RP2350 firmware
+# packages/graph-runtime/device-check, its own CMake project on the Pico SDK's toolchain, sets RP_DEVICE_BUILD before it
+# does. Then a package's native/CMakeLists.txt defines its device targets alone, retroplug_package_library() compiles
+# them as a device compiles graph/node.hpp, and a product is a DEVICE product (retroplug_product() says what that is).
+# The packages are found from this file, not from the including project's source dir, so either project finds them.
+get_filename_component(RP_PACKAGES_DIR "${CMAKE_CURRENT_LIST_DIR}/../packages" ABSOLUTE)
 set(RP_PRODUCTS_DIR "${CMAKE_BINARY_DIR}/packages/products")
 
 # retroplug_package(<name>): reads packages/<name>/package.json's manifest and, when the package has a
@@ -93,20 +98,24 @@ function(retroplug_package name)
         endif()
     endforeach()
     list(REMOVE_DUPLICATES _targets)
+    list(REMOVE_DUPLICATES _deviceTargets)
 
     set_property(GLOBAL APPEND PROPERTY RP_PACKAGES ${name})
     set_property(GLOBAL APPEND PROPERTY RP_PACKAGE_ENTRIES ${_entries})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_TARGETS ${_targets})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_ENTRIES ${_entries})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_ENTRIES ${_device})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_TARGETS ${_deviceTargets})
 
     if(EXISTS "${_dir}/native/CMakeLists.txt")
         add_subdirectory("${_dir}/native" "${CMAKE_BINARY_DIR}/packages/${name}")
     endif()
-    list(REMOVE_DUPLICATES _deviceTargets)
-    foreach(_target IN LISTS _deviceTargets)
-        _retroplug_device_check(${name} ${_target})
-    endforeach()
+    # A device build compiles every target as a device does already, so it has nothing to check twice.
+    if(NOT RP_DEVICE_BUILD)
+        foreach(_target IN LISTS _deviceTargets)
+            _retroplug_device_check(${name} ${_target})
+        endforeach()
+    endif()
 endfunction()
 
 # _retroplug_device_check(<package> <target>): the desktop build's check of a `device` entry. An entry the manifest
@@ -161,23 +170,40 @@ endfunction()
 # shares. Position-independent, as each is linked into the plugin's shared module, and /bigobj on MSVC: reflect-cpp's
 # templates instantiate inside any translation unit that includes graph/node.hpp, enough COMDAT sections to pass COFF's
 # 2^16 limit (C1128), which packages/native sets directory-wide for its own and a package's directory does not inherit.
+#
+# In a device build it is the device's library instead: graph/node.hpp's device mode (RP_DEVICE), no exceptions and no
+# RTTI, and the code-generation options the device project names in RP_DEVICE_COMPILE_OPTIONS (the Pico SDK's, which
+# its own sources compile with), on top of what the device's toolchain adds to every compile; not
+# position-independent, as a firmware image links it statically.
 function(retroplug_package_library target)
     add_library(${target} STATIC ${ARGN})
-    set_target_properties(${target} PROPERTIES
-        CXX_STANDARD 20
-        CXX_STANDARD_REQUIRED ON
-        POSITION_INDEPENDENT_CODE ON)
+    set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    if(RP_DEVICE_BUILD)
+        target_compile_definitions(${target} PRIVATE RP_DEVICE)
+        target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>"
+                               ${RP_DEVICE_COMPILE_OPTIONS})
+        return()
+    endif()
+    set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
     if(MSVC)
         target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/bigobj>)
     endif()
 endfunction()
 
-# retroplug_product(<product> PACKAGES <package>... [TARGETS <target>...]): declares a product and the packages it
-# carries, in registration order. Generates build/packages/products/<product>.cpp, which defines the product's
+# retroplug_product(<product> PACKAGES <package>... [TARGETS <target>...] [DEVICE]): declares a product and the packages
+# it carries, in registration order. Generates build/packages/products/<product>.cpp, which defines the product's
 # rp_register_packages(), and adds it to each of TARGETS (default: the target named <product>) with the packages'
 # targets linked. TARGETS is for one product built as several binaries: the plugin's formats, each its own module.
+#
+# DEVICE makes it a device product: it takes each package's `device` entries alone, and their targets, and a package
+# with none is refused, since a device product that names one would carry a node type the device cannot run (as the
+# planner refuses one on the Pico). A device build's products are all device products: the RP2350 check, whose targets
+# are device-mode libraries. A desktop build may declare one too, which links the desktop's builds of the same entries:
+# the device check's case generator, which lists what the device registers. A device product constructs no engine, so
+# it is not in the engine's registration golden (retroplug_product_table); retroplug-device-mode-test holds what a
+# device registers instead.
 function(retroplug_product product)
-    cmake_parse_arguments(P "" "" "PACKAGES;TARGETS" ${ARGN})
+    cmake_parse_arguments(P "DEVICE" "" "PACKAGES;TARGETS" ${ARGN})
     if(P_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "retroplug_product(${product}): unrecognised argument(s): ${P_UNPARSED_ARGUMENTS}")
     endif()
@@ -189,22 +215,38 @@ function(retroplug_product product)
     if(NOT P_PACKAGES)
         message(FATAL_ERROR "retroplug_product(${product}): PACKAGES is required")
     endif()
+    if(RP_DEVICE_BUILD AND NOT P_DEVICE)
+        message(FATAL_ERROR "retroplug_product(${product}): a device build declares DEVICE products alone")
+    endif()
     if(NOT P_TARGETS)
         set(P_TARGETS ${product})
     endif()
     get_property(_products GLOBAL PROPERTY RP_PRODUCTS)
-    if(product IN_LIST _products)
+    get_property(_deviceProducts GLOBAL PROPERTY RP_DEVICE_PRODUCTS)
+    if(product IN_LIST _products OR product IN_LIST _deviceProducts)
         message(FATAL_ERROR "retroplug_product(${product}): the product is declared twice")
     endif()
     get_property(_known GLOBAL PROPERTY RP_PACKAGES)
     set(_entries "")
     set(_targets "")
+    set(_leftOut "")
     foreach(_p IN LISTS P_PACKAGES)
         if(NOT _p IN_LIST _known)
             message(FATAL_ERROR "retroplug_product(${product}): no package `${_p}` (retroplug_package() adds one)")
         endif()
         get_property(_e GLOBAL PROPERTY RP_PACKAGE_${_p}_ENTRIES)
         get_property(_t GLOBAL PROPERTY RP_PACKAGE_${_p}_TARGETS)
+        if(P_DEVICE)
+            set(_all ${_e})
+            get_property(_e GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_ENTRIES)
+            get_property(_t GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_TARGETS)
+            if(NOT _e)
+                message(FATAL_ERROR "retroplug_product(${product}): package `${_p}` has no `device` entry "
+                                    "(${RP_PACKAGES_DIR}/${_p}/package.json), so a device product cannot carry it")
+            endif()
+            list(REMOVE_ITEM _all ${_e})
+            list(APPEND _leftOut ${_all})
+        endif()
         # Every package's targets exist by the first product (the packages are added before packages/native, whose
         # retroplug-backend comes before its first product), so a name that is not one is a manifest typo, refused here
         # rather than left to the linker as a bare -l flag.
@@ -223,6 +265,17 @@ function(retroplug_product product)
     list(LENGTH _entries _n)
     if(_n EQUAL 0)
         set(_body "    *count = 0;\n    return nullptr;\n")
+    elseif(P_DEVICE)
+        # Filled on every call rather than initialised: a static initialised by calls needs a guard
+        # (__cxa_guard_acquire), which a device image does not link (the device check's link trap refuses one).
+        # Every call writes the same pointers, and a device product calls it once.
+        set(_body "    static const rp_package* packages[${_n}];\n")
+        set(_i 0)
+        foreach(_e IN LISTS _entries)
+            string(APPEND _body "    packages[${_i}] = ${_e}();\n")
+            math(EXPR _i "${_i} + 1")
+        endforeach()
+        string(APPEND _body "    *count = ${_n};\n    return packages;\n")
     else()
         set(_calls "")
         foreach(_e IN LISTS _entries)
@@ -232,10 +285,18 @@ function(retroplug_product product)
         string(APPEND _body "    *count = ${_n};\n    return packages;\n")
     endif()
     list(JOIN P_PACKAGES " " _listed)
+    set(_kind "")
+    if(P_DEVICE)
+        set(_kind ", a device product,")
+        if(_leftOut)
+            list(JOIN _leftOut " " _leftOut)
+            string(APPEND _listed ";\n// their entries that are not `device`, left out: ${_leftOut}")
+        endif()
+    endif()
     set(_src "${RP_PRODUCTS_DIR}/${product}.cpp")
     file(GENERATE OUTPUT "${_src}" CONTENT
-"// Generated by retroplug_product(${product}) in cmake/packages.cmake from the manifests of the packages it lists:
-// ${_listed}. Do not edit; edit the product's PACKAGES or a manifest.
+"// Generated by retroplug_product(${product})${_kind} in cmake/packages.cmake from the manifests of the packages it
+// lists: ${_listed}. Do not edit; edit the product's PACKAGES or a manifest.
 
 #include \"graph/Packages.hpp\"
 
@@ -250,6 +311,11 @@ ${_body}}
         target_sources(${_t} PRIVATE "${_src}")
         target_link_libraries(${_t} PRIVATE ${_targets})
     endforeach()
+    if(P_DEVICE)
+        set_property(GLOBAL APPEND PROPERTY RP_DEVICE_PRODUCTS ${product})
+        set_property(GLOBAL PROPERTY RP_DEVICE_PRODUCT_${product}_ENTRIES ${_entries})
+        return()
+    endif()
     set_property(GLOBAL APPEND PROPERTY RP_PRODUCTS ${product})
     set_property(GLOBAL APPEND PROPERTY RP_PRODUCT_TARGETS ${P_TARGETS})
     set_property(GLOBAL PROPERTY RP_PRODUCT_${product}_ENTRIES ${_entries})

@@ -10,6 +10,12 @@ retroplug_package_library(retroplug-graph-exec
 target_include_directories(retroplug-graph-exec PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(retroplug-graph-exec PUBLIC retroplug-node-sdk-headers)
 
+# A device plans nothing (the desktop planned and validated the plan before export), so the device build
+# (RP_DEVICE_BUILD, cmake/packages.cmake) takes the executor alone.
+if(RP_DEVICE_BUILD)
+    return()
+endif()
+
 # retroplug-graph: everything the control thread needs to turn a graph document into a plan - the registry, resources,
 # the planner, GraphHost - plus the node types the runtime implements itself (rp.host.audio-out, the manifest's
 # rp_host_package).

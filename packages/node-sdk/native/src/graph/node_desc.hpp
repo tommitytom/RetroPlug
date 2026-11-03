@@ -35,6 +35,23 @@
 
 namespace rp {
 
+namespace graph {
+
+// The settings an instance holds, written back as JSON: every field, a default as much as a value its document gave.
+// An interface of the SDK's rather than the ABI's: every node graph/node.hpp builds for the desktop answers it through
+// get_interface, and a device-mode build, which has no JSON writer, does not; nor does a type written against
+// rp_node.h by hand. What reads it is desktop tooling: the device check's case generator
+// (packages/graph-runtime/device-check) writes each portable type's default settings through it, and converts them to
+// the msgpack a device reads. [control], and not while a commit_settings for the same instance may be in flight.
+inline constexpr const char* kSettingsJsonInterface = "rp.sdk.settings-json/1";
+struct SettingsJsonInterface {
+    // The JSON, NUL-terminated into out[0..capacity) when it fits; its length without the NUL either way, so a caller
+    // whose buffer is too small learns the size and asks again (as layout_for answers). 0 if writing it failed.
+    std::size_t (*write)(rp_node* node, char* out, std::size_t capacity);
+};
+
+}  // namespace graph
+
 namespace detail {
 
 // The two reflect-cpp field wrappers the field walk does not follow (fields.hpp), marked so the walk refuses them.
@@ -477,9 +494,33 @@ void releaseFn(rp_node*, void* old) noexcept {
 }
 
 template <class T>
+std::size_t writeSettingsFn(rp_node* n, char* out, std::size_t capacity) noexcept {
+    using S = typename SettingsOf<T>::type;
+    try {
+        std::string json = "{}";
+        if constexpr (!std::is_same_v<S, NoSettings>) json = rfl::json::write(*self<T>(n)->settings);
+        if (json.size() < capacity) {
+            std::memcpy(out, json.data(), json.size());
+            out[json.size()] = '\0';
+        }
+        return json.size();
+    } catch (...) {
+        return 0;
+    }
+}
+
+// The portable core's interfaces (rp.step/1, rp.link/1, the node's own), and the desktop's settings writer.
+template <class T>
+const void* desktopInterfaceFn(rp_node* n, const char* id) noexcept {
+    static constexpr graph::SettingsJsonInterface kSettings{&writeSettingsFn<T>};
+    if (std::string_view(id) == graph::kSettingsJsonInterface) return &kSettings;
+    return interfaceFn<T>(n, id);
+}
+
+template <class T>
 inline constexpr rp_node_vtable kVtable{&activateFn<T>, &deactivateFn<T>, &portsChangedFn<T>,
                                         &processFn<T>,  &prepareFn<T>,    &commitFn<T>,
-                                        &releaseFn<T>,  &interfaceFn<T>};
+                                        &releaseFn<T>,  &desktopInterfaceFn<T>};
 
 // An empty descriptor when building it throws (adjust_layout on default settings, say), which the registry
 // refuses with a reason rather than letting the exception reach it.

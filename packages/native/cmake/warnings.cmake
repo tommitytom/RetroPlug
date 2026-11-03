@@ -43,7 +43,9 @@ if(MSVC)
         retroplug-node-sdk retroplug-graph-exec retroplug-graph retroplug-core-nodes
         retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes retroplug-dsp-resample-nodes
         # The device build of the node SDK, tested on the desktop (cmake/tests.cmake).
-        retroplug-device-mode-objects retroplug-device-mode-test)
+        retroplug-device-mode-objects retroplug-device-mode-test
+        # The device check's case generator (packages/graph-runtime/device-check/cases).
+        rp-device-check-cases)
     # And each device entry's device-mode compile (cmake/packages.cmake's _retroplug_device_check).
     get_property(_rp_device_checks GLOBAL PROPERTY RP_DEVICE_CHECK_TARGETS)
     list(APPEND _rp_werror_targets ${_rp_device_checks})
