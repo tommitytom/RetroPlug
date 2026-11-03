@@ -251,7 +251,7 @@ nodes (the MIDI routing, the controller session and each role's protocol node) r
 holding the node packages (`rp.core`,
 `rp.host`, `rp.sameboy`, `rp.mesen`, `rp.host.io`, `rp.n8`, `rp.script`, and each script node pack
 `loadScriptPack` loaded), a `ResourceTable`, the one `SystemFactory` every core is built through, the
-[`GraphHost`](../packages/native/src/graph/GraphHost.hpp) running the plan, and every live core by id. Every op
+[`GraphHost`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) running the plan, and every live core by id. Every op
 runs "now, on the calling thread"; it holds **no locks**: transport and the ppq clock are plain members mutated
 only by whichever thread owns it (the pull path or the audio loop, never concurrently). The Engine's own
 atomics are block-thread tallies the control thread reads (blocks too long to run and the last one's
@@ -1109,7 +1109,7 @@ its **runtime** classes:
 | `SpscRing` / `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the command/release rings and the snapshot registry are built on |
 
 The graph the engine runs on is not in `retroplug-core`: the executor, planner and
-[`GraphHost`](../packages/native/src/graph/GraphHost.hpp), with the `rp.core` mixing nodes and the
+[`GraphHost`](../packages/graph-runtime/native/src/graph/GraphHost.hpp), with the `rp.core` mixing nodes and the
 `rp.host` package's `rp.host.audio-out`, are the `retroplug-graph` / `retroplug-graph-exec` libs
 (`src/graph/`), and the engine's own nodes (`src/host/graph/`: the system nodes, the host MIDI I/O, the cart's node
 and the control surface's two) and the script host (`src/host/script/`) compile into
@@ -1126,7 +1126,7 @@ library alone), `retroplug-dsp-resample` (the r8brain resampler, which brings th
 `retroplug-r8brain-base` (r8brain's static members, one vendored translation unit compiled on an allocator that throws,
 with no target declared for the vendored library; kept off RetroPlug's own warning level), and the two node packages
 `retroplug-dsp-nodes` (`rp.dsp.gain`, `.biquad`, `.dither`, `.normalize`, `.dpcm`) and `retroplug-dsp-resample-nodes`
-(`rp.dsp.resample`), in [cmake/graph.cmake](../packages/native/cmake/graph.cmake). `retroplug-core` links neither
+(`rp.dsp.resample`), in [cmake/graph.cmake](../packages/dsp/native/CMakeLists.txt). `retroplug-core` links neither
 (nothing of the core calls a kernel), and `retroplug-graph` links neither; `retroplug-backend` links both packages
 and `Engine.cpp` registers them beside the other static packages, the offline job pool registering them in its own
 registry too. The split is load-bearing: `rp.dsp` never
@@ -1275,7 +1275,7 @@ is one automatable parameter applied post-render across all 8 channels
 - [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp), [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs, the registry and the offline job pool; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, `submitOfflineJob`, `drainOfflineJobs`, `cancelOfflineJob`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
 - [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes), [`N8Nodes.cpp`](../packages/native/src/host/graph/N8Nodes.cpp) (the cart's node), [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) (the control surface's two), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
-- [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
+- [`GraphHost.hpp`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/graph-runtime/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/node-sdk/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
 - [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.
 - [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime and its packs, + the compiler a pack's source and the tests' toys go through; [`src/script/`](../packages/retroplug/src/script) (`bundle.ts`, `register.ts`, `nodes/`): the bundle every Engine embeds, how it registers its nodes, and the script nodes themselves.

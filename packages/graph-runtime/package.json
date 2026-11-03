@@ -1,0 +1,9 @@
+{
+  "name": "@retroplug/graph-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The graph runtime: the executor, the planner, the registry, the resource table, GraphHost and the rp.host node types the runtime implements itself.",
+  "retroplug": {
+    "native": { "target": "retroplug-graph", "entry": "rp_host_package", "device": false }
+  }
+}

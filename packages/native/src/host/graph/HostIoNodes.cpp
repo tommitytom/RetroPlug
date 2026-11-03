@@ -137,3 +137,5 @@ const rp_package* hostIoPackage() {
 }
 
 }  // namespace rp::host
+
+extern "C" const rp_package* rp_host_io_package(void) { return rp::host::hostIoPackage(); }

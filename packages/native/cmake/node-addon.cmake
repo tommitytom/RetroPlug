@@ -41,6 +41,7 @@ if(RETROPLUG_NODE_ADDON)
         ${CMAKE_CURRENT_SOURCE_DIR}/node
     )
     target_link_libraries(retroplug-node PRIVATE retroplug-backend)
+    retroplug_product(retroplug-node PACKAGES ${RP_DESKTOP_PACKAGES})
     set_target_properties(retroplug-node PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON

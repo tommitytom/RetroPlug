@@ -11,3 +11,7 @@ namespace rp::graph {
 const rp_package* hostPackage();
 
 }  // namespace rp::graph
+
+// The package's entry, named in packages/graph-runtime/package.json: what a product's generated registration calls
+// (rp_register_packages, graph/Packages.hpp).
+extern "C" const rp_package* rp_host_package(void);

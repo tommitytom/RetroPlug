@@ -45,6 +45,29 @@ target_link_libraries(retroplug PUBLIC
 
 target_compile_definitions(retroplug PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 
+# The plugin is one product (cmake/packages.cmake): every binary DPF builds from the plugin's DSP or UI library composes
+# the engine, so each gets the product's generated rp_register_packages(). They are read from what dpf_add_plugin made
+# rather than listed by format, since a format can make more than its own module (on macOS `au` also builds
+# retroplug-export, the executable its POST_BUILD runs to write the component's Info.plist) and a format added later
+# must not be missed. (Not on DPF's static `retroplug` library: an archive's object would sit before the backend that
+# calls it on a single-pass linker's command line.) A static format would have to make its consumer the product, so it
+# is refused here until one needs it.
+set(_rp_plugin_binaries "")
+get_property(_rp_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_t IN LISTS _rp_dir_targets)
+    get_target_property(_links ${_t} LINK_LIBRARIES)
+    if(NOT ("retroplug-dsp" IN_LIST _links OR "retroplug-ui" IN_LIST _links))
+        continue()
+    endif()
+    get_target_property(_type ${_t} TYPE)
+    if(_type STREQUAL "EXECUTABLE" OR _type STREQUAL "MODULE_LIBRARY" OR _type STREQUAL "SHARED_LIBRARY")
+        list(APPEND _rp_plugin_binaries ${_t})
+    else()
+        message(FATAL_ERROR "plugin.cmake: DPF's ${_t} is a ${_type} built from the plugin; it cannot be a product")
+    endif()
+endforeach()
+retroplug_product(retroplug PACKAGES ${RP_DESKTOP_PACKAGES} TARGETS ${_rp_plugin_binaries})
+
 # The embedded bundles must exist before the plugin compiles them.
 add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)
 

@@ -113,7 +113,7 @@ protocol node", one table ([graph/protocolNodes.ts](../packages/retroplug/src/gr
 
 A profile build's `apu-render` span begins where the last script node's `process` ended, which is right only while
 every script node runs before the systems. The planner keeps document order among nodes ready at once
-([Planner.cpp](../packages/native/src/graph/Planner.cpp) `order()`), so the span needed no change.
+([Planner.cpp](../packages/graph-runtime/native/src/graph/Planner.cpp) `order()`), so the span needed no change.
 
 ## 5. Host I/O, capacities, and what must match
 

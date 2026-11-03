@@ -343,7 +343,7 @@ as the same C structures. The shape follows CLAP: a small core table, plus optio
 by versioned string id. Statically linked packages are registered through the same entry point as
 downloaded ones, so there is one loading path.
 
-A sketch, abridged from [rp_node.h](../packages/native/src/graph/rp_node.h), which is the reference:
+A sketch, abridged from [rp_node.h](../packages/node-sdk/native/src/graph/rp_node.h), which is the reference:
 
 ```c
 #define RP_ABI_VERSION 1

@@ -76,6 +76,7 @@ retroplug_add_test_binary(
              ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
              retroplug-dsp-kernels                     # Effects.cpp's wrappers call these
+    PACKAGES ${RP_DESKTOP_PACKAGES}
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
@@ -117,6 +118,7 @@ retroplug_add_test_binary(
              test/engine-graph/ProtocolNodes.test.cpp
              test/engine-graph/ScriptBench.test.cpp    # hidden: run with "[bench]"
              test/engine-graph/BuildGraphGoldens.test.cpp
+             test/engine-graph/Packages.test.cpp       # each product registers the node types its golden row holds
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
              src/host/n8/Edio.cpp                      # the cart's adapters N8Adapters.test.cpp composes: serial-free,
              src/host/n8/N8Link.cpp                    # as retroplug-n8-test compiles them (the backend holds none of
@@ -126,6 +128,7 @@ retroplug_add_test_binary(
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
              retroplug-dsp-kernels                     # OfflineJobs.test.cpp holds a job's buffers to the kernels
              retroplug-dsp-resample                    # and to resampledLength, which the resample's node wraps
+    PACKAGES ${RP_DESKTOP_PACKAGES}
     INCLUDES ${RP_QUICKJS_INCLUDE}
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
@@ -139,6 +142,7 @@ retroplug_add_test_binary(
              RP_CORE_ROLES_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/coreRoles.ts"  # their ranges
              RP_SYSTEM_SETTINGS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/systemSettings.ts"  # gain's range
              RP_PORTS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/script/nodes/ports.ts"  # the queue capacities
+             RP_PRODUCT_REGISTRATIONS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph/golden/product-registrations.json"
              RP_BUILD_TYPE="$<CONFIG>")                 # the bench prints the configuration it was built in
 add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
 
@@ -175,8 +179,9 @@ retroplug_add_test_binary(
              src/host/launchpad/LaunchpadScanner.cpp
              test/graph/CountingAllocator.cpp          # the block thread's drain allocates and frees nothing
     LIBS     Threads::Threads                          # LaunchpadScanner's scan thread
+             retroplug-node-sdk-headers                # transport/SpscRing.hpp, the rings' type
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
-             ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/launchpad/*.hpp + transport/SpscRing.hpp
+             ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/launchpad/*.hpp
 
 # Guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact krikzz CMD_MEM_WR
 # byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status word; plus the
@@ -197,6 +202,7 @@ retroplug_add_test_binary(
              src/host/n8/N8Menu.cpp
     LIBS     reflectcpp::reflectcpp                    # rfl::json - parse the shared Edio golden (twins edio.test.ts)
              Threads::Threads                          # N8Link's serial thread
+             retroplug-node-sdk-headers                # transport/SpscRing.hpp, N8Link's rings
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src           # host/n8/Edio.hpp
     # The shared Edio framing golden both this and edio.test.ts assert against (single source, no drift).
     DEFS     EDIO_GOLDEN_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/n8/edio-golden.json")
@@ -226,6 +232,7 @@ retroplug_add_test_binary(
              src/host/n8/WjwwoodSerialPort.cpp
     LIBS     serial
              Threads::Threads
+             retroplug-node-sdk-headers                # transport/SpscRing.hpp, N8Link's rings
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # `timing` times against an ALSA capture of the console's audio, so it exists only where ALSA does. Linking
 # ALSA::ALSA unconditionally failed the GENERATE step on macOS/Windows - EXCLUDE_FROM_ALL does not spare a target
@@ -280,6 +287,7 @@ retroplug_add_test_binary(
              # named in LIBS below, and nothing of the core.
              ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     LIBS     retroplug-graph
+             retroplug-core-nodes                     # the rp.core package under test
              retroplug-dsp-nodes                      # the rp.dsp package under test
              retroplug-dsp-resample-nodes             # and the rp.dsp.resample package
              retroplug-dsp-kernels                    # core-free: the standard library
@@ -288,4 +296,6 @@ retroplug_add_test_binary(
     DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden"
     # Dsp.test.cpp includes dsp/R8bAllocator.hpp first, and that header includes r8brain's CDSPResampler.h. The dep's
     # include directory is private to the resampler target, so the one test that reads it asks for it here.
-    INCLUDES ${CMAKE_SOURCE_DIR}/deps/r8brain)
+    INCLUDES ${CMAKE_SOURCE_DIR}/deps/r8brain
+             # The engine tree's headers it reads beside the packages: lsdj/Effects.hpp, system/InputCapacity.hpp.
+             ${CMAKE_CURRENT_SOURCE_DIR}/src)

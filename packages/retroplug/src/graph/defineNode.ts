@@ -272,7 +272,7 @@ const MAX_QUEUE_BYTES = 16777216;
 const q = (s: string): string => JSON.stringify(s);
 
 /** How many channels a layout name means (mono 1, stereo 2, 5.1 6, 7.1 8, discrete(n) n); null for "any"
- *  or an unknown name. The twin of layoutChannels in packages/native/src/graph/Descriptor.cpp. */
+ *  or an unknown name. The twin of layoutChannels in packages/node-sdk/native/src/graph/Descriptor.cpp. */
 export function layoutChannels(layout: string): number | null {
   switch (layout) {
     case "mono": return 1;

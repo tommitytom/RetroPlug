@@ -1,4 +1,4 @@
-// The descriptor model shared with C++ (packages/native/src/graph/Descriptor.hpp): what a node type
+// The descriptor model shared with C++ (packages/node-sdk/native/src/graph/Descriptor.hpp): what a node type
 // declares (TypeDescriptor) and what one instance resolves to for its settings (Layout). These are the
 // JSON shapes, field for field; canonicalJson spells them identically on both sides. The id rules both
 // sides share are here too.

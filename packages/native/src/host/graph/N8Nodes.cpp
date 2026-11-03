@@ -195,3 +195,5 @@ const rp_package* n8Package() {
 }
 
 }  // namespace rp::host
+
+extern "C" const rp_package* rp_n8_package(void) { return rp::host::n8Package(); }

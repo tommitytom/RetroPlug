@@ -9,7 +9,6 @@
 #   cmake/bundles.cmake       the embedded control-plane, React-UI and script-node bytecode
 #   cmake/deps.cmake          rtmidi / serial / portaudio, and the retroplug-cli N8 facets
 #   cmake/plugin.cmake        dpf_add_plugin + per-platform packaging
-#   cmake/graph.cmake         the node-graph libraries the engine runs on
 #   cmake/tests.cmake         the twelve native test binaries
 #   cmake/warnings.cmake      /W4 /WX on our own targets (MSVC)
 #
@@ -36,64 +35,10 @@ endif()
 # The shape shared by every native test binary (see the file for why).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-binary.cmake)
 
-# --- retroplug-dsp-kernels: the DSP the rp.dsp nodes run (src/dsp/, docs/modular-graph-phase-d1-design.md section 4):
-# gain and peak, the RBJ biquads, dither / quantise, and risa's DMC encoder (a whole-buffer kernel, Dpcm.hpp says why;
-# the others stream a block at a time). A kit compile is a chain of those nodes, so it reaches this DSP through them.
-# Core-free on purpose: it links the C++ standard library and nothing else, so retroplug-graph-test and the rp.dsp node
-# package can use it with no core, txiki, backend or r8brain.
-# (Not `retroplug-dsp`: dpf_add_plugin(retroplug) already names the plugin's own DSP library that.)
-#
-# The resampler is its own target on purpose, because its kernel is the one that is not freestanding: r8brain brings
-# the heap, pthreads (its filter cache is a std::mutex) and RTTI (its resamplers are virtual). A build that has no use
-# for it - the Pico's, which runs rp.dsp's gain / biquad / dither / normalize alone - omits the target and never sees
-# any of that, and the rp.dsp package's resample node, which is the only node that needs it, is a target of its own for
-# the same reason.
-add_library(retroplug-dsp-kernels STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Gain.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Biquad.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Dither.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Dpcm.cpp)
-target_include_directories(retroplug-dsp-kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-set_target_properties(retroplug-dsp-kernels PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through the rp.dsp node package
-
-# r8brain's static members are vendored code, so they get a target of their own rather than riding in one of ours:
-# /W4 /WX is scoped to RetroPlug's own targets (cmake/warnings.cmake), which this one is deliberately not on, and
-# GNU/Clang get the same `-w` a vendored dep gets (retroplug_silence_dep_warnings). Its one source includes r8brain's
-# r8bbase.cpp through dsp/R8bAllocator.hpp, so every r8brain class in the program is built on the throwing allocator;
-# one translation unit in one target means there is no second definition of those classes to keep, and the tree
-# declares no target for the vendored library, so there is none to link.
-add_library(retroplug-r8brain-base STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/R8bBase.cpp)
-target_include_directories(retroplug-r8brain-base PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/deps/r8brain)
-set_target_properties(retroplug-r8brain-base PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through the rp.dsp.resample node package
-retroplug_silence_dep_warnings(retroplug-r8brain-base)
-
-# Threads: r8brain's filter cache is a std::mutex, efsw-static needs pthreads on Linux (its CMake links it to the
-# shared lib only), and the Launchpad scan thread and N8Link's serial thread do too. Found once, for this directory.
+# Threads: efsw-static needs pthreads on Linux (its CMake links it to the shared lib only), and the Launchpad scan
+# thread and N8Link's serial thread do too. Found once, for this directory. (The DSP package finds its own, for
+# r8brain.)
 find_package(Threads REQUIRED)
-add_library(retroplug-dsp-resample STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/dsp/Resample.cpp)
-target_include_directories(retroplug-dsp-resample
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
-    # r8brain's headers, all this build takes from the vendored dep, stay private to the translation units that include
-    # dsp/R8bAllocator.hpp first: that header is what puts r8brain's classes on the throwing allocator, and a TU that
-    # read them without it would build them on r8brain's defaults.
-    PRIVATE ${CMAKE_SOURCE_DIR}/deps/r8brain)
-# The tree declares no target for the vendored `r8brain` library. Its r8bbase.cpp would build r8brain's static members
-# on r8brain's own malloc hooks, where src/dsp/R8bBase.cpp (in retroplug-r8brain-base) builds them on the throwing
-# allocator the rest of this tree uses, and the linker would keep one copy of every r8brain class with no diagnostic
-# saying which.
-target_link_libraries(retroplug-dsp-resample PRIVATE Threads::Threads retroplug-r8brain-base)
-set_target_properties(retroplug-dsp-resample PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    POSITION_INDEPENDENT_CODE ON)   # linked into the plugin .so through the rp.dsp.resample node package
 
 # --- retroplug-core: the shared emulator core, as a neutrally-named static lib. Extracted out of
 # packages/native/cli (which also compiled the CLI-only HarnessRpcService) so the host links ONLY the
@@ -151,6 +96,11 @@ target_link_libraries(retroplug-core PUBLIC
     # Windows: SameBoySystem.cpp lives in this clang-cl-compiled lib (see root CMakeLists).
     $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )
+# SampleCache's content hash is util/Hash.hpp's FNV-1a, which lives in the DSP package beside the dither kernel that
+# draws its seeds with it. The core takes that header alone from there, its include root and not the kernels'
+# library, which nothing in the core calls.
+target_include_directories(retroplug-core PRIVATE
+    $<TARGET_PROPERTY:retroplug-dsp-kernels,INTERFACE_INCLUDE_DIRECTORIES>)
 
 set_target_properties(retroplug-core PROPERTIES
     CXX_STANDARD 20
@@ -224,9 +174,12 @@ target_include_directories(retroplug-backend PUBLIC
 
 target_link_libraries(retroplug-backend PUBLIC
     retroplug-core      # SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
-    retroplug-graph     # the graph executor, planner and GraphHost the engine runs on
-    retroplug-dsp-nodes # the rp.dsp package (gain, biquad, dither), which the engine registers
-    retroplug-dsp-resample-nodes # and the rp.dsp.resample package beside it
+    retroplug-graph     # the graph executor, planner and GraphHost the engine runs on (packages/graph-runtime)
+    # The core and DSP packages: the offline job pool registers its fixed subset of them itself (OfflineJobs.cpp),
+    # where the engine registers the product's list (rp_register_packages, graph/Packages.hpp).
+    retroplug-core-nodes
+    retroplug-dsp-nodes
+    retroplug-dsp-resample-nodes
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
     efsw-static         # NativeFileWatcher's filesystem watcher (PUBLIC-brings efsw/efsw.hpp include dir)
     Threads::Threads
@@ -243,6 +196,7 @@ set_target_properties(retroplug-backend PROPERTIES
 add_executable(retroplug-host src/main.cpp)
 
 target_link_libraries(retroplug-host PRIVATE retroplug-backend)
+retroplug_product(retroplug-host PACKAGES ${RP_DESKTOP_PACKAGES})
 
 set_target_properties(retroplug-host PROPERTIES
     CXX_STANDARD 20
@@ -255,6 +209,7 @@ set_target_properties(retroplug-host PROPERTIES
 # build-tsan/ and build-asan/. EXCLUDE_FROM_ALL: built by name, not part of a normal build.
 add_executable(retroplug-render-host-test EXCLUDE_FROM_ALL test/render-host-main.cpp)
 target_link_libraries(retroplug-render-host-test PRIVATE retroplug-backend)
+retroplug_product(retroplug-render-host-test PACKAGES ${RP_DESKTOP_PACKAGES})
 set_target_properties(retroplug-render-host-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
@@ -343,6 +298,7 @@ endif()
 add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend)
+retroplug_product(retroplug-cli PACKAGES ${RP_DESKTOP_PACKAGES})
 add_dependencies(retroplug-cli retroplug-cli-bundle)             # the embedded dispatcher bytecode must exist first
 add_dependencies(retroplug-cli retroplug-ts-stripper-bundle)     # ...and the stripper bytecode
 add_dependencies(retroplug-cli retroplug-cli-sdk-assets)         # ...and the embedded SDK
@@ -430,6 +386,7 @@ target_link_libraries(retroplug-sdl PRIVATE
     portaudio                     # audio backend (PipeWire/ALSA on Linux); replaces SDL audio
     serial                        # wjwwood/serial -> Everdrive N8 Pro (cmake/serial.cmake)
     PkgConfig::SDL2)              # window + present + gamepad (audio now via PortAudio; found at root scope)
+retroplug_product(retroplug-sdl PACKAGES ${RP_DESKTOP_PACKAGES})
 
 target_include_directories(retroplug-sdl PRIVATE
     # quickjs.h for the JS trampolines (lvgl-js-native PUBLIC-propagates the lv_binding_js render include
@@ -480,6 +437,7 @@ add_executable(retroplug-ui-test
 target_link_libraries(retroplug-ui-test PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng (+ tjs)
     retroplug-backend) # BackendFacade + rpcpp + the cores + the txiki host
+retroplug_product(retroplug-ui-test PACKAGES ${RP_DESKTOP_PACKAGES})
 
 target_include_directories(retroplug-ui-test PRIVATE
     # quickjs.h for the JS trampolines in RenderCore/UiRunner (lvgl-js-native
@@ -495,11 +453,19 @@ set_target_properties(retroplug-ui-test PROPERTIES
 # The embedded bundle must exist before the test binary compiles it.
 add_dependencies(retroplug-ui-test retroplug-ui-bundle)
 
-# The node-graph libraries (docs/modular-graph-design.md); retroplug-backend links them, as the engine runs on them.
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/graph.cmake)
-
 # The twelve native test binaries (EXCLUDE_FROM_ALL; built by name).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests.cmake)
+
+# Every product declared above, with its packages' entries, for the registration golden (test/engine-graph/
+# Packages.test.cpp). After the last retroplug_product(), which tests.cmake and plugin.cmake hold.
+retroplug_product_table(retroplug-engine-graph-test)
+
+# Every binary that links the engine's libraries is a product, refused here if it is not (cmake/packages.cmake). The two
+# exempt link the backend for its file watcher and its txiki host, and never pull the engine's object in.
+retroplug_check_products(
+    LIBRARIES retroplug-backend retroplug retroplug-dsp retroplug-ui
+    EXEMPT    retroplug-classid-test      # TjsHostRuntime + ClassIdSpace.hpp
+              retroplug-watcher-test)     # NativeFileWatcher + efsw-static
 
 # /W4 /WX on our own targets (MSVC), with per-number suppressions for what we do not own.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/warnings.cmake)

@@ -18,3 +18,8 @@ inline constexpr int kExpansionVolumeMax = 200;
 inline constexpr int kExpansionVolumeDefault = 100;
 
 }  // namespace rp::host
+
+// The packages' entries, named in packages/native/package.json: what a product's generated registration calls
+// (rp_register_packages, graph/Packages.hpp).
+extern "C" const rp_package* rp_sameboy_package(void);
+extern "C" const rp_package* rp_mesen_package(void);

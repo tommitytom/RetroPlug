@@ -33,3 +33,7 @@ inline constexpr std::uint32_t kSurfaceInMessages = 1024;
 inline constexpr std::uint32_t kSurfaceInBytes = 16384;
 
 }  // namespace rp::host
+
+// The package's entry, named in packages/native/package.json: what a product's generated registration calls
+// (rp_register_packages, graph/Packages.hpp).
+extern "C" const rp_package* rp_launchpad_package(void);

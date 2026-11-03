@@ -28,3 +28,7 @@ namespace rp::graph {
 const rp_package* corePackage();
 
 }  // namespace rp::graph
+
+// The package's entry, named in packages/core/package.json: what a product's generated registration calls
+// (rp_register_packages, graph/Packages.hpp).
+extern "C" const rp_package* rp_core_package(void);

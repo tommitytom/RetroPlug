@@ -1,5 +1,5 @@
 // The graph document TS owns and sends to the C++ planner with setGraph - the JSON shape of
-// packages/native/src/graph/GraphDocument.hpp. Node ids may not contain ".", so an endpoint always splits
+// packages/node-sdk/native/src/graph/GraphDocument.hpp. Node ids may not contain ".", so an endpoint always splits
 // at its first dot: "gb1.pins.pulse" is node "gb1", port "pins.pulse".
 import { canonicalJson } from "./canonicalJson";
 import { plainId, wellFormed } from "./descriptor";

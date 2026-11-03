@@ -871,3 +871,6 @@ const rp_package* mesenPackage() {
 }
 
 }  // namespace rp::host
+
+extern "C" const rp_package* rp_sameboy_package(void) { return rp::host::sameboyPackage(); }
+extern "C" const rp_package* rp_mesen_package(void) { return rp::host::mesenPackage(); }

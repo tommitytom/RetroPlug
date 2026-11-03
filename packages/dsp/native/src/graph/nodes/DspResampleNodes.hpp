@@ -32,3 +32,7 @@ namespace rp::graph {
 const rp_package* dspResamplePackage();
 
 }  // namespace rp::graph
+
+// The package's entry, named in packages/dsp/package.json: what a product's generated registration calls
+// (rp_register_packages, graph/Packages.hpp).
+extern "C" const rp_package* rp_dsp_resample_package(void);

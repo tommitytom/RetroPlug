@@ -28,7 +28,15 @@ importers:
         specifier: npm:typescript@5.7.3
         version: typescript@5.7.3
 
+  packages/core: {}
+
+  packages/dsp: {}
+
+  packages/graph-runtime: {}
+
   packages/native: {}
+
+  packages/node-sdk: {}
 
   packages/retroplug:
     dependencies:

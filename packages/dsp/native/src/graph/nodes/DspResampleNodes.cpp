@@ -169,3 +169,5 @@ const rp_package* dspResamplePackage() {
 }
 
 }  // namespace rp::graph
+
+extern "C" const rp_package* rp_dsp_resample_package(void) { return rp::graph::dspResamplePackage(); }

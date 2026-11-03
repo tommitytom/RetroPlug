@@ -96,7 +96,7 @@ goes through the command ring; all audio→control observation goes through the 
 
 The `Engine` itself is **single-threaded and thread-unaware**: it holds no locks and knows
 nothing about who is calling it. Thread-safety is entirely a property of the two rings (both
-inside the Engine's [`GraphHost`](../packages/native/src/graph/GraphHost.hpp)) and the registry
+inside the Engine's [`GraphHost`](../packages/graph-runtime/native/src/graph/GraphHost.hpp)) and the registry
 that surround it, plus the script host's own pair, which carries a destroyed script node's release
 to the block thread and its record back. One control-thread-written bit,
 [`QueuedInvoker::audioThreadOwns_`](../packages/native/src/host/engine/EngineInvoker.hpp),
@@ -131,7 +131,7 @@ Three primitives, three directions:
 - **release ring**: audio → control, a replaced plan handed back so the audio thread never frees (§5).
 
 All three are built on the shared-core transport primitives:
-[`SpscRing`](../packages/native/src/transport/SpscRing.hpp),
+[`SpscRing`](../packages/node-sdk/native/src/transport/SpscRing.hpp),
 [`FrameBufferTriple`](../packages/native/src/transport/FrameBufferTriple.hpp), and
 [`MemorySnapshotTriple`](../packages/native/src/transport/MemorySnapshotTriple.hpp).
 
@@ -140,7 +140,7 @@ All three are built on the shared-core transport primitives:
 ## 3. The command ring — the ONE mutation path
 
 Every control-plane edit lands on ONE ring: the `SpscRing<Command, 256>` inside the Engine's
-[`GraphHost`](../packages/native/src/graph/GraphHost.hpp)
+[`GraphHost`](../packages/graph-runtime/native/src/graph/GraphHost.hpp)
 ([modular-graph-phase-b1-design.md](../docs/modular-graph-phase-b1-design.md) section 5). An edit
 arrives one of three ways:
 
@@ -562,15 +562,15 @@ lost mutation.
 | [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) | mounts the capability facets onto an RPC server over the shared service instances |
 | [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp) | `QueuedInvoker`: every edit but structure onto the ring, `audioThreadOwns_` |
 | [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp) | the POD command the ring carries as an opaque host command |
-| [`GraphHost.hpp`](../packages/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/native/src/graph/GraphHost.cpp) | the one command ring, the release ring of plans, `setGraph` / `drain` / `run` / `reclaim` |
+| [`GraphHost.hpp`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/graph-runtime/native/src/graph/GraphHost.cpp) | the one command ring, the release ring of plans, `setGraph` / `drain` / `run` / `reclaim` |
 | [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and its publisher (the `ProjectStore`'s, or a `DirectGraph`'s or bare `SystemsStore`'s own) |
 | [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) / [`N8Nodes.cpp`](../packages/native/src/host/graph/N8Nodes.cpp) / [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the host MIDI I/O nodes, the cart's node and the control surface's two, and the host services they ask for |
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
 | [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), its one `SystemFactory`, the staged host MIDI, the host outputs and the registry; `buildSystem` / `destroySystem` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
 | [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in packs, each two bare QuickJS runtimes of its own (the built-in pack first, more loaded and reloaded at runtime), and the audio runtimes' profiling |
 | [`nodes/`](../packages/retroplug/src/script/nodes) / [`bundle.ts`](../packages/retroplug/src/script/bundle.ts) | the script nodes buildGraph places (the MIDI routing, each role's protocol node, the controller session), and the script-node bundle every Engine embeds |
-| [`src/dsp/`](../packages/native/src/dsp) | the `rp.dsp` nodes' kernels, core-free: gain and peak, the normalising gain, the RBJ biquads, dither and quantise, the DMC encode, and the r8brain resampler |
-| [`DspNodes.cpp`](../packages/native/src/graph/nodes/DspNodes.cpp) / [`DspResampleNodes.cpp`](../packages/native/src/graph/nodes/DspResampleNodes.cpp) | the `rp.dsp` package (gain, biquad, dither, normalize, dpcm) and the `rp.dsp.resample` package beside it |
+| [`src/dsp/`](../packages/dsp/native/src/dsp) | the `rp.dsp` nodes' kernels, core-free: gain and peak, the normalising gain, the RBJ biquads, dither and quantise, the DMC encode, and the r8brain resampler |
+| [`DspNodes.cpp`](../packages/dsp/native/src/graph/nodes/DspNodes.cpp) / [`DspResampleNodes.cpp`](../packages/dsp/native/src/graph/nodes/DspResampleNodes.cpp) | the `rp.dsp` package (gain, biquad, dither, normalize, dpcm) and the `rp.dsp.resample` package beside it |
 | [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp) | the offline job pool: a document run to completion on a host of its own, or a render (an engine job: a `RenderHost` and `Engine` of its own), its inputs, outputs and completion (the request and completion types are in [`OfflineTypes.hpp`](../packages/native/src/host/engine/OfflineTypes.hpp), which `Engine.hpp` includes in place of the pool) |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
 | [`PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |

@@ -97,3 +97,5 @@ const rp_package* hostPackage() {
 }
 
 }  // namespace rp::graph
+
+extern "C" const rp_package* rp_host_package(void) { return rp::graph::hostPackage(); }

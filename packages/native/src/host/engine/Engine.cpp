@@ -25,11 +25,8 @@
 
 #include "graph/Descriptor.hpp"
 #include "graph/GraphHost.hpp"
-#include "graph/HostNodes.hpp"
+#include "graph/Packages.hpp"  // rp_register_packages: the product's node packages
 #include "graph/Queue.hpp"
-#include "graph/nodes/CoreNodes.hpp"
-#include "graph/nodes/DspNodes.hpp"
-#include "graph/nodes/DspResampleNodes.hpp"
 #include "host/dsp/ScriptCompiler.hpp"
 #include "host/devices/DeviceRegistry.hpp"
 #include "host/engine/DspCommand.hpp"
@@ -194,10 +191,10 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
         graph_.get());
     if (!graph_->script.load(scriptBundle, &why))
         std::fprintf(stderr, "[engine] the script-node bundle did not load (%s); no script node type is registered\n", why.c_str());
-    // The routing, the controller and the protocol nodes are the script package's (src/script/nodes/).
-    for (const rp_package* p : {rp::graph::corePackage(), rp::graph::dspPackage(), rp::graph::dspResamplePackage(),
-                                rp::graph::hostPackage(), rp::host::sameboyPackage(), rp::host::mesenPackage(),
-                                rp::host::hostIoPackage(), rp::host::n8Package(), rp::host::launchpadPackage()})
+    // The native node packages are the product's: the list its CMake declares (retroplug_product,
+    // cmake/packages.cmake), generated into its rp_register_packages(). The routing, the controller and the protocol
+    // nodes are the script package's (src/script/nodes/).
+    for (const rp_package* p : rp::graph::productPackages())
         if (!graph_->registry.addPackage(p, &why))
             std::fprintf(stderr, "[engine] a node package was refused (%s); its types are not registered\n", why.c_str());
     if (!graph_->registry.addPackage(graph_->script.package(), &why))

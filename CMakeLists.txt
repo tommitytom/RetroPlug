@@ -277,8 +277,8 @@ add_subdirectory(deps/mesen)
 
 # --- r8brain-free: high-quality SRC for LSDJ kit compilation.
 # Also used for non-44.1 kHz host-rate sync accuracy.
-# Headers only: packages/native/src/dsp/R8bBase.cpp compiles its one source (r8bbase.cpp) on the throwing allocator, so
-# the tree declares no target for the vendored library and there is none to link.
+# Headers only: packages/dsp/native/src/dsp/R8bBase.cpp compiles its one source (r8bbase.cpp) on the throwing
+# allocator, so the tree declares no target for the vendored library and there is none to link.
 
 # --- enkiTS: a task scheduler, vendored under deps/enkiTS but not built. No RetroPlug code uses it, so the tree adds
 # no target for it and links none; the directory stays for a later cleanup to judge.
@@ -353,6 +353,24 @@ set(CATCH_INSTALL_DOCS   OFF CACHE BOOL "" FORCE)
 set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
 add_subdirectory(deps/catch2 "${CMAKE_BINARY_DIR}/deps/catch2" EXCLUDE_FROM_ALL)
 retroplug_silence_dep_warnings(Catch2 Catch2WithMain)
+
+# --- the workspace packages (cmake/packages.cmake, docs/modular-graph-phase-e1-design.md section 4): each reads its
+# manifest from its package.json and adds its native/ tree. The node SDK first, as every other package links it.
+include(cmake/packages.cmake)
+retroplug_package(node-sdk)        # rp_node.h, node.hpp and the description library: what a pack depends on
+retroplug_package(graph-runtime)   # the executor, the planner, the registry, GraphHost, rp.host.audio-out
+retroplug_package(core)            # the rp.core nodes
+retroplug_package(dsp)             # the kernels, the rp.dsp nodes and rp.dsp.resample
+# The node types not yet carved into packages of their own (sameboy, mesen, host.io, n8, launchpad) register from
+# packages/native, the engine's tree, whose manifest names their entries; its targets are defined below.
+retroplug_package(native)
+
+# The packages a desktop product carries (retroplug_product), every one today; a product that differs lists its own.
+# The ORDER is load-bearing: it is the order the products register in, which the registration golden holds
+# (packages/native/test/engine-graph/golden/product-registrations.json), and it reproduces the list the engine
+# registered before products declared theirs: rp.core, rp.dsp, rp.dsp.resample, then rp.host (graph-runtime, after
+# dsp for that reason alone), then the types still in packages/native.
+set(RP_DESKTOP_PACKAGES core dsp graph-runtime native)
 
 # --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
 # + the DPF plugin + the test host / cli / ui-test.

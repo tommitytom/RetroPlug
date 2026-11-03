@@ -1,0 +1,12 @@
+{
+  "name": "@retroplug/dsp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The DSP kernels and the rp.dsp node types around them, and rp.dsp.resample (r8brain) as a package of its own.",
+  "retroplug": {
+    "native": [
+      { "target": "retroplug-dsp-nodes", "entry": "rp_dsp_package", "device": true },
+      { "target": "retroplug-dsp-resample-nodes", "entry": "rp_dsp_resample_package", "device": false }
+    ]
+  }
+}

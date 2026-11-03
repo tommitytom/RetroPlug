@@ -655,3 +655,5 @@ const rp_package* dspPackage() {
 }
 
 }  // namespace rp::graph
+
+extern "C" const rp_package* rp_dsp_package(void) { return rp::graph::dspPackage(); }

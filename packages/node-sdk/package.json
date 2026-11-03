@@ -1,0 +1,9 @@
+{
+  "name": "@retroplug/node-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The node SDK: the C ABI (rp_node.h), the C++ authoring layer (node.hpp) and the description library it compiles against. A pack depends on this package alone.",
+  "retroplug": {
+    "native": { "target": "retroplug-node-sdk" }
+  }
+}

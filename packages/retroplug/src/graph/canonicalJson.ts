@@ -1,5 +1,5 @@
 // The one JSON spelling descriptors, layouts and settings comparisons use, so a TS node and a C++ node of
-// the same shape produce the same bytes. Its C++ twin is packages/native/src/graph/CanonicalJson.cpp:
+// the same shape produce the same bytes. Its C++ twin is packages/node-sdk/native/src/graph/CanonicalJson.cpp:
 // object keys sorted (JavaScript's default order, by UTF-16 code unit, which the C++ side reproduces), no
 // whitespace, strings and numbers exactly as JSON.stringify spells them, undefined object members dropped
 // and undefined array elements (holes included) written as null. Both are held to the same golden tables

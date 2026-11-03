@@ -595,3 +595,5 @@ const rp_package* corePackage() {
 }
 
 }  // namespace rp::graph
+
+extern "C" const rp_package* rp_core_package(void) { return rp::graph::corePackage(); }

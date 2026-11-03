@@ -587,7 +587,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     the input node carries, or a merge of k runs, would bound it.
   - A feedback source whose queue capacity changes while an audio thread runs gets a fresh, empty front:
     the block in flight is lost, and `droppedMessages` never counts it, since the carry and its count run
-    only while quiescent ([Planner.cpp](../packages/native/src/graph/Planner.cpp) `front`). No port changes
+    only while quiescent ([Planner.cpp](../packages/graph-runtime/native/src/graph/Planner.cpp) `front`). No port changes
     its capacity live today, and no document `buildGraph` builds holds a feedback wire: the Game Boy's `serialOut`,
     fixed, was the one source until LSDj's decoder moved after it.
   - `retroplug-engine-graph-test` replaces the global `operator new` with a counting allocator

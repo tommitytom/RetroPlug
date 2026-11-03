@@ -206,7 +206,7 @@ ring (release on push, acquire on adopt) carries the whole built pack with it.
      holds already, or a type id another package holds.
   3. The Engine replans its current document: the last request `setGraph` published, with its tap carried as it is
      (the request re-arms no tap, so its swap carries none: section 11's second question). The planner already
-     rebuilds an instance whose registry entry changed ([Planner.cpp](../packages/native/src/graph/Planner.cpp)
+     rebuilds an instance whose registry entry changed ([Planner.cpp](../packages/graph-runtime/native/src/graph/Planner.cpp)
      `reconcile`), so every node of the pack gets a fresh instance of the new code under the same node id, its JS state
      not carried over, while every other node keeps its instance. A document that places none of the old
      generation's types would plan as it runs, so it is not replanned. The replan leaves a core parked since that

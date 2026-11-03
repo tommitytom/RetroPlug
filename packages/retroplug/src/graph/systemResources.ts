@@ -17,8 +17,8 @@ import { stem } from "../pathUtil";
 export type ResourceBackend = Pick<EmulatorBackend, "putResource" | "releaseResource"> &
   Pick<HostBackend, "fileExists">;
 
-/** A node's settings name a resource as `"res:<id>"` (packages/native/src/graph/node.hpp): the resource's id in the
- *  engine's table, never a path. */
+/** A node's settings name a resource as `"res:<id>"` (packages/node-sdk/native/src/graph/node.hpp): the resource's
+ *  id in the engine's table, never a path. */
 export const resourceRef = (id: number): string => `res:${id}`;
 
 /** A system's resources, as the store counts and DirectGraph places them: the ROM its core boots from, and the seeds

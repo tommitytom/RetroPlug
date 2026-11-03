@@ -15,13 +15,16 @@
 #                             INCLUDES ${RP_QUICKJS_INCLUDE}
 #                             DEFS     RP_MGB_ROM_PATH="...")
 #
+# PACKAGES makes the binary a product (retroplug_product, cmake/packages.cmake): one that constructs an Engine lists
+# the node packages that engine registers, and gets its generated rp_register_packages().
+#
 # NO_CATCH2 opts out of the Catch2 link for a binary that brings its own main() —
 # retroplug-n8-hwtest is the one, a manual harness driven against real hardware.
 #
 # Sources are interpreted relative to packages/native/ (CMAKE_CURRENT_SOURCE_DIR at the point
 # this is included), matching how they were written before.
 function(retroplug_add_test_binary)
-    cmake_parse_arguments(T "NO_CATCH2" "NAME" "SOURCES;LIBS;INCLUDES;DEFS" ${ARGN})
+    cmake_parse_arguments(T "NO_CATCH2" "NAME" "SOURCES;LIBS;INCLUDES;DEFS;PACKAGES" ${ARGN})
 
     if(NOT T_NAME)
         message(FATAL_ERROR "retroplug_add_test_binary: NAME is required")
@@ -46,6 +49,10 @@ function(retroplug_add_test_binary)
     endif()
     if(T_DEFS)
         target_compile_definitions(${T_NAME} PRIVATE ${T_DEFS})
+    endif()
+
+    if(T_PACKAGES)
+        retroplug_product(${T_NAME} PACKAGES ${T_PACKAGES})
     endif()
 
     set_target_properties(${T_NAME} PROPERTIES

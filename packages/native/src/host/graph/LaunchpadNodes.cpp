@@ -128,3 +128,5 @@ const rp_package* launchpadPackage() {
 }
 
 }  // namespace rp::host
+
+extern "C" const rp_package* rp_launchpad_package(void) { return rp::host::launchpadPackage(); }

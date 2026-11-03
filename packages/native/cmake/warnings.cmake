@@ -38,8 +38,10 @@ if(MSVC)
     set(_rp_werror_targets
         retroplug-core retroplug-backend retroplug-host retroplug-cli retroplug-sdl
         retroplug retroplug-dsp retroplug-ui
-        retroplug-graph-exec retroplug-graph retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes
-        retroplug-dsp-resample-nodes)
+        # The workspace packages' targets (cmake/packages.cmake), defined in their own directories: a target's options
+        # can be set from any directory, so the list stays here, where every one of our targets is named.
+        retroplug-node-sdk retroplug-graph-exec retroplug-graph retroplug-core-nodes
+        retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes retroplug-dsp-resample-nodes)
     foreach(_t IN LISTS _rp_werror_targets)
         if(TARGET ${_t})
             target_compile_options(${_t} PRIVATE ${_rp_warn_flags})
