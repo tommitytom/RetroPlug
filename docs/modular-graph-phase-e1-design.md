@@ -248,7 +248,8 @@ header of constant arrays (with one completion table, `rp.dsp.normalize` needing
 check's host serves). CI builds the image and does not run it; the ELF is flashable, and E3 is the first phase to run
 the check's successor on the rig, with plans loaded by the box.
 
-**The link trap.** The image links with `--wrap` on 87 symbols and defines none of the wrapped ones, so any use in
+**The link trap.** The image links with `--wrap` on 87 symbols (with arm-none-eabi GCC 13.2.1; the C++ names are whatever that multilib's `libstdc++.a`
+defines, so another release changes the count and not the trap) and defines none of the wrapped ones, so any use in
 what it links is a link error naming the object that pulled it in: the malloc family (plain, newlib's `_r` forms,
 aligned and `memalign` variants), `sbrk`, `__cxa_guard_*`, and every `operator new` and `operator delete`, `__cxa_`
 throw entry and `std::__throw_*` that the device multilib's own `libstdc++.a` defines (read with `nm` at configure,
@@ -327,12 +328,28 @@ Five commits, each building and passing on its own:
   way (`skip_alarm_pool` with a repeating timer of its own on the SDK's default pool, which is static, or a pool not
   made on the heap), or the firmware keeps a heap and a trap scoped to the graph archives, with `rp-device-check` the
   only image that guards them whole. The TinyUSB host on the chip's own controller with UART MIDI (`RP_NATIVE_USB=ON`)
-  links under the 87-symbol trap as it is (12.5, question 3). A non-virtual protected destructor is also what the pack's
+  links under the 87-symbol trap (with arm-none-eabi GCC 13.2.1) as it is (12.5, question 3). A non-virtual protected destructor is also what the pack's
   abstract Edio transport needs: a virtual one makes the class's deleting destructor reference `operator delete`, which
   the trap refuses.
+- What E2's pack can depend on is narrower than "node-sdk and nothing else" until the host-service ABI moves. `rp.n8.nes`
+  (packages/native/src/host/graph/N8Nodes.cpp) includes `host/devices/DeviceLinks.hpp`, `host/engine/CapabilityJobs.hpp`,
+  `host/graph/HostServices.hpp` and `host/graph/SystemNodes.hpp`: `rp.host.devices/1` with `HostDevices`, the `CartLink`
+  and `SurfaceLink` interfaces, the `rp.system.*/1` capability-job types and the expansion-volume constants, which reach
+  `<mutex>`, `<string>`, `<vector>`, `<bitset>` and `system/SystemTypes.hpp`. E2 moves that ABI into `node-sdk` as portable
+  C ABI and headers, with the engine's implementations staying in packages/native, and gives the box's half of it a
+  portable form. A `device: true` entry has every source of its target compiled in device mode
+  (`_retroplug_device_check`), so the pack splits its portable sources (the node, Edio) from its desktop-only ones (the
+  serial transport, `N8Link`'s threads, the menu) into separate targets, and only the first is the device entry's. A
+  second device project (the box firmware) must reproduce `packages/graph-runtime/device-check/CMakeLists.txt`'s
+  reflect-cpp pin and finder; hoisting that into `cmake/packages.cmake` or a small `cmake/reflectcpp-pin.cmake` lets it
+  reuse the logic.
 - `exportPlan`, the blob's format, the arena executor and the box as a graph host (E3); with it a device default for
   `rp.core.delay` or a planner cap on the Pico (12.6), and a measure of the device's stack in `query_memory` and
-  `create`.
+  `create`. The settings blobs' reader differs from the desktop's JSON reader on one input: an integer above INT64_MAX in
+  a signed field is wrapped by the desktop and refused by the device's decode (6), so a document the desktop planned and
+  ran would be refused at plan load. `exportPlan` writes each blob from the desktop's parsed settings
+  (`rp.sdk.settings-json/1`, which every `node.hpp` type answers, then `settingsToMsgpack`) and not from the document's
+  JSON, which makes the two readers agree by construction for this input, for `-0` and for any later leniency.
 - MicroQuickJS on the Pico (E4).
 - The rest of the package split (main design section 11): Mesen's per-console compile-out, per-product esbuild
   bundles, menus and the HD player onto extensions and views, LSDj, risa, smsggdj, mGB, BlipToaster and Launchpad as
@@ -412,6 +429,9 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
   naming the field.
 - `resource_ref` stores a number. A malformed `"res:007"` is refused at the settings parse (`settings-invalid`) where it
   failed at create (`create-failed`); the mock backend refuses it first, in the same words.
+- A join or split with 17 ports, or a layout name over 16 bytes, is refused by the settings parse ("Failed to parse field
+  'inputs': an array of 17 elements is over the 16 the field holds") where `validate` refused it ("inputs must be between
+  1 and 16"). The error code is the same; `checkCount`'s upper bound is dead code for lists, which is harmless.
 - `text<16>`: the longest layout any table accepts is `discrete(64)`, 12 bytes. The bound is `kMaxLayoutName`.
 
 ### 12.3 Device mode and msgpack (commit 3)
@@ -447,7 +467,7 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
   `CPMAddPackage` line (0.26.2) so the two builds cannot drift, with a FetchContent fallback; no UF2 (the ELF is the
   artifact, and `pico_add_extra_outputs` would build picotool); `PICO_SDK_PATH` set but not an SDK is an error, the
   fallback to `/workspaces/pico-sdk` applies only when unset; the build directory is `build-device/`.
-- **The trap** is 87 symbols, each its own `--wrap` (a comma-joined list is split by gcc into input files). The package
+- **The trap** is 87 symbols (with arm-none-eabi GCC 13.2.1's libstdc++), each its own `--wrap` (a comma-joined list is split by gcc into input files). The package
   libraries compile with the SDK's code-generation flags (`-ffunction-sections -fdata-sections -fno-unwind-tables
   -fno-use-cxa-atexit`), so the trap names what the image keeps.
 - **A new SDK interface**, `rp.sdk.settings-json/1`, exists because the ABI had no way to get a type's defaults and the
@@ -478,7 +498,7 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
    newlib's `findfp.o` came from the default panic's `puts` in an image with no `pico_stdio`, which is newlib's and
    allocates its buffers; it was not a heap inside stdio. So the image keeps stdio and reports on the UART, and
    `pico_minimize_runtime` is for size only. The box's firmware (`pico/n8-host`), built in scratch trees (the code
-   review's under the 78-symbol trap, and the follow-up's under the 87-symbol trap, whose link line is the image's
+   review's under the 78-symbol trap, and the follow-up's under the 87-symbol trap (with arm-none-eabi GCC 13.2.1), whose link line is the image's
    with the same in-place removal): with TinyUSB host on the chip's own USB controller and UART MIDI
    (`RP_NATIVE_USB=ON`) it links clean under both, with no `__wrap_` symbol of the trap's defined in the ELF; its
    default build, Pico-PIO-USB's host, does not, as `pio_usb_host_init` makes its SOF alarm pool with

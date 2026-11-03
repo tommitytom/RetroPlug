@@ -144,7 +144,7 @@ The rules below are the parts that don't fit those.
   entry with `device: true`) includes `graph/node.hpp` and keeps its settings to `rp::text<N>`, `rp::list<T, N>`,
   `rp::choice` (not `rfl::Literal`), numbers, bools, `rp::resource_ref` and enums (a fixed underlying type, no
   `operator|`, enumerators within -256..256; `enum_param` too), and wraps `validate`, `adjust_layout` and the helpers
-  only they use in ONE `#ifndef RP_DEVICE`. The desktop build compiles a `<target>-device` object library for every
+  only they use in an `#ifndef RP_DEVICE`: one per node type around its desktop hooks and the helpers only they use. The desktop build compiles a `<target>-device` object library for every
   such target, so a missed guard or a non-portable `Settings` fails the ordinary build. A custom `rfl::Reflector<E>`
   is not seen by the device decode. Details:
   [docs/modular-graph-phase-e1-design.md](docs/modular-graph-phase-e1-design.md).
@@ -367,7 +367,7 @@ C++ unit checks — the per-context window-hook routing, the class-id counter sy
 that keeps the DAW-hosted editor from rendering blank, and the DPF dynamic-parameter
 diff classifier), `device:check` (`tools/build-device-check.sh` - builds `rp-device-check`, the RP2350 image of every
 portable `rp.core` / `rp.dsp` type, with `arm-none-eabi-g++` and the Pico SDK 2.1.1 (`PICO_SDK_PATH`), under a link
-trap on the heap, on exceptions and on RTTI (87 wrapped symbols) and a probe that must fail to link; built and never
+trap on the heap, on exceptions and on RTTI (87 wrapped symbols with arm-none-eabi GCC 13.2.1) and a probe that must fail to link; built and never
 run, in CI on linux-x64; needs no hardware), `screenshot`,
 `reaper:editor` (`tools/run-reaper-editor.sh` — floats the hosted plugin editor in
 headless Reaper and asserts its LVGL snapshot rendered; the only check of on-screen

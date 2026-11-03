@@ -521,14 +521,24 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     (`pio_usb_host_init` -> `alarm_pool_create(2, 1)`), so the firmware links under the device check's trap only with
     that pool made another way (`skip_alarm_pool` and a repeating timer of its own on the SDK's static default pool, or
     a pool not made on the heap), or keeps a heap with a trap scoped to the graph archives; TinyUSB host with UART MIDI
-    (`RP_NATIVE_USB=ON`) links under the 87-symbol trap as it is (E1 design 12.5, question 3). The pack's abstract Edio
+    (`RP_NATIVE_USB=ON`) links under the 87-symbol trap (with arm-none-eabi GCC 13.2.1) as it is (E1 design 12.5, question 3). The pack's abstract Edio
     transport needs a protected non-virtual destructor: a virtual one makes its deleting destructor reference
-    `operator delete`, which the trap refuses.
+    `operator delete`, which the trap refuses. The pack's interfaces are not yet portable: `rp.n8.nes` binds through
+    `host/devices/DeviceLinks.hpp`, `host/engine/CapabilityJobs.hpp`, `host/graph/HostServices.hpp` and
+    `host/graph/SystemNodes.hpp` (`rp.host.devices/1`, `CartLink`, the `rp.system.*/1` job types), desktop-typed headers in
+    packages/native, so E2 first moves that host-service ABI into `node-sdk` as portable headers (the engine's
+    implementations stay put). A `device: true` entry compiles every source of its target in device mode, so the pack's
+    portable sources (node, Edio) and its desktop-only ones (serial, link threads, menu) are separate targets. The box
+    firmware, a second device project, must reproduce `device-check/CMakeLists.txt`'s reflect-cpp pin and finder, or the
+    pin moves into `cmake/` for both to reuse.
   - **E3: `exportPlan` for `rp2350`, the static-arena executor and the box as a graph host**, gated on the Pico baseline
     and a C++ node in the box's plan. It must also settle `rp.core.delay`'s default, which needs 384 KB an instance
     (74% of the RP2350's RAM) and sizes the check's arena: a device default or a planner cap. The device's stack in
     `query_memory` and `create` (the `Settings` plus up to three 264-byte error buffers) is unmeasured, as are instance
-    sizes on ARM (the image is never run), and the float tolerance against the desktop is E3's decision.
+    sizes on ARM (the image is never run), and the float tolerance against the desktop is E3's decision. An integer above
+    INT64_MAX in a signed settings field is wrapped by the desktop's JSON reader and refused by the device's decode, so
+    `exportPlan` writes each blob from the desktop's parsed settings (`rp.sdk.settings-json/1`, then `settingsToMsgpack`),
+    not from the document's JSON.
   - **E4: MicroQuickJS on the Pico**, a script host in the arena and `defineNode` made portable.
   - **The rest of the package split** (the main design's section 11): `sameboy`, `mesen` (per console), `lsdj`, `mgb`,
     `risa`, `smsggdj`, `bliptoaster` and `launchpad` as packages, the TS halves of `core` and `dsp`, per-product esbuild
