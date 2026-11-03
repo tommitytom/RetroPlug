@@ -27,11 +27,12 @@ import/export paths are written once:
 - **`TRACKER_INTEGRATIONS`** — the registry that maps a system to its catalogs.
 - **`liveSav`** — reads the battery out of the *running* core rather than off disk, which is why
   the Songs menu acts on what the cart currently has.
-- **Kit compiles** are TypeScript ([`src/kit/`](../packages/retroplug/src/kit)): each slot is a chain of offline
-  graph jobs whose passes are `rp.dsp` documents (the effects and resample kernels in `src/dsp/`, which those nodes
-  wrap), and TypeScript packs the codes and bits and assembles the bank. TPDF dither seeds from a hash of its input, so
-  a kit compiles to the same bytes every time, and `test-native`'s `kit-baseline` and `kit-compile` hold the compiled
-  banks to their goldens (D1 and D2, [modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md),
+- **Kit compiles** are TypeScript ([`src/kit/`](../packages/retroplug/src/kit)): each slot is a chain of offline graph
+  jobs whose passes are `rp.dsp` documents (the effects and resample kernels in `packages/dsp/native/src/dsp/`, which
+  those nodes wrap), and TypeScript packs the codes and bits and assembles the bank. TPDF dither seeds from a hash of
+  its input, so a kit compiles to the same bytes every time, and `test-native`'s `kit-baseline` and `kit-compile` hold
+  the compiled banks to their goldens (D1 and D2,
+  [modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md),
   [modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md) section 11). Every host compiles a kit,
   the plugin included; the native compiler and its harness-facet RPCs are gone.
 
@@ -199,7 +200,8 @@ its serial-out decoder, `rp.lsdj.serial-out`, placed after the systems
 ([04-roles-protocol-nodes.md](04-roles-protocol-nodes.md)). What is left is
 [07-remaining-work.md](07-remaining-work.md) section 5.
 
-- Code: `packages/native/src/graph/` (C++), `packages/native/src/host/graph/` (the engine's nodes),
+- Code: `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (C++: the node SDK, the
+  executor and planner, the `rp.core` and `rp.dsp` nodes), `packages/native/src/host/graph/` (the engine's nodes),
   `packages/native/src/host/script/` (the script host), `packages/retroplug/src/graph/` (TS: the node and
   extension contracts, `buildGraph`, `DirectGraph`, the zod-free settings schema), `packages/retroplug/src/script/`
   (the script-node bundle and its nodes) and `packages/retroplug/src/engineGraph.ts`.

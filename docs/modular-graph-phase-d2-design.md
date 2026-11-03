@@ -368,7 +368,7 @@ moved a kit byte or a parity baseline either.
   stays. CI's Catch2 step drops `RP_KIT_GOLDEN_REQUIRE_TARGET` with the suite it guarded, and the `test:native` step
   keeps it, because the TypeScript goldens still compare exact bytes there. The C++ seam test no longer holds the
   compiler's side of an empty window: `kit-compile`'s EMP slots and the edges golden do.
-- **7, docs.** This section, the specs, AGENTS.md and `docs/lsdj.md` carry the build (and `src/dsp/`'s nodes, the
+- **7, docs.** This section, the specs, AGENTS.md and `docs/lsdj.md` carry the build (and the `rp.dsp` nodes, the
   compiler and the seam describe what they do now rather than what they replaced).
 
 ### Section 10's questions, answered

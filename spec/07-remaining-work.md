@@ -368,13 +368,14 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     the allocations left on the block thread, as C1/C4 list them above; C5 added none.
 - **D1 built: the kit baseline and the DSP library**
   ([modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md), six commits): the kit path's DSP is
-  `src/dsp/` as block-streaming kernels (`retroplug-dsp-kernels`, plus `retroplug-dsp-resample` for r8brain), and
-  `lsdj/Effects`, `KitUtil` and `RisaDmcCodec` run those kernels. The graph has them as `rp.dsp.gain`, `.biquad`,
-  `.dither` and `rp.dsp.resample` (`retroplug-dsp-nodes` / `retroplug-dsp-resample-nodes`, the resampler a package and
-  target of its own so a Pico build can leave it and r8brain out). TPDF dither is seeded from a hash of the sample it
-  sees, so a kit compiles to the same bytes, and `retroplug-audio-test`'s `[kit-baseline]` held 39 compiled banks to
-  a golden (the test-native runners hold them now; the next bullet). Strict parity held bit for bit at every commit,
-  and the baseline did not move by a hash through the kernel move. What it leaves:
+  `packages/dsp/native/src/dsp/` as block-streaming kernels (`retroplug-dsp-kernels`, plus `retroplug-dsp-resample`
+  for r8brain), and `lsdj/Effects`, `KitUtil` and `RisaDmcCodec` run those kernels. The graph has them as
+  `rp.dsp.gain`, `.biquad`, `.dither` and `rp.dsp.resample` (`retroplug-dsp-nodes` / `retroplug-dsp-resample-nodes`,
+  the resampler a package and target of its own so a Pico build can leave it and r8brain out). TPDF dither is seeded
+  from a hash of the sample it sees, so a kit compiles to the same bytes, and `retroplug-audio-test`'s
+  `[kit-baseline]` held 39 compiled banks to a golden (the test-native runners hold them now; the next bullet). Strict
+  parity held bit for bit at every commit, and the baseline did not move by a hash through the kernel move. What it
+  leaves:
   - **D2**: audio buffers in and out of a document, a run-to-completion driver over `GraphHost`, normalise in a graph,
     the two-rate kit chain, and kit compiles as graphs behind `compileKit` / `compileDmc`, byte-identical to the
     baseline (as built, the TypeScript entry points of those names; the harness RPCs went with native's compiler, the
@@ -506,6 +507,41 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **A GBA render case** is missing: without a BIOS the repo's GBA ROM renders exact silence.
   - **Cores print straight to the process.** Mesen's load log goes to fd 1 while the job's console lines arrive through
     the drain, so in the CLI the two can interleave differently than before.
+- **E1 built: a portable node core and the package boundary**
+  ([modular-graph-phase-e1-design.md](../docs/modular-graph-phase-e1-design.md), five commits): `node-sdk`,
+  `graph-runtime`, `core` and `dsp` are workspace packages with a manifest each, and every product's
+  `rp_register_packages()` is generated (the `[packages]` golden); portable nodes' settings are `rp::text`, `rp::list`,
+  `rp::choice` and numeric resource ids; `node.hpp` builds for the device (`RP_DEVICE`) and reads msgpack
+  (`RP_SETTINGS_MSGPACK`) with a reader of our own; `retroplug-device-mode-test` is the eleventh `test:plugin` binary;
+  and `pnpm device:check` links the RP2350 image of every portable `rp.core` and `rp.dsp` type under a trap on the heap
+  and on exceptions, a CI step. Nothing was re-recorded. What is left, in order:
+  - **E2: the N8 pack** (`packages/n8`: the nodes, one C++ Edio with an abstract transport, the link and the
+    lifecycle; `edio.ts`'s protocol and `pico/n8-host/edio.c` retire), gated on the desktop N8 tests, the real-hardware
+    leg and the Pico baseline.
+  - **E3: `exportPlan` for `rp2350`, the static-arena executor and the box as a graph host**, gated on the Pico baseline
+    and a C++ node in the box's plan. It must also settle `rp.core.delay`'s default, which needs 384 KB an instance
+    (74% of the RP2350's RAM) and sizes the check's arena: a device default or a planner cap. The device's stack in
+    `query_memory` and `create` (the `Settings` plus up to three 264-byte error buffers) is unmeasured, as are instance
+    sizes on ARM (the image is never run), and the float tolerance against the desktop is E3's decision.
+  - **E4: MicroQuickJS on the Pico**, a script host in the arena and `defineNode` made portable.
+  - **The rest of the package split** (the main design's section 11): `sameboy`, `mesen` (per console), `lsdj`, `mgb`,
+    `risa`, `smsggdj`, `bliptoaster` and `launchpad` as packages, the TS halves of `core` and `dsp`, per-product esbuild
+    bundles, downloadable packs.
+  - **Windows and MSVC have never built E1's targets.** The `<target>-device` object libraries are in the default build
+    under `/W4 /WX`, so a Windows problem breaks `build.bat` itself: a `build.bat` and `test.bat` run is owed. The risks
+    are the inline-namespace reopen for the device SDK, `rp::choice::make<>` and `rp::text`'s literal constructor as
+    consteval in default member initializers, `enums.hpp`'s template-lambda variable templates, `__FUNCSIG__` in a
+    consteval function, the copied `/bigobj`, and `std::strcpy` in `DeviceCheck.cpp`. The device objects keep MSVC's
+    `/EHsc`, so only the GCC and Clang builds prove the no-exceptions build.
+  - **libc++ runs two of the three refused-source checks** (the heap-header check reads libstdc++'s include guards and
+    is skipped on macOS); there the `static_assert`s and the link trap are the guards.
+  - **Enum limits.** An `rfl::config::enum_range<E>` override is not honoured and a custom `rfl::Reflector<E>` is not
+    seen by the device decode (`rfl::internal::has_read_reflector<E>` would refuse it in one line; no node has one);
+    each portable enum costs 55 to 95 ms of compile time a translation unit.
+  - **Hardening the product check.** `retroplug_check_products` looks at direct links to a fixed list of
+    carriers rather than computing the engine-carrying set outward from `retroplug-backend`; it runs at the end of
+    `packages/native`, not at the end of the root; its exempt names are not checked to exist; and the root's
+    `cmake_minimum_required` understates the 3.19 that `string(JSON)` and dpf.js need.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype
@@ -587,7 +623,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     the input node carries, or a merge of k runs, would bound it.
   - A feedback source whose queue capacity changes while an audio thread runs gets a fresh, empty front:
     the block in flight is lost, and `droppedMessages` never counts it, since the carry and its count run
-    only while quiescent ([Planner.cpp](../packages/graph-runtime/native/src/graph/Planner.cpp) `front`). No port changes
+    only while quiescent
+    ([Planner.cpp](../packages/graph-runtime/native/src/graph/Planner.cpp) `front`). No port changes
     its capacity live today, and no document `buildGraph` builds holds a feedback wire: the Game Boy's `serialOut`,
     fixed, was the one source until LSDj's decoder moved after it.
   - `retroplug-engine-graph-test` replaces the global `operator new` with a counting allocator

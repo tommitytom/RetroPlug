@@ -77,11 +77,11 @@ unchanged, and `test-native/kit-baseline.test.ts` is their runner now (D2 design
 
 ## 4. The DSP library
 
-**The targets.** `retroplug-dsp-kernels` (`packages/native/src/dsp/`) is a static library linking the C++ standard
-library and nothing else: gain, peak and the normalising gain, the biquads, dither and quantise.
+**The targets.** `retroplug-dsp-kernels` (`src/dsp/`, in `packages/dsp/native/` since E1) is a static library linking
+the C++ standard library and nothing else: gain, peak and the normalising gain, the biquads, dither and quantise.
 `retroplug-dsp-resample` is `Resample.cpp`, taking r8brain's headers and not linking its library, and linking
-`Threads::Threads` for r8brain's filter-cache mutex, so a build with no resampler omits that target and sees neither the
-heap nor pthreads nor RTTI. r8brain's static members are `retroplug-r8brain-base`, a target of their own beside it
+`Threads::Threads` for r8brain's filter-cache mutex, so a build with no resampler omits that target and sees neither
+the heap nor pthreads nor RTTI. r8brain's static members are `retroplug-r8brain-base`, a target of their own beside it
 (`R8bBase.cpp`, built on the throwing allocator section 10 describes): that one translation unit is vendored r8brain
 code, so it keeps the compiler's default warning level rather than this tree's `/W4 /WX` on Windows, and gets the
 deps' `-w` on GNU/Clang. `retroplug-core` links both for the kit path, the node packages link them, and so does

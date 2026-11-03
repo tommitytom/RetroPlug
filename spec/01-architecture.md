@@ -130,8 +130,8 @@ Three primitives, three directions:
 - **SnapshotRegistry** — audio → control, the ONE read door (§4).
 - **release ring**: audio → control, a replaced plan handed back so the audio thread never frees (§5).
 
-All three are built on the shared-core transport primitives:
-[`SpscRing`](../packages/node-sdk/native/src/transport/SpscRing.hpp),
+All three are built on [`SpscRing`](../packages/node-sdk/native/src/transport/SpscRing.hpp) (in `node-sdk`) and the
+shared-core transport primitives
 [`FrameBufferTriple`](../packages/native/src/transport/FrameBufferTriple.hpp), and
 [`MemorySnapshotTriple`](../packages/native/src/transport/MemorySnapshotTriple.hpp).
 
@@ -423,20 +423,41 @@ without the frame).
 
 ### The DSP library and its nodes
 
-`src/dsp/` is the kit path's gain, biquad, dither and resample as block-streaming kernels, in two targets:
-`retroplug-dsp-kernels` (core-free, the C++ standard library only) and `retroplug-dsp-resample` (r8brain, and with it
-the heap, pthreads and RTTI, so a build with no resampler omits it). r8brain's static members are a third target,
-`retroplug-r8brain-base`, beside the resampler: its one translation unit is vendored code (`R8bBase.cpp` includes
-r8brain's own `r8bbase.cpp`, on a throwing allocator), so it is kept off RetroPlug's own warning level.
-`retroplug-core` links neither (nothing of the core calls a kernel),
-and the graph has them as `rp.dsp` (`rp.dsp.gain`, `.biquad`, `.dither`, `.normalize`, `.dpcm`) and `rp.dsp.resample`,
-in targets of their own (`retroplug-dsp-nodes`, `retroplug-dsp-resample-nodes`) so `retroplug-graph` carries neither and
-a Pico build links `retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone. A kit compile and a rendered patch run the
-same arithmetic through those nodes, so a patched kit and a rendered patch share one DSP. `rp.dsp.resample` takes an
-`audio-buffer` resource at that buffer's own rate and outputs at the plan's; every other node's ports carry the plan's
-one rate. A kit compile's output is reproducible: the TPDF dither seeds from a hash of the input it sees, held by the
-kit baseline ([06-build-test.md](06-build-test.md), [02-native-host.md](02-native-host.md), D1 design sections 4 and 5,
-D2 design section 11).
+`packages/dsp/native/src/dsp/` is the kit path's gain, biquad, dither and resample as block-streaming kernels, in two
+targets: `retroplug-dsp-kernels` (core-free, the C++ standard library only) and `retroplug-dsp-resample` (r8brain, and
+with it the heap, pthreads and RTTI, so a build with no resampler omits it). r8brain's static members are a third
+target, `retroplug-r8brain-base`, beside the resampler: its one translation unit is vendored code (`R8bBase.cpp`
+includes r8brain's own `r8bbase.cpp`, on a throwing allocator), so it is kept off RetroPlug's own warning level.
+`retroplug-core` links neither (nothing of the core calls a kernel), and the graph has them as `rp.dsp`
+(`rp.dsp.gain`, `.biquad`, `.dither`, `.normalize`, `.dpcm`) and `rp.dsp.resample`, in targets of their own
+(`retroplug-dsp-nodes`, `retroplug-dsp-resample-nodes`) so `retroplug-graph` carries neither and a Pico build links
+`retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone (the `dsp` package's manifest marks `rp.dsp` a device entry
+and `rp.dsp.resample` not). A kit compile and a rendered patch run the same arithmetic through those nodes, so a
+patched kit and a rendered patch share one DSP. `rp.dsp.resample` takes an `audio-buffer` resource at that buffer's
+own rate and outputs at the plan's; every other node's ports carry the plan's one rate. A kit compile's output is
+reproducible: the TPDF dither seeds from a hash of the input it sees, held by the kit baseline
+([06-build-test.md](06-build-test.md), [02-native-host.md](02-native-host.md), D1 design sections 4 and 5, D2 design
+section 11).
+
+### The packages and the device build
+
+Since E1 ([modular-graph-phase-e1-design.md](../docs/modular-graph-phase-e1-design.md)) the graph libraries are
+workspace packages, `packages/<name>/` with a `native/` part, a `ts/` part or both and a `retroplug` field in
+`package.json` naming its native CMake target, its entry function (a unique function returning the `rp_package`) and
+whether the entry builds for the device. The native packages are `node-sdk` (the C ABI and the authoring header, which
+a node pack depends on alone), `graph-runtime` (the executor, planner, registry and `GraphHost`), `core` (the
+`rp.core` nodes) and `dsp` (the kernels and the `rp.dsp` nodes); `packages/native`'s manifest lists the types not yet
+carved (`sameboy`, `mesen`, `host.io`, `n8`, `launchpad`). Each product (the plugin, `retroplug-host`, the CLI, the
+SDL standalone, the Node addon and four test binaries) declares its packages with `retroplug_product()` and gets a
+generated `rp_register_packages()` that the Engine reads in place of a hard-coded loop; a golden holds each product's
+registered type ids, and a configure-time check refuses a binary that links the engine without being a product.
+
+A portable node's settings hold only fixed-capacity types, and `node.hpp` builds two ways: the desktop's description,
+JSON and heap-settings half, and, with `RP_DEVICE`, a portable core whose instance owns its `Settings` in the host's
+memory and reads them from msgpack (`RP_SETTINGS_MSGPACK`). `rp-device-check` (`packages/graph-runtime/device-check/`,
+`pnpm device:check`) is the RP2350 image that runs every portable `rp.core` and `rp.dsp` type once, linked with
+`--wrap` on the heap and the exception entry points so that any allocation or throw is a link error. It is built, never
+run, in CI ([06-build-test.md](06-build-test.md)).
 
 ### The offline job pool
 
@@ -569,7 +590,7 @@ lost mutation.
 | [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), its one `SystemFactory`, the staged host MIDI, the host outputs and the registry; `buildSystem` / `destroySystem` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
 | [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in packs, each two bare QuickJS runtimes of its own (the built-in pack first, more loaded and reloaded at runtime), and the audio runtimes' profiling |
 | [`nodes/`](../packages/retroplug/src/script/nodes) / [`bundle.ts`](../packages/retroplug/src/script/bundle.ts) | the script nodes buildGraph places (the MIDI routing, each role's protocol node, the controller session), and the script-node bundle every Engine embeds |
-| [`src/dsp/`](../packages/dsp/native/src/dsp) | the `rp.dsp` nodes' kernels, core-free: gain and peak, the normalising gain, the RBJ biquads, dither and quantise, the DMC encode, and the r8brain resampler |
+| [`packages/dsp/native/src/dsp/`](../packages/dsp/native/src/dsp) | the `rp.dsp` nodes' kernels, core-free: gain and peak, the normalising gain, the RBJ biquads, dither and quantise, the DMC encode, and the r8brain resampler |
 | [`DspNodes.cpp`](../packages/dsp/native/src/graph/nodes/DspNodes.cpp) / [`DspResampleNodes.cpp`](../packages/dsp/native/src/graph/nodes/DspResampleNodes.cpp) | the `rp.dsp` package (gain, biquad, dither, normalize, dpcm) and the `rp.dsp.resample` package beside it |
 | [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp) | the offline job pool: a document run to completion on a host of its own, or a render (an engine job: a `RenderHost` and `Engine` of its own), its inputs, outputs and completion (the request and completion types are in [`OfflineTypes.hpp`](../packages/native/src/host/engine/OfflineTypes.hpp), which `Engine.hpp` includes in place of the pool) |
 | [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |

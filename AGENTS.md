@@ -3,9 +3,10 @@
 Start with these — all short:
 
 - [README.md](README.md) — what RetroPlug is, how to build, project layout.
-- [spec/](spec/README.md) — the architecture (one doc per concern). The build lives
-  in `packages/native/` (C++ host: `src/` core + `src/host/` layer + `plugin/`) +
-  `packages/retroplug/` (TS/UI). The older **legacy** build has been removed;
+- [spec/](spec/README.md) - the architecture (one doc per concern). The build lives in `packages/native/` (C++ host:
+  `src/` core + `src/host/` layer + `plugin/`) + `packages/retroplug/` (TS/UI), with the graph libraries in the
+  workspace packages `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (formerly
+  `native/src/graph` and `native/src/dsp`). The older **legacy** build has been removed;
   [spec/07-remaining-work.md](spec/07-remaining-work.md) tracks the residual cleanup + feature gaps.
 - [docs/lsdj.md](docs/lsdj.md) — the LSDj domain reference + how to test LSDj sync /
   DAW timing / audio quality headlessly.
@@ -34,9 +35,9 @@ The rules below are the parts that don't fit those.
   linked into `retroplug-backend`; the watcher is opt-in via `enableWatching`, which
   only the plugin calls). `deps/catch2` is the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
-  ten `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
+  eleven `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
   `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` /
-  `-graph-test` / `-engine-graph-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
+  `-graph-test` / `-engine-graph-test` / `-device-mode-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
   holds the engine's graph to the cores it wraps: each system node renders what its core renders
   driven directly, bit for bit, its inputs, settings and params included (C2,
   [docs/modular-graph-phase-c2-design.md](docs/modular-graph-phase-c2-design.md): every setting reaches its core at
@@ -126,6 +127,26 @@ The rules below are the parts that don't fit those.
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive
   `PluginExporter::reinitParameters` over a toy plugin.
+  `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp`
+  compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library reached through the C ABI (Catch2
+  itself keeps exceptions), ten cases. A device-mode node created from msgpack settings renders bit for bit what a
+  desktop-mode node renders from the same settings as JSON, with create, process and destroy allocating nothing; the
+  desktop reads msgpack the same; the decode defaults a missing field, skips an unknown one and refuses what JSON
+  refuses in the same words, naming the field; the converter writes each number as the JSON spells it; and four
+  `[device-check]` cases hold the image's cases to the manifests' device entries and run the whole check in its arena
+  with no allocation. Its configure runs three refused-source checks (a heap type, a pointer in `Settings` and a heap
+  header must each fail in device mode with their own reason; libc++ skips the header one).
+- **The graph libraries are workspace packages, and portable nodes have rules.** `packages/<name>/package.json`'s
+  `retroplug` field is the manifest [cmake/packages.cmake](cmake/packages.cmake) reads; each product lists its
+  packages (`retroplug_product`) and gets a generated `rp_register_packages()` (the `[packages]` golden holds the type
+  ids; a configure check fails a binary that links the engine and is no product). A node meant for the Pico (a package
+  entry with `device: true`) includes `graph/node.hpp` and keeps its settings to `rp::text<N>`, `rp::list<T, N>`,
+  `rp::choice` (not `rfl::Literal`), numbers, bools, `rp::resource_ref` and enums (a fixed underlying type, no
+  `operator|`, enumerators within -256..256; `enum_param` too), and wraps `validate`, `adjust_layout` and the helpers
+  only they use in ONE `#ifndef RP_DEVICE`. The desktop build compiles a `<target>-device` object library for every
+  such target, so a missed guard or a non-portable `Settings` fails the ordinary build. A custom `rfl::Reflector<E>`
+  is not seen by the device decode. Details:
+  [docs/modular-graph-phase-e1-design.md](docs/modular-graph-phase-e1-design.md).
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
   EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
   in `Core/apu.{c,h}` and ships as a tracked patch
@@ -343,7 +364,10 @@ The headless loop (the only path — legacy is gone) is documented in
 `test:native` (real host + cores), `test:ui` (LVGL React), `test:plugin` (Catch2
 C++ unit checks — the per-context window-hook routing, the class-id counter sync
 that keeps the DAW-hosted editor from rendering blank, and the DPF dynamic-parameter
-diff classifier), `screenshot`,
+diff classifier), `device:check` (`tools/build-device-check.sh` - builds `rp-device-check`, the RP2350 image of every
+portable `rp.core` / `rp.dsp` type, with `arm-none-eabi-g++` and the Pico SDK 2.1.1 (`PICO_SDK_PATH`), under a link
+trap on the heap and on exceptions (78 wrapped symbols) and a probe that must fail to link; built and never run, in
+CI on linux-x64; needs no hardware), `screenshot`,
 `reaper:editor` (`tools/run-reaper-editor.sh` — floats the hosted plugin editor in
 headless Reaper and asserts its LVGL snapshot rendered; the only check of on-screen
 editor rendering, not in CI), `reaper:editor-reopen` (`tools/run-reaper-editor-reopen.sh`

@@ -1106,42 +1106,43 @@ its **runtime** classes:
 | [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; its node gives it its knobs through value-guarded setters (`setModel`, `setHighpass`, the display group, `setSerialOutCapture`); its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
 | [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap and build check name no console: it forward-declares `ChannelTap` and includes no core header, and with C5's cart node it has no console check at all |
 | `SampleCache`, `util/MinizZip`, `EmbeddedRoms` | the offline seam's file decode (miniaudio, mono float at the file's own rate, the decode a kit compile reads its sources through), `zip`/`unzip`, and embedded-ROM resolution. `lsdj/Effects` is the kit path's reference arithmetic now, compiled into the two test binaries that hold the DSP nodes to it, not into the core |
-| `SpscRing` / `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the command/release rings and the snapshot registry are built on |
+| `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the snapshot registry is built on (the command and release rings use `SpscRing`, which lives in `packages/node-sdk`) |
 
 The graph the engine runs on is not in `retroplug-core`: the executor, planner and
-[`GraphHost`](../packages/graph-runtime/native/src/graph/GraphHost.hpp), with the `rp.core` mixing nodes and the
-`rp.host` package's `rp.host.audio-out`, are the `retroplug-graph` / `retroplug-graph-exec` libs
-(`src/graph/`), and the engine's own nodes (`src/host/graph/`: the system nodes, the host MIDI I/O, the cart's node
-and the control surface's two) and the script host (`src/host/script/`) compile into
-`retroplug-backend`.
+[`GraphHost`](../packages/graph-runtime/native/src/graph/GraphHost.hpp), with the `rp.host` package's
+`rp.host.audio-out`, are the `retroplug-graph` / `retroplug-graph-exec` libs (`packages/graph-runtime/`, over the node
+SDK in `packages/node-sdk/`); the `rp.core` mixing nodes are `retroplug-core-nodes` (`packages/core/`),
+and the engine's own nodes (`src/host/graph/`: the system nodes, the host MIDI I/O, the cart's node and the control
+surface's two) and the script host (`src/host/script/`) compile into `retroplug-backend`.
 
 ROM classification (the legacy build's C++ `RomSniffer`) and the LSDj sav codec are TS-owned - neither is in
 the C++ tree.
 
 ### The DSP targets and the `rp.dsp` packages
 
-The kit path's DSP and the graph's DSP nodes are the same kernels, in `src/dsp/`, split across five targets:
-`retroplug-dsp-kernels` (gain and peak, the eight RBJ biquads, dither and quantise, the DMC encode; the C++ standard
-library alone), `retroplug-dsp-resample` (the r8brain resampler, which brings the heap, pthreads and RTTI),
-`retroplug-r8brain-base` (r8brain's static members, one vendored translation unit compiled on an allocator that throws,
-with no target declared for the vendored library; kept off RetroPlug's own warning level), and the two node packages
-`retroplug-dsp-nodes` (`rp.dsp.gain`, `.biquad`, `.dither`, `.normalize`, `.dpcm`) and `retroplug-dsp-resample-nodes`
-(`rp.dsp.resample`), in [cmake/graph.cmake](../packages/dsp/native/CMakeLists.txt). `retroplug-core` links neither
-(nothing of the core calls a kernel), and `retroplug-graph` links neither; `retroplug-backend` links both packages
-and `Engine.cpp` registers them beside the other static packages, the offline job pool registering them in its own
-registry too. The split is load-bearing: `rp.dsp` never
-reaches r8brain, so a Pico build links `retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone, leaves
-`dspResamplePackage()` out of its registration, and has neither the resampler nor r8brain in its binary, where the
-planner's `heap` refusal is only the second line (`rp.dsp.dpcm` declares `heap` and stays in the package, so the split
-is r8brain's link-time cost, not allocation). `rp.dsp.resample` reads an `audio-buffer` resource named by its
-settings at that buffer's rate and outputs at the plan's; a recorder and a resampler on one buffer in one plan are
-unsupported (the planner refuses a resource bound to a port reader when the same resource has a port writer, and a
-settings ref is not a binding it sees), so a driver fills a buffer before the plan that plays it. `rp.dsp.normalize`
-and `rp.dsp.dpcm` read a buffer the same way, and the dither's `seedFrom` names one too, so a kit-shaped document can
-name one buffer twice (the player's port and the settings ref). A rate change
-resumes where the output had reached, to within one frame, so a fresh r8brain run-in is heard from there rather than a
-gap. `rp.dsp.normalize` measures its peak over the channels it plays (the loudest of each played channel's peak), and
-`rp.dsp.dpcm` refuses a multi-channel buffer rather than mixing one.
+The kit path's DSP and the graph's DSP nodes are the same kernels, in `packages/dsp/native/src/dsp/`, split across
+five targets: `retroplug-dsp-kernels` (gain and peak, the eight RBJ biquads, dither and quantise, the DMC encode; the
+C++ standard library alone), `retroplug-dsp-resample` (the r8brain resampler, which brings the heap, pthreads and
+RTTI), `retroplug-r8brain-base` (r8brain's static members, one vendored translation unit compiled on an allocator that
+throws, with no target declared for the vendored library; kept off RetroPlug's own warning level), and the two node
+packages `retroplug-dsp-nodes` (`rp.dsp.gain`, `.biquad`, `.dither`, `.normalize`, `.dpcm`) and
+`retroplug-dsp-resample-nodes` (`rp.dsp.resample`), in the `dsp` package's
+[CMakeLists.txt](../packages/dsp/native/CMakeLists.txt). `retroplug-core` links neither (nothing of the core calls a
+kernel), and `retroplug-graph` links neither; `retroplug-backend`'s products link both packages and `Engine.cpp`
+registers them, beside the other static packages, through the product's generated `rp_register_packages()`, the
+offline job pool registering them in its own registry too. The split is load-bearing: `rp.dsp` never reaches r8brain,
+so a Pico build links `retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone, leaves `dspResamplePackage()` out of
+its registration, and has neither the resampler nor r8brain in its binary, where the planner's `heap` refusal is only
+the second line (`rp.dsp.dpcm` declares `heap` and stays in the package, so the split is r8brain's link-time cost, not
+allocation). `rp.dsp.resample` reads an `audio-buffer` resource named by its settings at that buffer's rate and
+outputs at the plan's; a recorder and a resampler on one buffer in one plan are unsupported (the planner refuses a
+resource bound to a port reader when the same resource has a port writer, and a settings ref is not a binding it
+sees), so a driver fills a buffer before the plan that plays it. `rp.dsp.normalize` and `rp.dsp.dpcm` read a buffer
+the same way, and the dither's `seedFrom` names one too, so a kit-shaped document can name one buffer twice (the
+player's port and the settings ref). A rate change resumes where the output had reached, to within one frame, so a
+fresh r8brain run-in is heard from there rather than a gap. `rp.dsp.normalize` measures its peak over the channels it
+plays (the loudest of each played channel's peak), and `rp.dsp.dpcm` refuses a multi-channel buffer rather than mixing
+one.
 
 Two of the nodes guard their state, because nothing between a plan and the host output rejects a non-finite sample:
 `rp.dsp.biquad` resets a channel's filter and writes that block as silence when the filter comes out of it non-finite
@@ -1162,6 +1163,35 @@ golden-ratio step, so a stereo patch's dither is decorrelated and channel 0 is t
 unchanged), unless `seedFrom` names a buffer, whose first channel's hash seeds the stream instead; a kit compile is
 byte-identical because it refuses rather than recovers. No kit byte moves either way: the nodes are held to those
 kernels by their own tests.
+
+### Packages, generated registration and device mode
+
+The node SDK, the graph runtime and the `rp.core` and `rp.dsp` nodes are workspace packages since E1
+([modular-graph-phase-e1-design.md](../docs/modular-graph-phase-e1-design.md));
+[cmake/packages.cmake](../cmake/packages.cmake) reads each `packages/<name>/package.json`'s `retroplug.native`
+manifest (an object or a list, one per `rp_package`, with a per-entry `device` flag) with `string(JSON)`.
+`retroplug_product(<target> PACKAGES ...)` generates that product's `rp_register_packages()` (declared in
+[`Packages.hpp`](../packages/graph-runtime/native/src/graph/Packages.hpp)), which `Engine.cpp` iterates in order; the
+order is load-bearing (`rp.host` after `rp.dsp.resample`) and the `[packages]` golden holds it. The plugin is one
+product whose targets are every binary DPF builds from the plugin's libraries; `retroplug_check_products` fails the
+configure for a binary that links the engine and is none, since a Linux module would only fail at load. The offline
+pool keeps its own fixed subset (`core` and `dsp`).
+
+`node.hpp` is the guide a node author reads and is built two ways. The portable half (`node_core.hpp` and
+`node_device.hpp`, with `fields.hpp`, `enums.hpp`, `settings_types.hpp`, `settings_msgpack.hpp` and
+`msgpack_reader.hpp`) compiles with `RP_DEVICE` and no exceptions or RTTI; the desktop half (`node_desc.hpp`,
+`settings_json.hpp`) holds the descriptor, `layout_for`, the JSON parse and the heap-settings instance. A device
+instance owns its `Settings` in the bytes `query_memory` counted, with the resource pins, and reads a msgpack blob
+(`rp_settings.encoding` is `RP_SETTINGS_MSGPACK`) with a reader of our own that matches fields by name, defaults a
+missing one and skips an unknown one; the desktop reads the same blob for a type whose settings are portable, and
+`settingsToMsgpack` converts a node's JSON settings. Settings use `rp::text<N>`, `rp::list<T, N>`, `rp::choice<...>`,
+numbers, bools, numeric `rp::resource_ref`s and enums with a fixed underlying type, no `operator|` and enumerators
+within -256 to 256 (the same limits hold for `enum_param`). A device-capable node source wraps `validate`,
+`adjust_layout` and the helpers only they use in one `#ifndef RP_DEVICE`; the desktop build compiles a
+`<target>-device` object library from every `device: true` target (the `RP_DEVICE` flags, nothing linked) so a missed
+guard, a pointer or non-portable `Settings`, or a `heap` node fails the desktop build. `rp.sdk.settings-json/1` is an
+SDK interface every `node.hpp` type answers, writing an instance's settings as JSON. The device image and the link
+trap are in [06-build-test.md](06-build-test.md).
 
 ### Kit reproducibility
 
@@ -1275,7 +1305,10 @@ is one automatable parameter applied post-render across all 8 channels
 - [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp), [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs, the registry and the offline job pool; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, `submitOfflineJob`, `drainOfflineJobs`, `cancelOfflineJob`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
 - [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes), [`N8Nodes.cpp`](../packages/native/src/host/graph/N8Nodes.cpp) (the cart's node), [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) (the control surface's two), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
-- [`GraphHost.hpp`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/graph-runtime/native/src/graph/GraphHost.cpp), [`rp_node.h`](../packages/node-sdk/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI (`layout_for` per type).
+- [`GraphHost.hpp`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) /
+  [`.cpp`](../packages/graph-runtime/native/src/graph/GraphHost.cpp),
+  [`rp_node.h`](../packages/node-sdk/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI
+  (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
 - [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.
 - [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime and its packs, + the compiler a pack's source and the tests' toys go through; [`src/script/`](../packages/retroplug/src/script) (`bundle.ts`, `register.ts`, `nodes/`): the bundle every Engine embeds, how it registers its nodes, and the script nodes themselves.

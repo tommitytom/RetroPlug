@@ -1,8 +1,9 @@
 # RetroPlug — architecture spec
 
 This directory is the single source of truth for the RetroPlug architecture — the
-implementation in [`packages/native/`](../packages/native) (C++ host)
-and [`packages/retroplug/`](../packages/retroplug) (TypeScript + React/LVGL UI).
+implementation in [`packages/native/`](../packages/native) (C++ host), the graph libraries in the workspace packages
+[`node-sdk`](../packages/node-sdk), [`graph-runtime`](../packages/graph-runtime), [`core`](../packages/core) and
+[`dsp`](../packages/dsp), and [`packages/retroplug/`](../packages/retroplug) (TypeScript + React/LVGL UI).
 
 The guiding principle is one sentence:
 

@@ -104,7 +104,8 @@ cannot be read refuses the whole package, and a second `load` is refused, leavin
 Every type is served by the same functions, which the ABI could not tell apart: its type-level calls had no context
 (§10). So `descriptor`, `layout_for`, `query_memory` and `create` now take the `const rp_node_type*`
 they are called through, and `rp_node_type` gains a trailing `ctx`, null for a C++ node and never read by the host,
-which for a script type points at its definition's record ([rp_node.h](../packages/node-sdk/native/src/graph/rp_node.h)).
+which for a script type points at its definition's record
+([rp_node.h](../packages/node-sdk/native/src/graph/rp_node.h)).
 
 ### 2.3 Marshalling
 
@@ -191,7 +192,8 @@ instance, with the layout `layout_for` gives for the new settings.
   control or resource output whose id, kind and resource type match. The rest start afresh: a param at its default,
   its document value (if the document gives one) sent again, a control output at 0, a resource slot empty.
 - Feedback wires keep their last block, as they already do across a plan swap when a wire's key (its two
-  endpoints) and shape are unchanged ([Planner.cpp](../packages/graph-runtime/native/src/graph/Planner.cpp) `front`). A queue
+  endpoints) and shape are unchanged
+  ([Planner.cpp](../packages/graph-runtime/native/src/graph/Planner.cpp) `front`). A queue
   front whose source's capacity changed carries its block too while no audio thread runs, counting what the new
   capacity cannot hold as the source's drops, and starts empty while one does (the control thread may not read a
   front the audio thread is filling); a front whose channel count changed starts silent.

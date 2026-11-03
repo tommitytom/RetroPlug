@@ -1,6 +1,8 @@
 # Design: the modular node-graph engine
 
-**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phase A built (`packages/native/src/graph/`, `packages/retroplug/src/graph/`); Phase B0 to B3b built, and Phases C1 and C2 (the rest of Phases C to E not yet built).
+**Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phases A to D built (the graph libraries are in
+`packages/graph-runtime/` and `packages/node-sdk/`, the TS half in `packages/retroplug/src/graph/`), and Phase E1; E2
+to E4 not yet built.
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -816,18 +818,20 @@ format.
 
 ### 5.6 Library targets
 
-All of it lives in `packages/native/src/graph/`:
+The graph libraries are workspace packages since E1
+([modular-graph-phase-e1-design.md](modular-graph-phase-e1-design.md)):
 
 | Target | Contents | Depends on |
 |---|---|---|
-| `graph/rp_node.h` | the C ABI | nothing |
-| `retroplug-graph-exec` | the executor (`Executor`, `Plan.hpp`, `Queue.hpp`) | nothing (freestanding C++20; builds for the RP2350) |
-| `retroplug-graph` | canonical JSON, descriptors, the graph document, registry, resources, planner, `GraphHost`, the host nodes, and the `rp.core` node package | exec, reflect-cpp |
-| `graph/node.hpp` | the C++ authoring layer (header-only, on `retroplug-graph`'s include path) | reflect-cpp |
+| `graph/rp_node.h`, `Queue.hpp` (`node-sdk`) | the C ABI and the queue types | nothing |
+| `retroplug-graph-exec` (`graph-runtime`) | the executor (`Executor`, `Plan.hpp`) | nothing (freestanding C++20; builds for the RP2350) |
+| `retroplug-graph` (`graph-runtime`) | the registry, resources, planner, `GraphHost` and the host nodes | exec, `retroplug-node-sdk` |
+| `retroplug-node-sdk` (`node-sdk`) | canonical JSON, descriptors, the graph document, the settings types, the msgpack converter | reflect-cpp |
+| `graph/node.hpp` (`node-sdk`) | the C++ authoring layer, built for the desktop or, with `RP_DEVICE`, for the device (header-only) | reflect-cpp |
+| `retroplug-core-nodes` (`core`) | the `rp.core` node package | `node-sdk` |
 
 The `rp.core` package (`+`, `merge`, `join`, `split`, `downmix`, `relabel`, `delay`, `constant`,
-`buffer-player`, `buffer-recorder`) sits in `retroplug-graph` for now and moves into the `dsp` package
-when the package split happens.
+`buffer-player`, `buffer-recorder`) is the `core` workspace package; the DSP kernels and the `rp.dsp` nodes are `dsp`.
 
 None of these link a core, txiki, efsw or LVGL. They are the seed of the system-free "retroplug core".
 The TS half (`defineNode`, `defineExtension`, descriptors, `buildGraph`) lives in
@@ -852,9 +856,19 @@ is not; [modular-graph-phase-d3-design.md](modular-graph-phase-d3-design.md)).
   export applies the target's capability rules, so a `heap` node fails here, on the desktop.
 - The firmware sizes a static arena from the blob (node memory from `query_memory`, plus buffers) and
   runs the identical executor over node types compiled into the firmware.
-- The blob's settings encoding (likely msgpack, already in the tree via dpf.js) is the Pico phase's
-  decision; the ABI already carries an encoding tag (`rp_settings.encoding`).
-- TS nodes on the Pico run on MicroQuickJS within `check:portable`'s rules.
+- **Settings are msgpack** in the blob (`RP_SETTINGS_MSGPACK`, the second value of `rp_settings.encoding`),
+  decoded at plan load by a reader of our own that allocates nothing and throws nothing, and matches fields
+  by name as the JSON does. A portable node's settings hold only fixed-capacity types: `rp::text<N>`,
+  `rp::list<T, N>`, `rp::choice`, numbers, bools, enums within limits and numeric resource ids. Nothing on
+  the device allocates, and a device instance owns its `Settings` in the memory `query_memory` sized.
+- **Device mode.** The node-authoring header builds two ways: with `RP_DEVICE` it is the portable core
+  (block path, in-place instance, msgpack decode) with the descriptor and the JSON parse compiled out; a
+  device-capable node source wraps its desktop-only hooks (`validate`, `adjust_layout`) in one
+  `#ifndef RP_DEVICE`, which the desktop build checks for every package whose manifest says `device: true`.
+- **Proved by a link trap.** `rp-device-check` links every portable `rp.core` and `rp.dsp` type for the
+  RP2350 under `--wrap` on the heap, `sbrk`, the C++ allocation operators and the throw entry points, so any
+  use is a link error naming the object (E1; `pnpm device:check`, a CI step).
+- TS nodes on the Pico run on MicroQuickJS within `check:portable`'s rules (E4).
 
 ---
 
@@ -1243,14 +1257,15 @@ leaves (its section 11): P7's remainder, and a cart's battery reachable only at 
   (`KitCompiler`, retired with its RPCs in D2; the goldens it seeded are still the oracle).
 - CLI `render` and background renders on the offline pool (as engine jobs; D3).
 
-D1 is built ([modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md), six commits): the kit path's DSP is a
-core-free library of block-streaming kernels (`src/dsp/`, `retroplug-dsp-kernels` + `retroplug-dsp-resample`), the kit
-compilers run it, and the graph has it as `rp.dsp.gain`, `.biquad`, `.dither` and `rp.dsp.resample`; TPDF dither is
-seeded from the sample it receives, so a kit compiles to the same bytes, and the kit baseline recorded 39 compiled
-banks. D2 is built too ([modular-graph-phase-d2-design.md](modular-graph-phase-d2-design.md), seven commits): the
-offline job seam, `rp.dsp.normalize`, dither's `seedFrom` and `rp.dsp.dpcm`, and `packages/retroplug/src/kit/`, whose
-TypeScript compiler builds each pass as a document and packs the bank, held byte for byte to those 39 banks; native's
-compiler retired with its RPCs, and every host, the plugin included, compiles kits. D3 is built too
+D1 is built ([modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md), six commits): the kit path's DSP is
+a core-free library of block-streaming kernels (`packages/dsp/native/src/dsp/`, `retroplug-dsp-kernels` +
+`retroplug-dsp-resample`), the kit compilers run it, and the graph has it as `rp.dsp.gain`, `.biquad`, `.dither` and
+`rp.dsp.resample`; TPDF dither is seeded from the sample it receives, so a kit compiles to the same bytes, and the kit
+baseline recorded 39 compiled banks. D2 is built too
+([modular-graph-phase-d2-design.md](modular-graph-phase-d2-design.md), seven commits): the offline job seam,
+`rp.dsp.normalize`, dither's `seedFrom` and `rp.dsp.dpcm`, and `packages/retroplug/src/kit/`, whose TypeScript
+compiler builds each pass as a document and packs the bank, held byte for byte to those 39 banks; native's compiler
+retired with its RPCs, and every host, the plugin included, compiles kits. D3 is built too
 ([modular-graph-phase-d3-design.md](modular-graph-phase-d3-design.md), five commits): the CLI's `render` and the UI's
 background renders are engine jobs on the same pool, `RenderJobRegistry` and the `__rp_*Render` hooks are gone, an
 engine job's engine runs continuous 1024-frame blocks, and a render baseline records the bytes (a render's bits moved
@@ -1258,9 +1273,34 @@ once, deliberately).
 
 ### Phase E: the Pico runtime
 
-- `exportPlan` for a named target; the static-arena executor built for the RP2350.
-- First proven on the desktop with heap allocation forbidden, then on hardware, running a real plan with
-  a C node.
+Phase E makes the C++ nodes, the TypeScript nodes and the packs RetroPlug builds run unchanged in the desktop products
+and on the RP2350, and makes the Pico box a graph host that keeps everything it does today. It is four sub-phases
+([modular-graph-phase-e1-design.md](modular-graph-phase-e1-design.md) section 3 has the gates), taken on these
+decisions: **C++ on the device**, the same sources, no C rewrites; **msgpack settings** in the plan blob;
+**fixed-capacity settings types** (`rp::text`, `rp::list`) in portable nodes; **one C++ Edio**, in the N8 pack,
+wrapped for TS; **TS nodes on MicroQuickJS**; **a workspace package per feature** with a manifest and a generated
+registration per product; **`node-sdk`, `graph-runtime`, then node packages**, a pack depending on `node-sdk` alone;
+portability **proved by a CI cross-compile with a link trap**.
+
+- **E1: the portable node core and the package boundary.** The packages (`node-sdk`, `graph-runtime`,
+  `core`, `dsp`) and each product's generated `rp_register_packages()`; fixed-capacity settings; the node
+  header built for the desktop and the device with `RP_SETTINGS_MSGPACK`; `rp-device-check` and its link
+  trap. The Pico baseline is untouched.
+- **E2: the N8 pack.** `packages/n8`: the nodes, one C++ Edio (no exceptions, caller-supplied buffers, an
+  abstract transport: the desktop serial port, TinyUSB on the Pico, later Web Serial), the link and the
+  lifecycle (probe, menu boot, recovery); TS reaches Edio through an RPC facet. `edio.ts`'s protocol and
+  `pico/n8-host/edio.c` retire. A SNES flash-cart pack follows the same template. Gate: the desktop N8
+  tests, the real-hardware leg and the Pico baseline.
+- **E3: `exportPlan` and the box as a graph host.** `exportPlan` for `rp2350` (the blob, msgpack settings),
+  the static-arena executor, a desktop run with the heap forbidden; the box takes `rp.host.midi-in` from the
+  UART and the pack's `rp.n8.nes`, with today's bridge as its built-in default plan. Gate: the Pico baseline,
+  and a C++ node in the box's plan. It also decides the delay's device default and the float tolerance.
+- **E4: MicroQuickJS on the Pico.** A script host in the arena, `defineNode` made portable. Gate: a TS node
+  in the box's MIDI path on the rig.
+
+E1 is built ([modular-graph-phase-e1-design.md](modular-graph-phase-e1-design.md), five commits): the registration
+is generated, settings are msgpack with the fixed-capacity types, and the device image of `core` and `dsp` links
+under the trap (about 42 KB of flash at -O3 and no static RAM).
 
 ---
 
@@ -1320,20 +1360,22 @@ here so it is not lost.
 
 ### Package split
 
-- Carve `core` (the graph libraries, §5.6), `dsp`, `sameboy`, `mesen` (per console), `lsdj`, `mgb`,
-  `risa`, `smsggdj`, `bliptoaster`, `n8`, `launchpad` into packages, each with a native part, a TS part,
-  or both.
+- E1 began it: `node-sdk`, `graph-runtime`, `core` and `dsp` are workspace packages (`packages/<name>/{native,ts}`
+  with a `retroplug` manifest in `package.json`), and `packages/native`'s own manifest lists the types not
+  yet carved. Carve `sameboy`, `mesen` (per console), `lsdj`, `mgb`, `risa`, `smsggdj`, `bliptoaster`, `n8`
+  (E2) and `launchpad` the same way, each with a native part, a TS part, or both, and the TS halves of
+  `core` and `dsp`.
 - **Mesen** compiles all seven consoles into one 426-object archive (NES 6.6 MB, SNES 6.3 MB of objects,
   ...), and `Core/Shared/Emulator.cpp` plus `Core/Debugger/Debugger.cpp` reference every console, so the
   linker cannot drop any. Per-console compile-out is a `MESEN_ENABLE_<X>` patch to ~20 files plus a
   filtered glob (Mesen is vendored, not a submodule). NES-only removes roughly half the object bytes.
-- Generated `registerCoreBackends` / `rp_register_packages()` per product; `txiki` and `efsw` out of
+- `rp_register_packages()` is generated per product (E1); `registerCoreBackends` the same way; `txiki` and `efsw` out of
   `retroplug-backend` into opt-in libraries; LSDj kit DTOs out of `BackendTypes.hpp`; the risa DMC codec's
   dependency on LSDj files removed; per-product esbuild entries (today every bundle carries every cart).
 - Menus (`menuDefs.ts`'s 240 cart-specific lines, `TRACKER_UI`), catalogs, the HD player and the overlays
   move onto extensions and views.
-- The Edio protocol exists three times (TS source of truth, C++, Pico C), kept in sync by hand; a package
-  boundary is the moment to fix that.
+- The Edio protocol exists three times (TS source of truth, C++, Pico C), kept in sync by hand; E2 fixes
+  that with one C++ implementation in the N8 pack.
 
 ### Web host
 

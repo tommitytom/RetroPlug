@@ -44,7 +44,8 @@ construct-time fields ... stay in the build spec until C3 builds cores in their 
   and `adopt` (a project load: one build per system, then one publish). System ids are never reused, so every rebuild
   is a new id and a new node id `sys-<id>`. The load-time roles' `onConstruct` hooks fold asset overrides into
   `romBytes` (`lsdj-assets`, `risa-assets`, `bliptoaster-assets`) or seed an empty LSDj battery (`lsdj-sync`).
-- **Resources** exist in the graph layer ([ResourceTable.hpp](../packages/graph-runtime/native/src/graph/ResourceTable.hpp)):
+- **Resources** exist in the graph layer
+  ([ResourceTable.hpp](../packages/graph-runtime/native/src/graph/ResourceTable.hpp)):
   immutable byte blocks with one owner and a pin per plan binding, freed once the owner has dropped them and no pin is
   left, ids never reused. Nothing creates one over RPC yet, and no node reads one from its settings: main design
   section 2.5 planned that host service "with the first system node".
