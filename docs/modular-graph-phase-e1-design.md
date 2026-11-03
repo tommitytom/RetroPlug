@@ -119,7 +119,12 @@ the package's include directory), so no node source changes for the move.
 generates that product's `rp_register_packages()`, which replaces `Engine.cpp`'s hard-coded loop; the order of the list
 is the registration order, and the golden holds it. The plugin is one product (`retroplug`) whose targets are every
 binary DPF builds from the plugin's libraries. A configure-time check (`retroplug_check_products`) stops the build when
-a binary links the engine and is no product, since a Linux module would otherwise fail only when loaded. A device
+a binary reaches the engine and is no product, since a Linux module would otherwise fail only when loaded. It runs when
+the root's CMakeLists is done (`cmake_language(DEFER)`, so a binary defined anywhere is seen), and the libraries that
+carry the engine are computed outward from `retroplug-backend` (any static, object or interface library linking a
+carrier, generator-expression operands included), not listed. `retroplug_package` and `retroplug_product` also refuse
+a package named `products`, a package listed twice in one product, and a manifest target its own
+`native/CMakeLists.txt` does not define. A device
 product (`retroplug_product(... DEVICE)`, section 7) takes the device entries only. The offline pool keeps its own fixed
 subset (`core` and `dsp`), and the script-node pack keeps its own path: it is loaded at run time, not linked.
 
@@ -374,8 +379,15 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
 - **Link-time registration.** `Engine.cpp` references `rp_register_packages()` and each product's own object defines it;
   GNU ld resolves an archive's undefined reference against a command-line object in any order. An executable that pulls
   the engine in without being a product fails to link; a Linux module would fail only when loaded, so
-  `retroplug_check_products` stands in for the missing link error. The test binaries `retroplug-classid-test` and
-  `-watcher-test` never pull `Engine.o` in and are exempt.
+  `retroplug_check_products` stands in for the missing link error: deferred to the end of the root's CMakeLists, it
+  computes the carriers from `retroplug-backend` outward and refuses a binary linking one (the scratch checks:
+  a binary linking a library that links `retroplug` is named, `rp-scratch-exe (links rp-scratch-lib)`; an exempt name
+  that is no target, a package twice in PACKAGES, a package `products` and a manifest target the package does not
+  define each fail the configure). The test binaries `retroplug-classid-test` and `-watcher-test` never pull
+  `Engine.o` in and are exempt, by names the check requires to be targets. The root's `cmake_minimum_required` is 3.19
+  (`string(JSON)`, `cmake_language(DEFER)`; dpf.js already required it): `VERSION 3.19...3.31` changes nothing for a
+  CMake at or above 3.19 (policies take the running version, to 3.31) and refuses 3.14 to 3.18 up front instead of at
+  the first `string(JSON)`; the device project already says 3.20.
 - **The golden** is `[packages]` in the engine-graph binary (`golden/product-registrations.json`, 26 ids per product):
   it was recorded from a throwaway program at the design commit that printed the old hard-coded list, not from the new
   code, so it could not agree with itself by construction.

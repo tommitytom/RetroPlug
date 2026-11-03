@@ -545,10 +545,6 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Enum limits.** An `rfl::config::enum_range<E>` override is not honoured and a custom `rfl::Reflector<E>` is not
     seen by the device decode (`rfl::internal::has_read_reflector<E>` would refuse it in one line; no node has one);
     each portable enum costs 55 to 95 ms of compile time a translation unit.
-  - **Hardening the product check.** `retroplug_check_products` looks at direct links to a fixed list of
-    carriers rather than computing the engine-carrying set outward from `retroplug-backend`; it runs at the end of
-    `packages/native`, not at the end of the root; its exempt names are not checked to exist; and the root's
-    `cmake_minimum_required` understates the 3.19 that `string(JSON)` and dpf.js need.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

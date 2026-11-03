@@ -1174,7 +1174,8 @@ manifest (an object or a list, one per `rp_package`, with a per-entry `device` f
 [`Packages.hpp`](../packages/graph-runtime/native/src/graph/Packages.hpp)), which `Engine.cpp` iterates in order; the
 order is load-bearing (`rp.host` after `rp.dsp.resample`) and the `[packages]` golden holds it. The plugin is one
 product whose targets are every binary DPF builds from the plugin's libraries; `retroplug_check_products` fails the
-configure for a binary that links the engine and is none, since a Linux module would only fail at load. The offline
+configure, at the end of the root's CMakeLists, for a binary that links a library carrying the engine (computed outward
+from `retroplug-backend`) and is none, since a Linux module would only fail at load. The offline
 pool keeps its own fixed subset (`core` and `dsp`).
 
 `node.hpp` is the guide a node author reads and is built two ways. The portable half (`node_core.hpp` and
