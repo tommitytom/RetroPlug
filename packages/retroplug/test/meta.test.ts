@@ -150,7 +150,16 @@ test("mock backend: a document naming a resource the engine does not hold is ref
     code: "create-failed",
     message: `sram: "res:${rom.id}" is a rom resource, not a sram`,
   });
-  expect(be.setGraph(doc({ rom: "res:007" })).errors[0].message).toBe('rom: "res:007" is not a resource reference (res:N)');
+  // A malformed ref is refused where native reads the settings, before the missing-ROM check and any create.
+  expect(be.setGraph(doc({ rom: "res:007" })).errors[0]).toEqual({
+    nodeId: "sys-1",
+    port: "",
+    code: "settings-invalid",
+    message: `Failed to parse field 'rom': "res:007" is not a resource reference (res:N)`,
+  });
+  expect(be.setGraph(doc({ sram: "res:007" })).errors[0].message).toBe(
+    `Failed to parse field 'sram': "res:007" is not a resource reference (res:N)`,
+  );
   expect(be.setGraph(doc({ sram: `res:${sram.id}` })).errors[0]).toEqual({
     nodeId: "sys-1",
     port: "",

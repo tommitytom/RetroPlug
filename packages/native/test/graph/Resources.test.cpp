@@ -48,7 +48,7 @@ struct ResourceNode {
         const rp_bytes* b = s.rom.bytes();
         sawBytes = b != nullptr;
         bytes = b ? static_cast<std::uint32_t>(b->size) : 0;
-        ref = s.rom.ref;
+        ref = s.rom.ref();
         level = static_cast<float>(s.level);
     }
     void process(const rp::Block& b) noexcept {
@@ -209,8 +209,12 @@ TEST_CASE("a resource a node's settings name must be a live resource of the fiel
     CHECK(dropped.find("not a live resource") != std::string::npos);
     const std::string wrongType = refused(doc(resRef(sram)));
     CHECK(wrongType.find("sram resource, not a rom") != std::string::npos);
-    const std::string malformed = refused(doc("res:007"));
-    CHECK(malformed.find("is not a resource reference") != std::string::npos);
+    // A ref that is not "res:N" never becomes a number, so it is refused where the settings are read, not at create.
+    const SetGraphResult malformed = rig.set(doc("res:007"));
+    REQUIRE_FALSE(malformed.ok);
+    REQUIRE(malformed.errors.size() == 1);
+    CHECK(malformed.errors[0].code == "settings-invalid");
+    CHECK(malformed.errors[0].message.find("is not a resource reference") != std::string::npos);
 
     // Every one of them left the running plan as it was: the node still runs, its own pin untouched.
     CHECK(rig.resources.pinCount(rom) == 1);

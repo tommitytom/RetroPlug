@@ -276,6 +276,7 @@ retroplug_add_test_binary(
              test/graph/HostCommands.test.cpp
              test/graph/Reshape.test.cpp
              test/graph/Resources.test.cpp            # a node that reads a resource its settings name
+             test/graph/SettingsTypes.test.cpp         # rp::text, rp::list and the numeric resource_ref
              test/graph/QueueCapacity.test.cpp
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
              test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's math

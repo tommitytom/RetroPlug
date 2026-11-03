@@ -500,6 +500,17 @@ export class MockBackend implements Backend {
   private resourceProblem(node: NodeDoc): { code: string; message: string } | null {
     if (!SYSTEM_NODE_TYPES.has(node.type)) return null;
     const settings = node.settings ?? {};
+    // Native reads every settings field before it validates or creates anything, so a ref that is not "res:N" is
+    // refused first, as the settings read refuses it (rfl names the field it was reading).
+    for (const field of ["rom", "sram", "state"] as const) {
+      const value = settings[field];
+      if (value === undefined || value === "") continue;
+      if (typeof value !== "string" || !RES_REF.test(value))
+        return {
+          code: "settings-invalid",
+          message: `Failed to parse field '${field}': ${JSON.stringify(value)} is not a resource reference (res:N)`,
+        };
+    }
     for (const [field, type] of [["rom", "rom"], ["sram", "sram"], ["state", "state"]] as const) {
       const value = settings[field];
       if (value === undefined) {
@@ -507,7 +518,7 @@ export class MockBackend implements Backend {
         continue;
       }
       const match = typeof value === "string" ? RES_REF.exec(value) : null;
-      if (!match) return { code: "create-failed", message: `${field}: ${JSON.stringify(value)} is not a resource reference (res:N)` };
+      if (!match) return { code: "create-failed", message: `${field}: ${JSON.stringify(value)} names no resource` };
       const held = this.resources.get(Number(match[1]));
       if (!held) return { code: "create-failed", message: `${field}: "${value}" is not a live resource` };
       if (held.type !== type) return { code: "create-failed", message: `${field}: "${value}" is a ${held.type} resource, not a ${type}` };

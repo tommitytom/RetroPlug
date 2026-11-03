@@ -100,6 +100,7 @@
 #include "graph/GraphDocument.hpp"
 #include "graph/Queue.hpp"
 #include "graph/rp_node.h"
+#include "graph/settings_types.hpp"
 
 namespace rp {
 
@@ -254,7 +255,7 @@ struct link {
 // Create pins before any hook that sees the instance's settings runs, so `on_settings`, `activate`, `process`, `step` and
 // `finish` read a resolved handle (and a prepare that keeps the refs copies the instance's pins into the settings object
 // it installs). The hooks that run before create has pinned anything (`validate`, `adjust_layout`, `rebuild_key`,
-// `extra_memory`, `query_memory`) see only `ref`: a node must not read `bytes()` or `audio()` there. `needs_rebuild`
+// `extra_memory`, `query_memory`) see only `id` (and `empty()`): a node must not read `bytes()` or `audio()` there. `needs_rebuild`
 // sees handles in both objects, and is skipped for a ref that moved, which is a rebuild on its own.
 //
 //   struct Settings { rp::resource_ref<"rom"> rom; };   // JSON: {"rom": "res:7"}; absent: the node names none
@@ -264,11 +265,16 @@ struct link {
 template <fixed_string Type>
 struct resource_ref {
     // rfl reads and writes the ref as the plain string the document carries, never the handle it resolves to, and its
-    // schema is that string inline (the rfl::parsing::Parser specialization at the end of this file).
+    // schema is that string inline (the rfl::parsing::Parser specialization at the end of this file). The id is held
+    // as the number, so a settings object owns nothing on the heap for it.
     static constexpr std::string_view resource_type() { return Type.view(); }
 
-    std::string        ref;                 // "res:N" as the document names it (empty: none)
+    std::uint32_t      id = 0;              // N of the document's "res:N" (0: the document names none)
     const rp_resource* resource = nullptr;  // resolved by the host layer at create, and again at each prepare
+
+    bool empty() const { return id == 0; }
+    // The document's spelling of the id, for an error message: "res:N", or empty for none.
+    std::string ref() const { return id ? "res:" + std::to_string(id) : std::string(); }
 
     // The payload of a bytes resource (every type but "audio-buffer"), or null when the field names none.
     const rp_bytes* bytes() const {
@@ -669,8 +675,8 @@ constexpr bool checkHooks() {
 // that names no resource still holds its place, so the pins line up with the settings' resource fields in order.
 struct ResourceHold {
     const rp_host_resources* service = nullptr;
-    std::string              ref;  // the ref the settings named, so prepare can tell whether it moved
-    std::uint32_t            id = 0;
+    std::uint32_t            named = 0;   // the id the settings named (0: none), so prepare can tell whether it moved
+    std::uint32_t            id = 0;      // the id pinned: equal to `named` while a pin is held, 0 after drop
     const rp_resource*       resource = nullptr;
 
     ResourceHold() = default;
@@ -678,14 +684,14 @@ struct ResourceHold {
     ResourceHold& operator=(const ResourceHold&) = delete;
     ResourceHold(ResourceHold&& other) noexcept
         : service(std::exchange(other.service, nullptr)),
-          ref(std::move(other.ref)),
+          named(other.named),
           id(std::exchange(other.id, 0)),
           resource(std::exchange(other.resource, nullptr)) {}
     ResourceHold& operator=(ResourceHold&& other) noexcept {
         if (this != &other) {
             drop();
             service = std::exchange(other.service, nullptr);
-            ref = std::move(other.ref);
+            named = other.named;
             id = std::exchange(other.id, 0);
             resource = std::exchange(other.resource, nullptr);
         }
@@ -783,7 +789,7 @@ void forEachResourceField(S& s, F&& f) {
 }
 
 // Pin every resource `s` names into `inst`, resolving each field's handle, in field order. False, with the reason in
-// *why, for a ref that is not "res:N", a host that offers no table, an id that is unknown or dropped, or a resource
+// *why, for a host that offers no table, an id that is unknown or dropped, or a resource
 // of another type than the field declares (a "rom" where the document names an sram).
 template <class T>
 bool acquireResources(Instance<T>& inst, const rp_host* host, typename SettingsOf<T>::type& s, std::string* why) {
@@ -795,32 +801,27 @@ bool acquireResources(Instance<T>& inst, const rp_host* host, typename SettingsO
     bool ok = true;
     forEachResourceField(s, [&](std::string_view name, auto& field) {
         ResourceHold hold;
-        hold.ref = field.ref;
+        hold.named = field.id;
         inst.resources.push_back(std::move(hold));
-        if (!ok || field.ref.empty()) return;  // the document names none here
+        if (!ok || field.empty()) return;  // the document names none here
         ResourceHold& held = inst.resources.back();
         if (!service) {
             *why = std::string(name) + ": the host offers no resource table";
             ok = false;
             return;
         }
-        const auto id = graph::parseResourceRef(field.ref);
-        if (!id) {
-            *why = std::string(name) + ": " + graph::jsonString(field.ref) + " is not a resource reference (res:N)";
-            ok = false;
-            return;
-        }
         rp_error err{};
-        const rp_resource* r = service->acquire(service->ctx, *id, std::string(field.resource_type()).c_str(), &err);
+        const rp_resource* r =
+            service->acquire(service->ctx, field.id, std::string(field.resource_type()).c_str(), &err);
         if (!r) {
             // The service's reason continues the sentence: "rom: \"res:7\" is not a live resource".
-            *why = std::string(name) + ": " + graph::jsonString(field.ref) + " " +
+            *why = std::string(name) + ": " + graph::jsonString(field.ref()) + " " +
                    (err.message[0] ? std::string(err.message) : std::string("cannot be used"));
             ok = false;
             return;
         }
         held.service = service;
-        held.id = *id;
+        held.id = field.id;
         held.resource = r;
         field.resource = r;
     });
@@ -837,7 +838,7 @@ bool resolveResources(Instance<T>& inst, typename SettingsOf<T>::type& s) {
     std::size_t i = 0;
     forEachResourceField(s, [&](std::string_view, auto& field) {
         if (!same) return;
-        if (i >= inst.resources.size() || inst.resources[i].ref != field.ref) {
+        if (i >= inst.resources.size() || inst.resources[i].named != field.id) {
             same = false;
             return;
         }
@@ -1207,12 +1208,23 @@ struct rfl::parsing::Parser<R, W, rp::resource_ref<Type>, ProcessorsType> {
     using InputVarType = typename R::InputVarType;
     using String = Parser<R, W, std::string, ProcessorsType>;
 
+    // The empty string is "none" (id 0); anything else must be "res:N", the one spelling of an id parseResourceRef
+    // accepts. A ref that is not is refused here, with the string it carried, where the settings are read.
     static Result<rp::resource_ref<Type>> read(const R& r, const InputVarType& var) noexcept {
-        return String::read(r, var).transform([](std::string ref) { return rp::resource_ref<Type>{std::move(ref)}; });
+        auto text = String::read(r, var);
+        if (!text) return rfl::Unexpected(text.error());
+        rp::resource_ref<Type> out;
+        if (text->empty()) return out;
+        const auto id = rp::graph::parseResourceRef(*text);
+        if (!id)
+            return rfl::Unexpected(
+                rfl::Error(rp::graph::jsonString(*text) + " is not a resource reference (res:N)"));
+        out.id = *id;
+        return out;
     }
     template <class P>
     static void write(const W& w, const rp::resource_ref<Type>& field, const P& parent) {
-        String::write(w, field.ref, parent);
+        String::write(w, field.ref(), parent);
     }
     static schema::Type to_schema(std::map<std::string, schema::Type>* definitions) {
         return String::to_schema(definitions);

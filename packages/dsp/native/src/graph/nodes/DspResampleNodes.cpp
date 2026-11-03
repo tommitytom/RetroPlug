@@ -29,7 +29,7 @@ struct ResampleNodeSettings {
     // diagnostic. D2's driver fills a buffer before the plan that plays it, never in the same plan as the resampler.
     rp::resource_ref<"audio-buffer"> buffer;
     std::uint32_t                    channels = 2;
-    std::string                      layout = "stereo";
+    rp::text<kMaxLayoutName>         layout = "stereo";
     // Off: the buffer, then silence, which is the kernel's whole-buffer stream (the kit path's resample, before its
     // cut) continued for as long as the plan runs. On: the buffer again from its first frame at its end, as the player
     // loops, one seamless stream through the resampler. Off by default, unlike the player, because the stream the
@@ -73,7 +73,7 @@ struct Resample {
         return checkLayout(s.layout, s.channels);
     }
     static void adjust_layout(Layout& l, const Settings& s) {
-        l.ports[0].channels = ChannelSpec::fixed(s.channels, s.layout);
+        l.ports[0].channels = ChannelSpec::fixed(s.channels, s.layout.str());
     }
 
     std::vector<rp::dsp::Resampler> resamplers;

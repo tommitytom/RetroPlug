@@ -431,7 +431,7 @@ struct SystemNode {
     static std::optional<std::string> validate(const Settings& s) {
         if (s.system == 0)
             return std::string("a system node names the system it builds ({\"system\": <id>, \"rom\": \"res:N\"})");
-        if (s.rom.ref.empty()) return std::string("a system node names its ROM as {\"rom\": \"res:N\"}");
+        if (s.rom.empty()) return std::string("a system node names its ROM as {\"rom\": \"res:N\"}");
         return std::nullopt;
     }
 

@@ -18,6 +18,9 @@ namespace rp::graph {
 // they need the name; everything else below stays internal to this file.
 namespace core {
 
+// A join or split names at most kMaxPorts ports (the validators enforce it).
+constexpr std::uint32_t kMaxPorts = 16;
+
 using AddKind = rfl::Literal<"audio", "control">;
 
 struct AddSettings {
@@ -30,23 +33,23 @@ struct MergeSettings {
 };
 
 struct JoinSettings {
-    std::vector<std::uint32_t> inputs = {1, 1};
-    std::string                layout = "stereo";
+    rp::list<std::uint32_t, kMaxPorts> inputs = {1, 1};
+    rp::text<kMaxLayoutName>           layout = "stereo";
 };
 
 struct SplitSettings {
-    std::vector<std::uint32_t> outputs = {1, 1};
-    std::string                layout = "stereo";
+    rp::list<std::uint32_t, kMaxPorts> outputs = {1, 1};
+    rp::text<kMaxLayoutName>           layout = "stereo";
 };
 
 struct DownmixSettings {
-    std::string from = "stereo";
-    std::string to = "mono";
+    rp::text<kMaxLayoutName> from = "stereo";
+    rp::text<kMaxLayoutName> to = "mono";
 };
 
 struct RelabelSettings {
-    std::uint32_t channels = 6;
-    std::string   layout = "5.1";
+    std::uint32_t            channels = 6;
+    rp::text<kMaxLayoutName> layout = "5.1";
 };
 
 struct DelaySettings {
@@ -60,9 +63,9 @@ struct ConstantSettings {
 };
 
 struct PlayerSettings {
-    std::uint32_t channels = 2;
-    std::string   layout = "stereo";
-    bool          loop = true;
+    std::uint32_t            channels = 2;
+    rp::text<kMaxLayoutName> layout = "stereo";
+    bool                     loop = true;
 };
 
 struct RecorderSettings {
@@ -74,8 +77,6 @@ struct RecorderSettings {
 namespace {
 
 using namespace core;
-
-constexpr std::uint32_t kMaxPorts = 16;
 
 PortDesc audioPort(std::string id, PortDir dir, ChannelSpec spec) {
     PortDesc p;
@@ -101,9 +102,8 @@ std::optional<std::string> checkCount(std::uint32_t n, std::string_view what) {
 }
 
 // A list of per-port channel counts: 1..kMaxPorts ports of at least one channel, kMaxChannels in all.
-std::optional<std::string> checkChannelList(const std::vector<std::uint32_t>& counts, std::string_view what) {
-    const auto ports = static_cast<std::uint32_t>(std::min<std::size_t>(counts.size(), UINT32_MAX));
-    if (auto e = checkCount(ports, what)) return e;
+std::optional<std::string> checkChannelList(const rp::list<std::uint32_t, kMaxPorts>& counts, std::string_view what) {
+    if (auto e = checkCount(static_cast<std::uint32_t>(counts.size()), what)) return e;
     std::uint64_t total = 0;
     for (auto c : counts) {
         if (c < 1) return "every one of the " + std::string(what) + " needs at least one channel";
@@ -112,7 +112,7 @@ std::optional<std::string> checkChannelList(const std::vector<std::uint32_t>& co
     return checkChannels(total, std::string(what) + " together");
 }
 
-std::uint32_t sumOf(const std::vector<std::uint32_t>& v) {  // validated: at most kMaxChannels
+std::uint32_t sumOf(const rp::list<std::uint32_t, kMaxPorts>& v) {  // validated: at most kMaxChannels
     std::uint32_t n = 0;
     for (auto c : v) n += c;
     return n;
@@ -266,7 +266,7 @@ struct Join {
         for (std::size_t k = 0; k < s.inputs.size(); ++k)
             l.ports.push_back(audioPort("in" + std::to_string(k + 1), PortDir::In,
                                         ChannelSpec::fixed(s.inputs[k], layoutForCount(s.inputs[k]))));
-        l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(sumOf(s.inputs), s.layout)));
+        l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(sumOf(s.inputs), s.layout.str())));
     }
 
     void process(const rp::Block& b) noexcept {
@@ -292,7 +292,7 @@ struct Split {
     }
 
     static void adjust_layout(Layout& l, const Settings& s) {
-        l.ports.push_back(audioPort("in", PortDir::In, ChannelSpec::fixed(sumOf(s.outputs), s.layout)));
+        l.ports.push_back(audioPort("in", PortDir::In, ChannelSpec::fixed(sumOf(s.outputs), s.layout.str())));
         for (std::size_t k = 0; k < s.outputs.size(); ++k)
             l.ports.push_back(audioPort("out" + std::to_string(k + 1), PortDir::Out,
                                         ChannelSpec::fixed(s.outputs[k], layoutForCount(s.outputs[k]))));
@@ -323,14 +323,14 @@ struct Downmix {
         if (auto e = checkChannels(*from, "the source layout")) return e;
         if (s.to == "mono") return std::nullopt;
         if (s.to == "stereo" && s.from == "5.1") return std::nullopt;
-        return "downmix supports any layout to mono, and 5.1 to stereo; not " + s.from + " to " + s.to;
+        return "downmix supports any layout to mono, and 5.1 to stereo; not " + s.from.str() + " to " + s.to.str();
     }
 
     static void adjust_layout(Layout& l, const Settings& s) {
         const std::uint32_t from = layoutChannels(s.from).value_or(2);
         const std::uint32_t to = layoutChannels(s.to).value_or(1);
-        l.ports.push_back(audioPort("in", PortDir::In, ChannelSpec::fixed(from, s.from)));
-        l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(to, s.to)));
+        l.ports.push_back(audioPort("in", PortDir::In, ChannelSpec::fixed(from, s.from.str())));
+        l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(to, s.to.str())));
     }
 
     bool toStereo = false;  // 5.1 -> stereo; every other downmix is to mono
@@ -371,7 +371,7 @@ struct Relabel {
 
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports.push_back(audioPort("in", PortDir::In, ChannelSpec::fixed(s.channels, "any")));
-        l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(s.channels, s.layout)));
+        l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(s.channels, s.layout.str())));
     }
 
     void process(const rp::Block& b) noexcept {
@@ -504,7 +504,7 @@ struct BufferPlayer {
         return checkLayout(s.layout, s.channels);
     }
     static void adjust_layout(Layout& l, const Settings& s) {
-        l.ports[1].channels = ChannelSpec::fixed(s.channels, s.layout);
+        l.ports[1].channels = ChannelSpec::fixed(s.channels, s.layout.str());
     }
 
     bool               loop = true;

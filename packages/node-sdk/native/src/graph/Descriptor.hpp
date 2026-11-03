@@ -105,6 +105,11 @@ std::string_view kindName(PortKind kind);
 // The most channels one audio port carries; the planner refuses a port that resolves to more.
 constexpr std::uint32_t kMaxChannels = 64;
 
+// The bytes a layout name is stored in by a node's settings: "mono", "stereo", "5.1", "7.1" and "discrete(N)" with N up
+// to kMaxChannels, whose longest spelling "discrete(64)" is twelve bytes; sixteen holds every name layoutChannels
+// accepts.
+constexpr std::size_t kMaxLayoutName = 16;
+
 // Why a channel count outside 1..kMaxChannels cannot be used, or nullopt. `what` names the thing in the message ("a
 // delay", "inputs together"), which is the part of a settings refusal a document's author reads.
 std::optional<std::string> checkChannels(std::uint64_t n, std::string_view what);

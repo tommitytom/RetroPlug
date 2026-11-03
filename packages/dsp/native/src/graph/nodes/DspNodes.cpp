@@ -496,7 +496,7 @@ struct Normalize {
 
     static std::optional<std::string> validate(const Settings& s) {
         if (auto e = checkChannels(s.channels, "a normalise")) return e;
-        if (s.buffer.ref.empty()) return "a normalise names an audio buffer";
+        if (s.buffer.empty()) return "a normalise names an audio buffer";
         return std::nullopt;
     }
     static void adjust_layout(Layout& l, const Settings& s) {
@@ -589,7 +589,7 @@ struct Dpcm {
     struct { rp::audio_out<rp::mono> out; } outputs;
 
     static std::optional<std::string> validate(const Settings& s) {
-        if (s.buffer.ref.empty()) return "a DPCM node names an audio buffer";
+        if (s.buffer.empty()) return "a DPCM node names an audio buffer";
         return std::nullopt;
     }
 
