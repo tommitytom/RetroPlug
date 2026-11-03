@@ -444,7 +444,9 @@ if(NOT MSVC)
 int main() { return 0; }" RP_STDLIB_IS_LIBSTDCXX)
     set(_rp_refused_sources
         "HeapType|is never built for the device"
-        "PointerSettings|a device node's Settings holds only")
+        "PointerSettings|a device node's Settings holds only"
+        "UnguardedValidate|validate and adjust_layout are the desktop's"
+        "UnguardedLayout|incomplete type")
     if(RP_STDLIB_IS_LIBSTDCXX)
         list(APPEND _rp_refused_sources "HeapHeader|a heap or exception header")
     endif()

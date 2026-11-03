@@ -247,6 +247,12 @@ function(retroplug_product product)
     if(NOT P_TARGETS)
         set(P_TARGETS ${product})
     endif()
+    # The registration golden's table is generated once, from the products declared by then: a later one would escape it.
+    get_property(_tableDone GLOBAL PROPERTY RP_PRODUCT_TABLE_DONE)
+    if(_tableDone AND NOT P_DEVICE)
+        message(FATAL_ERROR "retroplug_product(${product}): declared after retroplug_product_table(), so the engine's "
+                            "registration golden would not cover it; declare it before that call")
+    endif()
     get_property(_products GLOBAL PROPERTY RP_PRODUCTS)
     get_property(_deviceProducts GLOBAL PROPERTY RP_DEVICE_PRODUCTS)
     if(product IN_LIST _products OR product IN_LIST _deviceProducts)
@@ -481,8 +487,10 @@ endfunction()
 # retroplug_product_table(<target>): generates build/packages/products/product-table.cpp, every product this configure
 # declared with the entries its rp_register_packages() returns, as rp_product_registrations(), and adds it to <target>,
 # which must link every package those name. The registration golden reads it (test/engine-graph/Packages.test.cpp), so
-# call this after the last retroplug_product().
+# call this after the last retroplug_product(); a
+# non-DEVICE retroplug_product() declared after it is refused.
 function(retroplug_product_table target)
+    set_property(GLOBAL PROPERTY RP_PRODUCT_TABLE_DONE TRUE)
     get_property(_products GLOBAL PROPERTY RP_PRODUCTS)
     set(_all "")
     set(_rows "")
