@@ -369,8 +369,6 @@ typedef struct rp_link_interface {
 
 #ifdef __cplusplus
 }
-/* Where the C++ SDK's names live in a device-mode build: declared before any C++ header opens rp::graph. */
-#include "graph/sdk_namespace.hpp"
 #endif
 
 #endif /* RP_NODE_H */

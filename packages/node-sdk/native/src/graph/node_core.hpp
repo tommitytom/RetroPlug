@@ -33,7 +33,7 @@
 #include "graph/settings_msgpack.hpp"
 #include "graph/settings_types.hpp"
 
-RP_NAMESPACE_BEGIN
+namespace rp {
 
 // ---- channel specs -----------------------------------------------------------------------------------
 
@@ -590,4 +590,4 @@ template <class T> constexpr std::uint32_t typeFlags() {
 
 }  // namespace detail
 
-RP_NAMESPACE_END
+}  // namespace rp

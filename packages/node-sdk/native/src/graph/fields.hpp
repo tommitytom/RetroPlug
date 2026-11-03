@@ -30,15 +30,13 @@
 #include <rfl/internal/cpp20/get_ith_field_from_fake_object.hpp>
 #include <rfl/internal/cpp20/num_fields.hpp>
 
-#include "graph/sdk_namespace.hpp"
-
 // Under C++26 reflection reflect-cpp's bind_to_tuple switches to its cpp26 walk while the count and the names here stay
 // cpp20's: the two could disagree on a field's index.
 #ifdef REFLECTCPP_USE_CPP26_REFLECTION
 #error "fields.hpp reads reflect-cpp's cpp20 reflection core; REFLECTCPP_USE_CPP26_REFLECTION needs it reworked"
 #endif
 
-RP_NAMESPACE_BEGIN
+namespace rp {
 namespace detail {
 
 // Whether a field's type is an rfl::Rename or an rfl::Flatten. False here, where neither is visible (rfl/Rename.hpp
@@ -165,4 +163,4 @@ void forEachNamedField(S& s, F&& f) {
 }
 
 }  // namespace detail
-RP_NAMESPACE_END
+}  // namespace rp

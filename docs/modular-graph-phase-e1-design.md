@@ -171,7 +171,7 @@ device keeps it, and `adjust_layout`, inside one `#ifndef RP_DEVICE` (section 6)
 | `node_core.hpp` | the port and param wrappers, `Block`, the compile-time reflection of `inputs`, `outputs` and `params`, the hook checks, `ResourceHold` and the resource-field walk, the block-path entries | both |
 | `node_device.hpp` | `DeviceTypeCheck`, the in-place instance, the msgpack-only settings read, `query_memory`, `create`, `destroy`, the vtable with null `prepare`, `commit` and `release` | `RP_DEVICE` |
 | `node_desc.hpp` | the descriptor, `layout_for`, the JSON parse, `prepare_settings` and `commit_settings`, `validate`, the schema, the heap-settings instance | desktop |
-| `fields.hpp`, `enums.hpp`, `settings_types.hpp`, `settings_msgpack.hpp`, `msgpack_reader.hpp`, `PortTypes.hpp`, `ResourceId.hpp`, `sdk_namespace.hpp` | the field walk, the enum scan, the fixed-capacity types, the msgpack decode and reader, and the constants and names both builds share | both |
+| `fields.hpp`, `enums.hpp`, `settings_types.hpp`, `settings_msgpack.hpp`, `msgpack_reader.hpp`, `PortTypes.hpp`, `ResourceId.hpp` | the field walk, the enum scan, the fixed-capacity types, the msgpack decode and reader, and the constants and names both builds share | both |
 | `settings_json.hpp` | the reflect-cpp parsers for `text`, `list`, `choice` and `resource_ref` | desktop |
 
 The portable boundary is a file boundary, which is easy to audit, where one file of interleaved `#if` blocks is not.
@@ -191,10 +191,13 @@ forward declaration of `Layout` in device mode (an `adjust_layout` left outside 
 libraries, which the desktop build compiles for every target of a manifest entry with `device: true` (the `RP_DEVICE`
 flag, `-fno-exceptions -fno-rtti` off MSVC, nothing linked), so an unguarded hook fails the desktop build and CI.
 Beyond that: settings hold the section 5 types only, a `heap` or `threads` type is not built for the device, and a
-source built both ways keeps its own names under `rp::graph`, `rp::detail` or an anonymous namespace. In device mode
-the SDK lives in an inline namespace `rp::device`, declared before any header opens `rp::graph`, so a node's own
-`namespace rp::graph` lands in `rp::device::graph` with no source change and the two builds link into one binary
-without an ODR clash. A package's `extern "C"` entries are renamed by the test's compile definitions.
+source built both ways keeps its own names with linkage under `rp` or in an anonymous namespace. Device mode puts
+the SDK's names where the desktop's are (`rp`, `rp::graph`, `rp::detail`): a device image holds one build. The one
+binary that holds both, `retroplug-device-mode-test`, compiles its device-mode objects with `rp=rp_devmode`, a token
+rename that gives every name under `rp` a second spelling (the kernels the nodes call are compiled in with them), and
+renames each package's `extern "C"` entry by a compile definition; `rp_node`, `RP_DEVICE` and string literals are
+other tokens. An inline namespace would have moved the device's names with no rename, but MSVC does not extend one
+through a later `namespace rp::graph` (CWG 2061), so no device-mode build relies on one.
 
 **A device instance owns its settings in place.** `query_memory` counts the `Settings` in the instance's own size, so
 `create` constructs them in the host's memory rather than with `new`: the resource pins, then the settings, then the
@@ -461,11 +464,15 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
 - **`rp.core.delay`'s default needs 384 KB per instance** (`maxSamples` 48,000, stereo; 384,104 bytes on x86-64), about
   74% of the RP2350's 520 KB of RAM, and sizes the check's 400 KiB arena. E3 needs a device default or a planner cap.
 - **Windows and MSVC never built E1's device-mode targets.** The `-device` object libraries are in the default build
-  under `/W4 /WX`, so a Windows problem breaks `build.bat`'s plain build. The risks: the inline-namespace reopen,
-  `rp::choice::make<>` and `rp::text`'s literal constructor as consteval in default member initializers, the
-  template-lambda variable templates in `enums.hpp`, `__FUNCSIG__` in a consteval function, the copied `/bigobj`, and
-  `std::strcpy` in `DeviceCheck.cpp`. A `build.bat` and `test.bat` run is owed. libc++ runs two of the three
-  refused-source checks.
+  under `/W4 /WX`, so a Windows problem breaks `build.bat`'s plain build. The code review found the first build's
+  device mode certain to fail there: it put the SDK in an inline namespace `rp::device`, and MSVC (19.44 to latest)
+  opens a new `rp::graph` at a later `namespace rp::graph {` rather than extending `rp::device::graph` (CWG 2061;
+  `C2039`, `C2872`). Device mode now uses the desktop's namespaces, and the device-mode test renames its objects'
+  `rp` instead (section 6). The review's MSVC snippets compiled the rest clean under `/W4 /WX` (`rp::choice::make<>`
+  and `rp::text`'s literal constructor as consteval in default member initializers, the template-lambda variable
+  templates in `enums.hpp`, `__FUNCSIG__` in a consteval function); not built on MSVC: the copied `/bigobj`,
+  `std::strcpy` in `DeviceCheck.cpp`, and `/Drp=rp_devmode` over the MSVC STL's headers. A `build.bat` and `test.bat`
+  run is owed. libc++ runs two of the three refused-source checks.
 - **Per-enum compile cost** is about 55 to 95 ms per int-underlying enum per translation unit (3 to 5 times
   enchantum's), and the desktop pays both scans. If enums multiply, test validity with `enumNameFromSignature` directly
   or batch values per signature.

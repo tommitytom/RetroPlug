@@ -29,9 +29,8 @@
 #endif
 
 #include "graph/rp_node.h"
-#include "graph/sdk_namespace.hpp"
 
-RP_NAMESPACE_BEGIN
+namespace rp {
 
 // A string as a template argument: a port's channel layout, a param's name, a resource type, a choice's labels.
 template <std::size_t N>
@@ -262,4 +261,4 @@ struct resource_ref {
     }
 };
 
-RP_NAMESPACE_END
+}  // namespace rp

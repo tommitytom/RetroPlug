@@ -15,8 +15,6 @@
 #include <cstring>
 #include <string_view>
 
-#include "graph/sdk_namespace.hpp"
-
 namespace rp::graph::msgpack {
 
 enum class Type : std::uint8_t { Nil, Bool, Int, Float, Str, Bin, Array, Map, Ext, Invalid };

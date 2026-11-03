@@ -7,8 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "graph/sdk_namespace.hpp"
-
 namespace rp::graph {
 
 enum class PortKind : std::uint8_t { Audio, Events, Bytes, Control, Link, Resource };

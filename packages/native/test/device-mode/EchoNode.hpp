@@ -16,8 +16,8 @@
 #include "DeviceModeEntries.hpp"
 #include "graph/node.hpp"
 
-// rp::graph::devtest, so the device-mode build of it is rp::device::graph::devtest (graph/sdk_namespace.hpp) and the
-// two never share a name; a named namespace, as a desktop Settings struct's schema needs.
+// rp::graph::devtest, so the device-mode build of it is rp_devmode::graph::devtest (the device-mode objects' rename,
+// cmake/tests.cmake) and the two never share a name; a named namespace, as a desktop Settings struct's schema needs.
 namespace rp::graph::devtest {
 
 enum class Mode : std::uint8_t { Off, Slow, Fast = 7 };

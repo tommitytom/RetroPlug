@@ -34,7 +34,7 @@
 #include "graph/rp_node.h"
 #include "graph/settings_types.hpp"
 
-RP_NAMESPACE_BEGIN
+namespace rp {
 namespace detail {
 
 namespace msgpack = graph::msgpack;
@@ -281,4 +281,4 @@ inline bool decodeNoSettings(const void* data, std::size_t size, ErrorText& why)
 }
 
 }  // namespace detail
-RP_NAMESPACE_END
+}  // namespace rp

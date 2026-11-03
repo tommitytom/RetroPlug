@@ -21,7 +21,7 @@
 
 #include "graph/node_core.hpp"
 
-RP_NAMESPACE_BEGIN
+namespace rp {
 
 namespace graph {
 // Declared and never defined in a device-mode build: the description layer's Layout is the desktop's. A node's
@@ -180,4 +180,4 @@ inline constexpr rp_node_type kNodeType{T::id,          nullptr,          nullpt
                                         typeFlags<T>(), nullptr};
 
 }  // namespace detail
-RP_NAMESPACE_END
+}  // namespace rp

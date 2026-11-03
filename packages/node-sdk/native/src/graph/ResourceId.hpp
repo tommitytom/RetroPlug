@@ -7,8 +7,6 @@
 #include <cstdint>
 #include <string_view>
 
-#include "graph/sdk_namespace.hpp"
-
 namespace rp::graph {
 
 // "res:12" -> 12, true. False for anything else, "res:0", a leading zero ("res:007"), a sign and an id past 32 bits

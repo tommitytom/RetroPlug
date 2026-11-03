@@ -309,13 +309,22 @@ retroplug_add_test_binary(
 # keeps JSON's leniency and refusals. The desktop's nodes read msgpack too.
 #
 # Both builds of one source sit in this one binary. The device-mode objects are an object library of their own, with
-# the device flags, and their C++ names are in rp::device (graph/sdk_namespace.hpp), so no name has two definitions as
-# long as a source keeps its own names under rp::graph, rp::detail or an anonymous namespace (that header's
-# convention); their packages' C entries, which no namespace reaches, are renamed by a compile definition. Catch2 is the shared
-# library every test binary links, built with exceptions, so the test's own translation unit keeps them and reaches the
-# device-mode code only through the C ABI, as a device's host would. MSVC keeps its /EHsc there: a second /EH option on
-# one command line is the D9025 warning AGENTS.md describes, and the GCC and Clang builds are where -fno-exceptions is
-# proved.
+# the device flags and one definition more, rp=rp_devmode: a token rename, so every `namespace rp` and `rp::` in their
+# translation units is rp_devmode's, and no C++ name has a definition in each build (rp::text has no str() in the
+# device's, its instance owns its settings in place, and the linker would otherwise keep whichever definition it saw
+# first). rp_node, rp_package, RP_DEVICE, a header's name and a string literal ("rp.core.gain") are other tokens and
+# keep their spelling. The kernels the nodes call (rp::dsp) are compiled into the objects too, as rp_devmode::dsp,
+# which also proves them built without exceptions: the sources of every package library a device entry's target links.
+# What the rename leaves the same in both builds is a name outside rp, so a source built both ways keeps its names
+# with linkage under rp (rp::graph, rp::dsp, ...) or in an anonymous namespace. It is a rename of this test's objects,
+# rather than a namespace the SDK opens in device mode, because only this binary holds both builds: a device image and
+# the <target>-device checks hold one, and compile the sources exactly as written. (An inline namespace rp::device
+# would move a source's names with no change to it, but MSVC does not extend one through a later `namespace rp::graph`
+# (CWG 2061).) The packages' C entries, which no namespace reaches, are renamed by a compile definition each. Catch2
+# is the shared library every test binary links, built with exceptions, so the test's own translation unit keeps them
+# and reaches the device-mode code only through the C ABI, as a device's host would. MSVC keeps its /EHsc there: a
+# second /EH option on one command line is the D9025 warning AGENTS.md describes, and the GCC and Clang builds are
+# where -fno-exceptions is proved.
 #
 # Which sources and entries are the device's is the manifests' word (cmake/packages.cmake): the objects compile the
 # sources of every `device` entry's target (each one's <target>-device check holds the same list), and each device
@@ -326,6 +335,7 @@ set(_rp_device_sources "")
 set(_rp_device_includes "")
 set(_rp_device_definitions "")
 set(_rp_device_owners "")
+set(_rp_device_libraries "")
 foreach(_t IN LISTS _rp_device_targets)
     get_target_property(_s ${_t} SOURCES)
     list(APPEND _rp_device_sources ${_s})
@@ -333,6 +343,28 @@ foreach(_t IN LISTS _rp_device_targets)
     list(APPEND _rp_device_owners ${_owner})
     list(APPEND _rp_device_includes $<TARGET_PROPERTY:${_owner},INCLUDE_DIRECTORIES>)
     list(APPEND _rp_device_definitions $<TARGET_PROPERTY:${_owner},COMPILE_DEFINITIONS>)
+    # The package libraries it links (the rp::dsp kernels), and theirs: renamed with it, so compiled with it. The SDK is
+    # headers alone in device mode, so retroplug-node-sdk's own sources (the description library) are not the device's.
+    get_target_property(_pending ${_owner} LINK_LIBRARIES)
+    while(_pending)
+        list(POP_FRONT _pending _lib)
+        if(NOT TARGET ${_lib} OR _lib STREQUAL "retroplug-node-sdk" OR _lib IN_LIST _rp_device_libraries)
+            continue()
+        endif()
+        get_target_property(_type ${_lib} TYPE)
+        if(NOT _type STREQUAL "STATIC_LIBRARY")
+            continue()
+        endif()
+        list(APPEND _rp_device_libraries ${_lib})
+        get_target_property(_s ${_lib} SOURCES)
+        list(APPEND _rp_device_sources ${_s})
+        list(APPEND _rp_device_includes $<TARGET_PROPERTY:${_lib},INCLUDE_DIRECTORIES>)
+        list(APPEND _rp_device_definitions $<TARGET_PROPERTY:${_lib},COMPILE_DEFINITIONS>)
+        get_target_property(_more ${_lib} LINK_LIBRARIES)
+        if(_more)
+            list(APPEND _pending ${_more})
+        endif()
+    endwhile()
 endforeach()
 set(_rp_device_renames "")
 set(_rp_device_rows "")
@@ -366,7 +398,7 @@ add_library(retroplug-device-mode-objects OBJECT EXCLUDE_FROM_ALL
     ${_rp_device_sources}
     ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/DeviceModeNodes.cpp)
 set_target_properties(retroplug-device-mode-objects PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_compile_definitions(retroplug-device-mode-objects PRIVATE ${_rp_device_definitions} RP_DEVICE
+target_compile_definitions(retroplug-device-mode-objects PRIVATE ${_rp_device_definitions} RP_DEVICE rp=rp_devmode
                                                                   ${_rp_device_renames})
 if(NOT MSVC)
     target_compile_options(retroplug-device-mode-objects PRIVATE -fno-exceptions -fno-rtti)
@@ -449,7 +481,7 @@ retroplug_add_test_binary(
              $<TARGET_OBJECTS:retroplug-device-mode-objects>
     LIBS     retroplug-graph
              ${_rp_device_owners}                      # the desktop's build of every device entry, the device's twin
-             retroplug-dsp-kernels                     # the kernels, which both builds of rp.dsp call
+             retroplug-dsp-kernels                     # the desktop rp.dsp's kernels (the objects build theirs)
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
              ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
              ${_rp_device_check_dir}                   # DeviceCheck.hpp

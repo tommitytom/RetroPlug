@@ -22,9 +22,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "graph/sdk_namespace.hpp"
-
-RP_NAMESPACE_BEGIN
+namespace rp {
 namespace detail {
 
 template <class E>
@@ -156,4 +154,4 @@ struct Enumerators {
 };
 
 }  // namespace detail
-RP_NAMESPACE_END
+}  // namespace rp

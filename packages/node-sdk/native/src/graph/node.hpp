@@ -91,7 +91,7 @@
 #include "graph/node_desc.hpp"
 #endif
 
-RP_NAMESPACE_BEGIN
+namespace rp {
 
 // The ABI table for a C++ node type: one per T, a constant (so a package's list of them needs no run-time
 // initialisation); every optional hook's signature is checked here, at compile time.
@@ -113,7 +113,7 @@ T* peer_as(rp_node* n) {
     return &detail::self<T>(n)->node;
 }
 
-RP_NAMESPACE_END
+}  // namespace rp
 
 #if defined(RP_DEVICE) && defined(__GLIBCXX__)
 // What a device-mode build must not carry: the standard library's heap and exception headers, and reflect-cpp's JSON.
