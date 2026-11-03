@@ -517,6 +517,8 @@ export class MockBackend implements Backend {
         if (field === "rom") return { code: "settings-invalid", message: `a system node names its ROM as {"rom": "res:N"}` };
         continue;
       }
+      // Native reads an empty sram or state as none (id 0); an empty rom names nothing a node could boot.
+      if (value === "" && field !== "rom") continue;
       const match = typeof value === "string" ? RES_REF.exec(value) : null;
       if (!match) return { code: "create-failed", message: `${field}: ${JSON.stringify(value)} names no resource` };
       const held = this.resources.get(Number(match[1]));

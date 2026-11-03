@@ -2,8 +2,8 @@
 #
 # Builds rp-device-check, the RP2350 image that runs every portable rp.core and rp.dsp node type in device mode with a
 # link trap on the heap, on exceptions and on RTTI (packages/graph-runtime/device-check,
-# docs/modular-graph-phase-e1-design.md section 7), and prints what it costs in flash and RAM. CI's linux-x64 job runs it after the desktop build; nothing is
-# flashed or run (E3 runs the check's successor on the rig).
+# docs/modular-graph-phase-e1-design.md section 7), and prints what it costs in flash and RAM. CI's linux-x64 job runs
+# it after the desktop build; nothing is flashed or run (E3 runs the check's successor on the rig).
 #
 #   1. Builds the case generator (rp-device-check-cases) in the desktop build, which must be configured (./build.sh),
 #      and writes the cases header: each type's default settings as msgpack and the layout they give.

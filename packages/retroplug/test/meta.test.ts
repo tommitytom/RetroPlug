@@ -168,6 +168,20 @@ test("mock backend: a document naming a resource the engine does not hold is ref
   });
 });
 
+test("mock backend: an empty sram or state reference means none, as native reads it", () => {
+  for (const field of ["sram", "state"]) {
+    const be = new MockBackend("/cfg");
+    const rom = be.putResource({ type: "rom", bytes: Uint8Array.of(1, 2, 3) });
+    if ("error" in rom) throw new Error(rom.error);
+    const settings = { rom: `res:${rom.id}`, [field]: "" };
+    const request: SetGraphRequest = {
+      document: JSON.stringify({ nodes: [{ id: "sys-1", type: "rp.sameboy.gb", settings }], wires: [] }),
+      slots: [1],
+    };
+    expect(be.setGraph(request).ok).toBe(true);
+  }
+});
+
 test("mock backend: a slot with no system node is refused as native refuses it, naming no node", () => {
   // native's slots check lines the document's system nodes up with the request's slots, which is the document's
   // fault rather than one node's, so it answers `nodeId: ""`: a load's drop-and-retry keys on a node id and must not

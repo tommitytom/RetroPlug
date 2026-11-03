@@ -1,8 +1,8 @@
 // rp-device-check (docs/modular-graph-phase-e1-design.md section 7): the RP2350 image that runs the device check over
 // every type its product registers (CMakeLists.txt: packages.cmake's list, as a device builds it), and the proof, at
-// link time, that what it links allocates and throws nothing: the image links with a trap on the heap and on
-// exceptions (CMakeLists.txt), so a use of either anywhere in its code is a link error naming the object that pulled
-// it in.
+// link time, that what it links allocates and throws nothing: the image links with a trap on the heap, on exceptions
+// and on RTTI (CMakeLists.txt), so a use of any of them anywhere in its code is a link error naming the object that
+// pulled it in.
 //
 // It reports the outcome three ways: one line on stdio (the UART, GP0 at 115200), gDeviceCheck for a debugger, and the
 // board's LED, lit and steady for a pass and for a failure a count of blinks, the failed Step's value, repeated after
