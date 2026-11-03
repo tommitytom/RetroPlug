@@ -18,7 +18,10 @@
 # node types a product carries is its CMake's choice. A binary that pulls the engine in without declaring itself a
 # product has no definition of rp_register_packages: an executable (and a module on macOS or Windows) fails to link
 # naming it, but a Linux module links and fails only when it is loaded. So the configure checks it instead, for every
-# binary: retroplug_check_products() refuses one that links the engine's libraries and is not a product.
+# binary: retroplug_check_products() refuses one that reaches the engine through its libraries and is not a product.
+#
+# This file needs CMake 3.19: string(JSON) for the manifests and cmake_language(DEFER) for the product check, which the
+# root's cmake_minimum_required states.
 
 # The device build (docs/modular-graph-phase-e1-design.md section 7) includes this file too: the RP2350 firmware
 # packages/graph-runtime/device-check, its own CMake project on the Pico SDK's toolchain, sets RP_DEVICE_BUILD before it
@@ -32,7 +35,16 @@ set(RP_PRODUCTS_DIR "${CMAKE_BINARY_DIR}/packages/products")
 # native/CMakeLists.txt, adds it (its binary dir build/packages/<name>). Call it once per package, before any product
 # that lists the package. A package whose targets are defined elsewhere (packages/native, the engine's own tree, whose
 # CMakeLists the root adds) has no native/CMakeLists.txt, and this only reads its manifest.
+#
+# A package's native/CMakeLists.txt is added from inside this function, so it runs in this function's variable scope:
+# what it set() is visible to nothing after it, and a set(... PARENT_SCOPE) in it lands here and is lost rather than
+# reaching the root. A package communicates through its targets (and cache or global properties), never variables.
 function(retroplug_package name)
+    # build/packages/<name> is the package's binary dir and build/packages/products holds the generated sources.
+    if(name STREQUAL "products")
+        message(FATAL_ERROR "retroplug_package(products): `products` is the directory of the generated product sources "
+                            "(${RP_PRODUCTS_DIR}), which a package's build tree would sit on")
+    endif()
     set(_dir "${RP_PACKAGES_DIR}/${name}")
     set(_manifest "${_dir}/package.json")
     if(NOT EXISTS "${_manifest}")
@@ -109,6 +121,20 @@ function(retroplug_package name)
 
     if(EXISTS "${_dir}/native/CMakeLists.txt")
         add_subdirectory("${_dir}/native" "${CMAKE_BINARY_DIR}/packages/${name}")
+        # What its manifest names it defines now, so a typo is refused here, whether or not a product lists the package
+        # (node-sdk, which none does). A device build defines the device targets alone. A package without a
+        # native/CMakeLists.txt (native) has its targets defined later, and retroplug_product() checks those.
+        if(RP_DEVICE_BUILD)
+            set(_defined ${_deviceTargets})
+        else()
+            set(_defined ${_targets})
+        endif()
+        foreach(_target IN LISTS _defined)
+            if(NOT TARGET ${_target})
+                message(FATAL_ERROR "retroplug_package(${name}): ${_manifest} names `${_target}`, which "
+                                    "${_dir}/native/CMakeLists.txt does not define")
+            endif()
+        endforeach()
     endif()
     # A device build compiles every target as a device does already, so it has nothing to check twice.
     if(NOT RP_DEVICE_BUILD)
@@ -226,6 +252,20 @@ function(retroplug_product product)
     if(product IN_LIST _products OR product IN_LIST _deviceProducts)
         message(FATAL_ERROR "retroplug_product(${product}): the product is declared twice")
     endif()
+    set(_unique ${P_PACKAGES})
+    list(REMOVE_DUPLICATES _unique)
+    list(LENGTH _unique _nUnique)
+    list(LENGTH P_PACKAGES _nListed)
+    if(NOT _nUnique EQUAL _nListed)
+        # Its entry would be called twice: the engine refuses the second offer with a line on stderr and carries on.
+        set(_seen "")
+        foreach(_p IN LISTS P_PACKAGES)
+            if(_p IN_LIST _seen)
+                message(FATAL_ERROR "retroplug_product(${product}): package `${_p}` is listed twice in PACKAGES")
+            endif()
+            list(APPEND _seen ${_p})
+        endforeach()
+    endif()
     get_property(_known GLOBAL PROPERTY RP_PACKAGES)
     set(_entries "")
     set(_targets "")
@@ -322,24 +362,78 @@ ${_body}}
 endfunction()
 
 # retroplug_check_products(LIBRARIES <library>... [EXEMPT <target>...]): refuses, at configure time, every executable,
-# module or shared library in the build that links one of LIBRARIES directly and is neither a product's target nor
-# EXEMPT. LIBRARIES are the ones that carry the engine; EXEMPT is for a binary that links one of them and is known never
-# to pull the engine's object in. Call it after the last retroplug_product(). It stands in for the link error a Linux
-# module never gives (this file's header says why); -Wl,--no-undefined would not, as it breaks the sanitizer
-# builds and guards only the modules that are already products.
+# module or shared library in the build that reaches the engine and is neither a product's target nor EXEMPT. LIBRARIES
+# are the seeds, the libraries that hold the engine (retroplug-backend: Engine.o); the set of libraries that carry it is
+# computed outward from them, every static, object or interface library of the build whose LINK_LIBRARIES or
+# INTERFACE_LINK_LIBRARIES name a carrier (a generator expression's operands included, so `$<LINK_ONLY:x>` and
+# `$<$<BOOL:..>:x>` count), repeated until nothing joins, so a library of ours that links the backend makes whatever
+# links it a suspect without anyone listing it. A binary that links a carrier is then refused. EXEMPT is for a binary
+# that does and is known never to pull the engine's object in; each name must be a target, so a renamed test cannot leave
+# a stale exemption. It stands in for the link error a Linux module never gives (this file's header says why);
+# -Wl,--no-undefined would not, as it breaks the sanitizer builds and guards only the modules that are already
+# products.
+#
+# It must see every binary of the build, so it runs when the root's CMakeLists is done:
+#
+#   cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_products LIBRARIES ... EXEMPT ...)
+#
+# (3.19; its arguments are expanded where it is deferred). A binary defined after the call, anywhere in the tree, is
+# checked as one before it.
 function(retroplug_check_products)
     cmake_parse_arguments(C "" "" "LIBRARIES;EXEMPT" ${ARGN})
+    if(NOT C_LIBRARIES)
+        message(FATAL_ERROR "retroplug_check_products: LIBRARIES is required")
+    endif()
+    foreach(_t IN LISTS C_LIBRARIES C_EXEMPT)
+        if(NOT TARGET ${_t})
+            message(FATAL_ERROR "retroplug_check_products: `${_t}`, named in LIBRARIES or EXEMPT, is not a target")
+        endif()
+    endforeach()
     get_property(_products GLOBAL PROPERTY RP_PRODUCT_TARGETS)
-    _retroplug_binaries(_binaries "${CMAKE_SOURCE_DIR}")
+    _retroplug_build_targets(_targets "${CMAKE_SOURCE_DIR}")
+
+    set(_libraries "")
+    set(_binaries "")
+    foreach(_t IN LISTS _targets)
+        get_target_property(_type ${_t} TYPE)
+        if(_type STREQUAL "STATIC_LIBRARY" OR _type STREQUAL "OBJECT_LIBRARY" OR _type STREQUAL "INTERFACE_LIBRARY")
+            list(APPEND _libraries ${_t})
+        elseif(_type STREQUAL "EXECUTABLE" OR _type STREQUAL "MODULE_LIBRARY" OR _type STREQUAL "SHARED_LIBRARY")
+            list(APPEND _binaries ${_t})
+        endif()
+    endforeach()
+
+    set(_carriers ${C_LIBRARIES})
+    foreach(_t IN LISTS _libraries)
+        _retroplug_linked_names(_names_${_t} ${_t} LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+    endforeach()
+    set(_grew TRUE)
+    while(_grew)
+        set(_grew FALSE)
+        foreach(_t IN LISTS _libraries)
+            if(_t IN_LIST _carriers)
+                continue()
+            endif()
+            foreach(_c IN LISTS _carriers)
+                if(_c IN_LIST _names_${_t})
+                    list(APPEND _carriers ${_t})
+                    set(_grew TRUE)
+                    break()
+                endif()
+            endforeach()
+        endforeach()
+    endwhile()
+    message(VERBOSE "retroplug_check_products: the libraries that carry the engine: ${_carriers}")
+
     set(_missing "")
     foreach(_t IN LISTS _binaries)
         if(_t IN_LIST _products OR _t IN_LIST C_EXEMPT)
             continue()
         endif()
-        get_target_property(_links ${_t} LINK_LIBRARIES)
-        foreach(_l IN LISTS C_LIBRARIES)
-            if(_l IN_LIST _links)
-                list(APPEND _missing "${_t} (links ${_l})")
+        _retroplug_linked_names(_linked ${_t} LINK_LIBRARIES)
+        foreach(_c IN LISTS _carriers)
+            if(_c IN_LIST _linked)
+                list(APPEND _missing "${_t} (links ${_c})")
                 break()
             endif()
         endforeach()
@@ -352,22 +446,30 @@ function(retroplug_check_products)
     endif()
 endfunction()
 
-# The executables, modules and shared libraries of `dir` and every directory under it.
-function(_retroplug_binaries out dir)
-    set(_found "")
-    get_property(_targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
-    foreach(_t IN LISTS _targets)
-        get_target_property(_type ${_t} TYPE)
-        if(_type STREQUAL "EXECUTABLE" OR _type STREQUAL "MODULE_LIBRARY" OR _type STREQUAL "SHARED_LIBRARY")
-            list(APPEND _found ${_t})
-        endif()
-    endforeach()
+# Every target `dir` and the directories under it define, imported and alias targets excepted. A directory still being
+# configured counts, with what it defined so far.
+function(_retroplug_build_targets out dir)
+    get_property(_found DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
     get_property(_subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
     foreach(_sub IN LISTS _subdirs)
-        _retroplug_binaries(_more "${_sub}")
+        _retroplug_build_targets(_more "${_sub}")
         list(APPEND _found ${_more})
     endforeach()
     set(${out} ${_found} PARENT_SCOPE)
+endfunction()
+
+# The names a target's link properties (<property>...) mention, as a list: every word of the property's value, so the
+# operands of a generator expression are in it, with its keywords.
+function(_retroplug_linked_names out target)
+    set(_names "")
+    foreach(_property IN LISTS ARGN)
+        get_target_property(_value ${target} ${_property})
+        if(_value)
+            string(REGEX MATCHALL "[A-Za-z0-9_.+-]+" _words "${_value}")
+            list(APPEND _names ${_words})
+        endif()
+    endforeach()
+    set(${out} ${_names} PARENT_SCOPE)
 endfunction()
 
 # retroplug_product_table(<target>): generates build/packages/products/product-table.cpp, every product this configure

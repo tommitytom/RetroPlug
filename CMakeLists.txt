@@ -2,7 +2,7 @@
 # Copyright (C) 2021-2024 Filipe Coelho <falktx@falktx.com>
 # SPDX-License-Identifier: ISC
 
-cmake_minimum_required(VERSION 3.14...3.31)
+cmake_minimum_required(VERSION 3.19...3.31)  # 3.19: string(JSON), cmake_language(DEFER), the packages
 
 # Windows/MSVC: pin the static CRT (/MT) across the whole tree. The framework
 # (txiki, mbedtls, libwebsockets) forces MultiThreaded for its own targets, so
