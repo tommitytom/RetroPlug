@@ -4,7 +4,8 @@
 # family's, with a heap behind them) would let every use through. It fails the build too if the image still refers to
 # any __wrap_ symbol it does not define: that is a trapped use the link let through, which only a link option that
 # tolerates an undefined symbol (--unresolved-symbols=ignore-all, --warn-unresolved-symbols, --noinhibit-exec) does,
-# so the image's own link is a proof of the trap as well as the probe's.
+# so the image's own link is a proof of the trap as well as the probe's. (A weak reference to a wrapped symbol links
+# without any option and leaves no undefined symbol, as it resolves to null; it reaches no heap.)
 #
 # cmake -DNM=<nm> -DIMAGE=<elf> -DTRAPPED=<file, one symbol a line> -P check-trap.cmake
 execute_process(COMMAND "${NM}" --defined-only "${IMAGE}" OUTPUT_VARIABLE _defined RESULT_VARIABLE _rc)

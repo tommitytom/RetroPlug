@@ -1,6 +1,6 @@
 # rp-device-check (docs/modular-graph-phase-e1-design.md section 7): a Pico SDK firmware for the RP2350 that runs every
 # portable node type of `core` and `dsp`, built in device mode (RP_DEVICE, no exceptions, no RTTI), from its default
-# settings as msgpack, and links with a trap on the heap and on exceptions. Its own CMake project on the SDK's
+# settings as msgpack, and links with a trap on the heap, on exceptions and on RTTI. Its own CMake project on the SDK's
 # toolchain, built in a build dir of its own, never part of the desktop's build/: tools/build-device-check.sh
 # configures and builds it (pnpm device:check), and CI's linux-x64 job runs that script.
 #
@@ -108,8 +108,8 @@ if(NOT PICO_SDK_VERSION_STRING STREQUAL "2.1.1")
 endif()
 get_target_property(_rp_runtime_libraries pico_runtime INTERFACE_LINK_LIBRARIES)
 if(NOT pico_malloc IN_LIST _rp_runtime_libraries)
-    message(FATAL_ERROR "rp-device-check: pico_runtime no longer links pico_malloc (it links ${_rp_runtime_libraries}); "
-                        "the Pico SDK's runtime has changed, and what this image removes from it must be read again")
+    message(FATAL_ERROR "rp-device-check: pico_runtime no longer links pico_malloc (it links ${_rp_runtime_libraries});"
+                        " the Pico SDK's runtime has changed, and what this image removes from it must be read again")
 endif()
 list(REMOVE_ITEM _rp_runtime_libraries pico_malloc)
 set_property(TARGET pico_runtime PROPERTY INTERFACE_LINK_LIBRARIES "${_rp_runtime_libraries}")
@@ -206,8 +206,9 @@ pico_enable_stdio_uart(rp-device-check 1)
 pico_enable_stdio_usb(rp-device-check 0)
 pico_minimize_runtime(rp-device-check INCLUDE FLOAT DOUBLE PRINTF PANIC)
 
-# None of the wrapped symbols may be defined either: a library that defined one (pico_malloc defines the malloc
-# family's) would turn the trap into a heap. Checked on the linked image, which fails the build when one is.
+# None of the wrapped symbols may be defined either (a library that defined one, as pico_malloc does the malloc
+# family's, would turn the trap into a heap), and none may be referred to and left undefined (a link option that
+# tolerates one). Both are checked on the linked image, which fails the build when either holds.
 add_custom_command(TARGET rp-device-check POST_BUILD
     COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DIMAGE=$<TARGET_FILE:rp-device-check> -DTRAPPED=${_rp_trap_list}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/check-trap.cmake"

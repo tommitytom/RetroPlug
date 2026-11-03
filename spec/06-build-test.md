@@ -453,13 +453,14 @@ portable `rp.core` and `rp.dsp` type once in `RP_DEVICE` mode from its default s
 KiB arena, reporting on the UART. It links with `--wrap` on 87 symbols (the malloc family, `sbrk`, `__cxa_guard_*`,
 every `operator new` / `delete` and `std::__throw_*` the device `libstdc++.a` defines, the throw entry points, and the
 exception-handling and RTTI runtime: the personality routine, the catch and cleanup entries, `__dynamic_cast` and the
-class `type_info` vtables), so any heap use or throw in what it links, or an object built with exceptions or RTTI, is
-a link error naming the object; a post-link check also refuses an image that defines a wrapper or refers to one. The
-Pico SDK's `pico_malloc` is taken out of `pico_runtime` in place, the one part of this image's runtime the trap
-cannot have (stdio over the UART links under it); a firmware with a library that makes an alarm pool on the heap
-(Pico-PIO-USB's host) needs more, an E2 item ([spec/07](07-remaining-work.md)). The script also links a probe that allocates and
-requires it to fail naming `__wrap__Znwj` and `__wrap_malloc`, on every run, so the trap cannot silently stop reaching
-the link. It needs `arm-none-eabi-g++` and a Pico SDK (no submodules); the CI linux-x64 job installs
+class `type_info` vtables), so any heap use or throw in what it links is a link error naming the object, as is an
+object built with exceptions or RTTI that keeps a handler, a cleanup or a polymorphic class's `type_info`; a post-link
+check also refuses an image that defines a wrapper or refers to one. The Pico SDK's `pico_malloc` is taken out of
+`pico_runtime` in place, the one part of this image's runtime the trap cannot have (stdio over the UART links under
+it); a firmware with a library that makes an alarm pool on the heap (Pico-PIO-USB's host) needs more, an E2 item
+([spec/07](07-remaining-work.md)). The script also links a probe that allocates and requires it to fail naming
+`__wrap__Znwj` and `__wrap_malloc`, on every run, so the trap cannot silently stop reaching the link. It needs
+`arm-none-eabi-g++` and a Pico SDK (no submodules); the CI linux-x64 job installs
 `gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib`, clones SDK 2.1.1 into `$RUNNER_TEMP` and
 runs the script. The image is not run: instance sizes on the device are unmeasured, and the first run of the check's
 successor on hardware is E3 (E2 runs the pack's Edio on the rig, but no graph node). Release sizes: core, dsp and the

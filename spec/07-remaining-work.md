@@ -513,15 +513,17 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `rp_register_packages()` is generated (the `[packages]` golden); portable nodes' settings are `rp::text`, `rp::list`,
   `rp::choice` and numeric resource ids; `node.hpp` builds for the device (`RP_DEVICE`) and reads msgpack
   (`RP_SETTINGS_MSGPACK`) with a reader of our own; `retroplug-device-mode-test` is the eleventh `test:plugin` binary;
-  and `pnpm device:check` links the RP2350 image of every portable `rp.core` and `rp.dsp` type under a trap on the heap
-  and on exceptions, a CI step. Nothing was re-recorded. What is left, in order:
+  and `pnpm device:check` links the RP2350 image of every portable `rp.core` and `rp.dsp` type under a trap on the heap,
+  on exceptions and on RTTI, a CI step. Nothing was re-recorded. What is left, in order:
   - **E2: the N8 pack** (`packages/n8`: the nodes, one C++ Edio with an abstract transport, the link and the
     lifecycle; `edio.ts`'s protocol and `pico/n8-host/edio.c` retire), gated on the desktop N8 tests, the real-hardware
     leg and the Pico baseline. The box's default USB host, Pico-PIO-USB, makes its SOF alarm pool on the heap at init
     (`pio_usb_host_init` -> `alarm_pool_create(2, 1)`), so the firmware links under the device check's trap only with
     that pool made another way (`skip_alarm_pool` and a repeating timer of its own on the SDK's static default pool, or
     a pool not made on the heap), or keeps a heap with a trap scoped to the graph archives; TinyUSB host with UART MIDI
-    (`RP_NATIVE_USB=ON`) links under the trap as it is (E1 design 12.5, question 3).
+    (`RP_NATIVE_USB=ON`) links under the 87-symbol trap as it is (E1 design 12.5, question 3). The pack's abstract Edio
+    transport needs a protected non-virtual destructor: a virtual one makes its deleting destructor reference
+    `operator delete`, which the trap refuses.
   - **E3: `exportPlan` for `rp2350`, the static-arena executor and the box as a graph host**, gated on the Pico baseline
     and a C++ node in the box's plan. It must also settle `rp.core.delay`'s default, which needs 384 KB an instance
     (74% of the RP2350's RAM) and sizes the check's arena: a device default or a planner cap. The device's stack in

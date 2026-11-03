@@ -259,7 +259,7 @@ int main(int argc, char** argv) {
         << arrays.str() << "\ninline constexpr TypeCase kCases[] = {\n"
         << rows.str()
         << "};\n"
-           "// How many: counted here, as std::size would need <iterator> in the image, which brings <string>.\n"
+           "// How many: counted here: a count of its own keeps the header to <cstddef>.\n"
            "inline constexpr std::size_t kCaseCount = sizeof kCases / sizeof kCases[0];\n\n"
            "}  // namespace rp::device_check\n";
 

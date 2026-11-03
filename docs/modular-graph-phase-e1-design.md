@@ -126,7 +126,8 @@ carrier, generator-expression operands included), not listed. `retroplug_package
 a package named `products`, a package listed twice in one product, and a manifest target its own
 `native/CMakeLists.txt` does not define. A device
 product (`retroplug_product(... DEVICE)`, section 7) takes the device entries only. The offline pool keeps its own fixed
-subset (`core` and `dsp`), and the script-node pack keeps its own path: it is loaded at run time, not linked.
+subset (`core` and `dsp`), and the script-node pack keeps its own
+path: it is loaded at run time, not linked.
 
 ## 5. Fixed-capacity settings
 
@@ -253,11 +254,14 @@ what it links is a link error naming the object that pulled it in: the malloc fa
 aligned and `memalign` variants), `sbrk`, `__cxa_guard_*`, and every `operator new` and `operator delete`, `__cxa_`
 throw entry and `std::__throw_*` that the device multilib's own `libstdc++.a` defines (read with `nm` at configure,
 which stops if an expected one is missing). The runtime that exception handling and RTTI reference is trapped too, so
-an object compiled with either is a link error even where it throws nothing: `__gxx_personality_v0`,
+an object compiled with either is a link error when it keeps a handler, a cleanup or a polymorphic class's `type_info`
+(one that keeps none references none of it, and adds none of the runtime): `__gxx_personality_v0`,
 `__cxa_begin_catch`, `__cxa_end_catch`, `__cxa_end_cleanup` (where an ARM cleanup ends), `_Unwind_Resume`,
 `__dynamic_cast` and the three class `type_info` vtables; `__cxa_pure_virtual` is not, since an abstract class built
-without RTTI references it. A post-link check fails the build if the image defines any `__wrap_` symbol, or refers to
-one at all (a use that a link option tolerating undefined symbols let through). A positive control
+without RTTI references it (such a class with a virtual destructor still trips the trap, as its deleting destructor
+calls `operator delete`, so an abstract class a device image keeps needs a protected non-virtual destructor). A
+post-link check fails the build if the image defines any `__wrap_` symbol, or refers to one at all (a use that a link
+option tolerating undefined symbols let through; a weak reference resolves to null and reaches no heap). A positive control
 (`rp-device-trap-probe`, which does `new int(1)` and `std::malloc(16)`) is linked on every run of the script and must
 fail naming both. The runtime is the SDK's own `pico_stdlib`, with `pico_malloc` taken out of `pico_runtime`'s link
 libraries in place at configure (so a library that links `pico_stdlib` itself loses it too, and the configure stops if
@@ -324,7 +328,9 @@ Five commits, each building and passing on its own:
   way (`skip_alarm_pool` with a repeating timer of its own on the SDK's default pool, which is static, or a pool not
   made on the heap), or the firmware keeps a heap and a trap scoped to the graph archives, with `rp-device-check` the
   only image that guards them whole. The TinyUSB host on the chip's own controller with UART MIDI (`RP_NATIVE_USB=ON`)
-  links under the trap as it is (12.5, question 3).
+  links under the 87-symbol trap as it is (12.5, question 3). A non-virtual protected destructor is also what the pack's
+  abstract Edio transport needs: a virtual one makes the class's deleting destructor reference `operator delete`, which
+  the trap refuses.
 - `exportPlan`, the blob's format, the arena executor and the box as a graph host (E3); with it a device default for
   `rp.core.delay` or a planner cap on the Pico (12.6), and a measure of the device's stack in `query_memory` and
   `create`.
@@ -466,16 +472,17 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
    malloc family, so a call to malloc resolves to the wrapper and the trap fires further down, at newlib's `malloc.o`.
    It is taken out of `pico_runtime` in place, not out of a copy of the SDK's targets, as a copy is defeated by any
    library that links `pico_stdlib` itself (Pico-PIO-USB does). Everything else this image links does under the full
-   trap, `pico_stdio`
-   (UART) and `pico_printf` included, because the SDK wraps `puts` and `printf` to its own heap-free implementation; a
-   scratch build that also linked `pico_stdio_usb` (TinyUSB) passed too. The first build's failure at newlib's
-   `findfp.o` came from the default panic's `puts` in an image with no `pico_stdio`, which is newlib's and allocates
-   its buffers; it was not a heap inside stdio. So the image keeps stdio and reports on the UART, and
-   `pico_minimize_runtime` is for size only. The box's firmware (`pico/n8-host`), built in the code review's scratch
-   trees under the 78-symbol trap: with TinyUSB host on the chip's own USB controller and UART MIDI
-   (`RP_NATIVE_USB=ON`) it links clean; its default build, Pico-PIO-USB's host, does not, as `pio_usb_host_init`
-   makes its SOF alarm pool with `alarm_pool_create(2, 1)`, which is `malloc` and `calloc` (the SDK's default alarm
-   pool is static). That is an E2 item (section 10).
+   trap, `pico_stdio` (UART) and `pico_printf` included, because the SDK wraps `puts` and `printf` to its own heap-free
+   implementation; a scratch build that also linked `pico_stdio_usb` (TinyUSB) passed too. The first build's failure at
+   newlib's `findfp.o` came from the default panic's `puts` in an image with no `pico_stdio`, which is newlib's and
+   allocates its buffers; it was not a heap inside stdio. So the image keeps stdio and reports on the UART, and
+   `pico_minimize_runtime` is for size only. The box's firmware (`pico/n8-host`), built in scratch trees (the code
+   review's under the 78-symbol trap, and the follow-up's under the 87-symbol trap, whose link line is the image's
+   with the same in-place removal): with TinyUSB host on the chip's own USB controller and UART MIDI
+   (`RP_NATIVE_USB=ON`) it links clean under both, with no `__wrap_` symbol of the trap's defined in the ELF; its
+   default build, Pico-PIO-USB's host, does not, as `pio_usb_host_init` makes its SOF alarm pool with
+   `alarm_pool_create(2, 1)`, which is `malloc` and `calloc` (the SDK's default alarm pool is static). That is an E2
+   item (section 10).
 4. **The sizes** (RP2350 flags, link map by owner, bytes; stdio over the UART and printf in the image):
 
    | Owner | Flash, Release (-O3) | Flash, MinSizeRel (-Os) | RAM (data / bss, Release) |

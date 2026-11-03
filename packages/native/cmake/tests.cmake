@@ -336,6 +336,11 @@ set(_rp_device_includes "")
 set(_rp_device_definitions "")
 set(_rp_device_owners "")
 set(_rp_device_libraries "")
+set(_rp_all_owners "")
+foreach(_t IN LISTS _rp_device_targets)
+    string(REGEX REPLACE "-device$" "" _o ${_t})
+    list(APPEND _rp_all_owners ${_o})
+endforeach()
 foreach(_t IN LISTS _rp_device_targets)
     get_target_property(_s ${_t} SOURCES)
     list(APPEND _rp_device_sources ${_s})
@@ -343,12 +348,15 @@ foreach(_t IN LISTS _rp_device_targets)
     list(APPEND _rp_device_owners ${_owner})
     list(APPEND _rp_device_includes $<TARGET_PROPERTY:${_owner},INCLUDE_DIRECTORIES>)
     list(APPEND _rp_device_definitions $<TARGET_PROPERTY:${_owner},COMPILE_DEFINITIONS>)
-    # The package libraries it links (the rp::dsp kernels), and theirs: renamed with it, so compiled with it. The SDK is
-    # headers alone in device mode, so retroplug-node-sdk's own sources (the description library) are not the device's.
+    # Every static library it links (the rp::dsp kernels), and theirs: renamed with it, so compiled with it, so a
+    # library here is the owner's own and not a vendored one. The SDK is headers alone in device mode, so
+    # retroplug-node-sdk's own sources (the description library) are not the device's, and a library that is another
+    # device owner is compiled once, from its own -device target.
     get_target_property(_pending ${_owner} LINK_LIBRARIES)
     while(_pending)
         list(POP_FRONT _pending _lib)
-        if(NOT TARGET ${_lib} OR _lib STREQUAL "retroplug-node-sdk" OR _lib IN_LIST _rp_device_libraries)
+        if(NOT TARGET ${_lib} OR _lib STREQUAL "retroplug-node-sdk" OR _lib IN_LIST _rp_device_libraries
+           OR _lib IN_LIST _rp_all_owners)
             continue()
         endif()
         get_target_property(_type ${_lib} TYPE)
@@ -401,7 +409,7 @@ set_target_properties(retroplug-device-mode-objects PROPERTIES CXX_STANDARD 20 C
 target_compile_definitions(retroplug-device-mode-objects PRIVATE ${_rp_device_definitions} RP_DEVICE rp=rp_devmode
                                                                   ${_rp_device_renames})
 if(NOT MSVC)
-    target_compile_options(retroplug-device-mode-objects PRIVATE -fno-exceptions -fno-rtti)
+    target_compile_options(retroplug-device-mode-objects PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>")
 endif()
 # The SDK's headers and reflect-cpp's (the field reflection, header-only and SYSTEM: nothing of reflect-cpp is linked),
 # and the packages' own source roots for their headers and the kernels'.
