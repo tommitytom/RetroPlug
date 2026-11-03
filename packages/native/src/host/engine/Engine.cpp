@@ -458,7 +458,7 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     // Every slot has a core by now: one already live, or one a node built while the plan activated (the planner
     // activates every node it plans). A null one would be a table the plan's per-block work dereferences, so it is an
     // invariant rather than a diagnostic.
-    for (const auto& e : table->slots) assert(e.core);
+    for ([[maybe_unused]] const auto& e : table->slots) assert(e.core);
     hostWidth_ = hostWidthOf(*doc);
     publishedTable_ = table;
     // A replan plans a copy of the request setGraph last kept (its re-arm cleared), so it must not replace it.

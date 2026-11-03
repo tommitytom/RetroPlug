@@ -101,9 +101,9 @@ struct N8Nes {
         return true;
     }
 
-    const void* get_interface(std::string_view id) noexcept {
-        if (id == RP_STAGE_INTERFACE) return &staged;
-        return id == RP_SYSTEM_SRAM_INTERFACE || id == RP_SYSTEM_ROM_INTERFACE ? &jobs : nullptr;
+    const void* get_interface(std::string_view want) noexcept {
+        if (want == RP_STAGE_INTERFACE) return &staged;
+        return want == RP_SYSTEM_SRAM_INTERFACE || want == RP_SYSTEM_ROM_INTERFACE ? &jobs : nullptr;
     }
     static bool submitJob(void* ctx, const JobRequest& request, Job& job, std::string* error) {
         auto* self = static_cast<N8Nes*>(ctx);

@@ -697,7 +697,7 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
 
     // The capture mode is not part of SameBoyConfig: the core takes it through its own setter, so the build did not
     // apply it and the node's own first application must.
-    void configApplied(Applied& applied) const noexcept { applied.serialOutCapture.reset(); }
+    void configApplied(Applied& a) const noexcept { a.serialOutCapture.reset(); }
 
     // The fast boot first, which waits for the next restart and so is what a model's restart boots with: a block that
     // carries both (several documents published between two blocks commit together) restarts on the new fast boot,

@@ -123,7 +123,17 @@ TEST_CASE("the enum scan lists every enum's enumerators as reflect-cpp does", "[
     sameEnum<S16>("int16_t, the scanned range's ends and one past them");
     sameEnum<U16>("uint16_t");
     sameEnum<S32>("int, negative and past the int8 range");
+#if defined(_MSC_VER) && !defined(__clang__)
+    // reflect-cpp's MSVC reader is wrong here, not the scan: enchantum measures the type's spelling from E{0}'s, assuming
+    // "(enum E)0x0", and MSVC spells a signed 64-bit zero "0x00", so every name loses its first character ("A" -> "").
+    // Pinned so the case fails once reflect-cpp reads it right; node_desc's static_assert refuses such an enum meanwhile.
+    static_assert(!rp::detail::enumMatchesReflect<S64>());
+    REQUIRE(rp::detail::Enumerators<S64>::count == 2);
+    CHECK(rp::detail::Enumerators<S64>::name(0) == "A");
+    CHECK(rp::detail::Enumerators<S64>::name(1) == "B");
+#else
     sameEnum<S64>("int64_t");
+#endif
     sameEnum<U64>("uint64_t, whose greatest value is no long long");
     sameEnum<ULong>("unsigned long");
     sameEnum<Plain>("an unscoped enum with a fixed type");

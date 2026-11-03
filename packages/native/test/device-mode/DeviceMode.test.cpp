@@ -967,17 +967,17 @@ TEST_CASE("the msgpack decode refuses what JSON refuses, naming the field", "[de
         }
         CHECK(Made(bare, asSettings(msgpackOf("[1,2]"))).refusal == "settings must be a msgpack map");
         CHECK(Made(bare, asSettings(msgpackOf("7"))).refusal == "settings must be a msgpack map");
-        auto trailing = msgpackOf("{}");
-        trailing.push_back(0xc0);
-        CHECK(Made(bare, asSettings(trailing)).refusal == "settings hold bytes after their map");
+        auto trailingBare = msgpackOf("{}");
+        trailingBare.push_back(0xc0);
+        CHECK(Made(bare, asSettings(trailingBare)).refusal == "settings hold bytes after their map");
         CHECK(Made(bare, asSettings(std::vector<std::uint8_t>{0x81, 0xa1, 'x'})).refusal ==
               "settings are not valid msgpack");
     }
 
     // A device reads msgpack alone.
-    Made json(deviceEcho(), asSettings(std::string("{}")));
-    CHECK_FALSE(json.node);
-    CHECK(json.refusal == "settings encoding 0 is not supported; a device node reads msgpack");
+    Made fromJson(deviceEcho(), asSettings(std::string("{}")));
+    CHECK_FALSE(fromJson.node);
+    CHECK(fromJson.refusal == "settings encoding 0 is not supported; a device node reads msgpack");
 
     // A create whose second resource will not pin releases the first, which it had pinned, and names the field that
     // failed, on both builds.

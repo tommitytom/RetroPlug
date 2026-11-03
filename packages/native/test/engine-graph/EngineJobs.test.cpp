@@ -89,7 +89,8 @@ struct TempDir {
         std::error_code ec;
         fs::remove_all(path, ec);
     }
-    std::string file(const std::string& name) const { return (path / name).string(); }
+    // Forward slashes on every platform: the path is spliced into a JSON spec, where a Windows backslash is an escape.
+    std::string file(const std::string& name) const { return (path / name).generic_string(); }
 };
 
 std::vector<char> readBytes(const std::string& path) {
