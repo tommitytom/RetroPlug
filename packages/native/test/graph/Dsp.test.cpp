@@ -41,6 +41,7 @@
 #include "CountingAllocator.hpp"
 #include "dsp/Biquad.hpp"
 #include "dsp/Dither.hpp"
+#include "dsp/Mt19937.hpp"
 #include "dsp/Dpcm.hpp"
 #include "dsp/Gain.hpp"
 #include "dsp/R8bAllocator.hpp"  // r8brain, for the reference resample below
@@ -877,6 +878,28 @@ TEST_CASE("the dithers without a padded reference give the old whole-buffer loop
                 }
             }
         }
+    }
+}
+
+TEST_CASE("the dither's Mt19937 is std::mt19937, seed for seed", "[dsp][dither]") {
+    // The kernel seeds through seed() alone (Dither::init); the constructor's seeding is the same recurrence. A spread
+    // of seeds, the edges among them, each held to the standard engine for a few twists' worth of draws.
+    std::vector<std::uint32_t> seeds = {0u, 1u, 5489u, 0x9e3779b9u, 0x80000000u, 0xffffffffu};
+    std::uint32_t x = 0x12345678u;
+    for (int i = 0; i < 64; ++i) seeds.push_back(x = x * 1664525u + 1013904223u);
+    for (const std::uint32_t seed : seeds) {
+        INFO("seed " << seed);
+        std::mt19937     reference(seed);
+        rp::dsp::Mt19937 constructed(seed);
+        rp::dsp::Mt19937 reseeded;
+        reseeded();  // a draw first, so seed() is seen replacing a state that has moved
+        reseeded.seed(seed);
+        bool same = true;
+        for (int k = 0; k < 2000 && same; ++k) {
+            const std::uint32_t want = reference();
+            same = constructed() == want && reseeded() == want;
+        }
+        CHECK(same);
     }
 }
 

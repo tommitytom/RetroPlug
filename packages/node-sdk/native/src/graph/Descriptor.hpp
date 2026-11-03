@@ -8,14 +8,15 @@
 
 #include <rfl/Result.hpp>
 
+#include "graph/PortTypes.hpp"
+
 namespace rp::graph {
 
 // The descriptor model: what a node type declares (TypeDescriptor) and what one instance resolves to
 // for its settings (Layout). Both travel across the C ABI as canonical JSON (CanonicalJson.hpp), and
-// this file is the one place that spells and parses that JSON on the C++ side.
-
-enum class PortKind : std::uint8_t { Audio, Events, Bytes, Control, Link, Resource };
-enum class PortDir : std::uint8_t { In, Out, Link };  // link ports are undirected
+// this file is the one place that spells and parses that JSON on the C++ side. The port kinds, the param types and
+// the bounds a port is sized by (the queue's default and most, kMaxChannels) are PortTypes.hpp's, which a device-mode
+// node reads with no descriptor model at all.
 
 struct ChannelSpec {
     enum class Mode : std::uint8_t { Fixed, Any, Match };
@@ -29,17 +30,7 @@ struct ChannelSpec {
     static ChannelSpec matching(std::string port) { return {Mode::Match, 0, {}, std::move(port)}; }
 };
 
-// An events or bytes output's queue: the most messages, and the most payload bytes, one block carries. A push past
-// either is dropped and counted (rp_queue::dropped). An output may declare either part or both, as
-// "capacity": {"messages": n, "bytes": n}; a part it leaves undeclared takes the default. A wire carries its
-// source's queue (an output queue, or a feedback wire's front, which is sized from the source too), so an input has
-// no queue of its own to size, and one that declares a capacity is refused rather than silently ignored.
-constexpr std::uint32_t kDefaultQueueMessages = 256;
-constexpr std::uint32_t kDefaultQueueBytes = 4096;
-// The most a port may declare, so a typo cannot allocate gigabytes.
-constexpr std::uint32_t kMaxQueueMessages = 1u << 20;  // 1 Mi
-constexpr std::uint32_t kMaxQueueBytes = 16u << 20;    // 16 MiB
-
+// An output's declared queue capacity (PortTypes.hpp says what one bounds).
 struct QueueCapacity {
     std::optional<std::uint32_t> messages;  // as declared: unset is the default, and is written as nothing
     std::optional<std::uint32_t> bytes;
@@ -56,8 +47,6 @@ struct PortDesc {
     bool          write = false; // resource input that writes the resource (one writer per mutable resource)
     QueueCapacity capacity;      // events / bytes outputs only
 };
-
-enum class ParamType : std::uint8_t { Float, Int, Enum, Bool };
 
 struct ParamDesc {
     std::string              id;
@@ -101,14 +90,6 @@ const PortDesc*  findPort(const Layout& layout, std::string_view id);
 const ParamDesc* findParam(const Layout& layout, std::string_view id);
 
 std::string_view kindName(PortKind kind);
-
-// The most channels one audio port carries; the planner refuses a port that resolves to more.
-constexpr std::uint32_t kMaxChannels = 64;
-
-// The bytes a layout name is stored in by a node's settings: "mono", "stereo", "5.1", "7.1" and "discrete(N)" with N up
-// to kMaxChannels, whose longest spelling "discrete(64)" is twelve bytes; sixteen holds every name layoutChannels
-// accepts.
-constexpr std::size_t kMaxLayoutName = 16;
 
 // Why a channel count outside 1..kMaxChannels cannot be used, or nullopt. `what` names the thing in the message ("a
 // delay", "inputs together"), which is the part of a settings refusal a document's author reads.

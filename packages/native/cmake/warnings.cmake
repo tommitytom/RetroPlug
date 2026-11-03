@@ -41,7 +41,12 @@ if(MSVC)
         # The workspace packages' targets (cmake/packages.cmake), defined in their own directories: a target's options
         # can be set from any directory, so the list stays here, where every one of our targets is named.
         retroplug-node-sdk retroplug-graph-exec retroplug-graph retroplug-core-nodes
-        retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes retroplug-dsp-resample-nodes)
+        retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes retroplug-dsp-resample-nodes
+        # The device build of the node SDK, tested on the desktop (cmake/tests.cmake).
+        retroplug-device-mode-objects retroplug-device-mode-test)
+    # And each device entry's device-mode compile (cmake/packages.cmake's _retroplug_device_check).
+    get_property(_rp_device_checks GLOBAL PROPERTY RP_DEVICE_CHECK_TARGETS)
+    list(APPEND _rp_werror_targets ${_rp_device_checks})
     foreach(_t IN LISTS _rp_werror_targets)
         if(TARGET ${_t})
             target_compile_options(${_t} PRIVATE ${_rp_warn_flags})

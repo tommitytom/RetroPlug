@@ -22,7 +22,10 @@
  * type per definition a bundle registers, all behind the same functions).
  *
  * Every rp_node_vtable entry is required: a node with nothing to do supplies a no-op. get_interface may
- * return null for every id.
+ * return null for every id. The one exception is a device-mode build of a C++ node (graph/node.hpp under RP_DEVICE):
+ * a device runs a plan the desktop made and never changes its settings or describes a type, so its rp_node_type's
+ * descriptor and layout_for and its vtable's prepare_settings, commit_settings and release_settings are null. Such a
+ * type is never registered with a host that plans.
  *
  * Result codes are fixed-width integers rather than enum types: an enum's size is implementation-defined
  * (-fshort-enums makes it one byte on some embedded toolchains), and every value here crosses the ABI.
@@ -63,11 +66,16 @@ enum { RP_LOG_ERROR = 0, RP_LOG_WARNING = 1, RP_LOG_INFO = 2, RP_LOG_DEBUG = 3 }
 /* A control-thread call that fails writes a NUL-terminated reason here. */
 typedef struct rp_error { char message[256]; } rp_error;
 
-enum { RP_SETTINGS_JSON = 0u };
+/* How a settings object is spelt. JSON is a JSON object, what a graph document carries. MSGPACK is the same object as
+ * a msgpack map keyed by field name (strings as str, numbers as ints or floats as the JSON had them, arrays, nested
+ * maps, bools, nil), what a device reads from a plan blob (docs/modular-graph-phase-e1-design.md section 6). A C++ node
+ * built with graph/node.hpp reads both on the desktop and MSGPACK alone in a device-mode build; empty data (size 0)
+ * is the empty object in either. */
+enum { RP_SETTINGS_JSON = 0u, RP_SETTINGS_MSGPACK = 1u };
 typedef struct rp_settings {
     const char* data;     /* bytes, not NUL-terminated; UTF-8 text when the encoding is JSON */
     size_t      size;
-    uint32_t    encoding; /* RP_SETTINGS_JSON on the desktop */
+    uint32_t    encoding; /* RP_SETTINGS_* */
 } rp_settings;
 
 typedef struct rp_memory_req { size_t size; size_t align; } rp_memory_req;
@@ -361,6 +369,8 @@ typedef struct rp_link_interface {
 
 #ifdef __cplusplus
 }
+/* Where the C++ SDK's names live in a device-mode build: declared before any C++ header opens rp::graph. */
+#include "graph/sdk_namespace.hpp"
 #endif
 
 #endif /* RP_NODE_H */

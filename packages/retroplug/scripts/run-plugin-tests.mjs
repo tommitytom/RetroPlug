@@ -8,9 +8,10 @@
 // Lottie rasterization behind the <Lottie> component (retroplug-lottie-test),
 // the MIDI device-selection policy (retroplug-midi-test), the control-surface
 // device link (retroplug-launchpad-test), the node-graph engine's foundations
-// (retroplug-graph-test), and the engine on the graph: its system nodes, the
+// (retroplug-graph-test), the engine on the graph: its system nodes, the
 // documents TS sends it, and buildGraph's goldens planned on it
-// (retroplug-engine-graph-test).
+// (retroplug-engine-graph-test), and the node SDK's device build, run against
+// the desktop's (retroplug-device-mode-test).
 //
 // A tiny runner (rather than chaining `build/bin/foo && …` in package.json) so
 // the suite is cross-platform: it appends `.exe` on Windows and spawns each
@@ -28,7 +29,7 @@ const REPO = resolve(PKG, "../..");
 const BIN_DIR = process.env.RETROPLUG_BIN_DIR || join(REPO, "build", "bin");
 const EXE = process.platform === "win32" ? ".exe" : "";
 
-const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test", "retroplug-graph-test", "retroplug-engine-graph-test"];
+const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test", "retroplug-graph-test", "retroplug-engine-graph-test", "retroplug-device-mode-test"];
 
 const jobs = resolveJobs();
 const filter = stripRunnerFlags()[0];

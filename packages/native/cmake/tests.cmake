@@ -277,6 +277,7 @@ retroplug_add_test_binary(
              test/graph/Reshape.test.cpp
              test/graph/Resources.test.cpp            # a node that reads a resource its settings name
              test/graph/SettingsTypes.test.cpp         # rp::text, rp::list and the numeric resource_ref
+             test/graph/Fields.test.cpp                # the field walk's names held to reflect-cpp's own
              test/graph/QueueCapacity.test.cpp
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
              test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's math
@@ -300,3 +301,99 @@ retroplug_add_test_binary(
     INCLUDES ${CMAKE_SOURCE_DIR}/deps/r8brain
              # The engine tree's headers it reads beside the packages: lsdj/Effects.hpp, system/InputCapacity.hpp.
              ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# Guards the device build of the node SDK (docs/modular-graph-phase-e1-design.md sections 6 and 8): rp.core and rp.dsp
+# compiled as a device compiles them (RP_DEVICE, no exceptions, no RTTI) render, through real plans and over ragged
+# blocks, what the desktop's builds of the same sources render, bit for bit, created from msgpack where the desktop's
+# are created from JSON; their create, activate, process and destroy allocate nothing; and the msgpack settings decode
+# keeps JSON's leniency and refusals. The desktop's nodes read msgpack too.
+#
+# Both builds of one source sit in this one binary. The device-mode objects are an object library of their own, with
+# the device flags, and their C++ names are in rp::device (graph/sdk_namespace.hpp), so no name has two definitions as
+# long as a source keeps its own names under rp::graph, rp::detail or an anonymous namespace (that header's
+# convention); their packages' C entries, which no namespace reaches, are renamed by a compile definition. Catch2 is the shared
+# library every test binary links, built with exceptions, so the test's own translation unit keeps them and reaches the
+# device-mode code only through the C ABI, as a device's host would. MSVC keeps its /EHsc there: a second /EH option on
+# one command line is the D9025 warning AGENTS.md describes, and the GCC and Clang builds are where -fno-exceptions is
+# proved.
+add_library(retroplug-device-mode-objects OBJECT EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/packages/core/native/src/graph/nodes/CoreNodes.cpp
+    ${CMAKE_SOURCE_DIR}/packages/dsp/native/src/graph/nodes/DspNodes.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/DeviceModeNodes.cpp)
+set_target_properties(retroplug-device-mode-objects PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_compile_definitions(retroplug-device-mode-objects PRIVATE
+    RP_DEVICE
+    rp_core_package=rp_core_package_device_mode
+    rp_dsp_package=rp_dsp_package_device_mode)
+if(NOT MSVC)
+    target_compile_options(retroplug-device-mode-objects PRIVATE -fno-exceptions -fno-rtti)
+endif()
+# The SDK's headers and reflect-cpp's (the field reflection, header-only and SYSTEM: nothing of reflect-cpp is linked),
+# and the packages' own source roots for their headers and the kernels'.
+target_link_libraries(retroplug-device-mode-objects PRIVATE retroplug-node-sdk-headers retroplug-reflect-headers)
+target_include_directories(retroplug-device-mode-objects PRIVATE
+    ${CMAKE_SOURCE_DIR}/packages/core/native/src
+    ${CMAKE_SOURCE_DIR}/packages/dsp/native/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode)
+
+# What a device-mode build refuses, held at every configure (GCC and Clang): each source under
+# test/device-mode/refused must fail to compile as a device compiles it, and fail with its own reason on one of the
+# compiler's error lines, so a check that stopped firing (a static_assert gone, the heap-header #error gone) fails the
+# configure rather than going unnoticed. HeapHeader is checked only where the standard library is libstdc++: the
+# heap-header #error in graph/node.hpp reads libstdc++'s include guards (the device toolchain's library), so under
+# libc++ (macOS's AppleClang, a Linux Clang with -stdlib=libc++) that source compiles, the other two are still held,
+# and the device check there is the link trap's and graph/node.hpp's static_asserts.
+if(NOT MSVC)
+    include(CheckCXXSourceCompiles)
+    check_cxx_source_compiles("#include <cstddef>
+#ifndef __GLIBCXX__
+#error not libstdc++
+#endif
+int main() { return 0; }" RP_STDLIB_IS_LIBSTDCXX)
+    set(_rp_refused_sources
+        "HeapType|is never built for the device"
+        "PointerSettings|a device node's Settings holds only")
+    if(RP_STDLIB_IS_LIBSTDCXX)
+        list(APPEND _rp_refused_sources "HeapHeader|a heap or exception header")
+    endif()
+    get_target_property(_rp_reflect_dir reflectcpp SOURCE_DIR)
+    foreach(_rp_refused IN LISTS _rp_refused_sources)
+        string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
+        list(GET _rp_refused 0 _rp_source)
+        list(GET _rp_refused 1 _rp_reason)
+        unset(RP_DEVICE_REFUSES_${_rp_source} CACHE)
+        try_compile(RP_DEVICE_REFUSES_${_rp_source}
+            "${CMAKE_BINARY_DIR}/device-mode-refused/${_rp_source}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/refused/${_rp_source}.cpp"
+            CMAKE_FLAGS
+                "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src;${_rp_reflect_dir}/include"
+            COMPILE_DEFINITIONS -DRP_DEVICE -fno-exceptions -fno-rtti
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED ON
+            OUTPUT_VARIABLE _rp_output)
+        if(RP_DEVICE_REFUSES_${_rp_source})
+            message(FATAL_ERROR "test/device-mode/refused/${_rp_source}.cpp compiled in device mode; it must not")
+        endif()
+        # The reason on a diagnostic line ("error: static assertion failed: ...", "error: #error ..."), not anywhere in
+        # the output, which also echoes the source lines a diagnostic quotes.
+        string(REGEX MATCHALL "[^\n]*error:[^\n]*" _rp_errors "${_rp_output}")
+        string(FIND "${_rp_errors}" "${_rp_reason}" _rp_at)
+        if(_rp_at EQUAL -1)
+            message(FATAL_ERROR "test/device-mode/refused/${_rp_source}.cpp failed in device mode, but not with "
+                                "\"${_rp_reason}\":\n${_rp_output}")
+        endif()
+        unset(RP_DEVICE_REFUSES_${_rp_source} CACHE)
+    endforeach()
+endif()
+
+retroplug_add_test_binary(
+    NAME     retroplug-device-mode-test
+    SOURCES  test/device-mode/DeviceMode.test.cpp
+             test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
+             $<TARGET_OBJECTS:retroplug-device-mode-objects>
+    LIBS     retroplug-graph
+             retroplug-core-nodes                      # the desktop's rp.core, the device's twin
+             retroplug-dsp-nodes                       # and rp.dsp
+             retroplug-dsp-kernels                     # the kernels, which both builds of rp.dsp call
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
+             ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode)

@@ -5,8 +5,9 @@
 // Six algorithms. `None` is plain rounding, which is what the kit path does when no dither is set; the other five are
 // the kit effect's, ported from the legacy build's AudioDithering helpers. Their arithmetic is the kit path's to the
 // bit: a code is `round(clamp(value, 0, 2^bits - 1))` of the input scaled by `(v + 1) * (2^bits - 1) / 2` plus that
-// algorithm's error or noise term. The two TPDF algorithms draw their noise from an `mt19937` seeded once, at `init`,
-// so the codes are a function of the input, the algorithm, the bit depth and the seed alone.
+// algorithm's error or noise term. The two TPDF algorithms draw their noise from an mt19937 (Mt19937.hpp, the engine
+// std::mt19937 is) seeded once, at `init`, so the codes are a function of the input, the algorithm, the bit depth and
+// the seed alone.
 //
 // Streaming: every algorithm's state is a few floats plus the noise generator (the error-diffusion forms keep their
 // past errors, one for ErrorDiffusion, two for Sierra Lite and four for JJN, rather than a padded copy of the buffer),
@@ -14,7 +15,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <random>
+
+#include "dsp/Mt19937.hpp"
 
 namespace rp::dsp {
 
@@ -47,7 +49,7 @@ struct Dither {
     float           maxValue  = 15.0f;  // 2^bits - 1
     float           halfScale = 7.5f;   // maxValue / 2
 
-    std::mt19937 rng;                  // the TPDF noise, seeded at init
+    Mt19937      rng;                  // the TPDF noise, seeded at init
     float        prevDither   = 0.0f;  // HighPassTPDF
     float        shapingState = 0.0f;  // HighPassTPDF
     float        err1 = 0.0f, err2 = 0.0f;  // ShapedTPDF: the last two quantisation errors, newest first

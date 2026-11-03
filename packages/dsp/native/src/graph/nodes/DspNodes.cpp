@@ -4,17 +4,16 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
-#include <memory>
-#include <optional>
+#include <new>
 #include <span>
-#include <stdexcept>
-#include <string>
 #include <string_view>
 #include <type_traits>
+#ifndef RP_DEVICE  // what validate, adjust_layout and the DPCM node use: the desktop's
+#include <optional>
+#include <stdexcept>
+#include <string>
 #include <vector>
-
-#include <rfl/Literal.hpp>
+#endif
 
 #include "dsp/Biquad.hpp"
 #include "dsp/Dither.hpp"
@@ -35,9 +34,9 @@ namespace dsp {
 // The eight filters and the six dither forms, labelled as every other enum in a document is: the kebab-case of the
 // kernel enumerator it names (node.hpp's enum_param uses the same convention for a param), in the order the kernel
 // declares them, so a label's index is its enumerator's value (the static_asserts below hold that).
-using BiquadType = rfl::Literal<"low-pass", "high-pass", "band-pass", "band-stop", "peak", "low-shelf", "high-shelf",
-                                 "all-pass">;
-using DitherAlgorithm = rfl::Literal<"none", "high-pass-tpdf", "shaped-tpdf", "error-diffusion", "jjn", "sierra-lite">;
+using BiquadType = rp::choice<"low-pass", "high-pass", "band-pass", "band-stop", "peak", "low-shelf", "high-shelf",
+                              "all-pass">;
+using DitherAlgorithm = rp::choice<"none", "high-pass-tpdf", "shaped-tpdf", "error-diffusion", "jjn", "sierra-lite">;
 
 static_assert(BiquadType::value_of<"low-pass">() == static_cast<std::uint32_t>(rp::dsp::BiquadType::LowPass) &&
                   BiquadType::value_of<"high-pass">() == static_cast<std::uint32_t>(rp::dsp::BiquadType::HighPass) &&
@@ -159,11 +158,13 @@ struct Gain {
     // gain outside the range rather than letting the planner clamp it silently.
     struct { rp::float_param<"Gain", rp::range{-100.0, 100.0, 1.0}> gain; } params;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) { return checkChannels(s.channels, "a gain"); }
 
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports[0].channels = ChannelSpec::fixed(s.channels, "any");
     }
+#endif
 
     rp::dsp::Gain kernel;
     float         applied = 1.0f;  // the gain the last block ended at
@@ -253,11 +254,13 @@ struct Biquad {
         rp::float_param<"Gain", rp::range{-96.0, 96.0, 0.0}, "dB">           gainDb;  // Peak and the shelves only
     } params;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) { return checkChannels(s.channels, "a biquad"); }
 
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports[0].channels = ChannelSpec::fixed(s.channels, "any");
     }
+#endif
 
     static std::size_t extra_memory(const Settings& s) {
         return static_cast<std::size_t>(s.channels) * sizeof(rp::dsp::Biquad);
@@ -282,7 +285,7 @@ struct Biquad {
         // because Biquad is trivially destructible: the static_assert above holds that.
         auto* const first = reinterpret_cast<rp::dsp::Biquad*>(mem.data());
         const std::size_t count = mem.size() / sizeof(rp::dsp::Biquad);
-        for (std::size_t i = 0; i < count; ++i) std::construct_at(first + i);
+        for (std::size_t i = 0; i < count; ++i) ::new (static_cast<void*>(first + i)) rp::dsp::Biquad();
         filters = std::span<rp::dsp::Biquad>(first, count);
     }
 
@@ -376,6 +379,7 @@ struct Dither {
     struct { rp::audio_in<rp::channels<2, "any">> in; } inputs;
     struct { rp::audio_out<rp::match<"in">> out; } outputs;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) {
         if (auto e = checkChannels(s.channels, "a dither")) return e;
         if (s.bits < rp::dsp::kMinDitherBits || s.bits > rp::dsp::kMaxDitherBits)
@@ -387,6 +391,7 @@ struct Dither {
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports[0].channels = ChannelSpec::fixed(s.channels, "any");
     }
+#endif
 
     static std::size_t extra_memory(const Settings& s) {
         return static_cast<std::size_t>(s.channels) * sizeof(rp::dsp::Dither);
@@ -414,7 +419,7 @@ struct Dither {
         // destructible, which it is with its noise generator held inline.
         auto* const first = reinterpret_cast<rp::dsp::Dither*>(mem.data());
         const std::size_t count = mem.size() / sizeof(rp::dsp::Dither);
-        for (std::size_t i = 0; i < count; ++i) std::construct_at(first + i);
+        for (std::size_t i = 0; i < count; ++i) ::new (static_cast<void*>(first + i)) rp::dsp::Dither();
         states = std::span<rp::dsp::Dither>(first, count);
     }
 
@@ -494,6 +499,7 @@ struct Normalize {
 
     struct { rp::audio_out<rp::channels<2, "any">> out; } outputs;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) {
         if (auto e = checkChannels(s.channels, "a normalise")) return e;
         if (s.buffer.empty()) return "a normalise names an audio buffer";
@@ -502,6 +508,7 @@ struct Normalize {
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports[0].channels = ChannelSpec::fixed(s.channels, "any");
     }
+#endif
 
     const rp_audio_buffer* buffer = nullptr;  // pinned by the instance, so it outlives every block
     float                  gain = 1.0f;       // the setting, as the last commit left it
@@ -549,6 +556,10 @@ struct Normalize {
 };
 
 // ---- rp.dsp.dpcm --------------------------------------------------------------------------------------------------
+
+// The DPCM node declares `heap`, so it is never built for the device (node_device.hpp): the planner refuses it on the
+// Pico, and a device build leaves it out of the package.
+#ifndef RP_DEVICE
 
 // risa's DMC encoder as a node: at activate, on the control thread, the kernel (src/dsp/Dpcm.hpp) runs over the whole
 // bound buffer into storage this instance owns, and every block after that streams one delta bit per frame as an audio
@@ -638,6 +649,7 @@ struct Dpcm {
         position = n < available ? at + n : total;
     }
 };
+#endif  // RP_DEVICE
 
 }  // namespace
 
@@ -647,7 +659,9 @@ const rp_package* dspPackage() {
         rp::node_type<Biquad>(),
         rp::node_type<Dither>(),
         rp::node_type<Normalize>(),
+#ifndef RP_DEVICE
         rp::node_type<Dpcm>(),
+#endif
     };
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.dsp","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};

@@ -16,6 +16,15 @@ static_assert(sizeof(float) == sizeof(std::uint32_t) && std::numeric_limits<floa
 
 namespace {
 
+// The standard's check of mt19937 ([rand.predef]): the 10000th draw of a default-constructed engine. Held here so the
+// engine the kit's noise comes from is the one the standard specifies, draw for draw.
+constexpr bool tenThousandthDrawIsTheStandards() {
+    Mt19937 engine;
+    for (int i = 0; i < 9999; ++i) engine();
+    return engine() == 4123659995u;
+}
+static_assert(tenThousandthDrawIsTheStandards(), "Mt19937 is not the standard's mt19937");
+
 // One salt per TPDF algorithm: FNV-1a 64 of the algorithm's name, folded to 32 bits. A stable constant rather than
 // the enum's ordinal, so the order `DitherAlgorithm` (or the kit effect's `DitherType`) declares its algorithms in
 // cannot re-seed a kit that uses one of them.
@@ -25,7 +34,7 @@ constexpr std::uint32_t kShapedTPDFSalt   = 0x262f0818u; // fold(fnv1a64("Shaped
 // A uniform in [0, 1) from raw `mt19937` output, 24 bits at a time: `(x >> 8) * 2^-24`. The standard specifies
 // mt19937's sequence, so this draw is the same on every host, where `std::uniform_real_distribution`'s is not (the
 // three standard libraries disagree). A multiple of 2^-24 is exact in binary32, so the value is too.
-float uniform01(std::mt19937& rng) noexcept {
+float uniform01(Mt19937& rng) noexcept {
     return static_cast<float>(rng() >> 8) * (1.0f / 16777216.0f);
 }
 
@@ -82,7 +91,7 @@ void Dither::init(DitherAlgorithm algo, int bitDepth, std::uint32_t seed) noexce
     prevDither = shapingState = 0.0f;
     err1 = err2 = 0.0f;
     error = 0.0f;
-    std::fill(std::begin(past), std::end(past), 0.0f);
+    for (float& e : past) e = 0.0f;
     pastCount = 0;
 }
 

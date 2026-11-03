@@ -4,10 +4,6 @@
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <iterator>
-#include <vector>
-
-#include <rfl/Literal.hpp>
 
 #include "graph/node.hpp"
 
@@ -21,7 +17,7 @@ namespace core {
 // A join or split names at most kMaxPorts ports (the validators enforce it).
 constexpr std::uint32_t kMaxPorts = 16;
 
-using AddKind = rfl::Literal<"audio", "control">;
+using AddKind = rp::choice<"audio", "control">;
 
 struct AddSettings {
     std::uint32_t inputs = 2;
@@ -78,6 +74,9 @@ namespace {
 
 using namespace core;
 
+// What validate and adjust_layout share: the desktop's, since a device runs plans the desktop validated and laid out
+// (node.hpp's header comment).
+#ifndef RP_DEVICE
 PortDesc audioPort(std::string id, PortDir dir, ChannelSpec spec) {
     PortDesc p;
     p.id = std::move(id);
@@ -117,6 +116,7 @@ std::uint32_t sumOf(const rp::list<std::uint32_t, kMaxPorts>& v) {  // validated
     for (auto c : v) n += c;
     return n;
 }
+#endif  // RP_DEVICE
 
 // Emit a control value at a frame, skipping one equal to what the stream already holds.
 struct ControlWriter {
@@ -140,6 +140,7 @@ struct Add {
     static constexpr const char* category = "core/combine";
     using Settings = AddSettings;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) { return checkCount(s.inputs, "inputs"); }
 
     static void adjust_layout(Layout& l, const Settings& s) {
@@ -153,6 +154,7 @@ struct Add {
         if (controlKind) l.ports.push_back(queuePort("out", PortDir::Out, PortKind::Control));
         else l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::matching("in1")));
     }
+#endif
 
     bool          control = false;
     std::uint32_t inputCount = 2;
@@ -215,6 +217,7 @@ struct Merge {
     static constexpr const char* category = "core/combine";
     using Settings = MergeSettings;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) { return checkCount(s.inputs, "inputs"); }
 
     static void adjust_layout(Layout& l, const Settings& s) {
@@ -222,6 +225,7 @@ struct Merge {
             l.ports.push_back(queuePort("in" + std::to_string(k), PortDir::In, PortKind::Events));
         l.ports.push_back(queuePort("out", PortDir::Out, PortKind::Events));
     }
+#endif
 
     std::uint32_t inputCount = 2;
     void on_settings(const Settings& s) noexcept { inputCount = s.inputs; }
@@ -257,6 +261,7 @@ struct Join {
     static constexpr const char* category = "core/channels";
     using Settings = JoinSettings;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) {
         if (auto e = checkChannelList(s.inputs, "inputs")) return e;
         return checkLayout(s.layout, sumOf(s.inputs));
@@ -268,6 +273,7 @@ struct Join {
                                         ChannelSpec::fixed(s.inputs[k], layoutForCount(s.inputs[k]))));
         l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(sumOf(s.inputs), s.layout.str())));
     }
+#endif
 
     void process(const rp::Block& b) noexcept {
         const rp_audio_view& out = b.output(0).u.audio;
@@ -286,6 +292,7 @@ struct Split {
     static constexpr const char* category = "core/channels";
     using Settings = SplitSettings;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) {
         if (auto e = checkChannelList(s.outputs, "outputs")) return e;
         return checkLayout(s.layout, sumOf(s.outputs));
@@ -297,6 +304,7 @@ struct Split {
             l.ports.push_back(audioPort("out" + std::to_string(k + 1), PortDir::Out,
                                         ChannelSpec::fixed(s.outputs[k], layoutForCount(s.outputs[k]))));
     }
+#endif
 
     void process(const rp::Block& b) noexcept {
         const rp_audio_view& in = b.input(0).u.audio;
@@ -317,6 +325,7 @@ struct Downmix {
     static constexpr const char* category = "core/channels";
     using Settings = DownmixSettings;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) {
         const auto from = layoutChannels(s.from);
         if (!from) return "unknown layout " + jsonString(s.from);
@@ -332,6 +341,7 @@ struct Downmix {
         l.ports.push_back(audioPort("in", PortDir::In, ChannelSpec::fixed(from, s.from.str())));
         l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(to, s.to.str())));
     }
+#endif
 
     bool toStereo = false;  // 5.1 -> stereo; every other downmix is to mono
     void on_settings(const Settings& s) noexcept { toStereo = s.to == "stereo"; }
@@ -364,6 +374,7 @@ struct Relabel {
     static constexpr const char* category = "core/channels";
     using Settings = RelabelSettings;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) {
         if (auto e = checkChannels(s.channels, "relabel")) return e;
         return checkLayout(s.layout, s.channels);
@@ -373,6 +384,7 @@ struct Relabel {
         l.ports.push_back(audioPort("in", PortDir::In, ChannelSpec::fixed(s.channels, "any")));
         l.ports.push_back(audioPort("out", PortDir::Out, ChannelSpec::fixed(s.channels, s.layout.str())));
     }
+#endif
 
     void process(const rp::Block& b) noexcept {
         const rp_audio_view& in = b.input(0).u.audio;
@@ -384,8 +396,10 @@ struct Relabel {
 
 // ---- rp.core.delay ----------------------------------------------------------------------------------------------
 
+#ifndef RP_DEVICE  // validate's bounds
 constexpr std::uint32_t kMaxDelaySamples = 1u << 24;      // keeps the int Time param in range
 constexpr std::uint64_t kMaxDelayRingSamples = 1ull << 26;  // 256 MiB of float across every channel
+#endif
 
 struct Delay {
     static constexpr const char* id = "rp.core.delay";
@@ -397,6 +411,7 @@ struct Delay {
     struct { rp::audio_out<rp::match<"in">> out; } outputs;
     struct { rp::int_param<"Time", rp::range{0, 48000, 0}, "samples"> time; } params;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) {
         if (auto e = checkChannels(s.channels, "a delay")) return e;
         if (s.maxSamples < 1 || s.maxSamples > kMaxDelaySamples)
@@ -410,6 +425,7 @@ struct Delay {
         l.ports[0].channels = ChannelSpec::fixed(s.channels, "any");
         l.params[0].max = static_cast<double>(s.maxSamples);
     }
+#endif
 
     // One ring of maxSamples + 1 per channel, in host-supplied memory: no heap, so it runs on the Pico.
     static std::size_t extra_memory(const Settings& s) {
@@ -463,6 +479,7 @@ struct Constant {
     struct { rp::control_out out; } outputs;
     struct { rp::float_param<"Value", rp::range{0, 1, 0}> value; } params;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) {
         if (!std::isfinite(s.min) || !std::isfinite(s.max)) return std::string("min and max must be finite numbers");
         if (!(s.min <= s.max)) return std::string("min must not exceed max");
@@ -474,6 +491,7 @@ struct Constant {
         l.params[0].max = s.max;
         l.params[0].def = std::clamp(0.0, s.min, s.max);
     }
+#endif
 
     // The output follows the param: its value from frame 0 (the block-start value, or a frame-0 change),
     // then each later change at its own frame, skipping any that would not change the output.
@@ -499,6 +517,7 @@ struct BufferPlayer {
     struct { rp::resource_in<"audio-buffer"> sample; } inputs;
     struct { rp::audio_out<rp::stereo> out; } outputs;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) {
         if (auto e = checkChannels(s.channels, "a player")) return e;
         return checkLayout(s.layout, s.channels);
@@ -506,6 +525,7 @@ struct BufferPlayer {
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports[1].channels = ChannelSpec::fixed(s.channels, s.layout.str());
     }
+#endif
 
     bool               loop = true;
     std::uint32_t      position = 0;
@@ -542,10 +562,12 @@ struct BufferRecorder {
     struct { rp::resource_out<"audio-buffer"> buffer; } outputs;
     struct { rp::bool_param<"Record", true> record; } params;
 
+#ifndef RP_DEVICE
     static std::optional<std::string> validate(const Settings& s) { return checkChannels(s.channels, "a recorder"); }
     static void adjust_layout(Layout& l, const Settings& s) {
         l.ports[0].channels = ChannelSpec::fixed(s.channels, "any");
     }
+#endif
 
     std::uint32_t      position = 0;
     bool               recording = false;   // Record as the last frame saw it

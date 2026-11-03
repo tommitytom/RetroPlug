@@ -59,6 +59,7 @@ function(retroplug_package name)
     set(_targets "")
     set(_entries "")
     set(_device "")
+    set(_deviceTargets "")
     math(EXPR _last "${_count} - 1")
     foreach(_i RANGE ${_last})
         string(JSON _target ERROR_VARIABLE _err GET "${_native}" ${_i} target)
@@ -88,6 +89,7 @@ function(retroplug_package name)
         list(APPEND _entries ${_entry})
         if(_isDevice)
             list(APPEND _device ${_entry})
+            list(APPEND _deviceTargets ${_target})
         endif()
     endforeach()
     list(REMOVE_DUPLICATES _targets)
@@ -101,6 +103,58 @@ function(retroplug_package name)
     if(EXISTS "${_dir}/native/CMakeLists.txt")
         add_subdirectory("${_dir}/native" "${CMAKE_BINARY_DIR}/packages/${name}")
     endif()
+    list(REMOVE_DUPLICATES _deviceTargets)
+    foreach(_target IN LISTS _deviceTargets)
+        _retroplug_device_check(${name} ${_target})
+    endforeach()
+endfunction()
+
+# _retroplug_device_check(<package> <target>): the desktop build's check of a `device` entry. An entry the manifest
+# marks `device` is one a device product compiles, so the desktop's default build compiles its target's sources a
+# second time, as the device does (graph/node.hpp under RP_DEVICE, no exceptions, no RTTI), into an object library
+# nothing links: <target>-device. A node type whose settings a device cannot hold, one declaring heap or threads, and
+# a description hook left outside `#ifndef RP_DEVICE` (node.hpp's header comment) then fail the desktop build, on
+# every platform CI builds, not only a device toolchain's. The manifest's flag is what keys it, rather than a constant
+# on each node type, because only a device-mode compile can see a hook that is not guarded, and the flag already says
+# which targets a device compiles. It copies the target's sources, definitions, options and include directories; a
+# source a generator expression picks, or a C source, is refused here rather than half-copied, and a device entry's
+# target must exist when retroplug_package() runs (a package's own native/CMakeLists.txt defines it).
+function(_retroplug_device_check package target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "retroplug_package(${package}): ${target}, a device entry's target, is not a target")
+    endif()
+    get_target_property(_sources ${target} SOURCES)
+    get_target_property(_sourceDir ${target} SOURCE_DIR)
+    set(_absolute "")
+    foreach(_source IN LISTS _sources)
+        # A source the device compile could not take as it stands: one a generator expression chooses (it would need
+        # evaluating per configuration), or C (graph/node.hpp is C++, and a C file is no node source).
+        if(_source MATCHES "^\\$<")
+            message(FATAL_ERROR "retroplug_package(${package}): ${target}'s source ${_source} is a generator "
+                                "expression, which its device check (_retroplug_device_check) does not take")
+        endif()
+        if(_source MATCHES "\\.c$")
+            message(FATAL_ERROR "retroplug_package(${package}): ${target}'s source ${_source} is C, which its device "
+                                "check (_retroplug_device_check) does not take")
+        endif()
+        if(NOT IS_ABSOLUTE "${_source}")
+            set(_source "${_sourceDir}/${_source}")
+        endif()
+        list(APPEND _absolute "${_source}")
+    endforeach()
+    add_library(${target}-device OBJECT ${_absolute})
+    set_target_properties(${target}-device PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    # The target's own definitions, options (/bigobj on MSVC among them, retroplug_package_library's) and include
+    # directories, read when the build is generated, so a package that adds one after this ran is still copied; then
+    # the device mode on top.
+    target_compile_definitions(${target}-device PRIVATE $<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS> RP_DEVICE)
+    target_compile_options(${target}-device PRIVATE $<TARGET_PROPERTY:${target},COMPILE_OPTIONS>)
+    if(NOT MSVC)
+        target_compile_options(${target}-device PRIVATE -fno-exceptions -fno-rtti)
+    endif()
+    target_include_directories(${target}-device PRIVATE $<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>)
+    target_link_libraries(${target}-device PRIVATE retroplug-node-sdk-headers retroplug-reflect-headers)
+    set_property(GLOBAL APPEND PROPERTY RP_DEVICE_CHECK_TARGETS ${target}-device)
 endfunction()
 
 # retroplug_package_library(<target> <sources>...): a package's static library, with the settings every one of them

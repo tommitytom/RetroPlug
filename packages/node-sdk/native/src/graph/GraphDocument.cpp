@@ -1,11 +1,10 @@
 #include "graph/GraphDocument.hpp"
 
-#include <charconv>
-
 #include <rfl/NoExtraFields.hpp>
 #include <rfl/from_generic.hpp>
 
 #include "graph/CanonicalJson.hpp"
+#include "graph/ResourceId.hpp"
 
 namespace rp::graph {
 
@@ -27,13 +26,8 @@ std::optional<Endpoint> parseEndpoint(std::string_view text) {
 }
 
 std::optional<std::uint32_t> parseResourceRef(std::string_view text) {
-    constexpr std::string_view kPrefix = "res:";
-    if (text.substr(0, kPrefix.size()) != kPrefix) return std::nullopt;
-    const auto digits = text.substr(kPrefix.size());
     std::uint32_t id = 0;
-    if (digits.empty() || digits[0] == '0') return std::nullopt;  // one spelling per id: no "res:007", no "res:0"
-    const auto [ptr, ec] = std::from_chars(digits.data(), digits.data() + digits.size(), id);
-    if (ec != std::errc() || ptr != digits.data() + digits.size()) return std::nullopt;
+    if (!parseResourceId(text, id)) return std::nullopt;
     return id;
 }
 
