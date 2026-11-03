@@ -68,7 +68,8 @@ if cmake --build "$OUT" --target rp-device-trap-probe -j"$JOBS" >"$probe_log" 2>
     die "rp-device-trap-probe LINKED: the link trap is not reaching the image's link ($probe_log)"
 fi
 for symbol in __wrap__Znwj __wrap_malloc; do
-    grep -q "trap-probe\.cpp\.o: in function .main.:" "$probe_log" && grep -q "undefined reference to .$symbol'" "$probe_log" ||
+    grep -q "trap-probe\.cpp\.o: in function .main.:" "$probe_log" &&
+        grep -q "undefined reference to .$symbol'" "$probe_log" ||
         die "rp-device-trap-probe failed, but not with its own object's reference to $symbol ($probe_log)"
 done
 grep -E "trap-probe\.cpp\.o: in function|undefined reference" "$probe_log" | sed 's/^.*ld: //; s/^/  /'

@@ -72,7 +72,8 @@ inline constexpr std::uint32_t kBufferFrames = 256;
 // What rp-device-check gives run(): one block of kBlockFrames, in an arena of kArenaBytes. The arena is sized for the
 // largest default instance, rp.core.delay's (a second of stereo at 48 kHz, 384,000 bytes of delay line of its own),
 // with room for its ports. retroplug-device-mode-test runs the check in an arena of the same size on the desktop, where
-// pointers and max_align_t are wider, so a run that fits there fits the device's.
+// pointers and max_align_t are wider, so the desktop's sizes should be an upper bound on the device's: they are for
+// every type the check runs today, but nothing checks it for a new one (the image is not run before E3).
 inline constexpr std::uint32_t kBlockFrames = 64;
 inline constexpr std::size_t   kArenaBytes = 400 * 1024;
 

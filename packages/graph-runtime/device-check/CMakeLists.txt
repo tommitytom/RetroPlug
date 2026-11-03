@@ -87,46 +87,36 @@ endif()
 # Copied in, so a new header re-runs the configure and rebuilds what includes it.
 configure_file("${RP_DEVICE_CHECK_CASES}" "${CMAKE_BINARY_DIR}/generated/DeviceCheckCases.hpp" COPYONLY)
 
-# --- the runtime: the SDK's pico_stdlib with pico_malloc taken out, and nothing else. pico_malloc is the one library
-# of the SDK the trap cannot have: it DEFINES the wrapped malloc family (its own --wrap, a heap behind it), so with it
-# in the link a call to malloc resolves to its wrapper, the trap fires only further down, at newlib's malloc.o, naming
-# that rather than the object that called it, and check-trap.cmake fails the build on the wrapper's definition. The
-# rest links under the full trap: stdio over the UART and pico_printf among them (the SDK wraps puts and printf to its
-# own implementation, which allocates nothing), and stdio over USB too (TinyUSB's device CDC, scratch-built against
-# SDK 2.1.1 with its submodules; this image leaves it out, as CI's SDK has none).
+# --- the runtime: the SDK's pico_stdlib, with pico_malloc taken out of pico_runtime. pico_malloc is the one library
+# of the SDK this image cannot have under the trap: it DEFINES the wrapped malloc family (its own --wrap, a heap behind
+# it), so with it in the link a call to malloc resolves to its wrapper, the trap fires only further down, at newlib's
+# malloc.o, naming that rather than the object that called it, and check-trap.cmake fails the build on the wrapper's
+# definition. The rest of what this image links does under the full trap: stdio over the UART and pico_printf among
+# them (the SDK wraps puts and printf to its own implementation, which allocates nothing), and stdio over USB too
+# (TinyUSB's device CDC, scratch-built against SDK 2.1.1 with its submodules; this image leaves it out, as CI's SDK has
+# none). That holds for this image's runtime, not for every firmware's: the default alarm pool is static, but
+# alarm_pool_create makes a pool on the heap, and a library that calls it (Pico-PIO-USB's host does, at init, unless
+# its config skips the pool) links only once that pool is made some other way (docs/modular-graph-phase-e1-design.md
+# section 10).
 #
-# Both lists are read from the SDK's own targets rather than copied, so an SDK that adds a runtime library brings it
-# here too: pico_runtime's sources, link options and libraries less pico_malloc (rp-device-runtime), and pico_stdlib's
-# with that in place of pico_runtime (rp-device-stdlib). A list that no longer holds the name it replaces stops the
-# configure, as the SDK has moved under it.
+# It is taken out of the SDK's own target, in place, rather than out of a copy of it: every consumer of pico_runtime
+# loses it, a library that links pico_stdlib itself (most third-party Pico libraries do) included, and pico_runtime
+# keeps everything else it carries, its compile definitions among them. A pico_runtime that no longer links pico_malloc
+# stops the configure, as the SDK has moved under it.
 if(NOT PICO_SDK_VERSION_STRING STREQUAL "2.1.1")
     message(WARNING "rp-device-check: built and checked against Pico SDK 2.1.1, and this is ${PICO_SDK_VERSION_STRING}")
 endif()
-function(_rp_derive_library name from drop)
-    get_target_property(_libraries ${from} INTERFACE_LINK_LIBRARIES)
-    if(NOT drop IN_LIST _libraries)
-        message(FATAL_ERROR "rp-device-check: ${from} no longer links ${drop} (it links ${_libraries}); the Pico SDK's "
-                            "runtime has changed, and ${name} must be derived from it again")
-    endif()
-    list(REMOVE_ITEM _libraries ${drop})
-    list(APPEND _libraries ${ARGN})
-    get_target_property(_sources ${from} INTERFACE_SOURCES)
-    get_target_property(_options ${from} INTERFACE_LINK_OPTIONS)
-    add_library(${name} INTERFACE)
-    target_link_libraries(${name} INTERFACE ${_libraries})
-    if(_sources)
-        target_sources(${name} INTERFACE ${_sources})
-    endif()
-    if(_options)
-        target_link_options(${name} INTERFACE ${_options})
-    endif()
-endfunction()
-_rp_derive_library(rp-device-runtime pico_runtime pico_malloc)
-_rp_derive_library(rp-device-stdlib pico_stdlib pico_runtime rp-device-runtime)
+get_target_property(_rp_runtime_libraries pico_runtime INTERFACE_LINK_LIBRARIES)
+if(NOT pico_malloc IN_LIST _rp_runtime_libraries)
+    message(FATAL_ERROR "rp-device-check: pico_runtime no longer links pico_malloc (it links ${_rp_runtime_libraries}); "
+                        "the Pico SDK's runtime has changed, and what this image removes from it must be read again")
+endif()
+list(REMOVE_ITEM _rp_runtime_libraries pico_malloc)
+set_property(TARGET pico_runtime PROPERTY INTERFACE_LINK_LIBRARIES "${_rp_runtime_libraries}")
 
 # --- the link trap. Every symbol through which code reaches the heap or throws is wrapped, and no __wrap_ symbol is
 # defined, so a reference to any of them in what the image links is an undefined __wrap_ reference: a link error
-# naming the object (and the function) that made it. Every object is compiled with a section a function, so
+# naming the object (and the function) that made it. Every object is compiled with a section per function, so
 # --gc-sections (pico_standard_link) means it names what the image keeps, not every function an object happens to
 # hold. The C heap is newlib's, and newlib reaches it through its reentrant _r forms as well as the plain ones, so both
 # are listed, and sbrk, the break under it; operator new and delete, the C++ runtime's throw path and the
@@ -134,12 +124,20 @@ _rp_derive_library(rp-device-stdlib pico_stdlib pico_runtime rp-device-runtime)
 # multilib defines), so a variant is never missed for being spelt differently. The function-local static guards
 # (__cxa_guard_*) are wrapped too: libsupc++ implements them with a throw, and a device image has no business with
 # them (the device product's registration is written to need none).
+#
+# So is the runtime that exception handling and RTTI reference, so an object compiled with either (a vendored source,
+# or one a library adds outside the SDK's -fno-exceptions -fno-rtti) is a link error even where it throws nothing:
+# the personality routine and the catch entries a function with a handler or a cleanup references (on ARM a cleanup
+# ends in __cxa_end_cleanup; _Unwind_Resume, its form elsewhere, is libgcc's and listed by name), __dynamic_cast, and
+# the vtables of the three class type_info kinds a polymorphic class's RTTI points at. __cxa_pure_virtual is not
+# trapped: an abstract class compiled without RTTI references it, and a device may have one.
 set(_rp_trapped
     malloc calloc realloc free memalign aligned_alloc posix_memalign valloc pvalloc reallocf reallocarray
     malloc_usable_size
     _malloc_r _calloc_r _realloc_r _free_r _memalign_r _valloc_r _pvalloc_r _reallocf_r _malloc_usable_size_r
     sbrk _sbrk _sbrk_r
-    __cxa_guard_acquire __cxa_guard_release __cxa_guard_abort)
+    __cxa_guard_acquire __cxa_guard_release __cxa_guard_abort
+    _Unwind_Resume)
 separate_arguments(_rp_cxx_flags UNIX_COMMAND "${CMAKE_CXX_FLAGS}")
 execute_process(COMMAND ${CMAKE_CXX_COMPILER} ${_rp_cxx_flags} -print-file-name=libstdc++.a
                 OUTPUT_VARIABLE _rp_libstdcxx OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -154,12 +152,18 @@ set(_rp_cxx_names
     "_Zdl[A-Za-z0-9_]+" "_Zda[A-Za-z0-9_]+"  # operator delete and delete[]
     "_ZSt[0-9]+__throw_[A-Za-z0-9_]+"        # std::__throw_*
     "__cxa_(throw|rethrow|allocate_exception|allocate_dependent_exception|free_exception|free_dependent_exception)"
-    "__cxa_(init_primary_exception|throw_bad_array_new_length|bad_cast|bad_typeid)")
+    "__cxa_(init_primary_exception|throw_bad_array_new_length|bad_cast|bad_typeid)"
+    # exception handling and RTTI; the type_info vtables are data (R), not code
+    "__gxx_personality_v0" "__cxa_(begin_catch|end_catch|end_cleanup)" "__dynamic_cast"
+    "_ZTVN10__cxxabiv1[0-9]+__(si_|vmi_)?class_type_infoE")
 list(JOIN _rp_cxx_names "|" _rp_cxx_names)
-string(REGEX MATCHALL "[ \t][TW] (${_rp_cxx_names})\n" _rp_cxx "${_rp_nm}")
-list(TRANSFORM _rp_cxx REPLACE "^[ \t][TW] ([^\n]+)\n$" "\\1")
+string(REGEX MATCHALL "[ \t][TWR] (${_rp_cxx_names})\n" _rp_cxx "${_rp_nm}")
+list(TRANSFORM _rp_cxx REPLACE "^[ \t][TWR] ([^\n]+)\n$" "\\1")
 list(REMOVE_DUPLICATES _rp_cxx)
-foreach(_rp_required _Znwj _ZdlPv __cxa_throw __cxa_allocate_exception _ZSt17__throw_bad_allocv)
+foreach(_rp_required _Znwj _ZdlPv __cxa_throw __cxa_allocate_exception _ZSt17__throw_bad_allocv
+                     __gxx_personality_v0 __cxa_begin_catch __cxa_end_catch __cxa_end_cleanup __dynamic_cast
+                     _ZTVN10__cxxabiv117__class_type_infoE _ZTVN10__cxxabiv120__si_class_type_infoE
+                     _ZTVN10__cxxabiv121__vmi_class_type_infoE)
     if(NOT _rp_required IN_LIST _rp_cxx)
         message(FATAL_ERROR "rp-device-check: ${_rp_libstdcxx} defines no ${_rp_required}; the trap would miss it")
     endif()
@@ -178,7 +182,7 @@ function(_rp_device_executable target)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     target_compile_definitions(${target} PRIVATE RP_DEVICE)
     target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>")
-    target_link_libraries(${target} PRIVATE rp-device-stdlib)
+    target_link_libraries(${target} PRIVATE pico_stdlib)
     list(TRANSFORM _rp_trapped PREPEND "LINKER:--wrap=" OUTPUT_VARIABLE _wrap)
     target_link_options(${target} PRIVATE ${_wrap})
 endfunction()

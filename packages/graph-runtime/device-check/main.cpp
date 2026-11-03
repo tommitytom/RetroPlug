@@ -45,7 +45,7 @@ int main() {
 
     std::size_t                    count = 0;
     const rp_package* const* const packages = rp_register_packages(&count);
-    gDeviceCheck = rp::device_check::run(packages, count, rp::device_check::kCases, std::size(rp::device_check::kCases),
+    gDeviceCheck = rp::device_check::run(packages, count, rp::device_check::kCases, rp::device_check::kCaseCount,
                                          gArena, sizeof gArena, rp::device_check::kBlockFrames);
     gDeviceCheckStep = gDeviceCheck.step;
     if (gDeviceCheck.step == rp::device_check::Step::Ok)

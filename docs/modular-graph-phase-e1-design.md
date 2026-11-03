@@ -243,17 +243,23 @@ header of constant arrays (with one completion table, `rp.dsp.normalize` needing
 check's host serves). CI builds the image and does not run it; the ELF is flashable, and E3 is the first phase to run
 the check's successor on the rig, with plans loaded by the box.
 
-**The link trap.** The image links with `--wrap` on 78 symbols and defines none of the wrapped ones, so any use in
+**The link trap.** The image links with `--wrap` on 87 symbols and defines none of the wrapped ones, so any use in
 what it links is a link error naming the object that pulled it in: the malloc family (plain, newlib's `_r` forms,
 aligned and `memalign` variants), `sbrk`, `__cxa_guard_*`, and every `operator new` and `operator delete`, `__cxa_`
 throw entry and `std::__throw_*` that the device multilib's own `libstdc++.a` defines (read with `nm` at configure,
-which stops if an expected one is missing). A post-link check fails the build if the image defines any `__wrap_`
-symbol. A positive control (`rp-device-trap-probe`, which does `new int(1)` and `std::malloc(16)`) is linked on every
-run of the script and must fail naming both. The runtime is the SDK's own with `pico_malloc` removed
-(`rp-device-runtime` and `rp-device-stdlib` are derived from `pico_runtime` and `pico_stdlib` at configure, and the
-configure stops if the name to remove is gone). Only `pico_malloc` has to leave: stdio over the UART links under the
-full trap, since the SDK wraps `printf` and `puts` to its own heap-free implementation. The image builds Release by
-default, so the Executor's asserts compile out; a Debug image links too.
+which stops if an expected one is missing). The runtime that exception handling and RTTI reference is trapped too, so
+an object compiled with either is a link error even where it throws nothing: `__gxx_personality_v0`,
+`__cxa_begin_catch`, `__cxa_end_catch`, `__cxa_end_cleanup` (where an ARM cleanup ends), `_Unwind_Resume`,
+`__dynamic_cast` and the three class `type_info` vtables; `__cxa_pure_virtual` is not, since an abstract class built
+without RTTI references it. A post-link check fails the build if the image defines any `__wrap_` symbol, or refers to
+one at all (a use that a link option tolerating undefined symbols let through). A positive control
+(`rp-device-trap-probe`, which does `new int(1)` and `std::malloc(16)`) is linked on every run of the script and must
+fail naming both. The runtime is the SDK's own `pico_stdlib`, with `pico_malloc` taken out of `pico_runtime`'s link
+libraries in place at configure (so a library that links `pico_stdlib` itself loses it too, and the configure stops if
+the name to remove is gone): `pico_malloc` defines the wrapped malloc family, so with it in the link a call to malloc
+resolves to its wrapper. Everything else this image links does under the full trap: stdio over the UART links, since
+the SDK wraps `printf` and `puts` to its own heap-free implementation. The image builds Release by default, so the
+Executor's asserts compile out; a Debug image links too.
 
 **CI.** The linux-x64 job installs `gcc-arm-none-eabi` (with newlib and its libstdc++), clones the Pico SDK 2.1.1 with
 no submodules and runs `pnpm device:check` (`tools/build-device-check.sh`), which builds the cases tool, the image and
@@ -415,7 +421,7 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
   `CPMAddPackage` line (0.26.2) so the two builds cannot drift, with a FetchContent fallback; no UF2 (the ELF is the
   artifact, and `pico_add_extra_outputs` would build picotool); `PICO_SDK_PATH` set but not an SDK is an error, the
   fallback to `/workspaces/pico-sdk` applies only when unset; the build directory is `build-device/`.
-- **The trap** is 78 symbols, each its own `--wrap` (a comma-joined list is split by gcc into input files). The package
+- **The trap** is 87 symbols, each its own `--wrap` (a comma-joined list is split by gcc into input files). The package
   libraries compile with the SDK's code-generation flags (`-ffunction-sections -fdata-sections -fno-unwind-tables
   -fno-use-cxa-atexit`), so the trap names what the image keeps.
 - **A new SDK interface**, `rp.sdk.settings-json/1`, exists because the ABI had no way to get a type's defaults and the

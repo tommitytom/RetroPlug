@@ -367,7 +367,7 @@ C++ unit checks — the per-context window-hook routing, the class-id counter sy
 that keeps the DAW-hosted editor from rendering blank, and the DPF dynamic-parameter
 diff classifier), `device:check` (`tools/build-device-check.sh` - builds `rp-device-check`, the RP2350 image of every
 portable `rp.core` / `rp.dsp` type, with `arm-none-eabi-g++` and the Pico SDK 2.1.1 (`PICO_SDK_PATH`), under a link
-trap on the heap and on exceptions (78 wrapped symbols) and a probe that must fail to link; built and never run, in
+trap on the heap, on exceptions and on RTTI (87 wrapped symbols) and a probe that must fail to link; built and never run, in
 CI on linux-x64; needs no hardware), `screenshot`,
 `reaper:editor` (`tools/run-reaper-editor.sh` — floats the hosted plugin editor in
 headless Reaper and asserts its LVGL snapshot rendered; the only check of on-screen

@@ -251,13 +251,17 @@ int main(int argc, char** argv) {
            "// msgpack and the layout they give. Do not edit.\n";
     if (!leftOut.str().empty())
         out << "//\n// Left out, as no device builds a type that declares heap or threads:\n" << leftOut.str();
-    out << "\n#include <cstdint>\n#include <iterator>\n\n#include \"DeviceCheck.hpp\"\n\n"
+    out << "\n#include <cstddef>\n#include <cstdint>\n\n#include \"DeviceCheck.hpp\"\n\n"
            "namespace rp::device_check {\n\n"
            "// The package entries the cases were made for, in registration order; the image checks its own\n"
            "// against it.\n"
            "inline constexpr const char kEntries[] = \"" RP_DEVICE_CHECK_ENTRIES "\";\n"
         << arrays.str() << "\ninline constexpr TypeCase kCases[] = {\n"
-        << rows.str() << "};\n\n}  // namespace rp::device_check\n";
+        << rows.str()
+        << "};\n"
+           "// How many: counted here, as std::size would need <iterator> in the image, which brings <string>.\n"
+           "inline constexpr std::size_t kCaseCount = sizeof kCases / sizeof kCases[0];\n\n"
+           "}  // namespace rp::device_check\n";
 
     const std::string text = out.str();
     {
