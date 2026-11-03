@@ -20,8 +20,8 @@
 # naming it, but a Linux module links and fails only when it is loaded. So the configure checks it instead, for every
 # binary: retroplug_check_products() refuses one that reaches the engine through its libraries and is not a product.
 #
-# This file needs CMake 3.19: string(JSON) for the manifests and cmake_language(DEFER) for the product check, which the
-# root's cmake_minimum_required states.
+# This file needs CMake 3.19: string(JSON) for the manifests and cmake_language(DEFER) for the product check. The root's
+# cmake_minimum_required is 3.27, which deps/efsw requires.
 
 # The device build (docs/modular-graph-phase-e1-design.md section 7) includes this file too: the RP2350 firmware
 # packages/graph-runtime/device-check, its own CMake project on the Pico SDK's toolchain, sets RP_DEVICE_BUILD before it
@@ -122,8 +122,8 @@ function(retroplug_package name)
     if(EXISTS "${_dir}/native/CMakeLists.txt")
         add_subdirectory("${_dir}/native" "${CMAKE_BINARY_DIR}/packages/${name}")
         # What its manifest names it defines now, so a typo is refused here, whether or not a product lists the package
-        # (node-sdk, which none does). A device build defines the device targets alone. A package without a
-        # native/CMakeLists.txt (native) has its targets defined later, and retroplug_product() checks those.
+        # (node-sdk, which none does). A device build need define only the manifest's `device` targets. A package
+        # without a native/CMakeLists.txt (native) has its targets defined later, and retroplug_product() checks those.
         if(RP_DEVICE_BUILD)
             set(_defined ${_deviceTargets})
         else()
@@ -252,20 +252,14 @@ function(retroplug_product product)
     if(product IN_LIST _products OR product IN_LIST _deviceProducts)
         message(FATAL_ERROR "retroplug_product(${product}): the product is declared twice")
     endif()
-    set(_unique ${P_PACKAGES})
-    list(REMOVE_DUPLICATES _unique)
-    list(LENGTH _unique _nUnique)
-    list(LENGTH P_PACKAGES _nListed)
-    if(NOT _nUnique EQUAL _nListed)
-        # Its entry would be called twice: the engine refuses the second offer with a line on stderr and carries on.
-        set(_seen "")
-        foreach(_p IN LISTS P_PACKAGES)
-            if(_p IN_LIST _seen)
-                message(FATAL_ERROR "retroplug_product(${product}): package `${_p}` is listed twice in PACKAGES")
-            endif()
-            list(APPEND _seen ${_p})
-        endforeach()
-    endif()
+    # Its entry would be called twice: the engine refuses the second offer with a line on stderr and carries on.
+    set(_seen "")
+    foreach(_p IN LISTS P_PACKAGES)
+        if(_p IN_LIST _seen)
+            message(FATAL_ERROR "retroplug_product(${product}): package `${_p}` is listed twice in PACKAGES")
+        endif()
+        list(APPEND _seen ${_p})
+    endforeach()
     get_property(_known GLOBAL PROPERTY RP_PACKAGES)
     set(_entries "")
     set(_targets "")
@@ -368,8 +362,8 @@ endfunction()
 # INTERFACE_LINK_LIBRARIES name a carrier (a generator expression's operands included, so `$<LINK_ONLY:x>` and
 # `$<$<BOOL:..>:x>` count), repeated until nothing joins, so a library of ours that links the backend makes whatever
 # links it a suspect without anyone listing it. A binary that links a carrier is then refused. EXEMPT is for a binary
-# that does and is known never to pull the engine's object in; each name must be a target, so a renamed test cannot leave
-# a stale exemption. It stands in for the link error a Linux module never gives (this file's header says why);
+# that does and is known never to pull the engine's object in; each name must be a target, so a renamed test cannot
+# leave a stale exemption. It stands in for the link error a Linux module never gives (this file's header says why);
 # -Wl,--no-undefined would not, as it breaks the sanitizer builds and guards only the modules that are already
 # products.
 #
@@ -377,8 +371,8 @@ endfunction()
 #
 #   cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_products LIBRARIES ... EXEMPT ...)
 #
-# (3.19; its arguments are expanded where it is deferred). A binary defined after the call, anywhere in the tree, is
-# checked as one before it.
+# (3.19; its arguments are expanded when it runs, in the root's scope, so pass names, not variables of the calling
+# directory). A binary defined after the call, anywhere in the tree, is checked as one before it.
 function(retroplug_check_products)
     cmake_parse_arguments(C "" "" "LIBRARIES;EXEMPT" ${ARGN})
     if(NOT C_LIBRARIES)
@@ -459,15 +453,27 @@ function(_retroplug_build_targets out dir)
 endfunction()
 
 # The names a target's link properties (<property>...) mention, as a list: every word of the property's value, so the
-# operands of a generator expression are in it, with its keywords.
+# operands of a generator expression are in it, with its keywords. An item with a slash is a path to a file (a segment
+# of one could spell a target's name), not a target, and is left out; an alias is named by the target it stands for.
 function(_retroplug_linked_names out target)
     set(_names "")
     foreach(_property IN LISTS ARGN)
         get_target_property(_value ${target} ${_property})
-        if(_value)
-            string(REGEX MATCHALL "[A-Za-z0-9_.+-]+" _words "${_value}")
-            list(APPEND _names ${_words})
-        endif()
+        foreach(_item IN LISTS _value)
+            if(_item MATCHES "[/\\\\]")
+                continue()
+            endif()
+            string(REGEX MATCHALL "[A-Za-z0-9_.+-]+(::[A-Za-z0-9_.+-]+)*" _words "${_item}")
+            foreach(_word IN LISTS _words)
+                if(TARGET ${_word})
+                    get_target_property(_aliased ${_word} ALIASED_TARGET)
+                    if(_aliased)
+                        list(APPEND _names ${_aliased})
+                    endif()
+                endif()
+                list(APPEND _names ${_word})
+            endforeach()
+        endforeach()
     endforeach()
     set(${out} ${_names} PARENT_SCOPE)
 endfunction()

@@ -311,7 +311,7 @@ but this one binary.
 ## Building
 `build.sh` (Linux/macOS) and `build.bat` (Windows) are the canonical entry points -
 they run the configure this project needs and build in parallel. You'll need
-CMake 3.19+, a C++20 compiler, and Node.js + pnpm (for the UI bundle); the
+CMake 3.27+, a C++20 compiler, and Node.js + pnpm (for the UI bundle); the
 [.devcontainer/Dockerfile](.devcontainer/Dockerfile) has the full dependency list, or
 just open the repo in the devcontainer. RetroPlug is developed in a dev container so it
 is the recommended approach.

@@ -124,9 +124,8 @@ the root's CMakeLists is done (`cmake_language(DEFER)`, so a binary defined anyw
 carry the engine are computed outward from `retroplug-backend` (any static, object or interface library linking a
 carrier, generator-expression operands included), not listed. `retroplug_package` and `retroplug_product` also refuse
 a package named `products`, a package listed twice in one product, and a manifest target its own
-`native/CMakeLists.txt` does not define. A device
-product (`retroplug_product(... DEVICE)`, section 7) takes the device entries only. The offline pool keeps its own fixed
-subset (`core` and `dsp`), and the script-node pack keeps its own
+`native/CMakeLists.txt` does not define. A device product (`retroplug_product(... DEVICE)`, section 7) takes the device
+entries only. The offline pool keeps its own fixed subset (`core` and `dsp`), and the script-node pack keeps its own
 path: it is loaded at run time, not linked.
 
 ## 5. Fixed-capacity settings
@@ -390,10 +389,12 @@ in). The final counts: `retroplug-device-mode-test` ends at 10 cases, `retroplug
   a binary linking a library that links `retroplug` is named, `rp-scratch-exe (links rp-scratch-lib)`; an exempt name
   that is no target, a package twice in PACKAGES, a package `products` and a manifest target the package does not
   define each fail the configure). The test binaries `retroplug-classid-test` and `-watcher-test` never pull
-  `Engine.o` in and are exempt, by names the check requires to be targets. The root's `cmake_minimum_required` is 3.19
-  (`string(JSON)`, `cmake_language(DEFER)`; dpf.js already required it): `VERSION 3.19...3.31` changes nothing for a
-  CMake at or above 3.19 (policies take the running version, to 3.31) and refuses 3.14 to 3.18 up front instead of at
-  the first `string(JSON)`; the device project already says 3.20.
+  `Engine.o` in and are exempt, by names the check requires to be targets. The root's `cmake_minimum_required` is 3.27, which `deps/efsw`
+  requires (the packages themselves need 3.19, for `string(JSON)` and `cmake_language(DEFER)`; dpf.js asks 3.19,
+  rpcpp 3.23 and rtmidi 3.24): `VERSION 3.27...3.31` changes nothing for a CMake at or above 3.27 (policies take the
+  running version, to 3.31) and refuses an older one at the top instead of inside a dependency; the device project
+  already says 3.20. The carriers are found by the names in a library's link properties: an item with a slash is a
+  path and is not read, and an alias is read as the target it stands for.
 - **The golden** is `[packages]` in the engine-graph binary (`golden/product-registrations.json`, 26 ids per product):
   it was recorded from a throwaway program at the design commit that printed the old hard-coded list, not from the new
   code, so it could not agree with itself by construction.

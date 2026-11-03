@@ -97,7 +97,8 @@ TEST_CASE("each product registers exactly the node types its golden row holds", 
     }
 }
 
-TEST_CASE("this binary's registration is its product's row, and its engine holds every package in it", "[packages]") {
+TEST_CASE("this binary's registration is its product's row, its engine holds those packages and nothing else",
+          "[packages]") {
     const auto  rows = rp_product_registrations();
     const auto& row = rowOf(rows, "retroplug-engine-graph-test");
     const auto  packages = rp::graph::productPackages();
@@ -115,12 +116,12 @@ TEST_CASE("this binary's registration is its product's row, and its engine holds
     }
 
     // And registered nothing else: its registry holds the product's types and the built-in script pack's, so an engine
-    // that registered some other list of packages as well (a second offer is refused, with a line on stderr only) fails.
+    // that registered some other list of packages as well (a second offer is refused, with a line on stderr only)
+    // fails.
     rp::host::ScriptHost script;
     std::string          why;
     const rp::host::ScriptHost::Chunk chunk[] = {rp::host::ScriptHost::embeddedBundle()};
-    REQUIRE(script.load(chunk, &why));
-    INFO(why);
+    if (!script.load(chunk, &why)) FAIL(why);
     REQUIRE(script.package() != nullptr);
     CHECK(e.nodeTypeCount() == types + script.package()->node_type_count);
 }

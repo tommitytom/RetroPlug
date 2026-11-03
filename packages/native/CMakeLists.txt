@@ -461,9 +461,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests.cmake)
 retroplug_product_table(retroplug-engine-graph-test)
 
 # Every binary that reaches the engine is a product, refused if it is not (cmake/packages.cmake). Deferred to the end of
-# the root's CMakeLists, so a binary defined after this line, in any directory, is checked too. The carriers are computed
-# from the backend. The two exempt link the backend for its file watcher and its txiki host, and never pull the engine's
-# object in.
+# the root's CMakeLists, so a binary defined after this line, in any directory, is checked too. The carriers are
+# computed from the backend. The two exempt link the backend for its file watcher and its txiki host, and never pull
+# the engine's object in.
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_products
     LIBRARIES retroplug-backend
     EXEMPT    retroplug-classid-test      # TjsHostRuntime + ClassIdSpace.hpp

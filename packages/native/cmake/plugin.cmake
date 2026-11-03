@@ -56,7 +56,7 @@ set(_rp_plugin_binaries "")
 get_property(_rp_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(_t IN LISTS _rp_dir_targets)
     get_target_property(_type ${_t} TYPE)
-    if(_type STREQUAL "INTERFACE_LIBRARY")
+    if(_type STREQUAL "INTERFACE_LIBRARY")  # builds nothing, and has no LINK_LIBRARIES to read
         continue()
     endif()
     get_target_property(_links ${_t} LINK_LIBRARIES)
