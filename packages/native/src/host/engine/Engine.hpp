@@ -382,8 +382,10 @@ public:
     // (DeviceRegistry::install).
     [[nodiscard]] bool installDevice(const char* name, const char* interfaceId, void* link,
                                      void (*acquire)(void* link) = nullptr, void (*release)(void* link) = nullptr);
-    // The host taking `link` back (the pointer it installed): a node's release of it reaches nothing from here on.
-    void clearDevice(void* link);
+    // The host taking `link` back (the pointer it installed): a lookup finds nothing and a node's release of it reaches
+    // nothing from here on. True when it was installed; false, clearing nothing, for a pointer the registry does not
+    // hold. It frees nothing: the link outlives every plan that could hold it (graph/rp_device.h).
+    bool clearDevice(void* link);
     // installDevice for a C++ link implementing `Interface`: installed as an `Interface*`, the pointer a node casts
     // back, with the link's own acquire() and release() as the hooks when it has them (rp::host::linkHooks). clearLink
     // takes it back.
@@ -393,8 +395,8 @@ public:
         return installDevice(name, interfaceId, static_cast<Interface*>(&link), hooks.acquire, hooks.release);
     }
     template <class Interface, class Link>
-    void clearLink(Link& link) {
-        clearDevice(static_cast<Interface*>(&link));
+    bool clearLink(Link& link) {
+        return clearDevice(static_cast<Interface*>(&link));
     }
     // Control thread, audio thread stopped: publish the construction-time empty document and reclaim the plan it
     // replaced, so every node of the host's last graph is destroyed here, while the links it may use in its destroy are

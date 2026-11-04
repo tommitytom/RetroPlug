@@ -663,15 +663,17 @@ TEST_CASE("a link cleared from the registry is handed out no more, and a release
     REQUIRE(registry.install("n8", "rp.n8.cart-link/1", &cart, &countAcquire, &countRelease));
     REQUIRE(registry.acquire("n8", "rp.n8.cart-link/1") == &cart);
 
-    // A link the registry does not hold clears nothing; the installed one goes.
-    registry.clear(&other);
-    registry.clear(nullptr);
+    // A link the registry does not hold clears nothing, and the answer says so; the installed one goes.
+    CHECK_FALSE(registry.clear(&other));
+    CHECK_FALSE(registry.clear(nullptr));
     CHECK(registry.size() == 1);
-    registry.clear(&cart);
+    CHECK(registry.clear(&cart));
     CHECK(registry.size() == 0);
+    CHECK_FALSE(registry.clear(&cart));
 
-    // The node that still holds it hands it back to a registry that no longer names it: the link hears nothing, so a
-    // host may free it once cleared.
+    // The node that still holds it hands it back to a registry that no longer names it: the link hears nothing, and a
+    // lookup after the clear finds nothing. The clear frees nothing: the link lives until every plan that could hold
+    // it is destroyed.
     registry.release(&cart);
     CHECK(cart.releases == 0);
     CHECK(registry.acquire("n8", "rp.n8.cart-link/1") == nullptr);
@@ -725,6 +727,8 @@ TEST_CASE("the registry refuses a full table, a link or a name installed twice, 
     CHECK_FALSE(fresh.install("", "rp.test.link/1", &c));
     CHECK_FALSE(fresh.install(nullptr, "rp.test.link/1", &c));
     CHECK_FALSE(fresh.install("other", "", &c));
+    static_assert(DeviceRegistry::kMaxName == RP_DEVICE_NAME_MAX);
+    static_assert(DeviceRegistry::kMaxInterfaceId == RP_DEVICE_INTERFACE_ID_MAX);
     const std::string longName(DeviceRegistry::kMaxName + 1, 'x');
     const std::string longId(DeviceRegistry::kMaxInterfaceId + 1, 'x');
     CHECK_FALSE(fresh.install(longName.c_str(), "rp.test.link/1", &c));
@@ -734,4 +738,30 @@ TEST_CASE("the registry refuses a full table, a link or a name installed twice, 
     const std::string maxId(DeviceRegistry::kMaxInterfaceId, 'x');
     CHECK(fresh.install(maxName.c_str(), maxId.c_str(), &c));
     CHECK(fresh.acquire(maxName.c_str(), maxId.c_str()) == &c);
+}
+
+namespace {
+struct FirstInterface {
+    virtual ~FirstInterface() = default;
+    int first = 0;
+};
+struct SecondInterface {
+    virtual ~SecondInterface() = default;
+    int second = 0;
+};
+struct TwoInterfaces : FirstInterface, SecondInterface {};
+}  // namespace
+
+TEST_CASE("an engine's clear answers false for a pointer it does not hold, the wrong interface's included",
+          "[devices]") {
+    Engine         e(kRate);
+    TwoInterfaces  link;
+    int            stranger = 0;
+    REQUIRE(e.installLink<FirstInterface>("two", "rp.test.first/1", link));
+    // The registry holds the FirstInterface pointer; the SecondInterface one is another address, so it clears nothing
+    // and the entry stays installed, which a host that freed the link on the strength of it would have to know.
+    CHECK_FALSE(e.clearLink<SecondInterface>(link));
+    CHECK_FALSE(e.clearDevice(&stranger));
+    CHECK(e.clearLink<FirstInterface>(link));
+    CHECK_FALSE(e.clearLink<FirstInterface>(link));
 }

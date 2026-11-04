@@ -620,7 +620,7 @@ bool Engine::installDevice(const char* name, const char* interfaceId, void* link
     return graph_->devices.install(name, interfaceId, link, acquire, release);
 }
 
-void Engine::clearDevice(void* link) { graph_->devices.clear(link); }
+bool Engine::clearDevice(void* link) { return graph_->devices.clear(link); }
 
 void Engine::clearGraph() {
     // The caller stopped the audio thread: make the engine quiescent so the swap below and the reclaim that follows it

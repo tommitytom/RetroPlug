@@ -44,8 +44,9 @@ typedef struct rp_device_host {
      * table, the name and id or the link taken, a name or id too long): the node then runs on its own stub. */
     bool (*install)(void* ctx, const char* name, const char* interface_id, void* link, void (*acquire)(void* link),
                     void (*release)(void* link));
-    /* Take `link` back: a node's later release of it reaches nothing. The provider clears what it installed before it
-     * frees the link. */
+    /* Take `link` back: a lookup after it finds nothing, and a node's later release of it reaches nothing. The provider
+     * clears what it installed before it frees the link, and frees it only after the product's plans are reclaimed
+     * (rp_device.h). */
     void (*clear)(void* ctx, void* link);
 } rp_device_host;
 

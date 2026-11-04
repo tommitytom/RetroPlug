@@ -6,7 +6,8 @@
 // on the control thread (a plan's reclaim included). A reactivate runs deactivate and activate again on one instance
 // (GraphHost::reactivate, for a sample-rate change or a block growth), so a node that already holds a link keeps it and
 // does not acquire a second: the registry forwards each acquire a node makes, and the balance is the node's to keep.
-// The links outlive every plan whose nodes hold one, so a node may use one in its destroy.
+// The links outlive every plan whose nodes hold one, so a node may use one in its destroy (graph/rp_device.h says the
+// rule once: a host frees a link only after every plan that could hold it is destroyed).
 //
 // The engine knows no link's interface: a link is the pointer a host installed, handed to the node that names it, and
 // the interface between the two is the device's own (rp::n8::CartLink, rp::launchpad::SurfaceLink).
@@ -25,9 +26,9 @@ public:
     // and eight leaves room for a pack or two more without the table ever being what a host runs out of first.
     static constexpr std::size_t kMaxLinks = 8;
     // The longest name and interface id an entry keeps (the NUL not included): copied in, so a host's strings need not
-    // outlive the install.
-    static constexpr std::size_t kMaxName = 31;
-    static constexpr std::size_t kMaxInterfaceId = 63;
+    // outlive the install. The bounds graph/rp_device.h tells a pack.
+    static constexpr std::size_t kMaxName = RP_DEVICE_NAME_MAX;
+    static constexpr std::size_t kMaxInterfaceId = RP_DEVICE_INTERFACE_ID_MAX;
     // What the registry forwards a node's acquire and release to: the link's own (a cart link counts the nodes holding
     // it, to put the device back to its own state at the last release). Null forwards nothing.
     using Hook = void (*)(void* link);
@@ -60,14 +61,19 @@ public:
         vacant->release = release;
         return true;
     }
-    // [control] The host taking `link` back, before the object it is goes. A node of a plan that is still alive must
-    // have been destroyed already (Engine::clearGraph), or its release reaches nothing: the identity check in release
-    // keeps that harmless, but a host tears its plans down first so a node may use its link there. Nothing for a link
-    // that is not installed.
-    void clear(void* link) {
-        if (link == nullptr) return;
+    // [control] The host taking `link` back: a lookup after this finds nothing, and a release reaches nothing. It frees
+    // nothing and makes freeing no safer: a node of a plan still alive holds the link and uses it in its destroy, so a
+    // host tears its plans down first (Engine::clearGraph) and frees the link after the clear. Whether `link` was
+    // installed: false for one that is not (a null pointer, one already cleared, or one installed as another interface
+    // than the caller computed, which leaves the entry installed).
+    bool clear(void* link) {
+        if (link == nullptr) return false;
         for (Entry& e : entries_)
-            if (e.link == link) e = Entry{};
+            if (e.link == link) {
+                e = Entry{};
+                return true;
+            }
+        return false;
     }
 
     // [control] The link installed under `name` with `interfaceId`, its acquire hook told, or null: a name this host
@@ -83,9 +89,9 @@ public:
         }
         return nullptr;
     }
-    // [control] A node is done with a link it acquired here. The link is told only while it is still installed: a host
-    // clears its links before the objects they wrap go, and the plans the engine frees afterwards hand their links
-    // back to a registry that no longer names them, so a release never reaches a freed link.
+    // [control] A node is done with a link it acquired here. The link is told only while it is still installed: the
+    // identity check guards a release that arrives out of order, after the host cleared the link, and is no licence to
+    // free a link a plan still holds.
     void release(void* link) {
         if (link == nullptr) return;
         for (Entry& e : entries_)
