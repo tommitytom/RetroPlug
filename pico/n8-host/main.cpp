@@ -295,8 +295,9 @@ static bool menu_test(void) {
 // Each step of a boot checks that the N8 it started on is still the one mounted: a power cut
 // mid-boot unmounts it, and a new one can be up (at a fresh menu) before a slow step returns.
 // The link is checked too: it is down from the unmount until the main loop binds the next N8,
-// so a boot whose N8 went (even one remounted since, which bumps n8_gen only once the boot has
-// read it, as inside the probe) stops at once rather than handshaking with a link that is gone.
+// so a boot whose N8 went stops at once rather than handshaking with a link that is gone, even
+// when the N8 has remounted since and bumped n8_gen before the boot read it (a remount inside
+// the probe), which the generation check alone misses.
 #define BOOT_GONE() (n8_gen != gen || !n8_ready || !usb.linkUp())
 #define ABANDON() do { printf("[n8-host] boot abandoned: the N8 went away\n"); return; } while (0)
 

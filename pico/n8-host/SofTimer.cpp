@@ -24,7 +24,8 @@
 //     handler does, and the SEV at its end kept (it wakes a WFE on the other core; the box has none, and it costs
 //     nothing).
 //   - the code path: the pool's handler ran from flash and called sof_timer and pio_usb_host_frame, both in RAM; this
-//     handler is in RAM too, so a frame never waits on a flash fetch.
+//     handler and pio_usb_host_frame are in RAM. The 64-bit timer read is the SDK's timer_time_us_64, which is in
+//     flash, as the pool's was, so a frame makes a few XIP fetches through it.
 namespace {
 
 constexpr unsigned     kAlarm   = 2;
@@ -67,7 +68,8 @@ void sof_timer_start() {
 // Pico-PIO-USB's init calls alarm_pool_create(2, 1) unless its config skips the pool, so the call is in the image even
 // though the box's config skips it, and the SDK's pool is made with malloc and calloc, which the link trap refuses.
 // CMakeLists.txt therefore wraps alarm_pool_create_on_timer (what the inline alarm_pool_create calls) to this, which
-// never runs: reaching it means the configuration lost skip_alarm_pool, and the box would have no frames.
+// never runs: Pico-PIO-USB's skipped init is its only caller (check-wrap-referrers.cmake holds that on the linked
+// image), so reaching it means a caller the box never had, or a config that lost skip_alarm_pool and has no frames.
 extern "C" alarm_pool_t* __wrap_alarm_pool_create_on_timer(alarm_pool_timer_t*, uint, uint) {
     panic("alarm_pool_create: the box's PIO-USB config skips the pool (SofTimer.cpp drives the frames)");
 }
