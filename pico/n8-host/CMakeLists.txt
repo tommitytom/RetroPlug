@@ -84,8 +84,10 @@ function(n8_host_setup target)
         target_link_libraries(${target} PRIVATE pico_pio_usb)
         # pio_usb_host_init calls alarm_pool_create unless its config skips the pool, so the call is linked even
         # though the box's config skips it, and the SDK makes that pool with malloc and calloc. The wrap points the
-        # call at a stub that never runs (SofTimer.cpp), which leaves the SDK's pool function, and the heap, out.
-        target_link_options(${target} PRIVATE "LINKER:--wrap=alarm_pool_create_on_timer")
+        # call at a stub that never runs (SofTimer.cpp), which leaves the SDK's pool function, and the heap, out. The
+        # wrap also puts every other caller of alarm_pool_create past the link trap, so --cref lets the post-link check
+        # below (check-wrap-referrers.cmake) hold that Pico-PIO-USB's init is the only one.
+        target_link_options(${target} PRIVATE "LINKER:--wrap=alarm_pool_create_on_timer" "LINKER:--cref")
     endif()
     # -DN8_TUSB_DEBUG=2 traces TinyUSB's attach / enumeration on the console - the first thing to
     # look at when the N8 never mounts (no attach line at all = nothing electrical on D+/D-).
@@ -103,6 +105,18 @@ if(NOT RP_NATIVE_USB)
     if(NOT EXISTS "${PICO_PIO_USB_PATH}/src/pio_usb.h")
         message(FATAL_ERROR "n8-host: PICO_PIO_USB_PATH (\"${PICO_PIO_USB_PATH}\") is not a Pico-PIO-USB checkout "
                             "(5a37a66); -DRP_NATIVE_USB=ON builds without it")
+    endif()
+    # The firmware is checked against one Pico-PIO-USB commit: its init is what the alarm-pool wrap and the static SOF
+    # timer stand in for (SofTimer.cpp), so another commit builds with a warning rather than quietly.
+    set(_n8_pio_usb_commit 5a37a66)
+    execute_process(COMMAND git -C "${PICO_PIO_USB_PATH}" rev-parse --short=7 HEAD
+                    OUTPUT_VARIABLE _n8_pio_usb_head OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(NOT _n8_pio_usb_head)
+        set(_n8_pio_usb_head "of a commit git cannot read")
+    endif()
+    if(NOT _n8_pio_usb_head STREQUAL _n8_pio_usb_commit)
+        message(WARNING "n8-host: Pico-PIO-USB at ${PICO_PIO_USB_PATH} is ${_n8_pio_usb_head}, and the firmware is "
+                        "built and checked against ${_n8_pio_usb_commit}")
     endif()
     add_subdirectory(${PICO_PIO_USB_PATH} pico_pio_usb)
 endif()
@@ -144,6 +158,12 @@ if(DEFINED N8_ROM_PATH)
 endif()
 
 rp_device_trap_check(n8_host)
+if(NOT RP_NATIVE_USB)
+    add_custom_command(TARGET n8_host POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -DMAP=$<TARGET_FILE:n8_host>.map -DSYMBOL=__wrap_alarm_pool_create_on_timer
+                -DREFERRER=pio_usb_host.c.o -P "${CMAKE_CURRENT_LIST_DIR}/check-wrap-referrers.cmake"
+        VERBATIM)
+endif()
 # The UF2, BIN, HEX and disassembly beside the ELF (the UF2 needs picotool; -DPICO_NO_PICOTOOL=1 skips it, as
 # tools/build-box.sh does, where the ELF is the artifact). loop.sh flashes the ELF.
 pico_add_extra_outputs(n8_host)
