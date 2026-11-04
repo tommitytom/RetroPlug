@@ -34,7 +34,7 @@ N8Reply replyOf(const Status& status, const retroplug::PortTransport& port, std:
     N8Reply r;
     const bool portFailed = !status.ok() && !retroplug::portSaid(status, port).empty();
     r.status              = portFailed ? codeName(Code::LinkDown) : codeName(status.code);
-    r.step   = stepName(status.step);
+    r.step                = stepName(status.step);
     if (status.code == Code::Device) r.deviceStatus = status.device;
     if (!status.ok()) r.message = retroplug::failureText(status, port, path);
     return r;

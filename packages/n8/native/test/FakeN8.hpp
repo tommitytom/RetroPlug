@@ -302,8 +302,7 @@ private:
                     for (std::uint32_t i = 0; i < size; ++i) fifoByte(data[i]);
                 } else {
                     for (std::uint32_t i = 0; i < size; ++i) poke(addr + i, data[i]);
-                    if (addr >= kSrm && addr < kSrmEnd)
-                        dev_.log.push_back("srm-wr");
+                    if (addr >= kSrm && addr < kSrmEnd) dev_.log.push_back("srm-wr");
                 }
             } else if (cmd == Edio::CMD_F_DEL) {
                 const std::string path(c.begin() + 6, c.end());

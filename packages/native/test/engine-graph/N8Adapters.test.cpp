@@ -7,7 +7,9 @@
 // in one section a ROM title and a refused dump through Engine::submitJob, a job abandoned by a replan with the
 // note-offs of what the node held written once the stream resumes, and an upload and the title it leaves, and in
 // another a host's teardown order with a note held (clearGraph, whose destroy releases it, then the provider stopped:
-// its link cleared and ~N8Host's join), each section reporting on its own.
+// its link cleared and ~N8Host's join), and in a third the last release's write of AUTO (the expansion-volume register
+// back to unity on a 5B after clearGraph, through the provider's own acquire and release hooks), each section
+// reporting on its own.
 //
 // Here rather than in retroplug-n8-test because that binary links no engine, cores or ROM fixtures, and because this
 // binary runs in `pnpm test:plugin` (CI) where `pnpm test:n8` does not; no serial port is opened.

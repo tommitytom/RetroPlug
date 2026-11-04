@@ -48,11 +48,11 @@ public:
 
     // [control] The nodes bound to this link: the hooks the N8 provider installs it with (its acquireCart and
     // releaseCart call these two by name, so a rename fails to compile rather than dropping the reset below), told of
-    // each node's acquire and release. A node acquires in its activate (once: a reactivate keeps its
-    // handle) and releases once in its destructor, at reclaim on the control thread. The last release puts the register
-    // back to AUTO, so a project that stops driving the cart - the setting off, its NES removed, another console loaded
-    // - does not leave the console's expansion chip at the level it last played at. A handover never reaches zero: the
-    // node taking over acquires before the one it replaces is reclaimed, so the reset cannot race the new node's first
+    // each node's acquire and release. A node acquires in its activate (once: a reactivate keeps its handle) and
+    // releases once in its destructor, at reclaim on the control thread. The last release puts the register back to
+    // AUTO, so a project that stops driving the cart - the setting off, its NES removed, another console loaded - does
+    // not leave the console's expansion chip at the level it last played at. A handover never reaches zero: the node
+    // taking over acquires before the one it replaces is reclaimed, so the reset cannot race the new node's first
     // value.
     void acquire() { holders_.fetch_add(1, std::memory_order_acq_rel); }
     void release() {

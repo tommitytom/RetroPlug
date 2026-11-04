@@ -34,9 +34,9 @@ extern "C" {
 /* What the control plane asks for, valid for the length of the submit call only: a device that needs any of it later
  * (the bytes it uploads, the file name it reaches) copies it. Every string is non-null, NUL-terminated and UTF-8, empty
  * when the request does not carry it; `bytes` is null when `size` is 0, so a device copies only after it checks the
- * size; the arguments an operation does not read are ignored. A host refuses a request whose
- * source strings hold a NUL byte rather than build one of these from it: a C string ends there, so the device would
- * read a battery name "a\0b" as "a" and reach another game's file.
+ * size; the arguments an operation does not read are ignored. A host refuses a request whose source strings hold a NUL
+ * byte rather than build one of these from it: a C string ends there, so the device would read a battery name "a\0b"
+ * as "a" and reach another game's file.
  *
  * Versioning: the three capability ids below version this struct and rp_device_jobs, each presented under its own id;
  * rp.host.jobs/1 versions the report table alone. A field added to either struct is a new version of the capability

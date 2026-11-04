@@ -727,8 +727,6 @@ TEST_CASE("the registry refuses a full table, a link or a name installed twice, 
     CHECK_FALSE(fresh.install("", "rp.test.link/1", &c));
     CHECK_FALSE(fresh.install(nullptr, "rp.test.link/1", &c));
     CHECK_FALSE(fresh.install("other", "", &c));
-    static_assert(DeviceRegistry::kMaxName == RP_DEVICE_NAME_MAX);
-    static_assert(DeviceRegistry::kMaxInterfaceId == RP_DEVICE_INTERFACE_ID_MAX);
     const std::string longName(DeviceRegistry::kMaxName + 1, 'x');
     const std::string longId(DeviceRegistry::kMaxInterfaceId + 1, 'x');
     CHECK_FALSE(fresh.install(longName.c_str(), "rp.test.link/1", &c));

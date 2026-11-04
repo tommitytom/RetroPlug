@@ -168,9 +168,9 @@ boot, for no RAM saved.
   have no TS twin (a write timeout, link down, cancelled, too large). A port that fails (a deps/serial exception) is
   reported by the facet as `linkDown` with the port's words rather than as a timeout: Edio itself says `Timeout`,
   because a desktop transport cannot tell its link's state, and latching `linkUp` false there would turn a refused
-  config write into a dead stream. A call refused before it reached the port (`TooLarge` at `Where::Length` or
-  `Where::BatteryPath`) is reported in the protocol's words, not the port's (`portSaid`), since the port's text is then
-  an earlier call's.
+  config write into a dead stream. A call refused before it reached the port (`TooLarge` at `Where::Length`,
+  `Where::BatteryPath` or `Where::Size`) is reported in the protocol's words, not the port's (`portSaid`), since the
+  port's text is then an earlier call's.
 - **One write per frame.** A command's header, its arguments and as much payload as fits a 256-byte scratch in the
   object go out in one `write`; a larger payload follows in further writes (8 KB at a time). That is the Pico's PIO-USB
   rule (one packet per endpoint per 1 ms frame) and it changes nothing on the desktop but the number of calls. **A short
@@ -211,7 +211,10 @@ boot, for no RAM saved.
   slot. **Every refusal is decided before the first byte**: a path past the 16-bit length that prefixes it is `TooLarge`
   at `Where::Length` in `Menu::install` (which would otherwise have sent `*n` and left the menu waiting for a path),
   `readFile`, `writeFile` and `bootRom`, and `bootRom` refuses both that and a battery slot that does not fit before its
-  `*t`, so no step runs for a boot that cannot finish; a test per refusal holds that nothing was written.
+  `*t`, so no step runs for a boot that cannot finish. So is a payload or file past the 32-bit count its command
+  carries (`memWR`, `memRD`, `fileWrite`, `fileRead`, and `writeFile` and `bootRom` over them): `TooLarge` at
+  `Where::Size`, which a 64-bit `size_t` can reach and a 32-bit one cannot (`Edio::countable`), where the count would
+  otherwise have been cast and the call silently cut short. A test per refusal holds that nothing was written.
   `BootOptions` is for a caller with a boot policy of its own, and its defaults are the plain boot: `handshake` false
   leaves out bootRom's `*t` (and that step's stop point), and `before(ctx, step)` is called before each step bootRom
   runs, between whole commands with the Edio idle, so unlike a `Progress` it may use the Edio; false stops the boot
@@ -297,12 +300,13 @@ typedef struct rp_host_devices {
 
 - The interface ids (`rp.system.memory/1`, `.sram/1`, `.rom/1`) move here from `CapabilityJobs.hpp`.
 - `rp_job_request`: C strings for the node id, capability, op, region and name, the offset and length, and a byte span
-  (today's `JobRequest` of `std::string` and `std::vector`). A C string cannot carry an embedded NUL, so `"a\0b"` would
-  reach the cart as `"a"` and dump another game's battery: the engine refuses a device job whose strings hold a NUL
-  ("the job's name holds a NUL byte, which a device's request cannot carry"), and the rule is written on the type. It is
-  the one behaviour change of the commit. The strings are UTF-8, and `bytes` is null when `size` is 0 (the engine's
-  view passes null for an empty span rather than an empty vector's `data()`). The three capability ids version
-  `rp_job_request` and `rp_device_jobs`; `rp.host.jobs/1` versions the report table alone.
+  (today's `JobRequest` of `std::string` and `std::vector`). A C string cannot carry an embedded NUL, so `"a\0b"`
+  would reach the cart as `"a"` and dump another game's battery: the engine refuses a device job whose strings hold a
+  NUL ("the job's name holds a NUL byte, which a device's request cannot carry"), and the rule is written on the type.
+  That refusal is the one behaviour change of the commit. Beside it the header states two things of the request: the
+  strings are UTF-8, and `bytes` is null when `size` is 0 (the engine's view passes null for an empty span rather than
+  an empty vector's `data()`). The three capability ids version `rp_job_request` and `rp_device_jobs`;
+  `rp.host.jobs/1` versions the report table alone.
 - A device node's `rp_device_jobs { void* ctx; bool (*submit)(void* ctx, const rp_job_request*, rp_job* job, char*
   error, size_t error_cap); }` under each capability id it answers.
 - **`rp_job` is opaque**: `struct rp_job` is incomplete in every host. The engine's record is `rp::host::Job`
@@ -426,9 +430,9 @@ the pack's provider:
   serial port: <port>", and `N8Host::setPortGuard`, which the facet sets and clears in its destructor, makes the link
   refuse to connect to a port a session holds ("the port <p> is open in an N8 session", the same state a failed
   connect leaves); both compare names first and then `std::filesystem::canonical`, so a `/dev/serial/by-id` symlink and
-  its tty are one port. One facet per host (`setPortGuard` holds one). This keeps out another writer in this process only:
-  deps/serial opens a POSIX port without `TIOCEXCL` or a lock, so a CLI process opens a port the standalone holds and
-  the two interleave commands on one N8, where only Windows refuses a COM port another process holds. Making
+  its tty are one port. One facet per host (`setPortGuard` holds one). This keeps out another writer in this process
+  only: deps/serial opens a POSIX port without `TIOCEXCL` or a lock, so a CLI process opens a port the standalone holds
+  and the two interleave commands on one N8, where only Windows refuses a COM port another process holds. Making
   `SerialTransport` take `TIOCEXCL` after it opens is a separate behaviour change, for the user to decide.
 - **The streaming link**, which the UI uses: `n8LinkConfig`, `n8SetPort`, `n8Connect`, `n8SetLookahead`, replacing the
   four `__rp_*N8` hooks, so the pack depends on rpcpp and not on QuickJS. `hasN8()` becomes "the product mounted the
@@ -524,14 +528,18 @@ function stores an int into an enum), and `main` reads `PIO_USB_ROOT_PORT(0)->co
   drift; late, the handler fires again in the same IRQ until the target is ahead), calling `pio_usb_host_frame()`: the
   alarm, the IRQ and the cadence `alarm_pool_create(2, 1)` gave, with nothing allocated. The first frame comes 1000 us
   after the start, armed from a forced IRQ (`gTarget` is stored before the handler is installed, so the forced IRQ is
-  the only thing that can start it); the handler runs from RAM, where the pool's ran from flash and called into RAM.
-  It differs in starting right after `tuh_init()` returns rather than inside it, microseconds later and before any
-  device can attach. **`skip_alarm_pool` alone is not enough**: `pio_usb_host_init` still contains the call
-  `alarm_pool_create(2, 1)` behind its `if`, so `alarm_pool_create_on_timer`, which mallocs, stays linked (the trap
-  fired at `time.c.o` naming `__wrap_malloc` and `__wrap_calloc`). The firmware links with
-  `--wrap=alarm_pool_create_on_timer` and defines the wrapper in `SofTimer.cpp` as a `panic()` that never runs, and
-  `--gc-sections` drops the SDK's function and the heap with it. The wrapper is not one of the 87 trapped symbols, and
-  Pico-PIO-USB itself is not edited.
+  the only thing that can start it); the handler runs from RAM, where the pool's ran from flash and called into RAM
+  (its 64-bit timer read is the SDK's `timer_time_us_64`, in flash as the pool's was). It differs in starting right
+  after `tuh_init()` returns rather than inside it, microseconds later and before any device can attach.
+  **`skip_alarm_pool` alone is not enough**: `pio_usb_host_init` still contains the call `alarm_pool_create(2, 1)`
+  behind its `if`, so `alarm_pool_create_on_timer`, which mallocs, stays linked (the trap fired at `time.c.o` naming
+  `__wrap_malloc` and `__wrap_calloc`). The firmware links with `--wrap=alarm_pool_create_on_timer` and defines the
+  wrapper in `SofTimer.cpp` as a `panic()` that never runs, and `--gc-sections` drops the SDK's function and the heap
+  with it. The wrapper is not one of the 87 trapped symbols, and Pico-PIO-USB itself is not edited. Because the wrap
+  takes that one symbol out of the trap's reach (any other caller of `alarm_pool_create` would link and panic at
+  boot), a post-link check (`check-wrap-referrers.cmake`, over the map's cross reference table, `--cref`) fails the
+  build unless `pio_usb_host.c.o` is the one object that refers to the wrapper, and the configure warns when the
+  Pico-PIO-USB checkout is not `5a37a66`.
 - **The stack is 4 KB.** `n8_host` sets `PICO_STACK_SIZE=0x1000` (all of SCRATCH_Y, which holds nothing else) and
   `PICO_CORE1_STACK_SIZE=0x800` (core 1's reservation keeps the 2 KB it had; the macro defaults to the main stack's).
   The linker checks only the reservation: scratch code that would overlap the reserved 4 KB fails the link. The stack's
@@ -546,7 +554,8 @@ sources compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti`, E1's runti
 87-symbol trap over the whole image (TinyUSB and Pico-PIO-USB included) and `n8_host_trap_probe`, the firmware's own
 probe that must fail to link. What both device projects share is hoisted: `cmake/reflectcpp-pin.cmake` (the
 reflect-cpp pin and finder), `cmake/device-image.cmake` (`pico_malloc`'s removal in place, the trap list,
-`rp_device_executable()` and `rp_device_trap_check()`) and `cmake/check-trap.cmake` (moved from `device-check`). Its
+`rp_device_executable()` and `rp_device_trap_check()`; included once a project, its three values in global properties so
+the functions work from any directory) and `cmake/check-trap.cmake` (moved from `device-check`). Its
 generated registration includes `rp.n8.nes`, which no plan uses until E3 and which `--gc-sections` would drop, so
 `main` references `rp_register_packages` and prints `[n8-host] node type rp.n8.nes (registered, not planned)` at boot:
 the node linking into the real image is proven by the image naming it. The `RP_NATIVE_USB=ON` variant builds and links
@@ -560,9 +569,9 @@ packages need 3.19) and the standard C++20.
 
 | Image (Release, flash / data / bss) | Before E2 | After E2 |
 |---|---|---|
-| PIO-USB | 43664 / 16528 / 32192 | 48508 / 15324 / 32360 |
-| `RP_NATIVE_USB` | 41256 / 1412 / 25592 | 48468 / 1560 / 26128 |
-| `rp-device-check` (E1: 65156 / 1844 / 412742) | | 82012 / 2000 / 416402 |
+| PIO-USB | 43664 / 16528 / 32192 | 48796 / 15324 / 32360 |
+| `RP_NATIVE_USB` | 41256 / 1412 / 25592 | 48756 / 1560 / 26128 |
+| `rp-device-check` (E1: 65156 / 1844 / 412742) | | 82512 / 2000 / 416402 |
 
 The PIO-USB image before linked a heap (`pico_malloc`'s wrappers, newlib's `malloc`, `calloc`, `free`, `_sbrk` and
 `alarm_pool_create_on_timer`, the only caller); after, it links no heap symbol, and its data shrank because newlib's
@@ -612,7 +621,7 @@ reference by more than noise.
   header: a fake job host of their own (`FakeJobs.hpp`) stands for the engine's record.
 - **New:** the Edio's cases for what it did not have (status codes for every failure each primitive can meet, one
   write per frame, `TooLarge`, a cancel at each step of `bootRom`, `listDir`'s visitor over a long name, `linkUp`
-  failing a wait); the C++ cases that replace `menu-load.test.ts` (`Ops.test.cpp`, 12 cases with `bootRom`'s options and
+  failing a wait); the C++ cases that replace `menu-load.test.ts` (`Ops.test.cpp`, 14 cases with `bootRom`'s options and
   the FatFs bound); the facet's sessions and link methods (`[n8-rpc]`: the port guard both ways and by device, the
   WHATWG names, a gone port); the generated provider and RPC registration (`[providers]`: a product with the pack mounts
   it, one without does not; the start, restore and stop order, an ABI mismatch, a throwing create); `[n8-provider]`; the
@@ -659,8 +668,8 @@ hardware, by the controller:
 - The rig is left at a fresh menu with every scratch file deleted.
 
 **How it is built** (as E1, Anthropic models only): a verified prototype on the local branch `proto/e2-n8`, one stage
-per commit, stages 1 to 4 by Opus and stage 5 by Sonnet, every stage reviewed by Opus and given a fix pass, the Pico
-gate run by the controller on the prototype's image before the plan is written; the plan generated from the
+per commit, stages 1 to 4 by Opus and stage 5 by Sonnet, every stage reviewed by Opus and corrected to its review,
+the Pico gate run by the controller on the prototype's image before the plan is written; the plan generated from the
 prototype, replayed to identical trees and reviewed by Opus; Sonnet implementers, Opus code reviews of tasks 1, 3 and
 4, Sonnet acceptance, the controller's hardware legs, an Opus final review. Work files in the gitignored
 `.superpowers/e2pro`, `e2plan` and `e2exec`.
@@ -699,14 +708,17 @@ Five commits on `feature/modularize`: the device ABI, the pack, the one Edio, th
 bit, the kit goldens, the render baseline, the descriptor goldens and `buildGraph`'s goldens were untouched throughout
 (the one golden E2 changes on purpose is `[packages]`, where `rp.n8.nes` moved under the n8 package and no product's
 type ids changed), both consumer suites passed at every commit, and nothing was re-recorded. The desktop's N8
-behaviour is the old clients' wire: identical bytes in identical order, on every path but a short write, for every
-operation the CLI, `N8Host` and `N8Link` perform, in fewer `write` calls. Sections 1 to 11 are corrected in place
-where the build made them false (the Edio's status, the report interface, the providers' per-instance API, what stays
-in `retroplug`, the box on `bootRom`). The final counts: `retroplug-n8-test` ends at 89 cases (1220 assertions; the
-baseline's 57 / 529) and `retroplug-serial-test` at 1 / 7, `retroplug-engine-graph-test` at 330 (313),
-`retroplug-device-mode-test` at 11 cases (10), `pnpm test` at 1781 cases over 174 files (1814), `test:native` at 606
-passed and 2 skipped over 168 files (602 / 167), and `device:check`'s image at 82012 / 2000 / 416402 flash / data /
-bss (65156 / 1844 / 412742).
+behaviour is the old clients' wire: identical bytes in identical order, on every path but a short write and a refusal,
+for every operation the CLI, `N8Host` and `N8Link` perform, in fewer `write` calls. A refusal sends nothing: the old
+clients had no length checks and sent a truncated prefix, or a whole command (an upload, a battery, a listing, a `*t`)
+before refusing, none of which a real caller reaches (paths are far below 64 KiB, and the box passes no battery).
+Sections 1 to 11 are corrected in place where the build made them false (the Edio's status, the report interface, the
+providers' per-instance API, what stays in `retroplug`, the box on `bootRom`). The final counts: `retroplug-n8-test`
+ends at 92 cases (1390 assertions; the baseline's 57 / 529) and `retroplug-serial-test` at 1 / 7,
+`retroplug-engine-graph-test` at 333 (313), `retroplug-device-mode-test` at 11 cases (10), `pnpm test` at 1781 cases
+over 174 files (1814), `test:native` at 606 passed and 2 skipped over 168 files (602 / 167), `device:check`'s image at
+82512 / 2000 / 416402 flash / data / bss (65156 / 1844 / 412742) and the box's two images at 48796 / 15324 / 32360
+(PIO-USB) and 48756 / 1560 / 26128 (`RP_NATIVE_USB`).
 
 ### 13.1 The device ABI (commit 1)
 
@@ -814,8 +826,8 @@ bss (65156 / 1844 / 412742).
   (section 7).
 - **The golden did not cover the operations.** The review of the Edio found that its 15 cases carried no listing, file
   read, menu command or boot, so a wrong wire there would have passed. Thirteen cases were recorded from the old TS
-  clients at `ad3a1d4ae`, the commit before the one Edio (its `edio.ts`, `n8Menu.ts` and `n8Load.ts` over their fake port), and appended;
-  every one matched the new Edio byte for byte on the first run, with every queued reply read.
+  clients at `ad3a1d4ae`, the commit before the one Edio (its `edio.ts`, `n8Menu.ts` and `n8Load.ts` over their fake
+  port), and appended; every one matched the new Edio byte for byte on the first run, with every queued reply read.
 - **A short write used to be ignored** by both old clients, the root of the 2026-10-22 mid-command bug; it now fails
   the command (section 4).
 - **`skip_alarm_pool` alone left the heap in the image**: the call to `alarm_pool_create(2, 1)` stays linked behind the
@@ -835,7 +847,7 @@ bss (65156 / 1844 / 412742).
 ### 13.7 The gate
 
 Run by the controller on the prototype's image (sha256 `10a6b09edb99...`, BlipToaster, never `n8-midi.nes`), against the
-baseline of section 8. The image is byte-identical to the one the final fix pass produced.
+baseline of section 8. The image is the prototype's final one.
 
 | Leg | Baseline | E2 |
 |---|---|---|
