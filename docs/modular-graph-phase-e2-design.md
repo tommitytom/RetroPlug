@@ -248,16 +248,24 @@ typedef struct rp_host_devices {
 ```
 
 - The engine's `DeviceRegistry` (`host/devices/DeviceRegistry.hpp`) is a fixed table of 8 entries, `{name[32],
-  interfaceId[64], link, acquire, release}`, copied in (a name up to 31 characters, an id up to 63), so an acquire is an
-  allocation-free scan. A provider installs and clears through `Engine::installDevice(name, id, link, acquire,
-  release)` and `clearDevice(link)`, the shape of `rp_device_host`'s `install` and `clear`; `Engine::installLink` and
-  `clearLink` do it for a C++ link implementing an interface, installed as an `Interface*`, the pointer a node casts
-  back, with the link's own `acquire()` and `release()` as the hooks when it has them (`rp::host::linkHooks`). An
-  install refuses a null link, an empty or overlong name or id, a duplicate name and id or link, and a full table (all
-  `[[nodiscard]]`; a host clears before it installs again). Today's rules are kept: acquire and release on the control
-  thread, a release reaching the link only while it is still the installed one (identity-checked, so a release after a
-  clear reaches nothing), a node keeping its own balance across a reactivate. **A link pointer identifies one
-  installation**: a device offering two interfaces, or two versions of one, installs a distinct object for each.
+  interfaceId[64], link, acquire, release}`, copied in (a name up to 31 bytes, an id up to 63: `RP_DEVICE_NAME_MAX` and
+  `RP_DEVICE_INTERFACE_ID_MAX` in `rp_device.h`, which the registry's `kMaxName` and `kMaxInterfaceId` are), so an
+  acquire is an allocation-free scan. A provider installs and clears through `Engine::installDevice(name, id, link,
+  acquire, release)` and `clearDevice(link)`, the shape of `rp_device_host`'s `install` and `clear`;
+  `Engine::installLink` and `clearLink` do it for a C++ link implementing an interface, installed as an `Interface*`,
+  the pointer a node casts back, with the link's own `acquire()` and `release()` as the hooks when it has them
+  (`rp::host::linkHooks`, which installs none for a link without the member, so a product whose link must be counted
+  passes its hooks by name: the N8 provider's `acquireCart` / `releaseCart` call `N8CartLink::acquire` and `release`,
+  and `[n8-adapters]` holds the expansion-volume register's reset to AUTO after `clearGraph`). An install refuses a null
+  link, an empty or overlong name or id, a duplicate name and id or link, and a full table (all `[[nodiscard]]`; a host
+  clears before it installs again). Today's rules are kept: acquire and release on the control thread, a release
+  reaching the link only while it is still the installed one (identity-checked, so a release after a clear reaches
+  nothing; a guard against an out-of-order release, not a licence to free), a node keeping its own balance across a
+  reactivate. **A host frees a link only after every plan that could hold it is destroyed**: a node uses its link in its
+  destroy, so the order is plans, then clear, then free, and a clear only stops new acquires. `clearDevice` and
+  `clearLink` answer whether the pointer was installed (false for one the registry does not hold, as when `clearLink`
+  computes another interface's pointer for a link inheriting two). **A link pointer identifies one installation**: a
+  device offering two interfaces, or two versions of one, installs a distinct object for each.
   `Engine::setDeviceLinks(CartLink*, SurfaceLink*)` is gone.
 - **`rp::n8::CartLink`** (`packages/n8/native/src/n8/CartLink.hpp`, interface id `rp.n8.cart-link/1`, device name
   `n8`) is today's `CartLink` made portable: `push`, `connected`, `dropped`, `setExpansionVolume`,
@@ -279,7 +287,9 @@ typedef struct rp_host_devices {
   (today's `JobRequest` of `std::string` and `std::vector`). A C string cannot carry an embedded NUL, so `"a\0b"` would
   reach the cart as `"a"` and dump another game's battery: the engine refuses a device job whose strings hold a NUL
   ("the job's name holds a NUL byte, which a device's request cannot carry"), and the rule is written on the type. It is
-  the one behaviour change of the commit.
+  the one behaviour change of the commit. The strings are UTF-8, and `bytes` is null when `size` is 0 (the engine's
+  view passes null for an empty span rather than an empty vector's `data()`). The three capability ids version
+  `rp_job_request` and `rp_device_jobs`; `rp.host.jobs/1` versions the report table alone.
 - A device node's `rp_device_jobs { void* ctx; bool (*submit)(void* ctx, const rp_job_request*, rp_job* job, char*
   error, size_t error_cap); }` under each capability id it answers.
 - **`rp_job` is opaque**: `struct rp_job` is incomplete in every host. The engine's record is `rp::host::Job`
@@ -290,14 +300,16 @@ typedef struct rp_host_devices {
   non-engine record works.
 - The engine's report interface, `rp.host.jobs/1` (`rp_host_jobs`), has **four entries and no `ctx`**: `progress(job,
   done, total)`, `succeed(job, data, size)` (the engine copies), `fail(job, reason)` (copies the reason) and
-  `abandon(job)`. `abandon` fails the job as removed, whose completion reads "node X left the plan before the job
-  completed"; `fail` is the device's own failure and would change that message. There is no `ctx` because the record
-  carries everything a report needs, so one static table serves every engine. A node reaches the table through
-  `rp_host::get_interface` at bind and passes it to its link with each job, so a host that offers none is visible: the
-  node refuses its jobs ("this host takes no device jobs"). Reasons are UTF-8 and bounded: a submit's refusal goes
-  through a 256-byte buffer (`Engine::kDeviceJobErrorBytes`) whose last byte the engine NUL-terminates and whose
-  trailing incomplete sequence it drops (`deviceReason`); a `fail()` reason is kept to `kFailReasonBytes` (1024, since
-  N8Host's texts embed SD paths) and cut back to a whole code point.
+  `abandon(job)`. A device that reports from a thread of its own serialises those reports with `abandon` (the desktop's
+  `DeviceJobSlot` does, under one lock), so nothing reaches the record after `abandon` returns; `DeviceJobSlot::claim`
+  refuses a null table or record. `abandon` fails the job as removed, whose completion reads "node X left the plan
+  before the job completed"; `fail` is the device's own failure and would change that message. There is no `ctx` because
+  the record carries everything a report needs, so one static table serves every engine. A node reaches the table
+  through `rp_host::get_interface` at bind and passes it to its link with each job, so a host that offers none is
+  visible: the node refuses its jobs ("this host takes no device jobs"). Reasons are UTF-8 and bounded: a submit's
+  refusal goes through a 256-byte buffer (`Engine::kDeviceJobErrorBytes`) whose last byte the engine NUL-terminates and
+  whose trailing incomplete sequence it drops (`deviceReason`); a `fail()` reason is kept to `kFailReasonBytes` (1024,
+  since N8Host's texts embed SD paths) and cut back to a whole code point.
 - **`rp_stage.h`** holds `rp.stage/1` (`rp_host_stage`), the staged-message interface, moved out of `HostServices.hpp`:
   the one interface of the device ABI that a node presents rather than takes, and `rp.n8.nes` presents it and must
   include no engine header.

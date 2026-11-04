@@ -33,6 +33,8 @@
 #include "host/devices/ProviderHost.hpp"
 #include "host/engine/CapabilityJobs.hpp"
 #include "host/engine/Engine.hpp"
+#include "n8/Edio.hpp"
+#include "n8/N8Node.hpp"
 #include "n8/desktop/N8Host.hpp"
 #include "n8/desktop/N8Provider.hpp"
 
@@ -237,6 +239,27 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
             e.clearGraph();
             REQUIRE(waitUntil([&] { return dev.count("fifo:80 3C 00") == 1; }));
             CHECK(host.link().isConnected());
+            provider.stop();
+        }
+        SECTION("the last node's destroy puts the expansion-volume register back to the cart's own, over the wire") {
+            // Sunsoft 5B, a mapper with its own sound chip: the register's Auto is unity, written by the link's last
+            // release, which the node's destroy makes at clearGraph through the provider's explicit hooks.
+            {
+                std::lock_guard<std::mutex> l(dev.mu);
+                dev.menu   = false;
+                dev.cfg[0] = 69;
+                dev.cfg[2] = 0;
+            }
+            REQUIRE(e.setParam("cart", "expansionVolume", 50.0));
+            block(e);
+            const auto register_ = [&] {
+                std::lock_guard<std::mutex> l(dev.mu);
+                return dev.cfg[rp::n8::Edio::ADDR_EXP_VOL - rp::n8::Edio::ADDR_CFG];
+            };
+            REQUIRE(waitUntil([&] { return register_() == rp::n8::expansionVolumeRegister(50); }));
+
+            e.clearGraph();
+            CHECK(waitUntil([&] { return register_() == retroplug::N8Host::EXP_VOL_UNITY; }));
             provider.stop();
         }
     }
