@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -299,6 +300,61 @@ TEST_CASE("bootRom's options: no handshake, a step hook that may use the Edio, a
         CHECK(dev.files["usb-games/b.nes"] == rom);
         CHECK(fifoLog(dev) == std::vector<std::string>{"fifo:2A 74"});  // the test alone: no install, no start
     }
+    {
+        // The box reads a stop at Start as "the N8 went": the install is done, and no '*s' went out after it.
+        FakeN8     dev;
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        Hook       hook{&edio, {}, Step::Start};
+        const Bytes  path  = {'u', 's', 'b', '-', 'g', 'a', 'm', 'e', 's', '/', 'b', '.', 'n', 'e', 's'};
+        const Status s = rp::n8::bootRom(edio, "usb-games/b.nes", {rom.data(), rom.size()}, {},
+                                         rp::n8::Upload::Always, nullptr, {}, {false, before, &hook});
+        CHECK(s.code == Code::Cancelled);
+        CHECK(s.step == Step::Start);
+        CHECK(hook.steps == std::vector<Step>{Step::Upload, Step::Install, Step::Start});
+        CHECK(dev.booted.empty());
+        const auto fifo = fifoLog(dev);
+        REQUIRE(fifo.size() >= 2);
+        CHECK(fifo.front() == "fifo:2A 6E");
+        CHECK(std::count(fifo.begin(), fifo.end(), std::string("fifo:2A 73")) == 0);
+        std::string installed = "fifo:";
+        for (std::size_t i = 0; i < path.size(); ++i) {
+            char hex[4];
+            std::snprintf(hex, sizeof hex, i == 0 ? "%02X" : " %02X", path[i]);
+            installed += hex;
+        }
+        CHECK(fifo.back() == installed);  // the install's path is the last thing sent
+    }
+    {
+        // A battery adds the Save stop point between the upload and the install.
+        FakeN8     dev;
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        Hook       hook{&edio};
+        const Bytes  srm = pattern(256, 9);
+        REQUIRE(rp::n8::bootRom(edio, "usb-games/b.nes", {rom.data(), rom.size()}, {srm.data(), srm.size()},
+                                rp::n8::Upload::Always, nullptr, {}, {false, before, &hook})
+                    .ok());
+        CHECK(hook.steps == std::vector<Step>{Step::Upload, Step::Save, Step::Install, Step::Start});
+        CHECK(dev.files["EDN8/gamedata/b.nes/bram.srm"] == srm);
+        CHECK(dev.booted == "usb-games/b.nes");
+    }
+    {
+        // A stop at Save leaves the ROM uploaded and the battery, the install and the start unsent.
+        FakeN8     dev;
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        Hook       hook{&edio, {}, Step::Save};
+        const Bytes  srm = pattern(256, 9);
+        const Status s = rp::n8::bootRom(edio, "usb-games/b.nes", {rom.data(), rom.size()}, {srm.data(), srm.size()},
+                                         rp::n8::Upload::Always, nullptr, {}, {false, before, &hook});
+        CHECK(s.code == Code::Cancelled);
+        CHECK(s.step == Step::Save);
+        CHECK(hook.steps == std::vector<Step>{Step::Upload, Step::Save});
+        CHECK(dev.files["usb-games/b.nes"] == rom);
+        CHECK(dev.files.count("EDN8/gamedata/b.nes/bram.srm") == 0);
+        CHECK(fifoLog(dev).empty());
+    }
 }
 
 TEST_CASE("bootRom's battery path fits any FatFs name: 255 UTF-16 units of three-byte UTF-8", "[n8][ops]") {
@@ -327,6 +383,17 @@ TEST_CASE("a refusal is decided before the first byte: nothing is written, and t
     const std::string huge(0x10000, 'x');  // past the 16-bit length that prefixes a string
     const std::string longName(256, 'n');  // a FatFs name is at most 255 units
     const Bytes       rom = pattern(32, 3), srm = pattern(16, 9);
+    // What a refused call must never ask of its caller: a stop point on its Progress, or a step on its before().
+    int  asks = 0, steps = 0;
+    auto counting = [&](std::uint32_t, std::uint32_t) {
+        ++asks;
+        return true;
+    };
+    const rp::n8::Progress asked = rp::n8::progressOf(counting);
+    const auto             stepped = [](void* ctx, Step) {
+        ++*static_cast<int*>(ctx);
+        return true;
+    };
     struct Row {
         const char*                  name;
         std::function<Status(Edio&)> call;
@@ -336,36 +403,100 @@ TEST_CASE("a refusal is decided before the first byte: nothing is written, and t
     const Row rows[] = {
         {"Menu::install", [&](Edio& e) { return Menu(e).install(huge); }, Step::None, Where::Length},
         {"readFile",
-         [&](Edio& e) { return rp::n8::readFile(e, huge, static_cast<std::uint8_t*>(nullptr), 0, nullptr); },
+         [&](Edio& e) { return rp::n8::readFile(e, huge, static_cast<std::uint8_t*>(nullptr), 0, nullptr, asked); },
          Step::Open, Where::Length},
-        {"writeFile", [&](Edio& e) { return rp::n8::writeFile(e, huge, {rom.data(), rom.size()}); }, Step::Open,
+        {"writeFile", [&](Edio& e) { return rp::n8::writeFile(e, huge, {rom.data(), rom.size()}, asked); }, Step::Open,
          Where::Length},
         {"bootRom, a path past the length, with an upload",
          [&](Edio& e) {
-             return rp::n8::bootRom(e, huge, {rom.data(), rom.size()}, {}, rp::n8::Upload::Always, nullptr);
+             return rp::n8::bootRom(e, huge, {rom.data(), rom.size()}, {}, rp::n8::Upload::Always, nullptr, asked);
          },
          Step::Upload, Where::Length},
         {"bootRom, a path past the length, without one",
-         [&](Edio& e) { return rp::n8::bootRom(e, huge, {}, {}, rp::n8::Upload::Never, nullptr); }, Step::Install,
-         Where::Length},
-        {"bootRom, a battery whose slot does not fit, which the test and the upload would have preceded",
+         [&](Edio& e) { return rp::n8::bootRom(e, huge, {}, {}, rp::n8::Upload::Never, nullptr, asked); },
+         Step::Install, Where::Length},
+        {"bootRom, a battery whose slot does not fit, which the upload would have preceded",
          [&](Edio& e) {
              return rp::n8::bootRom(e, "usb-games/" + longName + longName + longName, {rom.data(), rom.size()},
-                                    {srm.data(), srm.size()}, rp::n8::Upload::Always, nullptr);
+                                    {srm.data(), srm.size()}, rp::n8::Upload::Always, nullptr, asked);
+         },
+         Step::Save, Where::BatteryPath},
+        // With the handshake on and a step hook, which the pre-checks must come before: no '*t', no before().
+        {"bootRom, a path past the length, with the handshake and a step hook",
+         [&](Edio& e) {
+             return rp::n8::bootRom(e, huge, {rom.data(), rom.size()}, {}, rp::n8::Upload::Always, nullptr, asked,
+                                    {true, stepped, &steps});
+         },
+         Step::Upload, Where::Length},
+        {"bootRom, a battery whose slot does not fit, with the handshake and a step hook",
+         [&](Edio& e) {
+             return rp::n8::bootRom(e, "usb-games/" + longName + longName + longName, {rom.data(), rom.size()},
+                                    {srm.data(), srm.size()}, rp::n8::Upload::Always, nullptr, asked,
+                                    {true, stepped, &steps});
          },
          Step::Save, Where::BatteryPath},
     };
+    // A count past 32 bits: the pointer is never read, the refusal comes first. Where size_t is 32 bits no such size
+    // exists, and the call is simply not made.
+    if constexpr (sizeof(std::size_t) > sizeof(std::uint32_t)) {
+        const std::size_t big = (std::size_t{1} << 32);  // one past what the wire's count holds
+        std::uint8_t      scratch[4] = {};
+        const Row         sized[] = {
+            {"memWR", [&](Edio& e) { return e.memWR(0x1800000, scratch, big); }, Step::None, Where::Size},
+            {"memRD", [&](Edio& e) { return e.memRD(0x1800000, scratch, big); }, Step::None, Where::Size},
+            {"fifoWR", [&](Edio& e) { return e.fifoWR(scratch, big); }, Step::None, Where::Size},
+            {"fileWrite", [&](Edio& e) { return e.fileWrite(scratch, big); }, Step::None, Where::Size},
+            {"fileRead", [&](Edio& e) { return e.fileRead(scratch, big); }, Step::None, Where::Size},
+            {"writeFile", [&](Edio& e) { return rp::n8::writeFile(e, "a/b.bin", {scratch, big}); }, Step::Open,
+             Where::Size},
+            {"bootRom, a ROM past the count",
+             [&](Edio& e) { return rp::n8::bootRom(e, "usb-games/g.nes", {scratch, big}, {}, rp::n8::Upload::Always, nullptr); },
+             Step::Upload, Where::Size},
+            {"bootRom, a battery past the count",
+             [&](Edio& e) {
+                 return rp::n8::bootRom(e, "usb-games/g.nes", {}, {scratch, big}, rp::n8::Upload::Never, nullptr);
+             },
+             Step::Save, Where::Size},
+            {"bootRom, a ROM and a battery that together pass it",
+             [&](Edio& e) {
+                 const std::size_t half = big / 2 + 1;
+                 return rp::n8::bootRom(e, "usb-games/g.nes", {scratch, half}, {scratch, half}, rp::n8::Upload::Always,
+                                        nullptr);
+             },
+             Step::Upload, Where::Size},
+        };
+        for (const Row& r : sized) {
+            INFO(r.name);
+            FakeN8     dev;
+            FakeN8Port port(dev);
+            Edio       edio(port);
+            const Status s = r.call(edio);
+            CHECK(s.code == Code::TooLarge);
+            CHECK(s.where == r.where);
+            CHECK(s.step == r.step);
+            CHECK(dev.writes == 0);
+            CHECK(dev.log.empty());
+            CHECK(text(s) == "Edio: more than 4294967295 bytes in one command");
+            CHECK(Menu(edio).test().ok());
+            CHECK(fifoLog(dev) == std::vector<std::string>{"fifo:2A 74"});
+        }
+        CHECK(Edio::countable(0xFFFFFFFFu));
+        CHECK_FALSE(Edio::countable(big));
+    }
     for (const Row& r : rows) {
         INFO(r.name);
         FakeN8     dev;
         FakeN8Port port(dev);
         Edio       edio(port);
+        asks = steps = 0;
         const Status s = r.call(edio);
         CHECK(s.code == Code::TooLarge);
         CHECK(s.where == r.where);
         CHECK(s.step == r.step);
         CHECK(dev.writes == 0);
         CHECK(dev.log.empty());
+        CHECK(asks == 0);
+        CHECK(steps == 0);
         // The next command starts clean: nothing of the refused one precedes its frame.
         CHECK(Menu(edio).test().ok());
         CHECK(fifoLog(dev) == std::vector<std::string>{"fifo:2A 74"});

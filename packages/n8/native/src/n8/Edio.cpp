@@ -145,6 +145,7 @@ std::size_t describe(const Status& s, char* out, std::size_t capacity, std::stri
                 case Where::BatteryPath:
                     t << "Edio: the ROM's file name is too long for its battery slot (" << path << ")";
                     break;
+                case Where::Size: t << "Edio: more than 4294967295 bytes in one command"; break;
                 default: t << "Edio: a string longer than 65535 bytes (" << path << ")"; break;
             }
             break;
@@ -314,6 +315,7 @@ Status Edio::fileDelete(std::string_view path) {
 
 Status Edio::memWR(std::uint32_t addr, const std::uint8_t* data, std::size_t size) {
     if (size == 0) return {};
+    if (!countable(size)) return fail(Code::TooLarge, Where::Size);
     begin(CMD_MEM_WR);
     put32(addr);
     put32(static_cast<std::uint32_t>(size));
@@ -323,6 +325,7 @@ Status Edio::memWR(std::uint32_t addr, const std::uint8_t* data, std::size_t siz
 
 Status Edio::memRD(std::uint32_t addr, std::uint8_t* out, std::size_t size) {
     if (size == 0) return {};
+    if (!countable(size)) return fail(Code::TooLarge, Where::Size);
     begin(CMD_MEM_RD);
     put32(addr);
     put32(static_cast<std::uint32_t>(size));
@@ -399,6 +402,7 @@ Status Edio::fileOpen(std::string_view path, std::uint8_t mode) {
 }
 
 Status Edio::fileWrite(const std::uint8_t* data, std::size_t size, Progress progress) {
+    if (!countable(size)) return fail(Code::TooLarge, Where::Size);
     begin(CMD_F_FWR);
     put32(static_cast<std::uint32_t>(size));
     if (Status s = send(); !s.ok()) return s;
@@ -420,6 +424,7 @@ Status Edio::fileWrite(const std::uint8_t* data, std::size_t size, Progress prog
 }
 
 Status Edio::fileRead(std::uint8_t* out, std::size_t size, Progress progress) {
+    if (!countable(size)) return fail(Code::TooLarge, Where::Size);
     const auto total = static_cast<std::uint32_t>(size);
     for (std::size_t off = 0; off < size;) {
         if (!progress(static_cast<std::uint32_t>(off), total)) return fail(Code::Cancelled, Where::FileBlock);

@@ -46,8 +46,8 @@ Status readFile(Edio& edio, std::string_view path, std::uint8_t* buffer, std::si
 
 // A whole file written to an SD path, made with any missing parent directories (FA_WRITE | FA_CREATE_ALWAYS |
 // FS_MAKEPATH, which empties a file already there), as one fileWrite. The inverse of readFile. Stop point: before the
-// open; each acknowledged block reports. Steps: Open, Data, Close. A path past the 16-bit length is TooLarge at Open,
-// refused before any byte.
+// open; each acknowledged block reports. Steps: Open, Data, Close. A path past the 16-bit length (Where::Length) or data
+// past a 32-bit count (Where::Size) is TooLarge at Open, refused before any byte.
 Status writeFile(Edio& edio, std::string_view path, ByteView data, Progress progress = {});
 
 // Whether bootRom writes the ROM to the card first, or boots one already there.
@@ -78,10 +78,11 @@ struct BootOptions {
 // ('*s'). `mapIndex` gets what the install answered. Progress counts the bytes written, of the ROM and the battery
 // together. Stop points: before the test (with the handshake), before each file's open, and before the install, each
 // after `options`' before() for that step. A stop point's values may repeat the last report's, since one file's end and
-// the next stop point's start are the same count of bytes: a Progress counts each ask once, not each distinct value.
+// the next stop point's start are the same count of bytes, so a Progress that counts asks sees each stop point once.
 // Steps: Test, Upload, Save, Install, Start. What cannot finish is refused before the first byte, the test included: a
 // path past the 16-bit length (TooLarge at Where::Length, Step::Upload with an upload, else Install) and a battery
-// whose slot does not fit (Where::BatteryPath, Step::Save), neither calling `options`' before().
+// whose slot does not fit (Where::BatteryPath, Step::Save), neither calling `options`' before(); a ROM, a battery or
+// the two together past a 32-bit count (Where::Size, Step::Upload or Save) is refused the same way.
 Status bootRom(Edio& edio, std::string_view path, ByteView rom, ByteView srm, Upload upload, std::uint16_t* mapIndex,
                Progress progress = {}, BootOptions options = {});
 

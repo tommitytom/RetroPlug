@@ -10,13 +10,13 @@
 // or written whole, a ROM booted) are n8/Ops.hpp's.
 //
 // It allocates nothing, throws nothing and uses no RTTI: every call answers a Status, values come back through
-// out-parameters and caller buffers, and describe() words a failure. A call that refuses (TooLarge at Where::Length) has
-// decided it before its first byte: nothing of it is written, and the next command starts clean. Nor is it thread-safe: on the desktop N8Link and
-// N8Host serialise every use, and the Pico has one thread. Nor is it re-entrant: the frame being written and the name
-// being listed are the object's, so nothing a call runs inside it (a Progress, a listDir visitor, a transport's idle
-// hook pumping USB inside a wait) may call the same Edio; a MIDI forward from inside a wait waits for the call. The
-// same bytes go out in the same order as the TS and C++ clients it replaced, which edio-golden.json holds
-// (packages/n8/native/test).
+// out-parameters and caller buffers, and describe() words a failure. A call that refuses (TooLarge at Where::Length or
+// Where::Size) has decided it before its first byte: nothing of it is written, and the next command starts clean. Nor
+// is it thread-safe: on the desktop N8Link and N8Host serialise every use, and the Pico has one thread. Nor is it
+// re-entrant: the frame being written and the name being listed are the object's, so nothing a call runs inside it (a
+// Progress, a listDir visitor, a transport's idle hook pumping USB inside a wait) may call the same Edio; a MIDI
+// forward from inside a wait waits for the call. The same bytes go out in the same order as the TS and C++ clients it
+// replaced, which edio-golden.json holds (packages/n8/native/test), but for a refusal, which sends nothing.
 //
 // One write per frame: a command's header, its arguments and as much of its payload as fits a 256-byte scratch in the
 // object go out in one Transport::write, and a larger payload follows in further writes. That is the Pico's rule
@@ -62,6 +62,7 @@ enum class Where : std::uint8_t {
     Install,      // the menu's install status
     MapIndex,     // the map index the menu sends after a 0 install status (a timeout there followed an install)
     BatteryPath,  // the ROM's file name, too long for the battery slot the menu keeps it in
+    Size,         // a payload or file past the 32-bit count its command carries (4 GiB: only a 64-bit size_t gets there)
 };
 
 // The step of an operation (Ops.hpp) a status comes from; None for a single call.
@@ -84,8 +85,7 @@ const char* stepName(Step step);
 
 // The text of a failure, as the TS client this replaced threw it (the CLI prints it, and BlipToaster and the hardware
 // lab read it): into `out` (NUL-terminated, cut to `capacity`), the length written (less than the text's own when it
-// was cut). `path` is the call's path, which
-// a few texts name (a mkdir's, an install's, a file not found). "" for Ok.
+// was cut). `path` is the call's path, which a few texts name (a mkdir's, an install's, a file not found). "" for Ok.
 std::size_t describe(const Status& status, char* out, std::size_t capacity, std::string_view path = {});
 
 // How long each kind of wait lasts, in ms. One table of defaults on every Edio, which a caller may change; a call that
@@ -183,6 +183,12 @@ public:
     // The longest string a 16-bit length prefix carries: a path past it is refused (TooLarge, Where::Length) before any
     // byte is written.
     static constexpr std::size_t kStringMax = 0xFFFF;
+    // Whether `size` fits the 32-bit count memWR, memRD, fileWrite and fileRead put on the wire; one past it is
+    // refused (TooLarge, Where::Size) before any byte rather than sent short. Always true where size_t is 32 bits.
+    static constexpr bool countable(std::size_t size) {
+        if constexpr (sizeof(std::size_t) > sizeof(std::uint32_t)) return size <= 0xFFFFFFFFu;
+        else return true;
+    }
 
     // Not constexpr on purpose: a constant-initialised static Edio (the Pico box's) would put the whole object, its
     // 512 bytes of zeroed buffers included, in .data, copied from flash at boot, where a dynamic one is a bss zero
@@ -213,7 +219,7 @@ public:
     Status fileDelete(std::string_view path);
 
     // Device memory. memWR is fire-and-forget (no status: a failed write is silent, by design); memRD blocks until
-    // `size` bytes have arrived. Neither sends anything for a size of 0.
+    // `size` bytes have arrived. Neither sends anything for a size of 0, and both refuse a size past countable().
     Status memWR(std::uint32_t addr, const std::uint8_t* data, std::size_t size);
     Status memRD(std::uint32_t addr, std::uint8_t* out, std::size_t size);
     // MIDI (or any bytes) to the cart FIFO: memWR to ADDR_FIFO.
@@ -240,7 +246,7 @@ public:
     // each released by the cart's 0 ack, then reads the command's status; `progress` reports each block, the command
     // having been asked for (it cannot stop one). fileRead reads `size` bytes as one CMD_F_FRD a RD_BLOCK_SIZE block,
     // each gated by a status byte, with no trailing status; `progress` is asked before each block (false cancels before
-    // it: Cancelled, the file still open) and told at the end.
+    // it: Cancelled, the file still open) and told at the end. Both refuse a size past countable() before any byte.
     Status fileOpen(std::string_view path, std::uint8_t mode);
     Status fileWrite(const std::uint8_t* data, std::size_t size, Progress progress = {});
     Status fileRead(std::uint8_t* out, std::size_t size, Progress progress = {});

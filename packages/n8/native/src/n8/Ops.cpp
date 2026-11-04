@@ -148,6 +148,7 @@ Status readFile(Edio& edio, std::string_view path, std::uint8_t* buffer, std::si
 
 Status writeFile(Edio& edio, std::string_view path, ByteView data, Progress progress) {
     if (path.size() > Edio::kStringMax) return failed(Code::TooLarge, Where::Length, Step::Open);  // before any byte
+    if (!Edio::countable(data.size)) return failed(Code::TooLarge, Where::Size, Step::Open);  // before any byte
     const auto total = static_cast<std::uint32_t>(data.size);
     if (!progress(0, total)) return failed(Code::Cancelled, Where::None, Step::Open);
     if (Status s = edio.fileOpen(path, Edio::FA_REPLACE); !s.ok()) return at(s, Step::Open);
@@ -169,14 +170,18 @@ bool batteryPath(std::string_view romPath, char* out, std::size_t capacity) {
 
 Status bootRom(Edio& edio, std::string_view path, ByteView rom, ByteView srm, Upload upload, std::uint16_t* mapIndex,
                Progress progress, BootOptions options) {
-    const std::uint32_t uploaded = upload == Upload::Always ? static_cast<std::uint32_t>(rom.size) : 0;
-    const std::uint32_t total    = uploaded + static_cast<std::uint32_t>(srm.size);
-    Menu                menu(edio);
-
     // What a boot cannot finish is refused before its first byte, not after a test, an upload or a battery went out.
     if (path.size() > Edio::kStringMax)
         return failed(Code::TooLarge, Where::Length, upload == Upload::Always ? Step::Upload : Step::Install);
+    if (upload == Upload::Always && !Edio::countable(rom.size)) return failed(Code::TooLarge, Where::Size, Step::Upload);
+    if (!Edio::countable(srm.size)) return failed(Code::TooLarge, Where::Size, Step::Save);
     if (srm.size != 0 && !batterySlotFits(path)) return failed(Code::TooLarge, Where::BatteryPath, Step::Save);
+    // The progress counts both files in 32 bits, so the two together must fit it too.
+    const std::uint64_t counted = (upload == Upload::Always ? std::uint64_t{rom.size} : 0) + srm.size;
+    if (counted > 0xFFFFFFFFu) return failed(Code::TooLarge, Where::Size, Step::Upload);
+    const std::uint32_t uploaded = upload == Upload::Always ? static_cast<std::uint32_t>(rom.size) : 0;
+    const std::uint32_t total    = static_cast<std::uint32_t>(counted);
+    Menu                menu(edio);
 
     // Confirm the menu is running: a running game does not answer '*t'.
     if (options.handshake) {
