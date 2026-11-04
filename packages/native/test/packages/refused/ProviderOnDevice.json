@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/refused-provider-on-device",
+  "private": true,
+  "retroplug": {
+    "native": { "target": "scratch-nodes", "entry": "rp_scratch_package", "device": true, "provider": "rp_scratch_provider" }
+  }
+}

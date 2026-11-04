@@ -12,6 +12,7 @@ import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { getN8CartJob, n8RestoreSram, projectCart, resetN8CartJob } from "../../ui/screens/menu/n8SdOps";
+import { setN8LinkClient } from "../../ui/screens/menu/n8Devices";
 import { nesRom, gbRom } from "../systems/fixtures";
 
 // The MenuContext App.tsx assembles from its hooks, minus React (mirrors leaves.test's ctxOf).
@@ -78,23 +79,23 @@ const DEFAULT_CFG: CfgStub = {
   error: "",
 };
 
-// Install the __rp_* N8 streaming hooks the UI reads (getN8Config makes the submenu appear when a port isN8; setN8Port
-// records port picks). Returns a spy record + a restore().
+// Install a fake of the N8 facet's link client the UI reads (getN8Config makes the submenu appear when a port isN8;
+// setN8Port records port picks): the mock tier has no native host to mount the facet. Returns a spy record + a
+// restore().
 function installN8(cfg?: Partial<CfgStub>): { calls: { setPort: string[] }; cfg: CfgStub; restore: () => void } {
   resetN8CartJob(); // one case's job does not colour the next one's rows
-  const g = globalThis as Record<string, unknown>;
   const calls = { setPort: [] as string[] };
-  const saved = { cfg: g.__rp_getN8Config, setPort: g.__rp_setN8Port };
   const merged: CfgStub = { ...DEFAULT_CFG, ...cfg };
-  g.__rp_getN8Config = () => merged;
-  g.__rp_setN8Port = (p: string) => calls.setPort.push(p);
+  setN8LinkClient({
+    linkConfig: () => merged,
+    setPort: (p: string) => void calls.setPort.push(p),
+    connect: () => {},
+    setLookahead: () => {},
+  });
   return {
     calls,
     cfg: merged,
-    restore: () => {
-      g.__rp_getN8Config = saved.cfg;
-      g.__rp_setN8Port = saved.setPort;
-    },
+    restore: () => setN8LinkClient(undefined),
   };
 }
 

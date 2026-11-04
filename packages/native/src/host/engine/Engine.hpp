@@ -371,10 +371,10 @@ public:
     // (graph/rp_device.h, host/devices/DeviceRegistry.hpp). Install them before the first graph: the engine keeps these
     // pointers for the life of its graph, and a node borrows a link for the life of the plan it runs in. A name a host
     // installs nothing under answers null, and the node that asks runs on a stub of its own, never connected, which is
-    // what a host that owns no such device leaves it as by never calling this (the CLI, the Node addon, the render host
-    // and the UI harness). A host that owns its links as members of its own state tears its plans down with
-    // clearGraph first, then clears them here, before those members go: its engine is destroyed after them, and with
-    // it the plans whose nodes still hold a link.
+    // what a host that owns no such device leaves it as by never calling this (the Node addon, the render host and the
+    // UI harness; the CLI installs the N8's, through the provider it starts, and never connects it). A host that owns
+    // its links as members of its own state tears its plans down with clearGraph first, then clears them here, before
+    // those members go: its engine is destroyed after them, and with it the plans whose nodes still hold a link.
     //
     // `link` is the pointer to the interface `interfaceId` names, which a node casts back to that interface; `acquire`
     // and `release` (null: nothing) are told of each node's acquire and release. False, installing nothing, for a full

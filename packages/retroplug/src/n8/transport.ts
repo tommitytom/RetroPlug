@@ -1,4 +1,4 @@
-// The TS twin of the native ISerialPort seam (packages/native/src/host/n8/Edio.hpp): the ONE thing the
+// The TS twin of the native ISerialPort seam (packages/n8/native/src/n8/desktop/Edio.hpp): the ONE thing the
 // TS N8 stack needs from native. `edio.ts` and everything above it (menu, ROM/save orchestration) run
 // purely in TS on top of this interface, so they are unit-testable against a fake transport (fakeSerial.ts)
 // and host-agnostic. The facet-backed implementation is `createSerialClient()` in ../realBackend.ts.

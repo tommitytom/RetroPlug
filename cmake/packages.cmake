@@ -56,6 +56,40 @@ function(retroplug_package name)
     endif()
     # A manifest is configure input, as a CMakeLists.txt is: editing one re-runs the configure.
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_manifest}")
+    _retroplug_read_manifest(${name} "${_manifest}")
+    get_property(_targets GLOBAL PROPERTY RP_PACKAGE_${name}_TARGETS)
+    get_property(_deviceTargets GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_TARGETS)
+
+    if(EXISTS "${_dir}/native/CMakeLists.txt")
+        add_subdirectory("${_dir}/native" "${CMAKE_BINARY_DIR}/packages/${name}")
+        # What its manifest names it defines now, so a typo is refused here, whether or not a product lists the package
+        # (node-sdk, which none does). A device build need define only the manifest's `device` targets. A package
+        # without a native/CMakeLists.txt (native) has its targets defined later, and retroplug_product() checks those.
+        if(RP_DEVICE_BUILD)
+            set(_defined ${_deviceTargets})
+        else()
+            set(_defined ${_targets})
+        endif()
+        foreach(_target IN LISTS _defined)
+            if(NOT TARGET ${_target})
+                message(FATAL_ERROR "retroplug_package(${name}): ${_manifest} names `${_target}`, which "
+                                    "${_dir}/native/CMakeLists.txt does not define")
+            endif()
+        endforeach()
+    endif()
+    # A device build compiles every target as a device does already, so it has nothing to check twice.
+    if(NOT RP_DEVICE_BUILD)
+        foreach(_target IN LISTS _deviceTargets)
+            _retroplug_device_check(${name} ${_target})
+        endforeach()
+    endif()
+endfunction()
+
+# _retroplug_read_manifest(<name> <manifest>): reads one package's manifest into the global properties the products
+# read (its targets, its entries and which are `device`, its providers and their facets), refusing a manifest that
+# breaks a rule. Apart from retroplug_package() so that a configure-time check can run it over a scratch manifest in
+# script mode (cmake -P, packages/native/cmake/tests.cmake), which has no add_subdirectory.
+function(_retroplug_read_manifest name _manifest)
     file(READ "${_manifest}" _json)
     string(JSON _kind ERROR_VARIABLE _err TYPE "${_json}" retroplug native)
     if(_err)
@@ -77,6 +111,7 @@ function(retroplug_package name)
     set(_entries "")
     set(_device "")
     set(_deviceTargets "")
+    set(_providers "")
     math(EXPR _last "${_count} - 1")
     foreach(_i RANGE ${_last})
         string(JSON _target ERROR_VARIABLE _err GET "${_native}" ${_i} target)
@@ -85,14 +120,29 @@ function(retroplug_package name)
         endif()
         list(APPEND _targets ${_target})
         string(JSON _entry ERROR_VARIABLE _noEntry GET "${_native}" ${_i} entry)
-        if(_noEntry)
+        string(JSON _provider ERROR_VARIABLE _noProvider GET "${_native}" ${_i} provider)
+        string(JSON _rpc ERROR_VARIABLE _noRpc GET "${_native}" ${_i} rpc)
+        if(_noEntry AND _noProvider AND _noRpc)
             continue()
         endif()
-        # A boolean reads back as ON or OFF. Required wherever there is an entry, so no package's device standing is
-        # a default nobody chose.
+        if(_noEntry)
+            set(_what "${_target}")
+        else()
+            set(_what "${_entry}")
+        endif()
+        # A boolean reads back as ON or OFF. Required wherever there is an entry or a provider, so no package's device
+        # standing is a default nobody chose.
         string(JSON _isDevice ERROR_VARIABLE _err GET "${_native}" ${_i} device)
         if(_err OR NOT (_isDevice STREQUAL "ON" OR _isDevice STREQUAL "OFF"))
-            message(FATAL_ERROR "retroplug_package(${name}): entry ${_entry} needs \"device\": true or false")
+            message(FATAL_ERROR "retroplug_package(${name}): entry ${_what} needs \"device\": true or false")
+        endif()
+        if(NOT (_noProvider AND _noRpc))
+            _retroplug_read_provider(${name} ${_what} ${_isDevice} "${_noProvider}" "${_provider}" "${_noRpc}"
+                                     "${_rpc}")
+            list(APPEND _providers ${_provider})
+            if(_noEntry)
+                continue()
+            endif()
         endif()
         if(NOT _entry MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
             message(FATAL_ERROR "retroplug_package(${name}): entry \"${_entry}\" is not a C identifier")
@@ -118,30 +168,45 @@ function(retroplug_package name)
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_ENTRIES ${_entries})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_ENTRIES ${_device})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_TARGETS ${_deviceTargets})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_PROVIDERS ${_providers})
 
-    if(EXISTS "${_dir}/native/CMakeLists.txt")
-        add_subdirectory("${_dir}/native" "${CMAKE_BINARY_DIR}/packages/${name}")
-        # What its manifest names it defines now, so a typo is refused here, whether or not a product lists the package
-        # (node-sdk, which none does). A device build need define only the manifest's `device` targets. A package
-        # without a native/CMakeLists.txt (native) has its targets defined later, and retroplug_product() checks those.
-        if(RP_DEVICE_BUILD)
-            set(_defined ${_deviceTargets})
-        else()
-            set(_defined ${_targets})
+endfunction()
+
+# _retroplug_read_provider(<package> <entry> <device> <noProvider> <provider> <noRpc> <rpc>): one manifest entry's
+# provider (graph/rp_provider.h) and the facet it mounts, `"provider": "<C function>"` and `"rpc": {"header": "<path
+# from the package's include root>", "register": "<C++ function>"}`. A device entry may have neither: a device image
+# runs no provider and mounts no facet, so a provider there would be a service no device product can start. An rpc
+# needs the provider on its own entry, since the service it registers is that provider's. A provider is an extern "C"
+# symbol of the program, so two packages may not name one.
+function(_retroplug_read_provider name entry isDevice noProvider provider noRpc rpc)
+    if(isDevice)
+        message(FATAL_ERROR "retroplug_package(${name}): entry ${entry} is `device` and names a provider or an rpc, "
+                            "which only a desktop entry may (a device image runs no provider and mounts no facet)")
+    endif()
+    if(noProvider)
+        message(FATAL_ERROR "retroplug_package(${name}): entry ${entry} names an rpc and no provider, whose service "
+                            "the rpc's registration would be handed")
+    endif()
+    if(NOT provider MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
+        message(FATAL_ERROR "retroplug_package(${name}): provider \"${provider}\" is not a C identifier")
+    endif()
+    get_property(_taken GLOBAL PROPERTY RP_PROVIDERS)
+    if(provider IN_LIST _taken)
+        message(FATAL_ERROR "retroplug_package(${name}): provider ${provider} is taken")
+    endif()
+    set(_header "")
+    set(_register "")
+    if(NOT noRpc)
+        string(JSON _header ERROR_VARIABLE _e1 GET "${rpc}" header)
+        string(JSON _register ERROR_VARIABLE _e2 GET "${rpc}" register)
+        if(_e1 OR _e2 OR NOT _register MATCHES "^[A-Za-z_][A-Za-z0-9_:]*$" OR _header STREQUAL "")
+            message(FATAL_ERROR "retroplug_package(${name}): entry ${entry}'s rpc needs a \"header\" and a "
+                                "\"register\" naming a C++ function")
         endif()
-        foreach(_target IN LISTS _defined)
-            if(NOT TARGET ${_target})
-                message(FATAL_ERROR "retroplug_package(${name}): ${_manifest} names `${_target}`, which "
-                                    "${_dir}/native/CMakeLists.txt does not define")
-            endif()
-        endforeach()
     endif()
-    # A device build compiles every target as a device does already, so it has nothing to check twice.
-    if(NOT RP_DEVICE_BUILD)
-        foreach(_target IN LISTS _deviceTargets)
-            _retroplug_device_check(${name} ${_target})
-        endforeach()
-    endif()
+    set_property(GLOBAL APPEND PROPERTY RP_PROVIDERS ${provider})
+    set_property(GLOBAL PROPERTY RP_PROVIDER_${provider}_HEADER "${_header}")
+    set_property(GLOBAL PROPERTY RP_PROVIDER_${provider}_REGISTER "${_register}")
 endfunction()
 
 # _retroplug_device_check(<package> <target>): the desktop build's check of a `device` entry. An entry the manifest
@@ -344,12 +409,25 @@ ${_decls}
 const rp_package* const* rp_register_packages(size_t* count) {
 ${_body}}
 ")
+    # A desktop product's providers, which a device product never has (a device image runs none).
+    if(NOT P_DEVICE)
+        retroplug_providers_header("${RP_PRODUCTS_DIR}/${product}/rp_product_providers.hpp"
+                                   "retroplug_product(${product})" ${P_PACKAGES})
+    endif()
     foreach(_t IN LISTS P_TARGETS)
         if(NOT TARGET ${_t})
             message(FATAL_ERROR "retroplug_product(${product}): no target `${_t}`")
         endif()
         target_sources(${_t} PRIVATE "${_src}")
+        # Every target of every listed package, whether the product starts its providers or not: a binary that never
+        # includes its providers header links the N8 pack's desktop library, and with it deps/serial and that library's
+        # system frameworks (setupapi on Windows, IOKit and CoreFoundation on macOS), and pulls no object of either.
         target_link_libraries(${_t} PRIVATE ${_targets})
+        # The directory of this product's own rp_product_providers.hpp, the header its sources include to start, stop
+        # and mount its providers: the product's alone, so each binary includes the header made for its packages.
+        if(NOT P_DEVICE)
+            target_include_directories(${_t} PRIVATE "${RP_PRODUCTS_DIR}/${product}")
+        endif()
     endforeach()
     if(P_DEVICE)
         set_property(GLOBAL APPEND PROPERTY RP_DEVICE_PRODUCTS ${product})
@@ -359,6 +437,82 @@ ${_body}}
     set_property(GLOBAL APPEND PROPERTY RP_PRODUCTS ${product})
     set_property(GLOBAL APPEND PROPERTY RP_PRODUCT_TARGETS ${P_TARGETS})
     set_property(GLOBAL PROPERTY RP_PRODUCT_${product}_ENTRIES ${_entries})
+endfunction()
+
+# retroplug_providers_header(<file> <label> <package>...): generates <file>, the providers of the packages listed
+# (graph/rp_provider.h) as rp_start_providers(host), rp_restore_providers(providers), rp_stop_providers(providers) and
+# rp_register_package_rpc<Server>(server, providers), in the order the packages and their manifests list them
+# (stopped in the reverse). retroplug_product() writes one per desktop product, rp_product_providers.hpp in an include
+# directory of its own; a test writes one for a list of its choosing. Header-only and inline on purpose: a binary that
+# never includes it (the render host, a test that starts no provider) names no provider, and a static library's members
+# are linked only where something names them, so it carries none of the providers' code, threads or ports. Whether a
+# product starts its providers is therefore its sources' word (whether they include the header), not CMake's. The
+# providers' state is an rp::Providers the product holds per instance (a DAW holds several), not a static here.
+function(retroplug_providers_header file label)
+    set(_providers "")
+    foreach(_p IN LISTS ARGN)
+        get_property(_pp GLOBAL PROPERTY RP_PACKAGE_${_p}_PROVIDERS)
+        list(APPEND _providers ${_pp})
+    endforeach()
+    list(JOIN ARGN " " _listed)
+    set(_includes "")
+    set(_decls "")
+    set(_table "")
+    set(_registers "")
+    set(_i 0)
+    foreach(_v IN LISTS _providers)
+        get_property(_h GLOBAL PROPERTY RP_PROVIDER_${_v}_HEADER)
+        get_property(_r GLOBAL PROPERTY RP_PROVIDER_${_v}_REGISTER)
+        string(APPEND _decls "extern \"C\" const rp_provider* ${_v}(void);\n")
+        string(APPEND _table "        &${_v},\n")
+        if(_r)
+            string(APPEND _includes "#include \"${_h}\"\n")
+            string(APPEND _registers "    ${_r}(server, providers.service(${_i}));\n")
+        endif()
+        math(EXPR _i "${_i} + 1")
+    endforeach()
+    list(LENGTH _providers _n)
+    if(_n EQUAL 0)
+        set(_start "    (void)host;\n    return {};\n")
+        set(_registers "    (void)server;\n    (void)providers;\n")
+    else()
+        set(_start "    static const rp_provider_fn kProviders[] = {\n${_table}    };\n")
+        string(APPEND _start "    return rp::Providers(kProviders, ${_n}, host);\n")
+    endif()
+    if(NOT _registers)
+        set(_registers "    (void)server;\n    (void)providers;\n")
+    endif()
+    file(GENERATE OUTPUT "${file}" CONTENT
+"// Generated by ${label} in cmake/packages.cmake from the manifests of the packages it lists:
+// ${_listed}. Do not edit; edit the PACKAGES or a manifest.
+//
+// The providers of those packages (graph/rp_provider.h), in the order they list them, and the facets they mount. A
+// product starts them after its engine and before its control plane can publish a graph, restores them where it
+// restores its own state, mounts their facets where it mounts its own, and stops them after it has reclaimed its plans.
+//
+// A product's sources include it by its bare name, #include \"rp_product_providers.hpp\" (the SDL standalone's
+// main.cpp, the plugin's PluginDSP.cpp and the CLI's main.cpp, the three that start providers): its directory is an
+// include directory of that product's targets alone, so each binary reads the header made for its own packages.
+#pragma once
+
+#include \"graph/desktop/Providers.hpp\"
+${_includes}
+${_decls}
+// [control] Creates each provider in order, into the registry `host` forwards to.
+inline rp::Providers rp_start_providers(const rp_device_host* host) {
+${_start}}
+
+// [control] Each provider's persisted state back (a link left enabled reconnects), in order.
+inline void rp_restore_providers(rp::Providers& providers) { providers.restore(); }
+
+// [control] Destroys each provider in the reverse order, after the product's plans are reclaimed.
+inline void rp_stop_providers(rp::Providers& providers) { providers.stop(); }
+
+// Mounts each started provider's facet on `server`, an rpcpp TypedRpcServer.
+template <class Server>
+void rp_register_package_rpc(Server& server, const rp::Providers& providers) {
+${_registers}}
+")
 endfunction()
 
 # retroplug_check_products(LIBRARIES <library>... [EXEMPT <target>...]): refuses, at configure time, every executable,

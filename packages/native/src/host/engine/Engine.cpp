@@ -46,6 +46,26 @@ static_assert(rp::kCommandRingCapacity == rp::graph::GraphHost::commandCapacity(
 // the audio thread, which must not take a static's init guard or register its destructor.
 const rp::host::SystemTable kNoSystems;
 
+// A device's refusal, read from the buffer the engine handed it (rp_device_jobs::submit). The ABI asks for a reason of
+// at most `size` bytes with its NUL, which rp_job_error writes cut at a code point, but a device is not bound to that
+// helper: one that copies with memcpy or strncpy may leave no NUL, or split a code point at the end. So the buffer is
+// terminated at its last byte whatever the device wrote, and a UTF-8 sequence its end leaves incomplete is dropped
+// whole: the reason is always bounded and never carries half a character into a JS string.
+std::string deviceReason(char* error, std::size_t size) {
+    if (size == 0) return {};
+    error[size - 1] = '\0';
+    std::size_t n = std::strlen(error);
+    // Back over the continuation bytes at the end (three at most, a 4-byte sequence's), to the byte that leads them.
+    std::size_t lead = n;
+    while (lead > 0 && n - lead < 3 && (static_cast<unsigned char>(error[lead - 1]) & 0xC0u) == 0x80u) --lead;
+    if (lead > 0) {
+        const unsigned char b = static_cast<unsigned char>(error[lead - 1]);
+        const std::size_t   want = (b & 0xE0u) == 0xC0u ? 2 : (b & 0xF0u) == 0xE0u ? 3 : (b & 0xF8u) == 0xF0u ? 4 : 1;
+        if (want > 1 && n - (lead - 1) < want) n = lead - 1;
+    }
+    return std::string(error, n);
+}
+
 // `mode` is one the caller has checked: 0 to 3, so it fits the command's byte.
 DspCommand syncTapCommand(bool arm, SystemId id, std::uint32_t mode) {
     DspCommand c;
@@ -1057,8 +1077,10 @@ rp::host::JobSubmit Engine::submitDeviceJob(const rp::host::JobRequest& r) {
     // lost.
     const rp_job_request request = rp::host::requestView(r);
     char                 error[kDeviceJobErrorBytes] = {};
-    if (!jobs->submit(jobs->ctx, &request, rp::host::handle(job.get()), error, sizeof error))
-        return {0, error[0] != '\0' ? std::string(error) : std::string("the job was refused")};
+    if (!jobs->submit(jobs->ctx, &request, rp::host::handle(job.get()), error, sizeof error)) {
+        std::string why = deviceReason(error, sizeof error);
+        return {0, why.empty() ? std::string("the job was refused") : std::move(why)};
+    }
     job->id = nextJobId_++;
     const std::uint32_t id = job->id;
     jobs_.push_back(std::move(job));

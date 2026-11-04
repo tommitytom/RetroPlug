@@ -34,12 +34,17 @@ importers:
 
   packages/graph-runtime: {}
 
+  packages/n8: {}
+
   packages/native: {}
 
   packages/node-sdk: {}
 
   packages/retroplug:
     dependencies:
+      '@retroplug/n8':
+        specifier: workspace:*
+        version: link:../n8
       zod:
         specifier: ^4.4.3
         version: 4.4.3

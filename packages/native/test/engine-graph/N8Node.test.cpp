@@ -107,6 +107,10 @@ public:
             rp_job_error(error, errorCap, refusal.c_str());
             return false;
         }
+        if (!rawRefusal.empty()) {  // copied as a C device might, without rp_job_error: no NUL past the buffer's end
+            std::memcpy(error, rawRefusal.data(), std::min(rawRefusal.size(), errorCap));
+            return false;
+        }
         if (slot.busy()) {
             rp_job_error(error, errorCap, "busy: the cart is running another job");
             return false;
@@ -151,7 +155,8 @@ public:
     std::vector<Push> pushes;
     std::vector<CartNotes> released;  // each release a leaving node handed over, in order
     JobRequest        lastRequest;
-    std::string       refusal;  // set: every job is refused with it
+    std::string       refusal;     // set: every job is refused with it
+    std::string       rawRefusal;  // set: every job is refused with it copied in raw, cut at the buffer, no NUL added
     DeviceJobSlot     slot;
 };
 
@@ -571,6 +576,35 @@ TEST_CASE("a device's refusal comes back through Engine::submitJob cut to its bu
     CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == cart.refusal);
 }
 
+TEST_CASE("a device's refusal that fills the buffer with no NUL, or ends mid code point, still comes back bounded and "
+          "whole",
+          "[engine-graph][n8-node]") {
+    // A device that copies its reason in rather than through rp_job_error: the engine ends the buffer at its last byte
+    // itself and drops a UTF-8 sequence its end leaves incomplete, so what crosses the RPC is bounded and a string.
+    FakeCart               cart;
+    Engine                 e(kRate);
+    rp::host::test::Roms   roms;
+    std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
+    withRoms(e, systems, roms);
+    rp::host::test::installCart(e, cart);
+    REQUIRE(e.setGraph(cartDocument(systems)).ok);
+    block(e);
+    static_assert(Engine::kDeviceJobErrorBytes == 256);
+
+    // Every byte of the buffer written, none of them a NUL: the reason is the first 255.
+    cart.rawRefusal = std::string(300, 'q');
+    CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == std::string(255, 'q'));
+    // A three-byte code point whose last byte is the buffer's 256th: the two that are left are dropped.
+    cart.rawRefusal = std::string(253, 'x') + "\xE2\x82\xAC";
+    CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == std::string(253, 'x'));
+    // A four-byte one whose lead byte is the 255th: the lead byte alone is left, and dropped.
+    cart.rawRefusal = std::string(254, 'y') + "\xF0\x9F\x8E\xB5";
+    CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == std::string(254, 'y'));
+    // One that ends whole inside the 255 bytes is kept whole (the buffer's last byte was the engine's NUL already).
+    cart.rawRefusal = std::string(252, 'x') + "\xE2\x82\xAC";
+    CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == cart.rawRefusal);
+}
+
 TEST_CASE("a cart node removed during a job abandons it: it fails at once, and the device reports into it no more",
           "[engine-graph][n8-node]") {
     FakeCart               cart;
@@ -806,19 +840,20 @@ TEST_CASE("a warmed block feeding a NES and its cart node allocates and frees no
     CHECK(cart.volumes.back() == rp::n8::expansionVolumeRegister(90));
 }
 
-TEST_CASE("rp.n8.nes declares threads, so a target with none refuses the type", "[engine-graph][n8-node]") {
+TEST_CASE("rp.n8.nes declares no threads, so a target with none plans the type", "[engine-graph][n8-node]") {
+    // Whether a cart link runs a thread is the host's link's business (n8/CartLink.hpp): the node asks only for a push
+    // that never blocks, so it declares no `threads` and the Pico's planner takes it, as the desktop's does.
     const rp_package* pkg = rp::n8::n8Package();
     const rp_node_type* cart = nullptr;
     for (std::uint32_t i = 0; i < pkg->node_type_count; ++i)
         if (std::string(pkg->node_types[i]->id) == "rp.n8.nes") cart = pkg->node_types[i];
     REQUIRE(cart != nullptr);
-    CHECK(std::string(cart->descriptor(cart)).find(R"("threads":true)") != std::string::npos);
+    CHECK(std::string(cart->descriptor(cart)).find(R"("threads":false)") != std::string::npos);
 
     NodeRig pico(kRate, 8192, rp::graph::Target::Pico);
-    const auto refused = pico.set(R"({"nodes":[{"id":"cart","type":"rp.n8.nes"}],"wires":[]})");
-    REQUIRE_FALSE(refused.ok);
-    CHECK(refused.errors.at(0).code == "capability");
-    CHECK(refused.errors.at(0).message.find("threads") != std::string::npos);
+    const auto planned = pico.set(R"({"nodes":[{"id":"cart","type":"rp.n8.nes"}],"wires":[]})");
+    INFO((planned.errors.empty() ? std::string() : planned.errors.at(0).message));
+    CHECK(planned.ok);
     NodeRig desktop(kRate);
     CHECK(desktop.set(R"({"nodes":[{"id":"cart","type":"rp.n8.nes"}],"wires":[]})").ok);
 }

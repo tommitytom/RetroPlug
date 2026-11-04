@@ -42,6 +42,7 @@ if(MSVC)
         # can be set from any directory, so the list stays here, where every one of our targets is named.
         retroplug-node-sdk retroplug-graph-exec retroplug-graph retroplug-core-nodes
         retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes retroplug-dsp-resample-nodes
+        retroplug-n8 retroplug-n8-desktop
         # The device build of the node SDK, tested on the desktop (cmake/tests.cmake).
         retroplug-device-mode-objects retroplug-device-mode-test
         # The device check's case generator (packages/graph-runtime/device-check/cases).

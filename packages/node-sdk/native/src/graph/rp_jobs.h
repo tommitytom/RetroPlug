@@ -49,7 +49,8 @@ typedef struct rp_job_request {
     size_t         size;
 } rp_job_request;
 
-/* The host's record of one job, opaque to a node: what a submit is handed and every report names. */
+/* The host's record of one job, opaque to a node: what a submit is handed and every report names. Every host keeps
+ * rp_job incomplete: its record is a type of its own, cast to and from rp_job*; a host never defines struct rp_job. */
 typedef struct rp_job rp_job;
 
 /* What a device's node presents under each capability id it answers. [control] `submit` takes the job into `job` or

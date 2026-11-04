@@ -1,0 +1,10 @@
+{
+  "name": "@retroplug/refused-rpc-on-device",
+  "private": true,
+  "retroplug": {
+    "native": [
+      { "target": "scratch-nodes", "entry": "rp_scratch_package", "device": false },
+      { "target": "scratch-desktop", "device": true, "rpc": { "header": "scratch/Rpc.hpp", "register": "scratch::registerRpc" } }
+    ]
+  }
+}

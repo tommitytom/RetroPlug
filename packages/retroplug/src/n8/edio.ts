@@ -1,4 +1,4 @@
-// krikzz Everdrive N8 Pro USB client - a faithful TS port of packages/native/src/host/n8/Edio.{hpp,cpp}.
+// krikzz Everdrive N8 Pro USB client - a faithful TS port of packages/n8/native/src/n8/desktop/Edio.{hpp,cpp}.
 // The framing is asserted byte-for-byte against the native FakeSerialPort test (test/n8/edio.test.ts mirrors
 // test/n8/Edio.test.cpp). Every command is a 4-byte framed header ('+', '+'^0xFF, cmd, cmd^0xFF); args are
 // little-endian; MIDI / save bytes are delivered by writing to a device address via CMD_MEM_WR. Rides an

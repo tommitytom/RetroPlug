@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.ui.json"
   },
   "dependencies": {
+    "@retroplug/n8": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

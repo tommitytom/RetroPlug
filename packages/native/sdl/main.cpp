@@ -67,11 +67,8 @@ extern "C" {
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
 #include "host/input/GamepadPump.hpp"        // the event->bus switch, shared with the plugin editor
 #include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
-#include "host/n8/N8Link.hpp"                // host serial thread -> physical Everdrive N8 Pro (MIDI forward)
-#include "host/n8/N8Host.hpp"                // shared N8 link + config + n8.cfg (also used by the DAW plugin)
-#include "host/n8/N8CartLink.hpp"             // the cart device link rp.host.devices/2 hands a node
-#include "host/n8/N8Hooks.hpp"               // binds the __rp_*N8* config hooks (shared with the plugin)
-#include "host/n8/WjwwoodSerialPort.hpp"     // the serial-port factory + listSerialPorts for the N8 picker
+#include "host/devices/ProviderHost.hpp"     // the rp_device_host this product starts its providers with
+#include "rp_product_providers.hpp"          // generated, in this product's own include dir: its providers (the N8's)
 #include "host/launchpad/LaunchpadHost.hpp"  // control-surface link + config + launchpad.cfg
 #include "host/launchpad/LaunchpadSurfaceLink.hpp"  // the surface device link rp.host.devices/2 hands a node
 #include "host/launchpad/LaunchpadHooks.hpp" // binds the __rp_*Launchpad* config hooks
@@ -243,21 +240,6 @@ struct AppState {
     std::atomic<bool>  transportExternal{false};  // audio -> UI: a MIDI clock master is driving it
     std::atomic<float> transportBpm{120.0f};      // audio -> UI: the tempo in force (theirs when external)
 
-    // Physical Everdrive N8 Pro link (Settings > N8): a host serial thread streams the polled MIDI + generated
-    // sync bytes to the real cart on a timed schedule (audioCb pushes; the thread does the USB I/O). The port +
-    // enabled toggle + lookahead persist to n8.cfg. N8Host wraps the link + config and is shared with the DAW
-    // plugin (bindN8Hooks exposes it to the same Settings > N8 UI in both).
-    retroplug::N8Host n8Host{
-        [](const std::string& p) -> std::unique_ptr<retroplug::ISerialPort> {
-            return std::make_unique<retroplug::WjwwoodSerialPort>(p);
-        },
-        [] {
-            std::vector<retroplug::N8PortDto> ports;
-            for (const auto& p : retroplug::listSerialPorts()) ports.push_back({p.port, p.isN8});
-            return ports;
-        },
-        svc.host.configDir()};
-
     // Control surface (Settings-adjacent "Launchpad" submenu): its own RtMidi in/out pair, deliberately kept
     // out of app.midi's shared stream so pad presses never arrive as musical MIDI too (a NoteOn there is a
     // row launch to LSDj's MI.MAP translator, so a shared stream fires every launch twice). The graph's
@@ -269,19 +251,22 @@ struct AppState {
         [this](bool input) { return input ? midi.listInputs() : midi.listOutputs(); },
         svc.host.configDir()};
 
-    // The device links the graph's hardware nodes bind (rp.host.devices/2): the cart and the surface this host owns.
-    // svc (the engine) is declared above them (n8Host and launchpadHost read its config dir), so it is destroyed after
-    // both links. The destructor below reclaims the plans first, while every member is still alive: a node may use its
-    // handle in destroy, and it must reach a live link. The engine has no plan left to destroy by then.
-    retroplug::N8CartLink           n8CartLink{n8Host};
+    // The device links the graph's hardware nodes bind (rp.host.devices/2): the surface this host owns, and the ones
+    // the providers of its packages install (the N8 pack's: its streaming link, n8.cfg and the cart link; Settings > N8
+    // reaches it through the pack's facet, mounted beside this host's own in bootControlPlane). svc (the engine) is
+    // declared above them (launchpadHost and the providers read its config dir), so it is destroyed after all of them.
+    // The destructor below reclaims the plans first, while every member is still alive: a node may use its handle in
+    // destroy, and it must reach a live link. The engine has no plan left to destroy by then.
     retroplug::LaunchpadSurfaceLink launchpadSurfaceLink{launchpadHost.link()};
+    rp::host::ProviderHost          deviceHost{svc.engine, svc.host.configDir()};
+    rp::Providers                   providers;  // started in main, before the control plane can publish a graph
     // RETROPLUG_IDLE_RECLAIM_TEST: inert unless the smoke arms it. Holds this loop to the idle tick it owes the
     // engine (HostServices::reclaimOnIdle), which no in-process test can reach.
     retroplug::IdleReclaimProbe idleProbe;
 
     ~AppState() {
         svc.engine.clearGraph();
-        svc.engine.clearLink<rp::n8::CartLink>(n8CartLink);
+        rp_stop_providers(providers);
         svc.engine.clearLink<rp::launchpad::SurfaceLink>(launchpadSurfaceLink);
     }
 
@@ -343,8 +328,6 @@ void saveAudioConfig(AppState& a);
 // live device change; defined next to reconfigureAudio (it pauses the audio callback the same way).
 void reconfigureMidi(AppState& a, bool input, const std::string& name);
 void loadMidiConfig(AppState& a);
-// The N8 link (Settings > N8) is now an N8Host member (connect/setPort/persist live there); the __rp_*N8*
-// hooks are bound via the shared retroplug::bindN8Hooks — no SDL-local functions to forward-declare.
 
 // Resize the window + everything that tracks its dimensions (the __rp_setWindowSize seam). Defined after the
 // LVGL glue; declared here so the window hook can call it. Runs on the UI thread (same as present), so the
@@ -741,8 +724,6 @@ void installWindowHooks(JSContext* ctx) {
     bind("__rp_getMidiConfig", jsGetMidiConfig, 0);
     bind("__rp_setMidiInput", jsSetMidiInput, 1);
     bind("__rp_setMidiOutput", jsSetMidiOutput, 1);
-    // Physical Everdrive N8 Pro streaming (Settings > N8) is bound separately via retroplug::bindN8Hooks (the
-    // shared helper the DAW plugin also uses), right after this call - it needs the AppState's N8Host.
     // The OS-native file dialog — only where a desktop helper exists (zenity/kdialog/…). Where none does
     // (the muOS handheld, a bare container) we DON'T bind it: useFileBrowser sees no nativeHook and the
     // "File Dialogs: OS Native" toggle transparently stays in-app. The self-test forces the bind to prove it.
@@ -1250,8 +1231,6 @@ void reconfigureMidi(AppState& a, bool input, const std::string& name) {
                  name.empty() ? "None" : (name == retroplug::kAllInputs ? "All Devices" : name.c_str()));
 }
 
-// (The N8 link + config + n8.cfg persistence now live in retroplug::N8Host, shared with the DAW plugin.)
-
 // ---- screenshot (headless proof) ------------------------------------------------------------------
 // Dump the display's composited draw buffer (the exact frame presented, including top-layer overlays
 // like the file browser) so a headless run (SDL_VIDEODRIVER=offscreen) can screenshot for a test.
@@ -1277,6 +1256,9 @@ bool bootControlPlane(AppState& a) {
     a.server    = std::make_unique<BackendRpcServer>(*a.transport, rpcpp::QuickJSCodec{ctx});
     registerHostRpc(*a.server, a.svc.host);
     registerEmulatorRpc(*a.server, a.svc.engineSvc);
+    // The facets of the providers this product started (the N8's link half, which Settings > N8 drives). The UI
+    // bundle runs on this same context, so it reaches them through the same __rpcSend.
+    rp_register_package_rpc(*a.server, a.providers);
     a.server->addDiscoveryMethod();
 
     // globalThis[Symbol.for("plugin")] = { __rpcSend } — the namespace realBackend.ts targets.
@@ -1325,9 +1307,6 @@ bool setupUi(AppState& a) {
     // Black screen, stripped chrome, root pinned to 100% — same as PluginUI (shared with the test harness).
     retroplug::ui::applyChromelessScreen();
     if (ctx) installWindowHooks(ctx);
-    // The N8 config hooks (Settings > N8) - bound via the shared helper (same one the plugin uses), carrying
-    // this AppState's N8Host. Standalone-only, same gating as the MIDI picker (hasN8() is a typeof check).
-    if (ctx) retroplug::bindN8Hooks(ctx, a.n8Host);
     // The Launchpad config hooks (the instance menu's Launchpad submenu). Standalone-only: the DAW plugin's
     // MIDI seam still caps a message at 4 bytes, and every message here is SysEx.
     if (ctx) retroplug::bindLaunchpadHooks(ctx, a.launchpadHost);
@@ -1591,10 +1570,10 @@ int main(int argc, char** argv) {
     AppState app;
     g_app = &app;
     // The graph's hardware nodes bind these by name (rp.host.devices/2), so they go in before any document can place
-    // one: the control plane below is the first thing that can publish a graph.
+    // one: the control plane below is the first thing that can publish a graph. The providers install theirs (the N8's
+    // cart link) as they start, and mount their facets in bootControlPlane.
     // A refusal (a full table, a name taken) would leave the nodes on their stubs, so it is said, not swallowed.
-    if (!app.svc.engine.installLink<rp::n8::CartLink>(rp::n8::kDeviceName, rp::n8::kCartLinkInterface, app.n8CartLink))
-        std::fprintf(stderr, "[retroplug-sdl] the N8 cart link was not installed\n");
+    app.providers = rp_start_providers(app.deviceHost.get());
     if (!app.svc.engine.installLink<rp::launchpad::SurfaceLink>(rp::launchpad::kDeviceName,
                                                                 rp::launchpad::kSurfaceLinkInterface,
                                                                 app.launchpadSurfaceLink))
@@ -1637,11 +1616,8 @@ int main(int argc, char** argv) {
     loadMidiConfig(app);
     app.midi.open("RetroPlug");
 
-    // Restore the persisted N8 link (Settings > N8): reconnect the physical cart if it was left enabled.
-    app.n8Host.restore();  // load n8.cfg + reconnect the persisted link
-    if (const auto c = app.n8Host.getConfig(); c.enabled)
-        std::fprintf(stderr, "[retroplug-sdl] N8 restore: port '%s'%s\n", c.selectedPort.c_str(),
-                     c.connected ? "" : " - not connected");
+    // Restore the providers' persisted state (the N8's n8.cfg: reconnect the physical cart if it was left enabled).
+    rp_restore_providers(app.providers);
 
     // Restore the persisted Launchpad link (the instance menu's Launchpad submenu) and hand app.midi the
     // port it claimed. No stop/start dance here: the audio thread has not been given the Engine yet, so

@@ -2,8 +2,9 @@
 // declares (retroplug_product, cmake/packages.cmake) registers, through its generated rp_register_packages(), exactly
 // the node type ids golden/product-registrations.json holds for it, in registration order. The golden was recorded from
 // the list Engine.cpp registered before products declared their packages, which every product carried whole, so a row
-// changes only when a product gains or drops a package on purpose. The script node types are not in it: the built-in
-// script pack is loaded at run time, not linked, and keeps its own path.
+// changes only on purpose: when a product gains or drops a package, or a type moves to another package, which moves it
+// to that package's place in the order (rp.n8.nes, in the n8 pack, registers after rp.host.audio-out). The script node
+// types are not in it: the built-in script pack is loaded at run time, not linked, and keeps its own path.
 //
 // The products are read from the table the configure generates for this binary (rp_product_registrations), which names
 // each product's entries; this binary links every package, so it can call all of them. Every golden row must have its

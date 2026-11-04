@@ -8,7 +8,6 @@
       { "target": "retroplug-backend", "entry": "rp_sameboy_package", "device": false },
       { "target": "retroplug-backend", "entry": "rp_mesen_package", "device": false },
       { "target": "retroplug-backend", "entry": "rp_host_io_package", "device": false },
-      { "target": "retroplug-backend", "entry": "rp_n8_package", "device": false },
       { "target": "retroplug-backend", "entry": "rp_launchpad_package", "device": false }
     ]
   }

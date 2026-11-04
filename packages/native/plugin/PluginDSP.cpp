@@ -30,10 +30,8 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "Version.hpp"                    // single source of truth for the plugin version
 #include "host/rpc/BackendRpcRegistration.hpp"
-#include "host/n8/N8Host.hpp"             // physical Everdrive N8 link + config (shared with the SDL standalone)
-#include "host/n8/N8CartLink.hpp"          // the cart device link rp.host.devices/2 hands a node (over that N8Host)
-#include "host/n8/N8Hooks.hpp"            // binds the __rp_*N8* config hooks (shared)
-#include "host/n8/WjwwoodSerialPort.hpp"  // the serial-port factory + listSerialPorts for the N8 picker
+#include "host/devices/ProviderHost.hpp"  // the rp_device_host this product starts its providers with
+#include "rp_product_providers.hpp"       // generated, in this product's own include dir: its providers (the N8's)
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
@@ -90,25 +88,15 @@ class PluginDSP : public Plugin {
     // RETROPLUG_IDLE_RECLAIM_TEST: inert unless `tools/run-standalone.sh` arms it. Holds the editor's idle (the only
     // per-frame hook the plugin has) to the idle tick it owes the engine, which no in-process test can reach.
     retroplug::IdleReclaimProbe idleProbe_;
-    // Physical Everdrive N8 Pro streaming (Settings > N8) - the SAME N8Host the SDL standalone uses. Nothing in
-    // run() pushes at it: the graph's rp.n8.nes node does, on the audio thread, through n8CartLink_ (below), which
-    // the engine hands the node by name; the config UI drives connect/setPort through bindN8Hooks. svc_.host
-    // (above) provides the n8.cfg dir.
-    retroplug::N8Host n8Host_{
-        [](const std::string& p) -> std::unique_ptr<retroplug::ISerialPort> {
-            return std::make_unique<retroplug::WjwwoodSerialPort>(p);
-        },
-        [] {
-            std::vector<retroplug::N8PortDto> ports;
-            for (const auto& p : retroplug::listSerialPorts()) ports.push_back({p.port, p.isN8});
-            return ports;
-        },
-        svc_.host.configDir()};
-    // The cart link the graph's device nodes bind (rp.host.devices/2). The plugin owns no control surface, so its
-    // surface name answers null and the surface nodes run on a stub that is never connected: every message is SysEx,
-    // which the DAW MIDI seam caps at 4 bytes (the SDL standalone's comment says the same where it binds its
-    // Launchpad).
-    retroplug::N8CartLink n8CartLink_{n8Host_};
+    // The device providers of the packages this product lists (rp_product_providers.hpp, generated): the N8 pack's,
+    // the same one the SDL standalone starts, which owns the physical Everdrive N8 Pro's streaming link, its n8.cfg in
+    // svc_.host's config dir and the cart link the engine hands rp.n8.nes by name. Nothing in run() pushes at it: the
+    // graph's node does, on the audio thread. Settings > N8 drives it through the pack's facet, mounted on this
+    // channel. The plugin owns no control surface, so the surface name answers null and the surface nodes run on a
+    // stub that is never connected: every message is SysEx, which the DAW MIDI seam caps at 4 bytes (the SDL
+    // standalone's comment says the same where it binds its Launchpad).
+    rp::host::ProviderHost deviceHost_{svc_.engine, svc_.host.configDir()};
+    rp::Providers          providers_;
     std::unique_ptr<rpcpp::QuickJSTransport> transport_;
     std::unique_ptr<PluginRpcServer>     server_;
     // Did the control plane come up AND signal __rp_ready? Gates callGlobal, so a runtime that failed
@@ -147,10 +135,9 @@ public:
         for (auto& b : ccBinding_) b.store(0, std::memory_order_relaxed);
         for (auto& v : ccValue_)   v.store(0.0f, std::memory_order_relaxed);
         ccSent_.fill(0.0f);
-        // The device links before the first graph the control plane can publish, so a node of that graph binds one.
-        // A refusal (a full table, a name taken) would leave rp.n8.nes on its stub, so it is said, not swallowed.
-        if (!svc_.engine.installLink<rp::n8::CartLink>(rp::n8::kDeviceName, rp::n8::kCartLinkInterface, n8CartLink_))
-            std::fprintf(stderr, "[retroplug] the N8 cart link was not installed\n");
+        // The providers before the first graph the control plane can publish, so a node of that graph binds the links
+        // they install (a refusal is said by the provider, and leaves rp.n8.nes on its stub).
+        providers_ = rp_start_providers(deviceHost_.get());
         bootControlPlane();
         // The autoload in bootControlPlane may already have put a ROM in place, so name the pool from
         // it before DPF reads the parameters. (This is the construct-time pass; the host has no
@@ -158,13 +145,13 @@ public:
         updateParameterMap();
     }
 
-    // svc_ (the engine) is declared above n8Host_, so it is destroyed last, after the link adapter and the N8Host it
-    // wraps. Reclaim the plans first, in this body, while both are still alive: a node may use its handle in destroy
-    // (a farewell, a flush, a read), and it must reach a live link. The engine has no plan left to destroy by the time
-    // the members go.
+    // svc_ (the engine) is declared above the providers, so it is destroyed last, after them. Reclaim the plans first,
+    // in this body, while the providers are still running: a node may use its handle in destroy (a farewell, a flush,
+    // a read), and it must reach a live link. Then stop them, which takes their links back. The engine has no plan
+    // left to destroy by the time the members go.
     ~PluginDSP() override {
         svc_.engine.clearGraph();
-        svc_.engine.clearLink<rp::n8::CartLink>(n8CartLink_);
+        rp_stop_providers(providers_);
     }
 
 protected:
@@ -409,6 +396,8 @@ private:
         // The editor reuses this same context/channel, so it inherits exactly this surface.
         registerHostRpc(*server_, svc_.host);
         registerEmulatorRpc(*server_, svc_.engineSvc);
+        // The facets of the providers started in the constructor: the N8's link half, which Settings > N8 drives.
+        rp_register_package_rpc(*server_, providers_);
         server_->addDiscoveryMethod();
 
         // globalThis[Symbol.for("plugin")] = { __rpcSend } — the namespace realBackend.ts targets.
@@ -451,14 +440,12 @@ private:
         // Only the plugin enables this — the test host / CLI leave drainChangedPaths inert.
         svc_.host.enableWatching(svc_.host.configDir());
 
-        // Physical Everdrive N8 Pro (Settings > N8): expose the config hooks to the shared UI and restore the
-        // persisted link. A system whose "drive the real cart" setting is on places an rp.n8.nes node, and what its
+        // The providers' persisted state (the physical Everdrive N8 Pro, Settings > N8: n8.cfg, reconnecting a link
+        // left enabled). A system whose "drive the real cart" setting is on places an rp.n8.nes node, and what its
         // protocol nodes send the emulated NES's core reaches the cart through the graph's fan-out (buildGraph wires
-        // both from the same sources), on the audio thread, in the block it was played. Same N8Host + hooks the SDL
-        // standalone uses - so the plugin drives a real NES from the DAW transport, in lock-step with the emulated
-        // core.
-        retroplug::bindN8Hooks(ctx, n8Host_);
-        n8Host_.restore();
+        // both from the same sources), on the audio thread, in the block it was played - so the plugin drives a real
+        // NES from the DAW transport, in lock-step with the emulated core.
+        rp_restore_providers(providers_);
 
         // Headless seed: reaper -renderproject sets RETROPLUG_AUTOLOAD_PROJECT to a .rplg path.
         if (const char* autoload = std::getenv("RETROPLUG_AUTOLOAD_PROJECT")) {

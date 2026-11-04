@@ -7,6 +7,7 @@
 
 #include "graph/Executor.hpp"
 #include "graph/Plan.hpp"
+#include "graph/rp_device.h"
 
 namespace rp::device_check {
 
@@ -53,9 +54,17 @@ const rp_resource* acquireResource(void*, std::uint32_t id, const char* type, rp
 bool releaseResource(void*, std::uint32_t id) { return id == kBufferResource; }
 const rp_host_resources kResources{nullptr, &acquireResource, &releaseResource};
 
+// The device links (rp.host.devices/2) of a host that owns no device: every acquire answers null, so a node that binds
+// one (rp.n8.nes) runs on its own disconnected stub, as it does in any host with no such device. A node that finds no
+// devices interface at all refuses to activate, so the check offers this one rather than none.
+void* acquireDevice(void*, const char*, const char*) { return nullptr; }
+void  releaseDevice(void*, void*) {}
+const rp_host_devices kDevices{nullptr, &acquireDevice, &releaseDevice};
+
 void ignoreLog(void*, int, const char*) {}
 const void* hostInterface(const rp_host*, const char* id) {
-    return std::strcmp(id, RP_HOST_RESOURCES_INTERFACE) == 0 ? &kResources : nullptr;
+    if (std::strcmp(id, RP_HOST_RESOURCES_INTERFACE) == 0) return &kResources;
+    return std::strcmp(id, RP_HOST_DEVICES_INTERFACE) == 0 ? &kDevices : nullptr;
 }
 const rp_host kHost{RP_ABI_VERSION, nullptr, nullptr, nullptr, &ignoreLog, &hostInterface};
 

@@ -357,11 +357,14 @@ retroplug_silence_dep_warnings(Catch2 Catch2WithMain)
 # --- the workspace packages (cmake/packages.cmake, docs/modular-graph-phase-e1-design.md section 4): each reads its
 # manifest from its package.json and adds its native/ tree. The node SDK first, as every other package links it.
 include(cmake/packages.cmake)
+# The shape every native test binary shares (see the file for why), for packages/native's and the packs' alike.
+include(cmake/test-binary.cmake)
 retroplug_package(node-sdk)        # rp_node.h, node.hpp and the description library: what a pack depends on
 retroplug_package(graph-runtime)   # the executor, the planner, the registry, GraphHost, rp.host.audio-out
 retroplug_package(core)            # the rp.core nodes
 retroplug_package(dsp)             # the kernels, the rp.dsp nodes and rp.dsp.resample
-# The node types not yet carved into packages of their own (sameboy, mesen, host.io, n8, launchpad) register from
+retroplug_package(n8)              # the Everdrive N8 Pro: rp.n8.nes and the desktop's serial link to the cart
+# The node types not yet carved into packages of their own (sameboy, mesen, host.io, launchpad) register from
 # packages/native, the engine's tree, whose manifest names their entries; its targets are defined below.
 retroplug_package(native)
 # The device check's case generator, a desktop tool listing what the RP2350 check registers (a device product of the
@@ -370,10 +373,11 @@ add_subdirectory(packages/graph-runtime/device-check/cases "${CMAKE_BINARY_DIR}/
 
 # The packages a desktop product carries (retroplug_product), every one today; a product that differs lists its own.
 # The ORDER is load-bearing: it is the order the products register in, which the registration golden holds
-# (packages/native/test/engine-graph/golden/product-registrations.json), and it reproduces the list the engine
-# registered before products declared theirs: rp.core, rp.dsp, rp.dsp.resample, then rp.host (graph-runtime, after
-# dsp for that reason alone), then the types still in packages/native.
-set(RP_DESKTOP_PACKAGES core dsp graph-runtime native)
+# (packages/native/test/engine-graph/golden/product-registrations.json). The carved packages come first, in the order
+# they were carved: rp.core, rp.dsp, rp.dsp.resample, rp.host (graph-runtime, after dsp for that reason alone), then
+# rp.n8 (the n8 pack's rp.n8.nes, after rp.host.audio-out and before rp.sameboy.gb); then the types still in
+# packages/native.
+set(RP_DESKTOP_PACKAGES core dsp graph-runtime n8 native)
 
 # --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
 # + the DPF plugin + the test host / cli / ui-test.

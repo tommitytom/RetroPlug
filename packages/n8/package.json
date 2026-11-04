@@ -1,0 +1,19 @@
+{
+  "name": "@retroplug/n8",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Everdrive N8 Pro: the rp.n8.nes node type, the Edio protocol, the cart's link and the desktop's serial host around it.",
+  "exports": "./ts/index.ts",
+  "retroplug": {
+    "native": [
+      { "target": "retroplug-n8", "entry": "rp_n8_package", "device": true },
+      {
+        "target": "retroplug-n8-desktop",
+        "device": false,
+        "provider": "rp_n8_provider",
+        "rpc": { "header": "n8/desktop/N8Rpc.hpp", "register": "rp::n8::registerRpc" }
+      }
+    ]
+  }
+}

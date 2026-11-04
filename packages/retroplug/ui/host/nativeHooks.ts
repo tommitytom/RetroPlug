@@ -1,7 +1,7 @@
 // nativeHooks: the whole `__rp_*` seam between the UI bundle and the native host, typed in one place.
 //
 // The native side binds these as plain globals on the UI's QuickJS context (PluginUI.cpp for the plugin
-// editor, sdl/main.cpp for the SDL standalone, the N8 / Launchpad hook files for the hardware seams, and
+// editor, sdl/main.cpp for the SDL standalone, the Launchpad hook file for its hardware seam, and
 // RenderCore.cpp for the UI test harness); the UI installs a few of its own the other way (mount, close
 // request, the in-app file browser). Every hook is OPTIONAL: which ones exist depends on the host, and a
 // missing one means "this host has no such thing", so callers optional-chain and fall back. Each module used
@@ -13,7 +13,6 @@ import type { AppStores, StoreChannel } from "../../src/appStores";
 import type { NativeAudioConfig } from "../screens/menu/audioDraft";
 import type { MidiConfig } from "../screens/menu/midiDevices";
 import type { TransportState } from "../screens/menu/transport";
-import type { N8Config } from "../screens/menu/n8Devices";
 import type { LaunchpadConfig, LaunchpadScanStatus } from "../screens/menu/launchpadDevices";
 
 export interface RpHooks {
@@ -55,14 +54,6 @@ export interface RpHooks {
   __rp_getTransport?: () => Partial<TransportState>;
   __rp_setTransport?: (playing: boolean) => void;
   __rp_setClockBpm?: (bpm: number) => void;
-
-  // --- N8 Pro link (N8Hooks.cpp) -----------------------------------------------------------------------------
-  // The card's own operations (a ROM load, a battery dump or restore) are the cart node's capability jobs, and
-  // its expansion volume is that node's param, so neither crosses this seam.
-  __rp_getN8Config?: () => Partial<N8Config>;
-  __rp_setN8Port?: (name: string) => void;
-  __rp_connectN8?: (enabled: boolean) => void;
-  __rp_setN8Lookahead?: (ms: number) => void;
 
   // --- Launchpad control surface (LaunchpadHooks.cpp) -------------------------------------------------------
   __rp_getLaunchpadConfig?: () => Partial<LaunchpadConfig>;

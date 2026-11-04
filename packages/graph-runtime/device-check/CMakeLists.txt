@@ -1,8 +1,9 @@
 # rp-device-check (docs/modular-graph-phase-e1-design.md section 7): a Pico SDK firmware for the RP2350 that runs every
-# portable node type of `core` and `dsp`, built in device mode (RP_DEVICE, no exceptions, no RTTI), from its default
-# settings as msgpack, and links with a trap on the heap, on exceptions and on RTTI. Its own CMake project on the SDK's
-# toolchain, built in a build dir of its own, never part of the desktop's build/: tools/build-device-check.sh
-# configures and builds it (pnpm device:check), and CI's linux-x64 job runs that script.
+# portable node type of the packages packages.cmake lists (`core`, `dsp` and `n8`), built in device mode (RP_DEVICE, no
+# exceptions, no RTTI), from its default settings as msgpack, and links with a trap on the heap, on exceptions and on
+# RTTI. Its own CMake project on the SDK's toolchain, built in a build dir of its own, never part of the desktop's
+# build/: tools/build-device-check.sh configures and builds it (pnpm device:check), and CI's linux-x64 job runs that
+# script.
 #
 # Inputs, both given by the script:
 #   PICO_SDK_PATH          the Pico SDK (2.1.1; no submodules needed)

@@ -4,10 +4,11 @@
 # a child scope and re-roots that variable, which is the trap this split is avoiding.)
 #
 # --- native test binaries ---------------------------------------------------------------------------
-# Thirteen Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING):
-# `pnpm test:plugin` builds and runs ten of them, `pnpm test:n8` the next two, and the thirteenth needs a
-# real console on a USB port. The shared shape lives in retroplug_add_test_binary() — see
-# cmake/test-binary.cmake; what is written out here is only what differs per test.
+# Eleven Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING), which
+# `pnpm test:plugin` builds and runs. The N8 pack's three (`pnpm test:n8`'s two, and a harness that needs a
+# real console on a USB port) are packages/n8/native/CMakeLists.txt's. The shared shape lives in
+# retroplug_add_test_binary(): see cmake/test-binary.cmake at the root; what is written out here is only
+# what differs per test.
 
 # Pure-C++ Catch2 checks for plugin/ mechanisms that need real JSContexts but no LVGL/txiki host —
 # currently the per-context window-hook routing (ContextTargets.hpp) and the last-good project-state
@@ -87,10 +88,10 @@ retroplug_add_test_binary(
 # -c2-design.md): each system node renders exactly what its core renders driven directly, its inputs and its settings'
 # knobs included, the engine places, re-arms and frees what the documents TS builds say, the host MIDI I/O nodes move
 # what the hosts stage and drain and the hardware nodes drive their fake device links (and the cart's node its real
-# adapters, down to test/n8/FakeN8.hpp's serial port), TS nodes run behind the C ABI in the script host, a script
-# node pack loads beside the built-in one into runtimes of its own and reloads, the generation it replaced freed off
-# the audio thread, the protocol script nodes send what the DSP kernel they replaced
-# was recorded sending, every document in buildGraph's goldens, its role goldens among them, plans on it, and an
+# adapters, down to packages/n8/native/test/FakeN8.hpp's serial port), TS nodes run behind the C ABI in the script
+# host, a script node pack loads beside the built-in one into runtimes of its own and reloads, the generation it
+# replaced freed off the audio thread, the protocol script nodes send what the DSP kernel they replaced was recorded
+# sending, every document in buildGraph's goldens, its role goldens among them, plans on it, and an
 # offline job (docs/modular-graph-phase-d2-design.md section 3) runs a document to completion on a worker host of its
 # own, apart from the live plan, as an engine job (docs/modular-graph-phase-d3-design.md section 3) runs a render with a
 # runtime and an Engine of its own. A hidden bench times a script node per block, another an offline job.
@@ -106,8 +107,8 @@ retroplug_add_test_binary(
              test/engine-graph/SlurpFile.test.cpp     # the file reader putResource reads a `path` resource with
              test/engine-graph/HostIo.test.cpp
              test/engine-graph/Devices.test.cpp        # rp.host.devices/2: the links a hardware node binds by name
-             test/engine-graph/DeviceAbi.test.cpp      # graph/rp_device.h and rp_jobs.h, as C++ and as C:
-             test/engine-graph/DeviceAbi.c             # the same two headers compiled as C, a C node's use of them
+             test/engine-graph/DeviceAbi.test.cpp      # graph/rp_device.h, rp_jobs.h and rp_stage.h, as C++ and C:
+             test/engine-graph/DeviceAbi.c             # the same three headers compiled as C, a C node's use of them
              test/engine-graph/Capabilities.test.cpp   # rp.system.memory/1, sram/1, rom/1 as asynchronous jobs
              test/engine-graph/OfflineJobs.test.cpp    # a document run to completion on a worker host of its own
              test/engine-graph/EngineJobs.test.cpp     # a render run on the same pool by a RenderHost of its own
@@ -121,17 +122,17 @@ retroplug_add_test_binary(
              test/engine-graph/ScriptBench.test.cpp    # hidden: run with "[bench]"
              test/engine-graph/BuildGraphGoldens.test.cpp
              test/engine-graph/Packages.test.cpp       # each product registers the node types its golden row holds
+             test/engine-graph/Providers.test.cpp      # the providers a product starts, and its generated ones
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
-             src/host/n8/Edio.cpp                      # the cart's adapters N8Adapters.test.cpp composes: serial-free,
-             src/host/n8/N8Link.cpp                    # as retroplug-n8-test compiles them (the backend holds none of
-             src/host/n8/N8Host.cpp                    # them; the hosts that own an N8Host compile their own)
-             src/host/n8/N8Menu.cpp
              ${SCRIPT_TEST_BUNDLE_C}                    # rp_script_test_bundle
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
              retroplug-dsp-kernels                     # OfflineJobs.test.cpp holds a job's buffers to the kernels
              retroplug-dsp-resample                    # and to resampledLength, which the resample's node wraps
+             rpcpp                                     # the JSON server Providers.test.cpp mounts the facets on
     PACKAGES ${RP_DESKTOP_PACKAGES}
     INCLUDES ${RP_QUICKJS_INCLUDE}
+             ${CMAKE_SOURCE_DIR}/packages/n8/native/test   # FakeN8.hpp, the cart model N8Adapters.test.cpp drives
+             ${CMAKE_BINARY_DIR}/packages/test             # without/rp_product_providers.hpp (below)
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
@@ -147,6 +148,47 @@ retroplug_add_test_binary(
              RP_PRODUCT_REGISTRATIONS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph/golden/product-registrations.json"
              RP_BUILD_TYPE="$<CONFIG>")                 # the bench prints the configuration it was built in
 add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
+# The providers header retroplug_product() would generate for a product listing no package with a provider, which
+# Providers.test.cpp holds to starting and mounting nothing beside this binary's own (it lists the N8 pack).
+retroplug_providers_header("${CMAKE_BINARY_DIR}/packages/test/without/rp_product_providers.hpp"
+                           "packages/native/cmake/tests.cmake (a product listing no provider)"
+                           core dsp graph-runtime native)
+
+# What a manifest may not say, held at every configure: each scratch manifest under test/packages/refused must be
+# refused by the reader retroplug_package() runs (cmake/packages.cmake's _retroplug_read_manifest, run here in script
+# mode by cmake/check-manifest.cmake) with its own reason, so a rule that stopped firing fails the configure rather than
+# going unnoticed; and the N8 pack's manifest, whose desktop entry names a provider and its facet, must read.
+set(_rp_refused_manifests
+    "ProviderOnDevice|entry rp_scratch_package is `device` and names a provider or an rpc"
+    "RpcOnDevice|entry scratch-desktop is `device` and names a provider or an rpc"
+    "RpcWithoutProvider|entry scratch-desktop names an rpc and no provider"
+    "ProviderWithoutDevice|entry scratch-desktop needs \"device\": true or false")
+foreach(_rp_refused IN LISTS _rp_refused_manifests)
+    string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
+    list(GET _rp_refused 0 _rp_manifest)
+    list(GET _rp_refused 1 _rp_reason)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -DRP_MANIFEST=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/refused/${_rp_manifest}.json
+                -P ${CMAKE_SOURCE_DIR}/cmake/check-manifest.cmake
+        RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+    if(_rp_result EQUAL 0)
+        message(FATAL_ERROR "test/packages/refused/${_rp_manifest}.json was read; the configure must refuse it")
+    endif()
+    # CMake wraps a message's lines, so the reason is looked for with the output's whitespace folded.
+    string(REGEX REPLACE "[ \t\r\n]+" " " _rp_folded "${_rp_output}")
+    string(FIND "${_rp_folded}" "${_rp_reason}" _rp_at)
+    if(_rp_at EQUAL -1)
+        message(FATAL_ERROR "test/packages/refused/${_rp_manifest}.json was refused, but not with \"${_rp_reason}\":\n"
+                            "${_rp_output}")
+    endif()
+endforeach()
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -DRP_MANIFEST=${CMAKE_SOURCE_DIR}/packages/n8/package.json
+            -P ${CMAKE_SOURCE_DIR}/cmake/check-manifest.cmake
+    RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+if(NOT _rp_result EQUAL 0)
+    message(FATAL_ERROR "packages/n8/package.json did not read in script mode:\n${_rp_output}")
+endif()
 
 # Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive
 # detection, registered-ROM parent-dir watches, and the unregistered-file filter.
@@ -184,67 +226,6 @@ retroplug_add_test_binary(
              retroplug-node-sdk-headers                # transport/SpscRing.hpp, the rings' type
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
              ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/launchpad/*.hpp
-
-# Guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact krikzz CMD_MEM_WR
-# byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status word; plus the
-# N8Link forward path (the SDL standalone's realtime serial thread) and the cart's capability jobs
-# (SRAM dump and restore, the ROM upload and its boot), which pause and resume streaming around the
-# transfer. Compiles those against a capturing FakeSerialPort - no `serial` lib, no `rtmidi`, no
-# hardware. The CLI's risa-sync translation lives in TS (packages/retroplug src/n8, `pnpm test n8`); the
-# C++ Edio/N8Link/N8Menu twin backs the realtime + job paths. Run by `pnpm test:n8`.
-retroplug_add_test_binary(
-    NAME     retroplug-n8-test
-    SOURCES  test/n8/Edio.test.cpp
-             test/n8/N8Host.test.cpp
-             test/n8/N8CartLink.test.cpp   # the cart device link over N8Link + N8Host
-             test/n8/N8CartJobs.test.cpp   # the cart's capability jobs, run with streaming paused
-             src/host/n8/Edio.cpp
-             src/host/n8/N8Link.cpp
-             src/host/n8/N8Host.cpp
-             src/host/n8/N8Menu.cpp
-    LIBS     reflectcpp::reflectcpp                    # rfl::json - parse the shared Edio golden (twins edio.test.ts)
-             Threads::Threads                          # N8Link's serial thread
-             retroplug-node-sdk-headers                # transport/SpscRing.hpp, N8Link's rings; the job ABI
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src           # host/n8/Edio.hpp
-    # The shared Edio framing golden both this and edio.test.ts assert against (single source, no drift).
-    DEFS     EDIO_GOLDEN_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/n8/edio-golden.json")
-
-# WjwwoodSerialPort against a pseudo-terminal: that a read's timeout does not leak into the next write (the bug
-# that left a real N8 mid-command behind N8Link's 0 ms back-channel polls). The one N8 test that needs the `serial`
-# lib, so it is its own binary - retroplug-n8-test stays serial-free. Run by `pnpm test:n8`.
-retroplug_add_test_binary(
-    NAME     retroplug-serial-test
-    SOURCES  test/n8/WjwwoodSerialPort.test.cpp
-             src/host/n8/WjwwoodSerialPort.cpp
-    LIBS     serial
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
-
-# A manual hardware harness (NOT CI) that drives the real N8 card's jobs through the same native
-# N8Host the cart's node hands them to, over a real /dev/ttyACM0 (adds the real WjwwoodSerialPort +
-# `serial`). Brings its own main(), hence NO_CATCH2.
-# Build by name: cmake --build build --target retroplug-n8-hwtest.
-retroplug_add_test_binary(
-    NAME     retroplug-n8-hwtest
-    NO_CATCH2
-    SOURCES  test/n8/n8-sd-hwtest.cpp
-             src/host/n8/Edio.cpp
-             src/host/n8/N8Link.cpp
-             src/host/n8/N8Host.cpp
-             src/host/n8/N8Menu.cpp
-             src/host/n8/WjwwoodSerialPort.cpp
-    LIBS     serial
-             Threads::Threads
-             retroplug-node-sdk-headers                # transport/SpscRing.hpp, N8Link's rings; the job ABI
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
-# `timing` times against an ALSA capture of the console's audio, so it exists only where ALSA does. Linking
-# ALSA::ALSA unconditionally failed the GENERATE step on macOS/Windows - EXCLUDE_FROM_ALL does not spare a target
-# from resolving its link libraries.
-find_package(ALSA)
-if(ALSA_FOUND)
-    target_sources(retroplug-n8-hwtest PRIVATE test/n8/n8-timing.cpp)
-    target_link_libraries(retroplug-n8-hwtest PRIVATE ALSA::ALSA)
-    target_compile_definitions(retroplug-n8-hwtest PRIVATE RP_N8_TIMING=1)
-endif()
 
 # Proves the ThorVG-backed <Lottie> capability: that lv_lottie rasterizes animated vector frames on a
 # headless software display (LV_USE_LOTTIE → ThorVG). Links bare lvgl (which PRIVATE-brings

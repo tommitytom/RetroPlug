@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Builds rp-device-check, the RP2350 image that runs every portable rp.core and rp.dsp node type in device mode with a
-# link trap on the heap, on exceptions and on RTTI (packages/graph-runtime/device-check,
+# Builds rp-device-check, the RP2350 image that runs every portable rp.core, rp.dsp and rp.n8 node type in device mode
+# with a link trap on the heap, on exceptions and on RTTI (packages/graph-runtime/device-check,
 # docs/modular-graph-phase-e1-design.md section 7), and prints what it costs in flash and RAM. CI's linux-x64 job runs
 # it after the desktop build; nothing is flashed or run (E3 runs the check's successor on the rig).
 #
@@ -110,6 +110,7 @@ function hex(s,    i, n) {
     if (file ~ /libretroplug-core-nodes/) owner = "core: the rp.core nodes"
     else if (file ~ /libretroplug-dsp-nodes/) owner = "dsp: the rp.dsp nodes"
     else if (file ~ /libretroplug-dsp-kernels/) owner = "dsp: the kernels"
+    else if (file ~ /libretroplug-n8\.a/) owner = "n8: the rp.n8 nodes"
     else if (file ~ /libretroplug-graph-exec/) owner = "graph-runtime: the executor"
     else if (file ~ /rp-device-check\.dir\/(main|DeviceCheck)\.cpp/ || file ~ /\/packages\/products\//)
         owner = "the check (its cases and arena)"
@@ -119,7 +120,8 @@ function hex(s,    i, n) {
     total[owner, mem] += hex(size); owners[owner] = 1
 }
 END {
-    n = split("core: the rp.core nodes|dsp: the rp.dsp nodes|dsp: the kernels|graph-runtime: the executor|" \
+    n = split("core: the rp.core nodes|dsp: the rp.dsp nodes|dsp: the kernels|n8: the rp.n8 nodes|" \
+              "graph-runtime: the executor|" \
               "the check (its cases and arena)|the Pico SDK runtime|toolchain (libc, libm, libgcc)", order, "|")
     printf "  %-34s %9s %9s %9s\n", "", "flash", "data", "bss"
     for (i = 1; i <= n; i++) {

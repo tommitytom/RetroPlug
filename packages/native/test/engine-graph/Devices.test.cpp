@@ -334,9 +334,8 @@ TEST_CASE("a link whose device goes away reads disconnected and counts what the 
 
 TEST_CASE("a host with no device still plans and runs the node, whose pushes go nowhere and are counted", "[devices]") {
     script = ProbeScript{};  // one case at a time: nothing a case scripted reaches the next
-    // No link installed at all, as in the CLI, the Node addon, the render host and the UI harness: every acquire
-    // answers null and the node runs on its own stubs, never connected, so this document is the same one every host
-    // plans.
+    // No link installed at all, as in the Node addon, the render host and the UI harness: every acquire answers null
+    // and the node runs on its own stubs, never connected, so this document is the same one every host plans.
     Engine e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
     REQUIRE(e.setGraph(probeDocument()).ok);

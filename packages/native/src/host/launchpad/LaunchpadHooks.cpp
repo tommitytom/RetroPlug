@@ -12,8 +12,8 @@
 namespace retroplug {
 namespace {
 
-// Recover the LaunchpadHost* from a hook's func-data - the N8Hooks idiom: the pointer's bytes are packed
-// directly, since a host's lifetime equals its control-plane context's.
+// Recover the LaunchpadHost* from a hook's func-data: the pointer's bytes are packed directly, since a host's
+// lifetime equals its control-plane context's.
 LaunchpadHost* hostFromData(JSContext* ctx, JSValue* funcData) {
     std::size_t    len = 0;
     std::uint8_t*  raw = JS_GetArrayBuffer(ctx, &len, funcData[0]);

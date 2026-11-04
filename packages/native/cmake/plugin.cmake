@@ -14,13 +14,6 @@ dpf_add_plugin(retroplug
                                         # exists; also auto-enables DGL_USE_FILE_DROP for drag-and-drop (uiFileDropped)
     FILES_DSP
         plugin/PluginDSP.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Link.cpp            # host serial thread -> physical N8 (streaming)
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp             # N8 Pro serial client
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp # serial-port factory + listSerialPorts
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp           # shared N8 link + config + n8.cfg
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp          # binds the __rp_*N8* config, port, connect and
-                                                                    # lookahead hooks
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp           # on-device menu (*t/*n/*s) for the cart's rom job
         ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     FILES_UI
         plugin/PluginUI.cpp
@@ -41,7 +34,10 @@ target_link_libraries(retroplug PUBLIC
     retroplug-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
     lvgl-js-native                # LVGL + LvglJsEngine + lv_binding_js + lodepng (the editor)
     dpfjs::core                   # DPF Plugin + UI base
-    serial)                       # wjwwood/serial -> physical Everdrive N8 Pro (Settings > N8, all formats)
+    # The N8 pack's desktop half: the provider PluginDSP.cpp starts through its generated rp_start_providers (the
+    # physical Everdrive N8 Pro, Settings > N8, all formats) and the facet header rp_register_package_rpc mounts. Here
+    # as well as through the product, as the DSP library's own sources include the product's providers header.
+    retroplug-n8-desktop)
 
 target_compile_definitions(retroplug PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 
@@ -70,6 +66,10 @@ foreach(_t IN LISTS _rp_dir_targets)
     endif()
 endforeach()
 retroplug_product(retroplug PACKAGES ${RP_DESKTOP_PACKAGES} TARGETS ${_rp_plugin_binaries})
+# The product's generated providers header (rp_product_providers.hpp), which PluginDSP.cpp includes: retroplug_product()
+# puts its directory on the product's TARGETS, the format binaries, and the DSP library that compiles PluginDSP.cpp is
+# not one of them.
+target_include_directories(retroplug PUBLIC "${RP_PRODUCTS_DIR}/retroplug")
 
 # The embedded bundles must exist before the plugin compiles them.
 add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)

@@ -1,0 +1,661 @@
+// n8-sd-hwtest - a manual hardware harness for the cart's capability jobs (the UI drives the same jobs from its cart
+// menu, under Settings > N8 Pro). It constructs the SAME native N8Host the cart node hands a job to, but against a real
+// /dev/ttyACM0, and brings its link up as Settings > N8's Connect row would (a job is refused while the link is down),
+// so a hardware pass exercises the same N8Host job path the cart node reaches (not the CLI's TS stack).
+// EXCLUDE_FROM_ALL, built by name (retroplug-n8-hwtest); NOT a CI target. Needs a real N8 plugged in and at its menu
+// for the battery jobs and the upload.
+//
+//   retroplug-n8-hwtest dump    <rom-name> <dest.srm>  [port]  # the battery file to a local file (non-destructive)
+//   retroplug-n8-hwtest load    <rom.nes>              [port]  # upload + boot a ROM (the cart must be at its menu)
+//   retroplug-n8-hwtest restore <rom-name> <save.srm>  [port]  # write a .srm as the battery file the game loads next
+//
+// A battery job's <rom-name> is a bare file name, not a path: it names the ROM whose folder under EDN8/gamedata/ holds
+// the battery file, which is why `dump /roms/mGB.nes out.srm` is refused.
+//
+// The rest take the port directly, with no N8Host and no capability job. link and timing bring up N8Link's own
+// streaming thread; the others, linkdbg included, drive a bare Edio:
+//   retroplug-n8-hwtest peek     <addr-hex> <len> [port]       # CMD_MEM_RD: read bytes from a device address
+//   retroplug-n8-hwtest poke     <addr-hex> <byte> [port]      # CMD_MEM_WR: write one byte to a device address
+//   retroplug-n8-hwtest read     <sd-path> <local-dest> [port] # CMD_F_FRD: read an SD file over USB
+//   retroplug-n8-hwtest write    <local-src> <sd-path> [port]  # CMD_F_FWR: write a local file to the SD card
+//   retroplug-n8-hwtest fiford   <count> [timeout-ms] [port]   # read the cart's USB back-channel (CMD_USB_WR)
+//   retroplug-n8-hwtest link     <steps> [loss-permille] [port] # BlipToaster's reliable link, over N8Link
+//   retroplug-n8-hwtest linkdbg  [port]                        # the link step by hand: sync, frames, acks, APU mirror
+//   retroplug-n8-hwtest timing   <idle|busy> [steps] [--raw]   # latency / jitter / load on the real console
+//   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
+//   retroplug-n8-hwtest sniff    [port]                        # memRD ADDR_SSR: a running game's live APU/PPU/OAM
+//   retroplug-n8-hwtest memwr    <addr-hex> <file> [port]      # block memWR + verify (live-patch CHR/PRG)
+//   retroplug-n8-hwtest info     [port]                        # CMD_SYS_INF + CMD_GET_VDC: serial/versions/form/volts
+//   retroplug-n8-hwtest fstest   [port]                        # CMD_F_AVB/DIR_MK/DEL: free space + scratch mkdir/rm
+//
+// fiford is the read half of fifowr, and the only op that does NOT handshake first: Edio::connect starts with
+// flushInput, which would throw away bytes a running ROM had already queued. So it opens the port and reads,
+// and a wrong/absent port simply times out rather than reporting "no device".
+//
+// peek/poke reach FPGA config regs like the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3];
+// see krikzz edn8-pro-pub edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain.
+// read pulls a whole SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
+//
+// Exit 0 on success, 1 on the op's error, 2 on a usage / no-device problem.
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <initializer_list>
+#include <memory>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include "FakeJobs.hpp"  // a job record and request of the pack's own, as an engine would hand the cart
+#include "n8/desktop/Edio.hpp"
+#include "n8/desktop/N8Host.hpp"
+#include "n8/desktop/N8Link.hpp"
+#include "n8/desktop/N8Menu.hpp"
+#include "n8/desktop/WjwwoodSerialPort.hpp"
+
+using namespace retroplug;
+
+namespace {
+
+// A whole local file into a byte vector. Empty on a missing/unreadable/empty file — every caller here
+// treats "nothing to send" as an error, so the two cases don't need telling apart.
+std::vector<std::uint8_t> slurpLocal(const std::string& path) {
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return {};
+    std::vector<std::uint8_t> data;
+    std::uint8_t              chunk[4096];
+    for (std::size_t got; (got = std::fread(chunk, 1, sizeof(chunk), f)) > 0;)
+        data.insert(data.end(), chunk, chunk + got);
+    std::fclose(f);
+    return data;
+}
+
+}  // namespace
+
+#if defined(RP_N8_TIMING)
+int runTiming(int argc, char** argv, const std::string& defaultPort);   // n8-timing.cpp
+#endif
+int main(int argc, char** argv) {
+    if (argc < 3) {
+        // `sniff`/`info`/`fstest` need no path/addr (they auto-detect the port), so allow a bare argc==2.
+        const std::string a1 = argc >= 2 ? argv[1] : "";
+        if (!(argc == 2 && (a1 == "sniff" || a1 == "info" || a1 == "fstest" || a1 == "linkdbg"))) {
+            std::fprintf(stderr,
+                         "usage: %s dump <rom-name> <dest.srm> [port]\n"
+                         "       %s load <rom.nes> [port]\n"
+                         "       %s restore <rom-name> <save.srm> [port]\n"
+                         "       %s <peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|link|linkdbg|timing|info|"
+                         "fstest> <path|addr|count> [len|byte|dest] [port]\n",
+                         argv[0], argv[0], argv[0], argv[0]);
+            return 2;
+        }
+    }
+    const std::string op = argv[1];
+
+    // Bare-Edio SD file read (CMD_F_FRD): pull a whole SD file over USB to a local file. Read-only, so safe on
+    // a running game (exercises the C++ Edio::readFile twin of the CLI's TS readFile).
+    if (op == "read") {
+        if (argc < 4) {
+            std::fprintf(stderr, "usage: %s read <sd-path> <local-dest> [port]\n", argv[0]);
+            return 2;
+        }
+        const std::string sdPath = argv[2];
+        const std::string dest   = argv[3];
+        const std::string pport  = argc > 4 ? argv[4] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort               sp(pport);
+            Edio                            edio(sp);
+            edio.connect();  // handshake (works whether the menu or a game is running)
+            const std::vector<std::uint8_t> bytes = edio.readFile(sdPath);
+            std::FILE*                      f     = std::fopen(dest.c_str(), "wb");
+            if (!f) {
+                std::fprintf(stderr, "cannot write %s\n", dest.c_str());
+                return 1;
+            }
+            std::fwrite(bytes.data(), 1, bytes.size(), f);
+            std::fclose(f);
+            std::printf("read %zu bytes of %s -> %s\n", bytes.size(), sdPath.c_str(), dest.c_str());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "read failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio SD file write (CMD_F_FWR): push a local file onto the card, creating parent dirs. The
+    // supported way to put a DATA file on the SD over USB — the alternative was smuggling it through the
+    // per-game save slot (--srm), which is a fixed path capped at 64 KB.
+    if (op == "write") {
+        if (argc < 4) {
+            std::fprintf(stderr, "usage: %s write <local-src> <sd-path> [port]\n", argv[0]);
+            return 2;
+        }
+        const std::string src    = argv[2];
+        const std::string sdPath = argv[3];
+        const std::string pport  = argc > 4 ? argv[4] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        const std::vector<std::uint8_t> data = slurpLocal(src);
+        if (data.empty()) {
+            std::fprintf(stderr, "cannot read %s (or it is empty)\n", src.c_str());
+            return 1;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            edio.writeFile(sdPath, data);
+            std::printf("wrote %zu bytes of %s -> %s\n", data.size(), src.c_str(), sdPath.c_str());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "write failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // The read half of fifowr: bytes the RUNNING ROM sent host-ward with CMD_USB_WR, which the MCU
+    // forwards straight out of the USB port (edn8-pro-pub edio/everdrive.c `ed_cmd_usb_wr`; fifo_b in
+    // fpga/base_sv/base_io.sv, whose empty flag the ROM reads as $40F1 bit 6). This is the back-channel
+    // that lets a host streaming data IN pace itself to what the ROM has actually consumed.
+    //
+    // Deliberately NO connect() handshake: it begins with flushInput, which would discard bytes already
+    // queued by the ROM. The cost is that a wrong port just times out instead of saying "no device".
+    // BlipToaster's MIDI latency / jitter / latency-under-load on the real console, timed against a timestamped
+    // capture of its audio (n8-timing.cpp).
+    if (op == "timing") {
+#if defined(RP_N8_TIMING)
+        return runTiming(argc, argv, findN8Port());
+#else
+        std::fprintf(stderr, "timing needs ALSA (this build has none)\n");
+        return 2;
+#endif
+    }
+
+    // Diagnostic for the reliable link on hardware: one port, every step by hand - sync, read the back-channel,
+    // frames, the APU mirror after each - to see where a frame stops landing. It polls the back-channel the way
+    // N8Link does (0 ms reads), which is what found the read timeout leaking into writes (WjwwoodSerialPort::read):
+    // a healthy run acks F5 50, F5 51, F5 52 and every memRD answers.
+    if (op == "linkdbg") {
+        const std::string pport = argc > 2 ? argv[2] : findN8Port();
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            auto apu = [&](const char* tag) {
+                std::vector<std::uint8_t> ssr(0x200);
+                edio.memRD(Edio::ADDR_SSR, ssr.data(), ssr.size());
+                std::printf("%-28s $4000=%02X $400C=%02X\n", tag, ssr[0x080], ssr[0x08C]);
+            };
+            auto drain = [&](const char* tag, int ms) {
+                std::uint8_t b[64];
+                std::printf("%-28s rx:", tag);
+                const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+                while (std::chrono::steady_clock::now() < until) {
+                    const std::size_t n = sp.read(b, sizeof b, 0);   // N8Link's own polling: 0 ms reads
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                    for (std::size_t i = 0; i < n; ++i) std::printf(" %02X", b[i]);
+                }
+                std::printf("\n");
+            };
+            auto frame = [](std::uint8_t seq, std::initializer_list<std::uint8_t> msg) {
+                std::vector<std::uint8_t> f = { 0xF5, seq };
+                unsigned sum = seq;
+                for (auto m : msg) { f.push_back(m); sum += m; }
+                f.push_back(static_cast<std::uint8_t>(sum & 0x7F));
+                return f;
+            };
+            apu("start");
+            const std::uint8_t sync[2] = { 0xF4, 0x50 };
+            edio.fifoWR(sync, 2);
+            drain("after sync", 100);
+            auto a = frame(0x50, { 0x90, 0x48, 0x78 });   // pulse1 C5, vol 15
+            edio.fifoWR(a.data(), a.size());
+            drain("after frame 50 (note-on)", 100);
+            apu("after frame 50");
+            auto b = frame(0x51, { 0x80, 0x48, 0x00 });   // pulse1 off
+            edio.fifoWR(b.data(), b.size());
+            apu("after frame 51, no read");
+            drain("then read", 100);
+            apu("end");
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "linkdbg failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // The reliable link on real hardware, through N8Link - the code the plugin streams to a cart with. Plays
+    // <steps> 16th-note hats (ch4 noise) at 170 bpm, each released half a step later, dropping
+    // <loss-permille> of the framed bytes on the way out in 1-3 byte bursts (what an NTSC DMC-DMA halt does at the
+    // cart; a PAL console loses nothing, so the recovery has to be provoked). Reports whether the ROM answered the
+    // probe, the re-sends, the fastest round trip, and whether every frame was acknowledged. Record the audio
+    // alongside to count the hats that actually sounded (retroplug-cli/repro/capture-onsets.ts in BlipToaster).
+    if (op == "link") {
+        if (argc < 3) {
+            std::fprintf(stderr, "usage: %s link <steps> [loss-permille] [port]\n", argv[0]);
+            return 2;
+        }
+        const int         steps = static_cast<int>(std::strtol(argv[2], nullptr, 0));
+        const int         loss  = argc > 3 ? static_cast<int>(std::strtol(argv[3], nullptr, 0)) : 0;
+        const std::string lport = argc > 4 ? argv[4] : findN8Port();
+        if (lport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        retroplug::N8Link link([](const std::string& p) -> std::unique_ptr<ISerialPort> {
+            return std::make_unique<WjwwoodSerialPort>(p);
+        });
+        if (!link.connect(lport)) {
+            std::fprintf(stderr, "link: connect failed: %s\n", link.lastError().c_str());
+            return 1;
+        }
+        link.setLookaheadMs(0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));   // the probe (~100 ms)
+        std::printf("link: %s\n", link.reliable() ? "reliable (the ROM answered the probe)" : "raw (no answer)");
+        link.setTestLossPermille(loss);
+        const auto stepDur = std::chrono::microseconds(static_cast<long>(60e6 / 170 / 4));
+        const auto t0      = std::chrono::steady_clock::now();
+        const std::uint8_t on[]  = {0x93, 60, 120};
+        const std::uint8_t off[] = {0x83, 60, 0};
+        for (int i = 0; i < steps; ++i) {   // a half-step hat, so a capture can count the hits
+            std::this_thread::sleep_until(t0 + stepDur * i);
+            link.push(0, on, sizeof on, 48000.0);
+            std::this_thread::sleep_until(t0 + stepDur * i + stepDur / 2);
+            link.push(0, off, sizeof off, 48000.0);
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (link.linkOutstanding() > 0 && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        const unsigned long long outstanding = link.linkOutstanding();
+        std::printf("link: %d hats, loss %d/1000, re-sends %llu, outstanding %llu, fastest round trip %.2f ms, %llu bytes\n",
+                    steps, loss, static_cast<unsigned long long>(link.linkResends()), outstanding,
+                    static_cast<double>(link.linkRttMinNs()) / 1e6,
+                    static_cast<unsigned long long>(link.bytesForwarded()));
+        const std::string err = link.lastError();
+        link.disconnect();
+        if (!err.empty()) {
+            std::fprintf(stderr, "link: %s\n", err.c_str());
+            return 1;
+        }
+        return outstanding == 0 ? 0 : 1;
+    }
+
+    if (op == "fiford") {
+        if (argc < 3) {
+            std::fprintf(stderr, "usage: %s fiford <count> [timeout-ms] [port]\n", argv[0]);
+            return 2;
+        }
+        const std::size_t count     = static_cast<std::size_t>(std::strtol(argv[2], nullptr, 0));
+        const int         timeoutMs = argc > 3 ? static_cast<int>(std::strtol(argv[3], nullptr, 0)) : 2000;
+        const std::string pport     = argc > 4 ? argv[4] : findN8Port();
+        if (count == 0) {
+            std::fprintf(stderr, "fiford: count must be > 0\n");
+            return 2;
+        }
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort         sp(pport);
+            Edio                      edio(sp);
+            edio.setReadTimeout(timeoutMs);
+            std::vector<std::uint8_t> buf(count);
+            edio.readData(buf.data(), buf.size());  // throws on timeout (the ROM sent nothing)
+            std::printf("fiford %zu:", buf.size());
+            for (std::uint8_t b : buf) std::printf(" %02X", b);
+            std::printf("\n  ascii: ");
+            for (std::uint8_t b : buf) std::printf("%c", (b >= 0x20 && b < 0x7F) ? static_cast<char>(b) : '.');
+            std::printf("\n");
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "fiford failed: %s (is a ROM running and sending CMD_USB_WR?)\n", e.what());
+            return 1;
+        }
+    }
+
+    // Raw device-memory peek/poke: a bare Edio over the port (no N8Host, no streaming thread). Used to read /
+    // write FPGA config registers directly - e.g. the expansion-audio master volume at Edio::ADDR_EXP_VOL.
+    if (op == "peek" || op == "poke") {
+        if (argc < 4) {
+            std::fprintf(stderr, "usage: %s %s <addr-hex> <%s> [port]\n", argv[0], op.c_str(),
+                         op == "peek" ? "len" : "byte");
+            return 2;
+        }
+        // Base 16, as the usage says: with strtol's base 0 a bare "1800020" silently read as DECIMAL
+        // (0x1B7754) and returned bus noise, which is how the config block was once written off as
+        // write-only. An explicit "0x" prefix still parses.
+        const std::int32_t addr = static_cast<std::int32_t>(std::strtol(argv[2], nullptr, 16));
+        const std::string  pport = argc > 4 ? argv[4] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();  // handshake (works whether the menu or a game is running)
+            if (op == "poke") {
+                const std::uint8_t v = static_cast<std::uint8_t>(std::strtol(argv[3], nullptr, 0));
+                edio.memWR(addr, &v, 1);
+                std::printf("poke [0x%X] <- 0x%02X (%u)\n", addr, v, v);
+            } else {
+                const std::size_t         len = static_cast<std::size_t>(std::strtol(argv[3], nullptr, 0));
+                std::vector<std::uint8_t> buf(len ? len : 1);
+                edio.memRD(addr, buf.data(), buf.size());
+                std::printf("peek [0x%X] (%zu):", addr, buf.size());
+                for (std::uint8_t b : buf) std::printf(" %02X", b);
+                std::printf("\n");
+            }
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "%s failed: %s\n", op.c_str(), e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio SD file-management round-trip (CMD_F_AVB + CMD_F_DIR_MK + CMD_F_DEL): free space, then make +
+    // remove a scratch dir (self-cleaning, safe). Exercises the native freeSpace/dirMake/fileDelete twins.
+    if (op == "fstest") {
+        const std::string pport = argc > 2 ? argv[2] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            const std::uint64_t free = edio.freeSpace();
+            std::printf("SD free space: %.2f GB (%llu bytes)\n", free / static_cast<double>(1ull << 30),
+                        static_cast<unsigned long long>(free));
+            const std::string scratch = "EDN8/rp-scratch";
+            edio.dirMake(scratch);
+            std::printf("made %s\n", scratch.c_str());
+            edio.fileDelete(scratch);
+            std::printf("removed %s\n", scratch.c_str());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "fstest failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio device info (CMD_SYS_INF + CMD_GET_VDC): the native twin of the TS decodeSysInfo/decodeVdc.
+    // Decodes the key fields inline (offsets from edlink getSysInf; little-endian) to prove the C++ Edio::sysInfo.
+    if (op == "info") {
+        const std::string pport = argc > 2 ? argv[2] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            const std::vector<std::uint8_t> b = edio.sysInfo();
+            const std::vector<std::uint8_t> v = edio.vdc();
+            const auto u16 = [](const std::vector<std::uint8_t>& d, int o) { return d[o] | (d[o + 1] << 8); };
+            const auto u32 = [](const std::vector<std::uint8_t>& d, int o) {
+                return static_cast<std::uint32_t>(d[o]) | (d[o + 1] << 8) | (d[o + 2] << 16) | (static_cast<std::uint32_t>(d[o + 3]) << 24);
+            };
+            std::printf("device_id  : 0x%02X %s\n", b[46], b[46] == 0x17 ? "(EverDrive-N8 PRO)" : "");
+            std::printf("serial     : %08X.%08X\n", u32(b, 20), u32(b, 24));
+            std::printf("form factor: %s\n", b[52] == 0 ? "NES" : b[52] == 1 ? "Famicom" : "unknown");
+            std::printf("bootloader : 0x%04X   flash: %u MB\n", u16(b, 44), (1u << b[55]) / 0x100000u);
+            std::printf("voltages   : 5.0=%02X.%02X 2.5=%02X.%02X 1.2=%02X.%02X bat=%02X.%02X\n",
+                        v[1], v[0], v[3], v[2], v[5], v[4], v[7], v[6]);
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "info failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio block memWR from a file + readback verify: the block-write twin of poke. Live-patch a running
+    // game's CHR/PRG (memWR to ADDR_CHR/ADDR_PRG + offset writes the same PSRAM the console fetches). Exercises
+    // the native memWR on hardware at an arbitrary address.
+    if (op == "memwr") {
+        if (argc < 4) {
+            std::fprintf(stderr, "usage: %s memwr <addr-hex> <file> [port]\n", argv[0]);
+            return 2;
+        }
+        const std::int32_t addr  = static_cast<std::int32_t>(std::strtol(argv[2], nullptr, 0));
+        const std::string  src   = argv[3];
+        const std::string  pport = argc > 4 ? argv[4] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        const std::vector<std::uint8_t> data = slurpLocal(src);
+        if (data.empty()) {
+            std::fprintf(stderr, "cannot read %s (or it is empty)\n", src.c_str());
+            return 1;
+        }
+        try {
+            WjwwoodSerialPort         sp(pport);
+            Edio                      edio(sp);
+            edio.connect();
+            edio.memWR(addr, data.data(), data.size());
+            std::vector<std::uint8_t> check(data.size());
+            edio.memRD(addr, check.data(), check.size());
+            if (check != data) {
+                std::fprintf(stderr, "verify failed: readback != written\n");
+                return 1;
+            }
+            std::printf("wrote + verified %zu bytes -> [0x%X]\n", data.size(), addr);
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "memwr failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio cart-FIFO write from a file: memWR to ADDR_FIFO, which a running ROM drains at $40F0/$40F1
+    // (BlipToaster reads raw MIDI bytes from it). Unlike memwr there is NO readback verify - a FIFO is consumed
+    // by the NES side, so reading it back can never return what was written.
+    if (op == "fifowr") {
+        if (argc < 3) {
+            std::fprintf(stderr, "usage: %s fifowr <file> [port]\n", argv[0]);
+            return 2;
+        }
+        const std::string src   = argv[2];
+        const std::string pport = argc > 3 ? argv[3] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        const std::vector<std::uint8_t> data = slurpLocal(src);
+        if (data.empty()) {
+            std::fprintf(stderr, "cannot read %s (or it is empty)\n", src.c_str());
+            return 1;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            edio.fifoWR(data.data(), data.size());
+            std::printf("fifoWR %zu bytes\n", data.size());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "fifowr failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio + N8Menu screen dump ('*v'): pull the menu VRAM(2048)+palette(16)+CHR(8192) over USB to one
+    // raw file (10256 bytes). Menu-only (a running game won't answer '*v'). Exercises the C++ readData /
+    // vramDump / memRD twins; render the raw dump to PNG via the TS assembler or use the CLI --screenshot.
+    if (op == "vramdump") {
+        const std::string dest  = argv[2];
+        const std::string pport = argc > 3 ? argv[3] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            N8Menu menu(edio);
+            menu.test();  // clean "not at its menu" error before the big raw read
+            const N8VramDump          vd = menu.vramDump();
+            std::vector<std::uint8_t> chr(8192);
+            edio.memRD(Edio::ADDR_MENU_CHR, chr.data(), chr.size());
+            std::FILE* f = std::fopen(dest.c_str(), "wb");
+            if (!f) {
+                std::fprintf(stderr, "cannot write %s\n", dest.c_str());
+                return 1;
+            }
+            std::fwrite(vd.vram.data(), 1, vd.vram.size(), f);
+            std::fwrite(vd.palette.data(), 1, vd.palette.size(), f);
+            std::fwrite(chr.data(), 1, chr.size(), f);
+            std::fclose(f);
+            std::printf("wrote vram(%zu)+palette(%zu)+chr(%zu) = %zu bytes -> %s\n", vd.vram.size(),
+                        vd.palette.size(), chr.size(), vd.vram.size() + vd.palette.size() + chr.size(), dest.c_str());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "vramdump failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio live save-state sniffer read: memRD(ADDR_SSR, 512) mirrors a RUNNING game's APU/PPU/OAM
+    // writes (edn8-pro-pub sst.sv). Read-only, safe on a running game. Menu-only-OFF: at the file browser the
+    // mirror is disabled, so the magic byte at +0xCF won't be 0x53. Exercises the C++ memRD twin on hardware.
+    if (op == "sniff") {
+        const std::string pport = argc > 2 ? argv[2] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort         sp(pport);
+            Edio                      edio(sp);
+            edio.connect();
+            std::vector<std::uint8_t> ssr(0x200);
+            edio.memRD(Edio::ADDR_SSR, ssr.data(), ssr.size());
+            const bool magicOk = ssr[0xCF] == 0x53;
+            std::printf("magic [+0xCF] = 0x%02X %s\n", ssr[0xCF], magicOk ? "('S' - sniffer live)" : "(no running game?)");
+            std::printf("APU  [+0x080..0x09F]:");
+            for (int i = 0; i < 0x20; ++i) std::printf(" %02X", ssr[0x080 + i]);
+            std::printf("\nPPU  [+0x0C0..0x0C3]: %02X %02X %02X %02X   CPU [+0x0C8]: %02X %02X %02X %02X\n",
+                        ssr[0x0C0], ssr[0x0C1], ssr[0x0C2], ssr[0x0C3], ssr[0x0C8], ssr[0x0C9], ssr[0x0CA], ssr[0x0CB]);
+            return magicOk ? 0 : 1;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "sniff failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    if (op != "dump" && op != "load" && op != "restore") {
+        std::fprintf(stderr, "unknown op '%s'\n", op.c_str());
+        return 2;
+    }
+    // The card's operations are the cart node's capability jobs, which is what this drives: a battery job names the ROM
+    // whose file it reaches, and is run at the cart's menu (see N8Host::submitCartJob).
+    const bool        battery = op != "load";
+    const std::string romName = battery ? argv[2] : "";
+    const std::string path    = battery ? (argc > 3 ? argv[3] : "") : argv[2];
+    if (battery && path.empty()) {
+        std::fprintf(stderr, "usage: %s %s <rom-name> <file> [port]\n", argv[0], op.c_str());
+        return 2;
+    }
+    std::string port = argc > (battery ? 4 : 3) ? argv[battery ? 4 : 3] : findN8Port();
+    if (port.empty()) {
+        std::fprintf(stderr, "no Everdrive N8 found (VID:PID 38df:0017); pass a port explicitly\n");
+        return 2;
+    }
+    std::printf("N8 SD hw-test: op=%s file=%s rom=%s port=%s\n", op.c_str(), path.c_str(),
+                battery ? romName.c_str() : "-", port.c_str());
+
+    N8Host host(
+        [](const std::string& p) -> std::unique_ptr<ISerialPort> { return std::make_unique<WjwwoodSerialPort>(p); },
+        [] {
+            std::vector<N8PortDto> v;
+            for (const auto& p : listSerialPorts()) v.push_back({p.port, p.isN8});
+            return v;
+        },
+        "/tmp");
+    // setPort only reconnects a link that is already streaming, and a job is refused while the link is down, so bring it
+    // up the way Settings > N8 would: the cart node's jobs run on that link.
+    host.setPort(port);
+    host.connect(true);
+    if (!host.link().isConnected()) {
+        std::fprintf(stderr, "link did not come up on %s: %s\n", port.c_str(), host.link().lastError().c_str());
+        return 2;
+    }
+
+    rp::n8::test::JobRequest request;
+    if (op == "load") {
+        request.capability = RP_SYSTEM_ROM_INTERFACE;
+        request.op         = "upload";
+        request.bytes      = slurpLocal(path);
+        if (request.bytes.empty()) {
+            std::fprintf(stderr, "cannot read %s (or it is empty)\n", path.c_str());
+            return 1;
+        }
+        const auto slash   = path.find_last_of("/\\");
+        request.name       = slash == std::string::npos ? path : path.substr(slash + 1);
+    } else {
+        request.capability = RP_SYSTEM_SRAM_INTERFACE;
+        request.op         = op;
+        request.name       = romName;
+        if (op == "restore") {
+            request.bytes = slurpLocal(path);
+            if (request.bytes.empty()) {
+                std::fprintf(stderr, "cannot read %s (or it is empty)\n", path.c_str());
+                return 1;
+            }
+        }
+    }
+
+    rp::n8::test::Job job;
+    std::string       error;
+    if (!host.submitCartJob(rp::n8::test::requestView(request), rp::n8::test::handle(&job),
+                            rp::n8::test::jobReports(), &host, &error)) {
+        std::fprintf(stderr, "%s: %s\n", op.c_str(), error.c_str());
+        return 1;
+    }
+    // Poll the record, as an engine's drainJobs would, printing progress until the job is terminal.
+    std::uint32_t lastProgress = ~0u, lastTotal = ~0u;
+    while (!job.finished()) {
+        const std::uint32_t done = job.progress.load(std::memory_order_acquire);
+        const std::uint32_t total = job.total.load(std::memory_order_acquire);
+        if (done != lastProgress || total != lastTotal) {
+            lastProgress = done;
+            lastTotal    = total;
+            const int pct = total ? static_cast<int>(100.0 * done / total) : 0;
+            std::printf("\r  [%-8s] %6u/%-6u %3d%%   ", op.c_str(), done, total, pct);
+            std::fflush(stdout);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    }
+    std::printf("\n");
+    if (job.state.load(std::memory_order_acquire) != rp::n8::test::Job::Done) {
+        std::printf("ERROR: %s\n", job.error.c_str());
+        return 1;
+    }
+    if (op == "dump") {
+        std::FILE* f = std::fopen(path.c_str(), "wb");
+        if (!f) {
+            std::fprintf(stderr, "cannot write %s\n", path.c_str());
+            return 1;
+        }
+        std::fwrite(job.result.data(), 1, job.result.size(), f);
+        std::fclose(f);
+        std::printf("OK: %zu bytes -> %s\n", job.result.size(), path.c_str());
+    } else {
+        std::printf("OK: %.*s\n", static_cast<int>(job.result.size()), reinterpret_cast<const char*>(job.result.data()));
+    }
+    return 0;
+}

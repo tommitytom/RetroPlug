@@ -9,7 +9,7 @@
 
 #include <rfl/Bytestring.hpp>
 
-#include "host/n8/WjwwoodSerialPort.hpp"
+#include "n8/desktop/WjwwoodSerialPort.hpp"
 
 namespace retroplug {
 

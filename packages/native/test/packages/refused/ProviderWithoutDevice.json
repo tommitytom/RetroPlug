@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/refused-provider-without-device",
+  "private": true,
+  "retroplug": {
+    "native": { "target": "scratch-desktop", "provider": "rp_scratch_provider" }
+  }
+}

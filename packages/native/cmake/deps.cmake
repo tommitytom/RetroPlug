@@ -23,13 +23,14 @@ retroplug_silence_dep_warnings(rtmidi)
 # native only provides the thin transport facets they ride on - the serial byte transport (SerialRpcService
 # over wjwwood/serial) and the live-MIDI-input facet (MidiRpcService over RtMidi). No C++ Edio/menu/translator
 # here anymore (the TS edio.ts + risaSyncTranslator.ts replace them). ON by default; turn OFF to keep
-# retroplug-cli (and thus the CI `all` build) free of the RtMidi/serial deps (ALSA dev headers on Linux) -
-# the N8 tools then just fail to find a device.
+# retroplug-cli (and thus the CI `all` build) free of RtMidi (ALSA dev headers on Linux) - the N8 tools then
+# just fail to find a device. `serial` is linked either way: the CLI starts the N8 pack's provider (its
+# generated rp_start_providers), whose ports are wjwwood/serial's.
 option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli N8 transport facets (links RtMidi + serial)" ON)
 if(RETROPLUG_N8_BRIDGE)
     target_sources(retroplug-cli PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/SerialRpcService.cpp   # serial byte-transport RPC facet (TS N8 seam)
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/SerialRpcService.cpp   # serial byte-transport RPC facet (TS N8 seam),
+                                                                       # over the N8 pack's WjwwoodSerialPort
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (shared with retroplug-sdl)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiRpcService.cpp) # live-MIDI-input RPC facet (TS bridge seam)
     target_link_libraries(retroplug-cli PRIVATE serial rtmidi)

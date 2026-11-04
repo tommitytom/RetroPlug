@@ -1,15 +1,16 @@
 // The cart's production adapters behind a real Engine: Engine::submitJob and the staged MIDI reach rp.n8.nes, which
-// hands them to N8CartLink, N8Host and N8Link, down to a fake serial port (test/n8/FakeN8.hpp, the model of the cart
-// retroplug-n8-test drives N8Host with). N8Node.test.cpp holds the node to a fake CartLink and retroplug-n8-test holds
-// the link and its jobs with no engine; each forward between them is thin, and this is the one case that composes
-// them: a note through the whole path, then in one section a ROM title and a refused dump through Engine::submitJob, a
-// job abandoned by a replan with the note-offs of what the node held written once the stream resumes, and an upload and
-// the title it leaves, and in another a host's teardown order with a note held (clearGraph, whose destroy releases it,
-// the links uninstalled, then ~N8Host's join), each section reporting on its own.
+// hands them to N8CartLink, N8Host and N8Link, down to a fake serial port (packages/n8/native/test/FakeN8.hpp, the
+// model of the cart retroplug-n8-test drives N8Host with). The adapters are the N8 pack's provider (N8Provider.hpp),
+// started into the engine's registry as a product starts it, with FakeN8's ports in place of deps/serial's.
+// N8Node.test.cpp holds the node to a fake CartLink and retroplug-n8-test holds the link and its jobs with no engine;
+// each forward between them is thin, and this is the one case that composes them: a note through the whole path, then
+// in one section a ROM title and a refused dump through Engine::submitJob, a job abandoned by a replan with the
+// note-offs of what the node held written once the stream resumes, and an upload and the title it leaves, and in
+// another a host's teardown order with a note held (clearGraph, whose destroy releases it, then the provider stopped:
+// its link cleared and ~N8Host's join), each section reporting on its own.
 //
 // Here rather than in retroplug-n8-test because that binary links no engine, cores or ROM fixtures, and because this
-// binary runs in `pnpm test:plugin` (CI) where `pnpm test:n8` does not; the N8 sources it compiles are serial-free, as
-// that binary's are.
+// binary runs in `pnpm test:plugin` (CI) where `pnpm test:n8` does not; no serial port is opened.
 //
 // Run via `pnpm test:plugin engine-graph`, or `build/bin/retroplug-engine-graph-test "[n8-adapters]"`.
 
@@ -21,17 +22,19 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../n8/FakeN8.hpp"
+#include "FakeN8.hpp"
 #include "GraphDocs.hpp"
 #include "TestDevices.hpp"
+#include "host/devices/ProviderHost.hpp"
 #include "host/engine/CapabilityJobs.hpp"
 #include "host/engine/Engine.hpp"
-#include "host/n8/N8CartLink.hpp"
-#include "host/n8/N8Host.hpp"
+#include "n8/desktop/N8Host.hpp"
+#include "n8/desktop/N8Provider.hpp"
 
 namespace {
 
@@ -99,6 +102,28 @@ std::ptrdiff_t logIndex(FakeN8& dev, const std::string& entry) {
     return std::find(dev.log.begin(), dev.log.end(), entry) - dev.log.begin();
 }
 
+// The provider a case started, stopped as a product stops it: the engine's plans first, while the link is installed,
+// then the provider. A holder, so a REQUIRE that fails mid-case still stops it, in that order, before the FakeN8 whose
+// port its serial thread polls goes out of scope.
+class StartedProvider {
+public:
+    StartedProvider(Engine& engine, void* self) : engine_(engine), self_(self) {}
+    StartedProvider(const StartedProvider&) = delete;
+    StartedProvider& operator=(const StartedProvider&) = delete;
+    ~StartedProvider() { stop(); }
+
+    void* get() const { return self_; }
+    void  stop() {
+        if (!self_) return;
+        engine_.clearGraph();
+        rp_n8_provider()->destroy(std::exchange(self_, nullptr));
+    }
+
+private:
+    Engine& engine_;
+    void*   self_;
+};
+
 }  // namespace
 
 TEST_CASE("the cart's production adapters behind a real Engine: a note, then the jobs, or a host's teardown",
@@ -109,16 +134,18 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
     const auto cfgDir = std::filesystem::temp_directory_path() / "rp-n8-adapters-test";
     std::filesystem::create_directories(cfgDir);
     std::filesystem::remove(cfgDir / "n8.cfg");
-    // Declared as the plugin declares them: the host and its link before the engine whose nodes borrow the link.
-    retroplug::N8Host     host(retroplug::test::factoryFor(dev),
-                               [] { return std::vector<retroplug::N8PortDto>{{"/dev/fake", true}}; }, cfgDir.string());
-    retroplug::N8CartLink link(host);
     {
+        // Started as a product starts it (the generated rp_start_providers): after the engine, into its registry, the
+        // provider's ports FakeN8's rather than deps/serial's. It owns the N8Host and the cart link it installs.
         Engine                 e(kRate);
+        rp::host::ProviderHost deviceHost(e, cfgDir.string());
+        const auto             ports = [] { return std::vector<retroplug::N8PortDto>{{"/dev/fake", true}}; };
+        StartedProvider provider(e, rp::n8::createProvider(deviceHost.get(), retroplug::test::factoryFor(dev), ports));
+        REQUIRE(provider.get() != nullptr);
+        retroplug::N8Host&     host = rp::n8::providerHost(provider.get());
         rp::host::test::Roms   roms;
         std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
         withRoms(e, systems, roms);
-        rp::host::test::installCart(e, link);
         REQUIRE(e.setGraph(withCart(systems)).ok);
         host.setPort("/dev/fake");
         host.connect(true);
@@ -197,24 +224,23 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
             REQUIRE(answered.has_value());
             CHECK(answered->bytes == Bytes{'g', 'a', 'm', 'e', '.', 'n', 'e', 's'});
 
-            // Connected again after the boot, then the plugin's teardown order, which the other section holds with a
-            // note held.
+            // Connected again after the boot, then a product's teardown order, which the other section holds with a
+            // note held: the plans, then the providers.
             host.connect(true);
             REQUIRE(host.link().isConnected());
-            e.clearGraph();
-            rp::host::test::clearCart(e, link);
+            provider.stop();
         }
         SECTION("a host's teardown with a note held: the plans first, then the links") {
-            // The plugin's order: the plans first, while the link is installed, so the node's destroy hands the note
-            // it holds (60) to the link and releases its handle there; then the links. The note-off reaches the cart
-            // through the link's serial thread, which ~N8Host joins below.
+            // A product's order: the plans first, while the link is installed, so the node's destroy hands the note
+            // it holds (60) to the link and releases its handle there; then the providers. The note-off reaches the
+            // cart through the link's serial thread, which the provider's ~N8Host joins.
             e.clearGraph();
             REQUIRE(waitUntil([&] { return dev.count("fifo:80 3C 00") == 1; }));
             CHECK(host.link().isConnected());
-            rp::host::test::clearCart(e, link);
+            provider.stop();
         }
     }
-    // ~N8Host joins the serial thread with nothing left that borrows it.
+    // The provider's ~N8Host joined the serial thread with nothing left that borrows it.
     std::lock_guard<std::mutex> l(dev.mu);
     CHECK(dev.filesOpen == 0);
 }

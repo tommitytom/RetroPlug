@@ -77,8 +77,9 @@ inline constexpr std::uint32_t kBufferFrames = 256;
 inline constexpr std::uint32_t kBlockFrames = 64;
 inline constexpr std::size_t   kArenaBytes = 400 * 1024;
 
-// The host every type is created under: no heap (the types it runs declare none), no guards, and a resource table of
-// the one buffer above. The case generator creates the desktop's builds of the types under it too.
+// The host every type is created under: no heap (the types it runs declare none), no guards, a resource table of the
+// one buffer above, and device links of a host that owns no device (every acquire answers null). The case generator
+// creates the desktop's builds of the types under it too.
 const rp_host& host();
 
 // Runs every type of every package in `packages` (rp_register_packages()'s list) against its case, one block of

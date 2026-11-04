@@ -350,7 +350,7 @@ the first's, and `Engine::midiOut`, which the plugin writes to a DAW as it is, w
 The device nodes' uniqueness is their descriptors' `"unique":true` instead, which the planner checks for
 every host: a plan holds one `rp.n8.nes`, one `rp.launchpad.surface-in` and one `rp.launchpad.surface-out` at
 most, and a second is refused at plan time with code `unique`. The device nodes reach their devices through
-`rp.host.devices/1` ([DeviceLinks.hpp](../packages/native/src/n8/CartLink.hpp)), not the host I/O
+`rp.host.devices/1` ([DeviceLinks.hpp](../packages/n8/native/src/n8/CartLink.hpp)), not the host I/O
 service: a node asks for `"n8"` or `"launchpad"` by name in its activate and is handed a link the host owns,
 or a never-connected one in a host that owns no such device, so a document plans and runs everywhere. A
 message the UI stages at a node rides `rp.stage/1`, the third seam beside these two: a system node hands it to
@@ -441,10 +441,10 @@ the native goldens run hold at zero.
 ### Device nodes, their links and capability jobs
 
 `rp.n8.nes` and `rp.launchpad.surface-in` / `-out` are the hardware nodes
-([N8Nodes.cpp](../packages/native/src/n8/N8Node.cpp),
+([N8Nodes.cpp](../packages/n8/native/src/n8/N8Node.cpp),
 [LaunchpadNodes.cpp](../packages/native/src/host/graph/LaunchpadNodes.cpp)). Each binds the host-owned device it
 drives through `rp.host.devices/1`
-([DeviceLinks.hpp](../packages/native/src/n8/CartLink.hpp)): a `CartLink` for the cart, with a push per
+([DeviceLinks.hpp](../packages/n8/native/src/n8/CartLink.hpp)): a `CartLink` for the cart, with a push per
 message (frame, bytes, the flush flag, the block's rate) that answers whether all of it reached the device, the link's
 connected state and drop count, the expansion-volume register and `submitJob` / `abandonJobs`; a `SurfaceLink` for the
 pad, with a drain into the node's own array, a push, the connected state and its drop count. `LaunchpadLink` keeps the
@@ -1305,7 +1305,7 @@ is one automatable parameter applied post-render across all 8 channels
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
 - [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp), [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs, the registry and the offline job pool; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, `submitOfflineJob`, `drainOfflineJobs`, `cancelOfflineJob`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
-- [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes), [`N8Nodes.cpp`](../packages/native/src/n8/N8Node.cpp) (the cart's node), [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) (the control surface's two), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
+- [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes), [`N8Nodes.cpp`](../packages/n8/native/src/n8/N8Node.cpp) (the cart's node), [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) (the control surface's two), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) /
   [`.cpp`](../packages/graph-runtime/native/src/graph/GraphHost.cpp),
   [`rp_node.h`](../packages/node-sdk/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI

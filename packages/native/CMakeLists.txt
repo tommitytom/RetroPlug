@@ -4,7 +4,6 @@
 # This file holds the libraries and the straightforward executables. The parts that are large or
 # self-contained are include()d from cmake/ so this stays readable top to bottom:
 #
-#   cmake/test-binary.cmake   retroplug_add_test_binary() — the shape every test binary shares
 #   cmake/node-addon.cmake    retroplug-node, the N-API host (opt-in)
 #   cmake/bundles.cmake       the embedded control-plane, React-UI and script-node bytecode
 #   cmake/deps.cmake          rtmidi / serial / portaudio, and the retroplug-cli N8 facets
@@ -32,12 +31,9 @@ if(MSVC)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/bigobj>)
 endif()
 
-# The shape shared by every native test binary (see the file for why).
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-binary.cmake)
-
 # Threads: efsw-static needs pthreads on Linux (its CMake links it to the shared lib only), and the Launchpad scan
-# thread and N8Link's serial thread do too. Found once, for this directory. (The DSP package finds its own, for
-# r8brain.)
+# thread does too. Found once, for this directory. (The DSP package finds its own, for r8brain, and the N8 pack its
+# own, for N8Link's serial thread.)
 find_package(Threads REQUIRED)
 
 # --- retroplug-core: the shared emulator core, as a neutrally-named static lib. Extracted out of
@@ -101,6 +97,12 @@ target_link_libraries(retroplug-core PUBLIC
 # library, which nothing in the core calls.
 target_include_directories(retroplug-core PRIVATE
     $<TARGET_PROPERTY:retroplug-dsp-kernels,INTERFACE_INCLUDE_DIRECTORIES>)
+# The emulated NES's N8 FIFO role (NesN8FifoRole) speaks BlipToaster's reliable link from the cart's side, so the core
+# includes transport/N8ReliableLink.hpp, the N8 pack's, and with it util/FixedQueue.hpp, the node SDK's, which the
+# systems' own ingress queues use as well. As with the DSP header above, it takes the pack's portable library's include
+# roots alone (which carry the node SDK's, the library's own PUBLIC link), and not the library, which nothing in the
+# core calls. PUBLIC, as the systems' headers that include them are the core's own public headers.
+target_include_directories(retroplug-core PUBLIC $<TARGET_PROPERTY:retroplug-n8,INTERFACE_INCLUDE_DIRECTORIES>)
 
 set_target_properties(retroplug-core PROPERTIES
     CXX_STANDARD 20
@@ -147,7 +149,6 @@ add_library(retroplug-backend STATIC
     src/host/IdleReclaimProbe.cpp           # hosts' idle-tick self-test (HostServices::reclaimOnIdle), smoke-driven
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
     src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out
-    src/n8/N8Node.cpp                       # rp.n8.nes
     src/host/graph/LaunchpadNodes.cpp       # rp.launchpad.surface-in / -out
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
@@ -365,12 +366,6 @@ add_executable(retroplug-sdl
     sdl/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (virtual + hardware ports)
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp               # N8 Pro serial client (Settings > N8)
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Link.cpp             # host serial thread -> physical N8 (MIDI forward)
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp             # shared N8 link + config + n8.cfg (also the plugin)
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp           # binds the __rp_*N8* config hooks (shared)
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp             # on-device menu (*t/*n/*s) for the cart's rom job
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadLink.cpp   # control-surface in/out pair (own rings)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadHost.cpp   # link + config + launchpad.cfg
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadScanner.cpp # device-inquiry port scan (worker thread)
@@ -384,7 +379,6 @@ target_link_libraries(retroplug-sdl PRIVATE
     retroplug-backend             # Engine + cores + txiki host + rpcpp
     rtmidi                        # cross-platform MIDI in/out (ALSA/CoreMIDI/WinMM)
     portaudio                     # audio backend (PipeWire/ALSA on Linux); replaces SDL audio
-    serial                        # wjwwood/serial -> Everdrive N8 Pro (cmake/serial.cmake)
     PkgConfig::SDL2)              # window + present + gamepad (audio now via PortAudio; found at root scope)
 retroplug_product(retroplug-sdl PACKAGES ${RP_DESKTOP_PACKAGES})
 

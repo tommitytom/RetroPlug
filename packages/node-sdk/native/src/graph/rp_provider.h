@@ -1,0 +1,77 @@
+/* rp_provider.h - how a product starts a pack's device service without naming it (docs/modular-graph-phase-e2-design.md
+ * section 6).
+ *
+ * A pack that owns hardware on the desktop (the N8's serial link, its persisted state, the cart link its node binds)
+ * names a provider in its manifest: an entry of its desktop target with a `provider` (the C function returning this
+ * table) and, when it has a facet, an `rpc` (the header and the function that mount it). cmake/packages.cmake generates
+ * each product's rp_start_providers, rp_restore_providers, rp_stop_providers and rp_register_package_rpc from its
+ * packages' manifests, so a product starts, restores, stops and mounts every provider it carries in one place and names
+ * no class of any of them.
+ *
+ * Desktop only: a provider owns threads, ports and files, and a device image has none of those to give it (the Pico's
+ * box drives its hardware itself until E3 makes it a graph host). Plain C, as the rest of the device ABI is, so a
+ * provider in another language, or a downloaded pack's, can be one.
+ *
+ * Threads: every call here is [control]. A provider's device threads are its own; what it hands the engine goes
+ * through rp_device_host's install and clear, whose rules are rp_device.h's. */
+#ifndef RP_PROVIDER_H
+#define RP_PROVIDER_H
+
+#ifdef RP_DEVICE
+#error "graph/rp_provider.h is desktop-only: a device image runs no provider"
+#endif
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define RP_PROVIDER_ABI_VERSION 1u
+
+/* What the product hands a provider to create it with: the engine's device registry and where persisted state lives.
+ * The host and its strings outlive the provider (a product stops its providers before it destroys the engine). */
+typedef struct rp_device_host {
+    uint32_t    abi_version; /* RP_PROVIDER_ABI_VERSION */
+    void*       ctx;
+    const char* config_dir;  /* where a provider keeps its persisted state (the N8's n8.cfg) */
+    /* Install `link` under `name` with the interface `interface_id` (rp_device.h): a node asking for both is handed
+     * `link`, and its acquire and release reach the hooks (null for none). False when the registry refuses it (a full
+     * table, the name and id or the link taken, a name or id too long): the node then runs on its own stub. */
+    bool (*install)(void* ctx, const char* name, const char* interface_id, void* link, void (*acquire)(void* link),
+                    void (*release)(void* link));
+    /* Take `link` back: a node's later release of it reaches nothing. The provider clears what it installed before it
+     * frees the link. */
+    void (*clear)(void* ctx, void* link);
+} rp_device_host;
+
+typedef struct rp_provider {
+    /* RP_PROVIDER_ABI_VERSION, first so that it reads the same in every layout: a host refuses a provider built
+     * against another one (rp::Providers says so on stderr and carries on without it), as a provider refuses a host
+     * whose rp_device_host is of another version. */
+    uint32_t    abi_version;
+    const char* id; /* the provider's name in a log line ("n8") */
+    /* [control] After the engine, before the control plane can publish a graph. Returns the provider's state, or null
+     * when it could not start (the product carries on without it, and its facet is not mounted). No call of this
+     * table throws: a C++ provider catches what its own code throws and answers null, or logs and carries on. */
+    void* (*create)(const rp_device_host* host);
+    /* [control] Bring the persisted state back (reconnect a link left enabled), where the product restores its own. */
+    void (*restore)(void* self);
+    /* What the pack's rpc registration mounts (the `register` its manifest names is handed it), or null for none. */
+    void* (*rpc_service)(void* self);
+    /* [control] After the product's plans are reclaimed: clear what it installed and free everything. The plans come
+     * first because a node holds the link it acquired and may use it in its destroy (rp_device.h): clearing the link
+     * makes a later lookup answer null, but frees nothing a node already holds. */
+    void (*destroy)(void* self);
+} rp_provider;
+
+/* A manifest's `provider` names a function of this type, as an `entry` names one returning an rp_package. */
+typedef const rp_provider* (*rp_provider_fn)(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* RP_PROVIDER_H */
