@@ -173,7 +173,8 @@ Status bootRom(Edio& edio, std::string_view path, ByteView rom, ByteView srm, Up
     // What a boot cannot finish is refused before its first byte, not after a test, an upload or a battery went out.
     if (path.size() > Edio::kStringMax)
         return failed(Code::TooLarge, Where::Length, upload == Upload::Always ? Step::Upload : Step::Install);
-    if (upload == Upload::Always && !Edio::countable(rom.size)) return failed(Code::TooLarge, Where::Size, Step::Upload);
+    if (upload == Upload::Always && !Edio::countable(rom.size))
+        return failed(Code::TooLarge, Where::Size, Step::Upload);
     if (!Edio::countable(srm.size)) return failed(Code::TooLarge, Where::Size, Step::Save);
     if (srm.size != 0 && !batterySlotFits(path)) return failed(Code::TooLarge, Where::BatteryPath, Step::Save);
     // The progress counts both files in 32 bits, so the two together must fit it too.

@@ -46,8 +46,8 @@ Status readFile(Edio& edio, std::string_view path, std::uint8_t* buffer, std::si
 
 // A whole file written to an SD path, made with any missing parent directories (FA_WRITE | FA_CREATE_ALWAYS |
 // FS_MAKEPATH, which empties a file already there), as one fileWrite. The inverse of readFile. Stop point: before the
-// open; each acknowledged block reports. Steps: Open, Data, Close. A path past the 16-bit length (Where::Length) or data
-// past a 32-bit count (Where::Size) is TooLarge at Open, refused before any byte.
+// open; each acknowledged block reports. Steps: Open, Data, Close. A path past the 16-bit length (Where::Length) or
+// data past a 32-bit count (Where::Size) is TooLarge at Open, refused before any byte.
 Status writeFile(Edio& edio, std::string_view path, ByteView data, Progress progress = {});
 
 // Whether bootRom writes the ROM to the card first, or boots one already there.

@@ -7,8 +7,8 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <string>
 #include <vector>
@@ -306,7 +306,7 @@ TEST_CASE("bootRom's options: no handshake, a step hook that may use the Edio, a
         FakeN8Port port(dev);
         Edio       edio(port);
         Hook       hook{&edio, {}, Step::Start};
-        const Bytes  path  = {'u', 's', 'b', '-', 'g', 'a', 'm', 'e', 's', '/', 'b', '.', 'n', 'e', 's'};
+        const Bytes   path = {'u', 's', 'b', '-', 'g', 'a', 'm', 'e', 's', '/', 'b', '.', 'n', 'e', 's'};
         const Status s = rp::n8::bootRom(edio, "usb-games/b.nes", {rom.data(), rom.size()}, {},
                                          rp::n8::Upload::Always, nullptr, {}, {false, before, &hook});
         CHECK(s.code == Code::Cancelled);
@@ -331,7 +331,7 @@ TEST_CASE("bootRom's options: no handshake, a step hook that may use the Edio, a
         FakeN8Port port(dev);
         Edio       edio(port);
         Hook       hook{&edio};
-        const Bytes  srm = pattern(256, 9);
+        const Bytes   srm = pattern(256, 9);
         REQUIRE(rp::n8::bootRom(edio, "usb-games/b.nes", {rom.data(), rom.size()}, {srm.data(), srm.size()},
                                 rp::n8::Upload::Always, nullptr, {}, {false, before, &hook})
                     .ok());
@@ -345,7 +345,7 @@ TEST_CASE("bootRom's options: no handshake, a step hook that may use the Edio, a
         FakeN8Port port(dev);
         Edio       edio(port);
         Hook       hook{&edio, {}, Step::Save};
-        const Bytes  srm = pattern(256, 9);
+        const Bytes   srm = pattern(256, 9);
         const Status s = rp::n8::bootRom(edio, "usb-games/b.nes", {rom.data(), rom.size()}, {srm.data(), srm.size()},
                                          rp::n8::Upload::Always, nullptr, {}, {false, before, &hook});
         CHECK(s.code == Code::Cancelled);
@@ -439,7 +439,7 @@ TEST_CASE("a refusal is decided before the first byte: nothing is written, and t
     // A count past 32 bits: the pointer is never read, the refusal comes first. Where size_t is 32 bits no such size
     // exists, and the call is simply not made.
     if constexpr (sizeof(std::size_t) > sizeof(std::uint32_t)) {
-        const std::size_t big = (std::size_t{1} << 32);  // one past what the wire's count holds
+        const std::size_t big = std::size_t{0xFFFFFFFFu} + 1;  // one past the 32-bit count
         std::uint8_t      scratch[4] = {};
         const Row         sized[] = {
             {"memWR", [&](Edio& e) { return e.memWR(0x1800000, scratch, big); }, Step::None, Where::Size},
@@ -450,8 +450,23 @@ TEST_CASE("a refusal is decided before the first byte: nothing is written, and t
             {"writeFile", [&](Edio& e) { return rp::n8::writeFile(e, "a/b.bin", {scratch, big}); }, Step::Open,
              Where::Size},
             {"bootRom, a ROM past the count",
-             [&](Edio& e) { return rp::n8::bootRom(e, "usb-games/g.nes", {scratch, big}, {}, rp::n8::Upload::Always, nullptr); },
+             [&](Edio& e) {
+                 return rp::n8::bootRom(e, "usb-games/g.nes", {scratch, big}, {}, rp::n8::Upload::Always, nullptr,
+                                        asked);
+             },
              Step::Upload, Where::Size},
+            {"bootRom, a ROM past the count, with the handshake and a step hook",
+             [&](Edio& e) {
+                 return rp::n8::bootRom(e, "usb-games/g.nes", {scratch, big}, {}, rp::n8::Upload::Always, nullptr,
+                                        asked, {true, stepped, &steps});
+             },
+             Step::Upload, Where::Size},
+            {"bootRom, a battery past the count, with the handshake and a step hook",
+             [&](Edio& e) {
+                 return rp::n8::bootRom(e, "usb-games/g.nes", {}, {scratch, big}, rp::n8::Upload::Never, nullptr,
+                                        asked, {true, stepped, &steps});
+             },
+             Step::Save, Where::Size},
             {"bootRom, a battery past the count",
              [&](Edio& e) {
                  return rp::n8::bootRom(e, "usb-games/g.nes", {}, {scratch, big}, rp::n8::Upload::Never, nullptr);
@@ -470,13 +485,16 @@ TEST_CASE("a refusal is decided before the first byte: nothing is written, and t
             FakeN8     dev;
             FakeN8Port port(dev);
             Edio       edio(port);
+            asks = steps = 0;
             const Status s = r.call(edio);
             CHECK(s.code == Code::TooLarge);
             CHECK(s.where == r.where);
             CHECK(s.step == r.step);
             CHECK(dev.writes == 0);
             CHECK(dev.log.empty());
-            CHECK(text(s) == "Edio: more than 4294967295 bytes in one command");
+            CHECK(asks == 0);
+            CHECK(steps == 0);
+            CHECK(text(s) == "Edio: more than 4294967295 bytes, past a 32-bit count");
             CHECK(Menu(edio).test().ok());
             CHECK(fifoLog(dev) == std::vector<std::string>{"fifo:2A 74"});
         }

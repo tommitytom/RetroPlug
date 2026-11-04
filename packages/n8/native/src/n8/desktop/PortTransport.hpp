@@ -26,9 +26,8 @@ public:
 };
 
 // What the port said about `status`'s call: its failure() words, or "" when the port did not fail, or when the call was
-// refused before it made a transport call (a string past its length prefix, a battery slot that does not fit, a payload
-// past the 32-bit count), where
-// failure() is still the previous call's.
+// refused before it made a transport call (a string past its length prefix, a battery slot that does not fit, a size
+// past the 32-bit count), where failure() is still the previous call's.
 inline std::string portSaid(const rp::n8::Status& status, const PortTransport& port) {
     const bool refusedFirst = status.code == rp::n8::Code::TooLarge &&
                               (status.where == rp::n8::Where::Length || status.where == rp::n8::Where::BatteryPath ||

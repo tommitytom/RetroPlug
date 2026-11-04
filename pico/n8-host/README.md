@@ -29,6 +29,7 @@ PIO-USB - they don't contend.
 ```sh
 git -C /workspaces/pico-sdk submodule update --init lib/tinyusb
 git clone https://github.com/sekigon-gonnoc/Pico-PIO-USB.git /workspaces/Pico-PIO-USB
+git -C /workspaces/Pico-PIO-USB checkout 5a37a66
 ```
 
 The firmware is proven on Pico-PIO-USB at `5a37a66` (CI clones exactly that for `pnpm device:box`); never edit it: the
@@ -344,16 +345,19 @@ under the **link trap** (`cmake/device-image.cmake`, shared with `rp-device-chec
 heap, on exceptions and on RTTI, with `pico_malloc` taken out of the runtime and a post-link check. A link error naming
 `__wrap_<symbol>` means an object reached the heap or a throw. The image has no heap at all: Pico-PIO-USB's SOF timer
 was an alarm pool made with `malloc`, so the config sets `skip_alarm_pool`, `SofTimer.cpp` runs a timer of its own on
-hardware alarm 2 (the alarm, the IRQ and the 1000 us absolute cadence the pool had; the handler runs from RAM), and the
-link wraps `alarm_pool_create_on_timer`, which `skip_alarm_pool` alone still leaves linked, to a `panic()` that never
-runs. The main stack is 4 KB (`PICO_STACK_SIZE=0x1000`, core 1's reservation kept at 2 KB): the deepest chain is about
+hardware alarm 2 (the alarm, the IRQ and the 1000 us absolute cadence the pool had; the handler and
+`pio_usb_host_frame` run from RAM, the 64-bit timer read is the SDK's, in flash), and the link wraps
+`alarm_pool_create_on_timer`, which `skip_alarm_pool` alone still leaves linked, to a `panic()` that never runs. The
+wrap takes that symbol out of the trap's reach, so a post-link check (`check-wrap-referrers.cmake`, over the map's
+cross reference table) fails the build unless Pico-PIO-USB's own object is the only one that refers to it, and the
+configure warns when the Pico-PIO-USB checkout is not `5a37a66`. The main stack is 4 KB (`PICO_STACK_SIZE=0x1000`, core 1's reservation kept at 2 KB): the deepest chain is about
 1 KB of frames, and with TinyUSB's enumeration and the interrupts nested above it the pessimistic sum is 2.3 KB, which
 the SDK's default 2 KB would not have held.
 
 **`pnpm device:box`** ([`../../tools/build-box.sh`](../../tools/build-box.sh)) builds both variants under the trap, in
 `build-box/{pio,native}/`, each with `n8_host_trap_probe` (an allocating program that must fail to link naming
-`__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss: PIO-USB 48508 / 15324 / 32360,
-`RP_NATIVE_USB` 48468 / 1560 / 26128). It needs the SDK's TinyUSB (`PICO_SDK_PATH` when it carries one, else
+`__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss: PIO-USB 48796 / 15324 / 32360,
+`RP_NATIVE_USB` 48756 / 1560 / 26128). It needs the SDK's TinyUSB (`PICO_SDK_PATH` when it carries one, else
 `/workspaces/pico-sdk`) and Pico-PIO-USB at `5a37a66`; it builds an ELF only (`PICO_NO_PICOTOOL`) and runs in CI beside
 `device:check`. It proves the image links and traps; the rig's gate (`loop.sh`, `stress.sh`, `faults.sh`, with
 BlipToaster) proves it works.

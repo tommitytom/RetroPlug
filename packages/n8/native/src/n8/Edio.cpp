@@ -145,7 +145,7 @@ std::size_t describe(const Status& s, char* out, std::size_t capacity, std::stri
                 case Where::BatteryPath:
                     t << "Edio: the ROM's file name is too long for its battery slot (" << path << ")";
                     break;
-                case Where::Size: t << "Edio: more than 4294967295 bytes in one command"; break;
+                case Where::Size: t << "Edio: more than 4294967295 bytes, past a 32-bit count"; break;
                 default: t << "Edio: a string longer than 65535 bytes (" << path << ")"; break;
             }
             break;

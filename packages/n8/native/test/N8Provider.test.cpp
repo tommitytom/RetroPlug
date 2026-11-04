@@ -428,6 +428,21 @@ TEST_CASE("a read the port itself failed is linkDown in the port's words, not a 
     CHECK(reply.message == "read failed: Input/output error");
 }
 
+TEST_CASE("portSaid is empty for every refusal made before the port, and the port's words otherwise", "[n8-rpc]") {
+    GonePort port;
+    std::uint8_t byte = 0;
+    REQUIRE(port.read(&byte, 1, 0) == 0);  // the port's last call failed, and says so still
+    using rp::n8::Code;
+    using rp::n8::Status;
+    using rp::n8::Where;
+    const auto refused = [](Where where) { return Status{Code::TooLarge, where}; };
+    CHECK(retroplug::portSaid(refused(Where::Length), port).empty());
+    CHECK(retroplug::portSaid(refused(Where::BatteryPath), port).empty());
+    CHECK(retroplug::portSaid(refused(Where::Size), port).empty());
+    CHECK(retroplug::portSaid(refused(Where::Buffer), port) == "read failed: Input/output error");
+    CHECK(retroplug::portSaid(Status{Code::Timeout, Where::Read}, port) == "read failed: Input/output error");
+}
+
 TEST_CASE("a call refused before it reached the port is tooLarge in the protocol's words, whatever the port said last",
           "[n8-rpc]") {
     FakeN8        dev;

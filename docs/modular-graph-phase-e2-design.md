@@ -211,10 +211,10 @@ boot, for no RAM saved.
   slot. **Every refusal is decided before the first byte**: a path past the 16-bit length that prefixes it is `TooLarge`
   at `Where::Length` in `Menu::install` (which would otherwise have sent `*n` and left the menu waiting for a path),
   `readFile`, `writeFile` and `bootRom`, and `bootRom` refuses both that and a battery slot that does not fit before its
-  `*t`, so no step runs for a boot that cannot finish. So is a payload or file past the 32-bit count its command
-  carries (`memWR`, `memRD`, `fileWrite`, `fileRead`, and `writeFile` and `bootRom` over them): `TooLarge` at
-  `Where::Size`, which a 64-bit `size_t` can reach and a 32-bit one cannot (`Edio::countable`), where the count would
-  otherwise have been cast and the call silently cut short. A test per refusal holds that nothing was written.
+  `*t`, so no step runs for a boot that cannot finish. So is a size past the 32-bit count its command carries
+  (`memWR`, `memRD`, `fileWrite`) or its `Progress` does (`fileRead`'s total, `writeFile`'s, `bootRom`'s two files and
+  their sum): `TooLarge` at `Where::Size`, which a 64-bit `size_t` can reach and a 32-bit one cannot
+  (`Edio::countable`), where the count would otherwise have been cast and wrapped. A test per refusal holds that nothing was written.
   `BootOptions` is for a caller with a boot policy of its own, and its defaults are the plain boot: `handshake` false
   leaves out bootRom's `*t` (and that step's stop point), and `before(ctx, step)` is called before each step bootRom
   runs, between whole commands with the Edio idle, so unlike a `Progress` it may use the Edio; false stops the boot
@@ -538,8 +538,10 @@ function stores an int into an enum), and `main` reads `PIO_USB_ROOT_PORT(0)->co
   with it. The wrapper is not one of the 87 trapped symbols, and Pico-PIO-USB itself is not edited. Because the wrap
   takes that one symbol out of the trap's reach (any other caller of `alarm_pool_create` would link and panic at
   boot), a post-link check (`check-wrap-referrers.cmake`, over the map's cross reference table, `--cref`) fails the
-  build unless `pio_usb_host.c.o` is the one object that refers to the wrapper, and the configure warns when the
-  Pico-PIO-USB checkout is not `5a37a66`.
+  build unless `pio_usb_host.c.o` (`.obj` where the host's objects take that suffix) is the one object that refers to
+  the wrapper (one indented line of the map is one referrer, so a CRLF map or a path with spaces reads the same), and
+  the configure warns when the Pico-PIO-USB checkout is not `5a37a66` (the full commit, read from a checkout that is its
+  own work tree).
 - **The stack is 4 KB.** `n8_host` sets `PICO_STACK_SIZE=0x1000` (all of SCRATCH_Y, which holds nothing else) and
   `PICO_CORE1_STACK_SIZE=0x800` (core 1's reservation keeps the 2 KB it had; the macro defaults to the main stack's).
   The linker checks only the reservation: scratch code that would overlap the reserved 4 KB fails the link. The stack's
@@ -555,8 +557,8 @@ sources compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti`, E1's runti
 probe that must fail to link. What both device projects share is hoisted: `cmake/reflectcpp-pin.cmake` (the
 reflect-cpp pin and finder), `cmake/device-image.cmake` (`pico_malloc`'s removal in place, the trap list,
 `rp_device_executable()` and `rp_device_trap_check()`; included once a project, its three values in global properties so
-the functions work from any directory) and `cmake/check-trap.cmake` (moved from `device-check`). Its
-generated registration includes `rp.n8.nes`, which no plan uses until E3 and which `--gc-sections` would drop, so
+the functions work from any directory) and `cmake/check-trap.cmake` (moved from `device-check`). Its generated
+registration includes `rp.n8.nes`, which no plan uses until E3 and which `--gc-sections` would drop, so
 `main` references `rp_register_packages` and prints `[n8-host] node type rp.n8.nes (registered, not planned)` at boot:
 the node linking into the real image is proven by the image naming it. The `RP_NATIVE_USB=ON` variant builds and links
 under the trap too; the rig is PIO-USB, so only that one runs. A scratch build with every `loop.sh` option on at once
@@ -714,7 +716,7 @@ clients had no length checks and sent a truncated prefix, or a whole command (an
 before refusing, none of which a real caller reaches (paths are far below 64 KiB, and the box passes no battery).
 Sections 1 to 11 are corrected in place where the build made them false (the Edio's status, the report interface, the
 providers' per-instance API, what stays in `retroplug`, the box on `bootRom`). The final counts: `retroplug-n8-test`
-ends at 92 cases (1390 assertions; the baseline's 57 / 529) and `retroplug-serial-test` at 1 / 7,
+ends at 93 cases (1434 assertions; the baseline's 57 / 529) and `retroplug-serial-test` at 1 / 7,
 `retroplug-engine-graph-test` at 333 (313), `retroplug-device-mode-test` at 11 cases (10), `pnpm test` at 1781 cases
 over 174 files (1814), `test:native` at 606 passed and 2 skipped over 168 files (602 / 167), `device:check`'s image at
 82512 / 2000 / 416402 flash / data / bss (65156 / 1844 / 412742) and the box's two images at 48796 / 15324 / 32360

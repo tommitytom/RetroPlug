@@ -62,7 +62,7 @@ enum class Where : std::uint8_t {
     Install,      // the menu's install status
     MapIndex,     // the map index the menu sends after a 0 install status (a timeout there followed an install)
     BatteryPath,  // the ROM's file name, too long for the battery slot the menu keeps it in
-    Size,         // a payload or file past the 32-bit count its command carries (4 GiB: only a 64-bit size_t gets there)
+    Size,         // a size past the 32-bit count its command or its Progress carries (only a 64-bit size_t gets there)
 };
 
 // The step of an operation (Ops.hpp) a status comes from; None for a single call.
@@ -183,8 +183,9 @@ public:
     // The longest string a 16-bit length prefix carries: a path past it is refused (TooLarge, Where::Length) before any
     // byte is written.
     static constexpr std::size_t kStringMax = 0xFFFF;
-    // Whether `size` fits the 32-bit count memWR, memRD, fileWrite and fileRead put on the wire; one past it is
-    // refused (TooLarge, Where::Size) before any byte rather than sent short. Always true where size_t is 32 bits.
+    // Whether `size` fits the 32-bit count a command (memWR, memRD, fileWrite) or a Progress (fileRead's total,
+    // bootRom's sum) carries; one past it is refused (TooLarge, Where::Size) before any byte rather than cut short.
+    // Always true where size_t is 32 bits.
     static constexpr bool countable(std::size_t size) {
         if constexpr (sizeof(std::size_t) > sizeof(std::uint32_t)) return size <= 0xFFFFFFFFu;
         else return true;
