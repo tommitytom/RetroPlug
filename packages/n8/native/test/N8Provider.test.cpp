@@ -427,3 +427,18 @@ TEST_CASE("a read the port itself failed is linkDown in the port's words, not a 
     CHECK(reply.status == "linkDown");
     CHECK(reply.message == "read failed: Input/output error");
 }
+
+TEST_CASE("a call refused before it reached the port is tooLarge in the protocol's words, whatever the port said last",
+          "[n8-rpc]") {
+    FakeN8        dev;
+    N8Host        host(factoryFor(dev), twoPorts(), cleanDir("rp-n8-rpc-test").string());
+    rp::n8::N8Rpc rpc(host, [](const std::string&) -> std::unique_ptr<retroplug::PortTransport> {
+        return std::make_unique<GonePort>();
+    }, twoPorts());
+    const auto h = static_cast<std::int32_t>(rpc.n8Open("/dev/ttyACM0").value);
+    REQUIRE(rpc.n8Handshake(h, 0).status == "linkDown");  // the port's last call failed, and says so still
+
+    const auto refused = rpc.n8MenuInstall(h, std::string(0x10000, 'x'));
+    CHECK(refused.status == "tooLarge");
+    CHECK(refused.message.rfind("Edio: a string longer than 65535 bytes (", 0) == 0);
+}

@@ -65,9 +65,18 @@ struct SkipFirst {
     }
 };
 
-// The longest battery path a FatFs name gives, its NUL included: "EDN8/gamedata/" (14), the name (255 UTF-16 units,
-// at most three bytes of UTF-8 each), "/bram.srm" (9).
+// The menu keeps a game's battery at EDN8/gamedata/<the ROM's file name>/bram.srm.
+constexpr std::string_view kBatteryDir  = "EDN8/gamedata/";
+constexpr std::string_view kBatteryFile = "/bram.srm";
+
+// The longest battery path a FatFs name gives, its NUL included: the directory (14), the name (255 UTF-16 units, at
+// most three bytes of UTF-8 each), the file (9).
 constexpr std::size_t kBatteryPathBytes = 14 + 3 * 255 + 9 + 1;
+
+// Whether the battery path for `romPath` fits kBatteryPathBytes, which is what batteryPath() builds it in.
+bool batterySlotFits(std::string_view romPath) {
+    return kBatteryDir.size() + baseName(romPath).size() + kBatteryFile.size() + 1 <= kBatteryPathBytes;
+}
 
 // The never-inlined form of a function, so its frame is on the stack only while it runs.
 #if defined(_MSC_VER)
@@ -80,7 +89,7 @@ constexpr std::size_t kBatteryPathBytes = 14 + 3 * 255 + 9 + 1;
 // buffer is on the stack only while a battery is written, and a boot with none (the Pico box's) carries none of it.
 RP_N8_NOINLINE Status writeBattery(Edio& edio, std::string_view romPath, ByteView srm, Progress progress) {
     char battery[kBatteryPathBytes];
-    if (!batteryPath(romPath, battery, sizeof battery)) return failed(Code::TooLarge, Where::Length, Step::Save);
+    if (!batteryPath(romPath, battery, sizeof battery)) return failed(Code::TooLarge, Where::BatteryPath, Step::Save);
     return writeFile(edio, battery, srm, progress);
 }
 
@@ -91,6 +100,7 @@ bool ahead(const BootOptions& options, Step step) { return !options.before || op
 
 Status readFile(Edio& edio, std::string_view path, FileSink sink, std::size_t* size, Progress progress) {
     if (size) *size = 0;
+    if (path.size() > Edio::kStringMax) return failed(Code::TooLarge, Where::Length, Step::Open);  // before any byte
     const std::string_view dir   = dirName(path);
     const std::string_view name  = baseName(path);
     bool                   found = false;
@@ -137,9 +147,10 @@ Status readFile(Edio& edio, std::string_view path, std::uint8_t* buffer, std::si
 }
 
 Status writeFile(Edio& edio, std::string_view path, ByteView data, Progress progress) {
+    if (path.size() > Edio::kStringMax) return failed(Code::TooLarge, Where::Length, Step::Open);  // before any byte
     const auto total = static_cast<std::uint32_t>(data.size);
     if (!progress(0, total)) return failed(Code::Cancelled, Where::None, Step::Open);
-    const std::uint8_t mode = Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH;
+    const std::uint8_t mode{Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH};
     if (Status s = edio.fileOpen(path, mode); !s.ok()) return at(s, Step::Open);
     if (Status s = edio.fileWrite(data.data, data.size, progress); !s.ok()) return at(s, Step::Data);
     if (Status s = edio.fileClose(); !s.ok()) return at(s, Step::Close);
@@ -147,14 +158,12 @@ Status writeFile(Edio& edio, std::string_view path, ByteView data, Progress prog
 }
 
 bool batteryPath(std::string_view romPath, char* out, std::size_t capacity) {
-    constexpr std::string_view kDir  = "EDN8/gamedata/";
-    constexpr std::string_view kFile = "/bram.srm";
-    const std::string_view     rom   = baseName(romPath);
-    const std::size_t          size  = kDir.size() + rom.size() + kFile.size();
+    const std::string_view rom  = baseName(romPath);
+    const std::size_t      size = kBatteryDir.size() + rom.size() + kBatteryFile.size();
     if (size + 1 > capacity) return false;
-    std::memcpy(out, kDir.data(), kDir.size());
-    std::memcpy(out + kDir.size(), rom.data(), rom.size());
-    std::memcpy(out + kDir.size() + rom.size(), kFile.data(), kFile.size());
+    std::memcpy(out, kBatteryDir.data(), kBatteryDir.size());
+    std::memcpy(out + kBatteryDir.size(), rom.data(), rom.size());
+    std::memcpy(out + kBatteryDir.size() + rom.size(), kBatteryFile.data(), kBatteryFile.size());
     out[size] = '\0';
     return true;
 }
@@ -164,6 +173,11 @@ Status bootRom(Edio& edio, std::string_view path, ByteView rom, ByteView srm, Up
     const std::uint32_t uploaded = upload == Upload::Always ? static_cast<std::uint32_t>(rom.size) : 0;
     const std::uint32_t total    = uploaded + static_cast<std::uint32_t>(srm.size);
     Menu                menu(edio);
+
+    // What a boot cannot finish is refused before its first byte, not after a test, an upload or a battery have gone out.
+    if (path.size() > Edio::kStringMax)
+        return failed(Code::TooLarge, Where::Length, upload == Upload::Always ? Step::Upload : Step::Install);
+    if (srm.size != 0 && !batterySlotFits(path)) return failed(Code::TooLarge, Where::BatteryPath, Step::Save);
 
     // Confirm the menu is running: a running game does not answer '*t'.
     if (options.handshake) {

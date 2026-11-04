@@ -142,6 +142,9 @@ std::size_t describe(const Status& s, char* out, std::size_t capacity, std::stri
                 case Where::Name: t << "Edio: a directory entry's name is longer than the 255 bytes asked for"; break;
                 case Where::Buffer: t << "Edio: the file is larger than the buffer it is read into (" << path << ")";
                     break;
+                case Where::BatteryPath:
+                    t << "Edio: the ROM's file name is too long for its battery slot (" << path << ")";
+                    break;
                 default: t << "Edio: a string longer than 65535 bytes (" << path << ")"; break;
             }
             break;
@@ -190,7 +193,7 @@ Status Edio::send(const std::uint8_t* payload, std::size_t size) {
 }
 
 Status Edio::sendPath(std::string_view path) {
-    if (path.size() > 0xFFFF) {
+    if (path.size() > kStringMax) {
         frame_ = 0;
         return fail(Code::TooLarge, Where::Length);
     }
@@ -333,7 +336,7 @@ Status Edio::fifoWR(const std::uint8_t* data, std::size_t size) {
 }
 
 Status Edio::fifoTxString(std::string_view str) {
-    if (str.size() > 0xFFFF) return fail(Code::TooLarge, Where::Length);
+    if (str.size() > kStringMax) return fail(Code::TooLarge, Where::Length);
     const std::uint8_t len[2] = {static_cast<std::uint8_t>(str.size()), static_cast<std::uint8_t>(str.size() >> 8)};
     if (Status s = fifoWR(len, 2); !s.ok()) return s;
     return fifoWR(reinterpret_cast<const std::uint8_t*>(str.data()), str.size());
@@ -371,11 +374,11 @@ Status Edio::listDir(std::string_view path, void (*visit)(void* ctx, const DirEn
             return s;
         }
         DirEntry      e;
-        std::uint16_t date = 0, time = 0, nameLen = 0;
+        std::uint16_t dateWord = 0, timeWord = 0, nameLen = 0;
         std::uint8_t  attrib = 0;
         if (Status s = rx32(e.size); !s.ok()) return s;
-        if (Status s = rx16(date); !s.ok()) return s;  // unused
-        if (Status s = rx16(time); !s.ok()) return s;  // unused
+        if (Status s = rx16(dateWord); !s.ok()) return s;  // unused
+        if (Status s = rx16(timeWord); !s.ok()) return s;  // unused
         if (Status s = rx8(attrib); !s.ok()) return s;
         if (Status s = rx16(nameLen); !s.ok()) return s;
         if (nameLen > kNameMax) return fail(Code::TooLarge, Where::Name);

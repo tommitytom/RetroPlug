@@ -10,7 +10,8 @@
 // or written whole, a ROM booted) are n8/Ops.hpp's.
 //
 // It allocates nothing, throws nothing and uses no RTTI: every call answers a Status, values come back through
-// out-parameters and caller buffers, and describe() words a failure. Nor is it thread-safe: on the desktop N8Link and
+// out-parameters and caller buffers, and describe() words a failure. A call that refuses (TooLarge at Where::Length) has
+// decided it before its first byte: nothing of it is written, and the next command starts clean. Nor is it thread-safe: on the desktop N8Link and
 // N8Host serialise every use, and the Pico has one thread. Nor is it re-entrant: the frame being written and the name
 // being listed are the object's, so nothing a call runs inside it (a Progress, a listDir visitor, a transport's idle
 // hook pumping USB inside a wait) may call the same Edio; a MIDI forward from inside a wait waits for the call. The
@@ -60,6 +61,7 @@ enum class Where : std::uint8_t {
     MenuTest,     // the menu's answer to '*t', which is 'k'
     Install,      // the menu's install status
     MapIndex,     // the map index the menu sends after a 0 install status (a timeout there followed an install)
+    BatteryPath,  // the ROM's file name, too long for the battery slot the menu keeps it in
 };
 
 // The step of an operation (Ops.hpp) a status comes from; None for a single call.
@@ -81,7 +83,8 @@ const char* codeName(Code code);
 const char* stepName(Step step);
 
 // The text of a failure, as the TS client this replaced threw it (the CLI prints it, and BlipToaster and the hardware
-// lab read it): into `out` (NUL-terminated, cut to `capacity`), its length answered. `path` is the call's path, which
+// lab read it): into `out` (NUL-terminated, cut to `capacity`), the length written (less than the text's own when it
+// was cut). `path` is the call's path, which
 // a few texts name (a mkdir's, an install's, a file not found). "" for Ok.
 std::size_t describe(const Status& status, char* out, std::size_t capacity, std::string_view path = {});
 
@@ -174,6 +177,9 @@ public:
     static constexpr std::size_t kNameMax = 255;
     // The frame a command's header, arguments and first payload bytes are written from in one write.
     static constexpr std::size_t kFrameBytes = 256;
+    // The longest string a 16-bit length prefix carries: a path past it is refused (TooLarge, Where::Length) before any
+    // byte is written.
+    static constexpr std::size_t kStringMax = 0xFFFF;
 
     // Not constexpr on purpose: a constant-initialised static Edio (the Pico box's) would put the whole object, its
     // 512 bytes of zeroed buffers included, in .data, copied from flash at boot, where a dynamic one is a bss zero

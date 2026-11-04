@@ -32,7 +32,8 @@ namespace {
 // timeout, but the port is gone, not slow, and the TS client throws an N8TimeoutError only for a "timeout".
 N8Reply replyOf(const Status& status, const retroplug::PortTransport& port, std::string_view path = {}) {
     N8Reply r;
-    r.status = status.ok() || port.failure().empty() ? codeName(status.code) : codeName(Code::LinkDown);
+    const bool portFailed = !status.ok() && !retroplug::portSaid(status, port).empty();
+    r.status              = portFailed ? codeName(Code::LinkDown) : codeName(status.code);
     r.step   = stepName(status.step);
     if (status.code == Code::Device) r.deviceStatus = status.device;
     if (!status.ok()) r.message = retroplug::failureText(status, port, path);

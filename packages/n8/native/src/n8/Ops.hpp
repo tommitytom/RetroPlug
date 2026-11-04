@@ -37,7 +37,8 @@ struct FileSink {
 // buffer that size, then fileOpen(FA_READ), fileRead and fileClose. `size` gets the file's size once the listing has
 // found it, so a TooLarge (step List: the listing sized it, nothing opened) says how large a buffer it needs. NotFound
 // when the directory holds no file of that name. Stop points: before the open, and before each 512-byte block after
-// the first (a cancel there closes the file), each asked once. Steps: List, Open, Data, Close.
+// the first (a cancel there closes the file), each asked once. Steps: List, Open, Data, Close. A path past the 16-bit
+// length that prefixes it is TooLarge at Open, refused before any byte.
 Status readFile(Edio& edio, std::string_view path, FileSink sink, std::size_t* size, Progress progress = {});
 // The same into `buffer`, `capacity` bytes, as a caller with no heap (the box) reads one.
 Status readFile(Edio& edio, std::string_view path, std::uint8_t* buffer, std::size_t capacity, std::size_t* size,
@@ -45,7 +46,8 @@ Status readFile(Edio& edio, std::string_view path, std::uint8_t* buffer, std::si
 
 // A whole file written to an SD path, made with any missing parent directories (FA_WRITE | FA_CREATE_ALWAYS |
 // FS_MAKEPATH, which empties a file already there), as one fileWrite. The inverse of readFile. Stop point: before the
-// open; each acknowledged block reports. Steps: Open, Data, Close.
+// open; each acknowledged block reports. Steps: Open, Data, Close. A path past the 16-bit length is TooLarge at Open,
+// refused before any byte.
 Status writeFile(Edio& edio, std::string_view path, ByteView data, Progress progress = {});
 
 // Whether bootRom writes the ROM to the card first, or boots one already there.
@@ -55,7 +57,7 @@ enum class Upload : std::uint8_t { Always, Never };
 // EDN8/gamedata/<the ROM's file name>/bram.srm, into `out`. False when it does not fit `capacity` (NUL included).
 // bootRom's buffer fits any name FatFs can hold: 255 UTF-16 units, so at most 765 bytes of UTF-8 (a unit is at most
 // three bytes; a four-byte sequence is two units). A name it does not fit is longer than any FatFs name, and bootRom
-// answers it TooLarge before anything is sent.
+// answers it TooLarge at Where::BatteryPath (Step::Save) before anything is sent.
 bool batteryPath(std::string_view romPath, char* out, std::size_t capacity);
 
 // What a caller with a boot policy of its own runs around bootRom's steps (the Pico box: its handshake retries, its
@@ -75,7 +77,11 @@ struct BootOptions {
 // cart's SRAM directly over USB corrupts the running menu, which uses that region), install ('*n' and `path`), start
 // ('*s'). `mapIndex` gets what the install answered. Progress counts the bytes written, of the ROM and the battery
 // together. Stop points: before the test (with the handshake), before each file's open, and before the install, each
-// after `options`' before() for that step. Steps: Test, Upload, Save, Install, Start.
+// after `options`' before() for that step. A stop point's values may repeat the last report's, since one file's end and
+// the next stop point's start are the same count of bytes: a Progress counts each ask once, not each distinct value.
+// Steps: Test, Upload, Save, Install, Start. What cannot finish is refused before the first byte, the test included: a
+// path past the 16-bit length (TooLarge at Where::Length, Step::Upload with an upload, else Install) and a battery
+// whose slot does not fit (Where::BatteryPath, Step::Save), neither calling `options`' before().
 Status bootRom(Edio& edio, std::string_view path, ByteView rom, ByteView srm, Upload upload, std::uint16_t* mapIndex,
                Progress progress = {}, BootOptions options = {});
 

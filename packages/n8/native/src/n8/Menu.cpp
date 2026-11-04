@@ -20,6 +20,12 @@ Status Menu::test() {
 }
 
 Status Menu::install(std::string_view path, std::uint16_t* mapIndex) {
+    if (path.size() > Edio::kStringMax) {  // refused before '*n': the menu would wait for a path that never comes
+        Status s;
+        s.code  = Code::TooLarge;
+        s.where = Where::Length;
+        return s;
+    }
     if (Status s = command('n'); !s.ok()) return s;
     if (Status s = edio_.fifoTxString(path); !s.ok()) return s;
     std::uint8_t status = 0;  // the game-select status, once the menu has loaded the ROM and its core off SD

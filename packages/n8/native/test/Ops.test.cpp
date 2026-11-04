@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -319,6 +320,64 @@ TEST_CASE("bootRom's battery path fits any FatFs name: 255 UTF-16 units of three
     CHECK(s.code == Code::TooLarge);
     CHECK(s.step == Step::Save);
     CHECK(dev.log.empty());
+}
+
+TEST_CASE("a refusal is decided before the first byte: nothing is written, and the next command starts clean",
+          "[n8][ops][refusal]") {
+    const std::string huge(0x10000, 'x');  // past the 16-bit length that prefixes a string
+    const std::string longName(256, 'n');  // a FatFs name is at most 255 units
+    const Bytes       rom = pattern(32, 3), srm = pattern(16, 9);
+    struct Row {
+        const char*                  name;
+        std::function<Status(Edio&)> call;
+        Step                         step;
+        Where                        where;
+    };
+    const Row rows[] = {
+        {"Menu::install", [&](Edio& e) { return Menu(e).install(huge); }, Step::None, Where::Length},
+        {"readFile",
+         [&](Edio& e) { return rp::n8::readFile(e, huge, static_cast<std::uint8_t*>(nullptr), 0, nullptr); },
+         Step::Open, Where::Length},
+        {"writeFile", [&](Edio& e) { return rp::n8::writeFile(e, huge, {rom.data(), rom.size()}); }, Step::Open,
+         Where::Length},
+        {"bootRom, a path past the length, with an upload",
+         [&](Edio& e) {
+             return rp::n8::bootRom(e, huge, {rom.data(), rom.size()}, {}, rp::n8::Upload::Always, nullptr);
+         },
+         Step::Upload, Where::Length},
+        {"bootRom, a path past the length, without one",
+         [&](Edio& e) { return rp::n8::bootRom(e, huge, {}, {}, rp::n8::Upload::Never, nullptr); }, Step::Install,
+         Where::Length},
+        {"bootRom, a battery whose slot does not fit, which the test and the upload would have preceded",
+         [&](Edio& e) {
+             return rp::n8::bootRom(e, "usb-games/" + longName + longName + longName, {rom.data(), rom.size()},
+                                    {srm.data(), srm.size()}, rp::n8::Upload::Always, nullptr);
+         },
+         Step::Save, Where::BatteryPath},
+    };
+    for (const Row& r : rows) {
+        INFO(r.name);
+        FakeN8     dev;
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        const Status s = r.call(edio);
+        CHECK(s.code == Code::TooLarge);
+        CHECK(s.where == r.where);
+        CHECK(s.step == r.step);
+        CHECK(dev.writes == 0);
+        CHECK(dev.log.empty());
+        // The next command starts clean: nothing of the refused one precedes its frame.
+        CHECK(Menu(edio).test().ok());
+        CHECK(fifoLog(dev) == std::vector<std::string>{"fifo:2A 74"});
+    }
+}
+
+TEST_CASE("a battery path that does not fit is worded as the ROM's name, not as a long string", "[n8][ops]") {
+    Status s;
+    s.code  = Code::TooLarge;
+    s.where = Where::BatteryPath;
+    s.step  = Step::Save;
+    CHECK(text(s, "usb-games/x.nes") == "Edio: the ROM's file name is too long for its battery slot (usb-games/x.nes)");
 }
 
 // --- files -------------------------------------------------------------------------------------------------------

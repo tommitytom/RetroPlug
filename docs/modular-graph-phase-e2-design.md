@@ -200,11 +200,17 @@ boot, for no RAM saved.
   helper, so the path buffer is on the stack only while a battery is written (never in the box, which links the helper
   and never calls it). The bound counts FatFs characters, not bytes: a FatFs name is at most 255 UTF-16 units and so at
   most 765 bytes of UTF-8, which makes the buffer `14 + 3 x 255 + 9 + 1` bytes; a longer name is longer than any FatFs
-  name and is `TooLarge` at `Step::Save` before anything is sent. `BootOptions` is for a caller with a boot policy of
-  its own, and its defaults are the plain boot: `handshake` false leaves out bootRom's `*t` (and that step's stop
-  point), and `before(ctx, step)` is called before each step bootRom runs, between whole commands with the Edio idle, so
-  unlike a `Progress` it may use the Edio; false stops the boot there, `Cancelled` at that step with nothing of it sent.
-  The box keeps its CRC skip, its saved choice and its retry around it with these (section 8).
+  name and is `TooLarge` at `Where::BatteryPath` (`Step::Save`), worded as the ROM's name being too long for its battery
+  slot. **Every refusal is decided before the first byte**: a path past the 16-bit length that prefixes it is `TooLarge`
+  at `Where::Length` in `Menu::install` (which would otherwise have sent `*n` and left the menu waiting for a path),
+  `readFile`, `writeFile` and `bootRom`, and `bootRom` refuses both that and a battery slot that does not fit before its
+  `*t`, so no step runs for a boot that cannot finish; a test per refusal holds that nothing was written.
+  `BootOptions` is for a caller with a boot policy of its own, and its defaults are the plain boot: `handshake` false
+  leaves out bootRom's `*t` (and that step's stop point), and `before(ctx, step)` is called before each step bootRom
+  runs, between whole commands with the Edio idle, so unlike a `Progress` it may use the Edio; false stops the boot
+  there, `Cancelled` at that step with nothing of it sent. The box keeps its CRC skip, its saved choice and its retry
+  around it with these (section 8). A stop point's values may repeat the last report's (one file's end and the next
+  stop point's start are the same count of bytes), so a `Progress` that counts asks sees each stop point once.
 - **Progress and cancel are one callback**, `bool step(void* ctx, std::uint32_t done, std::uint32_t total)`, false to
   cancel, taken at stop points between whole commands (before a file is opened, before each block after the first of a
   file read, before an install); a call made inside a command, as each acknowledged block of a file write is, only

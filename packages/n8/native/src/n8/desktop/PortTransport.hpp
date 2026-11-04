@@ -20,13 +20,23 @@ public:
 
     // What the port said when its last call failed in the port itself (a deps/serial exception's text), or "" when
     // that call succeeded or only ran out its time. Each call sets it afresh, so after an Edio call that failed it is
-    // about the transport call the Edio call stopped at.
+    // about the transport call the Edio call stopped at; after one refused before it reached the port (portSaid) it is
+    // about an earlier call's.
     virtual std::string failure() const { return {}; }
 };
 
+// What the port said about `status`'s call: its failure() words, or "" when the port did not fail, or when the call was
+// refused before it made a transport call (a string past its length prefix, a battery slot that does not fit), where
+// failure() is still the previous call's.
+inline std::string portSaid(const rp::n8::Status& status, const PortTransport& port) {
+    const bool refusedFirst = status.code == rp::n8::Code::TooLarge && (status.where == rp::n8::Where::Length ||
+                                                                         status.where == rp::n8::Where::BatteryPath);
+    return refusedFirst ? std::string() : port.failure();
+}
+
 // The text of a failed Edio call on the desktop: the port's own words when the port failed, else describe()'s.
 inline std::string failureText(const rp::n8::Status& status, const PortTransport& port, std::string_view path = {}) {
-    if (std::string said = port.failure(); !said.empty()) return said;
+    if (std::string said = portSaid(status, port); !said.empty()) return said;
     char text[512];
     rp::n8::describe(status, text, sizeof text, path);
     return text;
