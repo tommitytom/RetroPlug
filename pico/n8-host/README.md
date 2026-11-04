@@ -14,12 +14,12 @@ PIO-USB - they don't contend.
 
 | Slice | State | What |
 |-------|-------|------|
-| 2.1 | **done (HW-verified)** | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.c`) |
-| 2.2 | **done (HW-verified)** | `edio.c/.h` port: status + sysInfo + memRD over PIO-USB |
-| 2.3 | **done (HW-verified 2026-10-30)** | `fifoWR` = memWR(0x1810000): the menu answers `*t`, and `boot_bliptoaster()` installs + boots the MIDI ROM through it, no PC (`loop.sh`, 5/5). It was blocked for months by the probe reading cart SRAM while the menu booted - see [`../pico-n8-fifo-write-bug.md`](../pico-n8-fifo-write-bug.md). |
+| 2.1 | **done (HW-verified)** | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.cpp`) |
+| 2.2 | **done (HW-verified)** | the Edio over PIO-USB: status + sysInfo + memRD (the N8 pack's `rp::n8::Edio` through `UsbCdcTransport`, the one Edio the desktop shares) |
+| 2.3 | **done (HW-verified 2026-10-30)** | `fifoWR` = memWR(0x1810000): the menu answers `*t`, and `boot_rom()` installs + boots the MIDI ROM through it, no PC (`loop.sh`, 5/5). It was blocked for months by the probe reading cart SRAM while the menu booted - see [`../pico-n8-fifo-write-bug.md`](../pico-n8-fifo-write-bug.md). |
 | 2.4 | **done (HW-verified 2026-10-30)** | the bridge: MIDI UART1/GP5 (reusing `../midi-in/midi.c`) -> one `fifoWR` per channel-voice message. Driven by a USB MIDI cable (CH345) into the TRS jack, with `amidi`: A4 / C5 on ch1 read back as Pulse1 timer 235 / 198 on the N8 sniffer and measured **440.3 Hz / 522.2 Hz** on the L6 capture (ch3), silent after note-off. (The August "verified" results were the PC host's residual note.) |
 | 2.5 | **done (HW-verified 2026-10-30)** | BlipToaster parity with the PC bridge: **SysEx** forwarded verbatim, the **expansion master volume** set when the cart needs it, aftertouch still filtered (BlipToaster ignores it). See "BlipToaster parity" below - Test G through the Pico matches the console numbers BlipToaster documented from the PC. |
-| 2.6 | **done (HW-verified 2026-10-30)** | the standalone box (`box.c`): status LED, watchdog + recovery reboots with backoff, several ROMs staged in flash and picked over MIDI (`F0 7D 50 01 <n> F7`), the choice saved on the SD. `faults.sh`: random NES power cuts, 8/8 rounds recovered and played. See "The standalone box". |
+| 2.6 | **done (HW-verified 2026-10-30)** | the standalone box (`box.cpp`): status LED, watchdog + recovery reboots with backoff, several ROMs staged in flash and picked over MIDI (`F0 7D 50 01 <n> F7`), the choice saved on the SD. `faults.sh`: random NES power cuts, 8/8 rounds recovered and played. See "The standalone box". |
 
 ## Dependencies (not in the repo yet - see "one-time setup")
 
@@ -30,6 +30,9 @@ PIO-USB - they don't contend.
 git -C /workspaces/pico-sdk submodule update --init lib/tinyusb
 git clone https://github.com/sekigon-gonnoc/Pico-PIO-USB.git /workspaces/Pico-PIO-USB
 ```
+
+The firmware is proven on Pico-PIO-USB at `5a37a66` (CI clones exactly that for `pnpm device:box`); never edit it: the
+firmware works around it (below). `PICO_PIO_USB_PATH` points the build at another checkout.
 
 (Baking these into the devcontainer, like the OpenOCD bake, is a follow-up.)
 
@@ -113,15 +116,16 @@ in `/tmp/n8-host-console.log` (`--log`). Exit 0 = done / `--until` seen, 1 = `--
 
 **Booting a freshly built ROM: `--rom <file.nes>` (repeatable).** The N8's SD card is only reachable
 over its USB, which belongs to the Pico, so `loop.sh` writes the ROMs into the **Pico's own flash**
-(at `0x10200000`, 2 MB past the firmware: per ROM a 64-byte header - `N8RM`, size, SD path - then the
-ROM, padded to 4 KB; one erased 4 KB block after the last ends the table). Once the menu answers `*t`,
-the firmware copies the chosen one to `usb-games/pico/<name>.nes` with Edio's file commands
-(`edio_file_put`: the same open / write / close sequence as the PC's `n8-load --put-file`) and boots
-it from there: ~5 s for a 288 KB ROM, and no upload at all when its CRC says it is already there (see
-"The standalone box"). Its own `usb-games/pico/` folder keeps it clear of the files other tools put
-on the shared card. A run that flashes without `--rom` erases the first header, and the firmware
-boots `N8_ROM_PATH` (default the older `usb-games/n8-midi.nes`; `-DN8_ROM_PATH=...` for another file
-already on the card). `stress.sh --rom` and `faults.sh --rom` pass it through.
+(at `0x10200000`, 2 MB past the firmware: per ROM a 64-byte header - `N8RM`, size, SD path - then
+the ROM, padded to 4 KB; one erased 4 KB block after the last ends the table). Once the menu answers
+`*t`, the firmware copies the chosen one to `usb-games/pico/<name>.nes` with Edio's file commands
+(`Ops::writeFile` in the N8 pack: the same open / write / close sequence as the PC's `n8-load
+--put-file`) and boots it from there: ~5 s for a 288 KB ROM, and no upload at all when its CRC says
+it is already there (see "The standalone box"). Its own `usb-games/pico/` folder keeps it clear of
+the files other tools put on the shared card. A run that flashes without `--rom` erases the first
+header, and the firmware boots `N8_ROM_PATH` (default the older `usb-games/n8-midi.nes`;
+`-DN8_ROM_PATH=...` for another file already on the card). Every check of the box boots BlipToaster
+(`--rom`), never `n8-midi.nes`. `stress.sh --rom` and `faults.sh --rom` pass it through.
 
 ### Driving the bridge from the container
 
@@ -207,8 +211,9 @@ the main loop goes out as one fifoWR (a batch of up to 64). Full run since: 50,8
 average, ~1.04 ms worst** (it was ~4.6 ms typical with 11-19 ms outliers). Four things had to go:
 
 - **Five USB transfers per write.** Pico-PIO-USB runs host transactions from its 1 ms
-  start-of-frame interrupt, one packet per endpoint per frame, and `edio_mem_wr` sent cmd / addr /
-  len / exec / data as five writes: 5 frames. One coalesced write is one frame.
+  start-of-frame interrupt, one packet per endpoint per frame, and the old `edio_mem_wr` sent cmd / addr /
+  len / exec / data as five writes: 5 frames. The pack's `Edio` puts a command's header, arguments and payload (up to
+  its 256-byte scratch) in one write, which is one frame.
 - **The UART receive timeout.** A 3-byte message is under the RX interrupt's 4-byte threshold, so
   it waited ~1 ms for the timeout. The idle main loop now reads the UART itself (IRQ masked), and
   the IRQ stays the safety net while the loop is blocked.
@@ -236,7 +241,7 @@ cycle-exact measurement (the emulator), not this probe.
 
 ## The standalone box
 
-`box.c` turns the bridge into something that runs unattended. Everything here was exercised on the
+`box.cpp` turns the bridge into something that runs unattended. Everything here was exercised on the
 rig; what was not is said so at the end.
 
 **Status LED** (the Pico's own, GP25):
@@ -249,8 +254,8 @@ rig; what was not is said so at the end.
 | double blink | the boot failed, or the menu is stuck (power-cycle the NES) |
 | n quick blinks | acknowledging a ROM pick (n = ROM index + 1) |
 
-**Watchdog and recovery.** A 3 s hardware watchdog reboots a hung Pico; every Edio wait pumps it
-(`edio_set_idle_hook`), so a long upload or install never trips it. The box also reboots itself on
+**Watchdog and recovery.** A 3 s hardware watchdog reboots a hung Pico; every wait of the transport pumps it
+(`UsbCdcTransport`'s idle hook, `box_feed`), so a long upload or install never trips it. The box also reboots itself on
 purpose (`box_recover`) when the link is wedged in a way a fresh USB host clears: a device on the
 socket that never enumerates (8 s), the N8 not answering `CMD_STATUS` (3 checks a second apart,
 while forwarding and MIDI is quiet), or 5 failed writes in a row. Why it rebooted and how many
@@ -260,12 +265,14 @@ the box cannot clear (the N8 itself wedged) is an error LED, not a reboot loop. 
 continues the count - a debugger's reset (a reflash) is a fresh start.
 
 A boot never outlives its N8: a power cut mid-boot unmounts it, and a new one can be at a fresh menu
-before a slow step returns, so every step checks a mount generation and abandons a boot whose N8 has
-gone (`boot abandoned`), and every Edio wait fails at once when the link drops instead of running
-out its timeout. `CMD_STATUS` before `*t` says whether a game already runs (forward at once) or the
-menu is up. A menu that reports status 0 but never answers `*t` - seen once, after a power cut whose
-"off" the Zigbee plug applied 2.3 s late, leaving the NES off ~2.7 s - is held as **stuck**: no
-forwarding (a `2A` data byte is the menu's `*` prefix), the error LED, a retry every 20 s.
+before a slow step returns, so every step checks a mount generation and the transport's link state
+and abandons a boot whose N8 has gone (`boot abandoned`), and every Edio wait fails at once when the
+link drops instead of running out its timeout. The unmount callback unbinds the transport and the
+main loop rebinds it just before the next N8's probe, so a remount inside a wait never resumes the
+call on the new N8. `CMD_STATUS` before `*t` says whether a game already runs (forward at once) or
+the menu is up. A menu that reports status 0 but never answers `*t` - seen once, after a power cut
+whose "off" the Zigbee plug applied 2.3 s late, leaving the NES off ~2.7 s - is held as **stuck**:
+no forwarding (a `2A` data byte is the menu's `*` prefix), the error LED, a retry every 20 s.
 
 **ROM selection.** `loop.sh --rom a.nes --rom b.nes ...` stages several ROMs in the Pico's flash
 (2 MB at `0x10200000`, about six BlipToaster builds). The box boots the one picked over MIDI, else
@@ -320,13 +327,45 @@ device (the only trigger seen was the false positive above, now fixed); the menu
 described (this N8 never returned to its menu on RESET); and the error LED's double blink (no boot
 failed or stuck while it was being sampled).
 
+## The firmware's layout, build and link trap
+
+The firmware is C++ on the N8 pack (`packages/n8`), the same `rp::n8::Edio` the desktop runs; nothing of the protocol
+is written here. `main.cpp` is the main loop (USB host, the probe, the boot, the MIDI bridge, the sniff), `box.cpp` the
+standalone box, `UsbCdcTransport.{hpp,cpp}` the `rp::n8::Transport` over TinyUSB's CDC host (its waits pump `tuh_task`
+and `box_feed`, `linkUp()` follows the mount), `SofTimer.{hpp,cpp}` the 1 ms start-of-frame timer, `pio_usb_root.c` a
+one-function C shim (`pio_usb_ll.h` does not compile as C++), and `../midi-in/midi.c` stays C. One `Edio` and one
+transport live in static storage.
+
+`CMakeLists.txt` declares `retroplug_product(n8-host DEVICE PACKAGES n8 TARGETS n8_host)`: the pack's portable sources
+are compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti`, against `node-sdk` and reflect-cpp's headers, so a
+configure needs a reflect-cpp checkout. `loop.sh` hands a fresh build directory the desktop build's
+(`../../build/CMakeCache.txt`'s `reflectcpp_SOURCE_DIR`) and clones one only when there is none. The whole image links
+under the **link trap** (`cmake/device-image.cmake`, shared with `rp-device-check`): 87 `--wrap`ped symbols on the
+heap, on exceptions and on RTTI, with `pico_malloc` taken out of the runtime and a post-link check. A link error naming
+`__wrap_<symbol>` means an object reached the heap or a throw. The image has no heap at all: Pico-PIO-USB's SOF timer
+was an alarm pool made with `malloc`, so the config sets `skip_alarm_pool`, `SofTimer.cpp` runs a timer of its own on
+hardware alarm 2 (the alarm, the IRQ and the 1000 us absolute cadence the pool had; the handler runs from RAM), and the
+link wraps `alarm_pool_create_on_timer`, which `skip_alarm_pool` alone still leaves linked, to a `panic()` that never
+runs. The main stack is 4 KB (`PICO_STACK_SIZE=0x1000`, core 1's reservation kept at 2 KB): the deepest chain is about
+1 KB of frames, and with TinyUSB's enumeration and the interrupts nested above it the pessimistic sum is 2.3 KB, which
+the SDK's default 2 KB would not have held.
+
+**`pnpm device:box`** ([`../../tools/build-box.sh`](../../tools/build-box.sh)) builds both variants under the trap, in
+`build-box/{pio,native}/`, each with `n8_host_trap_probe` (an allocating program that must fail to link naming
+`__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss: PIO-USB 48508 / 15324 / 32360,
+`RP_NATIVE_USB` 48468 / 1560 / 26128). It needs the SDK's TinyUSB (`PICO_SDK_PATH` when it carries one, else
+`/workspaces/pico-sdk`) and Pico-PIO-USB at `5a37a66`; it builds an ELF only (`PICO_NO_PICOTOOL`) and runs in CI beside
+`device:check`. It proves the image links and traps; the rig's gate (`loop.sh`, `stress.sh`, `faults.sh`, with
+BlipToaster) proves it works.
+
 ## Build + flash + verify
 
 `loop.sh` does all of this; by hand:
 
 ```sh
 export PICO_SDK_PATH=/workspaces/pico-sdk         # NOT the image's /opt/pico-sdk: it has no TinyUSB
-cmake -S . -B build -G Ninja && cmake --build build
+cmake -S . -B build -G Ninja -Dreflectcpp_SOURCE_DIR=<a reflect-cpp checkout, e.g. ../../build/_deps/reflectcpp-src> \
+  && cmake --build build     # without it the configure clones reflect-cpp
 sudo openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg \
      -c "program build/n8_host.elf verify reset exit"      # button-free SWD
 sudo stty -F /dev/ttyDbgProbe 115200 raw -echo && cat /dev/ttyDbgProbe
@@ -341,12 +380,17 @@ A good boot from a fresh N8 menu:
 [n8-host] SYS_INF: serial=00035AAD.00002C4D  device_id=0x17 (N8 PRO)  sw=0103 hw=0001
 [n8-host] --- probe done ---
 [n8-host] menu handshake (*t)...
-[n8-host] menu up -> install usb-games/n8-midi.nes (*n)...
-[n8-host] installed -> boot (*s); BlipToaster starting...
-[n8-host] BlipToaster booted by the Pico - no PC used.
+[box] ROM 0 of 1: usb-games/pico/bliptoaster.nes (crc f39a6773) - saved choice
+[box] already on the SD (its CRC was saved at the last upload) - no upload
+[n8-host] menu up -> install usb-games/pico/bliptoaster.nes (*n)...
+[n8-host] installed -> boot (*s); the ROM is starting...
+[n8-host] usb-games/pico/bliptoaster.nes booted by the Pico - no PC used.
 ```
 
-If a game is already running, the menu isn't there to answer `*t`, so `boot_bliptoaster()` gives
+(The boot starts with `[n8-host] USB host up (PIO-USB D+=GP2, D-=GP3). ...` and `[n8-host] node type rp.n8.nes
+(registered, not planned)`, the image naming the pack's node so the linker keeps it; E3 plans it.)
+
+If a game is already running, the menu isn't there to answer `*t`, so `boot_rom()` gives
 up after `N8_MENU_TRIES` (~48 s by default) and the bridge forwards MIDI to whatever runs.
 `midi_to_fifo()` forwards only channel-voice messages (`0x80-0xEF`), dropping clock / sensing /
 transport / aftertouch so they can't flood the FIFO; `sniff_report()` is read-only.

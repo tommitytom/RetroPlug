@@ -241,14 +241,15 @@ TEST_CASE("Edio framing matches the golden byte for byte", "[n8]") {
             std::uint8_t vram[rp::n8::Menu::kVramBytes], palette[rp::n8::Menu::kPaletteBytes];
             s = rp::n8::Menu(edio).vramDump(vram, palette);
         } else if (c.op == "loadRom") {
-            // As n8Load.ts's loadRom: an sdPath boots what the card holds, else the ROM goes to usb-games/<romName>.
+            // As the old TS client's loadRom (n8Load.ts at 3eb5a7928, which recorded these cases): an sdPath boots what
+            // the card holds, else the ROM goes to usb-games/<romName>.
             const auto        srm    = fromHex(a.srm.value_or(""));
             const bool        upload = !a.path;
             const std::string path   = upload ? "usb-games/" + a.str.value_or("") : *a.path;
             std::uint16_t     index  = 0;
             s = rp::n8::bootRom(edio, path, {bytes.data(), bytes.size()}, {srm.data(), srm.size()},
                                 upload ? rp::n8::Upload::Always : rp::n8::Upload::Never, &index);
-            CHECK(index == 0x45);  // the map index n8Load.ts parsed from the case's reply
+            CHECK(index == 0x45);  // the map index that client parsed from the case's reply
         } else {
             FAIL("unknown golden op: " << c.op);
         }

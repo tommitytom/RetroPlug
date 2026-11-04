@@ -11,7 +11,7 @@ Three independent stages, built and verified one at a time:
 | Stage | Folder | What it does | Status |
 |-------|--------|--------------|--------|
 | 1. MIDI IN | [`midi-in/`](midi-in/) | Hardware MIDI TRS jack -> opto -> Pico UART | built + buildable |
-| 2. N8 USB host | [`n8-host/`](n8-host/) | Pico as USB host speaking the Edio protocol to the N8 | **done, HW-verified**: the Pico boots a ROM through the N8 menu and forwards MIDI into its FIFO, no PC ([the months-long FIFO "bug"](pico-n8-fifo-write-bug.md)) |
+| 2. N8 USB host | [`n8-host/`](n8-host/) | Pico as USB host speaking the Edio protocol to the N8, in C++ on the N8 pack (`packages/n8`), the Edio the desktop shares | **done, HW-verified**: the Pico boots a ROM through the N8 menu and forwards MIDI into its FIFO, no PC ([the months-long FIFO "bug"](pico-n8-fifo-write-bug.md)) |
 | 3. Controller inject | `controller/` (todo) | Pico driving the NES controller ports (PIO) | planned |
 
 Target split: **two Picos** - one dedicated to the USB host (PIO-heavy), one for
@@ -34,4 +34,7 @@ git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git /
 export PICO_SDK_PATH=/opt/pico-sdk
 ```
 
-Each stage is a self-contained SDK project - `cd` into it and see its README.
+Each stage is a self-contained SDK project - `cd` into it and see its README. Stage 2 is the exception in one way: it
+builds the repository's N8 pack (`packages/n8`) in device mode, so its configure needs reflect-cpp's headers (the
+desktop build's checkout, or a clone) and it links under the link trap on the heap, on exceptions and on RTTI; CI builds
+it with `pnpm device:box`.

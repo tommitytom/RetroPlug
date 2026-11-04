@@ -11,7 +11,8 @@ memory. The firmware exposes a lot more over the same wire: **screen capture, co
 a live console-state sniffer (APU/PPU/CPU/RAM/OAM), full save-states, arbitrary SD file read,
 FPGA core loading, RTC, flash access, memory test/CRC, and a TCP/IP bridge.** Most are a small
 addition to `Edio` (a new opcode, a menu command, or just pointing `memRD`/`memWR` at a new
-address).
+address). `Edio` is written once, in C++ for the desktop and the Pico box
+([packages/n8/native/src/n8/Edio.hpp](../packages/n8/native/src/n8/Edio.hpp)).
 
 ## Sources — the N8 Pro is *partially* open
 
@@ -26,7 +27,7 @@ address).
 Key implication: the audio/graphics/state paths we care about are documented in the open FPGA +
 `edio` sources; we do **not** need the closed OS to reach them.
 
-## What RetroPlug already drives (`packages/native/src/host/n8/`)
+## What RetroPlug already drives (`packages/n8/native/src/n8/`)
 
 | Area | Ops | Where |
 |---|---|---|
@@ -35,8 +36,9 @@ Key implication: the audio/graphics/state paths we care about are documented in 
 | Cart FIFO | `CMD_MEM_WR` → `ADDR_FIFO` | `Edio::fifoWR`; MIDI bridge + risa sync |
 | SD dir list | `CMD_F_DIR_LD/SIZE/GET` (0xC5/C6/C8) | `Edio::listDir` |
 | SD file **write** | `CMD_F_FOPN/FWR/FCLOSE` (0xC9/CC/CE) | `Edio::fileOpen/Write/Close`; ROM upload |
-| Menu | `'t'` test, `'n'` select, `'s'` start, `'r'` reboot | `N8Menu` |
-| CLI/harness | `n8-load` (load/`--srm`/`--dump-sram`/`--ls`), `n8-bridge`, `n8-sync`, `retroplug-n8-hwtest` (dump/load/restore/**peek/poke**) | `cli/sessions/n8-*.ts`, `test/n8/n8-sd-hwtest.cpp` |
+| SD file **read** | `CMD_F_FOPN/FRD/FCLOSE` (0xC9/CA/CE) | `Edio::fileRead`; `Ops::readFile` |
+| Menu | `'t'` test, `'n'` select, `'s'` start, `'r'` reboot | `Menu::test/install/start/reset` |
+| CLI/harness | `n8-load` (load/`--srm`/`--dump-sram`/`--ls`), `n8-bridge`, `n8-sync`, `retroplug-n8-hwtest` (dump/load/restore/**peek/poke**) | `cli/sessions/n8-*.ts` (over the pack's RPC facet), `packages/n8/native/test/n8-sd-hwtest.cpp` |
 
 ## Full command set (`edlink/Device/DeviceIO_V1.cs`)
 
@@ -54,7 +56,7 @@ Key implication: the audio/graphics/state paths we care about are documented in 
 | `CMD_FLA_WR` | 0x17 | write flash | `CMD_DISK_INIT` | 0xC0 | mount SD |
 | `CMD_FLA_WR_SDC` | 0x18 | flash write from SD | `CMD_F_DIR_*` | 0xC3–C8 | dir open/read/load/size/path/get |
 | `CMD_MEM_RD` ✓ | 0x19 | read device mem | `CMD_F_FOPN` ✓ | 0xC9 | open file |
-| `CMD_MEM_WR` ✓ | 0x1A | write device mem | `CMD_F_FRD` | 0xCA | **read file** (we lack this) |
+| `CMD_MEM_WR` ✓ | 0x1A | write device mem | `CMD_F_FRD` | 0xCA | **read file** (`Edio::fileRead`, `Ops::readFile`) |
 | `CMD_MEM_SET` | 0x1B | fill memory | `CMD_F_FRD_MEM` | 0xCB | read file → device mem |
 | `CMD_MEM_TST` | 0x1C | memory test | `CMD_F_FWR` ✓ | 0xCC | write file |
 | `CMD_MEM_CRC` | 0x1D | memory CRC | `CMD_F_FWR_MEM` | 0xCD | device mem → file |
@@ -106,7 +108,7 @@ cart tracked the expansion audio on the L6 exactly — `0x00` mutes to noise flo
 The N8's FPGA continuously snoops the cartridge bus and mirrors every CPU write to the PPU/APU/OAM/mapper
 into a readable device region (`edn8-pro-pub fpga/base_sv/sst.sv`). Read via `memRD(0x1802000, 0x200)` — no
 trigger, no config, a pure read (cannot hang, unlike reset). **DONE + hardware-verified 2026-08-13** (`n8-load
---sniff` / `--sniff-raw`; hwtest `sniff`; pure-TS `decodeSniffer` in `src/n8/sniffer.ts`).
+--sniff` / `--sniff-raw`; hwtest `sniff`; pure-TS `decodeSniffer` in `packages/n8/ts/sniffer.ts`).
 
 **CRITICAL: two different layouts.** The `everdrive.h` header table (WRAM 0x0000, VRAM 0x0800, APU 0x1880 …)
 is the **OS-assembled 16 KB save FILE**, NOT the raw ADDR_SSR region — the raw hardware offset is that minus
@@ -136,12 +138,12 @@ and the read validates the emulator's `getApuState`/`getExpansionAudioState` fro
 
 | char | meaning | ours? |
 |---|---|---|
-| `'t'` | test / handshake | ✓ `N8Menu::test` |
-| `'n'` | select game (install) | ✓ `appInstall` |
-| `'s'` | run game | ✓ `appStart` |
+| `'t'` | test / handshake | ✓ `Menu::test` |
+| `'n'` | select game (install) | ✓ `Menu::install` |
+| `'s'` | run game | ✓ `Menu::start` |
 | `'r'` | reboot | ✗ HANGS the console to a gray screen from the menu (see caveat) |
 | `'h'` | halt | ✗ |
-| `'v'` | **VRAM dump** (screen capture) | ✓ `vramDump` (`n8-load --screenshot`) |
+| `'v'` | **VRAM dump** (screen capture) | ✓ `Menu::vramDump` (`n8-load --screenshot`) |
 
 ## Capability catalog — what's not yet exposed
 
@@ -160,11 +162,11 @@ Grouped by payoff. "Effort" is the add to `Edio`/tooling.
 
 | Capability | How | Notes |
 |---|---|---|
-| ✅ **Save-state read/decode** | read `EDN8/gamedata/<rom>/NN.SAV` (48 KB) via `readFile` + decode | DONE + HW-verified (`n8-load --savestate`, `src/n8/saveState.ts`): the FULL captured state - CPU regs (a/x/y/sp), WRAM, VRAM, APU/PPU/OAM (reuses `decodeSniffer`), CHR, EXRAM - reaching what the live sniffer can't. CAVEAT: *creating* a save-state needs the physical `ss_key` button combo (not host-triggerable over USB); reading existing ones works. Restore/write-back is a follow-on |
-| ✅ **PRG/CHR hot-patch** | `memWR` → `ADDR_PRG`/`ADDR_CHR` | DONE + HW-verified: live-patch a running game's graphics/code over USB (`--patch-chr`/`--patch-prg`/`--dump-chr`, hwtest `memwr`; write-twin of `--sniff`). PNG editing loop: `--dump-chr x.png` / `--patch-chr 0 x.png` round-trip an editable grayscale tile grid (`src/n8/chrImage.ts`) - edit a glyph, push it live. `--dump-chr x.png --color [--palette N]` renders the game's REAL colours via the live sniffer palette |
+| ✅ **Save-state read/decode** | read `EDN8/gamedata/<rom>/NN.SAV` (48 KB) via `readFile` + decode | DONE + HW-verified (`n8-load --savestate`, `packages/n8/ts/saveState.ts`): the FULL captured state - CPU regs (a/x/y/sp), WRAM, VRAM, APU/PPU/OAM (reuses `decodeSniffer`), CHR, EXRAM - reaching what the live sniffer can't. CAVEAT: *creating* a save-state needs the physical `ss_key` button combo (not host-triggerable over USB); reading existing ones works. Restore/write-back is a follow-on |
+| ✅ **PRG/CHR hot-patch** | `memWR` → `ADDR_PRG`/`ADDR_CHR` | DONE + HW-verified: live-patch a running game's graphics/code over USB (`--patch-chr`/`--patch-prg`/`--dump-chr`, hwtest `memwr`; write-twin of `--sniff`). PNG editing loop: `--dump-chr x.png` / `--patch-chr 0 x.png` round-trip an editable grayscale tile grid (`packages/retroplug/src/risa/rom/chrImage.ts`) - edit a glyph, push it live. `--dump-chr x.png --color [--palette N]` renders the game's REAL colours via the live sniffer palette |
 | **Load FPGA mapper core** | `CMD_FPG_USB` (0x1E) / `ed_cmd_fpg_init_usb` | swap cartridge hardware personality over USB |
 | **RTC get/set/cal** | `CMD_RTC_GET/SET/CAL` (0x14/15/21) | read/set the console clock |
-| ✅ **Device info** | `CMD_SYS_INF` (0x26) + `CMD_GET_VDC` (0x13) | DONE + HW-verified (`n8-load --info`, hwtest `info`, `src/n8/sysInfo.ts`): serial, boot/sw/hw versions, MCU-core build date, flash size, counters, board voltages, and NES-vs-Famicom form factor. This unit: EverDrive-N8 PRO, NES, boot 0x0100, core 2025-11-08 |
+| ✅ **Device info** | `CMD_SYS_INF` (0x26) + `CMD_GET_VDC` (0x13) | DONE + HW-verified (`n8-load --info`, hwtest `info`, `packages/n8/ts/sysInfo.ts`): serial, boot/sw/hw versions, MCU-core build date, flash size, counters, board voltages, and NES-vs-Famicom form factor. This unit: EverDrive-N8 PRO, NES, boot 0x0100, core 2025-11-08 |
 | **Memory fill/test/CRC** | `CMD_MEM_SET/TST/CRC` (0x1B/1C/1D); `edlink` `diag` | fast SRAM verify, self-test |
 | **Flash read/write** | `CMD_FLA_RD/WR` (0x16/17); `edlink` `flard`/`flawr` | cart firmware / recovery |
 | ✅ **SD file management** | `CMD_F_DIR_MK`/`F_DEL`/`F_AVB` (0xD2/D3/D5) | DONE + HW-verified (`n8-load --mkdir`/`--rm`/`--df`, hwtest `fstest`): mkdir + delete a file/empty-dir over USB (round-trip verified). CAVEAT: free space (`CMD_F_AVB`) returns 0 on this N8 firmware even though mkdir/rm/ls work - the `--df` command says so honestly. Copy/move/info/seek/crc still TODO |

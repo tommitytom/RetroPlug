@@ -341,7 +341,7 @@ it:
 | `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs' concatenation, input by input, each in queue order; each message goes at the later of its frame and the last handed out in the block, and at the block's last frame at most, a guard that keeps the list frame-sorted and inside the block whatever an input's queue holds (a node on the C ABI writes its own, and a script node's `send` carries a frame past the block as given), since the plugin hands each frame to the DAW unchecked. The merge allocates nothing, a head index per input, and costs messages times inputs; the sink it hands each message to, `Engine::midiOut`, still takes a `std::vector` per message ([07-remaining-work.md](07-remaining-work.md)). Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
 | `rp.launchpad.surface-in` | out `in` (events: 1024 messages, 16 KiB), out `connected` (control) | drains the surface link's receive ring at the top of its block (16-message batches until the link answers short), every message at frame 0; `connected` is 1 while the device is attached, from frame 0 of the block. Its first block discards what the link held when it bound it, so a press from before the plan is not replayed; a message the link's ring cannot hold is counted apart from the device's lost frames, and one the node's queue cannot hold is dropped and counted. `unique`, `threads`, category `device` |
 | `rp.launchpad.surface-out` | in `out` (events) | hands each message to the surface link's send ring in queue order; a detached link drops and counts them. `unique`, `threads`, category `device` |
-| `rp.n8.nes` | in `midi` (events), in `bytes`, param `expansionVolume`, out `connected` (control) | pushes each message at the cart link at its frame and the block's rate, the `bytes` port's flush flag carried; hands the link the expansion volume at its first block, on a change and on every reconnect; `connected` is the link's state from frame 0; leaving the plan, hands the link the notes the cart still holds for their note-offs. No audio output. `unique`, `threads`, category `device` |
+| `rp.n8.nes` | in `midi` (events), in `bytes`, param `expansionVolume`, out `connected` (control) | pushes each message at the cart link at its frame and the block's rate, the `bytes` port's flush flag carried; hands the link the expansion volume at its first block, on a change and on every reconnect; `connected` is the link's state from frame 0; leaving the plan, hands the link the notes the cart still holds for their note-offs. No audio output. `unique`, category `device` (no `threads`, below) |
 
 An input node takes everything staged whether or not its output is wired, so `Engine::setGraph` refuses
 (`midi-in`) a document with a second `rp.host.midi-in`. It refuses (`midi-out`) a second
@@ -350,11 +350,16 @@ the first's, and `Engine::midiOut`, which the plugin writes to a DAW as it is, w
 The device nodes' uniqueness is their descriptors' `"unique":true` instead, which the planner checks for
 every host: a plan holds one `rp.n8.nes`, one `rp.launchpad.surface-in` and one `rp.launchpad.surface-out` at
 most, and a second is refused at plan time with code `unique`. The device nodes reach their devices through
-`rp.host.devices/1` ([DeviceLinks.hpp](../packages/n8/native/src/n8/CartLink.hpp)), not the host I/O
+`rp.host.devices/2` ([rp_device.h](../packages/node-sdk/native/src/graph/rp_device.h)), not the host I/O
 service: a node asks for `"n8"` or `"launchpad"` by name in its activate and is handed a link the host owns,
 or a never-connected one in a host that owns no such device, so a document plans and runs everywhere. A
 message the UI stages at a node rides `rp.stage/1`, the third seam beside these two: a system node hands it to
 its core's ingress, the cart node pushes it at its link.
+
+A node's `threads` flag declares what the node itself needs (a thread of its own), not what its device link runs:
+whether a link has a thread is the link's business, so `rp.n8.nes` declares none (the planner's Pico target plans it;
+it relies only on `CartLink::push()` never blocking, never allocating and taking no lock, whoever drains the ring),
+and the Launchpad's two nodes, which still declare `threads` for their link, are the exception until they have a pack.
 
 Every system node has four inputs, mapped onto core calls `SystemBase` already has. It applies them
 at the top of its `prepare` (where `process` starts too, and which a linked group runs for every member
@@ -441,43 +446,51 @@ the native goldens run hold at zero.
 ### Device nodes, their links and capability jobs
 
 `rp.n8.nes` and `rp.launchpad.surface-in` / `-out` are the hardware nodes
-([N8Nodes.cpp](../packages/n8/native/src/n8/N8Node.cpp),
+([N8Node.cpp](../packages/n8/native/src/n8/N8Node.cpp),
 [LaunchpadNodes.cpp](../packages/native/src/host/graph/LaunchpadNodes.cpp)). Each binds the host-owned device it
-drives through `rp.host.devices/1`
-([DeviceLinks.hpp](../packages/n8/native/src/n8/CartLink.hpp)): a `CartLink` for the cart, with a push per
-message (frame, bytes, the flush flag, the block's rate) that answers whether all of it reached the device, the link's
-connected state and drop count, the expansion-volume register and `submitJob` / `abandonJobs`; a `SurfaceLink` for the
-pad, with a drain into the node's own array, a push, the connected state and its drop count. `LaunchpadLink` keeps the
-pushes it lost while the device was attached (`messagesDropped`) apart from the paint a session pushed while nothing
-was connected (`messagesDetached`) and a message the device sent that its receive ring held no slot for
-(`messagesInboundDropped`); the handle a node holds answers the first two, and the status line's `dropped` is the first.
-A host installs its links with `Engine::setDeviceLinks` before its first plan (the
-plugin passes its `N8CartLink` and no surface, the SDL standalone both, the test host a `HarnessSurfaceLink`, and the
-CLI, the Node addon and the render host neither), and a name it has no device for answers a handle that is never
-connected and that drops and counts everything, so a document plans and runs in every host. A node keeps its handle
-across a reactivate and gives it back once in destroy, which runs at reclaim on the control thread while the links are
-still installed: a host tears its plans down first (`Engine::clearGraph`), then uninstalls its links.
+drives through `rp.host.devices/2` ([rp_device.h](../packages/node-sdk/native/src/graph/rp_device.h)), a link its host
+installed by name and interface id: an `rp::n8::CartLink` ([CartLink.hpp](../packages/n8/native/src/n8/CartLink.hpp),
+`n8` / `rp.n8.cart-link/1`, the N8 pack's own) for the cart, with a push per message (frame, bytes, the flush flag,
+the block's rate) that answers whether all of it reached the device, the link's connected state and drop count, the
+expansion-volume register and `submitJob` / `abandonJobs`; an `rp::launchpad::SurfaceLink`
+([SurfaceLink.hpp](../packages/native/src/launchpad/SurfaceLink.hpp), `launchpad` / `rp.launchpad.surface-link/1`) for
+the pad, with a drain into the node's own array, a push, the connected state and its drop count. `LaunchpadLink` keeps
+the pushes it lost while the device was attached (`messagesDropped`) apart from the paint a session pushed while
+nothing was connected (`messagesDetached`) and a message the device sent that its receive ring held no slot for
+(`messagesInboundDropped`); the handle a node holds answers the first two, and the status line's `dropped` is the
+first. A host installs its links before its first plan with `Engine::installDevice` / `installLink`, into a fixed
+table of 8 entries (a name up to 31 characters, an interface id up to 63): the N8 pack's provider installs the
+`N8CartLink` in every product that starts providers (the plugin, the SDL standalone, the CLI, where it is never
+connected, and the test host, over a fake cart), the SDL standalone installs the Launchpad's surface and the test host
+a `HarnessSurfaceLink`, and the Node addon and the render host install neither. A name it has no device for answers
+null, and the node runs on a stub of its own that is never connected and that drops and counts everything, so a
+document plans and runs in every host. A node keeps its handle across a reactivate and gives it back once in destroy,
+which runs at reclaim on the control thread while the links are still installed: a host tears its plans down first
+(`Engine::clearGraph`), then uninstalls its links.
 
 A capability job ([CapabilityJobs.hpp](../packages/native/src/host/engine/CapabilityJobs.hpp)) is what `submitJob`
-takes: a request for a node of the last published plan, answered with an id or a refusal. A system node's job goes to the
-`memory()` / `sram()` / `rom()` accessor its core presents: a memory read is the published copy and a ROM header the
-core's immutable image, both at once, a write rides the command ring and completes once the block after its apply has
-published the region, and an emulated `sram.restore` is refused (a battery is a seed on a rebuild). A device node's
-job goes to its link, on the device's own thread: one at a time ("busy"), none while the device is not attached ("not
-connected"), progress reported per drain, and a node leaving the plan abandons the job it still runs. The cart reads
-its FPGA config block at submission (on that thread, between MIDI chunks, as the expansion volume reaches it, and only
-on a turn quiet for the read: nothing outstanding on the reliable link, or a cart silent for 250 ms since its oldest
-outstanding frame first went out, as one at its menu is), so a transfer a running game will refuse is refused without
-pausing the stream and dropping the block's notes; the submitting thread waits for that read, up to its 1 s bound.
-The cart node keeps books on the notes the cart holds: it re-sends at frame 0 the note-offs a pause dropped, and its
-destroy hands what is still sounding to the link (`CartLink::releaseNotes`), whose serial thread writes their note-offs
-behind every byte pushed before the call (a disconnect writes them before the port closes; a link that is down drops
-them), so a node leaving the plan mid-note leaves no tone on the console once its plan is reclaimed: within a frame of
-the swap where the host has an idle tick (the plugin with its editor open, the SDL standalone), and at the next
-publish or deactivate in a plugin whose editor is closed. The engine keeps at most `kMaxJobs` (64)
-outstanding, engine-wide back-pressure that leaves room for every completion, and a request names a capability from
-the one reserved id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`), so the engine asks a node only
-by an id it knows and never casts an answer.
+takes: a request for a node of the last published plan, answered with an id or a refusal. A system node's job goes to
+the `memory()` / `sram()` / `rom()` accessor its core presents: a memory read is the published copy and a ROM header
+the core's immutable image, both at once, a write rides the command ring and completes once the block after its apply
+has published the region, and an emulated `sram.restore` is refused (a battery is a seed on a rebuild). A device
+node's job goes to its link, on the device's own thread: one at a time ("busy"), none while the device is not attached
+("not connected"), progress reported per drain, and a node leaving the plan abandons the job it still runs. The
+request and the report are C ([rp_jobs.h](../packages/node-sdk/native/src/graph/rp_jobs.h)): a request's strings are C
+strings (a device job whose strings hold a NUL byte is refused, as a C string would cut it), and a link reports
+progress, success, a bounded UTF-8 failure reason or an abandon through the engine's `rp.host.jobs/1` over an opaque
+`rp_job`. The cart reads its FPGA config block at submission (on that thread, between MIDI chunks, as the expansion
+volume reaches it, and only on a turn quiet for the read: nothing outstanding on the reliable link, or a cart silent
+for 250 ms since its oldest outstanding frame first went out, as one at its menu is), so a transfer a running game
+will refuse is refused without pausing the stream and dropping the block's notes; the submitting thread waits for that
+read, up to its 1 s bound. The cart node keeps books on the notes the cart holds: it re-sends at frame 0 the note-offs
+a pause dropped, and its destroy hands what is still sounding to the link (`CartLink::releaseNotes`), whose serial
+thread writes their note-offs behind every byte pushed before the call (a disconnect writes them before the port
+closes; a link that is down drops them), so a node leaving the plan mid-note leaves no tone on the console once its
+plan is reclaimed: within a frame of the swap where the host has an idle tick (the plugin with its editor open, the
+SDL standalone), and at the next publish or deactivate in a plugin whose editor is closed. The engine keeps at most
+`kMaxJobs` (64) outstanding, engine-wide back-pressure that leaves room for every completion, and a request names a
+capability from the one reserved id space (`rp.system.memory/1`, `rp.system.sram/1`, `rp.system.rom/1`, in
+`rp_jobs.h`), so the engine asks a node only by an id it knows and never casts an answer.
 
 ### The system nodes' settings and params
 
@@ -1194,6 +1207,19 @@ guard, a pointer or non-portable `Settings`, or a `heap` node fails the desktop 
 SDK interface every `node.hpp` type answers, writing an instance's settings as JSON. The device image and the link
 trap are in [06-build-test.md](06-build-test.md).
 
+**Providers.** A pack's desktop entry may name a `provider` (a function returning an
+[`rp_provider`](../packages/node-sdk/native/src/graph/rp_provider.h): `create`, `restore`, `rpc_service`, `destroy`, led
+by an ABI version) and an `rpc` registration, which is how the N8 pack ([packages/n8](../packages/n8),
+[modular-graph-phase-e2-design.md](../docs/modular-graph-phase-e2-design.md)) starts its device service in a product
+that names no N8 class. `retroplug_product` generates, per desktop product, a header-only `rp_product_providers.hpp`
+(`rp_start_providers`, `rp_restore_providers`, `rp_stop_providers` and `rp_register_package_rpc<Server>`, over an
+`rp::Providers` the product holds per instance); a product starts its providers after its engine and before its first
+graph, restores them where it restores its own state, mounts their facets where it mounts its own, and in its
+destructor reclaims its plans (`Engine::clearGraph`) and then stops them. Listing a pack is not starting it: only a
+product whose sources include the header names the provider, so the render host, the Node addon and most test binaries
+carry none of its code. A provider installs its links into the engine's device registry through `rp_device_host`
+(`host/devices/ProviderHost.hpp`). The configure check refuses a provider or an `rpc` on a `device: true` entry.
+
 ### Kit reproducibility
 
 A kit compiles to the same bytes every time. The compiler is TypeScript (`packages/retroplug/src/kit/`): it builds
@@ -1305,7 +1331,12 @@ is one automatable parameter applied post-render across all 8 channels
 - [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
 - [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp), [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs, the registry and the offline job pool; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, `submitOfflineJob`, `drainOfflineJobs`, `cancelOfflineJob`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
-- [`host/graph/`](../packages/native/src/host/graph): [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes), [`N8Nodes.cpp`](../packages/n8/native/src/n8/N8Node.cpp) (the cart's node), [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) (the control surface's two), [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp), [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
+- [`host/graph/`](../packages/native/src/host/graph):
+  [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and
+  params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes),
+  [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) (the control surface's two),
+  [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp),
+  [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) /
   [`.cpp`](../packages/graph-runtime/native/src/graph/GraphHost.cpp),
   [`rp_node.h`](../packages/node-sdk/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI

@@ -1,8 +1,8 @@
 # Design: the modular node-graph engine
 
 **Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phases A to D built (the graph libraries are in
-`packages/graph-runtime/` and `packages/node-sdk/`, the TS half in `packages/retroplug/src/graph/`), and Phase E1; E2
-to E4 not yet built.
+`packages/graph-runtime/` and `packages/node-sdk/`, the TS half in `packages/retroplug/src/graph/`), and Phases E1 and
+E2; E3 and E4 not yet built.
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -973,17 +973,17 @@ What remains of `Engine` is the executor, the rings and the registry.
 ### 6.6 Real hardware as nodes
 
 `rp.n8.nes` (`n8` package) has the **same `midi` and `bytes` inputs as `rp.mesen.nes`**. Its `process` pushes each
-message, at its frame, onto the lock-free ring `N8Link` already uses to feed its serial thread (so it declares
-`threads`). It presents `rp.system.sram/1` (a dump and a restore of the SD card's own save file, at the cart's menu: a
-cart-memory read wedges a running game and leaves the menu deaf) and `rp.system.rom/1` (header and title from what the
-host booted, plus upload-and-boot). It has no audio output: the sound comes from the console, or from a capture input
-through `rp.host.audio-in`.
+message, at its frame, onto the lock-free ring `N8Link` already uses to feed its serial thread (the thread is the
+link's, so the node declares no `threads`). It presents `rp.system.sram/1` (a dump and a restore of the SD card's own
+save file, at the cart's menu: a cart-memory read wedges a running game and leaves the menu deaf) and
+`rp.system.rom/1` (header and title from what the host booted, plus upload-and-boot). It has no audio output: the
+sound comes from the console, or from a capture input through `rp.host.audio-in`.
 
 **The old "mirror the emulated FIFO to the hardware" (`coreByteSink_`) is plain fan-out**: the risa sync node's
 outputs feed both the emulated NES and the N8 node. Emulated, real, or both is just wiring. The Launchpad works the
 same way: `rp.launchpad.surface-in` / `-out` have events ports to and from the device, two nodes rather than one
 because a node that both fed a session and followed it is a cycle, and a feedback wire would deliver the previous
-block. Both devices reach their links through `rp.host.devices/1` and their long operations through capability jobs
+block. Both devices reach their links through `rp.host.devices/2` and their long operations through capability jobs
 ([modular-graph-phase-c5-design.md](modular-graph-phase-c5-design.md) sections 3 to 6 and 10).
 
 ---
@@ -1236,7 +1236,7 @@ narrow-host defect the B0 design records was fixed afterwards, in a follow-up th
 pinned (section 10 of the C4 design).
 
 C5 is built ([modular-graph-phase-c5-design.md](modular-graph-phase-c5-design.md)): the N8 cart and the Launchpad are
-nodes (`rp.n8.nes`, `rp.launchpad.surface-in` / `-out`) that bind a host-owned device through `rp.host.devices/1`, the
+nodes (`rp.n8.nes`, `rp.launchpad.surface-in` / `-out`) that bind a host-owned device through `rp.host.devices/2`, the
 operations an emulated system and a cart share are asynchronous capability jobs (`rp.system.memory/1`, `.sram/1`,
 `.rom/1`, §6.4), and the cart mirror and its sink, the controller channel and the system-addressed staging are gone, so
 `Engine` names no console and no device. Strict parity held bit for bit at every commit, nothing re-recorded. What it
@@ -1286,11 +1286,11 @@ portability **proved by a CI cross-compile with a link trap**.
   `core`, `dsp`) and each product's generated `rp_register_packages()`; fixed-capacity settings; the node
   header built for the desktop and the device with `RP_SETTINGS_MSGPACK`; `rp-device-check` and its link
   trap. The Pico baseline is untouched.
-- **E2: the N8 pack.** `packages/n8`: the nodes, one C++ Edio (no exceptions, caller-supplied buffers, an
-  abstract transport: the desktop serial port, TinyUSB on the Pico, later Web Serial), the link and the
-  lifecycle (probe, menu boot, recovery); TS reaches Edio through an RPC facet. `edio.ts`'s protocol and
-  `pico/n8-host/edio.c` retire. A SNES flash-cart pack follows the same template. Gate: the desktop N8
-  tests, the real-hardware leg and the Pico baseline.
+- **E2: the N8 pack** (built: [modular-graph-phase-e2-design.md](modular-graph-phase-e2-design.md)). `packages/n8`: the
+  nodes, one C++ Edio (no exceptions, caller-supplied buffers, an abstract transport: the desktop serial port, TinyUSB
+  on the Pico, later Web Serial), the link and the lifecycle (probe, menu boot, recovery); TS reaches Edio through an
+  RPC facet. `edio.ts`'s protocol and `pico/n8-host/edio.c` are retired. A SNES flash-cart pack follows the same
+  template. Gate: the desktop N8 tests, the real-hardware leg and the Pico baseline (passed).
 - **E3: `exportPlan` and the box as a graph host.** `exportPlan` for `rp2350` (the blob, msgpack settings),
   the static-arena executor, a desktop run with the heap forbidden; the box takes `rp.host.midi-in` from the
   UART and the pack's `rp.n8.nes`, with today's bridge as its built-in default plan. Gate: the Pico baseline,
@@ -1361,10 +1361,10 @@ here so it is not lost.
 ### Package split
 
 - E1 began it: `node-sdk`, `graph-runtime`, `core` and `dsp` are workspace packages (`packages/<name>/{native,ts}`
-  with a `retroplug` manifest in `package.json`), and `packages/native`'s own manifest lists the types not
-  yet carved. Carve `sameboy`, `mesen` (per console), `lsdj`, `mgb`, `risa`, `smsggdj`, `bliptoaster`, `n8`
-  (E2) and `launchpad` the same way, each with a native part, a TS part, or both, and the TS halves of
-  `core` and `dsp`.
+  with a `retroplug` manifest in `package.json`), and `packages/native`'s own manifest lists the types not yet carved.
+  E2 carved `n8` (with its provider mechanism). Carve `sameboy`, `mesen` (per console), `lsdj`, `mgb`, `risa`,
+  `smsggdj`, `bliptoaster` and `launchpad` the same way, each with a native part, a TS part, or both, and the TS
+  halves of `core` and `dsp`.
 - **Mesen** compiles all seven consoles into one 426-object archive (NES 6.6 MB, SNES 6.3 MB of objects,
   ...), and `Core/Shared/Emulator.cpp` plus `Core/Debugger/Debugger.cpp` reference every console, so the
   linker cannot drop any. Per-console compile-out is a `MESEN_ENABLE_<X>` patch to ~20 files plus a
@@ -1374,7 +1374,7 @@ here so it is not lost.
   dependency on LSDj files removed; per-product esbuild entries (today every bundle carries every cart).
 - Menus (`menuDefs.ts`'s 240 cart-specific lines, `TRACKER_UI`), catalogs, the HD player and the overlays
   move onto extensions and views.
-- The Edio protocol exists three times (TS source of truth, C++, Pico C), kept in sync by hand; E2 fixes
+- The Edio protocol existed three times (TS source of truth, C++, Pico C), kept in sync by hand; E2 fixed
   that with one C++ implementation in the N8 pack.
 
 ### Web host

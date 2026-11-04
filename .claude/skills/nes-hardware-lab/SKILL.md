@@ -124,7 +124,7 @@ A game must be running for these (the sniffer is off at the menu).
   command says so and you pass `--chr-bank <n>` (which also reaches the banks that aren't on
   screen). A CHR-RAM cart's RAM is NOT at `ADDR_CHR` - it is at `+0x400000`, the upper 4 MB of the
   chip - which the tool now handles; the decode lives in RetroPlug's
-  `packages/retroplug/src/n8/mapConfig.ts`.
+  `packages/n8/ts/mapConfig.ts`.
 - **Code:** `--patch-prg <hexoff> <file>` live-patches PRG (a bad patch crashes the game ->
   power-cycle to recover). `--savestate <sd-path>` decodes a full N8 save-state.
 - **Saves:** `--dump-sram <file>` reads cart battery RAM; `--srm <save.srm>` restores one on boot.
@@ -249,7 +249,7 @@ artifact or a stuck note, NOT proof the game is playing. Cross-check pitch again
 
 > **This console is PAL: pass `--pal` to `--sniff`.** The sniffer cannot tell the region, and without
 > the flag the APU timers decode at the NTSC clock (`decodeSniffer()`'s default,
-> [src/n8/sniffer.ts](../../../packages/n8/ts/sniffer.ts)), so the Hz read ~7.6% HIGH: a capture
+> [packages/n8/ts/sniffer.ts](../../../packages/n8/ts/sniffer.ts)), so the Hz read ~7.6% HIGH: a capture
 > measuring 440 Hz against a sniff reading 474 Hz is **agreement, not a tuning bug** (474 x
 > 1662607/1789773 = 440.3). `n8-load --sniff --pal` decodes at 1.6626 MHz and prints which clock it used;
 > without `--pal` the output reminds you.
@@ -272,6 +272,39 @@ artefact; the ROMs were fine. `grab-frame` runs ffmpeg for a run of frames keepi
 longer run and, if it stays black, reported as `WARNING: ... flat black` rather than handed back as the
 screen (`--fail-on-black` makes that exit 1). The raw ffmpeg line it wraps, if you need it:
 `ffmpeg -y -f v4l2 -standard PAL -input_format yuyv422 -video_size 720x576 -i /dev/video0 -frames:v 30 -update 1 /tmp/nes.png`.
+
+## 3b. The Pico box (standalone MIDI to N8, no PC)
+
+`pico/n8-host` is a Pico 2 that boots a ROM through the N8 menu and forwards MIDI to the cart FIFO
+by itself. Its firmware is C++ on the N8 pack (`packages/n8`), so it runs the SAME Edio as
+`retroplug-cli`'s n8-* tools; `pico/n8-host`'s README has the box's behaviour (LED, watchdog, ROM
+staging, the SysEx `7D 50` pick). Notes for running it:
+
+- **The N8's USB belongs to the Pico while a box test runs** (the SD card is reachable only through
+  it), so no CLI session may hold the port at the same time. Drive it only through `pico/n8-host`'s
+  scripts, from that directory (`cd` in a subshell): `./loop.sh --rom
+  /workspaces/bliptoaster/build/bliptoaster.nes --until 'booted by the Pico' --fail "no 'k'|FAILED"`
+  (stages the ROM, builds, flashes over SWD, power-cycles the NES and watches the console),
+  `./stress.sh --rom /workspaces/bliptoaster/build/bliptoaster.nes` (a MIDI flood through the Pico,
+  counters and latency) and `./faults.sh --rounds 8` (random NES power cuts, each round must boot
+  again and play an A4). The Debug Probe and its console (`/dev/ttyDbgProbe`, 115200) are the
+  Pico's; the lab's power rules above apply to the NES.
+- **Box tests boot BlipToaster, never `n8-midi.nes`.** Stage the ROM with `--rom <file.nes>` (it is written into the
+  Pico's flash and copied to `usb-games/pico/<name>.nes`). `n8-midi.nes` is the older MIDI ROM (it drops its first
+  message, hangs on a Launchpad's flood and is broken on ch2); `N8_ROM_PATH` still defaults to it in the firmware, so a
+  bare flash with no `--rom` boots that file if it is on the card.
+- **The boot line to match.** The console prints `[n8-host] USB host up (PIO-USB D+=GP2, D-=GP3)
+  ...`, then `[n8-host] node type rp.n8.nes (registered, not planned)` (the image naming the pack's
+  node; E3 plans it), and a good boot ends `[n8-host] usb-games/pico/bliptoaster.nes booted by the
+  Pico - no PC used.`, about 12 s after the reset from the saved choice with the CRC skip (`[box]
+  already on the SD ... - no upload`), an upload adds about 5 s for a 290 KB ROM. The pass pattern
+  is `booted by the Pico`; fail on `no 'k'` or `FAILED`.
+- **Read `[stats] lat=` per window.** The figure is the last window's average and maximum in us, not
+  cumulative: the final line's 10 ms is the recovery window and the window holding a 40-byte SysEx
+  peaks near 21 ms (the SysEx is about 13 ms on the wire). Isolated notes sit near 0.6 ms average
+  and 1.1 ms worst.
+- **`pnpm device:box` needs no hardware**: it proves the firmware links under the heap/exception/RTTI trap and is CI's
+  check; the scripts above are what prove it behaves.
 
 ## Typical loop
 

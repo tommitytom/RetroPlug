@@ -6,7 +6,8 @@ Start with these — all short:
 - [spec/](spec/README.md) - the architecture (one doc per concern). The build lives in `packages/native/` (C++ host:
   `src/` core + `src/host/` layer + `plugin/`) + `packages/retroplug/` (TS/UI), with the graph libraries in the
   workspace packages `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (formerly
-  `native/src/graph` and `native/src/dsp`). The older **legacy** build has been removed;
+  `native/src/graph` and `native/src/dsp`), and everything about the Everdrive N8 Pro in `packages/n8/`. The older
+  **legacy** build has been removed;
   [spec/07-remaining-work.md](spec/07-remaining-work.md) tracks the residual cleanup + feature gaps.
 - [docs/lsdj.md](docs/lsdj.md) — the LSDj domain reference + how to test LSDj sync /
   DAW timing / audio quality headlessly.
@@ -55,7 +56,7 @@ The rules below are the parts that don't fit those.
   node's kind check name no console; with C5's cart node the engine makes no console check at all), and a node
   refusing a core of another console's kind; the engine places, re-arms and frees what the graph documents
   TS builds say; the host MIDI I/O nodes move what the hosts stage and drain; the hardware nodes (C5,
-  [docs/modular-graph-phase-c5-design.md](docs/modular-graph-phase-c5-design.md)): `rp.host.devices/1` over fake
+  [docs/modular-graph-phase-c5-design.md](docs/modular-graph-phase-c5-design.md)): `rp.host.devices/2` over fake
   devices, a host that owns no device, a link kept across a reactivate and given back once at a teardown, and a
   warmed block touching both links allocating nothing; the capability jobs (`rp.system.memory/1`, `.sram/1`,
   `.rom/1`) on each emulated console against the system-id RPCs and the ROM file, a write completing at the block
@@ -63,8 +64,10 @@ The rules below are the parts that don't fit those.
   thread's progress, and a warmed block with writes in flight; `rp.n8.nes` from one source receiving what
   `rp.mesen.nes` receives, in order and at their frames, its expansion volume, the note-offs a pause dropped, the
   notes it holds handed to its link when it leaves the plan (by an idle reclaim too, with no further publish), its
-  jobs' busy and not-connected refusals, an abandoned job and its `threads`, and the same node behind a real Engine
-  driving the production cart adapters to a fake serial port (`[n8-adapters]`), a host's teardown included; the
+  jobs' busy and not-connected refusals, an abandoned job, and the node declaring no `threads` so that a Pico target
+  plans it, and the same node behind a
+  real Engine driving the production cart adapters to a fake serial port (`[n8-adapters]`), a host's teardown
+  included; the
   surface's two nodes (a frame-0 drain, the queue's bound, the first-block discard, uniqueness, one link each); and
   the UI's staged message reaching the node the running plan places under its id; the offline job pool (D2,
   [docs/modular-graph-phase-d2-design.md](docs/modular-graph-phase-d2-design.md) sections 3 and 11,
@@ -127,15 +130,17 @@ The rules below are the parts that don't fit those.
   `retroplug-dynparams-test` is the odd one out: it compiles DPF's format-neutral core (`DistrhoPlugin.cpp`)
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive
   `PluginExporter::reinitParameters` over a toy plugin.
-  `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp`
-  compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library reached through the C ABI
-  (Catch2 itself keeps exceptions), ten cases. A device-mode node created from msgpack settings renders bit for bit
+  `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp` (and
+  `rp.n8.nes`, in the `[device-check]` cases) compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an
+  object library reached through the C ABI
+  (Catch2 itself keeps exceptions), eleven cases. A device-mode node created from msgpack settings renders bit for bit
   what a desktop-mode node renders from the same settings as JSON, with create, process and destroy allocating
   nothing; the desktop reads msgpack the same; the decode defaults a missing field, skips an unknown one and refuses
   what JSON refuses in the same words, naming the field (two inputs part by choice, pinned: design section 6); the
-  converter writes each number as the JSON spells it; and four `[device-check]` cases hold the image's cases to the
-  manifests' device entries, run the whole check in its arena with no allocation, and stop it at each of its failure
-  steps. Its configure runs three refused-source checks (a heap type, a pointer in `Settings` and a heap header must
+  converter writes each number as the JSON spells it; and five `[device-check]` cases hold the image's cases to the
+  manifests' device entries, run the whole check in its arena with no allocation, stop it at each of its failure
+  steps, and drive the N8 pack's Edio, menu commands and operations over a scripted cart. Its configure runs three
+  refused-source checks (a heap type, a pointer in `Settings` and a heap header must
   each fail in device mode with their own reason; libc++ skips the header one).
 - **The graph libraries are workspace packages, and portable nodes have rules.** `packages/<name>/package.json`'s
   `retroplug` field is the manifest [cmake/packages.cmake](cmake/packages.cmake) reads; each product lists its
@@ -148,6 +153,24 @@ The rules below are the parts that don't fit those.
   such target, so a missed guard or a non-portable `Settings` fails the ordinary build. A custom `rfl::Reflector<E>`
   is not seen by the device decode. Details:
   [docs/modular-graph-phase-e1-design.md](docs/modular-graph-phase-e1-design.md).
+- **The N8 is a pack (`packages/n8`), and a product starts it through a provider, naming no N8 class.** Its portable
+  target (`retroplug-n8`, `device: true`) holds the Edio protocol written ONCE, in C++ with no exceptions, over an
+  abstract `Transport`, plus the menu commands, the operations (`bootRom`, `readFile`, `writeFile`), `rp.n8.nes` and the
+  `CartLink` it drives; the desktop target (`retroplug-n8-desktop`) holds the serial transport, `N8Link`, `N8Host`, the
+  `N8CartLink` and the RPC facet (`N8Rpc`), and the Pico box (`pico/n8-host`) runs the same Edio. A node's `threads`
+  flag
+  declares what the NODE needs, not its device link: `rp.n8.nes` declares none (its link's `push()` never blocks), the
+  Launchpad nodes still do, the one exception until their pack. A manifest entry's `provider` is how `retroplug_product`
+  generates `rp_product_providers.hpp` (`rp_start_providers`, `rp_restore_providers`, `rp_stop_providers`,
+  `rp_register_package_rpc`, over an `rp::Providers` each product instance holds); only a product whose sources include
+  it starts the provider, so listing a pack is not starting it. TS reaches the Edio through `createN8Client(call)` in
+  `@retroplug/n8` (`packages/n8/ts`: the decoders, the load helpers, sessions and the streaming link); the CLI's
+  sessions
+  run over the facet, and the Edio exists once. The pack's tests are `pnpm test:n8`
+  (`retroplug-n8-test` and `retroplug-serial-test`, built from `packages/n8/native/test`, NOT in `test:plugin`), whose
+  golden (`edio-golden.json`, 28 cases) is the protocol's byte-level oracle; the box's gate is repeated on the rig by
+  hand and tests BOOT BLIPTOASTER, never `n8-midi.nes`. Details:
+  [docs/modular-graph-phase-e2-design.md](docs/modular-graph-phase-e2-design.md).
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
   EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
   in `Core/apu.{c,h}` and ships as a tracked patch
@@ -366,9 +389,16 @@ The headless loop (the only path — legacy is gone) is documented in
 C++ unit checks — the per-context window-hook routing, the class-id counter sync
 that keeps the DAW-hosted editor from rendering blank, and the DPF dynamic-parameter
 diff classifier), `device:check` (`tools/build-device-check.sh` - builds `rp-device-check`, the RP2350 image of every
-portable `rp.core` / `rp.dsp` type, with `arm-none-eabi-g++` and the Pico SDK 2.1.1 (`PICO_SDK_PATH`), under a link
+portable `rp.core` / `rp.dsp` / `rp.n8.nes` type and the N8 pack's Edio, with `arm-none-eabi-g++` and the Pico SDK
+2.1.1 (`PICO_SDK_PATH`), under a link
 trap on the heap, on exceptions and on RTTI (87 wrapped symbols with arm-none-eabi GCC 13.2.1) and a probe that must fail to link; built and never
-run, in CI on linux-x64; needs no hardware), `screenshot`,
+run, in CI on linux-x64; needs no hardware), `device:box` (`tools/build-box.sh` - builds the Pico box's firmware,
+`pico/n8-host`, which is C++ on the N8 pack's Edio, in both USB variants (Pico-PIO-USB, the rig's, and
+`RP_NATIVE_USB`) under the same link trap over the WHOLE image, TinyUSB and Pico-PIO-USB included, each with its own
+probe that must fail to link; needs the SDK's TinyUSB submodule and a Pico-PIO-USB checkout at 5a37a66
+(`PICO_PIO_USB_PATH`, default `/workspaces/Pico-PIO-USB`); built and never run, in CI on linux-x64 beside
+`device:check`; the box's hardware gate is `pico/n8-host/loop.sh`, `stress.sh` and `faults.sh`, run by hand on the
+rig), `screenshot`,
 `reaper:editor` (`tools/run-reaper-editor.sh` — floats the hosted plugin editor in
 headless Reaper and asserts its LVGL snapshot rendered; the only check of on-screen
 editor rendering, not in CI), `reaper:editor-reopen` (`tools/run-reaper-editor-reopen.sh`

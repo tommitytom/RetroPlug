@@ -78,7 +78,8 @@
 // from msgpack into the instance itself. A device runs a plan the desktop planned and validated, so its build has no
 // descriptor, no layout, no JSON and no prepare / commit, and never calls validate or adjust_layout: a node source
 // that is built for the device puts those two (and whatever only they use) inside `#ifndef RP_DEVICE`, since they name
-// desktop types (std::string, rp::graph::Layout). A type built for the device declares neither `heap` nor `threads`,
+// desktop types (std::string, rp::graph::Layout). A type built for the device declares neither `heap` nor `threads`
+// (a node's `threads` is what the node itself needs; a device link's own thread is the link's business),
 // and its Settings holds only numbers, bools, enums (a fixed underlying type, no operator|), rp::choice, rp::text,
 // rp::list and rp::resource_ref; either is checked at compile time, on the desktop too, whose default build compiles
 // every `device` package entry in device mode as well (cmake/packages.cmake). An enum_param works on both builds.

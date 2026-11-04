@@ -303,9 +303,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
 - **C5 built: hardware as nodes, and the engine names no device**
   ([modular-graph-phase-c5-design.md](../docs/modular-graph-phase-c5-design.md), seven commits): the N8 cart and the
   Launchpad are nodes (`rp.n8.nes`, `rp.launchpad.surface-in` / `-out`) that bind the host-owned device through
-  `rp.host.devices/1`, the operations an emulated system and a cart share are asynchronous capability jobs
-  (`rp.system.memory/1`, `.sram/1`, `.rom/1`), and the cart mirror, the controller channel, `stageSystemMidi`, the
-  `__rp_n8*` operation hooks and `N8Host`'s SD worker are gone. Strict parity held bit for bit at every commit,
+  `rp.host.devices/2` (`/1` until E2), the operations an emulated system and a cart share are asynchronous capability
+  jobs (`rp.system.memory/1`, `.sram/1`, `.rom/1`), and the cart mirror, the controller channel, `stageSystemMidi`,
+  the `__rp_n8*` operation hooks and `N8Host`'s SD worker are gone. Strict parity held bit for bit at every commit,
   nothing re-recorded. What it leaves (its section 11):
   - **P7's remainder**, above: video, buttons and debug are still `SystemBase` virtuals, `state/1` is still the
     system-id RPC, and `SystemNodes.cpp` still holds all four consoles' nodes.
@@ -515,22 +515,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   (`RP_SETTINGS_MSGPACK`) with a reader of our own; `retroplug-device-mode-test` is the eleventh `test:plugin` binary;
   and `pnpm device:check` links the RP2350 image of every portable `rp.core` and `rp.dsp` type under a trap on the heap,
   on exceptions and on RTTI, a CI step. Nothing was re-recorded. What is left, in order:
-  - **E2: the N8 pack** (`packages/n8`: the nodes, one C++ Edio with an abstract transport, the link and the
-    lifecycle; `edio.ts`'s protocol and `pico/n8-host/edio.c` retire), gated on the desktop N8 tests, the real-hardware
-    leg and the Pico baseline. The box's default USB host, Pico-PIO-USB, makes its SOF alarm pool on the heap at init
-    (`pio_usb_host_init` -> `alarm_pool_create(2, 1)`), so the firmware links under the device check's trap only with
-    that pool made another way (`skip_alarm_pool` and a repeating timer of its own on the SDK's static default pool, or
-    a pool not made on the heap), or keeps a heap with a trap scoped to the graph archives; TinyUSB host with UART MIDI
-    (`RP_NATIVE_USB=ON`) links under the 87-symbol trap (with arm-none-eabi GCC 13.2.1) as it is (E1 design 12.5, question 3). The pack's abstract Edio
-    transport needs a protected non-virtual destructor: a virtual one makes its deleting destructor reference
-    `operator delete`, which the trap refuses. The pack's interfaces are not yet portable: `rp.n8.nes` binds through
-    `host/devices/DeviceLinks.hpp`, `host/engine/CapabilityJobs.hpp`, `host/graph/HostServices.hpp` and
-    `host/graph/SystemNodes.hpp` (`rp.host.devices/1`, `CartLink`, the `rp.system.*/1` job types), desktop-typed headers in
-    packages/native, so E2 first moves that host-service ABI into `node-sdk` as portable headers (the engine's
-    implementations stay put). A `device: true` entry compiles every source of its target in device mode, so the pack's
-    portable sources (node, Edio) and its desktop-only ones (serial, link threads, menu) are separate targets. The box
-    firmware, a second device project, must reproduce `device-check/CMakeLists.txt`'s reflect-cpp pin and finder, or the
-    pin moves into `cmake/` for both to reuse.
+  - **E2: the N8 pack** is built (below).
   - **E3: `exportPlan` for `rp2350`, the static-arena executor and the box as a graph host**, gated on the Pico baseline
     and a C++ node in the box's plan. It must also settle `rp.core.delay`'s default, which needs 384 KB an instance
     (74% of the RP2350's RAM) and sizes the check's arena: a device default or a planner cap. The device's stack in
@@ -557,6 +542,31 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Enum limits.** An `rfl::config::enum_range<E>` override is not honoured and a custom `rfl::Reflector<E>` is not
     seen by the device decode (`rfl::internal::has_read_reflector<E>` would refuse it in one line; no node has one);
     each portable enum costs 55 to 95 ms of compile time a translation unit.
+- **E2 built: the N8 pack and one Edio** ([modular-graph-phase-e2-design.md](../docs/modular-graph-phase-e2-design.md),
+  five commits): the device ABI in `node-sdk` (`rp_device.h`, `rp_jobs.h`, `rp_stage.h`: a fixed 8-entry registry,
+  `rp.host.devices/2`, an opaque `rp_job` over the engine's record, the four-entry `rp.host.jobs/1`), `packages/n8` (the
+  portable `retroplug-n8`, `device: true`, and the desktop `retroplug-n8-desktop` with its provider and RPC facet), the
+  Edio written once (C++, no exceptions, an abstract `Transport`; `edio.ts`, `n8Menu.ts`, the desktop C++ Edio,
+  `SerialRpcService`, the four `__rp_*N8` hooks and `pico/n8-host/edio.c` are gone), generated providers
+  (`rp_product_providers.hpp`, one `rp::Providers` per product instance), and the box firmware in C++ on the pack under
+  the link trap over the whole image (`pnpm device:box`, a CI step; a static SOF timer on hardware alarm 2 and a wrap of
+  `alarm_pool_create_on_timer`; a 4 KB stack). The Pico gate passed on the rig with BlipToaster. Nothing was re-recorded
+  but `[packages]`, where `rp.n8.nes` moved under the n8 package with every product's ids unchanged. What it leaves:
+  - **E3's box link must keep `CartLink`'s promise** that `push()` never blocks, allocates or takes a lock: the node
+    declares no `threads` and a Pico target plans it, so the link behind it decides what the box can do.
+  - **The device check keeps the SDK's 2 KB stack.** Its protocol chain is about 1.9 KB by the hand sum and its types
+    chain (E1's settings decode) about 2.3 KB; the check's successor wants `PICO_STACK_SIZE=0x1000` as the box has, and
+    a `-Wstack-usage` check would replace the hand sum, which has no limit at run time.
+  - **`UsbCdcTransport` has no host-side fake**: its remount, unmount and drain rules are proven on the rig and by
+    reading, with no host test.
+  - **The Launchpad's nodes still declare `threads`** for their link, the one exception to "the flag is what the node
+    itself needs", until they have a pack (provider, facet in place of `bindLaunchpadHooks`).
+  - **The N8 menus, the CLI sessions and `buildGraph`'s `cart-<id>` placement stay in `packages/retroplug`** until menus
+    move onto extensions; `chrImage.ts` and `risaSyncTranslator.ts` stay there too, as each imports `retroplug` modules.
+  - **The gate's latency comparison is partial.** The `[stats] lat=` figure is per window, not cumulative, and the SysEx
+    window peaks at 20.9 ms (a 40-byte SysEx is about 13 ms on the wire); no baseline window was kept for it.
+  - **The desktop hardware leg** (`n8-load`, `n8-play`, `retroplug-n8-hwtest`) is the controller's, after the plan's
+    replay.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

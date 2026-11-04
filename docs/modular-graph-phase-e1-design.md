@@ -322,7 +322,11 @@ Five commits, each building and passing on its own:
 
 ## 10. Left beyond E1
 
-- The N8 pack and the single C++ Edio (E2). Its firmware builds against the pack, and the box's default USB host,
+- The N8 pack and the single C++ Edio (E2). **Done in E2**
+  ([modular-graph-phase-e2-design.md](modular-graph-phase-e2-design.md) section 13): the box's alarm pool is made
+  another way, `skip_alarm_pool` with a static SOF timer of the firmware's own on hardware alarm 2, plus a `--wrap` of
+  `alarm_pool_create_on_timer`, since `skip_alarm_pool` alone leaves that function, and the heap with it, linked. What
+  follows is what E2 started from. Its firmware builds against the pack, and the box's default USB host,
   Pico-PIO-USB, allocates once at init: `pio_usb_host_init` makes its SOF alarm pool with `alarm_pool_create(2, 1)`,
   `malloc` and `calloc`, unless its config sets `skip_alarm_pool`. Under the link trap E2 needs that pool made another
   way (`skip_alarm_pool` with a repeating timer of its own on the SDK's default pool, which is static, or a pool not
@@ -331,8 +335,9 @@ Five commits, each building and passing on its own:
   links under the 87-symbol trap (with arm-none-eabi GCC 13.2.1) as it is (12.5, question 3). A non-virtual protected destructor is also what the pack's
   abstract Edio transport needs: a virtual one makes the class's deleting destructor reference `operator delete`, which
   the trap refuses.
-- What E2's pack can depend on is narrower than "node-sdk and nothing else" until the host-service ABI moves. `rp.n8.nes`
-  (packages/native/src/host/graph/N8Nodes.cpp) includes `host/devices/DeviceLinks.hpp`, `host/engine/CapabilityJobs.hpp`,
+- **Done in E2** (its design's section 5 moved the host-service ABI into `node-sdk`, and the pack depends on `node-sdk`
+  alone). What E2's pack could depend on was narrower than "node-sdk and nothing else" until the host-service ABI
+  moved. `rp.n8.nes` (packages/native/src/host/graph/N8Nodes.cpp) includes `host/devices/DeviceLinks.hpp`, `host/engine/CapabilityJobs.hpp`,
   `host/graph/HostServices.hpp` and `host/graph/SystemNodes.hpp`: `rp.host.devices/1` with `HostDevices`, the `CartLink`
   and `SurfaceLink` interfaces, the `rp.system.*/1` capability-job types and the expansion-volume constants, which reach
   `<mutex>`, `<string>`, `<vector>`, `<bitset>` and `system/SystemTypes.hpp`. E2 moves that ABI into `node-sdk` as portable

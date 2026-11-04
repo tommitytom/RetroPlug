@@ -87,13 +87,17 @@ copying 128 KiB and decoding a song every frame is too expensive (see the live-m
 Drives a **real** NES over USB: MIDI in (from a DAW or a controller) is forwarded to a physical
 Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart.
 
-- Code: `src/host/n8/` natively (`Edio`, `N8Link`, `N8Host`, the serial port), `src/n8/` in TS
-  (the protocol, the sniffer, the SD/menu images). The emulated twin is
+- Code: the workspace package `packages/n8`: natively `native/src/n8/` (the one `Edio`, written once in C++ for the
+  desktop and the Pico box over an abstract transport, with `Menu`, `Ops`, `rp.n8.nes` and `CartLink`) and
+  `native/src/n8/desktop/` (`N8Link`, `N8Host`, the serial transport, the RPC facet and the provider); in TS
+  `packages/n8/ts` (`createN8Client`, the sniffer and the other decoders, the load helpers). The emulated twin is
   `src/system/mesen/NesEverdriveFifo.hpp`, which every NES ROM gets at `$40F0`/`$40F1`.
-- The plugin and the SDL standalone link it; `retroplug-cli` gates it behind
-  `RETROPLUG_N8_BRIDGE` so the CLI does not drag in rtmidi and serial.
-- **Prove a change:** `pnpm test:n8` (protocol, no hardware), the `NesN8FifoTiming` and
-  `N8Host` Catch2 cases, and `pnpm test n8`. `retroplug-n8-hwtest` needs the physical console.
+- Every product that lists the pack and includes its generated provider header starts it (the plugin, the SDL
+  standalone and the CLI, whose sessions use the facet's session half; `RETROPLUG_N8_BRIDGE` gates only the CLI's
+  live-MIDI facet and rtmidi). The Pico box (`pico/n8-host`) is the same Edio on TinyUSB.
+- **Prove a change:** `pnpm test:n8` (protocol, no hardware; `packages/n8/native/test`), the `NesN8FifoTiming` and
+  `N8Host` Catch2 cases, `pnpm test n8` and `pnpm test:native n8-session`; for the box, `pnpm device:box` and the rig's
+  `loop.sh`, `stress.sh` and `faults.sh`. `retroplug-n8-hwtest` needs the physical console.
 - Deeper: [docs/n8-bridge-plan.md](../docs/n8-bridge-plan.md),
   [docs/n8-usb-capabilities.md](../docs/n8-usb-capabilities.md).
 
@@ -201,10 +205,11 @@ its serial-out decoder, `rp.lsdj.serial-out`, placed after the systems
 [07-remaining-work.md](07-remaining-work.md) section 5.
 
 - Code: `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (C++: the node SDK, the
-  executor and planner, the `rp.core` and `rp.dsp` nodes), `packages/native/src/host/graph/` (the engine's nodes),
-  `packages/native/src/host/script/` (the script host), `packages/retroplug/src/graph/` (TS: the node and
-  extension contracts, `buildGraph`, `DirectGraph`, the zod-free settings schema), `packages/retroplug/src/script/`
-  (the script-node bundle and its nodes) and `packages/retroplug/src/engineGraph.ts`.
+  executor and planner, the `rp.core` and `rp.dsp` nodes; `packages/n8/` holds `rp.n8.nes`),
+  `packages/native/src/host/graph/` (the engine's nodes), `packages/native/src/host/script/` (the script host),
+  `packages/retroplug/src/graph/` (TS: the node and extension contracts, `buildGraph`, `DirectGraph`, the zod-free
+  settings schema), `packages/retroplug/src/script/` (the script-node bundle and its nodes) and
+  `packages/retroplug/src/engineGraph.ts`.
 - **Prove a change:** `pnpm test:plugin graph` (a substring filter, so both `retroplug-graph-test`
   and `retroplug-engine-graph-test`), `pnpm test graph`, `pnpm test:native parity` for anything the
   engine renders, and the ThreadSanitizer build of `retroplug-graph-test` (`build-tsan/`, as in

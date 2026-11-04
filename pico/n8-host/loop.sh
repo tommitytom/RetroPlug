@@ -145,7 +145,7 @@ else
 fi
 # ROMs staged with --rom (repeatable) go into Pico flash at 0x10200000, back to back: a 64-byte
 # header ("N8RM", size LE, SD path) + the ROM, padded to the next 4 KB, then one erased 4 KB block
-# so a longer table from an earlier run cannot show through after the last entry (box.c reads
+# so a longer table from an earlier run cannot show through after the last entry (box.cpp reads
 # until a slot lacks the magic). The firmware boots the one picked over MIDI, else the one saved
 # on the SD as last booted, else the first. Flashing without --rom erases the first header, so a
 # plain run boots N8_ROM_PATH as before.
