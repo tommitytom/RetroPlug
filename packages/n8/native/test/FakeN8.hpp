@@ -144,6 +144,15 @@ struct FakeN8Port : PortTransport {
     }
 
 private:
+    // The device addresses as the command frames carry them (32 bits, unsigned), so no comparison below mixes them with
+    // Edio's signed constants.
+    static constexpr std::uint32_t kSrm    = static_cast<std::uint32_t>(Edio::ADDR_SRM);
+    static constexpr std::uint32_t kSrmEnd = kSrm + static_cast<std::uint32_t>(Edio::SIZE_SRM_GAME);
+    static constexpr std::uint32_t kCfg    = static_cast<std::uint32_t>(Edio::ADDR_CFG);
+    static constexpr std::uint32_t kCfgEnd = kCfg + static_cast<std::uint32_t>(Edio::SIZE_CFG);
+    static constexpr std::uint32_t kExpVol = static_cast<std::uint32_t>(Edio::ADDR_EXP_VOL);
+    static constexpr std::uint32_t kFifo   = static_cast<std::uint32_t>(Edio::ADDR_FIFO);
+
     static std::uint32_t le32(const Bytes& b, std::size_t at) {
         return b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | (static_cast<std::uint32_t>(b[at + 3]) << 24);
     }
@@ -269,18 +278,18 @@ private:
                 const Bytes& file = dev_.files[filePath_];
                 reply({0});
                 for (std::uint32_t i = 0; i < block; ++i)
-                    out_.push_back(readPos_ + i < file.size() ? file[readPos_ + i] : 0);
+                    out_.push_back(readPos_ + i < file.size() ? file[readPos_ + i] : std::uint8_t{0});
                 readPos_ += block;
                 dev_.log.push_back("file-rd");
                 delay = dev_.fileReadDelayMs;
             } else if (cmd == Edio::CMD_MEM_RD) {
                 const std::uint32_t addr = le32(c, 4), size = le32(c, 8);
                 for (std::uint32_t i = 0; i < size; ++i) out_.push_back(peek(addr + i));
-                if (addr >= Edio::ADDR_SRM && addr < Edio::ADDR_SRM + Edio::SIZE_SRM_GAME) dev_.log.push_back("srm-rd");
+                if (addr >= kSrm && addr < kSrmEnd) dev_.log.push_back("srm-rd");
             } else if (cmd == Edio::CMD_MEM_WR) {
                 const std::uint32_t addr = le32(c, 4), size = le32(c, 8);
                 const std::uint8_t* data = c.data() + 13;
-                if (addr == static_cast<std::uint32_t>(Edio::ADDR_EXP_VOL)) {
+                if (addr == kExpVol) {
                     ++dev_.expVolAttempts;
                     if (dev_.refuseExpVolWrites > 0) {
                         --dev_.refuseExpVolWrites;
@@ -288,12 +297,12 @@ private:
                         continue;
                     }
                 }
-                if (addr == static_cast<std::uint32_t>(Edio::ADDR_FIFO)) {
+                if (addr == kFifo) {
                     dev_.log.push_back("fifo:" + hex(data, size));
                     for (std::uint32_t i = 0; i < size; ++i) fifoByte(data[i]);
                 } else {
                     for (std::uint32_t i = 0; i < size; ++i) poke(addr + i, data[i]);
-                    if (addr >= Edio::ADDR_SRM && addr < Edio::ADDR_SRM + Edio::SIZE_SRM_GAME)
+                    if (addr >= kSrm && addr < kSrmEnd)
                         dev_.log.push_back("srm-wr");
                 }
             } else if (cmd == Edio::CMD_F_DEL) {
@@ -325,17 +334,16 @@ private:
         }
     }
     std::uint8_t peek(std::uint32_t addr) {
-        if (addr >= Edio::ADDR_SRM && addr < Edio::ADDR_SRM + Edio::SIZE_SRM_GAME)
-            return static_cast<std::uint8_t>(dev_.sram[addr - Edio::ADDR_SRM]);
+        if (addr >= kSrm && addr < kSrmEnd) return dev_.sram[addr - kSrm];
         // The menu runs on the OS's own mapper, 255.
-        if (dev_.menu && addr == static_cast<std::uint32_t>(Edio::ADDR_CFG)) return 0xFF;
-        if (dev_.menu && addr == static_cast<std::uint32_t>(Edio::ADDR_CFG) + 2) return 0;
-        if (addr >= Edio::ADDR_CFG && addr < Edio::ADDR_CFG + Edio::SIZE_CFG) return dev_.cfg[addr - Edio::ADDR_CFG];
+        if (dev_.menu && addr == kCfg) return 0xFF;
+        if (dev_.menu && addr == kCfg + 2) return 0;
+        if (addr >= kCfg && addr < kCfgEnd) return dev_.cfg[addr - kCfg];
         return 0;
     }
     void poke(std::uint32_t addr, std::uint8_t v) {
-        if (addr >= Edio::ADDR_SRM && addr < Edio::ADDR_SRM + Edio::SIZE_SRM_GAME) dev_.sram[addr - Edio::ADDR_SRM] = v;
-        if (addr >= Edio::ADDR_CFG && addr < Edio::ADDR_CFG + Edio::SIZE_CFG) dev_.cfg[addr - Edio::ADDR_CFG] = v;
+        if (addr >= kSrm && addr < kSrmEnd) dev_.sram[addr - kSrm] = v;
+        if (addr >= kCfg && addr < kCfgEnd) dev_.cfg[addr - kCfg] = v;
     }
 
     // What the cart's side of the FIFO makes of a byte: the menu's commands, or the game's reliable link.
@@ -407,7 +415,7 @@ private:
                     replyAck({0xF5, next_, next_});
                     return;
                 }
-                if (b != (sum & 0x7F)) return;
+                if (static_cast<unsigned>(b) != (sum & 0x7F)) return;
                 dev_.frameSeqs.push_back(seq_);
                 if (seq_ == next_) {
                     dev_.applied.push_back(msg_);

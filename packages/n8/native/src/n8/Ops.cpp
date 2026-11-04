@@ -150,8 +150,7 @@ Status writeFile(Edio& edio, std::string_view path, ByteView data, Progress prog
     if (path.size() > Edio::kStringMax) return failed(Code::TooLarge, Where::Length, Step::Open);  // before any byte
     const auto total = static_cast<std::uint32_t>(data.size);
     if (!progress(0, total)) return failed(Code::Cancelled, Where::None, Step::Open);
-    const std::uint8_t mode{Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH};
-    if (Status s = edio.fileOpen(path, mode); !s.ok()) return at(s, Step::Open);
+    if (Status s = edio.fileOpen(path, Edio::FA_REPLACE); !s.ok()) return at(s, Step::Open);
     if (Status s = edio.fileWrite(data.data, data.size, progress); !s.ok()) return at(s, Step::Data);
     if (Status s = edio.fileClose(); !s.ok()) return at(s, Step::Close);
     return {};
@@ -174,7 +173,7 @@ Status bootRom(Edio& edio, std::string_view path, ByteView rom, ByteView srm, Up
     const std::uint32_t total    = uploaded + static_cast<std::uint32_t>(srm.size);
     Menu                menu(edio);
 
-    // What a boot cannot finish is refused before its first byte, not after a test, an upload or a battery have gone out.
+    // What a boot cannot finish is refused before its first byte, not after a test, an upload or a battery went out.
     if (path.size() > Edio::kStringMax)
         return failed(Code::TooLarge, Where::Length, upload == Upload::Always ? Step::Upload : Step::Install);
     if (srm.size != 0 && !batterySlotFits(path)) return failed(Code::TooLarge, Where::BatteryPath, Step::Save);

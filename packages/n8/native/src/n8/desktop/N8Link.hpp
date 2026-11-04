@@ -162,7 +162,7 @@ public:
     // before the write, and whether it is a link re-send) - what retroplug-n8-hwtest `timing` times latency from.
     using WriteLog = std::function<void(const std::uint8_t* data, std::size_t n, std::int64_t ns, bool resend)>;
     void          setLinkAllowed(bool on) { linkAllowed_ = on; }
-    void          setWriteLog(WriteLog log) { writeLog_ = std::move(log); }
+    void          setWriteLog(WriteLog fn) { writeLog_ = std::move(fn); }
 
     // --- Audio thread ---
     // Forward MIDI/bytes with their intra-block sample offset. Lock-free, never blocks; drops on ring-full, and drops

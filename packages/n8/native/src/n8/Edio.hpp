@@ -173,6 +173,9 @@ public:
     static constexpr std::uint8_t FA_WRITE         = 0x02;
     static constexpr std::uint8_t FA_CREATE_ALWAYS = 0x08;
     static constexpr std::uint8_t FS_MAKEPATH      = 0x80;  // create parent dirs if missing
+    // A file written whole: made with its parent directories, emptied if it is there. A braced initialiser, so the int
+    // the flags are or-ed to is taken as the constant it is, not as a narrowing.
+    static constexpr std::uint8_t FA_REPLACE{FA_WRITE | FA_CREATE_ALWAYS | FS_MAKEPATH};
     // The longest name a listing asks for, and the buffer its visitor's name is read into.
     static constexpr std::size_t kNameMax = 255;
     // The frame a command's header, arguments and first payload bytes are written from in one write.

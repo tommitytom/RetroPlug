@@ -472,9 +472,9 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
                     stopped = stopReason();
                     return stopped == nullptr;
                 };
-                const rp::n8::Status read = edio->fileRead(buf.data(), size, rp::n8::progressOf(step));
-                if (read.code == rp::n8::Code::Cancelled) throw std::runtime_error(stopped);
-                check(read, *edio);
+                const rp::n8::Status readResult = edio->fileRead(buf.data(), size, rp::n8::progressOf(step));
+                if (readResult.code == rp::n8::Code::Cancelled) throw std::runtime_error(stopped);
+                check(readResult, *edio);
                 check(edio->fileClose(), *edio);
                 open = false;
                 outcome->bytes = std::move(buf);
@@ -507,7 +507,7 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
                 // place, and a write once started runs to the end (the menu writes about 100 KB a second: an upload of
                 // 288 KB took 2.8 s on the real cart, so a battery takes well under a second).
                 const std::uint32_t n = static_cast<std::uint32_t>(srm.size());
-                check(edio->fileOpen(path, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH), *edio);
+                check(edio->fileOpen(path, Edio::FA_REPLACE), *edio);
                 open = true;
                 constexpr std::size_t CHUNK = 4096;
                 cartJob_.progress(0, n);
@@ -557,7 +557,7 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
                     throw std::runtime_error(
                         "N8 is not at its menu (no '*t' answer) - reset the cart to the file browser and retry");
                 check(tested, *edio);
-                check(edio->fileOpen(bootPath, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH), *edio);
+                check(edio->fileOpen(bootPath, Edio::FA_REPLACE), *edio);
                 created = opened = true;
                 // Each chunk its own write command (its 1 KB blocks acknowledged, then its status), so the job may stop
                 // between two.

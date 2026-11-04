@@ -57,7 +57,8 @@ std::string wellFormed(std::string_view raw) {
     while (i < raw.size()) {
         const auto  lead   = static_cast<unsigned char>(raw[i]);
         std::size_t needed = 0;
-        unsigned    lower = 0x80, upper = 0xBF;
+        // The range the next continuation byte may take: bytes, so the comparisons below are between like types.
+        unsigned char lower = 0x80, upper = 0xBF;
         if (lead <= 0x7F) {
             out.push_back(static_cast<char>(lead));
             ++i;
@@ -112,8 +113,8 @@ const std::uint8_t* dataOf(const rfl::Bytestring& bytes) { return reinterpret_ca
 N8Rpc::N8Rpc(retroplug::N8Host& host, retroplug::N8Link::PortFactory factory, retroplug::N8Host::PortLister lister)
     : host_(host), factory_(std::move(factory)), lister_(std::move(lister)) {
     host_.setPortGuard([this](const std::string& port) {
-        for (const auto& [handle, session] : sessions_)
-            if (samePort(session->portName, port)) return "the port " + port + " is open in an N8 session";
+        for (const auto& entry : sessions_)
+            if (samePort(entry.second->portName, port)) return "the port " + port + " is open in an N8 session";
         return std::string();
     });
 }
@@ -133,8 +134,8 @@ N8Reply N8Rpc::n8Open(std::string port) {
     N8Reply r;
     r.status  = codeName(Code::LinkDown);
     r.message = "cannot open serial port: " + port;
-    // The streaming link's port is not a session's, as it is not another process's: two writers on one N8 would
-    // interleave their commands.
+    // The streaming link's port is not a session's: two writers on one N8 would interleave their commands. (Another
+    // process's port is not refused here; only Windows keeps that out, as N8Rpc.hpp says.)
     if ((host_.link().isConnected() || host_.cartJobBusy()) && samePort(host_.link().portName(), port)) return r;
     std::unique_ptr<retroplug::PortTransport> transport;
     try {
@@ -193,9 +194,9 @@ N8Reply N8Rpc::n8Vdc(std::int32_t handle) {
 N8Reply N8Rpc::n8FreeSpace(std::int32_t handle) {
     Session* s = find(handle);
     if (!s) return notOpen(handle);
-    std::uint64_t free = 0;
-    N8Reply       r    = replyOf(s->edio.freeSpace(free), *s->port);
-    r.value            = free;
+    std::uint64_t bytesFree = 0;
+    N8Reply       r         = replyOf(s->edio.freeSpace(bytesFree), *s->port);
+    r.value                 = bytesFree;
     return r;
 }
 
