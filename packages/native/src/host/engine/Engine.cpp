@@ -229,17 +229,15 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
                              for (std::size_t i = 0; i < size; ++i) self->syncTrace_.byte(frame, data[i]);
                          }};
     // rp.host.devices/1: the links the host installed, by name, handed out for the life of a plan. A host with no
-    // device never installs one, and its nodes get the never-connected handle instead (design section 3).
+    // device never installs one, and its nodes get the never-connected handle instead (design section 3). The context
+    // is the Graph, not the Engine: a node releases its handles from its destructor, which runs while graph_ itself is
+    // being destroyed, and libc++'s unique_ptr nulls graph_ before it deletes the Graph.
     graph_->devicesApi = {
-        this,
-        [](void* ctx, const char* name) {
-            return static_cast<Engine*>(ctx)->graph_->devices.acquireCart(name ? name : "");
-        },
-        [](void* ctx, rp::host::CartLink* link) { static_cast<Engine*>(ctx)->graph_->devices.release(link); },
-        [](void* ctx, const char* name) {
-            return static_cast<Engine*>(ctx)->graph_->devices.acquireSurface(name ? name : "");
-        },
-        [](void* ctx, rp::host::SurfaceLink* link) { static_cast<Engine*>(ctx)->graph_->devices.release(link); }};
+        graph_.get(),
+        [](void* ctx, const char* name) { return static_cast<Graph*>(ctx)->devices.acquireCart(name ? name : ""); },
+        [](void* ctx, rp::host::CartLink* link) { static_cast<Graph*>(ctx)->devices.release(link); },
+        [](void* ctx, const char* name) { return static_cast<Graph*>(ctx)->devices.acquireSurface(name ? name : ""); },
+        [](void* ctx, rp::host::SurfaceLink* link) { static_cast<Graph*>(ctx)->devices.release(link); }};
     rp::graph::HostConfig config;
     config.sampleRate = sampleRate;
     config.maxFrames = graph_->maxFrames;
