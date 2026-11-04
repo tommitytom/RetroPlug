@@ -54,9 +54,9 @@ typedef struct rp_job_request {
 typedef struct rp_job rp_job;
 
 /* What a device's node presents under each capability id it answers. [control] `submit` takes the job into `job` or
- * refuses it, false with a NUL-terminated reason in `error` (at most error_cap bytes, the NUL included): "busy", "not
- * connected", an operation it does not have, arguments it will not take. A refusal leaves the record untouched. A job
- * taken is the device's to finish, through the host's rp_host_jobs: on its own thread, or at once, before submit
+ * refuses it, false with a NUL-terminated UTF-8 reason in `error` (at most error_cap bytes, the NUL included): "busy",
+ * "not connected", an operation it does not have, arguments it will not take. A refusal leaves the record untouched.
+ * A job taken is the device's to finish, through the host's rp_host_jobs: on its own thread, or at once, before submit
  * returns (a read the device's host answers from what it keeps). */
 typedef struct rp_device_jobs {
     void* ctx;
@@ -77,7 +77,8 @@ typedef struct rp_host_jobs {
     void (*progress)(rp_job* job, uint32_t done, uint32_t total);
     /* Finish the job with its result: the host copies `size` bytes from `data` (null when size is 0). */
     void (*succeed)(rp_job* job, const uint8_t* data, size_t size);
-    /* Finish the job with the reason it failed, which the host copies. */
+    /* Finish the job with the reason it failed: NUL-terminated UTF-8, which the host copies, keeping at most its first
+     * 1024 bytes (the engine's bound) and never a sequence that bound would split. */
     void (*fail)(rp_job* job, const char* reason);
     /* [control] The node that submitted the job is leaving the plan: the job fails as its node's removal, the same
      * failure the host gives a job whose node is gone, and the device reports into it no more. */

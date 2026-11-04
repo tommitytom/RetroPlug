@@ -9,10 +9,12 @@
 #include "graph/rp_node.h"
 
 extern "C" {
-// rp.core and rp.dsp as a device builds them: CoreNodes.cpp and DspNodes.cpp compiled in device mode, their entries
-// (rp_core_package, rp_dsp_package) renamed by the objects' compile definitions so they sit beside the desktop's.
+// rp.core, rp.dsp and rp.n8 as a device builds them: CoreNodes.cpp, DspNodes.cpp and N8Node.cpp compiled in device
+// mode, their entries (rp_core_package, rp_dsp_package, rp_n8_package) renamed by the objects' compile definitions so
+// they sit beside the desktop's.
 const rp_package* rp_core_package_device_mode(void);
 const rp_package* rp_dsp_package_device_mode(void);
+const rp_package* rp_n8_package_device_mode(void);
 // rp.devtest: the echo, pair, shaper and bare nodes (EchoNode.hpp) in device mode.
 const rp_package* rp_devtest_package_device_mode(void);
 // rp.devtest.fault: a node that fails at the step its settings name (DeviceModeNodes.cpp), for the device check.

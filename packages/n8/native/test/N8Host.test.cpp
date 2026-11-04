@@ -1,4 +1,4 @@
-// Guards the shared N8Host helper (config + persistence over an N8Link) without hardware: a fake ISerialPort
+// Guards the shared N8Host helper (config + persistence over an N8Link) without hardware: a fake port
 // answers the Edio handshake so connect() succeeds, and an injected port lister feeds the enumeration. Covers
 // auto-pick, live port-switch, lookahead clamp, the expansion-audio master volume the host writes when the
 // link comes up, and the n8.cfg round-trip that both the SDL standalone and the DAW plugin rely on.
@@ -16,11 +16,12 @@
 #include <thread>
 #include <vector>
 
-#include "n8/desktop/Edio.hpp"  // ISerialPort
+#include "n8/Edio.hpp"
+#include "n8/desktop/PortTransport.hpp"
 #include "n8/desktop/N8Host.hpp"
 
-using retroplug::Edio;
-using retroplug::ISerialPort;
+using rp::n8::Edio;
+using retroplug::PortTransport;
 using retroplug::N8Host;
 using retroplug::N8Link;
 using retroplug::N8PortDto;
@@ -51,7 +52,7 @@ private:
 // A fake serial port that answers the Edio handshake (CMD_STATUS -> 0xA500 OK) so N8Link::connect succeeds
 // without hardware, then serves the 16-byte config block at Edio::ADDR_CFG. Reads are served in order, which
 // is all the device does on this path (handshake, then at most one block read).
-struct FakePort : ISerialPort {
+struct FakePort : PortTransport {
     explicit FakePort(FakeDevice& dev) : dev_(dev) {
         toRead = {0x00, 0xA5};  // 0xA500 = handshake OK
         std::uint8_t cfg[Edio::SIZE_CFG] = {0};
@@ -63,7 +64,7 @@ struct FakePort : ISerialPort {
         dev_.append(data, n);
         return n;
     }
-    std::size_t read(std::uint8_t* b, std::size_t n, int) override {
+    std::size_t read(std::uint8_t* b, std::size_t n, std::uint32_t) override {
         std::size_t i = 0;
         while (i < n && !toRead.empty()) { b[i++] = toRead.front(); toRead.pop_front(); }
         return i;
@@ -78,11 +79,11 @@ private:
 
 N8Link::PortFactory okFactory() {
     static FakeDevice unused;  // the tests that don't care about the wire share one sink
-    return [](const std::string&) -> std::unique_ptr<ISerialPort> { return std::make_unique<FakePort>(unused); };
+    return [](const std::string&) -> std::unique_ptr<PortTransport> { return std::make_unique<FakePort>(unused); };
 }
 
 N8Link::PortFactory factoryFor(FakeDevice& dev) {
-    return [&dev](const std::string&) -> std::unique_ptr<ISerialPort> { return std::make_unique<FakePort>(dev); };
+    return [&dev](const std::string&) -> std::unique_ptr<PortTransport> { return std::make_unique<FakePort>(dev); };
 }
 
 // The 14 bytes an Edio one-byte memWR to `addr` puts on the wire: the 4-byte command frame, LE32 address,

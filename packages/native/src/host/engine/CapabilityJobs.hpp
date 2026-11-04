@@ -138,6 +138,31 @@ inline rp_job_request requestView(const JobRequest& r) {
 inline rp_job* handle(Job* job) { return reinterpret_cast<rp_job*>(job); }
 inline Job*    record(rp_job* job) { return reinterpret_cast<Job*>(job); }
 
+// The most of a device's fail() reason a record keeps (rp_jobs.h): a bound, so a device's runaway text does not reach
+// the RPC whole, far past any reason a device writes.
+inline constexpr std::size_t kFailReasonBytes = 1024;
+
+// A device's fail() reason as a record keeps it: at most kFailReasonBytes, cut back to the start of the code point the
+// bound would split (the reason crosses the RPC as a string), as a submit's refusal is (rp_job_error, the engine's
+// deviceReason).
+inline std::string failReason(const char* reason) {
+    if (reason == nullptr) return {};
+    std::size_t n = 0;
+    while (n < kFailReasonBytes && reason[n] != '\0') ++n;
+    if (n == kFailReasonBytes && reason[n] != '\0') {
+        // Cut: back over the continuation bytes at the end of what is kept, and drop the sequence they belong to when
+        // the cut leaves it incomplete.
+        std::size_t lead = n;
+        while (lead > 0 && n - lead < 3 && (static_cast<unsigned char>(reason[lead - 1]) & 0xC0u) == 0x80u) --lead;
+        if (lead > 0) {
+            const auto        b    = static_cast<unsigned char>(reason[lead - 1]);
+            const std::size_t want = (b & 0xE0u) == 0xC0u ? 2 : (b & 0xF0u) == 0xE0u ? 3 : (b & 0xF8u) == 0xF0u ? 4 : 1;
+            if (want > 1 && n - (lead - 1) < want) n = lead - 1;
+        }
+    }
+    return std::string(reason, n);
+}
+
 // rp.host.jobs/1 over the records above: what a device reports a job it took through. One for every engine, since a
 // report reaches only its record. Each report is the record's hand-off as the job model says: progress, then the
 // result or the error, then the terminal state, stored last with release, which is what the control thread acquires
@@ -156,7 +181,7 @@ inline const rp_host_jobs* jobReports() {
         },
         [](rp_job* h, const char* reason) {
             Job* job = record(h);
-            job->error = reason != nullptr ? reason : "";
+            job->error = failReason(reason);
             job->failure.store(Job::Device, std::memory_order_relaxed);
             job->state.store(Job::Failed, std::memory_order_release);
         },

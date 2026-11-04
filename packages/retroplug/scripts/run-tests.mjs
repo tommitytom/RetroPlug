@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Test runner. For each test/**/*.test.ts: bundle it with esbuild
+// Test runner. For each test/**/*.test.ts, and each workspace package's ts/test/**/*.test.ts (packages/<name>/ts/test,
+// the TS half of a package such as @retroplug/n8, slugged <name>/<path>): bundle it with esbuild
 // (QuickJS/es2020 target, types stripped), then run the bundle on the
 // standalone txiki.js runtime (`tjs run`). Aggregates TAP; exits nonzero on any
 // failure. One tjs process per file = per-file isolation; files run in a bounded
@@ -67,10 +68,28 @@ function matches(slug) {
   return slug === filter || dash === filter || slug.startsWith(filter + "/") || dash.startsWith(filter + "-");
 }
 
-const tests = walk(TEST_DIR)
-  .map((file) => ({ file, slug: relative(TEST_DIR, file).replace(/\.test\.ts$/, "").split(/[\\/]/).join("/") }))
-  .filter((t) => matches(t.slug))
-  .sort((a, b) => a.slug.localeCompare(b.slug));
+const slugOf = (root, file, prefix = "") =>
+  prefix + relative(root, file).replace(/\.test\.ts$/, "").split(/[\\/]/).join("/");
+// The workspace packages beside this one: each one's ts/test, slugged under the package's directory name, so a filter
+// on "n8" runs the N8 pack's tests with this package's test/n8.
+const PACKAGES = join(REPO, "packages");
+const packageTests = readdirSync(PACKAGES, { withFileTypes: true })
+  .filter((ent) => ent.isDirectory())
+  .flatMap((ent) => {
+    const root = join(PACKAGES, ent.name, "ts", "test");
+    return walk(root).map((file) => ({ file, slug: slugOf(root, file, `${ent.name}/`) }));
+  });
+const all = [...walk(TEST_DIR).map((file) => ({ file, slug: slugOf(TEST_DIR, file) })), ...packageTests];
+// Two files of one slug would build to one bundle and share a timing and a skip-baseline entry.
+const seen = new Map();
+for (const t of all) {
+  if (seen.has(t.slug)) {
+    console.error(`two test files have the slug "${t.slug}": ${seen.get(t.slug)} and ${t.file}`);
+    process.exit(1);
+  }
+  seen.set(t.slug, t.file);
+}
+const tests = all.filter((t) => matches(t.slug)).sort((a, b) => a.slug.localeCompare(b.slug));
 
 if (!tests.length) {
   console.error(filter ? `no tests match "${filter}"` : "no tests found");

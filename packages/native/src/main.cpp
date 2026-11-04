@@ -14,11 +14,18 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
@@ -31,6 +38,10 @@
 #include "host/HostServices.hpp"
 #include "host/rpc/HarnessSurfaceLink.hpp"
 #include "host/QuickJsGlobals.hpp"
+#include "host/devices/ProviderHost.hpp"
+#include "n8/desktop/N8Provider.hpp"
+#include "n8/desktop/N8Rpc.hpp"
+#include "FakeN8.hpp"  // packages/n8/native/test: the cart this host's N8 provider opens its ports on
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
@@ -56,6 +67,15 @@ bool g_keepAlive = false;
 JSValue jsKeepAlive(JSContext*, JSValueConst, int, JSValueConst*) {
     g_keepAlive = true;
     return JS_UNDEFINED;
+}
+
+// This process's id, which names its scratch directory.
+long processId() {
+#if defined(_WIN32)
+    return static_cast<long>(_getpid());
+#else
+    return static_cast<long>(getpid());
+#endif
 }
 
 std::string slurp(const std::string& path) {
@@ -88,14 +108,49 @@ int main(int argc, char** argv) try {
 
     // The harness's control surface: the graph's rp.launchpad.surface-in / -out nodes bind it by name, so a headless
     // test's staged pad presses reach the controller session a document places and its answers have a device-side
-    // count. It is the test host's only device (no serial port, no MIDI port); the panel it stands in for has no
+    // count. It is the test host's only control surface (it opens no MIDI port); the panel it stands in for has no
     // tests of its own here, so the link is the harness's, not a fake of the Launchpad protocol. Declared before the
     // services, so it outlives the engine whose plans' nodes hold a handle on it.
     rp::host::HarnessSurfaceLink harnessSurface;
+    // The N8 this host's sessions reach (a test:native CLI-style session, through the real facet): FakeN8's model of
+    // the cart, which the pack's own tests drive too, behind the real N8 provider. This host starts the provider
+    // itself, with FakeN8's ports, rather than through a generated rp_start_providers with deps/serial's, so no
+    // production provider carries a fake cart or a switch to one. Declared before the services, so it outlives every
+    // port the provider opens on it.
+    retroplug::test::FakeN8 fakeCart;
 
     // The backend service graph (see host/HostServices.hpp). This host exposes the whole surface, so it
     // mounts every facet.
     HostServices svc;
+    // The N8 provider over the fake cart, its link installed in the engine's registry as a product's is; its facet is
+    // mounted below beside the host's own. Its n8.cfg, which the link half's setters write (test-native/n8-session
+    // connects the link), goes to a scratch directory of this process's own, never the user's (the standalone and the
+    // plugin read that one) and never another host's (test:native runs its files in parallel, and the authoring tools
+    // run this host too), removed at exit: a static, because the harness ends the process through txiki's own exit
+    // (tjs:os), which runs static destructors and not this frame's. At a return from main the plans go first, while
+    // the link is alive (a node may use its handle in destroy), then the provider: declared before `driver`, so
+    // ~AudioDriverRpcService has stopped any audio thread by then.
+    struct ScratchDir {
+        std::filesystem::path path;
+        ~ScratchDir() {
+            std::error_code ec;
+            std::filesystem::remove_all(path, ec);
+        }
+    };
+    static ScratchDir n8ConfigDir{std::filesystem::temp_directory_path() /
+                                  ("retroplug-host-n8-" + std::to_string(processId()))};
+    std::filesystem::create_directories(n8ConfigDir.path);
+    rp::host::ProviderHost deviceHost{svc.engine, n8ConfigDir.path.string()};
+    struct CartProvider {
+        Engine& engine;
+        void*   self;
+        ~CartProvider() {
+            engine.clearGraph();
+            if (self) rp_n8_provider()->destroy(self);
+        }
+    } cartProvider{svc.engine,
+                   rp::n8::createProvider(deviceHost.get(), retroplug::test::factoryFor(fakeCart),
+                                          [] { return std::vector<retroplug::N8PortDto>{{"fake-n8", true}}; })};
     // The two facets the plugin and the SDL standalone deliberately do NOT mount, so they are not
     // in HostServices: ~AudioDriverRpcService has teardown side effects a host that never uses the
     // facet should not inherit.
@@ -113,6 +168,8 @@ int main(int argc, char** argv) try {
     rpcpp::QuickJSTransport transport(ctx, [](JSContext*, JSValue) {});
     BackendRpcServer server(transport, rpcpp::QuickJSCodec{ctx});
     registerAllBackendRpc(server, svc.host, svc.engineSvc, debugSvc, driver);
+    if (cartProvider.self) rp::n8::registerRpc(server, rp_n8_provider()->rpc_service(cartProvider.self));
+    else std::fprintf(stderr, "[retroplug-host] the N8 provider did not start\n");
 
     JSValue global = JS_GetGlobalObject(ctx);
 

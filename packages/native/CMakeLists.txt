@@ -198,6 +198,9 @@ add_executable(retroplug-host src/main.cpp)
 
 target_link_libraries(retroplug-host PRIVATE retroplug-backend)
 retroplug_product(retroplug-host PACKAGES ${RP_DESKTOP_PACKAGES})
+# FakeN8.hpp, the model of the cart this test host starts the N8 provider over (src/main.cpp): a test header, in this
+# binary alone, so no product carries a fake cart.
+target_include_directories(retroplug-host PRIVATE ${CMAKE_SOURCE_DIR}/packages/n8/native/test)
 
 set_target_properties(retroplug-host PROPERTIES
     CXX_STANDARD 20

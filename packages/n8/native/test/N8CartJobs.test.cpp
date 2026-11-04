@@ -25,13 +25,14 @@
 #include <vector>
 
 #include "FakeJobs.hpp"
-#include "n8/desktop/Edio.hpp"
+#include "n8/Edio.hpp"
+#include "n8/desktop/PortTransport.hpp"
 #include "n8/desktop/N8CartLink.hpp"
 #include "n8/desktop/N8Host.hpp"
 #include "FakeN8.hpp"
 
-using retroplug::Edio;
-using retroplug::ISerialPort;
+using rp::n8::Edio;
+using retroplug::PortTransport;
 using retroplug::N8CartLink;
 using retroplug::N8Host;
 using retroplug::N8Link;
@@ -484,7 +485,7 @@ TEST_CASE("a port that throws as a job starts stops the link with the reason, an
     rig.connect();
     // The run's own pre-flush throws, as a USB unplug during a job does: the job never runs, so nothing addresses the
     // card, and its record must still carry a reason rather than the generic failure a job with no outcome gets.
-    rig.dev.throwOnFlushInput = 1;  // connect() flushed once already; the job's own flush is the next
+    rig.dev.failOnFlushInput = 1;  // connect() flushed once already; the job's own flush is the next
     Job job;
     REQUIRE(rig.submit(battery("dump"), job));
     REQUIRE(waitUntil([&] { return job.finished(); }));
@@ -508,7 +509,7 @@ TEST_CASE("a port that throws after a job ran still posts its outcome, and the l
     rig.dev.files[kGameBattery] = saveOf(1024, 3);
     rig.connect();
     // The flush after the job throws: the transfer itself completed, so its completion is the one that was decided.
-    rig.dev.throwOnFlushInput = 2;  // 1: the run's own pre-flush, 2: the flush after it ran
+    rig.dev.failOnFlushInput = 2;  // 1: the run's own pre-flush, 2: the flush after it ran
     Job job;
     REQUIRE(rig.submit(battery("dump"), job));
     REQUIRE(waitUntil([&] { return job.finished(); }));
@@ -522,7 +523,7 @@ TEST_CASE("a port that throws after a job ran still posts its outcome, and the l
 TEST_CASE("an upload whose trailing flush throws still closes the port it booted from", "[n8][cart-jobs]") {
     Rig rig;
     rig.connect();
-    rig.dev.throwOnFlushInput = 2;  // 1: the run's own pre-flush, 2: the flush after the boot
+    rig.dev.failOnFlushInput = 2;  // 1: the run's own pre-flush, 2: the flush after the boot
     Job job;
     REQUIRE(rig.submit(uploadOf(inesImage(8)), job));
     REQUIRE(waitUntil([&] { return job.finished() && !rig.host.cartJobBusy(); }));

@@ -24,11 +24,13 @@ public:
     const rp_device_host* get() const { return &host_; }
 
 private:
+    // Neither throws across the C table (rp_provider.h): the registry is a fixed table, and noexcept says so here, so a
+    // registry that one day could would end the process at this boundary rather than unwind through a provider.
     static bool install(void* ctx, const char* name, const char* interfaceId, void* link, void (*acquire)(void*),
-                        void (*release)(void*)) {
+                        void (*release)(void*)) noexcept {
         return static_cast<Engine*>(ctx)->installDevice(name, interfaceId, link, acquire, release);
     }
-    static void clear(void* ctx, void* link) { static_cast<Engine*>(ctx)->clearDevice(link); }
+    static void clear(void* ctx, void* link) noexcept { static_cast<Engine*>(ctx)->clearDevice(link); }
 
     std::string    configDir_;
     rp_device_host host_{};

@@ -21,13 +21,14 @@
 #include <vector>
 
 #include "FakeJobs.hpp"
-#include "n8/desktop/Edio.hpp"  // ISerialPort
+#include "n8/Edio.hpp"
+#include "n8/desktop/PortTransport.hpp"
 #include "n8/desktop/N8CartLink.hpp"
 #include "n8/desktop/N8Host.hpp"
 #include "n8/CartLink.hpp"
 
-using retroplug::Edio;
-using retroplug::ISerialPort;
+using rp::n8::Edio;
+using retroplug::PortTransport;
 using retroplug::N8CartLink;
 using retroplug::N8Host;
 using retroplug::N8Link;
@@ -48,23 +49,29 @@ struct FakeDevice {
     std::vector<std::uint8_t> written;
     int                       mapper             = 0;  // the config block's map_idx
     int                       expVolAttempts     = 0;  // every write to ADDR_EXP_VOL the host made
-    int                       refuseExpVolWrites = 0;  // the next N of those throw instead of reaching the device
+    int                       refuseExpVolWrites = 0;  // the next N of those fail in the port instead of reaching it
 };
 
 // A fake serial port that answers the Edio commands the link writes - the status handshake, a memory read of the
 // config block, a one-byte memory write - the way the cart does. A refused expansion-volume write is taken back off
-// the wire: it never reached the device.
-struct FakePort : ISerialPort {
+// the wire: it never reached the device, and the port answers it as SerialTransport answers a write deps/serial threw
+// on (nothing taken, the text kept).
+struct FakePort : PortTransport {
     explicit FakePort(FakeDevice& dev) : dev_(dev) {}
 
     std::size_t write(const std::uint8_t* data, std::size_t n) override {
         std::lock_guard<std::mutex> l(dev_.mu);
+        failure_.clear();
         dev_.written.insert(dev_.written.end(), data, data + n);
         in_.insert(in_.end(), data, data + n);
         parse();
-        return n;
+        return failure_.empty() ? n : 0;  // a refused write took nothing, as a port that failed it answers
     }
-    std::size_t read(std::uint8_t* b, std::size_t n, int) override {
+    std::string failure() const override {
+        std::lock_guard<std::mutex> l(dev_.mu);
+        return failure_;
+    }
+    std::size_t read(std::uint8_t* b, std::size_t n, std::uint32_t) override {
         std::lock_guard<std::mutex> l(dev_.mu);
         std::size_t i = 0;
         while (i < n && !out_.empty()) { b[i++] = out_.front(); out_.pop_front(); }
@@ -109,7 +116,7 @@ private:
                 if (dev_.refuseExpVolWrites > 0) {
                     --dev_.refuseExpVolWrites;
                     dev_.written.resize(dev_.written.size() - frame.size());  // never reached the device
-                    throw std::runtime_error("the port is gone");
+                    failure_ = "the port is gone";
                 }
             }
         }
@@ -118,10 +125,11 @@ private:
     FakeDevice&              dev_;
     std::vector<std::uint8_t> in_;
     std::deque<std::uint8_t> out_;
+    std::string              failure_;
 };
 
 N8Link::PortFactory factoryFor(FakeDevice& dev) {
-    return [&dev](const std::string&) -> std::unique_ptr<ISerialPort> { return std::make_unique<FakePort>(dev); };
+    return [&dev](const std::string&) -> std::unique_ptr<PortTransport> { return std::make_unique<FakePort>(dev); };
 }
 
 N8Host::PortLister noPorts() {

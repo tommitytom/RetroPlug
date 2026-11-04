@@ -613,3 +613,26 @@ TEST_CASE("a node that is no system node presents no capability yet", "[engine-g
         CHECK(refused.error == std::string("node split-1 presents no ") + capability);
     }
 }
+
+TEST_CASE("a device's fail() reason is kept bounded and whole, as a submit's refusal is",
+          "[engine-graph][capability]") {
+    using rp::host::failReason;
+    using rp::host::kFailReasonBytes;
+    CHECK(failReason(nullptr).empty());
+    CHECK(failReason("not at the menu") == "not at the menu");
+    // Within the bound, kept whole, a sequence at its very end included.
+    const std::string fits = std::string(kFailReasonBytes - 4, 'a') + "\xF0\x9F\x8E\xB5";
+    CHECK(failReason(fits.c_str()) == fits);
+    // Past it, cut at the bound, and back to before a sequence the cut splits: after its 2nd byte of 3, after its 3rd
+    // of 4, after its lead.
+    CHECK(failReason(std::string(3000, 'q').c_str()) == std::string(kFailReasonBytes, 'q'));
+    const std::string three = std::string(kFailReasonBytes - 2, 'b') + "\xE2\x82\xAC" + "tail";
+    CHECK(failReason(three.c_str()) == std::string(kFailReasonBytes - 2, 'b'));
+    const std::string four = std::string(kFailReasonBytes - 3, 'c') + "\xF0\x9F\x8E\xB5" + "tail";
+    CHECK(failReason(four.c_str()) == std::string(kFailReasonBytes - 3, 'c'));
+    const std::string lead = std::string(kFailReasonBytes - 1, 'd') + "\xC3\xA9" + "tail";
+    CHECK(failReason(lead.c_str()) == std::string(kFailReasonBytes - 1, 'd'));
+    // A sequence that ends exactly at the bound is whole, and kept.
+    const std::string atBound = std::string(kFailReasonBytes - 2, 'e') + "\xC3\xA9" + "tail";
+    CHECK(failReason(atBound.c_str()) == std::string(kFailReasonBytes - 2, 'e') + "\xC3\xA9");
+}

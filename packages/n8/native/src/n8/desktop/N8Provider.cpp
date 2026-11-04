@@ -10,7 +10,7 @@
 #include "n8/CartLink.hpp"
 #include "n8/desktop/N8CartLink.hpp"
 #include "n8/desktop/N8Rpc.hpp"
-#include "n8/desktop/WjwwoodSerialPort.hpp"
+#include "n8/desktop/SerialTransport.hpp"
 
 namespace rp::n8 {
 namespace {
@@ -25,9 +25,9 @@ struct Provider {
     Provider(const rp_device_host& given, retroplug::N8Link::PortFactory factory, retroplug::N8Host::PortLister lister)
         : host(given),
           configDir(given.config_dir ? given.config_dir : ""),
-          n8(std::move(factory), std::move(lister), configDir),
+          n8(factory, lister, configDir),
           cart(n8),
-          rpc(n8) {
+          rpc(n8, std::move(factory), std::move(lister)) {
         host.config_dir = configDir.c_str();
         // A refusal (a full table, the name taken) leaves rp.n8.nes on its stub, so it is said, not swallowed.
         installed = host.install && host.install(host.ctx, kDeviceName, kCartLinkInterface,
@@ -62,8 +62,8 @@ Provider& providerOf(void* self) { return *static_cast<Provider*>(self); }
 void* createWithSerial(const rp_device_host* host) noexcept {
     try {
         return createProvider(
-            host, [](const std::string& port) -> std::unique_ptr<retroplug::ISerialPort> {
-                return std::make_unique<retroplug::WjwwoodSerialPort>(port);
+            host, [](const std::string& port) -> std::unique_ptr<retroplug::PortTransport> {
+                return std::make_unique<retroplug::SerialTransport>(port);
             },
             [] {
                 std::vector<retroplug::N8PortDto> ports;

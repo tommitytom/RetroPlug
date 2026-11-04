@@ -130,7 +130,7 @@ namespace rp {
 	static constexpr uint8_t  MSTAT_STROBE   = 0x08;
 
 	// -----------------------------------------------------------------------
-	// PI bus geography of the N8 Pro cartridge (mirrors packages/retroplug/src/n8/edio.ts)
+	// PI bus geography of the N8 Pro cartridge (mirrors packages/n8/native/src/n8/Edio.hpp)
 	// -----------------------------------------------------------------------
 	// The addresses CMD_F_FRD_MEM's first parameter is drawn from. Only the CHR-RAM window is
 	// backed here; see setCartWriter for why the others are refused rather than guessed at.

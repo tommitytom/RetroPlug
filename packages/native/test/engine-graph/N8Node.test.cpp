@@ -600,8 +600,14 @@ TEST_CASE("a device's refusal that fills the buffer with no NUL, or ends mid cod
     // A four-byte one whose lead byte is the 255th: the lead byte alone is left, and dropped.
     cart.rawRefusal = std::string(254, 'y') + "\xF0\x9F\x8E\xB5";
     CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == std::string(254, 'y'));
-    // One that ends whole inside the 255 bytes is kept whole (the buffer's last byte was the engine's NUL already).
+    // A four-byte one cut after its third byte: the three are dropped, the whole of what backing up may cross.
+    cart.rawRefusal = std::string(252, 'z') + "\xF0\x9F\x8E\xB5";
+    CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == std::string(252, 'z'));
+    // One that ends whole inside the 255 bytes is kept whole (the buffer's last byte was the engine's NUL already),
+    // a four-byte one at the very end included, its three continuation bytes the most the cut backs over.
     cart.rawRefusal = std::string(252, 'x') + "\xE2\x82\xAC";
+    CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == cart.rawRefusal);
+    cart.rawRefusal = std::string(251, 'w') + "\xF0\x9F\x8E\xB5";
     CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == cart.rawRefusal);
 }
 

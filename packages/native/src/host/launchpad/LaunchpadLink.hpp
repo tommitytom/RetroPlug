@@ -13,9 +13,9 @@
 
 namespace retroplug {
 
-// A bidirectional MIDI endpoint owned EXCLUSIVELY by one link - this subsystem's ISerialPort. Injected
-// rather than concrete so LaunchpadLink depends on no MIDI library and is testable with nothing plugged in;
-// RtMidiPort.cpp is the only translation unit here that includes RtMidi.h.
+// A bidirectional MIDI endpoint owned EXCLUSIVELY by one link - this subsystem's transport, as rp::n8::Transport is
+// the N8's. Injected rather than concrete so LaunchpadLink depends on no MIDI library and is testable with nothing
+// plugged in; RtMidiPort.cpp is the only translation unit here that includes RtMidi.h.
 class IMidiPort {
 public:
     // Delivered on the MIDI backend's OWN callback thread, once per received message.

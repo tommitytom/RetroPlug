@@ -1,13 +1,13 @@
 // `retroplug-cli n8-load` - load + boot a ROM on a physical Everdrive N8 Pro over USB by driving its
 // on-device menu, plus the SD/SRAM helpers. The TS replacement for the native cli/N8Load.cpp (retired in
-// Phase 4): same flag interface, so every documented `n8-load ...` invocation keeps working - now running
-// on the TS N8 stack (Edio framing + menu + orchestration in src/n8) over the serial byte-transport facet.
+// Phase 4): same flag interface, so every documented `n8-load ...` invocation keeps working. It opens the cart as a
+// session of the N8 pack's facet (@retroplug/n8's createN8Client), whose protocol runs in the host (n8/Edio.hpp).
 // `--show-song` is new (decode the live cart battery via the pure-TS risa/LSDj codecs).
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
-import { createSerialClient } from "../../src/realBackend";
+import { makeCall } from "../../src/rpcClient";
 import {
-  createN8,
+  createN8Client,
   baseName,
   assertGameRegion,
   decodeMapConfig,
@@ -23,14 +23,22 @@ import {
   type ChrWindow,
   type N8,
   type N8MapConfig,
-  type SerialPortInfo,
+  type N8Port,
   type LoadOptions,
-} from "../../src/n8";
-import { menuScreenToRgba } from "../../src/n8/menuImage";
-import { decodeSniffer, SNIFFER_REGION_SIZE, CPU_HZ_NTSC, CPU_HZ_PAL, type SnifferSnapshot } from "../../src/n8/sniffer";
-import { chrToPng, chrToPngColor, pngToChr } from "../../src/n8/chrImage";
-import { decodeSysInfo, decodeVdc, fatDateStr, vdcStr } from "../../src/n8/sysInfo";
-import { decodeSaveState, type N8SaveState } from "../../src/n8/saveState";
+  menuScreenToRgba,
+  decodeSniffer,
+  SNIFFER_REGION_SIZE,
+  CPU_HZ_NTSC,
+  CPU_HZ_PAL,
+  type SnifferSnapshot,
+  decodeSysInfo,
+  decodeVdc,
+  fatDateStr,
+  vdcStr,
+  decodeSaveState,
+  type N8SaveState,
+} from "@retroplug/n8";
+import { chrToPng, chrToPngColor, pngToChr } from "../../src/risa/rom/chrImage";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 
@@ -72,7 +80,7 @@ function positional(args: string[]): string | undefined {
   return undefined;
 }
 
-function pickPort(ports: SerialPortInfo[], explicit: string | undefined): string {
+function pickPort(ports: N8Port[], explicit: string | undefined): string {
   if (explicit) return explicit;
   const n8 = ports.find((p) => p.isN8);
   if (!n8)
@@ -322,10 +330,9 @@ export const n8LoadTool: CliTool = {
     const srm = srmPath ? readOrThrow(s, srmPath, "save") : undefined;
     const putBytes = putFile != null ? readOrThrow(s, putFile, "file") : undefined;
 
-    const serial = createSerialClient();
-    const port = serial.open(pickPort(serial.listPorts(), serialPort));
+    const client = createN8Client(makeCall());
+    const n8 = client.openN8(pickPort(client.listPorts(), serialPort));
     try {
-      const n8 = createN8(port);
       n8.connect(); // throws if the N8 doesn't answer the handshake
 
       if (doInfo) {
@@ -495,7 +502,7 @@ export const n8LoadTool: CliTool = {
       const { bootPath, mapIndex } = n8.load(opts);
       console.log(`booted '${bootPath}' (map index ${mapIndex})${srmPath ? ` with save ${srmPath}` : ""}`);
     } finally {
-      port.close();
+      n8.close();
     }
   },
 };

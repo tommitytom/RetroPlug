@@ -32,7 +32,9 @@ extern "C" {
 #define RP_PROVIDER_ABI_VERSION 1u
 
 /* What the product hands a provider to create it with: the engine's device registry and where persisted state lives.
- * The host and its strings outlive the provider (a product stops its providers before it destroys the engine). */
+ * The host and its strings outlive the provider (a product stops its providers before it destroys the engine). The rule
+ * runs both ways: neither install nor clear throws (a C++ host catches what its own code throws and answers false, or
+ * carries on), as no call of the provider's table does. */
 typedef struct rp_device_host {
     uint32_t    abi_version; /* RP_PROVIDER_ABI_VERSION */
     void*       ctx;

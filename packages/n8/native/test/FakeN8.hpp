@@ -8,9 +8,14 @@
 // the reliable link while a game that speaks it runs (its acks late, never, or reporting every frame damaged, when a
 // case asks). Every event (a FIFO write, a battery read, a file block) lands in one ordered log.
 //
-// Shared by retroplug-n8-test (N8CartJobs.test.cpp: the jobs and the pause, against N8Host with no engine) and
-// retroplug-engine-graph-test (N8Adapters.test.cpp: the production adapters behind a real Engine), so both drive one
-// model of the cart rather than two that could drift. No `serial` lib, no hardware.
+// Shared by retroplug-n8-test (Ops.test.cpp: the menu and the operations; N8CartJobs.test.cpp: the jobs and the pause,
+// against N8Host with no engine), retroplug-engine-graph-test (N8Adapters.test.cpp: the production adapters behind a
+// real Engine) and the test host, retroplug-host (a test:native session through the real facet, packages/native/src/
+// main.cpp), so all of them drive one model of the cart rather than several that could drift. No `serial` lib, no
+// hardware.
+//
+// A port that fails does as the desktop's SerialTransport does with a deps/serial exception: it answers short (a write
+// that took nothing) or not at all, and keeps the text as failure(), which the link and the jobs report.
 
 #include <algorithm>
 #include <chrono>
@@ -20,18 +25,21 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
-#include "n8/desktop/Edio.hpp"
+#include "n8/Edio.hpp"
 #include "n8/desktop/N8Link.hpp"
+#include "n8/desktop/PortTransport.hpp"
 
 namespace retroplug::test {
 
 using Bytes = std::vector<std::uint8_t>;
+using rp::n8::Edio;
 
 // The cart: what every port opened on it shares, under one lock (the serial thread drives it while the test reads).
 struct FakeN8 {
@@ -44,12 +52,12 @@ struct FakeN8 {
     bool                     linkDeaf = false;      // ... until it stops answering (it read no frame and acks nothing)
     int                      linkAckDelayMs = 0;    // how long the game takes to write a frame's ack back
     bool                     linkDamaged = false;   // every frame reaches the game damaged, and it says so each time
-    int                      refuseExpVolWrites = 0; // the next N expansion-volume writes throw (a refusing port)
+    int                      refuseExpVolWrites = 0; // the next N expansion-volume writes fail in the port
     int                      expVolAttempts = 0;    // every expansion-volume write the host made
     int                      fileDelayMs = 0;       // likewise each SD file write
     int                      fileReadDelayMs = 0;   // likewise each SD file read block
     bool                     failNextWrite = false; // the next SD file write answers its first block with an error
-    int                      throwOnFlushInput = 0; // the Nth flushInput from now throws, as a port that just died does
+    int                      failOnFlushInput = 0;  // the Nth flushInput from now fails, as a port that just died does
     bool                     failNextRead = false;  // the next SD file read block answers an error
     bool                     failNextList = false;  // the next directory load answers a disk error
     int                      filesOpen = 0;         // files opened on the card and not yet closed
@@ -61,6 +69,15 @@ struct FakeN8 {
     int                      syncs = 0;             // F4 syncs the game saw
     std::vector<int>         frameSeqs;             // the seq of every intact frame it read
     int                      opens = 0, openNow = 0;
+    int                      writes = 0;            // every write a port took a call for (one per frame, Edio.hpp)
+    std::set<std::string>    dirs;                  // directories made on the card (a file's own are implied)
+    Bytes                    sysInfo = Bytes(Edio::SIZE_SYS_INFO, 0);  // what CMD_SYS_INF answers
+    Bytes                    vdc     = Bytes(Edio::SIZE_VDC, 0);       // what CMD_GET_VDC answers
+    std::uint64_t            freeBytes = 0;         // what CMD_F_AVB answers
+    Bytes                    vram    = Bytes(2048, 0), palette = Bytes(16, 0);  // what '*v' answers
+    std::uint8_t             testReply = 'k';       // what '*t' answers
+    std::uint8_t             installStatus = 0;     // what '*n' answers first (0x44: the menu is out of memory)
+    int                      resets = 0;            // '*r's the menu took
 
     std::size_t count(const std::string& prefix) {
         std::lock_guard<std::mutex> l(mu);
@@ -81,7 +98,7 @@ inline std::string hex(const std::uint8_t* d, std::size_t n) {
 }
 
 // One open port on the cart: Edio's frames parsed as they arrive, the replies queued for the host's reads.
-struct FakeN8Port : ISerialPort {
+struct FakeN8Port : PortTransport {
     explicit FakeN8Port(FakeN8& dev) : dev_(dev) {
         std::lock_guard<std::mutex> l(dev_.mu);
         ++dev_.opens;
@@ -95,14 +112,18 @@ struct FakeN8Port : ISerialPort {
         int delayMs = 0;
         {
             std::lock_guard<std::mutex> l(dev_.mu);
+            failure_.clear();
+            ++dev_.writes;
             in_.insert(in_.end(), data, data + n);
             delayMs = parse();
         }
         if (delayMs) std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
-        return n;
-    }
-    std::size_t read(std::uint8_t* b, std::size_t n, int) override {
         std::lock_guard<std::mutex> l(dev_.mu);
+        return failure_.empty() ? n : 0;
+    }
+    std::size_t read(std::uint8_t* b, std::size_t n, std::uint32_t) override {
+        std::lock_guard<std::mutex> l(dev_.mu);
+        failure_.clear();
         releaseAcks(true);  // whatever the game has had time to write since the last read
         std::size_t i = 0;
         while (i < n && !out_.empty()) {
@@ -113,9 +134,13 @@ struct FakeN8Port : ISerialPort {
     }
     void flushInput() override {
         std::lock_guard<std::mutex> l(dev_.mu);
+        failure_.clear();
         out_.clear();
-        if (dev_.throwOnFlushInput > 0 && --dev_.throwOnFlushInput == 0)
-            throw std::runtime_error("fake port: flushInput failed");
+        if (dev_.failOnFlushInput > 0 && --dev_.failOnFlushInput == 0) failure_ = "fake port: flushInput failed";
+    }
+    std::string failure() const override {
+        std::lock_guard<std::mutex> l(dev_.mu);
+        return failure_;
     }
 
 private:
@@ -184,6 +209,7 @@ private:
             if (cmd == Edio::CMD_F_FOPN) need = in_.size() >= 7 ? 7 + (in_[5] | (in_[6] << 8)) : 7;
             if (cmd == Edio::CMD_F_FWR) need = 8;
             if (cmd == Edio::CMD_F_DEL) need = in_.size() >= 6 ? 6 + (in_[4] | (in_[5] << 8)) : 6;
+            if (cmd == Edio::CMD_F_DIR_MK) need = in_.size() >= 6 ? 6 + (in_[4] | (in_[5] << 8)) : 6;
             if (cmd == Edio::CMD_F_DIR_LD) need = in_.size() >= 7 ? 7 + (in_[5] | (in_[6] << 8)) : 7;
             if (cmd == Edio::CMD_F_DIR_GET) need = 10;
             if (cmd == Edio::CMD_F_FRD) need = 8;
@@ -193,13 +219,30 @@ private:
             if (cmd == Edio::CMD_STATUS) {
                 reply({status_, 0xA5});
                 status_ = 0;
+            } else if (cmd == Edio::CMD_SYS_INF) {
+                out_.insert(out_.end(), dev_.sysInfo.begin(), dev_.sysInfo.end());
+            } else if (cmd == Edio::CMD_GET_VDC) {
+                out_.insert(out_.end(), dev_.vdc.begin(), dev_.vdc.end());
+            } else if (cmd == Edio::CMD_F_AVB) {  // two u32, high then low
+                for (int shift : {32, 40, 48, 56, 0, 8, 16, 24})
+                    out_.push_back(static_cast<std::uint8_t>(dev_.freeBytes >> shift));
+            } else if (cmd == Edio::CMD_F_DIR_MK) {
+                const std::string path(c.begin() + 6, c.end());
+                if (!dev_.dirs.insert(path).second) status_ = 0x08;  // FR_EXIST
+                dev_.log.push_back("mkdir:" + path);
             } else if (cmd == Edio::CMD_F_DIR_LD) {
-                const std::string dir = std::string(c.begin() + 7, c.end()) + "/";
+                const std::string name = std::string(c.begin() + 7, c.end());
+                const std::string dir  = name + "/";
                 dirList_.clear();
+                // The directories made directly under it (a file's own folders are not listed: what a case reads is
+                // the files), then its files.
+                for (const std::string& d : dev_.dirs)
+                    if (d.rfind(dir, 0) == 0 && d.find('/', dir.size()) == std::string::npos)
+                        dirList_.push_back({d.substr(dir.size()), 0, true});
                 for (const auto& [path, bytes] : dev_.files)
                     if (path.rfind(dir, 0) == 0 && path.find('/', dir.size()) == std::string::npos)
-                        dirList_.push_back({path.substr(dir.size()), bytes.size()});
-                if (dirList_.empty()) status_ = 0x05;  // FR_NO_PATH
+                        dirList_.push_back({path.substr(dir.size()), bytes.size(), false});
+                if (dirList_.empty() && !dev_.dirs.count(name)) status_ = 0x05;  // FR_NO_PATH
                 if (dev_.failNextList) {
                     dev_.failNextList = false;
                     dirList_.clear();
@@ -209,10 +252,11 @@ private:
                 const auto n = static_cast<std::uint16_t>(dirList_.size());
                 reply({static_cast<std::uint8_t>(n), static_cast<std::uint8_t>(n >> 8)});
             } else if (cmd == Edio::CMD_F_DIR_GET) {
-                for (const auto& [name, size] : dirList_) {
+                for (const auto& [name, size, isDir] : dirList_) {
                     const auto s = static_cast<std::uint32_t>(size);
                     reply({0, static_cast<std::uint8_t>(s), static_cast<std::uint8_t>(s >> 8),
-                           static_cast<std::uint8_t>(s >> 16), static_cast<std::uint8_t>(s >> 24), 0, 0, 0, 0, 0,
+                           static_cast<std::uint8_t>(s >> 16), static_cast<std::uint8_t>(s >> 24), 0, 0, 0, 0,
+                           static_cast<std::uint8_t>(isDir ? 0x10 : 0x20),  // FatFs AM_DIR, AM_ARC
                            static_cast<std::uint8_t>(name.size()), static_cast<std::uint8_t>(name.size() >> 8)});
                     out_.insert(out_.end(), name.begin(), name.end());
                 }
@@ -240,7 +284,8 @@ private:
                     ++dev_.expVolAttempts;
                     if (dev_.refuseExpVolWrites > 0) {
                         --dev_.refuseExpVolWrites;
-                        throw std::runtime_error("fake port: the config write was refused");
+                        failure_ = "fake port: the config write was refused";
+                        continue;
                     }
                 }
                 if (addr == static_cast<std::uint32_t>(Edio::ADDR_FIFO)) {
@@ -253,7 +298,7 @@ private:
                 }
             } else if (cmd == Edio::CMD_F_DEL) {
                 const std::string path(c.begin() + 6, c.end());
-                dev_.files.erase(path);
+                if (dev_.files.erase(path) + dev_.dirs.erase(path) == 0) status_ = 0x04;  // FR_NO_FILE
                 dev_.log.push_back("file-del:" + path);
             } else if (cmd == Edio::CMD_F_FOPN) {
                 filePath_ = std::string(c.begin() + 7, c.end());
@@ -299,7 +344,14 @@ private:
             menu_.push_back(b);
             if (menu_[0] != '*') { menu_.clear(); return; }      // not a command: the menu skips it
             if (menu_.size() < 2) return;
-            if (menu_[1] == 't') { reply({'k'}); menu_.clear(); return; }
+            if (menu_[1] == 't') { reply({dev_.testReply}); menu_.clear(); return; }
+            if (menu_[1] == 'v') {  // the screen: 2048 VRAM bytes, then 16 palette bytes
+                out_.insert(out_.end(), dev_.vram.begin(), dev_.vram.end());
+                out_.insert(out_.end(), dev_.palette.begin(), dev_.palette.end());
+                menu_.clear();
+                return;
+            }
+            if (menu_[1] == 'r') { ++dev_.resets; menu_.clear(); return; }  // no ack: the console reboots
             if (menu_[1] == 's') {  // the game boots, and the FPGA's config block names its mapper
                 dev_.menu = false;
                 dev_.booted = menuPath_;
@@ -313,7 +365,9 @@ private:
                 const std::size_t len = menu_[2] | (menu_[3] << 8);
                 if (menu_.size() < 4 + len) return;
                 menuPath_ = std::string(menu_.begin() + 4, menu_.end());
-                reply({0x00, static_cast<std::uint8_t>(dev_.mapIndex), static_cast<std::uint8_t>(dev_.mapIndex >> 8)});
+                if (dev_.installStatus != 0) reply({dev_.installStatus});  // refused: no map index follows
+                else reply({0x00, static_cast<std::uint8_t>(dev_.mapIndex),
+                            static_cast<std::uint8_t>(dev_.mapIndex >> 8)});
                 menu_.clear();
                 return;
             }
@@ -371,7 +425,13 @@ private:
     std::string              filePath_;
     std::size_t              readPos_ = 0;
     std::uint8_t             status_ = 0;  // what the next CMD_STATUS answers (a FatFs error, or 0)
-    std::vector<std::pair<std::string, std::size_t>> dirList_;
+    struct Listed {
+        std::string name;
+        std::size_t size  = 0;
+        bool        isDir = false;
+    };
+    std::vector<Listed>      dirList_;
+    std::string              failure_;  // what the port's last call failed with (PortTransport::failure)
     Bytes                    file_;
     std::size_t              fileLeft_ = 0, blockLeft_ = 0;
     Bytes                    menu_;
@@ -383,7 +443,7 @@ private:
 };
 
 inline N8Link::PortFactory factoryFor(FakeN8& dev) {
-    return [&dev](const std::string&) -> std::unique_ptr<ISerialPort> { return std::make_unique<FakeN8Port>(dev); };
+    return [&dev](const std::string&) -> std::unique_ptr<PortTransport> { return std::make_unique<FakeN8Port>(dev); };
 }
 
 }  // namespace retroplug::test

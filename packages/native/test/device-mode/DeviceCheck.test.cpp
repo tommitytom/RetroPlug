@@ -25,6 +25,7 @@
 #include "DeviceCheck.hpp"
 #include "DeviceCheckCases.hpp"
 #include "DeviceModeEntries.hpp"
+#include "N8Protocol.hpp"
 #include "graph/CountingAllocator.hpp"
 #include "graph/Descriptor.hpp"
 #include "graph/JsonToMsgpack.hpp"
@@ -224,4 +225,20 @@ TEST_CASE("the device check stops at the type that fails, and names it", "[devic
         CHECK(std::string(r.id) == "rp.devtest.fault");
         CHECK(r.types == 0);
     }
+}
+
+TEST_CASE("the device check's N8 protocol run drives the pack's Edio, Menu and Ops to what its script says, "
+          "allocating nothing",
+          "[device-mode][device-check]") {
+    // The image links N8Protocol.cpp under the trap; here the same source runs over the desktop's build of the pack,
+    // so the constants it holds the device to (the bytes its calls write, and their hash) are the desktop's.
+    rp::test::beginCountingAllocations(rp::test::countsCAllocations());
+    const rp::device_check::N8ProtocolResult r = rp::device_check::n8Protocol();
+    const auto                               counted = rp::test::endCountingAllocations();
+    INFO("failed at " << (r.failed ? r.failed : "-") << ", " << r.written << " bytes, hash " << r.hash);
+    CHECK(r.ok);
+    CHECK(r.written == rp::device_check::kN8ProtocolBytes);
+    CHECK(r.hash == rp::device_check::kN8ProtocolHash);
+    CHECK(counted.allocations == 0);
+    CHECK(counted.frees == 0);
 }

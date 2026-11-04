@@ -1,14 +1,16 @@
 // `retroplug-cli n8-bridge` / `n8-sync` - stream live MIDI to a physical Everdrive N8 Pro over USB, entirely
 // in TS (these replaced the native subcommands). `n8-bridge` forwards raw MIDI to the cart FIFO (for the
 // BlipToaster ROM); `n8-sync` translates a MIDI clock/transport into risa host-sync bytes (via the pure-TS
-// RisaSyncTranslator). Both are long-running: they open the serial (createN8) + MIDI (createMidiClient)
-// facets, call keepAlive(), and run an event-driven poll loop (setInterval) until Ctrl-C - the native
-// launcher pumps it (see cli/main.cpp).
+// RisaSyncTranslator). Both are long-running: they open the N8 (a session of the pack's facet, createN8Client) and
+// the MIDI facet (createMidiClient), call keepAlive(), and run an event-driven poll loop (setInterval) until
+// Ctrl-C - the native launcher pumps it (see cli/main.cpp).
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import { keepAlive, exitProcess } from "../session";
-import { createSerialClient, createMidiClient } from "../../src/realBackend";
-import { createN8, RisaSyncTranslator, type SerialPortInfo } from "../../src/n8";
+import { createMidiClient } from "../../src/realBackend";
+import { makeCall } from "../../src/rpcClient";
+import { RisaSyncTranslator } from "../../src/risaSyncTranslator";
+import { createN8Client, type N8Port } from "@retroplug/n8";
 
 // txiki provides this libuv-backed global at runtime (deps/.../txiki timers); the TS lib config omits it.
 declare function setInterval(handler: () => void, ms: number): number;
@@ -19,7 +21,7 @@ const flag = (args: string[], name: string): string | undefined => {
 };
 
 // The port to talk to: an explicit --serial, else the first attached N8 (USB VID:PID 38df:0017).
-function pickPort(ports: SerialPortInfo[], explicit: string | undefined): string {
+function pickPort(ports: N8Port[], explicit: string | undefined): string {
   if (explicit) return explicit;
   const n8 = ports.find((p) => p.isN8);
   if (!n8)
@@ -47,9 +49,8 @@ function printInputs(): void {
 function runBridge(args: string[], clientName: string, transform: (bytes: Uint8Array, out: number[]) => void): void {
   const lookaheadMs = Math.max(0, Number(flag(args, "--lookahead-ms") ?? 0) | 0);
 
-  const serial = createSerialClient();
-  const port = serial.open(pickPort(serial.listPorts(), flag(args, "--serial")));
-  const n8 = createN8(port);
+  const client = createN8Client(makeCall());
+  const n8 = client.openN8(pickPort(client.listPorts(), flag(args, "--serial")));
   n8.connect(); // throws if the N8 doesn't answer the handshake
 
   const midi = createMidiClient();
@@ -82,7 +83,7 @@ function runBridge(args: string[], clientName: string, transform: (bytes: Uint8A
   setInterval(() => console.log(`forwarded ${msgCount} messages / ${byteCount} bytes`), 2000);
 
   console.log(
-    `bridging ${midiIn || "all MIDI inputs"} -> Everdrive N8 on ${port.port}` +
+    `bridging ${midiIn || "all MIDI inputs"} -> Everdrive N8 on ${n8.port}` +
       `${lookaheadMs ? ` (+${lookaheadMs}ms lookahead)` : ""}. Ctrl-C to stop.`,
   );
 }

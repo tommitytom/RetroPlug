@@ -42,7 +42,7 @@
 #include <vector>
 
 #include "n8/desktop/N8Link.hpp"
-#include "n8/desktop/WjwwoodSerialPort.hpp"
+#include "n8/desktop/SerialTransport.hpp"
 
 using namespace retroplug;
 
@@ -234,7 +234,8 @@ int runTiming(int argc, char** argv, const std::string& defaultPort) {
     // The link, with its write log.
     std::mutex wm;
     std::vector<std::pair<std::int64_t, std::vector<std::uint8_t>>> writes;
-    N8Link link([](const std::string& p) -> std::unique_ptr<ISerialPort> { return std::make_unique<WjwwoodSerialPort>(p); });
+    N8Link link(
+        [](const std::string& p) -> std::unique_ptr<PortTransport> { return std::make_unique<SerialTransport>(p); });
     link.setLinkAllowed(!raw);
     link.setWriteLog([&](const std::uint8_t* d, std::size_t n, std::int64_t ns, bool resend) {
         if (resend) return;   // a hit's latency runs from its FIRST write: a re-send is part of it

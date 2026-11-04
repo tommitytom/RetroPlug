@@ -9,14 +9,24 @@
 #include <stdexcept>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
-#include "n8/desktop/N8Menu.hpp"
+#include "n8/Menu.hpp"
+#include "n8/desktop/PortTransport.hpp"
 
 namespace retroplug {
 
+using rp::n8::Edio;
+
 namespace {
+
+// An Edio call's failure as the throw the jobs' steps are written around, in the words the port or describe() gives it
+// (failureText).
+void check(const rp::n8::Status& status, Edio& edio, std::string_view path = {}) {
+    if (!status.ok()) throw std::runtime_error(failureText(status, edio, path));
+}
 
 // iNES mappers whose cartridge carries its own sound chip - the audio the N8's FPGA mixes in through
 // `master_vol`. The TS twin is EXPANSION_MAPPERS in cli/sessions/n8-play.ts (the same policy behind
@@ -49,11 +59,7 @@ int inesMapper(std::span<const std::uint8_t> rom) {
 // the block can't be read, which lands on "leave the register alone" - the safe answer.
 int runningMapper(Edio& edio) {
     std::uint8_t cfg[Edio::SIZE_CFG] = {0};
-    try {
-        edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg);
-    } catch (const std::exception&) {
-        return -1;
-    }
+    if (!edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok()) return -1;
     return ((cfg[2] >> 4) << 8) | cfg[0];
 }
 
@@ -89,26 +95,28 @@ constexpr const char* kUploadAtGame =
 constexpr std::size_t kMaxBatteryFile = 1u << 20;
 
 // What the card holds for `rom`'s battery: whether its folder exists, and the size of its bram.srm when there is one. A
-// folder that is not there (FatFs FR_NO_FILE / FR_NO_PATH, which Edio reports as operation error 0x04 / 0x05) is the
-// one failure taken as an answer; any other is the card's or the link's, and is reported as that.
+// folder that is not there (FatFs FR_NO_FILE / FR_NO_PATH, the directory load's status 0x04 / 0x05) is the one failure
+// taken as an answer; any other is the card's or the link's, and is reported as that.
 struct BatteryFolder {
     bool                         exists = false;
     std::optional<std::uint32_t> size;
 };
 BatteryFolder listBatteryFolder(Edio& edio, const std::string& rom) {
-    BatteryFolder folder;
-    try {
-        const auto entries = edio.listDir("EDN8/gamedata/" + rom);
+    BatteryFolder                folder;
+    std::optional<std::uint32_t> size;
+    const rp::n8::Status         listed = edio.listDir("EDN8/gamedata/" + rom, [&](const rp::n8::DirEntry& e) {
+        if (!e.isDir && e.name == "bram.srm") size = e.size;
+    });
+    if (listed.ok()) {
         folder.exists = true;
-        for (const N8DirEntry& e : entries)
-            if (!e.isDir && e.name == "bram.srm") folder.size = e.size;
-    } catch (const std::exception& e) {
-        const std::string what = e.what();
-        const bool absent = what.find("operation error 0x04") != std::string::npos ||
-                            what.find("operation error 0x05") != std::string::npos;
-        if (!absent)
-            throw std::runtime_error("the battery folder EDN8/gamedata/" + rom + " could not be listed: " + what);
+        folder.size   = size;
+        return folder;
     }
+    const bool absent = listed.code == rp::n8::Code::Device && listed.where == rp::n8::Where::Operation &&
+                        (listed.device == 0x04 || listed.device == 0x05);
+    if (!absent)
+        throw std::runtime_error("the battery folder EDN8/gamedata/" + rom + " could not be listed: " +
+                                 failureText(listed, edio));
     return folder;
 }
 
@@ -230,7 +238,7 @@ void N8Host::setPort(const std::string& port) {
     port_ = port;
     if (wasStreaming) {
         link_.disconnect();
-        if (!port.empty()) link_.connect(port);
+        if (!port.empty()) connectLink(port);
     }
     save();
 }
@@ -243,12 +251,20 @@ void N8Host::connect(bool enable) {
                 if (p.isN8) { port_ = p.port; break; }
         }
         enabled_ = true;
-        if (!port_.empty()) link_.connect(port_);
+        if (!port_.empty()) connectLink(port_);
     } else {
         enabled_ = false;
         link_.disconnect();
     }
     save();
+}
+
+void N8Host::connectLink(const std::string& port) {
+    if (std::string why = portGuard_ ? portGuard_(port) : std::string(); !why.empty()) {
+        link_.refuse(why);
+        return;
+    }
+    link_.connect(port);
 }
 
 void N8Host::setLookahead(int ms) {
@@ -289,8 +305,10 @@ void N8Host::applyExpVol(Edio& edio, int value, int mapperHint) {
         if (mapper < 0 || !mapperHasExpansionAudio(mapper)) return;
         value = EXP_VOL_UNITY;
     }
+    // A failed write throws: OnControl's caller (N8Link's serial thread) retries it a second later, and every other
+    // caller takes it as best-effort.
     const std::uint8_t byte = static_cast<std::uint8_t>(value);
-    edio.memWR(Edio::ADDR_EXP_VOL, &byte, 1);
+    check(edio.memWR(Edio::ADDR_EXP_VOL, &byte, 1), edio);
 }
 
 void N8Host::restore() {
@@ -405,9 +423,13 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
     };
     auto outcome = std::make_shared<Outcome>();
     // Between steps: the job's node left the plan (its record already failed), or a disconnect was asked for.
-    const auto checkStop = [this] {
-        if (cartJob_.abandoned()) throw std::runtime_error("the job's node left the plan");
-        if (link_.stopRequested()) throw std::runtime_error("the link was disconnected during the job");
+    const auto stopReason = [this]() -> const char* {
+        if (cartJob_.abandoned()) return "the job's node left the plan";
+        if (link_.stopRequested()) return "the link was disconnected during the job";
+        return nullptr;
+    };
+    const auto checkStop = [stopReason] {
+        if (const char* why = stopReason()) throw std::runtime_error(why);
     };
     // The cart's state, read off its FPGA config block (a system-region read, which never touches the cart's bus and
     // puts no byte in a running game's FIFO): the OS runs on its own mapper, 255, so that is the menu.
@@ -419,7 +441,7 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
     using AfterJob = N8Link::AfterJob;
     N8Link::PausedJob paused;
     if (dump) {
-        paused.run = [this, outcome, checkStop, atMenu, rom = batteryRom](Edio* edio) {
+        paused.run = [this, outcome, stopReason, checkStop, atMenu, rom = batteryRom](Edio* edio) {
             if (!edio) {
                 outcome->error = "the link went down before the job ran";
                 return AfterJob::Resume;
@@ -439,30 +461,27 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
                                              " bytes: a battery file is 1 to " + std::to_string(kMaxBatteryFile));
                 // The menu's file read moves about a kilobyte a second whatever the block (measured on an N8 Pro: 512
                 // bytes in 476 ms, 256 in 209 ms), so a 64 KB file takes about a minute: a block a step, each one a
-                // progress report and a point the job may stop at (reading changes nothing on the card).
+                // progress report and a point the job may stop at (reading changes nothing on the card). fileRead asks
+                // before each block and tells the end, which is the job's progress in bytes.
                 std::vector<std::uint8_t> buf(size);
-                edio->fileOpen(path, Edio::FA_READ);
+                check(edio->fileOpen(path, Edio::FA_READ), *edio);
                 open = true;
-                cartJob_.progress(0, size);
-                constexpr std::size_t kBlock = static_cast<std::size_t>(Edio::RD_BLOCK_SIZE);
-                for (std::size_t off = 0; off < size; off += kBlock) {
-                    checkStop();
-                    const std::size_t n = std::min<std::size_t>(kBlock, size - off);
-                    edio->fileRead(buf.data() + off, n);
-                    cartJob_.progress(static_cast<std::uint32_t>(off + n), size);
-                }
-                edio->fileClose();
+                const char* stopped = nullptr;
+                auto        step    = [&](std::uint32_t done, std::uint32_t total) {
+                    cartJob_.progress(done, total);
+                    stopped = stopReason();
+                    return stopped == nullptr;
+                };
+                const rp::n8::Status read = edio->fileRead(buf.data(), size, rp::n8::progressOf(step));
+                if (read.code == rp::n8::Code::Cancelled) throw std::runtime_error(stopped);
+                check(read, *edio);
+                check(edio->fileClose(), *edio);
                 open = false;
                 outcome->bytes = std::move(buf);
                 outcome->ok    = true;
             } catch (const std::exception& e) {
                 outcome->error = e.what();
-                if (open) {
-                    try {
-                        edio->fileClose();
-                    } catch (const std::exception&) {
-                    }
-                }
+                if (open) (void)edio->fileClose();  // best-effort
             }
             return AfterJob::Resume;
         };
@@ -488,16 +507,17 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
                 // place, and a write once started runs to the end (the menu writes about 100 KB a second: an upload of
                 // 288 KB took 2.8 s on the real cart, so a battery takes well under a second).
                 const std::uint32_t n = static_cast<std::uint32_t>(srm.size());
-                edio->fileOpen(path, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH);
+                check(edio->fileOpen(path, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH), *edio);
                 open = true;
                 constexpr std::size_t CHUNK = 4096;
                 cartJob_.progress(0, n);
                 for (std::size_t off = 0; off < n; off += CHUNK) {
                     const std::size_t c = std::min<std::size_t>(CHUNK, n - off);
-                    edio->fileWrite(srm.data() + off, c);  // each 1 KB acknowledged by the cart, then its status
+                    // Each 1 KB acknowledged by the cart, then the command's status.
+                    check(edio->fileWrite(srm.data() + off, c), *edio);
                     cartJob_.progress(static_cast<std::uint32_t>(off + c), n);
                 }
-                edio->fileClose();
+                check(edio->fileClose(), *edio);
                 open = false;
                 const std::string json =
                     "{\"path\":\"" + jsonString(path) + "\",\"created\":" + (created ? "true" : "false") + "}";
@@ -510,10 +530,7 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
                     // so the cart does not keep the handle.
                     outcome->error = "the battery file " + path + " was replaced and is incomplete: restore again (" +
                                      e.what() + ")";
-                    try {
-                        edio->fileClose();
-                    } catch (const std::exception&) {
-                    }
+                    (void)edio->fileClose();
                 }
             }
             return AfterJob::Resume;
@@ -532,39 +549,43 @@ bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_
                 checkStop();
                 // A running game has no menu, and the menu's own probe would put '*t' into its MIDI stream.
                 if (!atMenu(*edio)) throw std::runtime_error(kUploadAtGame);
-                N8Menu menu(*edio);
-                menu.test();  // clear error if the menu does not answer
-                edio->fileOpen(bootPath, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH);
+                rp::n8::Menu menu(*edio);
+                // A clear error if the menu answers something else, in the job's own words (a job's caller shows them),
+                // as an install's refusal is below; the CLI prints the protocol's (describe()) for both.
+                const rp::n8::Status tested = menu.test();
+                if (tested.code == rp::n8::Code::BadReply)
+                    throw std::runtime_error(
+                        "N8 is not at its menu (no '*t' answer) - reset the cart to the file browser and retry");
+                check(tested, *edio);
+                check(edio->fileOpen(bootPath, Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH), *edio);
                 created = opened = true;
+                // Each chunk its own write command (its 1 KB blocks acknowledged, then its status), so the job may stop
+                // between two.
                 constexpr std::size_t CHUNK = 8192;
                 for (std::size_t off = 0; off < image.size(); off += CHUNK) {
                     checkStop();
                     const std::size_t n = std::min(CHUNK, image.size() - off);
-                    edio->fileWrite(image.data() + off, n);
+                    check(edio->fileWrite(image.data() + off, n), *edio);
                     cartJob_.progress(static_cast<std::uint32_t>(off + n), static_cast<std::uint32_t>(image.size()));
                 }
                 checkStop();  // the last point that leaves the cart as it was: past it, the cart boots the image
-                edio->fileClose();
+                check(edio->fileClose(), *edio);
                 opened = false;
-                mapIndex = menu.appInstall(bootPath);  // the menu parses iNES and sources the mapper core from SD
-                menu.appStart();
+                // The menu parses iNES and sources the mapper core from SD.
+                std::uint16_t        index     = 0;
+                const rp::n8::Status installed = menu.install(bootPath, &index);
+                if (installed.code == rp::n8::Code::Device && installed.device != 0x44)
+                    throw std::runtime_error("N8 menu: app install error (path '" + bootPath + "')");
+                check(installed, *edio, bootPath);
+                mapIndex = index;
+                check(menu.start(), *edio);
             } catch (const std::exception& e) {
                 // Nothing booted: the cart is as it was, and streaming resumes to it, as a job that failed before its
                 // first chunk leaves it. The file the open made (or emptied) goes with it, so the cart's browser never
                 // lists a partial image (best-effort).
                 outcome->error = e.what();
-                if (opened) {
-                    try {
-                        edio->fileClose();
-                    } catch (const std::exception&) {
-                    }
-                }
-                if (created) {
-                    try {
-                        edio->fileDelete(bootPath);
-                    } catch (const std::exception&) {
-                    }
-                }
+                if (opened) (void)edio->fileClose();
+                if (created) (void)edio->fileDelete(bootPath);
                 return AfterJob::Resume;
             }
             // The game runs. The mapload reloaded the OS's stored master_vol, so set ours on the ROM we hold, whose

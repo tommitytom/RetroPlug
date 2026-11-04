@@ -15,10 +15,10 @@ struct RpcMidiIn {
     rfl::Bytestring bytes;
 };
 
-// The thin native live-MIDI-input transport exposed to the TS control plane over the Backend RPC channel -
-// the MIDI twin of SerialRpcService. Owns one MidiIo; a TS session enumerates inputs, opens (a virtual port
-// + the selected hardware inputs), and drains messages by polling. RtMidi + its callback thread + the ring
-// stay native behind it. Mounted CLI-only (registerMidiRpc, under RETROPLUG_N8_BRIDGE).
+// The thin native live-MIDI-input transport exposed to the TS control plane over the Backend RPC channel,
+// beside the N8 pack's facet the same sessions open the cart through. Owns one MidiIo; a TS session enumerates
+// inputs, opens (a virtual port + the selected hardware inputs), and drains messages by polling. RtMidi + its
+// callback thread + the ring stay native behind it. Mounted CLI-only (registerMidiRpc, under RETROPLUG_N8_BRIDGE).
 class MidiRpcService {
 public:
     // Hardware MIDI input port names (skips our own virtual port + ALSA "Through").
@@ -50,8 +50,8 @@ private:
     std::vector<MidiIo::Message> scratch_;  // reused poll buffer
 };
 
-// Mount the MIDI-input facet onto an rpcpp server - same cross-object addMethod pattern as
-// registerSerialRpc. Header-only + templated so it stays OUT of the shared registration union; only the
+// Mount the MIDI-input facet onto an rpcpp server - the cross-object addMethod pattern of
+// BackendRpcRegistration.hpp. Header-only + templated so it stays OUT of the shared registration union; only the
 // CLI includes + calls it, so the plugin/test hosts never link rtmidi.
 template <class Server>
 void registerMidiRpc(Server& s, MidiRpcService& svc) {

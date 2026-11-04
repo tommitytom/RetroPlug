@@ -44,20 +44,91 @@
 #include <cstring>
 #include <initializer_list>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
 #include "FakeJobs.hpp"  // a job record and request of the pack's own, as an engine would hand the cart
-#include "n8/desktop/Edio.hpp"
+#include "n8/Edio.hpp"
+#include "n8/Menu.hpp"
+#include "n8/Ops.hpp"
 #include "n8/desktop/N8Host.hpp"
 #include "n8/desktop/N8Link.hpp"
-#include "n8/desktop/N8Menu.hpp"
-#include "n8/desktop/WjwwoodSerialPort.hpp"
+#include "n8/desktop/SerialTransport.hpp"
 
 using namespace retroplug;
 
 namespace {
+
+// The bare-Edio ops below are each written around a throw (an op reports its failure and exits): the pack's Edio, Menu
+// and Ops behind the calls they make, each throwing a failed Status's text (failureText, the port's own words or
+// describe()'s), so an op reads as a short script.
+struct Edio : rp::n8::Edio {
+    using rp::n8::Edio::Edio;
+
+    void connect() { ok(rp::n8::Edio::connect()); }
+    void setReadTimeout(int ms) { timeouts().readMs = static_cast<std::uint32_t>(ms); }
+    void readData(std::uint8_t* out, std::size_t n) { ok(rp::n8::Edio::readData(out, n)); }
+    void memRD(std::uint32_t addr, std::uint8_t* out, std::size_t n) { ok(rp::n8::Edio::memRD(addr, out, n)); }
+    void memWR(std::uint32_t addr, const std::uint8_t* d, std::size_t n) { ok(rp::n8::Edio::memWR(addr, d, n)); }
+    void fifoWR(const std::uint8_t* d, std::size_t n) { ok(rp::n8::Edio::fifoWR(d, n)); }
+    void dirMake(const std::string& path) { ok(rp::n8::Edio::dirMake(path), path); }
+    void fileDelete(const std::string& path) { ok(rp::n8::Edio::fileDelete(path), path); }
+    std::uint64_t freeSpace() {
+        std::uint64_t bytes = 0;
+        ok(rp::n8::Edio::freeSpace(bytes));
+        return bytes;
+    }
+    std::vector<std::uint8_t> sysInfo() {
+        std::uint8_t b[SIZE_SYS_INFO];
+        ok(rp::n8::Edio::sysInfo(b));
+        return {b, b + sizeof b};
+    }
+    std::vector<std::uint8_t> vdc() {
+        std::uint8_t b[SIZE_VDC];
+        ok(rp::n8::Edio::vdc(b));
+        return {b, b + sizeof b};
+    }
+    std::vector<std::uint8_t> readFile(const std::string& path) {
+        std::vector<std::uint8_t> out;
+        const rp::n8::FileSink    sink{[](void* ctx, std::size_t size) {
+                                        auto& v = *static_cast<std::vector<std::uint8_t>*>(ctx);
+                                        v.resize(size);
+                                        return v.data();
+                                    },
+                                    &out};
+        std::size_t size = 0;
+        ok(rp::n8::readFile(*this, path, sink, &size), path);
+        out.resize(size);
+        return out;
+    }
+    void writeFile(const std::string& path, const std::vector<std::uint8_t>& data) {
+        ok(rp::n8::writeFile(*this, path, {data.data(), data.size()}), path);
+    }
+
+    void ok(const rp::n8::Status& s, std::string_view path = {}) {
+        if (!s.ok()) throw std::runtime_error(failureText(s, *this, path));
+    }
+};
+
+struct N8VramDump {
+    std::vector<std::uint8_t> vram, palette;
+};
+
+struct N8Menu {
+    explicit N8Menu(Edio& edio) : edio_(edio), menu_(edio) {}
+    void       test() { edio_.ok(menu_.test()); }
+    N8VramDump vramDump() {
+        std::uint8_t vram[rp::n8::Menu::kVramBytes], palette[rp::n8::Menu::kPaletteBytes];
+        edio_.ok(menu_.vramDump(vram, palette));
+        return {{vram, vram + sizeof vram}, {palette, palette + sizeof palette}};
+    }
+
+    Edio&        edio_;
+    rp::n8::Menu menu_;
+};
 
 // A whole local file into a byte vector. Empty on a missing/unreadable/empty file — every caller here
 // treats "nothing to send" as an error, so the two cases don't need telling apart.
@@ -109,7 +180,7 @@ int main(int argc, char** argv) {
             return 2;
         }
         try {
-            WjwwoodSerialPort               sp(pport);
+            SerialTransport                 sp(pport);
             Edio                            edio(sp);
             edio.connect();  // handshake (works whether the menu or a game is running)
             const std::vector<std::uint8_t> bytes = edio.readFile(sdPath);
@@ -149,7 +220,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         try {
-            WjwwoodSerialPort sp(pport);
+            SerialTransport   sp(pport);
             Edio              edio(sp);
             edio.connect();
             edio.writeFile(sdPath, data);
@@ -181,12 +252,12 @@ int main(int argc, char** argv) {
 
     // Diagnostic for the reliable link on hardware: one port, every step by hand - sync, read the back-channel,
     // frames, the APU mirror after each - to see where a frame stops landing. It polls the back-channel the way
-    // N8Link does (0 ms reads), which is what found the read timeout leaking into writes (WjwwoodSerialPort::read):
+    // N8Link does (0 ms reads), which is what found the read timeout leaking into writes (SerialTransport::read):
     // a healthy run acks F5 50, F5 51, F5 52 and every memRD answers.
     if (op == "linkdbg") {
         const std::string pport = argc > 2 ? argv[2] : findN8Port();
         try {
-            WjwwoodSerialPort sp(pport);
+            SerialTransport   sp(pport);
             Edio              edio(sp);
             edio.connect();
             auto apu = [&](const char* tag) {
@@ -250,8 +321,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
             return 2;
         }
-        retroplug::N8Link link([](const std::string& p) -> std::unique_ptr<ISerialPort> {
-            return std::make_unique<WjwwoodSerialPort>(p);
+        retroplug::N8Link link([](const std::string& p) -> std::unique_ptr<PortTransport> {
+            return std::make_unique<SerialTransport>(p);
         });
         if (!link.connect(lport)) {
             std::fprintf(stderr, "link: connect failed: %s\n", link.lastError().c_str());
@@ -306,7 +377,7 @@ int main(int argc, char** argv) {
             return 2;
         }
         try {
-            WjwwoodSerialPort         sp(pport);
+            SerialTransport           sp(pport);
             Edio                      edio(sp);
             edio.setReadTimeout(timeoutMs);
             std::vector<std::uint8_t> buf(count);
@@ -341,7 +412,7 @@ int main(int argc, char** argv) {
             return 2;
         }
         try {
-            WjwwoodSerialPort sp(pport);
+            SerialTransport   sp(pport);
             Edio              edio(sp);
             edio.connect();  // handshake (works whether the menu or a game is running)
             if (op == "poke") {
@@ -372,7 +443,7 @@ int main(int argc, char** argv) {
             return 2;
         }
         try {
-            WjwwoodSerialPort sp(pport);
+            SerialTransport   sp(pport);
             Edio              edio(sp);
             edio.connect();
             const std::uint64_t free = edio.freeSpace();
@@ -399,7 +470,7 @@ int main(int argc, char** argv) {
             return 2;
         }
         try {
-            WjwwoodSerialPort sp(pport);
+            SerialTransport   sp(pport);
             Edio              edio(sp);
             edio.connect();
             const std::vector<std::uint8_t> b = edio.sysInfo();
@@ -442,7 +513,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         try {
-            WjwwoodSerialPort         sp(pport);
+            SerialTransport           sp(pport);
             Edio                      edio(sp);
             edio.connect();
             edio.memWR(addr, data.data(), data.size());
@@ -480,7 +551,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         try {
-            WjwwoodSerialPort sp(pport);
+            SerialTransport   sp(pport);
             Edio              edio(sp);
             edio.connect();
             edio.fifoWR(data.data(), data.size());
@@ -503,7 +574,7 @@ int main(int argc, char** argv) {
             return 2;
         }
         try {
-            WjwwoodSerialPort sp(pport);
+            SerialTransport   sp(pport);
             Edio              edio(sp);
             edio.connect();
             N8Menu menu(edio);
@@ -539,7 +610,7 @@ int main(int argc, char** argv) {
             return 2;
         }
         try {
-            WjwwoodSerialPort         sp(pport);
+            SerialTransport           sp(pport);
             Edio                      edio(sp);
             edio.connect();
             std::vector<std::uint8_t> ssr(0x200);
@@ -579,7 +650,7 @@ int main(int argc, char** argv) {
                 battery ? romName.c_str() : "-", port.c_str());
 
     N8Host host(
-        [](const std::string& p) -> std::unique_ptr<ISerialPort> { return std::make_unique<WjwwoodSerialPort>(p); },
+        [](const std::string& p) -> std::unique_ptr<PortTransport> { return std::make_unique<SerialTransport>(p); },
         [] {
             std::vector<N8PortDto> v;
             for (const auto& p : listSerialPorts()) v.push_back({p.port, p.isN8});

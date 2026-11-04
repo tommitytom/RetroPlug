@@ -188,7 +188,7 @@ function(_rp_device_executable target)
     target_link_options(${target} PRIVATE ${_wrap})
 endfunction()
 
-_rp_device_executable(rp-device-check main.cpp DeviceCheck.cpp)
+_rp_device_executable(rp-device-check main.cpp DeviceCheck.cpp N8Protocol.cpp)
 target_include_directories(rp-device-check PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/generated")
 # The device check's product: the device entries of packages.cmake's list, which the case generator's product lists
 # too. The image's entries reach main.cpp, which refuses a cases header made for other ones.

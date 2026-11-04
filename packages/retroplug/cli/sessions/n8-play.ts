@@ -10,16 +10,15 @@
 // next, capture the whole time).
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
-import { createSerialClient } from "../../src/realBackend";
-import { createN8, type SerialPortInfo } from "../../src/n8";
-import { ADDR_EXP_VOL } from "../../src/n8/edio";
+import { makeCall } from "../../src/rpcClient";
+import { createN8Client, ADDR_EXP_VOL, type N8Port } from "@retroplug/n8";
 
 const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
 
-function pickPort(ports: SerialPortInfo[], explicit: string | undefined): string {
+function pickPort(ports: N8Port[], explicit: string | undefined): string {
   if (explicit) return explicit;
   const n8 = ports.find((p) => p.isN8);
   if (!n8)
@@ -155,9 +154,8 @@ function run(s: Session, args: string[]): void {
   }
   const plan = expVolPlan(flag(args, "--exp-vol"), mapper);
 
-  const serial = createSerialClient();
-  const port = serial.open(pickPort(serial.listPorts(), flag(args, "--serial")));
-  const n8 = createN8(port);
+  const client = createN8Client(makeCall());
+  const n8 = client.openN8(pickPort(client.listPorts(), flag(args, "--serial")));
   n8.connect();
 
   // Expansion audio (VRC6/VRC7/N163/S5B/MMC5) is mixed by the FPGA, not the 2A03 - if this is 0 the

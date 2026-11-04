@@ -41,6 +41,7 @@
 #include "graph/node.hpp"
 #include "graph/nodes/CoreNodes.hpp"
 #include "graph/nodes/DspNodes.hpp"
+#include "n8/N8Node.hpp"
 
 // The rig's own nodes' settings, in a named namespace as a desktop Settings struct's schema needs.
 namespace rp::graph::devtest_rig {
@@ -720,7 +721,8 @@ struct OneRomHost {
 }  // namespace
 
 TEST_CASE("a device-mode type carries no description and never re-plans", "[device-mode]") {
-    for (const rp_package* p : {rp_core_package_device_mode(), rp_dsp_package_device_mode()}) {
+    for (const rp_package* p :
+         {rp_core_package_device_mode(), rp_dsp_package_device_mode(), rp_n8_package_device_mode()}) {
         for (std::uint32_t i = 0; i < p->node_type_count; ++i) {
             const rp_node_type* t = p->node_types[i];
             INFO(t->id);
@@ -734,6 +736,7 @@ TEST_CASE("a device-mode type carries no description and never re-plans", "[devi
     // The device's rp.dsp has no rp.dsp.dpcm, which declares heap; every other type is there.
     CHECK(rp_core_package_device_mode()->node_type_count == rp_core_package()->node_type_count);
     CHECK(rp_dsp_package_device_mode()->node_type_count == rp_dsp_package()->node_type_count - 1);
+    CHECK(rp_n8_package_device_mode()->node_type_count == rp_n8_package()->node_type_count);
     for (std::uint32_t i = 0; i < rp_dsp_package_device_mode()->node_type_count; ++i)
         CHECK(std::string_view(rp_dsp_package_device_mode()->node_types[i]->id) != "rp.dsp.dpcm");
 

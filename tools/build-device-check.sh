@@ -110,9 +110,9 @@ function hex(s,    i, n) {
     if (file ~ /libretroplug-core-nodes/) owner = "core: the rp.core nodes"
     else if (file ~ /libretroplug-dsp-nodes/) owner = "dsp: the rp.dsp nodes"
     else if (file ~ /libretroplug-dsp-kernels/) owner = "dsp: the kernels"
-    else if (file ~ /libretroplug-n8\.a/) owner = "n8: the rp.n8 nodes"
+    else if (file ~ /libretroplug-n8\.a/) owner = "n8: the rp.n8 nodes, the protocol"
     else if (file ~ /libretroplug-graph-exec/) owner = "graph-runtime: the executor"
-    else if (file ~ /rp-device-check\.dir\/(main|DeviceCheck)\.cpp/ || file ~ /\/packages\/products\//)
+    else if (file ~ /rp-device-check\.dir\/(main|DeviceCheck|N8Protocol)\.cpp/ || file ~ /\/packages\/products\//)
         owner = "the check (its cases and arena)"
     # The SDK sources compile into the image (CMakeFiles/rp-device-check.dir/<their path>); its own libraries build
     # under pico-sdk/.
@@ -120,7 +120,7 @@ function hex(s,    i, n) {
     total[owner, mem] += hex(size); owners[owner] = 1
 }
 END {
-    n = split("core: the rp.core nodes|dsp: the rp.dsp nodes|dsp: the kernels|n8: the rp.n8 nodes|" \
+    n = split("core: the rp.core nodes|dsp: the rp.dsp nodes|dsp: the kernels|n8: the rp.n8 nodes, the protocol|" \
               "graph-runtime: the executor|" \
               "the check (its cases and arena)|the Pico SDK runtime|toolchain (libc, libm, libgcc)", order, "|")
     printf "  %-34s %9s %9s %9s\n", "", "flash", "data", "bss"

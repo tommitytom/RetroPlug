@@ -17,10 +17,7 @@
 #include <string>
 #include <vector>
 
-#include "TypedRpcServer.h"
-#include "codecs/JsonCodec.h"
-#include "transports/QueueTransport.h"
-
+#include "QjsRpc.hpp"  // the products' server type, over QuickJS (packages/n8/native/test)
 #include "graph/desktop/Providers.hpp"
 #include "host/devices/ProviderHost.hpp"
 #include "host/engine/Engine.hpp"
@@ -93,13 +90,6 @@ rp_device_host fakeHost() {
     host.abi_version = RP_PROVIDER_ABI_VERSION;
     host.config_dir  = "/cfg";
     return host;
-}
-
-using JsonServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::JsonCodec>;
-
-std::string ask(JsonServer& server, const std::string& method) {
-    const auto out = server.processMessage(R"({"jsonrpc":"2.0","id":1,"method":")" + method + R"(","params":[]})");
-    return out ? *out : std::string();
 }
 
 // Whether `engine`'s registry holds a link under the N8's name and interface: one installed there refuses another.
@@ -195,10 +185,9 @@ TEST_CASE("this product's generated providers start the N8 provider into its eng
     rp_restore_providers(providers);  // no n8.cfg: nothing to bring back, nothing connects
     CHECK(holdsCart(engine));
 
-    rpcpp::QueueTransport<rpcpp::JsonCodec> transport;
-    JsonServer                              server(transport);
-    rp_register_package_rpc(server, providers);
-    const std::string config = ask(server, "n8LinkConfig");
+    rp::n8::test::QjsRpc server;
+    rp_register_package_rpc(server.server(), providers);
+    const std::string config = server.ask("n8LinkConfig");
     INFO(config);
     CHECK(config.find(R"("connected":false)") != std::string::npos);
     CHECK(config.find(R"("enabled":false)") != std::string::npos);
@@ -218,10 +207,9 @@ TEST_CASE("a product listing no provider starts nothing and mounts nothing", "[e
     CHECK(providers.size() == 0);
     CHECK_FALSE(holdsCart(engine));
 
-    rpcpp::QueueTransport<rpcpp::JsonCodec> transport;
-    JsonServer                              server(transport);
-    without::rp_register_package_rpc(server, providers);
-    CHECK(ask(server, "n8LinkConfig").find("-32601") != std::string::npos);  // Method not found
+    rp::n8::test::QjsRpc server;
+    without::rp_register_package_rpc(server.server(), providers);
+    CHECK(server.ask("n8LinkConfig").find("-32601") != std::string::npos);  // Method not found
     without::rp_restore_providers(providers);
     without::rp_stop_providers(providers);
     CHECK(providers.size() == 0);

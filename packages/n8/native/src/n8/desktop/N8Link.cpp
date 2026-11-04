@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 
 namespace retroplug {
 
@@ -42,12 +43,28 @@ void N8Link::setError(const std::string& msg) {
     error_ = msg;
 }
 
+void N8Link::check(const rp::n8::Status& status) {
+    if (!status.ok()) throw std::runtime_error(failureText(status, *serialPort_));
+}
+
+std::size_t N8Link::readPort(std::uint8_t* buffer, std::size_t size, std::uint32_t timeoutMs) {
+    const std::size_t n = serialPort_->read(buffer, size, timeoutMs);
+    if (std::string said = serialPort_->failure(); !said.empty()) throw std::runtime_error(said);
+    return n;
+}
+
+void N8Link::flushPort() {
+    serialPort_->flushInput();
+    if (std::string said = serialPort_->failure(); !said.empty()) throw std::runtime_error(said);
+}
+
 bool N8Link::connect(const std::string& port) {
     disconnect();  // tear down any prior connection first
     try {
         auto sp   = factory_(port);
-        auto edio = std::make_unique<Edio>(*sp);
-        edio->connect();  // handshake; throws on a bad / absent reply
+        auto edio = std::make_unique<rp::n8::Edio>(*sp);
+        if (const rp::n8::Status s = edio->connect(); !s.ok())  // the handshake: a bad or absent reply
+            throw std::runtime_error(failureText(s, *sp));
         serialPort_ = std::move(sp);
         edio_       = std::move(edio);
     } catch (const std::exception& e) {
@@ -63,7 +80,7 @@ bool N8Link::connect(const std::string& port) {
         error_.clear();
     }
     // The link is up and nothing else is on the port yet (the serial thread starts below), so this is where a
-    // one-shot device write belongs - see OnConnected. Best-effort by design: the only plausible throw is a
+    // one-shot device write belongs - see OnConnected. Best-effort by design: the only plausible failure is a
     // read timeout on a port whose first fifoWR would fail anyway, and losing the MIDI link over a volume
     // register would be a worse outcome than the register staying where the N8 OS left it.
     if (onConnected_) {
@@ -175,12 +192,12 @@ void N8Link::probeLink() {
     rel_.reset();
     reliable_.store(false, std::memory_order_release);
     const std::uint8_t sync[2] = { rp::N8ReliableSender::SYNC, 0 };
-    edio_->fifoWR(sync, 2);
+    check(edio_->fifoWR(sync, 2));
     const std::int64_t until = nowNs() + 100'000'000;
     bool sawFrame = false;
     while (running_.load(std::memory_order_acquire) && nowNs() < until) {
         std::uint8_t buf[32];
-        const std::size_t n = serialPort_->read(buf, sizeof buf, 2);
+        const std::size_t n = readPort(buf, sizeof buf, 2);
         for (std::size_t i = 0; i < n; ++i) {
             if (sawFrame && buf[i] < 0x80) {
                 rp::N8ReliableSender::Timing t;
@@ -220,14 +237,14 @@ void N8Link::writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>&
         std::fprintf(stderr, "\n");
     }
     if (writeLog_) writeLog_(out.data(), out.size(), nowNs(), resend);
-    edio_->fifoWR(out.data(), out.size());
+    check(edio_->fifoWR(out.data(), out.size()));
     bytesForwarded_.fetch_add(out.size(), std::memory_order_relaxed);
 }
 
 void N8Link::serviceLink() {
     const std::int64_t now = nowNs();
     std::uint8_t buf[64];
-    const std::size_t n = serialPort_->read(buf, sizeof buf, 0);   // whatever the cart has said: never waits
+    const std::size_t n = readPort(buf, sizeof buf, 0);   // whatever the cart has said: never waits
     if (n && traceOn()) {
         std::fprintf(stderr, "[n8link] %.3f rx", static_cast<double>(now) / 1e6);
         for (std::size_t i = 0; i < n; ++i) std::fprintf(stderr, " %02X", buf[i]);
@@ -370,7 +387,7 @@ void N8Link::writeChunk(const TimedChunk& chunk) {
         writeFramed(out, seqs, nowNs(), false);
     } else {
         if (writeLog_) writeLog_(chunk.data, chunk.len, nowNs(), false);
-        edio_->fifoWR(chunk.data, chunk.len);
+        check(edio_->fifoWR(chunk.data, chunk.len));
         bytesForwarded_.fetch_add(chunk.len, std::memory_order_relaxed);
     }
 }
@@ -424,12 +441,11 @@ void N8Link::runJob(TimedChunk& chunk, bool& have) {
     if (portOk && running_.load(std::memory_order_acquire)) {
         try {
             // Whatever the back-channel still holds (a late ack) would read as the first bytes of the job's reply.
-            serialPort_->flushInput();
+            flushPort();
             started = true;
             after   = job.run(edio_.get());
             decided = true;
-            serialPort_->flushInput();
-            edio_->setReadTimeout(2000);  // a menu command raises it; streaming's own reads never wait on it
+            flushPort();
         } catch (const std::exception& e) {
             // A throw this far into a job is the port's: the jobs report their own failures and return (a flush that
             // fails, or an edio call outside a job's own catch - only a bad_alloc gets out of a `run`). The port cannot

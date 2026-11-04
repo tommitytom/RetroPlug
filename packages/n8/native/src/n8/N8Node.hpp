@@ -32,6 +32,6 @@ int expansionVolumeRegister(double percent);
 
 }  // namespace rp::n8
 
-// The package's entry, named in packages/native/package.json: what a product's generated registration calls
+// The package's entry, named in packages/n8/package.json: what a product's generated registration calls
 // (rp_register_packages, graph/Packages.hpp).
 extern "C" const rp_package* rp_n8_package(void);

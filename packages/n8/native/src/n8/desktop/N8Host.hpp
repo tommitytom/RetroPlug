@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "n8/desktop/Edio.hpp"     // Edio (control-op protocol), ISerialPort
+#include "n8/Edio.hpp"             // the control ops' protocol
 #include "n8/desktop/N8Link.hpp"
 #include "graph/desktop/DeviceJobSlot.hpp"  // the one cart job at a time
 #include "graph/rp_jobs.h"                  // the capability jobs rp.n8.nes hands the cart (N8CartLink)
@@ -36,8 +36,8 @@ struct N8ConfigDto {
 // plugin. Owns an N8Link (the serial thread), the selected port + enabled toggle, and persistence to
 // <configDir>/n8.cfg. The audio thread pushes bytes via link().push(...); the UI thread drives
 // connect/setPort/setLookahead (through the N8 facet, N8Rpc.hpp) and reads getConfig().
-// The serial-port factory + enumeration are injected, so this is testable hardware-free (a fake ISerialPort,
-// no serial lib). Factors what used to be inline SDL-only logic (sdl/main.cpp connectN8/setN8Port/save/load).
+// The serial-port factory + enumeration are injected, so this is testable hardware-free (a fake port, no serial
+// lib). Factors what used to be inline SDL-only logic (sdl/main.cpp connectN8/setN8Port/save/load).
 class N8Host {
 public:
     using PortLister = std::function<std::vector<N8PortDto>()>;
@@ -85,6 +85,13 @@ public:
 
     // Load n8.cfg (port / lookahead / enabled) and reconnect if it was enabled. Call once at host startup.
     void restore();
+
+    // [control] What connects the link asks first: the reason `port` is not the link's to open, or "" when it is. The
+    // facet (N8Rpc.hpp) answers for the ports its sessions hold, as a session refuses the link's: two writers on one
+    // N8 would interleave their commands. A refused connect leaves the link down with the reason as its lastError, as
+    // a failed one does. Cleared (null) by the facet before it goes.
+    using PortGuard = std::function<std::string(const std::string& port)>;
+    void setPortGuard(PortGuard guard) { portGuard_ = std::move(guard); }
 
     // --- The cart's capability jobs (docs/modular-graph-phase-c5-design.md section 6), which rp.n8.nes hands over
     // through its cart link (N8CartLink). The transfers run on the link's serial thread with streaming PAUSED rather
@@ -153,6 +160,8 @@ public:
 
 private:
     void save();
+    // link_.connect(port) unless the guard refuses it.
+    void connectLink(const std::string& port);
 
     // The cart's running map_idx, read on the serial thread that owns the port (a config-block read, between two MIDI
     // chunks) and answered here: the map_idx, or -1 when the block did not answer, -2 when the link went down while
@@ -164,10 +173,11 @@ private:
     // mapper when the caller knows it (a ROM we just uploaded), or -1 to ask the running cart.
     // Runs on whichever thread owns the port: the UI thread inside connect(), or the serial thread a job's transfer
     // runs on.
-    void applyExpVol(Edio& edio, int value, int mapperHint);
+    void applyExpVol(rp::n8::Edio& edio, int value, int mapperHint);
 
     N8Link              link_;
     PortLister          lister_;
+    PortGuard           portGuard_;
     std::string         configDir_;
     std::string         port_;
     std::atomic<bool>   enabled_{false};  // atomic: a successful ROM load clears it from the serial thread

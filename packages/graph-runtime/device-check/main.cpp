@@ -4,9 +4,13 @@
 // and on RTTI (CMakeLists.txt), so a use of any of them anywhere in its code is a link error naming the object that
 // pulled it in.
 //
-// It reports the outcome three ways: one line on stdio (the UART, GP0 at 115200), gDeviceCheck for a debugger, and the
-// board's LED, lit and steady for a pass and for a failure a count of blinks, the failed Step's value, repeated after
-// a pause. E3 runs this check's successor on the rig; E1 builds it and runs nothing.
+// Beside the types it runs the N8 pack's protocol over a scripted cart (N8Protocol.hpp), which links the pack's Edio,
+// Menu and Ops into the image under the same trap.
+//
+// It reports the outcome three ways: one line on stdio (the UART, GP0 at 115200) for each check, gDeviceCheck and
+// gN8Protocol for a debugger, and the board's LED, lit and steady for a pass and for a failure a count of blinks, the
+// failed Step's value (kN8ProtocolBlinks for the protocol's), repeated after a pause. E3 runs this check's successor
+// on the rig; E1 builds it and runs nothing.
 
 #include <cstddef>
 #include <cstdio>
@@ -14,6 +18,7 @@
 
 #include "DeviceCheck.hpp"
 #include "DeviceCheckCases.hpp"
+#include "N8Protocol.hpp"
 #include "graph/Packages.hpp"
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
@@ -32,11 +37,15 @@ alignas(16) std::byte gArena[rp::device_check::kArenaBytes];
 
 void led(bool on) { gpio_put(PICO_DEFAULT_LED_PIN, on); }
 
+// The blinks a protocol failure shows when the types passed: past every Step's value.
+constexpr unsigned kN8ProtocolBlinks = 20;
+
 }  // namespace
 
 // The outcome, where a debugger finds it.
 volatile rp::device_check::Step gDeviceCheckStep = rp::device_check::Step::Ok;
 rp::device_check::Result        gDeviceCheck;
+rp::device_check::N8ProtocolResult gN8Protocol;
 
 int main() {
     stdio_init_all();
@@ -56,7 +65,15 @@ int main() {
                     static_cast<unsigned>(gDeviceCheck.type), gDeviceCheck.id ? gDeviceCheck.id : "-",
                     gDeviceCheck.error.message);
 
-    const unsigned blinks = static_cast<unsigned>(gDeviceCheck.step);
+    gN8Protocol = rp::device_check::n8Protocol();
+    if (gN8Protocol.ok)
+        std::printf("rp-device-check: n8 protocol pass, %u bytes\n", static_cast<unsigned>(gN8Protocol.written));
+    else
+        std::printf("rp-device-check: n8 protocol failed at %s (%u bytes, hash %08x)\n", gN8Protocol.failed,
+                    static_cast<unsigned>(gN8Protocol.written), static_cast<unsigned>(gN8Protocol.hash));
+
+    unsigned blinks = static_cast<unsigned>(gDeviceCheck.step);
+    if (blinks == 0 && !gN8Protocol.ok) blinks = kN8ProtocolBlinks;
     for (;;) {
         if (blinks == 0) {
             led(true);

@@ -18,22 +18,19 @@ set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
 retroplug_silence_dep_warnings(rtmidi)
 
-# --- retroplug-cli N8 transport facets: serial + live MIDI -> the TS N8 stack ------------------------
-# The N8 tools (n8-load / n8-bridge / n8-sync) are all TS now (packages/retroplug/src/n8 + cli/sessions/):
-# native only provides the thin transport facets they ride on - the serial byte transport (SerialRpcService
-# over wjwwood/serial) and the live-MIDI-input facet (MidiRpcService over RtMidi). No C++ Edio/menu/translator
-# here anymore (the TS edio.ts + risaSyncTranslator.ts replace them). ON by default; turn OFF to keep
-# retroplug-cli (and thus the CI `all` build) free of RtMidi (ALSA dev headers on Linux) - the N8 tools then
-# just fail to find a device. `serial` is linked either way: the CLI starts the N8 pack's provider (its
-# generated rp_start_providers), whose ports are wjwwood/serial's.
-option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli N8 transport facets (links RtMidi + serial)" ON)
+# --- retroplug-cli's live-MIDI facet: the TS N8 bridges' MIDI input -----------------------------------------------
+# The N8 tools (n8-load / n8-play / n8-bridge / n8-sync) are TS (packages/retroplug/cli/sessions/), and they reach the
+# cart through the N8 pack's facet (packages/n8, its session half), which every product that lists the pack mounts.
+# What the bridges need beside it is live MIDI in: the live-MIDI-input facet (MidiRpcService over RtMidi), which this
+# option builds into the CLI. ON by default; turn OFF to keep retroplug-cli (and thus the CI `all` build) free of
+# RtMidi (ALSA dev headers on Linux) - the bridges then find no MIDI input. `serial` reaches the CLI either way, through
+# the pack the CLI lists.
+option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli live-MIDI facet the N8 bridges poll (links RtMidi)" ON)
 if(RETROPLUG_N8_BRIDGE)
     target_sources(retroplug-cli PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/SerialRpcService.cpp   # serial byte-transport RPC facet (TS N8 seam),
-                                                                       # over the N8 pack's WjwwoodSerialPort
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (shared with retroplug-sdl)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiRpcService.cpp) # live-MIDI-input RPC facet (TS bridge seam)
-    target_link_libraries(retroplug-cli PRIVATE serial rtmidi)
+    target_link_libraries(retroplug-cli PRIVATE rtmidi)
     target_compile_definitions(retroplug-cli PRIVATE RETROPLUG_N8_BRIDGE)
 endif()
 

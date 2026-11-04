@@ -128,10 +128,10 @@ retroplug_add_test_binary(
     LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
              retroplug-dsp-kernels                     # OfflineJobs.test.cpp holds a job's buffers to the kernels
              retroplug-dsp-resample                    # and to resampledLength, which the resample's node wraps
-             rpcpp                                     # the JSON server Providers.test.cpp mounts the facets on
+             rpcpp                                     # the server Providers.test.cpp mounts the facets on (QjsRpc.hpp)
     PACKAGES ${RP_DESKTOP_PACKAGES}
     INCLUDES ${RP_QUICKJS_INCLUDE}
-             ${CMAKE_SOURCE_DIR}/packages/n8/native/test   # FakeN8.hpp, the cart model N8Adapters.test.cpp drives
+             ${CMAKE_SOURCE_DIR}/packages/n8/native/test   # FakeN8.hpp (N8Adapters.test.cpp), QjsRpc.hpp
              ${CMAKE_BINARY_DIR}/packages/test             # without/rp_product_providers.hpp (below)
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
@@ -469,6 +469,7 @@ retroplug_add_test_binary(
              test/device-mode/DeviceCheck.test.cpp
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
              ${_rp_device_check_dir}/DeviceCheck.cpp   # the device check, as a host: desktop-built, C ABI only
+             ${_rp_device_check_dir}/N8Protocol.cpp    # its N8 protocol run, over the desktop's build of the pack
              ${CMAKE_BINARY_DIR}/device-check/DeviceCheckCases.hpp
              ${CMAKE_BINARY_DIR}/device-mode/device-entries.cpp
              $<TARGET_OBJECTS:retroplug-device-mode-objects>

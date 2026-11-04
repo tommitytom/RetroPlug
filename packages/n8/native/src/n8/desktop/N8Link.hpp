@@ -11,7 +11,8 @@
 #include <thread>
 #include <vector>
 
-#include "n8/desktop/Edio.hpp"  // ISerialPort, Edio
+#include "n8/Edio.hpp"
+#include "n8/desktop/PortTransport.hpp"
 #include "transport/N8ReliableLink.hpp"
 #include "transport/SpscRing.hpp"
 
@@ -25,17 +26,17 @@ namespace retroplug {
 // a live MIDI port. Lifecycle modeled on AudioDriverRpcService (run-flag + join-in-dtor, thread member last).
 class N8Link {
 public:
-    // Serial-port opener the caller supplies - the standalone passes a WjwwoodSerialPort factory, a unit
-    // test passes one returning a FakeSerialPort. Keeping it injected means N8Link depends only on
-    // ISerialPort (not the serial lib), so it's testable hardware-free. May throw if the port can't be
-    // opened; connect() catches it. (Port enumeration for the picker is the caller's job via listSerialPorts.)
-    using PortFactory = std::function<std::unique_ptr<ISerialPort>(const std::string&)>;
+    // Serial-port opener the caller supplies - the N8 provider passes a SerialTransport factory, a unit test one
+    // returning a fake port. Keeping it injected means N8Link depends only on PortTransport (not the serial lib), so
+    // it's testable hardware-free. May throw if the port can't be opened; connect() catches it. (Port enumeration for
+    // the picker is the caller's job via listSerialPorts.)
+    using PortFactory = std::function<std::unique_ptr<PortTransport>(const std::string&)>;
 
     // Ran on the freshly handshaken Edio inside connect(), before the serial thread starts - so it is the
     // only user of the port and needs no locking. The one-shot "the link just came up" seam: N8Host hangs the
     // expansion-audio master volume off it (N8Host::applyExpVol). A throw is caught and ignored: a config
     // write must never fail a working MIDI link.
-    using OnConnected = std::function<void(Edio&)>;
+    using OnConnected = std::function<void(rp::n8::Edio&)>;
     // Ran on the serial thread each turn while the link is up, once the reliable link's acks are read and its re-sends
     // written: where a setting whose value lives in an atomic (N8Host's expansion volume and its config-block probe)
     // reaches the device without the caller taking a lock or building a std::function. Set once before any connect,
@@ -52,7 +53,7 @@ public:
     // write never takes the MIDI link down; the callback then waits a second, not the next 200 us turn, so a port that
     // keeps refusing a write cannot take the link's turns from the MIDI stream (a caller that cannot wait that out, a
     // submission's probe, asks for a quiet turn of its own through wakeControl).
-    using OnControl = std::function<void(Edio&, bool backChannelQuiet)>;
+    using OnControl = std::function<void(rp::n8::Edio&, bool backChannelQuiet)>;
 
     // What a paused job tells the link once it has run: resume streaming, or stop it (a ROM boot: the old stream is
     // stale, and a running game has no menu to come back to). Stop closes the port, as a disconnect does.
@@ -66,14 +67,15 @@ public:
     // the serial thread, so a job's completion is posted after the link is back. A job checks stopRequested() between
     // its steps, and those are its only stop points: a disconnect() (or the owner's destructor) that lands inside a
     // step waits for it: a 512-byte block of a file read (about half a second on the real cart), a battery file's whole
-    // write once it has begun (under a second), an upload's 8 KB chunk, up to the Edio timeout (2 s, raised to 10 s
-    // while the menu installs an uploaded ROM) for a cart that stops answering, plus the drain's bounded wait for acks.
+    // write once it has begun (under a second), an upload's 8 KB chunk, up to an Edio timeout (n8/Edio.hpp's
+    // Timeouts: a reply 2 s, a file block 5 s, the menu's install 12 s) for a cart that stops answering, plus the
+    // drain's bounded wait for acks.
     // A throw that escapes `run` is the port's (a job reports its own failures and returns): it is recorded
     // (lastError), a job that never started is told the link went down (one whose `run` threw did run, and is not run
     // again), and the link stops streaming as a failed write stops it, so a completion that had already been decided is
     // still posted - and a job that had decided to stop closes the port as it would have.
     struct PausedJob {
-        std::function<AfterJob(Edio*)> run;
+        std::function<AfterJob(rp::n8::Edio*)> run;
         std::function<void()>          done;
     };
 
@@ -126,6 +128,12 @@ public:
     // step to end (see PausedJob): a caller on a UI thread (Settings > N8's Connect and port rows) should not offer it
     // while a job holds the cart, as N8Host refuses its config writes then.
     void          disconnect();
+    // Stay down (disconnecting first) and say why in lastError, as a connect that failed would: a port its owner will
+    // not stream to (one an N8 session of the facet holds, N8Host::setPortGuard).
+    void          refuse(const std::string& why) {
+        disconnect();
+        setError(why);
+    }
     bool          isConnected() const { return connected_.load(std::memory_order_acquire); }
     std::string   portName() const;
     std::uint64_t bytesForwarded() const { return bytesForwarded_.load(std::memory_order_relaxed); }
@@ -183,6 +191,15 @@ private:
     bool quietForRead(std::int64_t now) const;           // serial thread: may a reply be read now (see OnControl)
     void writeFramed(std::vector<std::uint8_t>& out, const std::vector<int>& seqs, std::int64_t now, bool resend);
     void setError(const std::string& msg);
+    // The serial thread's calls on the port, each throwing when the call failed, as deps/serial's own calls did: the
+    // link's error paths are written around that throw, and a desktop transport answers short and keeps the text
+    // instead (PortTransport). check() throws an Edio call's failure (failureText), readPort and flushPort the port's.
+    // A write the port did not take whole (deps/serial's 2 s write timeout) is such a failure: the stream stops, with
+    // "serial write failed (N8 unplugged?): Edio: serial write timeout ...", rather than writing on into a cart parser
+    // left mid-command; OnControl's config write meeting one is retried a second later, as any failed one is.
+    void        check(const rp::n8::Status& status);
+    std::size_t readPort(std::uint8_t* buffer, std::size_t size, std::uint32_t timeoutMs);
+    void        flushPort();
 
     PortFactory                factory_;
     OnConnected                onConnected_;  // set before the first connect; never mutated afterwards
@@ -235,8 +252,8 @@ private:
     WriteLog                   writeLog_;
     std::uint32_t              lossRng_ = 0x2545F491u;
 
-    std::unique_ptr<ISerialPort> serialPort_;  // owned; read by the serial thread
-    std::unique_ptr<Edio>        edio_;
+    std::unique_ptr<PortTransport> serialPort_;  // owned; read by the serial thread
+    std::unique_ptr<rp::n8::Edio>  edio_;
     std::thread                  thread_;  // LAST: joined (in disconnect) before serialPort_/edio_ are torn down
 };
 

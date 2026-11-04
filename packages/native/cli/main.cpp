@@ -27,7 +27,6 @@
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
 #ifdef RETROPLUG_N8_BRIDGE
-#include "host/n8/SerialRpcService.hpp"    // the serial byte-transport facet the TS N8 stack rides on
 #include "host/input/MidiRpcService.hpp"   // the live-MIDI-input facet the TS bridges poll
 #endif
 
@@ -172,8 +171,8 @@ std::string slurp(const std::string& path) {
 } // namespace
 
 int main(int argc, char** argv) try {
-    // n8-load / n8-bridge / n8-sync are all TS tools now (cli/sessions/n8-*.ts) over the serial + MIDI
-    // transport facets: n8-load is a linear script, and the two bridges opt into the launcher's long-running
+    // n8-load / n8-play / n8-bridge / n8-sync are TS tools (cli/sessions/n8-*.ts) over the N8 pack's facet and
+    // the MIDI facet: n8-load is a linear script, and the two bridges opt into the launcher's long-running
     // pump (globalThis.__rp_keepAlive) so they ride it instead of a native loop. Nothing to intercept here -
     // they route through the dispatcher below.
 
@@ -227,12 +226,9 @@ int main(int argc, char** argv) try {
     rp_register_package_rpc(server, providers);
 
 #ifdef RETROPLUG_N8_BRIDGE
-    // The serial + MIDI-input transport facets (CLI-only): the thin native seams the TS N8 stack (Edio
-    // framing, menu, ROM/save orchestration + the live MIDI bridges in packages/retroplug/src/n8) rides on.
-    // Deliberately kept out of registerAllBackendRpc so the plugin/test hosts don't drag in serial/rtmidi;
-    // mounted here alongside the other N8 subcommands.
-    retroplug::SerialRpcService serialSvc;
-    retroplug::registerSerialRpc(server, serialSvc);
+    // The MIDI-input facet (CLI-only): the live MIDI the TS N8 bridges forward to the cart, which they reach through
+    // the N8 pack's facet mounted above. Deliberately kept out of registerAllBackendRpc so the plugin/test hosts don't
+    // drag in rtmidi.
     retroplug::MidiRpcService midiSvc;
     retroplug::registerMidiRpc(server, midiSvc);
 #endif
