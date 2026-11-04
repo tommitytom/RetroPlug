@@ -5,8 +5,11 @@
 # link cleanly and panic at boot where the trap would have failed the link naming its object. The map's cross reference
 # table (LINKER:--cref) lists a symbol's defining file, then each file that refers to it.
 #
-# cmake -DMAP=<the image's map> -DSYMBOL=<symbol> -DREFERRER=<the one object's name> -P check-wrap-referrers.cmake
+# cmake -DMAP=<the image's map> -DSYMBOL=<symbol> -DREFERRER=<the one object's file name> -P check-wrap-referrers.cmake
+# (REFERRER is a plain file name, such as pio_usb_host.c.o, or .c.obj where the host's objects take that suffix.) The
+# map may end its lines in CRLF, and an object's path may hold spaces: one indented line is one referrer.
 file(READ "${MAP}" _map)
+string(REPLACE "\r" "" _map "${_map}")
 string(FIND "${_map}" "Cross Reference Table" _table)
 if(_table EQUAL -1)
     message(FATAL_ERROR "check-wrap-referrers: ${MAP} has no cross reference table (the link needs --cref)")
@@ -16,12 +19,19 @@ string(REGEX MATCH "\n${SYMBOL}[ \t]+[^\n]*\n(([ \t]+[^ \t\n][^\n]*\n)*)" _entry
 if(NOT _entry)
     message(FATAL_ERROR "check-wrap-referrers: ${MAP} lists no ${SYMBOL}: the wrap is no longer in the link")
 endif()
-string(REGEX MATCHALL "[^ \t\n]+" _referrers "${CMAKE_MATCH_1}")
+set(_lines "${CMAKE_MATCH_1}")
+string(REGEX REPLACE "(^|\n)[ \t]+" "\\1" _lines "${_lines}")
+string(REGEX REPLACE "\n$" "" _lines "${_lines}")
+set(_referrers "")
+if(NOT _lines STREQUAL "")
+    string(REPLACE "\n" ";" _referrers "${_lines}")
+endif()
 list(LENGTH _referrers _count)
+string(REGEX REPLACE "([.+*?^$()\\[\\]|])" "\\\\\\1" _escaped "${REFERRER}")
 set(_ok FALSE)
 if(_count EQUAL 1)
     list(GET _referrers 0 _only)
-    if(_only MATCHES "(^|/)${REFERRER}$")
+    if(_only MATCHES "(^|/)${_escaped}$")
         set(_ok TRUE)
     endif()
 endif()

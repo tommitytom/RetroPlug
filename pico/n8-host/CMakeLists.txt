@@ -108,11 +108,21 @@ if(NOT RP_NATIVE_USB)
     endif()
     # The firmware is checked against one Pico-PIO-USB commit: its init is what the alarm-pool wrap and the static SOF
     # timer stand in for (SofTimer.cpp), so another commit builds with a warning rather than quietly.
-    set(_n8_pio_usb_commit 5a37a66)
-    execute_process(COMMAND git -C "${PICO_PIO_USB_PATH}" rev-parse --short=7 HEAD
-                    OUTPUT_VARIABLE _n8_pio_usb_head OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    if(NOT _n8_pio_usb_head)
-        set(_n8_pio_usb_head "of a commit git cannot read")
+    set(_n8_pio_usb_commit 5a37a66dc5d3fbe0ef3cdbeda923a757440f984f)
+    execute_process(COMMAND git -C "${PICO_PIO_USB_PATH}" rev-parse HEAD --show-toplevel
+                    OUTPUT_VARIABLE _n8_pio_usb_git OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    string(REPLACE "\n" ";" _n8_pio_usb_git "${_n8_pio_usb_git}")
+    list(LENGTH _n8_pio_usb_git _n8_pio_usb_n)
+    set(_n8_pio_usb_head "of a commit git cannot read")
+    if(_n8_pio_usb_n EQUAL 2)
+        # A plain copy inside another work tree would answer that tree's HEAD, so the checkout must be its own.
+        list(GET _n8_pio_usb_git 0 _n8_pio_usb_sha)
+        list(GET _n8_pio_usb_git 1 _n8_pio_usb_top)
+        get_filename_component(_n8_pio_usb_top "${_n8_pio_usb_top}" REALPATH)
+        get_filename_component(_n8_pio_usb_dir "${PICO_PIO_USB_PATH}" REALPATH)
+        if(_n8_pio_usb_top STREQUAL _n8_pio_usb_dir)
+            set(_n8_pio_usb_head "${_n8_pio_usb_sha}")
+        endif()
     endif()
     if(NOT _n8_pio_usb_head STREQUAL _n8_pio_usb_commit)
         message(WARNING "n8-host: Pico-PIO-USB at ${PICO_PIO_USB_PATH} is ${_n8_pio_usb_head}, and the firmware is "
@@ -161,7 +171,7 @@ rp_device_trap_check(n8_host)
 if(NOT RP_NATIVE_USB)
     add_custom_command(TARGET n8_host POST_BUILD
         COMMAND ${CMAKE_COMMAND} -DMAP=$<TARGET_FILE:n8_host>.map -DSYMBOL=__wrap_alarm_pool_create_on_timer
-                -DREFERRER=pio_usb_host.c.o -P "${CMAKE_CURRENT_LIST_DIR}/check-wrap-referrers.cmake"
+                -DREFERRER=pio_usb_host.c${CMAKE_C_OUTPUT_EXTENSION} -P "${CMAKE_CURRENT_LIST_DIR}/check-wrap-referrers.cmake"
         VERBATIM)
 endif()
 # The UF2, BIN, HEX and disassembly beside the ELF (the UF2 needs picotool; -DPICO_NO_PICOTOOL=1 skips it, as
