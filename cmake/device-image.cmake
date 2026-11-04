@@ -3,6 +3,11 @@
 # Included, after project() and pico_sdk_init(), by both device projects: packages/graph-runtime/device-check
 # (rp-device-check) and pico/n8-host (the box's firmware). RP_DEVICE_IMAGE names the including image in what this says.
 # Defines rp_device_executable() and rp_device_trap_check().
+#
+# Included once a project: a second include (two images, or a sibling directory's) finds the removal below done and the
+# trap's list written, and leaves them as they are. What the two functions need is kept in global properties, so they
+# work from any directory of the project, not only the including one and its subdirectories.
+include_guard(GLOBAL)
 if(NOT RP_DEVICE_IMAGE)
     message(FATAL_ERROR "device-image.cmake: set RP_DEVICE_IMAGE (the image's name) before including it")
 endif()
@@ -95,7 +100,9 @@ message(STATUS "${RP_DEVICE_IMAGE}: the link trap wraps ${_rp_trapped_count} sym
 set(_rp_trap_list "${CMAKE_BINARY_DIR}/trapped-symbols.txt")
 list(JOIN _rp_trapped "\n" _rp_trapped_lines)
 file(WRITE "${_rp_trap_list}" "${_rp_trapped_lines}\n")
-set(_rp_check_trap "${CMAKE_CURRENT_LIST_DIR}/check-trap.cmake")
+set_property(GLOBAL PROPERTY RP_DEVICE_TRAPPED "${_rp_trapped}")
+set_property(GLOBAL PROPERTY RP_DEVICE_TRAP_LIST "${_rp_trap_list}")
+set_property(GLOBAL PROPERTY RP_DEVICE_CHECK_TRAP "${CMAKE_CURRENT_LIST_DIR}/check-trap.cmake")
 
 # rp_device_executable(<target> <sources>...): an executable as a device builds it: the device-mode flags, the runtime
 # and the trap. One --wrap a symbol: -Wl, splits at commas, so a joined list would hand the linker the symbols as input
@@ -106,7 +113,8 @@ function(rp_device_executable target)
     target_compile_definitions(${target} PRIVATE RP_DEVICE)
     target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>")
     target_link_libraries(${target} PRIVATE pico_stdlib)
-    list(TRANSFORM _rp_trapped PREPEND "LINKER:--wrap=" OUTPUT_VARIABLE _wrap)
+    get_property(_trapped GLOBAL PROPERTY RP_DEVICE_TRAPPED)
+    list(TRANSFORM _trapped PREPEND "LINKER:--wrap=" OUTPUT_VARIABLE _wrap)
     target_link_options(${target} PRIVATE ${_wrap})
 endfunction()
 
@@ -115,8 +123,10 @@ endfunction()
 # none may be referred to and left undefined (a link option that tolerates one). Both are checked on the linked image,
 # which fails the build when either holds.
 function(rp_device_trap_check target)
+    get_property(_trap_list GLOBAL PROPERTY RP_DEVICE_TRAP_LIST)
+    get_property(_check_trap GLOBAL PROPERTY RP_DEVICE_CHECK_TRAP)
     add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DIMAGE=$<TARGET_FILE:${target}> -DTRAPPED=${_rp_trap_list}
-                -P "${_rp_check_trap}"
+        COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DIMAGE=$<TARGET_FILE:${target}> -DTRAPPED=${_trap_list}
+                -P "${_check_trap}"
         VERBATIM)
 endfunction()
