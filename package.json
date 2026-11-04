@@ -26,6 +26,7 @@
     "sdl:smoke": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-smoke.sh",
     "sdl:pipewire": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-pipewire.sh",
     "device:check": "tools/build-device-check.sh",
+    "device:box": "tools/build-box.sh",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
     "profile": "tools/run-profile.sh stats",
     "validate": "node scripts/cmake-build.js retroplug-clap retroplug-vst3 && tools/validate-plugins.sh",

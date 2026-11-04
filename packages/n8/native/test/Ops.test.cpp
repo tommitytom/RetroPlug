@@ -5,6 +5,7 @@
 // names, a file read and written whole, the cart-SRAM paths the CLI's direct writes take, free space, mkdir and delete.
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -240,6 +241,84 @@ TEST_CASE("bootRom names the step that failed, so a caller keeps its policy arou
         CHECK(s.step == Step::Upload);
         CHECK(text(s) == "Edio: tx ack error 0x01");
     }
+}
+
+TEST_CASE("bootRom's options: no handshake, a step hook that may use the Edio, and one that stops the boot",
+          "[n8][ops]") {
+    const Bytes rom = pattern(1500, 6);
+    struct Hook {
+        Edio*             edio = nullptr;
+        std::vector<Step> steps;
+        Step              stopAt = Step::None;
+    };
+    const auto before = [](void* ctx, Step step) {
+        Hook& h = *static_cast<Hook*>(ctx);
+        h.steps.push_back(step);
+        if (step == h.stopAt) return false;
+        // Between whole commands the Edio is idle: a file written here lands between the upload and the install, as
+        // the Pico box's box.cfg does.
+        if (step == Step::Install) {
+            const std::uint8_t cfg[4] = {'N', '8', 'P', 'B'};
+            REQUIRE(rp::n8::writeFile(*h.edio, "usb-games/pico/box.cfg", {cfg, sizeof cfg}).ok());
+        }
+        return true;
+    };
+    {
+        FakeN8     dev;
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        Hook       hook{&edio};
+        REQUIRE(rp::n8::bootRom(edio, "usb-games/b.nes", {rom.data(), rom.size()}, {}, rp::n8::Upload::Always, nullptr,
+                                {}, {false, before, &hook})
+                    .ok());
+        CHECK(hook.steps == std::vector<Step>{Step::Upload, Step::Install, Step::Start});
+        CHECK(dev.booted == "usb-games/b.nes");
+        CHECK(dev.files.count("usb-games/pico/box.cfg") == 1);
+        // No '*t': the install's '*n' is the first FIFO write, after both files.
+        const auto fifo = fifoLog(dev);
+        REQUIRE_FALSE(fifo.empty());
+        CHECK(fifo.front() == "fifo:2A 6E");
+        CHECK(fifo.back() == "fifo:2A 73");
+        std::lock_guard<std::mutex> l(dev.mu);
+        const auto written = std::count(dev.log.begin(), dev.log.end(), std::string("file-wr"));
+        const auto install = std::find(dev.log.begin(), dev.log.end(), std::string("fifo:2A 6E"));
+        CHECK(written == 2);
+        CHECK(std::count(dev.log.begin(), install, std::string("file-wr")) == 2);
+    }
+    {
+        FakeN8     dev;
+        FakeN8Port port(dev);
+        Edio       edio(port);
+        Hook       hook{&edio, {}, Step::Install};
+        const Status s = rp::n8::bootRom(edio, "usb-games/b.nes", {rom.data(), rom.size()}, {},
+                                         rp::n8::Upload::Always, nullptr, {}, {true, before, &hook});
+        CHECK(s.code == Code::Cancelled);
+        CHECK(s.step == Step::Install);
+        CHECK(hook.steps == std::vector<Step>{Step::Test, Step::Upload, Step::Install});
+        CHECK(dev.files["usb-games/b.nes"] == rom);
+        CHECK(fifoLog(dev) == std::vector<std::string>{"fifo:2A 74"});  // the test alone: no install, no start
+    }
+}
+
+TEST_CASE("bootRom's battery path fits any FatFs name: 255 UTF-16 units of three-byte UTF-8", "[n8][ops]") {
+    std::string longest;
+    for (int i = 0; i < 255; ++i) longest += "\xE3\x81\x82";  // U+3042: one UTF-16 unit, three bytes
+    const Bytes srm = pattern(16, 7);
+    FakeN8      dev;
+    FakeN8Port  port(dev);
+    Edio        edio(port);
+    REQUIRE(rp::n8::bootRom(edio, "usb-games/" + longest, {}, {srm.data(), srm.size()}, rp::n8::Upload::Never, nullptr)
+                .ok());
+    CHECK(dev.files["EDN8/gamedata/" + longest + "/bram.srm"] == srm);
+
+    // One unit more is no FatFs name, and does not fit: refused before anything of the battery is sent (the menu,
+    // having started the first boot's game, is past answering '*t', so this one skips it).
+    dev.log.clear();
+    const Status s = rp::n8::bootRom(edio, "usb-games/" + longest + "\xE3\x81\x82", {}, {srm.data(), srm.size()},
+                                     rp::n8::Upload::Never, nullptr, {}, {false});
+    CHECK(s.code == Code::TooLarge);
+    CHECK(s.step == Step::Save);
+    CHECK(dev.log.empty());
 }
 
 // --- files -------------------------------------------------------------------------------------------------------

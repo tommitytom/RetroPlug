@@ -380,6 +380,7 @@ TEST_CASE("a listing's names reach the session as TextDecoder decoded them", "[n
         {"d\xE2\x82", "d\xEF\xBF\xBD"},                                        // a sequence cut short
         {"e\xED\xA0\x80", "e\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD"},            // a surrogate's encoding
         {"f\xE2\x82x", "f\xEF\xBF\xBDx"},                                      // cut short by an ASCII byte
+        {"\xEF\xBB\xBFg", "g"},                                                // a leading BOM, dropped
     };
     for (const auto& [raw, decoded] : names) dev.files["d/" + raw] = {1};
     const rp::n8::N8Reply opened = rpc.n8Open("/dev/ttyACM0");

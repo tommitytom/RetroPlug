@@ -59,6 +59,7 @@ enum class Where : std::uint8_t {
     Buffer,       // a file larger than the buffer it is read into
     MenuTest,     // the menu's answer to '*t', which is 'k'
     Install,      // the menu's install status
+    MapIndex,     // the map index the menu sends after a 0 install status (a timeout there followed an install)
 };
 
 // The step of an operation (Ops.hpp) a status comes from; None for a single call.
@@ -174,6 +175,9 @@ public:
     // The frame a command's header, arguments and first payload bytes are written from in one write.
     static constexpr std::size_t kFrameBytes = 256;
 
+    // Not constexpr on purpose: a constant-initialised static Edio (the Pico box's) would put the whole object, its
+    // 512 bytes of zeroed buffers included, in .data, copied from flash at boot, where a dynamic one is a bss zero
+    // fill and one store.
     explicit Edio(Transport& transport) : transport_(transport) {}
     Edio(const Edio&)            = delete;
     Edio& operator=(const Edio&) = delete;

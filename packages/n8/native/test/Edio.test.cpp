@@ -210,14 +210,19 @@ TEST_CASE("Edio framing matches the golden byte for byte", "[n8]") {
             std::uint8_t vdc[Edio::SIZE_VDC];
             s = edio.vdc(vdc);
         } else if (c.op == "freeSpace") {
-            std::uint64_t free = 0;
-            s = edio.freeSpace(free);
+            std::uint64_t bytesFree = 0;
+            s = edio.freeSpace(bytesFree);
         } else if (c.op == "dirMake") {
             s = edio.dirMake(a.path.value_or(""));
         } else if (c.op == "fileDelete") {
             s = edio.fileDelete(a.path.value_or(""));
         } else if (c.op == "listDir") {
-            s = edio.listDir(a.path.value_or(""), [](const rp::n8::DirEntry&) {});
+            std::vector<std::string> entries;  // "<name> <size> <file|dir>", as the old client parsed each record
+            s = edio.listDir(a.path.value_or(""), [&](const rp::n8::DirEntry& e) {
+                entries.push_back(std::string(e.name) + " " + std::to_string(e.size) + (e.isDir ? " dir" : " file"));
+            });
+            if (c.id == "listDir.two") CHECK(entries == std::vector<std::string>{"a.nes 10 file", "sub 0 dir"});
+            if (c.id == "listDir.empty") CHECK(entries.empty());
         } else if (c.op == "readFile") {
             std::vector<std::uint8_t> file(4096);
             std::size_t               size = 0;
@@ -225,7 +230,9 @@ TEST_CASE("Edio framing matches the golden byte for byte", "[n8]") {
         } else if (c.op == "menu.test") {
             s = rp::n8::Menu(edio).test();
         } else if (c.op == "menu.install") {
-            s = rp::n8::Menu(edio).install(a.path.value_or(""));
+            std::uint16_t index = 0;
+            s = rp::n8::Menu(edio).install(a.path.value_or(""), &index);
+            CHECK(index == 7);  // the map index the old client parsed from the case's reply
         } else if (c.op == "menu.start") {
             s = rp::n8::Menu(edio).start();
         } else if (c.op == "menu.reset") {
@@ -238,8 +245,10 @@ TEST_CASE("Edio framing matches the golden byte for byte", "[n8]") {
             const auto        srm    = fromHex(a.srm.value_or(""));
             const bool        upload = !a.path;
             const std::string path   = upload ? "usb-games/" + a.str.value_or("") : *a.path;
+            std::uint16_t     index  = 0;
             s = rp::n8::bootRom(edio, path, {bytes.data(), bytes.size()}, {srm.data(), srm.size()},
-                                upload ? rp::n8::Upload::Always : rp::n8::Upload::Never, nullptr);
+                                upload ? rp::n8::Upload::Always : rp::n8::Upload::Never, &index);
+            CHECK(index == 0x45);  // the map index n8Load.ts parsed from the case's reply
         } else {
             FAIL("unknown golden op: " << c.op);
         }
@@ -330,6 +339,22 @@ TEST_CASE("Menu.vramDump sends '*v' and splits the 2048+16 reply", "[n8]") {
     REQUIRE(palette[15] == 0xAF);
     // The only write is the '*v' FIFO command (memWR to ADDR_FIFO 0x1810000).
     REQUIRE(port.written == fromHex("2bd41ae50000810102000000002a76"));
+}
+
+TEST_CASE("Menu.install tells a missing map index from a failed install", "[n8]") {
+    // A 0 status and then no index: the ROM is installed, and the failure says where it came, so a caller that boots
+    // regardless (the Pico box always has) can tell it from the install's own timeout.
+    FakeSerialPort port;
+    port.queue({0x00});
+    Edio           edio(port);
+    const Status   noIndex = rp::n8::Menu(edio).install("usb-games/x.nes");
+    CHECK(noIndex.code == Code::Timeout);
+    CHECK(noIndex.where == Where::MapIndex);
+    CHECK(text(noIndex) == "Edio: serial read timeout (no N8 response)");
+
+    const Status noStatus = rp::n8::Menu(edio).install("usb-games/x.nes");
+    CHECK(noStatus.code == Code::Timeout);
+    CHECK(noStatus.where == Where::Read);
 }
 
 // --- every failure each primitive can meet -----------------------------------------------------------------------

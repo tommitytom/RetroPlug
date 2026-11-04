@@ -127,6 +127,10 @@ test("a failed call throws the reply's message, and an N8TimeoutError when the N
     throw new Error(`rpc ${method}: [-32601] Method not found`);
   };
   expect(createN8Client(noFacet).listPorts()).toEqual([]);
+  const broken: N8Call = () => {
+    throw new Error("rpc n8ListPorts: [-32603] the port lister failed");
+  };
+  expect(() => createN8Client(broken).listPorts()).toThrow("the port lister failed");
 });
 
 test("load boots through the host's bootRom: an upload to usb-games, or the SD path as it is", () => {

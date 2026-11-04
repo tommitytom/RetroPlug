@@ -3,9 +3,10 @@
 // One Pico does the whole thing. MIDI comes in on a hardware UART (UART1/GP5, the stage-1
 // 6N138 opto circuit) and is decoded by the reusable parser (../midi-in/midi.c); channel-voice
 // messages and SysEx are forwarded to the N8's cart FIFO via Edio fifoWR (= memWR to
-// 0x1810000). The N8 is hosted over PIO-USB and driven with the Edio port (edio.c). When the N8
+// 0x1810000). The N8 is hosted over PIO-USB and driven with the N8 pack's Edio (packages/n8: the
+// protocol, its menu commands and operations, over UsbCdcTransport). When the N8
 // shows its menu, the Pico boots a ROM through it - one staged in its own flash (uploaded to the
-// SD first) or one already on the card. box.c makes it a standalone box: status LED, watchdog
+// SD first) or one already on the card. box.cpp makes it a standalone box: status LED, watchdog
 // and recovery reboots, and which staged ROM to boot (picked over MIDI, saved on the SD).
 //
 // So: play a MIDI keyboard -> the real NES plays it, with no computer in the loop.
@@ -22,13 +23,24 @@
 #include "hardware/irq.h"
 #include "hardware/sync.h"
 #ifndef USE_NATIVE_USB
+#include "SofTimer.hpp"
 #include "pio_usb.h"
-#include "pio_usb_ll.h"
+extern "C" bool pio_usb_root_attached(void);   // pio_usb_root.c: pio_usb_ll.h is C that C++ cannot compile
 #endif
+// TinyUSB's osal_none.h applies ++ and -- to a volatile, which C++20 deprecates: its warning, not this file's.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wvolatile"
 #include "tusb.h"
+#pragma GCC diagnostic pop
+#include "UsbCdcTransport.hpp"
 #include "box.h"
-#include "edio.h"
+#include "graph/Packages.hpp"
 #include "midi.h"
+#include "n8/Edio.hpp"
+#include "n8/Menu.hpp"
+#include "n8/Ops.hpp"
+
+using rp::n8::Edio;
 
 #define PIN_USB_DP 2          // GP2 = D+, GP3 = D-
 #define N8_VID     0x38df
@@ -54,6 +66,12 @@
 #ifndef N8_TEST_HOOKS
 #define N8_TEST_HOOKS 0
 #endif
+
+// The N8's link and its Edio, in static storage: one of each, for whichever N8 is mounted (UsbCdcTransport.hpp says
+// how a mount rebinds it). The transport's waits run the box's idle hook, so the long Edio calls keep it fed.
+static UsbCdcTransport usb(box_feed);
+static Edio            edio(usb);
+static uint8_t         n8_cdc_idx = 0;   // the N8's CDC interface, from its mount; bound before its probe
 
 #define MIDI_UART   uart1     // stage-1 MIDI IN
 #define MIDI_RX_PIN 5         // GP5 = UART1 RX = physical pin 7
@@ -82,7 +100,7 @@ typedef struct {
     uint32_t uart_oe;      // bytes lost to a full UART hardware FIFO
     uint32_t uart_fe;      // framing / break errors (wiring, or a Type A/B swap)
     uint32_t ring_full;    // bytes lost to a full receive ring
-    uint32_t max_fwd_us;   // slowest edio_fifo_wr call (queueing it, not its delivery: see lat)
+    uint32_t max_fwd_us;   // slowest Edio::fifoWR call (queueing it, not its delivery: see lat)
     uint32_t lat_avg_us;   // this report window: a message's last byte taken off the UART -> the
     uint32_t lat_max_us;   //   N8 acknowledging the fifoWR that carried it (avg / worst)
 } bridge_stats;
@@ -105,15 +123,15 @@ static void on_midi_uart_irq(void) {
     while (uart_is_readable(MIDI_UART)) {
         // Read DR whole: bits 8-11 flag this byte's framing / parity / break / overrun.
         uint32_t dr = uart_get_hw(MIDI_UART)->dr;
-        if (dr & UART_UARTDR_OE_BITS) irq_oe++;
-        if (dr & (UART_UARTDR_FE_BITS | UART_UARTDR_BE_BITS)) { irq_fe++; continue; }
+        if (dr & UART_UARTDR_OE_BITS) irq_oe = irq_oe + 1;
+        if (dr & (UART_UARTDR_FE_BITS | UART_UARTDR_BE_BITS)) { irq_fe = irq_fe + 1; continue; }
         uint32_t h = rx_head, next = (h + 1) % RX_RING;
-        if (next == rx_tail) { irq_ring_full++; continue; }
+        if (next == rx_tail) { irq_ring_full = irq_ring_full + 1; continue; }
         rx_ring[h] = (uint8_t)dr;
         rx_ts[h] = now;
         __dmb();   // the byte is in the ring before the main loop can see the new head
         rx_head = next;
-        irq_rx++;
+        irq_rx = irq_rx + 1;
         last_rx_us = now;
     }
 }
@@ -126,13 +144,13 @@ static uint32_t batch_len = 0, batch_msgs = 0;
 static uint32_t cur_byte_us = 0;      // rx_ts of the byte the parser is being fed
 static uint32_t batch_first_us = 0;   // ... of the last byte of the batch's first message
 static uint32_t lat_sum = 0, lat_n = 0, lat_win_max = 0;
-// Latency is measured to the N8's ACK, not to edio_fifo_wr returning: the write returns once
+// Latency is measured to the N8's ACK, not to Edio::fifoWR returning: the write returns once
 // TinyUSB has queued it, and the packet then waits for the next 1 ms USB frame. The oldest
 // unacknowledged batch is timed, so overlapping writes over- rather than under-report.
 static volatile bool ack_pending = false;
 static uint32_t      ack_from_us = 0;
 
-void tuh_cdc_tx_complete_cb(uint8_t idx) {
+extern "C" void tuh_cdc_tx_complete_cb(uint8_t idx) {
     // Invoked per completed bulk-OUT transfer; the TX FIFO back at full size = this write is all out.
     if (!ack_pending || tuh_cdc_write_available(idx) != CFG_TUH_CDC_TX_BUFSIZE) return;
     uint32_t lat = time_us_32() - ack_from_us;
@@ -152,7 +170,7 @@ static void apu_latency_probe(uint32_t from_us) {
     while (time_us_32() - from_us < 100000) {
         uint32_t req = time_us_32();
         uint8_t v = 0;
-        if (!edio_mem_rd(EDIO_ADDR_SSR + 0x80, &v, 1)) { printf("[apu] read FAIL\n"); return; }
+        if (!edio.memRD(Edio::ADDR_SSR + 0x80, &v, 1).ok()) { printf("[apu] read FAIL\n"); return; }
         polls++;
         if (v & 0x0f) {
             printf("[apu] ROM wrote $4000 between %lu and %lu us after the note (%lu polls)\n",
@@ -168,9 +186,9 @@ static void apu_latency_probe(uint32_t from_us) {
 static void batch_flush(void) {
     if (!batch_len) return;
     if (!ack_pending) { ack_from_us = batch_first_us; ack_pending = true; }   // armed first: the
-    // write pumps tuh_task, so its completion can arrive before edio_fifo_wr even returns
+    // write pumps tuh_task, so its completion can arrive before Edio::fifoWR even returns
     uint64_t t0 = time_us_64();
-    bool ok = edio_fifo_wr(batch, batch_len);
+    bool ok = edio.fifoWR(batch, batch_len).ok();
     uint32_t us = (uint32_t)(time_us_64() - t0);
     stats.writes++;
     if (ok) stats.fwd += batch_msgs; else { stats.fwd_fail += batch_msgs; ack_pending = false; }
@@ -190,7 +208,7 @@ static void batch_flush(void) {
 }
 
 // TinyUSB's no-RTOS timing hook (no board layer), backed by the SDK clock.
-uint32_t tusb_time_millis_api(void) { return to_ms_since_boot(get_absolute_time()); }
+extern "C" uint32_t tusb_time_millis_api(void) { return to_ms_since_boot(get_absolute_time()); }
 
 static void hexdump(const char *label, const uint8_t *d, int n) {
     printf("[n8-host] %s:", label);
@@ -198,19 +216,29 @@ static void hexdump(const char *label, const uint8_t *d, int n) {
     printf("\n");
 }
 
+// CMD_STATUS: the N8's status byte, or -1 for no (or a malformed) reply.
+static int n8_status(void) {
+    uint8_t st = 0;
+    return edio.status(st).ok() ? st : -1;
+}
+
+// What a failed Edio call or operation reports: the N8's own status byte when it refused, else -1 (no reply, or the
+// link went down).
+static int status_byte(const rp::n8::Status &s) { return s.code == rp::n8::Code::Device ? s.device : -1; }
+
 // Run the Edio probe. Called from the main loop (not a callback) because the
-// edio_* ops block + pump tuh_task() internally.
+// Edio calls block + pump tuh_task() internally.
 static int n8_probe(void) {
     printf("[n8-host] --- Edio probe ---\n");
 
     // Status is 0 (OK) at the N8 menu; a running ROM reports a non-zero busy state
     // (e.g. 5) while the link stays fully functional - not an error. -1 = no reply.
-    int st = edio_get_status();
+    int st = n8_status();
     printf("[n8-host] CMD_STATUS -> %d %s\n", st,
            st == 0 ? "(OK)" : st < 0 ? "(no reply)" : "(busy - ROM running)");
 
-    uint8_t info[64];
-    if (edio_sys_info(info)) {
+    uint8_t info[Edio::SIZE_SYS_INFO];
+    if (edio.sysInfo(info).ok()) {
         uint32_t ser0 = info[20] | info[21] << 8 | info[22] << 16 | (uint32_t)info[23] << 24;
         uint32_t ser1 = info[24] | info[25] << 8 | info[26] << 16 | (uint32_t)info[27] << 24;
         uint16_t sw = info[40] | info[41] << 8;
@@ -243,12 +271,12 @@ static void wait_ms(uint32_t ms) {
 }
 
 // Autonomous boot: if the N8 file-browser MENU is running (it answers '*t' with 'k'), drive it
-// over the cart FIFO (edio_menu_*) to install + boot a ROM, no PC in the loop. If a game is
+// over the cart FIFO (rp::n8::Menu, through bootRom) to install + boot a ROM, no PC in the loop. If a game is
 // already running (or wedged) the menu won't answer, and we just forward MIDI to it.
 // The handshake rides the cart-FIFO write (memWR to 0x1810000); it only works if nothing
 // touched cart memory while the menu was booting - see n8_probe().
 //
-// Which ROM: with ROMs staged in the Pico's flash (`loop.sh --rom ...`, box.c), the one picked
+// Which ROM: with ROMs staged in the Pico's flash (`loop.sh --rom ...`, box.cpp), the one picked
 // over MIDI if a pick is waiting, else the one saved on the SD card as last booted, else the
 // first - uploaded to the SD unless the saved CRC says it is already there. With none staged,
 // N8_ROM_PATH, a ROM already on the card (-DN8_ROM_PATH=usb-games/bliptoaster.nes for the
@@ -257,19 +285,92 @@ static void wait_ms(uint32_t ms) {
 #define N8_ROM_PATH "usb-games/n8-midi.nes"
 #endif
 
-static bool upload_rom(const rom_blob_hdr *rom) {
-    printf("[n8-host] upload %s (%lu bytes)...\n", rom->path, (unsigned long)rom->size);
-    uint64_t t0 = time_us_64();
-    int up = edio_file_put(rom->path, (const uint8_t *)(rom + 1), rom->size);
-    if (up != 0) { printf("[n8-host] upload FAILED (status %d)\n", up); return false; }
-    printf("[n8-host] uploaded in %lu ms\n", (unsigned long)((time_us_64() - t0) / 1000));
-    return true;
+// The menu's '*t' handshake: true iff it answered 'k'. Input is flushed first, so a stale byte is never taken for the
+// answer.
+static bool menu_test(void) {
+    edio.flushInput();
+    return rp::n8::Menu(edio).test().ok();
 }
 
 // Each step of a boot checks that the N8 it started on is still the one mounted: a power cut
 // mid-boot unmounts it, and a new one can be up (at a fresh menu) before a slow step returns.
-#define BOOT_GONE() (n8_gen != gen || !n8_ready)
+// The link is checked too: it is down from the unmount until the main loop binds the next N8,
+// so a boot whose N8 went (even one remounted since, which bumps n8_gen only once the boot has
+// read it, as inside the probe) stops at once rather than handshaking with a link that is gone.
+#define BOOT_GONE() (n8_gen != gen || !n8_ready || !usb.linkUp())
 #define ABANDON() do { printf("[n8-host] boot abandoned: the N8 went away\n"); return; } while (0)
+
+// One boot through the pack's bootRom, and what the box does at its steps (boot_step): the lines it prints where it
+// always printed them, its choice saved on the SD between the upload and the install, and the N8 checked before the
+// install and before the start.
+typedef struct {
+    uint32_t            gen;         // the N8 mount the boot began on
+    const rom_blob_hdr *rom;         // the staged ROM, or null for one already on the card
+    const char         *path;        // what the menu installs
+    int                 sel;         // the staged ROM's index
+    const box_state    *save;        // the choice to write before the install (null: unchanged)
+    bool                retry;       // the upload again after a refused install: nothing saved, no "menu up" line
+    uint64_t            upload_us;   // when the upload began (0: no upload)
+} boot_run;
+
+static bool boot_step(void *ctx, rp::n8::Step step) {
+    boot_run &run = *static_cast<boot_run *>(ctx);
+    const uint32_t gen = run.gen;
+    switch (step) {
+        case rp::n8::Step::Upload:
+            printf("[n8-host] upload %s (%lu bytes)...\n", run.rom->path, (unsigned long)run.rom->size);
+            run.upload_us = time_us_64();
+            return true;
+        case rp::n8::Step::Install:
+            if (run.upload_us)
+                printf("[n8-host] uploaded in %lu ms\n", (unsigned long)((time_us_64() - run.upload_us) / 1000));
+            if (run.retry) return true;
+            // Saved only when it changed: an unchanged boot then writes nothing to the SD card, and a
+            // card write is the one thing a power cut at the wrong moment can damage.
+            if (run.save && !box_state_save(edio, run.save))
+                printf("[box] could not save the choice to %s\n", BOX_STATE_PATH);
+            if (run.rom) {
+                box_set_pending_sel(-1);
+                cur_sel = run.sel;
+            }
+            if (BOOT_GONE()) return false;
+            printf("[n8-host] menu up -> install %s (*n)...\n", run.path);
+            return true;
+        case rp::n8::Step::Start:
+            if (BOOT_GONE()) return false;
+            printf("[n8-host] installed -> boot (*s); the ROM is starting...\n");
+            return true;
+        default:
+            return true;
+    }
+}
+
+// bootRom for the box: no handshake of its own (boot_rom has had the menu's 'k'), boot_step around its steps, the
+// staged ROM uploaded when `upload`. What it came to, as boot_rom reads it: 0 once the ROM is installed and its '*s'
+// sent, -2 when the upload failed (its line printed), the menu's status byte when it refused the install, -1 for
+// anything else (no reply, the N8 gone). As the box always had it, a map index that never follows a 0 install status
+// fails nothing (the '*s' goes out regardless), and nor does a '*s' that could not be written, which is
+// fire-and-forget: the wait for the game and the N8 check after it judge the boot.
+static int boot_through_menu(boot_run &run, bool upload) {
+    const rp::n8::ByteView rom = upload ? rp::n8::ByteView{(const uint8_t *)(run.rom + 1), run.rom->size}
+                                        : rp::n8::ByteView{};
+    const rp::n8::Status s = rp::n8::bootRom(edio, run.path, rom, {}, upload ? rp::n8::Upload::Always
+                                                                             : rp::n8::Upload::Never,
+                                             nullptr, {}, {false, boot_step, &run});
+    if (s.ok()) return 0;
+    if (s.step == rp::n8::Step::Upload) {
+        printf("[n8-host] upload FAILED (status %d)\n", status_byte(s));
+        return -2;
+    }
+    if (s.code == rp::n8::Code::Cancelled) return -1;   // boot_step found the N8 gone
+    if (s.step == rp::n8::Step::Start) return 0;
+    if (s.step == rp::n8::Step::Install && s.where == rp::n8::Where::MapIndex) {
+        if (!boot_step(&run, rp::n8::Step::Start)) return -1;
+        (void)rp::n8::Menu(edio).start();
+        return 0;
+    }
+    return status_byte(s);
+}
 
 static void boot_rom(int status) {
     const uint32_t gen = n8_gen;
@@ -282,12 +383,12 @@ static void boot_rom(int status) {
     printf("[n8-host] menu handshake (*t)...\n");
     bool menu = false;
     for (int i = 0; i < N8_MENU_TRIES && !menu && !BOOT_GONE(); i++) {
-        menu = edio_menu_test();
+        menu = menu_test();
         if (!menu) wait_ms(400);
     }
     if (BOOT_GONE()) ABANDON();
     if (!menu) {
-        int now_st = edio_get_status();
+        int now_st = n8_status();
         if (now_st == 0) {
             // CMD_STATUS says menu, but the menu does not answer: the console came back in a bad
             // state (seen after a power cut only ~2.7 s long). MIDI must not go into a menu's FIFO -
@@ -302,63 +403,57 @@ static void boot_rom(int status) {
         return;
     }
 
-    const char *path = N8_ROM_PATH;
-    const rom_blob_hdr *rom = NULL;
-    bool uploaded = false;
+    boot_run run = {gen, NULL, N8_ROM_PATH, -1, NULL, false, 0};
+    box_state st;
+    bool upload = false;
     int n = rom_count();
     if (n > 0) {
-        box_state st;
-        bool have = box_state_load(&st);
+        bool have = box_state_load(edio, &st);
         int sel = box_pending_sel();
         if (sel < 0) sel = have ? st.sel : 0;
         if (sel >= n) sel = 0;
-        rom = rom_get(sel);
+        const rom_blob_hdr *rom = rom_get(sel);
         uint32_t crc = rom_crc32(rom);
         printf("[box] ROM %d of %d: %s (crc %08lx)%s\n", sel, n, rom->path, (unsigned long)crc,
                box_pending_sel() >= 0 ? " - picked over MIDI" : have ? " - saved choice" : "");
         if (have && st.crc == crc) {
             printf("[box] already on the SD (its CRC was saved at the last upload) - no upload\n");
         } else {
-            if (!upload_rom(rom)) { if (BOOT_GONE()) ABANDON(); boot_error = true; return; }
-            uploaded = true;
+            upload = true;
         }
-        // Saved only when it changed: an unchanged boot then writes nothing to the SD card, and a
-        // card write is the one thing a power cut at the wrong moment can damage.
         if (!have || st.sel != sel || st.crc != crc) {
             memcpy(st.magic, "N8PB", 4);
             st.sel = (uint8_t)sel;
             memset(st.pad, 0, sizeof st.pad);
             st.crc = crc;
             st.reserved = 0;
-            if (!box_state_save(&st)) printf("[box] could not save the choice to %s\n", BOX_STATE_PATH);
+            run.save = &st;
         }
-        box_set_pending_sel(-1);
-        cur_sel = sel;
-        path = rom->path;
+        run.rom = rom;
+        run.sel = sel;
+        run.path = rom->path;
     }
 
-    if (BOOT_GONE()) ABANDON();
-    printf("[n8-host] menu up -> install %s (*n)...\n", path);
-    int st = edio_menu_install(path);
-    if (st > 0 && st != 0x44 && rom && !uploaded) {   // the device's own status, not a lost link
+    int result = boot_through_menu(run, upload);
+    if (result == -2) { if (BOOT_GONE()) ABANDON(); boot_error = true; return; }
+    if (result > 0 && result != 0x44 && run.rom && !upload) {   // the device's own status, not a lost link
         // The saved CRC said the file was on the card, but the menu could not load it - it was
         // deleted or replaced behind the box's back. Put it back and try once more.
-        printf("[n8-host] install FAILED (status %d) - uploading it again\n", st);
-        if (!upload_rom(rom)) { if (BOOT_GONE()) ABANDON(); boot_error = true; return; }
-        st = edio_menu_install(path);
+        printf("[n8-host] install FAILED (status %d) - uploading it again\n", result);
+        run.retry = true;
+        result = boot_through_menu(run, true);
+        if (result == -2) { if (BOOT_GONE()) ABANDON(); boot_error = true; return; }
     }
     if (BOOT_GONE()) ABANDON();
-    if (st != 0) {
-        printf("[n8-host] install FAILED (status %d)%s\n", st,
-               st == 0x44 ? " - dirty menu heap, power-cycle to a fresh menu" : "");
+    if (result != 0) {
+        printf("[n8-host] install FAILED (status %d)%s\n", result,
+               result == 0x44 ? " - dirty menu heap, power-cycle to a fresh menu" : "");
         boot_error = true;
         return;
     }
-    printf("[n8-host] installed -> boot (*s); the ROM is starting...\n");
-    edio_menu_start();
     wait_ms(4000);   // let the NES reboot into the game
     if (BOOT_GONE()) ABANDON();
-    printf("[n8-host] %s booted by the Pico - no PC used.\n", path);
+    printf("[n8-host] %s booted by the Pico - no PC used.\n", run.path);
 }
 
 // The bridge sink: a complete MIDI message from the parser -> the N8 FIFO. Channel-voice
@@ -515,7 +610,7 @@ static void sniff_report(void) {
     // Only $4000-$4015 (22 bytes, one USB packet): the whole 0x200-byte mirror is eight packets,
     // and at one per 1 ms frame that read held the main loop - and any MIDI behind it - ~10 ms.
     uint8_t r[0x16];
-    if (!edio_mem_rd(EDIO_ADDR_SSR + 0x80, r, sizeof r)) { printf("[sniff] read FAIL\n"); return; }
+    if (!edio.memRD(Edio::ADDR_SSR + 0x80, r, sizeof r).ok()) { printf("[sniff] read FAIL\n"); return; }
     uint16_t p1  = r[0x2] | ((r[0x3] & 0x07) << 8);
     uint16_t p2  = r[0x6] | ((r[0x7] & 0x07) << 8);
     uint16_t tri = r[0xa] | ((r[0xb] & 0x07) << 8);
@@ -552,8 +647,8 @@ static const char *expansion_chip(uint16_t mapper) {
 }
 
 static void exp_vol_check(void) {
-    uint8_t cfg[16];
-    if (!edio_mem_rd(EDIO_ADDR_CFG, cfg, sizeof cfg)) { printf("[n8-host] config read FAILED\n"); return; }
+    uint8_t cfg[Edio::SIZE_CFG];
+    if (!edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok()) { printf("[n8-host] config read FAILED\n"); return; }
     uint16_t mapper = (uint16_t)(((cfg[2] >> 4) << 8) | cfg[0]);
     bool game = (cfg[7] & 0x80) != 0;   // ctrl bit 7: a game core is configured (the menu is map 255)
     const char *chip = expansion_chip(mapper);
@@ -563,9 +658,9 @@ static void exp_vol_check(void) {
         return;
     }
     uint8_t v = N8_EXP_VOL;
-    bool ok = edio_mem_wr(EDIO_ADDR_CFG + 3, &v, 1);
+    bool ok = edio.memWR(Edio::ADDR_EXP_VOL, &v, 1).ok();
     uint8_t back = 0;   // a live register: read it back to confirm the write took
-    if (ok) ok = edio_mem_rd(EDIO_ADDR_CFG + 3, &back, 1) && back == v;
+    if (ok) ok = edio.memRD(Edio::ADDR_EXP_VOL, &back, 1).ok() && back == v;
     printf("[n8-host] mapper %u (%s): expansion volume 0 -> %u%s\n", mapper, chip, back,
            ok ? "" : " (write FAILED)");
 }
@@ -587,7 +682,7 @@ static volatile uint32_t attached_since_ms = 0;
 static void link_watch(void) {
     uint32_t now = to_ms_since_boot(get_absolute_time());
 #ifndef USE_NATIVE_USB
-    bool attached = PIO_USB_ROOT_PORT(0)->connected;
+    bool attached = pio_usb_root_attached();
 #else
     bool attached = false;
 #endif
@@ -611,7 +706,7 @@ static void health_check(void) {
     uint32_t now = to_ms_since_boot(get_absolute_time());
     if ((int32_t)(now - next_ms) < 0) return;
     next_ms = now + 1000;
-    int st = fake_dead_link ? -1 : edio_get_status();
+    int st = fake_dead_link ? -1 : n8_status();
     if (st < 0) {
         printf("[box] the N8 did not answer CMD_STATUS (%d in a row)\n", ++fails);
         if (fails >= 3) recover(RECOVER_LINK_DEAD);
@@ -643,7 +738,14 @@ int main(void) {
 
     led_init();
     box_start();                        // says why we (re)booted, then arms the watchdog
-    edio_set_idle_hook(box_feed);       // the long Edio waits keep it fed
+
+    // The node types this image registers (retroplug_product in CMakeLists.txt): rp.n8.nes, which nothing plans here
+    // yet, named so that the node is linked into the image the trap judges, as a device image's types must be.
+    size_t package_count = 0;
+    const rp_package *const *packages = rp_register_packages(&package_count);
+    for (size_t i = 0; i < package_count; i++)
+        for (uint32_t t = 0; t < packages[i]->node_type_count; t++)
+            printf("[n8-host] node type %s (registered, not planned)\n", packages[i]->node_types[t]->id);
 
     // MIDI IN (stage-1 opto circuit) on UART1/GP5.
     uart_init(MIDI_UART, MIDI_BAUD);
@@ -667,8 +769,10 @@ int main(void) {
     // N8 USB host on PIO-USB (GP2/GP3).
     pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
     pio_cfg.pin_dp = PIN_USB_DP;
+    pio_cfg.skip_alarm_pool = true;   // its pool is on the heap: SofTimer.cpp drives the 1 ms frames instead
     tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
     tuh_init(1);
+    sof_timer_start();
 #endif
 
     while (true) {
@@ -696,6 +800,7 @@ int main(void) {
         if (n8_ready && !probed) {
             led_set_mode(LED_BUSY);   // the boot blocks for seconds: show it now, not after
             probed = true;
+            usb.bind(n8_cdc_idx);     // here, at the top of the loop: never inside an Edio call's wait
             int status = n8_probe();
             game_seen = false;
             boot_rom(status);
@@ -724,7 +829,7 @@ int main(void) {
     }
 }
 
-void tuh_mount_cb(uint8_t daddr) {
+extern "C" void tuh_mount_cb(uint8_t daddr) {
     uint16_t vid = 0, pid = 0;
     tuh_vid_pid_get(daddr, &vid, &pid);
     any_mounted = true;
@@ -733,7 +838,7 @@ void tuh_mount_cb(uint8_t daddr) {
            daddr, vid, pid, (vid == N8_VID && pid == N8_PID) ? "   <- N8!" : "");
 }
 
-void tuh_umount_cb(uint8_t daddr) {
+extern "C" void tuh_umount_cb(uint8_t daddr) {
     printf("[n8-host] device %u unmounted\n", daddr);
     any_mounted = false;
     attached_since_ms = 0;   // a new stretch starts with the next link_watch()
@@ -741,26 +846,28 @@ void tuh_umount_cb(uint8_t daddr) {
     probed = false;
 }
 
-// The N8's CDC-ACM interface mounted -> bind Edio to it and arm the probe.
-void tuh_cdc_mount_cb(uint8_t idx) {
-    tuh_itf_info_t info = { 0 };
+// The N8's CDC-ACM interface mounted -> note its index and arm the probe, which binds the transport to it. Not here:
+// this runs inside tuh_task, so inside an Edio call's wait when one is in progress, and binding the new N8 there would
+// let that call carry on, mid-command, on it (UsbCdcTransport.hpp).
+extern "C" void tuh_cdc_mount_cb(uint8_t idx) {
+    tuh_itf_info_t info = {};
     tuh_cdc_itf_get_info(idx, &info);
     uint16_t vid = 0, pid = 0;
     tuh_vid_pid_get(info.daddr, &vid, &pid);
     printf("[n8-host] CDC mounted (idx %u, VID:PID %04x:%04x)\n", idx, vid, pid);
     if (vid == N8_VID && pid == N8_PID) {
-        edio_bind(idx);
+        n8_cdc_idx = idx;
         menu_stuck_until = 0;
-        n8_gen++;
+        n8_gen = n8_gen + 1;
         boot_error = false;   // a fresh mount gets a fresh boot
         n8_ready = true;
         probed = false;
     }
 }
 
-void tuh_cdc_umount_cb(uint8_t idx) {
+extern "C" void tuh_cdc_umount_cb(uint8_t idx) {
     (void)idx;
-    edio_unbind();
+    usb.unbind();
     n8_ready = false;
     probed = false;
 }

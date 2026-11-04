@@ -89,7 +89,8 @@ public:
     // [control] What connects the link asks first: the reason `port` is not the link's to open, or "" when it is. The
     // facet (N8Rpc.hpp) answers for the ports its sessions hold, as a session refuses the link's: two writers on one
     // N8 would interleave their commands. A refused connect leaves the link down with the reason as its lastError, as
-    // a failed one does. Cleared (null) by the facet before it goes.
+    // a failed one does. Cleared (null) by the facet before it goes. One facet per host: a second's guard would
+    // replace the first's, and whichever went first would clear the other's.
     using PortGuard = std::function<std::string(const std::string& port)>;
     void setPortGuard(PortGuard guard) { portGuard_ = std::move(guard); }
 

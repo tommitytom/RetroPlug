@@ -65,10 +65,27 @@ struct SkipFirst {
     }
 };
 
-// The longest battery path batteryPath writes, its NUL included: "EDN8/gamedata/" (14), a FatFs name (at most 255),
-// "/bram.srm" (9). bootRom keeps one on its stack, held through the battery's writeFile, whose waits run the Pico's
-// idle hook on the SDK's 2 KB stack: exactly this, and no more.
-constexpr std::size_t kBatteryPathBytes = 14 + Edio::kNameMax + 9 + 1;
+// The longest battery path a FatFs name gives, its NUL included: "EDN8/gamedata/" (14), the name (255 UTF-16 units,
+// at most three bytes of UTF-8 each), "/bram.srm" (9).
+constexpr std::size_t kBatteryPathBytes = 14 + 3 * 255 + 9 + 1;
+
+// The never-inlined form of a function, so its frame is on the stack only while it runs.
+#if defined(_MSC_VER)
+#define RP_N8_NOINLINE __declspec(noinline)
+#else
+#define RP_N8_NOINLINE __attribute__((noinline))
+#endif
+
+// bootRom's battery: its path built and the file written. Apart from bootRom and never inlined into it, so the path's
+// buffer is on the stack only while a battery is written, and a boot with none (the Pico box's) carries none of it.
+RP_N8_NOINLINE Status writeBattery(Edio& edio, std::string_view romPath, ByteView srm, Progress progress) {
+    char battery[kBatteryPathBytes];
+    if (!batteryPath(romPath, battery, sizeof battery)) return failed(Code::TooLarge, Where::Length, Step::Save);
+    return writeFile(edio, battery, srm, progress);
+}
+
+// The caller's before() for `step`: true to go on (and when it set none).
+bool ahead(const BootOptions& options, Step step) { return !options.before || options.before(options.ctx, step); }
 
 }  // namespace
 
@@ -143,30 +160,34 @@ bool batteryPath(std::string_view romPath, char* out, std::size_t capacity) {
 }
 
 Status bootRom(Edio& edio, std::string_view path, ByteView rom, ByteView srm, Upload upload, std::uint16_t* mapIndex,
-               Progress progress) {
+               Progress progress, BootOptions options) {
     const std::uint32_t uploaded = upload == Upload::Always ? static_cast<std::uint32_t>(rom.size) : 0;
     const std::uint32_t total    = uploaded + static_cast<std::uint32_t>(srm.size);
     Menu                menu(edio);
 
     // Confirm the menu is running: a running game does not answer '*t'.
-    if (!progress(0, total)) return failed(Code::Cancelled, Where::None, Step::Test);
-    if (Status s = menu.test(); !s.ok()) return at(s, Step::Test);
+    if (options.handshake) {
+        if (!ahead(options, Step::Test) || !progress(0, total)) return failed(Code::Cancelled, Where::None, Step::Test);
+        if (Status s = menu.test(); !s.ok()) return at(s, Step::Test);
+    }
 
     if (upload == Upload::Always) {
+        if (!ahead(options, Step::Upload)) return failed(Code::Cancelled, Where::None, Step::Upload);
         Shifted shifted{progress, 0, total};
         if (Status s = writeFile(edio, path, rom, shifted.progress()); !s.ok()) return at(s, Step::Upload);
     }
     // The battery goes the native way: into the menu's per-game save slot BEFORE the menu loads the game, so the MENU
     // copies it into cart SRAM at the hand-off.
     if (srm.size != 0) {
-        char battery[kBatteryPathBytes];
-        if (!batteryPath(path, battery, sizeof battery)) return failed(Code::TooLarge, Where::Length, Step::Save);
+        if (!ahead(options, Step::Save)) return failed(Code::Cancelled, Where::None, Step::Save);
         Shifted shifted{progress, uploaded, total};
-        if (Status s = writeFile(edio, battery, srm, shifted.progress()); !s.ok()) return at(s, Step::Save);
+        if (Status s = writeBattery(edio, path, srm, shifted.progress()); !s.ok()) return at(s, Step::Save);
     }
 
-    if (!progress(total, total)) return failed(Code::Cancelled, Where::None, Step::Install);
+    if (!ahead(options, Step::Install) || !progress(total, total))
+        return failed(Code::Cancelled, Where::None, Step::Install);
     if (Status s = menu.install(path, mapIndex); !s.ok()) return at(s, Step::Install);
+    if (!ahead(options, Step::Start)) return failed(Code::Cancelled, Where::None, Step::Start);
     if (Status s = menu.start(); !s.ok()) return at(s, Step::Start);
     return {};
 }

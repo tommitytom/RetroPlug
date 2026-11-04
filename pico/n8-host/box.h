@@ -3,8 +3,9 @@
 #ifndef BOX_H
 #define BOX_H
 
-#include <stdbool.h>
 #include <stdint.h>
+
+#include "n8/Edio.hpp"
 
 // --- Status LED (the Pico's own, GP25) -----------------------------------------------------
 typedef enum {
@@ -33,7 +34,7 @@ enum {
 };
 
 void box_start(void);                 // report why we booted, then arm the watchdog
-void box_feed(void);                  // feed the watchdog + run the LED; also the edio idle hook
+void box_feed(void);                  // feed the watchdog + run the LED; also the Edio transport's idle hook
 bool box_may_recover(void);           // false while backing off after recent recoveries
 void box_recover(int reason);         // reboot now; never returns
 void box_note_healthy(void);          // the link works: 60 s of it clears the backoff
@@ -67,7 +68,8 @@ typedef struct {
     uint32_t reserved;
 } box_state;             // 16 bytes on the card
 
-bool box_state_load(box_state *s);
-bool box_state_save(const box_state *s);
+// Over the box's Edio, at the menu (an SD file operation is the N8 MCU's, not one to run under a game).
+bool box_state_load(rp::n8::Edio &edio, box_state *s);
+bool box_state_save(rp::n8::Edio &edio, const box_state *s);
 
 #endif // BOX_H

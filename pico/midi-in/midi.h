@@ -12,6 +12,11 @@
 
 #include <stdint.h>
 
+// C, and included from C++ too (pico/n8-host is C++ and links this parser as C).
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // High-nibble type for channel-voice messages; full status byte for system msgs.
 typedef enum {
     MIDI_NOTE_OFF         = 0x80,
@@ -54,5 +59,9 @@ typedef struct {
 void midi_parser_init(midi_parser *p, midi_sink sink, void *user);
 void midi_parser_set_sysex_sink(midi_parser *p, midi_sysex_sink sysex);
 void midi_parser_byte(midi_parser *p, uint8_t b);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // MIDI_H

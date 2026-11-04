@@ -1,4 +1,4 @@
-# The link trap's second half (CMakeLists.txt): run on the linked image, it fails the build if the image defines the
+# The link trap's second half (device-image.cmake): run on the linked image, it fails the build if the image defines the
 # wrapper of any trapped symbol. --wrap turns each reference into a reference to __wrap_<symbol>, which only an
 # undefined wrapper makes a link error; a library that defines one (the Pico SDK's pico_malloc defines the malloc
 # family's, with a heap behind them) would let every use through. It fails the build too if the image still refers to
@@ -23,7 +23,7 @@ endforeach()
 if(_found)
     list(JOIN _found ", " _found)
     message(FATAL_ERROR "check-trap: ${IMAGE} defines ${_found}, so the link trap lets those uses through. Whatever "
-                        "defines them must leave the image (see the runtime's comment in CMakeLists.txt).")
+                        "defines them must leave the image (see the runtime's comment in device-image.cmake).")
 endif()
 
 execute_process(COMMAND "${NM}" --undefined-only "${IMAGE}" OUTPUT_VARIABLE _undefined RESULT_VARIABLE _rc)

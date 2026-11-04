@@ -113,9 +113,9 @@ N8ProtocolResult n8Protocol() {
     std::uint8_t vdc[n8::Edio::SIZE_VDC];
     gScript.zeros(sizeof vdc);
     if (!gEdio.vdc(vdc).ok()) return fail("vdc");
-    std::uint64_t free = 1;
+    std::uint64_t bytesFree = 1;
     gScript.zeros(8);
-    if (!gEdio.freeSpace(free).ok() || free != 0) return fail("freeSpace");
+    if (!gEdio.freeSpace(bytesFree).ok() || bytesFree != 0) return fail("freeSpace");
     if (!gEdio.dirMake("chk").ok()) return fail("dirMake");
     if (!gEdio.fileDelete("chk").ok()) return fail("fileDelete");
     std::uint8_t cfg[n8::Edio::SIZE_CFG];

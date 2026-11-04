@@ -304,8 +304,11 @@ export function createN8Client(call: N8Call): N8Client {
       let ports: N8Port[] | undefined;
       try {
         ports = call("n8ListPorts") as N8Port[] | undefined;
-      } catch {
-        return []; // a host that mounted no N8 facet: the CLI says it found no N8, as the serial client's [] did
+      } catch (e) {
+        // A host that mounted no N8 facet answers method-not-found (JSON-RPC -32601): the CLI then says it found no
+        // N8, as the serial client's [] did. Any other failure is the call's own, and reaches the caller.
+        if (/-32601|Method not found/.test(e instanceof Error ? e.message : String(e))) return [];
+        throw e;
       }
       return (ports ?? []).map((p) => ({ port: p.port, isN8: !!p.isN8 }));
     },

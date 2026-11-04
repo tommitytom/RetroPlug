@@ -4,7 +4,7 @@
 #include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
-#include "edio.h"
+#include "n8/Ops.hpp"
 
 // --- Status LED --------------------------------------------------------------------------------
 
@@ -83,7 +83,7 @@ void box_start(void) {
         watchdog_hw->scratch[SCR_PENDING_SEL] = 0;
     }
     if (watchdog_enable_caused_reboot()) {         // a timeout, not one of our own reboots
-        watchdog_hw->scratch[SCR_RECOVERIES]++;
+        watchdog_hw->scratch[SCR_RECOVERIES] = watchdog_hw->scratch[SCR_RECOVERIES] + 1;
         watchdog_hw->scratch[SCR_REASON] = RECOVER_HANG;
     }
     uint32_t n = watchdog_hw->scratch[SCR_RECOVERIES];
@@ -107,7 +107,7 @@ bool box_may_recover(void) {
 }
 
 void box_recover(int reason) {
-    watchdog_hw->scratch[SCR_RECOVERIES]++;
+    watchdog_hw->scratch[SCR_RECOVERIES] = watchdog_hw->scratch[SCR_RECOVERIES] + 1;
     watchdog_hw->scratch[SCR_REASON] = (uint32_t)reason;
     printf("[box] recovering: %s - rebooting\n", reason_name((uint32_t)reason));
     sleep_ms(20);   // let the line reach the console
@@ -183,11 +183,15 @@ void box_set_pending_sel(int sel) {
 
 // --- The selection saved on the SD card -------------------------------------------------------------
 
-bool box_state_load(box_state *s) {
-    if (edio_file_get(BOX_STATE_PATH, (uint8_t *)s, sizeof *s) != 0) return false;   // none yet
-    return memcmp(s->magic, "N8PB", 4) == 0;
+// A plain open, one read of the record and a close, which is always sent once the open has succeeded (a failed read
+// included), so the card is never left with the file open; Ops::readFile would list the directory first to size it.
+bool box_state_load(rp::n8::Edio &edio, box_state *s) {
+    if (!edio.fileOpen(BOX_STATE_PATH, rp::n8::Edio::FA_READ).ok()) return false;   // none yet
+    const bool read = edio.fileRead(reinterpret_cast<uint8_t *>(s), sizeof *s).ok();
+    const bool closed = edio.fileClose().ok();
+    return read && closed && memcmp(s->magic, "N8PB", 4) == 0;
 }
 
-bool box_state_save(const box_state *s) {
-    return edio_file_put(BOX_STATE_PATH, (const uint8_t *)s, sizeof *s) == 0;
+bool box_state_save(rp::n8::Edio &edio, const box_state *s) {
+    return rp::n8::writeFile(edio, BOX_STATE_PATH, {reinterpret_cast<const uint8_t *>(s), sizeof *s}).ok();
 }

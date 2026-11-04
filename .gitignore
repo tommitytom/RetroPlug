@@ -8,6 +8,8 @@
 /build-prof/
 # the RP2350 device check's build dir (tools/build-device-check.sh)
 /build-device/
+# the Pico box firmware's build dirs (tools/build-box.sh)
+/build-box/
 # aarch64 cross-build dirs + sysroot (leftover build artifacts)
 /build-arm/
 /build-arm-prof/

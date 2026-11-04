@@ -136,6 +136,26 @@ jobs:
           PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
         run: pnpm device:check
 
+      # The Pico box's firmware (docs/modular-graph-phase-e2-design.md section 8): pico/n8-host, the MIDI-to-N8 bridge
+      # on the N8 pack's Edio, in both USB variants, each linked under the same trap over the whole image (TinyUSB and
+      # Pico-PIO-USB included), with its own probe that must fail to link. Built, never run (the rig's gate runs it).
+      # It needs what the device check does not: the SDK's TinyUSB submodule (0.18.0, by the 2.1.1 tag's pointer) and
+      # Pico-PIO-USB at the commit the rig's firmware was proven on, which nothing else in the repository uses.
+      - name: Install the box's USB stacks (TinyUSB, Pico-PIO-USB 5a37a66)
+        run: |
+          set -eux
+          git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1 lib/tinyusb
+          git init -q "$RUNNER_TEMP/Pico-PIO-USB"
+          git -C "$RUNNER_TEMP/Pico-PIO-USB" fetch -q --depth 1 https://github.com/sekigon-gonnoc/Pico-PIO-USB.git \
+            5a37a66dc5d3fbe0ef3cdbeda923a757440f984f
+          git -C "$RUNNER_TEMP/Pico-PIO-USB" checkout -q FETCH_HEAD
+
+      - name: Device build (the Pico box's firmware, the link trap)
+        env:
+          PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
+          PICO_PIO_USB_PATH: ${{ runner.temp }}/Pico-PIO-USB
+        run: pnpm device:box
+
       - name: Install plugin-format validators
         run: |
           set -eux

@@ -46,13 +46,13 @@ N8Reply notOpen(std::int32_t handle) {
     return r;
 }
 
-// A listing's name as the TS client decoded it (TextDecoder, the WHATWG UTF-8 decoder): every well-formed sequence
-// kept, and each maximal ill-formed subpart replaced by U+FFFD, so a card's non-UTF-8 name reaches JS as it always did
-// and never as whatever a codec makes of invalid UTF-8.
+// A listing's name as the TS client decoded it (a default TextDecoder, the WHATWG UTF-8 decoder): a leading BOM
+// dropped (its ignoreBOM is false), every well-formed sequence kept, and each maximal ill-formed subpart replaced by
+// U+FFFD, so a card's non-UTF-8 name reaches JS as it always did and never as whatever a codec makes of invalid UTF-8.
 std::string wellFormed(std::string_view raw) {
     std::string out;
     out.reserve(raw.size());
-    std::size_t i = 0;
+    std::size_t i = raw.substr(0, 3) == "\xEF\xBB\xBF" ? 3 : 0;
     while (i < raw.size()) {
         const auto  lead   = static_cast<unsigned char>(raw[i]);
         std::size_t needed = 0;

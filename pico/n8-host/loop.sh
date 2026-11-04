@@ -87,7 +87,10 @@ if [ $do_build = 1 ]; then
 	echo "== build ($(basename "$bdir"), SDK $sdk)"
 	if [ ! -f "$bdir/build.ninja" ]; then
 		mkdir -p "$bdir"
-		PICO_SDK_PATH=$sdk cmake -S "$here" -B "$bdir" -G Ninja $cfg >"$bdir/loop-configure.log" 2>&1 \
+		# reflect-cpp's headers from the desktop build's checkout when there is one: no clone at configure.
+		reflect=$(sed -n 's/^reflectcpp_SOURCE_DIR:STATIC=//p' "$repo/build/CMakeCache.txt" 2>/dev/null)
+		PICO_SDK_PATH=$sdk cmake -S "$here" -B "$bdir" -G Ninja $cfg ${reflect:+-DRP_REFLECTCPP_SOURCE_DIR="$reflect"} \
+			>"$bdir/loop-configure.log" 2>&1 \
 			|| { tail -20 "$bdir/loop-configure.log"; die "configure failed (log: $bdir/loop-configure.log)"; }
 	fi
 	cmake --build "$bdir" -j"$(nproc)" >"$bdir/loop-build.log" 2>&1 \

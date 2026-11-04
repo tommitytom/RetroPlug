@@ -53,15 +53,30 @@ enum class Upload : std::uint8_t { Always, Never };
 
 // The SD path the menu loads a game's battery from at its boot (and writes it back to at the next return to the menu):
 // EDN8/gamedata/<the ROM's file name>/bram.srm, into `out`. False when it does not fit `capacity` (NUL included).
+// bootRom's buffer fits any name FatFs can hold: 255 UTF-16 units, so at most 765 bytes of UTF-8 (a unit is at most
+// three bytes; a four-byte sequence is two units). A name it does not fit is longer than any FatFs name, and bootRom
+// answers it TooLarge before anything is sent.
 bool batteryPath(std::string_view romPath, char* out, std::size_t capacity);
+
+// What a caller with a boot policy of its own runs around bootRom's steps (the Pico box: its handshake retries, its
+// saved choice); the defaults are the plain boot. `handshake` false leaves out bootRom's '*t', for a caller that has
+// just had the menu's 'k' itself (the test's stop point goes with it). `before(ctx, step)` is called before each step
+// bootRom runs (Test, Upload, Save, Install, Start), between whole commands with the Edio idle, so unlike a Progress it
+// may use the Edio (the box writes its box.cfg before the install); false stops the boot there, Cancelled at that step,
+// with nothing of it sent.
+struct BootOptions {
+    bool handshake = true;
+    bool (*before)(void* ctx, Step step) = nullptr;
+    void* ctx = nullptr;
+};
 
 // Boot a ROM by driving the menu: test ('*t'), the ROM written to `path` when `upload` is Always, the battery (`srm`,
 // when not empty) written to batteryPath(path) so the MENU copies it into cart SRAM at the hand-off (writing the
 // cart's SRAM directly over USB corrupts the running menu, which uses that region), install ('*n' and `path`), start
 // ('*s'). `mapIndex` gets what the install answered. Progress counts the bytes written, of the ROM and the battery
-// together. Stop points: before the test, before each file's open, and before the install. Steps: Test, Upload, Save,
-// Install, Start.
+// together. Stop points: before the test (with the handshake), before each file's open, and before the install, each
+// after `options`' before() for that step. Steps: Test, Upload, Save, Install, Start.
 Status bootRom(Edio& edio, std::string_view path, ByteView rom, ByteView srm, Upload upload, std::uint16_t* mapIndex,
-               Progress progress = {});
+               Progress progress = {}, BootOptions options = {});
 
 }  // namespace rp::n8

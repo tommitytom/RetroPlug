@@ -32,7 +32,10 @@ Status Menu::install(std::string_view path, std::uint16_t* mapIndex) {
         return s;
     }
     std::uint16_t index = 0;
-    if (Status s = edio_.rx16(index); !s.ok()) return s;
+    if (Status s = edio_.rx16(index); !s.ok()) {
+        s.where = Where::MapIndex;  // the ROM is installed: a caller may still start it (the Pico box does)
+        return s;
+    }
     if (mapIndex) *mapIndex = index;
     return {};
 }
