@@ -23,14 +23,16 @@ namespace rp {
 // The record is the host's, freed once terminal, and the node that submitted the job can leave the plan while the
 // device is still busy (a node removed, a plan torn down), so every touch the device makes goes through here, under a
 // lock the control thread shares: once `abandon` has failed the record, the device's later reports reach nothing, and
-// the record may be freed without waiting for the device to finish. The lock is held for a report, never across device
-// I/O, and never by the block thread. Every report goes through the host's rp.host.jobs/1, which the node submitting
-// the job hands over with it.
+// the record may be freed without waiting for the device to finish (graph/rp_jobs.h makes this the rule of a device
+// that reports from a thread of its own: it serialises its reports with abandon, and this is how). The lock is held for
+// a report, never across device I/O, and never by the block thread. Every report goes through the host's
+// rp.host.jobs/1, which the node submitting the job hands over with it.
 class DeviceJobSlot {
 public:
     // [control] Take the slot for `job`, submitted by the node `owner`, reporting through `reports`; false while
-    // another job holds it.
+    // another job holds it, and for a missing report table or record, which every later report would call through.
     bool claim(const rp_host_jobs* reports, rp_job* job, const void* owner) {
+        if (reports == nullptr || job == nullptr) return false;
         std::lock_guard<std::mutex> lock(mutex_);
         if (busy_) return false;
         busy_ = true;

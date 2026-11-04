@@ -32,10 +32,15 @@ extern "C" {
 #define RP_SYSTEM_ROM_INTERFACE "rp.system.rom/1"
 
 /* What the control plane asks for, valid for the length of the submit call only: a device that needs any of it later
- * (the bytes it uploads, the file name it reaches) copies it. Every string is non-null and NUL-terminated, empty when
- * the request does not carry it; the arguments an operation does not read are ignored. A host refuses a request whose
+ * (the bytes it uploads, the file name it reaches) copies it. Every string is non-null, NUL-terminated and UTF-8, empty
+ * when the request does not carry it; `bytes` is null when `size` is 0, so a device copies only after it checks the
+ * size; the arguments an operation does not read are ignored. A host refuses a request whose
  * source strings hold a NUL byte rather than build one of these from it: a C string ends there, so the device would
- * read a battery name "a\0b" as "a" and reach another game's file. */
+ * read a battery name "a\0b" as "a" and reach another game's file.
+ *
+ * Versioning: the three capability ids below version this struct and rp_device_jobs, each presented under its own id;
+ * rp.host.jobs/1 versions the report table alone. A field added to either struct is a new version of the capability
+ * ids, never an edit under the old ones. */
 typedef struct rp_job_request {
     const char*    node_id;     /* a node of the host's last published plan */
     const char*    capability;  /* one of the ids above */
@@ -81,7 +86,9 @@ typedef struct rp_host_jobs {
      * 1024 bytes (the engine's bound) and never a sequence that bound would split. */
     void (*fail)(rp_job* job, const char* reason);
     /* [control] The node that submitted the job is leaving the plan: the job fails as its node's removal, the same
-     * failure the host gives a job whose node is gone, and the device reports into it no more. */
+     * failure the host gives a job whose node is gone, and the device reports into it no more. A device that reports
+     * from a thread of its own serialises those reports with abandon (DeviceJobSlot does, under one lock), so that
+     * after abandon returns nothing reaches the record, which the host may then free. */
     void (*abandon)(rp_job* job);
 } rp_host_jobs;
 

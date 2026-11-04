@@ -124,6 +124,27 @@ TEST_CASE("rp.host.jobs/1: progress overwrites, succeed copies the result, fail 
     CHECK(abandoned.error.empty());
 }
 
+TEST_CASE("a request with no bytes carries a null pointer, not a vector's leftover capacity", "[devices]") {
+    rp::host::JobRequest r{"cart", RP_SYSTEM_SRAM_INTERFACE, "dump", "", 0, 0, {}, ""};
+    r.bytes.reserve(64);  // an empty vector with storage: data() is not null, and the C header says the request's is
+    const rp_job_request request = rp::host::requestView(r);
+    CHECK(request.size == 0);
+    CHECK(request.bytes == nullptr);
+    r.bytes = {1, 2};
+    CHECK(rp::host::requestView(r).bytes == r.bytes.data());
+}
+
+TEST_CASE("DeviceJobSlot refuses a claim with no report table or no record", "[capability]") {
+    rp::DeviceJobSlot slot;
+    int               owner = 0;
+    Job               job;
+    CHECK_FALSE(slot.claim(nullptr, rp::host::handle(&job), &owner));
+    CHECK_FALSE(slot.busy());
+    CHECK_FALSE(slot.claim(rp::host::jobReports(), nullptr, &owner));
+    CHECK_FALSE(slot.busy());
+    CHECK(slot.claim(rp::host::jobReports(), rp::host::handle(&job), &owner));  // neither refusal took the slot
+}
+
 TEST_CASE("a device's report after its node abandoned the job reaches nothing", "[capability]") {
     rp::DeviceJobSlot slot;
     int               owner = 0, other = 0;

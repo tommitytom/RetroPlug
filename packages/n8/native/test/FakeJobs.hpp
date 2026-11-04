@@ -31,7 +31,8 @@ struct JobRequest {
 // The C request for `r`, borrowing its strings and bytes: valid while `r` is.
 inline rp_job_request requestView(const JobRequest& r) {
     return rp_job_request{r.nodeId.c_str(), r.capability.c_str(), r.op.c_str(), r.region.c_str(), r.name.c_str(),
-                          r.offset,         r.length,             r.bytes.data(), r.bytes.size()};
+                          r.offset,         r.length,             r.bytes.empty() ? nullptr : r.bytes.data(),
+                          r.bytes.size()};
 }
 
 // One job's record: untouched until the device takes it (Queued), then its progress, and its result or its reason

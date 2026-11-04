@@ -128,7 +128,8 @@ struct Job {
 // The C request a device's node is handed for `r`, borrowing its strings and bytes: valid while `r` is.
 inline rp_job_request requestView(const JobRequest& r) {
     return rp_job_request{r.nodeId.c_str(), r.capability.c_str(), r.op.c_str(), r.region.c_str(), r.name.c_str(),
-                          r.offset,         r.length,             r.bytes.data(), r.bytes.size()};
+                          r.offset,         r.length,             r.bytes.empty() ? nullptr : r.bytes.data(),
+                          r.bytes.size()};
 }
 
 // The record as the opaque handle a device's node is handed (graph/rp_jobs.h), and back. rp_job stays incomplete in
