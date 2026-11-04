@@ -16,6 +16,7 @@
 #include "system/SystemTypes.hpp"
 
 #include "graph/rp_node.h"  // rp_queue
+#include "host/devices/DeviceRegistry.hpp"  // linkHooks, for installLink
 #include "host/engine/CapabilityJobs.hpp"
 #include "host/engine/HostSyncTrace.hpp"
 #include "host/engine/OfflineTypes.hpp"
@@ -28,7 +29,7 @@ class ChannelTap;
 struct DspCommand;
 struct SystemBuildRequest;
 namespace rp::graph { struct HostCommand; }
-namespace rp::host { class CartLink; class OfflineJobs; class SurfaceLink; struct SystemEntry; struct SystemTable; }
+namespace rp::host { class OfflineJobs; struct SystemEntry; struct SystemTable; }
 
 // One message of the host MIDI out (Engine::midiOut), tagged with the system that emitted it.
 struct EngineMidiOut {
@@ -145,6 +146,10 @@ public:
     // How many jobs may be outstanding at once: taken and not yet finished, or finished and not yet drained. A
     // submission past it is refused (busy), so every job taken has room for its completion and none is ever dropped.
     static constexpr std::size_t kMaxJobs = 64;
+    // The room a device's node has for a refusal's reason (rp_device_jobs::submit's error buffer), its NUL included: a
+    // reason past it is cut short. The fixed reasons in tree are all under half of it; only one that echoes back an
+    // argument the caller made long (an operation's name) can reach it.
+    static constexpr std::size_t kDeviceJobErrorBytes = 256;
     // Take a job for a node of the last published plan, or refuse it (id 0, the reason in `error`): a node the plan
     // does not have, one that does not present the capability (a node that is not a system node, or whose core returns
     // null), an operation the capability does not have or does not perform here (an emulated battery's restore, which
@@ -361,19 +366,40 @@ public:
     // faultCount.
     std::uint32_t scriptInstances() const;
 
-    // --- device links (docs/modular-graph-phase-c5-design.md section 3), control thread ---
-    // The host's device links, for the nodes that bind one by name through rp.host.devices/1. Install them before the
-    // first graph: the engine keeps these pointers for the life of its graph, and a node borrows a handle for the life
-    // of the plan it runs in. A null link leaves that name answering with a handle that is never connected, which is
+    // --- device links (docs/modular-graph-phase-e2-design.md section 5), control thread ---
+    // The host's device links, for the nodes that bind one by name and interface id through rp.host.devices/2
+    // (graph/rp_device.h, host/devices/DeviceRegistry.hpp). Install them before the first graph: the engine keeps these
+    // pointers for the life of its graph, and a node borrows a link for the life of the plan it runs in. A name a host
+    // installs nothing under answers null, and the node that asks runs on a stub of its own, never connected, which is
     // what a host that owns no such device leaves it as by never calling this (the CLI, the Node addon, the render host
     // and the UI harness). A host that owns its links as members of its own state tears its plans down with
-    // clearGraph first, then uninstalls them here, before those members go: its engine is destroyed after them, and
-    // with it the plans whose nodes still hold a handle.
-    void setDeviceLinks(rp::host::CartLink* cart, rp::host::SurfaceLink* surface);
+    // clearGraph first, then clears them here, before those members go: its engine is destroyed after them, and with
+    // it the plans whose nodes still hold a link.
+    //
+    // `link` is the pointer to the interface `interfaceId` names, which a node casts back to that interface; `acquire`
+    // and `release` (null: nothing) are told of each node's acquire and release. False, installing nothing, for a full
+    // table, a name and id or a link already installed, or a name or id the registry has no room for
+    // (DeviceRegistry::install).
+    [[nodiscard]] bool installDevice(const char* name, const char* interfaceId, void* link,
+                                     void (*acquire)(void* link) = nullptr, void (*release)(void* link) = nullptr);
+    // The host taking `link` back (the pointer it installed): a node's release of it reaches nothing from here on.
+    void clearDevice(void* link);
+    // installDevice for a C++ link implementing `Interface`: installed as an `Interface*`, the pointer a node casts
+    // back, with the link's own acquire() and release() as the hooks when it has them (rp::host::linkHooks). clearLink
+    // takes it back.
+    template <class Interface, class Link>
+    [[nodiscard]] bool installLink(const char* name, const char* interfaceId, Link& link) {
+        const rp::host::LinkHooks hooks = rp::host::linkHooks<Interface, Link>();
+        return installDevice(name, interfaceId, static_cast<Interface*>(&link), hooks.acquire, hooks.release);
+    }
+    template <class Interface, class Link>
+    void clearLink(Link& link) {
+        clearDevice(static_cast<Interface*>(&link));
+    }
     // Control thread, audio thread stopped: publish the construction-time empty document and reclaim the plan it
     // replaced, so every node of the host's last graph is destroyed here, while the links it may use in its destroy are
     // still alive. A host that owns its device links as members and cannot declare them before its engine runs this
-    // from its destructor body, before setDeviceLinks(nullptr, nullptr).
+    // from its destructor body, before it clears them (clearDevice).
     void clearGraph();
 
 private:
@@ -441,8 +467,8 @@ private:
     // Move every finished job to the completions (an old write to none) and free its record.
     void sweepJobs();
     // A job for a node of the plan that is not a system node: a device's node, asked for the capability through its
-    // rp_node_vtable::get_interface (rp::host::DeviceJobs), takes it into a record kept here or refuses it (busy, not
-    // connected); a node that presents none of the interfaces refuses every job.
+    // rp_node_vtable::get_interface (rp_device_jobs, graph/rp_jobs.h), takes it into a record kept here or refuses it
+    // (busy, not connected); a node that presents none of the interfaces refuses every job.
     rp::host::JobSubmit submitDeviceJob(const rp::host::JobRequest& request);
     // The system node `nodeId` names in the last published plan, or null for a node id that is not sys-<id> of one.
     const rp::host::SystemEntry* publishedSystem(const std::string& nodeId) const;

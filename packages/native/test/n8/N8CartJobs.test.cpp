@@ -83,8 +83,12 @@ struct Rig {
         host.link().setLookaheadMs(0);
     }
     bool submit(const JobRequest& r, Job& job, std::string* error = nullptr) {
-        std::string why;
-        const bool ok = cart.submitJob(r, job, &owner, &why);
+        // As Engine::submitDeviceJob hands it over: the request as C, the record as its rp_job handle, and the engine's
+        // report interface.
+        const rp_job_request request = rp::host::requestView(r);
+        char                 why[256] = {};  // as Engine::kDeviceJobErrorBytes
+        const bool ok =
+            cart.submitJob(request, rp::host::handle(&job), rp::host::jobReports(), &owner, why, sizeof why);
         if (error) *error = why;
         return ok;
     }
@@ -995,8 +999,9 @@ TEST_CASE("a battery job's name wins over the ROM this host booted, names are pl
     REQUIRE(waitUntil([&] { return named.finished() && !rig.host.cartJobBusy(); }));
     CHECK(named.result == saveOf(700, 9));
 
-    for (const std::string bad : {std::string("."), std::string(".."), std::string("a\\b"), std::string("a\0b", 3),
-                                  std::string(256, 'x')}) {
+    // A name holding a NUL never reaches the cart: a request crosses as C strings, and the engine refuses one before it
+    // does (rp.n8.nes's jobs case, N8Node.test.cpp).
+    for (const std::string bad : {std::string("."), std::string(".."), std::string("a\\b"), std::string(256, 'x')}) {
         Job none;
         std::string why;
         auto r = request(RP_SYSTEM_SRAM_INTERFACE, "dump");
@@ -1016,8 +1021,8 @@ TEST_CASE("a battery job's name wins over the ROM this host booted, names are pl
 namespace {
 
 // The notes a cart node hands its link when it leaves the plan: 60 on channel 1 and 67 on channel 2.
-rp::host::CartNotes heldNotes() {
-    rp::host::CartNotes notes;
+rp::n8::CartNotes heldNotes() {
+    rp::n8::CartNotes notes;
     notes.set(60);
     notes.set(128 + 67);
     return notes;

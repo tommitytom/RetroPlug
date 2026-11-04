@@ -19,11 +19,12 @@
 
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
-#include "host/devices/DeviceLinks.hpp"
+#include "TestDevices.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/graph/HostIoNodes.hpp"
-#include "host/graph/N8Nodes.hpp"
+#include "n8/CartLink.hpp"
+#include "n8/N8Node.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 
 namespace {
@@ -40,7 +41,7 @@ using Bytes = std::vector<std::uint8_t>;
 constexpr double kRate = 48000.0;
 
 // A cart link that records what reaches the device: a stage at the cart's node is one push.
-class FakeCart final : public rp::host::CartLink {
+class FakeCart final : public rp::n8::CartLink {
 public:
     struct Push {
         std::uint32_t frame = 0;
@@ -81,7 +82,7 @@ TEST_CASE("a staged message reaches the node the running plan places under its i
     rp::host::test::Roms roms;
     std::vector<DocSystem> systems{{1, kNesType}};
     rp::host::test::withRoms(e, systems, roms);
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     REQUIRE(e.setGraph(document(systems)).ok);
 
     // The cart's node: the link records the message as a frame-0 push at the engine's rate, exactly as its `midi` input
@@ -126,7 +127,7 @@ TEST_CASE("a node the plan adds later under the same id takes a stored message",
     rp::host::test::Roms    roms;
     std::vector<DocSystem>  systems{{1, kNesType}};
     rp::host::test::withRoms(e, systems, roms);
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     // A plan with no cart: staging at "cart" has nowhere to go.
     REQUIRE(e.setGraph(document(systems, false)).ok);
     invoker.stageNodeMidi("cart", kSysEx);
@@ -149,7 +150,7 @@ TEST_CASE("a staged id resolves against the plan that runs, not the one that ran
     rp::host::test::Roms    roms;
     std::vector<DocSystem>  systems{{1, kNesType}};
     rp::host::test::withRoms(e, systems, roms);
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     // The plan that runs places the cart's node.
     REQUIRE(e.setGraph(document(systems, true)).ok);
     // The audio thread owns the drain, so nothing applies inline: the swap and the message wait in the ring.

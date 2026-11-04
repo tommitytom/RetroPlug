@@ -1,4 +1,4 @@
-// Guards the cart device link rp.host.devices/1 hands rp.n8.nes (host/n8/N8CartLink.hpp), over a real N8Host and its
+// Guards the cart device link rp.host.devices/2 hands rp.n8.nes (host/n8/N8CartLink.hpp), over a real N8Host and its
 // N8Link: a push reaches the cart as the FIFO bytes the timed scheduler writes, timed at the block's rate; a push
 // with no cart loses its bytes and is counted; the expansion volume a node's param drives goes out through the link's
 // control path and again on every connect; and the connected state is the link's own.
@@ -20,11 +20,11 @@
 #include <thread>
 #include <vector>
 
-#include "host/devices/DeviceLinks.hpp"
 #include "host/engine/CapabilityJobs.hpp"
 #include "host/n8/Edio.hpp"  // ISerialPort
 #include "host/n8/N8CartLink.hpp"
 #include "host/n8/N8Host.hpp"
+#include "n8/CartLink.hpp"
 
 using retroplug::Edio;
 using retroplug::ISerialPort;
@@ -343,10 +343,11 @@ TEST_CASE("N8CartLink: a submission's menu probe takes a turn of its own, not th
     r.op         = "dump";
     r.name       = "game.nes";
     rp::host::Job job;
-    std::string   why;
+    char          why[256] = {};
     const auto    t0 = std::chrono::steady_clock::now();
-    CHECK_FALSE(link.submitJob(r, job, &link, &why));
-    CHECK(why == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
+    CHECK_FALSE(link.submitJob(rp::host::requestView(r), rp::host::handle(&job), rp::host::jobReports(), &link, why,
+                               sizeof why));
+    CHECK(std::string(why) == "the battery file can only be reached at the N8 menu: power-cycle to the menu first");
     const auto took =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
     CHECK(took < 500);

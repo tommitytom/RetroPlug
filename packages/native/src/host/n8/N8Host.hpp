@@ -9,7 +9,8 @@
 
 #include "host/n8/Edio.hpp"        // Edio (control-op protocol), ISerialPort
 #include "host/n8/N8Link.hpp"
-#include "host/engine/CapabilityJobs.hpp"  // the capability jobs rp.n8.nes hands the cart (N8CartLink)
+#include "graph/desktop/DeviceJobSlot.hpp"  // the one cart job at a time
+#include "graph/rp_jobs.h"                  // the capability jobs rp.n8.nes hands the cart (N8CartLink)
 
 namespace retroplug {
 
@@ -141,7 +142,9 @@ public:
     // step, for a cart that changed in between.
     // [control], like abandonCartJobs: the node submitting is the job's owner, and a node leaving the plan abandons its
     // job, which fails at once (Removed) and stops at its next safe point.
-    bool submitCartJob(const rp::host::JobRequest& request, rp::host::Job& job, const void* owner, std::string* error);
+    // The job is the host's record, finished through `reports` (rp.host.jobs/1); the request is borrowed for the call.
+    bool submitCartJob(const rp_job_request& request, rp_job* job, const rp_host_jobs* reports, const void* owner,
+                       std::string* error);
     void abandonCartJobs(const void* owner) { cartJob_.abandon(owner); }
     // A capability job holds the cart: taken, and not yet done (streaming not yet resumed, or its completion not
     // posted).
@@ -182,7 +185,7 @@ private:
     std::atomic<int>      menuProbeIndex_{-1};
     // The one capability job running on the cart, and what this host last booted there (rom.header / rom.title), which
     // an upload writes on the serial thread and those read on the control thread.
-    rp::host::DeviceJobSlot   cartJob_;
+    rp::DeviceJobSlot         cartJob_;
     mutable std::mutex        loadedMutex_;
     std::vector<std::uint8_t> loadedRom_;
     std::string               loadedName_;

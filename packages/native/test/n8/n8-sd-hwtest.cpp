@@ -48,6 +48,7 @@
 #include <thread>
 #include <vector>
 
+#include "host/engine/CapabilityJobs.hpp"  // the job record and request an engine hands the cart
 #include "host/n8/Edio.hpp"
 #include "host/n8/N8Host.hpp"
 #include "host/n8/N8Link.hpp"
@@ -620,7 +621,8 @@ int main(int argc, char** argv) {
 
     rp::host::Job job;
     std::string    error;
-    if (!host.submitCartJob(request, job, &host, &error)) {
+    if (!host.submitCartJob(rp::host::requestView(request), rp::host::handle(&job), rp::host::jobReports(), &host,
+                            &error)) {
         std::fprintf(stderr, "%s: %s\n", op.c_str(), error.c_str());
         return 1;
     }

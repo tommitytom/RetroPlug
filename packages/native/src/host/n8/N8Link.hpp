@@ -109,7 +109,7 @@ public:
     // Chunks a stream that stopped after a job (AfterJob::Stop) found in its ring and threw away: pushes that raced the
     // pause's start, and so reached the ring after its drain. Counted in pushesDropped() too.
     std::uint64_t chunksDiscarded() const { return chunksDiscarded_.load(std::memory_order_relaxed); }
-    // The notes a cart holds, one bit a note (channel * 128 + note), as rp.host.devices/1's CartNotes.
+    // The notes a cart holds, one bit a note (channel * 128 + note), as rp::n8::CartNotes.
     using NoteSet = std::bitset<16 * 128>;
     // [control] Send each of `notes` a note-off (0x8n, note, 0) from the serial thread: after every chunk pushed before
     // this call has gone out, so a note-on still waiting for its release time cannot follow its own release, framed

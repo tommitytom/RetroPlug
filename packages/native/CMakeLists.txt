@@ -147,7 +147,7 @@ add_library(retroplug-backend STATIC
     src/host/IdleReclaimProbe.cpp           # hosts' idle-tick self-test (HostServices::reclaimOnIdle), smoke-driven
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
     src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out
-    src/host/graph/N8Nodes.cpp              # rp.n8.nes
+    src/n8/N8Node.cpp                       # rp.n8.nes
     src/host/graph/LaunchpadNodes.cpp       # rp.launchpad.surface-in / -out
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory

@@ -1,9 +1,10 @@
 #pragma once
 
-// The fake control-surface link, shared by the cases that drive a node over rp.host.devices/1: it scripts what the
-// device sent, records what a node handed it, and counts the nodes holding it. A message it records lives in its own
-// slot, so a case that counts allocations reserves the room it needs before counting. A push it takes nowhere is
-// counted as LaunchpadLink counts one: the device was not there for it.
+// The fake control-surface link, shared by the cases that drive a node over rp.host.devices/2: it scripts what the
+// device sent, records what a node handed it, and counts the nodes holding it (through the hooks it is installed with,
+// TestDevices.hpp). A message it records lives in its own slot, so a case that counts allocations reserves the room it
+// needs before counting. A push it takes nowhere is counted as LaunchpadLink counts one: the device was not there for
+// it.
 
 #include <algorithm>
 #include <cstddef>
@@ -11,9 +12,12 @@
 #include <cstring>
 #include <vector>
 
-#include "host/devices/DeviceLinks.hpp"
+#include "launchpad/SurfaceLink.hpp"
 
 namespace rp::host::test {
+
+using rp::launchpad::DeviceMessage;
+using rp::launchpad::kMaxDeviceMessage;
 
 // One message in storage the caller owns, as a test scripts the device's input.
 inline DeviceMessage deviceMessage(const std::vector<std::uint8_t>& bytes) {
@@ -23,7 +27,7 @@ inline DeviceMessage deviceMessage(const std::vector<std::uint8_t>& bytes) {
     return m;
 }
 
-class FakeSurfaceLink final : public SurfaceLink {
+class FakeSurfaceLink final : public rp::launchpad::SurfaceLink {
 public:
     struct Out {
         std::uint16_t size = 0;
@@ -53,8 +57,8 @@ public:
     bool connected() const override { return attached; }
     // The pushes that went nowhere: this fake has no send ring, so a link that is down is the only way to lose one.
     std::uint64_t dropped() const override { return detached; }
-    void acquire() override { ++acquires; }
-    void release() override { ++releases; }
+    void acquire() { ++acquires; }
+    void release() { ++releases; }
 
     bool                       attached = true;
     std::uint64_t              detached = 0;  // pushed while there was no device

@@ -35,6 +35,7 @@
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "ScriptRig.hpp"
+#include "TestDevices.hpp"
 #include "graph/Descriptor.hpp"
 #include "host/engine/DspCommand.hpp"
 #include "host/engine/Engine.hpp"
@@ -1042,7 +1043,7 @@ TEST_CASE("a pack reloads while its nodes run: they rebuild on its new code, fre
     // teardown destroys its nodes, and each one hands the link back on the way.
     rp::host::test::FakeSurfaceLink surface;
     Engine e(kRate);
-    e.setDeviceLinks(nullptr, &surface);
+    rp::host::test::installSurface(e, surface);
     load(e, "test.keep", toys(tally("test.keep.count", 1)));
     load(e, "test.code", toys(transposer("test.code.shift", 12) + tally("test.code.count", 2)));
     // Beside them the built-in controller session, which takes the control surface (Programmer mode, a full paint) on

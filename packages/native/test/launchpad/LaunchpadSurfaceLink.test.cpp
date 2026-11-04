@@ -1,4 +1,4 @@
-// Guards the surface device link rp.host.devices/1 hands rp.launchpad.surface-in / -out
+// Guards the surface device link rp.host.devices/2 hands rp.launchpad.surface-in / -out
 // (host/launchpad/LaunchpadSurfaceLink.hpp), over a real LaunchpadLink and its fake IMidiPort: the device's messages
 // drain into the caller's own slots, in order, once each; the ring's bound drops and counts rather than truncating (a
 // message wider than a slot, and a full ring); a push while the device is gone is dropped and counted too, which is
@@ -17,15 +17,15 @@
 
 #include "../graph/CountingAllocator.hpp"
 
-#include "host/devices/DeviceLinks.hpp"
+#include "launchpad/SurfaceLink.hpp"
 #include "host/launchpad/LaunchpadLink.hpp"
 #include "host/launchpad/LaunchpadSurfaceLink.hpp"
 
 using retroplug::IMidiPort;
 using retroplug::LaunchpadLink;
 using retroplug::LaunchpadSurfaceLink;
-using rp::host::DeviceMessage;
-using rp::host::kMaxDeviceMessage;
+using rp::launchpad::DeviceMessage;
+using rp::launchpad::kMaxDeviceMessage;
 
 namespace {
 

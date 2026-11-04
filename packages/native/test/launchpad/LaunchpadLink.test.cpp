@@ -259,7 +259,7 @@ TEST_CASE("LaunchpadLink: a message from the device reaches the audio-thread dra
     const std::uint8_t release[3] = {0x90, 0x51, 0x00};
     log.receiver(release, 3);
 
-    rp::host::DeviceMessage drained[2];
+    rp::launchpad::DeviceMessage drained[2];
     REQUIRE(link.drainInput(drained, 2) == 2);
     REQUIRE(std::vector<std::uint8_t>(drained[0].data, drained[0].data + drained[0].size) ==
             std::vector<std::uint8_t>{0x90, 0x51, 0x7F});

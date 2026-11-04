@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "host/devices/DeviceLinks.hpp"
+#include "launchpad/SurfaceLink.hpp"
 #include "transport/SpscRing.hpp"
 
 namespace retroplug {
@@ -33,7 +33,7 @@ public:
 // Three decisions worth knowing before touching anything here:
 //
 //   1. **Both rings are POD, because one end of each is the audio thread.** Device -> audio keeps one message per
-//      fixed slot (rp::host::DeviceMessage) in a single allocation made at construction: the producer is the
+//      fixed slot (rp::launchpad::DeviceMessage) in a single allocation made at construction: the producer is the
 //      backend's callback thread, where allocating would be that thread's own problem, and the audio thread copies
 //      bytes out and frees nothing (a vector per slot would be freed there by whoever dropped it). Audio -> main is
 //      an SpscRing of fixed slots for the same reason.
@@ -55,7 +55,7 @@ public:
     // maximum 106 colour specs at the RGB form's 5 bytes each, plus the 8-byte SysEx frame = 538. Rounded
     // up; a longer message is dropped and counted rather than truncated into nonsense. The same bound sizes a
     // received slot, in either direction: the device's own replies are far shorter.
-    static constexpr std::size_t kMaxOutMessage = rp::host::kMaxDeviceMessage;
+    static constexpr std::size_t kMaxOutMessage = rp::launchpad::kMaxDeviceMessage;
 
     // The messages the link holds for the block thread, in slots of one kMaxDeviceMessage: 256 x 562 bytes is 140
     // KiB, and a host's link is a member of its own state (the SDL standalone's AppState is a local of main, whose
@@ -87,7 +87,7 @@ public:
      *  for waits for its next call. The answer is min(queued, capacity), fewer only when nothing is left, which is
      *  what lets a node that drains in batches stop on a short answer. A message carries no arrival frame: the drain's
      *  caller places it at frame 0. */
-    std::size_t drainInput(rp::host::DeviceMessage* out, std::size_t capacity);
+    std::size_t drainInput(rp::launchpad::DeviceMessage* out, std::size_t capacity);
     /** Queue one message for the device. Lock-free, never blocks; drops (and counts) when the ring is full,
      *  the message is oversized, or nothing is connected. */
     void pushOutput(const std::uint8_t* data, std::size_t n);
@@ -127,7 +127,7 @@ private:
     // device -> audio. Fixed-capacity SPSC ring of fixed slots: the producer (backend callback) copies the bytes into
     // a slot, the consumer (audio thread) copies them out, so neither end of the block thread's path allocates or
     // frees. Overflow, and a message wider than a slot, drop and count in inboundDropped_.
-    std::unique_ptr<rp::host::DeviceMessage[]> inRing_;
+    std::unique_ptr<rp::launchpad::DeviceMessage[]> inRing_;
     std::atomic<std::size_t>         inHead_{0};  // consumer index (audio thread)
     std::atomic<std::size_t>         inTail_{0};  // producer index (callback thread)
 

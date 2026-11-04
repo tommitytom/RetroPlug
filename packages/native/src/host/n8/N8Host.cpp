@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -37,7 +38,7 @@ bool mapperHasExpansionAudio(int mapper) {
 // The iNES mapper number from a ROM image's header, or -1 when the bytes are not an iNES image. Twin of
 // inesMapper in cli/sessions/n8-play.ts, down to ignoring NES 2.0's extra nibble (no expansion-audio mapper
 // needs it).
-int inesMapper(const std::vector<std::uint8_t>& rom) {
+int inesMapper(std::span<const std::uint8_t> rom) {
     if (rom.size() < 16 || rom[0] != 'N' || rom[1] != 'E' || rom[2] != 'S' || rom[3] != 0x1A) return -1;
     return (rom[7] & 0xF0) | (rom[6] >> 4);
 }
@@ -320,12 +321,24 @@ void N8Host::save() {
     }
 }
 
-bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, const void* owner, std::string* error) {
-    using rp::host::Job;
+bool N8Host::submitCartJob(const rp_job_request& request, rp_job* job, const rp_host_jobs* reports, const void* owner,
+                           std::string* error) {
     const auto refuse = [error](std::string why) {
         if (error) *error = std::move(why);
         return false;
     };
+    if (!job || !reports) return refuse("the job has no record to report into");
+    // What the job reads of the request: the strings copied, the bytes viewed. The C request is the caller's for this
+    // call only and the job's steps run later on the serial thread, so the one job that keeps the bytes (a restore's
+    // save, an upload's image) copies them into its step, once, after every refusal.
+    const auto text = [](const char* s) { return std::string(s ? s : ""); };
+    const struct {
+        std::string                    capability, op, name;
+        std::uint32_t                  length;
+        std::span<const std::uint8_t> bytes;
+    } r{text(request.capability), text(request.op), text(request.name), request.length,
+        request.bytes && request.size ? std::span<const std::uint8_t>(request.bytes, request.size)
+                                      : std::span<const std::uint8_t>{}};
     const bool sram = r.capability == RP_SYSTEM_SRAM_INTERFACE;
     const bool rom  = r.capability == RP_SYSTEM_ROM_INTERFACE;
     if (!sram && !rom) return refuse("the cart presents no " + r.capability);
@@ -339,11 +352,10 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
         if (r.op == "header") {
             const std::size_t n =
                 r.length != 0 ? std::min<std::size_t>(r.length, loadedRom_.size()) : loadedRom_.size();
-            job.result.assign(loadedRom_.begin(), loadedRom_.begin() + static_cast<std::ptrdiff_t>(n));
+            reports->succeed(job, loadedRom_.data(), n);
         } else {
-            job.result.assign(loadedName_.begin(), loadedName_.end());
+            reports->succeed(job, reinterpret_cast<const std::uint8_t*>(loadedName_.data()), loadedName_.size());
         }
-        job.state.store(Job::Done, std::memory_order_release);
         return true;
     }
 
@@ -382,7 +394,7 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
                       "stream");
     if (mapper < 0) return refuse("the cart's config block did not answer");
     if (mapper != kMenuMapper) return refuse(dump || restore ? kBatteryAtGame : kUploadAtGame);
-    if (!cartJob_.claim(job, owner)) return refuse("busy: the cart is running another job");
+    if (!cartJob_.claim(reports, job, owner)) return refuse("busy: the cart is running another job");
 
     // The job's outcome, which `run` fills and `done` posts once streaming is back: both on the serial thread, one
     // after the other, so it needs no lock of its own.
@@ -455,7 +467,8 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
             return AfterJob::Resume;
         };
     } else if (restore) {
-        paused.run = [this, outcome, checkStop, atMenu, rom = batteryRom, srm = r.bytes](Edio* edio) {
+        std::vector<std::uint8_t> restored(r.bytes.begin(), r.bytes.end());
+        paused.run = [this, outcome, checkStop, atMenu, rom = batteryRom, srm = std::move(restored)](Edio* edio) {
             if (!edio) {
                 outcome->error = "the link went down before the job ran";
                 return AfterJob::Resume;
@@ -506,7 +519,8 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
             return AfterJob::Resume;
         };
     } else {
-        paused.run = [this, outcome, checkStop, atMenu, image = r.bytes, name = r.name](Edio* edio) {
+        std::vector<std::uint8_t> uploaded(r.bytes.begin(), r.bytes.end());
+        paused.run = [this, outcome, checkStop, atMenu, image = std::move(uploaded), name = r.name](Edio* edio) {
             if (!edio) {
                 outcome->error = "the link went down before the job ran";
                 return AfterJob::Resume;
@@ -579,8 +593,8 @@ bool N8Host::submitCartJob(const rp::host::JobRequest& r, rp::host::Job& job, co
         };
     }
     paused.done = [this, outcome] {
-        if (outcome->ok) cartJob_.succeed(std::move(outcome->bytes));
-        else cartJob_.fail(std::move(outcome->error));
+        if (outcome->ok) cartJob_.succeed(outcome->bytes);
+        else cartJob_.fail(outcome->error);
     };
     if (!link_.runPaused(std::move(paused))) {
         cartJob_.unclaim();  // the link went down between the check and the hand-over

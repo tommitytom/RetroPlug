@@ -141,7 +141,7 @@ public:
     // staged against no surface node is dropped rather than delivered.
     bool            stageControllerIn(std::vector<std::uint8_t> bytes);
     // TEST / HARNESS: the surface a headless host stages into (the test host's, retroplug-host). A host that owns a
-    // real surface installs its link on the Engine (setDeviceLinks) and leaves this null; the two are alternatives, not
+    // real surface installs its link on the Engine (installLink) and leaves this null; the two are alternatives, not
     // layers: this one exists only where no device does.
     void            setHarnessSurface(rp::host::HarnessSurfaceLink* surface) { harnessSurface_ = surface; }
     // Drain the host MIDI out (LSDj's serial-out decoders, a controller's launches), accumulated across renderAudio

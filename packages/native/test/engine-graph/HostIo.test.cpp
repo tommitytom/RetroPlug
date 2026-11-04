@@ -31,6 +31,7 @@
 #include "../graph/CountingAllocator.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
+#include "TestDevices.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "graph/GraphHost.hpp"
@@ -154,20 +155,20 @@ Order stableOrder(const std::vector<std::uint32_t>& frames) {
 }
 
 // A cart link, always attached, that keeps every push in a slot of its own.
-class RecordingCart final : public rp::host::CartLink {
+class RecordingCart final : public rp::n8::CartLink {
 public:
     struct Push {
         std::uint32_t frame = 0;
         bool          flush = false;
         std::uint16_t size  = 0;
-        std::uint8_t  data[rp::host::kMaxDeviceMessage] = {};
+        std::uint8_t  data[rp::host::test::kCartPushBytes] = {};
     };
 
     bool push(std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool flush, double) override {
         Push p;
         p.frame = frame;
         p.flush = flush;
-        p.size  = static_cast<std::uint16_t>(std::min(size, rp::host::kMaxDeviceMessage));
+        p.size  = static_cast<std::uint16_t>(std::min(size, rp::host::test::kCartPushBytes));
         std::memcpy(p.data, data, p.size);
         pushes.push_back(p);
         return true;
@@ -188,7 +189,7 @@ SameBoySystem* serialOutToCart(Engine& e, RecordingCart& cart) {
     withRoms(e, systems, roms);
     DocExtras extras{{docNode("cart", "rp.n8.nes")},
                      {docWire("sys-1.serialOut", "sys-2.bytes"), docWire("sys-1.serialOut", "cart.bytes")}};
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     REQUIRE(e.setGraph(graphRequest(stereoDocument(systems, extras), {1, 2})).ok);
     return dynamic_cast<SameBoySystem*>(e.findSystem(1));
 }

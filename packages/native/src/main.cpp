@@ -101,8 +101,11 @@ int main(int argc, char** argv) try {
     // facet should not inherit.
     DebugRpcService       debugSvc{svc.engine};
     AudioDriverRpcService driver{svc.engine, svc.invoker};
-    // The link before the first document, and the RPC service's handle on it for the harness's staging seam.
-    svc.engine.setDeviceLinks(nullptr, &harnessSurface);
+    // The link before the first document, and the RPC service's handle on it for the harness's staging seam. A refusal
+    // (a full table, a name taken) would leave the surface nodes on their stubs, so it is said, not swallowed.
+    if (!svc.engine.installLink<rp::launchpad::SurfaceLink>(rp::launchpad::kDeviceName,
+                                                            rp::launchpad::kSurfaceLinkInterface, harnessSurface))
+        std::fprintf(stderr, "[retroplug-host] the harness surface link was not installed\n");
     svc.engineSvc.setHarnessSurface(&harnessSurface);
 
     // rpcpp server over the QuickJS object codec (marshals request/response as live JS objects against

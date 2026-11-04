@@ -16,15 +16,19 @@
 #include <vector>
 
 #include "GraphDocs.hpp"
+#include "TestDevices.hpp"
 #include "TestNodes.hpp"
 #include "graph/GraphHost.hpp"
 #include "graph/HostNodes.hpp"
 #include "graph/nodes/CoreNodes.hpp"
 #include "host/devices/DeviceRegistry.hpp"
+#include "host/engine/CapabilityJobs.hpp"  // jobReports
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/LaunchpadNodes.hpp"
-#include "host/graph/N8Nodes.hpp"
 #include "host/graph/HostServices.hpp"
+#include "launchpad/SurfaceLink.hpp"
+#include "n8/CartLink.hpp"
+#include "n8/N8Node.hpp"
 #include "host/graph/SystemNodes.hpp"
 #include "system/CoreBackends.hpp"
 #include "system/SystemBase.hpp"
@@ -83,11 +87,11 @@ struct NodeRig {
     std::vector<HostMidiOut>                             midiOut;
     EngineHostIo                                         hostIo{this, &takeNothing, &recordMidiOut};
     EngineSyncTrace                                      trace{this, &recordTrace};
-    // rp.host.devices/1: the links a case installs (devices.install), each name with none answering never connected, as
-    // an Engine's registry does.
+    // rp.host.devices/2: the links a case installs (installCart, installSurface), a name with none answering null, as
+    // an Engine's registry does; and rp.host.jobs/1, an Engine's job reports.
     DeviceRegistry                                       devices;
-    HostDevices                                          hostDevices{this, &acquireCart, &releaseCart, &acquireSurface,
-                                                                     &releaseSurface};
+    // False: the rig offers no rp.host.jobs/1, as a host that takes no device jobs (read when a node binds).
+    bool                                                 offerJobReports = true;
     // The `rom` resource each console's fixture was put under, by node type: one per rig, as one per Engine.
     std::map<std::string, std::uint32_t>                 roms;
     // Last, so it is destroyed first: its nodes free their cores through the host's destroySystem into `released`.
@@ -100,7 +104,7 @@ struct NodeRig {
         rate = sampleRate;
         registerCoreBackends(factory);
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), sameboyPackage(), mesenPackage(),
-                                    hostIoPackage(), n8Package(), launchpadPackage(), testPackage()})
+                                    hostIoPackage(), rp::n8::n8Package(), launchpadPackage(), testPackage()})
             registry.addPackage(p);
         rp::graph::HostConfig config;
         config.sampleRate = sampleRate;
@@ -112,11 +116,23 @@ struct NodeRig {
             if (want == RP_HOST_SYSTEMS_INTERFACE) return &rig->systems;
             if (want == RP_ENGINE_HOST_IO_INTERFACE) return &rig->hostIo;
             if (want == RP_ENGINE_SYNC_TRACE_INTERFACE) return &rig->trace;
-            if (want == RP_HOST_DEVICES_INTERFACE) return &rig->hostDevices;
+            if (want == RP_HOST_DEVICES_INTERFACE) return rig->devices.api();
+            if (want == RP_HOST_JOBS_INTERFACE) return rig->offerJobReports ? jobReports() : nullptr;
             return nullptr;
         };
         config.interfacesCtx = this;
         host = std::make_unique<rp::graph::GraphHost>(registry, resources, config);
+    }
+
+    // A case's cart and surface links, installed as a host installs them (Engine::installLink).
+    template <class Link>
+    void installCart(Link& link) {
+        installOn<rp::n8::CartLink>(devices, rp::n8::kDeviceName, rp::n8::kCartLinkInterface, link);
+    }
+    template <class Link>
+    void installSurface(Link& link) {
+        installOn<rp::launchpad::SurfaceLink>(devices, rp::launchpad::kDeviceName, rp::launchpad::kSurfaceLinkInterface,
+                                              link);
     }
 
     // An immutable byte resource a document names as "res:<id>", as Engine::putResource makes one.
@@ -199,14 +215,6 @@ struct NodeRig {
     static void recordTrace(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
         static_cast<NodeRig*>(ctx)->traced.push_back({frame, bytesOf(data, size)});
     }
-    static CartLink* acquireCart(void* ctx, const char* name) {
-        return static_cast<NodeRig*>(ctx)->devices.acquireCart(name);
-    }
-    static void releaseCart(void* ctx, CartLink* link) { static_cast<NodeRig*>(ctx)->devices.release(link); }
-    static SurfaceLink* acquireSurface(void* ctx, const char* name) {
-        return static_cast<NodeRig*>(ctx)->devices.acquireSurface(name);
-    }
-    static void releaseSurface(void* ctx, SurfaceLink* link) { static_cast<NodeRig*>(ctx)->devices.release(link); }
 };
 
 }  // namespace rp::host::test

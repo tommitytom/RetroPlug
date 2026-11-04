@@ -84,6 +84,7 @@
 #include "FakeSurfaceLink.hpp"
 #include "NodeRig.hpp"
 #include "ScriptRig.hpp"
+#include "TestDevices.hpp"
 #include "TestNodes.hpp"
 #include "graph/CanonicalJson.hpp"
 #include "graph/GraphHost.hpp"
@@ -414,11 +415,11 @@ std::vector<Message> serialBytes(const std::vector<Message>& ms) {
 // stream the recorded digests are of, whether or not the link is attached: the session paints a device it has just
 // taken, but an LED update it computes while detached is still its output, so a run's controller-out digest is of what
 // the session sent, not what a device kept.
-class RecordingSurfaceLink final : public rp::host::SurfaceLink {
+class RecordingSurfaceLink final : public rp::launchpad::SurfaceLink {
 public:
     RecordingSurfaceLink(rp::host::test::FakeSurfaceLink& fake, std::vector<Bytes>& out) : fake_(fake), out_(out) {}
 
-    std::size_t drainInput(rp::host::DeviceMessage* out, std::size_t capacity) override {
+    std::size_t drainInput(rp::launchpad::DeviceMessage* out, std::size_t capacity) override {
         return fake_.drainInput(out, capacity);
     }
     void pushOutput(const std::uint8_t* data, std::size_t size) override {
@@ -457,11 +458,10 @@ struct ProtocolRig {
     std::vector<std::vector<Bytes>>   outByBlock;
     rp::host::EngineHostIo            hostIo{this, &takeMidi, &recordMidiOut};
     // A structure whose session is wired to rp.launchpad.surface-in / -out: the device's link, fed the traffic a host
-    // would stage and drained for what the session wrote, and rp.host.devices/1 answering for it.
+    // would stage and drained for what the session wrote, and rp.host.devices/2 answering for it.
     rp::host::test::FakeSurfaceLink   surface;
     RecordingSurfaceLink              recording{surface, controllerOut};
     rp::host::DeviceRegistry          devices;
-    rp::host::HostDevices             hostDevices{this, &acquireCart, &releaseCart, &acquireSurface, &releaseSurface};
     std::unique_ptr<rp::graph::GraphHost> host;
     rp_node*                          kept = nullptr;  // keptId's instance, as the first plan made it
     int                               blocks = 0;
@@ -503,10 +503,11 @@ struct ProtocolRig {
         config.interfaces = [](void* ctx, const char* id) -> const void* {
             auto* rig = static_cast<ProtocolRig*>(ctx);
             if (std::string(id) == RP_ENGINE_HOST_IO_INTERFACE) return &rig->hostIo;
-            if (std::string(id) == RP_HOST_DEVICES_INTERFACE) return &rig->hostDevices;
+            if (std::string(id) == RP_HOST_DEVICES_INTERFACE) return rig->devices.api();
             return nullptr;
         };
-        devices.install(nullptr, &recording);
+        rp::host::test::installOn<rp::launchpad::SurfaceLink>(devices, rp::launchpad::kDeviceName,
+                                                              rp::launchpad::kSurfaceLinkInterface, recording);
         config.interfacesCtx = this;
         host = std::make_unique<rp::graph::GraphHost>(registry, resources, config);
         // The surface's input node drops what its link held when it bound it (a device's presses from before the
@@ -669,13 +670,6 @@ struct ProtocolRig {
         for (const auto& [frame, data] : staged) rp::graph::pushMessage(*out, frame, data);
         staged.clear();
     }
-    // The surface's traffic is the link's on the way in and the output node's `out` on the way back.
-    static rp::host::SurfaceLink* acquireSurface(void* ctx, const char* name) {
-        return of(ctx).devices.acquireSurface(name);
-    }
-    static void releaseSurface(void* ctx, rp::host::SurfaceLink* link) { of(ctx).devices.release(link); }
-    static rp::host::CartLink* acquireCart(void* ctx, const char* name) { return of(ctx).devices.acquireCart(name); }
-    static void releaseCart(void* ctx, rp::host::CartLink* link) { of(ctx).devices.release(link); }
     static void recordMidiOut(void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
         of(ctx).midiOut.push_back({system, frame, Bytes(data, data + size)});
     }

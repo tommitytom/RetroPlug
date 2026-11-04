@@ -7,8 +7,8 @@
 namespace rp::host {
 
 // The rp.launchpad package: a Novation Launchpad as a control surface on nodes of its own
-// (docs/modular-graph-phase-c5-design.md section 5), through the host's surface link (rp.host.devices/1,
-// "launchpad").
+// (docs/modular-graph-phase-c5-design.md section 5), through the host's surface link (rp.host.devices/2: "launchpad",
+// rp::launchpad::SurfaceLink, launchpad/SurfaceLink.hpp).
 //
 //   rp.launchpad.surface-in   in: the device's MIDI, drained from the link at the start of the block, each message at
 //                             frame 0 (a control surface's timing is not musical); connected: 1 while the device is

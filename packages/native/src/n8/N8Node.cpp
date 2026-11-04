@@ -1,20 +1,20 @@
-#include "host/graph/N8Nodes.hpp"
+#include "n8/N8Node.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <limits>
-#include <string>
 #include <string_view>
 
 #include "graph/node.hpp"
-#include "host/devices/DeviceLinks.hpp"
-#include "host/engine/CapabilityJobs.hpp"
-#include "host/graph/HostServices.hpp"
-#include "host/graph/SystemNodes.hpp"  // kExpansionVolume*
+#include "graph/rp_device.h"
+#include "graph/rp_jobs.h"
+#include "graph/rp_stage.h"
+#include "n8/CartLink.hpp"
 
-namespace rp::host {
+namespace rp::n8 {
 
 int expansionVolumeRegister(double percent) {
     const long value = std::lround(percent * 128.0 / 100.0);
@@ -29,8 +29,8 @@ using ExpansionVolumeParam =
 // The real cart, a node of its own (docs/modular-graph-phase-c5-design.md section 4). It borrows the host's cart link
 // for the life of its plan: acquired in activate, kept across a reactivate, released in its destructor (the reclaim's,
 // on the control thread). Placed by a setting rather than by the device's state, so it always activates: in a host with
-// no cart, or with the cart unplugged, the link reads disconnected and takes every push nowhere, and nothing in the
-// graph changes when the cart comes or goes.
+// no cart (its acquire answers null, and the node runs on a NoCart of its own), or with the cart unplugged, the link
+// reads disconnected and takes every push nowhere, and nothing in the graph changes when the cart comes or goes.
 struct N8Nes {
     static constexpr const char* id = "rp.n8.nes";
     static constexpr const char* name = "NES (N8 cart)";
@@ -50,10 +50,15 @@ struct N8Nes {
     struct { rp::control_out connected; } outputs;
     struct { ExpansionVolumeParam expansionVolume; } params;
 
-    const HostDevices* devices = nullptr;
-    CartLink*          cart = nullptr;
+    const rp_host_devices* devices = nullptr;
+    // The host's report interface (rp.host.jobs/1), handed to the link with every job it takes: the record a job runs
+    // into is the host's, so the host's interface is what finishes it. A host that offers none takes no device job.
+    const rp_host_jobs*    reports = nullptr;
+    CartLink*              cart = nullptr;  // the host's link, or `none`; set by the first activate
+    void*                  held = nullptr;  // what the acquire answered, handed back to the release
+    NoCart                 none;
     // What the node presents as rp.system.sram/1 and rp.system.rom/1: every job goes to the link, the node its owner.
-    DeviceJobs jobs{this, &submitJob};
+    rp_device_jobs jobs{this, &submitJob};
     // The volume the link was last given, in whole percent (NaN: none yet, so the first block gives it), and whether
     // the link read connected in the last block, so a reconnect gives it again.
     double volumeSent = std::numeric_limits<double>::quiet_NaN();
@@ -66,14 +71,19 @@ struct N8Nes {
     CartNotes sounding, owed;
 
     void bind_host(const rp_host* h) noexcept {
-        devices = static_cast<const HostDevices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
+        devices = static_cast<const rp_host_devices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
+        reports = static_cast<const rp_host_jobs*>(h->get_interface(h, RP_HOST_JOBS_INTERFACE));
     }
     bool activate(double, std::uint32_t) {
         if (!devices) return false;
-        // A reactivate runs activate again on this instance: the handle already held is kept, one acquire to one
-        // release.
-        if (!cart) cart = devices->acquireCart(devices->ctx, kCartDeviceName);
-        return cart != nullptr;
+        // A reactivate runs activate again on this instance: the link already held is kept, one acquire to one
+        // release. A host with no cart answers null once, and the node keeps its own stub across a reactivate as it
+        // would the host's link.
+        if (!cart) {
+            held = devices->acquire(devices->ctx, kDeviceName, kCartLinkInterface);
+            cart = held ? static_cast<CartLink*>(held) : &none;
+        }
+        return true;
     }
     ~N8Nes() {
         if (!devices || !cart) return;
@@ -86,7 +96,7 @@ struct N8Nes {
         // A job this node submitted that is still running fails now, and the link reports into its record no more, so
         // the engine may free the record; the device stops at its next safe point.
         cart->abandonJobs(this);
-        devices->releaseCart(devices->ctx, cart);
+        if (held) devices->release(devices->ctx, held);
     }
 
     // rp.stage/1: a message a host aimed at this node (Engine::stageNodeMidi's path), onto the link's ring at frame 0
@@ -105,13 +115,17 @@ struct N8Nes {
         if (want == RP_STAGE_INTERFACE) return &staged;
         return want == RP_SYSTEM_SRAM_INTERFACE || want == RP_SYSTEM_ROM_INTERFACE ? &jobs : nullptr;
     }
-    static bool submitJob(void* ctx, const JobRequest& request, Job& job, std::string* error) {
+    static bool submitJob(void* ctx, const rp_job_request* request, rp_job* job, char* error, std::size_t errorCap) {
         auto* self = static_cast<N8Nes*>(ctx);
-        if (!self->cart) {
-            if (error) *error = "not connected";
+        if (!self->cart || !request) {
+            rp_job_error(error, errorCap, "not connected");
             return false;
         }
-        return self->cart->submitJob(request, job, self, error);
+        if (!self->reports) {
+            rp_job_error(error, errorCap, "this host takes no device jobs");
+            return false;
+        }
+        return self->cart->submitJob(*request, job, self->reports, self, error, errorCap);
     }
 
     void process(const rp::Block& b) noexcept {
@@ -194,6 +208,6 @@ const rp_package* n8Package() {
     return &kPackage;
 }
 
-}  // namespace rp::host
+}  // namespace rp::n8
 
-extern "C" const rp_package* rp_n8_package(void) { return rp::host::n8Package(); }
+extern "C" const rp_package* rp_n8_package(void) { return rp::n8::n8Package(); }

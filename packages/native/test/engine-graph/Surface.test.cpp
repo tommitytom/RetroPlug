@@ -2,7 +2,7 @@
 // (docs/modular-graph-phase-c5-design.md section 5): the device's MIDI drained from the host's surface link into the
 // input node's `in`, a `connected` control output that follows the device, and what a session writes into the output
 // node's `out` handed back to the link in the block it queued it. The nodes bind the link by name through
-// rp.host.devices/1, as rp.n8.nes binds the cart's, so a host with no surface plans and runs the same document. Two
+// rp.host.devices/2, as rp.n8.nes binds the cart's, so a host with no surface plans and runs the same document. Two
 // nodes rather than one because a session is fed by the device and feeds it: one node would be a cycle the planner
 // refuses, and breaking it on a feedback wire would deliver the LED stream a block late.
 //
@@ -28,12 +28,12 @@
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "graph/node.hpp"
-#include "host/devices/DeviceLinks.hpp"
 #include "host/graph/LaunchpadNodes.hpp"
+#include "launchpad/SurfaceLink.hpp"
 
 namespace {
 
-using rp::host::kMaxDeviceMessage;
+using rp::launchpad::kMaxDeviceMessage;
 using rp::host::kSurfaceInBytes;
 using rp::host::test::deviceMessage;
 using rp::host::test::DocExtras;
@@ -109,7 +109,7 @@ const rp_node_type* type(const rp_package* package, const char* id) {
 TEST_CASE("a surface's in carries what the device sent, in order, every message at frame 0", "[launchpad]") {
     FakeSurfaceLink surface;
     NodeRig         rig(kRate);
-    rig.devices.install(nullptr, &surface);
+    rig.installSurface(surface);
     plan(rig, surfaceDocument({docNode("probe", "rp.test.probe")}, {docWire("surface-in.in", "probe.events")}));
 
     // The node's first block discards what the link held when it bound it (the next case); this one scripts traffic
@@ -139,7 +139,7 @@ TEST_CASE("a surface's in carries what the device sent, in order, every message 
 TEST_CASE("a surface's out reaches the link in queue order, and a detached link takes nothing", "[launchpad]") {
     FakeSurfaceLink surface;
     NodeRig         rig(kRate);
-    rig.devices.install(nullptr, &surface);
+    rig.installSurface(surface);
     plan(rig, surfaceDocument({docNode("feed", "rp.test.feed")}, {docWire("feed.midi", "surface-out.out")}));
 
     Feed& feed = rig.node<Feed>("feed");
@@ -165,7 +165,7 @@ TEST_CASE("a surface's out reaches the link in queue order, and a detached link 
 TEST_CASE("a surface's connected follows the link, from frame 0", "[launchpad]") {
     FakeSurfaceLink surface;
     NodeRig         rig(kRate);
-    rig.devices.install(nullptr, &surface);
+    rig.installSurface(surface);
     plan(rig, surfaceDocument({docNode("probe", "rp.test.probe")}, {docWire("surface-in.connected", "probe.control")}));
     surface.attached = false;
     block(rig);
@@ -190,9 +190,9 @@ TEST_CASE("a surface's connected follows the link, from frame 0", "[launchpad]")
 }
 
 TEST_CASE("the surface nodes in a host with no device plan and run with connected 0", "[launchpad]") {
-    // The registry answers a name its host never installed with a handle that is never connected, so the same document
-    // plans in the plugin, the CLI and every harness, and nothing needs a null check.
-    NodeRig rig(kRate);  // no devices.install at all
+    // The registry answers a name its host never installed with null, and each node runs on a stub of its own that is
+    // never connected, so the same document plans in the plugin, the CLI and every harness.
+    NodeRig rig(kRate);  // no installSurface at all
     plan(rig, surfaceDocument({docNode("probe", "rp.test.probe")},
                               {docWire("surface-in.in", "probe.events"),
                                docWire("surface-in.connected", "probe.control")}));
@@ -206,7 +206,7 @@ TEST_CASE("the surface nodes in a host with no device plan and run with connecte
 TEST_CASE("a surface's in drops what its queue has no room for, and counts it", "[launchpad]") {
     FakeSurfaceLink surface;
     NodeRig         rig(kRate);
-    rig.devices.install(nullptr, &surface);
+    rig.installSurface(surface);
     plan(rig, surfaceDocument({docNode("probe", "rp.test.probe")}, {docWire("surface-in.in", "probe.events")}));
 
     // 1100 messages of 20 bytes against rp.launchpad.surface-in's 1024 messages and 16384 bytes: the byte bound binds
@@ -232,7 +232,7 @@ TEST_CASE("a surface's in discards what the link held when it bound it, and a re
           "[launchpad]") {
     FakeSurfaceLink surface;
     NodeRig         rig(kRate);
-    rig.devices.install(nullptr, &surface);
+    rig.installSurface(surface);
     // Presses sent while no node read the device wait in the link (a project with the controller off drains nothing):
     // a session that starts now would replay them, so the node's first block drains the link and forwards none of it.
     surface.input.push_back(deviceMessage({0x90, 0x33, 100}));
@@ -311,7 +311,7 @@ TEST_CASE("the surface nodes take the link once each, keep it across a reactivat
           "[launchpad]") {
     FakeSurfaceLink surface;
     NodeRig         rig(kRate);
-    rig.devices.install(nullptr, &surface);
+    rig.installSurface(surface);
     plan(rig, surfaceDocument({}, {}));
     // Two nodes, two holds on the one link: the registry forwards every acquire a node makes, so an unbalanced one is
     // visible only here.
@@ -340,7 +340,7 @@ TEST_CASE("a warmed block of the surface nodes allocates and frees nothing", "[l
     NodeRig         rig(kRate);
     std::string     why;
     REQUIRE(rig.registry.addPackage(surfaceTestPackage(), &why));
-    rig.devices.install(nullptr, &surface);
+    rig.installSurface(surface);
     // A source writing the output node's out, so the counted block covers both halves of the link: the drain into the
     // input node's `in`, which no probe reads (a probe allocates its copies), and the hand-off of what the source
     // queued.

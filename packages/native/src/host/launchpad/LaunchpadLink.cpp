@@ -9,7 +9,7 @@
 namespace retroplug {
 
 LaunchpadLink::LaunchpadLink(PortFactory factory)
-    : factory_(std::move(factory)), inRing_(std::make_unique<rp::host::DeviceMessage[]>(kInCapacity)) {}
+    : factory_(std::move(factory)), inRing_(std::make_unique<rp::launchpad::DeviceMessage[]>(kInCapacity)) {}
 
 LaunchpadLink::~LaunchpadLink() { disconnect(); }
 
@@ -73,7 +73,7 @@ void LaunchpadLink::pushInputRing(const std::uint8_t* data, std::size_t n) {
     inTail_.store(next, std::memory_order_release);
 }
 
-std::size_t LaunchpadLink::drainInput(rp::host::DeviceMessage* out, std::size_t capacity) {
+std::size_t LaunchpadLink::drainInput(rp::launchpad::DeviceMessage* out, std::size_t capacity) {
     if (!out) return 0;
     std::size_t       h = inHead_.load(std::memory_order_relaxed);
     const std::size_t t = inTail_.load(std::memory_order_acquire);

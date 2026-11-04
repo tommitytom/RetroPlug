@@ -105,7 +105,9 @@ retroplug_add_test_binary(
              test/engine-graph/EngineGraph.test.cpp
              test/engine-graph/SlurpFile.test.cpp     # the file reader putResource reads a `path` resource with
              test/engine-graph/HostIo.test.cpp
-             test/engine-graph/Devices.test.cpp        # rp.host.devices/1: the links a hardware node binds by name
+             test/engine-graph/Devices.test.cpp        # rp.host.devices/2: the links a hardware node binds by name
+             test/engine-graph/DeviceAbi.test.cpp      # graph/rp_device.h and rp_jobs.h, as C++ and as C:
+             test/engine-graph/DeviceAbi.c             # the same two headers compiled as C, a C node's use of them
              test/engine-graph/Capabilities.test.cpp   # rp.system.memory/1, sram/1, rom/1 as asynchronous jobs
              test/engine-graph/OfflineJobs.test.cpp    # a document run to completion on a worker host of its own
              test/engine-graph/EngineJobs.test.cpp     # a render run on the same pool by a RenderHost of its own
@@ -202,7 +204,7 @@ retroplug_add_test_binary(
              src/host/n8/N8Menu.cpp
     LIBS     reflectcpp::reflectcpp                    # rfl::json - parse the shared Edio golden (twins edio.test.ts)
              Threads::Threads                          # N8Link's serial thread
-             retroplug-node-sdk-headers                # transport/SpscRing.hpp, N8Link's rings
+             retroplug-node-sdk-headers                # transport/SpscRing.hpp, N8Link's rings; the job ABI
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src           # host/n8/Edio.hpp
     # The shared Edio framing golden both this and edio.test.ts assert against (single source, no drift).
     DEFS     EDIO_GOLDEN_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/n8/edio-golden.json")
@@ -232,7 +234,7 @@ retroplug_add_test_binary(
              src/host/n8/WjwwoodSerialPort.cpp
     LIBS     serial
              Threads::Threads
-             retroplug-node-sdk-headers                # transport/SpscRing.hpp, N8Link's rings
+             retroplug-node-sdk-headers                # transport/SpscRing.hpp, N8Link's rings; the job ABI
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # `timing` times against an ALSA capture of the console's audio, so it exists only where ALSA does. Linking
 # ALSA::ALSA unconditionally failed the GENERATE step on macOS/Windows - EXCLUDE_FROM_ALL does not spare a target

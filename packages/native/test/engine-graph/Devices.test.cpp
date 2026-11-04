@@ -1,12 +1,14 @@
-// The host's device links, rp.host.devices/1 (docs/modular-graph-phase-c5-design.md sections 3 to 5): a node binds the
-// hardware it drives by name and is handed a link, which it borrows for the life of its plan and gives back when the
-// plan's reclaim destroys it. Driven on a real Engine with a test node that does what rp.n8.nes and the surface nodes
-// do: it acquires both links in its activate, pushes at the cart's frame offsets in its block, drains the surface into
-// storage it owns and pushes one LED message back, and releases both in its destructor.
+// The host's device links, rp.host.devices/2 (docs/modular-graph-phase-c5-design.md sections 3 to 5,
+// docs/modular-graph-phase-e2-design.md section 5): a node binds the hardware it drives by name and interface id and is
+// handed a link, or null, which it borrows for the life of its plan and gives back when the plan's reclaim destroys it.
+// Driven on a real Engine with a test node that does what rp.n8.nes and the surface nodes do: it acquires both links in
+// its activate, pushes at the cart's frame offsets in its block, drains the surface into storage it owns and pushes one
+// LED message back, and releases both in its destructor.
 //
 // The links here are fakes that record what a node did with them, and count how many nodes hold them: what reaches the
 // device, its order and frames, the connected state a host with no device leaves in place, the balance of acquire and
-// release across a plan replaced and a node removed, and a warmed block that allocates and frees nothing.
+// release across a plan replaced and a node removed, and a warmed block that allocates and frees nothing. The
+// registry's own table is held directly too: install, acquire by name and interface id, a clear, and a full table.
 //
 // Run via `pnpm test:plugin engine-graph`.
 
@@ -16,6 +18,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -23,17 +26,20 @@
 #include "../graph/CountingAllocator.hpp"
 #include "FakeSurfaceLink.hpp"
 #include "GraphDocs.hpp"
+#include "TestDevices.hpp"
 #include "graph/node.hpp"
-#include "host/devices/DeviceLinks.hpp"
+#include "graph/rp_device.h"
+#include "host/devices/DeviceRegistry.hpp"
 #include "host/engine/Engine.hpp"
-#include "host/graph/HostServices.hpp"
+#include "launchpad/SurfaceLink.hpp"
+#include "n8/CartLink.hpp"
 
 namespace {
 
-using rp::host::CartLink;
-using rp::host::DeviceMessage;
-using rp::host::HostDevices;
-using rp::host::SurfaceLink;
+using rp::host::DeviceRegistry;
+using rp::launchpad::DeviceMessage;
+using rp::launchpad::SurfaceLink;
+using rp::n8::CartLink;
 using rp::host::test::deviceMessage;
 using rp::host::test::FakeSurfaceLink;
 
@@ -60,8 +66,9 @@ struct ProbeScript {
     std::uint64_t                 surfaceDropped   = 0;       // the surface link's count, read the same way
     bool                          cartConnected    = false;  // what the two handles answer, as the node reads them
     bool                          surfaceConnected = false;
-    const char*                   cartName         = rp::host::kCartDeviceName;     // what the node asks for
-    const char*                   surfaceName      = rp::host::kSurfaceDeviceName;  // what the node asks for
+    const char*                   cartName         = rp::n8::kDeviceName;         // what the node asks for
+    const char*                   surfaceName      = rp::launchpad::kDeviceName;  // what the node asks for
+    const char*                   cartInterface    = rp::n8::kCartLinkInterface;  // ... and the interface it wants
     bool                          destroyed        = false;  // the node's destroy ran
     std::uint64_t                 droppedAtDestroy = 0;      // a read of the cart's count from the destroy
 };
@@ -70,26 +77,37 @@ ProbeScript script;
 // The message the probe always pushes at the surface, so a case sees the node's own LED traffic beside what it drained.
 constexpr std::uint8_t kSurfaceOut[] = {0xB0, 0x10, 0x7F};
 
-// A node that binds both device links, the way the two hardware nodes will: acquire in activate, use in process, give
-// the handles back from the destructor that the plan's reclaim runs (on the control thread).
+// A node that binds both device links, the way the two hardware nodes do: acquire in activate (running on a stub of
+// its own when the host answers null), use in process, give the links back from the destructor that the plan's
+// reclaim runs (on the control thread).
 struct DeviceProbe {
     static constexpr const char* id = "rp.test.device-probe";
 
-    const HostDevices*   devices = nullptr;
-    CartLink*            cart    = nullptr;
-    SurfaceLink*         surface = nullptr;
+    const rp_host_devices*   devices = nullptr;
+    CartLink*                cart    = nullptr;
+    SurfaceLink*             surface = nullptr;
+    void*                    heldCart    = nullptr;  // what each acquire answered, handed back to the release
+    void*                    heldSurface = nullptr;
+    rp::n8::NoCart           noCart;
+    rp::launchpad::NoSurface noSurface;
     std::array<DeviceMessage, 16> in{};  // in the node's own storage, so the drain frees nothing on the block thread
 
     void bind_host(const rp_host* h) noexcept {
-        devices = static_cast<const HostDevices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
+        devices = static_cast<const rp_host_devices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
     }
     bool activate(double, std::uint32_t) {
         if (!devices) return false;
-        // A reactivate (a sample-rate change, a block growth) runs activate again on this same instance: a handle
+        // A reactivate (a sample-rate change, a block growth) runs activate again on this same instance: a link
         // already held is kept, so one acquire here is one release in the destructor.
-        if (!cart) cart = devices->acquireCart(devices->ctx, script.cartName);
-        if (!surface) surface = devices->acquireSurface(devices->ctx, script.surfaceName);
-        return cart != nullptr && surface != nullptr;
+        if (!cart) {
+            heldCart = devices->acquire(devices->ctx, script.cartName, script.cartInterface);
+            cart = heldCart ? static_cast<CartLink*>(heldCart) : &noCart;
+        }
+        if (!surface) {
+            heldSurface = devices->acquire(devices->ctx, script.surfaceName, rp::launchpad::kSurfaceLinkInterface);
+            surface = heldSurface ? static_cast<SurfaceLink*>(heldSurface) : &noSurface;
+        }
+        return true;
     }
     void process(const rp::Block& b) noexcept {
         script.rate = b.transport().sample_rate;
@@ -110,8 +128,8 @@ struct DeviceProbe {
         // A host tears its plans down while its links are alive, so a node may use a handle here, not only give it
         // back: this reads the cart's drop count before releasing both.
         script.droppedAtDestroy = cart ? cart->dropped() : 0;
-        if (cart) devices->releaseCart(devices->ctx, cart);
-        if (surface) devices->releaseSurface(devices->ctx, surface);
+        devices->release(devices->ctx, heldCart);
+        devices->release(devices->ctx, heldSurface);
         script.destroyed = true;
     }
 };
@@ -132,7 +150,7 @@ public:
         double        sampleRate = 0.0;
         bool          flush      = false;
         std::uint16_t size       = 0;
-        std::uint8_t  data[rp::host::kMaxDeviceMessage] = {};
+        std::uint8_t  data[rp::host::test::kCartPushBytes] = {};
     };
 
     void reserve(std::size_t n) { pushes.reserve(n); }
@@ -147,7 +165,7 @@ public:
         p.frame      = frame;
         p.flush      = flush;
         p.sampleRate = sampleRate;
-        p.size       = static_cast<std::uint16_t>(std::min(size, rp::host::kMaxDeviceMessage));
+        p.size       = static_cast<std::uint16_t>(std::min(size, rp::host::test::kCartPushBytes));
         std::memcpy(p.data, data, p.size);
         pushes.push_back(p);
         return true;
@@ -155,11 +173,11 @@ public:
     bool          connected() const override { return attached; }
     std::uint64_t dropped() const override { return drops; }
     void          setExpansionVolume(int value) override { volume = value; }
-    void          acquire() override {
+    void          acquire() {
         ++acquires;
         ++holders;
     }
-    void release() override {
+    void release() {
         ++releases;
         --holders;
         if (holders < minHolders) minHolders = holders;
@@ -221,7 +239,7 @@ TEST_CASE("a node's cart pushes reach the installed cart link in order, at their
     FakeCartLink cart;
     Engine       e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     REQUIRE(e.setGraph(probeDocument()).ok);
 
     script.cart = {{0, {0x90, 0x40, 0x7F}, false},
@@ -260,7 +278,7 @@ TEST_CASE("the surface link's scripted input arrives in order, and its output is
     surface.input = {deviceMessage({0x90, 0x51, 0x7F}), deviceMessage({0x90, 0x51, 0x00})};
     Engine e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(nullptr, &surface);
+    rp::host::test::installSurface(e, surface);
     REQUIRE(e.setGraph(probeDocument()).ok);
 
     block(e);
@@ -291,7 +309,8 @@ TEST_CASE("a link whose device goes away reads disconnected and counts what the 
     FakeSurfaceLink surface;
     Engine          e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, &surface);
+    rp::host::test::installCart(e, cart);
+    rp::host::test::installSurface(e, surface);
     REQUIRE(e.setGraph(probeDocument()).ok);
 
     script.cart = {{0, {0x90, 0x40, 0x7F}, false}, {7, {0x80, 0x40, 0x00}, false}};
@@ -315,15 +334,15 @@ TEST_CASE("a link whose device goes away reads disconnected and counts what the 
 
 TEST_CASE("a host with no device still plans and runs the node, whose pushes go nowhere and are counted", "[devices]") {
     script = ProbeScript{};  // one case at a time: nothing a case scripted reaches the next
-    // No setDeviceLinks at all, as in the CLI, the Node addon, the render host and the UI harness: the names answer
-    // with a handle that is never connected, never null, so the node needs no null check and this document is the same
-    // one every host plans.
+    // No link installed at all, as in the CLI, the Node addon, the render host and the UI harness: every acquire
+    // answers null and the node runs on its own stubs, never connected, so this document is the same one every host
+    // plans.
     Engine e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
     REQUIRE(e.setGraph(probeDocument()).ok);
 
     script.cart = {{0, {0x90, 0x40, 0x7F}, false}, {7, {0x80, 0x40, 0x00}, false}};
-    script.volume = 42;  // through the fallback's setExpansionVolume too: a no-op, and no fault
+    script.volume = 42;  // through the stub's setExpansionVolume too: a no-op, and no fault
     block(e);
     block(e);
     script.cart.clear();
@@ -335,7 +354,7 @@ TEST_CASE("a host with no device still plans and runs the node, whose pushes go 
     // goes nowhere without a word.
     CHECK_FALSE(script.cartConnected);
     CHECK_FALSE(script.surfaceConnected);
-    // A never-connected handle accepts every push and counts it as dropped, which is the count a node reads off its
+    // A never-connected stub accepts every push and counts it as dropped, which is the count a node reads off its
     // device: two blocks, two pushes each.
     CHECK(script.cartDropped == 4);
     CHECK(script.surfaceDropped == 2);
@@ -347,7 +366,8 @@ TEST_CASE("acquire and release balance across a plan that keeps the node and one
     FakeSurfaceLink surface;
     Engine          e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, &surface);
+    rp::host::test::installCart(e, cart);
+    rp::host::test::installSurface(e, surface);
 
     REQUIRE(e.setGraph(probeDocument()).ok);
     CHECK(cart.acquires == 1);
@@ -385,7 +405,7 @@ TEST_CASE("a handover to a new node never leaves the cart link with no holder", 
     FakeCartLink cart;
     Engine       e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
 
     // The document is republished with the node replaced by a new instance under a new id - what a project edit that
     // swaps the system driving the cart does. The plan that replaces the first activates the second (and so acquires)
@@ -414,7 +434,8 @@ TEST_CASE("a reactivate keeps the handles a node already holds, and destroy stil
     FakeSurfaceLink surface;
     Engine          e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, &surface);
+    rp::host::test::installCart(e, cart);
+    rp::host::test::installSurface(e, surface);
     REQUIRE(e.setGraph(probeDocument()).ok);
     REQUIRE(cart.acquires == 1);
     REQUIRE(surface.acquires == 1);
@@ -452,7 +473,7 @@ TEST_CASE("a cart push carries the block's rate, not a fixed one", "[devices]") 
     FakeCartLink cart;
     Engine       e(44100.0);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     REQUIRE(e.setGraph(probeDocument()).ok);
 
     script.cart = {{3, {0x90, 0x40, 0x7F}, false}};
@@ -462,16 +483,17 @@ TEST_CASE("a cart push carries the block's rate, not a fixed one", "[devices]") 
     CHECK(script.rate == 44100.0);
 }
 
-TEST_CASE("a device name this host has no link for answers with a never-connected handle", "[devices]") {
+TEST_CASE("a device name this host has no link for answers null, and the node runs on its own stub", "[devices]") {
     script = ProbeScript{};  // one case at a time: nothing a case scripted reaches the next
-    // The host's cart is named "n8" (kCartDeviceName); the node asks for another name, so it gets the registry's
-    // never-connected fallback and the installed link is never touched. One behaviour for a typo and for a device the
-    // host does not own, so a node needs no null check and a document plans wherever it runs.
+    // The host's cart is named "n8" (rp::n8::kDeviceName); the node asks for another name, so the registry answers
+    // null, the node takes its own never-connected stub and the installed link is never touched. One behaviour for a
+    // typo and for a device the host does not own, so a document plans wherever it runs.
     FakeCartLink    cart;
     FakeSurfaceLink surface;
     Engine          e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, &surface);
+    rp::host::test::installCart(e, cart);
+    rp::host::test::installSurface(e, surface);
     script.cartName = "nes";
     REQUIRE(e.setGraph(probeDocument()).ok);
 
@@ -481,8 +503,33 @@ TEST_CASE("a device name this host has no link for answers with a never-connecte
     script.cart = {{0, {0x90, 0x40, 0x7F}, false}};
     block(e);
     CHECK(cart.pushes.empty());
-    CHECK(script.cartDropped == 1);  // the fallback counted the push it took nowhere
+    CHECK(script.cartDropped == 1);  // the stub counted the push it took nowhere
     CHECK(e.faultCount() == 0);
+}
+
+TEST_CASE("a link of another interface id answers null: the name alone does not hand it out", "[devices]") {
+    script = ProbeScript{};  // one case at a time: nothing a case scripted reaches the next
+    // The right name and a version of the interface the host's link does not implement: a node built against another
+    // shape of the cart's contract must never be handed this one, so the registry answers null and the node runs on its
+    // stub, as for a name it has no link for.
+    FakeCartLink cart;
+    Engine       e(kRate);
+    REQUIRE(e.addNodePackage(deviceProbePackage()));
+    rp::host::test::installCart(e, cart);
+    script.cartInterface = "rp.n8.cart-link/2";
+    REQUIRE(e.setGraph(probeDocument()).ok);
+    CHECK(cart.acquires == 0);
+
+    script.cart = {{0, {0x90, 0x40, 0x7F}, false}};
+    block(e);
+    CHECK(cart.pushes.empty());
+    CHECK_FALSE(script.cartConnected);
+    CHECK(script.cartDropped == 1);
+
+    // And no release reaches it when the node goes: the node holds nothing of the host's.
+    REQUIRE(e.setGraph(noProbeDocument()).ok);
+    CHECK(script.destroyed);
+    CHECK(cart.releases == 0);
 }
 
 TEST_CASE("a release after the host clears its links reaches nothing and is harmless", "[devices]") {
@@ -491,13 +538,15 @@ TEST_CASE("a release after the host clears its links reaches nothing and is harm
     FakeSurfaceLink surface;
     Engine          e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, &surface);
+    rp::host::test::installCart(e, cart);
+    rp::host::test::installSurface(e, surface);
     REQUIRE(e.setGraph(probeDocument()).ok);
     REQUIRE(cart.acquires == 1);
 
-    // A host taking its links back before the objects they wrap go: the plans still alive hand their handles to a
-    // registry that no longer names either link, so nothing is forwarded to a link that could already be gone.
-    e.setDeviceLinks(nullptr, nullptr);
+    // A host taking its links back before the objects they wrap go: the plans still alive hand their links to a
+    // registry that no longer names either, so nothing is forwarded to a link that could already be gone.
+    rp::host::test::clearCart(e, cart);
+    rp::host::test::clearSurface(e, surface);
     REQUIRE(e.setGraph(noProbeDocument()).ok);
     CHECK(cart.acquires == 1);
     CHECK(cart.releases == 0);
@@ -511,7 +560,8 @@ TEST_CASE("a host's teardown destroys its plans while the links are still alive"
     FakeSurfaceLink surface;
     Engine          e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, &surface);
+    rp::host::test::installCart(e, cart);
+    rp::host::test::installSurface(e, surface);
     REQUIRE(e.setGraph(probeDocument()).ok);
     REQUIRE(cart.acquires == 1);
 
@@ -524,7 +574,8 @@ TEST_CASE("a host's teardown destroys its plans while the links are still alive"
     CHECK(surface.releases == 1);
 
     // Only then do the links leave the registry, and a later release nothing is left to reach.
-    e.setDeviceLinks(nullptr, nullptr);
+    rp::host::test::clearCart(e, cart);
+    rp::host::test::clearSurface(e, surface);
     CHECK(cart.releases == 1);
     CHECK(surface.releases == 1);
 }
@@ -535,7 +586,8 @@ TEST_CASE("a warmed block touching both device links allocates and frees nothing
     FakeSurfaceLink surface;
     Engine          e(kRate);
     REQUIRE(e.addNodePackage(deviceProbePackage()));
-    e.setDeviceLinks(&cart, &surface);
+    rp::host::test::installCart(e, cart);
+    rp::host::test::installSurface(e, surface);
     REQUIRE(e.setGraph(probeDocument()).ok);
 
     // One block first, so every plan-side buffer exists, then the script and the fakes' room for the block's work,
@@ -558,4 +610,129 @@ TEST_CASE("a warmed block touching both device links allocates and frees nothing
     CHECK(counted.frees == 0);
     CHECK(cart.pushes.size() == 2);
     CHECK(script.drainedCount == 2);
+}
+
+namespace {
+
+// A link of no interface at all, for the registry's own cases: it counts what the registry forwards to it.
+struct CountedLink {
+    int acquires = 0;
+    int releases = 0;
+};
+void countAcquire(void* link) { ++static_cast<CountedLink*>(link)->acquires; }
+void countRelease(void* link) { ++static_cast<CountedLink*>(link)->releases; }
+
+}  // namespace
+
+TEST_CASE("the registry hands a link out by its name and interface id, and tells its hooks", "[devices]") {
+    DeviceRegistry registry;
+    CountedLink    cart, surface;
+    REQUIRE(registry.install("n8", "rp.n8.cart-link/1", &cart, &countAcquire, &countRelease));
+    REQUIRE(registry.install("launchpad", "rp.launchpad.surface-link/1", &surface));  // no hooks: nothing forwarded
+    CHECK(registry.size() == 2);
+
+    // Through the C struct a node reads, as an Engine hands it out.
+    const rp_host_devices* api = registry.api();
+    CHECK(api->acquire(api->ctx, "n8", "rp.n8.cart-link/1") == &cart);
+    CHECK(cart.acquires == 1);
+    CHECK(api->acquire(api->ctx, "launchpad", "rp.launchpad.surface-link/1") == &surface);
+    CHECK(surface.acquires == 0);
+
+    // The name alone is not enough, nor the id alone: either wrong answers null, and no hook hears of it.
+    CHECK(api->acquire(api->ctx, "n8", "rp.n8.cart-link/2") == nullptr);
+    CHECK(api->acquire(api->ctx, "n8", "rp.launchpad.surface-link/1") == nullptr);
+    CHECK(api->acquire(api->ctx, "nes", "rp.n8.cart-link/1") == nullptr);
+    CHECK(api->acquire(api->ctx, nullptr, "rp.n8.cart-link/1") == nullptr);
+    CHECK(api->acquire(api->ctx, "n8", nullptr) == nullptr);
+    CHECK(cart.acquires == 1);
+
+    // Each acquire is forwarded, a second node's included, and each release reaches the link it names.
+    CHECK(api->acquire(api->ctx, "n8", "rp.n8.cart-link/1") == &cart);
+    CHECK(cart.acquires == 2);
+    api->release(api->ctx, &cart);
+    api->release(api->ctx, &cart);
+    CHECK(cart.releases == 2);
+    api->release(api->ctx, &surface);  // installed with no hook: nothing to tell
+    api->release(api->ctx, nullptr);   // a node that was answered null hands back nothing
+    CHECK(surface.releases == 0);
+}
+
+TEST_CASE("a link cleared from the registry is handed out no more, and a release after the clear reaches nothing",
+          "[devices]") {
+    DeviceRegistry registry;
+    CountedLink    cart, other;
+    REQUIRE(registry.install("n8", "rp.n8.cart-link/1", &cart, &countAcquire, &countRelease));
+    REQUIRE(registry.acquire("n8", "rp.n8.cart-link/1") == &cart);
+
+    // A link the registry does not hold clears nothing; the installed one goes.
+    registry.clear(&other);
+    registry.clear(nullptr);
+    CHECK(registry.size() == 1);
+    registry.clear(&cart);
+    CHECK(registry.size() == 0);
+
+    // The node that still holds it hands it back to a registry that no longer names it: the link hears nothing, so a
+    // host may free it once cleared.
+    registry.release(&cart);
+    CHECK(cart.releases == 0);
+    CHECK(registry.acquire("n8", "rp.n8.cart-link/1") == nullptr);
+    CHECK(cart.acquires == 1);
+
+    // The name is free again: another link may take it, and only that one is reached from then on.
+    REQUIRE(registry.install("n8", "rp.n8.cart-link/1", &other, &countAcquire, &countRelease));
+    CHECK(registry.acquire("n8", "rp.n8.cart-link/1") == &other);
+    registry.release(&cart);
+    registry.release(&other);
+    CHECK(cart.releases == 0);
+    CHECK(other.releases == 1);
+}
+
+TEST_CASE("the registry refuses a full table, a link or a name installed twice, and a name it has no room for",
+          "[devices]") {
+    DeviceRegistry registry;
+    std::array<CountedLink, DeviceRegistry::kMaxLinks + 1> links{};
+    std::array<std::string, DeviceRegistry::kMaxLinks + 1> names;
+    for (std::size_t i = 0; i < DeviceRegistry::kMaxLinks; ++i) {
+        names[i] = "device-" + std::to_string(i);
+        REQUIRE(registry.install(names[i].c_str(), "rp.test.link/1", &links[i]));
+    }
+    CHECK(registry.size() == DeviceRegistry::kMaxLinks);
+    // Full: the next is refused, and every installed one still answers.
+    names.back() = "device-last";
+    CHECK_FALSE(registry.install(names.back().c_str(), "rp.test.link/1", &links.back()));
+    for (std::size_t i = 0; i < DeviceRegistry::kMaxLinks; ++i)
+        CHECK(registry.acquire(names[i].c_str(), "rp.test.link/1") == &links[i]);
+    CHECK(registry.acquire("device-last", "rp.test.link/1") == nullptr);
+    // A clear makes room for exactly one more.
+    registry.clear(&links[3]);
+    CHECK(registry.install("device-last", "rp.test.link/1", &links.back()));
+    CHECK(registry.acquire("device-last", "rp.test.link/1") == &links.back());
+    CHECK(registry.size() == DeviceRegistry::kMaxLinks);
+
+    DeviceRegistry fresh;
+    CountedLink    a, b;
+    REQUIRE(fresh.install("n8", "rp.n8.cart-link/1", &a));
+    // The same name and id twice, or the same link under another name: a host clears before it installs again.
+    CHECK_FALSE(fresh.install("n8", "rp.n8.cart-link/1", &b));
+    CHECK_FALSE(fresh.install("n8-b", "rp.n8.cart-link/1", &a));
+    // The same name under another interface id is another entry, for another link object: a link pointer identifies one
+    // installation (release is handed the pointer alone), so a device that offers two interfaces installs two objects.
+    CHECK(fresh.install("n8", "rp.n8.cart-link/2", &b));
+    CHECK(fresh.acquire("n8", "rp.n8.cart-link/1") == &a);
+    CHECK(fresh.acquire("n8", "rp.n8.cart-link/2") == &b);
+    // No link, no name, and a name or id past what an entry keeps.
+    CountedLink c;
+    CHECK_FALSE(fresh.install("other", "rp.test.link/1", nullptr));
+    CHECK_FALSE(fresh.install("", "rp.test.link/1", &c));
+    CHECK_FALSE(fresh.install(nullptr, "rp.test.link/1", &c));
+    CHECK_FALSE(fresh.install("other", "", &c));
+    const std::string longName(DeviceRegistry::kMaxName + 1, 'x');
+    const std::string longId(DeviceRegistry::kMaxInterfaceId + 1, 'x');
+    CHECK_FALSE(fresh.install(longName.c_str(), "rp.test.link/1", &c));
+    CHECK_FALSE(fresh.install("other", longId.c_str(), &c));
+    // At the bound exactly, both fit.
+    const std::string maxName(DeviceRegistry::kMaxName, 'x');
+    const std::string maxId(DeviceRegistry::kMaxInterfaceId, 'x');
+    CHECK(fresh.install(maxName.c_str(), maxId.c_str(), &c));
+    CHECK(fresh.acquire(maxName.c_str(), maxId.c_str()) == &c);
 }

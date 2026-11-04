@@ -69,11 +69,11 @@ extern "C" {
 #include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
 #include "host/n8/N8Link.hpp"                // host serial thread -> physical Everdrive N8 Pro (MIDI forward)
 #include "host/n8/N8Host.hpp"                // shared N8 link + config + n8.cfg (also used by the DAW plugin)
-#include "host/n8/N8CartLink.hpp"             // the cart device link rp.host.devices/1 hands a node
+#include "host/n8/N8CartLink.hpp"             // the cart device link rp.host.devices/2 hands a node
 #include "host/n8/N8Hooks.hpp"               // binds the __rp_*N8* config hooks (shared with the plugin)
 #include "host/n8/WjwwoodSerialPort.hpp"     // the serial-port factory + listSerialPorts for the N8 picker
 #include "host/launchpad/LaunchpadHost.hpp"  // control-surface link + config + launchpad.cfg
-#include "host/launchpad/LaunchpadSurfaceLink.hpp"  // the surface device link rp.host.devices/1 hands a node
+#include "host/launchpad/LaunchpadSurfaceLink.hpp"  // the surface device link rp.host.devices/2 hands a node
 #include "host/launchpad/LaunchpadHooks.hpp" // binds the __rp_*Launchpad* config hooks
 #include "host/launchpad/RtMidiPort.hpp"     // the RtMidi in/out pair the link claims exclusively
 #include "host/rpc/BackendRpcRegistration.hpp"
@@ -269,7 +269,7 @@ struct AppState {
         [this](bool input) { return input ? midi.listInputs() : midi.listOutputs(); },
         svc.host.configDir()};
 
-    // The device links the graph's hardware nodes bind (rp.host.devices/1): the cart and the surface this host owns.
+    // The device links the graph's hardware nodes bind (rp.host.devices/2): the cart and the surface this host owns.
     // svc (the engine) is declared above them (n8Host and launchpadHost read its config dir), so it is destroyed after
     // both links. The destructor below reclaims the plans first, while every member is still alive: a node may use its
     // handle in destroy, and it must reach a live link. The engine has no plan left to destroy by then.
@@ -281,7 +281,8 @@ struct AppState {
 
     ~AppState() {
         svc.engine.clearGraph();
-        svc.engine.setDeviceLinks(nullptr, nullptr);
+        svc.engine.clearLink<rp::n8::CartLink>(n8CartLink);
+        svc.engine.clearLink<rp::launchpad::SurfaceLink>(launchpadSurfaceLink);
     }
 
     std::uint32_t width = 640;
@@ -1589,9 +1590,15 @@ void handleEvents(AppState& a) {
 int main(int argc, char** argv) {
     AppState app;
     g_app = &app;
-    // The graph's hardware nodes bind these by name (rp.host.devices/1), so they go in before any document can place
+    // The graph's hardware nodes bind these by name (rp.host.devices/2), so they go in before any document can place
     // one: the control plane below is the first thing that can publish a graph.
-    app.svc.engine.setDeviceLinks(&app.n8CartLink, &app.launchpadSurfaceLink);
+    // A refusal (a full table, a name taken) would leave the nodes on their stubs, so it is said, not swallowed.
+    if (!app.svc.engine.installLink<rp::n8::CartLink>(rp::n8::kDeviceName, rp::n8::kCartLinkInterface, app.n8CartLink))
+        std::fprintf(stderr, "[retroplug-sdl] the N8 cart link was not installed\n");
+    if (!app.svc.engine.installLink<rp::launchpad::SurfaceLink>(rp::launchpad::kDeviceName,
+                                                                rp::launchpad::kSurfaceLinkInterface,
+                                                                app.launchpadSurfaceLink))
+        std::fprintf(stderr, "[retroplug-sdl] the Launchpad surface link was not installed\n");
 
     // --- args / env ---
     std::string autoloadPath;

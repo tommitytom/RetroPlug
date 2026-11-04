@@ -7,8 +7,8 @@
 #include <span>
 
 #include "graph/node.hpp"
-#include "host/devices/DeviceLinks.hpp"
-#include "host/graph/HostServices.hpp"
+#include "graph/rp_device.h"
+#include "launchpad/SurfaceLink.hpp"
 
 namespace rp::host {
 
@@ -20,31 +20,34 @@ namespace {
 constexpr std::size_t kSurfaceDrainBatch = 16;
 
 // What both surface nodes share: the host's one surface link, borrowed for the life of the plan. It is acquired in
-// activate, kept across a reactivate (activate runs again on the same instance, so a handle already held is not taken
+// activate, kept across a reactivate (activate runs again on the same instance, so a link already held is not taken
 // twice), and released in the destructor, the plan's reclaim, on the control thread. Placed by a setting rather than by
-// the device's state, so both always activate: in a host with no surface, or with one unplugged, the link reads
-// disconnected and takes every push nowhere, and nothing in the graph changes when the device comes or goes.
+// the device's state, so both always activate: in a host with no surface (its acquire answers null, and the node runs
+// on a NoSurface of its own), or with one unplugged, the link reads disconnected and takes every push nowhere, and
+// nothing in the graph changes when the device comes or goes.
 struct SurfaceNode {
-    const HostDevices* devices = nullptr;
-    SurfaceLink*       surface = nullptr;
+    const rp_host_devices*      devices = nullptr;
+    rp::launchpad::SurfaceLink* surface = nullptr;  // the host's link, or `none`; set by the first activate
+    void*                       held = nullptr;     // what the acquire answered, handed back to the release
+    rp::launchpad::NoSurface    none;
     // Set when activate bound the link, so the next process is the node's first block with it. A reactivate that keeps
     // the handle does not set it: that block has a reader on both sides of it, so nothing waited unread.
-    bool               fresh = false;
+    bool                        fresh = false;
 
     void bind_host(const rp_host* h) noexcept {
-        devices = static_cast<const HostDevices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
+        devices = static_cast<const rp_host_devices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
     }
     bool activate(double, std::uint32_t) {
         if (!devices) return false;
         if (!surface) {
-            surface = devices->acquireSurface(devices->ctx, kSurfaceDeviceName);
-            fresh = surface != nullptr;
+            held = devices->acquire(devices->ctx, rp::launchpad::kDeviceName, rp::launchpad::kSurfaceLinkInterface);
+            surface = held ? static_cast<rp::launchpad::SurfaceLink*>(held) : &none;
+            fresh = true;
         }
-        return surface != nullptr;
+        return true;
     }
     ~SurfaceNode() {
-        if (!devices || !surface) return;
-        devices->releaseSurface(devices->ctx, surface);
+        if (devices && held) devices->release(devices->ctx, held);
     }
 };
 
@@ -68,7 +71,7 @@ struct SurfaceIn : SurfaceNode {
         rp::control_out connected;
     } outputs;
     // What one drain returns, in the node's own storage.
-    std::array<DeviceMessage, kSurfaceDrainBatch> batch{};
+    std::array<rp::launchpad::DeviceMessage, kSurfaceDrainBatch> batch{};
 
     void process(const rp::Block&) noexcept {
         // The node's first block after it binds the link discards what the link already holds: those messages were sent

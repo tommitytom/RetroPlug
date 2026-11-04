@@ -1,95 +1,150 @@
 #pragma once
 
-// The device links an engine's host installed, by the name a node asks for (rp.host.devices/1). An engine holds what
-// its host gave it; a node holds a handle for the life of the plan it runs in. [control]: a host installs before the
-// first graph, a node acquires in its activate and releases in its destroy, and both of those run on the control
-// thread (a plan's reclaim included). A reactivate runs deactivate and activate again on one instance
-// (GraphHost::reactivate, for a sample-rate change or a block growth), so a node that already holds a handle keeps it
-// and does not acquire a second: the registry forwards each acquire a node makes, and the balance is the node's to
-// keep. The links outlive every plan whose nodes hold a handle, so a node may use one in its destroy.
+// The device links an engine's host installed, by name and interface id (rp.host.devices/2, graph/rp_device.h). An
+// engine holds what its host gave it; a node holds a link for the life of the plan it runs in. [control]: a host
+// installs before the first graph, a node acquires in its activate and releases in its destroy, and both of those run
+// on the control thread (a plan's reclaim included). A reactivate runs deactivate and activate again on one instance
+// (GraphHost::reactivate, for a sample-rate change or a block growth), so a node that already holds a link keeps it and
+// does not acquire a second: the registry forwards each acquire a node makes, and the balance is the node's to keep.
+// The links outlive every plan whose nodes hold one, so a node may use one in its destroy.
+//
+// The engine knows no link's interface: a link is the pointer a host installed, handed to the node that names it, and
+// the interface between the two is the device's own (rp::n8::CartLink, rp::launchpad::SurfaceLink).
 
-#include <atomic>
 #include <cstddef>
-#include <cstdint>
-#include <string_view>
+#include <cstring>
 
-#include "host/devices/DeviceLinks.hpp"
+#include "graph/rp_device.h"
 
 namespace rp::host {
 
 class DeviceRegistry {
 public:
-    // [control] The links this host owns. Null installs nothing: that name then answers with a handle that is never
-    // connected, as does every name this host has no link for, so a node needs no null check and a document plans the
-    // same wherever it runs (design section 3).
-    void install(CartLink* cart, SurfaceLink* surface) {
-        cart_    = cart;
-        surface_ = surface;
-    }
-    // [control] The host taking its links back, before the objects they are members of go. A node of a plan that is
-    // still alive must have been destroyed already (Engine::clearGraph), or its release reaches nothing: the identity
-    // check in release keeps that harmless, but a host tears its plans down first so a node may use its handle there.
-    void clear() { install(nullptr, nullptr); }
+    // The links one host installs. A fixed table, so an acquire is a scan that allocates nothing and the registry needs
+    // nothing but the control-thread rule: a host owns a handful of devices (the standalone two, a cart and a surface),
+    // and eight leaves room for a pack or two more without the table ever being what a host runs out of first.
+    static constexpr std::size_t kMaxLinks = 8;
+    // The longest name and interface id an entry keeps (the NUL not included): copied in, so a host's strings need not
+    // outlive the install.
+    static constexpr std::size_t kMaxName = 31;
+    static constexpr std::size_t kMaxInterfaceId = 63;
+    // What the registry forwards a node's acquire and release to: the link's own (a cart link counts the nodes holding
+    // it, to put the device back to its own state at the last release). Null forwards nothing.
+    using Hook = void (*)(void* link);
 
-    // [control] A handle for the device `name`, never null. `name` is a node's own string, so a C node's word for the
-    // device has to be a link this host installed to get it.
-    CartLink* acquireCart(std::string_view name) {
-        CartLink* link = cart_ != nullptr && name == kCartDeviceName ? cart_ : &noneCart_;
-        link->acquire();
-        return link;
+    DeviceRegistry() : api_{this, &acquireFn, &releaseFn} {}
+    DeviceRegistry(const DeviceRegistry&) = delete;
+    DeviceRegistry& operator=(const DeviceRegistry&) = delete;
+
+    // [control] Install `link` under `name` with the interface `interfaceId`. False, installing nothing, for a null
+    // link, a name or id empty or past its bound, a link or a name and id already installed, and a full table: a host
+    // installs each of its links once and clears it before it installs another in its place.
+    [[nodiscard]] bool install(const char* name, const char* interfaceId, void* link, Hook acquire = nullptr,
+                               Hook release = nullptr) {
+        if (link == nullptr || !fits(name, kMaxName) || !fits(interfaceId, kMaxInterfaceId)) return false;
+        Entry* vacant = nullptr;
+        for (Entry& e : entries_) {
+            if (e.link == nullptr) {
+                if (vacant == nullptr) vacant = &e;
+                continue;
+            }
+            if (e.link == link || (std::strcmp(e.name, name) == 0 && std::strcmp(e.interfaceId, interfaceId) == 0))
+                return false;
+        }
+        if (vacant == nullptr) return false;
+        // memcpy rather than strcpy, which MSVC's /W4 /WX refuses: the lengths are known and bounded above.
+        std::memcpy(vacant->name, name, std::strlen(name) + 1);
+        std::memcpy(vacant->interfaceId, interfaceId, std::strlen(interfaceId) + 1);
+        vacant->link = link;
+        vacant->acquire = acquire;
+        vacant->release = release;
+        return true;
     }
-    SurfaceLink* acquireSurface(std::string_view name) {
-        SurfaceLink* link = surface_ != nullptr && name == kSurfaceDeviceName ? surface_ : &noneSurface_;
-        link->acquire();
-        return link;
+    // [control] The host taking `link` back, before the object it is goes. A node of a plan that is still alive must
+    // have been destroyed already (Engine::clearGraph), or its release reaches nothing: the identity check in release
+    // keeps that harmless, but a host tears its plans down first so a node may use its link there. Nothing for a link
+    // that is not installed.
+    void clear(void* link) {
+        if (link == nullptr) return;
+        for (Entry& e : entries_)
+            if (e.link == link) e = Entry{};
     }
-    // [control] A node is done with a handle it acquired here. The link is told only while it is still the installed
-    // one: a host clears its links before the objects they wrap go, and the plans the engine frees afterwards hand
-    // their handles back to a registry that no longer names them, so a release never reaches a freed link.
-    void release(CartLink* link) {
-        if (link != nullptr && link == cart_) link->release();
+
+    // [control] The link installed under `name` with `interfaceId`, its acquire hook told, or null: a name this host
+    // has no link for, or a link of another interface. `name` and the id are a node's own strings, so a C node's word
+    // for the device has to be one this host installed to get it.
+    void* acquire(const char* name, const char* interfaceId) {
+        if (name == nullptr || interfaceId == nullptr) return nullptr;
+        for (Entry& e : entries_) {
+            if (e.link == nullptr || std::strcmp(e.name, name) != 0 || std::strcmp(e.interfaceId, interfaceId) != 0)
+                continue;
+            if (e.acquire) e.acquire(e.link);
+            return e.link;
+        }
+        return nullptr;
     }
-    void release(SurfaceLink* link) {
-        if (link != nullptr && link == surface_) link->release();
+    // [control] A node is done with a link it acquired here. The link is told only while it is still installed: a host
+    // clears its links before the objects they wrap go, and the plans the engine frees afterwards hand their links
+    // back to a registry that no longer names them, so a release never reaches a freed link.
+    void release(void* link) {
+        if (link == nullptr) return;
+        for (Entry& e : entries_)
+            if (e.link == link) {
+                if (e.release) e.release(e.link);
+                return;
+            }
     }
+
+    // The links installed now.
+    std::size_t size() const {
+        std::size_t n = 0;
+        for (const Entry& e : entries_) n += e.link != nullptr ? 1 : 0;
+        return n;
+    }
+
+    // What a node reads the registry through, rp.host.devices/2.
+    const rp_host_devices* api() const { return &api_; }
 
 private:
-    // What a host that owns no cart answers with: never connected, taking every push nowhere and counting it (the
-    // count a caller that reads the link's sees, while a node keeps its own books on push()'s answer), an expansion
-    // volume it has nowhere to send, and every job refused "not connected" (CartLink's own answer).
-    class NoCart final : public CartLink {
-    public:
-        bool push(std::uint32_t, const std::uint8_t*, std::size_t size, bool, double) override {
-            if (size != 0) dropped_.fetch_add(1, std::memory_order_relaxed);
-            return size == 0;
-        }
-        bool          connected() const override { return false; }
-        std::uint64_t dropped() const override { return dropped_.load(std::memory_order_relaxed); }
-        void          setExpansionVolume(int) override {}
-
-    private:
-        std::atomic<std::uint64_t> dropped_{0};
+    struct Entry {
+        char  name[kMaxName + 1] = {};
+        char  interfaceId[kMaxInterfaceId + 1] = {};
+        void* link = nullptr;  // null: the entry is free
+        Hook  acquire = nullptr;
+        Hook  release = nullptr;
     };
 
-    // And the same for a surface: nothing queued, nothing received, and every push counted as dropped (a node reads
-    // that count as its device's drop).
-    class NoSurface final : public SurfaceLink {
-    public:
-        std::size_t   drainInput(DeviceMessage*, std::size_t) override { return 0; }
-        void          pushOutput(const std::uint8_t*, std::size_t size) override {
-            if (size != 0) dropped_.fetch_add(1, std::memory_order_relaxed);
-        }
-        bool          connected() const override { return false; }
-        std::uint64_t dropped() const override { return dropped_.load(std::memory_order_relaxed); }
+    static bool fits(const char* s, std::size_t max) {
+        if (s == nullptr || s[0] == '\0') return false;
+        std::size_t n = 0;
+        while (s[n] != '\0')
+            if (++n > max) return false;
+        return true;
+    }
+    static void* acquireFn(void* ctx, const char* name, const char* interfaceId) {
+        return static_cast<DeviceRegistry*>(ctx)->acquire(name, interfaceId);
+    }
+    static void releaseFn(void* ctx, void* link) { static_cast<DeviceRegistry*>(ctx)->release(link); }
 
-    private:
-        std::atomic<std::uint64_t> dropped_{0};
-    };
-
-    CartLink*    cart_    = nullptr;
-    SurfaceLink* surface_ = nullptr;
-    NoCart       noneCart_;
-    NoSurface    noneSurface_;
+    Entry           entries_[kMaxLinks];
+    rp_host_devices api_;
 };
+
+// The hooks a C++ link implementing `Interface` is installed with: its own acquire() and release(), reached through the
+// `Interface*` it was installed as, each null for a link that has no such member. What Engine::installLink installs a
+// C++ link with, and a test's rig the same.
+struct LinkHooks {
+    DeviceRegistry::Hook acquire = nullptr;
+    DeviceRegistry::Hook release = nullptr;
+};
+template <class Interface, class Link>
+LinkHooks linkHooks() {
+    LinkHooks hooks;
+    if constexpr (requires(Link& l) { l.acquire(); })
+        hooks.acquire = [](void* p) { static_cast<Link*>(static_cast<Interface*>(p))->acquire(); };
+    if constexpr (requires(Link& l) { l.release(); })
+        hooks.release = [](void* p) { static_cast<Link*>(static_cast<Interface*>(p))->release(); };
+    return hooks;
+}
 
 }  // namespace rp::host

@@ -32,7 +32,6 @@
 #include "host/engine/DspCommand.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/LaunchpadNodes.hpp"
-#include "host/graph/N8Nodes.hpp"
 #include "host/graph/HostServices.hpp"
 #include "host/graph/SystemNodes.hpp"
 #include "host/graph/SystemTable.hpp"
@@ -164,11 +163,10 @@ struct Engine::Graph {
     rp::host::HostSystems                  systems{};
     rp::host::EngineHostIo                 hostIo{};
     rp::host::EngineSyncTrace              syncTrace{};
-    // The links this host's engine hands out by name (rp.host.devices/1), and the struct the nodes read them through.
-    // The registry is declared before the GraphHost below, so it outlives the plans whose nodes give their handles back
-    // as the graph goes.
+    // The links this host's engine hands out by name and interface id (rp.host.devices/2, through devices.api()). The
+    // registry is declared before the GraphHost below, so it outlives the plans whose nodes give their links back as
+    // the graph goes.
     rp::host::DeviceRegistry               devices;
-    rp::host::HostDevices                  devicesApi{};
     std::unique_ptr<rp::graph::GraphHost>  host;
     std::uint32_t                          maxFrames = kDefaultMaxBlockFrames;
 };
@@ -228,18 +226,6 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
                              if (!self->blockTracing_) return;
                              for (std::size_t i = 0; i < size; ++i) self->syncTrace_.byte(frame, data[i]);
                          }};
-    // rp.host.devices/1: the links the host installed, by name, handed out for the life of a plan. A host with no
-    // device never installs one, and its nodes get the never-connected handle instead (design section 3).
-    graph_->devicesApi = {
-        this,
-        [](void* ctx, const char* name) {
-            return static_cast<Engine*>(ctx)->graph_->devices.acquireCart(name ? name : "");
-        },
-        [](void* ctx, rp::host::CartLink* link) { static_cast<Engine*>(ctx)->graph_->devices.release(link); },
-        [](void* ctx, const char* name) {
-            return static_cast<Engine*>(ctx)->graph_->devices.acquireSurface(name ? name : "");
-        },
-        [](void* ctx, rp::host::SurfaceLink* link) { static_cast<Engine*>(ctx)->graph_->devices.release(link); }};
     rp::graph::HostConfig config;
     config.sampleRate = sampleRate;
     config.maxFrames = graph_->maxFrames;
@@ -287,7 +273,11 @@ const void* Engine::graphInterface(void* ctx, const char* id) {
     if (std::strcmp(id, RP_HOST_SYSTEMS_INTERFACE) == 0) return &self->graph_->systems;
     if (std::strcmp(id, RP_ENGINE_HOST_IO_INTERFACE) == 0) return &self->graph_->hostIo;
     if (std::strcmp(id, RP_ENGINE_SYNC_TRACE_INTERFACE) == 0) return &self->graph_->syncTrace;
-    if (std::strcmp(id, RP_HOST_DEVICES_INTERFACE) == 0) return &self->graph_->devicesApi;
+    // rp.host.devices/2: the links the host installed, by name and interface id, handed out for the life of a plan.
+    // A host with no such device installs none, and its nodes are answered null and run on a stub of their own.
+    if (std::strcmp(id, RP_HOST_DEVICES_INTERFACE) == 0) return self->graph_->devices.api();
+    // rp.host.jobs/1: what a device's node hands its link with each job, to finish the engine's record through.
+    if (std::strcmp(id, RP_HOST_JOBS_INTERFACE) == 0) return rp::host::jobReports();
     return nullptr;
 }
 
@@ -605,11 +595,12 @@ bool Engine::addNodePackage(const rp_package* package, std::string* why) {
     return true;
 }
 
-void Engine::setDeviceLinks(rp::host::CartLink* cart, rp::host::SurfaceLink* surface) {
-    // Both back at once is the host uninstalling its links, which is what the registry calls `clear`.
-    if (cart == nullptr && surface == nullptr) graph_->devices.clear();
-    else graph_->devices.install(cart, surface);
+bool Engine::installDevice(const char* name, const char* interfaceId, void* link, void (*acquire)(void* link),
+                           void (*release)(void* link)) {
+    return graph_->devices.install(name, interfaceId, link, acquire, release);
 }
+
+void Engine::clearDevice(void* link) { graph_->devices.clear(link); }
 
 void Engine::clearGraph() {
     // The caller stopped the audio thread: make the engine quiescent so the swap below and the reclaim that follows it
@@ -1049,12 +1040,25 @@ rp::host::JobSubmit Engine::submitDeviceJob(const rp::host::JobRequest& r) {
         return {0, "unknown capability " + r.capability};
     rp_node* node = graph_->host->node(r.nodeId);
     const auto* jobs =
-        node ? static_cast<const rp::host::DeviceJobs*>(node->vt->get_interface(node, r.capability.c_str())) : nullptr;
+        node ? static_cast<const rp_device_jobs*>(node->vt->get_interface(node, r.capability.c_str())) : nullptr;
     if (!jobs) return {0, "node " + r.nodeId + " presents no " + r.capability};
+    // The request crosses as C strings, which end at a NUL: a field holding one would reach the device cut short (a
+    // battery name "a\0b" read as "a"), so it is refused here, where the whole string is still seen.
+    const std::pair<const char*, const std::string*> fields[] = {
+        {"node id", &r.nodeId}, {"capability", &r.capability}, {"operation", &r.op}, {"region", &r.region},
+        {"name", &r.name}};
+    for (const auto& [field, value] : fields)
+        if (value->find('\0') != std::string::npos)
+            return {0, std::string("the job's ") + field + " holds a NUL byte, which a device's request cannot carry"};
     auto job = std::make_unique<rp::host::Job>();
     job->nodeId = r.nodeId;
-    std::string error;
-    if (!jobs->submit(jobs->ctx, r, *job, &error)) return {0, error.empty() ? "the job was refused" : error};
+    // The request crosses as C (graph/rp_jobs.h), borrowing `r` for the call; the record crosses as its opaque handle,
+    // the rp_job a report names. A refusal's reason comes back in a buffer of ours, and one past it is cut short, not
+    // lost.
+    const rp_job_request request = rp::host::requestView(r);
+    char                 error[kDeviceJobErrorBytes] = {};
+    if (!jobs->submit(jobs->ctx, &request, rp::host::handle(job.get()), error, sizeof error))
+        return {0, error[0] != '\0' ? std::string(error) : std::string("the job was refused")};
     job->id = nextJobId_++;
     const std::uint32_t id = job->id;
     jobs_.push_back(std::move(job));
@@ -1270,6 +1274,6 @@ bool Engine::stageNodeMidi(const std::string& nodeId, const std::uint8_t* bytes,
     // device.
     rp_node* node = graph_->host->runningNode(nodeId);
     if (!node) return false;
-    const auto* stage = static_cast<const rp::host::rp_host_stage*>(node->vt->get_interface(node, RP_STAGE_INTERFACE));
+    const auto* stage = static_cast<const rp_host_stage*>(node->vt->get_interface(node, RP_STAGE_INTERFACE));
     return stage != nullptr && stage->stage(stage->ctx, bytes, len, sampleRate_);
 }

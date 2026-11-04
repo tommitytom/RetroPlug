@@ -510,5 +510,5 @@ Native ([packages/native/src/](../packages/native/src/)):
 - [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp): each system node's settings, params
   and inputs, applied before its core runs.
 - [HostIoNodes.cpp](../packages/native/src/host/graph/HostIoNodes.cpp): the host MIDI I/O nodes the protocol
-  nodes read from and send to; [N8Nodes.cpp](../packages/native/src/host/graph/N8Nodes.cpp): the cart's node;
+  nodes read from and send to; [N8Nodes.cpp](../packages/native/src/n8/N8Node.cpp): the cart's node;
   [LaunchpadNodes.cpp](../packages/native/src/host/graph/LaunchpadNodes.cpp): the control surface's two.

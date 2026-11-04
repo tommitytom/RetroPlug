@@ -27,16 +27,20 @@
 #include "../graph/CountingAllocator.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
-#include "host/devices/DeviceLinks.hpp"
+#include "TestDevices.hpp"
+#include "graph/desktop/DeviceJobSlot.hpp"
 #include "host/engine/CapabilityJobs.hpp"
 #include "host/HostServices.hpp"
 #include "host/engine/Engine.hpp"
-#include "host/graph/N8Nodes.hpp"
+#include "host/graph/SystemNodes.hpp"  // kExpansionVolume*, rp.mesen.nes's range
+#include "n8/CartLink.hpp"
+#include "n8/N8Node.hpp"
 
 namespace {
 
-using rp::host::CartLink;
-using rp::host::DeviceJobSlot;
+using rp::DeviceJobSlot;
+using rp::n8::CartLink;
+using rp::n8::CartNotes;
 using rp::host::Job;
 using rp::host::JobRequest;
 using rp::host::test::DocExtras;
@@ -63,7 +67,7 @@ public:
         bool          flush = false;
         double        rate  = 0.0;
         std::uint16_t size  = 0;
-        std::uint8_t  data[rp::host::kMaxDeviceMessage] = {};
+        std::uint8_t  data[rp::host::test::kCartPushBytes] = {};
         Bytes         bytes() const { return Bytes(data, data + size); }
     };
 
@@ -84,7 +88,7 @@ public:
         p.frame = frame;
         p.flush = flush;
         p.rate  = rate;
-        p.size  = static_cast<std::uint16_t>(std::min(size, rp::host::kMaxDeviceMessage));
+        p.size  = static_cast<std::uint16_t>(std::min(size, rp::host::test::kCartPushBytes));
         std::memcpy(p.data, data, p.size);
         pushes.push_back(p);
         return true;
@@ -92,22 +96,31 @@ public:
     bool          connected() const override { return streaming(); }
     std::uint64_t dropped() const override { return drops; }
     void          setExpansionVolume(int value) override { volumes.push_back(value); }
-    void          acquire() override { ++acquires; }
-    void          release() override { ++releases; }
+    void          acquire() { ++acquires; }
+    void          release() { ++releases; }
 
     // One job at a time, none while detached, as the real link answers; a taken job holds the device until the case,
     // playing its thread, finishes it.
-    bool submitJob(const JobRequest& request, Job& job, const void* owner, std::string* error) override {
+    bool submitJob(const rp_job_request& request, rp_job* job, const rp_host_jobs* reports, const void* owner,
+                   char* error, std::size_t errorCap) override {
+        if (!refusal.empty()) {  // a reason of the case's own, to hold how the engine carries it back
+            rp_job_error(error, errorCap, refusal.c_str());
+            return false;
+        }
         if (slot.busy()) {
-            *error = "busy: the cart is running another job";
+            rp_job_error(error, errorCap, "busy: the cart is running another job");
             return false;
         }
         if (!attached) {
-            *error = "not connected";
+            rp_job_error(error, errorCap, "not connected");
             return false;
         }
-        if (!slot.claim(job, owner)) return false;
-        lastRequest = request;
+        if (!slot.claim(reports, job, owner)) return false;
+        lastRequest.nodeId     = request.node_id;
+        lastRequest.capability = request.capability;
+        lastRequest.op         = request.op;
+        lastRequest.name       = request.name;
+        lastRequest.bytes.assign(request.bytes, request.bytes + request.size);
         jobRunning  = true;
         return true;
     }
@@ -115,16 +128,16 @@ public:
         ++abandons;
         slot.abandon(owner);
     }
-    void releaseNotes(const rp::host::CartNotes& notes) override { released.push_back(notes); }
+    void releaseNotes(const CartNotes& notes) override { released.push_back(notes); }
     // The device's thread: progress, then streaming back and the completion after it.
     void progress(std::uint32_t done, std::uint32_t total) { slot.progress(done, total); }
     void finish(Bytes result) {
         jobRunning = false;
-        slot.succeed(std::move(result));
+        slot.succeed(result);
     }
     void failJob(std::string error) {
         jobRunning = false;
-        slot.fail(std::move(error));
+        slot.fail(error);
     }
 
     bool              attached   = true;
@@ -136,8 +149,9 @@ public:
     int               abandons   = 0;
     std::vector<int>  volumes;
     std::vector<Push> pushes;
-    std::vector<rp::host::CartNotes> released;  // each release a leaving node handed over, in order
+    std::vector<CartNotes> released;  // each release a leaving node handed over, in order
     JobRequest        lastRequest;
+    std::string       refusal;  // set: every job is refused with it
     DeviceJobSlot     slot;
 };
 
@@ -206,7 +220,7 @@ TEST_CASE("rp.n8.nes receives what rp.mesen.nes receives from one source, in ord
           "[engine-graph][n8-node]") {
     FakeCart cart;
     NodeRig  rig(kRate);
-    rig.devices.install(&cart, nullptr);
+    rig.installCart(cart);
     REQUIRE(rig.set(fanOut(rig)).ok);
     Feed& feed = rig.node<Feed>("feed");
     // Several messages at one frame, a SysEx longer than a MidiEvent, an empty one (skipped), and bytes with and
@@ -249,7 +263,7 @@ TEST_CASE("rp.n8.nes's connected output follows the link from frame 0, and a hos
     SECTION("an installed link, attached, then gone, then back") {
         FakeCart cart;
         NodeRig  rig(kRate);
-        rig.devices.install(&cart, nullptr);
+        rig.installCart(cart);
         REQUIRE(rig.set(fanOut(rig)).ok);
         Probe& probe = rig.node<Probe>("probe");
         block(rig);
@@ -264,7 +278,7 @@ TEST_CASE("rp.n8.nes's connected output follows the link from frame 0, and a hos
         CHECK(probe.controlAtZero == 1.0);
         CHECK(cart.acquires == 1);
     }
-    SECTION("no link installed: the never-connected handle, through a real Engine") {
+    SECTION("no link installed: the node's never-connected stub, through a real Engine") {
         Engine                         e(kRate);
         rp::host::test::Roms           roms;
         std::vector<DocSystem>         systems{{1, rp::host::test::kNesType}};
@@ -285,7 +299,7 @@ TEST_CASE("rp.n8.nes gives the link its expansion volume at its first block, on 
           "[engine-graph][n8-node]") {
     FakeCart cart;
     NodeRig  rig(kRate);
-    rig.devices.install(&cart, nullptr);
+    rig.installCart(cart);
     REQUIRE(rig.set(fanOut(rig, R"("expansionVolume":50)")).ok);
     block(rig);
     // 50 % of unity, rescaled as the node's expansionVolumeRegister does: round(50 * 128 / 100).
@@ -304,15 +318,24 @@ TEST_CASE("rp.n8.nes gives the link its expansion volume at its first block, on 
     cart.attached = true;
     block(rig);
     CHECK(cart.volumes == std::vector<int>{64, 255, 255});
-    CHECK(rp::host::expansionVolumeRegister(100) == 128);
-    CHECK(rp::host::expansionVolumeRegister(0) == 0);
+    CHECK(rp::n8::expansionVolumeRegister(100) == 128);
+    CHECK(rp::n8::expansionVolumeRegister(0) == 0);
+}
+
+TEST_CASE("rp.n8.nes's expansion-volume range is rp.mesen.nes's, since one knob drives both",
+          "[engine-graph][n8-node]") {
+    // The pack keeps its own constants (its node includes nothing of the engine's), and buildGraph hands both nodes the
+    // system's one knob, so a range that drifted on one side would clamp the same value two ways.
+    STATIC_REQUIRE(rp::n8::kExpansionVolumeMin == rp::host::kExpansionVolumeMin);
+    STATIC_REQUIRE(rp::n8::kExpansionVolumeMax == rp::host::kExpansionVolumeMax);
+    STATIC_REQUIRE(rp::n8::kExpansionVolumeDefault == rp::host::kExpansionVolumeDefault);
 }
 
 TEST_CASE("a note-off the link dropped during a pause goes out at frame 0 of the first block it reads connected",
           "[engine-graph][n8-node]") {
     FakeCart cart;
     NodeRig  rig(kRate);
-    rig.devices.install(&cart, nullptr);
+    rig.installCart(cart);
     REQUIRE(rig.set(fanOut(rig)).ok);
     Feed& feed = rig.node<Feed>("feed");
     feed.next[Feed::Midi] = {{4, {0x91, 60, 100}}, {5, {0x91, 64, 100}}};
@@ -345,7 +368,7 @@ TEST_CASE("an owed note-off the link refuses part-way stays owed, and a retrigge
     SECTION("a pay the link refuses part-way keeps the rest owed") {
         FakeCart cart;
         NodeRig  rig(kRate);
-        rig.devices.install(&cart, nullptr);
+        rig.installCart(cart);
         REQUIRE(rig.set(fanOut(rig)).ok);
         Feed& feed = rig.node<Feed>("feed");
         // Two notes the cart is holding, then a pause that drops both their note-offs.
@@ -377,7 +400,7 @@ TEST_CASE("an owed note-off the link refuses part-way stays owed, and a retrigge
     SECTION("a note-on that reaches the cart clears that note's owed note-off") {
         FakeCart cart;
         NodeRig  rig(kRate);
-        rig.devices.install(&cart, nullptr);
+        rig.installCart(cart);
         REQUIRE(rig.set(fanOut(rig)).ok);
         Feed& feed = rig.node<Feed>("feed");
         feed.next[Feed::Midi] = {{1, {0x90, 60, 100}}};
@@ -410,7 +433,7 @@ TEST_CASE("rp.n8.nes's jobs: one at a time, none while disconnected, streaming p
     rp::host::test::Roms   roms;
     std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
     withRoms(e, systems, roms);
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     REQUIRE(e.setGraph(cartDocument(systems)).ok);
     block(e);
 
@@ -425,6 +448,18 @@ TEST_CASE("rp.n8.nes's jobs: one at a time, none while disconnected, streaming p
         const auto unknown = e.submitJob(request(id, "dump"));
         CHECK(unknown.id == 0);
         CHECK(unknown.error == std::string("unknown capability ") + id);
+    }
+
+    // A request crosses to the node as C strings, so a field holding a NUL is refused before the node is asked: the
+    // cart would read the battery name "a\0b" as "a" and reach another game's file.
+    {
+        auto nul = request(RP_SYSTEM_SRAM_INTERFACE, "dump");
+        nul.name = std::string("a\0b", 3);
+        const auto refused = e.submitJob(nul);
+        CHECK(refused.id == 0);
+        CHECK(refused.error == "the job's name holds a NUL byte, which a device's request cannot carry");
+        CHECK_FALSE(cart.slot.busy());
+        CHECK(cart.lastRequest.op.empty());  // the cart was never asked
     }
 
     // Detached: refused at once.
@@ -483,6 +518,59 @@ TEST_CASE("rp.n8.nes's jobs: one at a time, none while disconnected, streaming p
     CHECK(e.jobsOutstanding() == 0);
 }
 
+TEST_CASE("rp.n8.nes refuses every job in a host that offers no job reports, before its link is asked",
+          "[engine-graph][n8-node]") {
+    FakeCart cart;
+    NodeRig  rig(kRate);
+    rig.offerJobReports = false;
+    rig.installCart(cart);
+    REQUIRE(rig.set(fanOut(rig)).ok);
+    block(rig);
+
+    rp_node* node = rig.host->node("cart");
+    REQUIRE(node != nullptr);
+    const auto* jobs = static_cast<const rp_device_jobs*>(node->vt->get_interface(node, RP_SYSTEM_SRAM_INTERFACE));
+    REQUIRE(jobs != nullptr);
+    const JobRequest     r       = request(RP_SYSTEM_SRAM_INTERFACE, "dump");
+    const rp_job_request request = rp::host::requestView(r);
+    Job                  job;
+    char                 error[256] = {};
+    CHECK_FALSE(jobs->submit(jobs->ctx, &request, rp::host::handle(&job), error, sizeof error));
+    CHECK(std::string(error) == "this host takes no device jobs");
+    CHECK(job.state.load() == Job::Queued);  // the record untouched
+    CHECK_FALSE(cart.slot.busy());
+    CHECK(cart.lastRequest.op.empty());  // the link was never asked
+}
+
+TEST_CASE("a device's refusal comes back through Engine::submitJob cut to its buffer, never inside a UTF-8 sequence",
+          "[engine-graph][n8-node]") {
+    FakeCart               cart;
+    Engine                 e(kRate);
+    rp::host::test::Roms   roms;
+    std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
+    withRoms(e, systems, roms);
+    rp::host::test::installCart(e, cart);
+    REQUIRE(e.setGraph(cartDocument(systems)).ok);
+    block(e);
+    static_assert(Engine::kDeviceJobErrorBytes == 256);
+
+    // Past the buffer: the reason arrives cut to its 255 bytes, the NUL the 256th.
+    cart.refusal = std::string(300, 'z');
+    const auto plain = e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump"));
+    CHECK(plain.id == 0);
+    CHECK(plain.error == std::string(255, 'z'));
+
+    // A two-byte code point across the cut (its lead byte the 255th): the cut backs up to before it, so what crosses
+    // the RPC is still a string.
+    cart.refusal = std::string(254, 'x') + "\xC3\xA9" + "tail";
+    const auto split = e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump"));
+    CHECK(split.id == 0);
+    CHECK(split.error == std::string(254, 'x'));
+    // One that fits whole is kept whole.
+    cart.refusal = std::string(253, 'x') + "\xC3\xA9";
+    CHECK(e.submitJob(request(RP_SYSTEM_SRAM_INTERFACE, "dump")).error == cart.refusal);
+}
+
 TEST_CASE("a cart node removed during a job abandons it: it fails at once, and the device reports into it no more",
           "[engine-graph][n8-node]") {
     FakeCart               cart;
@@ -490,7 +578,7 @@ TEST_CASE("a cart node removed during a job abandons it: it fails at once, and t
     rp::host::test::Roms   roms;
     std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
     withRoms(e, systems, roms);
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     REQUIRE(e.setGraph(cartDocument(systems)).ok);
     block(e);
 
@@ -533,11 +621,11 @@ TEST_CASE("a cart node leaving the plan hands its link the notes the cart holds;
     rp::host::test::Roms   roms;
     std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
     withRoms(e, systems, roms);
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     REQUIRE(e.setGraph(cartDocument(systems)).ok);
     block(e);
     const auto notes = [](std::initializer_list<std::size_t> held) {
-        rp::host::CartNotes n;
+        CartNotes n;
         for (std::size_t note : held) n.set(note);
         return n;
     };
@@ -610,7 +698,7 @@ TEST_CASE("the idle tick a host's frame loop calls destroys the plan an audio th
     rp::host::test::Roms   roms;
     std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
     withRoms(e, systems, roms);
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     REQUIRE(e.setGraph(cartDocument(systems)).ok);
     e.stageMidi(0, Bytes{0x90, 60, 100});
     block(e);
@@ -665,7 +753,7 @@ TEST_CASE("the idle tick a host's frame loop calls destroys the plan an audio th
     // handle given back), the core and the last pins on the ROM.
     CHECK(svc.reclaimOnIdle() >= 1);
     REQUIRE(cart.released.size() == 1);
-    rp::host::CartNotes held;
+    CartNotes held;
     held.set(60);
     CHECK(cart.released[0] == held);
     CHECK(cart.releases == 1);
@@ -690,7 +778,7 @@ TEST_CASE("a warmed block feeding a NES and its cart node allocates and frees no
     rp::host::test::Roms   roms;
     std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
     withRoms(e, systems, roms);
-    e.setDeviceLinks(&cart, nullptr);
+    rp::host::test::installCart(e, cart);
     REQUIRE(e.setGraph(cartDocument(systems, R"("expansionVolume":80)")).ok);
     for (int i = 0; i < 4; ++i) block(e);
     // A note the cart holds and whose note-off a pause then drops, so the counted block pays an owed note-off too.
@@ -715,11 +803,11 @@ TEST_CASE("a warmed block feeding a NES and its cart node allocates and frees no
     CHECK(counted.frees == 0);
     REQUIRE(cart.pushes.size() == 3);  // the owed note-off, then the block's two
     CHECK(cart.pushes[0].bytes() == Bytes{0x80, 60, 0});
-    CHECK(cart.volumes.back() == rp::host::expansionVolumeRegister(90));
+    CHECK(cart.volumes.back() == rp::n8::expansionVolumeRegister(90));
 }
 
 TEST_CASE("rp.n8.nes declares threads, so a target with none refuses the type", "[engine-graph][n8-node]") {
-    const rp_package* pkg = rp::host::n8Package();
+    const rp_package* pkg = rp::n8::n8Package();
     const rp_node_type* cart = nullptr;
     for (std::uint32_t i = 0; i < pkg->node_type_count; ++i)
         if (std::string(pkg->node_types[i]->id) == "rp.n8.nes") cart = pkg->node_types[i];
@@ -738,7 +826,7 @@ TEST_CASE("rp.n8.nes declares threads, so a target with none refuses the type", 
 TEST_CASE("rp.n8.nes is unique: a plan holds one cart node", "[engine-graph][n8-node]") {
     // One cart, one link: a second node would push at the one device's ring while its twin pushed too, so the type
     // declares itself unique and the planner refuses the document, naming the second.
-    const rp_package* pkg = rp::host::n8Package();
+    const rp_package* pkg = rp::n8::n8Package();
     const rp_node_type* cart = nullptr;
     for (std::uint32_t i = 0; i < pkg->node_type_count; ++i)
         if (std::string(pkg->node_types[i]->id) == "rp.n8.nes") cart = pkg->node_types[i];

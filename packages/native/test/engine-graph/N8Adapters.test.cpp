@@ -27,6 +27,7 @@
 
 #include "../n8/FakeN8.hpp"
 #include "GraphDocs.hpp"
+#include "TestDevices.hpp"
 #include "host/engine/CapabilityJobs.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/n8/N8CartLink.hpp"
@@ -117,7 +118,7 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
         rp::host::test::Roms   roms;
         std::vector<DocSystem> systems{{1, rp::host::test::kNesType}};
         withRoms(e, systems, roms);
-        e.setDeviceLinks(&link, nullptr);
+        rp::host::test::installCart(e, link);
         REQUIRE(e.setGraph(withCart(systems)).ok);
         host.setPort("/dev/fake");
         host.connect(true);
@@ -201,7 +202,7 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
             host.connect(true);
             REQUIRE(host.link().isConnected());
             e.clearGraph();
-            e.setDeviceLinks(nullptr, nullptr);
+            rp::host::test::clearCart(e, link);
         }
         SECTION("a host's teardown with a note held: the plans first, then the links") {
             // The plugin's order: the plans first, while the link is installed, so the node's destroy hands the note
@@ -210,7 +211,7 @@ TEST_CASE("the cart's production adapters behind a real Engine: a note, then the
             e.clearGraph();
             REQUIRE(waitUntil([&] { return dev.count("fifo:80 3C 00") == 1; }));
             CHECK(host.link().isConnected());
-            e.setDeviceLinks(nullptr, nullptr);
+            rp::host::test::clearCart(e, link);
         }
     }
     // ~N8Host joins the serial thread with nothing left that borrows it.

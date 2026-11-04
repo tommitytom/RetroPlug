@@ -27,6 +27,7 @@
 #include "EmbeddedRoms.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
+#include "TestDevices.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "host/HostServices.hpp"
@@ -311,7 +312,7 @@ TEST_CASE("a press the harness link held before a surface node bound it is never
     QueuedInvoker               invoker(e);
     EngineRpcService            rpc(e, invoker);
     rp::host::HarnessSurfaceLink surface;
-    e.setDeviceLinks(nullptr, &surface);  // as the test host installs it: the node binds it by name
+    rp::host::test::installSurface(e, surface);  // as the test host installs it: the node binds it by name
     rpc.setHarnessSurface(&surface);
 
     // A plan with no surface node reads nothing from the harness's link, so a controller message waits there.

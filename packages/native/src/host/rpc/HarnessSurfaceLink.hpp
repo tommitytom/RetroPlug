@@ -18,11 +18,11 @@
 #include <span>
 
 #include "transport/SpscRing.hpp"
-#include "host/devices/DeviceLinks.hpp"
+#include "launchpad/SurfaceLink.hpp"
 
 namespace rp::host {
 
-class HarnessSurfaceLink final : public SurfaceLink {
+class HarnessSurfaceLink final : public rp::launchpad::SurfaceLink {
 public:
     // The messages one host may stage before a block drains them, and the bytes each may hold: the surface link's own
     // receive ring depth and the message bound (kMaxDeviceMessage) are what a real link holds too.
@@ -33,8 +33,8 @@ public:
     // in dropped(); an empty or oversized message is refused without being counted, where a real link counts an
     // oversized arrival too.
     bool queueInput(std::span<const std::uint8_t> bytes) {
-        if (bytes.empty() || bytes.size() > kMaxDeviceMessage) return false;
-        DeviceMessage m;
+        if (bytes.empty() || bytes.size() > rp::launchpad::kMaxDeviceMessage) return false;
+        rp::launchpad::DeviceMessage m;
         m.size = static_cast<std::uint16_t>(bytes.size());
         for (std::size_t i = 0; i < bytes.size(); ++i) m.data[i] = bytes[i];
         if (staged_->tryPush(m)) return true;
@@ -43,7 +43,7 @@ public:
     }
 
     // ---- SurfaceLink ----
-    std::size_t drainInput(DeviceMessage* out, std::size_t capacity) override {
+    std::size_t drainInput(rp::launchpad::DeviceMessage* out, std::size_t capacity) override {
         std::size_t n = 0;
         while (n < capacity && staged_->tryPop(out[n])) ++n;
         return n;
@@ -64,8 +64,8 @@ private:
     // Windows gives 1 MiB of stack, where every suite here has 8), so the ring is one allocation made when the link is
     // built, as LaunchpadLink's receive ring is, and never rides a stack. Staging and draining copy in and out of its
     // fixed slots.
-    std::unique_ptr<SpscRing<DeviceMessage, kStagedMessages>> staged_ =
-        std::make_unique<SpscRing<DeviceMessage, kStagedMessages>>();
+    std::unique_ptr<SpscRing<rp::launchpad::DeviceMessage, kStagedMessages>> staged_ =
+        std::make_unique<SpscRing<rp::launchpad::DeviceMessage, kStagedMessages>>();
     std::atomic<std::uint64_t>                          pushed_{0};
     std::atomic<std::uint64_t>                          dropped_{0};
 };

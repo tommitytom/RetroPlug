@@ -1,12 +1,17 @@
 #pragma once
 
-// The engine services the engine's nodes ask the host for through rp_host.get_interface.
+// The engine services the engine's nodes ask the host for through rp_host.get_interface. The device links
+// (rp.host.devices/2) and the job reports (rp.host.jobs/1) a device's node takes, and the staged message (rp.stage/1)
+// it presents, are the node SDK's (graph/rp_device.h, graph/rp_jobs.h, graph/rp_stage.h), since such a node includes
+// nothing here.
 
 #include <cstddef>
 #include <cstdint>
 
+#include "graph/rp_device.h"  // rp.host.devices/2
+#include "graph/rp_jobs.h"    // rp.host.jobs/1 and the capability ids
 #include "graph/rp_node.h"
-#include "host/devices/DeviceLinks.hpp"
+#include "graph/rp_stage.h"   // rp.stage/1, which the system nodes present
 
 class SystemBase;
 struct SystemBuildRequest;  // system/SystemFactory.hpp, which only the builders need in full
@@ -51,23 +56,6 @@ struct EngineHostIo {
     void (*midiOut)(void* ctx, std::uint32_t system, std::uint32_t frame, const std::uint8_t* data, std::size_t size);
 };
 
-// The host's device links (docs/modular-graph-phase-c5-design.md section 3), for the hardware nodes: a node binds the
-// device it drives by name and is handed a link (host/devices/DeviceLinks.hpp), which it borrows for the life of its
-// plan rather than owning - the host's link outlives every plan that could hold a handle, so a node may use it in
-// destroy. acquire is [control], in the node's activate; release likewise, in its destroy. A reactivate runs activate
-// again on the same instance (a sample-rate change, a block growth), so a node keeps a handle it already holds and
-// acquires no second one. A name this host has no device for answers with a link that is never connected and accepts
-// and drops everything, never null, so a node needs no null checks and a document plans and runs the same in every
-// host.
-#define RP_HOST_DEVICES_INTERFACE "rp.host.devices/1"
-struct HostDevices {
-    void* ctx;
-    CartLink* (*acquireCart)(void* ctx, const char* name);
-    void (*releaseCart)(void* ctx, CartLink* link);
-    SurfaceLink* (*acquireSurface)(void* ctx, const char* name);
-    void (*releaseSurface)(void* ctx, SurfaceLink* link);
-};
-
 // The engine's sync trace (HostSyncTrace): a system node records the bytes its `bytes` input feeds the core's byte
 // device, so across systems a block's bytes are in plan order, one system's after another's, where the kernel
 // stage's were in its emission order. The trace is a diagnostic, and nothing reads that order. Nothing while the
@@ -76,22 +64,6 @@ struct HostDevices {
 struct EngineSyncTrace {
     void* ctx;
     void (*bytes)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size);
-};
-
-// A node a host may hand a message aimed at it, outside its inputs (docs/modular-graph-phase-c5-design.md section 4):
-// the UI stages a settings message at one node by the document id it gives it, so it reaches the cart whose menu it is
-// whatever the project's musical routing does with channels. The engine asks the node the running plan places under
-// this id, so it learns no node's type: a system node hands the message to its core's ingress, a device node to its
-// device.
-// [audio] - the call happens on the thread that drains the engine's command ring, before the block that follows it, so
-// a staged message lands at frame 0 of the next block exactly as a per-system command did.
-#define RP_STAGE_INTERFACE "rp.stage/1"
-struct rp_host_stage {
-    void* ctx;
-    // Hand `size` staged bytes to the node, at frame 0 of the next block, the rate being the block's transport rate a
-    // device needs to time a release. False when the node stages nothing (no core yet, or a message its door cannot
-    // take), which is what the caller reads as "this node took none".
-    bool (*stage)(void* ctx, const std::uint8_t* data, std::size_t size, double sample_rate);
 };
 
 }  // namespace rp::host
