@@ -170,8 +170,8 @@ TEST_CASE("Edio framing matches the golden byte for byte", "[n8]") {
     const auto parsed = rfl::json::read<EdioGolden>(text);
     REQUIRE(parsed);
     const EdioGolden g = parsed.value();
-    // The 15 primitives' cases, then the 13 the fix pass recorded from the TS client at 3eb5a7928 (listings, files read
-    // whole, the menu's commands, boots).
+    // The 15 primitives' cases, then the 13 recorded from the TS client at ad3a1d4ae, the commit before the one Edio
+    // (listings, files read whole, the menu's commands, boots).
     REQUIRE(g.cases.size() == 28);
 
     for (const EdioCase& c : g.cases) {
@@ -241,7 +241,7 @@ TEST_CASE("Edio framing matches the golden byte for byte", "[n8]") {
             std::uint8_t vram[rp::n8::Menu::kVramBytes], palette[rp::n8::Menu::kPaletteBytes];
             s = rp::n8::Menu(edio).vramDump(vram, palette);
         } else if (c.op == "loadRom") {
-            // As the old TS client's loadRom (n8Load.ts at 3eb5a7928, which recorded these cases): an sdPath boots what
+            // As the old TS client's loadRom (n8Load.ts at ad3a1d4ae, which recorded these cases): an sdPath boots what
             // the card holds, else the ROM goes to usb-games/<romName>.
             const auto        srm    = fromHex(a.srm.value_or(""));
             const bool        upload = !a.path;

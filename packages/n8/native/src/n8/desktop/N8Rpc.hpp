@@ -16,11 +16,12 @@
 // The session half is what the CLI's sessions drive (n8-load, n8-play, n8-bridge, n8-sync, through createN8Client's
 // openN8): a port opened by name (n8Open, answering a handle), the Edio primitives, the menu's commands and the
 // operations (n8/Ops.hpp) on that handle, and n8Close. A session persists nothing and is its own Edio over its own
-// port, opened through the provider's port factory (deps/serial's, or a test host's fake cart). One writer to an N8:
-// a port the streaming link holds does not open in a session, as one another process holds does not, and the link
-// does not connect to a port a session holds (N8Host::setPortGuard, which the facet answers). Both compare the device
-// where the platform can tell (a /dev/serial/by-id symlink and its /dev/ttyACM are one port), else the name. Every
-// session call answers an N8Reply.
+// port, opened through the provider's port factory (deps/serial's, or a test host's fake cart). One writer to an N8
+// within this process: a port the streaming link holds does not open in a session, and the link does not connect to a
+// port a session holds (N8Host::setPortGuard, which the facet answers). Both compare the device where the platform can
+// tell (a /dev/serial/by-id symlink and its /dev/ttyACM are one port), else the name. Another process is not kept out
+// by this: deps/serial opens a POSIX port without TIOCEXCL or a lock, so there a port this process holds opens in a
+// CLI process too, and only Windows refuses a COM port another process holds. Every session call answers an N8Reply.
 
 #include <cstdint>
 #include <map>
@@ -97,8 +98,9 @@ public:
 
     // The serial ports, each flagged when it is an N8 (USB VID:PID 38df:0017).
     std::vector<retroplug::N8PortDto> n8ListPorts();
-    // Open `port`: `value` is the session's handle. A port that cannot be opened (absent, busy, the streaming link's)
-    // answers "linkDown", "cannot open serial port: <port>".
+    // Open `port`: `value` is the session's handle. A port that cannot be opened (absent, no permission, held by
+    // another process where the OS refuses that, or the streaming link's) answers "linkDown", "cannot open serial
+    // port: <port>".
     N8Reply n8Open(std::string port);
     // Close a session and its port. False for a handle that is not open.
     bool n8Close(std::int32_t handle);

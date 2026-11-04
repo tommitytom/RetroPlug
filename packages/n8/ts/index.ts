@@ -70,7 +70,7 @@ export interface N8DirEntry {
 
 /** The Edio protocol's calls on an open session, each one call of the facet's (N8Rpc.hpp), throwing on a failure. */
 export interface N8Edio {
-  /** The connect handshake: flushInput, then CMD_STATUS answered A5 <status> within `handshakeTimeoutMs` (default
+  /** The connect handshake: flushInput, then CMD_STATUS answered <status> A5 within `handshakeTimeoutMs` (default
    *  300). The status byte. */
   connect(handshakeTimeoutMs?: number): number;
   getStatus(): number;
@@ -82,7 +82,8 @@ export interface N8Edio {
   /** mkdir ("already exists" is done); delete a file or an empty directory. */
   dirMake(path: string): void;
   fileDelete(path: string): void;
-  /** The read timeout of this session's waits, in ms (2000 until changed). */
+  /** The reply wait (Timeouts::readMs), in ms (2000 until changed); the handshake, the file blocks and the install keep
+   *  their own waits. */
   setReadTimeout(ms: number): void;
   flushInput(): void;
   /** Device memory: memWR is fire-and-forget; memRD blocks until `size` bytes arrive. */

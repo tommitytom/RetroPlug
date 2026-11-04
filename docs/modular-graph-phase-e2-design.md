@@ -141,7 +141,12 @@ transport interface plus a virtual destructor and the text of the call that fail
 target: the desktop's catches deps/serial's exceptions, answers a short count or 0 and keeps the port's own words, which
 `N8Link`, `N8Host` and the facet report in place of Edio's. The Pico's `UsbCdcTransport` (section 8) pumps TinyUSB and
 its idle hook inside its own waits, and `read(..., 0)` returns after one pump with what it found. Edio never knows about
-either.
+either. The contract a new transport (a browser's, E4's) meets is in the header: a read blocks its caller, so a
+transport whose bytes arrive elsewhere pumps that context inside the wait or runs the protocol on a worker it can
+block; `linkUp()` stays false once it is false until the owner binds the transport again, so a call mid-command when its
+device went cannot carry on into the next; and `flushInput()` waits for the line to go quiet only if the transport
+chooses (the Pico's drops until 20 ms pass with nothing arriving, the desktop's drops what the OS holds now), so a
+caller cannot count on it to take a reply's tail still in flight.
 
 **`Edio`** is a plain class over a `Transport&`: it allocates nothing, throws nothing, uses no RTTI, and is neither
 thread-safe (on the desktop `N8Link` and `N8Host` already serialise every use; on the Pico there is one thread) nor
@@ -163,7 +168,9 @@ boot, for no RAM saved.
   have no TS twin (a write timeout, link down, cancelled, too large). A port that fails (a deps/serial exception) is
   reported by the facet as `linkDown` with the port's words rather than as a timeout: Edio itself says `Timeout`,
   because a desktop transport cannot tell its link's state, and latching `linkUp` false there would turn a refused
-  config write into a dead stream.
+  config write into a dead stream. A call refused before it reached the port (`TooLarge` at `Where::Length` or
+  `Where::BatteryPath`) is reported in the protocol's words, not the port's (`portSaid`), since the port's text is then
+  an earlier call's.
 - **One write per frame.** A command's header, its arguments and as much payload as fits a 256-byte scratch in the
   object go out in one `write`; a larger payload follows in further writes (8 KB at a time). That is the Pico's PIO-USB
   rule (one packet per endpoint per 1 ms frame) and it changes nothing on the desktop but the number of calls. **A short
@@ -419,7 +426,10 @@ the pack's provider:
   serial port: <port>", and `N8Host::setPortGuard`, which the facet sets and clears in its destructor, makes the link
   refuse to connect to a port a session holds ("the port <p> is open in an N8 session", the same state a failed
   connect leaves); both compare names first and then `std::filesystem::canonical`, so a `/dev/serial/by-id` symlink and
-  its tty are one port. One facet per host (`setPortGuard` holds one).
+  its tty are one port. One facet per host (`setPortGuard` holds one). This keeps out another writer in this process only:
+  deps/serial opens a POSIX port without `TIOCEXCL` or a lock, so a CLI process opens a port the standalone holds and
+  the two interleave commands on one N8, where only Windows refuses a COM port another process holds. Making
+  `SerialTransport` take `TIOCEXCL` after it opens is a separate behaviour change, for the user to decide.
 - **The streaming link**, which the UI uses: `n8LinkConfig`, `n8SetPort`, `n8Connect`, `n8SetLookahead`, replacing the
   four `__rp_*N8` hooks, so the pack depends on rpcpp and not on QuickJS. `hasN8()` becomes "the product mounted the
   facet": the UI probes once and reads it true when `n8LinkConfig` answers. This half is the UI's alone, since its
@@ -804,7 +814,7 @@ bss (65156 / 1844 / 412742).
   (section 7).
 - **The golden did not cover the operations.** The review of the Edio found that its 15 cases carried no listing, file
   read, menu command or boot, so a wrong wire there would have passed. Thirteen cases were recorded from the old TS
-  clients at the pack commit (`3eb5a7928`'s `edio.ts`, `n8Menu.ts` and `n8Load.ts` over their fake port) and appended;
+  clients at `ad3a1d4ae`, the commit before the one Edio (its `edio.ts`, `n8Menu.ts` and `n8Load.ts` over their fake port), and appended;
   every one matched the new Edio byte for byte on the first run, with every queued reply read.
 - **A short write used to be ignored** by both old clients, the root of the 2026-10-22 mid-command bug; it now fails
   the command (section 4).

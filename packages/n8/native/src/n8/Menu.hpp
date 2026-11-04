@@ -30,9 +30,9 @@ public:
     // menu's out-of-memory, a dirty heap after a failed load) within the install timeout, as the menu loads the ROM and
     // its mapper core off SD first, then the 16-bit map index, into `mapIndex` when given. The index is read at the
     // reply's 2 s, not the install's: the menu sends it straight after the status (the Pico read it so too). A failure
-    // reading it is at Where::MapIndex, after a 0 status: the install itself succeeded. A path past the 16-bit length is
-    // TooLarge at Where::Length, refused before '*n': the menu would otherwise wait for a path that never comes and read
-    // the next command as its length.
+    // reading it is at Where::MapIndex, after a 0 status: the install itself succeeded. A path past the 16-bit length
+    // is TooLarge at Where::Length, refused before '*n': the menu would otherwise wait for a path that never comes and
+    // read the next command as its length.
     Status install(std::string_view path, std::uint16_t* mapIndex = nullptr);
 
     // Boot the installed ROM: '*s'. The menu core drops out and the game runs; nothing answers.
