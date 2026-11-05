@@ -177,7 +177,12 @@ endfunction()
 # from the package's include root>", "register": "<C++ function>"}`. A device entry may have neither: a device image
 # runs no provider and mounts no facet, so a provider there would be a service no device product can start. An rpc
 # needs the provider on its own entry, since the service it registers is that provider's. A provider is an extern "C"
-# symbol of the program, so two packages may not name one.
+# symbol of the program, so two packages may not name one. The register function is
+# `template <class Server> void f(Server& server, void* service)`, `service` being what the provider's rpc_service
+# answered (null when its create answered null, which the function tolerates), and it mounts methods by name on a
+# server whose names are global: a name another facet or pack already mounted is replaced without a word (rpcpp's
+# addHandler assigns), so a pack prefixes its own (the N8's are n8*). The server's codec is the product's QuickJSCodec
+# for a facet that carries rfl::Bytestring.
 function(_retroplug_read_provider name entry isDevice noProvider provider noRpc rpc)
     if(isDevice)
         message(FATAL_ERROR "retroplug_package(${name}): entry ${entry} is `device` and names a provider or an rpc, "

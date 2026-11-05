@@ -91,14 +91,19 @@ std::string wellFormed(std::string_view raw) {
 
 // Whether two port names are one device: the same name, or (where the platform resolves them: a /dev/serial/by-id
 // symlink and the /dev/ttyACM it points at) the same file. The port lister names ports only, so this is the identity
-// it allows.
+// it allows. A COM name is already canonical, and std::filesystem::canonical on one would open the device (MSVC's STL
+// opens a handle to resolve it), so Windows compares names alone.
 bool samePort(const std::string& a, const std::string& b) {
     if (a == b) return true;
+#if defined(_WIN32)
+    return false;
+#else
     if (a.empty() || b.empty()) return false;
     std::error_code ea, eb;
     const auto      ca = std::filesystem::canonical(a, ea);
     const auto      cb = std::filesystem::canonical(b, eb);
     return !ea && !eb && ca == cb;
+#endif
 }
 
 rfl::Bytestring bytesOf(const std::uint8_t* data, std::size_t size) {
@@ -135,13 +140,16 @@ N8Reply N8Rpc::n8Open(std::string port) {
     r.status  = codeName(Code::LinkDown);
     r.message = "cannot open serial port: " + port;
     // The streaming link's port is not a session's: two writers on one N8 would interleave their commands. (Another
-    // process's port is not refused here; only Windows keeps that out, as N8Rpc.hpp says.)
+    // process's port is refused by the transport, which holds its port exclusive: N8Rpc.hpp.)
     if ((host_.link().isConnected() || host_.cartJobBusy()) && samePort(host_.link().portName(), port)) return r;
     std::unique_ptr<retroplug::PortTransport> transport;
     try {
         transport = factory_ ? factory_(port) : nullptr;
+    } catch (const retroplug::PortBusyError& e) {
+        r.message = e.what();  // another process has it: the words say so
+        return r;
     } catch (const std::exception&) {
-        return r;  // absent, busy, no permission
+        return r;  // absent, no permission
     }
     if (!transport) return r;
     const std::int32_t handle = nextHandle_++;

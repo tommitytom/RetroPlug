@@ -6,10 +6,13 @@
 //
 // Here a pseudo-terminal stands in for the N8: a 0 ms read, then a write bigger than the pty's buffer while a reader
 // drains it only after a pause. The write must wait for room, not give up at the read's 0 ms. Linux only (ptys).
+// A second case holds the port exclusive: a POSIX port RetroPlug opens refuses every other open (another instance, a CLI
+// session, minicom) with EBUSY, as only a Windows COM port does without it. Not for root, which TIOCEXCL does not bind.
 // Run via `pnpm test:n8` (retroplug-serial-test).
 #include <catch2/catch_test_macros.hpp>
 
 #if defined(__linux__)
+#include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -17,10 +20,32 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <string>
 #include <thread>
 #include <vector>
 
 #include "n8/desktop/SerialTransport.hpp"
+
+namespace {
+
+// A pseudo-terminal master, and the name of its slave (the "port").
+struct Pty {
+    int         master = -1;
+    std::string slave;
+
+    Pty() {
+        master = posix_openpt(O_RDWR | O_NOCTTY);
+        REQUIRE(master >= 0);
+        REQUIRE(grantpt(master) == 0);
+        REQUIRE(unlockpt(master) == 0);
+        const char* name = ptsname(master);
+        REQUIRE(name != nullptr);
+        slave = name;
+    }
+    ~Pty() { ::close(master); }
+};
+
+}  // namespace
 
 TEST_CASE("SerialTransport: a write is not cut short by the previous read's timeout", "[n8][serial]") {
     const int master = posix_openpt(O_RDWR | O_NOCTTY);
@@ -51,6 +76,37 @@ TEST_CASE("SerialTransport: a write is not cut short by the previous read's time
     reader.join();
     ::close(master);
     CHECK(written == big.size());
+}
+
+TEST_CASE("SerialTransport: an open port is exclusive, a second open fails busy", "[n8][serial]") {
+    if (geteuid() == 0) SKIP("running as root: TIOCEXCL does not bind a process with CAP_SYS_ADMIN");
+    Pty pty;
+
+    {
+        retroplug::SerialTransport port(pty.slave);
+        REQUIRE(port.isOpen());
+
+        // Any second open, by this process or another: the kernel's EBUSY.
+        const int fd  = ::open(pty.slave.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+        const int err = errno;
+        if (fd >= 0) ::close(fd);
+        CHECK(fd == -1);
+        CHECK(err == EBUSY);
+
+        // A second transport throws, and says the port is busy rather than a bare errno.
+        try {
+            retroplug::SerialTransport second(pty.slave);
+            FAIL("a second SerialTransport opened the same port");
+        } catch (const std::exception& e) {
+            const std::string said = e.what();
+            CHECK(said.find("busy") != std::string::npos);
+            CHECK(said.find(pty.slave) != std::string::npos);
+        }
+    }
+
+    // The exclusivity lives with the open: once the port is closed, it opens again.
+    retroplug::SerialTransport again(pty.slave);
+    CHECK(again.isOpen());
 }
 #else
 TEST_CASE("SerialTransport: timeout guard is Linux-only (pty)", "[n8][serial]") { SUCCEED(); }

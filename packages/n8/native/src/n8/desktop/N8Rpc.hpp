@@ -10,8 +10,10 @@
 // n8Devices.ts): the ports, the chosen port, the link's state and lookahead, read and set on the provider's N8Host. A
 // product that does not mount it has no N8 submenu, since the UI takes "the facet answers" for "this host has the N8
 // seam" (hasN8). N8Host serialises these with its link thread. The link half is the UI's alone. Each of its setters
-// persists n8.cfg, which the standalone, the plugin and the CLI share (one config dir), so the CLI mounts it, as every
-// product registers its packs one way, and its sessions never call it.
+// persists n8.cfg, which the standalone, the plugin and the CLI share (one config dir). Every product that lists the
+// pack mounts the whole facet: the plugin and SDL channels carry the session half as well, and the CLI the link half,
+// and only a convention keeps the CLI's sessions off the link half (no untrusted code reaches a product's channel
+// today; docs/modular-graph-phase-e2-design.md section 6).
 //
 // The session half is what the CLI's sessions drive (n8-load, n8-play, n8-bridge, n8-sync, through createN8Client's
 // openN8): a port opened by name (n8Open, answering a handle), the Edio primitives, the menu's commands and the
@@ -19,9 +21,10 @@
 // port, opened through the provider's port factory (deps/serial's, or a test host's fake cart). One writer to an N8
 // within this process: a port the streaming link holds does not open in a session, and the link does not connect to a
 // port a session holds (N8Host::setPortGuard, which the facet answers). Both compare the device where the platform can
-// tell (a /dev/serial/by-id symlink and its /dev/ttyACM are one port), else the name. Another process is not kept out
-// by this: deps/serial opens a POSIX port without TIOCEXCL or a lock, so there a port this process holds opens in a
-// CLI process too, and only Windows refuses a COM port another process holds. Every session call answers an N8Reply.
+// tell (a /dev/serial/by-id symlink and its /dev/ttyACM are one port), else the name. Another process (another
+// instance, a CLI session, minicom) is kept out by the transport: SerialTransport takes TIOCEXCL on a POSIX port after
+// it opens it, so a second open fails busy, and a COM port is exclusive on Windows already. Every session call answers
+// an N8Reply.
 
 #include <cstdint>
 #include <map>

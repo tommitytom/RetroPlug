@@ -13,9 +13,12 @@ namespace serial { class Serial; }
 namespace retroplug {
 
 // The desktop's transport, over wjwwood/serial (deps/serial). Opens the given port at 9600 / 8N1 (baud is irrelevant on
-// the N8's FT245-class USB device); the constructor throws serial::IOException if the port can't be opened, before any
-// Edio call (its owner catches it). The read timeout is applied per call. Every call catches what deps/serial throws
-// and answers short (a write that took nothing, a read with nothing), keeping the exception's text as failure().
+// the N8's FT245-class USB device). The constructor throws if the port can't be opened (serial::IOException, or
+// PortBusyError when another process holds it), before any Edio call (its owner catches it). On POSIX the open port is
+// exclusive (TIOCEXCL): a second open of it anywhere, by another instance, a CLI session or minicom, fails busy until
+// this one closes (root is exempt, as the kernel has it); a Windows COM port is exclusive already. The read timeout is
+// applied per call. Every call catches what deps/serial throws and answers short (a write that took nothing, a read
+// with nothing), keeping the exception's text as failure().
 class SerialTransport final : public PortTransport {
 public:
     explicit SerialTransport(const std::string& portName);
@@ -35,6 +38,7 @@ public:
 private:
     std::string                     portName_;
     std::string                     failure_;
+    int                             exclusiveFd_ = -1;  // POSIX: the descriptor holding TIOCEXCL, -1 when none
     std::unique_ptr<serial::Serial> port_;
 };
 

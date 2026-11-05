@@ -10,7 +10,9 @@
  *
  * Desktop only: a provider owns threads, ports and files, and a device image has none of those to give it (the Pico's
  * box drives its hardware itself until E3 makes it a graph host). Plain C, as the rest of the device ABI is, so a
- * provider in another language, or a downloaded pack's, can be one.
+ * provider in another language can be one. A provider is reached only through the table cmake/packages.cmake generates
+ * from the manifests at build time, an extern "C" symbol the program links: no provider is loaded at run time, as a
+ * script node pack is, so a downloaded pack cannot carry one until a product has a way to load code.
  *
  * Threads: every call here is [control]. A provider's device threads are its own; what it hands the engine goes
  * through rp_device_host's install and clear, whose rules are rp_device.h's. */

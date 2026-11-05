@@ -249,6 +249,14 @@ TEST_CASE("a session does not open the port the streaming link holds, nor one it
     const rp::n8::N8Reply absent = refusing.n8Open("/dev/ttyACM7");
     CHECK(absent.status == "linkDown");
     CHECK(absent.message == "cannot open serial port: /dev/ttyACM7");
+
+    // A port another process holds says so, in the words the transport gave.
+    rp::n8::N8Rpc busy(host, [](const std::string& port) -> std::unique_ptr<retroplug::PortTransport> {
+        throw retroplug::PortBusyError("the serial port " + port + " is busy: another program has it open");
+    }, twoPorts());
+    const rp::n8::N8Reply taken = busy.n8Open("/dev/ttyACM0");
+    CHECK(taken.status == "linkDown");
+    CHECK(taken.message == "the serial port /dev/ttyACM0 is busy: another program has it open");
 }
 
 TEST_CASE("the N8 provider installs its cart link, restores n8.cfg and clears the link before it frees it",

@@ -6,6 +6,7 @@
 // throws nothing and runs on the device too), so SerialTransport catches the exception and keeps its text here: the
 // text N8Link puts in its lastError (Settings > N8 shows it) and a job its failure, as when the throw reached them.
 
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -13,6 +14,13 @@
 #include "n8/Transport.hpp"
 
 namespace retroplug {
+
+// Thrown by a transport's open when another process (or instance, or session) holds the port. Its words are the ones the
+// UI shows as the link's error and the CLI prints as the reason a session did not open.
+class PortBusyError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 class PortTransport : public rp::n8::Transport {
 public:
