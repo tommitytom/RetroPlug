@@ -44,7 +44,7 @@ if(MSVC)
         retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes retroplug-dsp-resample-nodes
         retroplug-n8 retroplug-n8-desktop
         # The device build of the node SDK, tested on the desktop (cmake/tests.cmake).
-        retroplug-device-mode-objects retroplug-device-mode-test
+        retroplug-device-mode-objects retroplug-device-mode-test retroplug-box-usb-cdc
         # The device check's case generator (packages/graph-runtime/device-check/cases).
         rp-device-check-cases
         # The executor and the plan loader built as a device builds them, and the plan exporter's tool with its device

@@ -6,6 +6,7 @@
 #include <new>
 
 #include "graph/PlanBlob.hpp"
+#include "graph/noinline.hpp"
 
 #if defined(RP_DEVICE) && defined(__GLIBCXX__)
 // What a device build of the loader must not carry, as graph/node.hpp checks a node's translation unit: the standard
@@ -694,10 +695,27 @@ rp_control_queue* LoadedPlan::param(std::uint32_t n, std::uint32_t k) const {
     return wired[at] ? nullptr : p.params[k];
 }
 
+namespace {
+
+// A caller that wants no error gets one of these, in a frame of its own, so a caller that passes one (a device, whose
+// stack the error's 352 bytes would otherwise sit on under the whole load) carries none of it: -Wstack-usage holds a
+// device's frames to cmake/device-image.cmake's limit.
+RP_NOINLINE bool sizePlanIgnoring(std::span<const std::uint8_t> blob, std::span<const rp_package* const> types,
+                                  std::size_t arenaBytes, PlanSize* size) {
+    PlanLoadError ignored;
+    return sizePlan(blob, types, arenaBytes, size, &ignored);
+}
+RP_NOINLINE LoadedPlan* loadPlanIgnoring(std::span<const std::uint8_t> blob, std::span<std::byte> arena,
+                                         std::span<const rp_package* const> types, const rp_host* host) {
+    PlanLoadError ignored;
+    return loadPlan(blob, arena, types, host, &ignored);
+}
+
+}  // namespace
+
 bool sizePlan(std::span<const std::uint8_t> blob, std::span<const rp_package* const> types, std::size_t arenaBytes,
               PlanSize* size, PlanLoadError* error) {
-    PlanLoadError ignored;
-    if (!error) error = &ignored;
+    if (!error) return sizePlanIgnoring(blob, types, arenaBytes, size);
     Blob b;
     if (!check(blob, types, b, error)) return false;
     Bump measure;
@@ -707,8 +725,7 @@ bool sizePlan(std::span<const std::uint8_t> blob, std::span<const rp_package* co
 
 LoadedPlan* loadPlan(std::span<const std::uint8_t> blob, std::span<std::byte> arena,
                      std::span<const rp_package* const> types, const rp_host* host, PlanLoadError* error) {
-    PlanLoadError ignored;
-    if (!error) error = &ignored;
+    if (!error) return loadPlanIgnoring(blob, arena, types, host);
     if (reinterpret_cast<std::uintptr_t>(arena.data()) % kBaseAlign != 0) {
         fail(error, "arena") << "the arena must be aligned to " << kBaseAlign << " bytes";
         return nullptr;

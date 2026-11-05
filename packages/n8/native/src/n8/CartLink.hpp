@@ -62,6 +62,25 @@ private:
     std::uint32_t words_[kNotes / 32] = {};
 };
 
+// A MIDI message as a cart's note books read it: rp.n8.nes's (which notes the cart holds, and which note-offs it owes
+// after a link refused them), and a link that keeps the same books from its own answers (the box's, which tells the
+// node's own note-offs from what its plan was handed). One rule for both: a note-on with velocity 0 is a note-off, and
+// anything shorter than three bytes, or of another kind, is neither.
+struct NoteEvent {
+    bool        on = false;
+    bool        off = false;
+    std::size_t index = 0;  // channel * 128 + note, CartNotes' numbering
+};
+inline NoteEvent noteEvent(const std::uint8_t* data, std::size_t size) {
+    NoteEvent n;
+    if (size < 3) return n;
+    const std::uint8_t kind = data[0] & 0xF0;
+    n.index = static_cast<std::size_t>(data[0] & 0x0F) * 128 + (data[1] & 0x7F);
+    n.on = kind == 0x90 && data[2] != 0;
+    n.off = kind == 0x80 || (kind == 0x90 && data[2] == 0);
+    return n;
+}
+
 // A cart in a real console (rp.n8.nes): the same inputs an emulated NES takes, pushed at the cart's FIFO.
 class CartLink {
 public:

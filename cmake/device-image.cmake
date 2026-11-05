@@ -1,8 +1,8 @@
 # An RP2350 image under the link trap (docs/modular-graph-phase-e1-design.md section 7, and the E2 design's section 8):
 # the runtime with no heap, the trap on the heap, on exceptions and on RTTI, and the post-link check that the trap held.
-# Included, after project() and pico_sdk_init(), by both device projects: packages/graph-runtime/device-check
-# (rp-device-check) and pico/n8-host (the box's firmware). RP_DEVICE_IMAGE names the including image in what this says.
-# Defines rp_device_executable() and rp_device_trap_check().
+# Included, after project() and pico_sdk_init() and before the first package, by both device projects:
+# packages/graph-runtime/device-check (rp-device-check) and pico/n8-host (the box's firmware). RP_DEVICE_IMAGE names
+# the including image in what this says. Defines rp_device_executable() and rp_device_trap_check().
 #
 # Included once a project: a second include (two images, or a sibling directory's) finds the removal below done and the
 # trap's list written, and leaves them as they are. What the two functions need is kept in global properties, so they
@@ -104,14 +104,51 @@ set_property(GLOBAL PROPERTY RP_DEVICE_TRAPPED "${_rp_trapped}")
 set_property(GLOBAL PROPERTY RP_DEVICE_TRAP_LIST "${_rp_trap_list}")
 set_property(GLOBAL PROPERTY RP_DEVICE_CHECK_TRAP "${CMAKE_CURRENT_LIST_DIR}/check-trap.cmake")
 
-# rp_device_executable(<target> <sources>...): an executable as a device builds it: the device-mode flags, the runtime
-# and the trap. One --wrap a symbol: -Wl, splits at commas, so a joined list would hand the linker the symbols as input
-# files.
+# --- the stack (the E3 design's section 7). Every function an image compiles, its own sources, the SDK's and the USB
+# stacks' that build into it, and its packages' libraries, is held to a frame of at most RP_DEVICE_STACK_FRAME bytes:
+# -Wstack-usage as an error, so a frame past it (or one GCC cannot bound, a variable-length array or an alloca) fails
+# the build naming the function. That is the measure of a node's stack in query_memory and create that E1 asked for, in
+# place of a hand sum: it bounds each frame, not a chain of them, and the chains are still the images' own word
+# (pico/n8-host/CMakeLists.txt's for the box). 1 KiB is a quarter of the 4 KB main stack the box gives. The limit is
+# on in every build type, and both the shipped Release (-O3) and the Debug Probe's Debug (-Og) builds of both images
+# hold it: the deepest frames are bootRom's battery path (writeBattery, 864 bytes at -O3 and 840 at -Og, which the box
+# never calls), sizePlan for a caller that asks for no error (792 at -O3), loadPlan (768 at -O3, 504 at -Og; its
+# no-error path is a frame of its own, graph/PlanLoader.cpp) and a dither's or a normalize's create in rp-device-check
+# (592). Inlining moves frames between the two: the loader's check() is 560 bytes at -Og and 344 at -O3. (A later
+# -Werror=stack-usage on a command line replaces an earlier one, which is what the remedy below relies on.)
+#
+# A frame past the limit is fixed where it is ours: a large local moved into a frame of its own (RP_NOINLINE,
+# graph/noinline.hpp) or off the stack. Where it is a vendored source's (a later SDK, TinyUSB or Pico-PIO-USB), the
+# remedy is that one source's own limit, a COMPILE_OPTIONS property on it (set_source_files_properties) raising
+# -Werror=stack-usage for it alone, beside a comment naming the function, its frame and why the chain still fits; never
+# the flag taken off a target.
+#
+# A package's library takes the limit through RP_DEVICE_COMPILE_OPTIONS (cmake/packages.cmake's
+# retroplug_package_library), which is why a project includes this file after setting those options and before it adds
+# its first package; an image takes it in rp_device_executable().
+set(RP_DEVICE_STACK_FRAME 1024)
+get_property(_rp_packages_added GLOBAL PROPERTY RP_PACKAGES)
+if(_rp_packages_added)
+    message(FATAL_ERROR "${RP_DEVICE_IMAGE}: include device-image.cmake before the first retroplug_package(), so the "
+                        "packages' libraries are held to the stack limit (${_rp_packages_added} are added already)")
+endif()
+if(NOT DEFINED RP_DEVICE_COMPILE_OPTIONS)
+    message(FATAL_ERROR "${RP_DEVICE_IMAGE}: set RP_DEVICE_COMPILE_OPTIONS (the SDK's code-generation options) before "
+                        "including device-image.cmake, which adds the stack limit to them")
+endif()
+list(APPEND RP_DEVICE_COMPILE_OPTIONS "-Werror=stack-usage=${RP_DEVICE_STACK_FRAME}")
+set_property(GLOBAL PROPERTY RP_DEVICE_STACK_FRAME "${RP_DEVICE_STACK_FRAME}")
+
+# rp_device_executable(<target> <sources>...): an executable as a device builds it: the device-mode flags, the stack
+# limit, the runtime and the trap. One --wrap a symbol: -Wl, splits at commas, so a joined list would hand the linker
+# the symbols as input files.
 function(rp_device_executable target)
     add_executable(${target} ${ARGN})
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     target_compile_definitions(${target} PRIVATE RP_DEVICE)
-    target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>")
+    get_property(_frame GLOBAL PROPERTY RP_DEVICE_STACK_FRAME)
+    target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>"
+                           "-Werror=stack-usage=${_frame}")
     target_link_libraries(${target} PRIVATE pico_stdlib)
     get_property(_trapped GLOBAL PROPERTY RP_DEVICE_TRAPPED)
     list(TRANSFORM _trapped PREPEND "LINKER:--wrap=" OUTPUT_VARIABLE _wrap)

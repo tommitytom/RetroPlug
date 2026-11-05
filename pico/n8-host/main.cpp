@@ -1,13 +1,15 @@
-// N8 standalone bridge: MIDI in -> the N8's cart FIFO -> the ROM running on a real NES.
+// N8 standalone bridge: MIDI in -> a graph plan -> the N8's cart FIFO -> the ROM running on a real NES.
 //
-// One Pico does the whole thing. MIDI comes in on a hardware UART (UART1/GP5, the stage-1
-// 6N138 opto circuit) and is decoded by the reusable parser (../midi-in/midi.c); channel-voice
-// messages and SysEx are forwarded to the N8's cart FIFO via Edio fifoWR (= memWR to
-// 0x1810000). The N8 is hosted over PIO-USB and driven with the N8 pack's Edio (packages/n8: the
-// protocol, its menu commands and operations, over UsbCdcTransport). When the N8
-// shows its menu, the Pico boots a ROM through it - one staged in its own flash (uploaded to the
-// SD first) or one already on the card. box.cpp makes it a standalone box: status LED, watchdog
-// and recovery reboots, and which staged ROM to boot (picked over MIDI, saved on the SD).
+// One Pico does the whole thing, as a graph host (docs/modular-graph-phase-e3-design.md section 5). MIDI comes in on a
+// hardware UART (UART1/GP5, the stage-1 6N138 opto circuit) and is parsed and staged by the generic box host
+// (../host: the UART's ring, ../midi-in's parser, the staging); the box's built-in plan (plan.json, exported when the
+// firmware is built and embedded in it) takes it into rp.device.midi-in, drops what BlipToaster does not want
+// (rp.core.midi-filter) and hands the rest to rp.n8.nes, whose cart link (BoxCartLink) the main loop drains into the
+// N8's cart FIFO via Edio fifoWR (= memWR to 0x1810000). The N8 is hosted over PIO-USB and driven with the N8 pack's
+// Edio (packages/n8: the protocol, its menu commands and operations, over UsbCdcTransport). When the N8 shows its menu,
+// the Pico boots a ROM through it - one staged in its own flash (uploaded to the SD first) or one already on the card.
+// box.cpp makes it a standalone box: status LED, watchdog and recovery reboots, and which staged ROM to boot (picked
+// over MIDI, saved on the SD).
 //
 // So: play a MIDI keyboard -> the real NES plays it, with no computer in the loop.
 //
@@ -15,13 +17,12 @@
 // GND=pin38; MIDI opto out -> GP5 (pin 7); console on UART0/GP0-GP1 -> the debug
 // probe -> /dev/ttyDbgProbe. UART1/GP5, PIO-USB and UART0 don't contend.
 
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
-#include "hardware/uart.h"
-#include "hardware/irq.h"
-#include "hardware/sync.h"
 #ifndef USE_NATIVE_USB
 #include "SofTimer.hpp"
 #include "pio_usb.h"
@@ -32,13 +33,22 @@ extern "C" bool pio_usb_root_attached(void);   // pio_usb_root.c: pio_usb_ll.h i
 #pragma GCC diagnostic ignored "-Wvolatile"
 #include "tusb.h"
 #pragma GCC diagnostic pop
+#include "BlockDriver.hpp"
+#include "BoxCartLink.hpp"
+#include "BoxStats.hpp"
+#include "BuiltInPlan.hpp"
+#include "CartVolume.hpp"
+#include "DeviceHost.hpp"
+#include "MidiStaging.hpp"
+#include "UartMidi.hpp"
 #include "UsbCdcTransport.hpp"
 #include "box.h"
 #include "graph/Packages.hpp"
-#include "midi.h"
+#include "graph/PlanBlob.hpp"
 #include "n8/Edio.hpp"
 #include "n8/Menu.hpp"
 #include "n8/Ops.hpp"
+#include "n8_host_plan.hpp"   // kBuiltInPlan: plan.json, exported by retroplug-export-plan at build time
 
 using rp::n8::Edio;
 
@@ -46,7 +56,7 @@ using rp::n8::Edio;
 #define N8_VID     0x38df
 #define N8_PID     0x0017
 
-// 1 = print every forwarded message. Off by default: at 115200 baud the console line costs
+// 1 = print every forwarded write. Off by default: at 115200 baud the console line costs
 // more than the forward itself, so it caps the bridge's throughput; [stats] summarises instead.
 #ifndef N8_BRIDGE_VERBOSE
 #define N8_BRIDGE_VERBOSE 0
@@ -67,6 +77,18 @@ using rp::n8::Edio;
 #define N8_TEST_HOOKS 0
 #endif
 
+// 1 = the latency trace (LatTrace.hpp): a message's way from the UART to the N8's acknowledgement, and what each part
+// of a pass costs, summarised after a second of quiet. Measurement only; with it off, LAT() is nothing.
+#ifndef N8_LAT_TRACE
+#define N8_LAT_TRACE 0
+#endif
+#if N8_LAT_TRACE
+#include "LatTrace.hpp"
+#define LAT(call) lat::call
+#else
+#define LAT(call) ((void)0)
+#endif
+
 // The N8's link and its Edio, in static storage: one of each, for whichever N8 is mounted (UsbCdcTransport.hpp says
 // how a mount rebinds it). The transport's waits run the box's idle hook, so the long Edio calls keep it fed.
 static UsbCdcTransport usb(box_feed);
@@ -79,13 +101,56 @@ static uint8_t         n8_cdc_idx = 0;   // the N8's CDC interface, from its mou
 
 static volatile bool n8_ready    = false;   // set by the CDC mount callback
 static bool          probed      = false;   // run the probe once per mount
-static bool          forward_ok  = false;   // gate MIDI->FIFO on a ready+probed N8
+static bool          forward_ok  = false;   // gate MIDI->FIFO on a ready+probed N8: the cart link's connected state
 static volatile bool any_mounted = false;   // some USB device has enumerated (the N8, or its MCU alone)
 static volatile uint32_t n8_gen  = 0;      // bumped on every N8 mount: a boot checks it is still its N8
 static bool          boot_error  = false;   // the last menu boot failed: LED_ERROR until the next mount
 static int           write_fail_streak = 0; // consecutive failed fifoWRs
 static int           cur_sel     = -1;      // the staged ROM the box last booted (-1 = none / unknown)
 static uint32_t      menu_stuck_until = 0; // !0: the menu stopped answering - no forwarding; retry the boot then
+
+// --- The graph host ----------------------------------------------------------------------------------------------
+// The box's plan runs in a static arena: 128 KiB (plan.cmake), handed to retroplug-export-plan as the budget the
+// plan must fit (CMakeLists.txt), so a plan that would not fit fails the firmware's build. The bridge plan takes under
+// a quarter of it (the boot line says how much); the rest is room for a later plan's audio buffers at 256 frames a
+// block, 1 KiB a channel each.
+#ifndef N8_HOST_ARENA_BYTES
+#error "N8_HOST_ARENA_BYTES: the plan's arena, which CMakeLists.txt sets for the image and its export alike"
+#endif
+alignas(rp::graph::blob::kTargetAlign > alignof(max_align_t) ? rp::graph::blob::kTargetAlign : alignof(max_align_t))
+static std::byte arena[N8_HOST_ARENA_BYTES];
+
+static rp::box::MidiStaging   staging;
+static rp::box::ElapsedDriver driver;
+static rp::box::DeviceHost    host;
+static rp::box::BuiltInPlan   plan;
+static rp::box::BoxCartLink::Storage cart_ring;
+static rp::box::BoxCartLink   cart(cart_ring);
+
+static void cart_acquired(void *) { cart.acquire(); }
+static void cart_released(void *) { cart.release(); }
+// The one device the box's nodes may acquire: the cart, as rp.n8.nes asks for it ("n8", rp.n8.cart-link/1).
+static const rp::box::DeviceLink links[] = {
+    {rp::n8::kDeviceName, rp::n8::kCartLinkInterface, static_cast<rp::n8::CartLink *>(&cart), nullptr, cart_acquired,
+     cart_released},
+};
+
+static void print_line(const char *line) { printf("%s\n", line); }
+static void host_log(int level, const char *message) {
+    printf("[host] %s%s\n", level == RP_LOG_ERROR ? "error: " : level == RP_LOG_WARNING ? "warning: " : "", message);
+}
+static uint64_t clock_us(void *) { return time_us_64(); }
+static uint32_t frame_of(void *, uint32_t us) { return driver.frameOf(us); }
+static uint32_t now_us(void *) { return time_us_32(); }
+static bool     arrival_of(void *, uint32_t frame, const uint8_t *data, size_t size, uint32_t *us) {
+#if N8_LAT_TRACE
+    if (!staging.arrival(frame, data, size, us)) return false;
+    lat::pushed(*us);
+    return true;
+#else
+    return staging.arrival(frame, data, size, us);
+#endif
+}
 
 typedef struct {
     uint32_t rx_bytes;     // bytes off the MIDI UART
@@ -95,54 +160,21 @@ typedef struct {
     uint32_t writes;       // fifoWRs issued (each carries a batch of messages)
     uint32_t max_batch;    // most messages carried by one fifoWR
     uint32_t sysex;        // complete SysEx messages forwarded (counted in fwd too)
-    uint32_t filtered;     // aftertouch, dropped on purpose
-    uint32_t not_ready;    // dropped because the N8 was not up
+    uint32_t filtered;     // dropped before the cart: what the plan dropped (aftertouch, system common, real time),
+                           //   a SysEx past the 4 KB a message may be, and staged MIDI no block took (BoxStats.hpp)
+    uint32_t not_ready;    // dropped because the N8 was not up (the cart link refused them)
     uint32_t uart_oe;      // bytes lost to a full UART hardware FIFO
     uint32_t uart_fe;      // framing / break errors (wiring, or a Type A/B swap)
     uint32_t ring_full;    // bytes lost to a full receive ring
     uint32_t max_fwd_us;   // slowest Edio::fifoWR call (queueing it, not its delivery: see lat)
     uint32_t lat_avg_us;   // this report window: a message's last byte taken off the UART -> the
     uint32_t lat_max_us;   //   N8 acknowledging the fifoWR that carried it (avg / worst)
+    uint32_t link_full;    // messages lost to a full cart-link ring (one block's MIDI twice over: none expected)
+    uint32_t skipped;      // frames the block driver dropped past its carry's bound (an N8 boot's wait, a long hold;
+                           //   BlockDriver.hpp), saturating
 } bridge_stats;
 static bridge_stats stats;
 
-// MIDI receive is interrupt-driven into this ring, so bytes keep arriving while the main loop
-// is blocked in a USB write (~5 ms each). Polled, a burst overran the UART's 32-byte hardware
-// FIFO in ~10 ms and lost ~70% of its bytes. on_midi_uart_irq() is the only writer of rx_head,
-// last_rx_us and the irq_* counters - run as the ISR, or by the idle main loop with the IRQ
-// masked; the main loop is the only writer of rx_tail.
-#define RX_RING 4096
-static uint8_t           rx_ring[RX_RING];
-static uint32_t          rx_ts[RX_RING];   // time_us_32() each byte was taken off the UART
-static volatile uint32_t rx_head = 0, rx_tail = 0;
-static volatile uint32_t irq_rx = 0, irq_oe = 0, irq_fe = 0, irq_ring_full = 0;
-static volatile uint32_t last_rx_us = 0;   // when the last MIDI byte arrived
-
-static void on_midi_uart_irq(void) {
-    uint32_t now = time_us_32();
-    while (uart_is_readable(MIDI_UART)) {
-        // Read DR whole: bits 8-11 flag this byte's framing / parity / break / overrun.
-        uint32_t dr = uart_get_hw(MIDI_UART)->dr;
-        if (dr & UART_UARTDR_OE_BITS) irq_oe = irq_oe + 1;
-        if (dr & (UART_UARTDR_FE_BITS | UART_UARTDR_BE_BITS)) { irq_fe = irq_fe + 1; continue; }
-        uint32_t h = rx_head, next = (h + 1) % RX_RING;
-        if (next == rx_tail) { irq_ring_full = irq_ring_full + 1; continue; }
-        rx_ring[h] = (uint8_t)dr;
-        rx_ts[h] = now;
-        __dmb();   // the byte is in the ring before the main loop can see the new head
-        rx_head = next;
-        irq_rx = irq_rx + 1;
-        last_rx_us = now;
-    }
-}
-
-// Forwarded messages collect here and go out as ONE fifoWR per pass of the main loop: a write
-// costs the same ~5 ms whatever it carries, so batching is what lets a burst through.
-#define BATCH_MAX 192
-static uint8_t  batch[BATCH_MAX];
-static uint32_t batch_len = 0, batch_msgs = 0;
-static uint32_t cur_byte_us = 0;      // rx_ts of the byte the parser is being fed
-static uint32_t batch_first_us = 0;   // ... of the last byte of the batch's first message
 static uint32_t lat_sum = 0, lat_n = 0, lat_win_max = 0;
 // Latency is measured to the N8's ACK, not to Edio::fifoWR returning: the write returns once
 // TinyUSB has queued it, and the packet then waits for the next 1 ms USB frame. The oldest
@@ -157,6 +189,7 @@ extern "C" void tuh_cdc_tx_complete_cb(uint8_t idx) {
     lat_sum += lat; lat_n++;
     if (lat > lat_win_max) lat_win_max = lat;
     ack_pending = false;
+    LAT(acked());
 }
 
 #if N8_APU_LAT
@@ -183,29 +216,40 @@ static void apu_latency_probe(uint32_t from_us) {
 }
 #endif
 
-static void batch_flush(void) {
-    if (!batch_len) return;
-    if (!ack_pending) { ack_from_us = batch_first_us; ack_pending = true; }   // armed first: the
+// The cart link's FIFO writes: one fifoWR a batch (up to 192 bytes of whole messages; a write costs the same ~5 ms
+// whatever it carries, so batching is what lets a burst through), each timed from the arrival of the first message it
+// carries to the N8's ACK.
+static bool fifo_write(void *, const uint8_t *batch, size_t len, uint32_t msgs, uint32_t first_us) {
+    LAT(writeBegin(first_us, !ack_pending));
+    if (!ack_pending) { ack_from_us = first_us; ack_pending = true; }   // armed first: the
     // write pumps tuh_task, so its completion can arrive before Edio::fifoWR even returns
     uint64_t t0 = time_us_64();
-    bool ok = edio.fifoWR(batch, batch_len).ok();
+    bool ok = edio.fifoWR(batch, len).ok();
+    LAT(writeEnd(ok));
     uint32_t us = (uint32_t)(time_us_64() - t0);
-    stats.writes++;
-    if (ok) stats.fwd += batch_msgs; else { stats.fwd_fail += batch_msgs; ack_pending = false; }
+    if (!ok) ack_pending = false;
     write_fail_streak = ok ? 0 : write_fail_streak + 1;
     if (ok) led_activity();
     if (us > stats.max_fwd_us) stats.max_fwd_us = us;
-    if (batch_msgs > stats.max_batch) stats.max_batch = batch_msgs;
 #if N8_BRIDGE_VERBOSE
-    printf("[bridge] MIDI -> FIFO (%lu msgs):", (unsigned long)batch_msgs);
-    for (uint32_t i = 0; i < batch_len; i++) printf(" %02x", batch[i]);
+    printf("[bridge] MIDI -> FIFO (%lu msgs):", (unsigned long)msgs);
+    for (size_t i = 0; i < len; i++) printf(" %02x", batch[i]);
     printf("%s\n", ok ? "" : "  (write FAILED)");
 #endif
 #if N8_APU_LAT
-    if (ok && batch_msgs == 1 && batch[0] == 0x90 && batch[2]) apu_latency_probe(batch_first_us);
+    if (ok && msgs == 1 && batch[0] == 0x90 && batch[2]) apu_latency_probe(first_us);
+#else
+    (void)msgs;
 #endif
-    batch_len = batch_msgs = 0;
+    return ok;
 }
+
+// The cart link's expansion volume: CartVolume.cpp's rule (only a write the transport failed is tried again; each
+// outcome said once), over the box's Edio.
+static bool volume_write(void *, int value, bool again) {
+    return rp::box::writeExpansionVolume(edio, value, again, print_line);
+}
+static const rp::box::BoxCartLink::Writer cart_writer = {nullptr, fifo_write, volume_write};
 
 // TinyUSB's no-RTOS timing hook (no board layer), backed by the SDK clock.
 extern "C" uint32_t tusb_time_millis_api(void) { return to_ms_since_boot(get_absolute_time()); }
@@ -457,45 +501,6 @@ static void boot_rom(int status) {
     printf("[n8-host] %s booted by the Pico - no PC used.\n", run.path);
 }
 
-// The bridge sink: a complete MIDI message from the parser -> the N8 FIFO. Channel-voice
-// messages (0x80-0xEF) are forwarded, SysEx through midi_sysex_to_fifo(); system common and
-// realtime bytes (clock / sensing / transport) are dropped. Aftertouch is dropped too:
-// poly-aftertouch (0xA0) and channel-pressure (0xD0) are high-rate continuous streams (a
-// Launchpad floods channel-pressure while any pad is held), and no ROM here uses them -
-// BlipToaster's parser reads and ignores both, and the older n8-midi.nes HUNG on that flood.
-// Program-change carries one data byte, the rest two. Every message is sent with its status
-// byte (no running status), so a batch is just the messages back to back.
-static void midi_to_fifo(const midi_message *m, void *user) {
-    (void)user;
-    if (m->status >= 0xf0) return;                      // channel-voice only
-    stats.msgs++;
-    if (m->type == MIDI_POLY_AFTERTOUCH ||
-        m->type == MIDI_CHANNEL_PRESSURE) { stats.filtered++; return; }   // the aftertouch flood
-    if (!forward_ok) { stats.not_ready++; return; }     // N8 not ready yet: drop
-
-    uint32_t n = (m->type == MIDI_PROGRAM_CHANGE) ? 2 : 3;   // 1-data-byte message
-    if (batch_len + n > BATCH_MAX) batch_flush();
-    if (batch_len == 0) batch_first_us = cur_byte_us;
-    batch[batch_len++] = m->status;
-    batch[batch_len++] = m->data0;
-    if (n == 3) batch[batch_len++] = m->data1;
-    batch_msgs++;
-}
-
-// SysEx, byte by byte from the parser (F0, payload, F7 - a terminator is synthesised if another
-// status cuts one short), into the same batch as the channel messages so order is kept. BlipToaster
-// takes N163 waves, GM System On and its settings this way. A long SysEx simply spans batches: the
-// ROM reads one byte stream. One whose start was dropped (the N8 not ready) is dropped whole.
-static bool sysex_open = false;
-static void sysex_emit(uint8_t b) {
-    if (b == 0xF0) sysex_open = forward_ok;
-    if (!sysex_open) { if (b == 0xF7) stats.not_ready++; return; }
-    if (batch_len + 1 > BATCH_MAX) batch_flush();
-    if (batch_len == 0) batch_first_us = cur_byte_us;
-    batch[batch_len++] = b;
-    if (b == 0xF7) { stats.sysex++; batch_msgs++; sysex_open = false; }
-}
-
 // The box's own commands: F0 7D 50 <cmd> ... F7 (7D = non-commercial, 50 = 'P' for Pico;
 // BlipToaster's are 7D 42). They are acted on here and never reach the ROM.
 //   F0 7D 50 01 <n> F7   boot staged ROM n at the next menu (power-cycle the NES, or RESET if the N8 returns to its menu on RESET);
@@ -534,26 +539,14 @@ static void box_command(const uint8_t *c, int n) {
     }
 }
 
-static uint8_t sx_head[3], sx_cmd[8];
-static int     sx_head_n = 0, sx_cmd_n = 0;
-static bool    sx_box = false;
-static void midi_sysex_to_fifo(uint8_t b, void *user) {
-    (void)user;
-    if (b == 0xF0) { sx_head_n = 0; sx_box = false; }
-    if (sx_head_n < 3) {
-        // Hold the F0 and the two ID bytes until it is known whose SysEx this is.
-        sx_head[sx_head_n++] = b;
-        if (b == 0xF7 || sx_head_n == 3) {
-            sx_box = sx_head_n == 3 && sx_head[1] == 0x7D && sx_head[2] == 0x50;
-            sx_cmd_n = 0;
-            if (!sx_box) for (int i = 0; i < sx_head_n; i++) sysex_emit(sx_head[i]);
-            if (b == 0xF7) sx_head_n = 3;   // ended inside the header: nothing more to hold
-        }
-        return;
-    }
-    if (!sx_box) { sysex_emit(b); return; }
-    if (b == 0xF7) box_command(sx_cmd, sx_cmd_n);
-    else if (sx_cmd_n < (int)sizeof sx_cmd) sx_cmd[sx_cmd_n++] = b;
+// The staging's SysEx hook: a complete F0 7D 50 <cmd> ... F7 is the box's own, acted on here and never staged, so it
+// never reaches the plan. The command is what follows the header, up to 8 bytes.
+static bool box_sysex(void *, const uint8_t *d, uint32_t n) {
+    if (n < 4 || d[1] != 0x7D || d[2] != 0x50) return false;
+    uint32_t len = n - 4;   // between the header and the F7
+    if (len > 8) len = 8;
+    box_command(d + 3, (int)len);
+    return true;
 }
 
 // Once a second, if anything moved: what the bridge received, forwarded and lost. A message
@@ -562,7 +555,11 @@ static void midi_sysex_to_fifo(uint8_t b, void *user) {
 // on the 115200 console), and MIDI arriving meanwhile waits behind them. So the diagnostics run
 // only once MIDI has been quiet for 100 ms: a player never pays for them, and the stress test
 // reads its counters after a pause anyway.
-static bool midi_quiet(void) { return time_us_32() - last_rx_us > 100000; }
+//
+// What the plan does is counted at its two edges, which the host owns: the staging (what rp.device.midi-in was
+// handed) and the cart link (what rp.n8.nes pushed, and which of those were its own note-offs). `filtered` is the
+// difference, so the firmware never reads a node's state.
+static bool midi_quiet(void) { return time_us_32() - rp::box::uartMidiLastRx() > 100000; }
 
 static void stats_report(void) {
     if (!midi_quiet()) return;
@@ -571,17 +568,30 @@ static void stats_report(void) {
     uint32_t t = to_ms_since_boot(get_absolute_time());
     if (t < next_ms) return;
     next_ms = t + 1000;
-    stats.rx_bytes = irq_rx;          // the ISR's counters, folded in for the report
-    stats.uart_oe = irq_oe;
-    stats.uart_fe = irq_fe;
-    stats.ring_full = irq_ring_full;
+    const rp::box::UartMidiCounts uart = rp::box::uartMidiCounts();   // the ISR's counters, folded in for the report
+    const rp::box::MidiStaging::Counts &in = staging.counts();
+    const rp::box::BoxCartLink::Counts &out = cart.counts();
+    stats.rx_bytes = uart.rx;
+    stats.uart_oe = uart.overrun;
+    stats.uart_fe = uart.framing;
+    stats.ring_full = uart.ringFull;
+    stats.msgs = in.channelMessages;
+    stats.fwd = out.forwarded;
+    stats.fwd_fail = out.failed;
+    stats.writes = out.writes;
+    stats.max_batch = out.maxBatch;
+    stats.sysex = out.sysex;
+    stats.not_ready = out.notReady;
+    stats.link_full = out.full;
+    stats.skipped = driver.skipped() > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t)driver.skipped();
+    stats.filtered = rp::box::filtered(in, out);
     stats.lat_avg_us = lat_n ? lat_sum / lat_n : 0;
     stats.lat_max_us = lat_win_max;
     lat_sum = lat_n = lat_win_max = 0;
     if (memcmp(&last, &stats, sizeof stats) == 0) return;
     last = stats;
     printf("[stats] rx=%lu msgs=%lu sysex=%lu fwd=%lu fail=%lu writes=%lu maxbatch=%lu filtered=%lu "
-           "notready=%lu oe=%lu fe=%lu ringfull=%lu maxfwd=%luus lat=%lu/%luus\n",
+           "notready=%lu oe=%lu fe=%lu ringfull=%lu maxfwd=%luus lat=%lu/%luus linkfull=%lu skipped=%lu\n",
            (unsigned long)stats.rx_bytes, (unsigned long)stats.msgs, (unsigned long)stats.sysex,
            (unsigned long)stats.fwd,
            (unsigned long)stats.fwd_fail, (unsigned long)stats.writes,
@@ -589,7 +599,7 @@ static void stats_report(void) {
            (unsigned long)stats.not_ready, (unsigned long)stats.uart_oe,
            (unsigned long)stats.uart_fe, (unsigned long)stats.ring_full,
            (unsigned long)stats.max_fwd_us, (unsigned long)stats.lat_avg_us,
-           (unsigned long)stats.lat_max_us);
+           (unsigned long)stats.lat_max_us, (unsigned long)stats.link_full, (unsigned long)stats.skipped);
 }
 
 // Read-only confirmation: poll the running ROM's APU write-mirror ($4000-$401F at SSR+0x80)
@@ -623,47 +633,6 @@ static void sniff_report(void) {
     if (strcmp(line, last) == 0) return;
     strcpy(last, line);
     printf("[sniff] %s\n", line);
-}
-
-// The N8 mixes expansion audio (VRC6 / VRC7 / N163 / Sunsoft 5B / MMC5) through an FPGA master
-// volume; at 0 every expansion voice is silent, which reads exactly like a dead chip. The PC tools
-// warn it is 0 after a power-cycle and set it (`n8-play --exp-vol`, defaulting to unity for these
-// mappers). On this rig the N8 OS set it to 129-130 itself at every hand-over, so this is a guard
-// rather than the usual path: the same rule, run whenever forwarding starts - after the Pico booted
-// a ROM, or on finding one already running. It reads the live config block the N8 OS writes when it
-// hands a game over (system region, not a cart-bus DMA), so it covers a ROM booted from the SD path
-// as well as a staged one, and it only raises a volume still at 0: a deliberate setting is kept.
-#ifndef N8_EXP_VOL
-#define N8_EXP_VOL 128   // unity (0 mute, 255 = 2x)
-#endif
-static const char *expansion_chip(uint16_t mapper) {
-    switch (mapper) {
-        case 5:  return "MMC5";
-        case 19: return "N163";
-        case 24: case 26: return "VRC6";
-        case 69: return "Sunsoft 5B";
-        case 85: return "VRC7";
-        default: return NULL;
-    }
-}
-
-static void exp_vol_check(void) {
-    uint8_t cfg[Edio::SIZE_CFG];
-    if (!edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg).ok()) { printf("[n8-host] config read FAILED\n"); return; }
-    uint16_t mapper = (uint16_t)(((cfg[2] >> 4) << 8) | cfg[0]);
-    bool game = (cfg[7] & 0x80) != 0;   // ctrl bit 7: a game core is configured (the menu is map 255)
-    const char *chip = expansion_chip(mapper);
-    if (!game || !chip) return;
-    if (cfg[3] != 0) {
-        printf("[n8-host] mapper %u (%s): expansion volume already %u\n", mapper, chip, cfg[3]);
-        return;
-    }
-    uint8_t v = N8_EXP_VOL;
-    bool ok = edio.memWR(Edio::ADDR_EXP_VOL, &v, 1).ok();
-    uint8_t back = 0;   // a live register: read it back to confirm the write took
-    if (ok) ok = edio.memRD(Edio::ADDR_EXP_VOL, &back, 1).ok() && back == v;
-    printf("[n8-host] mapper %u (%s): expansion volume 0 -> %u%s\n", mapper, chip, back,
-           ok ? "" : " (write FAILED)");
 }
 
 // --- Recovery triggers and the menu coming back ---------------------------------------------------
@@ -739,29 +708,22 @@ int main(void) {
 
     led_init();
     box_start();                        // says why we (re)booted, then arms the watchdog
+    LAT(init());
 
-    // The node types this image registers (retroplug_product in CMakeLists.txt): rp.n8.nes, which nothing plans here
-    // yet, named so that the node is linked into the image the trap judges, as a device image's types must be.
+    // The graph host: the staged MIDI and the cart link under the box's rp_host, and the built-in plan loaded into the
+    // arena with the node types this image registers (retroplug_product in CMakeLists.txt). A plan the loader refuses
+    // (which the build's export rules out) leaves the box running its N8 part with the error LED, forwarding nothing.
+    staging.init(box_sysex, nullptr, frame_of, nullptr);
+    cart.setClock({nullptr, now_us, arrival_of});
+    host.init(links, sizeof links / sizeof links[0], staging.interface(), host_log);
     size_t package_count = 0;
     const rp_package *const *packages = rp_register_packages(&package_count);
-    for (size_t i = 0; i < package_count; i++)
-        for (uint32_t t = 0; t < packages[i]->node_type_count; t++)
-            printf("[n8-host] node type %s (registered, not planned)\n", packages[i]->node_types[t]->id);
+    if (plan.load({kBuiltInPlan, sizeof kBuiltInPlan}, {arena, sizeof arena}, {packages, package_count}, host.host(),
+                  print_line))
+        driver.start(clock_us, nullptr, (uint32_t)plan.plan()->sampleRate, plan.plan()->maxFrames);
 
     // MIDI IN (stage-1 opto circuit) on UART1/GP5.
-    uart_init(MIDI_UART, MIDI_BAUD);
-    gpio_set_function(MIDI_RX_PIN, GPIO_FUNC_UART);
-    uart_set_format(MIDI_UART, 8, 1, UART_PARITY_NONE);
-    uart_set_fifo_enabled(MIDI_UART, true);
-    // Lowest priority: the ISR only copies bytes, and must never delay PIO-USB's own timer IRQ.
-    irq_set_exclusive_handler(UART_IRQ_NUM(MIDI_UART), on_midi_uart_irq);
-    irq_set_priority(UART_IRQ_NUM(MIDI_UART), PICO_LOWEST_IRQ_PRIORITY);
-    irq_set_enabled(UART_IRQ_NUM(MIDI_UART), true);
-    uart_set_irqs_enabled(MIDI_UART, true, false);
-
-    midi_parser parser;
-    midi_parser_init(&parser, midi_to_fifo, NULL);
-    midi_parser_set_sysex_sink(&parser, midi_sysex_to_fifo);
+    rp::box::uartMidiInit(MIDI_UART, MIDI_RX_PIN, MIDI_BAUD);
     bool was_forwarding = false;
 
 #ifdef USE_NATIVE_USB
@@ -776,27 +738,36 @@ int main(void) {
     sof_timer_start();
 #endif
 
+    // One pass (docs/modular-graph-phase-e3-design.md section 5): the watchdog and USB; the MIDI parsed and staged;
+    // the block; the cart link drained to the N8; the N8 part; stats. Block work and N8 work never overlap, which is
+    // what keeps a push from ever waiting on the N8.
     while (true) {
+        LAT(passBegin());
         box_feed();
         tuh_task();
+        LAT(mark(lat::Uart));
 
-        // Drain the receive ring -> parser, whose sink batches complete messages; then send
-        // the batch as one fifoWR. The sink gates on forward_ok, so bytes that arrive before
-        // the N8 is ready are parsed and dropped.
-        // Idle, read the UART here as well: a 3-byte message is under the RX interrupt's 4-byte
-        // threshold, so left to the IRQ it waits ~1 ms for the receive timeout to fire.
-        irq_set_enabled(UART_IRQ_NUM(MIDI_UART), false);
-        on_midi_uart_irq();
-        irq_set_enabled(UART_IRQ_NUM(MIDI_UART), true);
-        while (rx_tail != rx_head) {
-            uint32_t t = rx_tail;
-            uint8_t b = rx_ring[t];
-            cur_byte_us = rx_ts[t];
-            __dmb();   // the byte is read before the ISR may reuse its slot
-            rx_tail = (t + 1) % RX_RING;
-            midi_parser_byte(&parser, b);
+        // The receive ring -> the parser -> the staging, every message as it came but the box's own commands, which
+        // its hook takes. Idle, read the UART here as well: a 3-byte message is under the RX interrupt's 4-byte
+        // threshold, so left to the IRQ it waits ~1 ms for the receive timeout to fire. What the staging cannot take
+        // stays in the ring for the next pass.
+        rp::box::uartMidiPoll();
+        rp::box::uartMidiDrain(staging);
+        LAT(drained(rp::box::uartMidiCounts().rx, driver.blocks()));
+
+        // The block the time since the last one makes, which takes what is staged; the host ends it, dropping what it
+        // did not take (a plan whose rp.device.midi-in is silenced, or has none), so the parse, and the box's own
+        // commands, go on whatever the plan does. With no plan, nothing takes what is staged.
+        if (plan.plan()) {
+            if (plan.run(driver)) staging.endBlock();
+        } else {
+            staging.clearStaged();
         }
-        batch_flush();
+        LAT(blockDone(driver.blocks()));
+
+        // What the block pushed, to the N8 (the cart link refused it all while no game runs).
+        cart.drain(cart_writer, to_ms_since_boot(get_absolute_time()));
+        LAT(mark(lat::N8));
 
         if (n8_ready && !probed) {
             led_set_mode(LED_BUSY);   // the boot blocks for seconds: show it now, not after
@@ -814,19 +785,23 @@ int main(void) {
         forward_ok = n8_ready && probed && !menu_stuck_until;
         // Forwarding just became possible (after a mount, and the up-to-48 s menu boot): the ring
         // may hold seconds of MIDI from before the N8 could take it, and playing that stale burst
-        // into the ROM now would only produce surprise notes. Start from a clean stream.
+        // into the ROM now would only produce surprise notes. Start from a clean stream. The cart
+        // link writes the expansion volume at the connect, on the next pass's drain.
         if (forward_ok && !was_forwarding) {
-            rx_tail = rx_head;
-            midi_parser_init(&parser, midi_to_fifo, NULL);
-            midi_parser_set_sysex_sink(&parser, midi_sysex_to_fifo);
-            sysex_open = false;
-            exp_vol_check();
+            rp::box::uartMidiDiscard();
+            staging.reset();
         }
         was_forwarding = forward_ok;
+        cart.setConnected(forward_ok);
+        LAT(mark(lat::Diag));
         if (forward_ok) { sniff_report(); health_check(); }
+        LAT(mark(lat::Watch));
         link_watch();
-        led_set_mode(boot_error ? LED_ERROR : !n8_ready ? LED_NO_N8 : !forward_ok ? LED_BUSY : LED_READY);
+        led_set_mode(boot_error || !plan.plan() ? LED_ERROR : !n8_ready ? LED_NO_N8 : !forward_ok ? LED_BUSY
+                                                                                                   : LED_READY);
+        LAT(mark(lat::Stats));
         stats_report();
+        LAT(passEnd(rp::box::uartMidiLastRx()));
     }
 }
 

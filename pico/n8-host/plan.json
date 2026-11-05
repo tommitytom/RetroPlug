@@ -1,0 +1,12 @@
+{
+  "nodes": [
+    {"id": "in", "type": "rp.device.midi-in"},
+    {"id": "filter", "type": "rp.core.midi-filter",
+     "settings": {"drop": ["polyAftertouch", "channelAftertouch", "systemCommon", "realtime"]}},
+    {"id": "nes", "type": "rp.n8.nes"}
+  ],
+  "wires": [
+    {"from": "in.midi", "to": "filter.in"},
+    {"from": "filter.out", "to": "nes.midi"}
+  ]
+}

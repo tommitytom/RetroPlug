@@ -4,6 +4,7 @@
 // or RTTI, cmake/tests.cmake) export their packages through C entries renamed for this binary, and the echo node
 // reports the settings it decoded through a plain struct. Nothing here names an SDK type, so both builds read it alike.
 
+#include <cstddef>
 #include <cstdint>
 
 #include "graph/rp_node.h"
@@ -48,6 +49,48 @@ struct CartRecord {
 };
 
 extern "C" void* rp_devtest_cart_device_mode(CartRecord* record);
+
+// The box's cart link (pico/n8-host/BoxCartLink.hpp) as the device builds it, for the box's whole pass over the
+// device-mode rp.n8.nes: what its drain wrote, each FIFO write and each volume, and its counts, copied out field for
+// field. The link is reached through the rp_devtest_box_* calls below, which answer it as the void* an
+// rp.host.devices/2 acquire hands rp.n8.nes; the desktop's build of the same class is BoxCartLink.hpp's own type.
+struct BoxWrite {
+    std::uint32_t size = 0;
+    std::uint32_t messages = 0;
+    std::uint32_t firstUs = 0;
+    std::uint8_t  bytes[192] = {};
+};
+
+struct BoxRecord {
+    static constexpr std::uint32_t kWrites = 64;
+    BoxWrite      writes[kWrites];
+    std::uint32_t writeCount = 0;  // every write, recorded or past kWrites
+    int           volumes[8] = {};
+    std::uint32_t volumeCount = 0;
+    bool          fifoFails = false;
+    // When what the plan pushes arrived: the clock for one the plan made, and the staging's arrival (MidiStaging) for
+    // one it was handed, as the box gives its link.
+    void*         clockCtx = nullptr;
+    std::uint32_t (*now)(void* ctx) = nullptr;
+    bool (*arrival)(void* ctx, std::uint32_t frame, const std::uint8_t* data, std::size_t size,
+                    std::uint32_t* us) = nullptr;
+};
+
+struct BoxCounts {
+    std::uint32_t received, made, notReady, full, released, forwarded, failed, sysex, writes, maxBatch;
+    std::uint32_t fromPlanInput;
+    int           volume, holders;
+};
+
+extern "C" {
+// A fresh link (its ring empty, disconnected, its counts zero) writing into `record`; the link, as rp.n8.nes takes it.
+void* rp_devtest_box_link_device_mode(BoxRecord* record);
+void  rp_devtest_box_connect_device_mode(bool connected);
+void  rp_devtest_box_drain_device_mode(std::uint32_t nowMs);
+void  rp_devtest_box_counts_device_mode(BoxCounts* out);
+void  rp_devtest_box_acquired_device_mode(void* ctx);
+void  rp_devtest_box_released_device_mode(void* ctx);
+}
 
 // A package's `device` entry as its manifest names it, with both builds of it: the desktop's (`desktop`) and the
 // device-mode objects' (`device`, the entry renamed <entry>_device_mode). The generated device-entries.cpp lists every

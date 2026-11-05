@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include "graph/noinline.hpp"
 #include "n8/Menu.hpp"
 
 namespace rp::n8 {
@@ -78,16 +79,9 @@ bool batterySlotFits(std::string_view romPath) {
     return kBatteryDir.size() + baseName(romPath).size() + kBatteryFile.size() + 1 <= kBatteryPathBytes;
 }
 
-// The never-inlined form of a function, so its frame is on the stack only while it runs.
-#if defined(_MSC_VER)
-#define RP_N8_NOINLINE __declspec(noinline)
-#else
-#define RP_N8_NOINLINE __attribute__((noinline))
-#endif
-
 // bootRom's battery: its path built and the file written. Apart from bootRom and never inlined into it, so the path's
 // buffer is on the stack only while a battery is written, and a boot with none (the Pico box's) carries none of it.
-RP_N8_NOINLINE Status writeBattery(Edio& edio, std::string_view romPath, ByteView srm, Progress progress) {
+RP_NOINLINE Status writeBattery(Edio& edio, std::string_view romPath, ByteView srm, Progress progress) {
     char battery[kBatteryPathBytes];
     if (!batteryPath(romPath, battery, sizeof battery)) return failed(Code::TooLarge, Where::BatteryPath, Step::Save);
     return writeFile(edio, battery, srm, progress);

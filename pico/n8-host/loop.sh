@@ -85,12 +85,28 @@ elf=$bdir/n8_host.elf
 # --- build -----------------------------------------------------------------------------------
 if [ $do_build = 1 ]; then
 	echo "== build ($(basename "$bdir"), SDK $sdk)"
+	mkdir -p "$bdir"
+	# The firmware's build exports its built-in plan (plan.json) with the desktop build's retroplug-export-plan
+	# (RP_DESKTOP_BUILD_DIR, default build/, as tools/build-box.sh reads it), handed to the configure by path. This
+	# script does not build the desktop tree: another session may be building it, and two builds of one tree at once
+	# race. It takes the exporter as that tree last built it (tools/build-box.sh and pnpm test:plugin build it; it is in
+	# no default target, so a plain desktop build does not), and the firmware's export reruns whenever the exporter,
+	# plan.json or plan.cmake changes; a package changed since the exporter was built wants the exporter built first
+	# (the box's loader refuses, at boot and in words, a blob of another format).
+	# Absolute, as CMake stores the tool's path in the build dir's cache, so the comparison below sees the same path.
+	desk=$(cd "${RP_DESKTOP_BUILD_DIR:-$repo/build}" 2>/dev/null && pwd) \
+		|| die "no desktop build at ${RP_DESKTOP_BUILD_DIR:-$repo/build} (RP_DESKTOP_BUILD_DIR; ./build.sh makes build/)"
+	tool=$desk/export-plan/retroplug-export-plan
+	[ -x "$tool" ] || die "no plan exporter at $tool: build it first (cmake --build $desk --target retroplug-export-plan)"
 	if [ ! -f "$bdir/build.ninja" ]; then
-		mkdir -p "$bdir"
 		# reflect-cpp's headers from the desktop build's checkout when there is one: no clone at configure.
-		reflect=$(sed -n 's/^reflectcpp_SOURCE_DIR:STATIC=//p' "$repo/build/CMakeCache.txt" 2>/dev/null)
-		PICO_SDK_PATH=$sdk cmake -S "$here" -B "$bdir" -G Ninja $cfg ${reflect:+-DRP_REFLECTCPP_SOURCE_DIR="$reflect"} \
-			>"$bdir/loop-configure.log" 2>&1 \
+		reflect=$(sed -n 's/^reflectcpp_SOURCE_DIR:STATIC=//p' "$desk/CMakeCache.txt" 2>/dev/null)
+		PICO_SDK_PATH=$sdk cmake -S "$here" -B "$bdir" -G Ninja $cfg -DRP_EXPORT_PLAN_TOOL="$tool" \
+			${reflect:+-DRP_REFLECTCPP_SOURCE_DIR="$reflect"} >"$bdir/loop-configure.log" 2>&1 \
+			|| { tail -20 "$bdir/loop-configure.log"; die "configure failed (log: $bdir/loop-configure.log)"; }
+	elif [ "$(sed -n 's/^RP_EXPORT_PLAN_TOOL:FILEPATH=//p' "$bdir/CMakeCache.txt")" != "$tool" ]; then
+		# A build dir configured before (or against another desktop build): point it at this exporter.
+		cmake -B "$bdir" -DRP_EXPORT_PLAN_TOOL="$tool" >"$bdir/loop-configure.log" 2>&1 \
 			|| { tail -20 "$bdir/loop-configure.log"; die "configure failed (log: $bdir/loop-configure.log)"; }
 	fi
 	cmake --build "$bdir" -j"$(nproc)" >"$bdir/loop-build.log" 2>&1 \

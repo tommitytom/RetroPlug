@@ -1,11 +1,17 @@
 #include "UsbCdcTransport.hpp"
 
 #include "pico/time.h"
-// TinyUSB's osal_none.h applies ++ and -- to a volatile, which C++20 deprecates: its warning, not this file's.
+// TinyUSB's osal_none.h applies ++ and -- to a volatile, which C++20 deprecates: its warning, not this file's. GCC's
+// alone: the desktop's test builds this file over a fake TinyUSB (packages/native/test/device-mode/fake-tinyusb), with
+// compilers that know neither the pragma nor the warning.
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wvolatile"
+#endif
 #include "tusb.h"
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
 
 namespace {
 

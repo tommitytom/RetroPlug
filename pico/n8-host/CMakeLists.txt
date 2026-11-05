@@ -38,33 +38,61 @@ endif()
 
 get_filename_component(RP_REPO "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 
-# --- the N8 pack, as a device builds it (docs/modular-graph-phase-e2-design.md section 8): the firmware runs the
-# pack's one Edio (packages/n8), compiled as rp-device-check compiles its packages (cmake/packages.cmake's device mode:
-# RP_DEVICE, no exceptions, no RTTI, the SDK's code-generation flags), with reflect-cpp's headers at the desktop's pin
-# for graph/node.hpp. node-sdk is what every package builds on; graph-runtime carries the product registration's
-# header.
+# --- the packages, as a device builds them (docs/modular-graph-phase-e2-design.md section 8, the E3 design's section
+# 5): the N8 pack (packages/n8: its one Edio, the menu commands and operations, rp.n8.nes) and the two packages the
+# built-in plan names beside it (core, for rp.core.midi-filter, and device-io, for rp.device.midi-in), compiled as
+# rp-device-check compiles its packages (cmake/packages.cmake's device mode: RP_DEVICE, no exceptions, no RTTI, the
+# SDK's code-generation flags), with reflect-cpp's headers at the desktop's pin for graph/node.hpp. node-sdk is what
+# every package builds on; graph-runtime carries the executor, the plan loader and the product registration's header.
+#
+# The runtime with pico_malloc taken out, the link trap on the heap, on exceptions and on RTTI over the whole image
+# (the firmware's own code, TinyUSB, Pico-PIO-USB and the packages alike), and the stack limit on every frame they
+# compile (cmake/device-image.cmake), which is included before the packages so that their libraries take it.
 include("${RP_REPO}/cmake/reflectcpp-pin.cmake")
 set(RP_DEVICE_BUILD ON)
 set(RP_DEVICE_COMPILE_OPTIONS
     "$<TARGET_PROPERTY:pico_standard_link,INTERFACE_COMPILE_OPTIONS>"
     "$<TARGET_PROPERTY:pico_cxx_options,INTERFACE_COMPILE_OPTIONS>")
+set(RP_DEVICE_IMAGE n8-host)
+include("${RP_REPO}/cmake/device-image.cmake")
 include("${RP_REPO}/cmake/packages.cmake")
 retroplug_package(node-sdk)
 retroplug_package(graph-runtime)
+retroplug_package(core)
+retroplug_package(device-io)
 retroplug_package(n8)
 
-# --- the runtime with pico_malloc taken out, and the link trap on the heap, on exceptions and on RTTI over the whole
-# image (cmake/device-image.cmake): the firmware's own code, TinyUSB, Pico-PIO-USB and the pack alike.
-set(RP_DEVICE_IMAGE n8-host)
-include("${RP_REPO}/cmake/device-image.cmake")
+# --- the generic box host (../host: the device rp_host, the built-in plan's load and blocks, the block driver, the
+# UART MIDI path), and the built-in plan, exported when the firmware is built.
+include("${CMAKE_CURRENT_LIST_DIR}/../host/host.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/plan.cmake")
+
+# retroplug-export-plan (packages/graph-runtime/export-plan), a desktop tool of the desktop build: it plans plan.json
+# for the RP2350 with the desktop's builds of the types, sizes it with their device builds against the arena below, and
+# writes the blob as a header, so a plan the box cannot run or hold fails this build rather than its boot.
+# tools/build-box.sh builds it in the desktop build first and passes its path; loop.sh passes the path of the one the
+# desktop build last built (it builds no desktop tree itself). The default is the desktop build's own (build/).
+set(RP_EXPORT_PLAN_TOOL "${RP_REPO}/build/export-plan/retroplug-export-plan" CACHE FILEPATH
+    "retroplug-export-plan, from the desktop build (cmake --build build --target retroplug-export-plan)")
+if(NOT EXISTS "${RP_EXPORT_PLAN_TOOL}")
+    message(FATAL_ERROR "n8-host: no plan exporter at RP_EXPORT_PLAN_TOOL (\"${RP_EXPORT_PLAN_TOOL}\"); build it "
+                        "in the desktop build (cmake --build build --target retroplug-export-plan), as "
+                        "tools/build-box.sh does, or pass -DRP_EXPORT_PLAN_TOOL=<path>")
+endif()
+set(_n8_plan_header "${CMAKE_BINARY_DIR}/generated/n8_host_plan.hpp")
+add_custom_command(
+    OUTPUT  "${_n8_plan_header}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/generated"
+    COMMAND "${RP_EXPORT_PLAN_TOOL}" "${N8_HOST_PLAN}" "${_n8_plan_header}" --arena ${N8_HOST_ARENA_BYTES}
+            --sample-rate ${N8_HOST_PLAN_SAMPLE_RATE} --max-frames ${N8_HOST_PLAN_MAX_FRAMES} --header kBuiltInPlan
+    DEPENDS "${N8_HOST_PLAN}" "${RP_EXPORT_PLAN_TOOL}" "${CMAKE_CURRENT_LIST_DIR}/plan.cmake"
+    COMMENT "retroplug-export-plan: the box's built-in plan (plan.json)"
+    VERBATIM)
 
 # The firmware's own sources, its includes, libraries and options, for the image and for its trap probe alike.
 function(n8_host_setup target)
-    # So TinyUSB finds tusb_config.h, and the build finds the shared midi.h.
-    target_include_directories(${target} PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/../midi-in
-    )
+    # So TinyUSB finds tusb_config.h (the host library carries the shared midi.h).
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_LIST_DIR})
     target_link_libraries(${target} PRIVATE
         pico_stdlib
         hardware_uart
@@ -134,30 +162,55 @@ endif()
 set(_n8_host_sources
     main.cpp
     box.cpp
+    BoxCartLink.cpp
+    CartVolume.cpp
     UsbCdcTransport.cpp
-    # Stage-1 MIDI parser, reused as-is (the bridge forwards its decoded messages).
-    ${CMAKE_CURRENT_LIST_DIR}/../midi-in/midi.c
+    "${_n8_plan_header}"
 )
 if(NOT RP_NATIVE_USB)
     list(APPEND _n8_host_sources SofTimer.cpp pio_usb_root.c)
 endif()
 rp_device_executable(n8_host ${_n8_host_sources})
 n8_host_setup(n8_host)
-# A 4 KB main stack: all of SCRATCH_Y, which holds nothing else. The box's deepest chain (the main loop, a boot through
-# bootRom and box.cfg's save, a transport wait, TinyUSB's callbacks and printf, with the UART and SOF interrupts
-# nested on top) comes to about 2.3 KB summed pessimistically, past the SDK's 2 KB default. What the linker checks is
-# the reservation: it refuses scratch code that would overlap the reserved 4 KB. The stack's real depth is still the
-# hand sum, with no limit at run time. Core 1's reservation (PICO_CORE1_STACK_SIZE, which defaults to this one) stays
-# its 2 KB in SCRATCH_X: core 1 never runs, and SCRATCH_X keeps room for scratch code.
+# The image runs from SRAM: the SDK's copy_to_ram binary type, whose boot copies it out of flash (flash then holds only
+# the load image and the staged ROMs). Run from flash, every instruction comes through the 16 KB XIP cache, and a
+# message's own path (the parse and the staging, the block's three nodes, the cart link's push and drain, the FIFO write
+# through the Edio and TinyUSB) runs once a message, so between isolated messages it falls out of the cache and each
+# 8-byte line comes back from the QSPI flash (quad EBh at clk_sys/3), about 90 cycles a line. On the rig an isolated
+# message's way from its UART poll to its FIFO write took about 11,200 cycles with about 90 refills from flash and
+# 3,200 with none from SRAM, its fifoWR call 91 us and 38, and stress.sh's isolated latency (average/worst, us) went
+# from 689-742/1192-1248 (four runs; a fifth held a message 12.6 ms behind a console line, as E2 can too) to
+# 588-720/1080-1128 (five), where E2's image, half the size, gave 558-653/1083-1097 from flash. It costs SRAM: the
+# code and constants sit beside the data, about 305 KiB of the 512 KiB in all where running from flash took about 200
+# (the plan's 128 KiB arena among them), which leaves about 200 KiB for a later plan's audio and E4's script heap.
+pico_set_binary_type(n8_host copy_to_ram)
+# A 4 KB main stack: all of SCRATCH_Y, which holds nothing else. The box's deepest chains, summed pessimistically from
+# -fstack-usage: the plan's load at boot (main, BuiltInPlan::load, loadPlan, its layout, a node's query_memory and its
+# settings' decode) about 2.5 KB, before the UART and USB interrupts are on; a boot through bootRom and box.cfg's save,
+# a transport wait, TinyUSB's callbacks and printf, with the UART and SOF interrupts nested on top, about 2.3 KB; a
+# block (main, BuiltInPlan::run, runBlock, rp.n8.nes's process, the link's push) about 0.6 KB. What the linker checks is
+# the reservation: it refuses scratch code that would overlap the reserved 4 KB. Every frame is held to 1 KB at build
+# time (-Wstack-usage, cmake/device-image.cmake), and the chains are still the hand sum, with no limit at run time.
+# In the PIO-USB build, which links pico_multicore (Pico-PIO-USB does), core 1's reservation (PICO_CORE1_STACK_SIZE,
+# which defaults to this one) stays its 2 KB in SCRATCH_X: core 1 never runs, and SCRATCH_X keeps room for scratch
+# code. The native build links no pico_multicore and reserves no core 1 stack.
 target_compile_definitions(n8_host PRIVATE PICO_STACK_SIZE=0x1000 PICO_CORE1_STACK_SIZE=0x800)
-# The box's product: the N8 pack's device entry (rp.n8.nes), registered as a device registers it, and the pack's
-# portable library (the Edio, its menu commands and operations) linked in.
-retroplug_product(n8-host DEVICE PACKAGES n8 TARGETS n8_host)
-target_link_libraries(n8_host PRIVATE retroplug-graph-exec)
+# No heap reserved (the SDK's .heap section, 2 KB by default): nothing in the image allocates, which the link trap
+# holds, so the reservation would be RAM no one can use. The plan's memory is its arena, a static below.
+target_compile_definitions(n8_host PRIVATE PICO_HEAP_SIZE=0)
+# The box's product: the device entries of the packages its plan names (rp.core, rp.device and rp.n8), registered as a
+# device registers them, which is what the loader holds the plan's types to at boot, and the N8 pack's portable library
+# (the Edio, its menu commands and operations) linked in; the generic box host; the plan's header and its arena.
+retroplug_product(n8-host DEVICE PACKAGES core device-io n8 TARGETS n8_host)
+target_link_libraries(n8_host PRIVATE rp-box-host retroplug-graph-exec)
+target_include_directories(n8_host PRIVATE "${CMAKE_BINARY_DIR}/generated")
+target_compile_definitions(n8_host PRIVATE N8_HOST_ARENA_BYTES=${N8_HOST_ARENA_BYTES})
 
 # Experiment knobs, each a plain #define in main.cpp with a default: N8_MENU_TRIES (how many
-# '*t' attempts before giving up on the menu).
-foreach(knob N8_MENU_TRIES N8_APU_LAT N8_EXP_VOL N8_TEST_HOOKS)
+# '*t' attempts before giving up on the menu), N8_LAT_TRACE (the latency trace, LatTrace.hpp: a message's way through
+# the box and what each part of a pass costs, printed after a second of quiet). The expansion volume is no knob: it is
+# rp.n8.nes's `expansionVolume` param, unity unless plan.json sets it, which the cart link writes.
+foreach(knob N8_MENU_TRIES N8_APU_LAT N8_TEST_HOOKS N8_LAT_TRACE)
     if(DEFINED ${knob})
         target_compile_definitions(n8_host PRIVATE ${knob}=${${knob}})
     endif()

@@ -139,6 +139,8 @@ jobs:
       # The Pico box's firmware (docs/modular-graph-phase-e2-design.md section 8): pico/n8-host, the MIDI-to-N8 bridge
       # on the N8 pack's Edio, in both USB variants, each linked under the same trap over the whole image (TinyUSB and
       # Pico-PIO-USB included), with its own probe that must fail to link. Built, never run (the rig's gate runs it).
+      # Its built-in plan (pico/n8-host/plan.json, the E3 design's section 5) is exported at build time by
+      # retroplug-export-plan, which the script builds by name in the desktop build above (it is in no default target).
       # It needs what the device check does not: the SDK's TinyUSB submodule (0.18.0, by the 2.1.1 tag's pointer) and
       # Pico-PIO-USB at the commit the rig's firmware was proven on, which nothing else in the repository uses.
       - name: Install the box's USB stacks (TinyUSB, Pico-PIO-USB 5a37a66)

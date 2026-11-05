@@ -40,12 +40,18 @@ include("${RP_REPO}/cmake/reflectcpp-pin.cmake")
 # --- the packages, in device mode (cmake/packages.cmake): each defines its device targets alone, compiled as a device
 # compiles graph/node.hpp, with the SDK's code-generation flags (each function and object in a section of its own, so
 # --gc-sections drops what the image never calls; no unwind tables; no __cxa_atexit), as the image's own sources have
-# them. node-sdk and graph-runtime are what every package and the check build on; the list is packages.cmake's.
+# them, and the stack limit (cmake/device-image.cmake, included first for it). node-sdk and graph-runtime are what
+# every package and the check build on; the list is packages.cmake's.
+#
+# The runtime with pico_malloc taken out of pico_runtime, the link trap on the heap, on exceptions and on RTTI, and the
+# stack limit (cmake/device-image.cmake, which says why each is what it is; the box's firmware links under the same).
 include("${CMAKE_CURRENT_SOURCE_DIR}/packages.cmake")
 set(RP_DEVICE_BUILD ON)
 set(RP_DEVICE_COMPILE_OPTIONS
     "$<TARGET_PROPERTY:pico_standard_link,INTERFACE_COMPILE_OPTIONS>"
     "$<TARGET_PROPERTY:pico_cxx_options,INTERFACE_COMPILE_OPTIONS>")
+set(RP_DEVICE_IMAGE rp-device-check)
+include("${RP_REPO}/cmake/device-image.cmake")
 include("${RP_REPO}/cmake/packages.cmake")
 retroplug_package(node-sdk)
 retroplug_package(graph-runtime)
@@ -59,11 +65,6 @@ if(NOT RP_DEVICE_CHECK_CASES OR NOT EXISTS "${RP_DEVICE_CHECK_CASES}")
 endif()
 # Copied in, so a new header re-runs the configure and rebuilds what includes it.
 configure_file("${RP_DEVICE_CHECK_CASES}" "${CMAKE_BINARY_DIR}/generated/DeviceCheckCases.hpp" COPYONLY)
-
-# --- the runtime with pico_malloc taken out of pico_runtime, and the link trap on the heap, on exceptions and on RTTI
-# (cmake/device-image.cmake, which says why each is what it is; the box's firmware links under the same trap).
-set(RP_DEVICE_IMAGE rp-device-check)
-include("${RP_REPO}/cmake/device-image.cmake")
 
 rp_device_executable(rp-device-check main.cpp DeviceCheck.cpp N8Protocol.cpp)
 target_include_directories(rp-device-check PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/generated")

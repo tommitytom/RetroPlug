@@ -295,7 +295,9 @@ retroplug_add_test_binary(
 # renders what GraphHost renders from the same document, allocating nothing, and each of the loader's and the
 # exporter's refusals says why (DevicePlan.test.cpp, which runs retroplug-export-plan too); rp.device.midi-in takes
 # what a device host stages, each build alike (DeviceIo.test.cpp), and the box's bridge plan feeds a fake cart link what
-# its filter keeps.
+# its filter keeps. The Pico box's portable pieces run here too, over its own plan.json (BoxHost.test.cpp: the block
+# driver, the staging, the cart link and a whole pass, and plan.json's blob golden), and its Edio link over a fake
+# TinyUSB host (UsbCdcTransport.test.cpp).
 #
 # Both builds of one source sit in this one binary: the device-mode objects (retroplug_device_mode_objects,
 # cmake/packages.cmake, which says how the rename lets them) are the device's build of every package with a `device`
@@ -312,11 +314,29 @@ foreach(_p IN LISTS _rp_packages)
         list(APPEND _rp_device_packages ${_p})
     endif()
 endforeach()
+# The Pico box's portable pieces (docs/modular-graph-phase-e3-design.md sections 5 and 8), built for the host: the
+# generic box host's sources (pico/host/host.cmake) and the N8 box's cart link, desktop-built here, and the link again
+# in the device-mode objects, where it derives the device-mode build's CartLink as the box's derives the device's; the
+# box's plan.json and what it is exported for (pico/n8-host/plan.cmake), which BoxHost.test.cpp's golden pins.
+include("${CMAKE_SOURCE_DIR}/pico/host/host.cmake")
+include("${CMAKE_SOURCE_DIR}/pico/n8-host/plan.cmake")
+set(_rp_box_dir "${CMAKE_SOURCE_DIR}/pico/n8-host")
+
 retroplug_device_mode_objects(retroplug-device-mode-objects
     PACKAGES ${_rp_device_packages}
     SOURCES  ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/DeviceModeNodes.cpp
+             ${_rp_box_dir}/BoxCartLink.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
+             ${_rp_box_dir}
     OWNERS   _rp_device_owners)
+
+# The box's Edio link (pico/n8-host/UsbCdcTransport.cpp) over a fake TinyUSB host: its own objects, so the fake
+# tusb.h and pico/time.h (test/device-mode/fake-tinyusb) are on no other source's include path.
+add_library(retroplug-box-usb-cdc OBJECT EXCLUDE_FROM_ALL ${_rp_box_dir}/UsbCdcTransport.cpp)
+set_target_properties(retroplug-box-usb-cdc PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_include_directories(retroplug-box-usb-cdc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/fake-tinyusb
+                                                         ${_rp_box_dir})
+target_link_libraries(retroplug-box-usb-cdc PRIVATE retroplug-n8)
 
 set(_rp_device_rows "")
 set(_rp_device_decls "")
@@ -411,6 +431,13 @@ retroplug_add_test_binary(
              test/device-mode/DeviceCheck.test.cpp
              test/device-mode/DevicePlan.test.cpp
              test/device-mode/DeviceIo.test.cpp
+             test/device-mode/BoxHost.test.cpp
+             test/device-mode/UsbCdcTransport.test.cpp
+             test/device-mode/FakeTinyUsb.cpp
+             ${RP_BOX_HOST_PORTABLE_SOURCES}          # the box host, desktop-built
+             ${_rp_box_dir}/BoxCartLink.cpp           # the N8 box's cart link, desktop-built
+             ${_rp_box_dir}/CartVolume.cpp            # and its expansion-volume write
+             $<TARGET_OBJECTS:retroplug-box-usb-cdc>
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
              ${_rp_device_check_dir}/DeviceCheck.cpp   # the device check, as a host: desktop-built, C ABI only
              ${_rp_device_check_dir}/N8Protocol.cpp    # its N8 protocol run, over the desktop's build of the pack
@@ -424,7 +451,13 @@ retroplug_add_test_binary(
              ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
              ${_rp_device_check_dir}                   # DeviceCheck.hpp
              ${CMAKE_BINARY_DIR}/device-check          # DeviceCheckCases.hpp
+             ${RP_BOX_HOST_INCLUDES}                   # the box host and midi.h
+             ${_rp_box_dir}                            # BoxCartLink.hpp, UsbCdcTransport.hpp
     DEFS     RP_DEVICE_MODE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/golden"
-             RP_EXPORT_PLAN_TOOL="$<TARGET_FILE:retroplug-export-plan>")
+             RP_EXPORT_PLAN_TOOL="$<TARGET_FILE:retroplug-export-plan>"
+             RP_BOX_PLAN="${N8_HOST_PLAN}"
+             RP_BOX_SAMPLE_RATE=${N8_HOST_PLAN_SAMPLE_RATE}
+             RP_BOX_MAX_FRAMES=${N8_HOST_PLAN_MAX_FRAMES}
+             RP_BOX_ARENA_BYTES=${N8_HOST_ARENA_BYTES})
 # The plan cases run the exporter's tool in a process of its own (DevicePlan.test.cpp).
 add_dependencies(retroplug-device-mode-test retroplug-export-plan)

@@ -165,21 +165,17 @@ struct N8Nes {
     // One MIDI message to the link, keeping the books on its notes. Whether it went is the push's own answer, so the
     // books never read a count that another thread moves.
     void pushMidi(std::uint32_t frame, const std::uint8_t* data, std::size_t size, double rate) noexcept {
-        const bool sent = cart->push(frame, data, size, false, rate);
-        if (size < 3) return;
-        const std::uint8_t kind = data[0] & 0xF0;
-        const std::size_t  note = static_cast<std::size_t>(data[0] & 0x0F) * 128 + (data[1] & 0x7F);
-        const bool         on = kind == 0x90 && data[2] != 0;
-        const bool         off = kind == 0x80 || (kind == 0x90 && data[2] == 0);
-        if (on && sent) {
-            sounding.set(note);
-            owed.reset(note);
-        } else if (off) {
+        const bool      sent = cart->push(frame, data, size, false, rate);
+        const NoteEvent note = noteEvent(data, size);
+        if (note.on && sent) {
+            sounding.set(note.index);
+            owed.reset(note.index);
+        } else if (note.off) {
             if (sent) {
-                sounding.reset(note);
-                owed.reset(note);
-            } else if (sounding.test(note)) {
-                owed.set(note);
+                sounding.reset(note.index);
+                owed.reset(note.index);
+            } else if (sounding.test(note.index)) {
+                owed.set(note.index);
             }
         }
     }

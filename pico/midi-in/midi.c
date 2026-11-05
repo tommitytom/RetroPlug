@@ -42,8 +42,8 @@ static void emit(midi_parser *p, uint8_t status) {
         m.type = status;
         m.channel = 0;
     } else {
-        m.type = status & 0xF0;
-        m.channel = status & 0x0F;
+        m.type = (uint8_t)(status & 0xF0);
+        m.channel = (uint8_t)(status & 0x0F);
     }
     m.data0 = p->data[0];
     m.data1 = p->data[1];
@@ -54,7 +54,12 @@ void midi_parser_byte(midi_parser *p, uint8_t b) {
     // System realtime (0xF8..0xFF): single byte, may interleave anywhere, and
     // must not disturb a message currently being assembled or running status.
     if (b >= 0xF8) {
-        midi_message m = { .status = b, .type = b, .channel = 0, .data0 = 0, .data1 = 0 };
+        midi_message m;
+        m.status = b;
+        m.type = b;
+        m.channel = 0;
+        m.data0 = 0;
+        m.data1 = 0;
         if (p->sink) p->sink(&m, p->user);
         return;
     }
@@ -81,7 +86,7 @@ void midi_parser_byte(midi_parser *p, uint8_t b) {
             p->running_status = 0;
             p->cur_status = b;
             p->have = 0;
-            p->need = (b == 0xF2) ? 2 : (b == 0xF1 || b == 0xF3) ? 1 : 0;
+            p->need = (uint8_t)((b == 0xF2) ? 2 : (b == 0xF1 || b == 0xF3) ? 1 : 0);
             if (p->need == 0) { emit(p, b); p->cur_status = 0; }
             return;
         }
@@ -109,6 +114,6 @@ void midi_parser_byte(midi_parser *p, uint8_t b) {
         emit(p, p->cur_status);
         p->have = 0;
         // Keep running status for voice messages; system common has none.
-        p->cur_status = (p->cur_status >= 0xF0) ? 0 : p->running_status;
+        p->cur_status = (uint8_t)((p->cur_status >= 0xF0) ? 0 : p->running_status);
     }
 }

@@ -24,8 +24,8 @@
 //     handler does, and the SEV at its end kept (it wakes a WFE on the other core; the box has none, and it costs
 //     nothing).
 //   - the code path: the pool's handler ran from flash and called sof_timer and pio_usb_host_frame, both in RAM; this
-//     handler and pio_usb_host_frame are in RAM. The 64-bit timer read is the SDK's timer_time_us_64, which is in
-//     flash, as the pool's was, so a frame makes a few XIP fetches through it.
+//     handler and pio_usb_host_frame are in RAM, as the whole image is (copy_to_ram, CMakeLists.txt), the SDK's 64-bit
+//     timer read (timer_time_us_64) among it, so a frame makes no XIP fetch.
 namespace {
 
 constexpr unsigned     kAlarm   = 2;
