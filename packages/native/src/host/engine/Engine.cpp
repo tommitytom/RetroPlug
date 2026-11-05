@@ -185,7 +185,9 @@ struct Engine::Graph {
     rp::host::EngineSyncTrace              syncTrace{};
     // The links this host's engine hands out by name and interface id (rp.host.devices/2, through devices.api()). The
     // registry is declared before the GraphHost below, so it outlives the plans whose nodes give their links back as
-    // the graph goes.
+    // the graph goes. Its interface's context is the registry itself, never the Engine: a node releases its links from
+    // its destructor, which runs while graph_ itself is being destroyed, and libc++'s unique_ptr nulls graph_ before it
+    // deletes the Graph.
     rp::host::DeviceRegistry               devices;
     std::unique_ptr<rp::graph::GraphHost>  host;
     std::uint32_t                          maxFrames = kDefaultMaxBlockFrames;

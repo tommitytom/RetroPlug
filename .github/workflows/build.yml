@@ -347,14 +347,14 @@ jobs:
             build/bin/RetroPlug.dll
             build/bin/retroplug-sdl.exe
 
-  # Universal (arm64 + x86_64) macOS build on macos-14. Building both slices on
+  # Universal (arm64 + x86_64) macOS build on macos-15. Building both slices on
   # every PR gives x86_64 compile coverage without a native Intel runner (the
   # macos-13 Intel runners are effectively unavailable). Tests run against the
   # native arm64 slice. Matches release.yml's universal recipe: libffi comes
   # from the (universal) macOS SDK — do NOT `brew install libffi` (single-arch,
   # would shadow it); SDL2 comes from the official universal framework.
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
         with:
