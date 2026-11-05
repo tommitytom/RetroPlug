@@ -54,6 +54,14 @@ struct Resolved {
     State         state = State::Unvisited;  // meaningful until ok
 };
 
+// An events or bytes output's queue capacity once its "match" is followed (QueueCapacity, Descriptor.hpp): the size
+// its queue is made at, which is its declared one for a port that declares a size or nothing.
+struct SizedQueue {
+    QueueCapacity   capacity;  // both parts set once ok
+    bool            ok = false;
+    Resolved::State state = Resolved::State::Unvisited;
+};
+
 int outputOrdinal(const Layout& l, const PortDesc* port) {
     int o = 0;
     for (const auto& p : l.ports) {
@@ -125,8 +133,8 @@ public:
         try {
             // Every check that needs a layout runs on the types' layouts before any instance exists, so a
             // document refused here creates nothing.
-            if (structure() && params() && wires() && groups() && order() && channels() && exclusive() &&
-                resources() && queueBudget() && reconcile() && linkedSteps()) {
+            if (structure() && params() && wires() && groups() && order() && channels() && capacities() &&
+                exclusive() && resources() && queueBudget() && reconcile() && linkedSteps()) {
                 build();
             }
         } catch (const std::bad_alloc&) {
@@ -148,6 +156,7 @@ private:
     std::vector<int>                      parent_;    // union-find over link wires
     std::vector<std::vector<int>>         groupMembers_;  // in topological order once ordered
     std::vector<std::vector<Resolved>>    resolved_;  // node -> layout port index -> resolution
+    std::vector<std::vector<SizedQueue>>  sized_;     // node -> layout port index -> its queue's capacity
     std::vector<std::map<int, int>>       inputWire_; // node -> layout port index -> wire
     std::vector<std::map<int, int>>       paramWire_; // node -> param index -> wire
     std::vector<std::vector<std::pair<int, double>>> paramValues_;  // node -> (param index, value)
@@ -235,12 +244,16 @@ private:
             const std::string& id = nodes_[w.from].doc->id;
             const PortDesc& port = nodes_[w.from].layout.ports[w.fromPort];
             auto charge = [&](const std::string& queue) {
-                total += queueMemory(port.capacity);
+                total += queueMemory(capacityOf(w.from, w.fromPort));
                 if (total <= kPlanQueueBudget) return true;
+                // A matched queue is its source's size, so the size to declare smaller is upstream of it.
+                const char* advice = port.capacity.match.empty()
+                                         ? "; declare smaller capacities"
+                                         : "; declare smaller capacities on the queues it matches";
                 return error(id, port.id, "queue-budget",
                              queue + " takes the plan's events and bytes queues to " + std::to_string(total) +
-                                 " bytes, past their " + std::to_string(kPlanQueueBudget >> 20) +
-                                 " MiB budget; declare smaller capacities");
+                                 " bytes, past their " + std::to_string(kPlanQueueBudget >> 20) + " MiB budget" +
+                                 advice);
             };
             if (counted.emplace(w.from, w.fromPort).second && !charge("the queue of " + q(id + "." + port.id)))
                 return false;
@@ -688,6 +701,59 @@ private:
         return out_.errors.empty();
     }
 
+    // ---- queue capacities -------------------------------------------------------------------------------------
+
+    // An events or bytes output's capacity, a "match" followed upstream: the capacity of the output wired into the
+    // input it names (through a feedback wire too, whose front is sized as its source), or the default when that input
+    // is unwired. Each port is resolved once, a failure cached as resolve()'s is; a chain of matches that comes back
+    // to itself has no size to take, and is refused.
+    const QueueCapacity& sizeQueue(int node, int port) {
+        SizedQueue& r = sized_[node][port];
+        if (r.ok || r.state == Resolved::State::Failed) return r.capacity;
+        const PortDesc& d = nodes_[node].layout.ports[port];
+        if (d.capacity.match.empty()) {
+            r.capacity.messages = d.capacity.messageCount();
+            r.capacity.bytes = d.capacity.byteCount();
+            r.ok = true;
+            return r.capacity;
+        }
+        auto fail = [&](std::string message) -> const QueueCapacity& {
+            r.state = Resolved::State::Failed;
+            r.capacity = QueueCapacity{};
+            if (!message.empty()) error(nodes_[node].doc->id, d.id, "capacity-match", std::move(message));
+            return r.capacity;
+        };
+        if (r.state == Resolved::State::Visiting) return fail(q(d.id) + "'s \"capacity.match\" specs form a loop");
+        r.state = Resolved::State::Visiting;
+        // The layout's parse held the match to one of the node's inputs of the output's own kind.
+        const PortDesc* input = findPort(nodes_[node].layout, d.capacity.match);
+        QueueCapacity from;
+        if (const DataWire* w = input ? wireInto(node, static_cast<int>(input - nodes_[node].layout.ports.data()))
+                                      : nullptr) {
+            const QueueCapacity& upstream = sizeQueue(w->from, w->fromPort);
+            if (sized_[w->from][w->fromPort].state == Resolved::State::Failed) return fail({});  // upstream said why
+            from = upstream;
+        }
+        r.capacity.messages = from.messageCount();
+        r.capacity.bytes = from.byteCount();
+        r.ok = true;
+        return r.capacity;
+    }
+
+    bool capacities() {
+        sized_.resize(nodes_.size());
+        for (std::size_t n = 0; n < nodes_.size(); ++n) sized_[n].resize(nodes_[n].layout.ports.size());
+        for (std::size_t n = 0; n < nodes_.size(); ++n)
+            for (const int p : nodes_[n].outPorts) {
+                const PortKind kind = nodes_[n].layout.ports[p].kind;
+                if (kind == PortKind::Events || kind == PortKind::Bytes) sizeQueue(static_cast<int>(n), p);
+            }
+        return out_.errors.empty();
+    }
+
+    // What an events or bytes output's queue holds, once capacities() has run.
+    const QueueCapacity& capacityOf(int node, int port) const { return sized_[node][port].capacity; }
+
     // ---- exclusive groups ---------------------------------------------------------------------------------
 
     bool connectedOutput(int node, int port) const {
@@ -787,7 +853,7 @@ private:
     // drops. A front whose channel count changed always starts silent: its frames are for other channels.
     std::shared_ptr<FeedbackFront> front(const DataWire& w, std::uint32_t channelCount) {
         // A front is filled from its source's queue, so it is sized as that queue is.
-        const QueueCapacity& capacity = nodes_[w.from].layout.ports[w.fromPort].capacity;
+        const QueueCapacity& capacity = capacityOf(w.from, w.fromPort);
         const auto it = in_.feedback->find(w.key);
         const FeedbackFront* old = it != in_.feedback->end() ? it->second.get() : nullptr;
         // What the old front holds still means the same: the same kind of data, in as many channels.
@@ -884,9 +950,10 @@ private:
                             if (lastReader == kNone) {
                                 v.u.queue = &st.scratchQueue->queue;
                             } else {
-                                // Sized as the port declares; what it drops is charged to this instance.
-                                st.queues.push_back(
-                                    std::make_unique<QueueStore>(d.capacity.messageCount(), d.capacity.byteCount()));
+                                // Sized as the port declares (or as the input it matches is fed); what it drops is
+                                // charged to this instance.
+                                const QueueCapacity& c = capacityOf(n, port);
+                                st.queues.push_back(std::make_unique<QueueStore>(c.messageCount(), c.byteCount()));
                                 v.u.queue = &st.queues.back()->queue;
                                 st.queuesToClear.push_back({v.u.queue, &p.inst->drops});
                             }

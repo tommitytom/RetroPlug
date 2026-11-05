@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <string>
 #include <thread>
@@ -89,9 +90,12 @@ struct Tally {
     }
 
     std::uint32_t messages = 0, largest = 0;
+    std::uint32_t capacity = 0, bytesCapacity = 0;  // of the queue it read
     void process(const rp::Block&) noexcept {
         messages = 0;
         largest = 0;
+        capacity = inputs.in.queue->capacity;
+        bytesCapacity = inputs.in.queue->bytes_capacity;
         for (const auto& m : inputs.in.messages()) {
             ++messages;
             largest = std::max(largest, m.size);
@@ -99,9 +103,19 @@ struct Tally {
     }
 };
 
+// Every message of its input onto an output sized as that input's source: rp::events_out::matching.
+struct Pass {
+    static constexpr const char* id = "rp.test.pass";
+    struct { rp::events_in in; } inputs;
+    struct { rp::events_out::matching<"in"> out; } outputs;
+    void process(const rp::Block&) noexcept {
+        for (const auto& m : inputs.in.messages()) outputs.out.push(m.frame, inputs.in.data(m), m.flags);
+    }
+};
+
 const rp_package* capacityPackage() {
     static const rp_node_type* const kTypes[] = {rp::node_type<Burst>(), rp::node_type<ReBurst>(),
-                                                 rp::node_type<Tally>()};
+                                                 rp::node_type<Tally>(), rp::node_type<Pass>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.capacity"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;
@@ -222,6 +236,67 @@ TEST_CASE("a wire carries its source's capacity, and an input that declares one 
     CHECK(r.errors[0].message == R"(port "in": only an output declares a capacity: a wire carries its source's queue)");
     rig.run();
     CHECK(rig.node<Tally>("t").messages == 2);
+}
+
+TEST_CASE("an output that matches an input is sized as what feeds that input, along a chain, and at the default "
+          "with nothing wired",
+          "[graph][capacity]") {
+    CapacityRig rig;
+    const auto chain = [](const std::string& burst) {
+        return R"({"nodes":[{"id":"b","type":"rp.test.burst","settings":)" + burst +
+               R"(},{"id":"p1","type":"rp.test.pass"},{"id":"p2","type":"rp.test.pass"},)"
+               R"({"id":"t","type":"rp.test.tally"}],"wires":[{"from":"b.out","to":"p1.in"},)"
+               R"({"from":"p1.out","to":"p2.in"},{"from":"p2.out","to":"t.in"}]})";
+    };
+    // 600 messages on a queue of 600 and 64 KiB pass two matching outputs whole.
+    SetGraphResult r = rig.set(chain(R"({"count":600,"messages":600,"bytes":65536})"));
+    REQUIRE(r.ok);
+    CHECK(r.layouts.at("p1").find(R"("capacity":{"match":"in"})") != std::string::npos);  // the layout as declared
+    rig.run();
+    CHECK(rig.node<Tally>("t").messages == 600);
+    CHECK(rig.node<Tally>("t").capacity == 600);
+    CHECK(rig.node<Tally>("t").bytesCapacity == 65536);
+    CHECK(rig.host->droppedMessages() == 0);
+    // A source of two drops the rest itself, and the chain after it carries what it kept.
+    REQUIRE(rig.set(chain(R"({"count":8,"messages":2})")).ok);
+    rig.run();
+    CHECK(rig.node<Tally>("t").messages == 2);
+    CHECK(rig.node<Tally>("t").capacity == 2);
+    CHECK(rig.node<Tally>("t").bytesCapacity == kDefaultQueueBytes);
+    CHECK(rig.host->droppedMessages("b") == 6);
+    CHECK(rig.host->droppedMessages("p1") == 0);
+    CHECK(rig.host->droppedMessages("p2") == 0);
+    // Nothing into the input: the default.
+    REQUIRE(rig.set(R"({"nodes":[{"id":"p","type":"rp.test.pass"},{"id":"t","type":"rp.test.tally"}],)"
+                    R"("wires":[{"from":"p.out","to":"t.in"}]})")
+                .ok);
+    rig.run();
+    CHECK(rig.node<Tally>("t").capacity == kDefaultQueueMessages);
+    CHECK(rig.node<Tally>("t").bytesCapacity == kDefaultQueueBytes);
+}
+
+TEST_CASE("a match follows a feedback wire to its source, and a loop of matches is refused", "[graph][capacity]") {
+    CapacityRig rig;
+    REQUIRE(rig.set(R"({"nodes":[{"id":"b","type":"rp.test.burst","settings":{"count":300,"messages":512}},)"
+                    R"({"id":"p","type":"rp.test.pass"},{"id":"t","type":"rp.test.tally"}],)"
+                    R"("wires":[{"from":"b.out","to":"p.in","feedback":true},{"from":"p.out","to":"t.in"}]})")
+                .ok);
+    rig.run(64, 2);
+    CHECK(rig.node<Tally>("t").capacity == 512);
+    CHECK(rig.node<Tally>("t").messages == 300);
+    CHECK(rig.host->droppedMessages() == 0);
+
+    // Two passes feeding each other have no size to take.
+    const SetGraphResult r = rig.set(R"({"nodes":[{"id":"p1","type":"rp.test.pass"},{"id":"p2","type":"rp.test.pass"}],)"
+                                     R"("wires":[{"from":"p1.out","to":"p2.in"},)"
+                                     R"({"from":"p2.out","to":"p1.in","feedback":true}]})");
+    REQUIRE_FALSE(r.ok);
+    CHECK(GraphRig::codes(r) == "capacity-match");
+    CHECK(r.errors[0].nodeId == "p1");
+    CHECK(r.errors[0].port == "out");
+    CHECK(r.errors[0].message == R"("out"'s "capacity.match" specs form a loop)");
+    rig.run();  // the plan before it runs on
+    CHECK(rig.node<Tally>("t").capacity == 512);
 }
 
 TEST_CASE("a feedback wire's front is sized from its source, and resized with it", "[graph][capacity]") {
@@ -390,6 +465,55 @@ TEST_CASE("a plan's queues are held to their budget, naming the port that crosse
     // Queues at the defaults are 8 KiB each, nowhere near it.
     std::vector<std::string> many(64, "{}");
     REQUIRE(rig.set(bursts(many)).ok);
+}
+
+TEST_CASE("a matched queue past the budget says the size to shrink is the one it matches", "[graph][capacity]") {
+    CapacityRig rig;
+    // A source at the caps and one pass matching it are the whole 64 MiB; a second pass crosses it.
+    const auto chain = [](int passes) {
+        std::string nodes = R"({"id":"b","type":"rp.test.burst","settings":)" + kAtCaps + "}";
+        std::string wires, from = "b.out";
+        for (int k = 1; k <= passes; ++k) {
+            const std::string id = "p" + std::to_string(k);
+            nodes += R"(,{"id":")" + id + R"(","type":"rp.test.pass"})";
+            wires += std::string(k > 1 ? "," : "") + R"({"from":")" + from + R"(","to":")" + id + R"(.in"})";
+            from = id + ".out";
+        }
+        nodes += R"(,{"id":"t","type":"rp.test.tally"})";
+        wires += R"(,{"from":")" + from + R"(","to":"t.in"})";
+        return R"({"nodes":[)" + nodes + R"(],"wires":[)" + wires + "]}";
+    };
+    REQUIRE(rig.set(chain(1)).ok);
+    const SetGraphResult r = rig.set(chain(2));
+    REQUIRE_FALSE(r.ok);
+    CHECK(GraphRig::codes(r) == "queue-budget");
+    CHECK(r.errors[0].nodeId == "p2");
+    CHECK(r.errors[0].message == R"(the queue of "p2.out" takes the plan's events and bytes queues to 100663296 )"
+                                 R"(bytes, past their 64 MiB budget; declare smaller capacities on the queues it matches)");
+}
+
+TEST_CASE("a message's size is held to the room its queue has left, so no size wraps past the check",
+          "[graph][capacity]") {
+    std::vector<rp_message>   items(4);
+    std::vector<std::uint8_t> bytes(64);
+    rp_queue q{items.data(), 0, 4, bytes.data(), 0, 64, 0};
+    const std::uint8_t small[3] = {0x90, 60, 100};
+    REQUIRE(pushMessage(q, 0, small));
+    // A size that, added to the 3 bytes used, wraps std::size_t back to 1: the room left (61) is what it is held to,
+    // so it is dropped and counted rather than written. 0xFFFFFFFD is the same wrap (to 0) where size_t is 32 bits,
+    // as on the device, where a host supplies the length; here it is simply too large.
+    std::uint8_t* at = nullptr;
+    CHECK_FALSE(reserveMessage(q, 1, std::numeric_limits<std::size_t>::max() - 1, 0, &at));
+    CHECK(at == nullptr);
+    CHECK_FALSE(reserveMessage(q, 1, std::size_t{0xFFFFFFFDu}, 0, &at));
+    CHECK(q.dropped == 2);
+    CHECK(q.count == 1);
+    CHECK(q.bytes_used == 3);
+    // Exactly the room left fits, one byte more does not.
+    CHECK_FALSE(reserveMessage(q, 2, 62, 0, &at));
+    CHECK(reserveMessage(q, 2, 61, 0, &at));
+    CHECK(q.bytes_used == 64);
+    CHECK(q.dropped == 3);
 }
 
 TEST_CASE("an unconnected output's drops lose nothing, so they are not counted", "[graph][capacity]") {

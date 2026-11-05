@@ -35,14 +35,16 @@ export type ChannelSpec =
 
 /** An events or bytes output's queue: the most messages, and the most payload bytes, one block carries (a push
  *  past either is dropped and counted). An output declares either part or both; one it leaves out takes the
- *  default, 256 messages and 4096 bytes, and neither may pass 1 Mi messages or 16 MiB. A wire carries its
+ *  default, 256 messages and 4096 bytes, and neither may pass 1 Mi messages or 16 MiB. Or it declares `match`
+ *  alone, naming one of the node's inputs of its own kind, and is sized as what feeds it. A wire carries its
  *  source's queue (an output queue, or a feedback wire's front, sized from the source too), so an input has no
  *  queue of its own to size, and one that declares a capacity is refused. The twin of QueueCapacity in
  *  Descriptor.hpp. */
-export interface QueueCapacity {
-  messages?: number;
-  bytes?: number;
-}
+export type QueueCapacity =
+  | { messages?: number; bytes?: number; match?: never }
+  /** In place of a size: one of the node's inputs of this output's kind, whose source's capacity this queue takes
+   *  (the default when the input is unwired), so a pass-through drops nothing its source could carry. */
+  | { match: string; messages?: never; bytes?: never };
 
 export interface PortDesc {
   id: string;

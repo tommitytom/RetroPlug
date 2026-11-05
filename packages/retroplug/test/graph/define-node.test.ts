@@ -214,6 +214,29 @@ test("a queue capacity is refused where Descriptor.cpp refuses it", () => {
   expect(port({ dir: "in", kind: "audio", channels: { any: true }, capacity: { messages: 2 } })).toThrow("only events and bytes ports have capacity");
 });
 
+test("an events or bytes output may take its capacity from an input of its own kind, refused where Descriptor.cpp refuses it", () => {
+  const n = defineNode({ id: "rp.test.pass", ports: { midi: events.in(), out: events.out({ match: "midi" }) }, create: noop });
+  expect(n.descriptor().ports[1]).toEqual({ id: "out", dir: "out", kind: "events", capacity: { match: "midi" } });
+  const ports = (p: Record<string, unknown>) => () => defineNode({ id: "rp.test.cap", ports: p as never, create: noop }).descriptor();
+  expect(ports({ raw: bytes.in(), q: bytes.out({ match: "raw" }) })().ports[1].capacity).toEqual({ match: "raw" });
+  // Worded as Descriptor.cpp words them, after the port.
+  const both = { dir: "out", kind: "events", capacity: { match: "midi", messages: 2 } };
+  expect(ports({ midi: events.in(), q: both })).toThrow('port "q": "capacity" takes "match" or a size, not both');
+  const named = 'port "q": "capacity.match" must name an input, with no whitespace or control characters';
+  expect(ports({ q: events.out({ match: "" }) })).toThrow(named);
+  expect(ports({ q: { dir: "out", kind: "events", capacity: { match: 7 } } })).toThrow(named);
+  expect(ports({ q: events.out({ match: "nope" }) })).toThrow(
+    'rp.test.cap: port "q": "capacity.match" names "nope", which is not an events input',
+  );
+  expect(ports({ o: events.out(), q: events.out({ match: "o" }) })).toThrow("which is not an events input");
+  expect(ports({ c: { dir: "in", kind: "control" }, q: events.out({ match: "c" }) })).toThrow("which is not an events input");
+  // Of its own kind: events from events, bytes from bytes.
+  expect(ports({ raw: bytes.in(), q: events.out({ match: "raw" }) })).toThrow('"capacity.match" names "raw", which is not an events input');
+  expect(ports({ midi: events.in(), q: bytes.out({ match: "midi" }) })).toThrow('"capacity.match" names "midi", which is not a bytes input');
+  // @ts-expect-error a match and a size together is no QueueCapacity
+  expect(ports({ midi: events.in(), q: events.out({ match: "midi", bytes: 8 }) })).toThrow('takes "match" or a size');
+});
+
 test("an input's capacity is refused: a wire carries its source's queue", () => {
   const port = (spec: unknown) => () => defineNode({ id: "rp.test.cap", ports: { q: spec as never }, create: noop }).descriptor();
   // Worded as Descriptor.cpp words it after the port.

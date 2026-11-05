@@ -364,6 +364,7 @@ retroplug_package(graph-runtime)   # the executor, the planner, the registry, Gr
 retroplug_package(core)            # the rp.core nodes
 retroplug_package(dsp)             # the kernels, the rp.dsp nodes and rp.dsp.resample
 retroplug_package(n8)              # the Everdrive N8 Pro: rp.n8.nes and the desktop's serial link to the cart
+retroplug_package(device-io)       # a device host's own I/O (rp.device.midi-in): the exporter's and the devices'
 # The node types not yet carved into packages of their own (sameboy, mesen, host.io, launchpad) register from
 # packages/native, the engine's tree, whose manifest names their entries; its targets are defined below.
 retroplug_package(native)

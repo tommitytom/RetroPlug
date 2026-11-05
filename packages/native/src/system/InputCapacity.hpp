@@ -6,9 +6,11 @@
 // (spec/02-native-host.md, "Host I/O, the system nodes' inputs and queue capacities"), so the bound is the capacity of
 // the outputs that feed a system: a script node's serialIn and midi outputs hold 4096 messages and 72 KiB, its bytes
 // output 256 messages and 1 KiB, its buttons output 64 messages of two bytes each, and rp.host.midi-in's output (which
-// reaches a system through a routing node) holds less than the midi one. A Game Boy's serialOut output, fixed at 8256
-// messages and 8256 bytes, can wire into any system's serialIn or bytes input too. The script numbers are the ones
-// packages/retroplug/src/script/nodes/ports.ts declares, and none of them depend on the block size.
+// reaches a system through a routing node) and rp.device.midi-in's (256 messages and 4 KiB) hold less than the midi
+// one. An output that matches its input (`capacity.match`, rp.core.midi-filter's) holds what its source holds, so it
+// bounds nothing new. A Game Boy's serialOut output, fixed at 8256 messages and 8256 bytes, can wire into any system's
+// serialIn or bytes input too. The script numbers are the ones packages/retroplug/src/script/nodes/ports.ts declares,
+// and none of them depend on the block size.
 //
 // A core sizes its ingress queues from them when it is built, so a block's input grows nothing on the block thread
 // (docs/modular-graph-phase-c4-design.md section 11).

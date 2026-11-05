@@ -30,6 +30,8 @@ importers:
 
   packages/core: {}
 
+  packages/device-io: {}
+
   packages/dsp: {}
 
   packages/graph-runtime: {}

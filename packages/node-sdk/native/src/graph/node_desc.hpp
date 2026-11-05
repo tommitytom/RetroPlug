@@ -179,6 +179,7 @@ graph::PortDesc portDesc() {
         if constexpr (P::rp_capacity.messages != 0) d.capacity.messages = P::rp_capacity.messages;
         if constexpr (P::rp_capacity.bytes != 0) d.capacity.bytes = P::rp_capacity.bytes;
     }
+    if constexpr (requires { P::rp_capacity_match(); }) d.capacity.match = std::string(P::rp_capacity_match());
     return d;
 }
 

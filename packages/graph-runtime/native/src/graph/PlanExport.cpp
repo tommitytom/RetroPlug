@@ -16,6 +16,7 @@
 #include "graph/ResourceTable.hpp"
 #include "graph/node.hpp"
 #include "graph/rp_device.h"
+#include "graph/rp_device_midi_in.h"
 
 namespace rp::graph {
 
@@ -32,10 +33,15 @@ constexpr const char* kNamed = "is named, and resources are not exported to rp23
 
 // Its devices interface answers every acquire with null, so a node that binds a device (rp.n8.nes) runs on its own
 // disconnected stub, as in any host that owns no device; one that finds no devices interface at all refuses to
-// activate, so the exporter offers this one rather than none. Its resource table holds nothing and says why.
+// activate, so the exporter offers this one rather than none. Its MIDI input (rp.device.midi-in/1) has nothing staged,
+// as a box's has before its first byte, so rp.device.midi-in plans and loads here as it does on the box. Its resource
+// table holds nothing and says why.
 void* acquireNoDevice(void*, const char*, const char*) { return nullptr; }
 void  releaseNoDevice(void*, void*) {}
 const rp_host_devices kDevices{nullptr, &acquireNoDevice, &releaseNoDevice};
+
+bool                    nothingStaged(void*, std::uint32_t, rp_device_midi_message*) { return false; }
+const rp_device_midi_in kMidiIn{nullptr, &nothingStaged};
 
 const rp_resource* refuseResource(void*, std::uint32_t, const char*, rp_error* err) {
     if (err) std::snprintf(err->message, sizeof err->message, "%s", kNamed);
@@ -47,6 +53,7 @@ const rp_host_resources kResources{nullptr, &refuseResource, &releaseNoResource}
 void        ignoreLog(void*, int, const char*) {}
 const void* hostInterface(const rp_host*, const char* id) {
     if (std::strcmp(id, RP_HOST_DEVICES_INTERFACE) == 0) return &kDevices;
+    if (std::strcmp(id, RP_DEVICE_MIDI_IN_INTERFACE) == 0) return &kMidiIn;
     if (std::strcmp(id, RP_HOST_RESOURCES_INTERFACE) == 0) return &kResources;
     return nullptr;
 }

@@ -335,14 +335,22 @@ function checkPort(node: string, p: PortDesc): void {
 }
 
 // A queue capacity, as parseCapacity in Descriptor.cpp checks it: messages, bytes or both, nothing else, each a
-// whole number from 1 to its cap. An undefined part is no part, as canonicalJson spells it.
+// whole number from 1 to its cap; or match alone, naming an input (which buildLayout holds to one of the node's
+// inputs of the output's own kind), the match refusals worded as Descriptor.cpp's. An undefined part is no part, as
+// canonicalJson spells it.
 function checkCapacity(where: string, c: unknown): void {
   if (typeof c !== "object" || c === null || Array.isArray(c)) throw new Error(`${where}: capacity must be an object`);
   const parts = c as Record<string, unknown>;
   const given = Object.keys(parts).filter((k) => parts[k] !== undefined);
-  const stray = given.find((k) => k !== "messages" && k !== "bytes");
+  const stray = given.find((k) => k !== "messages" && k !== "bytes" && k !== "match");
   if (stray !== undefined) throw new Error(`${where}: capacity: unknown field ${q(stray)}`);
   if (given.length === 0) throw new Error(`${where}: capacity needs messages, bytes or both`);
+  if (given.includes("match")) {
+    if (!isString(parts.match) || !plainId(parts.match))
+      throw new Error(`${where}: "capacity.match" must name an input, with no whitespace or control characters`);
+    if (given.length > 1) throw new Error(`${where}: "capacity" takes "match" or a size, not both`);
+    return;
+  }
   for (const [key, max] of [["messages", MAX_QUEUE_MESSAGES], ["bytes", MAX_QUEUE_BYTES]] as const) {
     const v = parts[key];
     if (v !== undefined && (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > max))
@@ -472,6 +480,16 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
     const target = ordered.find((t) => t.id === c.match);
     if (!target || target === p || target.kind !== "audio")
       throw new Error(`${def.id}: port ${q(p.id)} matches ${q(c.match)}, which is not another audio port`);
+  }
+  // A capacity match names an input of the output's own kind: events from events, bytes from bytes.
+  for (const p of ordered) {
+    const match = p.capacity?.match;
+    if (match === undefined) continue;
+    const target = ordered.find((t) => t.id === match);
+    if (!target || target.dir !== "in" || target.kind !== p.kind) {
+      const kind = p.kind === "bytes" ? "a bytes" : "an events";
+      throw new Error(`${def.id}: port ${q(p.id)}: "capacity.match" names ${q(match)}, which is not ${kind} input`);
+    }
   }
   const isWildcard = (m: string) => m.length > 2 && m.endsWith(".*");
   const covers = (pattern: string, id: string) => isWildcard(pattern) && id.startsWith(pattern.slice(0, -1));

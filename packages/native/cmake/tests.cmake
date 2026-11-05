@@ -262,6 +262,7 @@ retroplug_add_test_binary(
              test/graph/SettingsTypes.test.cpp         # rp::text, rp::list and the numeric resource_ref
              test/graph/Fields.test.cpp                # the field walk's names held to reflect-cpp's own
              test/graph/QueueCapacity.test.cpp
+             test/graph/MidiFilter.test.cpp           # rp.core.midi-filter through real plans, and its golden
              test/graph/PlannerBench.test.cpp         # hidden: run with "[bench]"
              test/graph/Dsp.test.cpp                  # the rp::dsp kernels: streaming, no allocation, the kit's math
              test/graph/DspNodes.test.cpp             # the rp.dsp nodes, through real plans, against those kernels
@@ -292,7 +293,9 @@ retroplug_add_test_binary(
 # keeps JSON's leniency and refusals. The desktop's nodes read msgpack too. And a plan exported for the RP2350
 # (docs/modular-graph-phase-e3-design.md section 4), loaded by the loader over the device-mode builds in an arena,
 # renders what GraphHost renders from the same document, allocating nothing, and each of the loader's and the
-# exporter's refusals says why (DevicePlan.test.cpp, which runs retroplug-export-plan too).
+# exporter's refusals says why (DevicePlan.test.cpp, which runs retroplug-export-plan too); rp.device.midi-in takes
+# what a device host stages, each build alike (DeviceIo.test.cpp), and the box's bridge plan feeds a fake cart link what
+# its filter keeps.
 #
 # Both builds of one source sit in this one binary: the device-mode objects (retroplug_device_mode_objects,
 # cmake/packages.cmake, which says how the rename lets them) are the device's build of every package with a `device`
@@ -407,6 +410,7 @@ retroplug_add_test_binary(
     SOURCES  test/device-mode/DeviceMode.test.cpp
              test/device-mode/DeviceCheck.test.cpp
              test/device-mode/DevicePlan.test.cpp
+             test/device-mode/DeviceIo.test.cpp
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
              ${_rp_device_check_dir}/DeviceCheck.cpp   # the device check, as a host: desktop-built, C ABI only
              ${_rp_device_check_dir}/N8Protocol.cpp    # its N8 protocol run, over the desktop's build of the pack

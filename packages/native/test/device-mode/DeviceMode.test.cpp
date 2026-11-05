@@ -24,9 +24,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,7 @@ struct NoiseSettings {
     std::uint32_t channels = 2;
     std::string   layout;  // empty: the count's own name (mono, stereo, discrete(n))
     std::uint32_t seed = 1;
+    bool          kinds = false;  // messages of every kind rp.core.midi-filter tells apart, rather than note-ons
 };
 
 }  // namespace rp::graph::devtest_rig
@@ -76,7 +79,11 @@ struct Noise {
     }
 
     std::uint32_t state = 1;
-    void on_settings(const Settings& s) noexcept { state = s.seed * 2654435761u + 1u; }
+    bool          kinds = false;
+    void on_settings(const Settings& s) noexcept {
+        state = s.seed * 2654435761u + 1u;
+        kinds = s.kinds;
+    }
 
     std::uint32_t next() noexcept {  // xorshift32
         state ^= state << 13;
@@ -89,11 +96,26 @@ struct Noise {
     void process(const rp::Block& b) noexcept {
         for (std::uint32_t c = 0; c < outputs.out.channel_count; ++c)
             for (std::uint32_t i = 0; i < b.frames(); ++i) outputs.out[c][i] = sample();
-        // Up to three messages and two control changes a block, each at a frame of its own, in order.
+        // Up to three note-ons a block (or, with `kinds`, up to seven messages of any kind) and two control changes,
+        // each at a frame of its own, in order.
         std::uint32_t frame = 0;
-        for (std::uint32_t k = next() % 4; k > 0 && frame < b.frames(); --k, frame += 1 + next() % 8) {
-            const std::uint8_t note[3] = {0x90, static_cast<std::uint8_t>(next() & 0x7f), 100};
-            outputs.events.push(frame, note);
+        for (std::uint32_t k = next() % (kinds ? 8 : 4); k > 0 && frame < b.frames(); --k, frame += 1 + next() % 8) {
+            if (!kinds) {
+                const std::uint8_t note[3] = {0x90, static_cast<std::uint8_t>(next() & 0x7f), 100};
+                outputs.events.push(frame, note);
+                continue;
+            }
+            // A channel message of each of the seven kinds on any channel, a SysEx, a song position, a clock.
+            static constexpr std::uint8_t kStatus[] = {0x80, 0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xF0, 0xF2, 0xF8};
+            const std::uint8_t status = kStatus[next() % std::size(kStatus)];
+            const auto data = [&] { return static_cast<std::uint8_t>(next() & 0x7f); };
+            std::uint8_t msg[4] = {status, data(), data(), 0xF7};
+            std::size_t size = 3;
+            if (status < 0xF0) msg[0] = static_cast<std::uint8_t>(status | (next() & 0x0f));
+            if (status == 0xC0 || status == 0xD0) size = 2;
+            if (status == 0xF0) size = 4;
+            if (status == 0xF8) size = 1;
+            outputs.events.push(frame, std::span<const std::uint8_t>(msg, size));
         }
         frame = 0;
         for (std::uint32_t k = next() % 3; k > 0 && frame < b.frames(); --k, frame += 1 + next() % 16)
@@ -376,9 +398,11 @@ struct Case {
         : name(std::move(n)), document(std::move(d)), probes(std::move(p)), moves(std::move(m)), records(r) {}
 };
 
-std::string noise(const std::string& id, std::uint32_t channels, std::uint32_t seed, const std::string& layout = "") {
+std::string noise(const std::string& id, std::uint32_t channels, std::uint32_t seed, const std::string& layout = "",
+                  bool kinds = false) {
     return R"({"id":")" + id + R"(","type":"rp.devtest.noise","settings":{"channels":)" + std::to_string(channels) +
-           R"(,"seed":)" + std::to_string(seed) + R"(,"layout":")" + layout + R"("}})";
+           R"(,"seed":)" + std::to_string(seed) + R"(,"layout":")" + layout + R"(","kinds":)" +
+           (kinds ? "true" : "false") + "}}";
 }
 std::string probe(const std::string& id) { return R"({"id":")" + id + R"(","type":"rp.devtest.probe"})"; }
 std::string node(const std::string& type, const std::string& settings, const std::string& params = "{}",
@@ -434,6 +458,17 @@ std::vector<Case> cases() {
                       probe("p")},
                      {wire("n1.events", "x.in1"), wire("n2.events", "x.in2"), wire("n3.events", "x.in3"),
                       wire("x.out", "p.events")}),
+                 {"p"}});
+    // rp.core.midi-filter, over messages of every kind
+    t.push_back({"midi-filter, defaults",
+                 doc({noise("n", 1, 21, "", true), node("rp.core.midi-filter", "{}"), probe("p")},
+                     {wire("n.events", "x.in"), wire("x.out", "p.events")}),
+                 {"p"}});
+    t.push_back({"midi-filter, drop moved",
+                 doc({noise("n", 1, 22, "", true),
+                      node("rp.core.midi-filter", R"({"drop":["polyAftertouch","channelAftertouch","realtime","sysex"]})"),
+                      probe("p")},
+                     {wire("n.events", "x.in"), wire("x.out", "p.events")}),
                  {"p"}});
     // rp.core.join and rp.core.split
     t.push_back({"join, defaults",
@@ -721,8 +756,8 @@ struct OneRomHost {
 }  // namespace
 
 TEST_CASE("a device-mode type carries no description and never re-plans", "[device-mode]") {
-    for (const rp_package* p :
-         {rp_core_package_device_mode(), rp_dsp_package_device_mode(), rp_n8_package_device_mode()}) {
+    for (const rp_package* p : {rp_core_package_device_mode(), rp_dsp_package_device_mode(),
+                                rp_n8_package_device_mode(), rp_device_io_package_device_mode()}) {
         for (std::uint32_t i = 0; i < p->node_type_count; ++i) {
             const rp_node_type* t = p->node_types[i];
             INFO(t->id);
@@ -737,6 +772,7 @@ TEST_CASE("a device-mode type carries no description and never re-plans", "[devi
     CHECK(rp_core_package_device_mode()->node_type_count == rp_core_package()->node_type_count);
     CHECK(rp_dsp_package_device_mode()->node_type_count == rp_dsp_package()->node_type_count - 1);
     CHECK(rp_n8_package_device_mode()->node_type_count == rp_n8_package()->node_type_count);
+    CHECK(rp_device_io_package_device_mode()->node_type_count == rp_device_io_package()->node_type_count);
     for (std::uint32_t i = 0; i < rp_dsp_package_device_mode()->node_type_count; ++i)
         CHECK(std::string_view(rp_dsp_package_device_mode()->node_types[i]->id) != "rp.dsp.dpcm");
 

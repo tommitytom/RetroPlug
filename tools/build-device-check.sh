@@ -111,6 +111,7 @@ function hex(s,    i, n) {
     else if (file ~ /libretroplug-dsp-nodes/) owner = "dsp: the rp.dsp nodes"
     else if (file ~ /libretroplug-dsp-kernels/) owner = "dsp: the kernels"
     else if (file ~ /libretroplug-n8\.a/) owner = "n8: the rp.n8 nodes, the protocol"
+    else if (file ~ /libretroplug-device-io-nodes/) owner = "device-io: the rp.device nodes"
     else if (file ~ /libretroplug-graph-exec/) owner = "graph-runtime: the executor"
     else if (file ~ /rp-device-check\.dir\/(main|DeviceCheck|N8Protocol)\.cpp/ || file ~ /\/packages\/products\//)
         owner = "the check (its cases and arena)"
@@ -121,7 +122,7 @@ function hex(s,    i, n) {
 }
 END {
     n = split("core: the rp.core nodes|dsp: the rp.dsp nodes|dsp: the kernels|n8: the rp.n8 nodes, the protocol|" \
-              "graph-runtime: the executor|" \
+              "device-io: the rp.device nodes|graph-runtime: the executor|" \
               "the check (its cases and arena)|the Pico SDK runtime|toolchain (libc, libm, libgcc)", order, "|")
     printf "  %-34s %9s %9s %9s\n", "", "flash", "data", "bss"
     for (i = 1; i <= n; i++) {

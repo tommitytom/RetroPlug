@@ -1,0 +1,9 @@
+{
+  "name": "@retroplug/device-io",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A device host's own I/O as node types: rp.device.midi-in, the MIDI a device host parses and stages.",
+  "retroplug": {
+    "native": { "target": "retroplug-device-io-nodes", "entry": "rp_device_io_package", "device": true }
+  }
+}

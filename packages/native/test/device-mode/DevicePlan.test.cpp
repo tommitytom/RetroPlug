@@ -12,6 +12,10 @@
 //   nothing it made is alive.
 // - The exporter's refusals: a heap and a threads type, a resource named in settings and one bound, a type the device
 //   does not build, and a plan over its arena, each with its message; and the tool's.
+// - The box's bridge, rp.device.midi-in into rp.core.midi-filter into rp.n8.nes, exported and loaded over a fake cart
+//   link (FakeCart.hpp) and a fake MIDI input (FakeMidiIn.hpp): the link is handed every message the filter keeps, in
+//   order and at its frame, never one it drops, and the cart's expansion volume at unity; GraphHost's run of the same
+//   document with the desktop's builds hands its own fake the same.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -32,6 +36,8 @@
 #include <vector>
 
 #include "DeviceModeEntries.hpp"
+#include "FakeCart.hpp"
+#include "FakeMidiIn.hpp"
 #include "PlanNodes.hpp"
 #include "graph/CountingAllocator.hpp"
 #include "graph/Executor.hpp"
@@ -46,6 +52,7 @@
 #include "graph/nodes/CoreNodes.hpp"
 #include "graph/nodes/DspNodes.hpp"
 #include "graph/rp_device.h"
+#include "graph/rp_device_midi_in.h"
 #include "n8/N8Node.hpp"
 
 namespace {
@@ -92,13 +99,14 @@ std::unique_ptr<NodeRegistry> registryOf(const std::vector<const rp_package*>& p
 
 // The desktop's builds, which plan and which GraphHost runs; rp.host.audio-out among them, a type no device builds.
 std::unique_ptr<NodeRegistry> desktopRegistry() {
-    return registryOf({rp_core_package(), rp_dsp_package(), rp_n8_package(), hostPackage(), planPackageDesktop(),
-                       faultPackageDesktop(), threadedPackage()});
+    return registryOf({rp_core_package(), rp_dsp_package(), rp_n8_package(), rp_device_io_package(), hostPackage(),
+                       planPackageDesktop(), faultPackageDesktop(), threadedPackage()});
 }
 // The device's builds of the same packages, which the loader creates.
 const std::vector<const rp_package*>& deviceTypes() {
     static const std::vector<const rp_package*> types{
-        rp_core_package_device_mode(), rp_dsp_package_device_mode(), rp_n8_package_device_mode(),
+        rp_core_package_device_mode(),         rp_dsp_package_device_mode(),
+        rp_n8_package_device_mode(),           rp_device_io_package_device_mode(),
         rp_devtest_plan_package_device_mode(), rp_devtest_fault_package_device_mode()};
     return types;
 }
@@ -145,8 +153,8 @@ struct AlteredPlanTypes {
         for (std::uint32_t i = 0; i < p->node_type_count; ++i)
             types.push_back(p->node_types[i] == deviceDigest() ? &digest : p->node_types[i]);
         package = rp_package{RP_ABI_VERSION, p->manifest_json, static_cast<std::uint32_t>(types.size()), types.data()};
-        all = {rp_core_package_device_mode(), rp_dsp_package_device_mode(), rp_n8_package_device_mode(), &package,
-               rp_devtest_fault_package_device_mode()};
+        all = {rp_core_package_device_mode(), rp_dsp_package_device_mode(), rp_n8_package_device_mode(),
+               rp_device_io_package_device_mode(), &package, rp_devtest_fault_package_device_mode()};
     }
 };
 
@@ -396,6 +404,93 @@ LoadedRun renderLoaded(const std::vector<std::uint8_t>& blob, const std::vector<
     }
     r.error = text(err.code) + " " + text(err.node) + ": " + text(err.message);
     return r;
+}
+
+// ---- the box's bridge ---------------------------------------------------------------------------------------------
+
+using devtest::FakeMidiIn;
+
+// The box's plan (docs/modular-graph-phase-e3-design.md section 5): the host's MIDI, BlipToaster's filter, the cart.
+const char* kBridge = R"({"nodes":[
+    {"id":"in","type":"rp.device.midi-in"},
+    {"id":"f","type":"rp.core.midi-filter","settings":{"drop":["polyAftertouch","channelAftertouch"]}},
+    {"id":"nes","type":"rp.n8.nes"}],
+  "wires":[{"from":"in.midi","to":"f.in"},{"from":"f.out","to":"nes.midi"}]})";
+
+// A block's staged MIDI, and whether the filter keeps each message.
+struct BridgeMessage {
+    std::uint32_t             frame;
+    std::vector<std::uint8_t> bytes;
+    bool                      kept;
+};
+const std::vector<std::vector<BridgeMessage>>& bridgeBlocks() {
+    static const std::vector<std::vector<BridgeMessage>> blocks = {
+        {{0, {0x90, 0x3c, 0x64}, true},
+         {3, {0xA0, 0x3c, 0x10}, false},
+         {4, {0xD0, 0x20}, false},
+         {4, {0xB0, 0x07, 0x64}, true},
+         {9, {0xF8}, true},
+         {10, {0xF0, 0x7D, 0x50, 0x01, 0xF7}, true},
+         {20, {0xE0, 0x00, 0x40}, true}},
+        {},
+        {{1, {0x80, 0x3c, 0x00}, true}, {2, {0xA1, 0x40, 0x01}, false}, {30, {0xFA}, true}, {30, {0xD3, 0x7f}, false}},
+    };
+    return blocks;
+}
+
+// What a link should have been handed: each kept message at its frame, one line each.
+std::string keptLines() {
+    std::ostringstream o;
+    for (const auto& block : bridgeBlocks())
+        for (const BridgeMessage& m : block) {
+            if (!m.kept) continue;
+            o << m.frame << ":";
+            for (const std::uint8_t b : m.bytes) o << " " << std::hex << int(b) << std::dec;
+            o << "\n";
+        }
+    return o.str();
+}
+std::string pushedLines(const CartRecord& r) {
+    std::ostringstream o;
+    for (std::uint32_t i = 0; i < r.count && i < CartRecord::kPushes; ++i) {
+        o << r.pushes[i].frame << ":";
+        for (std::uint32_t k = 0; k < r.pushes[i].size; ++k) o << " " << std::hex << int(r.pushes[i].bytes[k]) << std::dec;
+        o << "\n";
+    }
+    return o.str();
+}
+
+// A device host for the bridge: its cart link is `cart` (installed as the N8's, "n8" with rp.n8.cart-link/1) and its
+// MIDI input is `midi`.
+struct BridgeHost {
+    void*           cart = nullptr;
+    FakeMidiIn*     midi = nullptr;
+    rp_host_devices devices{this, &acquire, &release};
+    rp_host         host{RP_ABI_VERSION, this, nullptr, nullptr, &ignoreLog, &interface};
+    int             held = 0;
+
+    static void* acquire(void* ctx, const char* name, const char* id) {
+        auto* self = static_cast<BridgeHost*>(ctx);
+        if (std::strcmp(name, rp::n8::kDeviceName) != 0 || std::strcmp(id, rp::n8::kCartLinkInterface) != 0)
+            return nullptr;
+        ++self->held;
+        return self->cart;
+    }
+    static void release(void* ctx, void*) { --static_cast<BridgeHost*>(ctx)->held; }
+    static const void* lookup(const BridgeHost* self, const char* id) {
+        if (std::strcmp(id, RP_HOST_DEVICES_INTERFACE) == 0) return &self->devices;
+        if (std::strcmp(id, RP_DEVICE_MIDI_IN_INTERFACE) == 0) return &self->midi->iface;
+        return nullptr;
+    }
+    static const void* interface(const rp_host* h, const char* id) {
+        return lookup(static_cast<const BridgeHost*>(h->ctx), id);
+    }
+    // As GraphHost asks its embedder (HostConfig::interfaces).
+    static const void* embedded(void* ctx, const char* id) { return lookup(static_cast<const BridgeHost*>(ctx), id); }
+};
+
+void stageBlock(FakeMidiIn& midi, std::size_t block) {
+    for (const BridgeMessage& m : bridgeBlocks()[block]) midi.stage(m.frame, m.bytes);
 }
 
 }  // namespace
@@ -787,4 +882,76 @@ TEST_CASE("the exporter refuses what a device cannot run, and says why", "[devic
                                   "wires":[{"from":"a.out","to":"a.in"}]})")) == "cycle");
         CHECK(codes(exported("not json")) == "document");
     }
+}
+
+TEST_CASE("the box's bridge, exported and loaded, hands the cart link what the filter keeps, in order, and never what "
+          "it drops",
+          "[device-mode][plan][device-io]") {
+    const ExportResult r = exported(kBridge);
+    INFO(described(r));
+    REQUIRE(r.ok());
+    constexpr std::uint32_t kBlock = 64;
+
+    // The loaded plan, over the device's builds and the device-mode fake link.
+    CartRecord device{};
+    FakeMidiIn deviceMidi;
+    BridgeHost deviceHost;
+    deviceHost.cart = rp_devtest_cart_device_mode(&device);
+    deviceHost.midi = &deviceMidi;
+    Arena         arena(kArenaBytes);
+    PlanLoadError err{};
+    LoadedPlan*   plan = loadPlan(r.blob, arena.span(kArenaBytes), deviceTypes(), &deviceHost.host, &err);
+    INFO(text(err.code) << " " << text(err.node) << ": " << text(err.message));
+    REQUIRE(plan);
+    CHECK(plan->nodes.size() == 3);
+    CHECK(deviceHost.held == 1);
+    for (std::size_t b = 0; b < bridgeBlocks().size(); ++b) {
+        stageBlock(deviceMidi, b);
+        runBlock(plan->view, kBlock, kTransport);
+    }
+    CHECK(plan->faults.load() == 0);
+    CHECK(plan->drops.load() == 0);
+    unloadPlan(plan);
+    CHECK(deviceHost.held == 0);
+
+    // GraphHost's run of the same document, over the desktop's builds and the desktop's fake link.
+    CartRecord             desktop{};
+    rp::graph::devtest::FakeCart desktopCart;
+    desktopCart.record = &desktop;
+    FakeMidiIn desktopMidi;
+    BridgeHost desktopHost;
+    desktopHost.cart = static_cast<rp::n8::CartLink*>(&desktopCart);
+    desktopHost.midi = &desktopMidi;
+    auto          registry = desktopRegistry();
+    ResourceTable resources;
+    HostConfig    config{48000.0, kMaxFrames, Target::Pico};
+    config.interfaces = &BridgeHost::embedded;
+    config.interfacesCtx = &desktopHost;
+    {
+        GraphHost host(*registry, resources, config);
+        REQUIRE(host.setGraph(kBridge).ok);
+        for (std::size_t b = 0; b < bridgeBlocks().size(); ++b) {
+            stageBlock(desktopMidi, b);
+            host.processBlock(kBlock, kTransport);
+        }
+        CHECK(host.faultCount() == 0);
+        CHECK(host.droppedMessages() == 0);
+    }
+
+    for (const CartRecord* rec : {&device, &desktop}) {
+        INFO((rec == &device ? "loaded" : "GraphHost"));
+        CHECK(pushedLines(*rec) == keptLines());
+        CHECK(rec->refused == 0);
+        CHECK(rec->volume == rp::n8::expansionVolumeRegister(rp::n8::kExpansionVolumeDefault));  // unity: 128
+        CHECK(rec->volume == 128);
+    }
+    // The dropped kinds never reached a push, and what reached one is every message of the others.
+    std::size_t staged = 0, kept = 0;
+    for (const auto& block : bridgeBlocks())
+        for (const BridgeMessage& m : block) {
+            ++staged;
+            kept += m.kept;
+        }
+    CHECK(device.count == kept);
+    CHECK(kept < staged);
 }

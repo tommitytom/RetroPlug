@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <span>
 
 #include "graph/node.hpp"
 
@@ -66,6 +67,18 @@ struct PlayerSettings {
 
 struct RecorderSettings {
     std::uint32_t channels = 2;
+};
+
+// The kinds of MIDI message rp.core.midi-filter tells apart, in status-byte order: the seven channel messages by their
+// status's high nibble (0x8n to 0xEn), then a SysEx (F0, and a lone F7), the other system common messages (F1 to F6)
+// and the real-time ones (F8 to FF).
+using MidiKind = rp::choice<"noteOff", "noteOn", "polyAftertouch", "controlChange", "programChange",
+                            "channelAftertouch", "pitchBend", "sysex", "systemCommon", "realtime">;
+
+struct MidiFilterSettings {
+    // The kinds to drop; empty passes everything. Bounded by the number of kinds, so every set of them fits, and
+    // validate refuses a kind named twice, so the bound is never what stops a list.
+    rp::list<MidiKind, MidiKind::size()> drop;
 };
 
 }  // namespace core
@@ -602,6 +615,66 @@ struct BufferRecorder {
     }
 };
 
+// ---- rp.core.midi-filter ----------------------------------------------------------------------------------
+
+// A message's kind, from its first byte: an events message is one MIDI message, its status first (the plugin's hosts,
+// the box's parser and every node of RetroPlug's send them so), so a message whose first byte is a data byte (or an
+// empty one) is of no kind. The filter holds no running status across messages: such a message passes, whatever came
+// before it. A note-on with velocity 0 is a noteOn: kinds are statuses, not meanings.
+constexpr std::uint32_t kNoKind = MidiKind::size();
+// midiKind maps a channel status's high nibble straight onto the label's index, so the first seven labels stay in
+// status order.
+static_assert(MidiKind::value_of<"noteOff">() == 0 && MidiKind::value_of<"noteOn">() == 1 &&
+                  MidiKind::value_of<"polyAftertouch">() == 2 && MidiKind::value_of<"controlChange">() == 3 &&
+                  MidiKind::value_of<"programChange">() == 4 && MidiKind::value_of<"channelAftertouch">() == 5 &&
+                  MidiKind::value_of<"pitchBend">() == 6,
+              "MidiKind's channel kinds are in status order, 0x8n to 0xEn");
+constexpr std::uint32_t midiKind(std::span<const std::uint8_t> data) noexcept {
+    if (data.empty() || data[0] < 0x80) return kNoKind;
+    const std::uint8_t status = data[0];
+    if (status < 0xF0) return static_cast<std::uint32_t>((status >> 4) - 0x8);  // noteOff .. pitchBend, the first seven
+    if (status == 0xF0 || status == 0xF7) return MidiKind::value_of<"sysex">();
+    if (status < 0xF8) return MidiKind::value_of<"systemCommon">();
+    return MidiKind::value_of<"realtime">();
+}
+
+struct MidiFilter {
+    static constexpr const char* id = "rp.core.midi-filter";
+    static constexpr const char* name = "MIDI Filter";
+    static constexpr const char* category = "core/events";
+    using Settings = MidiFilterSettings;
+
+    struct { rp::events_in in; } inputs;
+    // Sized as whatever feeds `in`, so a stream the filter passes whole is never one it drops.
+    struct { rp::events_out::matching<"in"> out; } outputs;
+
+#ifndef RP_DEVICE
+    static std::optional<std::string> validate(const Settings& s) {
+        for (std::size_t i = 0; i < s.drop.size(); ++i)
+            for (std::size_t k = 0; k < i; ++k)
+                if (s.drop[k] == s.drop[i]) return "drop names " + std::string(s.drop[i].name()) + " twice";
+        return std::nullopt;
+    }
+#endif
+
+    std::uint32_t dropping = 0;  // a bit per MidiKind
+    void on_settings(const Settings& s) noexcept {
+        dropping = 0;
+        for (const MidiKind k : s.drop) dropping |= 1u << k.value();
+    }
+
+    // Every message of a kind it keeps goes on as it came, frame, flags and bytes, in order; one the output cannot take
+    // is dropped and counted, as any full queue drops.
+    void process(const rp::Block&) noexcept {
+        for (const rp_message& m : inputs.in.messages()) {
+            const auto data = inputs.in.data(m);
+            const std::uint32_t kind = midiKind(data);
+            if (kind != kNoKind && (dropping & (1u << kind)) != 0) continue;
+            outputs.out.push(m.frame, data, m.flags);
+        }
+    }
+};
+
 }  // namespace
 
 const rp_package* corePackage() {
@@ -609,7 +682,7 @@ const rp_package* corePackage() {
         rp::node_type<Add>(),     rp::node_type<Merge>(),    rp::node_type<Join>(),
         rp::node_type<Split>(),   rp::node_type<Downmix>(),  rp::node_type<Relabel>(),
         rp::node_type<Delay>(),   rp::node_type<Constant>(), rp::node_type<BufferPlayer>(),
-        rp::node_type<BufferRecorder>(),
+        rp::node_type<BufferRecorder>(), rp::node_type<MidiFilter>(),
     };
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.core","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};

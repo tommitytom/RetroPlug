@@ -5,4 +5,4 @@
 #
 # retroplug-device-mode-test holds the list to the manifests: every package with a `device` entry must be on it, so a
 # package that becomes device-capable is device-checked from then on.
-set(RP_DEVICE_CHECK_PACKAGES core dsp n8)
+set(RP_DEVICE_CHECK_PACKAGES core dsp n8 device-io)

@@ -54,10 +54,12 @@ rfl::Generic portGeneric(const PortDesc& p) {
         if (p.write) put(o, "access", rfl::Generic(std::string("write")));
     }
     // As declared: a part left undeclared is written as nothing, so a port that declares none writes no field.
-    if ((p.kind == PortKind::Events || p.kind == PortKind::Bytes) && (p.capacity.messages || p.capacity.bytes)) {
+    if ((p.kind == PortKind::Events || p.kind == PortKind::Bytes) &&
+        (p.capacity.messages || p.capacity.bytes || !p.capacity.match.empty())) {
         Object c;
         if (p.capacity.messages) put(c, "messages", rfl::Generic(static_cast<std::int64_t>(*p.capacity.messages)));
         if (p.capacity.bytes) put(c, "bytes", rfl::Generic(static_cast<std::int64_t>(*p.capacity.bytes)));
+        if (!p.capacity.match.empty()) put(c, "match", rfl::Generic(p.capacity.match));
         put(o, "capacity", rfl::Generic(std::move(c)));
     }
     return rfl::Generic(std::move(o));
@@ -217,13 +219,22 @@ std::string capacityRange(const std::string& where, std::string_view part, std::
 const char* const kNoQueue = ": only events and bytes ports have \"capacity\"";
 // Worded as defineNode.ts words it: an input reads its source's queue, so a capacity there would bound nothing.
 const char* const kInputCapacity = ": only an output declares a capacity: a wire carries its source's queue";
+const char* const kMatchName = ": \"capacity.match\" must name an input, with no whitespace or control characters";
+const char* const kMatchAndSize = ": \"capacity\" takes \"match\" or a size, not both";
 
-// A queue port's capacity: messages, bytes or both, each a whole number from 1 to its cap.
+// A queue port's capacity: messages, bytes or both, each a whole number from 1 to its cap; or the input it matches.
 rfl::Result<QueueCapacity> parseCapacity(const rfl::Generic& g, const std::string& where) {
     auto o = g.to_object();
     if (!o) return fail(where + ": \"capacity\" must be an object");
-    if (auto bad = unknownField(*o, {"messages", "bytes"}, where + " capacity")) return fail(*bad);
+    if (auto bad = unknownField(*o, {"messages", "bytes", "match"}, where + " capacity")) return fail(*bad);
     QueueCapacity c;
+    if (const auto* m = field(*o, "match")) {
+        const auto port = m->to_string();
+        if (!port || !isPlainId(*port)) return fail(where + kMatchName);
+        if (field(*o, "messages") || field(*o, "bytes")) return fail(where + kMatchAndSize);
+        c.match = *port;
+        return c;
+    }
     for (const bool bytes : {false, true}) {
         const std::string_view part = bytes ? "bytes" : "messages";
         const std::uint32_t max = bytes ? kMaxQueueBytes : kMaxQueueMessages;
@@ -424,6 +435,14 @@ rfl::Result<Layout> parseLayoutObject(const Object& o) {
         if (!target || target == &p || target->kind != PortKind::Audio)
             return fail("port " + q(p.id) + ": matches " + q(p.channels.match) + ", which is not another audio port");
     }
+    // A capacity match names an input of the output's own kind: events from events, bytes from bytes.
+    for (const auto& p : layout.ports) {
+        if (p.capacity.match.empty()) continue;
+        const PortDesc* target = port(p.capacity.match);
+        if (!target || target->dir != PortDir::In || target->kind != p.kind)
+            return fail("port " + q(p.id) + ": \"capacity.match\" names " + q(p.capacity.match) + ", which is not " +
+                        (p.kind == PortKind::Bytes ? "a bytes" : "an events") + " input");
+    }
     if (const auto* exclusive = field(o, "exclusive")) {
         auto groups = exclusive->to_array();
         if (!groups) return fail("\"exclusive\" must be an array of arrays");
@@ -578,10 +597,12 @@ std::optional<std::string> checkLayout(std::string_view layout, std::uint32_t ch
 
 std::optional<std::string> checkCapacity(const PortDesc& port) {
     const QueueCapacity& c = port.capacity;
-    if (!c.messages && !c.bytes) return std::nullopt;
+    if (!c.messages && !c.bytes && c.match.empty()) return std::nullopt;
     const std::string where = "port " + q(port.id);
     if (port.kind != PortKind::Events && port.kind != PortKind::Bytes) return where + kNoQueue;
     if (port.dir != PortDir::Out) return where + kInputCapacity;
+    if (!c.match.empty() && !isPlainId(c.match)) return where + kMatchName;
+    if (!c.match.empty() && (c.messages || c.bytes)) return where + kMatchAndSize;
     if (c.messages && (*c.messages < 1 || *c.messages > kMaxQueueMessages))
         return capacityRange(where, "messages", kMaxQueueMessages);
     if (c.bytes && (*c.bytes < 1 || *c.bytes > kMaxQueueBytes)) return capacityRange(where, "bytes", kMaxQueueBytes);

@@ -73,7 +73,9 @@ struct audio_out {
 // carries. A part left 0 takes the default (graph::kDefaultQueueMessages / kDefaultQueueBytes). It rides on the
 // port's type, rp::bytes_out::sized<rp::capacity{.bytes = 65536}>, or adjust_layout sets it from settings. A wire
 // carries its source's queue, so only an output has one: an input has no `sized` (naming it is a compile error),
-// and a capacity adjust_layout sets on one is refused with the node's settings.
+// and a capacity adjust_layout sets on one is refused with the node's settings. An output that passes an input's
+// messages on takes that input's capacity instead, rp::events_out::matching<"in">: sized as the queue of whatever is
+// wired into `in` (the default when nothing is), so it never drops what its source could carry.
 struct capacity {
     std::uint32_t messages = 0;
     std::uint32_t bytes = 0;
@@ -88,6 +90,17 @@ struct queue_in {
     std::span<const std::uint8_t> data(const rp_message& m) const { return graph::messageData(*queue, m); }
 };
 
+template <graph::PortKind Kind, fixed_string Input>
+struct queue_out_matching {
+    static constexpr auto rp_kind = Kind;
+    static constexpr auto rp_dir  = graph::PortDir::Out;
+    static constexpr std::string_view rp_capacity_match() { return Input.view(); }
+    rp_queue* queue = nullptr;
+    bool push(std::uint32_t frame, std::span<const std::uint8_t> data, std::uint32_t flags = 0) const {
+        return graph::pushMessage(*queue, frame, data, flags);
+    }
+};
+
 template <graph::PortKind Kind, capacity C = capacity{}>
 struct queue_out {
     static_assert(C.messages <= graph::kMaxQueueMessages && C.bytes <= graph::kMaxQueueBytes,
@@ -96,6 +109,7 @@ struct queue_out {
     static constexpr auto     rp_dir  = graph::PortDir::Out;
     static constexpr capacity rp_capacity = C;
     template <capacity N> using sized = queue_out<Kind, N>;
+    template <fixed_string Input> using matching = queue_out_matching<Kind, Input>;
     rp_queue* queue = nullptr;
     bool push(std::uint32_t frame, std::span<const std::uint8_t> data, std::uint32_t flags = 0) const {
         return graph::pushMessage(*queue, frame, data, flags);

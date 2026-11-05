@@ -9,12 +9,14 @@
 #include "graph/rp_node.h"
 
 extern "C" {
-// rp.core, rp.dsp and rp.n8 as a device builds them: CoreNodes.cpp, DspNodes.cpp and N8Node.cpp compiled in device
-// mode, their entries (rp_core_package, rp_dsp_package, rp_n8_package) renamed by the objects' compile definitions so
-// they sit beside the desktop's.
+// rp.core, rp.dsp, rp.n8 and rp.device as a device builds them: CoreNodes.cpp, DspNodes.cpp, N8Node.cpp and
+// DeviceIoNodes.cpp compiled in device mode, their entries (rp_core_package, rp_dsp_package, rp_n8_package,
+// rp_device_io_package) renamed by the objects' compile definitions so they sit beside the desktop's.
 const rp_package* rp_core_package_device_mode(void);
 const rp_package* rp_dsp_package_device_mode(void);
 const rp_package* rp_n8_package_device_mode(void);
+const rp_package* rp_device_io_package_device_mode(void);
+const rp_package* rp_device_io_package(void);  // the desktop's, which no product of this binary lists
 // rp.devtest: the echo, pair, shaper and bare nodes (EchoNode.hpp) in device mode.
 const rp_package* rp_devtest_package_device_mode(void);
 // rp.devtest.fault: a node that fails at the step its settings name (PlanNodes.hpp), for the device check and the
@@ -25,6 +27,27 @@ const rp_package* rp_devtest_plan_package_device_mode(void);
 // How many plan and fault nodes the device-mode build holds alive (PlanNodes.hpp's gLive).
 int rp_devtest_plan_live_device_mode(void);
 }
+
+// What a fake cart link (FakeCart.hpp) was handed: each push, in order, and the expansion volume. The device-mode
+// build's link is reached through rp_devtest_cart_device_mode, which answers it as the void* an rp.host.devices/2
+// acquire hands rp.n8.nes; the desktop's is FakeCart.hpp's own type.
+struct CartPush {
+    std::uint32_t frame = 0;
+    std::uint32_t size = 0;
+    bool          flush = false;
+    std::uint8_t  bytes[16] = {};
+};
+
+struct CartRecord {
+    static constexpr std::uint32_t kPushes = 256;
+    CartPush      pushes[kPushes];
+    std::uint32_t count = 0;    // every push, recorded or past kPushes
+    std::uint32_t refused = 0;  // pushes answered false (the link read disconnected)
+    int           volume = -2;  // the last setExpansionVolume, -2 for none
+    bool          connected = true;
+};
+
+extern "C" void* rp_devtest_cart_device_mode(CartRecord* record);
 
 // A package's `device` entry as its manifest names it, with both builds of it: the desktop's (`desktop`) and the
 // device-mode objects' (`device`, the entry renamed <entry>_device_mode). The generated device-entries.cpp lists every

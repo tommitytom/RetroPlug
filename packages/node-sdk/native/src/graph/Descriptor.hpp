@@ -30,10 +30,14 @@ struct ChannelSpec {
     static ChannelSpec matching(std::string port) { return {Mode::Match, 0, {}, std::move(port)}; }
 };
 
-// An output's declared queue capacity (PortTypes.hpp says what one bounds).
+// An output's declared queue capacity (PortTypes.hpp says what one bounds). Either a size, or `match`: the id of one of
+// the node's own inputs of the output's kind (events or bytes), whose queue this output's is sized as, the capacity of
+// the output wired into it (a pass-through, such as rp.core.midi-filter, then drops nothing its source could carry).
+// The planner resolves a match from the wires (an unwired input's is the default); a layout keeps it as declared.
 struct QueueCapacity {
     std::optional<std::uint32_t> messages;  // as declared: unset is the default, and is written as nothing
     std::optional<std::uint32_t> bytes;
+    std::string                  match;  // the input sized as, or empty; never with a size
     std::uint32_t messageCount() const { return messages.value_or(kDefaultQueueMessages); }
     std::uint32_t byteCount() const { return bytes.value_or(kDefaultQueueBytes); }
 };

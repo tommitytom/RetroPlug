@@ -200,6 +200,8 @@ std::string typeCase(const rp_node_type* type, std::size_t index, std::ostringst
             const bool          output = p.dir == PortDir::Out;
             const std::uint32_t channels = p.kind == PortKind::Audio ? channelsOf(*layout, p) : 0;
             const bool          queue = p.kind == PortKind::Events || p.kind == PortKind::Bytes;
+            // A capacity that matches an input reads as the default here, which is what the planner gives it with that
+            // input unwired: the check wires nothing.
             arrays << "    {" << kindName(kind) << ", " << (output ? "true" : "false") << ", " << channels << ", "
                    << (queue ? p.capacity.messageCount() : 0) << ", " << (queue ? p.capacity.byteCount() : 0)
                    << "},  // " << p.id << "\n";

@@ -17,6 +17,7 @@ namespace rp::graph {
 //   rp.core.constant        a param as a control output                    {"min":0,"max":1}
 //   rp.core.buffer-player   play an audio-buffer resource                  {"channels":2,"layout":"stereo","loop":true}
 //   rp.core.buffer-recorder write audio into an audio-buffer resource      {"channels":2}
+//   rp.core.midi-filter     drop the MIDI messages of the kinds it names   {"drop":["polyAftertouch"]}
 //
 // The player starts a buffer from its first frame whenever it is handed a different one, ignores the
 // buffer's sample rate (it plays frames, not seconds), and leaves output channels the buffer lacks silent.
@@ -25,6 +26,10 @@ namespace rp::graph {
 // whatever they held. Both spot a new buffer by its handle's address, so one freed and another made at
 // the same address while the node was unbound reads as the same buffer (an offline driver can arrange
 // that; a running host cannot, since the old plan pins the old buffer until the new one exists).
+//
+// The MIDI filter tells a message's kind by its status byte alone (noteOff, noteOn, polyAftertouch, controlChange,
+// programChange, channelAftertouch, pitchBend, sysex, systemCommon, realtime), drops those its `drop` lists and passes
+// every other message as it came; its output is sized as its input's source, so nothing it passes is lost to it.
 const rp_package* corePackage();
 
 }  // namespace rp::graph

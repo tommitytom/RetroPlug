@@ -199,6 +199,51 @@ TEST_CASE("a queue capacity is refused past its cap, empty, fractional, misspelt
     CHECK(checkCapacity(p) == std::optional<std::string>(R"(port "q": only events and bytes ports have "capacity")"));
 }
 
+TEST_CASE("an events or bytes output may take its capacity from one of the node's inputs of its kind, and only from one",
+          "[graph][descriptor]") {
+    const auto l = parseLayout(R"({"ports":[{"id":"in","dir":"in","kind":"events"},{"id":"raw","dir":"in","kind":"bytes"},)"
+                               R"({"id":"out","dir":"out","kind":"events","capacity":{"match":"in"}},)"
+                               R"({"id":"tx","dir":"out","kind":"bytes","capacity":{"match":"raw"}}]})");
+    REQUIRE(l);
+    CHECK(l->ports[2].capacity.match == "in");
+    CHECK_FALSE(l->ports[2].capacity.messages);
+    CHECK(l->ports[3].capacity.match == "raw");
+    CHECK(layoutJson(*l).find(R"({"capacity":{"match":"in"},"dir":"out","id":"out","kind":"events"})") !=
+          std::string::npos);
+    CHECK(layoutJson(*parseLayout(layoutJson(*l))) == layoutJson(*l));
+
+    const auto withInput = [](const char* capacity, const char* input = R"({"id":"in","dir":"in","kind":"events"})") {
+        return layoutReason((std::string(R"({"ports":[)") + input +
+                             R"(,{"id":"q","dir":"out","kind":"events","capacity":)" + capacity + "}]}")
+                                .c_str());
+    };
+    CHECK(withInput(R"({"match":"in","messages":2})") == R"(port "q": "capacity" takes "match" or a size, not both)");
+    CHECK(withInput(R"({"bytes":64,"match":"in"})") == R"(port "q": "capacity" takes "match" or a size, not both)");
+    CHECK(withInput(R"({"match":""})") ==
+          R"(port "q": "capacity.match" must name an input, with no whitespace or control characters)");
+    CHECK(withInput(R"({"match":7})") ==
+          R"(port "q": "capacity.match" must name an input, with no whitespace or control characters)");
+    CHECK(withInput(R"({"match":"nope"})") ==
+          R"(port "q": "capacity.match" names "nope", which is not an events input)");
+    CHECK(withInput(R"({"match":"in"})", R"({"id":"in","dir":"in","kind":"control"})") ==
+          R"(port "q": "capacity.match" names "in", which is not an events input)");
+    CHECK(withInput(R"({"match":"in"})", R"({"id":"in","dir":"out","kind":"events"})") ==
+          R"(port "q": "capacity.match" names "in", which is not an events input)");
+    CHECK(withInput(R"({"match":"q"})") == R"(port "q": "capacity.match" names "q", which is not an events input)");
+    // Of the output's own kind: an events output takes no bytes input's size, nor a bytes output an events input's.
+    CHECK(withInput(R"({"match":"in"})", R"({"id":"in","dir":"in","kind":"bytes"})") ==
+          R"(port "q": "capacity.match" names "in", which is not an events input)");
+    CHECK(layoutReason(R"({"ports":[{"id":"in","dir":"in","kind":"events"},)"
+                       R"({"id":"q","dir":"out","kind":"bytes","capacity":{"match":"in"}}]})") ==
+          R"(port "q": "capacity.match" names "in", which is not a bytes input)");
+    // As a C++ layer builds it, held by checkCapacity like a size.
+    PortDesc p{"q", PortDir::Out, PortKind::Events, {}, {}, false};
+    p.capacity.match = "in";
+    CHECK_FALSE(checkCapacity(p));
+    p.capacity.messages = 2;
+    CHECK(checkCapacity(p) == std::optional<std::string>(R"(port "q": "capacity" takes "match" or a size, not both)"));
+}
+
 TEST_CASE("an input's capacity is refused: a wire carries its source's queue", "[graph][descriptor]") {
     // Worded as defineNode.ts words it after the port.
     const std::string why = R"(port "m": only an output declares a capacity: a wire carries its source's queue)";

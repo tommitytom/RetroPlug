@@ -14,10 +14,11 @@ namespace rp::graph {
 
 // Append one message of `size` payload bytes, which the caller then writes at *payload: pushMessage for a payload
 // that is not in one piece yet (a script node's array of numbers). False, the message dropped and counted, when it
-// does not fit. Frames as pushMessage.
+// does not fit. Frames as pushMessage. The room is checked as what is left, never as a sum, so a size near the top of
+// std::size_t (32 bits on a device, where a host-supplied length reaches it) cannot wrap past the check.
 inline bool reserveMessage(rp_queue& q, std::uint32_t frame, std::size_t size, std::uint32_t flags,
                            std::uint8_t** payload) {
-    if (q.count >= q.capacity || q.bytes_used + size > q.bytes_capacity) {
+    if (q.count >= q.capacity || q.bytes_used > q.bytes_capacity || size > q.bytes_capacity - q.bytes_used) {
         ++q.dropped;
         return false;
     }

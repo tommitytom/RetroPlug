@@ -75,6 +75,8 @@ std::string graphDoc(bool swapped, rp::graph::ResourceTable::Id buf, rp::graph::
         {"id":"rl","type":"rp.core.relabel","settings":{"channels":2,"layout":"stereo"}},
         {"id":"mg","type":"rp.core.merge"},
         {"id":"es","type":"rp.test.sink"},
+        {"id":"mf","type":"rp.core.midi-filter","settings":{"drop":["noteOff"]}},
+        {"id":"fs","type":"rp.test.sink"},
         {"id":"x","type":"rp.test.through"},{"id":"y","type":"rp.test.through"},
         {"id":"rec","type":"rp.core.buffer-recorder","resources":{"target":"res:)" + r + R"("}},
         {"id":"la","type":"rp.test.quiet-linked"},{"id":"lb","type":"rp.test.quiet-linked"},{"id":"ls","type":"rp.test.sink"},
@@ -91,6 +93,7 @@ std::string graphDoc(bool swapped, rp::graph::ResourceTable::Id buf, rp::graph::
         {"from":"sum.out","to":"rl.in"},{"from":"rl.out","to":"out.out.3-4"},
         {"from":"k.out","to":"addc.in1"},{"from":"k2.out","to":"addc.in2"},{"from":"addc.out","to":"cs.control","feedback":true},
         {"from":"src.events","to":"mg.in1"},{"from":"mg.out","to":"es.events"},
+        {"from":"src.events","to":"mf.in"},{"from":"mf.out","to":"fs.events"},
         {"from":"x.out","to":"y.in"},{"from":"y.out","to":"out.out.5-6"},{"from":"y.out","to":"x.in","feedback":true},
         {"from":"la.link","to":"lb.link"},{"from":"la.out","to":"ls.in"},
         {"from":"src.events","to":"sh.q"},{"from":"sh.b","to":"shs.events"},{"from":"sh.L","to":"shl.control"})";

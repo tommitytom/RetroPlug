@@ -7,7 +7,7 @@
 # lists as the desktop builds them, which plan; beside them, the same entries as the device builds them
 # (retroplug_device_mode_objects), which the loader's sizing pass sizes the plan with. Not shipped, and built by name:
 # the scripts that build a device image build it first, and retroplug-device-mode-test runs it.
-set(RP_EXPORT_PLAN_PACKAGES core dsp n8)
+set(RP_EXPORT_PLAN_PACKAGES core dsp n8 device-io)
 add_executable(retroplug-export-plan EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp)
 set_target_properties(retroplug-export-plan PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 retroplug_product(retroplug-export-plan PACKAGES ${RP_EXPORT_PLAN_PACKAGES} DEVICE)
