@@ -370,6 +370,9 @@ retroplug_package(native)
 # The device check's case generator, a desktop tool listing what the RP2350 check registers (a device product of the
 # packages above); the check itself is packages/graph-runtime/device-check, a Pico SDK project of its own.
 add_subdirectory(packages/graph-runtime/device-check/cases "${CMAKE_BINARY_DIR}/device-check/cases")
+# The plan exporter, the desktop tool a device image's build runs to embed its built-in plan (a device product of the
+# packages above, with their device builds beside it to size the plan as the device will).
+add_subdirectory(packages/graph-runtime/export-plan "${CMAKE_BINARY_DIR}/export-plan")
 
 # The packages a desktop product carries (retroplug_product), every one today; a product that differs lists its own.
 # The ORDER is load-bearing: it is the order the products register in, which the registration golden holds

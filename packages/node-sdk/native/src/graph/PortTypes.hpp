@@ -33,4 +33,13 @@ constexpr std::uint32_t kMaxChannels = 64;
 // accepts.
 constexpr std::size_t kMaxLayoutName = 16;
 
+// The most alignment a device gives a node instance, and the alignment of an instance's tail memory there: the
+// RP2350's alignof(std::max_align_t). A device-mode build aligns its instances to this rather than to the compiler's
+// max_align_t, so the desktop's device-mode build of a type asks what the device's asks (16 on x86-64 would hide a type
+// that needs 16, which the device cannot give), and the plan exporter refuses a type that asks more at export, as the
+// device's loader would at boot (graph/PlanBlob.hpp's kTargetAlign). What that refuses falsely at export is a type
+// whose own alignment is more on the desktop than on the device: one holding a long double or an alignas(max_align_t)
+// member (16 on x86-64 and aarch64, 8 on the M33). No portable type holds either, and refusing is the safe direction.
+constexpr std::size_t kDeviceAlign = 8;
+
 }  // namespace rp::graph

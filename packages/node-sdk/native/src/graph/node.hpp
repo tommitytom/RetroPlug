@@ -37,7 +37,8 @@
 //                                                         with the key the instance was created with, which no
 //                                                         commit writes, so unlike needs_rebuild it allows
 //                                                         stateless_prepare. Never both on one type
-//   static std::size_t extra_memory(const Settings&);     host-supplied tail memory (max_align_t aligned)
+//   static std::size_t extra_memory(const Settings&);     host-supplied tail memory (max_align_t aligned; in a
+//                                                         device-mode build, rp::graph::kDeviceAlign aligned)
 //   void attach(std::span<std::byte>) noexcept;           receives it, at create. The objects a node builds
 //                                                         there are never destroyed - nothing runs a destructor
 //                                                         over tail memory - so a node whose state owns anything

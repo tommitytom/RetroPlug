@@ -444,6 +444,148 @@ ${_body}}
     set_property(GLOBAL PROPERTY RP_PRODUCT_${product}_ENTRIES ${_entries})
 endfunction()
 
+# retroplug_device_mode_objects(<target> PACKAGES <package>... [SOURCES <source>...] [INCLUDES <dir>...]
+#                               [OWNERS <variable>]): the device's build of the packages' `device` entries, for a
+# desktop binary that holds it beside the desktop's build of the same entries: the device-mode test, and the plan
+# exporter (packages/graph-runtime/export-plan), which plans with the desktop's build of each type and sizes the plan
+# with the device's. An object library, EXCLUDE_FROM_ALL, of the sources of every `device` entry's target of the
+# packages (each one's <target>-device check holds the same list), plus SOURCES, compiled as a device compiles them (the
+# device flags, no exceptions, no RTTI) and one definition more, rp=rp_devmode: a token rename, so every `namespace rp`
+# and `rp::` in their translation units is rp_devmode's, and no C++ name has a definition in each build (rp::text has
+# no str() in the device's, its instance owns its settings in place, and the linker would otherwise keep whichever
+# definition it saw first). rp_node, rp_package, RP_DEVICE, a header's name and a string literal ("rp.core.gain") are
+# other tokens and keep their spelling. The kernels the nodes call (rp::dsp) are compiled into the objects too, as
+# rp_devmode::dsp, which also proves them built without exceptions: the sources of every package library a device
+# entry's target links. What the rename leaves the same in both builds is a name outside rp, so a source built both
+# ways keeps its names with linkage under rp (rp::graph, rp::dsp, ...) or in an anonymous namespace. It is a rename of
+# these objects, rather than a namespace the SDK opens in device mode, because only such a binary holds both builds: a
+# device image and the <target>-device checks hold one, and compile the sources exactly as written. (An inline
+# namespace rp::device would move a source's names with no change to it, but MSVC does not extend one through a later
+# `namespace rp::graph` (CWG 2061).) The packages' C entries, which no namespace reaches, are renamed by a compile
+# definition each, <entry>_device_mode, and the objects define rp_register_device_mode_packages() (graph/Packages.hpp),
+# which lists the renamed entries in the order PACKAGES does, as a device product's rp_register_packages() lists its
+# own. The binary keeps exceptions in its own translation units (Catch2 is built with them) and reaches the device-mode
+# code through the C ABI alone, as a device's host would. MSVC keeps its /EHsc: a second /EH option on one command line
+# is the D9025 warning AGENTS.md describes, and the GCC and Clang builds are where -fno-exceptions is proved. OWNERS
+# names a variable set to the desktop targets the objects twin, which the binary links for the desktop's build.
+function(retroplug_device_mode_objects target)
+    cmake_parse_arguments(P "" "OWNERS" "PACKAGES;SOURCES;INCLUDES" ${ARGN})
+    if(RP_DEVICE_BUILD)
+        message(FATAL_ERROR "retroplug_device_mode_objects(${target}): a device build compiles every package in device "
+                            "mode already")
+    endif()
+    if(P_UNPARSED_ARGUMENTS OR NOT P_PACKAGES)
+        message(FATAL_ERROR "retroplug_device_mode_objects(${target}): PACKAGES is required, and nothing else is "
+                            "unnamed (${P_UNPARSED_ARGUMENTS})")
+    endif()
+    # Every device entry's owner, of every package: a library one of them links that is another's owner is compiled
+    # from that owner's own sources, once, and only where its package is listed.
+    get_property(_known GLOBAL PROPERTY RP_PACKAGES)
+    set(_allOwners "")
+    foreach(_p IN LISTS _known)
+        get_property(_t GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_TARGETS)
+        list(APPEND _allOwners ${_t})
+    endforeach()
+    set(_sources "")
+    set(_includes "")
+    set(_definitions "")
+    set(_owners "")
+    set(_libraries "")
+    set(_entries "")
+    foreach(_p IN LISTS P_PACKAGES)
+        if(NOT _p IN_LIST _known)
+            message(FATAL_ERROR "retroplug_device_mode_objects(${target}): no package `${_p}`")
+        endif()
+        get_property(_e GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_ENTRIES)
+        get_property(_t GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_TARGETS)
+        if(NOT _e)
+            message(FATAL_ERROR "retroplug_device_mode_objects(${target}): package `${_p}` has no `device` entry")
+        endif()
+        list(APPEND _entries ${_e})
+        foreach(_owner IN LISTS _t)
+            # The owner's <target>-device check holds its sources made absolute (_retroplug_device_check).
+            get_target_property(_s ${_owner}-device SOURCES)
+            list(APPEND _sources ${_s})
+            list(APPEND _owners ${_owner})
+            list(APPEND _includes $<TARGET_PROPERTY:${_owner},INCLUDE_DIRECTORIES>)
+            list(APPEND _definitions $<TARGET_PROPERTY:${_owner},COMPILE_DEFINITIONS>)
+            # Every static library it links (the rp::dsp kernels), and theirs: renamed with it, so compiled with it, so
+            # a library here is the owner's own and not a vendored one. The SDK is headers alone in device mode, so
+            # retroplug-node-sdk's own sources (the description library) are not the device's.
+            get_target_property(_pending ${_owner} LINK_LIBRARIES)
+            while(_pending)
+                list(POP_FRONT _pending _lib)
+                if(NOT TARGET ${_lib} OR _lib STREQUAL "retroplug-node-sdk" OR _lib IN_LIST _libraries
+                   OR _lib IN_LIST _allOwners)
+                    continue()
+                endif()
+                get_target_property(_type ${_lib} TYPE)
+                if(NOT _type STREQUAL "STATIC_LIBRARY")
+                    continue()
+                endif()
+                list(APPEND _libraries ${_lib})
+                get_target_property(_s ${_lib} SOURCES)
+                get_target_property(_dir ${_lib} SOURCE_DIR)
+                foreach(_one IN LISTS _s)
+                    cmake_path(ABSOLUTE_PATH _one BASE_DIRECTORY "${_dir}" OUTPUT_VARIABLE _one)
+                    list(APPEND _sources ${_one})
+                endforeach()
+                list(APPEND _includes $<TARGET_PROPERTY:${_lib},INCLUDE_DIRECTORIES>)
+                list(APPEND _definitions $<TARGET_PROPERTY:${_lib},COMPILE_DEFINITIONS>)
+                get_target_property(_more ${_lib} LINK_LIBRARIES)
+                if(_more)
+                    list(APPEND _pending ${_more})
+                endif()
+            endwhile()
+        endforeach()
+    endforeach()
+    list(REMOVE_DUPLICATES _sources)
+    set(_renames "")
+    set(_decls "")
+    set(_body "")
+    list(LENGTH _entries _n)
+    set(_i 0)
+    foreach(_e IN LISTS _entries)
+        list(APPEND _renames ${_e}=${_e}_device_mode)
+        string(APPEND _decls "extern \"C\" const rp_package* ${_e}_device_mode(void);\n")
+        string(APPEND _body "    packages[${_i}] = ${_e}_device_mode();\n")
+        math(EXPR _i "${_i} + 1")
+    endforeach()
+    list(JOIN P_PACKAGES " " _listed)
+    set(_registration "${CMAKE_BINARY_DIR}/device-mode/${target}-packages.cpp")
+    file(GENERATE OUTPUT "${_registration}" CONTENT
+"// Generated by retroplug_device_mode_objects(${target}) in cmake/packages.cmake from the manifests of the packages it
+// lists: ${_listed}. Do not edit.
+
+#include <stddef.h>
+
+#include \"graph/rp_node.h\"
+
+${_decls}
+// Filled on every call, as a device product's registration is (a guarded static would need __cxa_guard_acquire).
+extern \"C\" const rp_package* const* rp_register_device_mode_packages(size_t* count) {
+    static const rp_package* packages[${_n}];
+${_body}    *count = ${_n};
+    return packages;
+}
+")
+    add_library(${target} OBJECT EXCLUDE_FROM_ALL ${_sources} ${P_SOURCES} "${_registration}")
+    set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    target_compile_definitions(${target} PRIVATE ${_definitions} RP_DEVICE rp=rp_devmode ${_renames})
+    if(MSVC)
+        target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/bigobj>)  # retroplug_package_library's
+    else()
+        target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>")
+    endif()
+    # The SDK's headers and reflect-cpp's (the field reflection, header-only and SYSTEM: nothing of reflect-cpp is
+    # linked), and the packages' own source roots for their headers and the kernels'.
+    target_link_libraries(${target} PRIVATE retroplug-node-sdk-headers retroplug-reflect-headers)
+    target_include_directories(${target} PRIVATE ${_includes} ${P_INCLUDES})
+    if(P_OWNERS)
+        set(${P_OWNERS} ${_owners} PARENT_SCOPE)
+    endif()
+endfunction()
+
 # retroplug_providers_header(<file> <label> <package>...): generates <file>, the providers of the packages listed
 # (graph/rp_provider.h) as rp_start_providers(host), rp_restore_providers(providers), rp_stop_providers(providers) and
 # rp_register_package_rpc<Server>(server, providers), in the order the packages and their manifests list them

@@ -46,7 +46,10 @@ if(MSVC)
         # The device build of the node SDK, tested on the desktop (cmake/tests.cmake).
         retroplug-device-mode-objects retroplug-device-mode-test
         # The device check's case generator (packages/graph-runtime/device-check/cases).
-        rp-device-check-cases)
+        rp-device-check-cases
+        # The executor and the plan loader built as a device builds them, and the plan exporter's tool with its device
+        # builds of the packages it lists (packages/graph-runtime).
+        retroplug-graph-exec-device retroplug-export-plan retroplug-export-plan-device)
     # And each device entry's device-mode compile (cmake/packages.cmake's _retroplug_device_check).
     get_property(_rp_device_checks GLOBAL PROPERTY RP_DEVICE_CHECK_TARGETS)
     list(APPEND _rp_werror_targets ${_rp_device_checks})

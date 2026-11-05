@@ -75,8 +75,17 @@ struct Instance : rp_node {
     std::span<std::byte>                           extra;
 };
 
+// Held on the Arm build, the RP2350's Cortex-M33. Its Hazard3 cores are riscv32, where max_align_t is 16 (long
+// double is): a RISC-V device build would need its own figure, and gets no check here.
+#if defined(__arm__)
+static_assert(alignof(std::max_align_t) == graph::kDeviceAlign, "kDeviceAlign is the device's alignof(max_align_t)");
+#endif
+
+// An instance and its tail are aligned to the device's max_align_t (graph::kDeviceAlign), whatever compiler builds
+// them: on the desktop's device-mode build that is what makes its query_memory ask what the device's asks, so a type
+// that needs more is seen needing it there too.
 template <class T>
-std::size_t extraOffset() { return alignUp(sizeof(Instance<T>), alignof(std::max_align_t)); }
+std::size_t extraOffset() { return alignUp(sizeof(Instance<T>), graph::kDeviceAlign); }
 
 // The settings in `s`, read into `out` (which holds the defaults). False with the reason for any encoding but msgpack:
 // a device has no JSON reader.
@@ -136,7 +145,7 @@ bool queryMemoryFn(const rp_node_type*, const rp_settings* s, rp_memory_req* out
         return false;
     }
     out->size = extra ? extraOffset<T>() + extra : sizeof(Instance<T>);
-    out->align = alignof(Instance<T>) > alignof(std::max_align_t) ? alignof(Instance<T>) : alignof(std::max_align_t);
+    out->align = alignof(Instance<T>) > graph::kDeviceAlign ? alignof(Instance<T>) : graph::kDeviceAlign;
     return true;
 }
 

@@ -289,82 +289,37 @@ retroplug_add_test_binary(
 # compiled as a device compiles them (RP_DEVICE, no exceptions, no RTTI) render, through real plans and over ragged
 # blocks, what the desktop's builds of the same sources render, bit for bit, created from msgpack where the desktop's
 # are created from JSON; their create, activate, process and destroy allocate nothing; and the msgpack settings decode
-# keeps JSON's leniency and refusals. The desktop's nodes read msgpack too.
+# keeps JSON's leniency and refusals. The desktop's nodes read msgpack too. And a plan exported for the RP2350
+# (docs/modular-graph-phase-e3-design.md section 4), loaded by the loader over the device-mode builds in an arena,
+# renders what GraphHost renders from the same document, allocating nothing, and each of the loader's and the
+# exporter's refusals says why (DevicePlan.test.cpp, which runs retroplug-export-plan too).
 #
-# Both builds of one source sit in this one binary. The device-mode objects are an object library of their own, with
-# the device flags and one definition more, rp=rp_devmode: a token rename, so every `namespace rp` and `rp::` in their
-# translation units is rp_devmode's, and no C++ name has a definition in each build (rp::text has no str() in the
-# device's, its instance owns its settings in place, and the linker would otherwise keep whichever definition it saw
-# first). rp_node, rp_package, RP_DEVICE, a header's name and a string literal ("rp.core.gain") are other tokens and
-# keep their spelling. The kernels the nodes call (rp::dsp) are compiled into the objects too, as rp_devmode::dsp,
-# which also proves them built without exceptions: the sources of every package library a device entry's target links.
-# What the rename leaves the same in both builds is a name outside rp, so a source built both ways keeps its names
-# with linkage under rp (rp::graph, rp::dsp, ...) or in an anonymous namespace. It is a rename of this test's objects,
-# rather than a namespace the SDK opens in device mode, because only this binary holds both builds: a device image and
-# the <target>-device checks hold one, and compile the sources exactly as written. (An inline namespace rp::device
-# would move a source's names with no change to it, but MSVC does not extend one through a later `namespace rp::graph`
-# (CWG 2061).) The packages' C entries, which no namespace reaches, are renamed by a compile definition each. Catch2
-# is the shared library every test binary links, built with exceptions, so the test's own translation unit keeps them
-# and reaches the device-mode code only through the C ABI, as a device's host would. MSVC keeps its /EHsc there: a
-# second /EH option on one command line is the D9025 warning AGENTS.md describes, and the GCC and Clang builds are
-# where -fno-exceptions is proved.
-#
-# Which sources and entries are the device's is the manifests' word (cmake/packages.cmake): the objects compile the
-# sources of every `device` entry's target (each one's <target>-device check holds the same list), and each device
-# entry is renamed <entry>_device_mode. device-entries.cpp, generated below, lists every device entry with both its
-# builds, which is what the test holds a device registration to.
-get_property(_rp_device_targets GLOBAL PROPERTY RP_DEVICE_CHECK_TARGETS)
-set(_rp_device_sources "")
-set(_rp_device_includes "")
-set(_rp_device_definitions "")
-set(_rp_device_owners "")
-set(_rp_device_libraries "")
-set(_rp_all_owners "")
-foreach(_t IN LISTS _rp_device_targets)
-    string(REGEX REPLACE "-device$" "" _o ${_t})
-    list(APPEND _rp_all_owners ${_o})
+# Both builds of one source sit in this one binary: the device-mode objects (retroplug_device_mode_objects,
+# cmake/packages.cmake, which says how the rename lets them) are the device's build of every package with a `device`
+# entry, beside the echo node's own (test/device-mode/DeviceModeNodes.cpp), and the binary links the desktop's build of
+# the same entries. Which sources and entries are the device's is the manifests' word (cmake/packages.cmake): the
+# objects compile the sources of every `device` entry's target (each one's <target>-device check holds the same list),
+# and each device entry is renamed <entry>_device_mode. device-entries.cpp, generated below, lists every device entry
+# with both its builds, which is what the test holds a device registration to.
+get_property(_rp_packages GLOBAL PROPERTY RP_PACKAGES)
+set(_rp_device_packages "")
+foreach(_p IN LISTS _rp_packages)
+    get_property(_entries GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_ENTRIES)
+    if(_entries)
+        list(APPEND _rp_device_packages ${_p})
+    endif()
 endforeach()
-foreach(_t IN LISTS _rp_device_targets)
-    get_target_property(_s ${_t} SOURCES)
-    list(APPEND _rp_device_sources ${_s})
-    string(REGEX REPLACE "-device$" "" _owner ${_t})
-    list(APPEND _rp_device_owners ${_owner})
-    list(APPEND _rp_device_includes $<TARGET_PROPERTY:${_owner},INCLUDE_DIRECTORIES>)
-    list(APPEND _rp_device_definitions $<TARGET_PROPERTY:${_owner},COMPILE_DEFINITIONS>)
-    # Every static library it links (the rp::dsp kernels), and theirs: renamed with it, so compiled with it, so a
-    # library here is the owner's own and not a vendored one. The SDK is headers alone in device mode, so
-    # retroplug-node-sdk's own sources (the description library) are not the device's, and a library that is another
-    # device owner is compiled once, from its own -device target.
-    get_target_property(_pending ${_owner} LINK_LIBRARIES)
-    while(_pending)
-        list(POP_FRONT _pending _lib)
-        if(NOT TARGET ${_lib} OR _lib STREQUAL "retroplug-node-sdk" OR _lib IN_LIST _rp_device_libraries
-           OR _lib IN_LIST _rp_all_owners)
-            continue()
-        endif()
-        get_target_property(_type ${_lib} TYPE)
-        if(NOT _type STREQUAL "STATIC_LIBRARY")
-            continue()
-        endif()
-        list(APPEND _rp_device_libraries ${_lib})
-        get_target_property(_s ${_lib} SOURCES)
-        list(APPEND _rp_device_sources ${_s})
-        list(APPEND _rp_device_includes $<TARGET_PROPERTY:${_lib},INCLUDE_DIRECTORIES>)
-        list(APPEND _rp_device_definitions $<TARGET_PROPERTY:${_lib},COMPILE_DEFINITIONS>)
-        get_target_property(_more ${_lib} LINK_LIBRARIES)
-        if(_more)
-            list(APPEND _pending ${_more})
-        endif()
-    endwhile()
-endforeach()
-set(_rp_device_renames "")
+retroplug_device_mode_objects(retroplug-device-mode-objects
+    PACKAGES ${_rp_device_packages}
+    SOURCES  ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/DeviceModeNodes.cpp
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
+    OWNERS   _rp_device_owners)
+
 set(_rp_device_rows "")
 set(_rp_device_decls "")
-get_property(_rp_packages GLOBAL PROPERTY RP_PACKAGES)
 foreach(_p IN LISTS _rp_packages)
     get_property(_entries GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_ENTRIES)
     foreach(_e IN LISTS _entries)
-        list(APPEND _rp_device_renames ${_e}=${_e}_device_mode)
         string(APPEND _rp_device_decls
                "extern \"C\" const rp_package* ${_e}(void);\nextern \"C\" const rp_package* ${_e}_device_mode(void);\n")
         string(APPEND _rp_device_rows "        {\"${_p}\", \"${_e}\", &${_e}, &${_e}_device_mode},\n")
@@ -384,22 +339,6 @@ std::vector<DeviceEntry> deviceEntries() {
 ${_rp_device_rows}    };
 }
 ")
-
-add_library(retroplug-device-mode-objects OBJECT EXCLUDE_FROM_ALL
-    ${_rp_device_sources}
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/DeviceModeNodes.cpp)
-set_target_properties(retroplug-device-mode-objects PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_compile_definitions(retroplug-device-mode-objects PRIVATE ${_rp_device_definitions} RP_DEVICE rp=rp_devmode
-                                                                  ${_rp_device_renames})
-if(NOT MSVC)
-    target_compile_options(retroplug-device-mode-objects PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>")
-endif()
-# The SDK's headers and reflect-cpp's (the field reflection, header-only and SYSTEM: nothing of reflect-cpp is linked),
-# and the packages' own source roots for their headers and the kernels'.
-target_link_libraries(retroplug-device-mode-objects PRIVATE retroplug-node-sdk-headers retroplug-reflect-headers)
-target_include_directories(retroplug-device-mode-objects PRIVATE
-    ${_rp_device_includes}
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode)
 
 # The device check (packages/graph-runtime/device-check) run on the desktop over the device-mode objects, against the
 # header the case generator writes for the RP2350 image: the same cases, the same code, the same arena size.
@@ -467,6 +406,7 @@ retroplug_add_test_binary(
     NAME     retroplug-device-mode-test
     SOURCES  test/device-mode/DeviceMode.test.cpp
              test/device-mode/DeviceCheck.test.cpp
+             test/device-mode/DevicePlan.test.cpp
              test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
              ${_rp_device_check_dir}/DeviceCheck.cpp   # the device check, as a host: desktop-built, C ABI only
              ${_rp_device_check_dir}/N8Protocol.cpp    # its N8 protocol run, over the desktop's build of the pack
@@ -479,4 +419,8 @@ retroplug_add_test_binary(
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
              ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
              ${_rp_device_check_dir}                   # DeviceCheck.hpp
-             ${CMAKE_BINARY_DIR}/device-check)         # DeviceCheckCases.hpp
+             ${CMAKE_BINARY_DIR}/device-check          # DeviceCheckCases.hpp
+    DEFS     RP_DEVICE_MODE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/golden"
+             RP_EXPORT_PLAN_TOOL="$<TARGET_FILE:retroplug-export-plan>")
+# The plan cases run the exporter's tool in a process of its own (DevicePlan.test.cpp).
+add_dependencies(retroplug-device-mode-test retroplug-export-plan)

@@ -136,6 +136,10 @@ using namespace dsp;
 // rather than leaking one object per instance.
 static_assert(std::is_trivially_destructible_v<rp::dsp::Biquad>);
 static_assert(std::is_trivially_destructible_v<rp::dsp::Dither>);
+// And a device build aligns tail memory to the device's max_align_t alone (graph::kDeviceAlign), so a kernel that
+// needs more would sit misaligned in it.
+static_assert(alignof(rp::dsp::Biquad) <= rp::graph::kDeviceAlign);
+static_assert(alignof(rp::dsp::Dither) <= rp::graph::kDeviceAlign);
 
 // ---- rp.dsp.gain --------------------------------------------------------------------------------------------------
 

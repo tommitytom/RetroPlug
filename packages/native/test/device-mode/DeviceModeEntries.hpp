@@ -17,8 +17,13 @@ const rp_package* rp_dsp_package_device_mode(void);
 const rp_package* rp_n8_package_device_mode(void);
 // rp.devtest: the echo, pair, shaper and bare nodes (EchoNode.hpp) in device mode.
 const rp_package* rp_devtest_package_device_mode(void);
-// rp.devtest.fault: a node that fails at the step its settings name (DeviceModeNodes.cpp), for the device check.
+// rp.devtest.fault: a node that fails at the step its settings name (PlanNodes.hpp), for the device check and the
+// loader's run-up.
 const rp_package* rp_devtest_fault_package_device_mode(void);
+// rp.devtest.plan: the source, digest and lockstep nodes (PlanNodes.hpp) the exported-plan cases run.
+const rp_package* rp_devtest_plan_package_device_mode(void);
+// How many plan and fault nodes the device-mode build holds alive (PlanNodes.hpp's gLive).
+int rp_devtest_plan_live_device_mode(void);
 }
 
 // A package's `device` entry as its manifest names it, with both builds of it: the desktop's (`desktop`) and the
@@ -50,4 +55,13 @@ struct EchoView {
     std::uint32_t rom = 0;
     bool          romResolved = false;
     int           mode = 0;  // the enum field, as its value
+};
+
+// What a digest node has seen, as it counted it: get_interface(kDigestInterface) answers one.
+inline constexpr const char* kDigestInterface = "rp.devtest.digest/1";
+
+struct DigestView {
+    std::uint64_t hash = 1469598103934665603ull;  // FNV-1a 64 over every block's inputs
+    std::uint32_t blocks = 0;
+    bool          heard = false;  // anything but silence and empty queues reached it
 };

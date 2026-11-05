@@ -15,12 +15,24 @@
 // (retroplug_check_products).
 extern "C" const rp_package* const* rp_register_packages(size_t* count);
 
+// The device's build of a product's packages, beside the desktop's in one desktop binary: the device-mode objects
+// (retroplug_device_mode_objects, cmake/packages.cmake) define it, listing their renamed entries in the order the
+// product lists the packages. Only a binary that links such objects has it (the plan exporter, the device-mode test).
+extern "C" const rp_package* const* rp_register_device_mode_packages(size_t* count);
+
 namespace rp::graph {
 
 // rp_register_packages(), as a span.
 inline std::span<const rp_package* const> productPackages() {
     std::size_t n = 0;
     const rp_package* const* packages = rp_register_packages(&n);
+    return {packages, n};
+}
+
+// rp_register_device_mode_packages(), as a span.
+inline std::span<const rp_package* const> deviceModePackages() {
+    std::size_t n = 0;
+    const rp_package* const* packages = rp_register_device_mode_packages(&n);
     return {packages, n};
 }
 
