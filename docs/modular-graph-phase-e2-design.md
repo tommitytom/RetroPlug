@@ -587,12 +587,14 @@ probe that must fail to link. What both device projects share is hoisted: `cmake
 reflect-cpp pin and finder), `cmake/device-image.cmake` (`pico_malloc`'s removal in place, the trap list,
 `rp_device_executable()` and `rp_device_trap_check()`; included once a project, its three values in global properties so
 the functions work from any directory) and `cmake/check-trap.cmake` (moved from `device-check`). Its generated
-registration includes `rp.n8.nes`, which no plan uses until E3 and which `--gc-sections` would drop, so
-`main` references `rp_register_packages` and prints `[n8-host] node type rp.n8.nes (registered, not planned)` at boot:
-the node linking into the real image is proven by the image naming it. The `RP_NATIVE_USB=ON` variant builds and links
-under the trap too; the rig is PIO-USB, so only that one runs. A scratch build with every `loop.sh` option on at once
-(`-DRP_NATIVE_USB`, `N8_TUSB_DEBUG`, `N8_MENU_TRIES`, `N8_APU_LAT`, `N8_EXP_VOL`, `N8_TEST_HOOKS`, `N8_ROM_PATH`)
-links under the trap. The image carries no UF2 in `device:box` (`-DPICO_NO_PICOTOOL=1`, as E1 decided, or the SDK
+registration includes `rp.n8.nes`, which no plan used in E2 and which `--gc-sections` would drop, so
+`main` referenced `rp_register_packages` and printed `[n8-host] node type rp.n8.nes (registered, not planned)` at
+boot: the node linking into the real image was proven by the image naming it. (E3 plans it: the line is
+replaced by `[host] plan loaded: ...`, see [the E3 design](modular-graph-phase-e3-design.md) section 5.) The
+`RP_NATIVE_USB=ON` variant builds and links under the trap too; the rig is PIO-USB, so only that one runs. A scratch
+build with every `loop.sh` option on at once (`-DRP_NATIVE_USB`, `N8_TUSB_DEBUG`, `N8_MENU_TRIES`, `N8_APU_LAT`,
+`N8_EXP_VOL` (retired in E3), `N8_TEST_HOOKS`, `N8_ROM_PATH`) links under the trap. The image carries no UF2 in
+`device:box` (`-DPICO_NO_PICOTOOL=1`, as E1 decided, or the SDK
 would fetch and build picotool in CI); `loop.sh`'s own build still makes its UF2, and the flashed bytes are identical.
 A fresh `loop.sh` build dir passes the desktop build's `reflectcpp_SOURCE_DIR` from `$repo/build/CMakeCache.txt` when
 there is one, so it needs no network, and falls back to the clone otherwise. `cmake_minimum_required` is 3.20 (the
@@ -925,6 +927,11 @@ baseline of section 8. The table is the prototype's final image; the shipped one
   successor wants `PICO_STACK_SIZE=0x1000`, and a `-Wstack-usage` check would replace the hand sum. A host-side fake
   for `UsbCdcTransport` (the transport's remount, unmount and drain rules are proven on the rig and by reading, and
   have no host test). The main loop still splits into the generic host and the pack's part then.
+  **Done in E3** ([modular-graph-phase-e3-design.md](modular-graph-phase-e3-design.md) sections 5, 7 and 12): the box's
+  `CartLink` is `BoxCartLink` over a fixed ring, the device check runs on a 4 KB stack, every frame of the images and
+  the device libraries is held to 1 KiB by `-Wstack-usage` (the chains are still summed by hand, and the check prints
+  its measured high-water mark), `UsbCdcTransport` has its host fake, and the main loop is split into `pico/host/` and
+  the N8 product.
 - **Windows, macOS and arm64 have never built E2.** Its new surface under `/W4 /WX` on MSVC is `retroplug-n8`,
   `retroplug-n8-desktop` and `retroplug-n8-device`, `DeviceAbi.c` compiled as C, the generated providers header in
   three products, `N8Rpc.cpp`'s `std::filesystem` (`canonical` is not called on Windows now), `SerialTransport.cpp`'s
@@ -948,6 +955,7 @@ baseline of section 8. The table is the prototype's final image; the shipped one
 - **The box image's heap reservation.** "No heap" means no allocator code is linked; the SDK's 2 KB `.heap` section
   is still in the image (`PICO_HEAP_SIZE=0` would drop it), and it is E3's, with the stack (no firmware change in E2:
   the flashed bytes stay what the gate ran).
+  **Done in E3** for the box: `PICO_HEAP_SIZE=0` drops it. `rp-device-check` keeps its 2 KB `.heap`.
 - **The Launchpad's `threads` flag** is the one node still declaring `threads` for its link; it goes with its pack,
   provider and facet in place of `bindLaunchpadHooks`.
 - **E4**, the rest of the package split and a web transport, as section 11.

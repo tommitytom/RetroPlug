@@ -516,14 +516,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   and `pnpm device:check` links the RP2350 image of every portable `rp.core` and `rp.dsp` type under a trap on the heap,
   on exceptions and on RTTI, a CI step. Nothing was re-recorded. What is left, in order:
   - **E2: the N8 pack** is built (below).
-  - **E3: `exportPlan` for `rp2350`, the static-arena executor and the box as a graph host**, gated on the Pico baseline
-    and a C++ node in the box's plan. It must also settle `rp.core.delay`'s default, which needs 384 KB an instance
-    (74% of the RP2350's RAM) and sizes the check's arena: a device default or a planner cap. The device's stack in
-    `query_memory` and `create` (the `Settings` plus up to three 264-byte error buffers) is unmeasured, as are instance
-    sizes on ARM (the image is never run), and the float tolerance against the desktop is E3's decision. An integer above
-    INT64_MAX in a signed settings field is wrapped by the desktop's JSON reader and refused by the device's decode, so
-    `exportPlan` writes each blob from the desktop's parsed settings (`rp.sdk.settings-json/1`, then `settingsToMsgpack`),
-    not from the document's JSON.
+  - **E3 is built** (below): `exportPlan` for `rp2350`, the arena loader and the box as a graph host, with the
+    settings written from the desktop's parsed settings, every frame held to 1 KiB by `-Wstack-usage` (the chains
+    stay a hand sum, and the device check prints its measured high-water mark) and `rp.core.delay`'s default left as it
+    is (a plan is refused where its arena cannot hold it: the box's 128 KiB arena refuses a defaulted delay).
   - **E4: MicroQuickJS on the Pico**, a script host in the arena and `defineNode` made portable.
   - **The rest of the package split** (the main design's section 11): `sameboy`, `mesen` (per console), `lsdj`, `mgb`,
     `risa`, `smsggdj`, `bliptoaster` and `launchpad` as packages, the TS halves of `core` and `dsp`, per-product esbuild
@@ -552,13 +548,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   the link trap over the whole image (`pnpm device:box`, a CI step; a static SOF timer on hardware alarm 2 and a wrap of
   `alarm_pool_create_on_timer`; a 4 KB stack). The Pico gate passed on the rig with BlipToaster. Nothing was re-recorded
   but `[packages]`, where `rp.n8.nes` moved under the n8 package with every product's ids unchanged. What it leaves:
-  - **E3's box link must keep `CartLink`'s promise** that `push()` never blocks, allocates or takes a lock: the node
-    declares no `threads` and a Pico target plans it, so the link behind it decides what the box can do.
-  - **The device check keeps the SDK's 2 KB stack.** Its protocol chain is about 1.9 KB by the hand sum and its types
-    chain (E1's settings decode) about 2.3 KB; the check's successor wants `PICO_STACK_SIZE=0x1000` as the box has, and
-    a `-Wstack-usage` check would replace the hand sum, which has no limit at run time.
-  - **`UsbCdcTransport` has no host-side fake**: its remount, unmount and drain rules are proven on the rig and by
-    reading, with no host test.
+  - **Done in E3:** the box's link (`BoxCartLink`, over a fixed ring) keeps `CartLink`'s promise that `push()` never
+    blocks, allocates or takes a lock; the device check runs on `PICO_STACK_SIZE=0x1000` with every frame held to 1 KiB
+    by `-Wstack-usage` (the chains are still summed by hand); `UsbCdcTransport` has its host fake (`[usb-cdc]`).
   - **The Launchpad's nodes still declare `threads`** for their link, the one exception to "the flag is what the node
     itself needs", until they have a pack (provider, facet in place of `bindLaunchpadHooks`).
   - **The N8 menus, the CLI sessions and `buildGraph`'s `cart-<id>` placement stay in `packages/retroplug`** until menus
@@ -582,7 +574,27 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The pack boundary has three standing exceptions** (design 13.6): `retroplug-core` includes `retroplug-n8`'s roots
     for `N8ReliableLink.hpp`, `plugin.cmake` links `retroplug-n8-desktop` by name, and the test host's `main.cpp` names
     the provider.
-  - **The box image keeps the SDK's 2 KB `.heap` reservation** (no allocator is linked; `PICO_HEAP_SIZE=0` is E3's).
+  - **The box image's 2 KB `.heap` reservation** went in E3 (`PICO_HEAP_SIZE=0`); `rp-device-check` keeps its own.
+- **E3 built: exported plans and the box as a graph host**
+  ([modular-graph-phase-e3-design.md](../docs/modular-graph-phase-e3-design.md), five commits): a versioned plan blob
+  (`PlanBlob.hpp`), `exportPlan` and `retroplug-export-plan` on the desktop, a portable loader into a static arena that
+  runs the same executor (`PlanLoader`), `rp.core.midi-filter` with `capacity.match`, `packages/device-io`
+  (`rp.device.midi-in`), the box as a graph host (`pico/host/` and `pico/n8-host/`, whose bridge is the built-in
+  `plan.json`, with `PICO_HEAP_SIZE=0`, a 128 KiB arena and `-Werror=stack-usage=1024`), and `rp-device-check`
+  running a plan
+  through the loader on a 4 KB stack (`packages/devtest`). Nothing was re-recorded but `[packages]`; the filter's
+  descriptor golden and the three blob goldens are new. What it leaves:
+  - **The audio version:** a codec and its DMA driver, a fixed-cadence block driver, the float tolerance against the
+    desktop; a time-reading plan on the elapsed driver loses the time its carry bound skips under load.
+  - **A live plan upload needs more than the loader checks**: it trusts the blob, so a blob from outside needs per-step
+    port checks or a signature. No plan file on the SD card, no resources on the device.
+  - **Windows, macOS and arm64 have never built E3**; the blob goldens' first run there answers whether the blob is
+    byte-stable across hosts, and the new libraries are unbuilt under MSVC `/W4 /WX`. A Windows export may accept a
+    `long double` type Linux refuses.
+  - **The Pico gate passed** on the rig with BlipToaster (design section 12.7); the image runs from SRAM
+    (`copy_to_ram`, about 305 KiB of 512), which E4's heap and audio share, and the `[stats]` print can still stall a
+    message for ~13.7 ms, as E2's did. `RP_NATIVE_USB` has never run on hardware.
+  - **The Launchpad's `threads` flag** and the E2 template gaps remain.
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

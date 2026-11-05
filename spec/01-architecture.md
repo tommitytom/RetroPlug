@@ -445,9 +445,11 @@ Since E1 ([modular-graph-phase-e1-design.md](../docs/modular-graph-phase-e1-desi
 workspace packages, `packages/<name>/` with a `native/` part, a `ts/` part or both and a `retroplug` field in
 `package.json` naming its native CMake target, its entry function (a unique function returning the `rp_package`) and
 whether the entry builds for the device. The native packages are `node-sdk` (the C ABI and the authoring header, which
-a node pack depends on alone), `graph-runtime` (the executor, planner, registry and `GraphHost`), `core` (the
-`rp.core` nodes) and `dsp` (the kernels and the `rp.dsp` nodes); `packages/native`'s manifest lists the types not yet
-carved (`sameboy`, `mesen`, `host.io`, `n8`, `launchpad`). Each product (the plugin, `retroplug-host`, the CLI, the
+a node pack depends on alone), `graph-runtime` (the executor, planner, registry, `GraphHost`, and since E3 the plan
+blob with `exportPlan` and the loader), `core` (the `rp.core` nodes), `dsp` (the kernels and the `rp.dsp` nodes),
+`n8` (the N8 pack), `device-io` (`rp.device.midi-in`, the box's host MIDI) and `devtest` (test nodes the device check
+and the exporter register and no product lists); `packages/native`'s manifest lists the types not yet carved
+(`sameboy`, `mesen`, `host_io` and `launchpad`). Each product (the plugin, `retroplug-host`, the CLI, the
 SDL standalone, the Node addon and four test binaries) declares its packages with `retroplug_product()` and gets a
 generated `rp_register_packages()` that the Engine reads in place of a hard-coded loop; a golden holds each product's
 registered type ids, and a configure-time check refuses a binary that links the engine without being a product.
@@ -455,9 +457,12 @@ registered type ids, and a configure-time check refuses a binary that links the 
 A portable node's settings hold only fixed-capacity types, and `node.hpp` builds two ways: the desktop's description,
 JSON and heap-settings half, and, with `RP_DEVICE`, a portable core whose instance owns its `Settings` in the host's
 memory and reads them from msgpack (`RP_SETTINGS_MSGPACK`). `rp-device-check` (`packages/graph-runtime/device-check/`,
-`pnpm device:check`) is the RP2350 image that runs every portable `rp.core` and `rp.dsp` type once, linked with
-`--wrap` on the heap and the exception entry points so that any allocation or throw is a link error. It is built, never
-run, in CI ([06-build-test.md](06-build-test.md)).
+`pnpm device:check`) is the RP2350 image that runs every portable type of `core dsp n8 device-io devtest` once,
+linked with
+`--wrap` on the heap and the exception entry points so that any allocation or throw is a link error, and then loads a
+10-node plan exported at build time through the loader, in its arena on a 4 KB stack, and runs it. A plan is a
+versioned blob (`exportPlan`, [modular-graph-phase-e3-design.md](../docs/modular-graph-phase-e3-design.md)); the Pico
+box runs its bridge as such a plan. It is built, never run, in CI ([06-build-test.md](06-build-test.md)).
 
 ### The offline job pool
 

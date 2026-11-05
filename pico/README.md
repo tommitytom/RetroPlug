@@ -14,6 +14,12 @@ Three independent stages, built and verified one at a time:
 | 2. N8 USB host | [`n8-host/`](n8-host/) | Pico as USB host speaking the Edio protocol to the N8, in C++ on the N8 pack (`packages/n8`), the Edio the desktop shares | **done, HW-verified**: the Pico boots a ROM through the N8 menu and forwards MIDI into its FIFO, no PC ([the months-long FIFO "bug"](pico-n8-fifo-write-bug.md)) |
 | 3. Controller inject | `controller/` (todo) | Pico driving the NES controller ports (PIO) | planned |
 
+Since E3 the box is a graph host ([docs/modular-graph-phase-e3-design.md](../docs/modular-graph-phase-e3-design.md)):
+[`host/`](host/) is the generic part (the block driver, the UART MIDI staging, the device `rp_host`, the load of the
+built-in plan) and [`n8-host/`](n8-host/) the N8 product, whose MIDI bridge is `n8-host/plan.json` (MIDI in, a filter,
+the N8 node) exported by `retroplug-export-plan` when the firmware is built and loaded into a static arena at boot.
+Build the exporter first (`cmake --build build --target retroplug-export-plan -j$(nproc)`); `pnpm device:box` does.
+
 Target split: **two Picos** - one dedicated to the USB host (PIO-heavy), one for
 MIDI + controller. They can coordinate over UART/I2C. (Stage 2's own README notes that one Pico can
 in fact carry both MIDI-in and the N8 host, since the UART and PIO do not contend; the split is
@@ -35,6 +41,7 @@ export PICO_SDK_PATH=/opt/pico-sdk
 ```
 
 Each stage is a self-contained SDK project - `cd` into it and see its README. Stage 2 is the exception in one way: it
-builds the repository's N8 pack (`packages/n8`) in device mode, so its configure needs reflect-cpp's headers (the
-desktop build's checkout, or a clone) and it links under the link trap on the heap, on exceptions and on RTTI; CI builds
+builds the repository's `core`, `device-io` and `n8` packages in device mode over `node-sdk` and `graph-runtime`, so its
+configure needs reflect-cpp's headers (the desktop build's checkout, or a clone) and the desktop's
+`retroplug-export-plan` and it links under the link trap on the heap, on exceptions and on RTTI; CI builds
 it with `pnpm device:box`.

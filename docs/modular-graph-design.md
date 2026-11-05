@@ -505,6 +505,13 @@ either part or both: a part it leaves out takes the default (256 messages, 4096 
 and a feedback wire's front is sized from the source too, so a capacity on an input would bound nothing, and
 both parsers (and the C++ layer, which gives an input no `sized`) refuse one rather than ignore it.
 
+Instead of a size, an output may declare `"capacity": { "match": "<input>" }`: it names an input of the output's own
+kind (events from events, bytes from bytes), is exclusive with a size, and is resolved by the planner per plan as the
+queue that feeds that input (through a feedback wire to its source; an unwired input gives the default; a loop of
+matches is refused with `capacity-match`). The descriptor keeps the declared form, so a source's capacity change
+resizes the matched queue at the next plan without reshaping the node. In C++ it is `rp::events_out::matching<"in">`
+(`bytes_out::matching<...>`), in TS `{ match: "in" }`.
+
 The descriptor is emitted in one canonical spelling (keys sorted, no whitespace, numbers and strings exactly
 as JSON.stringify writes them), so its ports, params and metadata are **byte-stable**: across compilers,
 and between a C++ node and a TS node of the same declared shape (§10). The one exception is a node's

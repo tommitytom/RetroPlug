@@ -432,10 +432,15 @@ refuse one, and an input has no `sized`): the outputs that do are the host input
 `serialOut`, and every script node's output
 ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts): `serialIn` 4096 messages / 72 KiB,
 `midi` 4096 / 72 KiB, `bytes` 256 / 1 KiB, `buttons` 64 / 128 B, `midiOut` 1024 / 8 KiB, `controllerOut`
-256 / 4 KiB, a routing output 2048 / 64 KiB, `launches` 64 / 256 B). The two that pass host MIDI on, `serialIn` and `midi`, hold what
+256 / 4 KiB, a routing output 2048 / 64 KiB, `launches` 64 / 256 B) and the box's `rp.device.midi-in` (256 / 4 KiB).
+The two that pass host MIDI on, `serialIn` and `midi`, hold what
 `rp.host.midi-in`'s output holds and room for a role's own bytes besides, so the one place host MIDI is
 dropped is that edge; the rest are sized from what the suites send through them in one block, with
-margin. Queues are allocated per plan, a plan's events and bytes queues held to a budget of 64 MiB
+margin. Instead of a size an output may declare `{"match": "<input>"}` (`rp::events_out::matching<"in">`,
+`defineNode`'s `{ match }`): it names an input of the output's own kind and is sized, per plan, as the queue that feeds
+that input (the planner's `capacities()` pass; an unwired input gives the default, a loop of matches is refused,
+`capacity-match`), which is how `rp.core.midi-filter` serves the box's 256 / 4 KiB and the desktop's 2048 / 64 KiB with
+one declaration. Queues are allocated per plan, a plan's events and bytes queues held to a budget of 64 MiB
 (`kPlanQueueBudget`; a document past it is refused, `queue-budget`), and an unwired output writes a
 shared scratch queue of the default size, whose drops go uncounted. A push that does not fit is dropped
 and counted on its queue; after each block the executor adds the counts to the producing instance's

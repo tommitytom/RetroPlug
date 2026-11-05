@@ -128,10 +128,11 @@ chosen app's own schema validates it on the control plane (`parseAppConfig`), an
 
 ### Pico firmware (`pico/`)
 
-Standalone "MIDI in, N8 out, no computer" firmware for a Pico 2 (RP2350), developed in this repo but
-built with the Pico SDK rather than the RetroPlug CMake — nothing in the RetroPlug build references
-it. Stage 1 (hardware MIDI in) is verified; stage 2 (the Pico as a USB host speaking Edio) is
-verified for reads and blocked on a PIO-USB FIFO-write limitation.
+Standalone "MIDI in, N8 out, no computer" firmware for a Pico 2 (RP2350), built with the Pico SDK but through
+the repo's `cmake/device-image.cmake` and the workspace packages (`pnpm device:box`). Since E3 it is a graph host:
+`pico/host/` (the block driver, the UART MIDI staging, the device `rp_host`, the built-in plan's load) and
+`pico/n8-host/` (the N8 flows, the box cart link and `plan.json`, which `retroplug-export-plan` turns into the blob
+the firmware embeds); see [modular-graph-phase-e3-design.md](../docs/modular-graph-phase-e3-design.md).
 
 - Deeper: [pico/README.md](../pico/README.md) and the per-stage READMEs.
 
@@ -205,7 +206,8 @@ its serial-out decoder, `rp.lsdj.serial-out`, placed after the systems
 [07-remaining-work.md](07-remaining-work.md) section 5.
 
 - Code: `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (C++: the node SDK, the
-  executor and planner, the `rp.core` and `rp.dsp` nodes; `packages/n8/` holds `rp.n8.nes`),
+  executor, planner and plan loader, the `rp.core` and `rp.dsp` nodes; `packages/n8/` holds `rp.n8.nes`,
+  `packages/device-io/` `rp.device.midi-in`, `packages/devtest/` the device check's test nodes),
   `packages/native/src/host/graph/` (the engine's nodes), `packages/native/src/host/script/` (the script host),
   `packages/retroplug/src/graph/` (TS: the node and extension contracts, `buildGraph`, `DirectGraph`, the zod-free
   settings schema), `packages/retroplug/src/script/` (the script-node bundle and its nodes) and

@@ -294,15 +294,25 @@ staging, the SysEx `7D 50` pick). Notes for running it:
   message, hangs on a Launchpad's flood and is broken on ch2); `N8_ROM_PATH` still defaults to it in the firmware, so a
   bare flash with no `--rom` boots that file if it is on the card.
 - **The boot line to match.** The console prints `[n8-host] USB host up (PIO-USB D+=GP2, D-=GP3)
-  ...`, then `[n8-host] node type rp.n8.nes (registered, not planned)` (the image naming the pack's
-  node; E3 plans it), and a good boot ends `[n8-host] usb-games/pico/bliptoaster.nes booted by the
+  ...`, then `[host] plan loaded: 3 nodes, <N> of 131072 arena bytes, 48000 Hz, 256 frames a block` and a `[host]
+  node ...` line per node (three spaces after `[host]`) (the box runs its bridge as a built-in plan; a refused plan
+  prints `the built-in plan was
+  refused` and forwards nothing), and a good boot ends `[n8-host] usb-games/pico/bliptoaster.nes booted by the
   Pico - no PC used.`, about 12 s after the reset from the saved choice with the CRC skip (`[box]
-  already on the SD ... - no upload`), an upload adds about 5 s for a 290 KB ROM. The pass pattern
-  is `booted by the Pico`; fail on `no 'k'` or `FAILED`.
+  already on the SD ... - no upload`), an upload adds about 5 s for a 290 KB ROM. At every connect the console also
+  prints `[n8-host] cart link: expansion volume 128 written (reads back 128)` (the register is 128 on every game, not
+  the N8 OS's 129-130); a volume write that did not go through prints `expansion volume N: write did not go through,
+  trying again each second`, which the fail pattern does not match. The pass pattern is `booted by the Pico`; fail on
+  `no 'k'` or `FAILED`, and on `the built-in plan was refused`. The firmware's build needs the desktop's
+  `retroplug-export-plan` built first (`cmake --build build
+  --target retroplug-export-plan -j$(nproc)`; `loop.sh` reads `RP_DESKTOP_BUILD_DIR`, default `build/`).
 - **Read `[stats] lat=` per window.** The figure is the last window's average and maximum in us, not
   cumulative: the final line's 10 ms is the recovery window and the window holding a 40-byte SysEx
-  peaks near 21 ms (the SysEx is about 13 ms on the wire). Isolated notes sit near 0.6 ms average
-  and 1.1 ms worst.
+  peaks near 21 ms (the SysEx is about 13 ms on the wire; since E3 a SysEx is timed from its F7, so expect that window
+  lower). Isolated notes sit near 0.6 ms average and 1.1 ms worst. `[stats]` also carries `linkfull=` and `skipped=`
+  (judge `skipped` by its change across a case, 0 expected outside a boot or recovery: it is cumulative and a boot adds
+  millions; `linkfull` stays 0), and `filtered` counts what the plan's filter dropped (aftertouch, system common,
+  real time) among other things.
 - **`pnpm device:box` needs no hardware**: it proves the firmware links under the heap/exception/RTTI trap and is CI's
   check; the scripts above are what prove it behaves.
 

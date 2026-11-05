@@ -355,6 +355,12 @@ Five commits, each building and passing on its own:
   ran would be refused at plan load. `exportPlan` writes each blob from the desktop's parsed settings
   (`rp.sdk.settings-json/1`, which every `node.hpp` type answers, then `settingsToMsgpack`) and not from the document's
   JSON, which makes the two readers agree by construction for this input, for `-0` and for any later leniency.
+  **Done in E3** ([modular-graph-phase-e3-design.md](modular-graph-phase-e3-design.md) sections 4, 7 and 12): the blob,
+  `exportPlan` and the arena loader exist, and the exporter writes settings from `rp.sdk.settings-json/1` as described;
+  every frame is held to 1 KiB by `-Werror=stack-usage=1024` on the device builds and the images (the chains are still
+  summed by hand, and `rp-device-check` prints its measured high-water mark); the device check runs on a 4 KB stack.
+  `rp.core.delay` has no device default and no planner cap on the Pico: its default stays 48,000 samples everywhere,
+  and a plan is refused where its arena cannot hold it (the box's 128 KiB arena refuses a defaulted delay).
 - MicroQuickJS on the Pico (E4).
 - The rest of the package split (main design section 11): Mesen's per-console compile-out, per-product esbuild
   bundles, menus and the HD player onto extensions and views, LSDj, risa, smsggdj, mGB, BlipToaster and Launchpad as
@@ -362,7 +368,9 @@ Five commits, each building and passing on its own:
 - Downloadable native packs.
 - Bit-identity across targets: a float node on the Cortex-M33 can differ from the desktop (fused multiply-adds, newlib's
   `libm`), so E3's on-device comparisons hold events and integers exactly and audio to a tolerance, unless E3 decides on
-  `-ffp-contract=off` everywhere.
+  `-ffp-contract=off` everywhere. **As built in E3:** no float is compared across targets; `rp-device-check` prints the
+  device's digest beside the desktop's and judges only the same-binary run, and the tolerance moved to the audio
+  version.
 - A Windows run of `build.bat` and `test.bat` (12.6) and a macOS or libc++ run of the refused-source checks.
 
 ## 11. Prototype questions
