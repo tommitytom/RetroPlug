@@ -1,6 +1,6 @@
 // The device-mode half of retroplug-device-mode-test: built with RP_DEVICE and with neither exceptions nor RTTI
 // (cmake/tests.cmake), beside the device-mode builds of CoreNodes.cpp and DspNodes.cpp. It holds the echo node's
-// package (echo, pair, shaper, bare), the fault node's and the plan cases' (PlanNodes.hpp), a fake cart link
+// package (echo, pair, shaper, bare), the fault node's and the misfits' (PlanNodes.hpp), a fake cart link
 // (FakeCart.hpp) and the box's own cart link (pico/n8-host/BoxCartLink.cpp, compiled into these objects too); the test
 // reaches them, and the node packages, only through their C entries.
 
@@ -22,13 +22,12 @@ namespace {
 
 const rp_node_type* const kFaultTypes[] = {rp::node_type<Fault>()};
 const rp_package kFaultPackage{RP_ABI_VERSION, R"({"id":"rp.devtest.fault","version":"1.0.0"})", 1, kFaultTypes};
+const rp_node_type* const kMisfitTypes[] = {rp::node_type<Flood>(), rp::node_type<Miscount>()};
+const rp_package kMisfitPackage{RP_ABI_VERSION, R"({"id":"rp.devtest.misfit","version":"1.0.0"})", 2, kMisfitTypes};
 
 const rp_node_type* const kTypes[] = {rp::node_type<Echo>(), rp::node_type<Pair>(), rp::node_type<Shaper>(),
                                       rp::node_type<Bare>()};
 const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.devtest","version":"1.0.0"})", 4, kTypes};
-
-const rp_node_type* const kPlanTypes[] = {rp::node_type<Source>(), rp::node_type<Digest>(), rp::node_type<Lockstep>()};
-const rp_package kPlanPackage{RP_ABI_VERSION, R"({"id":"rp.devtest.plan","version":"1.0.0"})", 3, kPlanTypes};
 
 FakeCart gCart;
 
@@ -66,8 +65,10 @@ bool          boxArrival(void*, std::uint32_t frame, const std::uint8_t* data, s
 
 extern "C" const rp_package* rp_devtest_package_device_mode(void) { return &rp::graph::devtest::kPackage; }
 extern "C" const rp_package* rp_devtest_fault_package_device_mode(void) { return &rp::graph::devtest::kFaultPackage; }
-extern "C" const rp_package* rp_devtest_plan_package_device_mode(void) { return &rp::graph::devtest::kPlanPackage; }
-extern "C" int rp_devtest_plan_live_device_mode(void) { return rp::graph::devtest::gLive; }
+extern "C" const rp_package* rp_devtest_misfit_package_device_mode(void) {
+    return &rp::graph::devtest::kMisfitPackage;
+}
+extern "C" int rp_devtest_plan_live_device_mode(void) { return rp::devtest::live(); }
 extern "C" void* rp_devtest_cart_device_mode(CartRecord* record) {
     rp::graph::devtest::gCart.record = record;
     return static_cast<rp::n8::CartLink*>(&rp::graph::devtest::gCart);

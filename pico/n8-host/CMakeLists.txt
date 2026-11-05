@@ -68,8 +68,9 @@ include("${CMAKE_CURRENT_LIST_DIR}/../host/host.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/plan.cmake")
 
 # retroplug-export-plan (packages/graph-runtime/export-plan), a desktop tool of the desktop build: it plans plan.json
-# for the RP2350 with the desktop's builds of the types, sizes it with their device builds against the arena below, and
-# writes the blob as a header, so a plan the box cannot run or hold fails this build rather than its boot.
+# for the RP2350 with the desktop's builds of the box's own packages' types (plan.cmake's N8_HOST_PACKAGES, the product
+# below), sizes it with their device builds against the arena below, and writes the blob as a header, so a plan the box
+# cannot run or hold fails this build rather than its boot.
 # tools/build-box.sh builds it in the desktop build first and passes its path; loop.sh passes the path of the one the
 # desktop build last built (it builds no desktop tree itself). The default is the desktop build's own (build/).
 set(RP_EXPORT_PLAN_TOOL "${RP_REPO}/build/export-plan/retroplug-export-plan" CACHE FILEPATH
@@ -80,11 +81,13 @@ if(NOT EXISTS "${RP_EXPORT_PLAN_TOOL}")
                         "tools/build-box.sh does, or pass -DRP_EXPORT_PLAN_TOOL=<path>")
 endif()
 set(_n8_plan_header "${CMAKE_BINARY_DIR}/generated/n8_host_plan.hpp")
+string(REPLACE ";" "," _n8_plan_packages "${N8_HOST_PACKAGES}")
 add_custom_command(
     OUTPUT  "${_n8_plan_header}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/generated"
     COMMAND "${RP_EXPORT_PLAN_TOOL}" "${N8_HOST_PLAN}" "${_n8_plan_header}" --arena ${N8_HOST_ARENA_BYTES}
-            --sample-rate ${N8_HOST_PLAN_SAMPLE_RATE} --max-frames ${N8_HOST_PLAN_MAX_FRAMES} --header kBuiltInPlan
+            --sample-rate ${N8_HOST_PLAN_SAMPLE_RATE} --max-frames ${N8_HOST_PLAN_MAX_FRAMES}
+            --packages ${_n8_plan_packages} --header kBuiltInPlan
     DEPENDS "${N8_HOST_PLAN}" "${RP_EXPORT_PLAN_TOOL}" "${CMAKE_CURRENT_LIST_DIR}/plan.cmake"
     COMMENT "retroplug-export-plan: the box's built-in plan (plan.json)"
     VERBATIM)
@@ -201,7 +204,7 @@ target_compile_definitions(n8_host PRIVATE PICO_HEAP_SIZE=0)
 # The box's product: the device entries of the packages its plan names (rp.core, rp.device and rp.n8), registered as a
 # device registers them, which is what the loader holds the plan's types to at boot, and the N8 pack's portable library
 # (the Edio, its menu commands and operations) linked in; the generic box host; the plan's header and its arena.
-retroplug_product(n8-host DEVICE PACKAGES core device-io n8 TARGETS n8_host)
+retroplug_product(n8-host DEVICE PACKAGES ${N8_HOST_PACKAGES} TARGETS n8_host)
 target_link_libraries(n8_host PRIVATE rp-box-host retroplug-graph-exec)
 target_include_directories(n8_host PRIVATE "${CMAKE_BINARY_DIR}/generated")
 target_compile_definitions(n8_host PRIVATE N8_HOST_ARENA_BYTES=${N8_HOST_ARENA_BYTES})

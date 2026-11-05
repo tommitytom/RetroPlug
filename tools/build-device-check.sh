@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 #
-# Builds rp-device-check, the RP2350 image that runs every portable rp.core, rp.dsp and rp.n8 node type in device mode
-# with a link trap on the heap, on exceptions and on RTTI (packages/graph-runtime/device-check,
-# docs/modular-graph-phase-e1-design.md section 7), and prints what it costs in flash and RAM. CI's linux-x64 job runs
-# it after the desktop build; nothing is flashed or run (E3 runs the check's successor on the rig).
+# Builds rp-device-check, the RP2350 image that runs every portable node type in device mode (rp.core, rp.dsp, rp.n8,
+# rp.device and rp.devtest) and a multi-node plan through the plan loader, with a link trap on the heap, on exceptions
+# and on RTTI (packages/graph-runtime/device-check, docs/modular-graph-phase-e1-design.md section 7 and the E3 design's
+# section 7), and prints what it costs in flash and RAM. CI's linux-x64 job runs it after the desktop build; nothing is
+# flashed or run here (the rig runs the image by hand, and reads its result lines off the UART).
 #
-#   1. Builds the case generator (rp-device-check-cases) in the desktop build, which must be configured (./build.sh),
-#      and writes the cases header: each type's default settings as msgpack and the layout they give.
+#   1. Builds the case generator (rp-device-check-cases) and the plan exporter (retroplug-export-plan) in the desktop
+#      build, which must be configured (./build.sh), and writes the cases header: each type's default settings as
+#      msgpack and the layout they give. The image's build exports its plan (device-check/plan.json) with the
+#      exporter and embeds the blob, so a plan the image could not run or hold fails here.
 #   2. Configures the image's own CMake project, on the Pico SDK's toolchain, in a build dir of its own, and builds it.
 #      A link error there naming __wrap_<symbol> is the trap: the object it names reached the heap or a throw.
 #   3. Builds the trap's positive control, rp-device-trap-probe, which allocates with new and malloc, and stops unless
@@ -17,7 +20,8 @@
 # Usage:  tools/build-device-check.sh            (pnpm device:check)
 #   PICO_SDK_PATH         the Pico SDK (2.1.1); when unset, /workspaces/pico-sdk, the devcontainer's. A path that is
 #                         set and is not an SDK stops the run. The check needs none of the SDK's submodules.
-#   RP_DESKTOP_BUILD_DIR  the configured desktop build (default build/)
+#   RP_DESKTOP_BUILD_DIR  the configured desktop build (default build/), which builds the case generator and the plan
+#                         exporter
 #   RP_DEVICE_BUILD_DIR   the image's build dir (default build-device/)
 #   RP_DEVICE_BUILD_TYPE  default Release (the SDK's default: -O3, NDEBUG); MinSizeRel for -Os
 
@@ -44,10 +48,12 @@ command -v arm-none-eabi-g++ >/dev/null ||
     die "no arm-none-eabi-g++ (apt: gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib)"
 [ -f "$DESKTOP/CMakeCache.txt" ] || die "$DESKTOP is not a configured desktop build (run ./build.sh first)"
 
-echo "== the cases (desktop: rp-device-check-cases)"
-cmake --build "$DESKTOP" --target rp-device-check-cases -j"$JOBS"
+echo "== the cases and the plan exporter (desktop: rp-device-check-cases, retroplug-export-plan)"
+cmake --build "$DESKTOP" --target rp-device-check-cases retroplug-export-plan -j"$JOBS"
 mkdir -p "$OUT/cases"
 "$DESKTOP/device-check/cases/rp-device-check-cases" "$OUT/cases/DeviceCheckCases.hpp"
+exporter="$DESKTOP/export-plan/retroplug-export-plan"
+[ -x "$exporter" ] || die "no $exporter after building it"
 
 # reflect-cpp at the desktop's pin: the desktop build's own checkout when it has one, which saves a clone (the image's
 # CMakeLists checks its version against the pin either way, and clones the pinned tag without it).
@@ -58,7 +64,7 @@ command -v ninja >/dev/null && [ ! -f "$OUT/CMakeCache.txt" ] && generator=(-G N
 echo "== the image (Pico SDK $sdk, $TYPE)"
 cmake -S "$REPO_DIR/packages/graph-runtime/device-check" -B "$OUT" ${generator[@]+"${generator[@]}"} \
     -DPICO_SDK_PATH="$sdk" -DCMAKE_BUILD_TYPE="$TYPE" \
-    -DRP_DEVICE_CHECK_CASES="$OUT/cases/DeviceCheckCases.hpp" \
+    -DRP_DEVICE_CHECK_CASES="$OUT/cases/DeviceCheckCases.hpp" -DRP_EXPORT_PLAN_TOOL="$exporter" \
     ${reflect:+-DRP_REFLECTCPP_SOURCE_DIR="$reflect"}
 cmake --build "$OUT" -j"$JOBS"
 
@@ -112,7 +118,8 @@ function hex(s,    i, n) {
     else if (file ~ /libretroplug-dsp-kernels/) owner = "dsp: the kernels"
     else if (file ~ /libretroplug-n8\.a/) owner = "n8: the rp.n8 nodes, the protocol"
     else if (file ~ /libretroplug-device-io-nodes/) owner = "device-io: the rp.device nodes"
-    else if (file ~ /libretroplug-graph-exec/) owner = "graph-runtime: the executor"
+    else if (file ~ /libretroplug-devtest-nodes/) owner = "devtest: the rp.devtest nodes"
+    else if (file ~ /libretroplug-graph-exec/) owner = "graph-runtime: executor, loader"
     else if (file ~ /rp-device-check\.dir\/(main|DeviceCheck|N8Protocol)\.cpp/ || file ~ /\/packages\/products\//)
         owner = "the check (its cases and arena)"
     # The SDK sources compile into the image (CMakeFiles/rp-device-check.dir/<their path>); its own libraries build
@@ -122,7 +129,7 @@ function hex(s,    i, n) {
 }
 END {
     n = split("core: the rp.core nodes|dsp: the rp.dsp nodes|dsp: the kernels|n8: the rp.n8 nodes, the protocol|" \
-              "device-io: the rp.device nodes|graph-runtime: the executor|" \
+              "device-io: the rp.device nodes|devtest: the rp.devtest nodes|graph-runtime: executor, loader|" \
               "the check (its cases and arena)|the Pico SDK runtime|toolchain (libc, libm, libgcc)", order, "|")
     printf "  %-34s %9s %9s %9s\n", "", "flash", "data", "bss"
     for (i = 1; i <= n; i++) {

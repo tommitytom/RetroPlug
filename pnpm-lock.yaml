@@ -32,6 +32,8 @@ importers:
 
   packages/device-io: {}
 
+  packages/devtest: {}
+
   packages/dsp: {}
 
   packages/graph-runtime: {}

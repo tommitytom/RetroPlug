@@ -1,18 +1,24 @@
 // retroplug-export-plan: the plan exporter (docs/modular-graph-phase-e3-design.md section 4) as a build-time tool. A
-// desktop tool, and a device product of the desktop build: its rp_register_packages() is the device entries of the
-// packages it lists, built for the desktop, which plan the document, and its rp_register_device_mode_packages() is the
-// same entries built for the device, which the loader's sizing pass sizes the blob with (CMakeLists.txt beside this).
+// desktop tool, and a device product of the desktop build: the device entries of the packages it lists, built for the
+// desktop, plan the document, and the same entries built for the device size the blob with the loader's sizing pass
+// (CMakeLists.txt beside this, which generates the table of both builds, ExportPackages.hpp).
 //
 // Usage: retroplug-export-plan <plan.json> <out> [--arena <bytes>] [--sample-rate <hz>] [--max-frames <frames>]
-//                              [--header <symbol>]
+//                              [--packages <name>,...] [--header <symbol>]
 //
 // Plans the graph document in <plan.json> for the RP2350 and writes the blob to <out>; with --header, <out> is a C++
 // header holding the blob as `alignas(4) inline constexpr std::uint8_t <symbol>[]`, which is what a device image's
-// build embeds. --arena is the image's arena, which the plan must fit (without it the plan is sized and nothing is
-// refused for its size); the sample rate defaults to 48000 and maxFrames to 256. The output is rewritten only when its
-// bytes change, so a desktop rebuild that moves nothing rebuilds no image. One line on stdout says what it wrote; a
-// refused plan prints each error on stderr, as "<code> <node>[.<port>]: <message>", and exits 1 (2 for a usage error).
+// build embeds, and the arena the tool's sizing gives it as `<symbol>ArenaEstimate` (the desktop's sizes of the device
+// builds, an upper bound on the device's own, which an image may hold its loaded plan to). --arena is the image's
+// arena, which the plan must fit (without it the plan is sized and nothing is refused for its size); the sample rate
+// defaults to 48000 and maxFrames to 256. --packages is the image's own product list, by package name (core, dsp, n8,
+// device-io, devtest): only their types plan and size, so a plan naming a type the image does not register is refused
+// as the planner refuses any type it does not know; without it, every package the tool carries. The output is
+// rewritten only when its bytes change, so a desktop rebuild that moves nothing rebuilds no image. One line on stdout
+// says what it wrote; a refused plan prints each error on stderr, as "<code> <node>[.<port>]: <message>", and exits 1
+// (2 for a usage error).
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -25,8 +31,8 @@
 #include <string_view>
 #include <vector>
 
+#include "ExportPackages.hpp"
 #include "graph/NodeRegistry.hpp"
-#include "graph/Packages.hpp"
 #include "graph/PlanExport.hpp"
 
 namespace {
@@ -34,7 +40,7 @@ namespace {
 int usage(const char* why) {
     std::fprintf(stderr,
                  "retroplug-export-plan: %s\nusage: retroplug-export-plan <plan.json> <out> [--arena <bytes>] "
-                 "[--sample-rate <hz>] [--max-frames <frames>] [--header <symbol>]\n",
+                 "[--sample-rate <hz>] [--max-frames <frames>] [--packages <name>,...] [--header <symbol>]\n",
                  why);
     return 2;
 }
@@ -67,13 +73,15 @@ std::string header(const std::vector<std::uint8_t>& blob, const std::string& sym
       << " bytes of arena as the desktop sizes it (the device's own sizing is the authority), at " << o.sampleRate
       << " Hz and " << o.maxFrames << " frames a block" << (o.arenaBytes ? ", against an arena of " : "");
     if (o.arenaBytes) h << o.arenaBytes << " bytes";
-    h << ".\n\n#pragma once\n\n#include <cstdint>\n\n"
+    h << ".\n\n#pragma once\n\n#include <cstddef>\n#include <cstdint>\n\n"
       << "alignas(4) inline constexpr std::uint8_t " << symbol << "[] = {";
     for (std::size_t i = 0; i < blob.size(); ++i) {
         if (i % 16 == 0) h << "\n   ";
         h << ' ' << static_cast<unsigned>(blob[i]) << ',';
     }
-    h << "\n};\n";
+    h << "\n};\n\n// The arena the plan takes as the desktop sizes the device's builds: an upper bound on the device's "
+         "own.\n"
+      << "inline constexpr std::size_t " << symbol << "ArenaEstimate = " << size.bytes << ";\n";
     return h.str();
 }
 
@@ -91,6 +99,41 @@ bool writeIfChanged(const std::string& path, const std::string& bytes) {
     return static_cast<bool>(out);
 }
 
+// The packages a --packages list names, both builds of each of their entries; false, saying which name and what the
+// tool carries, for a name it does not carry. No list takes every package.
+bool choose(const std::string* list, std::vector<const rp_package*>& desktop, std::vector<const rp_package*>& device) {
+    std::size_t            rows = 0;
+    const RpExportPackage* table = rp_export_plan_packages(&rows);
+    auto                   take = [&](std::string_view name) {
+        bool found = false;
+        for (std::size_t i = 0; i < rows; ++i)
+            if (name.empty() || name == table[i].name) {
+                desktop.push_back(table[i].desktop());
+                device.push_back(table[i].device());
+                found = true;
+            }
+        return found;
+    };
+    if (!list) return take({});
+    for (std::size_t at = 0; at <= list->size();) {
+        const std::size_t      end = std::min(list->find(',', at), list->size());
+        const std::string_view name(list->data() + at, end - at);
+        if (name.empty() || !take(name)) {
+            std::string known;
+            for (std::size_t i = 0; i < rows; ++i)
+                if (i == 0 || std::string_view(table[i].name) != table[i - 1].name)
+                    known += (known.empty() ? "" : ", ") + std::string(table[i].name);
+            std::fprintf(stderr,
+                         "retroplug-export-plan: --packages names \"%.*s\", which is no package the tool carries "
+                         "(%s)\n",
+                         static_cast<int>(name.size()), name.data(), known.c_str());
+            return false;
+        }
+        at = end + 1;
+    }
+    return true;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -98,6 +141,8 @@ int main(int argc, char** argv) {
     const std::string planPath = argv[1], outPath = argv[2];
     rp::graph::ExportOptions options;
     std::string symbol;
+    std::string packages;
+    bool        listed = false;
     for (int i = 3; i < argc; ++i) {
         const std::string_view flag = argv[i];
         if (i + 1 >= argc) return usage("every option takes a value");
@@ -108,9 +153,14 @@ int main(int argc, char** argv) {
             ok = number(value, options.sampleRate) && std::isfinite(options.sampleRate) && options.sampleRate > 0.0;
         else if (flag == "--max-frames") ok = number(value, options.maxFrames) && options.maxFrames > 0;
         else if (flag == "--header") ok = identifier(symbol = std::string(value));
-        else return usage("unknown option");
+        else if (flag == "--packages") {
+            packages = std::string(value);
+            listed = true;
+        } else return usage("unknown option");
         if (!ok) return usage("an option's value is not one it takes");
     }
+    std::vector<const rp_package*> desktop, device;
+    if (!choose(listed ? &packages : nullptr, desktop, device)) return 2;
 
     std::ifstream in(planPath, std::ios::binary);
     if (!in) {
@@ -120,14 +170,14 @@ int main(int argc, char** argv) {
     const std::string json((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
     rp::graph::NodeRegistry registry;
-    for (const rp_package* p : rp::graph::productPackages()) {
+    for (const rp_package* p : desktop) {
         std::string why;
         if (!registry.addPackage(p, &why)) {
             std::fprintf(stderr, "retroplug-export-plan: a package is refused: %s\n", why.c_str());
             return 1;
         }
     }
-    const auto result = rp::graph::exportPlan(json, registry, rp::graph::deviceModePackages(), options);
+    const auto result = rp::graph::exportPlan(json, registry, device, options);
     if (!result.ok()) {
         for (const auto& e : result.errors) {
             const std::string where = e.nodeId.empty() ? "-" : e.port.empty() ? e.nodeId : e.nodeId + "." + e.port;

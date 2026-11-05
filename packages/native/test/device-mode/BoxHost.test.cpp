@@ -841,6 +841,7 @@ TEST_CASE("the box's plan.json exports to its golden's bytes, as the tool writes
     const std::string tool = RP_EXPORT_PLAN_TOOL;
     const std::string flags = " --arena " + std::to_string(kArenaBytes) + " --sample-rate " + std::to_string(kRate) +
                               " --max-frames " + std::to_string(kMaxFrames);
+    const std::string packages = std::string(" --packages ") + RP_BOX_PACKAGES;
     auto run = [&](const std::string& out, const std::string& extra) {
         std::string command = "\"" + tool + "\" \"" + std::string(RP_BOX_PLAN) + "\" \"" + (dir / out).string() +
                               "\"" + flags + extra + " > \"" + (dir / "stdout.txt").string() + "\" 2>&1";
@@ -849,11 +850,24 @@ TEST_CASE("the box's plan.json exports to its golden's bytes, as the tool writes
 #endif
         return std::system(command.c_str());
     };
-    REQUIRE(run("plan.bin", "") == 0);
+    REQUIRE(run("plan.bin", packages) == 0);
     const std::string bytes = readFile(dir / "plan.bin");
     CHECK(Bytes(bytes.begin(), bytes.end()) == blob);
-    REQUIRE(run("plan.hpp", " --header kBuiltInPlan") == 0);
-    CHECK(readFile(dir / "plan.hpp").find("alignas(4) inline constexpr std::uint8_t kBuiltInPlan[] = {") !=
+    REQUIRE(run("plan.hpp", packages + " --header kBuiltInPlan") == 0);
+    const std::string header = readFile(dir / "plan.hpp");
+    CHECK(header.find("alignas(4) inline constexpr std::uint8_t kBuiltInPlan[] = {") != std::string::npos);
+    const std::string estimate = std::to_string(boxExport().size.bytes);
+    CHECK(header.find("inline constexpr std::size_t kBuiltInPlanArenaEstimate = " + estimate + ";") !=
+          std::string::npos);
+    // Held to an image's own packages, the tool refuses a plan naming a type that image does not register, as the
+    // firmware's build runs it: plan.json's rp.device.midi-in, for an image without device-io; and a name it does not
+    // carry, as a usage error.
+    CHECK(run("refused.bin", " --packages core,n8") != 0);
+    CHECK(readFile(dir / "stdout.txt").find("unknown-type in: no node type \"rp.device.midi-in\" is registered") !=
+          std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(dir / "refused.bin"));
+    CHECK(run("refused.bin", " --packages core,nope") != 0);
+    CHECK(readFile(dir / "stdout.txt").find("--packages names \"nope\", which is no package the tool carries") !=
           std::string::npos);
     std::filesystem::remove_all(dir);
 
@@ -891,12 +905,9 @@ TEST_CASE("a built-in plan the loader refuses is said, and runs nothing; a node 
         CHECK(plan.plan() == nullptr);
     }
     SECTION("a fault") {
-        static const rp_node_type* const kFault[] = {rp::node_type<rp::graph::devtest::Fault>()};
-        static const rp_package kFaultPackage{RP_ABI_VERSION, R"({"id":"rp.devtest.fault","version":"1.0.0"})", 1,
-                                              kFault};
         NodeRegistry registry;
         std::string  why;
-        REQUIRE(registry.addPackage(&kFaultPackage, &why));
+        REQUIRE(registry.addPackage(rp::graph::devtest::faultPackageDesktop(), &why));
         const std::vector<const rp_package*> types{rp_devtest_fault_package_device_mode()};
         ExportOptions o;
         o.arenaBytes = kArenaBytes;

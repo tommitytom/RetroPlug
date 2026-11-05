@@ -12,3 +12,6 @@
 
 # Goldens compared line for line on every platform: a Windows checkout must not turn them CRLF.
 packages/retroplug/test/graph/golden/*.json text eol=lf
+
+# The device-mode test's blob goldens, read in binary and compared with LF-joined hex.
+packages/native/test/device-mode/golden/*.hex text eol=lf

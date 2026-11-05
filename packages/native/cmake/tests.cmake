@@ -290,7 +290,8 @@ retroplug_add_test_binary(
 # compiled as a device compiles them (RP_DEVICE, no exceptions, no RTTI) render, through real plans and over ragged
 # blocks, what the desktop's builds of the same sources render, bit for bit, created from msgpack where the desktop's
 # are created from JSON; their create, activate, process and destroy allocate nothing; and the msgpack settings decode
-# keeps JSON's leniency and refusals. The desktop's nodes read msgpack too. And a plan exported for the RP2350
+# keeps JSON's leniency and refusals. The desktop's nodes read msgpack too. The device check runs its types and its
+# plan as the image does (DeviceCheck.test.cpp). And a plan exported for the RP2350
 # (docs/modular-graph-phase-e3-design.md section 4), loaded by the loader over the device-mode builds in an arena,
 # renders what GraphHost renders from the same document, allocating nothing, and each of the loader's and the
 # exporter's refusals says why (DevicePlan.test.cpp, which runs retroplug-export-plan too); rp.device.midi-in takes
@@ -364,13 +365,28 @@ ${_rp_device_rows}    };
 ")
 
 # The device check (packages/graph-runtime/device-check) run on the desktop over the device-mode objects, against the
-# header the case generator writes for the RP2350 image: the same cases, the same code, the same arena size.
+# header the case generator writes for the RP2350 image and the plan exported for it as the image's build exports it
+# (its plan.cmake): the same cases, the same plan, the same code, the same arena size.
 set(_rp_device_check_dir ${CMAKE_SOURCE_DIR}/packages/graph-runtime/device-check)
+include("${_rp_device_check_dir}/plan.cmake")
+include("${_rp_device_check_dir}/packages.cmake")  # RP_DEVICE_CHECK_PACKAGES, which the export is held to
 add_custom_command(
     OUTPUT  ${CMAKE_BINARY_DIR}/device-check/DeviceCheckCases.hpp
     COMMAND rp-device-check-cases ${CMAKE_BINARY_DIR}/device-check/DeviceCheckCases.hpp
     DEPENDS rp-device-check-cases
     COMMENT "rp-device-check-cases: the device check's cases"
+    VERBATIM)
+string(REPLACE ";" "," _rp_device_check_list "${RP_DEVICE_CHECK_PACKAGES}")
+string(REPLACE ";" "," _rp_box_list "${N8_HOST_PACKAGES}")
+add_custom_command(
+    OUTPUT  ${CMAKE_BINARY_DIR}/device-check/DeviceCheckPlan.hpp
+    COMMAND retroplug-export-plan "${RP_DEVICE_CHECK_PLAN}" ${CMAKE_BINARY_DIR}/device-check/DeviceCheckPlan.hpp
+            --arena ${RP_DEVICE_CHECK_ARENA_BYTES} --sample-rate ${RP_DEVICE_CHECK_PLAN_SAMPLE_RATE}
+            --max-frames ${RP_DEVICE_CHECK_PLAN_MAX_FRAMES} --packages ${_rp_device_check_list}
+            --header kDeviceCheckPlan
+    DEPENDS retroplug-export-plan "${RP_DEVICE_CHECK_PLAN}" "${_rp_device_check_dir}/plan.cmake"
+            "${_rp_device_check_dir}/packages.cmake"
+    COMMENT "retroplug-export-plan: the device check's plan (plan.json)"
     VERBATIM)
 
 # What a device-mode build refuses, held at every configure (GCC and Clang): each source under
@@ -442,6 +458,7 @@ retroplug_add_test_binary(
              ${_rp_device_check_dir}/DeviceCheck.cpp   # the device check, as a host: desktop-built, C ABI only
              ${_rp_device_check_dir}/N8Protocol.cpp    # its N8 protocol run, over the desktop's build of the pack
              ${CMAKE_BINARY_DIR}/device-check/DeviceCheckCases.hpp
+             ${CMAKE_BINARY_DIR}/device-check/DeviceCheckPlan.hpp
              ${CMAKE_BINARY_DIR}/device-mode/device-entries.cpp
              $<TARGET_OBJECTS:retroplug-device-mode-objects>
     LIBS     retroplug-graph
@@ -450,14 +467,18 @@ retroplug_add_test_binary(
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
              ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
              ${_rp_device_check_dir}                   # DeviceCheck.hpp
-             ${CMAKE_BINARY_DIR}/device-check          # DeviceCheckCases.hpp
+             ${CMAKE_BINARY_DIR}/device-check          # DeviceCheckCases.hpp, DeviceCheckPlan.hpp
              ${RP_BOX_HOST_INCLUDES}                   # the box host and midi.h
              ${_rp_box_dir}                            # BoxCartLink.hpp, UsbCdcTransport.hpp
+             ${CMAKE_CURRENT_SOURCE_DIR}/src/util      # BuildTarget.hpp: the reference host, for float figures
     DEFS     RP_DEVICE_MODE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/golden"
              RP_EXPORT_PLAN_TOOL="$<TARGET_FILE:retroplug-export-plan>"
              RP_BOX_PLAN="${N8_HOST_PLAN}"
              RP_BOX_SAMPLE_RATE=${N8_HOST_PLAN_SAMPLE_RATE}
              RP_BOX_MAX_FRAMES=${N8_HOST_PLAN_MAX_FRAMES}
-             RP_BOX_ARENA_BYTES=${N8_HOST_ARENA_BYTES})
+             RP_BOX_ARENA_BYTES=${N8_HOST_ARENA_BYTES}
+             RP_BOX_PACKAGES="${_rp_box_list}"
+             RP_DEVICE_CHECK_PLAN="${RP_DEVICE_CHECK_PLAN}"
+             RP_DEVICE_CHECK_ARENA_BYTES=${RP_DEVICE_CHECK_ARENA_BYTES})
 # The plan cases run the exporter's tool in a process of its own (DevicePlan.test.cpp).
 add_dependencies(retroplug-device-mode-test retroplug-export-plan)

@@ -8,6 +8,9 @@
 # high-rate streams a Launchpad floods and no ROM here reads, and system common and real time, which the bridge never
 # forwarded), and rp.n8.nes, the cart. A graph document takes no comment, so the why is here.
 #
+# The packages are the box's product (the firmware's retroplug_product), which the export holds the plan's types to, as
+# the loader holds them at boot, so a plan naming a type the box does not register fails the firmware's build.
+#
 # The rate and block are the design's: 48 kHz and 256 frames (5.3 ms). The arena is the image's static arena, which
 # the plan must fit at export (and which the loader holds it to at boot): 128 KiB. The bridge takes under a quarter of
 # it; the rest is room for a later plan's audio, whose buffers are 1 KiB a channel at 256 frames (main.cpp).
@@ -16,3 +19,4 @@ set(N8_HOST_PLAN "${CMAKE_CURRENT_LIST_DIR}/plan.json")
 set(N8_HOST_PLAN_SAMPLE_RATE 48000)
 set(N8_HOST_PLAN_MAX_FRAMES 256)
 set(N8_HOST_ARENA_BYTES 131072)
+set(N8_HOST_PACKAGES core device-io n8)

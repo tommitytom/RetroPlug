@@ -1,0 +1,9 @@
+{
+  "name": "@retroplug/devtest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Test node types a device image's check runs: a deterministic source, a digest and a coupled pair. No product that ships lists it.",
+  "retroplug": {
+    "native": { "target": "retroplug-devtest-nodes", "entry": "rp_devtest_plan_package", "device": true }
+  }
+}

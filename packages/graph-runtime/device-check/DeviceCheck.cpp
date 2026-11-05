@@ -4,9 +4,14 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <string_view>
+#include <type_traits>
 
+#include "devtest/DevtestNodes.hpp"
 #include "graph/Executor.hpp"
 #include "graph/Plan.hpp"
+#include "graph/PlanLoader.hpp"
+#include "graph/Queue.hpp"
 #include "graph/rp_device.h"
 
 namespace rp::device_check {
@@ -215,6 +220,21 @@ Step runType(const rp_node_type& type, const TypeCase& c, Arena& a, std::uint32_
     return faulted ? Step::Process : Step::Ok;
 }
 
+// A node's id (not NUL-terminated, in the blob) into the result's error, cut to fit, with what happened to it.
+void nodeAt(PlanResult& out, PlanStep step, std::string_view node, const char* what) {
+    out.step = step;
+    const std::size_t n = node.size() < sizeof out.error.node - 1 ? node.size() : sizeof out.error.node - 1;
+    std::memcpy(out.error.node, node.data(), n);
+    out.error.node[n] = '\0';
+    std::strncpy(out.error.message, what, sizeof out.error.message - 1);
+}
+
+// The stream move `m` writes, or null: its node's own param stream (null for a wired param or one past its params).
+rp_control_queue* moveStream(const graph::LoadedPlan& plan, const PlanMove& m) {
+    const graph::LoadedNode* n = plan.find(m.node);
+    return n ? plan.param(static_cast<std::uint32_t>(n - plan.nodes.data()), m.param) : nullptr;
+}
+
 }  // namespace
 
 const rp_host& host() { return kHost; }
@@ -253,6 +273,101 @@ Result run(const rp_package* const* packages, std::size_t packageCount, const Ty
     }
     r.id = nullptr;
     return r;
+}
+
+void runPlan(const PlanCase& c, const rp_package* const* packages, std::size_t packageCount, void* arena,
+             std::size_t arenaBytes, PlanResult* out) {
+    // Reset in place: a PlanResult{} assigned would be built on this frame first, with the loader's chain on top of it.
+    static_assert(std::is_trivially_copyable_v<PlanResult>);
+    PlanResult& r = *out;
+    std::memset(static_cast<void*>(&r), 0, sizeof r);
+    for (std::size_t i = 0; i < c.splitCount; ++i)
+        if (c.splits[i] == 0) {
+            nodeAt(r, PlanStep::Case, "-", "a block size of 0 frames, which would never end the run");
+            return;
+        }
+    graph::LoadedPlan* plan =
+        graph::loadPlan(std::span<const std::uint8_t>(c.blob, c.blobSize),
+                        std::span<std::byte>(static_cast<std::byte*>(arena), arenaBytes),
+                        std::span<const rp_package* const>(packages, packageCount), &kHost, &r.error);
+    if (!plan) {
+        r.step = PlanStep::Load;
+        if (r.error.node[0] == '\0') std::strcpy(r.error.node, "-");  // the blob refused whole: no node at fault
+        return;
+    }
+    r.nodes = static_cast<std::uint32_t>(plan->nodes.size());
+    r.arenaBytes = plan->bytes;
+    r.sampleRate = plan->sampleRate;
+    r.maxFrames = plan->maxFrames;
+    auto stop = [&](PlanStep step, std::string_view node, const char* what) {
+        nodeAt(r, step, node, what);
+        graph::unloadPlan(plan);
+    };
+
+    // The exporter sized the plan with the desktop's builds of the device's types, which the design takes to be at
+    // least as large as the device's own (its section 11, question 1): the device's layout is held to that figure.
+    if (c.arenaEstimate && r.arenaBytes > c.arenaEstimate)
+        return stop(PlanStep::Estimate, "-", "the plan took more arena than the exporter's sizing gave it");
+
+    // Every move is held to a stream before the first block, so a case that names the wrong param fails before it runs.
+    for (std::size_t i = 0; i < c.moveCount; ++i)
+        if (!moveStream(*plan, c.moves[i]))
+            return stop(PlanStep::Move, c.moves[i].node,
+                        "a param move names no param stream: no such node, a param past its params, or one a wire "
+                        "drives");
+
+    const rp_transport transport{plan->sampleRate, 120.0, 0.0, RP_TRANSPORT_PLAYING};
+    for (std::size_t split = 0; r.frames < c.frames; ++split) {
+        for (std::size_t i = 0; i < c.moveCount; ++i) {
+            if (c.moves[i].block != r.blocks) continue;
+            if (!graph::pushControl(*moveStream(*plan, c.moves[i]), 0, c.moves[i].value))
+                return stop(PlanStep::Move, c.moves[i].node, "a param move found its param's stream full");
+            ++r.moves;
+        }
+        // A block never passes the plan's maxFrames: runBlock does not check, and the plan's buffers hold no more.
+        std::uint32_t frames = c.splitCount ? c.splits[split % c.splitCount] : plan->maxFrames;
+        if (frames > plan->maxFrames) frames = plan->maxFrames;
+        if (frames > c.frames - r.frames) frames = c.frames - r.frames;
+        graph::runBlock(plan->view, frames, transport);
+        ++r.blocks;
+        r.frames += frames;
+        if (plan->faults.load(std::memory_order_relaxed) != 0) {
+            for (const graph::LoadedNode& n : plan->nodes)
+                if (n.faulted.load(std::memory_order_relaxed))
+                    return stop(PlanStep::Process, n.name(), "the block faulted the node");
+        }
+    }
+    r.drops = plan->drops.load(std::memory_order_relaxed);
+    const graph::LoadedNode* d = c.digest ? plan->find(c.digest) : nullptr;
+    if (d)
+        if (const void* view = d->node->vt->get_interface(d->node, RP_DEVTEST_DIGEST_INTERFACE)) {
+            rp_devtest_digest seen;
+            std::memcpy(&seen, view, sizeof seen);
+            r.digested = true;
+            r.digest = seen.hash;
+            r.digestBlocks = seen.blocks;
+            r.heard = seen.heard;
+        }
+
+    // The run's integer results, which are the device's to match exactly: every frame, every move, nothing dropped, and
+    // a digest that heard every block. The digest's value is float arithmetic, and is not judged.
+    if (r.moves != c.moveCount) {
+        for (std::size_t i = 0; i < c.moveCount; ++i)
+            if (c.moves[i].block >= r.blocks)
+                return stop(PlanStep::Result, c.moves[i].node, "a param move falls past the run's last block");
+    }
+    if (r.drops != 0) {
+        for (const graph::LoadedNode& n : plan->nodes)
+            if (n.drops.load(std::memory_order_relaxed) != 0)
+                return stop(PlanStep::Result, n.name(), "a full output queue dropped messages");
+        return stop(PlanStep::Result, "-", "a full queue dropped messages");
+    }
+    if (c.digest && !r.digested)
+        return stop(PlanStep::Result, c.digest, "the case's digest node is not in the plan, or is no digest");
+    if (c.digest && !r.heard) return stop(PlanStep::Result, c.digest, "the digest heard nothing but silence");
+    if (c.digest && r.digestBlocks != r.blocks)
+        return stop(PlanStep::Result, c.digest, "the digest counted other blocks than ran");
+    graph::unloadPlan(plan);
 }
 
 }  // namespace rp::device_check

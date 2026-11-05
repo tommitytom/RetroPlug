@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "devtest/DevtestNodes.hpp"
 #include "graph/rp_node.h"
 
 extern "C" {
@@ -23,9 +24,13 @@ const rp_package* rp_devtest_package_device_mode(void);
 // rp.devtest.fault: a node that fails at the step its settings name (PlanNodes.hpp), for the device check and the
 // loader's run-up.
 const rp_package* rp_devtest_fault_package_device_mode(void);
-// rp.devtest.plan: the source, digest and lockstep nodes (PlanNodes.hpp) the exported-plan cases run.
+// rp.devtest.misfit: a flood that overruns its queue and a digest that miscounts (PlanNodes.hpp), which the device
+// check's plan run must refuse.
+const rp_package* rp_devtest_misfit_package_device_mode(void);
+// rp.devtest.plan: the source, digest and lockstep nodes (packages/devtest) the exported-plan cases run, as a device
+// builds them (the package is a `device` entry, renamed with the rest); the desktop's is the package's own entry.
 const rp_package* rp_devtest_plan_package_device_mode(void);
-// How many plan and fault nodes the device-mode build holds alive (PlanNodes.hpp's gLive).
+// How many plan and fault nodes the device-mode build holds alive (rp::devtest::live(), which the fault node joins).
 int rp_devtest_plan_live_device_mode(void);
 }
 
@@ -123,11 +128,6 @@ struct EchoView {
     int           mode = 0;  // the enum field, as its value
 };
 
-// What a digest node has seen, as it counted it: get_interface(kDigestInterface) answers one.
-inline constexpr const char* kDigestInterface = "rp.devtest.digest/1";
-
-struct DigestView {
-    std::uint64_t hash = 1469598103934665603ull;  // FNV-1a 64 over every block's inputs
-    std::uint32_t blocks = 0;
-    bool          heard = false;  // anything but silence and empty queues reached it
-};
+// What a digest node (packages/devtest) has seen, as it counted it: get_interface(kDigestInterface) answers one.
+inline constexpr const char* kDigestInterface = RP_DEVTEST_DIGEST_INTERFACE;
+using DigestView = rp_devtest_digest;

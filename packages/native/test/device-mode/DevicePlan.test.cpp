@@ -69,17 +69,6 @@ struct Threaded {
     }
 };
 
-const rp_package* planPackageDesktop() {
-    static const rp_node_type* const kTypes[] = {rp::node_type<devtest::Source>(), rp::node_type<devtest::Digest>(),
-                                                 rp::node_type<devtest::Lockstep>()};
-    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.devtest.plan","version":"1.0.0"})", 3, kTypes};
-    return &kPackage;
-}
-const rp_package* faultPackageDesktop() {
-    static const rp_node_type* const kTypes[] = {rp::node_type<devtest::Fault>()};
-    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.devtest.fault","version":"1.0.0"})", 1, kTypes};
-    return &kPackage;
-}
 const rp_package* threadedPackage() {
     static const rp_node_type* const kTypes[] = {rp::node_type<Threaded>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.devtest.threaded","version":"1.0.0"})", 1, kTypes};
@@ -100,7 +89,7 @@ std::unique_ptr<NodeRegistry> registryOf(const std::vector<const rp_package*>& p
 // The desktop's builds, which plan and which GraphHost runs; rp.host.audio-out among them, a type no device builds.
 std::unique_ptr<NodeRegistry> desktopRegistry() {
     return registryOf({rp_core_package(), rp_dsp_package(), rp_n8_package(), rp_device_io_package(), hostPackage(),
-                       planPackageDesktop(), faultPackageDesktop(), threadedPackage()});
+                       rp_devtest_plan_package(), devtest::faultPackageDesktop(), threadedPackage()});
 }
 // The device's builds of the same packages, which the loader creates.
 const std::vector<const rp_package*>& deviceTypes() {
