@@ -1220,6 +1220,19 @@ product whose sources include the header names the provider, so the render host,
 carry none of its code. A provider installs its links into the engine's device registry through `rp_device_host`
 (`host/devices/ProviderHost.hpp`). The configure check refuses a provider or an `rpc` on a `device: true` entry.
 
+**A pack's facet is mounted whole, in every product that lists it (decided).** `rp_register_package_rpc` makes one
+`registerRpc` call per provider and the manifest's `rpc` is one header and one function, so the N8 facet's 34 methods
+are all mounted wherever it is: the plugin's and the SDL standalone's channels carry the session half (`n8Open` on any
+port name, `n8MemWR`, `n8FifoWR`, `n8ReadData`, which neither uses) and the CLI the link half (which persists `n8.cfg`),
+and only a convention keeps the CLI's scripts on sessions. That is wider than the capability facets above, which
+drop debug, harness and driver from the plugin's channel; it is accepted because no untrusted code reaches a product's
+channel today (its callers are the product's own UI and the user's own scripts, which can drive the hardware through
+the link half anyway). A product can be scoped later, by an `rpc` list with a scope per entry and a facet split into a
+link and a session registration, if packs become downloadable. A pack prefixes its method names (the N8's are `n8*`):
+the server's names are global and a repeat replaces without a word. The N8 port itself is exclusive on POSIX
+(`SerialTransport` takes `TIOCEXCL` after it opens), so a second instance, a CLI session or minicom is refused with
+"busy" rather than interleaving frames on one cart; N8Rpc.hpp has the rest.
+
 ### Kit reproducibility
 
 A kit compiles to the same bytes every time. The compiler is TypeScript (`packages/retroplug/src/kit/`): it builds

@@ -343,8 +343,8 @@ configure needs a reflect-cpp checkout. `loop.sh` hands a fresh build directory 
 (`../../build/CMakeCache.txt`'s `reflectcpp_SOURCE_DIR`) and clones one only when there is none. The whole image links
 under the **link trap** (`cmake/device-image.cmake`, shared with `rp-device-check`): 87 `--wrap`ped symbols on the
 heap, on exceptions and on RTTI, with `pico_malloc` taken out of the runtime and a post-link check. A link error naming
-`__wrap_<symbol>` means an object reached the heap or a throw. The image has no heap at all: Pico-PIO-USB's SOF timer
-was an alarm pool made with `malloc`, so the config sets `skip_alarm_pool`, `SofTimer.cpp` runs a timer of its own on
+`__wrap_<symbol>` means an object reached the heap or a throw. The image links no allocator (the SDK's 2 KB `.heap`
+reservation is still there; `PICO_HEAP_SIZE=0` is E3's to try): Pico-PIO-USB's SOF timer was an alarm pool made with `malloc`, so the config sets `skip_alarm_pool`, `SofTimer.cpp` runs a timer of its own on
 hardware alarm 2 (the alarm, the IRQ and the 1000 us absolute cadence the pool had; the handler and
 `pio_usb_host_frame` run from RAM, the 64-bit timer read is the SDK's, in flash), and the link wraps
 `alarm_pool_create_on_timer`, which `skip_alarm_pool` alone still leaves linked, to a `panic()` that never runs. The

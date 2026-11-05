@@ -473,13 +473,13 @@ pack's nodes and Edio about 13 KB of it) and about 418 KB RAM (data and bss), al
 
 `pnpm device:box` ([tools/build-box.sh](../tools/build-box.sh)) builds the Pico box's firmware under the same trap. The
 firmware is `retroplug_product(n8-host DEVICE PACKAGES n8 TARGETS n8_host)`: C++ on the N8 pack, the pack compiled
-with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti`, with no heap anywhere in the image. Pico-PIO-USB's SOF timer was
-an alarm pool made with `malloc`, so the firmware sets `skip_alarm_pool`, runs a static SOF timer of its own on
+with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti`, linking no allocator (the SDK's 2 KB `.heap` reservation
+remains). Pico-PIO-USB's SOF timer was an alarm pool made with `malloc`, so the firmware sets `skip_alarm_pool`, runs a static SOF timer of its own on
 hardware alarm 2 (`SofTimer.cpp`) and links with `--wrap=alarm_pool_create_on_timer`, since the config flag alone
 leaves the function (and the heap) linked; the unreachable wrapper panics. The main stack is 4 KB
 (`PICO_STACK_SIZE=0x1000`, core 1's reservation kept at 2 KB), asserted only as a reservation of SCRATCH_Y. Both
 variants, PIO-USB (the rig's; the N8 on GP2/GP3) and `RP_NATIVE_USB=ON`, link under the trap, each with a probe that
-must fail to link; the sizes in flash / data / bss are 48508 / 15324 / 32360 and 48468 / 1560 / 26128. The boot prints
+must fail to link; the sizes in flash / data / bss are 48796 / 15324 / 32360 and 48756 / 1560 / 26128. The boot prints
 `[n8-host] node type rp.n8.nes (registered, not planned)`: `main` references the registration, so `--gc-sections` keeps
 the node, and the line is the proof. CI
 installs TinyUSB and clones Pico-PIO-USB at 5a37a66 for it. The hardware gate (`loop.sh`, `stress.sh`, `faults.sh`) is

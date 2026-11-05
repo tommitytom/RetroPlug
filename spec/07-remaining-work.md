@@ -565,8 +565,22 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     move onto extensions; `chrImage.ts` and `risaSyncTranslator.ts` stay there too, as each imports `retroplug` modules.
   - **The gate's latency comparison is partial.** The `[stats] lat=` figure is per window, not cumulative, and the SysEx
     window peaks at 20.9 ms (a 40-byte SysEx is about 13 ms on the wire); no baseline window was kept for it.
-  - **The desktop hardware leg** (`n8-load`, `n8-play`, `retroplug-n8-hwtest`) is the controller's, after the plan's
-    replay.
+  - **Windows, macOS and arm64 have never built E2.** The new `/W4 /WX` surface on MSVC is `retroplug-n8`,
+    `retroplug-n8-desktop`, `retroplug-n8-device`, `DeviceAbi.c` compiled as C, the generated providers header in three
+    products, `N8Rpc.cpp`'s `std::filesystem` (POSIX names only on Windows now), `SerialTransport.cpp`'s POSIX half and
+    `FakeN8.hpp` in `retroplug-host`; AppleClang and libc++ and the arm64 job have seen none of it. `build.yml` runs only
+    on pull requests, main and a dispatch, so the first run of the `device:box` step on a runner is that run too. A
+    `build.bat` and `test.bat` run and the macOS and arm64 builds are owed.
+  - **A pack's facet is mounted whole in every product that lists it** (decided 2026-11-05; design section 6): the
+    plugin and SDL channels carry the N8 session methods and the CLI the link half, and only a convention keeps CLI
+    scripts on sessions. Scoping a product (an `rpc` list with a scope per entry) is for when packs become downloadable.
+  - **Template gaps a second pack meets** (design 13.8): method names are global and a repeat replaces silently; a pack
+    cannot add a capability beyond `rp.system.memory/sram/rom`; the test host has no seam for a pack's test provider;
+    the TS half needs its `ts/` in `packages/retroplug/tsconfig.json`'s `include`; a provider cannot be downloaded.
+  - **The pack boundary has three standing exceptions** (design 13.6): `retroplug-core` includes `retroplug-n8`'s roots
+    for `N8ReliableLink.hpp`, `plugin.cmake` links `retroplug-n8-desktop` by name, and the test host's `main.cpp` names
+    the provider.
+  - **The box image keeps the SDK's 2 KB `.heap` reservation** (no allocator is linked; `PICO_HEAP_SIZE=0` is E3's).
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype

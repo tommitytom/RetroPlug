@@ -430,15 +430,35 @@ the pack's provider:
   serial port: <port>", and `N8Host::setPortGuard`, which the facet sets and clears in its destructor, makes the link
   refuse to connect to a port a session holds ("the port <p> is open in an N8 session", the same state a failed
   connect leaves); both compare names first and then `std::filesystem::canonical`, so a `/dev/serial/by-id` symlink and
-  its tty are one port. One facet per host (`setPortGuard` holds one). This keeps out another writer in this process
-  only: deps/serial opens a POSIX port without `TIOCEXCL` or a lock, so a CLI process opens a port the standalone holds
-  and the two interleave commands on one N8, where only Windows refuses a COM port another process holds. Making
-  `SerialTransport` take `TIOCEXCL` after it opens is a separate behaviour change, for the user to decide.
+  its tty are one port (a COM name is compared as it is: `canonical` on one would open the device on MSVC's STL). One
+  facet per host (`setPortGuard` holds one). The guard keeps out another writer in this process only; **another
+  process, or another instance in the same DAW, is kept out by the transport**: deps/serial opens a POSIX port without
+  `TIOCEXCL` or a lock (and hands out no descriptor), so `SerialTransport` opens a second descriptor on the path right
+  after, sets `TIOCEXCL` on it and keeps it, to clear the flag (`TIOCNXCL`) when the transport closes, since a
+  descriptor cannot be opened once it is set. Every later open of that port, by another RetroPlug instance, a CLI
+  session or minicom, fails with `EBUSY`, and the constructor says so in a `PortBusyError` ("the serial port <p> is
+  busy: another program or RetroPlug instance has it open"), which is the link's error in Settings > N8 and the reason
+  `n8Open` answers with, in place of the bare "cannot open serial port". Root is exempt (the kernel's `CAP_SYS_ADMIN`
+  rule), and a device that refuses the ioctl stays shared; a Windows COM port is exclusive already, so that half is
+  `#if !defined(_WIN32)`. This was the user's call (2026-11-05): two instances that both restore an enabled `n8.cfg`
+  used to open one port and interleave frames on one N8. `retroplug-serial-test` holds it on a pty (the second open's
+  `EBUSY`, the second transport's words, the port opening again once closed; skipped with its reason as root).
 - **The streaming link**, which the UI uses: `n8LinkConfig`, `n8SetPort`, `n8Connect`, `n8SetLookahead`, replacing the
   four `__rp_*N8` hooks, so the pack depends on rpcpp and not on QuickJS. `hasN8()` becomes "the product mounted the
   facet": the UI probes once and reads it true when `n8LinkConfig` answers. This half is the UI's alone, since its
-  setters persist the `n8.cfg` the three products share; the CLI mounts both halves because every product registers its
-  packs one way, and uses only the sessions.
+  setters persist the `n8.cfg` the three products share.
+- **The facet's scope is the pack's, not the product's (decided, 2026-11-05).** A product that lists a pack mounts
+  all of its facet's methods: `rp_register_package_rpc` makes one `registerRpc` call per provider, and the manifest's
+  `rpc` is one header and one function. So the plugin's and the SDL standalone's channels carry the 30 session methods
+  as well (`n8Open` on any port name, `n8MemWR`, `n8FifoWR`, `n8ReadData`: nothing in either product uses them), and
+  the CLI carries the link half (`n8SetPort`, `n8Connect` and the rest, which persist `n8.cfg`); only a convention
+  keeps the CLI's scripts on sessions. This is a widening of what the repo's capability facets do (the plugin channel
+  deliberately drops debug, harness and driver, `BackendRpcRegistration.hpp`), accepted because no untrusted code
+  reaches a product's channel today: a channel's callers are the product's own UI bundle and the user's own scripts,
+  and both can already drive the hardware through the link half. The alternative, an `rpc` list of `{header, register,
+  scope}` with `retroplug_product(... RPC_SCOPES ...)` generating only the matching calls and `registerRpc` split into a
+  link and a session registration, is a later change if packs become downloadable or a channel starts to carry
+  untrusted code; nothing in the manifest forbids adding the scope then.
 - **The codec:** `rfl::Bytestring`, the facet's bytes, reaches JavaScript as a `Uint8Array` through the products'
   QuickJS codec; the JSON codec cannot carry it at all (`rfl::Generic` has no bytes), so `registerRpc` instantiates
   for `TypedRpcServer<Empty, QuickJSCodec>` (the CLI's and SDL's `BackendRpcServer` and the plugin's `PluginRpcServer`
@@ -573,7 +593,7 @@ packages need 3.19) and the standard C++20.
 |---|---|---|
 | PIO-USB | 43664 / 16528 / 32192 | 48796 / 15324 / 32360 |
 | `RP_NATIVE_USB` | 41256 / 1412 / 25592 | 48756 / 1560 / 26128 |
-| `rp-device-check` (E1: 65156 / 1844 / 412742) | | 82512 / 2000 / 416402 |
+| `rp-device-check` (E1: 65156 / 1844 / 412742) | | 82528 / 2000 / 416402 |
 
 The PIO-USB image before linked a heap (`pico_malloc`'s wrappers, newlib's `malloc`, `calloc`, `free`, `_sbrk` and
 `alarm_pool_create_on_timer`, the only caller); after, it links no heap symbol, and its data shrank because newlib's
@@ -716,10 +736,10 @@ clients had no length checks and sent a truncated prefix, or a whole command (an
 before refusing, none of which a real caller reaches (paths are far below 64 KiB, and the box passes no battery).
 Sections 1 to 11 are corrected in place where the build made them false (the Edio's status, the report interface, the
 providers' per-instance API, what stays in `retroplug`, the box on `bootRom`). The final counts: `retroplug-n8-test`
-ends at 93 cases (1434 assertions; the baseline's 57 / 529) and `retroplug-serial-test` at 1 / 7,
+ends at 93 cases (1436 assertions; the baseline's 57 / 529) and `retroplug-serial-test` at 2 cases / 17 assertions (1 / 7),
 `retroplug-engine-graph-test` at 333 (313), `retroplug-device-mode-test` at 11 cases (10), `pnpm test` at 1781 cases
 over 174 files (1814), `test:native` at 606 passed and 2 skipped over 168 files (602 / 167), `device:check`'s image at
-82512 / 2000 / 416402 flash / data / bss (65156 / 1844 / 412742) and the box's two images at 48796 / 15324 / 32360
+82528 / 2000 / 416402 flash / data / bss (65156 / 1844 / 412742) and the box's two images at 48796 / 15324 / 32360
 (PIO-USB) and 48756 / 1560 / 26128 (`RP_NATIVE_USB`).
 
 ### 13.1 The device ABI (commit 1)
@@ -843,13 +863,21 @@ over 174 files (1814), `test:native` at 606 passed and 2 skipped over 168 files 
   the old firmware's was about 2.0 KB. Today an overrun would land in unused SCRATCH_Y, but nothing guards it, so the
   box asks for 4 KB (section 8); `rp-device-check`'s protocol chain is about 1.9 KB against its nominal 2 KB and its
   types chain (E1's settings decode) about 2.3 KB, and it is never run.
+- **The pack boundary has three standing exceptions** to "products list the pack and name nothing in it", each
+  justified where it is: `packages/native/CMakeLists.txt` makes `retroplug-core` (the emulators) PUBLIC-include
+  `retroplug-n8`'s roots, for `transport/N8ReliableLink.hpp` (`NesN8FifoRole.hpp`), so the pack can never be left out
+  of a build that has the emulators; `packages/native/cmake/plugin.cmake` links `retroplug-n8-desktop` by name, as the
+  DSP library's own sources include the product's providers header; and `packages/native/src/main.cpp` (the test
+  host) names `createProvider`, `rp_n8_provider`, `registerRpc` and a header of `packages/n8/native/test`, which is how
+  it gives the pack a fake cart. Moving `N8ReliableLink.hpp` to a protocol header the core and the pack share, without
+  the core naming the pack, would remove the first.
 - **Writing a battery to the SD card is not for the box**: `writeBattery` is linked and never called; its 789-byte
   path buffer (an 864-byte frame) is on the stack only in the facet's boots (the CLI's) and the device check's.
 
 ### 13.7 The gate
 
 Run by the controller on the prototype's image (sha256 `10a6b09edb99...`, BlipToaster, never `n8-midi.nes`), against the
-baseline of section 8. The image is the prototype's final one.
+baseline of section 8. The table is the prototype's final image; the shipped one's gate follows it.
 
 | Leg | Baseline | E2 |
 |---|---|---|
@@ -864,9 +892,20 @@ baseline of section 8. The image is the prototype's final one.
   to 7.0 ms, and **the window holding the SysEx pair peaks at 20.9 ms (average 7.2 ms)**: a 40-byte SysEx is about 13
   ms on the 31250 baud wire, and no baseline window was kept for it. The gate condition, that the maximum not grow,
   held where it can be compared.
+- **The shipped image was gated again.** The table above is the prototype's image. The image of the tip
+  (`a1c31e82e`, normalised sha256 `0289afcd...`, which differs from the prototype's by the follow-ups' firmware
+  changes) ran the same legs on the rig with BlipToaster, and passed: booted in 12.2 s (saved choice, CRC skip,
+  expansion volume 129); `stress.sh` 50756 msgs, fail 0, isolated latency worst 1089 us and 621 us, the SysEx window
+  20.6 ms and its recovery 12.0 ms; audio A4 440.30 Hz +1.2 c and C5 522.16 Hz -3.6 c; `faults.sh --rounds 8` 8 of 8
+  (abandoned 8, stuck 0, recoveries 0); the upload path with two ROMs staged: pick 1 uploaded in 4922 ms and pick 0
+  in 4925 ms, each then a saved choice and a CRC skip (expansion volume 139 for the VRC6 ROM, 129 for the 5B).
+- **The desktop leg passed** on the same rig, with the cable moved to the desktop (the N8 on `/dev/ttyACM1`):
+  `n8-load --info`, the menu frame and `--df 0`; a put, ls, get, cmp and rm round trip; a boot through the facet's
+  `bootRom` (map index 69) with `--pal` sniffing and a screen grab; `n8-play` A4 440.30 Hz +1.2 c; `retroplug-n8-hwtest`
+  info and sniff, and `fifowr` on at 440.30 Hz and off silent; and the cart jobs: restore 0.29 s, dump 7.7 s
+  byte-identical, load 2.9 s booted (C5: 2.8 s). The scratch files were deleted, and the cable went back to the Pico,
+  whose box booted its saved choice (CRC skip, expansion volume 129) after an NES power-cycle.
 - **A `loop.sh` reset clears a pending pick**, as `box_start` documents; a pick needs an NES power-cycle only.
-- The desktop leg of the acceptance (`n8-load`, `n8-play`, `retroplug-n8-hwtest`) is the controller's, run after the
-  plan is replayed.
 
 ### 13.8 What is left
 
@@ -876,6 +915,27 @@ baseline of section 8. The image is the prototype's final one.
   successor wants `PICO_STACK_SIZE=0x1000`, and a `-Wstack-usage` check would replace the hand sum. A host-side fake
   for `UsbCdcTransport` (the transport's remount, unmount and drain rules are proven on the rig and by reading, and
   have no host test). The main loop still splits into the generic host and the pack's part then.
+- **Windows, macOS and arm64 have never built E2.** Its new surface under `/W4 /WX` on MSVC is `retroplug-n8`,
+  `retroplug-n8-desktop` and `retroplug-n8-device`, `DeviceAbi.c` compiled as C, the generated providers header in
+  three products, `N8Rpc.cpp`'s `std::filesystem` (on Windows now only for POSIX names), `SerialTransport.cpp`'s
+  `#if !defined(_WIN32)` half (the exclusive descriptor), and `FakeN8.hpp` in `retroplug-host`; AppleClang and libc++
+  have not seen any of it, nor has the arm64 job. Their first run is on the first push that triggers `build.yml`, which
+  runs only on pull requests, main and a dispatch, and so is the first run of the `device:box` step on a runner too. A
+  `build.bat`, `test.bat` and macOS and arm64 builds are owed.
+- **Template gaps the next pack will meet** (a pack template, none of them E2's to close):
+  - rpcpp's `addHandler` assigns into a map, so a method name a pack shares with a host facet or another pack replaces
+    it without a word; the `n8*` prefix is convention only, stated in `cmake/packages.cmake`. The server is the
+    submodule's, so a duplicate check would live in the generated registration or in rpcpp.
+  - A pack cannot add a capability: the engine answers "unknown capability" outside `rp.system.memory/sram/rom`, the
+    three ids `rp_jobs.h` reserves, so a cart pack fits and a device with another job kind needs an engine change.
+  - A `test:native` session for a new pack means editing `packages/native/src/main.cpp` and its CMake again; there is
+    no seam for a pack's test provider.
+  - The TS half has no tsconfig of its own: `packages/retroplug/tsconfig.json` must `include` each pack's `ts/`.
+  - A provider is reached through the generated static table only; there is no dynamic path for one as there is for a
+    script node pack, so a downloaded pack cannot carry a provider (`rp_provider.h` says so).
+- **The box image's heap reservation.** "No heap" means no allocator code is linked; the SDK's 2 KB `.heap` section
+  is still in the image (`PICO_HEAP_SIZE=0` would drop it), and it is E3's, with the stack (no firmware change in E2:
+  the flashed bytes stay what the gate ran).
 - **The Launchpad's `threads` flag** is the one node still declaring `threads` for its link; it goes with its pack,
   provider and facet in place of `bindLaunchpadHooks`.
 - **E4**, the rest of the package split and a web transport, as section 11.
