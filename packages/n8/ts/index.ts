@@ -158,7 +158,7 @@ export interface N8Client {
   /** All serial ports, flagging Everdrive N8 units (USB VID:PID 38df:0017); [] from a host that mounted no N8 facet
    *  or answers nothing. */
   listPorts(): N8Port[];
-  /** Open a session on `port`; throws (`cannot open serial port: <port>`) if it can't be opened. */
+  /** Open a session on `port`; throws if it can't be opened (`cannot open serial port: <port>`, or the busy words for a port another process holds). */
   openN8(port: string): N8;
 }
 

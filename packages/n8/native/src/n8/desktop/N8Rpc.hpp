@@ -9,7 +9,7 @@
 // The streaming-link half is what the UI's Settings > N8 drives (packages/n8/ts's createN8Client, ui/screens/menu/
 // n8Devices.ts): the ports, the chosen port, the link's state and lookahead, read and set on the provider's N8Host. A
 // product that does not mount it has no N8 submenu, since the UI takes "the facet answers" for "this host has the N8
-// seam" (hasN8). N8Host serialises these with its link thread. The link half is the UI's alone. Each of its setters
+// seam" (hasN8). N8Host serialises these with its link thread. Only the UI calls the link half. Each of its setters
 // persists n8.cfg, which the standalone, the plugin and the CLI share (one config dir). Every product that lists the
 // pack mounts the whole facet: the plugin and SDL channels carry the session half as well, and the CLI the link half,
 // and only a convention keeps the CLI's sessions off the link half (no untrusted code reaches a product's channel
@@ -24,7 +24,8 @@
 // tell (a /dev/serial/by-id symlink and its /dev/ttyACM are one port), else the name. Another process (another
 // instance, a CLI session, minicom) is kept out by the transport: SerialTransport takes TIOCEXCL on a POSIX port after
 // it opens it, so a second open fails busy, and a COM port is exclusive on Windows already. Every session call answers
-// an N8Reply.
+// an N8Reply. A link that failed keeps its port, so it stays exclusive, until it is disconnected or reconnected, and
+// an instance whose restore was refused as busy stays down until Connect.
 
 #include <cstdint>
 #include <map>

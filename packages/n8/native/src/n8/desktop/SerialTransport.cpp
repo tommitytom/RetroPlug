@@ -32,17 +32,27 @@ bool hardwareIdIsN8(const std::string& hwid) {
         || h.find("vid_38df&pid_0017") != std::string::npos;  // Windows shape
 }
 
+std::string busyWords(const std::string& portName) {
+    return "the serial port " + portName + " is busy: another program or RetroPlug instance has it open";
+}
+
 #if !defined(_WIN32)
 // Makes the port this process has open exclusive: every later open of it, by another RetroPlug instance, a CLI session
 // or minicom, fails with EBUSY (except for root, which the kernel exempts). deps/serial opens a POSIX port without
 // TIOCEXCL or a lock and does not hand out its descriptor, so a second descriptor on the same path sets it. The flag
 // belongs to the device, not the descriptor, and a descriptor cannot be opened once it is set, so this one is kept
 // to clear the flag again (releaseExclusive) when the transport closes; the kernel clears it at the last close of a
-// real port, and a pty keeps it for as long as its master lives. Answers -1, the port left shared as it was, for a
-// device that does not take the ioctl.
+// real port, and a pty keeps it for as long as its master lives. The descriptor is close-on-exec, so a child process
+// does not keep the port exclusive after this one lets go. Answers -1, the port left shared as it was, for a device
+// that does not take the ioctl. If another instance set the flag between deps/serial's open and this one, the open
+// answers EBUSY and the constructor throws PortBusyError. Two opens that both land before either flag are not told
+// apart, and the window cannot be closed: the flag cannot be set before deps/serial's own open without refusing it.
 int holdExclusive(const std::string& portName) {
-    const int fd = ::open(portName.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (fd < 0) return -1;
+    const int fd = ::open(portName.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) {
+        if (errno == EBUSY) throw PortBusyError(busyWords(portName));
+        return -1;
+    }
     if (::ioctl(fd, TIOCEXCL) != 0) {
         ::close(fd);
         return -1;
@@ -55,15 +65,12 @@ void releaseExclusive(int fd) {
     (void)::ioctl(fd, TIOCNXCL);
     ::close(fd);
 }
-
-bool isBusy(const serial::IOException& e) { return e.getErrorNumber() == EBUSY; }
 #else
-// A COM port another process holds already refuses an open, and Windows' own wording names it.
+// A COM port another process holds is refused by the open itself; deps/serial reports it as an unknown error 5
+// (ERROR_ACCESS_DENIED), not as a busy port, so Windows has no PortBusyError.
 int holdExclusive(const std::string&) { return -1; }
 
 void releaseExclusive(int) {}
-
-bool isBusy(const serial::IOException&) { return false; }
 #endif
 
 }  // namespace
@@ -73,13 +80,18 @@ SerialTransport::SerialTransport(const std::string& portName) : portName_(portNa
     // net; every read sets its own (read()).
     try {
         port_ = std::make_unique<serial::Serial>(portName, 9600, serial::Timeout::simpleTimeout(2000));
-    } catch (const serial::IOException& e) {
-        if (isBusy(e))
-            throw PortBusyError("the serial port " + portName +
-                                     " is busy: another program or RetroPlug instance has it open");
+    } catch ([[maybe_unused]] const serial::IOException& e) {
+#if !defined(_WIN32)
+        if (e.getErrorNumber() == EBUSY) throw PortBusyError(busyWords(portName));
+#endif
         throw;
     }
-    exclusiveFd_ = holdExclusive(portName);
+    try {
+        exclusiveFd_ = holdExclusive(portName);
+    } catch (...) {
+        port_.reset();  // the port is not ours to hold: close what was opened
+        throw;
+    }
 }
 
 SerialTransport::~SerialTransport() {

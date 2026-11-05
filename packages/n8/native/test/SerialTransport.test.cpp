@@ -6,8 +6,9 @@
 //
 // Here a pseudo-terminal stands in for the N8: a 0 ms read, then a write bigger than the pty's buffer while a reader
 // drains it only after a pause. The write must wait for room, not give up at the read's 0 ms. Linux only (ptys).
-// A second case holds the port exclusive: a POSIX port RetroPlug opens refuses every other open (another instance, a CLI
-// session, minicom) with EBUSY, as only a Windows COM port does without it. Not for root, which TIOCEXCL does not bind.
+// A second case holds the port exclusive: a POSIX port RetroPlug opens refuses every other open (another instance, a
+// CLI session, minicom) with EBUSY, as only a Windows COM port does without it. Not for root, which TIOCEXCL does not
+// bind. (The window between deps/serial's open and the flag cannot be provoked on a pty.)
 // Run via `pnpm test:n8` (retroplug-serial-test).
 #include <catch2/catch_test_macros.hpp>
 

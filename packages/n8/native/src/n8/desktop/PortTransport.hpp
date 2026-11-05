@@ -15,8 +15,9 @@
 
 namespace retroplug {
 
-// Thrown by a transport's open when another process (or instance, or session) holds the port. Its words are the ones the
-// UI shows as the link's error and the CLI prints as the reason a session did not open.
+// Thrown by a POSIX transport's open when another process (or instance, or session) holds the port. Its words are the
+// ones the UI shows as the link's error and the CLI prints as the reason a session did not open. (A Windows COM port
+// another process holds is refused too, but deps/serial words it as an unknown error, so none is thrown there.)
 class PortBusyError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;

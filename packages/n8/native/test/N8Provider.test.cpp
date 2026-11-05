@@ -349,6 +349,9 @@ TEST_CASE("one writer to an N8: the link does not connect to a session's port, b
     host.connect(false);
 
     // A symlink and the file it points at are one port (a /dev/serial/by-id name and its /dev/ttyACM), either way.
+#if defined(_WIN32)
+    return;  // Windows compares port names alone (samePort in N8Rpc.cpp): a COM name has no symlink to resolve
+#endif
     const auto dir    = cleanDir("rp-n8-rpc-identity");
     const auto device = dir / "ttyFAKE0";
     const auto byId   = dir / "usb-krikzz_N8-if00";

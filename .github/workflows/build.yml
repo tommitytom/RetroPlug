@@ -116,13 +116,13 @@ jobs:
       # every platform and it rides along in the artifact below; `pnpm sdl:smoke` above then proves
       # it RUNS, on this job only. It is deliberately absent from release.yml's packaging lists.
 
-      # The device build (docs/modular-graph-phase-e1-design.md section 7): rp-device-check, the RP2350 image that
-      # runs every portable rp.core, rp.dsp and rp.n8 node type (and the N8 Edio) in device mode, linked with a trap on
-      # the heap, on exceptions and on RTTI, so a node that allocates or throws on the device fails this step naming the object, and
-      # a probe that allocates must fail to link, proving the trap still reaches the link. Built, never run (E3 runs its
-      # successor on the rig). The Pico SDK is pinned to the tag the devcontainer's is, and the check needs none of
-      # its submodules; reflect-cpp comes from the desktop build above, at the desktop's pin. x86 linux alone carries
-      # it: the image is the same from any host.
+      # The device build (docs/modular-graph-phase-e1-design.md section 7): rp-device-check, the RP2350 image that runs
+      # every portable rp.core, rp.dsp and rp.n8 node type (and the N8 Edio) in device mode, linked with a trap on the
+      # heap, on exceptions and on RTTI, so a node that allocates or throws on the device fails this step naming the
+      # object, and a probe that allocates must fail to link, proving the trap still reaches the link. Built, never run
+      # (E3 runs its successor on the rig). The Pico SDK is pinned to the tag the devcontainer's is, and the check needs
+      # none of its submodules; reflect-cpp comes from the desktop build above, at the desktop's pin. x86 linux alone
+      # carries it: the image is the same from any host.
       - name: Install the device toolchain (arm-none-eabi, Pico SDK 2.1.1)
         run: |
           set -eux

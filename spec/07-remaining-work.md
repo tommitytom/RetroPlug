@@ -567,10 +567,12 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     window peaks at 20.9 ms (a 40-byte SysEx is about 13 ms on the wire); no baseline window was kept for it.
   - **Windows, macOS and arm64 have never built E2.** The new `/W4 /WX` surface on MSVC is `retroplug-n8`,
     `retroplug-n8-desktop`, `retroplug-n8-device`, `DeviceAbi.c` compiled as C, the generated providers header in three
-    products, `N8Rpc.cpp`'s `std::filesystem` (POSIX names only on Windows now), `SerialTransport.cpp`'s POSIX half and
+    products, `N8Rpc.cpp`'s `std::filesystem` (`canonical` is not called on Windows now), `SerialTransport.cpp`'s POSIX half and
     `FakeN8.hpp` in `retroplug-host`; AppleClang and libc++ and the arm64 job have seen none of it. `build.yml` runs only
     on pull requests, main and a dispatch, so the first run of the `device:box` step on a runner is that run too. A
     `build.bat` and `test.bat` run and the macOS and arm64 builds are owed.
+  - **`pnpm test:n8` is no CI step and not in `test.bat`**: the Edio golden, the facet's tests and the serial port's
+    exclusivity case run only by hand.
   - **A pack's facet is mounted whole in every product that lists it** (decided 2026-11-05; design section 6): the
     plugin and SDL channels carry the N8 session methods and the CLI the link half, and only a convention keeps CLI
     scripts on sessions. Scoping a product (an `rpc` list with a scope per entry) is for when packs become downloadable.

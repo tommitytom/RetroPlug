@@ -438,11 +438,20 @@ the pack's provider:
   descriptor cannot be opened once it is set. Every later open of that port, by another RetroPlug instance, a CLI
   session or minicom, fails with `EBUSY`, and the constructor says so in a `PortBusyError` ("the serial port <p> is
   busy: another program or RetroPlug instance has it open"), which is the link's error in Settings > N8 and the reason
-  `n8Open` answers with, in place of the bare "cannot open serial port". Root is exempt (the kernel's `CAP_SYS_ADMIN`
-  rule), and a device that refuses the ioctl stays shared; a Windows COM port is exclusive already, so that half is
-  `#if !defined(_WIN32)`. This was the user's call (2026-11-05): two instances that both restore an enabled `n8.cfg`
-  used to open one port and interleave frames on one N8. `retroplug-serial-test` holds it on a pty (the second open's
-  `EBUSY`, the second transport's words, the port opening again once closed; skipped with its reason as root).
+  `n8Open` answers with, in place of the bare "cannot open serial port". That is POSIX only: a Windows COM port is
+  exclusive already, but deps/serial's `win.cc` words a refused open as "Unknown error opening the serial port: 5"
+  (`ERROR_ACCESS_DENIED`), so there `n8Open` answers the generic text and Settings > N8 shows that one; the whole
+  exclusive half is `#if !defined(_WIN32)`. The kept descriptor is close-on-exec. Root is exempt (the kernel's
+  `CAP_SYS_ADMIN` rule), and a device that refuses the ioctl stays shared. If another instance sets the flag between
+  deps/serial's open and ours, our open answers `EBUSY` and the constructor throws the same `PortBusyError`, closing
+  what it opened; two opens that both land before either flag are not told apart, and that window cannot be closed
+  (the flag cannot be set before deps/serial's own open without refusing it). A link that failed keeps its transport,
+  and so its port exclusive, until it is disconnected or reconnected (`N8Link::streamLoop` stops its thread and leaves
+  the port open), and a second instance whose `restore` was refused stays down until Connect: it does not retry when
+  the first lets go. This was the user's call (2026-11-05): two instances that both restore an enabled `n8.cfg` used to
+  open one port and interleave frames on one N8. `retroplug-serial-test` holds it on a pty (the second open's `EBUSY`,
+  the second transport's words, the port opening again once closed; skipped with its reason as root); the
+  two-opens window cannot be provoked on a pty.
 - **The streaming link**, which the UI uses: `n8LinkConfig`, `n8SetPort`, `n8Connect`, `n8SetLookahead`, replacing the
   four `__rp_*N8` hooks, so the pack depends on rpcpp and not on QuickJS. `hasN8()` becomes "the product mounted the
   facet": the UI probes once and reads it true when `n8LinkConfig` answers. This half is the UI's alone, since its
@@ -736,7 +745,8 @@ clients had no length checks and sent a truncated prefix, or a whole command (an
 before refusing, none of which a real caller reaches (paths are far below 64 KiB, and the box passes no battery).
 Sections 1 to 11 are corrected in place where the build made them false (the Edio's status, the report interface, the
 providers' per-instance API, what stays in `retroplug`, the box on `bootRom`). The final counts: `retroplug-n8-test`
-ends at 93 cases (1436 assertions; the baseline's 57 / 529) and `retroplug-serial-test` at 2 cases / 17 assertions (1 / 7),
+ends at 93 cases (1436 assertions; the baseline's 57 / 529) and `retroplug-serial-test` at 2 cases / 17 assertions
+(1 / 7),
 `retroplug-engine-graph-test` at 333 (313), `retroplug-device-mode-test` at 11 cases (10), `pnpm test` at 1781 cases
 over 174 files (1814), `test:native` at 606 passed and 2 skipped over 168 files (602 / 167), `device:check`'s image at
 82528 / 2000 / 416402 flash / data / bss (65156 / 1844 / 412742) and the box's two images at 48796 / 15324 / 32360
@@ -892,9 +902,9 @@ baseline of section 8. The table is the prototype's final image; the shipped one
   to 7.0 ms, and **the window holding the SysEx pair peaks at 20.9 ms (average 7.2 ms)**: a 40-byte SysEx is about 13
   ms on the 31250 baud wire, and no baseline window was kept for it. The gate condition, that the maximum not grow,
   held where it can be compared.
-- **The shipped image was gated again.** The table above is the prototype's image. The image of the tip
-  (`a1c31e82e`, normalised sha256 `0289afcd...`, which differs from the prototype's by the follow-ups' firmware
-  changes) ran the same legs on the rig with BlipToaster, and passed: booted in 12.2 s (saved choice, CRC skip,
+- **The shipped image was gated again.** The table above is the prototype's image. The image built at
+  `a1c31e82e` (follow-up D changed no byte of it; normalised sha256 `0289afcd...`, which differs from the
+  prototype's by the follow-ups' firmware changes) ran the same legs on the rig with BlipToaster, and passed: booted in 12.2 s (saved choice, CRC skip,
   expansion volume 129); `stress.sh` 50756 msgs, fail 0, isolated latency worst 1089 us and 621 us, the SysEx window
   20.6 ms and its recovery 12.0 ms; audio A4 440.30 Hz +1.2 c and C5 522.16 Hz -3.6 c; `faults.sh --rounds 8` 8 of 8
   (abandoned 8, stuck 0, recoveries 0); the upload path with two ROMs staged: pick 1 uploaded in 4922 ms and pick 0
@@ -917,11 +927,13 @@ baseline of section 8. The table is the prototype's final image; the shipped one
   have no host test). The main loop still splits into the generic host and the pack's part then.
 - **Windows, macOS and arm64 have never built E2.** Its new surface under `/W4 /WX` on MSVC is `retroplug-n8`,
   `retroplug-n8-desktop` and `retroplug-n8-device`, `DeviceAbi.c` compiled as C, the generated providers header in
-  three products, `N8Rpc.cpp`'s `std::filesystem` (on Windows now only for POSIX names), `SerialTransport.cpp`'s
+  three products, `N8Rpc.cpp`'s `std::filesystem` (`canonical` is not called on Windows now), `SerialTransport.cpp`'s
   `#if !defined(_WIN32)` half (the exclusive descriptor), and `FakeN8.hpp` in `retroplug-host`; AppleClang and libc++
   have not seen any of it, nor has the arm64 job. Their first run is on the first push that triggers `build.yml`, which
   runs only on pull requests, main and a dispatch, and so is the first run of the `device:box` step on a runner too. A
   `build.bat`, `test.bat` and macOS and arm64 builds are owed.
+- **`pnpm test:n8` is no CI step on any platform** (nor in `test.bat`): the Edio golden, the facet's tests and the pty
+  exclusivity case run only where someone runs them by hand.
 - **Template gaps the next pack will meet** (a pack template, none of them E2's to close):
   - rpcpp's `addHandler` assigns into a map, so a method name a pack shares with a host facet or another pack replaces
     it without a word; the `n8*` prefix is convention only, stated in `cmake/packages.cmake`. The server is the
