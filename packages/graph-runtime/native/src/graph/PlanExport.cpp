@@ -479,6 +479,14 @@ ExportResult exportPlan(const GraphDocument& document, const NodeRegistry& regis
         return result;
     };
     if (!sizePlan(blob, deviceTypes, options.arenaBytes, &result.size, &err)) return refuse();
+    // With no budget the sizing pass refuses nothing below 2^48; a plan past what a 32-bit arena addresses is no
+    // device's, and the trial load below would allocate it here.
+    if (result.size.bytes > 0xFFFFFFFFull) {
+        std::snprintf(err.code, sizeof err.code, "arena");
+        std::snprintf(err.message, sizeof err.message, "the plan needs %llu bytes, more than any rp2350 arena holds",
+                      static_cast<unsigned long long>(result.size.bytes));
+        return refuse();
+    }
     // The trial load: the blob laid out, created and activated by the device's builds on the exporter's host, in an
     // arena of exactly the size it measured, then unloaded. What the device's create or activate would refuse at boot
     // (a refusal a device build makes and the desktop's does not) is refused here instead, in the loader's words.

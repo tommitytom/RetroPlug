@@ -19,6 +19,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -146,6 +147,73 @@ struct AlteredPlanTypes {
                rp_device_io_package_device_mode(), &package, rp_devtest_fault_package_device_mode()};
     }
 };
+
+// A device-only query_memory that asks for more than a 32-bit arena can address, as a type with a huge line would.
+bool askFiveGiB(const rp_node_type*, const rp_settings* s, rp_memory_req* out, rp_error* err) {
+    const rp_node_type* real = deviceDigest();
+    if (!real->query_memory(real, s, out, err)) return false;
+    out->size = std::size_t{5} << 30;
+    return true;
+}
+
+// A desktop type that is rp.core.constant in all but not writing its settings back (rp.sdk.settings-json/1), as a
+// hand-written type would not: its node wraps the real one and answers every interface but that one.
+struct Unwritable {
+    rp_node        base;
+    rp_node*       inner;
+    static const rp_node_type* real() {
+        const rp_package* p = rp_core_package();
+        for (std::uint32_t i = 0; i < p->node_type_count; ++i)
+            if (std::string_view(p->node_types[i]->id) == "rp.core.constant") return p->node_types[i];
+        return nullptr;
+    }
+    static Unwritable* of(rp_node* n) { return reinterpret_cast<Unwritable*>(n); }
+    static std::size_t head() { return (sizeof(Unwritable) + 15) & ~std::size_t{15}; }
+
+    static const char* descriptor(const rp_node_type*) { return real()->descriptor(real()); }
+    static std::size_t layoutFor(const rp_node_type*, const rp_settings* s, char* out, std::size_t cap, rp_error* e) {
+        return real()->layout_for(real(), s, out, cap, e);
+    }
+    static bool queryMemory(const rp_node_type*, const rp_settings* s, rp_memory_req* out, rp_error* e) {
+        if (!real()->query_memory(real(), s, out, e)) return false;
+        out->size += head();
+        out->align = std::max<std::size_t>(out->align, 16);
+        return true;
+    }
+    static rp_node* create(const rp_node_type*, const rp_host* h, void* memory, const rp_settings* s, rp_error* e) {
+        auto* w = static_cast<Unwritable*>(memory);
+        w->inner = real()->create(real(), h, static_cast<std::byte*>(memory) + head(), s, e);
+        if (!w->inner) return nullptr;
+        w->base.vt = &kVt;
+        return &w->base;
+    }
+    static void destroy(rp_node* n) { real()->destroy(of(n)->inner); }
+
+    static bool activate(rp_node* n, double r, std::uint32_t f, rp_error* e) {
+        return of(n)->inner->vt->activate(of(n)->inner, r, f, e);
+    }
+    static void deactivate(rp_node* n) { of(n)->inner->vt->deactivate(of(n)->inner); }
+    static void portsChanged(rp_node* n, const std::uint8_t* c, std::uint32_t k) {
+        of(n)->inner->vt->ports_changed(of(n)->inner, c, k);
+    }
+    static rp_status process(rp_node* n, const rp_process* b) { return of(n)->inner->vt->process(of(n)->inner, b); }
+    static rp_prepare_result prepare(rp_node* n, const rp_settings* s, void** p, rp_error* e) {
+        return of(n)->inner->vt->prepare_settings(of(n)->inner, s, p, e);
+    }
+    static void commit(rp_node* n, void* p, void** old) { of(n)->inner->vt->commit_settings(of(n)->inner, p, old); }
+    static void release(rp_node* n, void* old) { of(n)->inner->vt->release_settings(of(n)->inner, old); }
+    static const void* interfaceOf(rp_node* n, const char* id) {
+        if (std::string_view(id) == "rp.sdk.settings-json/1") return nullptr;
+        return of(n)->inner->vt->get_interface(of(n)->inner, id);
+    }
+    static const rp_node_vtable kVt;
+    static const rp_node_type   kType;
+};
+const rp_node_vtable Unwritable::kVt{&Unwritable::activate, &Unwritable::deactivate, &Unwritable::portsChanged,
+                                     &Unwritable::process,  &Unwritable::prepare,    &Unwritable::commit,
+                                     &Unwritable::release,  &Unwritable::interfaceOf};
+const rp_node_type Unwritable::kType{"rp.core.constant", &Unwritable::descriptor, &Unwritable::layoutFor,
+                                     &Unwritable::queryMemory, &Unwritable::create, &Unwritable::destroy, 0, nullptr};
 
 std::string codes(const ExportResult& r) {
     std::string out;
@@ -596,6 +664,10 @@ TEST_CASE("an exported blob is byte-stable: twice, in another process, and again
     const auto dir =
         std::filesystem::temp_directory_path() / ("rp-export-plan-" + std::to_string(std::random_device{}()));
     std::filesystem::create_directories(dir);
+    struct Remove {  // the directory goes with the case, a failed REQUIRE included
+        const std::filesystem::path& dir;
+        ~Remove() { std::error_code ignored; std::filesystem::remove_all(dir, ignored); }
+    } removeDir{dir};
     const std::string doc = R"({"nodes":[
         {"id":"c","type":"rp.core.constant","params":{"value":0.25}},
         {"id":"d","type":"rp.core.delay","settings":{"maxSamples":2000,"channels":1},"params":{"time":120}},
@@ -635,12 +707,16 @@ TEST_CASE("an exported blob is byte-stable: twice, in another process, and again
     CHECK_FALSE(std::filesystem::exists(dir / "small.bin"));
     CHECK(run("\"" + (dir / "x.bin").string() + "\" --arena") != 0);  // a usage error
     CHECK(run("\"" + (dir / "x.bin").string() + "\" --sample-rate inf") != 0);
+    CHECK(run("\"" + (dir / "x.bin").string() + "\" --bogus 1") != 0);
+    CHECK(contains(readFile(dir / "stderr.txt"), "unknown option"));
+    CHECK(run("\"" + (dir / "x.bin").string() + "\" --header 1bad") != 0);
+    CHECK(contains(readFile(dir / "stderr.txt"), "an option's value is not one it takes"));
+    CHECK_FALSE(std::filesystem::exists(dir / "x.bin"));
     // A refusal at a port names it.
     std::ofstream(dir / "plan.json", std::ios::trunc)
         << R"({"nodes":[{"id":"pl","type":"rp.core.buffer-player","resources":{"sample":"res:1"}}],"wires":[]})";
     CHECK(run("\"" + (dir / "x.bin").string() + "\"") != 0);
     CHECK(contains(readFile(dir / "stderr.txt"), "resource pl.sample: resources are not exported to rp2350 yet"));
-    std::filesystem::remove_all(dir);
 }
 
 TEST_CASE("the loader refuses a blob it cannot run, in its own words, creating nothing", "[device-mode][plan]") {
@@ -757,6 +833,153 @@ TEST_CASE("the loader refuses a blob it cannot run, in its own words, creating n
         reseal(b);
         CHECK(contains(refusal(b), "settings-invalid a: "));
     }
+    SECTION("coupled nodes that do not implement the link or the step interface unwind everything made") {
+        // Peers named for a node with no rp.link/1 (src), after every node was created and activated.
+        std::vector<std::uint8_t> b = good;
+        blob::Header              h = headerOf(b);
+        const auto&               peers = h.sections[static_cast<int>(blob::Section::Peers)];
+        REQUIRE(peers.count > 0);
+        blob::PeerRecord p;
+        std::memcpy(&p, b.data() + peers.offset, sizeof p);
+        p.node = 0;  // "src"
+        std::memcpy(b.data() + peers.offset, &p, sizeof p);
+        reseal(b);
+        REQUIRE(rp_devtest_plan_live_device_mode() == 0);
+        CHECK(refusal(b) == "peers-without-link src: \"src\" has peers but does not implement rp.link/1");
+        CHECK(rp_devtest_plan_live_device_mode() == 0);
+
+        // Two steps outside the lockstep pair made a coupled group: the first has no rp.step/1.
+        b = good;
+        const auto& steps = h.sections[static_cast<int>(blob::Section::Steps)];
+        const auto& nodes = h.sections[static_cast<int>(blob::Section::Nodes)];
+        auto stepAt = [&](std::uint32_t i) {
+            blob::StepRecord r;
+            std::memcpy(&r, b.data() + steps.offset + i * sizeof r, sizeof r);
+            return r;
+        };
+        auto nodeAt = [&](std::uint32_t i) {
+            blob::NodeRecord r;
+            std::memcpy(&r, b.data() + nodes.offset + i * sizeof r, sizeof r);
+            return r;
+        };
+        std::uint32_t pairStart = 0, pairEnd = 0;  // the lockstep pair's steps
+        for (std::uint32_t i = 0; i < steps.count; ++i)
+            if (stepAt(i).groupSize > 1) {
+                pairStart = i;
+                pairEnd = i + stepAt(i).groupSize;
+            }
+        auto inPair = [&](std::uint32_t i) { return i >= pairStart && i < pairEnd; };
+        std::uint32_t first = 0;
+        while (first + 1 < steps.count && (inPair(first) || inPair(first + 1))) ++first;
+        REQUIRE(first < steps.count);
+        blob::StepRecord lead = stepAt(first);
+        lead.groupSize = 2;
+        std::memcpy(b.data() + steps.offset + first * sizeof lead, &lead, sizeof lead);
+        blob::NodeRecord follower = nodeAt(stepAt(first + 1).node);
+        follower.group = nodeAt(lead.node).group;
+        std::memcpy(b.data() + nodes.offset + stepAt(first + 1).node * sizeof follower, &follower, sizeof follower);
+        reseal(b);
+        const std::string why = refusal(b);
+        CHECK(contains(why, "link-without-step "));
+        CHECK(contains(why, " is coupled but does not implement rp.step/1"));
+        CHECK(rp_devtest_plan_live_device_mode() == 0);
+    }
+    SECTION("an arena that is not aligned") {
+        Arena        arena(kArenaBytes);
+        PlanLoadError err{};
+        const auto   span = arena.span(kArenaBytes);
+        CHECK(loadPlan(good, span.subspan(1), deviceTypes(), &kDeviceHost, &err) == nullptr);
+        CHECK(text(err.code) == "arena");
+        CHECK(text(err.message) == "the arena must be aligned to " + std::to_string(kArenaAlign) + " bytes");
+    }
+    SECTION("a plan whose shape is not one it can run") {
+        auto edited = [&](auto edit) {
+            std::vector<std::uint8_t> b = good;
+            blob::Header              h = headerOf(b);
+            edit(b, h);
+            std::memcpy(b.data(), &h, sizeof h);
+            reseal(b);
+            return refusal(b);
+        };
+        const char* positive = "plan-malformed : the plan's sample rate and maxFrames must be positive";
+        CHECK(edited([](auto&, blob::Header& h) { h.maxFrames = 0; }) == positive);
+        CHECK(edited([](auto&, blob::Header& h) { h.sampleRate[0] = 0; h.sampleRate[1] = 0x7ff80000u; }) == positive);
+        CHECK(edited([](auto&, blob::Header& h) { h.sampleRate[0] = 0; h.sampleRate[1] = 0; }) == positive);
+        // A section off the word boundary, and one inside the header.
+        const auto strings = static_cast<int>(blob::Section::Strings);
+        CHECK(contains(edited([&](auto&, blob::Header& h) { h.sections[strings].offset += 1; }),
+                       "plan-malformed : the strings section ["));
+        CHECK(contains(edited([&](auto&, blob::Header& h) { h.sections[strings].offset = 4; }),
+                       "is not within the blob's"));
+    }
+    SECTION("records that do not hold together") {
+        const blob::Header h = headerOf(good);
+        // Edits one record of a section in place.
+        auto change = [&](blob::Section section, std::uint32_t index, auto&& edit) {
+            std::vector<std::uint8_t> b = good;
+            const auto&               e = h.sections[static_cast<int>(section)];
+            REQUIRE(index < e.count);
+            std::uint8_t* at = b.data() + e.offset + index * e.recordBytes;
+            edit(at);
+            reseal(b);
+            return refusal(b);
+        };
+        auto set32 = [](std::uint8_t* at, std::size_t word, std::uint32_t v) { std::memcpy(at + word * 4, &v, 4); };
+        auto get32 = [](const std::uint8_t* at, std::size_t word) {
+            std::uint32_t v;
+            std::memcpy(&v, at + word * 4, 4);
+            return v;
+        };
+        const auto& steps = h.sections[static_cast<int>(blob::Section::Steps)];
+        // Two nodes with each other's step: step 0 runs a node whose step is another.
+        {
+            std::vector<std::uint8_t> b = good;
+            const auto&               nodes = h.sections[static_cast<int>(blob::Section::Nodes)];
+            std::uint8_t*             n0 = b.data() + nodes.offset;
+            std::uint8_t*             n1 = n0 + sizeof(blob::NodeRecord);
+            const std::uint32_t       s0 = get32(n0, 7), s1 = get32(n1, 7);  // a NodeRecord's step is word 7
+            set32(n0, 7, s1);
+            set32(n1, 7, s0);
+            reseal(b);
+            CHECK(contains(refusal(b), "plan-malformed : step "));
+            CHECK(contains(refusal(b), ", whose step is "));
+        }
+        // A coupled group of one, and one that runs past the schedule.
+        CHECK(change(blob::Section::Steps, 0, [&](std::uint8_t* at) { set32(at, 1, 1); }) ==
+              "plan-malformed : step 0's coupled group of 1 does not fit the schedule");
+        CHECK(change(blob::Section::Steps, steps.count - 1, [&](std::uint8_t* at) { set32(at, 1, 2); }) ==
+              "plan-malformed : step " + std::to_string(steps.count - 1) +
+                  "'s coupled group of 2 does not fit the schedule");
+        // A port kind no view has.
+        CHECK(change(blob::Section::Views, 0, [&](std::uint8_t* at) { set32(at, 0, 99); }) ==
+              "plan-malformed : views record 0 has port kind 99, which it cannot have");
+        // A node's mask with the wrong number of flags.
+        const auto& masks = h.sections[static_cast<int>(blob::Section::Masks)];
+        REQUIRE(masks.count > 0);
+        {
+            std::vector<std::uint8_t> b = good;
+            std::uint8_t*             at = b.data() + masks.offset;
+            REQUIRE(get32(at, 2) > 0);
+            set32(at, 2, get32(at, 2) - 1);
+            reseal(b);
+            CHECK(contains(refusal(b), "plan-malformed : the mask for "));
+            CHECK(contains(refusal(b), " flags, for a node of "));
+        }
+        // A feedback copy of audio holding more frames than a block can.
+        const auto& feedback = h.sections[static_cast<int>(blob::Section::Feedback)];
+        std::uint32_t audioCopy = feedback.count;
+        for (std::uint32_t i = 0; i < feedback.count && audioCopy == feedback.count; ++i)
+            if (get32(good.data() + feedback.offset + i * feedback.recordBytes, 0) == RP_PORT_AUDIO) audioCopy = i;
+        REQUIRE(audioCopy < feedback.count);
+        CHECK(change(blob::Section::Feedback, audioCopy, [&](std::uint8_t* at) { set32(at, 4, kMaxFrames + 1); }) ==
+              "plan-malformed : feedback copy " + std::to_string(audioCopy) + " holds " +
+                  std::to_string(kMaxFrames + 1) + " frames, past the plan's maxFrames of " +
+                  std::to_string(kMaxFrames));
+        // A feedback copy of a kind it cannot be.
+        CHECK(change(blob::Section::Feedback, audioCopy, [&](std::uint8_t* at) { set32(at, 0, RP_PORT_LINK); }) ==
+              "plan-malformed : feedback copies record " + std::to_string(audioCopy) +
+                  " has port kind " + std::to_string(static_cast<unsigned>(RP_PORT_LINK)) + ", which it cannot have");
+    }
     SECTION("another target, another section count, another record size") {
         auto edited = [&](auto edit) {
             std::vector<std::uint8_t> b = good;
@@ -865,6 +1088,49 @@ TEST_CASE("the exporter refuses what a device cannot run, and says why", "[devic
         const auto unbounded = exported(R"({"nodes":[{"id":"d","type":"rp.core.delay"}],"wires":[]})", 0);
         CHECK(unbounded.ok());
         CHECK(unbounded.size.bytes > kArenaBytes);
+    }
+    SECTION("a target that is not the rp2350") {
+        auto          registry = desktopRegistry();
+        ExportOptions o = options();
+        o.target = Target::Desktop;
+        const ExportResult r = exportPlan(kDocument, *registry, deviceTypes(), o);
+        REQUIRE(r.errors.size() == 1);
+        CHECK(r.errors[0].code == "target");
+        CHECK(r.errors[0].message == "a plan is exported for rp2350 alone");
+        CHECK(r.blob.empty());
+    }
+    SECTION("options no device has") {
+        auto          registry = desktopRegistry();
+        ExportOptions o = options();
+        o.maxFrames = 0;
+        CHECK(codes(exportPlan(kDocument, *registry, deviceTypes(), o)) == "export-options");
+        o = options(std::size_t{1} << 32);
+        const ExportResult r = exportPlan(kDocument, *registry, deviceTypes(), o);
+        REQUIRE(r.errors.size() == 1);
+        CHECK(r.errors[0].code == "export-options");
+        CHECK(r.errors[0].message == "an arena of 4 GiB or more is no device's");
+    }
+    SECTION("a node that cannot write its settings back") {
+        const rp_node_type* const types[] = {&Unwritable::kType};
+        const rp_package package{RP_ABI_VERSION, R"({"id":"rp.devtest.unwritable","version":"1.0.0"})", 1, types};
+        auto registry = registryOf({&package});
+        const ExportResult r =
+            exportPlan(R"({"nodes":[{"id":"k","type":"rp.core.constant"}],"wires":[]})", *registry, deviceTypes(),
+                       options());
+        REQUIRE(r.errors.size() == 1);
+        CHECK(r.errors[0].code == "settings-export");
+        CHECK(r.errors[0].nodeId == "k");
+        CHECK(contains(r.errors[0].message, "cannot write its settings back (rp.sdk.settings-json/1)"));
+        CHECK(r.blob.empty());
+    }
+    SECTION("a plan no 32-bit arena can hold, asked for with no budget, is refused before it is trial-loaded") {
+        const AlteredPlanTypes huge([](rp_node_type& t) { t.query_memory = &askFiveGiB; });
+        const auto             r = exported(kDocument, 0, true, huge.all);
+        REQUIRE(r.errors.size() == 1);
+        CHECK(r.errors[0].code == "arena");
+        CHECK(contains(r.errors[0].message, "more than any rp2350 arena holds"));
+        CHECK(r.blob.empty());
+        CHECK(rp_devtest_plan_live_device_mode() == 0);
     }
     SECTION("what the planner refuses on the desktop too") {
         CHECK(codes(exported(R"({"nodes":[{"id":"a","type":"rp.devtest.lockstep"}],

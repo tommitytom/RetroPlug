@@ -376,11 +376,6 @@ bool check(std::span<const std::uint8_t> data, std::span<const rp_package* const
 
 // ---- the layout ---------------------------------------------------------------------------------------------------
 
-// What the arena's start is aligned to: the target's alignment, and the compiler's max_align_t where that is more (the
-// desktop's), so every request the layout makes (an instance's at most kTargetAlign, a pool's at most its type's) is
-// met by an offset of the same alignment and the layout is the same computation wherever it runs.
-constexpr std::uint64_t kBaseAlign =
-    kTargetAlign > alignof(std::max_align_t) ? kTargetAlign : alignof(std::max_align_t);
 constexpr std::uint64_t kUnlimited = ~std::uint64_t{0};
 
 // Bump allocation from offset 0, over at most `limit` bytes of `base`. With no base it only counts (the exporter's
@@ -457,8 +452,8 @@ bool layout(const Blob& b, std::span<const rp_package* const> types, Bump& bump,
     p.paramViews = bump.array<rp_control_queue*>(b.count(Section::ParamViews));
     p.wired = bump.array<std::uint8_t>(b.count(Section::ParamViews));
     p.channels = bump.array<float*>(b.count(Section::Channels));
-    p.bufferStride = (std::uint64_t{b.h.maxFrames} * sizeof(float) + (kBaseAlign - 1)) & ~(kBaseAlign - 1);
-    p.buffers = bump.raw(Bump::product(p.bufferStride, b.h.buffers), kBaseAlign);
+    p.bufferStride = (std::uint64_t{b.h.maxFrames} * sizeof(float) + (kArenaAlign - 1)) & ~(kArenaAlign - 1);
+    p.buffers = bump.raw(Bump::product(p.bufferStride, b.h.buffers), kArenaAlign);
     p.queues = bump.array<rp_queue>(b.count(Section::Queues));
     for (std::uint32_t i = 0; i < b.count(Section::Queues); ++i) {
         const auto q = b.record<QueueRecord>(Section::Queues, i);
@@ -726,8 +721,8 @@ bool sizePlan(std::span<const std::uint8_t> blob, std::span<const rp_package* co
 LoadedPlan* loadPlan(std::span<const std::uint8_t> blob, std::span<std::byte> arena,
                      std::span<const rp_package* const> types, const rp_host* host, PlanLoadError* error) {
     if (!error) return loadPlanIgnoring(blob, arena, types, host);
-    if (reinterpret_cast<std::uintptr_t>(arena.data()) % kBaseAlign != 0) {
-        fail(error, "arena") << "the arena must be aligned to " << kBaseAlign << " bytes";
+    if (reinterpret_cast<std::uintptr_t>(arena.data()) % kArenaAlign != 0) {
+        fail(error, "arena") << "the arena must be aligned to " << kArenaAlign << " bytes";
         return nullptr;
     }
     Blob b;

@@ -53,8 +53,8 @@ static_assert(RP_DEVICE_CHECK_ARENA_BYTES == rp::device_check::kArenaBytes,
 
 namespace {
 
-// Aligned past the loader's need (the larger of the RP2350's max_align_t and the compiler's).
-alignas(16) std::byte gArena[rp::device_check::kArenaBytes];
+// Aligned as the loader asks.
+alignas(rp::graph::kArenaAlign) std::byte gArena[rp::device_check::kArenaBytes];
 
 void led(bool on) { gpio_put(PICO_DEFAULT_LED_PIN, on); }
 

@@ -7,18 +7,17 @@
 // so a plan that would not fit is refused at export by the same arithmetic the device refuses it with.
 //
 // loadPlan, in order: checks the blob (its magic, its version, its length, its CRC, every index and offset in bounds,
-// every type id registered), sizes it (each node's own query_memory on its settings, plus every pool, view array, step
-// and counter) and refuses one over the arena, naming the node that tips it over and by how much, before it creates
-// anything; then lays it out and runs it up in PlanStorage::adopt's order: create and activate each node in the
-// document's order, bind the steps, tell each linked node its peers, each node its connected outputs, and start each
-// param the document sets. A failure part-way unwinds what it made, in reverse, and names the node and the step.
+// every type id registered), then lays it out and sizes it in one pass (each node's own query_memory on its settings,
+// plus every pool, view array, step and counter), refusing a plan over the arena, naming the node that tips it over and
+// by how much, before it creates anything; then runs it up in PlanStorage::adopt's order: create and activate each node
+// in the document's order, bind the steps, tell each linked node its peers, each node its connected outputs, and start
+// each param the document sets. A failure part-way unwinds what it made, in reverse, and names the node and the step.
 // unloadPlan deactivates and destroys the nodes in reverse.
 //
 // The blob is read in place and must outlive the plan loaded from it (on the device it is in flash): node ids and the
-// masks point into it. The arena must be aligned to the larger of the target's alignment (PlanBlob.hpp's kTargetAlign,
-// the RP2350's max_align_t) and the compiler's max_align_t, and a node type that asks for more than the target's
-// alignment is refused, on the desktop's sizing pass as on the device, so the sizing pass and the layout are one
-// computation wherever they run.
+// masks point into it. The arena must be aligned to kArenaAlign, and a node type that asks for more than the target's
+// alignment (PlanBlob.hpp's kTargetAlign, the RP2350's max_align_t) is refused, on the desktop's sizing pass as on the
+// device. The sizing pass and the layout are one function (layout()), so on one host the measure is the placement.
 //
 // The blob is trusted to be the exporter's output for these builds of its types. The checks keep the loader's own
 // reads and writes in bounds (every index, offset and count, overflow-safe) and refuse a corrupted blob (the CRC), but
@@ -36,9 +35,16 @@
 #include <string_view>
 
 #include "graph/Plan.hpp"
+#include "graph/PlanBlob.hpp"
 #include "graph/rp_node.h"
 
 namespace rp::graph {
+
+// What an arena's start must be aligned to: the target's alignment (blob::kTargetAlign), and the compiler's max_align_t
+// where that is more (the desktop's), so every request the layout makes (an instance's at most kTargetAlign, a pool's
+// at most its type's) is met by an offset of the same alignment. A firmware's static arena is declared with it.
+inline constexpr std::uint64_t kArenaAlign =
+    blob::kTargetAlign > alignof(std::max_align_t) ? blob::kTargetAlign : alignof(std::max_align_t);
 
 // Why a plan was refused: a code (the planner's where it has one: "unknown-type", "settings-invalid", "create-failed",
 // "activate-failed", "link-without-step"; the loader's own: "plan-format", "plan-version", "plan-truncated",

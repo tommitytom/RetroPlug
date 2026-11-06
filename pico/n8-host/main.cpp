@@ -45,6 +45,7 @@ extern "C" bool pio_usb_root_attached(void);   // pio_usb_root.c: pio_usb_ll.h i
 #include "box.h"
 #include "graph/Packages.hpp"
 #include "graph/PlanBlob.hpp"
+#include "graph/PlanLoader.hpp"
 #include "n8/Edio.hpp"
 #include "n8/Menu.hpp"
 #include "n8/Ops.hpp"
@@ -117,7 +118,7 @@ static uint32_t      menu_stuck_until = 0; // !0: the menu stopped answering - n
 #ifndef N8_HOST_ARENA_BYTES
 #error "N8_HOST_ARENA_BYTES: the plan's arena, which CMakeLists.txt sets for the image and its export alike"
 #endif
-alignas(rp::graph::blob::kTargetAlign > alignof(max_align_t) ? rp::graph::blob::kTargetAlign : alignof(max_align_t))
+alignas(rp::graph::kArenaAlign)
 static std::byte arena[N8_HOST_ARENA_BYTES];
 
 static rp::box::MidiStaging   staging;
