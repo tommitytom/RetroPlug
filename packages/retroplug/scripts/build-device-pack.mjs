@@ -19,26 +19,41 @@
 //   descriptor JSON). A definition the device refuses (an audio port, graph/defineNode.ts) throws here, at build time,
 //   with its own message. Node's run is the REFERENCE, nothing more: a vm context has every standard global whatever
 //   it is handed, so it says nothing about what MicroQuickJS has.
-// - The bytecode: `mqjs -o` compiles the pack at the host's width (64-bit, for the desktop's mquickjs host) and with
-//   `-m32` (the box's). It is relocated to address 0 and names its source by the bundle's file name alone, so the same
-//   pack builds the same bytes in any checkout.
+// - The bytecode: `mqjs -o` compiles the pack at the host's width (64-bit, for the desktop's mquickjs host). It is
+//   relocated to address 0 and names its source by the bundle's file name alone, so the same pack builds the same
+//   bytes in any checkout.
+// - The device's runtime: the bytecode every node of the pack runs, on every host, is the pack bundled a second time
+//   with RP_DEVICE_RUNTIME defined true as well (and esbuild's syntax folding, which turns the define into dead
+//   branches it then drops), over the device's runtime of the node SDK (graph/defineNode.ts): a definition keeps its
+//   id, its create, its layout and its idle flag, which is all running a node asks of one, and the checks, the
+//   settings parse and the descriptor go, which the whole pack keeps for the desktop's control context. It is lowered
+//   and scanned as the pack is, and compiled with `-m32` for the box and at 64 bits for the desktop. The pack's own
+//   code is the same source in both bundles; the engine runs below hold the two to the same layouts and the same
+//   output.
 // - The engine's run, on the runner (retroplug-mqjs-run: RetroPlug's own standard library and the MicroQuickJS script
 //   host, as the desktop and the box run a pack, not upstream's REPL): the pack with the epilogue, compiled as the pack
-//   is, runs as bytecode and must print Node's transcript byte for byte; and the pack's own 64-bit bytecode, set up as
-//   a host sets a pack up, must define its node types, create one node of each from its default settings and run each
-//   for a run of blocks with messages on every events or bytes input, inside the heap its manifest declares (the whole
-//   context, so the figure is the context's size). The check is at 64 bits: a 64-bit context is the larger, so a pack
-//   that runs in its heap here runs in it on the box. The runner also finds the least context the same run needs, which
-//   this prints beside the declaration. The 32-bit bytecode runs on the box alone.
+//   is, runs as bytecode and must print Node's transcript byte for byte; each type's layout for its default settings,
+//   from the whole pack and from the device's runtime, each run on the engine, must be the same JSON; and the pack's
+//   64-bit bytecode, set up as a host sets a pack up, must define its node types, create one node of each from its
+//   default settings and run each for a run of blocks with messages on every events or bytes input (every first byte
+//   among them), inside the heap its manifest declares, by the toolchain's heuristic: the whole context as the box runs
+//   it, at 32 bits, which the runner's check takes 3/2 of at 64 bits (script/MqjsHost.hpp's kCheckHalves says why,
+//   and why that is no guarantee: the box's boot line and the device check are the authority). The whole pack's
+//   nodes run first, as the reference; then the device's runtime's, registered from the whole pack as the desktop
+//   registers them, through the same run in the same heap: their output must be the reference's, block for block (the
+//   runner's digest). The runner also finds the least heap each run needs by that check, which this prints beside the
+//   declaration. The 32-bit bytecode runs on the box alone.
 //
-// Writes, under --out-dir and only once every check has passed: <name>.js (the lowered pack, what the bytecode is
-// compiled from), <name>.mqjs64.bin and <name>.mqjs32.bin (the bytecode), <name>.pack64.c and <name>.pack32.c (the same
-// bytecode as C, with the node type ids the definitions register and the declared heap, for a binary to carry:
-// graph-runtime's script/rp_mqjs_pack.h), and <name>.transcript.txt (the engine run's transcript), each only when its
-// bytes change. Its work files are in a directory of their own beside them, removed whether the pack passes or not.
-// Exits nonzero saying what refused the pack. CMake runs it for a package whose manifest declares a script pack
-// (cmake/packages.cmake, retroplug_device_script_pack), with the manifest's entry and heap; the tests run it on
-// fixtures of their own (test/graph/device-pack.test.ts).
+// Writes, under --out-dir and only once every check has passed: <name>.js (the lowered pack, what the whole pack's
+// bytecode is compiled from), <name>.device.js (the device's runtime, lowered, what every node's bytecode is compiled
+// from: a fault's line is a line of it), <name>.mqjs64.bin (the whole pack), <name>.device64.bin and <name>.mqjs32.bin
+// (the device's runtime at each width), <name>.pack64.c and <name>.pack32.c (the bytecode as C, with the node type ids
+// the definitions register, the declared heap and the 32-bit bytecode's size, for a binary to carry: graph-runtime's
+// script/rp_mqjs_pack.h; the 64-bit one carries both bundles), and <name>.transcript.txt (the engine run's
+// transcript), each only when its bytes change. Its work files are in a directory of their own beside them,
+// removed whether the pack passes or not. Exits nonzero saying what refused the pack. CMake runs it for a package whose
+// manifest declares a script pack (cmake/packages.cmake, retroplug_device_script_pack), with the manifest's entry and
+// heap; the tests run it on fixtures of their own (test/graph/device-pack.test.ts).
 //
 // Usage: node build-device-pack.mjs --entry <file.ts> --name <pack> --heap-bytes <n> --out-dir <dir>
 //                                   [--pack-dir <dir>] [--mqjs <path>] [--runner <path>]
@@ -47,7 +62,7 @@
 //   --runner    the runner (default: RUNNER, else build/bin/retroplug-mqjs-run, the desktop build's target)
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -159,8 +174,9 @@ if (!/^[a-z0-9][a-z0-9._-]*$/.test(NAME)) usage(`--name ${NAME} is not a file-na
 const ENTRY = resolve(args.entry);
 const PACK_DIR = resolve(args.packDir ?? dirname(ENTRY));
 const OUT_DIR = resolve(args.outDir);
-// The work files' own directory, beside the outputs: mqjs runs in it, and it goes whatever the outcome.
-const WORK = join(OUT_DIR, `.${NAME}.work`);
+// The work files' own directory, beside the outputs: mqjs runs in it, and it goes whatever the outcome. One a process:
+// a parallel build may run one pack's target from two of its goals at once (each a product that registers the pack).
+const WORK = join(OUT_DIR, `.${NAME}.work-${process.pid}`);
 const fail = (msg) => {
   rmSync(WORK, { recursive: true, force: true });
   console.error(`device pack ${NAME}: ${msg}`);
@@ -169,11 +185,11 @@ const fail = (msg) => {
 if (!/^[1-9][0-9]*$/.test(args.heapBytes)) usage(`--heap-bytes ${args.heapBytes} is not a whole number of bytes`);
 const HEAP_BYTES = Number(args.heapBytes);
 if (!existsSync(ENTRY)) fail(`no entry ${ENTRY}`);
-const MQJS = args.mqjs ?? process.env.MQJS ??
-  join(REPO, "build/bin", process.platform === "win32" ? "mqjs.exe" : "mqjs");
+const MQJS = resolve(args.mqjs ?? process.env.MQJS ??
+  join(REPO, "build/bin", process.platform === "win32" ? "mqjs.exe" : "mqjs"));
 if (!existsSync(MQJS)) fail(`no mqjs at ${MQJS} (build the desktop build's \`mqjs\` target, or pass --mqjs)`);
-const RUNNER = args.runner ?? process.env.RUNNER ??
-  join(REPO, "build/bin", process.platform === "win32" ? "retroplug-mqjs-run.exe" : "retroplug-mqjs-run");
+const RUNNER = resolve(args.runner ?? process.env.RUNNER ??
+  join(REPO, "build/bin", process.platform === "win32" ? "retroplug-mqjs-run.exe" : "retroplug-mqjs-run"));
 if (!existsSync(RUNNER)) {
   fail(`no runner at ${RUNNER} (build the desktop build's \`retroplug-mqjs-run\` target, or pass --runner)`);
 }
@@ -187,10 +203,14 @@ const TOOL_ENV = { ...process.env,
 
 // An output written only when its bytes change, so what a build makes from it (the bytecode embedded in an image) is
 // remade only then.
+// Written beside it and renamed over it, so a compile reading it while another run of the same pack writes it never
+// reads half a file.
 function keep(file, bytes) {
   const data = typeof bytes === "string" ? Buffer.from(bytes) : bytes;
   if (existsSync(file) && readFileSync(file).equals(data)) return;
-  writeFileSync(file, data);
+  const temp = `${file}.${process.pid}`;
+  writeFileSync(temp, data);
+  renameSync(temp, file);
 }
 
 // ---- the bundle and its allowlist --------------------------------------------------------------------------------
@@ -480,7 +500,7 @@ function helperCaller(lines, i, origin) {
 // Each MISSING kind's hit in `code`, named by the module line `origin` maps it to: the first that maps, else the first
 // in a helper, named with the source line that called the helper. With no origin (the node SDK's own scan, which has
 // no source map), a hit is named as the SDK's, with its line of the lowered code.
-function scan(code, origin) {
+function scan(code, origin, where = "the node SDK") {
   const scanned = blankForScan(code, OWNABLE);
   const lines = scanned.split("\n");
   const hits = [];
@@ -492,7 +512,7 @@ function scan(code, origin) {
       if (!m) continue;
       const from = origin ? origin(i, m.index) : null;
       if (from) found = `${from.where}: ${m[0].trim()} (${what}): ${from.text.slice(0, 120)}`;
-      else if (!origin) found = `${m[0].trim()} (${what}) in the node SDK: ${code.split("\n")[i].trim().slice(0, 120)}`;
+      else if (!origin) found = `${m[0].trim()} (${what}) in ${where}: ${code.split("\n")[i].trim().slice(0, 120)}`;
       else if (!helperHit) helperHit = { i, m };
     }
     if (!found && helperHit) {
@@ -574,8 +594,37 @@ function compile(source, out, wide) {
   return readFileSync(join(WORK, out));
 }
 const bytecode64 = compile(es5Name, `${NAME}.mqjs64.bin`, true);
-const bytecode32 = compile(es5Name, `${NAME}.mqjs32.bin`, false);
-console.log(`  ok: compiled to bytecode, ${bytecode64.length} bytes at 64-bit and ${bytecode32.length} at 32-bit`);
+console.log(`  ok: compiled to bytecode, ${bytecode64.length} bytes at 64-bit`);
+
+// ---- the device's runtime ----------------------------------------------------------------------------------------
+
+// The same entry, bundled with RP_DEVICE_RUNTIME as well and esbuild's syntax folding, which makes the define's tests
+// constants, drops the branches they rule out and then what only those reached: the box's bundle (the header says
+// what it keeps). No source map: what it calls is the full bundle's, scanned above with every line mapped, less what
+// the folding dropped.
+let runtimeBuilt;
+try {
+  runtimeBuilt = await esbuild.build({
+    ...bundleOptions,
+    define: { ...bundleOptions.define, RP_DEVICE_RUNTIME: "true" },
+    minifySyntax: true,
+    entryPoints: [ENTRY],
+    outfile: bundleFile,
+  });
+} catch (e) {
+  fail(`bundling ${repoPath(ENTRY)} for the device's runtime failed:\n${e.message}`);
+}
+const runtimeEs5 = STRICT + lowerToEs5(runtimeBuilt.outputFiles.find((f) => f.path.endsWith(".js")).text, false).code;
+const runtimeHits = scan(runtimeEs5, null, "the device's runtime of the pack");
+if (runtimeHits.length > 0) {
+  fail(`the device's runtime calls library functions MicroQuickJS does not have:\n  ${runtimeHits.join("\n  ")}`);
+}
+const runtimeName = `${NAME}.device.js`;
+writeFileSync(join(WORK, runtimeName), runtimeEs5);
+const runtime64 = compile(runtimeName, `${NAME}.device64.bin`, true);
+const bytecode32 = compile(runtimeName, `${NAME}.mqjs32.bin`, false);
+console.log(`  ok: the device's runtime, ${(runtimeEs5.length / 1024).toFixed(1)} KB lowered, compiled to ` +
+            `${bytecode32.length} bytes at 32-bit (the box's) and ${runtime64.length} at 64-bit (the desktop's)`);
 
 // ---- the bytecode on the engine ----------------------------------------------------------------------------------
 
@@ -610,49 +659,122 @@ if (engineTranscript !== reference) {
 }
 console.log(`  ok: ${ENGINE} runs the bytecode and matches Node byte for byte (${lines.length} lines)`);
 
-const own = spawnSync(RUNNER, ["pack", `${NAME}.mqjs64.bin`, "--name", NAME, "--heap-bytes", String(HEAP_BYTES),
-                                "--types", typeIds.join(",")], { cwd: WORK, encoding: "utf8", env: TOOL_ENV });
-if (own.status !== 0) {
-  // The runner says which step failed first: "define", "create" or "run", then the node and the engine's words.
-  const what = { define: "define its node types", create: "create its nodes", run: "run its nodes" };
-  const said_ = said(own);
-  const step = /^(define|create|run): /.exec(said_);
-  const small = HEAP_BYTES < LEAST_CONTEXT ? `, as it does in a context under its least, ${LEAST_CONTEXT} bytes` : "";
-  const how = crash(own) ? `the engine crashed (${crash(own)})${small}${said_ ? `: ${said_}` : ""}`
-                         : step ? said_.slice(step[0].length) : said_;
-  fail(`its bytecode does not ${step ? what[step[1]] : "run"} in its declared heap of ${HEAP_BYTES} bytes ` +
-       `(the manifest's heapBytes): ${how}`);
+// Each type's layout for its default settings, from both bundles, each run on the engine (the runner's script): the
+// whole pack's definitions parse the defaults and lay them out, and print both; the device's runtime's lay the same
+// settings out (as a node's context gets them, JSON), and must print the same lines. The bundles' code is one source,
+// but the runtime's definitions are defineNode's device form (orderedLayout, no checks), so this holds them to the
+// whole pack's layouts directly rather than through what the nodes then send. The lines are marked, so what a pack
+// prints of its own as it runs is not compared.
+const LAYOUTS = (settings) => `
+;(function () {
+  var nodes = globalThis.__rp_scriptNodes || [];
+  var settings = ${settings ?? "null"};
+  console.log("@@ " + nodes.length + " node type(s)");
+  for (var i = 0; i < nodes.length; ++i) {
+    var s = settings ? settings[i] : nodes[i].parseSettings({});
+    console.log("@@settings " + nodes[i].id + " " + JSON.stringify(s));
+    console.log("@@layout " + JSON.stringify(nodes[i].layout(s)));
+  }
+})();
+`;
+function layoutsOf(source, file, settings) {
+  writeFileSync(join(WORK, file), source + LAYOUTS(settings));
+  const bin = file.replace(/\.js$/, ".bin");
+  compile(file, bin, true);
+  const ran = spawnSync(RUNNER, ["script", bin, "--context-bytes", String(TRANSCRIPT_HEAP)],
+                        { cwd: WORK, encoding: "utf8", env: TOOL_ENV });
+  if (ran.status !== 0) {
+    const how = crash(ran) ? `the engine crashed (${crash(ran)})` : `exit ${ran.status}`;
+    fail(`laying out its node types from ${file} failed on ${ENGINE} (${how})${said(ran) ? `: ${said(ran)}` : ""}`);
+  }
+  return printed(ran).split("\n").filter((l) => l.startsWith("@@"));
 }
+const fullLayouts = layoutsOf(es5, `${NAME}.layouts.js`, null);
+const defaults = fullLayouts.filter((l) => l.startsWith("@@settings "))
+  .map((l) => l.slice(l.indexOf(" ", "@@settings ".length) + 1));
+const runtimeLayouts = layoutsOf(runtimeEs5, `${NAME}.device-layouts.js`, `[${defaults.join(", ")}]`);
+const parted = fullLayouts.findIndex((l, i) => l !== runtimeLayouts[i]);
+if (parted >= 0 || runtimeLayouts.length !== fullLayouts.length) {
+  const i = parted >= 0 ? parted : fullLayouts.length;
+  fail(`the device's runtime lays a node out unlike the pack, at line ${i + 1}:\n  pack:    ${fullLayouts[i]}\n` +
+       `  runtime: ${runtimeLayouts[i]}`);
+}
+console.log(`  ok: the device's runtime lays its ${typeIds.length} node type(s) out as the pack does, for their ` +
+            "default settings");
+
+// The pack on the runner, in its declared heap: the nodes run from `nodes` (the whole pack's bytecode, the reference,
+// or the device's runtime's, registered from the whole pack's as the desktop registers them). Its result line's
+// fields, or a failure saying which step failed and why.
+function runPack(nodes) {
+  const runtime = nodes !== `${NAME}.mqjs64.bin`;
+  const run = spawnSync(RUNNER, ["pack", nodes, "--name", NAME, "--heap-bytes", String(HEAP_BYTES),
+                                 "--types", typeIds.join(","), ...(runtime ? ["--control", `${NAME}.mqjs64.bin`] : [])],
+                        { cwd: WORK, encoding: "utf8", env: TOOL_ENV });
+  const whose = runtime ? "the device's runtime of the pack" : "its bytecode";
+  if (run.status !== 0) {
+    // The runner says which step failed first: "define", "create" or "run", then the node and the engine's words.
+    const what = { define: "define its node types", create: "create its nodes", run: "run its nodes" };
+    const said_ = said(run);
+    const step = /^(define|create|run): /.exec(said_);
+    const small = HEAP_BYTES * 3 / 2 < LEAST_CONTEXT
+      ? `, as it does in a context under its least, ${LEAST_CONTEXT} bytes` : "";
+    const how = crash(run) ? `the engine crashed (${crash(run)})${small}${said_ ? `: ${said_}` : ""}`
+                           : step ? said_.slice(step[0].length) : said_;
+    fail(`${whose} does not ${step ? what[step[1]] : "run"} in its declared heap of ${HEAP_BYTES} bytes ` +
+         `(the manifest's heapBytes, the box's context, checked as 3/2 of it at 64 bits): ${how}`);
+  }
+  const fit = /ok least=(\d+) declared=(\d+) live=(\d+) fixed=(\d+) digest=([0-9a-f]+)/.exec(run.stdout);
+  if (!fit) fail(`the runner's result for ${whose} is not one it prints: ${printed(run).trim()}`);
+  return { least: Number(fit[1]), live: Number(fit[3]), digest: fit[5], notes: printed(run).split("\n")
+    .filter((line) => line.startsWith("note: ")) };
+}
+const full = runPack(`${NAME}.mqjs64.bin`);
 // A node that faulted on its default settings for any reason but the heap is the pack's own business, and said.
-for (const line of printed(own).split("\n")) if (line.startsWith("note: ")) console.log(`  ${line}`);
-const fit = /ok least=(\d+) declared=(\d+) live=(\d+)/.exec(own.stdout);
-console.log(`  ok: the pack defines, creates and runs its nodes in its declared heap (${HEAP_BYTES} bytes at 64 ` +
-            `bits; the same run needs ${fit ? fit[1] : "?"}, and leaves ${fit ? fit[3] : "?"} bytes live)`);
+for (const note of full.notes) console.log(`  ${note}`);
+console.log(`  ok: the pack defines, creates and runs its nodes in its declared heap by the 3/2 check (${HEAP_BYTES} ` +
+            `bytes, the box's context; ${HEAP_BYTES * 3 / 2} at 64 bits; the check would pass ${full.least}, and the ` +
+            `run leaves ${full.live} bytes live at 64 bits; the box's boot line says what it takes there)`);
+const device = runPack(`${NAME}.device64.bin`);
+if (device.digest !== full.digest) {
+  fail(`the device's runtime of the pack does not do what the pack does: over the same blocks its nodes' output ` +
+       `digests to ${device.digest}, the full bundle's to ${full.digest}`);
+}
+console.log(`  ok: the device's runtime, which every host runs the nodes from, runs the same blocks to the same ` +
+            `output (digest ${full.digest}) in its declared heap; the check would pass ${device.least} for it`);
 
 // The bytecode as C, for a binary to carry (script/rp_mqjs_pack.h): one source per width, the same symbol in each, so a
 // binary builds the one of its width. The pack's name is a C identifier there with every character that cannot be one
 // made an underscore.
 const symbol = `rp_script_${NAME.replace(/[^A-Za-z0-9_]/g, "_")}`;
 function packSource(bytecode, width) {
-  const rows = [];
-  for (let i = 0; i < bytecode.length; i += 16) {
-    const row = Array.from(bytecode.subarray(i, i + 16), (b) => `0x${b.toString(16).padStart(2, "0")},`);
-    rows.push(`    ${row.join(" ")}`);
-  }
+  const rows = (bytes) => {
+    const out = [];
+    for (let i = 0; i < bytes.length; i += 16) {
+      const row = Array.from(bytes.subarray(i, i + 16), (b) => `0x${b.toString(16).padStart(2, "0")},`);
+      out.push(`    ${row.join(" ")}`);
+    }
+    return out.join("\n");
+  };
+  // The 64-bit source carries the whole pack too, for the desktop's control context; the box has none.
+  const control = width === 64
+    ? `\nstatic const uint8_t control[${bytecode64.length}] = {\n${rows(bytecode64)}\n};\n` : "";
   return `/* Generated by packages/retroplug/scripts/build-device-pack.mjs from the ${NAME} script pack: its
- * ${width}-bit MicroQuickJS bytecode, the node type ids its definitions register and its declared heap. Do not edit. */
+ * ${width}-bit MicroQuickJS bytecode (the device's runtime of the pack, which every node runs${width === 64
+    ? ", and the whole pack, which the desktop's control context runs" : ""}), the node type ids its definitions
+ * register, its declared heap and its 32-bit bytecode's size. Do not edit. */
 #include "script/rp_mqjs_pack.h"
 
-static const uint8_t bytecode[${bytecode.length}] = {
-${rows.join("\n")}
+static const uint8_t bytecode[${bytecode.length}] RP_MQJS_BYTECODE_PLACEMENT = {
+${rows(bytecode)}
 };
-
+${control}
 static const char* const typeIds[${typeIds.length}] = {
 ${typeIds.map((id) => `    ${JSON.stringify(id)},`).join("\n")}
 };
 
 const rp_mqjs_pack_source ${symbol} = {
-    ${JSON.stringify(NAME)}, bytecode, ${bytecode.length}, ${HEAP_BYTES}, ${typeIds.length}, typeIds};
+    ${JSON.stringify(NAME)}, bytecode, ${bytecode.length}, ${HEAP_BYTES}, ${typeIds.length}, typeIds,
+    ${bytecode32.length}, ${width === 64 ? `control, ${bytecode64.length}` : "0, 0"}};
 `;
 }
 
@@ -660,9 +782,11 @@ const rp_mqjs_pack_source ${symbol} = {
 
 mkdirSync(OUT_DIR, { recursive: true });
 keep(join(OUT_DIR, es5Name), es5);
+keep(join(OUT_DIR, runtimeName), runtimeEs5);
 keep(join(OUT_DIR, `${NAME}.mqjs64.bin`), bytecode64);
+keep(join(OUT_DIR, `${NAME}.device64.bin`), runtime64);
 keep(join(OUT_DIR, `${NAME}.mqjs32.bin`), bytecode32);
-keep(join(OUT_DIR, `${NAME}.pack64.c`), packSource(bytecode64, 64));
+keep(join(OUT_DIR, `${NAME}.pack64.c`), packSource(runtime64, 64));
 keep(join(OUT_DIR, `${NAME}.pack32.c`), packSource(bytecode32, 32));
 keep(join(OUT_DIR, `${NAME}.transcript.txt`), reference);
 rmSync(WORK, { recursive: true, force: true });

@@ -30,7 +30,87 @@
 # compiled with clang-cl, MSVC-ABI compatible, as SameBoy's core is (cmake/sameboy.cmake), and mqjs.c gets the one
 # header MSVC's C runtime lacks from cmake/mquickjs-win-shim (its gettimeofday). That half has not been built yet: it is
 # written to the SameBoy pattern, and the first Windows build is its test.
+#
+# Upstream bugs are fixed outside the tree, in graph-runtime's script/rp_mqjs_engine.c, which the host's engine
+# compiles in place of mquickjs.c (retroplug_mquickjs_engine's ENGINE, below):
+#
+#   - JS_MakeUniqueString corrupts the engine's weak table of run-time names when a collection runs inside the table's
+#     own growth (js_resize_value_array2 copies the size the table had before the collection shrank it, and the
+#     insertion lands where it was found before): stale words in the table, a crash or a name resolving to another's
+#     slot at the next lookup. It takes a dead name in the table and a collection at that one allocation, which a tight
+#     heap makes likely (the device-pack toolchain's least-heap search met it). rp_mqjs_engine.c compiles upstream's
+#     function under another name and routes every call to a copy that collects before the growth.
+#   - A loaded bytecode's string constant, once used as a property name, is marked unique where it lies, and the
+#     weak table drops it at the next collection, since the collector never marks a string outside the heap: a later
+#     lookup of the same text from C makes a second string and finds nothing. rp_mqjs_keep_bytecode_names marks the
+#     bytecode's strings kept after relocation.
+#   - Three exceptions the engine drops: one a String.prototype.replace function throws (js_string_replace ignores
+#     js_string_concat_subst's failure), an out-of-memory in string_buffer_puts, and one a hasOwnProperty key's
+#     toString throws (js_object_hasOwnProperty ignores JS_ToPropertyKey's). rp_mqjs_engine.c routes each through a
+#     wrapper that makes the engine's StringBuffer sticky, or makes the key first.
+#
+# RetroPlug also reaches into the engine in two ways these spans hold: rp_mqjs_limit_reentries caps a context's C
+# re-entries by starting JS_Call's count above 0 (it rests on JS_Call being the count's only writer, which the count of
+# its mentions holds), and the host's views are made by js_typed_array_constructor called with a C array of arguments
+# (it rests on the constructor reading them before it allocates).
+#
+# The first is a copy of upstream's code that reads the context's internals, so a bump that changes upstream's function
+# would still compile and the stale copy would win; the others rest on upstream's text as it stands. So the configure
+# below hashes the text of each (JS_MakeUniqueString's definition, the sweep of unique_strings, replace and its
+# substitution, the StringBuffer and its appends, hasOwnProperty, the typed array's constructor) and fails,
+# naming rp_mqjs_engine.c, when any is not the text the fixes were written against: re-review the fixes against the
+# new text, then record its hash here. retroplug-device-mode-test's [debug-gc] cases hold the second fix (its revert
+# fails them); no test reaches the first's condition on demand (a collection at every allocation, DEBUG_GC, sweeps a
+# dead name before any growth can meet it), so the hash is its guard.
 set(MQUICKJS_DIR "${CMAKE_SOURCE_DIR}/deps/mquickjs")
+file(READ "${MQUICKJS_DIR}/mquickjs.c" _mqjs_engine_text)
+string(REPLACE "\r" "" _mqjs_engine_text "${_mqjs_engine_text}")
+# Each span: what it is, the text it begins with, the text it ends before (neither may hold a semicolon, a list's
+# separator), and its SHA-256.
+set(_mqjs_span_0 "JS_MakeUniqueString" "static JSValue JS_MakeUniqueString(JSContext *ctx, JSValue val)" "\n}\n"
+                 "80908cb5f38c4b25f53e1991b80c1880a97c095339fc21298ddedda470b04567")
+set(_mqjs_span_1 "the sweep of unique_strings" "    /* update the unique string table (its elements are considered as"
+                 "    /* update the weak references in the string position cache"
+                 "0dcbcf210bd2a34941a7c0795e11f577932f5898251800e74c7a6fa509cc6c6d")
+set(_mqjs_span_2 "String.prototype.replace and its substitution"
+                 "static int js_string_concat_subst(JSContext *ctx, StringBuffer *b," "\n// split(sep, limit)"
+                 "5f8263e6c8cc87ca1366b0cd17b234ff773fe57fb8abd162cdb89a444636d84b")
+set(_mqjs_span_3 "the StringBuffer and its appends"
+                 "typedef struct {\n    JSGCRef buffer_ref" "/* val1 and val2 must be strings or exception */"
+                 "f9567d2729edcf582c7d45b70ff9e7b418db65022641dbb25dd438635b528f6a")
+set(_mqjs_span_4 "js_object_hasOwnProperty" "JSValue js_object_hasOwnProperty(JSContext *ctx" "\n}\n"
+                 "0046d19ecb2384776eda8f8344d8ce7fd87a612307a657278f1de8b7c8e5e2ec")
+set(_mqjs_span_5 "js_typed_array_constructor" "JSValue js_typed_array_constructor(JSContext *ctx, JSValue *this_val,"
+                 "\n}\n" "973db0412518887f46e5b757f768229e43658dc6922f07d7bfd07193b38ce11a")
+string(REGEX MATCHALL "js_call_rec_count" _mqjs_mentions "${_mqjs_engine_text}")
+list(LENGTH _mqjs_mentions _mqjs_mentions)
+if(NOT _mqjs_mentions EQUAL 4)
+    message(FATAL_ERROR "deps/mquickjs/mquickjs.c mentions js_call_rec_count ${_mqjs_mentions} times, not the 4 "
+                        "(its field, JS_Call's check, increment and decrement) rp_mqjs_limit_reentries was written "
+                        "against (cmake/mquickjs.cmake's header says why); re-review it")
+endif()
+foreach(_mqjs_span IN ITEMS _mqjs_span_0 _mqjs_span_1 _mqjs_span_2 _mqjs_span_3 _mqjs_span_4 _mqjs_span_5)
+    list(GET ${_mqjs_span} 0 _what)
+    list(GET ${_mqjs_span} 1 _begin)
+    list(GET ${_mqjs_span} 2 _end)
+    list(GET ${_mqjs_span} 3 _expected)
+    string(FIND "${_mqjs_engine_text}" "${_begin}" _at)
+    set(_hash "")
+    if(NOT _at EQUAL -1)
+        string(SUBSTRING "${_mqjs_engine_text}" ${_at} -1 _rest)
+        string(FIND "${_rest}" "${_end}" _length)
+        if(NOT _length EQUAL -1)
+            string(SUBSTRING "${_rest}" 0 ${_length} _rest)
+            string(SHA256 _hash "${_rest}")
+        endif()
+    endif()
+    if(NOT _hash STREQUAL _expected)
+        message(FATAL_ERROR "deps/mquickjs/mquickjs.c: ${_what} is not the text "
+                            "packages/graph-runtime/native/src/script/rp_mqjs_engine.c's fixes were written against "
+                            "(cmake/mquickjs.cmake's header says which and why); re-review them against it, then "
+                            "record its hash (${_hash}) here")
+    endif()
+endforeach()
 set(MQUICKJS_HOST_GEN "${CMAKE_BINARY_DIR}/deps/mquickjs/host")
 file(MAKE_DIRECTORY "${MQUICKJS_HOST_GEN}")
 
@@ -156,16 +236,22 @@ function(retroplug_mquickjs_stdlib name)
     endforeach()
 endfunction()
 
-# retroplug_mquickjs_engine(<target> STDLIB <name> SOURCES <c>... [ENGINE <c>]): the engine as a static library for the
-# desktop's own width, with the standard library <name> (retroplug_mquickjs_stdlib) whose run-time half SOURCES are (the
-# C file that compiles the generated tables with the functions they name). ENGINE, if given, is compiled in place of
-# mquickjs.c: a file that includes mquickjs.c whole and defines after it what must read the engine's own structures. The
-# engine's sources are upstream's, unpatched, at upstream Makefile's flags, their warnings silenced as a dep's are;
-# position-independent, as a product module links it. Its users get deps/mquickjs's headers (mquickjs.h). A device
-# builds the engine its own way, at its own width, and must compile the same ENGINE file the host's build names
-# (graph-runtime's script/rp_mqjs_engine.c) in place of mquickjs.c: the host's device build calls what it defines.
+# retroplug_mquickjs_engine(<target> STDLIB <name> SOURCES <c>... [ENGINE <c>] [FIRST <h>]): the engine as a static
+# library for the desktop's own width, with the standard library <name> (retroplug_mquickjs_stdlib) whose run-time half
+# SOURCES are (the C file that compiles the generated tables with the functions they name). ENGINE, if given, is
+# compiled in place of mquickjs.c: a file that includes mquickjs.c whole and defines after it what must read the
+# engine's own structures. The engine's sources are upstream's, unpatched, at upstream Makefile's flags, their warnings
+# silenced as a dep's are; position-independent, as a product module links it. Its users get deps/mquickjs's headers
+# (mquickjs.h). A device builds the engine its own way, at its own width, and must compile the same ENGINE file the
+# host's build names (graph-runtime's script/rp_mqjs_engine.c) in place of mquickjs.c: the host's device build calls
+# what it defines. FIRST, if given, is a header every source is compiled with first (graph-runtime's
+# script/rp_mqjs_names.h, which renames the engine's external names), and the built library is then held to defining
+# no external name outside rp_mqjs_ (cmake/mquickjs-names.cmake), with the toolchain's nm on Linux, and on macOS with
+# Xcode's (its `-g --defined-only` and Mach-O's leading underscore are handled, but no macOS build has run it yet). Not
+# on MSVC: CMAKE_NM is empty there, and though clang-cl's install carries llvm-nm, which reads its objects, the Windows
+# build has not linked the renamed engine yet, so the names are held there only by the products' link.
 function(retroplug_mquickjs_engine target)
-    cmake_parse_arguments(P "" "STDLIB;ENGINE" "SOURCES;INCLUDES" ${ARGN})
+    cmake_parse_arguments(P "" "STDLIB;ENGINE;FIRST" "SOURCES;INCLUDES" ${ARGN})
     if(NOT P_STDLIB OR NOT P_SOURCES OR P_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "retroplug_mquickjs_engine(${target}): STDLIB and SOURCES are required")
     endif()
@@ -183,6 +269,9 @@ function(retroplug_mquickjs_engine target)
         # clang-cl, as the tools above; the generated tables and the sources' own directories first.
         set(_saved_flags ${_mqjs_cl_flags})
         set(_mqjs_cl_flags ${_mqjs_cl_flags} "-I${_dir}")
+        if(P_FIRST)
+            list(APPEND _mqjs_cl_flags "/FI${P_FIRST}")
+        endif()
         foreach(_inc IN LISTS P_INCLUDES)
             list(APPEND _mqjs_cl_flags "-I${_inc}")
         endforeach()
@@ -201,6 +290,13 @@ function(retroplug_mquickjs_engine target)
         set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
         retroplug_silence_dep_warnings(${target})
         target_link_libraries(${target} PRIVATE m)
+        if(P_FIRST)
+            target_compile_options(${target} PRIVATE "SHELL:-include ${P_FIRST}")
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DLIBRARY=$<TARGET_FILE:${target}>
+                        -P "${CMAKE_SOURCE_DIR}/cmake/mquickjs-names.cmake"
+                VERBATIM)
+        endif()
     endif()
     target_include_directories(${target} PUBLIC "${MQUICKJS_DIR}")
 endfunction()

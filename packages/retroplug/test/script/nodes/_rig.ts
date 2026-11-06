@@ -130,6 +130,7 @@ export class NodeRig<S> {
         sources.push(data);
         return true;
       },
+      forward: (id, message) => block.send(id, message.frame, message.data, message.flags),
       control: (id) => {
         alive();
         port(id, "in", ["control"], "control input or param");

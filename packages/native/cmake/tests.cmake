@@ -330,7 +330,8 @@ get_property(_rp_packages GLOBAL PROPERTY RP_PACKAGES)
 set(_rp_device_packages "")
 foreach(_p IN LISTS _rp_packages)
     get_property(_entries GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_ENTRIES)
-    if(_entries)
+    get_property(_scriptFn GLOBAL PROPERTY RP_PACKAGE_${_p}_SCRIPT_FN)
+    if(_entries OR _scriptFn)  # a device entry, or a script pack (every one a device's): bliptoaster's
         list(APPEND _rp_device_packages ${_p})
     endif()
 endforeach()
@@ -347,10 +348,10 @@ set(_rp_box_dir "${CMAKE_SOURCE_DIR}/pico/n8-host")
 # (the block API, settings, the hooks, a fault of each kind) and hog runs its pack's heap out. Both builds of each
 # registration are in the binary, as devtest's script pack's are (ScriptPack.test.cpp).
 set(_rp_script_packs ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/script-packs)
-retroplug_device_script_pack(scripttest ENTRY ${_rp_script_packs}/scripttest/index.ts HEAP_BYTES 524288
+retroplug_device_script_pack(scripttest ENTRY ${_rp_script_packs}/scripttest/index.ts HEAP_BYTES 262144
                              PACK_DIR ${_rp_script_packs}/scripttest
                              OUT_DIR ${CMAKE_BINARY_DIR}/device-mode/script-packs/scripttest)
-retroplug_device_script_pack(hog ENTRY ${_rp_script_packs}/hog/index.ts HEAP_BYTES 81920
+retroplug_device_script_pack(hog ENTRY ${_rp_script_packs}/hog/index.ts HEAP_BYTES 40960
                              PACK_DIR ${_rp_script_packs}/hog OUT_DIR ${CMAKE_BINARY_DIR}/device-mode/script-packs/hog)
 
 retroplug_device_mode_objects(retroplug-device-mode-objects
@@ -369,6 +370,10 @@ set_target_properties(retroplug-box-usb-cdc PROPERTIES CXX_STANDARD 20 CXX_STAND
 target_include_directories(retroplug-box-usb-cdc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/fake-tinyusb
                                                          ${_rp_box_dir})
 target_link_libraries(retroplug-box-usb-cdc PRIVATE retroplug-n8)
+
+# The test's own scripttest pack defines more node types than a box's few (script/MqjsHost.cpp's RP_MQJS_MAX_TYPES, 16
+# on a device), which the device-mode host's fixed tables are sized for.
+target_compile_definitions(retroplug-device-mode-objects PRIVATE RP_MQJS_MAX_TYPES=32)
 
 set(_rp_device_rows "")
 set(_rp_device_decls "")
@@ -481,6 +486,7 @@ retroplug_add_test_binary(
              test/device-mode/BoxHost.test.cpp
              test/device-mode/UsbCdcTransport.test.cpp
              test/device-mode/ScriptPack.test.cpp
+             test/device-mode/BlipToaster.test.cpp
              test/device-mode/FakeTinyUsb.cpp
              ${RP_BOX_HOST_PORTABLE_SOURCES}          # the box host, desktop-built
              ${_rp_box_dir}/BoxCartLink.cpp           # the N8 box's cart link, desktop-built
@@ -511,6 +517,10 @@ retroplug_add_test_binary(
              RP_BOX_ARENA_BYTES=${N8_HOST_ARENA_BYTES}
              RP_BOX_PACKAGES="${_rp_box_list}"
              RP_DEVICE_CHECK_PLAN="${RP_DEVICE_CHECK_PLAN}"
-             RP_DEVICE_CHECK_ARENA_BYTES=${RP_DEVICE_CHECK_ARENA_BYTES})
-# The plan cases run the exporter's tool in a process of its own (DevicePlan.test.cpp).
-add_dependencies(retroplug-device-mode-test retroplug-export-plan)
+             RP_DEVICE_CHECK_ARENA_BYTES=${RP_DEVICE_CHECK_ARENA_BYTES}
+             RP_BUILD_DIR="${CMAKE_BINARY_DIR}"
+             RP_MQJS_RUN="$<TARGET_FILE:retroplug-mqjs-run>"
+             RP_MQJS_RUN_GC="$<TARGET_FILE:retroplug-mqjs-run-gc>")
+# The plan cases run the exporter's tool in a process of its own (DevicePlan.test.cpp), and the [debug-gc] case the
+# toolchain's runner and its DEBUG_GC build (ScriptPack.test.cpp).
+add_dependencies(retroplug-device-mode-test retroplug-export-plan retroplug-mqjs-run retroplug-mqjs-run-gc)

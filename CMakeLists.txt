@@ -373,6 +373,7 @@ retroplug_package(dsp)             # the kernels, the rp.dsp nodes and rp.dsp.re
 retroplug_package(n8)              # the Everdrive N8 Pro: rp.n8.nes and the desktop's serial link to the cart
 retroplug_package(device-io)       # a device host's own I/O (rp.device.midi-in): the exporter's and the devices'
 retroplug_package(devtest)         # test types for a plan's host (rp.devtest.plan): the device check's, no product's
+retroplug_package(bliptoaster)     # the BlipToaster cart's MIDI policy, a device script pack: the box's plan runs it
 # The node types not yet carved into packages of their own (sameboy, mesen, host.io, launchpad) register from
 # packages/native, the engine's tree, whose manifest names their entries; its targets are defined below.
 retroplug_package(native)
@@ -388,8 +389,8 @@ add_subdirectory(packages/graph-runtime/export-plan "${CMAKE_BINARY_DIR}/export-
 # (packages/native/test/engine-graph/golden/product-registrations.json). The carved packages come first, in the order
 # they were carved: rp.core, rp.dsp, rp.dsp.resample, rp.host (graph-runtime, after dsp for that reason alone), then
 # rp.n8 (the n8 pack's rp.n8.nes, after rp.host.audio-out and before rp.sameboy.gb); then the types still in
-# packages/native.
-set(RP_DESKTOP_PACKAGES core dsp graph-runtime n8 native)
+# packages/native; then the device script packs, rp.bliptoaster last, so a pack's types move none of the others.
+set(RP_DESKTOP_PACKAGES core dsp graph-runtime n8 native bliptoaster)
 
 # --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
 # + the DPF plugin + the test host / cli / ui-test.

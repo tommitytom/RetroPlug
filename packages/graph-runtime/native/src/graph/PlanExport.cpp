@@ -492,7 +492,10 @@ ExportResult exportPlan(const GraphDocument& document, const NodeRegistry& regis
                                  text(err.message, sizeof err.message)});
         return result;
     };
-    if (!sizePlan(blob, deviceTypes, options.arenaBytes, &result.size, &err)) return refuse();
+    // Sized for the target: its packages' own memory as an rp2350 build takes it (a script pack's context is
+    // word-sized, about half what these 64-bit builds take), and the rest with these builds, an upper bound on the
+    // device's own. That is the figure the arena is held to and the estimate an image is given.
+    if (!sizePlan(blob, deviceTypes, options.arenaBytes, &result.size, &err, kTargetPointerBytes)) return refuse();
     // With no budget the sizing pass refuses nothing below 2^48; a plan past what a 32-bit arena addresses is no
     // device's, and the trial load below would allocate it here.
     if (result.size.bytes > 0xFFFFFFFFull) {
@@ -502,12 +505,15 @@ ExportResult exportPlan(const GraphDocument& document, const NodeRegistry& regis
         return refuse();
     }
     // The trial load: the blob laid out, created and activated by the device's builds on the exporter's host, in an
-    // arena of exactly the size it measured, then unloaded. What the device's create or activate would refuse at boot
-    // (a refusal a device build makes and the desktop's does not) is refused here instead, in the loader's words.
+    // arena of exactly the size these builds measure (their own width's, the packages' memory included), then
+    // unloaded. What the device's create or activate would refuse at boot (a refusal a device build makes and the
+    // desktop's does not) is refused here instead, in the loader's words.
     if (options.trialLoad) {
-        std::vector<std::max_align_t> arena(result.size.bytes / sizeof(std::max_align_t) + 1);
+        PlanSize own;
+        if (!sizePlan(blob, deviceTypes, 0, &own, &err)) return refuse();
+        std::vector<std::max_align_t> arena(own.bytes / sizeof(std::max_align_t) + 1);
         LoadedPlan* loaded = loadPlan(blob, std::span<std::byte>(reinterpret_cast<std::byte*>(arena.data()),
-                                                                 result.size.bytes),
+                                                                 own.bytes),
                                       deviceTypes, &host, &err);
         if (!loaded) return refuse();
         // One block, every input empty: a script node is made at its first block (and its pack's heap sized there for

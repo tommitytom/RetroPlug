@@ -9,8 +9,9 @@
 // - The staging stages whole messages, each with its status byte and as it came (nothing filtered), a SysEx whole and
 //   the box's own F0 7D 50 commands taken by its hook; it takes no more than a block holds, and loses nothing to that:
 //   a byte it refuses waits for the next pass.
-// - What is staged reaches rp.device.midi-in at the frame its arrival falls on within the block, and the plan's filter
-//   keeps what the bridge always forwarded.
+// - What is staged reaches rp.device.midi-in at the frame its arrival falls on within the block, and the plan's MIDI
+//   policy (rp.bliptoaster.midi-policy, a script node on the device's MicroQuickJS host) keeps what the bridge always
+//   forwarded.
 // - The cart link: its ring, its refusals (no game running, full), its batching into writes of up to 192 bytes, the
 //   note-offs it is handed, the expansion volume at every connect and on a change, and the books that tell the
 //   node's own note-offs from what the plan was handed.
@@ -54,6 +55,16 @@
 #include "n8/CartLink.hpp"
 #include "n8/Edio.hpp"
 #include "n8/N8Node.hpp"
+#include "script/MqjsHost.hpp"
+
+// The bliptoaster script pack's registration, the desktop's and the device's (retroplug_device_mode_objects), and its
+// source (its heap).
+extern "C" const rp_package* rp_bliptoaster_script_package(void);
+extern "C" const rp_package* rp_bliptoaster_script_package_device_mode(void);
+extern "C" const rp_mqjs_pack_source rp_script_bliptoaster;
+// The scripttest fixture pack's (packages/native/test/device-mode/script-packs/scripttest), for a script node's fault.
+extern "C" const rp_package* rp_scripttest_script_package(void);
+extern "C" const rp_package* rp_scripttest_script_package_device_mode(void);
 
 namespace {
 
@@ -63,6 +74,12 @@ using Bytes = std::vector<std::uint8_t>;
 constexpr std::uint32_t kRate = RP_BOX_SAMPLE_RATE;
 constexpr std::uint32_t kMaxFrames = RP_BOX_MAX_FRAMES;
 constexpr std::size_t   kArenaBytes = RP_BOX_ARENA_BYTES;
+// The box's arena as this host's builds need it for the box's plan: the box's figure, grown by what the bliptoaster
+// pack's memory takes here over what it takes on the box (a 64-bit device build gives its context 3/2 of the heap,
+// script/MqjsHost.hpp's kDeviceHalves, and its copy of the runtime's bytecode is the 64-bit one). Every other part of
+// the plan is no smaller here than on the box, so a plan the export holds to the box's arena loads in this.
+const std::size_t kHostArenaBytes =
+    kArenaBytes + rp::mqjs::packageBytes(rp_script_bliptoaster) - rp::mqjs::boxPackageBytes(rp_script_bliptoaster);
 
 // ---- the block driver's clock --------------------------------------------------------------------------------------
 
@@ -89,17 +106,19 @@ std::string hexOf(const Bytes& bytes) {
     return out;
 }
 
-// What the box registers (its product: core, device-io, n8), as the device builds them.
+// What the box registers (its product: core, device-io, n8 and the bliptoaster script pack), as the device builds them.
 const std::vector<const rp_package*>& boxTypes() {
     static const std::vector<const rp_package*> types{rp_core_package_device_mode(), rp_device_io_package_device_mode(),
-                                                      rp_n8_package_device_mode()};
+                                                      rp_n8_package_device_mode(),
+                                                      rp_bliptoaster_script_package_device_mode()};
     return types;
 }
 
 // plan.json exported as the firmware's build exports it (pico/n8-host/plan.cmake's rate, block and arena).
 ExportResult boxExport() {
     NodeRegistry registry;
-    for (const rp_package* p : {rp_core_package(), rp_device_io_package(), rp_n8_package()}) {
+    for (const rp_package* p :
+         {rp_core_package(), rp_device_io_package(), rp_n8_package(), rp_bliptoaster_script_package()}) {
         std::string why;
         REQUIRE(registry.addPackage(p, &why));
     }
@@ -193,7 +212,8 @@ struct Box {
     rp::box::DeviceHost             host;
     rp::box::BuiltInPlan            plan;
     rp::box::DeviceLink             links[1]{};
-    Arena                           arena{kArenaBytes};
+    rp_host_clock                   scriptClock{&clock, &FakeClock::read, 0};  // main.cpp's, on the fake clock
+    Arena                           arena{kHostArenaBytes};
     SysexTaken                      sysex;
     // The UART's ring: each byte and its arrival, read from `ringAt` (a vector, so a pass frees nothing).
     std::vector<std::pair<std::uint8_t, std::uint32_t>> ring;
@@ -211,9 +231,9 @@ struct Box {
         staging->init(&SysexTaken::hook, &sysex, &frameOf, this);
         links[0] =
             rp::box::DeviceLink{rp::n8::kDeviceName, rp::n8::kCartLinkInterface, link, nullptr, acquired, released};
-        host.init(links, 1, staging->interface(), &ignoreLog);
+        host.init(links, 1, staging->interface(), &ignoreLog, &scriptClock);
         gLines.clear();
-        if (!blob.empty()) REQUIRE(plan.load(blob, arena.span(kArenaBytes), boxTypes(), host.host(), &collect));
+        if (!blob.empty()) REQUIRE(plan.load(blob, arena.span(kHostArenaBytes), boxTypes(), host.host(), &collect));
         driver.start(&FakeClock::read, &clock, kRate, kMaxFrames);
     }
     // Bytes onto the UART's ring, each 320 us after the one before, the clock moving with them.
@@ -393,19 +413,26 @@ TEST_CASE("the box's staging takes no more than a block holds, and loses nothing
     s->init(nullptr, nullptr, &noFrame, nullptr);
     std::uint32_t at = 0;
 
-    SECTION("300 note-ons: 256 a block, the rest a pass later") {
+    SECTION("300 note-ons: 64 a block, the rest a pass at a time") {
+        constexpr std::uint32_t kBlock = rp::box::MidiStaging::kMessages;
         Bytes wire;
         for (int i = 0; i < 300; ++i) wire.insert(wire.end(), {0x90, static_cast<std::uint8_t>(i % 128), 0x40});
         std::size_t fed = 0;
         while (fed < wire.size() && s->feed(wire[fed], at)) ++fed;
-        CHECK(fed == 256 * 3);  // the 257th note-on's first byte is refused: the staging has no message left
-        const auto first = take(*s);
-        CHECK(first.size() == 256);
-        while (fed < wire.size() && s->feed(wire[fed], at)) ++fed;
+        CHECK(fed == kBlock * 3);  // the 65th note-on's first byte is refused: the staging has no message left
+        std::uint32_t taken = 0, blocks = 0;
+        std::vector<Staged> last;
+        while (taken < 300) {
+            last = take(*s);
+            REQUIRE(last.size() == std::min<std::uint32_t>(kBlock, 300 - taken));
+            CHECK(last.front().bytes == Bytes{0x90, static_cast<std::uint8_t>(taken % 128), 0x40});
+            taken += static_cast<std::uint32_t>(last.size());
+            ++blocks;
+            while (fed < wire.size() && s->feed(wire[fed], at)) ++fed;
+        }
         CHECK(fed == wire.size());
-        const auto second = take(*s);
-        REQUIRE(second.size() == 44);
-        CHECK(second.back().bytes == Bytes{0x90, 299 % 128, 0x40});
+        CHECK(blocks == 5);  // 64 four times, then 44
+        CHECK(last.back().bytes == Bytes{0x90, 299 % 128, 0x40});
     }
     SECTION("a SysEx of exactly 4 KB fits; one byte more is dropped whole and counted") {
         Bytes sysex(rp::box::MidiStaging::kSysexBytes, 0x11);
@@ -423,8 +450,9 @@ TEST_CASE("the box's staging takes no more than a block holds, and loses nothing
         CHECK(got[0].bytes == Bytes{0x90, 0x3C, 0x64});
         CHECK(s->counts().tooLong == 1);
     }
+    // 60 note-ons leave room for two messages more but 3916 bytes, short of a 4001-byte SysEx.
     SECTION("a SysEx with no room waits whole, and what the same byte completed waits behind it") {
-        for (int i = 0; i < 100; ++i) REQUIRE(feed(*s, {0x90, static_cast<std::uint8_t>(i), 0x40}, at));
+        for (int i = 0; i < 60; ++i) REQUIRE(feed(*s, {0x90, static_cast<std::uint8_t>(i), 0x40}, at));
         Bytes sysex(4000, 0x33);
         sysex.front() = 0xF0;
         // Cut short by a tune request: the parser's F7, then the F6, completed by one byte.
@@ -432,7 +460,7 @@ TEST_CASE("the box's staging takes no more than a block holds, and loses nothing
         REQUIRE(feed(*s, {0xF6}, at));
         CHECK_FALSE(s->feed(0x90, at));  // nothing more until a block has made room
         auto got = take(*s);
-        CHECK(got.size() == 100);
+        CHECK(got.size() == 60);
         CHECK(s->staged() == 2);  // the block that made room staged the two for the next, with no byte to wait for
         REQUIRE(feed(*s, {0x90, 0x01, 0x02}, at));
         got = take(*s);
@@ -443,15 +471,15 @@ TEST_CASE("the box's staging takes no more than a block holds, and loses nothing
         CHECK(got[2].bytes == Bytes{0x90, 0x01, 0x02});
     }
     SECTION("a host with no plan drops what is staged and what is held, each counted") {
-        for (int i = 0; i < 100; ++i) REQUIRE(feed(*s, {0x90, static_cast<std::uint8_t>(i), 0x40}, at));
+        for (int i = 0; i < 60; ++i) REQUIRE(feed(*s, {0x90, static_cast<std::uint8_t>(i), 0x40}, at));
         Bytes sysex(4000, 0x33);
         sysex.front() = 0xF0;
         REQUIRE(feed(*s, sysex, at));
         REQUIRE(feed(*s, {0xF6}, at));  // cuts the SysEx short: both wait for room, as above
         REQUIRE(s->counts().untaken == 0);
-        REQUIRE(s->staged() == 100);  // the SysEx and the tune request are held, not staged
+        REQUIRE(s->staged() == 60);  // the SysEx and the tune request are held, not staged
         s->clearStaged();
-        CHECK(s->counts().untaken == 100 + 1 + 1);  // the staged messages, the held SysEx and the held tune request
+        CHECK(s->counts().untaken == 60 + 1 + 1);  // the staged messages, the held SysEx and the held tune request
         CHECK(s->staged() == 0);
         REQUIRE(feed(*s, {0x90, 0x01, 0x02}, at));  // and the staging takes bytes again
         const auto got = take(*s);
@@ -508,12 +536,13 @@ TEST_CASE("staged MIDI reaches the box's plan at the frame its arrival falls on,
     CartRecord cart{};
     Box        box;
     box.load(rp_devtest_cart_device_mode(&cart));
-    REQUIRE(gLines.size() == 4);
+    REQUIRE(gLines.size() == 5);
     CHECK(gLines[0].starts_with("[host] plan loaded: 3 nodes, "));
-    CHECK(gLines[0].ends_with(" of " + std::to_string(kArenaBytes) + " arena bytes, 48000 Hz, 256 frames a block"));
+    CHECK(gLines[0].ends_with(" of " + std::to_string(kHostArenaBytes) + " arena bytes, 48000 Hz, 256 frames a block"));
     CHECK(gLines[1].starts_with("[host]   node in (rp.device.midi-in), "));
-    CHECK(gLines[2].starts_with("[host]   node filter (rp.core.midi-filter), "));
+    CHECK(gLines[2].starts_with("[host]   node policy (rp.bliptoaster.midi-policy), "));
     CHECK(gLines[3].starts_with("[host]   node nes (rp.n8.nes), "));
+    CHECK(gLines[4].starts_with("[host]   pack bliptoaster, "));
 
     // A note-on, channel pressure, a clock and poly aftertouch (which the plan drops), a control change, the box's own
     // command (which the staging's hook takes) and a note-off.
@@ -523,6 +552,11 @@ TEST_CASE("staged MIDI reaches the box's plan at the frame its arrival falls on,
     box.arrive({0xF0, 0x7D, 0x50, 0x02, 0xF7});
     box.arrive({0x80, 0x45, 0x00});
     REQUIRE(box.pass(1'000));
+    // The first block made the policy node's port pools: the pack's heap, said once.
+    REQUIRE(gLines.size() == 6);
+    CHECK(gLines[5].starts_with("[host]   pack bliptoaster: heap "));
+    CHECK(gLines[5].find(" of " + std::to_string(rp_script_bliptoaster.heap_bytes * rp::mqjs::kDeviceHalves / 2) +
+                         " bytes in use after the first block") != std::string::npos);
     // 20 bytes at 320 us: the note-on's last byte at 960 us (frame 46), the control change's at 3,840 (184), the
     // note-off's at 6,400 (307). 7,400 us have passed, 355 frames: a block of 256, whose last frame the note-off is at.
     CHECK(pushedLines(cart) == "46: 90 45 7f\n184: b0 7 64\n255: 80 45 0\n");
@@ -938,13 +972,22 @@ TEST_CASE("the box's plan.json exports to its golden's bytes, as the tool writes
     CHECK(readFile(dir / "stdout.txt").find("--packages names \"nope\", which is no package the tool carries") !=
           std::string::npos);
 
-    // Loaded as the box loads it, it takes what the export measured, within the arena.
+    // The export holds the plan to the box's arena at the box's width, its pack's memory as the box takes it; loaded
+    // here as the box loads it, it takes what this width's sizing measures, which differs from the export's by the
+    // pack's memory alone.
     CartRecord cart{};
     Box        box;
     box.load(rp_devtest_cart_device_mode(&cart));
     const ExportResult r = boxExport();
-    CHECK(box.plan.plan()->bytes == r.size.bytes);
-    CHECK(box.plan.plan()->bytes <= kArenaBytes);
+    CHECK(r.size.bytes <= kArenaBytes);
+    CHECK(r.size.packages == 1);
+    CHECK(r.size.packageBytes == rp::mqjs::boxPackageBytes(rp_script_bliptoaster));
+    PlanSize      here;
+    PlanLoadError err{};
+    REQUIRE(sizePlan(blob, boxTypes(), 0, &here, &err));
+    CHECK(box.plan.plan()->bytes == here.bytes);
+    CHECK(here.bytes - here.packageBytes == r.size.bytes - r.size.packageBytes);
+    CHECK(here.packageBytes == rp::mqjs::packageBytes(rp_script_bliptoaster));
     CHECK(box.plan.plan()->nodes.size() == 3);
     unloadPlan(box.plan.plan());
 }
@@ -994,6 +1037,39 @@ TEST_CASE("a built-in plan the loader refuses is said, and runs nothing; a node 
         REQUIRE(plan.run(driver));
         CHECK(gLines.size() == 1);
         CHECK(plan.plan()->faults.load() == 1);
+        unloadPlan(plan.plan());
+    }
+    SECTION("a script node's fault is said with its words, cut to a line of the console") {
+        NodeRegistry registry;
+        std::string  why;
+        REQUIRE(registry.addPackage(rp_scripttest_script_package(), &why));
+        const std::vector<const rp_package*> types{rp_scripttest_script_package_device_mode()};
+        constexpr std::size_t kScriptArena = std::size_t{1} << 20;  // the pack's memory, its context 384 KiB here
+        ExportOptions o;
+        o.arenaBytes = kScriptArena;
+        // The node runs its first block (the export's trial load runs one), then throws at its second.
+        const ExportResult r = exportPlan(
+            R"({"nodes":[{"id":"t","type":"rp.scripttest.throws-later"}],"wires":[]})", registry, types, o);
+        INFO((r.errors.empty() ? std::string() : r.errors[0].message));
+        REQUIRE(r.ok());
+        Arena                big(kScriptArena);
+        rp::box::BuiltInPlan plan;
+        REQUIRE(plan.load(r.blob, big.span(kScriptArena), types, host.host(), &collect));
+        clock.us = 10'000;
+        REQUIRE(plan.run(driver));
+        gLines.clear();
+        clock.us = 20'000;
+        REQUIRE(plan.run(driver));
+        REQUIRE(gLines.size() == 2);
+        CHECK(gLines[0] == "[host] node t (rp.scripttest.throws-later) faulted: the executor silences it from here on");
+        // The fault keeps 159 bytes of its words (rp.script.fault/1), and the console's line 159 of its own.
+        const std::string words =
+            "process threw: RangeError: the throws-later node threw on its second block, with words that run on past "
+            "what a fault keeps of them and past what a line of the box's console holds, which cuts them short there";
+        CHECK(gLines[1] == ("[host]   " + words).substr(0, 159));
+        clock.us = 30'000;
+        REQUIRE(plan.run(driver));
+        CHECK(gLines.size() == 2);  // once
         unloadPlan(plan.plan());
     }
     SECTION("faults past the nodes the plan keeps books for are counted, not named") {

@@ -1,0 +1,1 @@
+{"id":"rp.bliptoaster.midi-policy","version":"1.0.0","name":"BlipToaster MIDI policy","category":"bliptoaster","requires":{"heap":false,"threads":false},"ports":[{"id":"in","dir":"in","kind":"events"},{"id":"out","dir":"out","kind":"events","capacity":{"match":"in"}}],"params":[],"settings":{"type":"object"}}

@@ -38,12 +38,34 @@ endif()
 
 get_filename_component(RP_REPO "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 
+# retroplug-export-plan (packages/graph-runtime/export-plan), a desktop tool of the desktop build: it plans plan.json
+# for the RP2350 with the desktop's builds of the box's own packages' types (plan.cmake's N8_HOST_PACKAGES, the product
+# below), sizes it with their device builds against the arena below, and writes the blob as a header, so a plan the box
+# cannot run or hold fails this build rather than its boot.
+# tools/build-box.sh builds it in the desktop build first and passes its path; loop.sh passes the path of the one the
+# desktop build last built (it builds no desktop tree itself). The default is the desktop build's own (build/).
+set(RP_EXPORT_PLAN_TOOL "${RP_REPO}/build/export-plan/retroplug-export-plan" CACHE FILEPATH
+    "retroplug-export-plan, from the desktop build (cmake --build build --target retroplug-export-plan)")
+if(NOT EXISTS "${RP_EXPORT_PLAN_TOOL}")
+    message(FATAL_ERROR "n8-host: no plan exporter at RP_EXPORT_PLAN_TOOL (\"${RP_EXPORT_PLAN_TOOL}\"); build it "
+                        "in the desktop build (cmake --build build --target retroplug-export-plan), as "
+                        "tools/build-box.sh does, or pass -DRP_EXPORT_PLAN_TOOL=<path>")
+endif()
+# The desktop build the exporter is from (its export-plan/ is the tool's directory), which the image's script pack also
+# comes from (cmake/packages.cmake's _retroplug_device_script_targets: its 32-bit bytecode, and MicroQuickJS's 32-bit
+# tables), so the pack the box runs is the one the exporter's trial load ran. retroplug-export-plan-current builds all
+# three.
+get_filename_component(RP_DESKTOP_BUILD_DIR "${RP_EXPORT_PLAN_TOOL}" DIRECTORY)
+get_filename_component(RP_DESKTOP_BUILD_DIR "${RP_DESKTOP_BUILD_DIR}" DIRECTORY)
+
 # --- the packages, as a device builds them (docs/modular-graph-phase-e2-design.md section 8, the E3 design's section
-# 5): the N8 pack (packages/n8: its one Edio, the menu commands and operations, rp.n8.nes) and the two packages the
-# built-in plan names beside it (core, for rp.core.midi-filter, and device-io, for rp.device.midi-in), compiled as
-# rp-device-check compiles its packages (cmake/packages.cmake's device mode: RP_DEVICE, no exceptions, no RTTI, the
-# SDK's code-generation flags), with reflect-cpp's headers at the desktop's pin for graph/node.hpp. node-sdk is what
-# every package builds on; graph-runtime carries the executor, the plan loader and the product registration's header.
+# 5, the E4 design's sections 3 and 5): the N8 pack (packages/n8: its one Edio, the menu commands and operations,
+# rp.n8.nes) and the packages the built-in plan names beside it (device-io, for rp.device.midi-in, and bliptoaster,
+# the cart's MIDI policy as a script pack, rp.bliptoaster.midi-policy; core is the box's too, for rp.core's types),
+# compiled as rp-device-check compiles its packages (cmake/packages.cmake's device mode: RP_DEVICE, no exceptions, no
+# RTTI, the SDK's code-generation flags), with reflect-cpp's headers at the desktop's pin for graph/node.hpp. node-sdk
+# is what every package builds on; graph-runtime carries the executor, the plan loader, the product registration's
+# header and, for the script pack, the MicroQuickJS host and engine.
 #
 # The runtime with pico_malloc taken out, the link trap on the heap, on exceptions and on RTTI over the whole image
 # (the firmware's own code, TinyUSB, Pico-PIO-USB and the packages alike), and the stack limit on every frame they
@@ -61,25 +83,17 @@ retroplug_package(graph-runtime)
 retroplug_package(core)
 retroplug_package(device-io)
 retroplug_package(n8)
+retroplug_package(bliptoaster)
+# The box registers one script pack of one node type, so the host's static tables hold that many
+# (script/MqjsHost.cpp's RP_MQJS_MAX_PACKS and RP_MQJS_MAX_TYPES, 4 and 16 on a device by default).
+target_compile_definitions(retroplug-mqjs-host PRIVATE RP_MQJS_MAX_PACKS=1 RP_MQJS_MAX_TYPES=1)
 
 # --- the generic box host (../host: the device rp_host, the built-in plan's load and blocks, the block driver, the
 # UART MIDI path), and the built-in plan, exported when the firmware is built.
 include("${CMAKE_CURRENT_LIST_DIR}/../host/host.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/plan.cmake")
 
-# retroplug-export-plan (packages/graph-runtime/export-plan), a desktop tool of the desktop build: it plans plan.json
-# for the RP2350 with the desktop's builds of the box's own packages' types (plan.cmake's N8_HOST_PACKAGES, the product
-# below), sizes it with their device builds against the arena below, and writes the blob as a header, so a plan the box
-# cannot run or hold fails this build rather than its boot.
-# tools/build-box.sh builds it in the desktop build first and passes its path; loop.sh passes the path of the one the
-# desktop build last built (it builds no desktop tree itself). The default is the desktop build's own (build/).
-set(RP_EXPORT_PLAN_TOOL "${RP_REPO}/build/export-plan/retroplug-export-plan" CACHE FILEPATH
-    "retroplug-export-plan, from the desktop build (cmake --build build --target retroplug-export-plan)")
-if(NOT EXISTS "${RP_EXPORT_PLAN_TOOL}")
-    message(FATAL_ERROR "n8-host: no plan exporter at RP_EXPORT_PLAN_TOOL (\"${RP_EXPORT_PLAN_TOOL}\"); build it "
-                        "in the desktop build (cmake --build build --target retroplug-export-plan), as "
-                        "tools/build-box.sh does, or pass -DRP_EXPORT_PLAN_TOOL=<path>")
-endif()
+# The built-in plan, exported by the tool above when the firmware is built.
 set(_n8_plan_header "${CMAKE_BINARY_DIR}/generated/n8_host_plan.hpp")
 string(REPLACE ";" "," _n8_plan_packages "${N8_HOST_PACKAGES}")
 add_custom_command(
@@ -184,8 +198,8 @@ n8_host_setup(n8_host)
 # 3,200 with none from SRAM, its fifoWR call 91 us and 38, and stress.sh's isolated latency (average/worst, us) went
 # from 689-742/1192-1248 (four runs; a fifth held a message 12.6 ms behind a console line, as E2 can too) to
 # 588-720/1080-1128 (five), where E2's image, half the size, gave 558-653/1083-1097 from flash. It costs SRAM: the
-# code and constants sit beside the data, about 305 KiB of the 512 KiB in all where running from flash took about 200
-# (the plan's 128 KiB arena among them), which leaves about 200 KiB for a later plan's audio and E4's script heap.
+# code and constants sit beside the data, about 347 KiB of the 512 KiB in all where running from flash took about 200
+# (the plan's 64 KiB arena among them), which leaves about 164 KiB for a later plan's audio.
 pico_set_binary_type(n8_host copy_to_ram)
 # A 4 KB main stack: all of SCRATCH_Y, which holds nothing else. The box's deepest chains, summed pessimistically from
 # -fstack-usage: the plan's load at boot (main, BuiltInPlan::load, loadPlan, its layout, a node's query_memory and its
@@ -193,17 +207,28 @@ pico_set_binary_type(n8_host copy_to_ram)
 # a transport wait, TinyUSB's callbacks and printf, with the UART and SOF interrupts nested on top, about 2.3 KB; a
 # block (main, BuiltInPlan::run, runBlock, rp.n8.nes's process, the link's push) about 0.6 KB. What the linker checks is
 # the reservation: it refuses scratch code that would overlap the reserved 4 KB. Every frame is held to 1 KB at build
-# time (-Wstack-usage, cmake/device-image.cmake), and the chains are still the hand sum, with no limit at run time.
-# In the PIO-USB build, which links pico_multicore (Pico-PIO-USB does), core 1's reservation (PICO_CORE1_STACK_SIZE,
-# which defaults to this one) stays its 2 KB in SCRATCH_X: core 1 never runs, and SCRATCH_X keeps room for scratch
-# code. The native build links no pico_multicore and reserves no core 1 stack.
-target_compile_definitions(n8_host PRIVATE PICO_STACK_SIZE=0x1000 PICO_CORE1_STACK_SIZE=0x800)
+# time (-Wstack-usage, cmake/device-image.cmake). The script pack adds its own chains: its setup at the load (the pack's
+# definitions run once, MicroQuickJS's JS_Run and the host's setupPackage on top of the load's), and in a block the
+# script node's process with the calls into JavaScript it nests on the C stack, which the host holds to
+# RP_MQJS_MAX_REENTRIES (script/rp_mqjs.h: 2360 bytes at its deepest, measured on the RP2350 with a malformed JSON text
+# parsed at the last level, and 2176 for a pack's load; bliptoaster's policy nests none). At run time the stack guard
+# holds the limit (PICO_USE_STACK_GUARDS): the SDK sets core 0's MSPLIM to the stack's bottom, so a push past it is a
+# HardFault (STKOF in CFSR), which halts at isr_hardfault's breakpoint under a debugger and otherwise locks the core
+# until the watchdog, armed by box_start before the plan loads, restarts the box as a hang (box.cpp), rather than
+# running on into SCRATCH_X below, where nothing would notice. The chains above leave it room: the load runs before the
+# UART and USB interrupts are on, and a block's deepest leaves about 1.7 KB for them. In the PIO-USB build, which links
+# pico_multicore (Pico-PIO-USB does), core 1's reservation (PICO_CORE1_STACK_SIZE, which defaults to this one) stays its
+# 2 KB in SCRATCH_X: core 1 never runs, and SCRATCH_X keeps room for scratch code. The native build links no
+# pico_multicore and reserves no core 1 stack.
+target_compile_definitions(n8_host PRIVATE PICO_STACK_SIZE=0x1000 PICO_CORE1_STACK_SIZE=0x800 PICO_USE_STACK_GUARDS=1)
 # No heap reserved (the SDK's .heap section, 2 KB by default): nothing in the image allocates, which the link trap
 # holds, so the reservation would be RAM no one can use. The plan's memory is its arena, a static below.
 target_compile_definitions(n8_host PRIVATE PICO_HEAP_SIZE=0)
-# The box's product: the device entries of the packages its plan names (rp.core, rp.device and rp.n8), registered as a
-# device registers them, which is what the loader holds the plan's types to at boot, and the N8 pack's portable library
-# (the Edio, its menu commands and operations) linked in; the generic box host; the plan's header and its arena.
+# The box's product: the device entries of the packages its plan names (rp.core, rp.device and rp.n8) and the
+# bliptoaster script pack's registration (rp.bliptoaster.midi-policy, on the device's MicroQuickJS host), registered as
+# a device registers them, which is what the loader holds the plan's types to at boot, and the N8 pack's portable
+# library (the Edio, its menu commands and operations) linked in; the generic box host; the plan's header and its
+# arena.
 retroplug_product(n8-host DEVICE PACKAGES ${N8_HOST_PACKAGES} TARGETS n8_host)
 target_link_libraries(n8_host PRIVATE rp-box-host retroplug-graph-exec)
 target_include_directories(n8_host PRIVATE "${CMAKE_BINARY_DIR}/generated")

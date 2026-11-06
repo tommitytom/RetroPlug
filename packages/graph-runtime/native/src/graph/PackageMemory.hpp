@@ -13,7 +13,8 @@ namespace rp::graph {
 // node's create asks), sized, allocated and set up at that first ask, and torn down and freed when the host goes, after
 // its nodes. Where the device's loader sets every package of a plan up before its first node (graph/PlanLoader.hpp),
 // a desktop host plans document after document, so a package is set up when the first node that needs it is created,
-// and kept for the host's life. Desktop only: it allocates.
+// and kept for the host's life. Desktop only: it allocates. A block is handed to its setup zeroed by the allocator
+// (calloc), so a large one (a script pack's context, 1 MiB on the desktop) costs only the pages its package touches.
 //
 // One per host: GraphHost holds one, and the exporter one for the plan it makes. The host answers
 // RP_HOST_PACKAGES_INTERFACE with service(), and destroys every node before clear() (or the destructor) tears the
@@ -37,9 +38,10 @@ private:
     struct Block {
         const rp_package* package = nullptr;
         void*             memory = nullptr;
-        std::size_t       align = 0;
+        std::size_t       align = 0;  // 0: calloc's, freed with free; else operator new's, at this alignment
     };
     static void* memory(void* ctx, const rp_package* package, rp_error* err);
+    static void  release(const Block& b);
 
     mutable std::mutex mutex_;
     std::vector<Block> blocks_;

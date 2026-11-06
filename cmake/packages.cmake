@@ -22,8 +22,9 @@
 # is, so no pack's standing is a default nobody chose: a device pack runs on MicroQuickJS wherever it runs, its
 # definitions held to what the box can run, and retroplug_package() gives it the targets that compile it to bytecode
 # and register it (_retroplug_script_targets). `device: false`, a desktop script pack, is reserved and refused, as
-# nothing builds one yet. `heapBytes` is a JSON number, a whole number of bytes, the same figure on every host: the
-# whole of the pack's MicroQuickJS context. A package has `native`, `script` or both.
+# nothing builds one yet. `heapBytes` is a JSON number, a whole number of bytes: the whole of the pack's MicroQuickJS
+# context as the box runs it, at 32 bits; a 64-bit device build gives 3/2 of it (script/MqjsHost.hpp's kDeviceHalves)
+# and a desktop host more (desktopContextBytes). A package has `native`, `script` or both.
 #
 # A product is an executable or a module that constructs an Engine. retroplug_product() generates its registration
 # source, which defines rp_register_packages() (graph/Packages.hpp) as the entries of the packages it lists, in the
@@ -90,15 +91,19 @@ function(retroplug_package name)
             endif()
         endforeach()
     endif()
-    # A device build compiles every target as a device does already, so it has nothing to check twice.
+    # A device build compiles every target as a device does already, so it has nothing to check twice; it registers a
+    # script pack from the desktop build's 32-bit source, when it names the desktop build (RP_DESKTOP_BUILD_DIR: an
+    # image whose plan runs one). One that names none carries the packages' native entries alone.
+    get_property(_script GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_ENTRY)
     if(NOT RP_DEVICE_BUILD)
         foreach(_target IN LISTS _deviceTargets)
             _retroplug_device_check(${name} ${_target})
         endforeach()
-        get_property(_script GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_ENTRY)
         if(_script)
             _retroplug_script_targets(${name})
         endif()
+    elseif(_script AND RP_DESKTOP_BUILD_DIR)
+        _retroplug_device_script_targets(${name})
     endif()
 endfunction()
 
@@ -367,8 +372,8 @@ function(retroplug_package_library target)
 endfunction()
 
 # _retroplug_script_targets(<package>): a package's device script pack (the manifest's `script` member), which
-# retroplug_package() gives its targets in the desktop build (no device image carries a pack yet; one will take its
-# bytecode from the desktop build, as it takes its exported plan): those of
+# retroplug_package() gives its targets in the desktop build (a device image takes its 32-bit bytecode from the desktop
+# build, as it takes its exported plan: _retroplug_device_script_targets): those of
 # retroplug_device_script_pack(<package>), from the manifest's entry and heap. Its registration is the package's script
 # entry, RP_PACKAGE_<package>_SCRIPT_FN (rp_<package>_script_package), and its target RP_PACKAGE_<package>_SCRIPT_TARGET
 # (retroplug-<package>-script): a product that lists the package registers it beside the package's native entries
@@ -384,6 +389,47 @@ function(_retroplug_script_targets package)
     set_property(GLOBAL PROPERTY RP_PACKAGE_${package}_SCRIPT_TARGET retroplug-${package}-script)
 endfunction()
 
+# _retroplug_device_script_targets(<package>): a device build's registration of a package's script pack, the
+# retroplug-<package>-script target and the same rp_<package>_script_package() the desktop's registration defines
+# (_retroplug_script_targets), so a DEVICE product that lists the package registers it as the desktop's does. A device
+# build compiles no TypeScript: its packs come from the desktop build RP_DESKTOP_BUILD_DIR names, the one whose
+# toolchain compiled them and whose exporter exported the image's plan (its trial load ran the same bundle at 64 bits),
+# as <package>.pack32.c (the device's runtime of the pack at 32 bits, build-device-pack.mjs). Its bytecode is kept in
+# flash (rp_mqjs_pack.h's RP_MQJS_BYTECODE_IN_FLASH: the Pico SDK's .flashdata, which an image copied into RAM at boot
+# leaves where it is), since the pack's setup copies it into the pack's own memory in the arena, and relocates the copy
+# there against the image's standard library. The registration links the device's MicroQuickJS host, which
+# graph-runtime defines in a device build given RP_DESKTOP_BUILD_DIR.
+function(_retroplug_device_script_targets package)
+    if(NOT TARGET retroplug-mqjs-host)
+        message(FATAL_ERROR "retroplug_package(${package}): a script pack needs the device's MicroQuickJS host first "
+                            "(retroplug_package(graph-runtime), with RP_DESKTOP_BUILD_DIR set)")
+    endif()
+    set(_source "${RP_DESKTOP_BUILD_DIR}/packages/${package}/script/${package}.pack32.c")
+    if(NOT EXISTS "${_source}")
+        message(FATAL_ERROR "retroplug_package(${package}): no ${_source}; build the pack in the desktop build (cmake "
+                            "--build ${RP_DESKTOP_BUILD_DIR} --target retroplug-export-plan-current)")
+    endif()
+    string(MAKE_C_IDENTIFIER "${package}" _id)
+    set(_fn rp_${_id}_script_package)
+    set(_registration "${CMAKE_BINARY_DIR}/packages/${package}/script/${package}-script.cpp")
+    file(GENERATE OUTPUT "${_registration}" CONTENT
+"// Generated by cmake/packages.cmake (_retroplug_device_script_targets) for the ${package} script pack: its
+// registration on the device's MicroQuickJS host, from the 32-bit bytecode the desktop build compiled
+// (${_source}). Do not edit.
+
+#include \"script/MqjsHost.hpp\"
+
+extern \"C\" const rp_mqjs_pack_source rp_script_${_id};
+
+extern \"C\" const rp_package* ${_fn}(void) { return rp::mqjs::package(rp_script_${_id}); }
+")
+    retroplug_package_library(retroplug-${package}-script "${_registration}" "${_source}")
+    target_compile_definitions(retroplug-${package}-script PRIVATE RP_MQJS_BYTECODE_IN_FLASH)
+    target_link_libraries(retroplug-${package}-script PUBLIC retroplug-mqjs-host)
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${package}_SCRIPT_FN ${_fn})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${package}_SCRIPT_TARGET retroplug-${package}-script)
+endfunction()
+
 # retroplug_device_script_pack(<name> ENTRY <file.ts> HEAP_BYTES <n> PACK_DIR <dir> [OUT_DIR <dir>]): a device script
 # pack's targets, desktop build only: a package's (_retroplug_script_targets) or a test's own fixture.
 #
@@ -391,9 +437,11 @@ endfunction()
 #       (packages/retroplug/scripts/build-device-pack.mjs: bundled against its allowlist, PACK_DIR and the node SDK,
 #       lowered to ES5, scanned for library calls the engine lacks, its definitions run under Node and its bytecode on
 #       the runner, retroplug-mqjs-run, inside HEAP_BYTES). It writes OUT_DIR (default build/packages/<name>/script):
-#       <name>.mqjs64.bin and <name>.mqjs32.bin, and the same as C, <name>.pack64.c and <name>.pack32.c (graph-runtime's
-#       script/rp_mqjs_pack.h, rp_script_<name>), and names the bytecode in its RP_BYTECODE_64 and RP_BYTECODE_32
-#       properties; a pack the toolchain refuses fails the target's build, saying why. It runs the toolchain on every
+#       <name>.mqjs64.bin (the whole pack), <name>.device64.bin and <name>.mqjs32.bin (the device's runtime of the pack,
+#       which every node runs, at each width), and the bytecode as C, <name>.pack64.c (both 64-bit bundles) and
+#       <name>.pack32.c (graph-runtime's script/rp_mqjs_pack.h, rp_script_<name>), and names the whole pack's and the
+#       box's bytecode in its RP_BYTECODE_64 and RP_BYTECODE_32 properties; a pack the toolchain refuses fails the
+#       target's build, saying why. It runs the toolchain on every
 #       build of it (as packages/native/cmake/bundles.cmake's bundles run esbuild), which rewrites an output only when
 #       it changes, so what depends on one is rebuilt only then.
 #   retroplug-<name>-pack64  the 64-bit C source as a library: what the desktop's host loads.
@@ -419,11 +467,12 @@ function(retroplug_device_script_pack name)
         set(P_OUT_DIR "${CMAKE_BINARY_DIR}/packages/${name}/script")
     endif()
     set(_out "${P_OUT_DIR}")
-    set(_bytecode "${_out}/${name}.mqjs64.bin" "${_out}/${name}.mqjs32.bin")
+    set(_bytecode "${_out}/${name}.mqjs64.bin" "${_out}/${name}.device64.bin" "${_out}/${name}.mqjs32.bin")
     set(_sources "${_out}/${name}.pack64.c" "${_out}/${name}.pack32.c")
     set(_pack retroplug-${name}-script-pack)
     add_custom_target(${_pack}
-        BYPRODUCTS ${_bytecode} ${_sources} "${_out}/${name}.js" "${_out}/${name}.transcript.txt"
+        BYPRODUCTS ${_bytecode} ${_sources} "${_out}/${name}.js" "${_out}/${name}.device.js"
+                   "${_out}/${name}.transcript.txt"
         COMMAND ${NODE_EXECUTABLE} "${RP_PACKAGES_DIR}/retroplug/scripts/build-device-pack.mjs"
                 --entry "${P_ENTRY}" --name ${name} --heap-bytes ${P_HEAP_BYTES} --out-dir "${_out}"
                 --pack-dir "${P_PACK_DIR}" --mqjs "$<TARGET_FILE:mqjs>"

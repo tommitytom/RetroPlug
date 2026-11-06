@@ -160,6 +160,19 @@ export function startValue(stream: ControlStream): number {
 //   any other array-like's read element by element into the space reserved for them (an element that throws takes the
 //   message back out, and the send throws). So a node may refill the array it sent and send it again, in the same
 //   block or a later one, as the LSDj nodes do with theirs.
+// - forward(port, message) is send(port, message.frame, message.data, message.flags), made in the host: a node that
+//   passes what it was handed (a MIDI policy) pays one call a message, not three reads and a call. Any object with
+//   those fields is sent as send would send it; a message the block handed out is read where it lies, its data as it
+//   holds it then (a node may have written its bytes), its frame and flags as the message object reads them (on
+//   MicroQuickJS read-only getters of what the block gave; on the desktop's QuickJS host plain fields, so a node that
+//   assigns one there forwards what it assigned, as send of the field would).
+// - A definition that says `idle: "skip"` promises that its process does nothing on a block that brings it nothing: no
+//   message on any events or bytes input, no change on any control input or param. The host then does not call it there
+//   (no block is filled, no JS runs), after the node's first block, which always runs, as does one whose activate or
+//   onSettings waits, and a kept node's first block in a new plan (which sets each control input's start afresh: a
+//   rewired or disconnected input's). So such a node keeps no time of its own: it cannot count blocks, follow the
+//   transport, or send anything a block did not bring it. Its layout may have no audio port (an audio output is written
+//   every block) and must have an input or a param, or nothing would ever reach it; buildLayout refuses either.
 // - A feedback input carries last block's messages at their frames in that block, so a frame can lie at or past
 //   this block's end. No production node reads one: LSDj's serial-out decoder, the one that reads a system's output,
 //   takes its Game Boy's serialOut over a forward wire, each byte at its frame in this block.
@@ -189,6 +202,9 @@ export interface Block {
   messages(port: string): readonly Message[];
   /** Events / bytes outputs. False when the fixed-capacity queue is full (the message is dropped). */
   send(port: string, frame: number, data: ArrayLike<number>, flags?: number): boolean;
+  /** send(port, message.frame, message.data, message.flags), in one call: what a node passes on as it came (a message
+   *  the block handed out), or any object of those fields. */
+  forward(port: string, message: { frame: number; data: ArrayLike<number>; flags?: number }): boolean;
   /** A control input, or a param by id. */
   control(id: string): ControlStream;
   /** Control outputs. */
@@ -254,6 +270,9 @@ export interface NodeDefinition<S> {
    *  run again next block, and is counted all the same; so does one in onSettings, portsChanged or activate, at its
    *  next block. */
   faultOnThrow?: true;
+  /** "skip": process does nothing on a block that brings no message and no control or param change, so the host
+   *  does not call it there (the host contract above says when it still does, and what the layout may then have). */
+  idle?: "skip";
   /** Runs on the thread that runs blocks, when the plan holding the node is adopted, not when the document is
    *  planned: a document naming the node plans whatever create will do, and a create that throws (or returns no
    *  process) surfaces as the node faulting at its first block, the throw counted and kept. */
@@ -277,6 +296,17 @@ export interface DefinedNode<S> extends NodeDefinition<S> {
 // the pack's bytecode carries the answer and every host that runs it reads the same one. No other bundle defines it.
 declare const RP_DEVICE_PACK: boolean | undefined;
 const devicePack = (): boolean => typeof RP_DEVICE_PACK !== "undefined" && RP_DEVICE_PACK === true;
+// Whether this is the device's runtime of a device pack: the bundle every node of the pack runs from, on every host
+// (the box's 32-bit bytecode, and the desktop's 64-bit one for its nodes), which the same toolchain bundles a second
+// time with RP_DEVICE_RUNTIME defined true as well. A node's context runs no definition's checks, settings parse or
+// descriptor (the planner checked the plan with the full bundle, in the desktop's control context, the exporter wrote
+// each node's settings whole, and the box registers the ids its build recorded): it asks a definition for its id, its
+// create, its layout for the settings the plan carries and its idle flag. So there defineNode keeps exactly those, and
+// the bundler drops every check, the descriptor and the settings schema's use from the runtime's bytecode (the test is
+// spelt out at its one use, which the bundler folds once the define makes it a constant). The layout is buildLayout's
+// own ordering (orderedLayout); the toolchain holds the two bundles' default layouts equal, and runs both bundles'
+// nodes through the same blocks and holds their output equal.
+declare const RP_DEVICE_RUNTIME: boolean | undefined;
 
 const MAX_CHANNELS = 4294967295;
 // The most a queue port may declare: kMaxQueueMessages / kMaxQueueBytes in Descriptor.hpp.
@@ -460,6 +490,8 @@ function checkMetadata<S>(def: NodeDefinition<S>): void {
   // Read by the script host as given, so a false would be a promise in a form it does not read.
   for (const key of ["reshapes", "faultOnThrow"] as const)
     if (def[key] !== undefined && def[key] !== true) throw new Error(`node type ${q(def.id)}: ${key} is true or absent`);
+  if (def.idle !== undefined && def.idle !== "skip")
+    throw new Error(`node type ${q(def.id)}: idle is "skip" or absent`);
 }
 
 // Every string (and key) in a JSON value is one C++ can read.
@@ -505,13 +537,24 @@ function checkFieldNames(node: string, schema: unknown, path: string): void {
   if (s.items) checkFieldNames(node, s.items, `${path.slice(0, -1)}[].`);
 }
 
-function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
+// The ports and params for these settings, copied, in the layout's order: inputs (and link ports) first, then outputs,
+// each in declaration order (the C++ layer's order too), then the params, and the exclusive groups. What the device's
+// runtime lays a node out with, unchecked; buildLayout checks it.
+function orderedLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   const portMap = typeof def.ports === "function" ? def.ports(settings) : def.ports;
   const paramMap = typeof def.params === "function" ? def.params(settings) : (def.params ?? {});
   const ports: PortDesc[] = Object.keys(portMap).map((id) => copyPort(id, portMap[id]));
-  // Inputs (and link ports) first, then outputs, each in declaration order - the C++ layer's order too.
   const ordered = [...ports.filter((p) => p.dir !== "out"), ...ports.filter((p) => p.dir === "out")];
   const params = Object.keys(paramMap).map((id) => copyParam(id, paramMap[id]));
+  const layout: Layout = { ports: ordered, params };
+  // A group that is no array is copied as it is, for buildLayout to refuse in its own words.
+  if (def.exclusive?.length) layout.exclusive = def.exclusive.map((g) => (Array.isArray(g) ? g.slice() : g));
+  return layout;
+}
+
+function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
+  const layout = orderedLayout(def, settings);
+  const { ports: ordered, params } = layout;
   // A device pack's nodes are event-rate logic, and audio-rate work stays C++ (docs/modular-graph-phase-e4-design.md
   // section 2): an audio port is refused here, at definition (defineNode lays out the defaults at once for a device
   // pack) and for any other settings, naming the node and the port.
@@ -520,6 +563,19 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
       if (p.kind === "audio")
         throw new Error(`${def.id}: port ${q(p.id)} is audio, which a device pack's node cannot have: audio stays C++`);
     }
+  }
+  // A node the host skips on an idle block (the host contract): no audio port, which must be written every block, and
+  // something a block can bring it, or it would never run past its first.
+  if (def.idle === "skip") {
+    for (const p of ordered) {
+      if (p.kind === "audio")
+        throw new Error(`${def.id}: port ${q(p.id)} is audio, which a node the host skips when idle cannot have`);
+    }
+    const fed = params.length > 0 ||
+      ordered.some((p) => p.dir === "in" && (p.kind === "events" || p.kind === "bytes" || p.kind === "control"));
+    if (!fed)
+      throw new Error(`${def.id}: it is skipped when idle but has no events, bytes or control input and no param, ` +
+        "so nothing would ever run it");
   }
   // The ids met so far: a dictionary with no prototype, so an id such as "__proto__" or "toString" is a key like any
   // other.
@@ -567,12 +623,16 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
       }
     });
   }
-  const layout: Layout = { ports: ordered, params };
-  if (def.exclusive?.length) layout.exclusive = def.exclusive.map((g) => g.slice());
   return layout;
 }
 
 export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): DefinedNode<S> {
+  return typeof RP_DEVICE_RUNTIME !== "undefined" && RP_DEVICE_RUNTIME === true
+    ? deviceDefinition(def)
+    : checkedDefinition(def);
+}
+
+function checkedDefinition<S>(def: NodeDefinition<S>): DefinedNode<S> {
   if (!plainId(def.id))
     throw new Error(`node type id ${q(String(def.id))} must be non-empty, with no whitespace, control characters or lone surrogates`);
   checkMetadata(def);
@@ -620,5 +680,24 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
       ...buildLayout(def, parseSettings({})),
       settings: def.settings ? settingsSchema(def) : { type: "object" },
     }),
+  };
+}
+
+// A definition as the device's runtime keeps it (RP_DEVICE_RUNTIME): its id, its create, its layout and whether the
+// host may skip it when idle, and nothing a device does not call. The other members a DefinedNode has throw if a host
+// ever asked this bundle for them: every host runs a device pack's nodes from this bundle, and registers them, reads
+// their descriptors and checks their settings with the full one (script/MqjsHost.hpp).
+function deviceDefinition<S>(def: NodeDefinition<S>): DefinedNode<S> {
+  const desktopOnly = (): never => {
+    throw new Error(`${def.id}: the device's runtime of a pack has no settings parse or descriptor`);
+  };
+  return {
+    id: def.id,
+    ports: def.ports,
+    create: def.create,
+    ...(def.idle ? { idle: def.idle } : {}),
+    layout: (settings: S) => orderedLayout(def, settings),
+    parseSettings: desktopOnly,
+    descriptor: desktopOnly,
   };
 }

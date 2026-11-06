@@ -136,9 +136,13 @@ struct LoadedPlan {
 // Checks the blob and sizes it against an arena of `arenaBytes` (0: any size), creating nothing; `types` are the
 // packages whose node types it may name (a product's rp_register_packages()). False, with `error` filled, for a blob
 // loadPlan would refuse before it created a node. `size` is filled once every node's query_memory has answered, so on
-// a pass and on an over-budget refusal, not on a refused blob, settings or alignment, or sizes that overflow.
+// a pass and on an over-budget refusal, not on a refused blob, settings or alignment, or sizes that overflow. With
+// `targetPointerBytes` (blob::kTargetPointerBytes, the exporter's), each package's own memory is sized as a target of
+// that width needs it (rp_package_memory's query_target), and the nodes and structures with these builds, which are
+// no smaller than the target's: the figure an export holds a device's arena to. 0 sizes everything with these builds,
+// which is what loadPlan places.
 bool sizePlan(std::span<const std::uint8_t> blob, std::span<const rp_package* const> types, std::size_t arenaBytes,
-              PlanSize* size, PlanLoadError* error);
+              PlanSize* size, PlanLoadError* error, std::uint32_t targetPointerBytes = 0);
 
 // Loads the blob into `arena` (see above) with its nodes created under `host`. The plan, at the arena's start, or null
 // with `error` filled and nothing left created.

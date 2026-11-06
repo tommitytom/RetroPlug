@@ -29,7 +29,9 @@ struct ExportOptions {
 struct ExportResult {
     std::vector<PlanError>    errors;
     std::vector<std::uint8_t> blob;  // empty when errors is not
-    PlanSize                  size;  // what the loader's sizing pass gives the blob with the device's builds
+    // What the loader's sizing pass gives the blob for the target: the device's builds of its types, its packages'
+    // own memory at the target's width (sizePlan's targetPointerBytes).
+    PlanSize                  size;
     bool                      ok() const { return errors.empty(); }
 };
 
@@ -42,14 +44,18 @@ struct ExportResult {
 // desktop's by construction. Then runs the loader's own check and sizing pass (sizePlan) over the blob with
 // `deviceTypes`, the device's builds of the types (on the desktop, the renamed device-mode objects:
 // rp_register_device_mode_packages), so a type the device does not build, one that asks more alignment than the target
-// gives, or a plan its arena cannot hold (its packages' memory among what it holds), is refused here as the device
+// gives, or a plan its arena cannot hold (its packages' memory among what it holds, sized at the target's width: a
+// script pack's context is word-sized, and these builds' words are twice the rp2350's), is refused here as the device
 // would refuse it. Then the trial load: the blob loaded with the same builds on the exporter's host, one block of
 // `options.maxFrames` run with every input empty, and unloaded, so a create or activate only the device's build
 // refuses fails the export too, and so does a script node whose first block faults (graph/rp_script.h's
 // rp.script.fault/1: a script node is made at its first block, where its pack's heap is also sized for the plan's
-// queues). The exporter's host offers a clock (rp.host.clock/1: the thread's CPU time at the desktop's deadline), so a
-// script node that runs on there faults rather than hanging the export. What it cannot see is what only a real device
-// answers: the box's own host interfaces, its links, its timing (its clock, and its heap for a block's contents).
+// queues, at these builds' width: the toolchain check's 3/2 of the pack's declared heap, script/MqjsHost.hpp's
+// kDeviceHalves, a heuristic for the box's 32-bit figure and never laxer than the toolchain's). The exporter's host
+// offers a clock (rp.host.clock/1: the thread's CPU time at the desktop's deadline), so a script node that runs on
+// there faults rather than hanging the export. What it cannot see is what only a real device answers: the box's own
+// host interfaces, its links, its timing (its clock, and its heap at 32 bits, which the box's boot line says after its
+// first block, and a block's contents).
 ExportResult exportPlan(const GraphDocument& document, const NodeRegistry& registry,
                         std::span<const rp_package* const> deviceTypes, const ExportOptions& options);
 // The same, from the document's JSON ("document" refuses text that is not one, as GraphHost::setGraph does).

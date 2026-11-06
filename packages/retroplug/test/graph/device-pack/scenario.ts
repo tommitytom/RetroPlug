@@ -10,7 +10,15 @@ import { plainId, wellFormed } from "../../../src/graph/descriptor";
 import { s } from "../../../src/graph/settingsSchema";
 import { registerScriptNodes } from "../../../src/script/register";
 
-const log = (line: string): void => console.log(line);
+// The device's runtime of a pack (the box's bundle, built with RP_DEVICE_RUNTIME: graph/defineNode.ts) keeps a
+// definition's id, create and layout alone, so what the desktop's checks, settings parse and descriptor make of each
+// definition is printed by the full bundle only (the transcript the two engines must agree on); the runtime defines the
+// same nodes, which the toolchain then runs through the same blocks as the full bundle's.
+declare const RP_DEVICE_RUNTIME: boolean | undefined;
+const full = typeof RP_DEVICE_RUNTIME === "undefined";
+const log = (line: string): void => {
+  if (full) console.log(line);
+};
 const noop = () => ({ process() {} });
 
 // What f does: "accepted", or the message it threw. Only the helpers' own Errors reach here.
@@ -67,7 +75,7 @@ const everything = defineNode({
   exclusive: [["out", "level"], ["out.*"]],
   create: noop,
 });
-log(`everything: ${JSON.stringify(everything.descriptor())}`);
+if (full) log(`everything: ${JSON.stringify(everything.descriptor())}`);
 
 // ---- settings, and ports that follow them ----
 
@@ -94,14 +102,16 @@ const fanIn = defineNode({
   reshapes: true,
   create: noop,
 });
-log(`fan-in defaults: ${JSON.stringify(fanIn.parseSettings({}))}`);
-log(`fan-in, 4 inputs: ${JSON.stringify(fanIn.layout(fanIn.parseSettings({ inputs: 4, thru: false })))}`);
-log(`fan-in, taps: ${JSON.stringify(fanIn.parseSettings({ taps: [{ on: true }, { at: 7 }], toString: 1 }))}`);
+if (full) {
+  log(`fan-in defaults: ${JSON.stringify(fanIn.parseSettings({}))}`);
+  log(`fan-in, 4 inputs: ${JSON.stringify(fanIn.layout(fanIn.parseSettings({ inputs: 4, thru: false })))}`);
+  log(`fan-in, taps: ${JSON.stringify(fanIn.parseSettings({ taps: [{ on: true }, { at: 7 }], toString: 1 }))}`);
+}
 const refusedSettings = [{ inputs: 99 }, { inputs: 1.5 }, { inputs: "2" }, { mode: "x" }, { taps: [1] },
                          { scale: "x" }];
 for (const raw of [...refusedSettings, [], null, "x", 3])
   attempt(`fan-in settings ${JSON.stringify(raw)}`, () => fanIn.parseSettings(raw));
-log(`fan-in schema: ${JSON.stringify(fanIn.descriptor().settings)}`);
+if (full) log(`fan-in schema: ${JSON.stringify(fanIn.descriptor().settings)}`);
 
 // ---- what a device pack refuses, and what every pack refuses ----
 
@@ -207,7 +217,6 @@ const counter = defineNode({
     };
   },
 });
-const instance = counter.create({ settings: counter.parseSettings({ step: 3 }), sampleRate: 48000, maxFrames: 64 });
 const sent: string[] = [];
 const message = (frame: number, data: number[]): Message => ({ frame, data: new Uint8Array(data), flags: 0 });
 const block = {
@@ -219,14 +228,18 @@ const block = {
     sent.push(`${port}@${frame}=${Array.prototype.join.call(data, ",")}/${flags ?? 0}`);
     return true;
   },
+  forward: (port: string, m: Message): boolean => block.send(port, m.frame, m.data, m.flags),
   control: () => ({ start: 10, changes: [{ frame: 0, value: 20 }, { frame: 0, value: 30 }, { frame: 9, value: 40 }] }),
   emit: (port: string, frame: number, value: number) => {
     sent.push(`${port}@${frame}=${value}`);
     return true;
   },
 } as Block;
-instance.process(block);
-instance.process(block);
-log(`counter sent: ${sent.join(" ")}`);
+if (full) {
+  const instance = counter.create({ settings: counter.parseSettings({ step: 3 }), sampleRate: 48000, maxFrames: 64 });
+  instance.process(block);
+  instance.process(block);
+  log(`counter sent: ${sent.join(" ")}`);
+}
 
 registerScriptNodes([everything, fanIn, audioLater, counter]);

@@ -5,7 +5,7 @@
 // - It takes what the host staged for the block, in the host's order, at the host's frames: a frame at or past the
 //   block's end lands on its last frame, one earlier than the last taken is clamped up to it, an empty message is not
 //   pushed, and a block with nothing staged is empty. The host is told the block's length.
-// - A full queue (256 messages, 4 KB) drops the rest and counts them as the queue's, and a message longer than the
+// - A full queue (64 messages, 4 KB) drops the rest and counts them as the queue's, and a message longer than the
 //   queue's 4 KB is dropped and counted before its length reaches a push, whatever length the host answers.
 // - A host that offers no rp.device.midi-in/1: it activates, every block is empty, and nothing faults.
 // - The device build's create, activate, process and destroy allocate nothing; one a plan (`unique`).
@@ -148,7 +148,7 @@ TEST_CASE("rp.device.midi-in takes what its host staged, at frames within the bl
     }
 }
 
-TEST_CASE("rp.device.midi-in drops what passes its 256 messages or 4 KB, and counts it", "[device-mode][device-io]") {
+TEST_CASE("rp.device.midi-in drops what passes its 64 messages or 4 KB, and counts it", "[device-mode][device-io]") {
     for (const rp_node_type* type : builds()) {
         INFO((type == builds()[0] ? "device" : "desktop"));
         FakeMidiIn midi;
@@ -158,7 +158,8 @@ TEST_CASE("rp.device.midi-in drops what passes its 256 messages or 4 KB, and cou
         CHECK(made.block(256) == RP_OK);
         CHECK(made.queue.count == RP_DEVICE_MIDI_IN_MESSAGES);
         CHECK(made.queue.dropped == 300 - RP_DEVICE_MIDI_IN_MESSAGES);
-        CHECK(made.queue.items[255].frame == 255 * 256 / 300);  // the first 256, as staged
+        // The first RP_DEVICE_MIDI_IN_MESSAGES, as staged.
+        CHECK(made.queue.items[RP_DEVICE_MIDI_IN_MESSAGES - 1].frame == (RP_DEVICE_MIDI_IN_MESSAGES - 1) * 256 / 300);
         // Two SysEx messages of 3000 bytes: the first fits the 4 KB, the second does not.
         std::vector<std::uint8_t> sysex(3000, 0x11);
         sysex.front() = 0xF0;

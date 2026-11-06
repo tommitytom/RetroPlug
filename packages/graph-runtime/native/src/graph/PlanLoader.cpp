@@ -448,9 +448,11 @@ struct Placement {
 };
 
 // The plan's packages with memory of their own (layout's), each queried and placed: false, with `err` filled, for one
-// that cannot be sized or asks an alignment the target does not give.
+// that cannot be sized or asks an alignment the target does not give. A `pointerBytes` other than 0 sizes each for a
+// target of that width (rp_package_memory's query_target, where a package has one): the exporter's measure, never a
+// placement.
 RP_NOINLINE bool placePackages(const Blob& b, std::span<const rp_package* const> types, Bump& bump, Placed& p,
-                               std::uint64_t limit, Placement& out, PlanLoadError* err) {
+                               std::uint64_t limit, std::uint32_t pointerBytes, Placement& out, PlanLoadError* err) {
     const std::uint32_t nodes = b.count(Section::Nodes);
     p.packageCount = countPackages(b, types);
     p.packages = bump.array<LoadedPackage>(p.packageCount);
@@ -465,7 +467,10 @@ RP_NOINLINE bool placePackages(const Blob& b, std::span<const rp_package* const>
                 << " pack has package memory without its query, setup and teardown";
             return false;
         }
-        if (!hooks.query(package, &req, &packageErr)) {
+        const bool sized = pointerBytes && hooks.query_target
+                               ? hooks.query_target(package, pointerBytes, &req, &packageErr)
+                               : hooks.query(package, &req, &packageErr);
+        if (!sized) {
             (fail(err, "package-memory") << "the ").quoted(packageName(package))
                 << " pack's memory cannot be sized: " << reason(packageErr, "the package refused");
             return false;
@@ -493,7 +498,7 @@ RP_NOINLINE bool placePackages(const Blob& b, std::span<const rp_package* const>
 // document's order, placed while they fit the bump's base (when it has one). It fills `size` and, past `limit` bytes,
 // refuses naming the first node whose instance does not fit, or the plan's own structures when they alone do not.
 bool layout(const Blob& b, std::span<const rp_package* const> types, Bump& bump, Placed& p, std::uint64_t limit,
-            PlanSize* size, PlanLoadError* err) {
+            std::uint32_t pointerBytes, PlanSize* size, PlanLoadError* err) {
     const std::uint32_t nodes = b.count(Section::Nodes);
     p.plan = bump.array<LoadedPlan>(1);
     p.nodes = bump.array<LoadedNode>(nodes);
@@ -527,7 +532,7 @@ bool layout(const Blob& b, std::span<const rp_package* const> types, Bump& bump,
     // The packages with memory of their own: each once, in the order the plan first names one of its types, after the
     // plan's own structures and before every node, since each is set up before its first node is created.
     Placement packages;
-    if (!placePackages(b, types, bump, p, limit, packages, err)) return false;
+    if (!placePackages(b, types, bump, p, limit, pointerBytes, packages, err)) return false;
     const std::uint64_t packageBytes = packages.bytes;
     const std::uint32_t packageCount = p.packageCount;
     const rp_package*   packageTip = packages.tip;
@@ -812,9 +817,9 @@ namespace {
 // stack the error's 352 bytes would otherwise sit on under the whole load) carries none of it: -Wstack-usage holds a
 // device's frames to cmake/device-image.cmake's limit.
 RP_NOINLINE bool sizePlanIgnoring(std::span<const std::uint8_t> blob, std::span<const rp_package* const> types,
-                                  std::size_t arenaBytes, PlanSize* size) {
+                                  std::size_t arenaBytes, PlanSize* size, std::uint32_t targetPointerBytes) {
     PlanLoadError ignored;
-    return sizePlan(blob, types, arenaBytes, size, &ignored);
+    return sizePlan(blob, types, arenaBytes, size, &ignored, targetPointerBytes);
 }
 RP_NOINLINE LoadedPlan* loadPlanIgnoring(std::span<const std::uint8_t> blob, std::span<std::byte> arena,
                                          std::span<const rp_package* const> types, const rp_host* host) {
@@ -825,13 +830,13 @@ RP_NOINLINE LoadedPlan* loadPlanIgnoring(std::span<const std::uint8_t> blob, std
 }  // namespace
 
 bool sizePlan(std::span<const std::uint8_t> blob, std::span<const rp_package* const> types, std::size_t arenaBytes,
-              PlanSize* size, PlanLoadError* error) {
-    if (!error) return sizePlanIgnoring(blob, types, arenaBytes, size);
+              PlanSize* size, PlanLoadError* error, std::uint32_t targetPointerBytes) {
+    if (!error) return sizePlanIgnoring(blob, types, arenaBytes, size, targetPointerBytes);
     Blob b;
     if (!check(blob, types, b, error)) return false;
     Bump measure;
     Placed none;
-    return layout(b, types, measure, none, arenaBytes ? arenaBytes : kUnlimited, size, error);
+    return layout(b, types, measure, none, arenaBytes ? arenaBytes : kUnlimited, targetPointerBytes, size, error);
 }
 
 LoadedPlan* loadPlan(std::span<const std::uint8_t> blob, std::span<std::byte> arena,
@@ -848,7 +853,7 @@ LoadedPlan* loadPlan(std::span<const std::uint8_t> blob, std::span<std::byte> ar
     Bump place{arena.data(), arena.size()};
     Placed p;
     PlanSize size;
-    if (!layout(b, types, place, p, arena.size(), &size, error)) return nullptr;
+    if (!layout(b, types, place, p, arena.size(), 0, &size, error)) return nullptr;
     LoadedPlan& plan = *new (p.plan) LoadedPlan{};
     plan.sampleRate = b.sampleRate();
     plan.maxFrames = b.h.maxFrames;

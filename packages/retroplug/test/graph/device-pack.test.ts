@@ -12,7 +12,9 @@
 //   whose name the SDK declares, a use beside a guard, a call in a helper the bundler wrote), naming the call and its
 //   source line; one whose node has an audio port, as defineNode refuses it at definition, naming the node and the
 //   port; one that imports outside its allowlist, naming the module and its importer; one the engine runs unlike Node,
-//   naming the transcript line; and one whose bytecode does not define its node types in its declared heap;
+//   naming the transcript line; one whose bytecode does not define its node types in its declared heap; one whose
+//   device runtime (the bundle every node runs) does other than the full bundle does with the same blocks; and one
+//   whose device runtime lays a node out otherwise;
 // - the devtest package's script pack (packages/devtest/ts), which CMake compiles from its manifest
 //   (_retroplug_script_targets in cmake/packages.cmake), has its bytecode at both widths, and the toolchain run by hand
 //   on the same entry writes the same bytes.
@@ -29,6 +31,7 @@ declare const tjs: {
   env: Record<string, string | undefined>;
   readFile(path: string): Promise<Uint8Array>;
   stat(path: string): Promise<unknown>;
+  readDir(path: string): Promise<AsyncIterable<{ name: string }>>;
   spawn(
     args: string[],
     opts: { stdout: "pipe"; stderr: "pipe" },
@@ -164,18 +167,23 @@ test("a device pack the engine runs unlike Node is refused, at the transcript li
   contains(run.err, "MicroQuickJS (deps/mquickjs, 6d4d7eb) disagrees with Node at line 2 of the transcript");
   contains(run.err, '"ports":[{"id":"out","dir":"out","kind":"events"}]');
   contains(run.err, '"ports":[{"id":"__proto__","dir":"in","kind":"events"},{"id":"out","dir":"out","kind":"events"}]');
-  // Refused after its bytecode was made: nothing of it is left, neither an output nor the work files.
-  for (const file of ["proto-key.js", "proto-key.mqjs64.bin", "proto-key.mqjs32.bin", "proto-key.pack64.c",
-                      "proto-key.pack32.c", "proto-key.transcript.txt", ".proto-key.work"])
+  // Refused after its bytecode was made: nothing of it is left, neither an output nor the work files (a directory of
+  // the run's own, named for the pack and the process).
+  for (const file of ["proto-key.js", "proto-key.device.js", "proto-key.mqjs64.bin", "proto-key.mqjs32.bin",
+                      "proto-key.pack64.c", "proto-key.pack32.c", "proto-key.transcript.txt"])
     expect(await exists(`${OUT}/proto-key/${file}`), file).toBe(false);
+  const left: string[] = [];
+  if (await exists(`${OUT}/proto-key`)) for await (const e of await tjs.readDir(`${OUT}/proto-key`)) left.push(e.name);
+  expect(left.filter((name) => name.startsWith(".proto-key.work")), "the work files").toEqual([]);
 });
 
 test("a device pack whose bytecode does not define its node types in its declared heap is refused", async () => {
-  // devtest defines its node in about 12 KiB of a 64-bit context. (Below 4 KiB, the least context the engine sets
-  // itself up in, the host refuses to make one, saying so.)
-  const run = await buildPack("../devtest/ts/index.ts", "devtest-small", 8192, "../devtest");
+  // devtest defines its node in about 12 KiB of a 64-bit context, and the check's context at 64 bits is 3/2 of the
+  // declared heap (the box's figure): 4096 bytes declared is a 6 KiB context there. (Below 4 KiB, the least context
+  // the engine sets itself up in, the host refuses to make one, saying so.)
+  const run = await buildPack("../devtest/ts/index.ts", "devtest-small", 4096, "../devtest");
   expect(run.ok).toBe(false);
-  contains(run.err, "its bytecode does not define its node types in its declared heap of 8192 bytes");
+  contains(run.err, "its bytecode does not define its node types in its declared heap of 4096 bytes");
   contains(run.err, "InternalError: out of memory");
 });
 
@@ -199,6 +207,21 @@ test("a device pack that imports outside its allowlist is refused, naming the mo
   );
 });
 
+test("a device pack whose device runtime does other than the pack does is refused", async () => {
+  const run = await buildPack(`${FIXTURES}/runtime-differs.ts`, "runtime-differs", 65536);
+  expect(run.ok).toBe(false);
+  contains(run.err,
+           "the device's runtime of the pack does not do what the pack does: over the same blocks its nodes' output " +
+             "digests to ");
+});
+
+test("a device pack whose device runtime lays a node out otherwise is refused, where the layouts part", async () => {
+  const run = await buildPack(`${FIXTURES}/layout-differs.ts`, "layout-differs", 65536);
+  expect(run.ok).toBe(false);
+  contains(run.err, "the device's runtime lays a node out unlike the pack, at line 3:");
+  contains(run.err, `"capacity":{"messages":32}`);
+});
+
 // A bytecode file's header (mquickjs.h's JSBytecodeHeader): magic 0xacfb and the version, whose bit 15 says 64-bit,
 // then the address it is relocated to, which the toolchain leaves at 0 (the loader relocates it to where it lies).
 function header(bytes: Uint8Array, wide: boolean) {
@@ -214,10 +237,11 @@ test("devtest's script pack is built from its manifest at both widths, the same 
   console.log(`# devtest bytecode: ${wide.length} bytes at 64-bit, ${narrow.length} at 32-bit`);
   expect(header(wide, true)).toEqual({ magic: 0xacfb, version: 0x8001, base: 0 });
   expect(header(narrow, false)).toEqual({ magic: 0xacfb, version: 0x0001, base: 0 });
-  // A pointer's width, and no more, between them: the 32-bit form is the smaller.
-  expect(narrow.length > 1024 && narrow.length < wide.length).toBe(true);
+  // The 32-bit form is the device's runtime of the pack (the box's), which keeps neither the definitions' checks nor
+  // their descriptors, so it is far the smaller.
+  expect(narrow.length > 1024 && narrow.length * 2 < wide.length).toBe(true);
   // The toolchain by hand, on the entry and heap the manifest names, writes what CMake's target wrote.
-  const run = await buildPack("../devtest/ts/index.ts", "devtest", 81920, "../devtest");
+  const run = await buildPack("../devtest/ts/index.ts", "devtest", 57344, "../devtest");
   expect(run.ok, `${run.out}${run.err}`).toBe(true);
   const same = async (file: string, built: Uint8Array) => {
     const again = await tjs.readFile(`${OUT}/devtest/${file}`);

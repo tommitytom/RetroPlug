@@ -1,6 +1,7 @@
 #include "graph/PackageMemory.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 
@@ -41,19 +42,27 @@ void* PackageMemory::memory(void* ctx, const rp_package* package, rp_error* err)
         return nullptr;
     }
     const std::size_t size = req.size ? req.size : 1;
-    void* block = ::operator new(size, std::align_val_t(align), std::nothrow);
+    // calloc's zeroes, where it can align the block: a fresh mapping's pages, never written here.
+    const bool zeroed = align <= alignof(std::max_align_t);
+    void* block = zeroed ? std::calloc(1, size) : ::operator new(size, std::align_val_t(align), std::nothrow);
     if (!block) {
         writeError(err, name, "'s memory could not be allocated", "");
         return nullptr;
     }
-    std::memset(block, 0, size);
+    if (!zeroed) std::memset(block, 0, size);
+    const Block made{package, block, zeroed ? 0 : align};
     if (!hooks.setup(package, block, &why)) {
-        ::operator delete(block, std::align_val_t(align));
+        release(made);
         writeError(err, name, " would not set up in its memory: ", why.message);
         return nullptr;
     }
-    self->blocks_.push_back({package, block, align});
+    self->blocks_.push_back(made);
     return block;
+}
+
+void PackageMemory::release(const Block& b) {
+    if (b.align == 0) std::free(b.memory);
+    else ::operator delete(b.memory, std::align_val_t(b.align));
 }
 
 void PackageMemory::clear() {
@@ -62,7 +71,7 @@ void PackageMemory::clear() {
         const Block b = blocks_.back();
         blocks_.pop_back();
         b.package->memory->teardown(b.package, b.memory);
-        ::operator delete(b.memory, std::align_val_t(b.align));
+        release(b);
     }
 }
 

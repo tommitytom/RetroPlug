@@ -27,7 +27,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <span>
 #include <string>
@@ -74,6 +77,8 @@ const rp_package* rp_n8_package(void);
 // The bytecode the toolchain compiled for devtest and hog (their pack64.c).
 extern const rp_mqjs_pack_source rp_script_devtest;
 extern const rp_mqjs_pack_source rp_script_hog;
+extern const rp_mqjs_pack_source rp_script_bliptoaster;
+extern const rp_mqjs_pack_source rp_script_scripttest;
 }
 
 // Every device entry with both its builds (the generated device-entries.cpp).
@@ -226,8 +231,11 @@ struct Made {
     rp_control_queue& control(std::size_t i) { return *inputs[i].u.control; }
     rp_queue&         out(std::size_t i) { return *outputs[i].u.queue; }
 
-    // One block: every output emptied (and a control output rolled) first, as an executor does.
-    rp_status run(std::uint32_t frames = 256) {
+    // One block: every output emptied (and a control output rolled) first, as an executor does. Its rp_process is the
+    // node's plan step, the same object every block as an executor's is; `plan` picks one of two, as if a re-plan had
+    // made the node's step anew.
+    rp_process steps[2]{};
+    rp_status run(std::uint32_t frames = 256, int plan = 0) {
         for (rp_port_view& v : outputs) {
             if (v.kind == RP_PORT_CONTROL) {
                 rollControl(*v.u.control);
@@ -235,11 +243,11 @@ struct Made {
                 clearQueue(*v.u.queue);
             }
         }
-        const rp_process block{frames,          &transport,
-                               inputs.data(),   static_cast<std::uint32_t>(inputs.size()),
-                               outputs.data(),  static_cast<std::uint32_t>(outputs.size()),
-                               params.data(),   static_cast<std::uint32_t>(params.size())};
-        return node->vt->process(node, &block);
+        steps[plan] = rp_process{frames,          &transport,
+                                 inputs.data(),   static_cast<std::uint32_t>(inputs.size()),
+                                 outputs.data(),  static_cast<std::uint32_t>(outputs.size()),
+                                 params.data(),   static_cast<std::uint32_t>(params.size())};
+        return node->vt->process(node, &steps[plan]);
     }
 
     std::vector<Sent> sent(std::size_t output) {
@@ -330,9 +338,11 @@ TEST_CASE("a script pack registers on both builds of the host, with memory of it
         rp_memory_req req{};
         rp_error err{};
         REQUIRE(p->memory->query(p, &req, &err));
-        // The pack's heap, its context's own copy of the bytecode, and the host's state; the desktop's context is
-        // kDesktopHeapFactor times the heap.
-        const std::size_t extra = p == desktop ? (rp::mqjs::kDesktopHeapFactor - 1) * rp_script_devtest.heap_bytes : 0;
+        // The pack's heap (the box's figure, kDeviceHalves halves of it on a device build of this width), its
+        // context's own copy of the runtime's bytecode, and the host's state; the desktop's context is
+        // desktopContextBytes().
+        const std::size_t heap = std::size_t{rp_script_devtest.heap_bytes} * rp::mqjs::kDeviceHalves / 2;
+        const std::size_t extra = p == desktop ? rp::mqjs::desktopContextBytes(rp_script_devtest) - heap : 0;
         CHECK(req.size == rp::mqjs::packageBytes(rp_script_devtest) + extra);
         CHECK(req.size > rp_script_devtest.heap_bytes + rp_script_devtest.bytecode_size);
         CHECK(req.align <= 8);
@@ -367,6 +377,103 @@ TEST_CASE("every C++ package has no package memory, on either build", "[device-m
 }
 
 // ---- the block API ------------------------------------------------------------------------------------------------
+
+TEST_CASE("send and forward take data that is no Uint8Array: an array-like, objects with a valueOf, a Float64Array",
+          "[device-mode][script-pack]") {
+    for (const Build& b : builds()) {
+        INFO(b.name);
+        Host host;
+        Made n(typeOf(b.scripttest, "rp.scripttest.sends"), host, {}, {{RP_PORT_EVENTS, true}});
+        REQUIRE(n.node);
+        for (int block = 0; block < 4; ++block) {
+            REQUIRE(n.run() == RP_OK);
+            CHECK(n.sent(0) == std::vector<Sent>{{0, 0, {0x90, 60, 100}},
+                                                 {1, 0, {0x80, 61, 0}},
+                                                 {2, 0, {144, 62, 100}},
+                                                 {3, 1, {0xC0, 5}}});
+        }
+        CHECK(n.fault().empty());
+    }
+}
+
+TEST_CASE("a node the host skips when idle runs only on a block that brings it something, and forward sends a message "
+          "as send would",
+          "[device-mode][script-pack]") {
+    // in, level; out, made, calls; the param p.
+    const std::vector<PortSpec> ports = {{RP_PORT_EVENTS, false}, {RP_PORT_CONTROL, false}, {RP_PORT_EVENTS, true},
+                                         {RP_PORT_EVENTS, true},  {RP_PORT_EVENTS, true}};
+    for (const Build& b : builds()) {
+        INFO(b.name);
+        Host host;
+        Made n(typeOf(b.scripttest, "rp.scripttest.skipper"), host, {}, ports, {0.0});
+        REQUIRE(n.node);
+        // What a block's call said its count was, or 0 when it was not called.
+        auto calls = [&]() -> int {
+            const std::vector<Sent> sent = n.sent(2);
+            return sent.empty() ? 0 : sent[0].bytes.at(0);
+        };
+        // Its first block runs, though it brings nothing; then such a block is not run at all.
+        REQUIRE(n.run() == RP_OK);
+        CHECK(calls() == 1);
+        for (int i = 0; i < 3; ++i) {
+            REQUIRE(n.run() == RP_OK);
+            CHECK(calls() == 0);
+        }
+        // A message runs it. Each goes on as it came, but for the velocity the node wrote into a note-on's data before
+        // forwarding it; and an object the node made goes on as send would send its fields.
+        push(n.in(0), 5, {0x90, 60, 100}, 1);
+        push(n.in(0), 9, {0xF8});
+        push(n.in(0), 9, {});
+        REQUIRE(n.run() == RP_OK);
+        CHECK(calls() == 2);
+        CHECK(n.sent(0) == std::vector<Sent>{{5, 1, {0x90, 60, 1}}, {9, 0, {0xF8}}, {9, 0, {}}});
+        CHECK(n.sent(1) == std::vector<Sent>{{6, 1, {0x90}}, {10, 1, {0xF8}}, {10, 1, {0}}});
+        clearQueue(n.in(0));
+        REQUIRE(n.run() == RP_OK);
+        CHECK(calls() == 0);
+        // A change on a control input runs it, and one on a param.
+        REQUIRE(pushControl(n.control(1), 10, 0.5));
+        REQUIRE(n.run() == RP_OK);
+        CHECK(calls() == 3);
+        n.control(1).count = 0;
+        REQUIRE(pushControl(*n.params[0], 0, 0.25));
+        REQUIRE(n.run() == RP_OK);
+        CHECK(calls() == 4);
+        n.params[0]->count = 0;
+        REQUIRE(n.run() == RP_OK);
+        CHECK(calls() == 0);
+        // A re-activation's hook waits for its next call, which an idle block then makes.
+        rp_error err{};
+        REQUIRE(n.node->vt->activate(n.node, 44100.0, 256, &err));
+        REQUIRE(n.run() == RP_OK);
+        CHECK(calls() == 5);
+        REQUIRE(n.run() == RP_OK);
+        CHECK(calls() == 0);
+        // A new plan's step (another rp_process) whose level starts elsewhere with no change, as a rewired or
+        // disconnected input does: its first block there runs, and reads the start; the next is skipped again.
+        n.control(1).start = 0.4;
+        REQUIRE(n.run(256, 1) == RP_OK);
+        REQUIRE(n.sent(2).size() == 1);
+        CHECK(n.sent(2)[0].bytes == std::vector<std::uint8_t>{6, 40});
+        REQUIRE(n.run(256, 1) == RP_OK);
+        CHECK(calls() == 0);
+        // On the desktop, a settings swap (the same layout, so the instance is kept) waits for the next call, which an
+        // idle block then makes.
+        if (b.name == std::string("desktop")) {
+            const rp_settings none{nullptr, 0, RP_SETTINGS_JSON};
+            void*             prepared = nullptr;
+            void*             old = nullptr;
+            REQUIRE(n.node->vt->prepare_settings(n.node, &none, &prepared, &err) == RP_PREPARE_SWAP);
+            n.node->vt->commit_settings(n.node, prepared, &old);
+            n.node->vt->release_settings(n.node, old);
+            REQUIRE(n.run(256, 1) == RP_OK);
+            CHECK(calls() == 7);
+            REQUIRE(n.run(256, 1) == RP_OK);
+            CHECK(calls() == 0);
+        }
+        CHECK(n.fault().empty());
+    }
+}
 
 TEST_CASE("a script node transposes through the block API, the same on both builds", "[device-mode][script-pack]") {
     std::vector<std::vector<Sent>> runs;
@@ -574,7 +681,8 @@ TEST_CASE("the desktop's build keeps its instance through a settings change that
 
 // ---- faults ---------------------------------------------------------------------------------------------------------
 
-TEST_CASE("a script node faults on a throw, a deadline, a promise, \"fault\" and no process, and stays faulted",
+TEST_CASE("a script node faults on a throw (one the engine would drop among them), a deadline, a promise, \"fault\" "
+          "and no process, and stays faulted",
           "[device-mode][script-pack]") {
     struct Case {
         const char*   id;
@@ -589,6 +697,11 @@ TEST_CASE("a script node faults on a throw, a deadline, a promise, \"fault\" and
         {"rp.scripttest.fault", RP_SCRIPT_FAULT_REFUSED, "process returned \"fault\""},
         {"rp.scripttest.no-process", RP_SCRIPT_FAULT_REFUSED, "create returned no object with a process function"},
         {"rp.scripttest.create-throws", RP_SCRIPT_FAULT_THREW, "create threw: TypeError: create would not"},
+        // Throws the engine itself would drop (rp_mqjs_engine.c's wrappers): a String.replace function's, and a
+        // hasOwnProperty key's toString's.
+        {"rp.scripttest.replace-throws", RP_SCRIPT_FAULT_THREW,
+         "process threw: RangeError: the replace function threw"},
+        {"rp.scripttest.has-own-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the key's toString threw"},
     };
     for (const Build& b : builds()) {
         Host host(50000);  // 50 ms of the thread's CPU time: what a preempted thread does not use up
@@ -613,6 +726,83 @@ TEST_CASE("a script node faults on a throw, a deadline, a promise, \"fault\" and
             CHECK(probe.run() == RP_OK);
         }
         CHECK(probe.fault().empty());
+    }
+}
+
+TEST_CASE("by a host's clock, a block's deadline grows by kHostClockMessageMicros for each message it hands the node",
+          "[device-mode][script-pack]") {
+    // The host's clock, once the node is made, a millisecond on at each reading: the entry's start and its restart once
+    // the ports are ready are its first two, so a node held to L microseconds faults at the reading past L + 2 ms, the
+    // (L / 1000 + 3)th. Before, the thread's CPU time, as the cases' hosts give it.
+    struct Ticks {
+        bool          live = false;
+        std::uint32_t calls = 0;
+        static std::uint64_t read(void* c) {
+            auto& t = *static_cast<Ticks*>(c);
+            if (!t.live) return cpuMicros(nullptr);
+            return std::uint64_t{++t.calls} * 1000;
+        }
+    };
+    for (const Build& b : builds()) {
+        // None, then 40 on the events input and one on the bytes input: each counts.
+        for (const std::uint32_t events : {0u, 40u}) {
+            const std::uint32_t messages = events ? events + 1 : 0;
+            INFO(b.name << ", " << messages << " messages");
+            Ticks clock;
+            Host  host(20000);
+            host.clock.ctx = &clock;
+            host.clock.micros = &Ticks::read;
+            Made n(typeOf(b.scripttest, "rp.scripttest.spins-in"), host, {},
+                   {{RP_PORT_EVENTS, false}, {RP_PORT_BYTES, false}, {RP_PORT_EVENTS, true}});
+            REQUIRE(n.node);
+            for (std::uint32_t k = 0; k < events; ++k) {
+                const std::uint8_t note[3] = {0x90, static_cast<std::uint8_t>(k), 100};
+                REQUIRE(pushMessage(n.in(0), k, note));
+            }
+            if (events) {
+                const std::uint8_t raw[2] = {0xF8, 0xFA};
+                REQUIRE(pushMessage(n.in(1), 0, raw));
+            }
+            const std::uint32_t limit = 20000 + messages * rp::mqjs::kHostClockMessageMicros;
+            clock.live = true;
+            CHECK(n.run() == RP_FAULT);
+            CHECK(n.faultKind() == RP_SCRIPT_FAULT_DEADLINE);
+            CHECK(n.fault() == "process ran past its deadline of " + std::to_string(limit) + " us");
+            // The interrupt held the node to the lengthened deadline, not the fixed one: it read the clock until then.
+            CHECK(clock.calls == limit / 1000 + 3);
+        }
+    }
+}
+
+TEST_CASE("a node reads and forwards its messages, SysEx among them, from the deepest call into JavaScript a context "
+          "allows on the C stack",
+          "[device-mode][script-pack]") {
+    for (const Build& b : builds()) {
+        INFO(b.name);
+        Host host;
+        Made n(typeOf(b.scripttest, "rp.scripttest.deep"), host, {},
+               {{RP_PORT_EVENTS, false}, {RP_PORT_EVENTS, true}, {RP_PORT_EVENTS, true}});
+        REQUIRE(n.node);
+        std::vector<Sent> sent;
+        for (std::uint32_t k = 0; k < 6; ++k) {
+            std::vector<std::uint8_t> bytes = {0x90, static_cast<std::uint8_t>(60 + k), 100};
+            if (k % 2) {  // a SysEx past the three bytes a place keeps a view of: its array is made in the refill
+                bytes.assign(64, static_cast<std::uint8_t>(k));
+                bytes.front() = 0xF0;
+                bytes.back() = 0xF7;
+            }
+            REQUIRE(pushMessage(n.in(0), k * 10, bytes, k % 3 == 0 ? 1u : 0u));
+            sent.push_back({k * 10, k % 3 == 0 ? 1u : 0u, bytes});
+        }
+        for (int block = 0; block < 2; ++block) {
+            REQUIRE(n.run() == RP_OK);
+            INFO(n.fault());
+            CHECK(n.sent(0) == sent);
+            REQUIRE(n.sent(1).size() == 1);
+            // The host's own call into process is the first of the calls on the C stack, each forEach one more.
+            CHECK(n.sent(1)[0].bytes == std::vector<std::uint8_t>{static_cast<std::uint8_t>(rp::mqjs::kMaxReentries)});
+        }
+        CHECK(n.fault().empty());
     }
 }
 
@@ -695,8 +885,12 @@ TEST_CASE("a pack whose heap runs out silences every node of the pack, and no ot
         CHECK(hog.run() == RP_FAULT);
         CHECK(quiet.run() == RP_FAULT);
         CHECK(hog.faultKind() == RP_SCRIPT_FAULT_HEAP);
-        // The desktop's context is kDesktopHeapFactor times the manifest's heapBytes.
-        const std::string heap = b.name == std::string("desktop") ? "163840" : "81920";
+        // The desktop's context is desktopContextBytes() (1 MiB here), a device build's kDeviceHalves halves of the
+        // manifest's heapBytes.
+        const std::size_t  deviceHeap = std::size_t{rp_script_hog.heap_bytes} * rp::mqjs::kDeviceHalves / 2;
+        const std::string heap = std::to_string(b.name == std::string("desktop")
+                                                    ? rp::mqjs::desktopContextBytes(rp_script_hog)
+                                                    : deviceHeap);
         CHECK(hog.fault() == "the pack's heap of " + heap +
                                  " bytes ran out (in a node's process), so every node of the pack is silenced");
         CHECK(quiet.faultKind() == RP_SCRIPT_FAULT_HEAP);
@@ -994,7 +1188,9 @@ TEST_CASE("a plan with a script node, exported and loaded over the device-mode b
     INFO(described(r));
     REQUIRE(r.ok());
     CHECK(r.size.packages == 1);
-    CHECK(r.size.packageBytes == rp::mqjs::packageBytes(rp_script_devtest));
+    // The export sizes a pack's memory as the box's 32-bit build takes it; the trial load and this binary's loader
+    // place this width's.
+    CHECK(r.size.packageBytes == rp::mqjs::boxPackageBytes(rp_script_devtest));
 
     // The loaded render, counting what the load, the blocks and the unload allocate (no Catch2 macro in the window).
     Arena                 arena(kArenaBytes);
@@ -1072,16 +1268,25 @@ TEST_CASE("the loader sizes a pack's memory with the plan, places it before the 
     CHECK(words.find(" past the " + std::to_string(short_) + "-byte arena") != std::string::npos);
     CHECK(rp_devtest_plan_live_device_mode() == 0);
 
-    // The exporter refuses the same plan for the same arena, in the loader's words.
-    const ExportResult tooSmall = exported(short_);
+    // The exporter refuses the plan for an arena that ends inside the pack's memory as the box sizes it (its 32-bit
+    // build's, the target's), in the loader's words, and passes it for the arena the target's sizing gives.
+    PlanSize target;
+    REQUIRE(sizePlan(r.blob, deviceTypes(), 0, &target, &err, blob::kTargetPointerBytes));
+    CHECK(target.packageBytes == rp::mqjs::boxPackageBytes(rp_script_devtest));
+    CHECK(target.packageBytes < size.packageBytes);
+    CHECK(target.bytes == size.bytes - size.packageBytes + target.packageBytes);
+    const ExportResult tooSmall = exported(target.structureBytes + target.packageBytes - 1);
     REQUIRE_FALSE(tooSmall.ok());
     CHECK(tooSmall.errors[0].code == "arena");
-    CHECK(tooSmall.errors[0].message.find("the \"devtest\" pack's memory") == 0);
+    CHECK(tooSmall.errors[0].message.find("the \"devtest\" pack's memory (" + std::to_string(target.packageBytes) +
+                                          " bytes) does not fit") == 0);
+    CHECK(exported(target.bytes).ok());
 
     // A pack whose heap is under the least context the engine sets itself up in cannot be sized.
     static rp_mqjs_pack_source small = rp_script_devtest;
-    small.heap_bytes = 1024;
-    const rp_package* tiny = rp::mqjs::package(small);
+    // A context of 768 bytes by the toolchain check's 3/2 (the desktop's own registration has a floor of 1 MiB).
+    small.heap_bytes = 512;
+    const rp_package* tiny = rp::mqjs::exactPackage(small);
     REQUIRE(tiny);
     const std::string under = refusal(r.blob, kArenaBytes, {rp_devtest_plan_package_device_mode(), tiny});
     CHECK(under == "package-memory : the \"devtest\" pack's memory cannot be sized: its heap is under the least "
@@ -1170,8 +1375,8 @@ TEST_CASE("a script node across threads: made on the audio thread, swapped, rebu
     // pack alone; the second adds scripttest's steady node, so its pack is set up (control thread) while blocks run.
     // Each document moves the devtest transpose's semitones (a settings swap, onSettings on the audio thread) and every
     // eighth renames it (a new instance made on the audio thread at its first block, the old one's slot released
-    // through the ring, both pools in the pack's heap until the old plan is reclaimed: what the desktop's
-    // kDesktopHeapFactor holds). The ThreadSanitizer build runs this case for the host's cross-thread protocol.
+    // through the ring, both pools in the pack's heap until the old plan is reclaimed: what the desktop's larger
+    // context holds). The ThreadSanitizer build runs this case for the host's cross-thread protocol.
     NodeRegistry registry;
     for (const rp_package* p :
          {rp_devtest_plan_package(), rp_devtest_script_package(), rp_scripttest_script_package()}) {
@@ -1262,7 +1467,8 @@ TEST_CASE("on the desktop, a pack whose heap ran out is set up again once its la
     }
     REQUIRE(host.faultCount() == 2);
     const std::string dead = faultOf(host, "q") ? faultOf(host, "q") : "";
-    CHECK(dead.find("the pack's heap of 163840 bytes ran out") == 0);
+    CHECK(dead.find("the pack's heap of " + std::to_string(rp::mqjs::desktopContextBytes(rp_script_hog)) +
+                    " bytes ran out") == 0);
     // While a node of the dead pack is planned, a new one is as dead.
     REQUIRE(host.setGraph(R"({"nodes":[{"id":"hog","type":"rp.hog.hog","settings":{"grow":true}},
                                        {"id":"q","type":"rp.hog.quiet"},{"id":"q2","type":"rp.hog.quiet"}],
@@ -1376,5 +1582,100 @@ TEST_CASE("a script node's cost a message, and its pack's heap use", "[.][script
                             warm.bytes, warm.fixed, first.heap, warm.heap, kBlocks + 63);
             std::printf("\n");
         }
+    }
+}
+
+// ---- the engine's two fixes (script/rp_mqjs_engine.c, cmake/mquickjs.cmake's header) --------------------------------
+
+TEST_CASE("a loaded pack's names stay the engine's after a collection: its definitions are found from C",
+          "[device-mode][script-pack][debug-gc]") {
+    // The pack's bytecode loaded as the host loads it, into a context of its own: relocated, its strings kept
+    // (rp_mqjs_keep_bytecode_names), run. Its definitions are under a name of the bytecode's own,
+    // `__rp_scriptNodes`, which the code used as a property name and so made unique where it lies; a collection then
+    // runs, and a lookup from C makes the same name again. Without the strings kept, the collection drops the
+    // bytecode's string from the engine's weak table of names, the lookup makes a second string of that text, and
+    // finds nothing.
+    const rp_mqjs_pack_source& source = rp_script_devtest;
+    std::vector<std::uint64_t> memory((std::size_t{1} << 20) / sizeof(std::uint64_t));
+    std::vector<std::uint64_t> code(source.bytecode_size / sizeof(std::uint64_t) + 1);
+    std::memcpy(code.data(), source.bytecode, source.bytecode_size);
+    auto* bytes = reinterpret_cast<std::uint8_t*>(code.data());
+    JSContext* ctx = JS_NewContext(memory.data(), memory.size() * sizeof(std::uint64_t), &rp_mqjs_stdlib);
+    REQUIRE(ctx);
+    REQUIRE(JS_RelocateBytecode(ctx, bytes, source.bytecode_size) == 0);
+    rp_mqjs_keep_bytecode_names(bytes, source.bytecode_size);
+    const JSValue main = JS_LoadBytecode(ctx, bytes);
+    REQUIRE_FALSE(JS_IsException(main));
+    REQUIRE_FALSE(JS_IsException(JS_Run(ctx, main)));
+    JS_GC(ctx);
+    const JSValue defs = JS_GetPropertyStr(ctx, JS_GetGlobalObject(ctx), "__rp_scriptNodes");
+    CHECK(JS_IsArray(ctx, defs));
+    JS_FreeContext(ctx);
+}
+
+namespace {
+
+// A runner's line for one pack (retroplug-mqjs-run pack: its nodes from the device's runtime, registered from the whole
+// pack), or the run's exit status when it failed.
+std::string runnerLine(const std::string& runner, const std::string& dir, const rp_mqjs_pack_source& source,
+                       std::uint32_t heapBytes, std::uint32_t blocks) {
+    std::string types;
+    for (std::uint32_t i = 0; i < source.type_count; ++i) types += (i ? "," : "") + std::string(source.type_ids[i]);
+    const std::string name = source.name;
+    const std::string out = dir + "/." + name + ".runner-" + std::to_string(heapBytes) + ".txt";
+    std::string command = "\"" + runner + "\" pack \"" + dir + "/" + name + ".device64.bin\" --control \"" + dir + "/" +
+                          name + ".mqjs64.bin\" --name " + name + " --heap-bytes " + std::to_string(heapBytes) +
+                          " --types " + types + " --blocks " + std::to_string(blocks) +
+                          " --least no --deadline-us 3000000 > \"" + out + "\" 2>&1";
+#ifdef _WIN32
+    command = "\"" + command + "\"";  // cmd /c drops a command line's outer quotes when it starts with one
+#endif
+    const int status = std::system(command.c_str());
+    std::ifstream in(out, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::remove(out.c_str());
+    if (status != 0) return "exit " + std::to_string(status) + ": " + text;
+    const std::size_t at = text.find("ok least=");
+    return at == std::string::npos ? text : text.substr(at);
+}
+
+std::string digestOf(const std::string& line) {
+    const std::size_t at = line.find("digest=");
+    return at == std::string::npos ? line : line.substr(at);
+}
+
+}  // namespace
+
+TEST_CASE("the pack check runs the same in the engine's DEBUG_GC build, a collection at every allocation",
+          "[device-mode][script-pack][debug-gc]") {
+    // retroplug-mqjs-run-gc is the toolchain's runner over the engine built with DEBUG_GC (graph-runtime's CMakeLists):
+    // every allocation collects first, and every collection moves what it keeps. Each pack's check, its nodes run from
+    // the device's runtime over the runner's whole stimulus, must digest to what the ordinary runner's does (the
+    // declared heap's run alone: the debug build's runs are slow). The debug build keeps a block of up to half the
+    // context aside to move the heap's addresses, so it runs at twice the declared heap. A bytecode string dropped from
+    // the weak table of names (the second fix, reverted) fails here at registration, and scripttest's sends node (data
+    // that is no Uint8Array, whose every read can collect) holds the host to reading its data through a slot the
+    // collector updates: a copy of the value, held across those reads, sends what the collector moved away.
+    // Each pack's run: the runner's 16 blocks, scripttest's one cycle of five (a block of each kind, its sends node's
+    // among them), as its many nodes make the debug build's run long. Both runners give a call 3 s by the wall
+    // clock, so a slow build's node (a sanitizer's, under DEBUG_GC) meets the deadline only where an ordinary one does.
+    struct Pack {
+        const rp_mqjs_pack_source* source;
+        std::string                dir;
+        std::uint32_t              blocks;
+    };
+    const std::string build = RP_BUILD_DIR;
+    for (const Pack& p : {Pack{&rp_script_bliptoaster, build + "/packages/bliptoaster/script", 16},
+                          Pack{&rp_script_devtest, build + "/packages/devtest/script", 16},
+                          Pack{&rp_script_hog, build + "/device-mode/script-packs/hog", 16},
+                          Pack{&rp_script_scripttest, build + "/device-mode/script-packs/scripttest", 5}}) {
+        INFO(p.source->name);
+        const std::string plain = runnerLine(RP_MQJS_RUN, p.dir, *p.source, p.source->heap_bytes, p.blocks);
+        const std::string gc = runnerLine(RP_MQJS_RUN_GC, p.dir, *p.source, 2 * p.source->heap_bytes, p.blocks);
+        INFO(plain);
+        INFO(gc);
+        REQUIRE(plain.starts_with("ok least=none"));
+        REQUIRE(gc.starts_with("ok least=none"));
+        CHECK(digestOf(gc) == digestOf(plain));
     }
 }

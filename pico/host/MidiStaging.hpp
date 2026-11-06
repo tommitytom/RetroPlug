@@ -38,7 +38,7 @@ public:
     // What one block takes: rp.device.midi-in's queue, which the host stages no more than.
     static constexpr std::uint32_t kMessages = RP_DEVICE_MIDI_IN_MESSAGES;
     static constexpr std::uint32_t kBytes = RP_DEVICE_MIDI_IN_BYTES;
-    static_assert(kMessages == 256 && kBytes == 4096, "the box stages what rp.device.midi-in takes in a block");
+    static_assert(kMessages == 64 && kBytes == 4096, "the box stages what rp.device.midi-in takes in a block");
     // The longest message, a SysEx with its F0 and F7: the most one message may carry in rp.device.midi-in's queue.
     static constexpr std::uint32_t kSysexBytes = RP_DEVICE_MIDI_IN_BYTES;
 

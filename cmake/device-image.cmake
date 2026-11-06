@@ -142,8 +142,11 @@ set_property(GLOBAL PROPERTY RP_DEVICE_STACK_FRAME "${RP_DEVICE_STACK_FRAME}")
 # rp_device_executable(<target> <sources>...): an executable as a device builds it: the device-mode flags, the stack
 # limit, the runtime and the trap. One --wrap a symbol: -Wl, splits at commas, so a joined list would hand the linker
 # the symbols as input files.
+set_property(GLOBAL PROPERTY RP_DEVICE_NO_UNWIND "${CMAKE_CURRENT_LIST_DIR}/device-image/no-unwind.c")
 function(rp_device_executable target)
-    add_executable(${target} ${ARGN})
+    # Every image links the trapping stand-in for libgcc's ARM unwinder (device-image/no-unwind.c says why).
+    get_property(_no_unwind GLOBAL PROPERTY RP_DEVICE_NO_UNWIND)
+    add_executable(${target} ${ARGN} "${_no_unwind}")
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     target_compile_definitions(${target} PRIVATE RP_DEVICE)
     get_property(_frame GLOBAL PROPERTY RP_DEVICE_STACK_FRAME)

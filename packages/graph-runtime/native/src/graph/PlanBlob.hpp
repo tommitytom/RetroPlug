@@ -53,6 +53,9 @@ inline constexpr const char*   kTargetName = "rp2350";
 // device-mode build aligns its instances to). The loader refuses a type that asks more, on the device and in the
 // exporter's sizing pass alike, so a type the device cannot place fails the firmware's build, not its boot.
 inline constexpr std::uint32_t kTargetAlign = static_cast<std::uint32_t>(kDeviceAlign);
+// An rp2350's pointer width, in bytes: what the exporter sizes a package's own memory at (rp_package_memory's
+// query_target), where a node's instance and the plan's structures are sized with the desktop's larger builds.
+inline constexpr std::uint32_t kTargetPointerBytes = 4;
 // "No node": a queue to clear whose drops are charged to nobody (the scratch queue unconnected outputs share).
 inline constexpr std::uint32_t kNoNode = 0xFFFFFFFFu;
 

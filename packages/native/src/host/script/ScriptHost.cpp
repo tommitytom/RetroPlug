@@ -340,6 +340,7 @@ struct ScriptHost::Type {
     std::string   descriptor;
     bool          reshapes = false;
     bool          faultOnThrow = false;
+    bool          idleSkip = false;  // its definition says idle: "skip" (defineNode.ts's host contract)
     std::uint32_t spanLabel = DSP_SPAN_SCRIPT_NODE;  // its nodes' process spans' label (DspSpanLabel), set by the load
     JSValue       control = JS_UNDEFINED;  // the definition, in its pack's control context
     JSValue       audio = JS_UNDEFINED;    // and in its audio context
@@ -419,6 +420,7 @@ struct ScriptHost::Instance {
     bool                    faultNext = false;  // a hook threw under faultOnThrow, or expired twice in a row: fault next block
     std::uint8_t            expiries = 0;       // its calls the deadline stopped in a row (expiryFaults)
     std::uint8_t            cutShorts = 0;      // checkpoints in a row that cut its promise jobs short (chargeJobs)
+    const rp_process*       last = nullptr;     // the block its process was last called on (an idle-skip node's)
     Settings*               settings = nullptr;
     std::unique_ptr<Layout> layout;
     JSValue                 object = JS_UNDEFINED;  // the NodeInstance its definition's create returned
@@ -758,13 +760,37 @@ struct ScriptHost::Glue {
         JS_FreeValue(ctx, mask);
     }
 
+    // Whether a block brings a node nothing (defineNode.ts's host contract): no message on an events or bytes input,
+    // no change on a control input or a param, and no audio output it would have to write.
+    static bool idleBlock(const rp_process& b) {
+        for (std::uint32_t i = 0; i < b.input_count; ++i) {
+            const rp_port_view& v = b.inputs[i];
+            if ((v.kind == RP_PORT_EVENTS || v.kind == RP_PORT_BYTES) && v.u.queue->count) return false;
+            if (v.kind == RP_PORT_CONTROL && v.u.control->count) return false;
+        }
+        for (std::uint32_t i = 0; i < b.param_count; ++i)
+            if (b.params[i]->count) return false;
+        for (std::uint32_t i = 0; i < b.output_count; ++i)
+            if (b.outputs[i].kind == RP_PORT_AUDIO) return false;
+        return true;
+    }
+
+    // A node whose definition says idle: "skip" is not called on a block that brings it nothing, once its process has
+    // run on this block's rp_process and while it is live with no fault waiting: no deadline armed, no block filled,
+    // no JS, no checkpoint (the jobs its pack has pending wait for the next call into a node of it, as they would
+    // between blocks). A new plan's steps are new rp_process objects and set each control start afresh, so a kept
+    // node's first block in a new plan always runs (script/MqjsHost.cpp's process says more).
     static rp_status process(rp_node* n, const rp_process* block) {
         Instance& in = instanceOf(n);
+        if (in.type->idleSkip && in.last == block && in.state == Instance::State::Live && !in.faultNext &&
+            idleBlock(*block))
+            return RP_OK;
         ScriptHost& h = *in.type->host;
         // The whole block, not just the call: the create a fresh instance makes first, the block path (a node may hang
         // a setter on what it fills in), the call, and the jobs they queue.
         const Deadline call(h, packOf(in));
         if (!ensureLive(h, in) || in.faultNext) return RP_FAULT;
+        in.last = block;
         const Pack& pack = packOf(in);
         JSContext* ctx = pack.audio;
         traceBegin(h, in.type->spanLabel);
@@ -1610,27 +1636,21 @@ struct ScriptHost::Glue {
         return JS_DupValue(ctx, p->value);
     }
 
-    // block.send(port, frame, data, flags?): onto an events or bytes output's queue, straight; false when it is full.
-    static JSValue send(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
-        Instance* in = running(ctx, self);
-        const Port* found = nullptr;
-        if (!in || !lookup(ctx, *in, argc ? argv[0] : JS_UNDEFINED, kOutputs, {PortKind::Events, PortKind::Bytes},
-                               "events or bytes output", &found))
-            return JS_EXCEPTION;
-        std::uint32_t frame = 0, flags = 0;
-        if (argc < 3 || JS_ToUint32(ctx, &frame, argv[1]) < 0 || (argc > 3 && JS_ToUint32(ctx, &flags, argv[3]) < 0))
-            return argc < 3 ? JS_ThrowTypeError(ctx, "send takes a port, a frame and the data") : JS_EXCEPTION;
-        rp_queue& q = *in->running->outputs[found->index].u.queue;
-        const int typed = JS_GetTypedArrayType(argv[2]);
+    // A message onto an events or bytes output's queue, straight: send's and forward's. False when it is full;
+    // JS_EXCEPTION when the data's length or an element throws (the message taken back out).
+    static JSValue sendData(JSContext* ctx, Instance& in, const Port& port, std::uint32_t frame, JSValueConst data,
+                            std::uint32_t flags) {
+        rp_queue& q = *in.running->outputs[port.index].u.queue;
+        const int typed = JS_GetTypedArrayType(data);
         if (typed == JS_TYPED_ARRAY_UINT8 || typed == JS_TYPED_ARRAY_UINT8C) {
             std::size_t size = 0;
-            const std::uint8_t* data = JS_GetUint8Array(ctx, &size, argv[2]);
-            if (!data && size == 0 && JS_HasException(ctx)) return JS_EXCEPTION;
-            return JS_NewBool(ctx, graph::pushMessage(q, frame, {data, size}, flags));
+            const std::uint8_t* bytes = JS_GetUint8Array(ctx, &size, data);
+            if (!bytes && size == 0 && JS_HasException(ctx)) return JS_EXCEPTION;
+            return JS_NewBool(ctx, graph::pushMessage(q, frame, {bytes, size}, flags));
         }
         // Any other array-like of numbers, each byte read into the queue as it is reserved.
         std::int64_t length = 0;
-        if (JS_GetLength(ctx, argv[2], &length) < 0) return JS_EXCEPTION;
+        if (JS_GetLength(ctx, data, &length) < 0) return JS_EXCEPTION;
         if (length < 0 || length > static_cast<std::int64_t>(UINT32_MAX)) return JS_ThrowRangeError(ctx, "the data is too long");
         std::uint8_t* at = nullptr;
         if (!graph::reserveMessage(q, frame, static_cast<std::size_t>(length), flags, &at)) return JS_NewBool(ctx, false);
@@ -1638,7 +1658,7 @@ struct ScriptHost::Glue {
         // (its bytes stay where they are, the arena being fixed).
         const std::uint32_t reserved = q.count - 1;
         for (std::int64_t i = 0; i < length; ++i) {
-            JSValue v = JS_GetPropertyUint32(ctx, argv[2], static_cast<std::uint32_t>(i));
+            JSValue v = JS_GetPropertyUint32(ctx, data, static_cast<std::uint32_t>(i));
             std::int32_t b = 0;
             const bool ok = !JS_IsException(v) && JS_ToInt32(ctx, &b, v) == 0;
             JS_FreeValue(ctx, v);
@@ -1650,6 +1670,44 @@ struct ScriptHost::Glue {
             at[i] = static_cast<std::uint8_t>(b & 0xff);
         }
         return JS_NewBool(ctx, true);
+    }
+
+    // block.send(port, frame, data, flags?): onto an events or bytes output's queue, straight; false when it is full.
+    static JSValue send(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
+        Instance* in = running(ctx, self);
+        const Port* found = nullptr;
+        if (!in || !lookup(ctx, *in, argc ? argv[0] : JS_UNDEFINED, kOutputs, {PortKind::Events, PortKind::Bytes},
+                               "events or bytes output", &found))
+            return JS_EXCEPTION;
+        std::uint32_t frame = 0, flags = 0;
+        if (argc < 3 || JS_ToUint32(ctx, &frame, argv[1]) < 0 || (argc > 3 && JS_ToUint32(ctx, &flags, argv[3]) < 0))
+            return argc < 3 ? JS_ThrowTypeError(ctx, "send takes a port, a frame and the data") : JS_EXCEPTION;
+        return sendData(ctx, *in, *found, frame, argv[2], flags);
+    }
+
+    // block.forward(port, message): send(port, message.frame, message.data, message.flags), the message's fields read
+    // here, in one call.
+    static JSValue forward(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv) {
+        Instance* in = running(ctx, self);
+        const Port* found = nullptr;
+        if (!in || !lookup(ctx, *in, argc ? argv[0] : JS_UNDEFINED, kOutputs, {PortKind::Events, PortKind::Bytes},
+                               "events or bytes output", &found))
+            return JS_EXCEPTION;
+        if (argc < 2) return JS_ThrowTypeError(ctx, "forward takes a port and a message");
+        const Pack& pack = packOf(*in);
+        std::uint32_t frame = 0, flags = 0;
+        JSValue v = JS_GetProperty(ctx, argv[1], atom(pack, kFrame));
+        const bool framed = !JS_IsException(v) && JS_ToUint32(ctx, &frame, v) == 0;
+        JS_FreeValue(ctx, v);
+        if (!framed) return JS_EXCEPTION;
+        JSValue data = JS_GetProperty(ctx, argv[1], atom(pack, kData));
+        if (JS_IsException(data)) return JS_EXCEPTION;
+        v = JS_GetProperty(ctx, argv[1], atom(pack, kFlags));
+        const bool flagged = !JS_IsException(v) && JS_ToUint32(ctx, &flags, v) == 0;
+        JS_FreeValue(ctx, v);
+        JSValue result = flagged ? sendData(ctx, *in, *found, frame, data, flags) : JS_EXCEPTION;
+        JS_FreeValue(ctx, data);
+        return result;
     }
 
     // block.emit(port, frame, value): onto a control output.
@@ -1751,6 +1809,7 @@ void ScriptHost::makeRuntimes(Pack& pack) {
     };
     bindFrozen(proto, "messages", &Glue::messages, 1, JS_PROP_C_W_E);
     bindFrozen(proto, "send", &Glue::send, 4, JS_PROP_C_W_E);
+    bindFrozen(proto, "forward", &Glue::forward, 2, JS_PROP_C_W_E);
     bindFrozen(proto, "control", &Glue::control, 1, JS_PROP_C_W_E);
     bindFrozen(proto, "emit", &Glue::emit, 3, JS_PROP_C_W_E);
     bindFrozen(proto, "audio", &Glue::audio, 1, JS_PROP_C_W_E);
@@ -2059,6 +2118,13 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         for (const auto& [flag, key] : {std::pair{&type.reshapes, "reshapes"}, std::pair{&type.faultOnThrow, "faultOnThrow"}}) {
             JSValue v = JS_GetPropertyStr(control, type.control, key);
             *flag = JS_IsBool(v) && JS_ToBool(control, v);
+            JS_FreeValue(control, v);
+        }
+        {
+            JSValue v = JS_GetPropertyStr(control, type.control, "idle");
+            const char* idle = JS_IsString(v) ? JS_ToCString(control, v) : nullptr;
+            type.idleSkip = idle && std::strcmp(idle, "skip") == 0;
+            if (idle) JS_FreeCString(control, idle);
             JS_FreeValue(control, v);
         }
         type.abi = rp_node_type{type.id.c_str(), &Glue::descriptor, &Glue::layoutFor, &Glue::queryMemory,

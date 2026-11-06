@@ -330,6 +330,30 @@ test("how the script host runs a node is the definition's, never its descriptor'
   expect(() => defineNode({ id: "rp.test.x", ports: {}, create: noop, faultOnThrow: 1 } as never)).toThrow("faultOnThrow is true or absent");
 });
 
+test("idle: \"skip\" is the host's to read, refused on a layout it cannot hold for", () => {
+  const fed = { in: events.in(), out: events.out({ match: "in" }) };
+  const skipped = defineNode({ id: "rp.test.skip", idle: "skip", ports: fed, create: noop });
+  expect(skipped.idle).toBe("skip");
+  // Not part of the descriptor: the planner plans it as any other node.
+  const plain = defineNode({ id: "rp.test.skip", ports: fed, create: noop });
+  expect(canonicalJson(skipped.descriptor())).toBe(canonicalJson(plain.descriptor()));
+  // A control input or a param alone is something a block can bring it.
+  defineNode({ id: "rp.test.skip", idle: "skip", ports: { level: control.in(), out: events.out() }, create: noop }).descriptor();
+  defineNode({
+    id: "rp.test.skip",
+    idle: "skip",
+    ports: { out: control.out() },
+    params: { p: param.float({ name: "P", min: 0, max: 1, default: 0 }) },
+    create: noop,
+  }).descriptor();
+  // An audio port is written every block; with no input and no param, nothing would ever run it again.
+  expect(() => defineNode({ id: "rp.test.skip", idle: "skip", ports: { in: events.in(), out: audio.out(channels.stereo()) }, create: noop }).descriptor())
+    .toThrow("rp.test.skip: port \"out\" is audio, which a node the host skips when idle cannot have");
+  expect(() => defineNode({ id: "rp.test.skip", idle: "skip", ports: { out: events.out() }, create: noop }).layout({}))
+    .toThrow("rp.test.skip: it is skipped when idle but has no events, bytes or control input and no param");
+  expect(() => defineNode({ id: "rp.test.x", ports: {}, create: noop, idle: "always" } as never)).toThrow("idle is \"skip\" or absent");
+});
+
 test("a returned descriptor is the caller's own copy", () => {
   const n = defineNode({
     id: "rp.test.copy",

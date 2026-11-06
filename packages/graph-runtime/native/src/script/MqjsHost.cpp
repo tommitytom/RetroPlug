@@ -34,6 +34,8 @@
 
 namespace rp::mqjs {
 
+static_assert(kMaxReentries == RP_MQJS_MAX_REENTRIES, "MqjsHost.hpp's kMaxReentries is rp_mqjs.h's figure");
+
 namespace {
 
 // How many packs and types one build registers: the device's is fixed storage, so it keeps what a box carries.
@@ -71,6 +73,10 @@ struct ContextState {
     void*         clockCtx = nullptr;
     std::uint64_t start = 0;
     std::uint64_t limit = kHostClockDeadlineMicros;
+    // A host's clock gives a block's entry kHostClockMessageMicros more for each message it hands the node (perMessage:
+    // the entry's `extra`, set by process); every other entry, and the desktop's CPU-time default, has none.
+    std::uint64_t perMessage = 0;
+    std::uint64_t extra = 0;
     std::uint32_t depth = 0;
     bool          timed = false;    // the entry's start was read: an entry the clock could not time runs untimed
     bool          expired = false;  // this entry ran past its deadline
@@ -101,6 +107,9 @@ constexpr std::size_t   kControlBytes = std::size_t{1} << 20;
 constexpr std::uint64_t kControlDeadlineMicros = 2000000;
 #endif
 
+// How a registration sizes a pack's context (Pack::sizing).
+enum class Sizing : std::uint8_t { Device, Check, Desktop };
+
 // One pack this build registered: its rp_package and its types.
 struct Pack {
     const rp_mqjs_pack_source* source = nullptr;
@@ -110,14 +119,26 @@ struct Pack {
     const rp_node_type*        typeList[kMaxTypes]{};
     TypeInfo                   infos[kMaxTypes]{};
     char                       manifest[96]{};
-    std::uint32_t              heapFactor = 1;  // the context is this many times the manifest's heapBytes
+    // How its registration sizes its context from the manifest's heapBytes (MqjsHost.hpp), read at each query: a
+    // device build's kDeviceHalves halves of it, the toolchain check's kCheckHalves, the desktop's
+    // desktopContextBytes. The source's heapBytes is read every time, so a tool may move it between setups (the
+    // runner's search for the least heap).
+    Sizing                     sizing = Sizing::Device;
 #ifndef RP_DEVICE
     Control*                   control = nullptr;
 #endif
 };
 
-// The pack's context, in bytes.
-std::uint32_t heapOf(const Pack& pack) { return pack.source->heap_bytes * pack.heapFactor; }
+std::uint32_t heapOf(const Pack& pack) {
+    const rp_mqjs_pack_source& source = *pack.source;
+    switch (pack.sizing) {
+#ifndef RP_DEVICE
+        case Sizing::Desktop: return static_cast<std::uint32_t>(desktopContextBytes(source));
+        case Sizing::Check: return static_cast<std::uint32_t>(std::uint64_t{source.heap_bytes} * kCheckHalves / 2);
+#endif
+        default: return static_cast<std::uint32_t>(std::uint64_t{source.heap_bytes} * kDeviceHalves / 2);
+    }
+}
 
 Pack          gPacks[kMaxPacks];
 std::uint32_t gPackCount = 0;
@@ -148,7 +169,7 @@ struct PackState {
     JSGCRef       root{};  // [defs, instances, transport]
     // The thread that runs blocks: the block a process call is running, its node and its node's slot.
     const rp_process*  block = nullptr;
-    const Node*        running = nullptr;
+    Node*              running = nullptr;
     std::int32_t       runningSlot = -1;
     bool               dead = false;
     char               deadReason[160] = {};
@@ -167,9 +188,15 @@ struct PackState {
 };
 
 // The pack's memory: the state, then the context's own copy of the bytecode (rp_mqjs_pack.h), then the context, each
-// at a multiple of 8 bytes.
+// at a multiple of 8 bytes. At 32 bits the state takes kBoxStateBytes, whatever its size, so that what a 64-bit build
+// answers for the box (boxPackageBytes, query_target) is what the box's own build takes.
 constexpr std::size_t aligned8(std::size_t n) { return (n + 7) & ~std::size_t{7}; }
+#if INTPTR_MAX >= INT64_MAX
 constexpr std::size_t kStateBytes = aligned8(sizeof(PackState));
+#else
+static_assert(sizeof(PackState) <= kBoxStateBytes, "a pack's state at 32 bits is past what the box's sizing allows");
+constexpr std::size_t kStateBytes = kBoxStateBytes;
+#endif
 std::size_t packBytes(const Pack& pack) { return kStateBytes + aligned8(pack.source->bytecode_size) + heapOf(pack); }
 
 PackState* stateAt(void* memory) { return static_cast<PackState*>(memory); }
@@ -187,6 +214,11 @@ struct Node {
     State           state = State::Pending;
     std::uint8_t    faultKind = 0;      // RP_SCRIPT_FAULT_*
     bool            activated = false;  // activate ran on a live instance: its hook runs at the next call
+    // Its definition says idle: "skip" (defineNode.ts's host contract), read as its instance is made, and the block
+    // its process last ran on (the plan step's rp_process): from then on a block of the same step that brings it
+    // nothing does not call it.
+    bool               idle = false;
+    const rp_process*  last = nullptr;
     double          sampleRate = 48000.0;
     std::uint32_t   maxFrames = 1024;
     char            fault[160] = {};
@@ -195,6 +227,17 @@ struct Node {
     // integers.
     std::uint32_t   portCount = 0;
     std::uint32_t   metas[kMaxPorts] = {};
+    // Each input's and param's pool, made (a bit a port) to this capacity (ensurePool): a block whose queues hold no
+    // more passes the port by, with no JS read.
+    std::uint64_t   readied = 0;
+    std::uint32_t   pooled[kMaxPorts] = {};
+    // The port names its blocks have asked for that never move (rp_mqjs_is_fixed: a constant of the pack's bytecode,
+    // `b.send("out", ...)`), each with its port's ordinal: found by the value alone, where any other name is compared
+    // as text (findPort).
+    static constexpr std::uint32_t kNames = 4;
+    JSValue         names[kNames] = {};
+    std::uint8_t    nameOrdinals[kNames] = {};
+    std::uint32_t   nameCount = 0;
 #ifndef RP_DEVICE
     std::string*    settings = nullptr;  // as the definition parsed them, JSON
     bool            settingsChanged = false;
@@ -241,7 +284,7 @@ private:
     JSValue*   slot_;
 };
 
-JSValue at(JSContext* ctx, JSValue array, std::uint32_t i) { return JS_GetPropertyUint32(ctx, array, i); }
+JSValue at(JSContext* ctx, JSValue array, std::uint32_t i) { return rp_mqjs_array_get(ctx, array, i); }
 bool    isObject(JSContext* ctx, JSValue v) { return JS_GetClassID(ctx, v) >= 0; }
 bool    isFunction(JSContext* ctx, JSValue v) { return JS_IsFunction(ctx, v) != 0; }
 
@@ -325,7 +368,7 @@ int interrupt(JSContext*, void* opaque) {
     auto* s = static_cast<ContextState*>(opaque);
     if (!s->timed || s->depth == 0) return 0;
     const std::uint64_t now = s->clock(s->clockCtx);
-    if (now == 0 || now < s->start || now - s->start <= s->limit) return 0;
+    if (now == 0 || now < s->start || now - s->start <= s->limit + s->extra) return 0;
     s->expired = true;
     return 1;
 }
@@ -339,6 +382,7 @@ public:
         ++s_.depth;
         if (!outermost_) return;
         s_.expired = false;
+        s_.extra = 0;
         restart();
     }
     ~Armed() { --s_.depth; }
@@ -348,6 +392,10 @@ public:
         if (!outermost_) return;
         s_.start = s_.clock ? s_.clock(s_.clockCtx) : 0;
         s_.timed = s_.start != 0;
+    }
+    // The outermost entry's deadline lengthened by `micros` (a block's messages, process).
+    void allow(std::uint64_t micros) {
+        if (outermost_) s_.extra = micros;
     }
     Armed(const Armed&) = delete;
     Armed& operator=(const Armed&) = delete;
@@ -400,13 +448,13 @@ JSValue consoleLog(JSContext* ctx, ContextState& s, int argc, JSValue* argv) {
 
 // ---- the bytecode ---------------------------------------------------------------------------------------------------
 
-// A fresh context over the standard library in `memory`, the pack's bytecode copied to `code` (its own, which lives as
-// long as the context), relocated there and run: its definitions are then in the global __rp_scriptNodes. Null, with
-// `why` filled, when any of it fails (the context is freed then). The copy is relocated in the context before it loads
-// anything: relocation finds the library's atoms in the context's tables, and a context refuses bytecode once an atom
-// of its own exists.
-JSContext* loadPack(ContextState& s, const rp_mqjs_pack_source& source, void* memory, std::size_t bytes,
-                    std::uint8_t* code, Text& why) {
+// A fresh context over the standard library in `memory`, `bytecode` (one of the pack's bundles) copied to `code` (its
+// own, which lives as long as the context), relocated there and run: its definitions are then in the global
+// __rp_scriptNodes. Null, with `why` filled, when any of it fails (the context is freed then). The copy is relocated in
+// the context before it loads anything: relocation finds the library's atoms in the context's tables, and a context
+// refuses bytecode once an atom of its own exists.
+JSContext* loadPack(ContextState& s, const std::uint8_t* bytecode, std::uint32_t size, void* memory,
+                    std::size_t bytes, std::uint8_t* code, Text& why) {
     if (bytes < kLeastContextBytes) {
         why << "its heap of " << bytes << " bytes is under the least context the engine sets itself up in, "
             << std::uint64_t{kLeastContextBytes} << " bytes at this width";
@@ -417,12 +465,13 @@ JSContext* loadPack(ContextState& s, const rp_mqjs_pack_source& source, void* me
     JS_SetContextOpaque(ctx, &s);
     JS_SetInterruptHandler(ctx, &interrupt);
     JS_SetLogFunc(ctx, &writeLog);
-    std::memcpy(code, source.bytecode, source.bytecode_size);
-    if (JS_RelocateBytecode(ctx, code, source.bytecode_size) != 0) {
+    std::memcpy(code, bytecode, size);
+    if (JS_RelocateBytecode(ctx, code, size) != 0) {
         why << "its bytecode could not be relocated (not MicroQuickJS bytecode of this width)";
         JS_FreeContext(ctx);
         return nullptr;
     }
+    rp_mqjs_keep_bytecode_names(code, size);
     bool ran = false;
     {
         Rooted main(ctx, JS_LoadBytecode(ctx, code));
@@ -440,6 +489,11 @@ JSContext* loadPack(ContextState& s, const rp_mqjs_pack_source& source, void* me
         JS_FreeContext(ctx);
         return nullptr;
     }
+    // A node's context is held to the box's figure from here on (rp_mqjs.h's RP_MQJS_MAX_REENTRIES): every call into
+    // it after its load, its nodes' create, hooks and blocks. Its load (the pack's definitions, made once, at setup)
+    // and the desktop's control context, which reads definitions, descriptors and settings and never runs on a block,
+    // keep the engine's own, as the SDK's definitions nest deeper.
+    if (s.kind == Kind::Pack) rp_mqjs_limit_reentries(ctx, RP_MQJS_MAX_REENTRIES);
     return ctx;
 }
 
@@ -581,7 +635,7 @@ bool faultFromException(Node& node, const char* during) {
     const JSValue e = JS_GetException(ctx);
     if (pk.base.expired) {
         char buf[96];
-        Text(buf, sizeof buf) << " ran past its deadline of " << pk.base.limit << " us";
+        Text(buf, sizeof buf) << " ran past its deadline of " << pk.base.limit + pk.base.extra << " us";
         return fault(node, RP_SCRIPT_FAULT_DEADLINE, during, buf);
     }
     if (outOfMemory(ctx, e)) {
@@ -676,6 +730,7 @@ bool materialize(Node& node) {
         if (JS_IsException(frames) || JS_IsException(JS_SetPropertyStr(ctx, context.get(), "maxFrames", frames)))
             return faultFromException(node, "create");
     }
+    node.idle = equals(ctx, JS_GetPropertyStr(ctx, def.get(), "idle"), "skip");
     Rooted fn(ctx, JS_GetPropertyStr(ctx, def.get(), "create"));
     Rooted instance(ctx, invoke(s, fn, def, &context));
     if (JS_IsException(instance.get())) return faultFromException(node, "create");
@@ -832,15 +887,28 @@ Port portAt(const PackState& pk, std::uint32_t ordinal) {
 // with a TypeError thrown, for one it does not have.
 bool findPort(JSContext* ctx, PackState& pk, JSValue name, std::uint32_t sides, std::uint32_t kinds, const char* what,
               Port* out) {
-    const JSValue ids = at(ctx, record(pk, pk.runningSlot), kRecPortIds);
-    for (std::uint32_t i = 0; i < pk.running->portCount; ++i) {
-        if (!sameString(ctx, at(ctx, ids, i), name)) continue;
-        const Port p = portAt(pk, i);
+    Node& node = *pk.running;
+    std::uint32_t found = kMaxPorts;
+    for (std::uint32_t k = 0; k < node.nameCount && found == kMaxPorts; ++k)
+        if (node.names[k] == name) found = node.nameOrdinals[k];
+    if (found == kMaxPorts) {
+        const JSValue ids = at(ctx, record(pk, pk.runningSlot), kRecPortIds);
+        for (std::uint32_t i = 0; i < node.portCount; ++i) {
+            if (!sameString(ctx, at(ctx, ids, i), name)) continue;
+            found = i;
+            if (node.nameCount < Node::kNames && rp_mqjs_is_fixed(ctx, name)) {
+                node.names[node.nameCount] = name;
+                node.nameOrdinals[node.nameCount++] = static_cast<std::uint8_t>(i);
+            }
+            break;
+        }
+    }
+    if (found < node.portCount) {
+        const Port p = portAt(pk, found);
         if ((sides >> p.side & 1u) && (kinds >> p.kind & 1u) && inBlock(pk, p)) {
             *out = p;
             return true;
         }
-        break;
     }
     JSCStringBuf buf;
     const char*  s = JS_IsString(ctx, name) ? JS_ToCString(ctx, name, &buf) : nullptr;
@@ -870,28 +938,10 @@ JSValue portState(JSContext* ctx, PackState& pk, std::uint32_t ordinal) {
     return made.get();
 }
 
-// new <global constructor>(size): an ArrayBuffer or a Uint8Array of `size`.
-JSValue construct(JSContext* ctx, const char* name, std::uint32_t size) {
-    if (JS_StackCheck(ctx, 3)) return JS_EXCEPTION;
-    const JSValue ctor = JS_GetPropertyStr(ctx, JS_GetGlobalObject(ctx), name);
-    if (JS_IsException(ctor)) return JS_EXCEPTION;
-    JS_PushArg(ctx, JS_NewUint32(ctx, size));
-    JS_PushArg(ctx, ctor);
-    JS_PushArg(ctx, JS_UNDEFINED);
-    return JS_Call(ctx, FRAME_CF_CTOR | 1);
-}
-
-// new Uint8Array(buffer, offset, length): a view of `length` bytes of a port's payload buffer.
+// new Uint8Array(buffer, offset, length): a view of `length` bytes of a port's payload buffer, made by the engine's own
+// constructor (rp_mqjs.h): no call into JavaScript, so a refill works at any depth of a node's C re-entries.
 JSValue view(JSContext* ctx, const Rooted& buffer, std::uint32_t offset, std::uint32_t length) {
-    if (JS_StackCheck(ctx, 5)) return JS_EXCEPTION;
-    const JSValue ctor = JS_GetPropertyStr(ctx, JS_GetGlobalObject(ctx), "Uint8Array");  // may collect: buffer after
-    if (JS_IsException(ctor)) return JS_EXCEPTION;
-    JS_PushArg(ctx, JS_NewUint32(ctx, length));
-    JS_PushArg(ctx, JS_NewUint32(ctx, offset));
-    JS_PushArg(ctx, buffer.get());
-    JS_PushArg(ctx, ctor);
-    JS_PushArg(ctx, JS_UNDEFINED);
-    return JS_Call(ctx, FRAME_CF_CTOR | 3);
+    return rp_mqjs_new_uint8_view(ctx, buffer.get(), offset, length);
 }
 
 // A port's pool grown to `capacity` places, with every bucket array up to capacity's: what a block hands out for this
@@ -907,7 +957,7 @@ bool ensurePool(JSContext* ctx, PackState& pk, std::uint32_t ordinal, std::uint3
     const auto have = static_cast<std::uint32_t>(pooled);
     if (JS_IsUndefined(at(ctx, st.get(), kStateHead))) {
         const JSValue head =
-            messages ? construct(ctx, "Uint8Array", 0) : JS_NewObjectClassUser(ctx, RP_MQJS_CLASS_CONTROL_STREAM, 0);
+            messages ? rp_mqjs_new_uint8_array(ctx, 0) : JS_NewObjectClassUser(ctx, RP_MQJS_CLASS_CONTROL_STREAM, 0);
         if (JS_IsException(head)) return false;
         if (!messages) JS_SetOpaque(ctx, head, encode(static_cast<std::uint32_t>(pk.runningSlot), ordinal, 0));
         JS_SetPropertyUint32(ctx, st.get(), kStateHead, head);
@@ -921,7 +971,7 @@ bool ensurePool(JSContext* ctx, PackState& pk, std::uint32_t ordinal, std::uint3
     if (have < capacity) {
         Rooted buffer(ctx);
         if (messages) {
-            buffer.set(construct(ctx, "ArrayBuffer", (capacity - have) * kPlacedLengths));
+            buffer.set(rp_mqjs_new_array_buffer(ctx, (capacity - have) * kPlacedLengths));
             if (JS_IsException(buffer.get())) return false;
         }
         for (std::uint32_t k = have; k < capacity; ++k) {
@@ -954,27 +1004,32 @@ bool ensurePool(JSContext* ctx, PackState& pk, std::uint32_t ordinal, std::uint3
 JSValue listOf(JSContext* ctx, PackState& pk, std::uint32_t ordinal, std::uint32_t n) {
     Rooted st(ctx, portState(ctx, pk, ordinal));
     if (JS_IsException(st.get())) return JS_EXCEPTION;
-    int pooled = 0;
-    JS_ToInt32(ctx, &pooled, at(ctx, st.get(), kStatePooled));
-    if (static_cast<std::uint32_t>(pooled) < n)
+    if (pk.running->pooled[ordinal] < n)
         return JS_ThrowInternalError(ctx, "the port holds more than its queue held at the block's start");
     Rooted list(ctx, at(ctx, st.get(), kStateBuckets + bucketOf(n)));
     if (rp_mqjs_set_length(ctx, list.slot(), n)) return JS_EXCEPTION;
     const JSValue pool = at(ctx, st.get(), kStatePool);
-    for (std::uint32_t k = 0; k < n; ++k) JS_SetPropertyUint32(ctx, list.get(), k, at(ctx, pool, k));
+    for (std::uint32_t k = 0; k < n; ++k) rp_mqjs_array_put(ctx, list.get(), k, at(ctx, pool, k));
     return list.get();
 }
 
 // A message's data for this block, refilled with the payload: the shared empty view, the message's own view of the
 // payload's length up to kPlacedLengths, or, for a longer payload (a SysEx), a Uint8Array made for this block.
+// The bytes are copied into the view where it lies (rp_mqjs_bytes), which allocates nothing.
 bool fillData(JSContext* ctx, JSValue message, JSValue empty, const std::uint8_t* bytes, std::uint32_t size) {
     Rooted m(ctx, message);
     Rooted data(ctx, size == 0 ? empty : size <= kPlacedLengths ? JS_GetUserValue(ctx, message, size) : JS_UNDEFINED);
     if (size > kPlacedLengths) {
-        data.set(construct(ctx, "Uint8Array", size));
+        data.set(rp_mqjs_new_uint8_array(ctx, size));
         if (JS_IsException(data.get())) return false;
     }
-    for (std::uint32_t j = 0; j < size; ++j) JS_SetPropertyUint32(ctx, data.get(), j, JS_NewInt32(ctx, bytes[j]));
+    std::uint32_t length = 0;
+    std::uint8_t* to = size ? rp_mqjs_bytes(ctx, data.get(), &length) : nullptr;
+    if (to && length == size) {
+        std::memcpy(to, bytes, size);
+    } else {
+        for (std::uint32_t j = 0; j < size; ++j) JS_SetPropertyUint32(ctx, data.get(), j, JS_NewInt32(ctx, bytes[j]));
+    }
     JS_SetUserValue(ctx, m.get(), 0, data.get());
     return true;
 }
@@ -1010,15 +1065,23 @@ bool keptPort(JSContext* ctx, PackState& pk, void* opaque, std::uint32_t sides, 
 // Every port of the running node readied for its block (ensurePool), before its JS runs: what keeps a warmed node's
 // heap where its first block left it.
 bool preparePorts(JSContext* ctx, PackState& pk) {
-    for (std::uint32_t i = 0; i < pk.running->portCount; ++i) {
+    Node& node = *pk.running;
+    for (std::uint32_t i = 0; i < node.portCount; ++i) {
         const Port p = portAt(pk, i);
         if (p.side == kOutput || !inBlock(pk, p)) continue;
         if (p.kind == RP_PORT_EVENTS || p.kind == RP_PORT_BYTES) {
-            if (!ensurePool(ctx, pk, i, pk.block->inputs[p.index].u.queue->capacity, true)) return false;
+            const std::uint32_t capacity = pk.block->inputs[p.index].u.queue->capacity;
+            if ((node.readied >> i & 1u) && node.pooled[i] >= capacity) continue;
+            if (!ensurePool(ctx, pk, i, capacity, true)) return false;
+            node.readied |= std::uint64_t{1} << i;
+            node.pooled[i] = capacity;
         } else if (p.kind == RP_PORT_CONTROL) {
             const rp_control_queue& q =
                 p.side == kParam ? *pk.block->params[p.index] : *pk.block->inputs[p.index].u.control;
+            if ((node.readied >> i & 1u) && node.pooled[i] >= q.capacity) continue;
             if (!ensurePool(ctx, pk, i, q.capacity, false)) return false;
+            node.readied |= std::uint64_t{1} << i;
+            node.pooled[i] = q.capacity;
         }
     }
     return true;
@@ -1055,29 +1118,32 @@ void eraseMessage(rp_queue& q, std::uint32_t index) {
     q.bytes_used -= gone.size;
 }
 
-// block.send(port, frame, data, flags?): onto an events or bytes output, copied at the call; false when it is full.
-JSValue blockSend(JSContext* ctx, JSValue* self, int argc, JSValue* argv) {
-    PackState* pk = running(ctx, *self, RP_MQJS_CLASS_BLOCK);
-    Port p;
-    if (!pk || !findPort(ctx, *pk, argc > 0 ? argv[0] : JS_UNDEFINED, 1u << kOutput, kQueueKinds,
-                         "events or bytes output", &p))
-        return JS_EXCEPTION;
-    if (argc < 3) return JS_ThrowTypeError(ctx, "send takes a port, a frame and the data");
-    std::uint32_t frame = 0, flags = 0, length = 0;
-    if (JS_ToUint32(ctx, &frame, argv[1]) || (argc > 3 && JS_ToUint32(ctx, &flags, argv[3]))) return JS_EXCEPTION;
+// A message onto an events or bytes output, copied at the call: send's and forward's. False when the queue is full.
+// JS_EXCEPTION when an element of the data (an array-like that is no Uint8Array) throws, the message taken back out.
+// `data` is a slot the collector updates (an argument on the engine's stack, a Rooted's), read at every use: reading
+// the length or an element by name, or converting an element (a valueOf, a boxed float at 32 bits), may allocate, and
+// a collection moves what it keeps.
+JSValue sendData(JSContext* ctx, PackState& pk, const Port& p, std::uint32_t frame, JSValue* data,
+                 std::uint32_t flags) {
     // An array's or a typed array's length is read in place; any other array-like's by name (which allocates).
-    length = rp_mqjs_length(ctx, argv[2]);
-    if (length == UINT32_MAX && JS_ToUint32(ctx, &length, JS_GetPropertyStr(ctx, argv[2], "length")))
-        return JS_EXCEPTION;
-    rp_queue& q = *pk->block->outputs[p.index].u.queue;
+    std::uint32_t length = rp_mqjs_length(ctx, *data);
+    if (length == UINT32_MAX && JS_ToUint32(ctx, &length, JS_GetPropertyStr(ctx, *data, "length"))) return JS_EXCEPTION;
+    rp_queue& q = *pk.block->outputs[p.index].u.queue;
     std::uint8_t* at_ = nullptr;
     if (!graph::reserveMessage(q, frame, length, flags, &at_)) return JS_FALSE;
+    // A Uint8Array's bytes (a message's own data, a node's array) are copied as they lie: nothing runs in between to
+    // move them, and no element can throw.
+    std::uint32_t viewed = 0;
+    if (const std::uint8_t* from = rp_mqjs_bytes(ctx, *data, &viewed); from && viewed == length) {
+        std::memcpy(at_, from, length);
+        return JS_TRUE;
+    }
     // Where it is: an element's getter or valueOf may send onto the same queue before this returns, so it need not stay
     // the last message (its bytes stay where they are).
     const std::uint32_t reserved = q.count - 1;
     for (std::uint32_t i = 0; i < length; ++i) {
         int b = 0;
-        const JSValue v = JS_GetPropertyUint32(ctx, argv[2], i);
+        const JSValue v = JS_GetPropertyUint32(ctx, *data, i);
         if (JS_IsException(v) || JS_ToInt32(ctx, &b, v)) {
             // A node's bug, and it throws: the message is taken back out, so no part of it goes.
             eraseMessage(q, reserved);
@@ -1086,6 +1152,52 @@ JSValue blockSend(JSContext* ctx, JSValue* self, int argc, JSValue* argv) {
         at_[i] = static_cast<std::uint8_t>(b & 0xff);
     }
     return JS_TRUE;
+}
+
+// block.send(port, frame, data, flags?): onto an events or bytes output, copied at the call; false when it is full.
+JSValue blockSend(JSContext* ctx, JSValue* self, int argc, JSValue* argv) {
+    PackState* pk = running(ctx, *self, RP_MQJS_CLASS_BLOCK);
+    Port p;
+    if (!pk || !findPort(ctx, *pk, argc > 0 ? argv[0] : JS_UNDEFINED, 1u << kOutput, kQueueKinds,
+                         "events or bytes output", &p))
+        return JS_EXCEPTION;
+    if (argc < 3) return JS_ThrowTypeError(ctx, "send takes a port, a frame and the data");
+    std::uint32_t frame = 0, flags = 0;
+    if (JS_ToUint32(ctx, &frame, argv[1]) || (argc > 3 && JS_ToUint32(ctx, &flags, argv[3]))) return JS_EXCEPTION;
+    return sendData(ctx, *pk, p, frame, &argv[2], flags);
+}
+
+// block.forward(port, message): send(port, message.frame, message.data, message.flags) in one call. A message this
+// node's block handed out is read where it lies, as its getters read it: its frame and flags from the queue its object
+// names, its data as the message holds it now (a node may have written its bytes). Any other object is read by its
+// fields.
+JSValue blockForward(JSContext* ctx, JSValue* self, int argc, JSValue* argv) {
+    PackState* pk = running(ctx, *self, RP_MQJS_CLASS_BLOCK);
+    Port p;
+    if (!pk || !findPort(ctx, *pk, argc > 0 ? argv[0] : JS_UNDEFINED, 1u << kOutput, kQueueKinds,
+                         "events or bytes output", &p))
+        return JS_EXCEPTION;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "forward takes a port and a message");
+    if (JS_GetClassID(ctx, argv[1]) == RP_MQJS_CLASS_MESSAGE) {
+        void* opaque = JS_GetOpaque(ctx, argv[1]);
+        if (static_cast<std::int32_t>(slotOf(opaque)) != pk->runningSlot)
+            return JS_ThrowTypeError(ctx, "%s", kNotRunning);
+        Port in;
+        if (!keptPort(ctx, *pk, opaque, 1u << kInput, kQueueKinds, &in)) return JS_EXCEPTION;
+        const rp_queue& q = *pk->block->inputs[in.index].u.queue;
+        const std::uint32_t k = itemOf(opaque);
+        // Past the queue's count its getters read undefined, which send converts to 0.
+        const std::uint32_t frame = k < q.count ? q.items[k].frame : 0, flags = k < q.count ? q.items[k].flags : 0;
+        Rooted data(ctx, JS_GetUserValue(ctx, argv[1], 0));
+        return sendData(ctx, *pk, p, frame, data.slot(), flags);
+    }
+    Rooted data(ctx);
+    std::uint32_t frame = 0, flags = 0;
+    if (JS_ToUint32(ctx, &frame, JS_GetPropertyStr(ctx, argv[1], "frame"))) return JS_EXCEPTION;
+    data.set(JS_GetPropertyStr(ctx, argv[1], "data"));
+    if (JS_IsException(data.get())) return JS_EXCEPTION;
+    if (JS_ToUint32(ctx, &flags, JS_GetPropertyStr(ctx, argv[1], "flags"))) return JS_EXCEPTION;
+    return sendData(ctx, *pk, p, frame, data.slot(), flags);
 }
 
 // block.control(id): a control input's or a param's stream object, which preparePorts made.
@@ -1121,6 +1233,7 @@ JSValue apiCall(JSContext* ctx, JSValue* self, int argc, JSValue* argv, int magi
         case RP_MQJS_LOG: return consoleLog(ctx, *static_cast<ContextState*>(JS_GetContextOpaque(ctx)), argc, argv);
         case RP_MQJS_MESSAGES: return blockMessages(ctx, self, argc, argv);
         case RP_MQJS_SEND: return blockSend(ctx, self, argc, argv);
+        case RP_MQJS_FORWARD: return blockForward(ctx, self, argc, argv);
         case RP_MQJS_CONTROL: return blockControl(ctx, self, argc, argv);
         case RP_MQJS_EMIT: return blockEmit(ctx, self, argc, argv);
         case RP_MQJS_AUDIO: return JS_ThrowTypeError(ctx, "a device pack's node has no audio ports");
@@ -1229,13 +1342,50 @@ void portsChanged(rp_node* n, const std::uint8_t* connected, std::uint32_t count
     if (JS_IsException(invoke(pk.base, fn, self, &flags))) faultFromException(node, "portsChanged");
 }
 
+// Whether a block brings a node nothing: no message on any events or bytes input, no change on any control input or
+// param. Read from the block alone, natively.
+bool idleBlock(const rp_process& b) {
+    for (std::uint32_t i = 0; i < b.input_count; ++i) {
+        const rp_port_view& v = b.inputs[i];
+        if ((v.kind == RP_PORT_EVENTS || v.kind == RP_PORT_BYTES) && v.u.queue->count) return false;
+        if (v.kind == RP_PORT_CONTROL && v.u.control->count) return false;
+    }
+    for (std::uint32_t i = 0; i < b.param_count; ++i)
+        if (b.params[i]->count) return false;
+    return true;
+}
+
+// The messages a block hands a node: every one on its events and bytes inputs.
+std::uint32_t inputMessages(const rp_process& b) {
+    std::uint32_t n = 0;
+    for (std::uint32_t i = 0; i < b.input_count; ++i) {
+        const rp_port_view& v = b.inputs[i];
+        if (v.kind == RP_PORT_EVENTS || v.kind == RP_PORT_BYTES) n += v.u.queue->count;
+    }
+    return n;
+}
+
 // One block: the instance made and its hooks run if they wait (enter), every port readied for the block
 // (preparePorts: at the first block, the port's whole pool), then process. One deadline covers the entry, started again
 // once the ports are ready: making a port's pools is the host's work, bounded by the plan, so it never counts against
-// the node's process.
+// the node's process. A node whose definition says idle: "skip" is not entered at all on a block that brings it
+// nothing, while no hook waits for its next call (the pack still alive), once it has run on this block's rp_process:
+// its process would do nothing there (defineNode.ts's host contract), and the executor clears its outputs as ever.
+// Within a plan a control stream's start moves only through its changes, which bring the node something; a new plan
+// sets each start afresh (a rewired or disconnected input's), and its plan steps are new rp_process objects, so a kept
+// node's first block in a new plan always runs. (A new plan is built while the one it replaces is alive, so its steps
+// never take the replaced plan's addresses.)
 rp_status process(rp_node* n, const rp_process* block) {
     Node& node = *as(n);
     PackState& pk = *node.pack;
+    if (node.idle && node.last == block && node.state == State::Live && !node.activated && !pk.dead &&
+        idleBlock(*block)) {
+#ifndef RP_DEVICE
+        if (!node.settingsChanged) return RP_OK;
+#else
+        return RP_OK;
+#endif
+    }
     Armed armed(pk.base);
     if (!enter(node)) return RP_FAULT;
     JSContext* ctx = pk.base.ctx;
@@ -1247,7 +1397,9 @@ rp_status process(rp_node* n, const rp_process* block) {
     pk.running = &node;
     pk.runningSlot = node.slot;
     const bool ready = preparePorts(ctx, pk);
+    node.last = block;
     armed.restart();
+    armed.allow(pk.base.perMessage * inputMessages(*block));
     const JSValue r = ready ? invoke(pk.base, fn, self, &blockObject) : JS_EXCEPTION;
     pk.block = nullptr;
     pk.running = nullptr;
@@ -1354,6 +1506,7 @@ PackState* packMemory(const rp_node_type* type, const rp_host* host, rp_error* e
             pk->base.clockCtx = clock->ctx;
             pk->base.clock = clock->micros;
             pk->base.limit = clock->deadline_micros ? clock->deadline_micros : kHostClockDeadlineMicros;
+            pk->base.perMessage = kHostClockMessageMicros;
         }
 #ifndef RP_DEVICE
         if (!pk->base.clock) {
@@ -1581,8 +1734,7 @@ const Pack& registered(const rp_package* package) { return *static_cast<const Pa
 
 bool queryPackage(const rp_package* package, rp_memory_req* out, rp_error* err) {
     const Pack& pack = registered(package);
-    const rp_mqjs_pack_source& source = *pack.source;
-    if (source.heap_bytes < kLeastContextBytes) {
+    if (heapOf(pack) < kLeastContextBytes) {
         char buf[48];
         Text(buf, sizeof buf) << std::uint64_t{kLeastContextBytes};
         writeError(err, "its heap is under the least context the engine sets itself up in at this width, ", buf,
@@ -1591,6 +1743,27 @@ bool queryPackage(const rp_package* package, rp_memory_req* out, rp_error* err) 
     }
     out->size = packBytes(pack);
     out->align = alignof(PackState);
+    return true;
+}
+
+// The pack's memory as a build of `pointerBytes` takes it: this build's own, or the box's (4), which a 64-bit build
+// (the exporter) sizes a box's plan with.
+bool queryTarget(const rp_package* package, std::uint32_t pointerBytes, rp_memory_req* out, rp_error* err) {
+    if (pointerBytes == sizeof(void*)) return queryPackage(package, out, err);
+    if (pointerBytes != 4) {
+        writeError(err, "a script pack is sized for a 32-bit target or for this build's own width");
+        return false;
+    }
+    const rp_mqjs_pack_source& source = *registered(package).source;
+    if (source.heap_bytes < kBoxLeastContextBytes) {
+        char buf[48];
+        Text(buf, sizeof buf) << std::uint64_t{kBoxLeastContextBytes};
+        writeError(err, "its heap is under the least context the engine sets itself up in at 32 bits, ", buf,
+                   " bytes");
+        return false;
+    }
+    out->size = boxPackageBytes(source);
+    out->align = 8;
     return true;
 }
 
@@ -1606,7 +1779,8 @@ bool setupPackage(const rp_package* package, void* memory, rp_error* err) {
     pk->contextMemory = code + aligned8(source.bytecode_size);
     char reason[200];
     Text why(reason, sizeof reason);
-    JSContext* ctx = loadPack(pk->base, source, pk->contextMemory, pk->contextBytes, code, why);
+    JSContext* ctx = loadPack(pk->base, source.bytecode, source.bytecode_size, pk->contextMemory, pk->contextBytes,
+                              code, why);
     if (!ctx) {
         writeError(err, reason);
         pk->~PackState();
@@ -1660,13 +1834,17 @@ std::mutex gRegistration;
 bool openControl(Pack& pack, Text& why) {
     auto c = std::make_unique<Control>();
     c->memory.reset(new std::uint64_t[kControlBytes / sizeof(std::uint64_t)]);
-    c->bytecode.reset(new std::uint64_t[aligned8(pack.source->bytecode_size) / sizeof(std::uint64_t)]);
+    const rp_mqjs_pack_source& source = *pack.source;
+    // The whole pack, which registers the types, describes them and checks settings; a source without one (none
+    // that a desktop build compiles) runs its nodes' bytecode here too.
+    const std::uint8_t* whole = source.control_bytecode ? source.control_bytecode : source.bytecode;
+    const std::uint32_t size = source.control_bytecode ? source.control_bytecode_size : source.bytecode_size;
+    c->bytecode.reset(new std::uint64_t[aligned8(size) / sizeof(std::uint64_t)]);
     c->state.api = &kApi;
     c->state.kind = Kind::Control;
     c->state.clock = &threadCpuMicros;
     c->state.limit = kControlDeadlineMicros;
-    const rp_mqjs_pack_source& source = *pack.source;
-    JSContext* ctx = loadPack(c->state, source, c->memory.get(), kControlBytes,
+    JSContext* ctx = loadPack(c->state, whole, size, c->memory.get(), kControlBytes,
                               reinterpret_cast<std::uint8_t*>(c->bytecode.get()), why);
     if (ctx) {
         Rooted defs(ctx, definitions(ctx, source, why));
@@ -1700,17 +1878,28 @@ bool openControl(Pack& pack, Text& why) {
 const char* packageRefusal() { return gRefusal; }
 
 std::size_t packageBytes(const rp_mqjs_pack_source& source) {
-    return kStateBytes + aligned8(source.bytecode_size) + source.heap_bytes;
+    return kStateBytes + aligned8(source.bytecode_size) + std::size_t{source.heap_bytes} * kDeviceHalves / 2;
 }
+
+std::size_t boxPackageBytes(const rp_mqjs_pack_source& source) {
+    return kBoxStateBytes + aligned8(source.box_bytecode_size) + source.heap_bytes;
+}
+
+#ifndef RP_DEVICE
+std::size_t desktopContextBytes(const rp_mqjs_pack_source& source) {
+    const std::uint64_t scaled = std::uint64_t{source.heap_bytes} * kWidthFactor * kDesktopHeapFactor;
+    return static_cast<std::size_t>(scaled > kDesktopLeastContextBytes ? scaled : kDesktopLeastContextBytes);
+}
+#endif
 
 namespace {
 
-const rp_package* registerPack(const rp_mqjs_pack_source& source, std::uint32_t heapFactor) {
+const rp_package* registerPack(const rp_mqjs_pack_source& source, Sizing sizing) {
 #ifndef RP_DEVICE
     const std::lock_guard<std::mutex> lock(gRegistration);
 #endif
     for (std::uint32_t i = 0; i < gPackCount; ++i)
-        if (gPacks[i].source == &source && gPacks[i].heapFactor == heapFactor) return &gPacks[i].package;
+        if (gPacks[i].source == &source && gPacks[i].sizing == sizing) return &gPacks[i].package;
     Text why(gRefusal, sizeof gRefusal);
     const std::size_t nameLength = std::strlen(source.name);
     bool plainName = nameLength > 0 && nameLength <= kMaxNameLength;
@@ -1739,7 +1928,7 @@ const rp_package* registerPack(const rp_mqjs_pack_source& source, std::uint32_t 
         return nullptr;
     }
     pack.source = &source;
-    pack.heapFactor = heapFactor;
+    pack.sizing = sizing;
     Text(pack.manifest, sizeof pack.manifest) << "{\"id\":\"rp." << source.name << ".script\",\"version\":\"1.0.0\"}";
     for (std::uint32_t i = 0; i < source.type_count; ++i) {
         pack.infos[i] = TypeInfo{&pack, i};
@@ -1756,7 +1945,7 @@ const rp_package* registerPack(const rp_mqjs_pack_source& source, std::uint32_t 
         t.ctx = &pack.infos[i];
         pack.typeList[i] = &t;
     }
-    pack.memory = rp_package_memory{source.name, &queryPackage, &setupPackage, &teardownPackage};
+    pack.memory = rp_package_memory{source.name, &queryPackage, &setupPackage, &teardownPackage, &queryTarget};
     pack.package = rp_package{RP_ABI_VERSION, pack.manifest, source.type_count, pack.typeList, &pack.memory, &pack};
     ++gPackCount;
     return &pack.package;
@@ -1765,10 +1954,10 @@ const rp_package* registerPack(const rp_mqjs_pack_source& source, std::uint32_t 
 }  // namespace
 
 #ifdef RP_DEVICE
-const rp_package* package(const rp_mqjs_pack_source& source) { return registerPack(source, 1); }
+const rp_package* package(const rp_mqjs_pack_source& source) { return registerPack(source, Sizing::Device); }
 #else
-const rp_package* package(const rp_mqjs_pack_source& source) { return registerPack(source, kDesktopHeapFactor); }
-const rp_package* exactPackage(const rp_mqjs_pack_source& source) { return registerPack(source, 1); }
+const rp_package* package(const rp_mqjs_pack_source& source) { return registerPack(source, Sizing::Desktop); }
+const rp_package* exactPackage(const rp_mqjs_pack_source& source) { return registerPack(source, Sizing::Check); }
 #endif
 
 #ifndef RP_DEVICE
@@ -1789,6 +1978,7 @@ std::string runScript(std::uint8_t* bytecode, std::size_t size, std::size_t cont
     if (JS_RelocateBytecode(ctx, bytecode, static_cast<std::uint32_t>(size)) != 0) {
         result = "not MicroQuickJS bytecode of this width";
     } else {
+        rp_mqjs_keep_bytecode_names(bytecode, static_cast<std::uint32_t>(size));
         Rooted main(ctx, JS_LoadBytecode(ctx, bytecode));
         const JSValue r = JS_IsException(main.get()) ? JS_EXCEPTION : JS_Run(ctx, main.get());
         if (JS_IsException(r)) {

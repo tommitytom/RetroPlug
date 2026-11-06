@@ -4,8 +4,9 @@
 // hardware UART (UART1/GP5, the stage-1 6N138 opto circuit) and is parsed and staged by the generic box host
 // (../host: the UART's ring, ../midi-in's parser, the staging); the box's built-in plan (plan.json, exported when the
 // firmware is built and embedded in it) takes it into rp.device.midi-in, drops what BlipToaster does not want
-// (rp.core.midi-filter) and hands the rest to rp.n8.nes, whose cart link (BoxCartLink) the main loop drains into the
-// N8's cart FIFO via Edio fifoWR (= memWR to 0x1810000). The N8 is hosted over PIO-USB and driven with the N8 pack's
+// (rp.bliptoaster.midi-policy, a TypeScript node of the bliptoaster pack on MicroQuickJS) and hands the rest to
+// rp.n8.nes, whose cart link (BoxCartLink) the main loop drains into the N8's cart FIFO via Edio fifoWR (= memWR to
+// 0x1810000). The N8 is hosted over PIO-USB and driven with the N8 pack's
 // Edio (packages/n8: the protocol, its menu commands and operations, over UsbCdcTransport). When the N8 shows its menu,
 // the Pico boots a ROM through it - one staged in its own flash (uploaded to the SD first) or one already on the card.
 // box.cpp makes it a standalone box: status LED, watchdog and recovery reboots, and which staged ROM to boot (picked
@@ -111,10 +112,10 @@ static int           cur_sel     = -1;      // the staged ROM the box last boote
 static uint32_t      menu_stuck_until = 0; // !0: the menu stopped answering - no forwarding; retry the boot then
 
 // --- The graph host ----------------------------------------------------------------------------------------------
-// The box's plan runs in a static arena: 128 KiB (plan.cmake), handed to retroplug-export-plan as the budget the
-// plan must fit (CMakeLists.txt), so a plan that would not fit fails the firmware's build. The bridge plan takes under
-// a quarter of it (the boot line says how much); the rest is room for a later plan's audio buffers at 256 frames a
-// block, 1 KiB a channel each.
+// The box's plan runs in a static arena (plan.cmake's N8_HOST_ARENA_BYTES), handed to retroplug-export-plan as the
+// budget the plan must fit (CMakeLists.txt), so a plan that would not fit fails the firmware's build. The bridge plan
+// takes most of it, its script pack's memory (the policy node's context, its heap and its copy of the bytecode) the
+// greater part (the boot lines say how much of each).
 #ifndef N8_HOST_ARENA_BYTES
 #error "N8_HOST_ARENA_BYTES: the plan's arena, which CMakeLists.txt sets for the image and its export alike"
 #endif
@@ -141,6 +142,11 @@ static void host_log(int level, const char *message) {
     printf("[host] %s%s\n", level == RP_LOG_ERROR ? "error: " : level == RP_LOG_WARNING ? "warning: " : "", message);
 }
 static uint64_t clock_us(void *) { return time_us_64(); }
+static uint64_t micros(void) { return time_us_64(); }
+// The clock a script node's every call is held to a deadline by (graph/rp_script.h): the box's microsecond clock, at
+// the script host's own figure for a host's clock (10 ms a call, script/MqjsHost.hpp), far past the microseconds the
+// policy takes and far inside the watchdog's 3 s.
+static const rp_host_clock script_clock{nullptr, clock_us, 0};
 static uint32_t frame_of(void *, uint32_t us) { return driver.frameOf(us); }
 static uint32_t now_us(void *) { return time_us_32(); }
 static bool     arrival_of(void *, uint32_t frame, const uint8_t *data, size_t size, uint32_t *us) {
@@ -716,11 +722,11 @@ int main(void) {
     // (which the build's export rules out) leaves the box running its N8 part with the error LED, forwarding nothing.
     staging.init(box_sysex, nullptr, frame_of, nullptr);
     cart.setClock({nullptr, now_us, arrival_of});
-    host.init(links, sizeof links / sizeof links[0], staging.interface(), host_log);
+    host.init(links, sizeof links / sizeof links[0], staging.interface(), host_log, &script_clock);
     size_t package_count = 0;
     const rp_package *const *packages = rp_register_packages(&package_count);
     if (plan.load({kBuiltInPlan, sizeof kBuiltInPlan}, {arena, sizeof arena}, {packages, package_count}, host.host(),
-                  print_line))
+                  print_line, micros))
         driver.start(clock_us, nullptr, (uint32_t)plan.plan()->sampleRate, plan.plan()->maxFrames);
 
     // MIDI IN (stage-1 opto circuit) on UART1/GP5.

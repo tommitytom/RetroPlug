@@ -43,10 +43,13 @@ namespace rp::box {
 
 class BoxCartLink final : public rp::n8::CartLink {
 public:
-    // Room for one block's MIDI (rp.device.midi-in's queue, which rp.core.midi-filter's matches) twice over, so the
-    // note-offs the node owes after a reconnect fit beside a full block: the ring is emptied after every block.
-    static constexpr std::uint32_t kMessages = 2 * RP_DEVICE_MIDI_IN_MESSAGES;
+    // Room for one block's MIDI (rp.device.midi-in's queue, which the plan's MIDI policy matches) twice over in bytes,
+    // and 512 messages, so the note-offs the node owes after a reconnect (each before the block's own messages, as many
+    // as fit) fit beside a full block: the ring is emptied after every block. The messages are not the block's 64
+    // twice: a block can bring that many while a reconnect owes far more note-offs than the rest of 128 would take.
+    static constexpr std::uint32_t kMessages = 512;
     static constexpr std::uint32_t kBytes = 2 * RP_DEVICE_MIDI_IN_BYTES;
+    static_assert(kMessages >= 2 * RP_DEVICE_MIDI_IN_MESSAGES, "a full block twice over");
     // The most one FIFO write carries.
     static constexpr std::uint32_t kBatch = 192;
     // How long a failed volume write waits before it is tried again.

@@ -28,6 +28,8 @@ importers:
         specifier: npm:typescript@5.7.3
         version: typescript@5.7.3
 
+  packages/bliptoaster: {}
+
   packages/core: {}
 
   packages/device-io: {}

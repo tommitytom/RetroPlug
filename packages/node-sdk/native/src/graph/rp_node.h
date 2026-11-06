@@ -347,6 +347,11 @@ typedef struct rp_package_memory {
     bool (*setup)(const rp_package* package, void* memory, rp_error* err);
     /* Undo setup. A host calls it once for each setup that succeeded, after the last node made under that block. */
     void (*teardown)(const rp_package* package, void* memory);
+    /* What query answers in the package's build for a target whose pointers are `pointer_bytes` wide (4: the RP2350),
+     * asked by a desktop that sizes a plan for that target with its own builds (the exporter): a script pack's context
+     * is word-sized, so a 64-bit build's own answer would be about twice the box's. False, with a reason, for a width
+     * it cannot answer for. Null when query's answer holds at every width. [control] */
+    bool (*query_target)(const rp_package* package, uint32_t pointer_bytes, rp_memory_req* out, rp_error* err);
 } rp_package_memory;
 
 struct rp_package {

@@ -191,11 +191,13 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // control(id) a reused { start, changes }, audio(port) a reused Float32Array[] over the instance's own JS-owned copy
 // of each channel, which an input's samples are copied into before process and an output's copied out of after it
 // (made when the port first runs and again only when a larger block or JS outgrows them, each view again only when the
-// block's length moves), and send and emit write the plan's output queues directly. No plan memory ever reaches JS,
+// block's length moves), and send, forward and emit write the plan's output queues directly (forward is send of a
+// message's frame, data and flags, its fields read in one native call). No plan memory ever reaches JS,
 // so nothing a node keeps, transfers or writes can reach a buffer another node reads or a plan the control thread
 // frees. Ports are found by id through atoms made when the instance, or the layout it reshapes to, is bound, so a warm
 // block allocates nothing native, and a node written with indexed loops nothing in JS either. What a block hands out
-// is good for that process call: keep copies.
+// is good for that process call: keep copies. A node whose definition says idle: "skip" is not called on a block that
+// brings it no message and no change, once its process has run (defineNode.ts's host contract).
 //
 // A node pays for its own promise jobs and memory (docs/modular-graph-phase-c1-design.md section 6). The jobs a call
 // into a node's JS queues (its onSettings, portsChanged, activate or process, and the create a fresh instance's first

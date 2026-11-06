@@ -8,11 +8,12 @@
 # (retroplug_device_mode_objects), which the loader's sizing pass sizes the plan with. Not shipped, and built by name:
 # the scripts that build a device image build it first, and retroplug-device-mode-test runs it.
 #
-# The list is every package a device image's plan may name: the box's (core, device-io, n8) and the device check's,
-# which adds dsp and devtest (rp.devtest.plan, test types no shipped product carries, for its plan's coupled pair). An
-# image's build passes its own product's list (--packages), and the tool registers only those, both builds: a plan
-# naming a type its image does not register is refused here, and the firmware's build with it, rather than at boot.
-set(RP_EXPORT_PLAN_PACKAGES core dsp n8 device-io devtest)
+# The list is every package a device image's plan may name: the box's (core, device-io, n8 and the bliptoaster script
+# pack) and the device check's, which adds dsp and devtest (rp.devtest.plan, test types no shipped product carries, for
+# its plan's coupled pair). An image's build passes its own product's list (--packages), and the tool registers only
+# those, both builds: a plan naming a type its image does not register is refused here, and the firmware's build with
+# it, rather than at boot.
+set(RP_EXPORT_PLAN_PACKAGES core dsp n8 device-io devtest bliptoaster)
 
 # --packages' table: each listed package's device entries and its script pack's registration, by package name, with both
 # builds of each (the desktop's from the product's link, the device's from the objects below, which rename every entry
@@ -56,10 +57,12 @@ target_link_libraries(retroplug-export-plan PRIVATE retroplug-graph retroplug-no
 
 # "The exporter is up to date": building this target builds the tool, then stamps a file beside it. The tool's own mtime
 # cannot say it, since a source the tool does not link (a desktop-only file of a package) is newer than the tool after
-# a build that had nothing to relink. pico/n8-host/loop.sh compares the packages' sources against the stamp.
+# a build that had nothing to relink. pico/n8-host/loop.sh compares the packages' sources against the stamp. It also
+# brings up to date what a device image takes from this build beside the tool: the script packs' 32-bit sources (each
+# pack's toolchain run, which the tool's device-mode objects depend on already) and MicroQuickJS's 32-bit tables.
 add_custom_target(retroplug-export-plan-current
     COMMAND ${CMAKE_COMMAND} -E touch "$<TARGET_FILE_DIR:retroplug-export-plan>/retroplug-export-plan.current"
     DEPENDS retroplug-export-plan
     COMMENT "retroplug-export-plan is current"
     VERBATIM)
-add_dependencies(retroplug-export-plan-current retroplug-export-plan)
+add_dependencies(retroplug-export-plan-current retroplug-export-plan retroplug-mqjs-tables-32)

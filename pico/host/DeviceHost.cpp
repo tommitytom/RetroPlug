@@ -4,11 +4,13 @@
 
 namespace rp::box {
 
-void DeviceHost::init(const DeviceLink* links, std::size_t count, const rp_device_midi_in* midi, Log log) {
+void DeviceHost::init(const DeviceLink* links, std::size_t count, const rp_device_midi_in* midi, Log log,
+                      const rp_host_clock* clock) {
     links_ = links;
     count_ = links ? count : 0;
     midi_ = midi;
     log_ = log;
+    clock_ = clock;
 }
 
 void* DeviceHost::acquireFn(void* ctx, const char* name, const char* interfaceId) {
@@ -45,6 +47,7 @@ const void* DeviceHost::interfaceFn(const rp_host* host, const char* id) {
     if (!id) return nullptr;
     if (std::strcmp(id, RP_HOST_DEVICES_INTERFACE) == 0) return &self.devices_;
     if (std::strcmp(id, RP_DEVICE_MIDI_IN_INTERFACE) == 0) return self.midi_;
+    if (std::strcmp(id, RP_HOST_CLOCK_INTERFACE) == 0) return self.clock_;
     return nullptr;
 }
 

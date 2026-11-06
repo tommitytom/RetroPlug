@@ -1,8 +1,10 @@
 #pragma once
 
 // A box's rp_host (docs/modular-graph-phase-e3-design.md section 5): what the nodes of its plan are created under. It
-// offers two interfaces and nothing else: rp.host.devices/2 over a small table of links the product fills (the N8 box's
-// cart link, installed as "n8" with rp.n8.cart-link/1), and rp.device.midi-in/1, the staged MIDI (MidiStaging). No
+// offers three interfaces and nothing else: rp.host.devices/2 over a small table of links the product fills (the N8
+// box's cart link, installed as "n8" with rp.n8.cart-link/1), rp.device.midi-in/1, the staged MIDI (MidiStaging), and
+// rp.host.clock/1, the clock a script node's every call is held to a deadline by (graph/rp_script.h: without one, a
+// script node on a device runs with no deadline at all). No
 // heap (alloc and free are null, as a target with none has them), no rp.host.jobs/1 (a node that would run a device job
 // is told "this host takes no device jobs"), no resources.
 //
@@ -14,6 +16,7 @@
 #include "graph/rp_device.h"
 #include "graph/rp_device_midi_in.h"
 #include "graph/rp_node.h"
+#include "graph/rp_script.h"
 
 namespace rp::box {
 
@@ -38,8 +41,9 @@ public:
     // The interface structs hold this object's address, so a copy would point back at the original.
     DeviceHost(const DeviceHost&) = delete;
     DeviceHost& operator=(const DeviceHost&) = delete;
-    // The links are the caller's and outlive every plan created under this host.
-    void init(const DeviceLink* links, std::size_t count, const rp_device_midi_in* midi, Log log);
+    // The links, and the clock if there is one, are the caller's and outlive every plan created under this host.
+    void init(const DeviceLink* links, std::size_t count, const rp_device_midi_in* midi, Log log,
+              const rp_host_clock* clock = nullptr);
 
     const rp_host* host() const { return &host_; }
 
@@ -53,6 +57,7 @@ private:
     std::size_t              count_ = 0;
     const rp_device_midi_in* midi_ = nullptr;
     Log                      log_ = nullptr;
+    const rp_host_clock*     clock_ = nullptr;
     rp_host_devices          devices_{this, &acquireFn, &releaseFn};
     rp_host                  host_{RP_ABI_VERSION, this, nullptr, nullptr, &logFn, &interfaceFn};
 };

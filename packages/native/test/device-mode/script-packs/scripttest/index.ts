@@ -11,7 +11,16 @@
 //   rp.scripttest.reader    reads what the keeper kept, as another node, and sends what each read did
 //   rp.scripttest.busy      a fixed count of work a block, long enough for the engine to poll its interrupt handler
 //   rp.scripttest.throws, .spins, .thenable, .fault, .no-process, .create-throws: one fault each
-import { bytes, control, defineNode, events, param } from "../../../../../retroplug/src/graph/defineNode";
+//   rp.scripttest.throws-later  throws at its second block, with words longer than a fault keeps
+//   rp.scripttest.sends     sends data that is no Uint8Array, whose reads allocate
+//   rp.scripttest.skipper   skipped when idle (idle: "skip"): counts its process calls, and forwards what it gets
+//   rp.scripttest.replace-throws, .has-own-throws: a throw where MicroQuickJS would drop it (a String.replace
+//                           function's, a hasOwnProperty key's toString's), which must fault the node as any throw does
+//   rp.scripttest.spins-in  spins as .spins does, behind an events and a bytes input: a block's deadline grows with
+//                           the messages on both
+//   rp.scripttest.deep      reads and forwards its messages from the deepest call into JavaScript the host allows on
+//                           the C stack, and says how deep that was
+import { type Block, bytes, control, defineNode, events, param } from "../../../../../retroplug/src/graph/defineNode";
 import { s } from "../../../../../retroplug/src/graph/settingsSchema";
 import { registerScriptNodes } from "../../../../../retroplug/src/script/register";
 
@@ -213,6 +222,41 @@ export const throwsNode = defineNode({
   }),
 });
 
+// Sends what is no Uint8Array, every block: an array-like object, an Array of objects with a valueOf, a Float64Array
+// of non-integers (each boxed at 32 bits) and, through forward, an object whose data is an array-like. Reading each
+// allocates (a property by name, a valueOf's call, a boxed float), so a collection can run between the host's reads of
+// the data, and move it.
+export const sendsNode = defineNode({
+  id: "rp.scripttest.sends",
+  ports: quiet,
+  create: () => ({
+    process(b) {
+      b.send("out", 0, { length: 3, 0: 0x90, 1: 60, 2: 100 } as unknown as ArrayLike<number>);
+      const v = (n: number) => ({ valueOf: () => n }) as unknown as number;
+      b.send("out", 1, [v(0x80), v(61), v(0)]);
+      b.send("out", 2, new Float64Array([144.5, 62.25, 100.75]));
+      b.forward("out", { frame: 3, data: { length: 2, 0: 0xc0, 1: 5 } as unknown as ArrayLike<number>, flags: 1 });
+    },
+  }),
+});
+
+// Runs its first block, then throws with words longer than a fault keeps (rp_script.h's rp.script.fault/1: 159 bytes),
+// so an export's trial load passes it and a box's console shows its words cut short.
+export const throwsLaterNode = defineNode({
+  id: "rp.scripttest.throws-later",
+  ports: quiet,
+  create: () => {
+    let calls = 0;
+    return {
+      process() {
+        if (++calls < 2) return;
+        throw new RangeError("the throws-later node threw on its second block, with words that run on past what a " +
+          "fault keeps of them and past what a line of the box's console holds, which cuts them short there");
+      },
+    };
+  },
+});
+
 export const busyNode = defineNode({
   id: "rp.scripttest.busy",
   ports: quiet,
@@ -270,5 +314,117 @@ export const createThrowsNode = defineNode({
   },
 });
 
+// Skipped when idle, so it sends on `calls` each call how many process calls it has had and its level input's start (in
+// hundredths): a block that brings it nothing (after its first) sends nothing there, as it is not called. Each message
+// goes on through forward, twice: on `out` as the block handed it out, a note-on's velocity written to 1 in its data
+// first (forward sends the data as it holds it then), and on `made` as an object of the node's own, a byte long, a
+// frame later and flagged.
+export const skipperNode = defineNode({
+  id: "rp.scripttest.skipper",
+  idle: "skip",
+  ports: { in: events.in(), level: control.in(), out: events.out(), made: events.out(), calls: events.out() },
+  params: { p: param.float({ name: "P", min: 0, max: 1, default: 0 }) },
+  create: () => {
+    let calls = 0;
+    return {
+      process(b) {
+        calls++;
+        b.send("calls", 0, [calls, Math.round(b.control("level").start * 100)]);
+        const messages = b.messages("in");
+        for (let i = 0; i < messages.length; i++) {
+          const m = messages[i];
+          if (m.data.length === 3 && (m.data[0] & 0xf0) === 0x90) m.data[2] = 1;
+          b.forward("out", m);
+          b.forward("made", { frame: m.frame + 1, data: [m.data.length ? m.data[0] : 0], flags: 1 });
+        }
+      },
+    };
+  },
+});
+
+export const replaceThrowsNode = defineNode({
+  id: "rp.scripttest.replace-throws",
+  ports: quiet,
+  create: () => ({
+    process(b) {
+      const r = "abc".replace("b", () => {
+        throw new RangeError("the replace function threw");
+      });
+      b.send("out", 0, [r.length]);
+    },
+  }),
+});
+
+export const hasOwnThrowsNode = defineNode({
+  id: "rp.scripttest.has-own-throws",
+  ports: quiet,
+  create: () => ({
+    process(b) {
+      const key = {
+        toString(): string {
+          throw new RangeError("the key's toString threw");
+        },
+      };
+      const has = { a: 1 }.hasOwnProperty(key as unknown as PropertyKey);
+      b.send("out", 0, [has ? 1 : 0]);
+    },
+  }),
+});
+
+export const spinsInNode = defineNode({
+  id: "rp.scripttest.spins-in",
+  ports: { in: events.in(), raw: bytes.in(), out: events.out() },
+  create: () => ({
+    process() {
+      let n = 0;
+      for (;;) n++;
+    },
+  }),
+});
+
+// Calls forEach from inside forEach's callback until the engine refuses the next call into JavaScript (the host's
+// limit on a context's C re-entries), reads its block's messages and forwards them from the deepest callback (so the
+// host's refill, a SysEx's array among it, runs there), then sends how deep that was on `depth`. A throw from below the
+// deepest call, or from the work done there, goes on up and faults the node.
+export const deepNode = defineNode({
+  id: "rp.scripttest.deep",
+  ports: { in: events.in(), out: events.out(), depth: events.out() },
+  create: () => {
+    const one = [0];
+    let block: Block | null = null;
+    let depth = 0;
+    let reached = 0;
+    let done = false;
+    const down = (): void => {
+      const at = ++depth;
+      if (at > reached) reached = at;
+      try {
+        one.forEach(down);
+      } catch (e) {
+        if (done || reached !== at) throw e;
+      }
+      if (!done && reached === at) {
+        done = true;
+        const b = block as Block;
+        const messages = b.messages("in");
+        for (let i = 0; i < messages.length; i++) b.forward("out", messages[i]);
+      }
+      depth--;
+    };
+    return {
+      process(b) {
+        block = b;
+        depth = 0;
+        reached = 0;
+        done = false;
+        down();
+        block = null;
+        b.send("depth", 0, [reached]);
+      },
+    };
+  },
+});
+
 registerScriptNodes([probeNode, settingsNode, hooksNode, steadyNode, keeperNode, readerNode, busyNode, throwsNode,
-                     spinsNode, thenableNode, faultNode, noProcessNode, createThrowsNode]);
+                     spinsNode, thenableNode, faultNode, noProcessNode, createThrowsNode, skipperNode,
+                     throwsLaterNode, sendsNode, replaceThrowsNode, hasOwnThrowsNode, spinsInNode, deepNode]);

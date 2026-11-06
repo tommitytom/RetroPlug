@@ -326,6 +326,34 @@ rp.register([rp.defineNode({
 })]);
 )JS";
 
+// Skipped when idle: each call sends on `calls` its count and its level input's start (in hundredths), forwards each
+// message on `out` (a note-on's velocity written to 1 first) and an object of its own made from it on `made`, as
+// rp.scripttest.skipper does on the MicroQuickJS host.
+const char* const kSkipper = R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.skipper",
+  idle: "skip",
+  ports: { in: rp.events.in(), level: rp.control.in(), out: rp.events.out(), made: rp.events.out(),
+           calls: rp.events.out() },
+  params: { p: rp.param.float({ name: "P", min: 0, max: 1, default: 0 }) },
+  create: () => {
+    let calls = 0;
+    return {
+      process(b) {
+        b.send("calls", 0, [++calls, Math.round(b.control("level").start * 100)]);
+        const ms = b.messages("in");
+        for (let i = 0; i < ms.length; ++i) {
+          const m = ms[i];
+          if (m.data.length === 3 && (m.data[0] & 0xf0) === 0x90) m.data[2] = 1;
+          b.forward("out", m);
+          b.forward("made", { frame: m.frame + 1, data: [m.data.length ? m.data[0] : 0], flags: 1 });
+        }
+      },
+    };
+  },
+})]);
+)JS";
+
 // Nothing to do: for tests that need instances and nothing else.
 const char* const kIdle = R"JS(
 rp.register([rp.defineNode({ id: "rp.toy.idle", ports: { out: rp.events.out() }, create: () => ({ process() {} }) })]);
@@ -369,6 +397,78 @@ TEST_CASE("a script node's messages arrive in order with their flags, and a send
     CHECK(probe.events[0].frame == 30);
     CHECK(probe.events[0].data == bytes({0x90, 70, 7}));
     CHECK(probe.bytes.empty());
+    CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("a script node the host skips when idle runs only on a block that brings it something, and forward sends a "
+          "message as send would",
+          "[script]") {
+    ScriptRig rig(kSkipper);
+    // Two constants, one into the skipper's level and the other into a probe's control; `swapped` crosses them.
+    auto plan = [&](bool swapped) {
+        return doc(node("feed", "rp.test.feed") + "," + node("s", "rp.toy.skipper") + "," +
+                       node("out", "rp.test.probe") + "," + node("made", "rp.test.probe") + "," +
+                       node("calls", "rp.test.probe") + "," + node("k", "rp.core.constant", "", R"({"value":0.5})") +
+                       "," + node("k2", "rp.core.constant", "", R"({"value":0.8})"),
+                   wire("feed.midi", "s.in") + "," + wire("s.out", "out.events") + "," +
+                       wire("s.made", "made.events") + "," + wire("s.calls", "calls.events") + "," +
+                       wire(swapped ? "k2.out" : "k.out", "s.level") + "," +
+                       wire(swapped ? "k.out" : "k2.out", "made.control"));
+    };
+    const auto r = rig.set(plan(false));
+    INFO(ScriptRig::codes(r));
+    REQUIRE(r.ok);
+    auto& feed = rig.node<Feed>("feed");
+    const auto& out = rig.node<Probe>("out");
+    const auto& made = rig.node<Probe>("made");
+    const auto& calls = rig.node<Probe>("calls");
+    auto count = [&]() -> int { return calls.events.empty() ? 0 : calls.events[0].data.at(0); };
+    // Its first block runs, though it brings nothing; then such a block is not run at all.
+    rig.run();
+    CHECK(count() == 1);
+    for (int i = 0; i < 3; ++i) {
+        rig.run();
+        CHECK(count() == 0);
+    }
+    feed.next[Feed::Midi] = {{5, bytes({0x90, 60, 100}), 1}, {9, bytes({0xf8})}, {9, {}}};
+    rig.run();
+    CHECK(count() == 2);
+    REQUIRE(out.events.size() == 3);
+    CHECK(out.events[0].frame == 5);
+    CHECK(out.events[0].flags == 1);
+    CHECK(out.events[0].data == bytes({0x90, 60, 1}));
+    CHECK(out.events[1].data == bytes({0xf8}));
+    CHECK(out.events[2].data.empty());
+    REQUIRE(made.events.size() == 3);
+    CHECK(made.events[0].frame == 6);
+    CHECK(made.events[0].flags == 1);
+    CHECK(made.events[0].data == bytes({0x90}));
+    CHECK(made.events[2].frame == 10);
+    CHECK(made.events[2].data == bytes({0}));
+    rig.run();
+    CHECK(count() == 0);
+    // A param's change runs it, and a change on its control input.
+    REQUIRE(rig.host->setParam("s", "p", 0.5));
+    rig.run();
+    CHECK(count() == 3);
+    rig.run();
+    CHECK(count() == 0);
+    REQUIRE(rig.host->setParam("k", "value", 0.25, 10));
+    rig.run();
+    CHECK(count() == 4);
+    CHECK(calls.events[0].data.at(1) == 50);  // the change is at frame 10: the start is the last block's end
+    rig.run();
+    CHECK(count() == 0);
+    // A re-plan that keeps it and rewires its level to the other constant, which brings no change: its first block in
+    // the new plan runs, and reads the new start.
+    const auto again = rig.set(plan(true));
+    INFO(ScriptRig::codes(again));
+    REQUIRE(again.ok);
+    rig.run();
+    CHECK(count() == 5);
+    CHECK(calls.events[0].data.at(1) == 80);
+    rig.run();
+    CHECK(count() == 0);
     CHECK(rig.scripts.throwCount() == 0);
 }
 
