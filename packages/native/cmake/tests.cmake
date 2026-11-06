@@ -157,12 +157,24 @@ retroplug_providers_header("${CMAKE_BINARY_DIR}/packages/test/without/rp_product
 # What a manifest may not say, held at every configure: each scratch manifest under test/packages/refused must be
 # refused by the reader retroplug_package() runs (cmake/packages.cmake's _retroplug_read_manifest, run here in script
 # mode by cmake/check-manifest.cmake) with its own reason, so a rule that stopped firing fails the configure rather than
-# going unnoticed; and the N8 pack's manifest, whose desktop entry names a provider and its facet, must read.
+# going unnoticed; and the manifests that must read do: the N8 pack's, whose desktop entry names a provider and its
+# facet, devtest's, with a native entry and a script pack, and a scratch package that is a script pack alone.
 set(_rp_refused_manifests
     "ProviderOnDevice|entry rp_scratch_package is `device` and names a provider or an rpc"
     "RpcOnDevice|entry scratch-desktop is `device` and names a provider or an rpc"
     "RpcWithoutProvider|entry scratch-desktop names an rpc and no provider"
-    "ProviderWithoutDevice|entry scratch-desktop needs \"device\": true or false")
+    "ProviderWithoutDevice|entry scratch-desktop needs \"device\": true or false"
+    "NeitherNativeNorScript|has neither a retroplug.native nor a retroplug.script field"
+    "ScriptNotObject|retroplug.script is a STRING, not an object"
+    "ScriptWithoutEntry|retroplug.script needs an \"entry\""
+    "ScriptEntryMissing|retroplug.script's entry nope.ts does not exist"
+    "ScriptWithoutDevice|retroplug.script needs \"device\": true or false"
+    "ScriptOnDesktop|retroplug.script is \"device\": false, a desktop script pack, which is reserved"
+    "ScriptDeviceWithoutHeap|retroplug.script is a device pack, and needs \"heapBytes\""
+    "ScriptHeapTooSmall|\"heapBytes\": a whole number of bytes from 4096 to 524288"
+    "ScriptHeapTooBig|\"heapBytes\": a whole number of bytes from 4096 to 524288"
+    "ScriptHeapFraction|\"heapBytes\": a whole number of bytes from 4096 to 524288"
+    "ScriptHeapString|\"heapBytes\": a whole number of bytes from 4096 to 524288")
 foreach(_rp_refused IN LISTS _rp_refused_manifests)
     string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
     list(GET _rp_refused 0 _rp_manifest)
@@ -182,13 +194,20 @@ foreach(_rp_refused IN LISTS _rp_refused_manifests)
                             "${_rp_output}")
     endif()
 endforeach()
-execute_process(
-    COMMAND ${CMAKE_COMMAND} -DRP_MANIFEST=${CMAKE_SOURCE_DIR}/packages/n8/package.json
-            -P ${CMAKE_SOURCE_DIR}/cmake/check-manifest.cmake
-    RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
-if(NOT _rp_result EQUAL 0)
-    message(FATAL_ERROR "packages/n8/package.json did not read in script mode:\n${_rp_output}")
-endif()
+foreach(_rp_read IN ITEMS "${CMAKE_SOURCE_DIR}/packages/n8/package.json"
+                          "${CMAKE_SOURCE_DIR}/packages/devtest/package.json"
+                          "${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/ScriptOnly.json")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -DRP_MANIFEST=${_rp_read} -P ${CMAKE_SOURCE_DIR}/cmake/check-manifest.cmake
+        RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+    if(NOT _rp_result EQUAL 0)
+        message(FATAL_ERROR "${_rp_read} did not read in script mode:\n${_rp_output}")
+    endif()
+endforeach()
+
+# The devtest package's device script pack (packages/devtest/ts), compiled to MicroQuickJS bytecode at both widths by
+# the device-pack toolchain: `pnpm test` builds it, and test/graph/device-pack.test.ts holds its two bytecodes.
+retroplug_script_pack(devtest)
 
 # Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive
 # detection, registered-ROM parent-dir watches, and the unregistered-file filter.

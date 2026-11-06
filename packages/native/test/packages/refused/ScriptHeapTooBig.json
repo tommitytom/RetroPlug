@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-script-heap-too-big",
+  "private": true,
+  "retroplug": { "script": { "entry": "scratch-pack.ts", "device": true, "heapBytes": 1048576 } }
+}

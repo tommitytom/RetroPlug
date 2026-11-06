@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-script-desktop",
+  "private": true,
+  "retroplug": { "script": { "entry": "scratch-pack.ts", "device": false } }
+}

@@ -285,6 +285,11 @@ add_subdirectory(deps/mesen)
 # --- enkiTS: a task scheduler, vendored under deps/enkiTS but not built. No RetroPlug code uses it, so the tree adds
 # no target for it and links none; the directory stays for a later cleanup to judge.
 
+# --- MicroQuickJS: the JavaScript engine a device script pack runs on (docs/modular-graph-phase-e4-design.md), vendored
+# under deps/mquickjs. Its host tools, mqjs_stdlib and mqjs (which the device-pack toolchain compiles a pack with), are
+# EXCLUDE_FROM_ALL; cmake/mquickjs.cmake says how they are built.
+include(cmake/mquickjs.cmake)
+
 # --- miniaudio: single-header audio file decoder (WAV / MP3 / FLAC).
 # Used by SampleCache, the decode an offline job's file input takes.
 # Header-only — no library, just an include path.

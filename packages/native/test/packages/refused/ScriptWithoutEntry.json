@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-script-without-entry",
+  "private": true,
+  "retroplug": { "script": { "device": true, "heapBytes": 4096 } }
+}

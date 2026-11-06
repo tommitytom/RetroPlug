@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/read-script-only",
+  "private": true,
+  "retroplug": { "script": { "entry": "../refused/scratch-pack.ts", "device": true, "heapBytes": 4096 } }
+}

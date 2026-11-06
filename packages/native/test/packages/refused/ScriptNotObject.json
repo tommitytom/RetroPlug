@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-script-not-object",
+  "private": true,
+  "retroplug": { "script": "scratch-pack.ts" }
+}

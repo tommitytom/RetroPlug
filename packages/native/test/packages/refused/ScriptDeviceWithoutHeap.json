@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-script-device-without-heap",
+  "private": true,
+  "retroplug": { "script": { "entry": "scratch-pack.ts", "device": true } }
+}

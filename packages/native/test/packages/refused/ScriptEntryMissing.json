@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-script-entry-missing",
+  "private": true,
+  "retroplug": { "script": { "entry": "nope.ts", "device": true, "heapBytes": 4096 } }
+}

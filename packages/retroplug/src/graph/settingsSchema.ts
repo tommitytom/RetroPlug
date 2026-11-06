@@ -40,9 +40,9 @@
 // - A default is copied each time it is taken, and an object or array parsed is a new one, so what safeParse returns
 //   is the caller's to edit. A json value given is kept as given, as z.unknown keeps it.
 //
-// It keeps to ES5's library (no Map, Set, Object.entries, includes, Number.isInteger and the like), the rule the script
-// core follows so it can run on MicroQuickJS under check:portable (docs/modular-graph-design.md, the Pico row), so it
-// is no obstacle there; defineNode itself is not yet.
+// It keeps to ES5's library (no Map, Set, Object.entries, includes, Number.isInteger and the like), as defineNode does,
+// so a device pack's settings run on MicroQuickJS (docs/modular-graph-phase-e4-design.md section 6); the device-pack
+// toolchain, scripts/build-device-pack.mjs, scans it for a call outside it.
 
 /** A refusal, as a zod issue carries one: where (the field names and item indices from the root), and why. */
 export interface SettingsIssue {

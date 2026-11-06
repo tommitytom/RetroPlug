@@ -12,6 +12,18 @@
 # manifest is the ONE source of a package's targets and entries: retroplug_package() reads them with string(JSON), and
 # nothing else in the build spells an entry.
 #
+# A package's TypeScript node types are its `script` member, a script pack (docs/modular-graph-phase-e4-design.md
+# section 6): the module that defines and registers them, whether the pack runs on the device, and, for one that does,
+# the heap its MicroQuickJS context declares, in bytes:
+#
+#   "retroplug": { "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 16384 } }
+#
+# `entry` is a path from the package's directory, as a manifest's other paths are. `device` is required, as an entry's
+# is, so no pack's standing is a default nobody chose: a device pack runs on MicroQuickJS wherever it runs, its
+# definitions held to what the box can run, and retroplug_script_pack() compiles it to bytecode. `device: false`, a
+# desktop script pack, is reserved and refused, as nothing builds one yet. `heapBytes` is a JSON number, a whole number
+# of bytes, the same figure on every host. A package has `native`, `script` or both.
+#
 # A product is an executable or a module that constructs an Engine. retroplug_product() generates its registration
 # source, which defines rp_register_packages() (graph/Packages.hpp) as the entries of the packages it lists, in the
 # order it lists them, and links those packages' targets. The engine registers what that function returns, so which
@@ -91,9 +103,20 @@ endfunction()
 # script mode (cmake -P, packages/native/cmake/tests.cmake), which has no add_subdirectory.
 function(_retroplug_read_manifest name _manifest)
     file(READ "${_manifest}" _json)
+    _retroplug_read_script(${name} "${_manifest}" "${_json}")
     string(JSON _kind ERROR_VARIABLE _err TYPE "${_json}" retroplug native)
     if(_err)
-        message(FATAL_ERROR "retroplug_package(${name}): ${_manifest} has no retroplug.native field (${_err})")
+        get_property(_script GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_ENTRY)
+        if(NOT _script)
+            message(FATAL_ERROR "retroplug_package(${name}): ${_manifest} has neither a retroplug.native nor a "
+                                "retroplug.script field (${_err})")
+        endif()
+        # A script pack alone: no targets, no entries.
+        set_property(GLOBAL APPEND PROPERTY RP_PACKAGES ${name})
+        foreach(_p TARGETS ENTRIES DEVICE_ENTRIES DEVICE_TARGETS PROVIDERS)
+            set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_${_p} "")
+        endforeach()
+        return()
     endif()
     string(JSON _native GET "${_json}" retroplug native)
     if(_kind STREQUAL "OBJECT")
@@ -170,6 +193,58 @@ function(_retroplug_read_manifest name _manifest)
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_TARGETS ${_deviceTargets})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_PROVIDERS ${_providers})
 
+endfunction()
+
+# _retroplug_read_script(<package> <manifest> <json>): the manifest's script pack, if it has one (the `script` member
+# above), into the global properties retroplug_script_pack() reads: RP_PACKAGE_<package>_SCRIPT_ENTRY (the entry's
+# absolute path, empty for a package with no script pack), _SCRIPT_DEVICE (ON or OFF) and _SCRIPT_HEAP_BYTES. The entry
+# must exist, so a typo is refused here rather than by the bundler.
+function(_retroplug_read_script name _manifest json)
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_ENTRY "")
+    string(JSON _kind ERROR_VARIABLE _none TYPE "${json}" retroplug script)
+    if(_none)
+        return()
+    endif()
+    if(NOT _kind STREQUAL "OBJECT")
+        message(FATAL_ERROR "retroplug_package(${name}): retroplug.script is a ${_kind}, not an object")
+    endif()
+    string(JSON _entry ERROR_VARIABLE _err GET "${json}" retroplug script entry)
+    if(_err OR _entry STREQUAL "")
+        message(FATAL_ERROR "retroplug_package(${name}): retroplug.script needs an \"entry\", the module that defines "
+                            "and registers its node types")
+    endif()
+    get_filename_component(_dir "${_manifest}" DIRECTORY)
+    get_filename_component(_entryPath "${_entry}" ABSOLUTE BASE_DIR "${_dir}")
+    if(NOT EXISTS "${_entryPath}")
+        message(FATAL_ERROR "retroplug_package(${name}): retroplug.script's entry ${_entry} does not exist "
+                            "(${_entryPath})")
+    endif()
+    string(JSON _isDevice ERROR_VARIABLE _err GET "${json}" retroplug script device)
+    if(_err OR NOT (_isDevice STREQUAL "ON" OR _isDevice STREQUAL "OFF"))
+        message(FATAL_ERROR "retroplug_package(${name}): retroplug.script needs \"device\": true or false")
+    endif()
+    if(NOT _isDevice)
+        message(FATAL_ERROR "retroplug_package(${name}): retroplug.script is \"device\": false, a desktop script pack, "
+                            "which is reserved: nothing builds one yet (the desktop's script nodes are the engine's "
+                            "own bundle, packages/native/cmake/bundles.cmake)")
+    endif()
+    # A JSON number, as string(JSON GET) would hand a string's contents back the same. From 4 KiB, the least 64-bit
+    # context the engine sets itself up in with mqjs's REPL stdlib, as the device-pack toolchain measures (below it
+    # JS_NewContext writes past its buffer rather than throwing; its own assertion, 1 KiB, is no working floor), to
+    # the RP2350's whole SRAM, 512 KiB. The engine's floor is per width and per stdlib, and the box's loader, which
+    # knows its own, enforces it before it makes a context.
+    string(JSON _heapType ERROR_VARIABLE _noHeap TYPE "${json}" retroplug script heapBytes)
+    if(NOT _noHeap)
+        string(JSON _heap GET "${json}" retroplug script heapBytes)
+    endif()
+    if(_noHeap OR NOT _heapType STREQUAL "NUMBER" OR NOT _heap MATCHES "^[1-9][0-9]*$" OR _heap LESS 4096
+       OR _heap GREATER 524288)
+        message(FATAL_ERROR "retroplug_package(${name}): retroplug.script is a device pack, and needs "
+                            "\"heapBytes\": a whole number of bytes from 4096 to 524288")
+    endif()
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_ENTRY "${_entryPath}")
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_DEVICE ${_isDevice})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_HEAP_BYTES "${_heap}")
 endfunction()
 
 # _retroplug_read_provider(<package> <entry> <device> <noProvider> <provider> <noRpc> <rpc>): one manifest entry's
@@ -284,6 +359,58 @@ function(retroplug_package_library target)
     if(MSVC)
         target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/bigobj>)
     endif()
+endfunction()
+
+# retroplug_script_pack(<package> [TARGET <target>]): a target that compiles the package's device script pack (its
+# manifest's `script` member) to MicroQuickJS bytecode, through the device-pack toolchain
+# (packages/retroplug/scripts/build-device-pack.mjs: bundled against its allowlist, lowered to ES5, scanned for library
+# calls the engine lacks, its definitions run under Node and its bytecode on the engine, inside the heap the manifest
+# declares). It writes build/packages/<package>/script/<package>.mqjs64.bin, for the desktop's mquickjs host, and
+# <package>.mqjs32.bin, for the box, and names them in the target's RP_BYTECODE_64 and RP_BYTECODE_32 properties; a
+# pack the toolchain refuses fails the target's build, saying why. The default target is
+# retroplug-<package>-script-pack.
+#
+# A product that carries the pack, or a test, calls it. Only the desktop build does: it needs the desktop's mqjs and
+# Node, and a device build takes the 32-bit bytecode from the desktop build, as it takes its exported plan. The target
+# runs the toolchain on every build of it (as packages/native/cmake/bundles.cmake's bundles run esbuild), which rewrites
+# the bytecode only when it changes, so what depends on a file is rebuilt only then.
+function(retroplug_script_pack package)
+    cmake_parse_arguments(P "" "TARGET" "" ${ARGN})
+    if(P_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "retroplug_script_pack(${package}): unrecognised argument(s): ${P_UNPARSED_ARGUMENTS}")
+    endif()
+    if(RP_DEVICE_BUILD)
+        message(FATAL_ERROR "retroplug_script_pack(${package}): a device build takes a pack's bytecode from the "
+                            "desktop build, whose mqjs and Node compile it")
+    endif()
+    if(NOT P_TARGET)
+        set(P_TARGET retroplug-${package}-script-pack)
+    endif()
+    get_property(_known GLOBAL PROPERTY RP_PACKAGES)
+    if(NOT package IN_LIST _known)
+        message(FATAL_ERROR "retroplug_script_pack(${package}): no package `${package}` (retroplug_package() adds one)")
+    endif()
+    get_property(_entry GLOBAL PROPERTY RP_PACKAGE_${package}_SCRIPT_ENTRY)
+    get_property(_heap GLOBAL PROPERTY RP_PACKAGE_${package}_SCRIPT_HEAP_BYTES)
+    if(NOT _entry)
+        message(FATAL_ERROR "retroplug_script_pack(${package}): ${RP_PACKAGES_DIR}/${package}/package.json has no "
+                            "retroplug.script")
+    endif()
+    if(NOT TARGET mqjs)
+        message(FATAL_ERROR "retroplug_script_pack(${package}): no mqjs target (cmake/mquickjs.cmake)")
+    endif()
+    set(_out "${CMAKE_BINARY_DIR}/packages/${package}/script")
+    set(_bytecode "${_out}/${package}.mqjs64.bin" "${_out}/${package}.mqjs32.bin")
+    add_custom_target(${P_TARGET}
+        BYPRODUCTS ${_bytecode} "${_out}/${package}.js" "${_out}/${package}.transcript.txt"
+        COMMAND ${NODE_EXECUTABLE} "${RP_PACKAGES_DIR}/retroplug/scripts/build-device-pack.mjs"
+                --entry "${_entry}" --name ${package} --heap-bytes ${_heap} --out-dir "${_out}"
+                --pack-dir "${RP_PACKAGES_DIR}/${package}" --mqjs "$<TARGET_FILE:mqjs>"
+        COMMENT "Compiling the ${package} device script pack (MicroQuickJS bytecode, 64- and 32-bit)"
+        VERBATIM)
+    add_dependencies(${P_TARGET} mqjs)
+    set_target_properties(${P_TARGET} PROPERTIES RP_BYTECODE_64 "${_out}/${package}.mqjs64.bin"
+                                                  RP_BYTECODE_32 "${_out}/${package}.mqjs32.bin")
 endfunction()
 
 # retroplug_product(<product> PACKAGES <package>... [TARGETS <target>...] [DEVICE]): declares a product and the packages

@@ -12,6 +12,11 @@
 // receives a plain, already-checked object. A definition's settings are any SettingsSchema, which brings its own
 // safeParse and toJSONSchema: an `s` schema (settingsSchema.ts), which holds no zod, or a zod one, which has the same
 // two methods. defineNode imports only their types, so a bundle holds zod only when a node it carries does.
+//
+// It keeps to MicroQuickJS's library (ES5's: no Map, Set, Symbol or Promise, no includes, find, Object.entries,
+// startsWith or Number.isInteger), as settingsSchema.ts and descriptor.ts do, so that one defineNode serves every pack,
+// a device pack's on the box's engine among them (docs/modular-graph-phase-e4-design.md section 6); the device-pack
+// toolchain, scripts/build-device-pack.mjs, scans these files for a call outside it.
 import { plainId, wellFormed } from "./descriptor";
 import type { ChannelSpec, Layout, ParamDesc, PortDesc, QueueCapacity, TypeDescriptor } from "./descriptor";
 import type { SettingsIssue, SettingsSchema } from "./settingsSchema";
@@ -265,6 +270,14 @@ export interface DefinedNode<S> extends NodeDefinition<S> {
   descriptor(): TypeDescriptor;
 }
 
+// Whether these definitions are a device pack's (docs/modular-graph-phase-e4-design.md section 6): a pack whose
+// manifest marks it `device` runs on MicroQuickJS, on the box and in the desktop's mquickjs host alike, and its nodes
+// may not have what the box cannot run. The pack's manifest says so (its package.json's retroplug.script.device), and
+// the one tool that builds such a pack, scripts/build-device-pack.mjs, defines RP_DEVICE_PACK when it bundles it, so
+// the pack's bytecode carries the answer and every host that runs it reads the same one. No other bundle defines it.
+declare const RP_DEVICE_PACK: boolean | undefined;
+const devicePack = (): boolean => typeof RP_DEVICE_PACK !== "undefined" && RP_DEVICE_PACK === true;
+
 const MAX_CHANNELS = 4294967295;
 // The most a queue port may declare: kMaxQueueMessages / kMaxQueueBytes in Descriptor.hpp.
 const MAX_QUEUE_MESSAGES = 1048576;
@@ -287,12 +300,20 @@ export function layoutChannels(layout: string): number | null {
 
 const isString = (v: unknown): v is string => typeof v === "string";
 const has = (o: object, key: string): boolean => Object.prototype.hasOwnProperty.call(o, key);
+// Number.isInteger, includes, startsWith and find, in ES5's library (the header says why).
+const isWhole = (v: unknown): v is number => typeof v === "number" && isFinite(v) && Math.floor(v) === v;
+const listed = (list: readonly unknown[], v: unknown): boolean => list.indexOf(v) >= 0;
+const startsWith = (s: string, prefix: string): boolean => s.slice(0, prefix.length) === prefix;
+function portById(ports: readonly PortDesc[], id: string): PortDesc | undefined {
+  for (let i = 0; i < ports.length; ++i) if (ports[i].id === id) return ports[i];
+  return undefined;
+}
 
 // One port's own shape, as parsePort in Descriptor.cpp checks it.
 function checkPort(node: string, p: PortDesc): void {
   const where = `${node}: port ${q(p.id)}`;
-  if (!["in", "out", "link"].includes(p.dir)) throw new Error(`${where}: unknown dir ${q(String(p.dir))}`);
-  if (!["audio", "events", "bytes", "control", "link", "resource"].includes(p.kind))
+  if (!listed(["in", "out", "link"], p.dir)) throw new Error(`${where}: unknown dir ${q(String(p.dir))}`);
+  if (!listed(["audio", "events", "bytes", "control", "link", "resource"], p.kind))
     throw new Error(`${where}: unknown kind ${q(String(p.kind))}`);
   if ((p.kind === "link") !== (p.dir === "link")) throw new Error(`${where}: link ports, and only link ports, have dir "link"`);
   if (p.kind === "audio") {
@@ -307,11 +328,11 @@ function checkPort(node: string, p: PortDesc): void {
       if (!plainId(c.match)) throw new Error(`${where}: channels.match must name a port`);
     } else {
       const count = c.count as number;
-      if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > MAX_CHANNELS)
+      if (!isWhole(count) || count < 1 || count > MAX_CHANNELS)
         throw new Error(`${where}: needs a whole channel count from 1 to ${MAX_CHANNELS}`);
       if (!isString(c.layout) || !c.layout || !wellFormed(c.layout)) throw new Error(`${where}: needs a layout name`);
       const known = layoutChannels(c.layout);
-      if (known === null && c.layout.startsWith("discrete("))
+      if (known === null && startsWith(c.layout, "discrete("))
         throw new Error(`${where}: layout ${q(c.layout)} is not a discrete(n) layout`);
       if (known !== null && known !== count) throw new Error(`${where}: layout ${q(c.layout)} is ${known} channels, not ${count}`);
     }
@@ -342,10 +363,12 @@ function checkCapacity(where: string, c: unknown): void {
   if (typeof c !== "object" || c === null || Array.isArray(c)) throw new Error(`${where}: capacity must be an object`);
   const parts = c as Record<string, unknown>;
   const given = Object.keys(parts).filter((k) => parts[k] !== undefined);
-  const stray = given.find((k) => k !== "messages" && k !== "bytes" && k !== "match");
-  if (stray !== undefined) throw new Error(`${where}: capacity: unknown field ${q(stray)}`);
+  for (let i = 0; i < given.length; ++i) {
+    if (given[i] !== "messages" && given[i] !== "bytes" && given[i] !== "match")
+      throw new Error(`${where}: capacity: unknown field ${q(given[i])}`);
+  }
   if (given.length === 0) throw new Error(`${where}: capacity needs messages, bytes or both`);
-  if (given.includes("match")) {
+  if (listed(given, "match")) {
     if (!isString(parts.match) || !plainId(parts.match))
       throw new Error(`${where}: "capacity.match" must name an input, with no whitespace or control characters`);
     if (given.length > 1) throw new Error(`${where}: "capacity" takes "match" or a size, not both`);
@@ -353,7 +376,7 @@ function checkCapacity(where: string, c: unknown): void {
   }
   for (const [key, max] of [["messages", MAX_QUEUE_MESSAGES], ["bytes", MAX_QUEUE_BYTES]] as const) {
     const v = parts[key];
-    if (v !== undefined && (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > max))
+    if (v !== undefined && (!isWhole(v) || v < 1 || v > max))
       throw new Error(`${where}: capacity.${key} must be a whole number from 1 to ${max}`);
   }
 }
@@ -365,16 +388,17 @@ function checkParam(node: string, p: ParamDesc): void {
   if (p.type === "enum") {
     if (!Array.isArray(p.values) || p.values.length === 0 || p.values.some((v) => !isString(v) || !v || !wellFormed(v)))
       throw new Error(`${where}: an enum needs non-empty values`);
-    if (new Set(p.values).size !== p.values.length) throw new Error(`${where}: an enum lists a value twice`);
-    if (!p.values.includes(p.default)) throw new Error(`${where}: default ${q(String(p.default))} is not one of its values`);
+    if (p.values.some((v, i) => p.values.indexOf(v) !== i)) throw new Error(`${where}: an enum lists a value twice`);
+    if (!listed(p.values, p.default))
+      throw new Error(`${where}: default ${q(String(p.default))} is not one of its values`);
   } else if (p.type === "bool") {
     if (typeof p.default !== "boolean") throw new Error(`${where}: a bool's default must be true or false`);
   } else if (p.type === "float" || p.type === "int") {
-    if (![p.min, p.max, p.default].every((v) => typeof v === "number" && Number.isFinite(v)))
+    if (![p.min, p.max, p.default].every((v) => typeof v === "number" && isFinite(v)))
       throw new Error(`${where}: needs finite min, max and default`);
     if (!(p.min <= p.max)) throw new Error(`${where}: min must not exceed max`);
     if (!(p.min <= p.default && p.default <= p.max)) throw new Error(`${where}: default must lie within [min, max]`);
-    if (p.type === "int" && ![p.min, p.max, p.default].every(Number.isInteger))
+    if (p.type === "int" && ![p.min, p.max, p.default].every(isWhole))
       throw new Error(`${where}: an int param needs whole-number min, max and default`);
   } else {
     throw new Error(`${where}: unknown type ${q(String((p as { type: unknown }).type))}`);
@@ -397,7 +421,11 @@ function copyPort(id: string, spec: PortSpec): PortDesc {
 function copyCapacity(c: QueueCapacity): QueueCapacity {
   if (typeof c !== "object" || c === null || Array.isArray(c)) return c;  // checkPort refuses it
   const copy: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(c)) if (value !== undefined) copy[key] = value;
+  const keys = Object.keys(c);
+  for (let i = 0; i < keys.length; ++i) {
+    const value = (c as Record<string, unknown>)[keys[i]];
+    if (value !== undefined) copy[keys[i]] = value;
+  }
   return copy as QueueCapacity;
 }
 
@@ -438,7 +466,10 @@ function checkMetadata<S>(def: NodeDefinition<S>): void {
 function allWellFormed(v: unknown): boolean {
   if (isString(v)) return wellFormed(v);
   if (Array.isArray(v)) return v.every(allWellFormed);
-  if (v && typeof v === "object") return Object.entries(v).every(([k, x]) => wellFormed(k) && allWellFormed(x));
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return Object.keys(o).every((k) => wellFormed(k) && allWellFormed(o[k]));
+  }
   return true;
 }
 
@@ -451,24 +482,54 @@ function settingsSchema<S>(def: NodeDefinition<S>): Record<string, unknown> {
   return schema;
 }
 
-// An integer-like key ("1") would be listed before every other key by Object.entries, so it could not
+// An integer-like key ("1") would be listed before every other key by Object.keys, so it could not
 // keep its declaration order; C++ keeps it, so the two sides would disagree.
 const integerLike = (id: string): boolean => /^(0|[1-9][0-9]*)$/.test(id);
+
+// A device pack's settings schema, every object in it at any depth: no field named like an integer (defineNode says
+// why).
+function checkFieldNames(node: string, schema: unknown, path: string): void {
+  if (!schema || typeof schema !== "object") return;
+  const s = schema as Record<string, unknown>;
+  const properties = s.properties as Record<string, unknown> | undefined;
+  if (properties && typeof properties === "object") {
+    const keys = Object.keys(properties);
+    for (let i = 0; i < keys.length; ++i) {
+      const field = path + keys[i];
+      if (integerLike(keys[i]))
+        throw new Error(`${node}: settings field ${q(field)} is a number, which a device pack's settings ` +
+          "cannot keep in order");
+      checkFieldNames(node, properties[keys[i]], `${field}.`);
+    }
+  }
+  if (s.items) checkFieldNames(node, s.items, `${path.slice(0, -1)}[].`);
+}
 
 function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   const portMap = typeof def.ports === "function" ? def.ports(settings) : def.ports;
   const paramMap = typeof def.params === "function" ? def.params(settings) : (def.params ?? {});
-  const ports: PortDesc[] = Object.entries(portMap).map(([id, spec]) => copyPort(id, spec));
+  const ports: PortDesc[] = Object.keys(portMap).map((id) => copyPort(id, portMap[id]));
   // Inputs (and link ports) first, then outputs, each in declaration order - the C++ layer's order too.
   const ordered = [...ports.filter((p) => p.dir !== "out"), ...ports.filter((p) => p.dir === "out")];
-  const params = Object.entries(paramMap).map(([id, spec]) => copyParam(id, spec));
-  const seen = new Set<string>();
+  const params = Object.keys(paramMap).map((id) => copyParam(id, paramMap[id]));
+  // A device pack's nodes are event-rate logic, and audio-rate work stays C++ (docs/modular-graph-phase-e4-design.md
+  // section 2): an audio port is refused here, at definition (defineNode lays out the defaults at once for a device
+  // pack) and for any other settings, naming the node and the port.
+  if (devicePack()) {
+    for (const p of ordered) {
+      if (p.kind === "audio")
+        throw new Error(`${def.id}: port ${q(p.id)} is audio, which a device pack's node cannot have: audio stays C++`);
+    }
+  }
+  // The ids met so far: a dictionary with no prototype, so an id such as "__proto__" or "toString" is a key like any
+  // other.
+  const seen: Record<string, true> = Object.create(null);
   for (const p of [...ordered, ...params]) {
-    if (!plainId(p.id) || p.id.includes("*"))
+    if (!plainId(p.id) || p.id.indexOf("*") >= 0)
       throw new Error(`${def.id}: id ${q(p.id)} must be non-empty, with no whitespace, control characters, lone surrogates or '*'`);
     if (integerLike(p.id)) throw new Error(`${def.id}: id ${q(p.id)} is a number, which a JS object cannot keep in order`);
-    if (seen.has(p.id)) throw new Error(`${def.id}: ${q(p.id)} is used by more than one port or param`);
-    seen.add(p.id);
+    if (seen[p.id] === true) throw new Error(`${def.id}: ${q(p.id)} is used by more than one port or param`);
+    seen[p.id] = true;
   }
   // The same checks the C++ parser applies to every layout (Descriptor.cpp), so a TS node cannot declare
   // what the planner would refuse.
@@ -477,7 +538,7 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   for (const p of ordered) {
     const c = p.channels;
     if (p.kind !== "audio" || !c || !("match" in c) || c.match === undefined) continue;
-    const target = ordered.find((t) => t.id === c.match);
+    const target = portById(ordered, c.match);
     if (!target || target === p || target.kind !== "audio")
       throw new Error(`${def.id}: port ${q(p.id)} matches ${q(c.match)}, which is not another audio port`);
   }
@@ -485,14 +546,14 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
   for (const p of ordered) {
     const match = p.capacity?.match;
     if (match === undefined) continue;
-    const target = ordered.find((t) => t.id === match);
+    const target = portById(ordered, match);
     if (!target || target.dir !== "in" || target.kind !== p.kind) {
       const kind = p.kind === "bytes" ? "a bytes" : "an events";
       throw new Error(`${def.id}: port ${q(p.id)}: "capacity.match" names ${q(match)}, which is not ${kind} input`);
     }
   }
-  const isWildcard = (m: string) => m.length > 2 && m.endsWith(".*");
-  const covers = (pattern: string, id: string) => isWildcard(pattern) && id.startsWith(pattern.slice(0, -1));
+  const isWildcard = (m: string) => m.length > 2 && m.slice(-2) === ".*";
+  const covers = (pattern: string, id: string) => isWildcard(pattern) && startsWith(id, pattern.slice(0, -1));
   for (const group of def.exclusive ?? []) {
     if (!Array.isArray(group) || group.length === 0) throw new Error(`${def.id}: an exclusive group needs members`);
     group.forEach((m, i) => {
@@ -507,7 +568,7 @@ function buildLayout<S>(def: NodeDefinition<S>, settings: S): Layout {
     });
   }
   const layout: Layout = { ports: ordered, params };
-  if (def.exclusive?.length) layout.exclusive = def.exclusive.map((g) => [...g]);
+  if (def.exclusive?.length) layout.exclusive = def.exclusive.map((g) => g.slice());
   return layout;
 }
 
@@ -535,6 +596,15 @@ export function defineNode<S = Record<string, never>>(def: NodeDefinition<S>): D
   if (def.settings) {
     const defaults = def.settings.safeParse({});
     if (!defaults.success) throw new Error(`node type ${q(def.id)}: every settings field needs a default (${firstIssue(defaults.error)})`);
+  }
+  // A device pack's definition is laid out at once, so what the device refuses (an audio port) is refused where the
+  // node is defined, which the toolchain runs at build time, rather than when a plan first asks for its layout.
+  // Its settings may not name a field like an integer either: V8 lists such a key before the others and MicroQuickJS
+  // keeps it where it was declared, so the descriptor's settings schema (and a parsed object's key order) would spell
+  // differently on the desktop's engines and the box's.
+  if (devicePack()) {
+    buildLayout(def, parseSettings({}));
+    if (def.settings) checkFieldNames(def.id, settingsSchema(def), "");
   }
   return {
     ...def,
