@@ -585,9 +585,16 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   through the loader on a 4 KB stack (`packages/devtest`). Nothing was re-recorded but `[packages]`; the filter's
   descriptor golden and the three blob goldens are new. What it leaves:
   - **The audio version:** a codec and its DMA driver, a fixed-cadence block driver, the float tolerance against the
-    desktop; a time-reading plan on the elapsed driver loses the time its carry bound skips under load.
+    desktop; a time-reading plan on the elapsed driver loses the time its carry bound skips under load. A fixed cadence
+    cannot run from the box's main loop, which blocks for every N8 call (5 ms a FIFO write, up to about 200 ms
+    draining a full ring, 2.5 ms a sniff or health read, 13.7 ms a `[stats]` line), so blocks move off it; the staging
+    and the cart link's ring then become single-producer / single-consumer (or the N8 calls non-blocking), and
+    `frameOf` moves onto `BlockDriver`.
   - **A live plan upload needs more than the loader checks**: it trusts the blob, so a blob from outside needs per-step
-    port checks or a signature. No plan file on the SD card, no resources on the device.
+    port checks or a signature: a per-node port signature (input, output and param counts and kinds) carried in the
+    blob and checked at load. The same check would replace `loop.sh`'s guard against a stale `retroplug-export-plan`
+    (a blob from an exporter built before a port changed loads and reads the wrong views). No plan file on the SD
+    card, no resources on the device.
   - **Windows, macOS and arm64 have never built E3**; the blob goldens' first run there answers whether the blob is
     byte-stable across hosts, and the new libraries are unbuilt under MSVC `/W4 /WX`. A Windows export may accept a
     `long double` type Linux refuses.

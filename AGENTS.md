@@ -134,7 +134,7 @@ The rules below are the parts that don't fit those.
   `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp` (and
   `rp.n8.nes`, `rp.device.midi-in` and `rp.devtest`, in the `[device-check]` cases; `rp.core.midi-filter` is a core
   type, held by the twin table) compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library
-  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 43
+  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 45
   cases in six files. A device-mode node created from msgpack settings renders bit for bit
   what a desktop-mode node renders from the same settings as JSON, with create, process and destroy allocating
   nothing; the desktop reads msgpack the same; the decode defaults a missing field, skips an unknown one and refuses
@@ -145,8 +145,9 @@ The rules below are the parts that don't fit those.
   It holds the plan loader too
   ([docs/modular-graph-phase-e3-design.md](docs/modular-graph-phase-e3-design.md), `[plan]`): a document exported by the
   library's `exportPlan` (`retroplug-graph`) and loaded by `loadPlan` into an arena over the device-mode builds renders
-  bit for bit what GraphHost renders, allocating nothing from load to unload, every loader refusal says its words, and
-  the three blob goldens (`golden/*.hex`, recorded with `RP_PLAN_BLOB_UPDATE=1`) pin the format. `rp.device.midi-in`
+  bit for bit what GraphHost renders, allocating nothing from load to unload, every loader refusal says its words,
+  every bit of each blob golden flipped (the CRC resealed) loads or is refused cleanly (`[mutation]`, run in build-asan
+  too), and the three blob goldens (`golden/*.hex`, recorded with `RP_PLAN_BLOB_UPDATE=1`) pin the format. `rp.device.midi-in`
   has four cases (`[device-io]`). The box's host pieces are in it as well (`[box]`: `pico/host/`'s block driver and
   staging, `BoxCartLink`, the volume write and the whole pass over a fake transport, with `plan.json`'s blob, and the
   `retroplug-export-plan` tool run as a process), and `UsbCdcTransport` over a fake TinyUSB (`[usb-cdc]`); the device

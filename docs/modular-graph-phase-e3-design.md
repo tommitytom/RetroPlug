@@ -113,10 +113,10 @@ in the ordinary desktop build, so a non-portable line in the loader fails there.
   the device asks and a type that truly needs 16 is seen at export and refused (`node-memory`: "node asked for an
   alignment of 16, where an rp2350 arena gives a power of two up to 8") by the exporter and the loader alike. The
   arena itself must be aligned to `kArenaAlign` (`PlanLoader.hpp`, which a firmware declares its arena with), the
-  larger of `kTargetAlign` and the compiler's `max_align_t`, which is also the buffer stride. (A portable type holding a `long double` or an `alignas(max_align_t)` member reads 16 on
-  x86-64 and 8 on the M33 and is refused for it: the safe direction. The `static_assert` that `kDeviceAlign` equals
-  the device's `max_align_t` holds the Arm build only; the RP2350's Hazard3 cores are riscv32, where it is 16, and a
-  RISC-V build would need its own figure.)
+  larger of `kTargetAlign` and the compiler's `max_align_t`, which is also the buffer stride. (A portable type holding
+  a `long double` or an `alignas(max_align_t)` member reads 16 on x86-64 and 8 on the M33 and is refused for it: the
+  safe direction. The `static_assert` that `kDeviceAlign` equals the device's `max_align_t` holds the Arm build only;
+  the RP2350's Hazard3 cores are riscv32, where it is 16, and a RISC-V build would need its own figure.)
 
 **The exporter** (`exportPlan(document or json, registry, deviceTypes, ExportOptions{target, sampleRate, maxFrames,
 arenaBytes, trialLoad})`, desktop):
@@ -183,7 +183,9 @@ A block must never be longer than the plan's `maxFrames`: `runBlock` does not ch
 **The blob is trusted.** The loader's checks bound its own reads and writes and catch corruption, but they cannot hold
 a step's views to its node's port layout, because a device build has no `layout_for`. That holds while the only blob is
 the firmware's own build output. A blob from outside would need per-step port kinds and counts checked against
-something the device knows, or a signature (section 10).
+something the device knows, such as a port signature (section 10). The same gap means a blob made by an exporter built
+from other package sources than the image's is not seen as wrong: `pico/n8-host/loop.sh` refuses to build with an
+exporter older than the sources it compiles (section 12.8).
 
 ## 5. The box as a graph host
 
@@ -211,8 +213,8 @@ product links the same library.
 5. The N8 part's probe, boot and health, the stale-MIDI discard at the forward edge, the link's connected state.
 6. Stats.
 
-Block work and N8 work never overlap, which is what keeps `push` from ever waiting on the N8, now and when an audio
-driver sets the cadence.
+Block work and N8 work run in turn on this one loop, which is what keeps `push` from waiting on the N8 under the
+elapsed driver. An audio cadence cannot be served from this loop (section 10).
 
 **The block-driver seam** is one call, `bool next(uint32_t* frames, rp_transport*)`. E3's `ElapsedDriver` counts frames
 from its start on a 64-bit microsecond clock (`frameAt = (us - origin) * rate / 1e6`) and answers each block
@@ -335,23 +337,20 @@ The exported blob carries resolved sizes, so the device needs nothing new.
   from SRAM (`pico_set_binary_type(n8_host copy_to_ram)`, which removes the flash-cache refills a message's path
   paid; section 12.5, question 3). That leaves roughly 200 KiB for E4's MicroQuickJS heap and a codec's DMA buffers,
   and the levers if it is not enough are the 128 KiB arena and cold code (the plan loader, the N8 protocol) moved back
-  to flash. The 87-symbol trap holds. A constant-initialised
-  static with any non-zero member lands in `.data` and is copied out of flash at boot, so the staging and the link keep
-  their state in all-zero structs in `.bss`.
+  to flash. The 87-symbol trap holds. A constant-initialised static with any non-zero member lands in `.data` and is
+  copied out of flash at boot, so the staging and the link keep their state in all-zero structs in `.bss`.
 - **The stack:** `-Werror=stack-usage=1024` (`RP_DEVICE_STACK_FRAME` in `cmake/device-image.cmake`) is on every
   `device: true` package library built in a device project and, through `rp_device_executable`, on both images, whose
   compiles include the SDK's, TinyUSB's and Pico-PIO-USB's sources; it holds in Release and Debug. Every frame is held
   to 1 KiB at build time; the chains are still summed by hand, and `rp-device-check` prints its measured high-water
-  mark (section 9). A frame of ours over the
-  limit is fixed (`RP_NOINLINE`, `node-sdk`'s `noinline.hpp`, or the local moved off the stack); a vendored one gets a
-  per-source `set_source_files_properties` raising the limit for that source alone, with a comment naming the function,
-  its frame and why the chain fits, never the flag taken off a target. It is not on the desktop's `<target>-device`
-  object checks: their frames are x86-64's, AppleClang has no `-Wstack-usage` and MSVC's equivalent is another tool.
-  `rp-device-check` gets `PICO_STACK_SIZE=0x1000` and `PICO_USE_STACK_GUARDS=1`, which writes the M33's `MSPLIM` with
-  `__StackBottom`, so an overrun faults (CFSR STKOF) instead of corrupting; the image links no `pico_multicore`, so
-  there
-  is no second stack. The deepest chain by hand is the plan's load, about 2.7 KB; the image paints its stack and prints
-  the measured high-water mark (section 9).
+  mark (section 9). A frame of ours over the limit is fixed (`RP_NOINLINE`, `node-sdk`'s `noinline.hpp`, or the local
+  moved off the stack); a vendored one gets a per-source `set_source_files_properties` raising the limit for that
+  source alone, with a comment naming the function, its frame and why the chain fits, never the flag taken off a
+  target. It is not on the desktop's `<target>-device` object checks: their frames are x86-64's, AppleClang has no
+  `-Wstack-usage` and MSVC's equivalent is another tool. `rp-device-check` gets `PICO_STACK_SIZE=0x1000` and
+  `PICO_USE_STACK_GUARDS=1`, which writes the M33's `MSPLIM` with `__StackBottom`, so an overrun faults (CFSR STKOF)
+  instead of corrupting; the image links no `pico_multicore`, so there is no second stack. The deepest chain by hand
+  is the plan's load, about 2.7 KB; the image paints its stack and prints the measured high-water mark (section 9).
 - **`UsbCdcTransport`:** a desktop test over a fake TinyUSB (`FakeTinyUsb`, the five calls it makes and the SDK clock)
   for its remount, unmount, drain and flush-silence rules.
 - **`rp-device-check` on the loader:** the image also loads and runs a 10-node plan at build-time-exported bytes
@@ -366,11 +365,14 @@ The exported blob carries resolved sizes, so the device needs nothing new.
 
 ## 8. Tests
 
-- **`retroplug-device-mode-test`** (43 cases): a core and DSP document with a coupled group, a feedback wire and moving
+- **`retroplug-device-mode-test`** (45 cases): a core and DSP document with a coupled group, a feedback wire and moving
   params, exported, loaded by the loader over the device-mode builds in an arena and run in ragged blocks, renders bit
   for bit what GraphHost renders with the desktop builds, with the counting allocator seeing nothing from load to
   unload (`DevicePlan.test.cpp`, `[plan]`; a second document with events and control feedback, and the bridge plan
-  `rp.device.midi-in` -> filter -> `rp.n8.nes` over a fake cart); every loader refusal with its message (a version, the
+  `rp.device.midi-in` -> filter -> `rp.n8.nes` over a fake cart); a mutation case that flips each bit of each byte of the three golden blobs, and each byte whole, resealing the CRC, and holds sizing and
+  loading to a clean load or a refusal in words with nothing left alive (about 1 s, so the whole sweep runs, and under
+  build-asan the blob and arena are exact-size heap blocks, so an out-of-bounds read or write fails there); every loader
+  refusal with its message (a version, the
   CRC, a truncated blob, an index out of range, a wired flag, a section past the blob, an unknown type, over budget to
   the byte, a create or an activate failing part-way and unwinding, an alignment of 16); `rp.device.midi-in` in both
   builds (`DeviceIo.test.cpp`); the midi-filter's device build against its desktop build (the twin table); the box
@@ -442,11 +444,20 @@ an Opus final review. Work files in the gitignored `.superpowers/e3pro`, `e3plan
 
 - **The audio version:** a codec and its DMA driver, a fixed-cadence block driver, the float tolerance against the
   desktop, a device audio-out node. A plan that reads time (a MIDI clock) on the elapsed driver loses what the carry
-  bound skips under load.
+  bound skips under load. A fixed cadence (5.3 ms at 256 frames) cannot run from the main loop, which blocks for
+  every N8 call (about 5 ms per FIFO write, up to about 200 ms draining a full ring, 2.5 ms per sniff or health read,
+  13.7 ms per `[stats]` line, 12 s for an install, up to 48 s for a menu boot), so the audio version runs blocks off it
+  (core 1, the DMA interrupt or the transport's idle hook). Block work then overlaps N8 work, and the one-thread
+  contracts of `MidiStaging` and `BoxCartLink` no longer hold: the staging and the link's ring become
+  single-producer / single-consumer, or the N8 calls become non-blocking. `frameOf` is not part of the `BlockDriver`
+  seam today (the box binds the staging to `ElapsedDriver::frameOf`), and moves onto it. The loader and the nodes are
+  untouched by a new driver.
 - **Plans other than the built-in one:** a plan file on the SD card, a live upload over SysEx with an on-device plan
   swap, and resources on the device. A blob from outside the firmware needs more than the loader checks today: it
   trusts the blob (section 4), so a live upload needs per-step port kinds and counts checked against something the
-  device knows, or a signature.
+  device knows: a per-node port signature (input, output and param counts and kinds, which the device-mode build
+  knows at compile time from its reflection) carried in the blob and checked at load. The same check would catch a
+  stale exporter (section 12.8).
 - **Other hosts:** Windows and macOS runs of the blob goldens (which answer whether the blob is byte-stable across
   hosts) and the MSVC build of the new libraries (`retroplug-graph-exec-device`, the export tool's objects, the box
   host's desktop objects, the usb-cdc object library and `packages/devtest`); a Windows export may accept a type with a
@@ -474,20 +485,18 @@ Answered in section 12.
 
 ## 12. As built
 
-Five commits on `feature/modularize`: the blob and the loader, the two nodes, the box as a graph host, the device check
-on the loader and these docs. Parity bit for bit, the kit goldens, the render baseline, the descriptor goldens of
-existing types, `buildGraph`'s goldens and `edio-golden.json` were untouched throughout, and none of them was
-re-recorded;
-the golden changes are the intended ones (the `[packages]` golden gaining `rp.core.midi-filter` in each of its nine
-products, and the filter's descriptor golden and the three blob goldens, new). Sections 1 to 10 are corrected in
-place where the
-build made them false. The counts: `retroplug-device-mode-test` ends at 43 cases (4386 assertions; the baseline's 11 /
-2446), `retroplug-graph-test` at 295 cases (356647; 282 / 356435), `pnpm test` at 174 files with `define-node` at 21
-cases (20), engine-graph, parity, native, ui and the render and kit legs unchanged, `device:check`'s image at 130232 /
-2000 / 416830 flash / data / bss (82528 / 2000 / 416402) and the box's two images at flash 101200, data 23832, bss
-188020
-(PIO-USB; 48796 / 15324 / 32360) and 101576 / 9836 / 181788 (`RP_NATIVE_USB`; 48756 / 1560 / 26128), of which 100628
-and 101004 bytes of the flash run from RAM, the images taking 312484 and 292636 bytes of SRAM in all.
+Five commits on `feature/modularize`: the blob and the loader, the two nodes, the box as a graph host, the device
+check on the loader and these docs. Parity bit for bit, the kit goldens, the render baseline, the descriptor goldens
+of existing types, `buildGraph`'s goldens and `edio-golden.json` were untouched throughout, and none of them was
+re-recorded; the golden changes are the intended ones (the `[packages]` golden gaining `rp.core.midi-filter` in each
+of its nine products, and the filter's descriptor golden and the three blob goldens, new). Sections 1 to 10 are
+corrected in place where the build made them false. The counts: `retroplug-device-mode-test` ends at 45 cases (4649
+assertions; the baseline's 11 / 2446), `retroplug-graph-test` at 295 cases (356647; 282 / 356435), `pnpm test` at 174
+files with `define-node` at 21 cases (20), engine-graph, parity, native, ui and the render and kit legs unchanged,
+`device:check`'s image at 130232 / 2000 / 416830 flash / data / bss (82528 / 2000 / 416402) and the box's two images
+at flash 101200, data 23832, bss 188020 (PIO-USB; 48796 / 15324 / 32360) and 101576 / 9836 / 181788 (`RP_NATIVE_USB`;
+48756 / 1560 / 26128), of which 100628 and 101004 bytes of the flash run from RAM, the images taking 312484 and 292636
+bytes of SRAM in all.
 
 ### 12.1 The blob, `exportPlan` and the loader (commit 1)
 
@@ -660,6 +669,17 @@ anyway.
 
 - **E4** and the audio version, as section 10; the live-upload item needs per-step port checks or a signature because
   the loader trusts the blob.
+- **A stale exporter is guarded only by `loop.sh`.** `retroplug-export-plan` is in no default target, and the blob it
+  writes lays out each node's port views by the package sources it was built from while the image compiles the sources
+  as they are, with nothing in the blob for the loader to compare (`bindPorts` reads the views by ordinal). Adding,
+  removing or reordering a port of `rp.n8.nes`, the filter or `rp.device.midi-in` and flashing with an old exporter
+  gives a firmware that boots, prints "plan loaded" and reads the wrong views, and the trial load, which uses the same
+  tool's device builds, does not see it. `loop.sh` refuses when a source the exporter compiles (`packages/*/native`,
+  which holds node-sdk and graph-runtime, and the exporter's own directory, tests apart) is newer than the tool, and
+  `tools/build-box.sh` and `pnpm test:plugin` build it first. The structural fix is the per-node port signature of
+  section 10, checked at load.
+- **An audio cadence needs blocks off the main loop** (section 10): staging and the link's ring made
+  single-producer / single-consumer, or the N8 calls made non-blocking, and `frameOf` on `BlockDriver`.
 - **Windows, macOS and arm64 have never built E3.** The blob goldens' first run there is where question 5 is answered
   across hosts, so a red there is that answer, not a regression; the new libraries under `/W4 /WX` on MSVC
   (`retroplug-graph-exec-device`, the export tool, `retroplug-box-usb-cdc`, `packages/devtest`, `packages/device-io`)
@@ -671,11 +691,12 @@ anyway.
   measured only for the code on a message's path.
 - **The `[stats]` print stalls the loop.** A message arriving as a `[stats]` line starts waits for it (13.7 ms; E2's
   line was 11.5 ms), so the rare isolated message can read about 12 ms. E2 had the same hazard, a ring console that
-  removes it costs about 100 us at the worst of every message, and it is recorded, not fixed.
+  removes it costs about 100 us at the worst of every message, and it is recorded, not fixed. The sniff / health USB
+  read (about 2.5 ms, E2's too) holds the loop the same way, so a message landing in it reads about 2.5 ms late;
+  acceptance saw both as its latency outliers.
 - **`RP_NATIVE_USB` has never run on hardware.** It builds and links under the trap; the rig is PIO-USB.
 - **The trace's counter arithmetic as committed has run only in an emulator** (`N8_LAT_TRACE`'s wrap-safe differences
-  were
-  checked there, not on the rig).
+  were checked there, not on the rig).
 - **The Launchpad's `threads` flag** is still the one node declaring `threads` for its link.
 - **`rp.core.delay`'s default is refused by no rule that names it.** It is 48,000 samples, as everywhere, and a plan
   holding it alone needs about 396 KB: the box's 128 KiB arena refuses it, at export and at boot, and the 400 KiB
