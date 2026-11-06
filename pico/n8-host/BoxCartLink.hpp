@@ -3,7 +3,7 @@
 // The box's cart link (docs/modular-graph-phase-e3-design.md section 5): rp::n8::CartLink (n8/CartLink.hpp) over the
 // main loop's one Edio, with no thread of its own. rp.n8.nes pushes into a fixed ring during the block; after the
 // block the main loop drains the ring to the cart's FIFO in writes of up to 192 bytes (drain()), so a push never waits
-// on the N8, and block work and N8 work never overlap, now and when an audio driver sets the cadence.
+// on the N8: block and drain run in turn on the main loop (an audio cadence would run blocks off it: design 10).
 //
 // - push() copies the message into the ring and answers false, counted, when no game is running (the box's forwarding
 //   state, which its N8 part sets each pass through setConnected(): a game is running and the box forwards to it) or

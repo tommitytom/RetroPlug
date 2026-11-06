@@ -740,8 +740,8 @@ int main(void) {
 #endif
 
     // One pass (docs/modular-graph-phase-e3-design.md section 5): the watchdog and USB; the MIDI parsed and staged;
-    // the block; the cart link drained to the N8; the N8 part; stats. Block work and N8 work never overlap, which is
-    // what keeps a push from ever waiting on the N8.
+    // the block; the cart link drained to the N8; the N8 part; stats. Block work and N8 work run in turn on this loop,
+    // so a push never waits on the N8 (an audio cadence would run blocks off it: design section 10).
     while (true) {
         LAT(passBegin());
         box_feed();

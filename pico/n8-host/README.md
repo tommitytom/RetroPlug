@@ -111,9 +111,11 @@ and capture the timestamped console until a verdict:
 
 The firmware's build exports its plan with the desktop build's `retroplug-export-plan`: `loop.sh` takes it from
 `RP_DESKTOP_BUILD_DIR` (default `build/`, which must exist) as `export-plan/retroplug-export-plan`, stops with how to
-build it when it is missing, builds no desktop tree itself (another session may be building it) and does not judge it
-stale, so after a package change build the exporter first (`cmake --build build --target
-retroplug-export-plan -j$(nproc)`). The export reruns whenever the exporter, `plan.json` or `plan.cmake` changes, so a
+build it when it is missing, builds no desktop tree itself (another session may be building it) and refuses when a
+source the exporter compiles (`packages/*/native` and the exporter's own directory, tests apart) is newer than it, so
+after a package change build the exporter first (`cmake --build build --target retroplug-export-plan -j$(nproc)`). The
+check is there because the loader cannot see a stale exporter: the blob carries no port signature, so a node whose
+ports changed since the exporter was built boots and reads the wrong views. The export reruns whenever the exporter, `plan.json` or `plan.cmake` changes, so a
 `plan.json` change alone needs nothing built first.
 
 The Pico is halted BEFORE the power-cycle: a working firmware left running would see the N8 come
