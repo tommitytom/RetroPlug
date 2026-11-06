@@ -334,7 +334,7 @@ auditioned there, and their `[packages]` rows gain it. The desktop's own N8 grap
 - **The mquickjs host on the desktop** (`[script-pack]`, 47 cases, most in `ScriptPack.test.cpp`, run on both builds of
   the host): a node's lifecycle, settings and block API; each fault (a throw, a deadline overrun, a loop over each kind
   of long builtin faulted within a small multiple of its deadline at bliptoaster's heap and devtest's (a quarter past
-  it), the bytes a comparison reads and a callback builtin's returns
+  it, and two of Windows' 15.6 ms clock ticks more there), the bytes a comparison reads and a callback builtin's returns
   counted toward the next poll by a clock that ticks a millisecond a reading, a getter the host reads, a heap that runs
   out silencing only its pack (whatever the call then threw, and past its deadline too) while a `throw null` or a typed
   array past its size limit faults only its node, the dropped exceptions, the re-entry cap, the allowance per message);

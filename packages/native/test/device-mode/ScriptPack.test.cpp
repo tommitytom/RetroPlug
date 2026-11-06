@@ -981,6 +981,14 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
           {"callback", 6000, 100000, 2048}}},
     };
     constexpr std::uint32_t kDeadline = 50000;
+    // The thread's CPU time moves in steps of the platform's clock: a microsecond on Linux and macOS, a scheduler tick
+    // of about 15.6 ms on Windows (GetThreadTimes), where the first reading at or past 50 ms is already 62.5 ms. There
+    // the bound allows two ticks more, the host's reading of its deadline and the case's own of what it spent.
+#if defined(_WIN32)
+    constexpr std::uint64_t kClockTicks = 2 * 15625;
+#else
+    constexpr std::uint64_t kClockTicks = 0;
+#endif
     static std::deque<rp_mqjs_pack_source> copies;  // a registration keys its pack on the source's address
     for (const Heap& heap : heaps) {
         copies.push_back(rp_script_devtest);
@@ -1016,7 +1024,7 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
                 CHECK(status == RP_FAULT);
                 CHECK(n.fault() == "process ran past its deadline of " + std::to_string(kDeadline) + " us");
                 CHECK(spent >= kDeadline);
-                CHECK(spent < kDeadline + kDeadline / 4);
+                CHECK(spent < kDeadline + kDeadline / 4 + kClockTicks);
                 CHECK(std::chrono::steady_clock::now() - wall < std::chrono::seconds(5));
             }
         }
