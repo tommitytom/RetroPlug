@@ -248,6 +248,7 @@ if(WIN32)
         "${CMAKE_SOURCE_DIR}/packages/native/src/system/sameboy/*.hpp"
         "${CMAKE_SOURCE_DIR}/packages/native/src/transport/*.hpp"
         "${CMAKE_SOURCE_DIR}/packages/native/src/util/*.hpp"
+        "${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src/util/*.hpp"
         "${CMAKE_SOURCE_DIR}/deps/sameboy/Core/*.h")
     add_custom_command(
         OUTPUT "${_sbs_obj}"
@@ -257,6 +258,7 @@ if(WIN32)
             -DGB_DISABLE_TIMEKEEPING -DGB_DISABLE_DEBUGGER
             -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DNOGDI -D_CRT_SECURE_NO_WARNINGS
             "-I${CMAKE_SOURCE_DIR}/packages/native/src"
+            "-I${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src"  # util/FixedQueue.hpp
             "-I${CMAKE_SOURCE_DIR}/deps/sameboy/Core"
             "-I${CMAKE_BINARY_DIR}/generated"
             "-I${CMAKE_BINARY_DIR}/_deps/reflectcpp-src/include"
