@@ -77,6 +77,10 @@ struct ContextState {
     // the entry's `extra`, set by process); every other entry, and the desktop's CPU-time default, has none.
     std::uint64_t perMessage = 0;
     std::uint64_t extra = 0;
+    // The polls (interrupt): the clock at the last one (or at the entry's start), and how many calls and branches the
+    // engine runs before the next.
+    std::uint64_t lastPoll = 0;
+    std::uint32_t poll = 0;
     std::uint32_t depth = 0;
     bool          timed = false;    // the entry's start was read: an entry the clock could not time runs untimed
     bool          expired = false;  // this entry ran past its deadline
@@ -362,15 +366,52 @@ bool outOfMemory(JSContext* ctx, JSValue e) {
 using graph::threadCpuMicros;
 #endif
 
-// A reading of 0, or one earlier than the entry's start, is no reading: the call goes on untimed rather than past its
-// deadline at once.
-int interrupt(JSContext*, void* opaque) {
+// An entry's first poll of its deadline: after its deadline in microseconds over kFirstPollDivisor of the engine's
+// calls and branches, and at least kLeastPoll (MqjsHost.hpp says why).
+std::uint32_t firstPoll(std::uint64_t limit) {
+    const std::uint64_t first = limit / kFirstPollDivisor;
+    return first < kLeastPoll ? kLeastPoll : first > kMostPoll ? kMostPoll : static_cast<std::uint32_t>(first);
+}
+
+// The poll after one that found the deadline not yet past, `since` microseconds after the poll before it, `poll` calls
+// and branches ago, with `left` microseconds left: twice as far, to kMostPoll, so a node that finishes its entry in
+// microseconds reads the clock a few times at most; but no further than the last interval's rate says fits in half of
+// what is left, so the polls close in on the deadline and the one past it lands about one call's or branch's work (one
+// builtin's) beyond it.
+std::uint32_t nextPoll(std::uint32_t poll, std::uint64_t since, std::uint64_t left) {
+    std::uint64_t next = std::uint64_t{poll} * 2;
+    if (next > kMostPoll) next = kMostPoll;
+    // Multiplied out first, so a poll far from its deadline divides nothing (a 64-bit division is a library call on
+    // the box's M33).
+    if (since > 0 && next * since > left / 2 * poll) {
+        const std::uint64_t fits = left / 2 * poll / since;
+        next = fits < 1 ? 1 : fits;
+    }
+    return static_cast<std::uint32_t>(next);
+}
+
+// The engine's interrupt handler, at each poll of a timed entry's deadline: past it, the entry has expired (and the
+// next poll comes at once, so an interrupt a builtin dropped is thrown again at the interpreter's next call or branch);
+// before it, the next poll's distance is set (nextPoll). A reading of 0, or one earlier than the entry's start, is no
+// reading: the call goes on untimed rather than past its deadline at once, polled as before.
+int interrupt(JSContext* ctx, void* opaque) {
     auto* s = static_cast<ContextState*>(opaque);
     if (!s->timed || s->depth == 0) return 0;
     const std::uint64_t now = s->clock(s->clockCtx);
-    if (now == 0 || now < s->start || now - s->start <= s->limit + s->extra) return 0;
-    s->expired = true;
-    return 1;
+    if (now == 0 || now < s->start) {
+        rp_mqjs_set_poll_interval(ctx, static_cast<int>(s->poll));
+        return 0;
+    }
+    const std::uint64_t budget = s->limit + s->extra, spent = now - s->start;
+    if (spent > budget) {
+        s->expired = true;
+        rp_mqjs_set_poll_interval(ctx, 1);
+        return 1;
+    }
+    s->poll = nextPoll(s->poll, now > s->lastPoll ? now - s->lastPoll : 0, budget - spent);
+    s->lastPoll = now;
+    rp_mqjs_set_poll_interval(ctx, static_cast<int>(s->poll));
+    return 0;
 }
 
 // The deadline over all one entry into a context runs (the outermost arms it; one inside it changes nothing): every
@@ -392,6 +433,12 @@ public:
         if (!outermost_) return;
         s_.start = s_.clock ? s_.clock(s_.clockCtx) : 0;
         s_.timed = s_.start != 0;
+        // The first poll soon after (interrupt): an untimed entry polls as the engine does.
+        if (s_.timed && s_.ctx) {
+            s_.lastPoll = s_.start;
+            s_.poll = firstPoll(s_.limit);
+            rp_mqjs_set_poll_interval(s_.ctx, static_cast<int>(s_.poll));
+        }
     }
     // The outermost entry's deadline lengthened by `micros` (a block's messages, process).
     void allow(std::uint64_t micros) {

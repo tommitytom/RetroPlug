@@ -50,18 +50,25 @@
 #     interrupt among them (js_array_sort_cmp returns it as a comparison's result), and one a String.prototype.repeat
 #     count's conversion throws (js_string_repeat returns -1 for it). rp_mqjs_engine.c routes each through a wrapper
 #     that makes the engine's StringBuffer sticky, converts the key or the count first, or ends the sort.
+#   - The deadline. The interpreter polls its interrupt handler only at its calls and branches, so one call of a
+#     builtin (a sort, a string search, join over an array-like whose length nothing bounds) ran unpolled however long
+#     it took. RetroPlug's sort comparison, string searches (js_string_indexOf, and js_string_indexof, which replace and
+#     split use) and join are upstream's bodies with a poll in their loops, counted off the interpreter's own counter,
+#     and rp_mqjs_set_poll_interval lets the handler set the next poll's distance (it rests on __js_poll_interrupt
+#     setting the counter before it calls the handler, so what the handler sets stands).
 #
 # RetroPlug also reaches into the engine in two ways these spans hold: rp_mqjs_limit_reentries caps a context's C
 # re-entries by starting JS_Call's count above 0 (it rests on JS_Call being the count's only writer, which the count of
 # its mentions holds), and the host's views are made by js_typed_array_constructor called with a C array of arguments
 # (it rests on the constructor reading them before it allocates).
 #
-# The first and the sort's comparison are copies of upstream's code that read the engine's internals, so a bump that
-# changes upstream's function would still compile and the stale copy would win; the others rest on upstream's text as
-# it stands. So the configure below hashes the text of each (JS_MakeUniqueString's definition, the sweep of
-# unique_strings, replace and its substitution, the StringBuffer and its appends, hasOwnProperty, the typed array's
-# constructor, the sort, repeat) and fails, naming rp_mqjs_engine.c, when any is not the text the fixes were written
-# against: re-review the fixes against the new text, then record its hash here. retroplug-device-mode-test's
+# The first, the sort's comparison, the string searches and join are copies of upstream's code that read the engine's
+# internals, so a bump that changes upstream's function would still compile and the stale copy would win; the others
+# rest on upstream's text as it stands. So the configure below hashes the text of each (JS_MakeUniqueString's
+# definition, the sweep of unique_strings, replace and its substitution, the StringBuffer and its appends,
+# hasOwnProperty, the typed array's constructor, the sort, repeat, the string searches, join and the interpreter's
+# poll) and fails, naming rp_mqjs_engine.c, when any is not the text the fixes were written against: re-review the
+# fixes against the new text, then record its hash here. retroplug-device-mode-test's
 # [debug-gc] cases hold the second fix (its revert fails them); no test reaches the first's condition on demand (a
 # collection at every allocation, DEBUG_GC, sweeps a dead name before any growth can meet it), so the hash is its
 # guard.
@@ -90,6 +97,14 @@ set(_mqjs_span_6 "Array.prototype.sort, its comparison and its heapsort" "/* hea
                  "2a6140131f92e1617f1321a6d7042a5c59a6fc25c3c3fe531849ce20e1343af8")
 set(_mqjs_span_7 "String.prototype.repeat" "JSValue js_string_repeat(JSContext *ctx, JSValue *this_val," "\n}\n"
                  "8f79116bfc7fb10ac0c710dfa4b95213e20c18e843be93670d666da00d71e3f8")
+set(_mqjs_span_8 "String.prototype.indexOf and the search of replace and split"
+                 "JSValue js_string_indexOf(JSContext *ctx, JSValue *this_val," "/* Note: ascii only */"
+                 "f0b54a20e0af306bfe72a57ac93da110330bd6c0fe1baccaccf74865645681fe")
+set(_mqjs_span_9 "Array.prototype.join" "JSValue js_array_join(JSContext *ctx, JSValue *this_val," "\n}\n"
+                 "34d659543c22034bce82803ad305780d5a75a5585417c55fe0147580de4e1177")
+set(_mqjs_span_10 "the interpreter's poll of the interrupt handler" "static JSValue __js_poll_interrupt(JSContext *ctx)"
+                  "/* must use JS_StackCheck() before using it */"
+                  "6c21cbb52fc004994e3c320fdcd7a5963c668d26109c2ecb88621a415abf7408")
 string(REGEX MATCHALL "js_call_rec_count" _mqjs_mentions "${_mqjs_engine_text}")
 list(LENGTH _mqjs_mentions _mqjs_mentions)
 if(NOT _mqjs_mentions EQUAL 4)
@@ -98,7 +113,7 @@ if(NOT _mqjs_mentions EQUAL 4)
                         "against (cmake/mquickjs.cmake's header says why); re-review it")
 endif()
 foreach(_mqjs_span IN ITEMS _mqjs_span_0 _mqjs_span_1 _mqjs_span_2 _mqjs_span_3 _mqjs_span_4 _mqjs_span_5
-                           _mqjs_span_6 _mqjs_span_7)
+                           _mqjs_span_6 _mqjs_span_7 _mqjs_span_8 _mqjs_span_9 _mqjs_span_10)
     list(GET ${_mqjs_span} 0 _what)
     list(GET ${_mqjs_span} 1 _begin)
     list(GET ${_mqjs_span} 2 _end)

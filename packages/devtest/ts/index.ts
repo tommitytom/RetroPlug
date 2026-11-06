@@ -115,4 +115,64 @@ export const scriptNestNode = defineNode({
   },
 });
 
-registerScriptNodes([scriptTransposeNode, scriptNestNode]);
+// One builtin over data of `count`, called for ever: an array's sort (of `count` numbers), a string's search (in a
+// string of `count` characters for a needle of half as many and one more, so every position compares about half of
+// it), join of an array-like whose length is `count`, or forEach over `count` numbers (`loop`; "none", the default,
+// does nothing, so the device check's run of each type and the toolchain's pass it). Every call is work the engine's
+// interpreter does not poll its deadline within, so the loop is held to its deadline only by the host's polls between
+// calls and the builtins' own (graph-runtime's script/MqjsHost.hpp, kFirstPollDivisor): what the device check's
+// deadline case times on the box (packages/graph-runtime/device-check, loopDeadline) and the device-mode tests time at
+// a pack's declared heaps. Its blocks make its data first, kLoopFill numbers a block, well inside a block's deadline
+// on the box, and then a block loops, until the deadline faults the node.
+const kLoopFill = 256;
+
+export const scriptLoopNode = defineNode({
+  id: "rp.devtest.script-loop",
+  name: "Script builtin loop (devtest)",
+  category: "test",
+  settings: s.object({
+    loop: s.enum(["none", "sort", "search", "join", "forEach"], "none"),
+    count: s.int({ min: 0, max: 1000000000, default: 0 }),
+  }),
+  ports: { out: events.out() },
+  create: ({ settings }) => {
+    const loop = settings.loop;
+    const count = settings.count;
+    const numbers = new Array<number>(loop === "sort" || loop === "forEach" ? count : 0);
+    let filled = 0;
+    let text = "";
+    let needle = "";
+    const lengthOnly = { length: loop === "join" ? count : 0 } as unknown as string[];
+    const visit = (): void => {};
+    return {
+      process() {
+        if (filled < numbers.length) {
+          const end = filled + kLoopFill < numbers.length ? filled + kLoopFill : numbers.length;
+          for (; filled < end; filled++) numbers[filled] = count - filled;
+          return;
+        }
+        if (loop === "search" && text.length === 0) {
+          text = "a";
+          while (text.length < count) text += text;
+          text = text.substring(0, count);
+          needle = text.substring(0, count >> 1) + "b";
+          return;
+        }
+        switch (loop) {
+          case "sort":
+            for (;;) numbers.sort();
+          case "search":
+            for (;;) text.indexOf(needle);
+          case "join":
+            for (;;) Array.prototype.join.call(lengthOnly, "");
+          case "forEach":
+            for (;;) numbers.forEach(visit);
+          default:
+            return;
+        }
+      },
+    };
+  },
+});
+
+registerScriptNodes([scriptTransposeNode, scriptNestNode, scriptLoopNode]);

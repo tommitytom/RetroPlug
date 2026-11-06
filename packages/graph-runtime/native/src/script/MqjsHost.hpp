@@ -102,8 +102,9 @@
 // kills the pack's context: every node of the pack faults at its next call, with the same words, and the context runs
 // nothing more. MicroQuickJS throws out of memory as an ordinary InternalError, which a node may catch: one that does
 // runs on in a heap with no room, and the host does not see it run out. Each entry into a context (a block, a hook, a
-// settings check) is held to a deadline through the engine's interrupt handler, polled every 10000 instructions, over
-// everything the entry runs: by the host's clock (rp.host.clock/1, the box's, at kHostClockDeadlineMicros unless it
+// settings check) is held to a deadline through the engine's interrupt handler, polled as kFirstPollDivisor says (the
+// interpreter's calls and branches, and inside the builtins whose one call could run long), over everything the entry
+// runs: by the host's clock (rp.host.clock/1, the box's, at kHostClockDeadlineMicros unless it
 // says otherwise, a block's entry kHostClockMessageMicros longer for each message it hands the node), or, on the
 // desktop when its host offers none, by the calling thread's CPU time at kDesktopDeadlineMicros, so a stall that is not
 // the node's costs it nothing. On the device, a host that offers no clock runs its script nodes with no deadline.
@@ -168,9 +169,10 @@ inline constexpr std::uint32_t kMaxPorts = 64;
 // The payload lengths a message place keeps a Uint8Array for, from 1: every MIDI message but a SysEx.
 inline constexpr std::uint32_t kPlacedLengths = 3;
 // An entry's deadline by a host's clock that names none (the box's): 10 ms. A MIDI-rate node's process takes
-// microseconds, the box's block is about a millisecond and its watchdog 3 s, so a node this far over is stuck, and the
-// box's other nodes lose at most this long before it is silenced, and kHostClockMessageMicros more for each message
-// the block hands it: 26 ms at a full queue of the device MIDI input's 64.
+// microseconds, the box's block is about a millisecond and its watchdog 3 s, so a node this far over is stuck. The
+// box's other nodes lose this long before it is silenced, and kHostClockMessageMicros more for each message the block
+// hands it (26 ms at a full queue of the device MIDI input's 64), and the overrun past it: about one call of the
+// builtin the node was in when the deadline passed, which the pack's heap bounds (kFirstPollDivisor).
 inline constexpr std::uint32_t kHostClockDeadlineMicros = 10000;
 // What a block's entry gets on top of it by a host's clock, for each message the block hands the node on its events and
 // bytes inputs: 250 us. A node's work grows with its messages, and one node's cost on the RP2350 at 150 MHz, run from
@@ -179,6 +181,25 @@ inline constexpr std::uint32_t kHostClockDeadlineMicros = 10000;
 // queue's fill, and a node is held to the fixed figure only where it is handed nothing. The desktop's CPU-time default
 // has none.
 inline constexpr std::uint32_t kHostClockMessageMicros = 250;
+// How an entry polls its deadline. MicroQuickJS calls the interrupt handler once every so many of the calls and
+// branches its interpreter runs, 10000 by its own count, and a builtin's work between two of them is unpolled, so at
+// the engine's interval a loop over a builtin ran 10000 of its calls between polls, each bounded only by the pack's
+// heap: in bliptoaster's 24576 bytes a `for (;;) a.sort()` on the desktop ran 0.7 s past a deadline of 10 ms, seconds
+// on the box, past its 3 s watchdog. So the handler sets each next poll's distance (script/rp_mqjs.h's
+// rp_mqjs_set_poll_interval): an entry first polls after its deadline in microseconds over kFirstPollDivisor calls and
+// branches, at least kLeastPoll (8 on the box's 10 ms, 244 at the desktop's 500 ms); each poll before the deadline sets
+// the next twice as far, to kMostPoll, the engine's own, but no further than the rate since the last poll says fits in
+// half of what is left, so the polls close in on the deadline; and a poll past it sets the next at once, so an
+// interrupt a builtin dropped is thrown again at the interpreter's next call or branch. The builtins whose one call can
+// run long poll in their loops off the same count (script/rp_mqjs_engine.c: the sort a comparison, the string searches
+// a position, join on what is no array an element), so a loop over any builtin overruns by about one call of a builtin
+// whose work is linear in what the pack's heap holds. A node that finishes its entry in microseconds reads the clock a
+// few times at most (the first poll and its doublings): the desktop's [script-bench], a transpose's block of 16
+// messages, went from about 259 to 275 ns a message (two reads of the thread's CPU time a block), and of 256 from 244
+// to 248; on the box, a read of its microsecond clock is a few dozen cycles.
+inline constexpr std::uint32_t kFirstPollDivisor = 2048;
+inline constexpr std::uint32_t kLeastPoll = 8;
+inline constexpr std::uint32_t kMostPoll = 10000;
 // An entry's deadline by the desktop's own clock, the thread's CPU time: 500 ms. Windows counts that time in scheduler
 // ticks of about 15.6 ms, so a deadline must be many ticks long to be measured at all; a Debug or sanitizer build's
 // first entry (the settings decoded, create and layout) takes tens of milliseconds; and a desktop host's audio thread

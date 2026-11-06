@@ -10,8 +10,10 @@
 // - The block API (frames, transport, a control input and a param, events and bytes in and out, emit) and what a block
 //   refuses, the same on both builds; settings reach create as the definition parsed them, from JSON or msgpack; the
 //   hooks run when the host says.
-// - Each fault: a throw, a deadline overrun, a promise, "fault", no process, a create that throws; and a heap that runs
-//   out silencing every node of its pack and no other pack's.
+// - Each fault: a throw (one the engine or a getter the host reads would drop among them), a deadline overrun (a loop
+//   over each long builtin among them, held to a small multiple of its deadline at bliptoaster's heap and devtest's),
+//   a promise, "fault", no process, a create that throws; and a heap that runs out silencing every node of its pack and
+//   no other pack's.
 // - A warmed block allocates nothing: not the C allocator, not the JS heap.
 // - A plan with a script node, exported and loaded over the device-mode builds in an arena, renders what GraphHost
 //   renders from the same document, and the loader sizes, places and sets up the pack's memory, refusing a plan that
@@ -29,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -331,9 +334,10 @@ TEST_CASE("a script pack registers on both builds of the host, with memory of it
     for (const rp_package* p : {desktop, device}) {
         CHECK(p->abi_version == RP_ABI_VERSION);
         CHECK(std::string(p->manifest_json) == R"({"id":"rp.devtest.script","version":"1.0.0"})");
-        REQUIRE(p->node_type_count == 2);
+        REQUIRE(p->node_type_count == 3);
         CHECK(std::string(p->node_types[0]->id) == "rp.devtest.script-transpose");
         CHECK(std::string(p->node_types[1]->id) == "rp.devtest.script-nest");
+        CHECK(std::string(p->node_types[2]->id) == "rp.devtest.script-loop");
         REQUIRE(p->memory);
         CHECK(std::string(p->memory->name) == "devtest");
         rp_memory_req req{};
@@ -793,6 +797,69 @@ TEST_CASE("by a host's clock, a block's deadline grows by kHostClockMessageMicro
     }
 }
 
+TEST_CASE("a loop over a builtin faults within a small multiple of its deadline, in bliptoaster's heap and devtest's",
+          "[device-mode][script-pack]") {
+    // A builtin's one call is work the engine's polls never see into, so at the engine's own interval (a poll every
+    // 10000 calls and branches) a loop over one ran 10000 of its calls between polls: the review's `for (;;) a.sort()`
+    // over 300 numbers in bliptoaster's heap went 0.7 s past a deadline of 10 ms on this host, seconds on the box. Each
+    // loop here is rp.devtest.script-loop in devtest's pack registered again at a pack's declared heap (both builds, at
+    // this width: 3/2 of it), over data of about what that heap holds (made by its first blocks), and its block that
+    // loops must fault with the deadline's words having spent under three times its deadline of the thread's CPU time,
+    // by which the deadline is read (a generous bound: each overruns by about one of its builtin's calls, well under a
+    // millisecond here).
+    struct Loop {
+        const char*   loop;
+        std::uint32_t count;
+    };
+    struct Heap {
+        const char*       pack;
+        std::uint32_t     heapBytes;
+        std::vector<Loop> loops;
+    };
+    const std::vector<Heap> heaps = {
+        {"bliptoaster", 24576, {{"sort", 300}, {"search", 4000}, {"join", 1000000000}, {"forEach", 1500}}},
+        {"devtest", 57344, {{"sort", 2000}, {"search", 12000}, {"join", 1000000000}, {"forEach", 6000}}},
+    };
+    constexpr std::uint32_t kDeadline = 50000;
+    static std::deque<rp_mqjs_pack_source> copies;  // a registration keys its pack on the source's address
+    for (const Heap& heap : heaps) {
+        copies.push_back(rp_script_devtest);
+        copies.back().heap_bytes = heap.heapBytes;
+        const rp_package* desktop = rp::mqjs::exactPackage(copies.back());
+        const rp_package* device = rp_devmode::mqjs::package(copies.back());
+        INFO(rp::mqjs::packageRefusal() << rp_devmode::mqjs::packageRefusal());
+        REQUIRE(desktop);
+        REQUIRE(device);
+        for (const auto& [build, pack] : {std::pair{"desktop", desktop}, std::pair{"device", device}}) {
+            for (const Loop& l : heap.loops) {
+                INFO(build << ", " << heap.pack << "'s heap: " << l.loop << " of " << l.count);
+                Host host(kDeadline);
+                char settings[96];
+                std::snprintf(settings, sizeof settings, R"({"loop":"%s","count":%u})", l.loop, l.count);
+                Made n(typeOf(pack, "rp.devtest.script-loop"), host, msgpackOf(settings), {{RP_PORT_EVENTS, true}});
+                INFO(n.error);
+                REQUIRE(n.node);
+                REQUIRE(n.fault().empty());
+                rp_status           status = RP_OK;
+                std::uint64_t       spent = 0;
+                auto                wall = std::chrono::steady_clock::now();
+                for (int block = 0; block < 64 && status == RP_OK; ++block) {
+                    const std::uint64_t cpu = cpuMicros(nullptr);
+                    wall = std::chrono::steady_clock::now();
+                    status = n.run();
+                    spent = cpuMicros(nullptr) - cpu;
+                }
+                INFO(spent << " us of CPU time");
+                CHECK(status == RP_FAULT);
+                CHECK(n.fault() == "process ran past its deadline of " + std::to_string(kDeadline) + " us");
+                CHECK(spent >= kDeadline);
+                CHECK(spent < 3 * kDeadline);
+                CHECK(std::chrono::steady_clock::now() - wall < std::chrono::seconds(5));
+            }
+        }
+    }
+}
+
 TEST_CASE("a node reads and forwards its messages, SysEx among them, from the deepest call into JavaScript a context "
           "allows on the C stack",
           "[device-mode][script-pack]") {
@@ -829,15 +896,16 @@ TEST_CASE("a clock reading of 0 is no reading: the call runs on, and its deadlin
           "[device-mode][script-pack]") {
     // The host's clock, scripted once the nodes are made, by the reading's number: `start` readings (the entry's start,
     // and its restart once the ports are ready), then `zeros` of 0 (a clock that answers nothing for a while), then
-    // each `step` on from `from`.
+    // each `step` on from `from`. Before, the thread's CPU time, or 0 throughout (`timedBefore` false).
     struct Scripted {
         bool          live = false;
+        bool          timedBefore = true;
         std::uint32_t calls = 0;
         std::uint64_t start = 1000, from = 1000, step = 10000;
         std::uint32_t zeros = 20;
         static std::uint64_t read(void* c) {
             auto& s = *static_cast<Scripted*>(c);
-            if (!s.live) return cpuMicros(nullptr);
+            if (!s.live) return s.timedBefore ? cpuMicros(nullptr) : 0;
             const std::uint32_t k = s.calls++;
             if (k < 2) return s.start;
             if (k < 2 + s.zeros) return 0;
@@ -867,6 +935,7 @@ TEST_CASE("a clock reading of 0 is no reading: the call runs on, and its deadlin
             clock.start = 0;
             clock.zeros = 0;
             clock.from = std::uint64_t{1} << 40;
+            clock.timedBefore = false;  // the node is made untimed too: a deadline of 1 us is the case's block's
             Host host(1);
             host.clock.ctx = &clock;
             host.clock.micros = &Scripted::read;

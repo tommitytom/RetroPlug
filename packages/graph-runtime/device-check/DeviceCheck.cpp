@@ -692,4 +692,95 @@ void benchScript(const rp_package* const* packages, std::size_t packageCount, co
     finish(BenchStep::Ok, nullptr);
 }
 
+namespace {
+
+// A loop case's settings as the msgpack a device reads: {"loop": <its name, under 32 bytes>, "count": <its count>}.
+std::uint32_t loopSettings(const LoopCase& c, std::uint8_t* out) {
+    std::uint32_t n = 0;
+    out[n++] = 0x82;
+    out[n++] = 0xa4;
+    std::memcpy(out + n, "loop", 4);
+    n += 4;
+    const std::uint32_t length = static_cast<std::uint32_t>(std::strlen(c.loop));
+    out[n++] = static_cast<std::uint8_t>(0xa0 | length);
+    std::memcpy(out + n, c.loop, length);
+    n += length;
+    out[n++] = 0xa5;
+    std::memcpy(out + n, "count", 5);
+    n += 5;
+    out[n++] = 0xce;
+    for (int shift = 24; shift >= 0; shift -= 8) out[n++] = static_cast<std::uint8_t>(c.count >> shift);
+    return n;
+}
+
+// Whether a script node's fault is its process call's deadline (rp.script.fault/1): its kind, and words that name the
+// process call, so a case whose instance's making ran out of time is not taken for a loop that did.
+bool processDeadline(rp_node* node) {
+    const auto* fault = static_cast<const rp_script_fault*>(node->vt->get_interface(node, RP_SCRIPT_FAULT_INTERFACE));
+    const char* words = fault ? fault->reason(node) : nullptr;
+    static constexpr char kWords[] = "process ran past its deadline";
+    return words && fault->kind(node) == RP_SCRIPT_FAULT_DEADLINE &&
+           std::strncmp(words, kWords, sizeof kWords - 1) == 0;
+}
+
+}  // namespace
+
+void loopDeadline(const rp_package* package, const TypeCase* cases, std::size_t caseCount, void* arena,
+                  std::size_t arenaBytes, Micros micros, LoopResult* out) {
+    static_assert(std::is_trivially_copyable_v<LoopResult>);
+    LoopResult& r = *out;
+    std::memset(static_cast<void*>(&r), 0, sizeof r);
+    auto fail = [&](LoopStep step, const char* what) {
+        r.step = step;
+        if (what) std::strncpy(r.error.message, what, sizeof r.error.message - 1);
+    };
+    const rp_node_type* type = nullptr;
+    for (std::uint32_t t = 0; package && t < package->node_type_count && !type; ++t)
+        if (std::strcmp(package->node_types[t]->id, kLoopType) == 0) type = package->node_types[t];
+    const TypeCase* c = type ? findCase(kLoopType, cases, caseCount) : nullptr;
+    if (!c) return fail(LoopStep::Type, "the package has no such type, or no case is the type's");
+
+    Arena        a{static_cast<std::byte*>(arena), arenaBytes};
+    PackageScope pack;
+    if (pack.take(a, *package, &r.error) != Step::Ok) return fail(LoopStep::Package, nullptr);
+    // Each case's node in the arena after the pack's memory, one at a time.
+    const std::size_t afterPack = a.used;
+    for (std::uint32_t k = 0; k < kLoopCount; ++k) {
+        r.loop = k;
+        a.used = afterPack;
+        std::uint8_t      bytes[48];
+        const rp_settings settings{reinterpret_cast<const char*>(bytes), loopSettings(kLoops[k], bytes),
+                                   RP_SETTINGS_MSGPACK};
+        rp_memory_req     req{};
+        if (!type->query_memory(type, &settings, &req, &r.error)) return fail(LoopStep::Create, nullptr);
+        void* memory = a.raw(req.size, req.align ? req.align : alignof(std::max_align_t));
+        if (!memory) return fail(LoopStep::Create, "the instance does not fit the arena");
+        rp_node* node = type->create(type, &kHost, memory, &settings, &r.error);
+        if (!node) return fail(LoopStep::Create, nullptr);
+        if (!node->vt->activate(node, kSampleRate, kBlockFrames, &r.error)) {
+            type->destroy(node);
+            return fail(LoopStep::Activate, nullptr);
+        }
+        // Its blocks until one faults it (the data's first, then the loop), the last timed.
+        OneStep    one;
+        const bool bound = one.bind(a, node, *c, kBlockFrames);
+        bool       faulted = false;
+        while (bound && !faulted && r.blocks[k] < kLoopBlocks) {
+            const std::uint64_t start = micros ? micros() : 0;
+            faulted = one.run(kBlockFrames);
+            r.micros[k] = micros ? micros() - start : 0;
+            ++r.blocks[k];
+        }
+        char what[sizeof r.error.message];
+        faultWords(what, sizeof what, "its blocks did not end in its process call's deadline", node);
+        const bool ended = faulted && processDeadline(node);
+        rp_script_heap_use use{};
+        if (k == 0 && heapOf(node, &use)) r.contextBytes = use.bytes;
+        node->vt->deactivate(node);
+        type->destroy(node);
+        if (!bound) return fail(LoopStep::Ports, "its ports do not fit the arena");
+        if (!ended) return fail(LoopStep::Result, what);
+    }
+}
+
 }  // namespace rp::device_check

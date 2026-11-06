@@ -36,6 +36,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -66,6 +67,7 @@
 #include "graph/PlanBlob.hpp"
 #include "graph/PlanExport.hpp"
 #include "graph/ResourceTable.hpp"
+#include "graph/ThreadClock.hpp"
 #include "graph/rp_device_midi_in.h"
 #include "graph/nodes/CoreNodes.hpp"
 #include "graph/nodes/DspNodes.hpp"
@@ -78,6 +80,8 @@ std::vector<ScriptEntry> scriptEntries();
 
 namespace {
 
+using rp::device_check::LoopResult;
+using rp::device_check::LoopStep;
 using rp::device_check::Result;
 using rp::device_check::Step;
 using rp::device_check::TypeCase;
@@ -804,7 +808,8 @@ TEST_CASE("the device check registers the devtest script pack with the image's h
     const rp_package* pack = imageScriptPack();
     REQUIRE(pack->memory);
     CHECK(std::string(pack->memory->name) == "devtest");
-    CHECK(idsOf(pack) == std::vector<std::string>{"rp.devtest.script-transpose", "rp.devtest.script-nest"});
+    CHECK(idsOf(pack) == std::vector<std::string>{"rp.devtest.script-transpose", "rp.devtest.script-nest",
+                                                  "rp.devtest.script-loop"});
     rp_memory_req req{};
     rp_error      err{};
     REQUIRE(pack->memory->query(pack, &req, &err));
@@ -829,7 +834,7 @@ TEST_CASE("the device check registers the devtest script pack with the image's h
             CHECK(c.ports[i].bytes == RP_DEVICE_MIDI_IN_BYTES);
         }
     }
-    CHECK(scriptCases == 2);
+    CHECK(scriptCases == 3);
 }
 
 TEST_CASE("the device check stops at a script type whose package memory does not fit, and names it",
@@ -837,11 +842,11 @@ TEST_CASE("the device check stops at a script type whose package memory does not
     std::vector<TypeCase> cases;
     for (const TypeCase& c : kAllCases)
         if (std::string(c.id).rfind("rp.devtest.script-", 0) == 0) cases.push_back(c);
-    REQUIRE(cases.size() == 2);
+    REQUIRE(cases.size() == 3);
     const Result fits = runCheck({imageScriptPack()}, cases);
     INFO(fits.error.message);
     CHECK(fits.step == Step::Ok);
-    CHECK(fits.types == 2);
+    CHECK(fits.types == 3);
     // The pack's memory takes the most of any type's run: the context and the bytecode's copy, beside its nodes.
     CHECK(fits.arenaBytes > kImageContextBytes);
 
@@ -1060,4 +1065,91 @@ TEST_CASE("the device check's host gives a script node the clock the image offer
     CHECK(run.result.blocks == 1);
     CHECK(run.allocations == 0);
     CHECK(now > rp::mqjs::kHostClockDeadlineMicros);
+}
+
+namespace {
+
+struct LoopRun {
+    LoopResult result{};
+    int        allocations = -1;
+};
+
+// The deadline case as the image runs it, in an arena of `arenaBytes` made before counting starts, over the image's
+// script pack registered at `heapBytes`, under a clock of the thread's CPU time at the host's default deadline (the
+// image offers the box's, time_us_64; with none, a device build's script node has no deadline, and a loop no end),
+// its blocks timed by the steady clock.
+std::uint64_t steadyMicros() {
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                          std::chrono::steady_clock::now().time_since_epoch())
+                                          .count());
+}
+LoopRun runLoops(std::uint32_t heapBytes = rp::device_check::kLoopHeapBytes,
+                 const std::vector<TypeCase>& cases = kAllCases,
+                 std::size_t arenaBytes = rp::device_check::kArenaBytes) {
+    const rp_host_clock clock{nullptr, &rp::graph::threadCpuMicros, 0};
+    struct Offered {
+        explicit Offered(const rp_host_clock* c) { rp::device_check::offerClock(c); }
+        ~Offered() { rp::device_check::offerClock(nullptr); }
+    } offered(&clock);
+    const rp_package*             pack = imageScriptPack(heapBytes);
+    LoopRun                       r;
+    std::vector<std::max_align_t> arena(arenaBytes / sizeof(std::max_align_t) + 1);
+    rp::test::beginCountingAllocations(rp::test::countsCAllocations());
+    rp::device_check::loopDeadline(pack, cases.data(), cases.size(), arena.data(), arenaBytes, &steadyMicros,
+                                   &r.result);
+    r.allocations = rp::test::endCountingAllocations().allocations;
+    return r;
+}
+
+}  // namespace
+
+TEST_CASE("the device check's deadline case faults every loop over a builtin by its deadline, in the box's pack's "
+          "heap, allocating nothing",
+          "[device-mode][device-check][script-pack]") {
+    const LoopRun     run = runLoops();
+    const LoopResult& r = run.result;
+    INFO(r.error.message);
+    REQUIRE(r.step == LoopStep::Ok);
+    CHECK(run.allocations == 0);
+    CHECK(r.contextBytes == std::size_t{rp::device_check::kLoopHeapBytes} * rp::mqjs::kDeviceHalves / 2);
+    for (std::uint32_t k = 0; k < rp::device_check::kLoopCount; ++k) {
+        INFO(rp::device_check::kLoops[k].loop);
+        // The sort's and forEach's data takes a block for each 256 numbers first; the search's string, one.
+        const std::uint32_t count = rp::device_check::kLoops[k].count;
+        const std::string   loop = rp::device_check::kLoops[k].loop;
+        const bool          numbers = loop == "sort" || loop == "forEach";
+        const std::uint32_t data = numbers ? (count + 255) / 256 : loop == "search" ? 1u : 0u;
+        CHECK(r.blocks[k] == data + 1);
+        // Its last block ran to its deadline (10 ms of CPU time) and not much past it: a generous bound by the wall
+        // clock, which a loaded machine stretches.
+        CHECK(r.micros[k] >= rp::mqjs::kHostClockDeadlineMicros);
+        CHECK(r.micros[k] < 2000000);
+    }
+}
+
+TEST_CASE("the device check's deadline case stops at the step that fails, and says why",
+          "[device-mode][device-check][script-pack]") {
+    SECTION("no case is the loop type's") {
+        std::vector<TypeCase> cases;
+        for (const TypeCase& c : kAllCases)
+            if (std::string(c.id) != rp::device_check::kLoopType) cases.push_back(c);
+        const LoopRun run = runLoops(rp::device_check::kLoopHeapBytes, cases);
+        CHECK(run.result.step == LoopStep::Type);
+        CHECK(std::string(run.result.error.message) == "the package has no such type, or no case is the type's");
+    }
+    SECTION("its package's memory does not fit the arena") {
+        const LoopRun run = runLoops(rp::device_check::kLoopHeapBytes, kAllCases, 16 * 1024);
+        CHECK(run.result.step == LoopStep::Package);
+        CHECK(std::string(run.result.error.message) == "the package's memory does not fit the arena");
+    }
+    SECTION("a loop that ends in another fault: a heap too small for its data, in its words") {
+        const LoopRun run = runLoops(16384);
+        INFO(run.result.error.message);
+        CHECK(run.result.step == LoopStep::Result);
+        CHECK(std::string(rp::device_check::kLoops[run.result.loop].loop) == "sort");
+        const std::string message = run.result.error.message;
+        CHECK(message.rfind("its blocks did not end in its process call's deadline: ", 0) == 0);
+        CHECK(message.find("heap") != std::string::npos);
+        CHECK(run.allocations == 0);
+    }
 }

@@ -172,11 +172,27 @@ engine's interrupt on the way out (the host checks at the end of every outermost
 allocating, and all of its nodes fault with the same words; on the desktop the pack is set up again once its last node
 is gone.
 
-- **The deadline** is enforced by the engine's interrupt handler, polled every 10000 instructions, against the host's
-  clock: **10 ms a call plus 250 us for each message on the block's events and bytes inputs** on the box (26 ms for a
-  full queue of 64), which is the author's budget; the device check measured 65 us a note and 48 us a 64-byte SysEx
-  from flash. A host with no clock times by the thread's CPU time at **500 ms** on the desktop (Windows counts thread
-  time in 15.6 ms ticks, so a deadline must be many ticks to be measured at all). A reading of 0 is no reading.
+- **The deadline** is enforced by the engine's interrupt handler against the host's clock: **10 ms a call plus 250 us
+  for each message on the block's events and bytes inputs** on the box (26 ms for a full queue of 64), which is the
+  author's budget; the device check measured 65 us a note and 48 us a 64-byte SysEx from flash. A host with no clock
+  times by the thread's CPU time at **500 ms** on the desktop (Windows counts thread time in 15.6 ms ticks, so a
+  deadline must be many ticks to be measured at all). A reading of 0 is no reading.
+- **The polls.** MicroQuickJS polls the handler only at its interpreter's calls and branches, once every 10000 by its
+  own count, and a builtin's work between two polls is unpolled: at that interval a loop over a builtin ran 10000 of
+  its calls past the deadline (`for (;;) a.sort()` over 300 numbers in bliptoaster's heap ran 0.7 s past 10 ms on the
+  desktop, seconds on the box, past its 3 s watchdog). So the handler sets the next poll's distance
+  (`rp_mqjs_set_poll_interval`): an entry first polls after its deadline in microseconds over 2048 calls and branches
+  (at least 8: 8 on the box's 10 ms, 244 at the desktop's 500 ms), each poll before the deadline sets the next twice
+  as far, up to the engine's 10000, but no further than the rate since the last poll says fits in half of what is
+  left, and a poll past the deadline sets the next at once, so an interrupt a builtin dropped is thrown again at the
+  next call or branch. The builtins whose one call can run long poll in their own loops, off the same count: the
+  sort a comparison, the string searches (`indexOf`, `lastIndexOf`, and the search of `replace` and `split`) a
+  position, `join` on what is no array (whose length nothing bounds) an element. A loop over any builtin then overruns
+  by about one call of a builtin whose work is linear in what the pack's heap holds: on the desktop, each of the
+  device check's four loops faulted within 70 us of a 50 ms deadline, and the device check times the worst on the M33
+  in a context of bliptoaster's heap, judged against a third of the watchdog. A node that finishes in microseconds
+  reads the clock a few times a block (the desktop's bench: a transpose's 16-message block went from about 259 to 275
+  ns a message, two reads of the thread's CPU time; 256 messages, 244 to 248).
 - **The re-entry cap.** C calls back into JavaScript (`replace`, `forEach`, a sort comparator) nest through the engine's
   `JS_Call`, 290 bytes of the box's 4 KB stack a level. A node's context is capped at **4** re-entries after its load
   (`RP_MQJS_MAX_REENTRIES`), and the box builds with `PICO_USE_STACK_GUARDS=1`, so a node nesting to the cap leaves
@@ -268,7 +284,7 @@ The outputs are `<name>.js`, `.mqjs64.bin`, `.mqjs32.bin`, `.device64.bin`, `.de
 pack for every manifest, `retroplug_product` registers a listed package's script pack beside its native entries, and a
 device build takes the pack from the desktop build the exporter came from (`RP_DESKTOP_BUILD_DIR`, derived from
 `RP_EXPORT_PLAN_TOOL`). `RP_SCRIPT_HEAP_BYTES_<package>` overrides a pack's heap in a device image's registration copy
-(the device check sets devtest's to 40960), refused for a package with no script pack.
+(the device check sets devtest's to 45056), refused for a package with no script pack.
 
 **The `bliptoaster` pack** (`packages/bliptoaster`, `heapBytes` 24576) holds one node, `rp.bliptoaster.midi-policy`,
 with no settings, `idle: "skip"`, and `in: events.in()` / `out: events.out({ match: "in" })`: it drops polyphonic and
@@ -281,15 +297,17 @@ auditioned there, and their `[packages]` rows gain it. The desktop's own N8 grap
 
 ## 7. Tests
 
-- **The mquickjs host on the desktop** (`[script-pack]`, 39 cases, most in `ScriptPack.test.cpp`, run on both builds of
-  the host): a node's lifecycle, settings and block API; each fault (a throw, a deadline overrun, a heap that runs out
-  silencing only its pack, the dropped exceptions, the re-entry cap, the allowance per message); kept objects; a
-  warmed block allocating nothing, counted by the C allocator and by the JS heap's growth; the threaded cases under
-  ThreadSanitizer; `[debug-gc]`, the runner over the engine built with a collection at every allocation held to the
-  ordinary runner's digests.
-- **`retroplug-device-mode-test`**: 84 cases (45 before). The box's plan with the `bliptoaster` pack, exported and
-  loaded into an arena over the device-mode builds and run in ragged blocks, renders what GraphHost renders; a pack
-  heap's sizing and its refusals; a C++ package without package memory unchanged; `box-plan.hex` re-recorded.
+- **The mquickjs host on the desktop** (`[script-pack]`, 42 cases, most in `ScriptPack.test.cpp`, run on both builds of
+  the host): a node's lifecycle, settings and block API; each fault (a throw, a deadline overrun, a loop over each kind
+  of long builtin faulted within a small multiple of its deadline at bliptoaster's heap and devtest's, a getter the
+  host reads, a heap that runs out silencing only its pack, the dropped exceptions, the re-entry cap, the allowance per
+  message); kept objects; a warmed block allocating nothing, counted by the C allocator and by the JS heap's growth;
+  the threaded cases under ThreadSanitizer; `[debug-gc]`, the runner over the engine built with a collection at every
+  allocation held to the ordinary runner's digests.
+- **`retroplug-device-mode-test`**: 87 cases (45 before E4, 84 at its five commits). The box's plan with the
+  `bliptoaster` pack, exported and loaded into an arena over the device-mode builds and run in ragged blocks, renders
+  what GraphHost renders; a pack heap's sizing and its refusals; a C++ package without package memory unchanged;
+  `box-plan.hex` re-recorded.
 - **The twin test** (`[bliptoaster]`): `rp.bliptoaster.midi-policy` against `rp.core.midi-filter` with the same kinds
   dropped, message for message, over every first byte and 400 seeded blocks, desktop and device builds of both.
 - **`defineNode` on both engines:** the TS tests on Node, and `device-pack.test.ts` (the toolchain's refusals, each with
@@ -422,11 +440,19 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
   the 64-bit one's); the pack's report; and the **stack in two phases**, the load and the blocks, each judged against
   4096 bytes with 512 kept for interrupts. The LED blinks 30 + the plan step (Heap is 7), 40 + the bench step and 39 for
   a stack phase under its reserve.
-- **Build:** `RP_SCRIPT_HEAP_BYTES_devtest` (40960), `NO_SCRIPTS` retired, the size table's new owners
-  (MicroQuickJS 98,798 bytes of flash, the script host 18,685, the devtest pack 17,955).
-- **Tests:** 8 new `[device-check]` cases (16 in all): registration at the image's heap, a type whose memory does not
-  fit, the script plan (allocating nothing, 4 nodes, 40 blocks, 2032 messages, digest pinned on every host), its
-  failure steps, the bench and its failure steps, and the clock case (a spinning node faults with the deadline's words).
+- **The deadline case** (after the code reviews, before the script plan, its line after the bench's, so the check
+  prints nine lines): `rp.devtest.script-loop`, a third devtest node, runs four loops over a builtin (a sort of 600
+  numbers, a search in 4000 characters, `join` of an array-like a billion long and `forEach` over 2000 numbers) in the
+  pack registered again at 24576 bytes, bliptoaster's heap, each until its 10 ms deadline faults it; each loop's
+  faulting block is timed by `time_us_64` and the worst judged against 1 s, a third of the box's watchdog. The LED
+  blinks 50 + its step, or 59 for a worst over the bound.
+- **Build:** `RP_SCRIPT_HEAP_BYTES_devtest` (40960 at the five commits, 45056 since the third node's definition: the
+  toolchain's 3/2 check passes the pack at 41720 now), `NO_SCRIPTS` retired, the size table's new owners
+  (MicroQuickJS 98,798 bytes of flash, the script host 18,685, the devtest pack 17,955 at the five commits).
+- **Tests:** 8 new `[device-check]` cases (16 in all, 18 with the deadline case and its failure steps): registration at
+  the image's heap, a type whose memory does not fit, the script plan (allocating nothing, 4 nodes, 40 blocks, 2032
+  messages, digest pinned on every host), its failure steps, the bench and its failure steps, and the clock case (a
+  spinning node faults with the deadline's words).
 
 ### 11.5 The prototype questions, answered
 
@@ -494,7 +520,12 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
 - **The stack.** The deep-nest run showed 3320 of 4096 bytes at the engine's default depth, so the re-entry cap of 4,
   the box's stack guard and the check's two-phase judgement with a reserve replaced a single measure.
 - **The deadline** scales with the messages a block brings (10 ms + 250 us each on the box), and the desktop's
-  500 ms CPU default has none, since Windows cannot measure a 10 ms thread time.
+  500 ms CPU default has none, since Windows cannot measure a 10 ms thread time. The code reviews found it could be
+  swallowed and was coarse: a sort comparator's exception (the interrupt's among them) and a `then` getter's were
+  dropped, so a spinning comparator never faulted and a spinning getter burned the deadline every block; and the
+  engine's poll every 10000 calls and branches let a loop over a builtin run seconds past it. The sort and repeat are
+  fixed in the wrapper, every outermost entry that ran past its deadline faults as it ends whatever it returned, and
+  the polls are finer and reach into the long builtins (section 4).
 - **The desktop re-plan holds two instances of a pack at once** (the replaced one waits to be reclaimed), so the
   desktop's contexts are 4x `heapBytes` with a 1 MiB floor, and a dead pack is set up again once its last node is gone.
 
@@ -556,13 +587,16 @@ the regression line moved to E4's measured figures (section 8). The first gate t
   pack is revived, but a plan that re-plans a script node behind a large source can still run its pack out, until the
   replaced instance is reclaimed.
 - **The exporter's trial load is laxer than the image's figure for devtest** (the manifest's 57344 against the image's
-  40960 through `RP_SCRIPT_HEAP_BYTES_devtest`), and the estimate (104,520) is an upper bound on the image's. An
+  45056 through `RP_SCRIPT_HEAP_BYTES_devtest`), and the estimate (106,240) is an upper bound on the image's. An
   exporter `--script-heap` was left out.
 - **A SysEx past 3 bytes allocates a Uint8Array per message**, and a block's SysEx arrays stay live until the next
   block refills those places, so a SysEx stream makes the box collect in the MIDI path; at 32 bits a node that reads a
   non-whole stream start, change value or tempo allocates too.
 - **A node's budget is its author's:** about 250 us a message, and a nest of native callbacks (`replace`, `forEach`) no
-  deeper than the cap of 4; the deadline faults the node, never the box.
+  deeper than the cap of 4; the deadline faults the node, never the box, within about one call of the builtin it was in
+  (the device check's deadline case times the worst at bliptoaster's heap on the M33). A node that runs cheap code
+  long enough for the polls to grow far apart and then loops over a long builtin can overrun by up to that distance
+  (10000 polls at most) times one call of it, which the pack's heap bounds; the watchdog stays the backstop.
 - **A stale exporter** is guarded as in E3 (`loop.sh`'s stamp), now also against a pack's TS sources, the SDK's TS,
   `deps/mquickjs` and the toolchain.
 - **The audio version, a live-upload or SD plan that brings its own packs** (a trust model for bytecode mquickjs does

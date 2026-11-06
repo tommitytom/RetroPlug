@@ -19,8 +19,9 @@
 // And a script pack (docs/modular-graph-phase-e4-design.md sections 7 and 8): the devtest pack's TypeScript nodes, on
 // the MicroQuickJS host, are types like the rest, each run with its package's memory set up in the arena; a second
 // plan (script-plan.json) runs two of them behind the device MIDI input, fed a fixed stimulus by the host, through the
-// loader, which sets their pack's memory up beside the nodes; and a bench (benchScript) times one of them alone, a
-// block and a message at a time.
+// loader, which sets their pack's memory up beside the nodes; a bench (benchScript) times one of them alone, a block
+// and a message at a time; and the deadline case (loopDeadline) times how long a loop over a builtin holds the block
+// thread before its deadline faults the node.
 
 #include <cstddef>
 #include <cstdint>
@@ -309,5 +310,57 @@ struct BenchResult {
 void benchScript(const rp_package* const* packages, std::size_t packageCount, const TypeCase* cases,
                  std::size_t caseCount, void* arena, std::size_t arenaBytes, std::uint32_t rounds, Cycles cycles,
                  BenchResult* out);
+
+// ---- the deadline over a loop of builtins ---------------------------------------------------------------------
+
+// What loopDeadline runs (docs/modular-graph-phase-e4-design.md section 4, the deadline): rp.devtest.script-loop made
+// from each kLoops case's settings in a package of the image's script pack registered again at kLoopHeapBytes, the
+// heap the box's bliptoaster pack declares, so its context is the box's pack's size; its blocks run until one faults
+// it, each time the deadline's: a loop over one builtin, whose every call is work the interpreter's polls never see
+// into, is the longest a node can hold the block thread before its deadline faults it. Each case's last block, the one
+// the deadline ended, is timed. The cases' data is about what that heap holds beside devtest's definitions at either
+// width: an array's sort of 600 numbers, a search in 4000 characters, join of an array-like of a billion elements
+// (whose loop nothing but its length bounds) and forEach over 2000 numbers.
+inline constexpr const char*   kLoopType = "rp.devtest.script-loop";
+inline constexpr std::uint32_t kLoopHeapBytes = 24576;
+struct LoopCase {
+    const char*   loop;
+    std::uint32_t count;
+};
+inline constexpr LoopCase      kLoops[] = {{"sort", 600}, {"search", 4000}, {"join", 1000000000}, {"forEach", 2000}};
+inline constexpr std::uint32_t kLoopCount = sizeof kLoops / sizeof kLoops[0];
+// How many blocks a case may take to fault (its data is made a few hundred numbers a block first).
+inline constexpr std::uint32_t kLoopBlocks = 32;
+// The longest a case's last block may take, by the image's judgement: a third of the box's 3 s watchdog, so a node in
+// the worst loop is faulted with the watchdog's restart a long way off.
+inline constexpr std::uint32_t kLoopBoundMicros = 1000000;
+
+enum class LoopStep : std::uint8_t {
+    Ok,
+    Type,     // the package has no such type, or no case is the type's
+    Package,  // its package memory was refused, or does not fit the arena
+    Create,   // query_memory or create refused a case's settings, or the instance does not fit
+    Activate,
+    Ports,    // its ports do not fit the arena
+    Result,   // a case's blocks did not end in its deadline's fault (the node's fault's words, if any, in the error)
+};
+
+struct LoopResult {
+    LoopStep      step = LoopStep::Ok;
+    rp_error      error{};
+    std::uint32_t loop = 0;                  // the case that failed
+    std::uint64_t micros[kLoopCount] = {};   // each case's last block, by the case's clock (0 untimed)
+    std::uint32_t blocks[kLoopCount] = {};   // and how many blocks it ran, the last included
+    std::size_t   contextBytes = 0;          // the pack's context (rp.script.heap/1)
+};
+
+// A clock in microseconds the loop case times its blocks with (time_us_64 on the image), or null for none.
+using Micros = std::uint64_t (*)();
+
+// Runs the cases (see above) in `arena` over `package` (the pack registered at kLoopHeapBytes) and `cases` (the
+// image's, whose case for kLoopType gives the type's ports), under host() and the clock offerClock gave it, whose
+// deadline is what faults each. Allocates nothing; fills `out`.
+void loopDeadline(const rp_package* package, const TypeCase* cases, std::size_t caseCount, void* arena,
+                  std::size_t arenaBytes, Micros micros, LoopResult* out);
 
 }  // namespace rp::device_check

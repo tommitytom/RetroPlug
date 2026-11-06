@@ -125,6 +125,12 @@ int      rp_mqjs_is_fixed(JSContext* ctx, JSValue v);
 #define RP_MQJS_MAX_REENTRIES 4
 void rp_mqjs_limit_reentries(JSContext* ctx, int calls);
 
+/* The calls and branches the interpreter runs before it next polls the context's interrupt handler, set from within
+ * the handler (rp_mqjs_engine.c): the engine sets the count to its own 10000 before each call of the handler, so what
+ * the handler sets is the next poll's distance. Clamped to 1 to 10000. A builtin that polls in its own loop (the sort's
+ * comparison, the string searches, join on what is no array) counts its work off the same count. */
+void rp_mqjs_set_poll_interval(JSContext* ctx, int units);
+
 /* A fresh ArrayBuffer of `bytes`, a Uint8Array of `length` and a Uint8Array viewing `length` bytes of `buffer` (an
  * ArrayBuffer) from `offset`, made by the engine's constructors with no call into JavaScript (rp_mqjs_engine.c), or
  * JS_EXCEPTION with the exception pending. */

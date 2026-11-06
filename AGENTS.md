@@ -135,20 +135,22 @@ The rules below are the parts that don't fit those.
   `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp` (and
   `rp.n8.nes`, `rp.device.midi-in` and `rp.devtest`, in the `[device-check]` cases; `rp.core.midi-filter` is a core
   type, held by the twin table) compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library
-  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 84
+  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 87
   cases in eight files. A device-mode node created from msgpack settings renders bit for bit what a desktop-mode node
   renders from the same settings as JSON, with create, process and destroy allocating nothing; the desktop reads
   msgpack the same; the decode defaults a missing field, skips an unknown one and refuses what JSON refuses in the
   same words, naming the field (two inputs part by choice, pinned: design section 6); the converter writes each number
-  as the JSON spells it; and sixteen `[device-check]` cases hold the image's cases to the manifests' device entries,
+  as the JSON spells it; and eighteen `[device-check]` cases hold the image's cases to the manifests' device entries,
   run the whole check in its arena with no allocation, stop it at each of its failure steps, run the check's 10-node
   plan and drive the N8 pack's Edio, menu commands and operations over a scripted cart, and run the script pack's side
   (the devtest pack's types, a script bench, a 4-node script plan held to the desktop's digest, the clock a node's
-  deadline is read from). The script host is in it as well
-  ([docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md), `[script-pack]`, 39 cases, with
+  deadline is read from, and the deadline case: a loop over a builtin in the box's pack's heap faulted by its
+  deadline). The script host is in it as well
+  ([docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md), `[script-pack]`, 42 cases, with
   `ScriptPack.test.cpp` and the fixture packs in `test/device-mode/script-packs`): a TS node run on MicroQuickJS in
   both builds of the host (the device build and the desktop's), a lifecycle, the block API, every fault (a throw, a
-  deadline, a heap running out silencing only its pack, the engine's dropped exceptions, the re-entry cap), kept
+  deadline, a loop over a builtin held to it, a heap running out silencing only its pack, the engine's dropped
+  exceptions, a getter the host reads, the re-entry cap), kept
   objects, and a warmed block allocating nothing, a plan exported and loaded over the device-mode builds
   digest-identical to GraphHost, and the loader's package memory (sizing, placement, refusals); `[bliptoaster]` holds
   `rp.bliptoaster.midi-policy` to `rp.core.midi-filter` message for message (the twin) and its heap to 64 full blocks;
@@ -189,8 +191,9 @@ The rules below are the parts that don't fit those.
   "skip"` and the block API's `forward()` keep an idle block off the interpreter. A pack's memory is `rp_package`'s
   `memory` hook, sized and placed by the loader; a device image gets a pack from the desktop build its exporter came
   from (`RP_DESKTOP_BUILD_DIR`), and `RP_SCRIPT_HEAP_BYTES_<package>` sets its heap in one image. A node faults on a
-  throw, a deadline (10 ms and 250 us a message on the box) or a dead heap; a throw or a deadline faults only that
-  node, a dead heap its whole pack. Details:
+  throw, a deadline (10 ms and 250 us a message on the box, polled finer as it nears and inside the builtins whose one
+  call can run long, so a loop over one overruns by about one call) or a dead heap; a throw or a deadline faults only
+  that node, a dead heap its whole pack. Details:
   [docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md).
 - **The N8 is a pack (`packages/n8`), and a product starts it through a provider, naming no N8 class.** Its portable
   target (`retroplug-n8`, `device: true`) holds the Edio protocol written ONCE, in C++ with no exceptions, over an

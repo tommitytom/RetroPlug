@@ -17,14 +17,18 @@
 // the host's MIDI input, fed DeviceCheck.hpp's stimulus, through two of its nodes into a digest) is loaded, run for 40
 // ragged blocks and unloaded, its digest held to the desktop's exactly (it hears messages alone), its pack's context
 // to the declared figure, and its stack measured on its own, its load's and its blocks' apart, the nest node taking the
-// engine to the host's deepest C re-entry every block.
+// engine to the host's deepest C re-entry every block. Before that plan, the deadline case (DeviceCheck.hpp's
+// loopDeadline) runs rp.devtest.script-loop's loops over a builtin in the pack registered again at the box's pack's
+// heap, times how long each holds the block thread before its deadline faults it, and judges the worst against
+// kLoopBoundMicros, a third of the box's watchdog.
 //
 // It reports the outcome three ways: one line on stdio (the UART, GP0 at 115200) for each check, gDeviceCheck,
 // gN8Protocol, gDevicePlan, gScriptPlan and gScriptBench for a debugger, and the board's LED, lit and steady for a pass
 // and for a failure a count of blinks, repeated after a pause: the failed Step's value for a type, kPlanBlinks plus the
 // PlanStep's for the plan, kN8ProtocolBlinks for the protocol, kScriptPlanBlinks plus the PlanStep's for the script
 // plan (plus kScriptStackBlinks for a stack that left less than kStackReserve), and kBenchBlinks plus the BenchStep's
-// for the bench. The plan's line reports its node count and the arena it
+// for the bench, and kLoopBlinks plus the LoopStep's for the deadline case (kLoopBoundBlinks over its bound). The
+// plan's line reports its node count and the arena it
 // took, as the device measured them, beside the exporter's estimate, which the check holds it to, and the digest of
 // what reached its end beside the desktop's (DeviceCheck.hpp's kPlanDesktopDigest), which it does not judge: the float
 // tolerance between the two is the audio version's. The script plan's lines report the same, the load's and the first
@@ -62,6 +66,9 @@
 static_assert(std::string_view(RP_DEVICE_CHECK_ENTRIES) == rp::device_check::kEntries,
               "DeviceCheckCases.hpp was generated for other package entries than this image registers: regenerate it "
               "with rp-device-check-cases from the same packages.cmake (tools/build-device-check.sh)");
+
+// The image's script pack's 32-bit source (its pack32.c), which the deadline case registers again at another heap.
+extern "C" const rp_mqjs_pack_source rp_script_devtest;
 
 // The stack's bounds (the SDK's linker script: the 4 KB of SCRATCH_Y, PICO_STACK_SIZE).
 extern "C" char __StackBottom[];
@@ -114,6 +121,9 @@ unsigned micros(std::uint64_t cycleCount) { return static_cast<unsigned>(cycleCo
 // microseconds, at the script host's default deadline for a host's clock (10 ms).
 std::uint64_t hostMicros(void*) { return time_us_64(); }
 const rp_host_clock kClock{nullptr, &hostMicros, 0};
+// The same microseconds, which the deadline case times its blocks by (the cycle counter wraps every 28 s at 150 MHz,
+// and a loop the deadline failed to end could run longer).
+std::uint64_t loopMicros() { return time_us_64(); }
 
 // Reads the script plan's load's stack and paints it again for its blocks (below).
 void afterScriptPlanLoad();
@@ -142,6 +152,9 @@ constexpr unsigned kPlanBlinks = 10;
 constexpr unsigned kN8ProtocolBlinks = 20;
 constexpr unsigned kScriptPlanBlinks = 30;
 constexpr unsigned kBenchBlinks = 40;
+constexpr unsigned kLoopBlinks = 50;
+// A deadline case whose worst loop took longer than kLoopBoundMicros: kLoopBlinks plus this, past every LoopStep's.
+constexpr unsigned kLoopBoundBlinks = 9;
 // A script plan whose load or blocks left less than kStackReserve: kScriptPlanBlinks plus this, past every PlanStep's.
 constexpr unsigned kScriptStackBlinks = 9;
 
@@ -209,6 +222,7 @@ rp::device_check::N8ProtocolResult gN8Protocol;
 rp::device_check::PlanResult       gDevicePlan;
 rp::device_check::PlanResult       gScriptPlan;
 rp::device_check::BenchResult      gScriptBench;
+rp::device_check::LoopResult       gLoops;
 
 namespace {
 
@@ -310,6 +324,62 @@ RP_NOINLINE void runBench() {
                 static_cast<unsigned>(b.contextBytes), xipHits, xipReads);
 }
 
+const char* loopStepName(rp::device_check::LoopStep step) {
+    switch (step) {
+        case rp::device_check::LoopStep::Ok: return "ok";
+        case rp::device_check::LoopStep::Type: return "type";
+        case rp::device_check::LoopStep::Package: return "package";
+        case rp::device_check::LoopStep::Create: return "create";
+        case rp::device_check::LoopStep::Activate: return "activate";
+        case rp::device_check::LoopStep::Ports: return "ports";
+        case rp::device_check::LoopStep::Result: return "result";
+    }
+    return "?";
+}
+
+// The deadline case: the image's script pack registered again with the box's pack's heap (a registration of its own,
+// keyed on this copy of its source), its loops run in the arena.
+rp_mqjs_pack_source gLoopSource;
+
+RP_NOINLINE void runLoops() {
+    gLoopSource = rp_script_devtest;
+    gLoopSource.heap_bytes = rp::device_check::kLoopHeapBytes;
+    rp::device_check::loopDeadline(rp::mqjs::package(gLoopSource), rp::device_check::kCases,
+                                   rp::device_check::kCaseCount, gArena, sizeof gArena, &loopMicros, &gLoops);
+}
+
+// The deadline case's worst loop: the one whose last block took longest.
+std::uint32_t worstLoop() {
+    std::uint32_t worst = 0;
+    for (std::uint32_t k = 1; k < rp::device_check::kLoopCount; ++k)
+        if (gLoops.micros[k] > gLoops.micros[worst]) worst = k;
+    return worst;
+}
+
+// Its line, the worst judged against kLoopBoundMicros: "pass" when every loop ended in its deadline's fault within it.
+RP_NOINLINE void printLoops() {
+    const rp::device_check::LoopResult& l = gLoops;
+    if (l.step != rp::device_check::LoopStep::Ok) {
+        std::printf("rp-device-check: script deadline failed, step %u (%s) at %s of %u: %s\n",
+                    static_cast<unsigned>(l.step), loopStepName(l.step), rp::device_check::kLoops[l.loop].loop,
+                    static_cast<unsigned>(rp::device_check::kLoops[l.loop].count), l.error.message);
+        return;
+    }
+    const std::uint32_t worst = worstLoop();
+    const bool          fits = l.micros[worst] <= rp::device_check::kLoopBoundMicros;
+    std::printf("rp-device-check: script deadline %s, %s in a context of %u bytes (the box's pack's heap), each loop "
+                "faulted by its deadline of %u us:",
+                fits ? "pass" : "failed", rp::device_check::kLoopType, static_cast<unsigned>(l.contextBytes),
+                static_cast<unsigned>(rp::mqjs::kHostClockDeadlineMicros));
+    for (std::uint32_t k = 0; k < rp::device_check::kLoopCount; ++k)
+        std::printf("%s %s of %u in %u us (%u blocks)", k ? "," : "", rp::device_check::kLoops[k].loop,
+                    static_cast<unsigned>(rp::device_check::kLoops[k].count), static_cast<unsigned>(l.micros[k]),
+                    static_cast<unsigned>(l.blocks[k]));
+    std::printf("; the worst, %s, %u us of its block, %s the bound of %u us (a third of the box's 3 s watchdog)\n",
+                rp::device_check::kLoops[worst].loop, static_cast<unsigned>(l.micros[worst]),
+                fits ? "within" : "over", static_cast<unsigned>(rp::device_check::kLoopBoundMicros));
+}
+
 // The script plan's stack, in two phases: the load (the pack's setup among it), read as the plan has loaded, which
 // paints the stack again below its own frame; then the blocks and the unload, read after.
 std::size_t gLoadStack = 0;
@@ -383,6 +453,8 @@ int main() {
     runN8Protocol();
     printPlan(runPlanCheck());
     runBench();
+    runLoops();
+    printLoops();
 
     // The script plan last, on a stack painted afresh, so its line says the depths its run alone took: the load (the
     // pack's setup), read and painted again as it has loaded (afterScriptPlanLoad), then every block with the nest
@@ -406,12 +478,16 @@ int main() {
     const rp::device_check::PlanResult&  p = gDevicePlan;
     const rp::device_check::PlanResult&  sp = gScriptPlan;
     const rp::device_check::BenchResult& b = gScriptBench;
+    const rp::device_check::LoopResult&  l = gLoops;
     unsigned blinks = static_cast<unsigned>(gDeviceCheck.step);
     if (blinks == 0 && p.step != rp::device_check::PlanStep::Ok) blinks = kPlanBlinks + static_cast<unsigned>(p.step);
     if (blinks == 0 && !gN8Protocol.ok) blinks = kN8ProtocolBlinks;
     if (blinks == 0 && sp.step != rp::device_check::PlanStep::Ok)
         blinks = kScriptPlanBlinks + static_cast<unsigned>(sp.step);
     if (blinks == 0 && b.step != rp::device_check::BenchStep::Ok) blinks = kBenchBlinks + static_cast<unsigned>(b.step);
+    if (blinks == 0 && l.step != rp::device_check::LoopStep::Ok) blinks = kLoopBlinks + static_cast<unsigned>(l.step);
+    if (blinks == 0 && l.micros[worstLoop()] > rp::device_check::kLoopBoundMicros)
+        blinks = kLoopBlinks + kLoopBoundBlinks;
     if (blinks == 0 && (gLoadStack + kStackReserve > stackSize || scriptStack + kStackReserve > stackSize))
         blinks = kScriptPlanBlinks + kScriptStackBlinks;
     for (;;) {

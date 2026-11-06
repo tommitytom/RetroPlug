@@ -144,8 +144,10 @@ static void host_log(int level, const char *message) {
 static uint64_t clock_us(void *) { return time_us_64(); }
 static uint64_t micros(void) { return time_us_64(); }
 // The clock a script node's every call is held to a deadline by (graph/rp_script.h): the box's microsecond clock, at
-// the script host's own figure for a host's clock (10 ms a call, script/MqjsHost.hpp), far past the microseconds the
-// policy takes and far inside the watchdog's 3 s.
+// the script host's own figures for a host's clock (script/MqjsHost.hpp: 10 ms a call, and 250 us more for each
+// message a block hands the node, so 26 ms at a full queue of 64), far past the microseconds the policy takes. A node
+// past it is faulted within about one call of the builtin it was in (rp-device-check's deadline case times the worst
+// at this pack's heap), far inside the watchdog's 3 s.
 static const rp_host_clock script_clock{nullptr, clock_us, 0};
 static uint32_t frame_of(void *, uint32_t us) { return driver.frameOf(us); }
 static uint32_t now_us(void *) { return time_us_32(); }

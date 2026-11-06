@@ -45,6 +45,18 @@
  *   ordinary result (and, left on its stack, as a catch handler's offset), the exception dropped. The standard
  *   library's repeat is rp_mqjs_js_string_repeat below, which converts the count first and returns on an exception,
  *   then hands upstream's body, compiled under another name, a count that converts to itself.
+ * And the deadline reaches into three builtins whose one call can run far longer than the interpreter's polls allow
+ * (it polls the interrupt handler at its calls and branches alone, every builtin's work between two of them unpolled):
+ * the sort's comparison polls once a comparison, the string searches (indexOf and lastIndexOf, js_string_indexOf, and
+ * replace's and split's js_string_indexof, both n times m) once a position, counting about one for every eight
+ * characters it compares, and join on what is no array (whose loop runs to the object's length, which nothing bounds)
+ * once an element. rp_mqjs_poll is their poll, the interpreter's counted off the same counter, and
+ * rp_mqjs_set_poll_interval is how the host's handler sets the next poll's distance. Each search is upstream's body
+ * with the poll in its loop: js_string_indexOf replaces the standard library's under its own name, as hasOwnProperty
+ * does; js_string_indexof's definition is told from its calls as JS_MakeUniqueString's is (the calls pass `ctx`), and
+ * join's too, since js_array_toString calls it. A search the interrupt stops answers -1, as one that found nothing,
+ * with the interrupt pending: replace and split cannot fail there, and the host's handler, once the deadline is past,
+ * asks the next poll at once, so the interpreter throws it again at its next call or branch.
  * The StringBuffer is a type mquickjs.c declares, so the wrappers take it as a void* before the include. An audit of
  * every other builtin that converts a value or calls back into JavaScript (the Array iterations and reduce, getters and
  * setters, toString and valueOf in conversions, JSON, which takes no reviver here) found the rest propagating what they
@@ -76,6 +88,20 @@ static int rp_mqjs_buffer_puts(JSContext* ctx, void* buffer, const char* str);
 #undef js_string_repeat
 #define js_string_repeat rp_mqjs_upstream_string_repeat
 
+#undef js_string_indexOf
+#define js_string_indexOf rp_mqjs_upstream_string_indexOf
+
+static int js_string_indexof(JSContext* ctx, JSValue str, JSValue needle, int start, int str_len, int needle_len);
+#define js_string_indexof(first, ...) RP_MQJS_INDEXOF_##first, __VA_ARGS__)
+#define RP_MQJS_INDEXOF_JSContext rp_mqjs_upstream_string_indexof(JSContext
+#define RP_MQJS_INDEXOF_ctx js_string_indexof(ctx
+
+JSValue rp_mqjs_js_array_join(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv);
+#undef js_array_join
+#define js_array_join(first, ...) RP_MQJS_JOIN_##first, __VA_ARGS__)
+#define RP_MQJS_JOIN_JSContext rp_mqjs_upstream_array_join(JSContext
+#define RP_MQJS_JOIN_ctx rp_mqjs_js_array_join(ctx
+
 static int js_array_sort_cmp(size_t i1, size_t i2, void* opaque);
 #define js_array_sort_cmp(first, ...) RP_MQJS_SORT_CMP_##first, __VA_ARGS__)
 #define RP_MQJS_SORT_CMP_size_t rp_mqjs_upstream_array_sort_cmp(size_t
@@ -88,6 +114,9 @@ static int js_array_sort_cmp(size_t i1, size_t i2, void* opaque);
 #undef js_object_hasOwnProperty
 #undef js_array_sort_cmp
 #undef js_string_repeat
+#undef js_string_indexOf
+#undef js_string_indexof
+#undef js_array_join
 
 #include "rp_mqjs.h"
 
@@ -208,7 +237,32 @@ uint8_t* rp_mqjs_bytes(JSContext* ctx, JSValue v, uint32_t* length) {
 
 int rp_mqjs_is_fixed(JSContext* ctx, JSValue v) { return JS_IsPtr(v) && JS_IS_ROM_PTR(ctx, JS_VALUE_TO_PTR(v)); }
 
-/* The five wrappers the header comment describes. */
+/* A builtin's own poll of the interrupt handler (the header comment): `units` counted off the context's counter, as
+ * the interpreter counts one a call or a branch, and the handler called when it runs out. 0, or -1 with the handler's
+ * interrupt thrown, pending as the interpreter's own is. The throw allocates, so what a caller holds across a poll that
+ * is due must be rooted. */
+static int rp_mqjs_poll(JSContext* ctx, int units) {
+    const int left = ctx->interrupt_counter - units;
+    if (left > 0) {
+        ctx->interrupt_counter = (int16_t)left;
+        return 0;
+    }
+    return JS_IsException(__js_poll_interrupt(ctx)) ? -1 : 0;
+}
+
+/* Whether a poll of `units` would call the handler: what a caller checks before rooting what it holds. */
+static int rp_mqjs_poll_due(JSContext* ctx, int units) { return ctx->interrupt_counter - units <= 0; }
+
+/* About one unit of the handler's count for every eight characters a search compares at a position. */
+static int rp_mqjs_search_units(int needle_len) { return 1 + needle_len / 8; }
+
+void rp_mqjs_set_poll_interval(JSContext* ctx, int units) {
+    if (units < 1) units = 1;
+    if (units > JS_INTERRUPT_COUNTER_INIT) units = JS_INTERRUPT_COUNTER_INIT;
+    ctx->interrupt_counter = (int16_t)units;
+}
+
+/* The wrappers the header comment describes. */
 
 static int rp_mqjs_concat_subst(JSContext* ctx, void* buffer, JSValue* str, JSValue* rep, uint32_t pos,
                                 uint32_t end_of_match, JSValue* capture_buf, uint32_t captures_len, JSValue* needle) {
@@ -259,6 +313,8 @@ static int js_array_sort_cmp(size_t i1, size_t i2, void* opaque) {
 
     (void)rp_mqjs_upstream_array_sort_cmp;
     if (s->exception) return 0;
+    /* A comparison is one poll (the header comment). The array is rooted by the sort and read after. */
+    if (rp_mqjs_poll(ctx, 1)) goto exception;
 
     arr = JS_VALUE_TO_PTR(*s->parr);
     if (s->pfunc) {
@@ -312,6 +368,146 @@ cmp_same:
 exception:
     s->exception = TRUE;
     return 0;
+}
+
+JSValue rp_mqjs_js_string_indexOf(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv, int lastIndexOf) {
+    int i, len, v_len, pos, start, stop, ret, inc, j;
+
+    (void)rp_mqjs_upstream_string_indexOf;
+    *this_val = JS_ToStringCheckObject(ctx, *this_val);
+    if (JS_IsException(*this_val)) return JS_EXCEPTION;
+    argv[0] = JS_ToString(ctx, argv[0]);
+    if (JS_IsException(argv[0])) return JS_EXCEPTION;
+    len = js_string_len(ctx, *this_val);
+    v_len = js_string_len(ctx, argv[0]);
+    if (lastIndexOf) {
+        pos = len - v_len;
+        if (argc > 1) {
+            double d;
+            if (JS_ToNumber(ctx, &d, argv[1])) return JS_EXCEPTION;
+            if (!isnan(d)) {
+                if (d <= 0)
+                    pos = 0;
+                else if (d < pos)
+                    pos = d;
+            }
+        }
+        start = pos;
+        stop = 0;
+        inc = -1;
+    } else {
+        pos = 0;
+        if (argc > 1) {
+            if (JS_ToInt32Clamp(ctx, &pos, argv[1], 0, len, 0)) return JS_EXCEPTION;
+        }
+        start = pos;
+        stop = len - v_len;
+        inc = 1;
+    }
+    ret = -1;
+    if (len >= v_len && inc * (stop - start) >= 0) {
+        for (i = start;; i += inc) {
+            /* A position is a poll (the header comment); both strings are the frame's, which the collector sees. */
+            if (rp_mqjs_poll(ctx, rp_mqjs_search_units(v_len))) return JS_EXCEPTION;
+            for (j = 0; j < v_len; j++) {
+                if (string_getc(ctx, *this_val, i + j) != string_getc(ctx, argv[0], j)) goto next;
+            }
+            ret = i;
+            break;
+        next:
+            if (i == stop) break;
+        }
+    }
+    return JS_NewShortInt(ret);
+}
+
+static int js_string_indexof(JSContext* ctx, JSValue str, JSValue needle, int start, int str_len, int needle_len) {
+    const int units = rp_mqjs_search_units(needle_len);
+    int       i, j;
+
+    (void)rp_mqjs_upstream_string_indexof;
+    for (i = start; i <= str_len - needle_len; i++) {
+        /* A position is a poll (the header comment), the strings rooted across one that is due. Stopped, the search
+         * answers -1 with the interrupt pending. */
+        if (rp_mqjs_poll_due(ctx, units)) {
+            JSGCRef str_ref, needle_ref;
+            int     stopped;
+            JS_PUSH_VALUE(ctx, str);
+            JS_PUSH_VALUE(ctx, needle);
+            stopped = rp_mqjs_poll(ctx, units);
+            JS_POP_VALUE(ctx, needle);
+            JS_POP_VALUE(ctx, str);
+            if (stopped) return -1;
+        } else {
+            rp_mqjs_poll(ctx, units);
+        }
+        for (j = 0; j < needle_len; j++) {
+            if (string_getc(ctx, str, i + j) != string_getc(ctx, needle, j)) goto next;
+        }
+        return i;
+    next:;
+    }
+    return -1;
+}
+
+JSValue rp_mqjs_js_array_join(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv) {
+    uint32_t      i, len;
+    BOOL          is_array;
+    JSValue       sep, val;
+    JSGCRef       sep_ref;
+    JSObject*     p;
+    JSValueArray* arr;
+    StringBuffer  b_s, *b = &b_s;
+
+    (void)rp_mqjs_upstream_array_join;
+    if (!JS_IsObject(ctx, *this_val)) return JS_ThrowTypeErrorNotAnObject(ctx);
+    p = JS_VALUE_TO_PTR(*this_val);
+    is_array = (p->class_id == JS_CLASS_ARRAY);
+    if (is_array) {
+        len = p->u.array.len;
+    } else {
+        if (js_get_length32(ctx, &len, *this_val)) return JS_EXCEPTION;
+    }
+
+    if (argc > 0 && !JS_IsUndefined(argv[0])) {
+        sep = JS_ToString(ctx, argv[0]);
+        if (JS_IsException(sep)) return sep;
+    } else {
+        sep = JS_NewStringChar(',');
+    }
+    JS_PUSH_VALUE(ctx, sep);
+
+    string_buffer_push(ctx, b, 0);
+    for (i = 0; i < len; i++) {
+        if (i > 0) {
+            if (string_buffer_concat(ctx, b, sep_ref.val)) goto exception;
+        }
+        if (is_array) {
+            p = JS_VALUE_TO_PTR(*this_val);
+            arr = JS_VALUE_TO_PTR(p->u.array.tab);
+            if (i < p->u.array.len)
+                val = arr->arr[i];
+            else
+                val = JS_UNDEFINED;
+        } else {
+            /* An element of what is no array is a poll (the header comment): its length bounds the loop, and nothing
+             * bounds its length. The separator, the buffer and this are rooted. */
+            if (rp_mqjs_poll(ctx, 1)) goto exception;
+            val = JS_GetPropertyUint32(ctx, *this_val, i);
+            if (JS_IsException(val)) goto exception;
+        }
+        if (!JS_IsUndefined(val) && !JS_IsNull(val)) {
+            if (string_buffer_concat(ctx, b, val)) goto exception;
+        }
+    }
+    val = string_buffer_pop(ctx, b);
+    JS_POP_VALUE(ctx, sep);
+    return val;
+
+exception:
+    string_buffer_pop(ctx, b);
+    JS_POP_VALUE(ctx, sep);
+    return JS_EXCEPTION;
 }
 
 void rp_mqjs_limit_reentries(JSContext* ctx, int calls) {
