@@ -18,8 +18,11 @@ namespace rp::graph {
 //
 // One per host: GraphHost holds one, and the exporter one for the plan it makes. The host answers
 // RP_HOST_PACKAGES_INTERFACE with service(), and destroys every node before clear() (or the destructor) tears the
-// packages down. memory() is the control thread's; a mutex keeps two control threads of one host from setting one
-// package up twice.
+// packages down. memory() is the host's control thread's, and a host has one: GraphHost creates and destroys every
+// node on its control thread (setGraph plans, reclaim frees), and the exporter's plan is made and freed in one call.
+// A package may rely on that for what it keeps in its block between its nodes' creates and destroys, unlocked: the
+// script host counts a pack's nodes there and sets a dead pack up again in place when its last node goes
+// (script/MqjsHost.cpp's renew). The mutex is the block list's own.
 class PackageMemory {
 public:
     PackageMemory() = default;

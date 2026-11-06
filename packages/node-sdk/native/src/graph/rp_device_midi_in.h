@@ -24,9 +24,10 @@ extern "C" {
 /* What rp.device.midi-in's output carries in one block: a host stages no more than this, and the node drops (and
  * counts) what passes it. The bytes are the box's UART ring's size, so a SysEx of up to 4 KB is one message. 64
  * messages is far more than one block's MIDI on a box, which runs a block every pass of its loop (tens of
- * microseconds) where MIDI brings a message a millisecond at most, and the box's staging leaves what does not fit for
- * the next pass rather than dropping it; and it is what a script node behind it makes of its pack's heap at its first
- * block, a message object a place (script/MqjsHost.hpp), which at 256 would be most of the pack's heap. */
+ * microseconds) where MIDI's 31250 baud brings a byte every 320 us, so a message every 320 us at most (a one-byte
+ * real-time message, three a millisecond), and the box's staging leaves what does not fit for the next pass rather
+ * than dropping it; and it is what a script node behind it makes of its pack's heap at its first block, a message
+ * object a place (script/MqjsHost.hpp), which at 256 would be most of the pack's heap. */
 #define RP_DEVICE_MIDI_IN_MESSAGES 64
 #define RP_DEVICE_MIDI_IN_BYTES 4096
 

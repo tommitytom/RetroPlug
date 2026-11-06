@@ -188,7 +188,7 @@ struct PackState {
     std::uint8_t*      contextMemory = nullptr;
     bool               configured = false;  // the host's clock and console taken (packMemory)
 #ifndef RP_DEVICE
-    std::uint32_t      nodes = 0;  // the control thread's: nodes made under this memory and not yet destroyed
+    std::uint32_t      nodes = 0;  // the host's one control thread's: nodes made under this memory, not yet destroyed
 #endif
 };
 
@@ -1870,7 +1870,10 @@ void teardownPackage(const rp_package* package, void* memory);
 // A dead pack whose last node is gone set up again in its memory, a fresh context with nothing of the old one, so the
 // host's next node of the pack runs: the desktop's way back from a heap that ran out, which a re-plan otherwise could
 // not take, since the host keeps a package's memory for its life (graph/PackageMemory.hpp). The control thread's, with
-// no node of the pack left for the block thread to enter. A setup that fails leaves the pack dead and torn down.
+// no node of the pack left for the block thread to enter, and outside PackageMemory's lock: a host creates and destroys
+// its nodes on its one control thread (PackageMemory.hpp says which), so no create of this pack (packMemory, which
+// counts the pack's nodes and reads its state, unlocked as well) runs beside it. A setup that fails leaves the pack
+// dead and torn down, with no context.
 void renew(PackState& pk) {
     const rp_package& package = pk.pack->package;
     void* memory = &pk;
