@@ -50,6 +50,11 @@
 #     interrupt among them (js_array_sort_cmp returns it as a comparison's result), and one a String.prototype.repeat
 #     count's conversion throws (js_string_repeat returns -1 for it). rp_mqjs_engine.c routes each through a wrapper
 #     that makes the engine's StringBuffer sticky, converts the key or the count first, or ends the sort.
+#   - The heap running out, which nothing the engine throws can say (a script may throw null, or an error saying "out
+#     of memory", and the engine's out-of-memory error is thrown for an array or a buffer past its size limits with
+#     room left too). check_free_mem, where every allocation and every push onto the context's stack finds room or
+#     collects and looks again, is upstream's body under another name, called by RetroPlug's, which tells the host
+#     (rp_mqjs_api's ran_out) when it finds none.
 #   - The deadline. The interpreter polls its interrupt handler only at its calls and branches, so one call of a
 #     builtin (a sort, a string search, join over an array-like whose length nothing bounds) ran unpolled however long
 #     it took. RetroPlug's sort comparison, string searches (js_string_indexOf, and js_string_indexof, which replace and
@@ -66,8 +71,8 @@
 # internals, so a bump that changes upstream's function would still compile and the stale copy would win; the others
 # rest on upstream's text as it stands. So the configure below hashes the text of each (JS_MakeUniqueString's
 # definition, the sweep of unique_strings, replace and its substitution, the StringBuffer and its appends,
-# hasOwnProperty, the typed array's constructor, the sort, repeat, the string searches, join and the interpreter's
-# poll) and fails, naming rp_mqjs_engine.c, when any is not the text the fixes were written against: re-review the
+# hasOwnProperty, the typed array's constructor, the sort, repeat, the string searches, join, the interpreter's poll
+# and the check for room, whose three mentions, its definition and its two calls, are counted as well) and fails, naming rp_mqjs_engine.c, when any is not the text the fixes were written against: re-review the
 # fixes against the new text, then record its hash here. retroplug-device-mode-test's
 # [debug-gc] cases hold the second fix (its revert fails them); no test reaches the first's condition on demand (a
 # collection at every allocation, DEBUG_GC, sweeps a dead name before any growth can meet it), so the hash is its
@@ -105,6 +110,9 @@ set(_mqjs_span_9 "Array.prototype.join" "JSValue js_array_join(JSContext *ctx, J
 set(_mqjs_span_10 "the interpreter's poll of the interrupt handler" "static JSValue __js_poll_interrupt(JSContext *ctx)"
                   "/* must use JS_StackCheck() before using it */"
                   "6c21cbb52fc004994e3c320fdcd7a5963c668d26109c2ecb88621a415abf7408")
+set(_mqjs_span_11 "the check for room an allocation makes"
+                  "static int check_free_mem(JSContext *ctx, JSValue *stack_bottom, uint32_t size)" "\n}\n"
+                  "49c61067cb7a5b33113b69c0a408bc9b4459e11122d12f4900451e79e445c962")
 string(REGEX MATCHALL "js_call_rec_count" _mqjs_mentions "${_mqjs_engine_text}")
 list(LENGTH _mqjs_mentions _mqjs_mentions)
 if(NOT _mqjs_mentions EQUAL 4)
@@ -112,8 +120,15 @@ if(NOT _mqjs_mentions EQUAL 4)
                         "(its field, JS_Call's check, increment and decrement) rp_mqjs_limit_reentries was written "
                         "against (cmake/mquickjs.cmake's header says why); re-review it")
 endif()
+string(REGEX MATCHALL "check_free_mem" _mqjs_mentions "${_mqjs_engine_text}")
+list(LENGTH _mqjs_mentions _mqjs_mentions)
+if(NOT _mqjs_mentions EQUAL 3)
+    message(FATAL_ERROR "deps/mquickjs/mquickjs.c mentions check_free_mem ${_mqjs_mentions} times, not the 3 (its "
+                        "definition, JS_StackCheck's call and js_malloc's) rp_mqjs_engine.c's report of a heap that "
+                        "ran out was written against (cmake/mquickjs.cmake's header says why); re-review it")
+endif()
 foreach(_mqjs_span IN ITEMS _mqjs_span_0 _mqjs_span_1 _mqjs_span_2 _mqjs_span_3 _mqjs_span_4 _mqjs_span_5
-                           _mqjs_span_6 _mqjs_span_7 _mqjs_span_8 _mqjs_span_9 _mqjs_span_10)
+                           _mqjs_span_6 _mqjs_span_7 _mqjs_span_8 _mqjs_span_9 _mqjs_span_10 _mqjs_span_11)
     list(GET ${_mqjs_span} 0 _what)
     list(GET ${_mqjs_span} 1 _begin)
     list(GET ${_mqjs_span} 2 _end)

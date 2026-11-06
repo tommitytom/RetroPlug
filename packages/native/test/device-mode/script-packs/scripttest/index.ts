@@ -18,6 +18,8 @@
 //                           drop it (a String.replace function's, a hasOwnProperty key's toString's, a sort
 //                           comparator's, a String.repeat count's valueOf's), which must fault the node as any throw
 //                           does
+//   rp.scripttest.throws-as  throws what is no out-of-memory but reads like one (null, or an Error whose words are
+//                           "out of memory"), which must fault the node alone, its pack's heap untouched
 //   rp.scripttest.forward-throws  hands forward an object whose frame or flags getter throws, or send an array-like
 //                           whose length getter throws, which the host reads and must fault the node with
 //   rp.scripttest.sort-spins  a sort comparator that never returns, where MicroQuickJS would drop the deadline's
@@ -412,6 +414,18 @@ export const repeatThrowsNode = defineNode({
   }),
 });
 
+export const throwsAsNode = defineNode({
+  id: "rp.scripttest.throws-as",
+  settings: s.object({ what: s.enum(["null", "words"], "null") }),
+  ports: quiet,
+  create: ({ settings }) => ({
+    process() {
+      if (settings.what === "null") throw null;
+      throw new Error("out of memory");
+    },
+  }),
+});
+
 export const forwardThrowsNode = defineNode({
   id: "rp.scripttest.forward-throws",
   settings: s.object({ field: s.enum(["frame", "flags", "length"], "frame") }),
@@ -573,4 +587,4 @@ registerScriptNodes([probeNode, settingsNode, hooksNode, steadyNode, keeperNode,
                      spinsNode, thenableNode, faultNode, noProcessNode, createThrowsNode, skipperNode,
                      throwsLaterNode, sendsNode, replaceThrowsNode, hasOwnThrowsNode, spinsInNode, deepNode,
                      sortThrowsNode, sortSpinsNode, repeatThrowsNode, thenThrowsNode, thenSpinsNode,
-                     processSpinsNode, sendSpinsNode, forwardThrowsNode]);
+                     processSpinsNode, sendSpinsNode, throwsAsNode, forwardThrowsNode]);

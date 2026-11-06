@@ -84,6 +84,7 @@ struct ContextState {
     std::uint32_t depth = 0;
     bool          timed = false;    // the entry's start was read: an entry the clock could not time runs untimed
     bool          expired = false;  // this entry ran past its deadline
+    bool          ranOut = false;   // the context's buffer had no room for an allocation in this entry (apiRanOut)
     // console.log's bytes, and what MicroQuickJS's own printing writes (JS_PrintValueF).
     void (*log)(void* ctx, const char* text, std::size_t size) = nullptr;
     void* logCtx = nullptr;
@@ -364,12 +365,6 @@ void describe(JSContext* ctx, JSValue v, Text& out) {
     out << ")";
 }
 
-// Out of memory, as MicroQuickJS throws it: an InternalError "out of memory", or null where even that could not be
-// made. Read with no allocation, in a heap that has just run out.
-bool outOfMemory(JSContext* ctx, JSValue e) {
-    return JS_IsNull(e) || equals(ctx, rp_mqjs_error_field(ctx, e, 0), "out of memory");
-}
-
 // ---- the clock and the deadline -------------------------------------------------------------------------------------
 
 #ifndef RP_DEVICE
@@ -426,13 +421,14 @@ int interrupt(JSContext* ctx, void* opaque) {
 
 // The deadline over all one entry into a context runs (the outermost arms it; one inside it changes nothing): every
 // JS call, every getter the host reads and every value it prints, with the entry's expired mark cleared as it starts,
-// so a fault an earlier entry ran into is never this one's.
+// so a fault an earlier entry ran into is never this one's, and its ranOut mark.
 class Armed {
 public:
     explicit Armed(ContextState& s) : s_(s), outermost_(s.depth == 0) {
         ++s_.depth;
         if (!outermost_) return;
         s_.expired = false;
+        s_.ranOut = false;
         s_.extra = 0;
         restart();
     }
@@ -699,14 +695,18 @@ bool deadlineFault(Node& node, const char* during) {
     return fault(node, RP_SCRIPT_FAULT_DEADLINE, during, buf);
 }
 
-// A call into the pack that ended in an exception, which this takes: the node faults, and an out-of-memory error kills
-// the pack's context first. `during` names what was called ("process").
+// A call into the pack that ended in an exception, which this takes: the node faults, and when the pack's heap ran out
+// in the entry the call is part of, the pack's context is killed first. That is the engine's word (ranOut), never the
+// exception's: what is thrown cannot say it (a node may throw null, or an error saying "out of memory", and the engine
+// throws its out-of-memory error for an array or a buffer past its size limits with room left), and once the heap
+// has run out the context is not to be trusted to have kept what it was doing, whatever the entry threw at the end
+// (a node may catch the engine's error and throw its own). `during` names what was called ("process").
 bool faultFromException(Node& node, const char* during) {
     PackState& pk = *node.pack;
     JSContext* ctx = pk.base.ctx;
     if (pk.base.expired) return deadlineFault(node, during);
     const JSValue e = JS_GetException(ctx);
-    if (outOfMemory(ctx, e)) {
+    if (pk.base.ranOut) {
         if (!pk.dead) {
             pk.dead = true;
             Text(pk.deadReason, sizeof pk.deadReason)
@@ -1394,7 +1394,11 @@ JSValue apiGet(JSContext* ctx, JSValue* self, int, JSValue*, int magic) {
     }
 }
 
-constexpr rp_mqjs_api kApi{&apiCall, &apiGet};
+// The engine's report that the context's buffer had no room for an allocation (rp_mqjs.h): marked for the entry it
+// happened in (faultFromException), and nothing else, since it runs inside the allocation that failed.
+void apiRanOut(JSContext* ctx) { static_cast<ContextState*>(JS_GetContextOpaque(ctx))->ranOut = true; }
+
+constexpr rp_mqjs_api kApi{&apiCall, &apiGet, &apiRanOut};
 
 // ---- the node ABI ---------------------------------------------------------------------------------------------------
 
@@ -1567,11 +1571,14 @@ constexpr rp_node_vtable kVtable{&activate, &deactivate, &portsChanged, &process
                                  nullptr,   nullptr,     nullptr,       &nodeInterface};
 #endif
 
+// False for a node whose instance is not made, and for one under a pack with no context (on the desktop, a dead pack
+// that could not be set up again: renew).
 bool heapUse(rp_node* n, bool collect, rp_script_heap_use* out) {
     Node& node = *as(n);
     if (node.state == State::Pending) return false;
     PackState* pk = node.pack;
     JSContext* ctx = pk->base.ctx;
+    if (!ctx) return false;
     if (collect) JS_GC(ctx);
     rp_mqjs_memory m{};
     rp_mqjs_memory_of(ctx, &m);

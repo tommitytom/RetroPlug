@@ -116,11 +116,14 @@ generated tables live in the build tree, never beside them. Everything of ours a
   marks them kept after relocation). Five are exceptions upstream swallows: `String.prototype.replace` ignoring its
   callback's throw, `string_buffer_puts` losing an out-of-memory, `hasOwnProperty` ignoring a throwing key,
   `Array.prototype.sort` taking a comparator's throw (the deadline's interrupt among them) for a comparison's result,
-  and `String.prototype.repeat` answering -1 for a count whose conversion throws. Typed arrays are built in the engine,
-  with no `JS_Call`, so `messages()` works at any depth. **The fixes are guarded by a configure-time hash**:
+  and `String.prototype.repeat` answering -1 for a count whose conversion throws. One is a report: the engine's check
+  for room (`check_free_mem`, which every allocation and every push onto the context's stack makes) tells the host
+  when it finds none after a collection (`rp_mqjs_api`'s `ran_out`), since nothing it throws can say the heap ran out
+  (a script may throw `null` or an error saying "out of memory"). Typed arrays are built in the engine, with no
+  `JS_Call`, so `messages()` works at any depth. **The fixes are guarded by a configure-time hash**:
   `cmake/mquickjs.cmake` hashes the text of each span the wrappers replace (CR stripped) and fails on a change naming
-  the file, and counts `js_call_rec_count` mentions (exactly four), so a bump of the pinned source cannot silently drop
-  one.
+  the file, and counts `js_call_rec_count` mentions (exactly four) and `check_free_mem`'s (three), so a bump of the
+  pinned source cannot silently drop one.
 - **`rp_mqjs_stdlib.c`**, our standard library for the build tool. It includes upstream's `mqjs_stdlib.c` unpatched
   with its REPL global object and `main` renamed out of the way, so the standard classes are upstream's own tables, and
   its own global object leaves out `print`, `gc`, `load`, the timers, `Date`, `performance` and `eval`. It adds a
@@ -174,9 +177,11 @@ array-like's `length`, an object's `frame` and `flags`), is the node's like any 
 ran past its deadline faults with the deadline's words whatever it returned, since a builtin or a getter may drop the
 engine's interrupt on the way out (the host checks at the end of every outermost entry). The host's interfaces are
 `rp.script.fault/1` (reason; kind: threw, deadline, heap, refused), `rp.script.heap/1`, `rp.host.clock/1` and
-`rp.host.script-log/1` (where `console.log` goes). A pack whose heap runs out has a dead context, read without
-allocating, and all of its nodes fault with the same words; on the desktop the pack is set up again once its last node
-is gone.
+`rp.host.script-log/1` (where `console.log` goes). A pack whose heap runs out (the engine's report, in an entry that
+then ends in an exception) has a dead context, read without allocating, and all of its nodes fault with the same words;
+on the desktop the pack is set up again once its last node is gone (on the host's one control thread, which creates
+and destroys its nodes: `graph/PackageMemory.hpp`). What a node throws does not decide it: `throw null`, or an error
+saying "out of memory", faults that node alone.
 
 - **The deadline** is enforced by the engine's interrupt handler against the host's clock: **10 ms a call plus 250 us
   for each message on the block's events and bytes inputs** on the box (26 ms for a full queue of 64), which is the
@@ -304,13 +309,14 @@ auditioned there, and their `[packages]` rows gain it. The desktop's own N8 grap
 
 ## 7. Tests
 
-- **The mquickjs host on the desktop** (`[script-pack]`, 42 cases, most in `ScriptPack.test.cpp`, run on both builds of
-  the host): a node's lifecycle, settings and block API; each fault (a throw, a deadline overrun, a loop over each kind
-  of long builtin faulted within a small multiple of its deadline at bliptoaster's heap and devtest's, a getter the
-  host reads, a heap that runs out silencing only its pack, the dropped exceptions, the re-entry cap, the allowance per
-  message); kept objects; a warmed block allocating nothing, counted by the C allocator and by the JS heap's growth;
-  the threaded cases under ThreadSanitizer; `[debug-gc]`, the runner over the engine built with a collection at every
-  allocation held to the ordinary runner's digests.
+- **The mquickjs host on the desktop** (`[script-pack]`, 42 cases, most in `ScriptPack.test.cpp`, run on both builds
+  of the host): a node's lifecycle, settings and block API; each fault (a throw, a deadline overrun, a loop over each
+  kind of long builtin faulted within a small multiple of its deadline at bliptoaster's heap and devtest's, a getter
+  the host reads, a heap that runs out silencing only its pack while a `throw null` faults only its node, the dropped
+  exceptions, the re-entry cap, the allowance per message); the idle skip read against what the node's last call read,
+  whichever plan step a block comes from; kept objects; a warmed block allocating nothing, counted by the C allocator
+  and by the JS heap's growth; the threaded cases under ThreadSanitizer; `[debug-gc]`, the runner over the engine
+  built with a collection at every allocation held to the ordinary runner's digests.
 - **`retroplug-device-mode-test`**: 87 cases (45 before E4, 84 at its five commits). The box's plan with the
   `bliptoaster` pack, exported and loaded into an arena over the device-mode builds and run in ragged blocks, renders
   what GraphHost renders; a pack heap's sizing and its refusals; a C++ package without package memory unchanged;
@@ -530,6 +536,9 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
   the end of its last call instead, and a block that starts one elsewhere runs.
 - **The stack.** The deep-nest run showed 3320 of 4096 bytes at the engine's default depth, so the re-entry cap of 4,
   the box's stack guard and the check's two-phase judgement with a reserve replaced a single measure.
+- **Out of memory by its words.** The host first took `null` or an error saying "out of memory" for the heap running
+  out, so one node's `throw null` silenced its whole pack (and the toolchain refused the pack): the engine reports a
+  heap that ran out instead (section 4).
 - **The deadline** scales with the messages a block brings (10 ms + 250 us each on the box), and the desktop's
   500 ms CPU default has none, since Windows cannot measure a 10 ms thread time. The code reviews found it could be
   swallowed and was coarse: a sort comparator's exception (the interrupt's among them) and a `then` getter's were

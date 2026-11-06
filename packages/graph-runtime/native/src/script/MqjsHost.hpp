@@ -99,10 +99,13 @@
 // may drop it on the way out, so the host faults an entry that ran past its deadline as it ends. A faulted node's
 // process answers RP_FAULT from then on, so the executor silences it and counts it once, and the node keeps the first
 // fault's words (graph/rp_script.h's rp.script.fault/1). A node does not run again after a throw, unlike the desktop's
-// QuickJS host: the box has no one to retry for. A heap that runs out (an out-of-memory error that reaches the host)
-// kills the pack's context: every node of the pack faults at its next call, with the same words, and the context runs
-// nothing more. MicroQuickJS throws out of memory as an ordinary InternalError, which a node may catch: one that does
-// runs on in a heap with no room, and the host does not see it run out. Each entry into a context (a block, a hook, a
+// QuickJS host: the box has no one to retry for. A heap that runs out (an allocation the engine finds no room for once
+// it has collected, which it reports to the host: rp_mqjs.h's rp_mqjs_api.ran_out) in an entry that then ends in an
+// exception kills the pack's context: every node of the pack faults at its next call, with the same words, and the
+// context runs nothing more. What the entry throws does not decide it: a node's own throw of null, or of an error
+// saying "out of memory", faults that node alone, as does the engine's out-of-memory error for an array or a buffer
+// past its size limits, with room left. MicroQuickJS throws out of memory as an ordinary InternalError, which a node
+// may catch: one that does and returns runs on in a heap with no room. Each entry into a context (a block, a hook, a
 // settings check) is held to a deadline through the engine's interrupt handler, polled as kFirstPollDivisor says (the
 // interpreter's calls and branches, and inside the builtins whose one call could run long), over everything the entry
 // runs: by the host's clock (rp.host.clock/1, the box's, at kHostClockDeadlineMicros unless it

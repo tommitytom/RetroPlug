@@ -64,7 +64,8 @@ typedef struct rp_script_fault {
  * live objects take; without, it is how far the heap has grown since the last collection, which a block that allocates
  * nothing leaves where it was. `bytes` is the context's buffer (the manifest's heapBytes), `fixed` what MicroQuickJS
  * takes of it before its heap (its JSContext and the class prototypes) and `stack` the stack's depth at the call.
- * False while the node has no instance (before its first call on that thread). */
+ * False while the node has no instance (before its first call on that thread), and while its pack has no context (on
+ * the desktop, a pack whose heap ran out and that could not be set up again). */
 #define RP_SCRIPT_HEAP_INTERFACE "rp.script.heap/1"
 typedef struct rp_script_heap_use {
     size_t bytes;

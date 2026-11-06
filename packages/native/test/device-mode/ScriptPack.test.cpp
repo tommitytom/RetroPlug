@@ -751,6 +751,12 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
         // faults as it ends.
         {"rp.scripttest.send-spins", RP_SCRIPT_FAULT_DEADLINE, "process ran past its deadline of 50000 us",
          R"({"on":true})"},
+        // What reads like the heap running out but is none (null, which the engine throws for one only when it cannot
+        // make its error, and an error saying it): the node's own throw, its pack's heap untouched, so the probe after
+        // it runs on.
+        {"rp.scripttest.throws-as", RP_SCRIPT_FAULT_THREW, "process threw: null", R"({"what":"null"})"},
+        {"rp.scripttest.throws-as", RP_SCRIPT_FAULT_THREW, "process threw: Error: out of memory",
+         R"({"what":"words"})"},
         // A getter the host reads of what forward or send is handed: its throw is the node's, never a 0 sent on.
         {"rp.scripttest.forward-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the frame getter threw",
          R"({"field":"frame"})"},

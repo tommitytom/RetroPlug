@@ -57,6 +57,10 @@
  * join's too, since js_array_toString calls it. A search the interrupt stops answers -1, as one that found nothing,
  * with the interrupt pending: replace and split cannot fail there, and the host's handler, once the deadline is past,
  * asks the next poll at once, so the interpreter throws it again at its next call or branch.
+ * And the engine tells its host when its heap runs out (rp_mqjs.h's rp_mqjs_api.ran_out), which nothing it throws can
+ * say: check_free_mem, where every allocation and every push onto the context's stack finds room or collects and
+ * looks again, is RetroPlug's, upstream's body (compiled under another name, told from its two calls as
+ * JS_MakeUniqueString's is) with the host's ran_out called when it finds none, once it has thrown.
  * The StringBuffer is a type mquickjs.c declares, so the wrappers take it as a void* before the include. An audit of
  * every other builtin that converts a value or calls back into JavaScript (the Array iterations and reduce, getters and
  * setters, toString and valueOf in conversions, JSON, which takes no reviver here) found the rest propagating what they
@@ -106,6 +110,11 @@ static int js_array_sort_cmp(size_t i1, size_t i2, void* opaque);
 #define js_array_sort_cmp(first, ...) RP_MQJS_SORT_CMP_##first, __VA_ARGS__)
 #define RP_MQJS_SORT_CMP_size_t rp_mqjs_upstream_array_sort_cmp(size_t
 
+static int check_free_mem(JSContext* ctx, JSValue* stack_bottom, uint32_t size);
+#define check_free_mem(first, ...) RP_MQJS_FREE_##first, __VA_ARGS__)
+#define RP_MQJS_FREE_JSContext rp_mqjs_upstream_check_free_mem(JSContext
+#define RP_MQJS_FREE_ctx check_free_mem(ctx
+
 #include "mquickjs.c"
 
 #undef JS_MakeUniqueString
@@ -117,6 +126,7 @@ static int js_array_sort_cmp(size_t i1, size_t i2, void* opaque);
 #undef js_string_indexOf
 #undef js_string_indexof
 #undef js_array_join
+#undef check_free_mem
 
 #include "rp_mqjs.h"
 
@@ -263,6 +273,17 @@ void rp_mqjs_set_poll_interval(JSContext* ctx, int units) {
 }
 
 /* The wrappers the header comment describes. */
+
+/* Room for `size` bytes below the stack's bottom (upstream's check, which collects and looks again when there is
+ * none, and throws out of memory when there is still none): 0, or -1 with the out-of-memory thrown and the context's
+ * host told through its opaque (rp_mqjs.h: a struct whose first member is the host's rp_mqjs_api; null before
+ * JS_NewContext's caller sets it). */
+static int check_free_mem(JSContext* ctx, JSValue* stack_bottom, uint32_t size) {
+    if (rp_mqjs_upstream_check_free_mem(ctx, stack_bottom, size) == 0) return 0;
+    const rp_mqjs_api* const* api = (const rp_mqjs_api* const*)ctx->opaque;
+    if (api && *api && (*api)->ran_out) (*api)->ran_out(ctx);
+    return -1;
+}
 
 static int rp_mqjs_concat_subst(JSContext* ctx, void* buffer, JSValue* str, JSValue* rep, uint32_t pos,
                                 uint32_t end_of_match, JSValue* capture_buf, uint32_t captures_len, JSValue* needle) {
