@@ -9,7 +9,7 @@
 //       stopped it on stderr, when it throws.
 //
 //   retroplug-mqjs-run pack <bytecode> --name <pack> --heap-bytes <n> --types <id,...> [--blocks <n>]
-//                           [--control <bytecode>] [--least no] [--deadline-us <n>]
+//                           [--control <bytecode>] [--least no] [--deadline-us <n>] [--control-deadline-us <n>]
 //       Holds a pack's 64-bit bytecode to its declared heap, by the toolchain's heuristic: in a context of 3/2 of n
 //       bytes (the manifest's heapBytes is the box's 32-bit figure; script/MqjsHost.hpp's kCheckHalves says why 3/2,
 //       and why it is no guarantee), set up as a host sets a pack up (its definitions run and checked against the ids),
@@ -39,7 +39,9 @@
 //       wants settings other than its defaults) is reported on stdout as a note, and the run goes on without it.
 //       --deadline-us gives each call into a node, and into the pack's control context (its load, its settings
 //       checks), that long by the wall clock, in place of the desktop's own deadlines: a build whose every run is slow
-//       (DEBUG_GC, a sanitizer) holds its pack to the same outcome as an ordinary one.
+//       (DEBUG_GC, a sanitizer) holds its pack to the same outcome as an ordinary one. --control-deadline-us gives the
+//       control context a deadline of its own (by the wall clock too): loading a large pack's whole bytecode (the
+//       tests' scripttest) in a DEBUG_GC build under a sanitizer takes longer than a node's call should.
 
 #include <chrono>
 #include <cstdint>
@@ -68,7 +70,8 @@ namespace {
                  "retroplug-mqjs-run: %s\n"
                  "usage: retroplug-mqjs-run script <bytecode> [--context-bytes <n>]\n"
                  "       retroplug-mqjs-run pack <bytecode> --name <pack> --heap-bytes <n> --types <id,...> "
-                 "[--blocks <n>] [--control <bytecode>] [--least no] [--deadline-us <n>]\n",
+                 "[--blocks <n>] [--control <bytecode>] [--least no] [--deadline-us <n>] "
+                 "[--control-deadline-us <n>]\n",
                  why);
     std::exit(2);
 }
@@ -353,6 +356,7 @@ int pack(int argc, char** argv) {
     std::string name, types, control;
     std::uint32_t heap = 0, blocks = 16;
     bool          least = true;
+    std::uint64_t controlDeadline = 0;
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
         if (i + 1 >= argc) usage(("no value for " + a).c_str());
@@ -364,6 +368,7 @@ int pack(int argc, char** argv) {
         else if (a == "--control") control = v;
         else if (a == "--least" && (v == "yes" || v == "no")) least = v == "yes";
         else if (a == "--deadline-us") gDeadlineMicros = std::stoull(v);
+        else if (a == "--control-deadline-us") controlDeadline = std::stoull(v);
         else usage(("unknown option " + a).c_str());
     }
     if (name.empty() || !heap || types.empty()) usage("pack needs --name, --heap-bytes and --types");
@@ -387,7 +392,8 @@ int pack(int argc, char** argv) {
                                control.empty() ? nullptr : reinterpret_cast<const std::uint8_t*>(controlWords.data()),
                                static_cast<std::uint32_t>(controlSize)};
     // The pack's registration (its control context: its load, its settings checks) held to the run's deadline too.
-    if (gDeadlineMicros) rp::mqjs::setControlClock(&wallMicros, gDeadlineMicros);
+    if (controlDeadline || gDeadlineMicros)
+        rp::mqjs::setControlClock(&wallMicros, controlDeadline ? controlDeadline : gDeadlineMicros);
     const rp_package* package = rp::mqjs::exactPackage(source);
     if (!package) {
         std::fprintf(stderr, "define: its bytecode is not a pack this host registers (said above)\n");

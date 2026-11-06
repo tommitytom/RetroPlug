@@ -1984,7 +1984,7 @@ std::string runnerLine(const std::string& runner, const std::string& dir, const 
     std::string command = "\"" + runner + "\" pack \"" + dir + "/" + name + ".device64.bin\" --control \"" + dir + "/" +
                           name + ".mqjs64.bin\" --name " + name + " --heap-bytes " + std::to_string(heapBytes) +
                           " --types " + types + " --blocks " + std::to_string(blocks) +
-                          " --least no --deadline-us 3000000 > \"" + out + "\" 2>&1";
+                          " --least no --deadline-us 3000000 --control-deadline-us 60000000 > \"" + out + "\" 2>&1";
 #ifdef _WIN32
     command = "\"" + command + "\"";  // cmd /c drops a command line's outer quotes when it starts with one
 #endif
@@ -2016,7 +2016,8 @@ TEST_CASE("the pack check runs the same in the engine's DEBUG_GC build, a collec
     // collector updates: a copy of the value, held across those reads, sends what the collector moved away.
     // Each pack's run: the runner's 16 blocks, scripttest's one cycle of five (a block of each kind, its sends node's
     // among them), as its many nodes make the debug build's run long. Both runners give a call 3 s by the wall
-    // clock, so a slow build's node (a sanitizer's, under DEBUG_GC) meets the deadline only where an ordinary one does.
+    // clock, so a slow build's node (a sanitizer's, under DEBUG_GC) meets the deadline only where an ordinary one does,
+    // and the pack's control context 60 s (loading scripttest's whole pack there takes seconds under ThreadSanitizer).
     struct Pack {
         const rp_mqjs_pack_source* source;
         std::string                dir;
