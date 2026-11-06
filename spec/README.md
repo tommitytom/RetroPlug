@@ -1,11 +1,11 @@
 # RetroPlug — architecture spec
 
-This directory is the single source of truth for the RetroPlug architecture — the
-implementation in [`packages/native/`](../packages/native) (C++ host), the graph libraries in the workspace packages
+This directory is the single source of truth for the RetroPlug architecture - the implementation in
+[`packages/native/`](../packages/native) (C++ host), the graph libraries in the workspace packages
 [`node-sdk`](../packages/node-sdk), [`graph-runtime`](../packages/graph-runtime), [`core`](../packages/core),
 [`dsp`](../packages/dsp), the box's device nodes [`device-io`](../packages/device-io), the test nodes
-[`devtest`](../packages/devtest) and the Everdrive N8 pack [`n8`](../packages/n8), and
-[`packages/retroplug/`](../packages/retroplug) (TypeScript + React/LVGL UI).
+[`devtest`](../packages/devtest), the BlipToaster pack [`bliptoaster`](../packages/bliptoaster) and the Everdrive N8
+pack [`n8`](../packages/n8), and [`packages/retroplug/`](../packages/retroplug) (TypeScript + React/LVGL UI).
 
 The guiding principle is one sentence:
 

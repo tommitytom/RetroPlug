@@ -1,8 +1,8 @@
 # Design: the modular node-graph engine
 
 **Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phases A to D built (the graph libraries are in
-`packages/graph-runtime/` and `packages/node-sdk/`, the TS half in `packages/retroplug/src/graph/`), and Phases E1 and
-E2; E3 and E4 not yet built.
+`packages/graph-runtime/` and `packages/node-sdk/`, the TS half in `packages/retroplug/src/graph/`), and Phases E1 to
+E4.
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -596,7 +596,7 @@ export const lsdjSync = defineNode({
   script-node bundle, which both runtimes of an Engine's built-in script pack load, was about 660 KB in B3a,
   567 KB of it zod; since B3b it is 78 KB with none, and a `pnpm test` case (not a build gate) fails a bundle
   that pulls zod back in ([B3b §3](modular-graph-phase-b3b-design.md)). That is also a hard requirement for
-  MicroQuickJS on the Pico, which `defineNode` itself does not yet meet (it uses ES2015's library). Every
+  MicroQuickJS on the Pico, which `defineNode` meets since E4 (it keeps to the ES5 subset). Every
   settings field needs a default, since the descriptor describes the layout for default settings (a C++ node
   has `S{}`).
 - A TS node sees an audio port as an array of `Float32Array`s, an events port as a frame-ordered array,

@@ -6,9 +6,9 @@ Start with these — all short:
 - [spec/](spec/README.md) - the architecture (one doc per concern). The build lives in `packages/native/` (C++ host:
   `src/` core + `src/host/` layer + `plugin/`) + `packages/retroplug/` (TS/UI), with the graph libraries in the
   workspace packages `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (formerly
-  `native/src/graph` and `native/src/dsp`), the box's device nodes in `packages/device-io/` and the device check's test
-  nodes in `packages/devtest/` (listed by no product), and everything about the Everdrive N8 Pro in
-  `packages/n8/`. The older **legacy** build has been removed;
+  `native/src/graph` and `native/src/dsp`), the box's device nodes in `packages/device-io/`, BlipToaster's MIDI policy
+  as a TypeScript node in `packages/bliptoaster/`, and the device check's test nodes in `packages/devtest/` (listed by
+  no product), and everything about the Everdrive N8 Pro in `packages/n8/`. The older **legacy** build has been removed;
   [spec/07-remaining-work.md](spec/07-remaining-work.md) tracks the residual cleanup + feature gaps.
 - [docs/lsdj.md](docs/lsdj.md) — the LSDj domain reference + how to test LSDj sync /
   DAW timing / audio quality headlessly.
@@ -31,8 +31,9 @@ The rules below are the parts that don't fit those.
   can't resolve `react`. Don't bump any submodule pointer (in either repo) without
   checking — they're managed deliberately. RetroPlug also keeps `deps/sameboy` +
   `deps/mesen` / `deps/r8brain` (the shared core; `deps/enkiTS` is vendored under `deps/`, but no
-  target adds or links it since the native kit compile retired), and `deps/efsw`
-  (the file-watcher — `NativeFileWatcher` behind `HostRpcService::drainChangedPaths`
+  target adds or links it since the native kit compile retired), `deps/mquickjs` (MicroQuickJS, vendored: upstream's
+  files unpatched with their LICENSE, built by `cmake/mquickjs.cmake`, the engine behind the device packs), and
+  `deps/efsw` (the file-watcher - `NativeFileWatcher` behind `HostRpcService::drainChangedPaths`
   — now uses it: `add_subdirectory`'d `EXCLUDE_FROM_ALL` at the root, `efsw-static`
   linked into `retroplug-backend`; the watcher is opt-in via `enableWatching`, which
   only the plugin calls). `deps/catch2` is the C++ unit-test framework:
@@ -134,27 +135,39 @@ The rules below are the parts that don't fit those.
   `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp` (and
   `rp.n8.nes`, `rp.device.midi-in` and `rp.devtest`, in the `[device-check]` cases; `rp.core.midi-filter` is a core
   type, held by the twin table) compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library
-  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 45
-  cases in six files. A device-mode node created from msgpack settings renders bit for bit
-  what a desktop-mode node renders from the same settings as JSON, with create, process and destroy allocating
-  nothing; the desktop reads msgpack the same; the decode defaults a missing field, skips an unknown one and refuses
-  what JSON refuses in the same words, naming the field (two inputs part by choice, pinned: design section 6); the
-  converter writes each number as the JSON spells it; and eight `[device-check]` cases hold the image's cases to the
-  manifests' device entries, run the whole check in its arena with no allocation, stop it at each of its failure
-  steps, run the check's 10-node plan and drive the N8 pack's Edio, menu commands and operations over a scripted cart.
-  It holds the plan loader too
-  ([docs/modular-graph-phase-e3-design.md](docs/modular-graph-phase-e3-design.md), `[plan]`): a document exported by the
-  library's `exportPlan` (`retroplug-graph`) and loaded by `loadPlan` into an arena over the device-mode builds renders
-  bit for bit what GraphHost renders, allocating nothing from load to unload, every loader refusal says its words,
-  every bit of each blob golden flipped (the CRC resealed) loads into an arena of exactly the measured bytes or is
-  refused cleanly (`[mutation]`; its bounds checks bite only under build-asan, which is run by hand), and the three blob
-  goldens (`golden/*.hex`, recorded with `RP_PLAN_BLOB_UPDATE=1`) pin the format. `rp.device.midi-in`
-  has four cases (`[device-io]`). The box's host pieces are in it as well (`[box]`: `pico/host/`'s block driver and
-  staging, `BoxCartLink`, the volume write and the whole pass over a fake transport, with `plan.json`'s blob, and the
+  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 84
+  cases in eight files. A device-mode node created from msgpack settings renders bit for bit what a desktop-mode node
+  renders from the same settings as JSON, with create, process and destroy allocating nothing; the desktop reads
+  msgpack the same; the decode defaults a missing field, skips an unknown one and refuses what JSON refuses in the
+  same words, naming the field (two inputs part by choice, pinned: design section 6); the converter writes each number
+  as the JSON spells it; and sixteen `[device-check]` cases hold the image's cases to the manifests' device entries,
+  run the whole check in its arena with no allocation, stop it at each of its failure steps, run the check's 10-node
+  plan and drive the N8 pack's Edio, menu commands and operations over a scripted cart, and run the script pack's side
+  (the devtest pack's types, a script bench, a 4-node script plan held to the desktop's digest, the clock a node's
+  deadline is read from). The script host is in it as well
+  ([docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md), `[script-pack]`, 39 cases, with
+  `ScriptPack.test.cpp` and the fixture packs in `test/device-mode/script-packs`): a TS node run on MicroQuickJS in
+  both builds of the host (the device build and the desktop's), a lifecycle, the block API, every fault (a throw, a
+  deadline, a heap running out silencing only its pack, the engine's dropped exceptions, the re-entry cap), kept
+  objects, and a warmed block allocating nothing, a plan exported and loaded over the device-mode builds
+  digest-identical to GraphHost, and the loader's package memory (sizing, placement, refusals); `[bliptoaster]` holds
+  `rp.bliptoaster.midi-policy` to `rp.core.midi-filter` message for message (the twin) and its heap to 64 full blocks;
+  `[debug-gc]` runs the packs on an engine built to collect at every allocation. The engine sources are in
+  `deps/mquickjs` (upstream's, unpatched) and the fixes are wrappers in `rp_mqjs_engine.c`, whose spans a
+  configure-time hash guards; **a bump of the pin that changes one fails the configure** and means regenerating the
+  wrapper, not loosening the guard. It holds the plan loader too
+  ([docs/modular-graph-phase-e3-design.md](docs/modular-graph-phase-e3-design.md), `[plan]`): a document exported by
+  the library's `exportPlan` (`retroplug-graph`) and loaded by `loadPlan` into an arena over the device-mode builds
+  renders bit for bit what GraphHost renders, allocating nothing from load to unload, every loader refusal says its
+  words, every bit of each blob golden flipped (the CRC resealed) loads into an arena of exactly the measured bytes or
+  is refused cleanly (`[mutation]`; its bounds checks bite only under build-asan, which is run by hand), and the three
+  blob goldens (`golden/*.hex`, recorded with `RP_PLAN_BLOB_UPDATE=1`) pin the format. `rp.device.midi-in` has four
+  cases (`[device-io]`). The box's host pieces are in it as well (`[box]`: `pico/host/`'s block driver and staging,
+  `BoxCartLink`, the volume write and the whole pass over a fake transport, with `plan.json`'s blob, and the
   `retroplug-export-plan` tool run as a process), and `UsbCdcTransport` over a fake TinyUSB (`[usb-cdc]`); the device
   check's digest literal is compared only on `linux-x64-gnu13`. Its configure runs three refused-source checks (a heap
-  type, a pointer in `Settings` and a heap header must each fail in device mode with their own reason; libc++ skips the
-  header one).
+  type, a pointer in `Settings` and a heap header must each fail in device mode with their own reason; libc++ skips
+  the header one).
 - **The graph libraries are workspace packages, and portable nodes have rules.** `packages/<name>/package.json`'s
   `retroplug` field is the manifest [cmake/packages.cmake](cmake/packages.cmake) reads; each product lists its
   packages (`retroplug_product`) and gets a generated `rp_register_packages()` (the `[packages]` golden holds the type
@@ -166,6 +179,19 @@ The rules below are the parts that don't fit those.
   such target, so a missed guard or a non-portable `Settings` fails the ordinary build. A custom `rfl::Reflector<E>`
   is not seen by the device decode. Details:
   [docs/modular-graph-phase-e1-design.md](docs/modular-graph-phase-e1-design.md).
+- **A device pack is TypeScript on MicroQuickJS, and it runs the same bytes on the desktop and the box.** A package
+  whose manifest has a `retroplug.script` member (`entry`, `device: true`, `heapBytes`, the box's 32-bit context) is
+  built at build time by the custom target `retroplug-<name>-script-pack` (`retroplug_device_script_pack`, which runs
+  `packages/retroplug/scripts/build-device-pack.mjs`: bundle, ES5, the scan for library calls the engine lacks, a
+  transcript and a heap check on `retroplug-mqjs-run`, bytecode at 64 and 32 bits), and `retroplug_product` registers
+  it beside the package's native entries. Its nodes use the same `defineNode`, which refuses an audio port in a device
+  pack (the toolchain's scan refuses `async` and `Promise`, and the host a promise returned from a hook); `idle:
+  "skip"` and the block API's `forward()` keep an idle block off the interpreter. A pack's memory is `rp_package`'s
+  `memory` hook, sized and placed by the loader; a device image gets a pack from the desktop build its exporter came
+  from (`RP_DESKTOP_BUILD_DIR`), and `RP_SCRIPT_HEAP_BYTES_<package>` sets its heap in one image. A node faults on a
+  throw, a deadline (10 ms and 250 us a message on the box) or a dead heap; a throw or a deadline faults only that
+  node, a dead heap its whole pack. Details:
+  [docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md).
 - **The N8 is a pack (`packages/n8`), and a product starts it through a provider, naming no N8 class.** Its portable
   target (`retroplug-n8`, `device: true`) holds the Edio protocol written ONCE, in C++ with no exceptions, over an
   abstract `Transport`, plus the menu commands, the operations (`bootRom`, `readFile`, `writeFile`), `rp.n8.nes` and the
@@ -402,15 +428,19 @@ The headless loop (the only path — legacy is gone) is documented in
 C++ unit checks — the per-context window-hook routing, the class-id counter sync
 that keeps the DAW-hosted editor from rendering blank, and the DPF dynamic-parameter
 diff classifier), `device:check` (`tools/build-device-check.sh` - builds `rp-device-check`, the RP2350 image of every
-portable `rp.core` / `rp.dsp` / `rp.n8.nes` / `rp.device.midi-in` / `rp.devtest` type, the N8 pack's Edio and a
-10-node plan exported at build time and run through the loader on a 4 KB stack, with `arm-none-eabi-g++` and the Pico
+portable `rp.core` / `rp.dsp` / `rp.n8.nes` / `rp.device.midi-in` / `rp.devtest` type, the N8 pack's Edio, a
+10-node plan exported at build time and run through the loader on a 4 KB stack, and the devtest script pack on
+MicroQuickJS (its types, a bench of a block and a message, and a 4-node script plan with a deep nest, whose stack is
+judged in two phases), with `arm-none-eabi-g++` and the Pico
 SDK 2.1.1 (`PICO_SDK_PATH`), `-Werror=stack-usage=1024` on every compile and the desktop `retroplug-export-plan` built
 first (`--packages` names the packages an image's plan may use), under a link
-trap on the heap, on exceptions and on RTTI (87 wrapped symbols with arm-none-eabi GCC 13.2.1) and a probe that must fail to link; built and never
+trap on the heap, on exceptions and on RTTI (87 wrapped symbols with arm-none-eabi GCC 13.2.1; MicroQuickJS, compiled
+at -Os, passes it with `abort` wrapped) and a probe that must fail to link; built and never
 run, in CI on linux-x64; needs no hardware), `device:box` (`tools/build-box.sh` - builds the Pico box's firmware,
-`pico/n8-host`, which is C++ on the N8 pack's Edio and runs the built-in `plan.json` through `pico/host/` and the
-loader, with `retroplug-export-plan` built first, in both USB variants (Pico-PIO-USB, the rig's, and
-`RP_NATIVE_USB`) under the same link trap over the WHOLE image, TinyUSB and Pico-PIO-USB included, each with its own
+`pico/n8-host`, which is C++ on the N8 pack's Edio and runs the built-in `plan.json` (MIDI in -> the `bliptoaster`
+policy, a TypeScript node -> the N8) through `pico/host/` and the loader, with `retroplug-export-plan` built first, in
+both USB variants (Pico-PIO-USB, the rig's, and `RP_NATIVE_USB`) under the same link trap over the WHOLE image,
+TinyUSB and Pico-PIO-USB included, each with its own
 probe that must fail to link; needs the SDK's TinyUSB submodule and a Pico-PIO-USB checkout at 5a37a66
 (`PICO_PIO_USB_PATH`, default `/workspaces/Pico-PIO-USB`); built and never run, in CI on linux-x64 beside
 `device:check`; the box's hardware gate is `pico/n8-host/loop.sh`, `stress.sh` and `faults.sh`, run by hand on the

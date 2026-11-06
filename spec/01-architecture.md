@@ -462,7 +462,10 @@ linked with
 `--wrap` on the heap and the exception entry points so that any allocation or throw is a link error, and then loads a
 10-node plan exported at build time through the loader, in its arena on a 4 KB stack, and runs it. A plan is a
 versioned blob (`exportPlan`, [modular-graph-phase-e3-design.md](../docs/modular-graph-phase-e3-design.md)); the Pico
-box runs its bridge as such a plan. It is built, never run, in CI ([06-build-test.md](06-build-test.md)).
+box runs its bridge as such a plan, with a TypeScript node (`rp.bliptoaster.midi-policy`) on MicroQuickJS in it
+([modular-graph-phase-e4-design.md](../docs/modular-graph-phase-e4-design.md): a device pack's bytecode is embedded,
+its context is sized by the loader as package memory, and the image also runs the devtest script pack). It is built,
+never run, in CI ([06-build-test.md](06-build-test.md)).
 
 ### The offline job pool
 

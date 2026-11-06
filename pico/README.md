@@ -16,8 +16,9 @@ Three independent stages, built and verified one at a time:
 
 Since E3 the box is a graph host ([docs/modular-graph-phase-e3-design.md](../docs/modular-graph-phase-e3-design.md)):
 [`host/`](host/) is the generic part (the block driver, the UART MIDI staging, the device `rp_host`, the load of the
-built-in plan) and [`n8-host/`](n8-host/) the N8 product, whose MIDI bridge is `n8-host/plan.json` (MIDI in, a filter,
-the N8 node) exported by `retroplug-export-plan` when the firmware is built and loaded into a static arena at boot.
+built-in plan) and [`n8-host/`](n8-host/) the N8 product, whose MIDI bridge is `n8-host/plan.json` (MIDI in, the
+`bliptoaster` policy, a TypeScript node on MicroQuickJS ([E4](../docs/modular-graph-phase-e4-design.md)), the N8 node)
+exported by `retroplug-export-plan` when the firmware is built and loaded into a static arena at boot.
 Build the exporter first (`cmake --build build --target retroplug-export-plan-current -j$(nproc)`); `pnpm device:box` does.
 
 Target split: **two Picos** - one dedicated to the USB host (PIO-heavy), one for

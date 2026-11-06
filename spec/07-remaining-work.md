@@ -519,10 +519,12 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **E3 is built** (below): `exportPlan` for `rp2350`, the arena loader and the box as a graph host, with the
     settings written from the desktop's parsed settings, every frame held to 1 KiB by `-Wstack-usage` (the chains
     stay a hand sum, and the device check prints its measured high-water mark) and `rp.core.delay`'s default left as it
-    is (a plan is refused where its arena cannot hold it: the box's 128 KiB arena refuses a defaulted delay).
-  - **E4: MicroQuickJS on the Pico**, a script host in the arena and `defineNode` made portable.
+    is (a plan is refused where its arena cannot hold it: the box's 64 KiB arena refuses a defaulted delay).
+  - **E4 is built** (below): MicroQuickJS on the box and the desktop, `defineNode` made portable, package memory in
+    the SDK and the loader, and BlipToaster's MIDI policy as a TypeScript node.
   - **The rest of the package split** (the main design's section 11): `sameboy`, `mesen` (per console), `lsdj`, `mgb`,
-    `risa`, `smsggdj`, `bliptoaster` and `launchpad` as packages, the TS halves of `core` and `dsp`, per-product esbuild
+    `risa`, `smsggdj`, `bliptoaster` (its MIDI policy node is the one part built, E4) and `launchpad` as packages, the
+    TS halves of `core` and `dsp`, per-product esbuild
     bundles, downloadable packs.
   - **Windows and MSVC have never built E1's targets.** The `<target>-device` object libraries are in the default build
     under `/W4 /WX`, so a Windows problem breaks `build.bat` itself: a `build.bat` and `test.bat` run is owed. Device
@@ -580,9 +582,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   (`PlanBlob.hpp`), `exportPlan` and `retroplug-export-plan` on the desktop, a portable loader into a static arena that
   runs the same executor (`PlanLoader`), `rp.core.midi-filter` with `capacity.match`, `packages/device-io`
   (`rp.device.midi-in`), the box as a graph host (`pico/host/` and `pico/n8-host/`, whose bridge is the built-in
-  `plan.json`, with `PICO_HEAP_SIZE=0`, a 128 KiB arena and `-Werror=stack-usage=1024`), and `rp-device-check`
-  running a plan
-  through the loader on a 4 KB stack (`packages/devtest`). Nothing was re-recorded but `[packages]`; the filter's
+  `plan.json`, with `PICO_HEAP_SIZE=0`, a 128 KiB arena (E4 halved it) and `-Werror=stack-usage=1024`), and
+  `rp-device-check` running a plan through the loader on a 4 KB stack (`packages/devtest`). Nothing was re-recorded
+  but `[packages]`; the filter's
   descriptor golden and the three blob goldens are new. What it leaves:
   - **The audio version:** a codec and its DMA driver, a fixed-cadence block driver, the float tolerance against the
     desktop; a time-reading plan on the elapsed driver loses the time its carry bound skips under load. A fixed cadence
@@ -599,9 +601,33 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     byte-stable across hosts, and the new libraries are unbuilt under MSVC `/W4 /WX`. A Windows export may accept a
     `long double` type Linux refuses.
   - **The Pico gate passed** on the rig with BlipToaster (design section 12.7); the image runs from SRAM
-    (`copy_to_ram`, about 305 KiB of 512), which E4's heap and audio share, and the `[stats]` print can still stall a
+    (`copy_to_ram`, about 305 KiB of 512; E4 took it to 347.5), and the `[stats]` print can still stall a
     message for ~13.7 ms, as E2's did. `RP_NATIVE_USB` has never run on hardware.
   - **The Launchpad's `threads` flag** and the E2 template gaps remain.
+- **E4 built: TypeScript nodes on the box, on MicroQuickJS**
+  ([modular-graph-phase-e4-design.md](../docs/modular-graph-phase-e4-design.md), five commits): `deps/mquickjs`
+  (vendored, unpatched) with our wrapper (the symbol rename, the fixes for two upstream GC bugs and three swallowed
+  exceptions guarded by a configure-time hash, our stdlib), the device-pack toolchain
+  (`packages/retroplug/scripts/build-device-pack.mjs`), `defineNode` in the ES5 subset with `idle: "skip"` and
+  `forward()`, `MqjsHost` (one context per pack, a node's deadline of 10 ms and 250 us a message, a re-entry cap of 4),
+  package memory (`rp_package`'s `memory`, `rp.host.packages/1`) sized and placed by the loader, `packages/bliptoaster`
+  (`rp.bliptoaster.midi-policy` in the box's plan in place of `rp.core.midi-filter`, a 64-message `rp.device.midi-in`,
+  a 64 KiB arena, 347.5 KiB of SRAM in all) and `rp-device-check` running a script pack. Nothing was re-recorded but
+  `[packages]` and `box-plan.hex`. What it leaves:
+  - **Windows, macOS and arm64 have never built E4.** The engine's clang-cl objects, the `sys/time.h` shim, the
+    thread-time deadline and the names check on macOS are unbuilt, and every desktop product now links the engine.
+  - **No 32-bit runner is in the build**: the 3/2 sizing of a 64-bit device build is a heuristic and the box's boot
+    line is the authority. The first engine fix is guarded only by the configure-time hash, since no test reaches it.
+  - **Every context runs a private copy of its bytecode** (running writes into it), and a desktop re-plan holds two
+    instances of a pack at once (contexts are 4x `heapBytes` with a 1 MiB floor, a dead pack is revived).
+  - **A SysEx past 3 bytes allocates a view per message**, and at 32 bits a non-whole number read allocates, so a
+    SysEx stream makes the box collect in the MIDI path.
+  - **Packs in plans that are not built in** (a live upload or an SD plan) need the per-node port signature and a
+    trust model for bytecode mquickjs does not verify; the desktop's N8 graphs do not use the policy node, and
+    `feature/launchpad` has not adopted the toolchain.
+  - **The Pico gate passed** with the new latency line (design section 11.7): averages near E3's, the worst about
+    50 us higher. The first stuck-menu episode on the rig stayed unexplained (the E3 control image failed the same way
+    and booted after a power cut).
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at
     moves by tens of frames from one split to another (up to 32 in `lsdj-mastersync` as the decoder's prototype
@@ -620,8 +646,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     each block's `Engine::midiOut` at once as the block is rendered, its frames dropped, where the plugin hands the
     DAW each message at its frame (`writeMidiEvent`). Scheduling it is the standalone's own work.
 - **Found while building B3b, left as they are:**
-  - `defineNode` keeps to ES2015's library (`Set`, `Object.entries`, `includes`), so the script-node bundle
-    holds no zod but is not yet MicroQuickJS-ready; `settingsSchema.ts` already keeps to ES5's.
+  - `defineNode` kept to ES2015's library (`Set`, `Object.entries`, `includes`), so the script-node bundle held no zod
+    but was not MicroQuickJS-ready; E4 rewrote it to the ES5 subset (`settingsSchema.ts` already kept to it).
   - `routeBlockInto` in [midiRouting.ts](../packages/retroplug/src/midiRouting.ts) has no caller since B3b:
     the routing node routes each message with `routeTarget`, the same arithmetic, and `routeBlock`, its pure
     twin, stays as the reference the routing node's test holds every mode to. It can be deleted.

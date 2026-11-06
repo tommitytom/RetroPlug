@@ -294,9 +294,12 @@ staging, the SysEx `7D 50` pick). Notes for running it:
   message, hangs on a Launchpad's flood and is broken on ch2); `N8_ROM_PATH` still defaults to it in the firmware, so a
   bare flash with no `--rom` boots that file if it is on the card.
 - **The boot line to match.** The console prints `[n8-host] USB host up (PIO-USB D+=GP2, D-=GP3)
-  ...`, then `[host] plan loaded: 3 nodes, <N> of 131072 arena bytes, 48000 Hz, 256 frames a block` and a `[host]
-  node ...` line per node (three spaces after `[host]`) (the box runs its bridge as a built-in plan; a refused plan
-  prints `the built-in plan was
+  ...`, then `[host] plan loaded: 3 nodes, <N> of 65536 arena bytes, 48000 Hz, 256 frames a block` (N near 56,600), a
+  `[host] node ...` line per node (three spaces after `[host]`), `[host]   pack bliptoaster, 32016 bytes` and, after
+  the first block, `[host]   pack bliptoaster: heap <X> of 24576 bytes in use after the first block; the load took <us>
+  us and the first block <us> us` (X near 11,600, about 9.6 ms and 1.0 ms): the box runs its bridge as a built-in plan,
+  and its MIDI policy is a TypeScript node on MicroQuickJS, so a node that faults prints `[host] node ... faulted` and
+  its words on the next `[host]` line (a refused plan prints `the built-in plan was
   refused` and forwards nothing), and a good boot ends `[n8-host] usb-games/pico/bliptoaster.nes booted by the
   Pico - no PC used.`, about 12 s after the reset from the saved choice with the CRC skip (`[box]
   already on the SD ... - no upload`), an upload adds about 5 s for a 290 KB ROM. At every connect the console also
@@ -308,12 +311,15 @@ staging, the SysEx `7D 50` pick). Notes for running it:
   -j$(nproc)`, which also stamps it for `loop.sh`'s staleness check; `loop.sh` reads `RP_DESKTOP_BUILD_DIR`, default
   `build/`, and refuses one configured from another checkout).
 - **Read `[stats] lat=` per window.** The figure is the last window's average and maximum in us, not
-  cumulative: the final line's 10 ms is the recovery window and the window holding a 40-byte SysEx
-  peaks near 21 ms (the SysEx is about 13 ms on the wire; since E3 a SysEx is timed from its F7, so expect that window
-  lower). Isolated notes sit near 0.6 ms average and 1.1 ms worst. `[stats]` also carries `linkfull=` and `skipped=`
+  cumulative: the final line's 10 ms is the recovery window and the window holding a 40-byte SysEx peaks near 21 ms
+  (the SysEx is about 13 ms on the wire; since E3 a SysEx is timed from its F7, so expect that window lower). Isolated
+  notes sit near 0.6 to 0.7 ms average and 1.1 to 1.17 ms worst since E4's script node (E3: 0.6 / 1.1; a worst past
+  about 1.2 ms, or an average past about 0.78 ms, is a regression, the worst being the primary signal since averages
+  vary about 0.19 ms from run to run; an isolated 8 to 12 ms worst is the `[stats]` print's stall). `[stats]` also
+  carries `linkfull=` and `skipped=`
   (`skipped` is frames the block driver dropped past its carry of four blocks, cumulative since boot: a boot or a
   recovery adds hundreds of thousands and each stress rerun about 150 to 1,100, so judge it by its growth across a
-  case, which `stress.sh` does not do; `linkfull` stays 0), and `filtered` counts what the plan's filter dropped
+  case, which `stress.sh` does not do; `linkfull` stays 0), and `filtered` counts what the plan's policy node dropped
   (aftertouch, system common, real time) among other things.
 - **`pnpm device:box` needs no hardware**: it proves the firmware links under the heap/exception/RTTI trap and is CI's
   check; the scripts above are what prove it behaves.

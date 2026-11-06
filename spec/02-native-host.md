@@ -425,28 +425,26 @@ is unread drops); a read stops at the chunk whose pushes start dropping; a model
 device's fifo_a does. A `CMD_F_FRD_MEM` validates the range the ROM asked for, not the bytes the file held, and
 answers 0x13 when the cart cannot back it.
 
-An events or bytes output may declare its queue's capacity (`rp::bytes_out::sized<rp::capacity{...}>` in
-C++, `events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messages and 4096 bytes, at
-most 1 Mi messages and 16 MiB. A wire carries its source's queue, so an input declares none (both parsers
-refuse one, and an input has no `sized`): the outputs that do are the host inputs above, the Game Boy's
-`serialOut`, and every script node's output
-([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts): `serialIn` 4096 messages / 72 KiB,
-`midi` 4096 / 72 KiB, `bytes` 256 / 1 KiB, `buttons` 64 / 128 B, `midiOut` 1024 / 8 KiB, `controllerOut`
-256 / 4 KiB, a routing output 2048 / 64 KiB, `launches` 64 / 256 B) and the box's `rp.device.midi-in` (256 / 4 KiB).
-The two that pass host MIDI on, `serialIn` and `midi`, hold what
-`rp.host.midi-in`'s output holds and room for a role's own bytes besides, so the one place host MIDI is
-dropped is that edge; the rest are sized from what the suites send through them in one block, with
-margin. Instead of a size an output may declare `{"match": "<input>"}` (`rp::events_out::matching<"in">`,
-`defineNode`'s `{ match }`): it names an input of the output's own kind and is sized, per plan, as the queue that feeds
-that input (the planner's `capacities()` pass; an unwired input gives the default, a loop of matches is refused,
-`capacity-match`), which is how `rp.core.midi-filter` serves the box's 256 / 4 KiB and the desktop's 2048 / 64 KiB with
-one declaration. Queues are allocated per plan, a plan's events and bytes queues held to a budget of 64 MiB
-(`kPlanQueueBudget`; a document past it is refused, `queue-budget`), and an unwired output writes a
-shared scratch queue of the default size, whose drops go uncounted. A push that does not fit is dropped
-and counted on its queue; after each block the executor adds the counts to the producing instance's
-atomic and the GraphHost's, `GraphHost::reclaim` names a node the first time its outputs drop, and
-`Engine::droppedMessages()` (the harness RPC `droppedMessages`) reads the total, which the parity rig and
-the native goldens run hold at zero.
+An events or bytes output may declare its queue's capacity (`rp::bytes_out::sized<rp::capacity{...}>` in C++,
+`events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messages and 4096 bytes, at most 1 Mi messages
+and 16 MiB. A wire carries its source's queue, so an input declares none (both parsers refuse one, and an input has no
+`sized`): the outputs that do are the host inputs above, the Game Boy's `serialOut`, and every script node's output
+([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts): `serialIn` 4096 messages / 72 KiB, `midi` 4096 /
+72 KiB, `bytes` 256 / 1 KiB, `buttons` 64 / 128 B, `midiOut` 1024 / 8 KiB, `controllerOut` 256 / 4 KiB, a routing
+output 2048 / 64 KiB, `launches` 64 / 256 B) and the box's `rp.device.midi-in` (64 / 4 KiB, which the `bliptoaster`
+pack's message pools follow). The two that pass host MIDI on, `serialIn` and `midi`, hold what `rp.host.midi-in`'s
+output holds and room for a role's own bytes besides, so the one place host MIDI is dropped is that edge; the rest are
+sized from what the suites send through them in one block, with margin. Instead of a size an output may declare
+`{"match": "<input>"}` (`rp::events_out::matching<"in">`, `defineNode`'s `{ match }`): it names an input of the
+output's own kind and is sized, per plan, as the queue that feeds that input (the planner's `capacities()` pass; an
+unwired input gives the default, a loop of matches is refused, `capacity-match`), which is how
+`rp.bliptoaster.midi-policy` serves the box's 64 / 4 KiB and the desktop's 2048 / 64 KiB with one declaration (as
+`rp.core.midi-filter` would). Queues are allocated per plan, a plan's events and bytes queues held to a budget of 64
+MiB (`kPlanQueueBudget`; a document past it is refused, `queue-budget`), and an unwired output writes a shared scratch
+queue of the default size, whose drops go uncounted. A push that does not fit is dropped and counted on its queue;
+after each block the executor adds the counts to the producing instance's atomic and the GraphHost's,
+`GraphHost::reclaim` names a node the first time its outputs drop, and `Engine::droppedMessages()` (the harness RPC
+`droppedMessages`) reads the total, which the parity rig and the native goldens run hold at zero.
 
 ### Device nodes, their links and capability jobs
 
@@ -1187,7 +1185,8 @@ kernels by their own tests.
 The node SDK, the graph runtime and the `rp.core` and `rp.dsp` nodes are workspace packages since E1
 ([modular-graph-phase-e1-design.md](../docs/modular-graph-phase-e1-design.md));
 [cmake/packages.cmake](../cmake/packages.cmake) reads each `packages/<name>/package.json`'s `retroplug.native`
-manifest (an object or a list, one per `rp_package`, with a per-entry `device` flag) with `string(JSON)`.
+manifest (an object or a list, one per `rp_package`, with a per-entry `device` flag) with `string(JSON)`, and its
+`retroplug.script` member (E4: `entry`, `device: true`, `heapBytes`) for a TypeScript pack.
 `retroplug_product(<target> PACKAGES ...)` generates that product's `rp_register_packages()` (declared in
 [`Packages.hpp`](../packages/graph-runtime/native/src/graph/Packages.hpp)), which `Engine.cpp` iterates in order; the
 order is load-bearing (`rp.host` after `rp.dsp.resample`) and the `[packages]` golden holds it. The plugin is one
@@ -1211,6 +1210,25 @@ within -256 to 256 (the same limits hold for `enum_param`). A device-capable nod
 guard, a pointer or non-portable `Settings`, or a `heap` node fails the desktop build. `rp.sdk.settings-json/1` is an
 SDK interface every `node.hpp` type answers, writing an instance's settings as JSON. The device image and the link
 trap are in [06-build-test.md](06-build-test.md).
+
+**Script packs and package memory (E4).** A package with a `retroplug.script` member is a TypeScript pack whose nodes
+run on MicroQuickJS, in the device-mode script host (`MqjsHost`, `packages/graph-runtime/native/src/script/`), on the
+desktop and on the box alike ([modular-graph-phase-e4-design.md](../docs/modular-graph-phase-e4-design.md));
+desktop-only packs stay on QuickJS (the script host above). The engine is `deps/mquickjs`, vendored, behind
+`rp_mqjs_engine.c`, which wraps the fixes (`rp_mqjs_names.h`, force-included, renames its symbols).
+`build-device-pack.mjs` bundles the entry, lowers it to ES5, scans it for library calls the engine lacks, compiles the
+bytecode the generated `pack64.c` / `pack32.c` carry, and runs that bytecode on `retroplug-mqjs-run` (a transcript and
+a heap check), with the type ids a device registers from without running any JavaScript. A pack's memory is one block
+`[host state][a private copy of its bytecode][the context, heapBytes]`, declared by `rp_package`'s `memory` hook
+(`query`, `query_target`, `setup`, `teardown`, with `ctx`), which the loader sizes once at the target's width, places
+before the nodes and sets up before the first is created; a node asks for its package's block through
+`rp.host.packages/1`. Each node's context loads the pack's device runtime bundle (no settings parse, no descriptor),
+the desktop's control context the whole pack. A node's `process` runs under a deadline read from `rp.host.clock/1` (10
+ms and 250 us a message on the box, 500 ms of thread CPU time on the desktop with no clock), a throw, an overrun or a
+dead heap faults the node (`rp.script.fault/1`) and a dead heap every node of its pack, and a definition's `idle:
+"skip"` keeps a block with nothing to do off the interpreter. The block API gains `forward(port, message)`.
+`rp.host.packages/1`, `rp.script.fault/1`, `rp.script.heap/1`, `rp.host.clock/1` and `rp.host.script-log/1` are
+declared in [rp_script.h](../packages/node-sdk/native/src/graph/rp_script.h) and `rp_node.h`.
 
 **Providers.** A pack's desktop entry may name a `provider` (a function returning an
 [`rp_provider`](../packages/node-sdk/native/src/graph/rp_provider.h): `create`, `restore`, `rpc_service`, `destroy`, led

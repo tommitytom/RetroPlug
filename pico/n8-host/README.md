@@ -21,6 +21,7 @@ PIO-USB - they don't contend.
 | 2.5 | **done (HW-verified 2026-10-30)** | BlipToaster parity with the PC bridge: **SysEx** forwarded verbatim, the **expansion master volume** set when the cart needs it, aftertouch still filtered (BlipToaster ignores it). See "BlipToaster parity" below - Test G through the Pico matches the console numbers BlipToaster documented from the PC. |
 | 2.6 | **done (HW-verified 2026-10-30)** | the standalone box (`box.cpp`): status LED, watchdog + recovery reboots with backoff, several ROMs staged in flash and picked over MIDI (`F0 7D 50 01 <n> F7`), the choice saved on the SD. `faults.sh`: random NES power cuts, 8/8 rounds recovered and played. See "The standalone box". |
 | 2.7 | **done, HW-verified 2026-11-05 (E3)** | the box as a graph host: `../host/` plus `plan.json` (MIDI in -> `rp.core.midi-filter` -> `rp.n8.nes`) exported at build time and loaded into a 128 KiB arena; the forwarding, the volume check and the aftertouch drop that 2.4 and 2.5 describe are now that plan and the box cart link |
+| 2.8 | **done, HW-verified 2026-11-06 (E4)** | the cart's MIDI policy as a TypeScript node: `plan.json` is MIDI in -> `rp.bliptoaster.midi-policy` (a `packages/bliptoaster` pack on MicroQuickJS) -> `rp.n8.nes`, in a 64 KiB arena; the `rp.core.midi-filter` it replaced stays in `rp.core` |
 
 ## Dependencies (not in the repo yet - see "one-time setup")
 
@@ -158,18 +159,17 @@ keeps a voice's timer at note-off and silences it through its level, so `p1=235/
 released, not a stuck one - plus a `[stats]` line once a second while anything moves (bytes in,
 messages parsed / forwarded, fifoWRs and their largest batch, and every way a byte can be lost:
 UART overrun, framing error, full receive ring; and `lat=avg/worst` in µs for the window).
-`filtered` is what the plan took off the stream before the cart link: the filter's drops (aftertouch, system common,
-real time), a SysEx past 4 KB and anything no block took, counted at the staging and the link rather than inside the
-plan (one read high, only while `linkfull` moves); `notready` is what the link refused while no game ran; `linkfull`
-counts pushes refused for a full link ring (0 expected) and `skipped` the frames the block driver dropped past its
-carry of four blocks: cumulative since boot, it grows by hundreds of thousands across a boot (the main loop waits on the
-N8 for seconds) and by about 150 to 1,100 frames over a stress rerun, where a hold outruns the carry (an N8 call such as
-the sniff's read, about 150 to 176 frames a pass), so judge it by its growth across a case, which `stress.sh` does not
-do. `-DN8_BRIDGE_VERBOSE=1` also prints each
-forwarded batch. The L6 capture's ch3 measures the pitch
-(`retroplug-cli analyze-capture <wav> --channel 3 --expect-hz 440`).
-Don't confuse it with the **L6's** own MIDI ports (`L6 MIDI I/O Port` etc.): those are USB
-control ports for the mixer, not a MIDI output, and writing to them can change capture settings.
+`filtered` is what the plan took off the stream before the cart link: the policy node's drops (aftertouch, system
+common, real time), a SysEx past 4 KB and anything no block took, counted at the staging and the link rather than
+inside the plan (one read high, only while `linkfull` moves); `notready` is what the link refused while no game ran;
+`linkfull` counts pushes refused for a full link ring (0 expected) and `skipped` the frames the block driver dropped
+past its carry of four blocks: cumulative since boot, it grows by hundreds of thousands across a boot (the main loop
+waits on the N8 for seconds) and by about 150 to 1,100 frames over a stress rerun, where a hold outruns the carry (an
+N8 call such as the sniff's read, about 150 to 176 frames a pass), so judge it by its growth across a case, which
+`stress.sh` does not do. `-DN8_BRIDGE_VERBOSE=1` also prints each forwarded batch. The L6 capture's ch3 measures the
+pitch (`retroplug-cli analyze-capture <wav> --channel 3 --expect-hz 440`). Don't confuse it with the **L6's** own MIDI
+ports (`L6 MIDI I/O Port` etc.): those are USB control ports for the mixer, not a MIDI output, and writing to them can
+change capture settings.
 
 ### BlipToaster parity: SysEx, expansion volume, aftertouch
 
@@ -190,8 +190,11 @@ control ports for the mixer, not a MIDI output, and writing to them can change c
   nothing. On this rig the N8 OS itself set 129-130 at every hand-over, so the register now reads 128 after a connect.
 - **Aftertouch stays filtered, in the plan.** BlipToaster's parser reads poly-aftertouch and channel pressure
   and ignores both, and the older n8-midi.nes hung on the flood a Launchpad sends, so forwarding
-  them would only cost FIFO bandwidth. The firmware filters nothing: `plan.json`'s `rp.core.midi-filter` drops
+  them would only cost FIFO bandwidth. The firmware filters nothing: `plan.json`'s `rp.bliptoaster.midi-policy` drops
   `polyAftertouch`, `channelAftertouch`, `systemCommon` and `realtime` (clock, sensing, transport), the cart's policy.
+  It is a TypeScript node (`packages/bliptoaster/ts/index.ts`, on MicroQuickJS); changing the policy is editing that
+  file and rebuilding, and `rp.core.midi-filter` (the C++ node it replaced, with the same behaviour, held to it by a
+  twin test) stays in `rp.core` for every other use.
 
 The base `bliptoaster.nes` is **2A03 only**: its mapper 69 (FME-7) banks the sample kits and drives
 no 5B voices - expansion audio needs a variant build (`bliptoaster-s5b.nes` etc.). Through the Pico
@@ -248,11 +251,22 @@ average, ~1.04 ms worst** (it was ~4.6 ms typical with 11-19 ms outliers). Four 
   isolated message can read ~12 ms; a non-blocking ring console removed that and cost ~100 us at the worst of every
   message, so it was dropped.
 - **Running from SRAM (E3).** The image is `copy_to_ram`: copied from flash at boot and run from SRAM, which takes
-  about 305 KiB of the 512 KiB (286 KiB for `RP_NATIVE_USB`). Run from flash, the plan's longer message path cost ~95 us
+  about 305 KiB of the 512 KiB (286 KiB for `RP_NATIVE_USB`) at E3, 347.5 KiB (328 KiB) with E4's engine. Run from
+  flash, the plan's longer message path cost ~95 us
   average and ~130 us worst in XIP cache refills; from SRAM the box is back at E2's latency (five runs 610-680 /
   1086-1128
   us). `-DN8_LAT_TRACE=1` builds a diagnostic that counts the cache's accesses and hits and times each segment of a
   message's path.
+- **The TypeScript policy node (E4).** A message now passes through MicroQuickJS: an isolated message pays its
+  block's base plus one message (estimated at about 40 us: callgrind on i386, scaled by the first block's timing; 65
+  us a note from flash at 150 MHz in the device check), and an idle pass is estimated at about a microsecond because
+  the node declares `idle: "skip"`. The isolated latency over 13 runs on three images reads averages of 550-743 us and
+  worsts of 1122-1170 us (E3: 610-680 / 1086-1128), a cost the user accepted ([E4's
+  design](../../docs/modular-graph-phase-e4-design.md) section 8 states the new line: a worst above about 1200 us, or
+  averages above about 780 us; the worst is the primary signal, as averages vary about 190 us from run to run). The
+  image takes 347.5 KiB of SRAM (335880 bytes for `RP_NATIVE_USB`), its arena is 64 KiB, and the MIDI input queue
+  holds 64 messages (and 4096 bytes). A node's budget is its author's: about 250 us a message, and a stack nesting
+  limited by a re-entry cap of 4.
 
 What remains is the frame itself: a write waits up to 1 ms for the next start-of-frame. Going
 under that means sending outside Pico-PIO-USB's frame schedule, i.e. patching the library. Add the
@@ -370,26 +384,38 @@ load; `UartMidi`: the UART1 ISR and its 4 KB ring), and this directory is the N8
 (USB host, the plan's blocks, the probe, the boot, the sniff), `BoxCartLink.{hpp,cpp}` the `rp::n8::CartLink` over a
 fixed 512-message ring (it drops and counts while no game runs and drains in FIFO writes of up to 192 bytes),
 `BoxStats.hpp` the `filtered` arithmetic, `CartVolume.{hpp,cpp}` the volume write, `plan.json` the bridge as a plan
-(`rp.device.midi-in` -> `rp.core.midi-filter` -> `rp.n8.nes`) and `plan.cmake` its export options (48 kHz, 256 frames,
-the 131072-byte arena), `box.cpp` the
+(`rp.device.midi-in` -> `rp.bliptoaster.midi-policy` -> `rp.n8.nes`) and `plan.cmake` its export options (48 kHz, 256
+frames, the 65536-byte arena, the packages `core device-io n8 bliptoaster`), `box.cpp` the
 standalone box, `UsbCdcTransport.{hpp,cpp}` the `rp::n8::Transport` over TinyUSB's CDC host (its waits pump `tuh_task`
 and `box_feed`, `linkUp()` follows the mount), `SofTimer.{hpp,cpp}` the 1 ms start-of-frame timer, `pio_usb_root.c` a
 one-function C shim (`pio_usb_ll.h` does not compile as C++), and `../midi-in/midi.c` stays C. One `Edio` and one
-transport live in static storage, and so does the plan's arena (128 KiB of `.bss`).
+transport live in static storage, and so does the plan's arena (64 KiB of `.bss`, the `bliptoaster` pack's context and
+bytecode copy inside it).
 
-**The plan.** The build runs the desktop's `retroplug-export-plan` over `plan.json` (`--arena 131072 --sample-rate 48000
---max-frames 256 --packages core,device-io,n8 --header kBuiltInPlan`) and embeds the blob as
+**The plan.** The build runs the desktop's `retroplug-export-plan` over `plan.json` (`--arena 65536 --sample-rate 48000
+--max-frames 256 --packages core,device-io,n8,bliptoaster --header kBuiltInPlan`) and embeds the blob as
 `generated/n8_host_plan.hpp`; a plan that cannot fit, or names a type the image lacks, fails the build. At boot the
-loader lays it out in the arena (`[host] plan loaded: 3 nodes, <N> of 131072 arena bytes, 48000 Hz, 256 frames a
-block`, then a line per node); a plan it refuses prints `the built-in plan was refused: ...` and `no plan runs, and
-nothing is forwarded`, with the error LED. The exporter is `build/export-plan/retroplug-export-plan` in the desktop
-build, which must be built first (`cmake --build build --target retroplug-export-plan-current -j$(nproc)`; `pnpm
-device:box` builds it, `loop.sh` checks it is current, and `RP_EXPORT_PLAN_TOOL` points the configure at another one).
-`CMakeLists.txt` declares `retroplug_product(n8-host DEVICE PACKAGES core device-io n8 TARGETS n8_host)`: the
-packages' portable
-sources
-are compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti`, against `node-sdk` and reflect-cpp's headers, so a
-configure needs a reflect-cpp checkout. `loop.sh` hands a fresh build directory the desktop build's
+loader lays it out in the arena (`[host] plan loaded: 3 nodes, <N> of 65536 arena bytes, 48000 Hz, 256 frames a
+block`, a line per node, `[host]   pack bliptoaster, <bytes> bytes` for the script pack's memory, and after the first
+block `[host]   pack bliptoaster: heap <X> of 24576 bytes in use after the first block; the load took <us> us and the
+first block <us> us`, X near 11,600 and the times near 9.6 ms and 1.0 ms on the rig; a script node that faults prints
+`[host] node <id> (<type>) faulted: ...` and its words on a `[host]` line below); a plan it refuses prints `the
+built-in plan was refused: ...` and `no plan runs, and nothing is forwarded`, with the error LED. The exporter is
+`build/export-plan/retroplug-export-plan` in the desktop build, which must be built first (`cmake --build build
+--target retroplug-export-plan-current -j$(nproc)`; `pnpm device:box` builds it, `loop.sh` checks it is current, and
+`RP_EXPORT_PLAN_TOOL` points the configure at another one).
+`CMakeLists.txt` declares `retroplug_product(n8-host DEVICE PACKAGES ${N8_HOST_PACKAGES} TARGETS n8_host)`
+(`plan.cmake`: `core device-io n8 bliptoaster`): the packages' portable sources are compiled with `RP_DEVICE`,
+`-fno-exceptions` and `-fno-rtti`, against `node-sdk` and reflect-cpp's headers, so a configure needs a reflect-cpp
+checkout. The `bliptoaster` pack is TypeScript: the desktop build the exporter came from (`RP_DESKTOP_BUILD_DIR`,
+derived from `RP_EXPORT_PLAN_TOOL`) compiles it with `build-device-pack.mjs`, and the image embeds its 32-bit bytecode
+in flash (`.flashdata`, not copied to RAM) beside MicroQuickJS (the engine, compiled at -Os and wrapped by
+`rp_mqjs_engine.c`, about 99 KB in RAM) and the script host, with the stack guards on (`PICO_USE_STACK_GUARDS=1`) and
+`RP_MQJS_MAX_PACKS=1`, `RP_MQJS_MAX_TYPES=1`. At boot the host registers the pack's type, the loader sizes its memory
+(448 + its bytecode copy + the declared heap of 24576) and sets it up in the arena, and a
+node runs under a deadline of 10 ms and 250 us a message read from `time_us_64`. `abort` is wrapped to the SDK's panic
+and the ARM unwinder `setjmp` drags in is stubbed (`cmake/device-image/no-unwind.c`), so the trap holds with the
+engine. `loop.sh` hands a fresh build directory the desktop build's
 (`../../build/CMakeCache.txt`'s `reflectcpp_SOURCE_DIR`) and clones one only when there is none. The whole image links
 under the **link trap** (`cmake/device-image.cmake`, shared with `rp-device-check`): 87 `--wrap`ped symbols on the
 heap, on exceptions and on RTTI, with `pico_malloc` taken out of the runtime and a post-link check. A link error naming
@@ -409,10 +435,11 @@ compile of the image, the SDK's, TinyUSB's and Pico-PIO-USB's included, takes `-
 
 **`pnpm device:box`** ([`../../tools/build-box.sh`](../../tools/build-box.sh)) builds both variants under the trap, in
 `build-box/{pio,native}/`, each with `n8_host_trap_probe` (an allocating program that must fail to link naming
-`__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss: PIO-USB 101200 / 23832 / 188020,
-`RP_NATIVE_USB` 101576 / 9836 / 181788, with 100628 and 101004 bytes of the flash running from RAM and 312484 and 292636
-bytes of SRAM in all; E2's were 48796 / 15324 / 32360 and 48756 / 1560 / 26128, before the plan loader, rp.core's types,
-the arena and the code in RAM). It builds the desktop's `retroplug-export-plan` first (CI needs it), so `build/` must be
+`__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss: PIO-USB 196688 / 46056 / 120600,
+`RP_NATIVE_USB` 197056 / 32020 / 114368, with 189112 and 189480 bytes of the flash running from RAM and 355824 and
+335880 bytes of SRAM in all; E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788 (312484 and 292636 bytes),
+before MicroQuickJS, the pack and the halved arena; E2's were 48796 / 15324 / 32360 and 48756 / 1560 / 26128). It
+builds the desktop's `retroplug-export-plan` first (CI needs it), so `build/` must be
 configured, and that build shares `build/` with a concurrent `./build.sh`: two builds of one tree at once race, so on a
 box where another session builds, point `RP_DESKTOP_BUILD_DIR` at a tree of your own. It needs the SDK's TinyUSB
 (`PICO_SDK_PATH` when it carries one, else `/workspaces/pico-sdk`) and Pico-PIO-USB at `5a37a66`; it builds an ELF only
@@ -455,7 +482,7 @@ the built-in plan is in its arena; a connect prints `[n8-host] cart link: expans
 
 If a game is already running, the menu isn't there to answer `*t`, so `boot_rom()` gives
 up after `N8_MENU_TRIES` (~48 s by default) and the bridge forwards MIDI to whatever runs.
-The plan's filter drops clock / sensing / transport / aftertouch so they can't flood the FIFO; `sniff_report()` is
+The plan's policy node drops clock / sensing / transport / aftertouch so they can't flood the FIFO; `sniff_report()` is
 read-only.
 
 ### Native-USB toggle

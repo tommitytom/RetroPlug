@@ -244,13 +244,14 @@ stages what waited for room. So the staging empties whatever the plan is, and th
 never stops.
 
 **`rp.device.midi-in`** (`packages/device-io`, `unique`: the host's staging is one stream) reads the host's
-`rp.device.midi-in/1` interface, a pull: it calls `next(ctx, frames, out)` until it answers false. It keeps the queue's
-rules: a frame at or past the block's end is clamped to the last frame, an earlier one up by the push, an empty message
-is skipped, a message longer than the queue's bytes is dropped before its length reaches a push, and a full queue
-drops and counts. Its output is 256 messages and 4 KB, the UART ring's size. With no interface it activates and gives
-empty blocks. (The desktop's `rp.host.midi-in` is one per document by `Engine::setGraph`'s type-id check, not by
-`unique`, and refuses to activate without `rp.engine.host-io/3`.) Desktop products do not list the package, so their
-`[packages]` rows do not change; the export tool, the device check and the box do.
+`rp.device.midi-in/1` interface, a pull: it calls `next(ctx, frames, out)` until it answers false. It keeps the
+queue's rules: a frame at or past the block's end is clamped to the last frame, an earlier one up by the push, an
+empty message is skipped, a message longer than the queue's bytes is dropped before its length reaches a push, and a
+full queue drops and counts. Its output is 256 messages and 4 KB, the UART ring's size (the box's plan declares 64
+messages since E4). With no interface it activates and gives empty blocks. (The desktop's `rp.host.midi-in` is one per
+document by `Engine::setGraph`'s type-id check, not by `unique`, and refuses to activate without
+`rp.engine.host-io/3`.) Desktop products do not list the package, so their `[packages]` rows do not change; the export
+tool, the device check and the box do.
 
 **The box cart link** (`BoxCartLink`, over `rp::n8::CartLink`):
 
@@ -301,7 +302,9 @@ entered a batch), so a refused or failed one is not counted.
 `systemCommon` and `realtime`) -> `rp.n8.nes`. The old firmware forwarded channel voice and SysEx only; the host now
 filters nothing, so the cart's policy must drop system common and real time too, or MIDI clock and active sensing would
 reach the ROM and stress.sh's runstat case (6 real-time bytes among 6 notes, `fwd == 6`) would fail. `plan.cmake`
-holds the plan, 48000 Hz, 256 frames and the 131072-byte arena in one place for the firmware and the tests.
+holds the plan, 48000 Hz, 256 frames and the 131072-byte arena in one place for the firmware and the tests. (E4
+replaced the filter with `rp.bliptoaster.midi-policy`, a TypeScript node, and cut the arena to 65536 bytes; the
+filter and its behaviour stay in `rp.core`.)
 
 ## 6. `rp.core.midi-filter`
 
@@ -324,9 +327,9 @@ bytes from bytes), and is resolved by the planner per plan, in a `capacities()` 
 feedback wire to its source, an unwired input gives the default (256 messages and 4 KB), and a loop of matches is
 refused (`capacity-match`). Layouts and descriptors keep it as declared, so a source's capacity change resizes the
 matched queue at the next plan without reshaping the downstream node. A fixed capacity could not serve both the box
-(256 / 4 KB) and the desktop (2048 / 64 KB). The consequence: the filter's output is its source's size and it passes a
-subset, so the filter itself never drops (the drop-and-count path in `pushMessage` exists and no real plan reaches it).
-The exported blob carries resolved sizes, so the device needs nothing new.
+(256 / 4 KB in E3, 64 / 4 KB since E4) and the desktop (2048 / 64 KB). The consequence: the filter's output is its
+source's size and it passes a subset, so the filter itself never drops (the drop-and-count path in `pushMessage`
+exists and no real plan reaches it). The exported blob carries resolved sizes, so the device needs nothing new.
 
 ## 7. Inherited items
 
@@ -337,7 +340,8 @@ The exported blob carries resolved sizes, so the device needs nothing new.
   from SRAM (`pico_set_binary_type(n8_host copy_to_ram)`, which removes the flash-cache refills a message's path
   paid; section 12.5, question 3). That leaves roughly 200 KiB for E4's MicroQuickJS heap and a codec's DMA buffers,
   and the levers if it is not enough are the 128 KiB arena and cold code (the plan loader, the N8 protocol) moved back
-  to flash. The 87-symbol trap holds. A constant-initialised static with any non-zero member lands in `.data` and is
+  to flash. (E4 took the first lever: the arena is 64 KiB and the image 347.5 KiB, with no cold code moved.)
+  The 87-symbol trap holds. A constant-initialised static with any non-zero member lands in `.data` and is
   copied out of flash at boot, so the staging and the link keep their state in all-zero structs in `.bss`.
 - **The stack:** `-Werror=stack-usage=1024` (`RP_DEVICE_STACK_FRAME` in `cmake/device-image.cmake`) is on every
   `device: true` package library built in a device project and, through `rp_device_executable`, on both images, whose
@@ -463,7 +467,8 @@ an Opus final review. Work files in the gitignored `.superpowers/e3pro`, `e3plan
   hosts) and the MSVC build of the new libraries (`retroplug-graph-exec-device`, the export tool's objects, the box
   host's desktop objects, the usb-cdc object library and `packages/devtest`); a Windows export may accept a type with a
   `long double` that Linux refuses (MSVC's is 8 bytes), which is harmless today.
-- **E4:** MicroQuickJS on the Pico, TS-authored nodes in a box plan.
+- **E4:** MicroQuickJS on the Pico, TS-authored nodes in a box plan (built:
+  [modular-graph-phase-e4-design.md](modular-graph-phase-e4-design.md)).
 - **The rest of the package split** (E2 design section 11), the Launchpad's pack and `threads` flag, and the template
   gaps E2 recorded (section 13.8).
 
