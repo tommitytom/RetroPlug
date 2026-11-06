@@ -106,7 +106,7 @@ if [ $do_build = 1 ]; then
 			|| { tail -20 "$bdir/loop-configure.log"; die "configure failed (log: $bdir/loop-configure.log)"; }
 	elif [ "$(sed -n 's/^RP_EXPORT_PLAN_TOOL:FILEPATH=//p' "$bdir/CMakeCache.txt")" != "$tool" ]; then
 		# A build dir configured before (or against another desktop build): point it at this exporter.
-		cmake -B "$bdir" -DRP_EXPORT_PLAN_TOOL="$tool" >"$bdir/loop-configure.log" 2>&1 \
+		cmake -S "$here" -B "$bdir" -DRP_EXPORT_PLAN_TOOL="$tool" >"$bdir/loop-configure.log" 2>&1 \
 			|| { tail -20 "$bdir/loop-configure.log"; die "configure failed (log: $bdir/loop-configure.log)"; }
 	fi
 	cmake --build "$bdir" -j"$(nproc)" >"$bdir/loop-build.log" 2>&1 \

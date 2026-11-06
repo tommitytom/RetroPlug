@@ -112,7 +112,8 @@ in the ordinary desktop build, so a non-portable line in the loader fails there.
   a device-mode instance and its tail are aligned to, in place of `max_align_t`, so the host build of a type asks what
   the device asks and a type that truly needs 16 is seen at export and refused (`node-memory`: "node asked for an
   alignment of 16, where an rp2350 arena gives a power of two up to 8") by the exporter and the loader alike. The
-  arena itself must be aligned to `kBaseAlign`, the larger of `kTargetAlign` and the compiler's `max_align_t`, which is
+  arena itself must be aligned to `kArenaAlign` (`PlanLoader.hpp`, which a firmware declares its arena with), the
+  larger of `kTargetAlign` and the compiler's `max_align_t`, which is
   also the buffer stride. (A portable type holding a `long double` or an `alignas(max_align_t)` member reads 16 on
   x86-64 and 8 on the M33 and is refused for it: the safe direction. The `static_assert` that `kDeviceAlign` equals
   the device's `max_align_t` holds the Arm build only; the RP2350's Hazard3 cores are riscv32, where it is 16, and a
@@ -272,6 +273,8 @@ empty blocks. (The desktop's `rp.host.midi-in` is one per document by `Engine::s
 **Stats and logs.** Every log line the gate's scripts match stays, and the `[stats]` fields keep their names and
 meanings except `filtered`, which counts at the plan's two edges, both the host's own: the staging (what
 `rp.device.midi-in` took, `tooLong`, `untaken`) and the link (pushes received, refused, written, failed).
+`sysex` too moves a little: it counts a SysEx once a write the cart took has carried its F7 (E2 counted it as it
+entered a batch), so a refused or failed one is not counted.
 
 - `filtered = handed + tooLong + untaken - (pushes the link received - the node's own note-offs)` (one function,
   `rp::box::filtered`). It counts what the plan's filter dropped, including system common and real time,
@@ -281,7 +284,8 @@ meanings except `filtered`, which counts at the plan's two edges, both the host'
   books from its own answers (`made`) and subtracts them. The mirror reads one high in a single case, reachable only
   with `linkfull` moving: a refused payment of an owed note-off whose note-off the same block's input carries.
 - `notready` is the link's refusals while not connected. `[stats]` gains two trailing fields: `linkfull=` (pushes
-  refused for a full ring; 0 expected) and `skipped=` (frames the driver dropped past its carry).
+  refused for a full ring; 0 expected) and `skipped=` (frames the driver dropped past its carry, cumulative since
+  boot: judged by its growth, not by zero).
 - At boot, after the `box_start` line, the box prints `[host] plan loaded: 3 nodes, <N> of 131072 arena bytes, 48000 Hz,
   256 frames a block` and a `[host]   node <id> (<type>), <b> bytes` line per node (the old "registered, not planned"
   line is gone). At every connect it prints `[n8-host] cart link: expansion volume 128 written (reads back 128)`, or
@@ -633,7 +637,7 @@ what led to the fix of question 3. The table is the second run, on the final ima
 | Leg | What it must show | E3 (final image) |
 |---|---|---|
 | boot | `[host] plan loaded: 3 nodes, <N> of 131072 arena bytes, 48000 Hz, 256 frames a block` and the three node lines | booted by the Pico 5.2 s after console start (E2 5.3 s); 3 nodes, 29976 of 131072 arena bytes (the export's estimate 30560); `expansion volume 128 written (reads back 128)` |
-| `stress.sh` | every case's counts as E2's (decisions 1, 4 and 5; runstat 6/6; the SysEx case 2 SysEx / 4 messages), fail 0, overrun, framing, ring loss and `linkfull` 0, `skipped`'s change across a case small (0 expected outside a boot or recovery); isolated latency within E2's 1110 us worst and 587 us average (budget 1.5 ms) | 34 cases ok, the recovery case included; 0 lost, fail 0, ring full 0; `filtered` 6, the runstat real-time bytes, as designed; latency avg/worst 640/1086, 677/1114, 680/1098, 679/1128, 610/1104 us (E2 558-653 / 1083-1097); no stall in the five runs |
+| `stress.sh` | every case's counts as E2's (decisions 1, 4 and 5; runstat 6/6; the SysEx case 2 SysEx / 4 messages), fail 0, overrun, framing, ring loss and `linkfull` 0, `skipped`'s growth across a case small (a count of frames, cumulative since boot: hundreds of thousands across a boot, about 150 to 1,100 per rerun; `stress.sh` does not judge it); isolated latency within E2's 1110 us worst and 587 us average (budget 1.5 ms) | 34 cases ok, the recovery case included; 0 lost, fail 0, ring full 0; `filtered` 6, the runstat real-time bytes, as designed; latency avg/worst 640/1086, 677/1114, 680/1098, 679/1128, 610/1104 us (E2 558-653 / 1083-1097); no stall in the five runs |
 | audio on the L6's channel 3 | A4 440.30 Hz +1.2 c, C5 522.16 Hz -3.6 c, identical | identical: A4 440.30 Hz +1.2 c, C5 522.16 Hz -3.6 c, -32.84 dBFS |
 | `faults.sh --rounds 8` | 8 of 8; stuck menus 0, recovery reboots 0, uploads 0 | 8 of 8, stuck 0, abandoned boots 6. Two earlier attempts never started: `loop.sh`'s 5 s power reset landed as a short off (the Zigbee plug's late cut), which leaves the N8 menu stuck at the first boot, the documented quirk; after a clean manual 16 s off the box booted by itself and the run passed. (On the first image it was 7 of 8 twice, each failure the same short-off quirk.) |
 | the upload path | two ROMs staged, SysEx `7D 50` pick and an NES power-cycle: uploaded in about 4.9 s and booted; the next cycle booted the saved choice by CRC skip | pick 1 uploaded in 4922 ms, the next cycle saved 1 with no upload; pick 0 uploaded in 4930 ms (E2 4929), the next saved 0 with no upload; the volume written each time, the VRC6 ROM included |

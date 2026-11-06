@@ -16,7 +16,7 @@
 //   cart), and drain() writes it to the cart's config register while connected: at every connect and on a change, as
 //   the desktop's N8Host does (and a failed write again a second later). Its -1 (N8Host::EXP_VOL_AUTO) writes nothing
 //   here: the desktop's rule for it (unity for an expansion mapper, else the N8 OS's value) is for a link no node
-//   holds, which a box with a plan never is, since rp.n8.nes gives its value at its first block.
+//   holds. The bridge plan's rp.n8.nes never leaves it at -1, as it gives its value at its first block.
 // - acquire() and release() are the hooks the box installs the link with (rp.host.devices/2), counting the nodes that
 //   hold it; the last release puts the volume back to -1, as N8CartLink does.
 // - No device jobs: the box offers no rp.host.jobs/1, so rp.n8.nes refuses a job before it reaches the link, and the

@@ -157,7 +157,9 @@ UART overrun, framing error, full receive ring; and `lat=avg/worst` in µs for t
 real time), a SysEx past 4 KB and anything no block took, counted at the staging and the link rather than inside the
 plan (one read high, only while `linkfull` moves); `notready` is what the link refused while no game ran; `linkfull`
 counts pushes refused for a full link ring (0 expected) and `skipped` the frames the block driver dropped past its
-carry of four blocks. `-DN8_BRIDGE_VERBOSE=1` also prints each
+carry of four blocks: cumulative since boot, it grows by hundreds of thousands across a boot (the main loop waits on the
+N8 for seconds) and by about 150 to 1,100 frames when a stall (a console line) outruns the carry, so judge it by its
+growth across a case, which `stress.sh` does not do. `-DN8_BRIDGE_VERBOSE=1` also prints each
 forwarded batch. The L6 capture's ch3 measures the pitch
 (`retroplug-cli analyze-capture <wav> --channel 3 --expect-hz 440`).
 Don't confuse it with the **L6's** own MIDI ports (`L6 MIDI I/O Port` etc.): those are USB
@@ -169,7 +171,8 @@ control ports for the mixer, not a MIDI output, and writing to them can change c
   so it goes out in the same queue as the channel messages in order, split into several writes only past 192 bytes.
   A SysEx cut short by another status byte gets a synthesised F7, so the ROM never sees one left open; one past 4 KB
   is dropped whole and counted. BlipToaster takes N163 waves, GM System On
-  (a warm reboot) and its settings this way. `[stats]` counts them (`sysex=`).
+  (a warm reboot) and its settings this way. `[stats]` counts them (`sysex=`): a SysEx counts once a write the cart took
+  has carried its F7, so one the cart refused or that failed is not counted (E2 counted it as it entered a batch).
 - **The expansion master volume** (VRC6 / VRC7 / N163 / Sunsoft 5B / MMC5) lives in the N8's
   config block (`0x1800020` + 3). The box cart link writes the volume the `rp.n8.nes` node gives it (unity, 128, unless
   `plan.json` sets the node's `expansionVolume` param) at every connect (after the Pico booted a ROM, or on finding one
@@ -403,8 +406,10 @@ compile of the image, the SDK's, TinyUSB's and Pico-PIO-USB's included, takes `-
 `__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss: PIO-USB 101200 / 23832 / 188020,
 `RP_NATIVE_USB` 101576 / 9836 / 181788, with 100628 and 101004 bytes of the flash running from RAM and 312484 and 292636
 bytes of SRAM in all; E2's were 48796 / 15324 / 32360 and 48756 / 1560 / 26128, before the plan loader, rp.core's types,
-the arena and the code in RAM). It builds the desktop's `retroplug-export-plan` first, so `build/` must be
-configured. It needs the SDK's TinyUSB (`PICO_SDK_PATH` when it carries one, else
+the arena and the code in RAM). It builds the desktop's `retroplug-export-plan` first (CI needs it), so `build/` must be
+configured, and that build shares `build/` with a concurrent `./build.sh`: two builds of one tree at once race, so on a
+box where another session builds, point `RP_DESKTOP_BUILD_DIR` at a tree of your own. It needs the SDK's TinyUSB
+(`PICO_SDK_PATH` when it carries one, else
 `/workspaces/pico-sdk`) and Pico-PIO-USB at `5a37a66`; it builds an ELF only (`PICO_NO_PICOTOOL`) and runs in CI beside
 `device:check`. It proves the image links and traps; the rig's gate (`loop.sh`, `stress.sh`, `faults.sh`, with
 BlipToaster) proves it works.

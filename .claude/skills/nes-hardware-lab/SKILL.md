@@ -310,8 +310,10 @@ staging, the SysEx `7D 50` pick). Notes for running it:
   cumulative: the final line's 10 ms is the recovery window and the window holding a 40-byte SysEx
   peaks near 21 ms (the SysEx is about 13 ms on the wire; since E3 a SysEx is timed from its F7, so expect that window
   lower). Isolated notes sit near 0.6 ms average and 1.1 ms worst. `[stats]` also carries `linkfull=` and `skipped=`
-  (judge `skipped` by its change across a case, 0 expected outside a boot or recovery: it is cumulative and a boot adds
-  millions; `linkfull` stays 0), and `filtered` counts what the plan's filter dropped (aftertouch, system common,
+  (`skipped` is frames the block driver dropped past its carry of four blocks, cumulative since boot: a boot or a
+  recovery adds hundreds of thousands and each stress rerun about 150 to 1,100, so judge it by its growth across a
+  case, which `stress.sh` does not do; `linkfull` stays 0), and `filtered` counts what the plan's filter dropped
+  (aftertouch, system common,
   real time) among other things.
 - **`pnpm device:box` needs no hardware**: it proves the firmware links under the heap/exception/RTTI trap and is CI's
   check; the scripts above are what prove it behaves.
