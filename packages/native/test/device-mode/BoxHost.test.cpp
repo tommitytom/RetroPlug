@@ -33,6 +33,7 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -126,6 +127,10 @@ struct Arena {
     explicit Arena(std::size_t bytes) : storage(bytes / sizeof(std::max_align_t) + 1) {}
     std::span<std::byte> span(std::size_t bytes) { return {reinterpret_cast<std::byte*>(storage.data()), bytes}; }
 };
+
+// Both hold their own address in the interface structs they hand out, so neither is copied.
+static_assert(!std::is_copy_constructible_v<rp::box::MidiStaging> && !std::is_copy_assignable_v<rp::box::MidiStaging>);
+static_assert(!std::is_copy_constructible_v<rp::box::DeviceHost> && !std::is_copy_assignable_v<rp::box::DeviceHost>);
 
 std::vector<std::string> gLines;
 void                     collect(const char* line) { gLines.emplace_back(line); }
@@ -897,6 +902,10 @@ TEST_CASE("the box's plan.json exports to its golden's bytes, as the tool writes
     // The tool, in a process of its own, as pico/n8-host/CMakeLists.txt runs it: the same bytes, and the header form.
     const auto dir = std::filesystem::temp_directory_path() / ("rp-box-plan-" + std::to_string(std::random_device{}()));
     std::filesystem::create_directories(dir);
+    struct Remove {  // the directory goes with the case, a failed REQUIRE included
+        const std::filesystem::path& dir;
+        ~Remove() { std::error_code ignored; std::filesystem::remove_all(dir, ignored); }
+    } removeDir{dir};
     const std::string tool = RP_EXPORT_PLAN_TOOL;
     const std::string flags = " --arena " + std::to_string(kArenaBytes) + " --sample-rate " + std::to_string(kRate) +
                               " --max-frames " + std::to_string(kMaxFrames);
@@ -928,7 +937,6 @@ TEST_CASE("the box's plan.json exports to its golden's bytes, as the tool writes
     CHECK(run("refused.bin", " --packages core,nope") != 0);
     CHECK(readFile(dir / "stdout.txt").find("--packages names \"nope\", which is no package the tool carries") !=
           std::string::npos);
-    std::filesystem::remove_all(dir);
 
     // Loaded as the box loads it, it takes what the export measured, within the arena.
     CartRecord cart{};

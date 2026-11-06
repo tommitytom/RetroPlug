@@ -59,6 +59,9 @@ public:
     // Zero until init(), which runs before the first byte: a box's one staging is in static storage, in .bss, with
     // nothing copied out of flash for it.
     constexpr MidiStaging() = default;
+    // init() hands out this object's address (the interface struct), so a copy would point back at the original.
+    MidiStaging(const MidiStaging&) = delete;
+    MidiStaging& operator=(const MidiStaging&) = delete;
     void init(SysexHook hook, void* hookCtx, FrameOf frameOf, void* frameCtx);
 
     // One byte off the UART and when it arrived (the low 32 bits of the microsecond clock): false, taking nothing,

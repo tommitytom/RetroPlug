@@ -1016,6 +1016,74 @@ TEST_CASE("the loader refuses a blob it cannot run, in its own words, creating n
     }
 }
 
+// The golden blob's bytes, from its hex file.
+std::vector<std::uint8_t> goldenBlob(const char* name) {
+    const std::string         hex = readFile(std::filesystem::path(RP_DEVICE_MODE_GOLDEN_DIR) / name);
+    std::vector<std::uint8_t> bytes;
+    int                       high = -1;
+    for (const char c : hex) {
+        const int v = (c >= '0' && c <= '9') ? c - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : -1;
+        if (v < 0) continue;
+        if (high < 0) {
+            high = v;
+        } else {
+            bytes.push_back(static_cast<std::uint8_t>(high << 4 | v));
+            high = -1;
+        }
+    }
+    return bytes;
+}
+
+// "every read and write in bounds" (PlanLoader.hpp), held by mutation: each of the three golden blobs with each of its
+// bytes flipped, one bit at a time and whole, and the CRC rewritten so the loader reads what the flip made (a flip in
+// the CRC itself is left as it is). Whatever the bytes now say, sizing and loading either refuse in the loader's words
+// or load a plan that unloads, and nothing created is left alive. The cases run under build-asan, where the blob and
+// the arena are exact-size heap blocks, so a read or write past either is the failure.
+TEST_CASE("a blob with any one byte changed loads or is refused cleanly, reading and writing within bounds",
+          "[device-mode][plan][mutation]") {
+    const char* const kGoldens[] = {"plan-blob.hex", "box-plan.hex", "device-check-plan.hex"};
+    std::size_t       runs = 0, loaded = 0, refused = 0;
+    std::size_t       bytesCovered = 0;
+    std::size_t       leaked = 0, noWords = 0;
+    for (const char* name : kGoldens) {
+        const std::vector<std::uint8_t> good = goldenBlob(name);
+        INFO(name);
+        REQUIRE(good.size() > sizeof(blob::Header));
+        bytesCovered += good.size();
+        Arena                           arena(kArenaBytes);
+        std::vector<std::uint8_t>       b;
+        auto                            attempt = [&](std::size_t at, std::uint8_t mask) {
+            b = good;  // exact-size blocks, so an over-read is the sanitizer's
+            b[at] ^= mask;
+            if (at < b.size() - 4) reseal(b);
+            PlanLoadError err{};
+            PlanSize      size;
+            const bool    sizes = sizePlan(b, deviceTypes(), kArenaBytes, &size, &err);
+            if (!sizes && (err.code[0] == '\0' || err.message[0] == '\0')) ++noWords;
+            err = PlanLoadError{};
+            LoadedPlan* plan = loadPlan(b, arena.span(kArenaBytes), deviceTypes(), &kDeviceHost, &err);
+            if (plan) {
+                ++loaded;
+                unloadPlan(plan);
+            } else {
+                ++refused;
+                if (err.code[0] == '\0' || err.message[0] == '\0') ++noWords;
+            }
+            if (rp_devtest_plan_live_device_mode() != 0) ++leaked;
+            ++runs;
+        };
+        for (std::size_t at = 0; at < good.size(); ++at) {
+            for (int bit = 0; bit < 8; ++bit) attempt(at, static_cast<std::uint8_t>(1u << bit));
+            attempt(at, 0xFF);
+        }
+    }
+    CHECK(runs == bytesCovered * 9);
+    CHECK(loaded + refused == runs);
+    CHECK(refused > loaded);  // most bytes are structure the loader holds to account
+    CHECK(noWords == 0);
+    CHECK(leaked == 0);
+}
+
 TEST_CASE("the exporter refuses what a device cannot run, and says why", "[device-mode][plan]") {
     SECTION("a heap type and a threads type, as the planner refuses them on the Pico") {
         const auto heap = exported(R"({"nodes":[{"id":"p","type":"rp.dsp.dpcm","settings":{"buffer":"res:1"}}],

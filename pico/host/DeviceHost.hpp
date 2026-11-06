@@ -35,6 +35,9 @@ public:
     using Log = void (*)(int level, const char* message);
 
     constexpr DeviceHost() = default;
+    // The interface structs hold this object's address, so a copy would point back at the original.
+    DeviceHost(const DeviceHost&) = delete;
+    DeviceHost& operator=(const DeviceHost&) = delete;
     // The links are the caller's and outlive every plan created under this host.
     void init(const DeviceLink* links, std::size_t count, const rp_device_midi_in* midi, Log log);
 
