@@ -108,22 +108,23 @@ generated tables live in the build tree, never beside them. Everything of ours a
   `#include`d by `rp_mqjs.h`, because every desktop product links this engine beside QuickJS and 46 names clashed
   (`JS_Call`, `JS_NewContext`, `js_dtoa`, ...). `cmake/mquickjs-names.cmake` fails the build if the library defines
   any other external name (Linux and macOS; MSVC has no `nm`).
-- **`rp_mqjs_engine.c`** includes `mquickjs.c` whole and carries the fixes as wrappers (renaming upstream's
-  definition at the preprocessor and defining ours under the old name) and one helper the host calls
-  (`rp_mqjs_keep_bytecode_names`). Two are real upstream GC bugs: the run-time
-  property-name table can corrupt itself when a collection runs inside its own growth (in `JS_MakeUniqueString`), and a
-  loaded bytecode's string constants, marked unique in place, drop out of that table at the next collection (the host
-  marks them kept after relocation). Five are exceptions upstream swallows: `String.prototype.replace` ignoring its
-  callback's throw, `string_buffer_puts` losing an out-of-memory, `hasOwnProperty` ignoring a throwing key,
-  `Array.prototype.sort` taking a comparator's throw (the deadline's interrupt among them) for a comparison's result,
-  and `String.prototype.repeat` answering -1 for a count whose conversion throws. One is a report: the engine's check
-  for room (`check_free_mem`, which every allocation and every push onto the context's stack makes) tells the host
-  when it finds none after a collection (`rp_mqjs_api`'s `ran_out`), since nothing it throws can say the heap ran out
-  (a script may throw `null` or an error saying "out of memory"). Typed arrays are built in the engine, with no
-  `JS_Call`, so `messages()` works at any depth. **The fixes are guarded by a configure-time hash**:
-  `cmake/mquickjs.cmake` hashes the text of each span the wrappers replace (CR stripped) and fails on a change naming
-  the file, and counts `js_call_rec_count` mentions (exactly four) and `check_free_mem`'s (three), so a bump of the
-  pinned source cannot silently drop one.
+- **`rp_mqjs_engine.c`** includes `mquickjs.c` whole and carries the fixes as wrappers (renaming upstream's definition
+  at the preprocessor and defining ours under the old name) and one helper the host calls
+  (`rp_mqjs_keep_bytecode_names`). Two are real upstream GC bugs: the run-time property-name table can corrupt itself
+  when a collection runs inside its own growth (in `JS_MakeUniqueString`), and a loaded bytecode's string constants,
+  marked unique in place, drop out of that table at the next collection (the host marks them kept after relocation).
+  Five are exceptions upstream swallows: `String.prototype.replace` ignoring its callback's throw, `string_buffer_puts`
+  losing an out-of-memory, `hasOwnProperty` ignoring a throwing key, `Array.prototype.sort` taking a comparator's throw
+  (the deadline's interrupt among them) for a comparison's result, and `String.prototype.repeat` answering -1 for a
+  count whose conversion throws. One is a report: the engine's check for room (`check_free_mem`, which every allocation
+  and every push onto the context's stack makes) tells the host when it finds none after a collection (`rp_mqjs_api`'s
+  `ran_out`), since nothing it throws can say the heap ran out (a script may throw `null` or an error saying "out of
+  memory"). And `RegExp.prototype.exec`, when its capture array cannot be made, popped a collector root it never pushed,
+  setting the context's root list to a stack word: the wrapper sets the list back as exec returns. Typed arrays are
+  built in the engine, with no `JS_Call`, so `messages()` works at any depth. **The fixes are guarded by a
+  configure-time hash**: `cmake/mquickjs.cmake` hashes the text of each span the wrappers replace (CR stripped) and
+  fails on a change naming the file, and counts `js_call_rec_count` mentions (exactly four) and `check_free_mem`'s
+  (three), so a bump of the pinned source cannot silently drop one.
 - **`rp_mqjs_stdlib.c`**, our standard library for the build tool. It includes upstream's `mqjs_stdlib.c` unpatched
   with its REPL global object and `main` renamed out of the way, so the standard classes are upstream's own tables, and
   its own global object leaves out `print`, `gc`, `load`, the timers, `Date`, `performance` and `eval`. It adds a
@@ -190,22 +191,30 @@ saying "out of memory", faults that node alone.
   author's budget; the device check measured 65 us a note and 48 us a 64-byte SysEx from flash. A host with no clock
   times by the thread's CPU time at **500 ms** on the desktop (Windows counts thread time in 15.6 ms ticks, so a
   deadline must be many ticks to be measured at all). A reading of 0 is no reading.
-- **The polls.** MicroQuickJS polls the handler only at its interpreter's calls and branches, once every 10000 by its
-  own count, and a builtin's work between two polls is unpolled: at that interval a loop over a builtin ran 10000 of
-  its calls past the deadline (`for (;;) a.sort()` over 300 numbers in bliptoaster's heap ran 0.7 s past 10 ms on the
-  desktop, seconds on the box, past its 3 s watchdog). So the handler sets the next poll's distance
-  (`rp_mqjs_set_poll_interval`): an entry first polls after its deadline in microseconds over 2048 calls and branches
-  (at least 8: 8 on the box's 10 ms, 244 at the desktop's 500 ms), each poll before the deadline sets the next twice
-  as far, up to the engine's 10000, but no further than the rate since the last poll says fits in half of what is
-  left, and a poll past the deadline sets the next at once, so an interrupt a builtin dropped is thrown again at the
-  next call or branch. The builtins whose one call can run long poll in their own loops, off the same count: the
-  sort a comparison, the string searches (`indexOf`, `lastIndexOf`, and the search of `replace` and `split`) a
-  position, `join` on what is no array (whose length nothing bounds) an element. A loop over any builtin then overruns
-  by about one call of a builtin whose work is linear in what the pack's heap holds: on the desktop, each of the
-  device check's four loops faulted within 70 us of a 50 ms deadline, and the device check times the worst on the M33
-  in a context of bliptoaster's heap, judged against a third of the watchdog. A node that finishes in microseconds
-  reads the clock a few times a block (the desktop's bench: a transpose's 16-message block went from about 259 to 275
-  ns a message, two reads of the thread's CPU time; 256 messages, 244 to 248).
+- **The polls.** MicroQuickJS polls the handler once every so many units of work, 10000 by its own count: each call and
+  branch of its interpreter, and (RetroPlug's) each allocation and each push of a frame; a builtin's own work between
+  two polls is otherwise unpolled. At that interval a loop over a builtin ran 10000 of its calls past the deadline (`for
+  (;;) a.sort()` over 300 numbers in bliptoaster's heap ran 0.7 s past 10 ms on the desktop, seconds on the box, past
+  its 3 s watchdog). So the handler sets the next poll's distance (`rp_mqjs_set_poll_interval`): an entry first polls
+  after its deadline in microseconds over 2048 units (at least 8: 8 on the box's 10 ms, 244 at the desktop's 500 ms),
+  each poll before the deadline sets the next twice as far, but never past the deadline in microseconds over 64 units
+  (156 on the box, 7812 on the desktop, 10000 at most) and no further than the rate since the last poll says fits in
+  half of what is left; a poll past the deadline sets the next at once, so an interrupt a builtin dropped is thrown
+  again at the next call or branch. The builtins whose one call can run long poll in their own loops, off the same
+  count: the sort a comparison, the string searches (`indexOf`, `lastIndexOf`, and the search of `replace` and `split`)
+  a position, `join` on what is no array (whose length nothing bounds) an element, `match` a match (and it moves past an
+  empty match, where upstream's added the same one until the heap ran out). **What the bound is:** a node faults at most
+  a cap's units after its deadline (each a call, a branch, an allocation, a push or a builtin's loop step, the costliest
+  a collection, linear in the heap) plus the rest of the one builtin call the count ran out in (a poll waits for the
+  interpreter's next call or branch), linear in what the pack's heap holds. The cap is what holds a phase change (plain
+  code whose cheap units let the polls grow apart, then a loop over a builtin such as a forEach over a plain callback or
+  JSON.stringify, whose calls and allocations count). On the desktop each of the four loop kinds, after plain code too,
+  faulted within about 50 us of a 50 ms deadline; the device check times seven loops on the M33 in a context of
+  bliptoaster's heap, two after plain code, and judges the worst against a third of the watchdog. The residual: a single
+  builtin call that neither allocates nor polls and is not bounded by the heap would run to its end; none is known in
+  RetroPlug's standard library. A node that finishes in microseconds reads the clock a few times a block (the desktop's
+  bench: a transpose's 16-message block about 272 to 280 ns a message at the desktop's deadline, 305 at the box's 10 ms
+  where its polls come every 156 units; 256 messages, 245 to 253 and 265).
 - **The re-entry cap.** C calls back into JavaScript (`replace`, `forEach`, a sort comparator) nest through the engine's
   `JS_Call`, 290 bytes of the box's 4 KB stack a level. A node's context is capped at **4** re-entries after its load
   (`RP_MQJS_MAX_REENTRIES`), and the box builds with `PICO_USE_STACK_GUARDS=1`, so a node nesting to the cap leaves
@@ -455,14 +464,16 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
   the 64-bit one's); the pack's report; and the **stack in two phases**, the load and the blocks, each judged against
   4096 bytes with 512 kept for interrupts. The LED blinks 30 + the plan step (Heap is 7), 40 + the bench step and 39 for
   a stack phase under its reserve.
-- **The deadline case** (after the code reviews, before the script plan, its line after the bench's, so the check
-  prints nine lines): `rp.devtest.script-loop`, a third devtest node, runs four loops over a builtin (a sort of 600
-  numbers, a search in 4000 characters, `join` of an array-like a billion long and `forEach` over 2000 numbers) in the
-  pack registered again at 24576 bytes, bliptoaster's heap, each until its 10 ms deadline faults it; each loop's
-  faulting block is timed by `time_us_64` and the worst judged against 1 s, a third of the box's watchdog. The LED
-  blinks 50 + its step, or 59 for a worst over the bound.
+- **The deadline case** (after the code reviews, before the script plan, its line after the bench's, so the check prints
+  nine lines): `rp.devtest.script-loop`, a third devtest node, runs seven loops over a builtin (a sort of 600 numbers, a
+  search in 4000 characters, `join` of an array-like a billion long, `forEach` over 2000 numbers and `JSON.stringify` of
+  400, then `forEach` and `JSON.stringify` again after 2500 turns of plain code, a phase change that lets the polls grow
+  apart first) in the pack registered again at 24576 bytes, bliptoaster's heap, each until its 10 ms deadline faults it;
+  each loop's faulting block is timed by `time_us_64` and the worst judged against 1 s, a third of the box's watchdog.
+  The LED blinks 50 + its step, or 59 for a worst over the bound. A loop the deadline failed to end would hang the image
+  there: a run that stops after the bench's line, with no LED, is this case failing.
 - **Build:** `RP_SCRIPT_HEAP_BYTES_devtest` (40960 at the five commits, 45056 since the third node's definition: the
-  toolchain's 3/2 check passes the pack at 41720 now), `NO_SCRIPTS` retired, the size table's new owners
+  toolchain's 3/2 check passes the pack at 42088 now), `NO_SCRIPTS` retired, the size table's new owners
   (MicroQuickJS 98,798 bytes of flash, the script host 18,685, the devtest pack 17,955 at the five commits).
 - **Tests:** 8 new `[device-check]` cases (16 in all, 18 with the deadline case and its failure steps): registration at
   the image's heap, a type whose memory does not fit, the script plan (allocating nothing, 4 nodes, 40 blocks, 2032
@@ -596,9 +607,10 @@ the regression line moved to E4's measured figures (section 8). The first gate t
 - **What the audit of the engine's builtins left.** Every builtin that converts a value or calls back into JavaScript
   propagates what it is handed (the sort and repeat are fixed, section 4), but for drops of an out-of-memory alone:
   `Function.prototype`'s `prototype` getter and setter, an error's backtrace and a thrown error's message
-  (`JS_ThrowError`), each leaving the error pending behind a result; and `RegExp.prototype.exec` (behind `test`,
-  `match`, `search` and `split`), which, when its capture array cannot be made, unlinks a collector root it never
-  linked, so a heap that runs out there corrupts the context's root list. None is fixed yet.
+  (`JS_ThrowError`), each leaving the error pending behind a result. The host meets them as it meets a node that caught
+  the out-of-memory: the context's own report that it ran out (`ran_out`) kills the pack when the entry then ends in an
+  exception, and a node that runs on does so in a heap with no room. `RegExp.prototype.exec`'s, which corrupted the
+  context's root list, is fixed (section 4).
 - **The `[stats]` print stalls the loop.** E3's hazard, unchanged: a message arriving as the 13.7 ms print starts reads
   about 12 ms. The sniff / health USB read (about 2.5 ms) holds the loop the same way. Both are the console, not the
   script node, and they appear as isolated outliers in some E4 latency runs.
@@ -615,10 +627,10 @@ the regression line moved to E4's measured figures (section 8). The first gate t
   block refills those places, so a SysEx stream makes the box collect in the MIDI path; at 32 bits a node that reads a
   non-whole stream start, change value or tempo allocates too.
 - **A node's budget is its author's:** about 250 us a message, and a nest of native callbacks (`replace`, `forEach`) no
-  deeper than the cap of 4; the deadline faults the node, never the box, within about one call of the builtin it was in
-  (the device check's deadline case times the worst at bliptoaster's heap on the M33). A node that runs cheap code
-  long enough for the polls to grow far apart and then loops over a long builtin can overrun by up to that distance
-  (10000 polls at most) times one call of it, which the pack's heap bounds; the watchdog stays the backstop.
+  deeper than the cap of 4; the deadline faults the node, never the box, within the bound section 4 states (the device
+  check's deadline case times the worst at bliptoaster's heap on the M33, a phase change among its loops). A single
+  builtin call that neither allocates nor polls and is not bounded by the heap would run to its end, none being known;
+  the watchdog stays the backstop.
 - **A stale exporter** is guarded as in E3 (`loop.sh`'s stamp), now also against a pack's TS sources, the SDK's TS,
   `deps/mquickjs` and the toolchain.
 - **The audio version, a live-upload or SD plan that brings its own packs** (a trust model for bytecode mquickjs does

@@ -372,8 +372,9 @@ RP_NOINLINE void printLoops() {
                 fits ? "pass" : "failed", rp::device_check::kLoopType, static_cast<unsigned>(l.contextBytes),
                 static_cast<unsigned>(rp::mqjs::kHostClockDeadlineMicros));
     for (std::uint32_t k = 0; k < rp::device_check::kLoopCount; ++k)
-        std::printf("%s %s of %u in %u us (%u blocks)", k ? "," : "", rp::device_check::kLoops[k].loop,
-                    static_cast<unsigned>(rp::device_check::kLoops[k].count), static_cast<unsigned>(l.micros[k]),
+        std::printf("%s %s of %u%s in %u us (%u blocks)", k ? "," : "", rp::device_check::kLoops[k].loop,
+                    static_cast<unsigned>(rp::device_check::kLoops[k].count),
+                    rp::device_check::kLoops[k].warm ? " after plain code" : "", static_cast<unsigned>(l.micros[k]),
                     static_cast<unsigned>(l.blocks[k]));
     std::printf("; the worst, %s, %u us of its block, %s the bound of %u us (a third of the box's 3 s watchdog)\n",
                 rp::device_check::kLoops[worst].loop, static_cast<unsigned>(l.micros[worst]),

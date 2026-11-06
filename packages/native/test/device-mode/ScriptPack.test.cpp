@@ -58,6 +58,7 @@
 #include "graph/PackageMemory.hpp"
 #include "graph/PlanExport.hpp"
 #include "graph/PlanLoader.hpp"
+#include "graph/noinline.hpp"
 #include "graph/Queue.hpp"
 #include "graph/ResourceTable.hpp"
 #include "graph/node_desc.hpp"
@@ -82,6 +83,10 @@ extern const rp_mqjs_pack_source rp_script_devtest;
 extern const rp_mqjs_pack_source rp_script_hog;
 extern const rp_mqjs_pack_source rp_script_bliptoaster;
 extern const rp_mqjs_pack_source rp_script_scripttest;
+// Two of the standard library's functions, called directly (mquickjs_priv.h declares them; rp_mqjs_names.h gives them
+// RetroPlug's names).
+JSValue js_regexp_exec(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv, int magic);
+JSValue js_string_search(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv);
 }
 
 // Every device entry with both its builds (the generated device-entries.cpp).
@@ -845,15 +850,18 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
           "[device-mode][script-pack]") {
     // A builtin's one call is work the engine's polls never see into, so at the engine's own interval (a poll every
     // 10000 calls and branches) a loop over one ran 10000 of its calls between polls: the review's `for (;;) a.sort()`
-    // over 300 numbers in bliptoaster's heap went 0.7 s past a deadline of 10 ms on this host, seconds on the box. Each
-    // loop here is rp.devtest.script-loop in devtest's pack registered again at a pack's declared heap (both builds, at
-    // this width: 3/2 of it), over data of about what that heap holds (made by its first blocks), and its block that
-    // loops must fault with the deadline's words having spent under three times its deadline of the thread's CPU time,
-    // by which the deadline is read (a generous bound: each overruns by about one of its builtin's calls, well under a
-    // millisecond here).
+    // over 300 numbers in bliptoaster's heap went 0.7 s past a deadline of 10 ms on this host, seconds on the box. And
+    // a node that runs plain code first lets the polls grow apart, after which each poll was thousands of the builtin's
+    // calls away (a forEach or a JSON.stringify is one call and branch for the whole array). Each loop here is
+    // rp.devtest.script-loop in devtest's pack registered again at a pack's declared heap (both builds, at this width:
+    // 3/2 of it), over data of about what that heap holds (made by its first blocks), some after `warm` turns of plain
+    // code, and its block that loops must fault with the deadline's words having spent under a quarter more than its
+    // deadline of the thread's CPU time, by which the deadline is read (a generous bound: each overruns by about one of
+    // its builtin's calls, well under a millisecond here, where plain code first let a forEach run 35 ms over).
     struct Loop {
         const char*   loop;
         std::uint32_t count;
+        std::uint32_t warm = 0;
     };
     struct Heap {
         const char*       pack;
@@ -861,8 +869,24 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
         std::vector<Loop> loops;
     };
     const std::vector<Heap> heaps = {
-        {"bliptoaster", 24576, {{"sort", 300}, {"search", 4000}, {"join", 1000000000}, {"forEach", 1500}}},
-        {"devtest", 57344, {{"sort", 2000}, {"search", 12000}, {"join", 1000000000}, {"forEach", 6000}}},
+        {"bliptoaster",
+         24576,
+         {{"sort", 300},
+          {"search", 4000},
+          {"join", 1000000000},
+          {"forEach", 1500},
+          {"stringify", 400},
+          {"forEach", 1500, 100000},
+          {"stringify", 400, 100000}}},
+        {"devtest",
+         57344,
+         {{"sort", 2000},
+          {"search", 12000},
+          {"join", 1000000000},
+          {"forEach", 6000},
+          {"stringify", 1500},
+          {"forEach", 6000, 100000},
+          {"stringify", 1500, 100000}}},
     };
     constexpr std::uint32_t kDeadline = 50000;
     static std::deque<rp_mqjs_pack_source> copies;  // a registration keys its pack on the source's address
@@ -876,10 +900,11 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
         REQUIRE(device);
         for (const auto& [build, pack] : {std::pair{"desktop", desktop}, std::pair{"device", device}}) {
             for (const Loop& l : heap.loops) {
-                INFO(build << ", " << heap.pack << "'s heap: " << l.loop << " of " << l.count);
+                INFO(build << ", " << heap.pack << "'s heap: " << l.loop << " of " << l.count << " after " << l.warm);
                 Host host(kDeadline);
                 char settings[96];
-                std::snprintf(settings, sizeof settings, R"({"loop":"%s","count":%u})", l.loop, l.count);
+                std::snprintf(settings, sizeof settings, R"({"loop":"%s","count":%u,"warm":%u})", l.loop, l.count,
+                              l.warm);
                 Made n(typeOf(pack, "rp.devtest.script-loop"), host, msgpackOf(settings), {{RP_PORT_EVENTS, true}});
                 INFO(n.error);
                 REQUIRE(n.node);
@@ -897,7 +922,7 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
                 CHECK(status == RP_FAULT);
                 CHECK(n.fault() == "process ran past its deadline of " + std::to_string(kDeadline) + " us");
                 CHECK(spent >= kDeadline);
-                CHECK(spent < 3 * kDeadline);
+                CHECK(spent < kDeadline + kDeadline / 4);
                 CHECK(std::chrono::steady_clock::now() - wall < std::chrono::seconds(5));
             }
         }
@@ -1665,19 +1690,25 @@ TEST_CASE("a script node's cost a message, and its pack's heap use", "[.][script
     // made to its queue's 256 places at the first block, whose time (the instance made, the pools, the block) is given
     // too.
     constexpr std::uint32_t kBlocks = 16000;
+    // The script builds run at the desktop's deadline (500 ms, by the thread's CPU time) and the device's at the box's
+    // too (10 ms), whose polls come closer together (MqjsHost.hpp's kFirstPollDivisor and kPollCapDivisor).
     struct Subject {
         const char*         name;
         const rp_node_type* type;
         bool                script;
+        std::uint32_t       deadline = rp::mqjs::kDesktopDeadlineMicros;
     };
     const std::vector<Subject> subjects = {
         {"desktop script", typeOf(rp_devtest_script_package(), "rp.devtest.script-transpose"), true},
         {"device script", typeOf(rp_devtest_script_package_device_mode(), "rp.devtest.script-transpose"), true},
+        {"device script at the box's deadline",
+         typeOf(rp_devtest_script_package_device_mode(), "rp.devtest.script-transpose"), true,
+         rp::mqjs::kHostClockDeadlineMicros},
         {"device C++ midi-filter", typeOf(rp_core_package_device_mode(), "rp.core.midi-filter"), false},
     };
     for (const std::uint32_t messages : {16u, 256u}) {
         for (const Subject& subject : subjects) {
-            Host host;
+            Host host(subject.deadline);
             Made n(subject.type, host, subject.script ? msgpackOf(R"({"semitones":3})") : msgpackOf("{}"),
                    kTransposePorts);
             REQUIRE(n.node);
@@ -1742,6 +1773,119 @@ TEST_CASE("a loaded pack's names stay the engine's after a collection: its defin
     JS_GC(ctx);
     const JSValue defs = JS_GetPropertyStr(ctx, JS_GetGlobalObject(ctx), "__rp_scriptNodes");
     CHECK(JS_IsArray(ctx, defs));
+    JS_FreeContext(ctx);
+}
+
+namespace {
+
+// A stack's worth of a pattern no root holds, below the caller's frame: where the next function the caller calls keeps
+// its locals.
+RP_NOINLINE void paintStack() {
+    volatile unsigned char bytes[4096];
+    for (std::size_t i = 0; i < sizeof bytes; ++i) bytes[i] = 0xA5;
+}
+
+}  // namespace
+
+TEST_CASE("a regular expression run out of memory leaves the context's roots as they were",
+          "[device-mode][script-pack]") {
+    // RegExp.prototype.exec (and test, and String.prototype.search, which run it), called with the context's heap so
+    // full that the capture array exec makes first cannot be made: MicroQuickJS jumped from there past its push of the
+    // array's root to the pop of it, which set the context's list of roots to whatever its stack word held, and a
+    // collection then walked it. Each is called here directly, on a stack painted with a pattern no root holds, with
+    // the heap filled with a chain of arrays, each as large as still fits after a collection; the out-of-memory is
+    // thrown, and the list of roots must end where it began, so the context collects and allocates again once the chain
+    // goes.
+    for (int call = 0; call < 3; ++call) {
+        INFO(call);
+        std::vector<std::uint64_t> memory(65536 / sizeof(std::uint64_t));
+        JSContext* ctx = JS_NewContext(memory.data(), memory.size() * sizeof(std::uint64_t), &rp_mqjs_stdlib);
+        REQUIRE(ctx);
+        const std::string setup = "var re = /(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)(m)(n)(o)(p)/, x = 'x';";
+        REQUIRE_FALSE(JS_IsException(JS_Eval(ctx, setup.c_str(), setup.size(), "<setup>", 0)));
+        JSGCRef re{}, x{}, chain{}, link{};
+        *JS_PushGCRef(ctx, &re) = JS_GetPropertyStr(ctx, JS_GetGlobalObject(ctx), "re");
+        *JS_PushGCRef(ctx, &x) = JS_GetPropertyStr(ctx, JS_GetGlobalObject(ctx), "x");
+        *JS_PushGCRef(ctx, &chain) = JS_NULL;
+        *JS_PushGCRef(ctx, &link) = JS_NULL;
+        for (int size = 4096; size >= 0; size = size ? size / 2 : -1) {
+            for (;;) {
+                link.val = JS_NewArray(ctx, 2);
+                if (JS_IsException(link.val)) break;
+                JS_SetPropertyUint32(ctx, link.val, 0, chain.val);
+                const JSValue pad = JS_NewArray(ctx, size);
+                if (JS_IsException(pad)) break;
+                JS_SetPropertyUint32(ctx, link.val, 1, pad);
+                chain.val = link.val;
+            }
+            JS_GetException(ctx);
+        }
+        link.val = JS_NULL;
+        paintStack();
+        JSValue result;
+        if (call == 2) {
+            result = js_string_search(ctx, &x.val, 1, &re.val);
+        } else {
+            result = js_regexp_exec(ctx, &re.val, 1, &x.val, call);  // 0: exec, 1: test
+        }
+        JSGCRef top{};
+        JS_PushGCRef(ctx, &top);
+        JS_PopGCRef(ctx, &top);
+        const bool kept = top.prev == &link;
+        CHECK(kept);
+        if (!kept) {  // set the list right again, so the context can be freed
+            JSGCRef mend{};
+            mend.prev = &link;
+            JS_PopGCRef(ctx, &mend);
+        }
+        CHECK(JS_IsException(result));
+        JS_GetException(ctx);
+        // The chain gone, the context collects and makes what it could not.
+        chain.val = JS_NULL;
+        const std::string again = "var again = []; for (var i = 0; i < 400; i++) again.push({ v: i }); again.length";
+        const JSValue length = JS_Eval(ctx, again.c_str(), again.size(), "<again>", JS_EVAL_RETVAL);
+        int32_t n = 0;
+        CHECK(JS_ToInt32(ctx, &n, length) == 0);
+        CHECK(n == 400);
+        JS_PopGCRef(ctx, &link);
+        JS_PopGCRef(ctx, &chain);
+        JS_PopGCRef(ctx, &x);
+        JS_PopGCRef(ctx, &re);
+        JS_FreeContext(ctx);
+    }
+}
+
+TEST_CASE("String.prototype.match with a global expression that matches nothing moves on, and ends",
+          "[device-mode][script-pack]") {
+    // MicroQuickJS's match never moved past an empty match, so a global expression that can match nothing added the
+    // same empty match until the heap ran out. Each empty match now moves the next search on a code point, as replace
+    // does: a match at each place between the characters, and one at the end.
+    struct Case {
+        const char* script;
+        const char* want;
+    };
+    static constexpr Case kCases[] = {
+        {"JSON.stringify('abc'.match(/x*/g))", R"(["","","",""])"},
+        {"JSON.stringify('x'.match(/(?:)/g))", R"(["",""])"},
+        {"JSON.stringify('aab'.match(/a*/g))", R"(["aa","",""])"},
+        {"'\\ud83d\\ude00'.match(/(?:)/g).length", "2"},
+        {"JSON.stringify('abc'.match(/b/g))", R"(["b"])"},
+        {"String('abc'.match(/x/g))", "null"},
+        {"var r = /x*/g; 'abc'.match(r); String(r.lastIndex)", "0"},
+    };
+    std::vector<std::uint64_t> memory(65536 / sizeof(std::uint64_t));
+    JSContext* ctx = JS_NewContext(memory.data(), memory.size() * sizeof(std::uint64_t), &rp_mqjs_stdlib);
+    REQUIRE(ctx);
+    for (const Case& c : kCases) {
+        INFO(c.script);
+        const JSValue v = JS_Eval(ctx, c.script, std::strlen(c.script), "<match>", JS_EVAL_RETVAL);
+        REQUIRE_FALSE(JS_IsException(v));
+        JSCStringBuf buf;
+        std::size_t  n = 0;
+        const char*  text = JS_ToCStringLen(ctx, &n, v, &buf);
+        REQUIRE(text);
+        CHECK(std::string(text, n) == c.want);
+    }
     JS_FreeContext(ctx);
 }
 

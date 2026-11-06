@@ -55,28 +55,33 @@
 #     room left too). check_free_mem, where every allocation and every push onto the context's stack finds room or
 #     collects and looks again, is upstream's body under another name, called by RetroPlug's, which tells the host
 #     (rp_mqjs_api's ran_out) when it finds none.
-#   - The deadline. The interpreter polls its interrupt handler only at its calls and branches, so one call of a
-#     builtin (a sort, a string search, join over an array-like whose length nothing bounds) ran unpolled however long
-#     it took. RetroPlug's sort comparison, string searches (js_string_indexOf, and js_string_indexof, which replace and
-#     split use) and join are upstream's bodies with a poll in their loops, counted off the interpreter's own counter,
-#     and rp_mqjs_set_poll_interval lets the handler set the next poll's distance (it rests on __js_poll_interrupt
-#     setting the counter before it calls the handler, so what the handler sets stands).
+#   - The deadline. The interpreter polls its interrupt handler only at its calls and branches, so one call of a builtin
+#     (a sort, a string search, join over an array-like whose length nothing bounds, a global match that matches
+#     nothing, which never ended) ran unpolled however long it took. RetroPlug's sort comparison, string searches
+#     (js_string_indexOf, and js_string_indexof, which replace and split use), join and match are upstream's bodies with
+#     a poll in their loops (match's also moving past an empty match, as replace does), counted off the interpreter's
+#     own counter, which RetroPlug's check_free_mem also counts each allocation and push off; and
+#     rp_mqjs_set_poll_interval lets the handler set the next poll's distance (it rests on __js_poll_interrupt setting
+#     the counter before it calls the handler, so what the handler sets stands).
+#   - RegExp.prototype.exec's out-of-memory (js_regexp_exec jumps from its capture array's allocation past the push of
+#     its root to the pop of it, which sets the context's list of roots to a stack word). Every call reaches RetroPlug's
+#     js_regexp_exec, upstream's body under another name with the list set back as it returns.
 #
 # RetroPlug also reaches into the engine in two ways these spans hold: rp_mqjs_limit_reentries caps a context's C
 # re-entries by starting JS_Call's count above 0 (it rests on JS_Call being the count's only writer, which the count of
 # its mentions holds), and the host's views are made by js_typed_array_constructor called with a C array of arguments
 # (it rests on the constructor reading them before it allocates).
 #
-# The first, the sort's comparison, the string searches and join are copies of upstream's code that read the engine's
-# internals, so a bump that changes upstream's function would still compile and the stale copy would win; the others
-# rest on upstream's text as it stands. So the configure below hashes the text of each (JS_MakeUniqueString's
+# The first, the sort's comparison, the string searches, join and match are copies of upstream's code that read the
+# engine's internals, so a bump that changes upstream's function would still compile and the stale copy would win; the
+# others rest on upstream's text as it stands. So the configure below hashes the text of each (JS_MakeUniqueString's
 # definition, the sweep of unique_strings, replace and its substitution, the StringBuffer and its appends,
-# hasOwnProperty, the typed array's constructor, the sort, repeat, the string searches, join, the interpreter's poll
-# and the check for room, whose three mentions, its definition and its two calls, are counted as well) and fails, naming rp_mqjs_engine.c, when any is not the text the fixes were written against: re-review the
-# fixes against the new text, then record its hash here. retroplug-device-mode-test's
-# [debug-gc] cases hold the second fix (its revert fails them); no test reaches the first's condition on demand (a
-# collection at every allocation, DEBUG_GC, sweeps a dead name before any growth can meet it), so the hash is its
-# guard.
+# hasOwnProperty, the typed array's constructor, the sort, repeat, the string searches, join, the interpreter's poll,
+# the check for room, whose three mentions, its definition and its two calls, are counted as well, exec and match) and
+# fails, naming rp_mqjs_engine.c, when any is not the text the fixes were written against: re-review the fixes against
+# the new text, then record its hash here. retroplug-device-mode-test's [debug-gc] cases hold the second fix (its revert
+# fails them); no test reaches the first's condition on demand (a collection at every allocation, DEBUG_GC, sweeps a
+# dead name before any growth can meet it), so the hash is its guard.
 set(MQUICKJS_DIR "${CMAKE_SOURCE_DIR}/deps/mquickjs")
 file(READ "${MQUICKJS_DIR}/mquickjs.c" _mqjs_engine_text)
 string(REPLACE "\r" "" _mqjs_engine_text "${_mqjs_engine_text}")
@@ -127,8 +132,13 @@ if(NOT _mqjs_mentions EQUAL 3)
                         "definition, JS_StackCheck's call and js_malloc's) rp_mqjs_engine.c's report of a heap that "
                         "ran out was written against (cmake/mquickjs.cmake's header says why); re-review it")
 endif()
+set(_mqjs_span_12 "RegExp.prototype.exec" "JSValue js_regexp_exec(JSContext *ctx, JSValue *this_val," "\n}\n"
+                  "4a8c4ccc9541dfe9e369492799a9d160ed93721b1b34ac2f8ef93e04ab56411c")
+set(_mqjs_span_13 "String.prototype.match" "JSValue js_string_match(JSContext *ctx, JSValue *this_val," "\n}\n"
+                  "f7c2a4d839d9fd4f901e9732f10f5a06dde8f54aec3448f634f94459f20130d8")
 foreach(_mqjs_span IN ITEMS _mqjs_span_0 _mqjs_span_1 _mqjs_span_2 _mqjs_span_3 _mqjs_span_4 _mqjs_span_5
-                           _mqjs_span_6 _mqjs_span_7 _mqjs_span_8 _mqjs_span_9 _mqjs_span_10 _mqjs_span_11)
+                           _mqjs_span_6 _mqjs_span_7 _mqjs_span_8 _mqjs_span_9 _mqjs_span_10 _mqjs_span_11
+                           _mqjs_span_12 _mqjs_span_13)
     list(GET ${_mqjs_span} 0 _what)
     list(GET ${_mqjs_span} 1 _begin)
     list(GET ${_mqjs_span} 2 _end)

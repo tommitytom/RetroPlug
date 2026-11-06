@@ -2,7 +2,7 @@
   "name": "@retroplug/devtest",
   "version": "0.1.0",
   "private": true,
-  "description": "Test node types a device image's check runs: a deterministic source, a digest and a coupled pair, and a script pack's transpose, nest and builtin loop. No product that ships lists it. The script pack's heapBytes is the desktop device-mode tests' figure, which feed it the planner's 256-place queues; behind a device's 64-place MIDI queue the toolchain's check passes it at 41720, so an image that registers it should give it about 45056 of its own.",
+  "description": "Test node types a device image's check runs: a deterministic source, a digest and a coupled pair, and a script pack's transpose, nest and builtin loop. No product that ships lists it. The script pack's heapBytes is the desktop device-mode tests' figure, which feed it the planner's 256-place queues; behind a device's 64-place MIDI queue the toolchain's check passes it at 42088, so an image that registers it should give it about 45056 of its own.",
   "retroplug": {
     "native": { "target": "retroplug-devtest-nodes", "entry": "rp_devtest_plan_package", "device": true },
     "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 57344 }

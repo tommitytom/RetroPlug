@@ -45,18 +45,28 @@
  *   ordinary result (and, left on its stack, as a catch handler's offset), the exception dropped. The standard
  *   library's repeat is rp_mqjs_js_string_repeat below, which converts the count first and returns on an exception,
  *   then hands upstream's body, compiled under another name, a count that converts to itself.
- * And the deadline reaches into three builtins whose one call can run far longer than the interpreter's polls allow
- * (it polls the interrupt handler at its calls and branches alone, every builtin's work between two of them unpolled):
- * the sort's comparison polls once a comparison, the string searches (indexOf and lastIndexOf, js_string_indexOf, and
+ * And the deadline reaches into the builtins whose one call can run far longer than the interpreter's polls allow (it
+ * polls the interrupt handler at its calls and branches alone, every builtin's work between two of them unpolled): the
+ * sort's comparison polls once a comparison, the string searches (indexOf and lastIndexOf, js_string_indexOf, and
  * replace's and split's js_string_indexof, both n times m) once a position, counting about one for every eight
- * characters it compares, and join on what is no array (whose loop runs to the object's length, which nothing bounds)
- * once an element. rp_mqjs_poll is their poll, the interpreter's counted off the same counter, and
- * rp_mqjs_set_poll_interval is how the host's handler sets the next poll's distance. Each search is upstream's body
- * with the poll in its loop: js_string_indexOf replaces the standard library's under its own name, as hasOwnProperty
- * does; js_string_indexof's definition is told from its calls as JS_MakeUniqueString's is (the calls pass `ctx`), and
- * join's too, since js_array_toString calls it. A search the interrupt stops answers -1, as one that found nothing,
- * with the interrupt pending: replace and split cannot fail there, and the host's handler, once the deadline is past,
- * asks the next poll at once, so the interpreter throws it again at its next call or branch.
+ * characters it compares, join on what is no array (whose loop runs to the object's length, which nothing bounds) once
+ * an element, and match once a match. rp_mqjs_poll is their poll, the interpreter's counted off the same counter, and
+ * check_free_mem below counts each allocation and each push of a frame off it too (down to 0: the poll is then the
+ * interpreter's next call or branch), so a builtin that allocates or calls back for each element (forEach over a plain
+ * callback, JSON.stringify) brings the next poll nearer as it works; rp_mqjs_set_poll_interval is how the host's
+ * handler sets the next poll's distance. Each search is upstream's body with the poll in its loop: js_string_indexOf
+ * replaces the standard library's under its own name, as hasOwnProperty does; js_string_indexof's definition is told
+ * from its calls as JS_MakeUniqueString's is (the calls pass `ctx`), and join's too, since js_array_toString calls it.
+ * A search the interrupt stops answers -1, as one that found nothing, with the interrupt pending: replace and split
+ * cannot fail there, and the host's handler, once the deadline is past, asks the next poll at once, so the interpreter
+ * throws it again at its next call or branch. match is upstream's body too, under its own name, which also moves past
+ * an empty match a code point, as replace does, and ends after one at the string's end: upstream's added the same empty
+ * match until the heap ran out.
+ * RegExp.prototype.exec (and test, search, match and split, which run it) jumped, when its capture array could not be
+ * made, past its push of the array's root to the pop of it, which set the context's list of roots to whatever that
+ * stack word held, and the next collection walked it. Every call (the standard library's and the four inside the
+ * engine, told from the definition as join's are) reaches rp_mqjs_js_regexp_exec, which keeps the list as it was and
+ * sets it back as upstream's body returns: on every other path the body's pushes and pops balance.
  * And the engine tells its host when its heap runs out (rp_mqjs.h's rp_mqjs_api.ran_out), which nothing it throws can
  * say: check_free_mem, where every allocation and every push onto the context's stack finds room or collects and
  * looks again, is RetroPlug's, upstream's body (compiled under another name, told from its two calls as
@@ -110,6 +120,15 @@ static int js_array_sort_cmp(size_t i1, size_t i2, void* opaque);
 #define js_array_sort_cmp(first, ...) RP_MQJS_SORT_CMP_##first, __VA_ARGS__)
 #define RP_MQJS_SORT_CMP_size_t rp_mqjs_upstream_array_sort_cmp(size_t
 
+JSValue rp_mqjs_js_regexp_exec(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv, int magic);
+#undef js_regexp_exec
+#define js_regexp_exec(first, ...) RP_MQJS_EXEC_##first, __VA_ARGS__)
+#define RP_MQJS_EXEC_JSContext rp_mqjs_upstream_regexp_exec(JSContext
+#define RP_MQJS_EXEC_ctx rp_mqjs_js_regexp_exec(ctx
+
+#undef js_string_match
+#define js_string_match rp_mqjs_upstream_string_match
+
 static int check_free_mem(JSContext* ctx, JSValue* stack_bottom, uint32_t size);
 #define check_free_mem(first, ...) RP_MQJS_FREE_##first, __VA_ARGS__)
 #define RP_MQJS_FREE_JSContext rp_mqjs_upstream_check_free_mem(JSContext
@@ -126,6 +145,8 @@ static int check_free_mem(JSContext* ctx, JSValue* stack_bottom, uint32_t size);
 #undef js_string_indexOf
 #undef js_string_indexof
 #undef js_array_join
+#undef js_regexp_exec
+#undef js_string_match
 #undef check_free_mem
 
 #include "rp_mqjs.h"
@@ -279,10 +300,90 @@ void rp_mqjs_set_poll_interval(JSContext* ctx, int units) {
  * host told through its opaque (rp_mqjs.h: a struct whose first member is the host's rp_mqjs_api; null before
  * JS_NewContext's caller sets it). */
 static int check_free_mem(JSContext* ctx, JSValue* stack_bottom, uint32_t size) {
+    /* Each counts one toward the interrupt handler's next poll, as a call or a branch of the interpreter does (the
+     * header comment), and never past it: the poll itself waits for the interpreter's next call or branch. */
+    if (ctx->interrupt_counter > 0) ctx->interrupt_counter--;
     if (rp_mqjs_upstream_check_free_mem(ctx, stack_bottom, size) == 0) return 0;
     const rp_mqjs_api* const* api = (const rp_mqjs_api* const*)ctx->opaque;
     if (api && *api && (*api)->ran_out) (*api)->ran_out(ctx);
     return -1;
+}
+
+JSValue rp_mqjs_js_regexp_exec(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv, int magic) {
+    /* Upstream's push and pop of its roots balance on every path but the capture array's out-of-memory, which pops
+     * one it never pushed: the list is set back to where it was as exec returns (the header comment). */
+    JSGCRef* const   top = ctx->top_gc_ref;
+    const JSValue    result = rp_mqjs_upstream_regexp_exec(ctx, this_val, argc, argv, magic);
+    ctx->top_gc_ref = top;
+    return result;
+}
+
+JSValue rp_mqjs_js_string_match(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv) {
+    JSRegExp*     re;
+    int           global, n;
+    JSValue *     A, *result, ret;
+    JSObject*     p;
+    JSValueArray* arr;
+    JSByteArray*  barr;
+    JSGCRef       A_ref, result_ref;
+    int           end;
+
+    (void)rp_mqjs_upstream_string_match;
+    re = js_get_regexp(ctx, argv[0]);
+    if (!re) return JS_EXCEPTION;
+    barr = JS_VALUE_TO_PTR(re->byte_code);
+    global = lre_get_flags(barr->buf) & LRE_FLAG_GLOBAL;
+    if (!global) return rp_mqjs_js_regexp_exec(ctx, &argv[0], 1, this_val, 0);
+
+    p = JS_VALUE_TO_PTR(argv[0]);
+    re = &p->u.regexp;
+    re->last_index = 0;
+
+    A = JS_PushGCRef(ctx, &A_ref);
+    result = JS_PushGCRef(ctx, &result_ref);
+    *A = JS_NULL;
+    n = 0;
+    for (;;) {
+        /* A match is a poll (the header comment). */
+        if (rp_mqjs_poll(ctx, 1)) goto fail;
+        *result = rp_mqjs_js_regexp_exec(ctx, &argv[0], 1, this_val, 0);
+        if (JS_IsException(*result)) goto fail;
+        if (*result == JS_NULL) break;
+        if (*A == JS_NULL) {
+            *A = JS_NewArray(ctx, 1);
+            if (JS_IsException(*A)) goto fail;
+        }
+
+        p = JS_VALUE_TO_PTR(*result);
+        arr = JS_VALUE_TO_PTR(p->u.array.tab);
+        /* An empty match moves the next search on a code point (as replace's loop does), and one at the string's end
+         * is the last (exec would find it there again), so a global match that can match nothing ends rather than
+         * adding the same empty match until the heap runs out. */
+        end = 0;
+        if (js_string_len(ctx, arr->arr[0]) == 0) {
+            p = JS_VALUE_TO_PTR(argv[0]);
+            const int at = p->u.regexp.last_index;
+            const int c = string_getcp(ctx, *this_val, at, TRUE);
+            p->u.regexp.last_index = at + 1 + (c >= 0x10000);
+            end = at >= js_string_len(ctx, *this_val);
+            p = JS_VALUE_TO_PTR(*result);
+            arr = JS_VALUE_TO_PTR(p->u.array.tab);
+        }
+
+        ret = JS_SetPropertyUint32(ctx, *A, n++, arr->arr[0]);
+        if (JS_IsException(ret)) {
+        fail:
+            *A = JS_EXCEPTION;
+            break;
+        }
+        if (end) {  /* as exec's own end of the matches leaves it */
+            p = JS_VALUE_TO_PTR(argv[0]);
+            p->u.regexp.last_index = 0;
+            break;
+        }
+    }
+    JS_PopGCRef(ctx, &result_ref);
+    return JS_PopGCRef(ctx, &A_ref);
 }
 
 static int rp_mqjs_concat_subst(JSContext* ctx, void* buffer, JSValue* str, JSValue* rep, uint32_t pos,

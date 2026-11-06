@@ -371,21 +371,26 @@ void describe(JSContext* ctx, JSValue v, Text& out) {
 using graph::threadCpuMicros;
 #endif
 
-// An entry's first poll of its deadline: after its deadline in microseconds over kFirstPollDivisor of the engine's
-// calls and branches, and at least kLeastPoll (MqjsHost.hpp says why).
-std::uint32_t firstPoll(std::uint64_t limit) {
-    const std::uint64_t first = limit / kFirstPollDivisor;
-    return first < kLeastPoll ? kLeastPoll : first > kMostPoll ? kMostPoll : static_cast<std::uint32_t>(first);
+// `limit` over `divisor`, held to kLeastPoll..kMostPoll: a deadline's polls, counted in the engine's units (a call, a
+// branch, an allocation, a push of a frame).
+std::uint32_t pollsOf(std::uint64_t limit, std::uint32_t divisor) {
+    const std::uint64_t polls = limit / divisor;
+    return polls < kLeastPoll ? kLeastPoll : polls > kMostPoll ? kMostPoll : static_cast<std::uint32_t>(polls);
 }
 
-// The poll after one that found the deadline not yet past, `since` microseconds after the poll before it, `poll` calls
-// and branches ago, with `left` microseconds left: twice as far, to kMostPoll, so a node that finishes its entry in
-// microseconds reads the clock a few times at most; but no further than the last interval's rate says fits in half of
-// what is left, so the polls close in on the deadline and the one past it lands about one call's or branch's work (one
-// builtin's) beyond it.
-std::uint32_t nextPoll(std::uint32_t poll, std::uint64_t since, std::uint64_t left) {
-    std::uint64_t next = std::uint64_t{poll} * 2;
-    if (next > kMostPoll) next = kMostPoll;
+// An entry's first poll of its deadline (MqjsHost.hpp says why each figure is what it is).
+std::uint32_t firstPoll(std::uint64_t limit) { return pollsOf(limit, kFirstPollDivisor); }
+
+// The poll after one that found the deadline not yet past, `since` microseconds after the poll before it, `poll` units
+// ago, with `left` microseconds of a deadline of `limit` left: twice as far, to the deadline's cap (pollsOf at
+// kPollCapDivisor), so a node that finishes its entry in microseconds reads the clock a few times at most; but no
+// further than the last interval's rate says fits in half of what is left, so the polls close in on the deadline. The
+// cap is what bounds a phase change (plain code, whose cheap units let the polls grow apart, then a builtin whose one
+// call is many times their work): at most a cap's units between polls, each a call, a branch, an allocation or a push.
+std::uint32_t nextPoll(std::uint32_t poll, std::uint64_t since, std::uint64_t left, std::uint64_t limit) {
+    std::uint64_t       next = std::uint64_t{poll} * 2;
+    const std::uint32_t cap = pollsOf(limit, kPollCapDivisor);
+    if (next > cap) next = cap;
     // Multiplied out first, so a poll far from its deadline divides nothing (a 64-bit division is a library call on
     // the box's M33).
     if (since > 0 && next * since > left / 2 * poll) {
@@ -413,7 +418,7 @@ int interrupt(JSContext* ctx, void* opaque) {
         rp_mqjs_set_poll_interval(ctx, 1);
         return 1;
     }
-    s->poll = nextPoll(s->poll, now > s->lastPoll ? now - s->lastPoll : 0, budget - spent);
+    s->poll = nextPoll(s->poll, now > s->lastPoll ? now - s->lastPoll : 0, budget - spent, s->limit);
     s->lastPoll = now;
     rp_mqjs_set_poll_interval(ctx, static_cast<int>(s->poll));
     return 0;

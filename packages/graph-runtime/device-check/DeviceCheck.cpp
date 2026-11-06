@@ -694,10 +694,11 @@ void benchScript(const rp_package* const* packages, std::size_t packageCount, co
 
 namespace {
 
-// A loop case's settings as the msgpack a device reads: {"loop": <its name, under 32 bytes>, "count": <its count>}.
+// A loop case's settings as the msgpack a device reads: {"loop": <its name, under 32 bytes>, "count": <its count>,
+// "warm": <its warm-up>}.
 std::uint32_t loopSettings(const LoopCase& c, std::uint8_t* out) {
     std::uint32_t n = 0;
-    out[n++] = 0x82;
+    out[n++] = 0x83;
     out[n++] = 0xa4;
     std::memcpy(out + n, "loop", 4);
     n += 4;
@@ -710,6 +711,11 @@ std::uint32_t loopSettings(const LoopCase& c, std::uint8_t* out) {
     n += 5;
     out[n++] = 0xce;
     for (int shift = 24; shift >= 0; shift -= 8) out[n++] = static_cast<std::uint8_t>(c.count >> shift);
+    out[n++] = 0xa4;
+    std::memcpy(out + n, "warm", 4);
+    n += 4;
+    out[n++] = 0xce;
+    for (int shift = 24; shift >= 0; shift -= 8) out[n++] = static_cast<std::uint8_t>(c.warm >> shift);
     return n;
 }
 

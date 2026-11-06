@@ -175,8 +175,8 @@ inline constexpr std::uint32_t kPlacedLengths = 3;
 // An entry's deadline by a host's clock that names none (the box's): 10 ms. A MIDI-rate node's process takes
 // microseconds, the box's block is about a millisecond and its watchdog 3 s, so a node this far over is stuck. The
 // box's other nodes lose this long before it is silenced, and kHostClockMessageMicros more for each message the block
-// hands it (26 ms at a full queue of the device MIDI input's 64), and the overrun past it: about one call of the
-// builtin the node was in when the deadline passed, which the pack's heap bounds (kFirstPollDivisor).
+// hands it (26 ms at a full queue of the device MIDI input's 64), and the overrun past it, which kPollCapDivisor bounds
+// (at most 156 units of work and one builtin call).
 inline constexpr std::uint32_t kHostClockDeadlineMicros = 10000;
 // What a block's entry gets on top of it by a host's clock, for each message the block hands the node on its events and
 // bytes inputs: 250 us. A node's work grows with its messages, and one node's cost on the RP2350 at 150 MHz, run from
@@ -185,23 +185,31 @@ inline constexpr std::uint32_t kHostClockDeadlineMicros = 10000;
 // queue's fill, and a node is held to the fixed figure only where it is handed nothing. The desktop's CPU-time default
 // has none.
 inline constexpr std::uint32_t kHostClockMessageMicros = 250;
-// How an entry polls its deadline. MicroQuickJS calls the interrupt handler once every so many of the calls and
-// branches its interpreter runs, 10000 by its own count, and a builtin's work between two of them is unpolled, so at
-// the engine's interval a loop over a builtin ran 10000 of its calls between polls, each bounded only by the pack's
-// heap: in bliptoaster's 24576 bytes a `for (;;) a.sort()` on the desktop ran 0.7 s past a deadline of 10 ms, seconds
-// on the box, past its 3 s watchdog. So the handler sets each next poll's distance (script/rp_mqjs.h's
-// rp_mqjs_set_poll_interval): an entry first polls after its deadline in microseconds over kFirstPollDivisor calls and
-// branches, at least kLeastPoll (8 on the box's 10 ms, 244 at the desktop's 500 ms); each poll before the deadline sets
-// the next twice as far, to kMostPoll, the engine's own, but no further than the rate since the last poll says fits in
-// half of what is left, so the polls close in on the deadline; and a poll past it sets the next at once, so an
-// interrupt a builtin dropped is thrown again at the interpreter's next call or branch. The builtins whose one call can
-// run long poll in their loops off the same count (script/rp_mqjs_engine.c: the sort a comparison, the string searches
-// a position, join on what is no array an element), so a loop over any builtin overruns by about one call of a builtin
-// whose work is linear in what the pack's heap holds. A node that finishes its entry in microseconds reads the clock a
-// few times at most (the first poll and its doublings): the desktop's [script-bench], a transpose's block of 16
-// messages, went from about 259 to 275 ns a message (two reads of the thread's CPU time a block), and of 256 from 244
-// to 248; on the box, a read of its microsecond clock is a few dozen cycles.
+// How an entry polls its deadline. MicroQuickJS calls the interrupt handler once every so many units of work, 10000 by
+// its own count: each call and branch of its interpreter, and (RetroPlug's, script/rp_mqjs_engine.c) each allocation
+// and each push of a frame, and the builtins whose one call can run long count off the same counter in their loops (the
+// sort a comparison, the string searches a position, join on what is no array an element, match a match). At the
+// engine's interval a loop over a builtin ran 10000 of its calls between polls: in bliptoaster's 24576 bytes `for (;;)
+// a.sort()` on the desktop ran 0.7 s past a deadline of 10 ms, seconds on the box, past its 3 s watchdog. So the
+// handler sets each next poll's distance (script/rp_mqjs.h's rp_mqjs_set_poll_interval): an entry first polls after its
+// deadline in microseconds over kFirstPollDivisor units, at least kLeastPoll (8 on the box's 10 ms, 244 at the
+// desktop's 500 ms); each poll before the deadline sets the next twice as far, but never past the deadline in
+// microseconds over kPollCapDivisor units (156 on the box, 7812 at the desktop's 500 ms, kMostPoll at most), and no
+// further than the rate since the last poll says fits in half of what is left; and a poll past the deadline sets the
+// next at once, so an interrupt a builtin dropped is thrown again at the interpreter's next call or branch. The cap is
+// what bounds a phase change, plain code whose cheap units let the polls grow apart and then a loop over a builtin
+// whose one call is many of them (a forEach over a plain callback, JSON.stringify): its calls and its allocations
+// count, so the overrun past a deadline IS at most the cap's units, each a call, a branch, an allocation, a push or a
+// builtin's own loop step (a collection the costliest, linear in the heap), plus the rest of the builtin call the count
+// ran out in, since a poll waits for the interpreter's next call or branch: one call, linear in what the pack's heap
+// holds. The box's figure is the device check's deadline case (rp-device-check, the worst of its loops, a phase change
+// among them, against a third of the watchdog). The residual: a single builtin call that neither allocates nor polls
+// and is not bounded by the heap runs to its end; none is known in the standard library (join's generic loop polls). A
+// node that finishes its entry in microseconds reads the clock a few times (the first poll and its doublings): the
+// desktop's [script-bench], a transpose's 16-message block, about 272 to 280 ns a message at the desktop's deadline
+// (A's 275), 305 at the box's 10 ms, where it reads its clock every 156 units; on the box a read is a few dozen cycles.
 inline constexpr std::uint32_t kFirstPollDivisor = 2048;
+inline constexpr std::uint32_t kPollCapDivisor = 64;
 inline constexpr std::uint32_t kLeastPoll = 8;
 inline constexpr std::uint32_t kMostPoll = 10000;
 // An entry's deadline by the desktop's own clock, the thread's CPU time: 500 ms. Windows counts that time in scheduler

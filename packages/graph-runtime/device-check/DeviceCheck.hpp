@@ -320,14 +320,19 @@ void benchScript(const rp_package* const* packages, std::size_t packageCount, co
 // into, is the longest a node can hold the block thread before its deadline faults it. Each case's last block, the one
 // the deadline ended, is timed. The cases' data is about what that heap holds beside devtest's definitions at either
 // width: an array's sort of 600 numbers, a search in 4000 characters, join of an array-like of a billion elements
-// (whose loop nothing but its length bounds) and forEach over 2000 numbers.
+// (whose loop nothing but its length bounds), forEach over 2000 numbers and JSON.stringify of 400; and forEach and
+// JSON.stringify again after `warm` turns of plain code, a few milliseconds of the box's 10 ms deadline, which let the
+// polls grow apart before the builtin's loop starts (a phase change, MqjsHost.hpp's kPollCapDivisor).
 inline constexpr const char*   kLoopType = "rp.devtest.script-loop";
 inline constexpr std::uint32_t kLoopHeapBytes = 24576;
 struct LoopCase {
     const char*   loop;
     std::uint32_t count;
+    std::uint32_t warm = 0;
 };
-inline constexpr LoopCase      kLoops[] = {{"sort", 600}, {"search", 4000}, {"join", 1000000000}, {"forEach", 2000}};
+inline constexpr LoopCase kLoops[] = {{"sort", 600},          {"search", 4000},           {"join", 1000000000},
+                                      {"forEach", 2000},      {"stringify", 400},         {"forEach", 2000, 2500},
+                                      {"stringify", 400, 2500}};
 inline constexpr std::uint32_t kLoopCount = sizeof kLoops / sizeof kLoops[0];
 // How many blocks a case may take to fault (its data is made a few hundred numbers a block first).
 inline constexpr std::uint32_t kLoopBlocks = 32;

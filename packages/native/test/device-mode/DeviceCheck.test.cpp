@@ -1117,7 +1117,7 @@ TEST_CASE("the device check's deadline case faults every loop over a builtin by 
         // The sort's and forEach's data takes a block for each 256 numbers first; the search's string, one.
         const std::uint32_t count = rp::device_check::kLoops[k].count;
         const std::string   loop = rp::device_check::kLoops[k].loop;
-        const bool          numbers = loop == "sort" || loop == "forEach";
+        const bool          numbers = loop == "sort" || loop == "forEach" || loop == "stringify";
         const std::uint32_t data = numbers ? (count + 255) / 256 : loop == "search" ? 1u : 0u;
         CHECK(r.blocks[k] == data + 1);
         // Its last block ran to its deadline (10 ms of CPU time) and not much past it: a generous bound by the wall

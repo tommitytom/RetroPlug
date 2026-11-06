@@ -117,13 +117,14 @@ export const scriptNestNode = defineNode({
 
 // One builtin over data of `count`, called for ever: an array's sort (of `count` numbers), a string's search (in a
 // string of `count` characters for a needle of half as many and one more, so every position compares about half of
-// it), join of an array-like whose length is `count`, or forEach over `count` numbers (`loop`; "none", the default,
-// does nothing, so the device check's run of each type and the toolchain's pass it). Every call is work the engine's
-// interpreter does not poll its deadline within, so the loop is held to its deadline only by the host's polls between
-// calls and the builtins' own (graph-runtime's script/MqjsHost.hpp, kFirstPollDivisor): what the device check's
-// deadline case times on the box (packages/graph-runtime/device-check, loopDeadline) and the device-mode tests time at
-// a pack's declared heaps. Its blocks make its data first, kLoopFill numbers a block, well inside a block's deadline
-// on the box, and then a block loops, until the deadline faults the node.
+// it), join of an array-like whose length is `count`, forEach over `count` numbers, or JSON.stringify of them (`loop`;
+// "none", the default, does nothing, so the device check's run of each type and the toolchain's pass it). Every call
+// is work the engine's interpreter does not poll its deadline within, so the loop is held to its deadline only by the
+// host's polls between calls and the engine's own inside them (graph-runtime's script/MqjsHost.hpp,
+// kFirstPollDivisor): what the device check's deadline case times on the box (packages/graph-runtime/device-check,
+// loopDeadline) and the device-mode tests time at a pack's declared heaps. Its blocks make its data first, kLoopFill
+// numbers a block, well inside a block's deadline on the box; then a block runs `warm` turns of a cheap loop (a phase
+// of plain code, which lets the polls grow apart) and loops over the builtin until the deadline faults the node.
 const kLoopFill = 256;
 
 export const scriptLoopNode = defineNode({
@@ -131,14 +132,16 @@ export const scriptLoopNode = defineNode({
   name: "Script builtin loop (devtest)",
   category: "test",
   settings: s.object({
-    loop: s.enum(["none", "sort", "search", "join", "forEach"], "none"),
+    loop: s.enum(["none", "sort", "search", "join", "forEach", "stringify"], "none"),
     count: s.int({ min: 0, max: 1000000000, default: 0 }),
+    warm: s.int({ min: 0, max: 1000000000, default: 0 }),
   }),
   ports: { out: events.out() },
   create: ({ settings }) => {
     const loop = settings.loop;
     const count = settings.count;
-    const numbers = new Array<number>(loop === "sort" || loop === "forEach" ? count : 0);
+    const numbered = loop === "sort" || loop === "forEach" || loop === "stringify";
+    const numbers = new Array<number>(numbered ? count : 0);
     let filled = 0;
     let text = "";
     let needle = "";
@@ -158,6 +161,9 @@ export const scriptLoopNode = defineNode({
           needle = text.substring(0, count >> 1) + "b";
           return;
         }
+        let odd = 0;
+        for (let i = 0; i < settings.warm; i++) odd += i & 1;
+        if (odd < 0) return;
         switch (loop) {
           case "sort":
             for (;;) numbers.sort();
@@ -167,6 +173,8 @@ export const scriptLoopNode = defineNode({
             for (;;) Array.prototype.join.call(lengthOnly, "");
           case "forEach":
             for (;;) numbers.forEach(visit);
+          case "stringify":
+            for (;;) JSON.stringify(numbers);
           default:
             return;
         }
