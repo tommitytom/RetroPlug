@@ -331,8 +331,9 @@ TEST_CASE("a script pack registers on both builds of the host, with memory of it
     for (const rp_package* p : {desktop, device}) {
         CHECK(p->abi_version == RP_ABI_VERSION);
         CHECK(std::string(p->manifest_json) == R"({"id":"rp.devtest.script","version":"1.0.0"})");
-        REQUIRE(p->node_type_count == 1);
+        REQUIRE(p->node_type_count == 2);
         CHECK(std::string(p->node_types[0]->id) == "rp.devtest.script-transpose");
+        CHECK(std::string(p->node_types[1]->id) == "rp.devtest.script-nest");
         REQUIRE(p->memory);
         CHECK(std::string(p->memory->name) == "devtest");
         rp_memory_req req{};

@@ -12,6 +12,12 @@
 // leaves those out and names them in the header. retroplug-device-mode-test holds the device-mode registration to the
 // same rule and to this header.
 //
+// A script pack's types (a package with memory of its own: the devtest pack's TypeScript nodes) are cases like the
+// rest, created under the check's host with their package set up in memory of the generator's own. Their events and
+// bytes ports are written at the device MIDI input's capacity (RP_DEVICE_MIDI_IN_MESSAGES and _BYTES), not the
+// planner's default for an unwired port: a script node's pools follow the queues it reads, and the image declares its
+// pack's heap for the device's queues, which is what its node reads behind rp.device.midi-in.
+//
 // Usage: rp-device-check-cases <out.hpp>. The header is rewritten only when its text changes, so a desktop rebuild
 // that moves no default rebuilds no device image.
 
@@ -19,6 +25,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <new>
@@ -32,6 +39,7 @@
 #include "graph/JsonToMsgpack.hpp"
 #include "graph/Packages.hpp"
 #include "graph/node.hpp"
+#include "graph/rp_device_midi_in.h"
 
 namespace {
 
@@ -156,7 +164,31 @@ std::string commentSafe(std::string_view text) {
     return out;
 }
 
-std::string typeCase(const rp_node_type* type, std::size_t index, std::ostringstream& arrays) {
+// A package's own memory (a script pack's context), set up in memory of the generator's and offered through the
+// check's host while the object lives; nothing for a package with none.
+struct PackageMemory {
+    rp_memory_req req{};
+    void*         memory = nullptr;
+
+    explicit PackageMemory(const rp_package* package) {
+        if (!package->memory) return;
+        rp_error err{};
+        if (!package->memory->query(package, &req, &err))
+            fail(std::string(package->memory->name) + ": its memory: " + err.message);
+        if (req.align == 0) req.align = alignof(std::max_align_t);
+        memory = ::operator new(req.size, std::align_val_t(req.align));
+        std::memset(memory, 0, req.size);
+        if (!rp::device_check::openPackage(package, memory, &err))
+            fail(std::string(package->memory->name) + ": its setup: " + err.message);
+    }
+    ~PackageMemory() {
+        if (!memory) return;
+        rp::device_check::closePackage();
+        ::operator delete(memory, std::align_val_t(req.align));
+    }
+};
+
+std::string typeCase(const rp_node_type* type, bool ownMemory, std::size_t index, std::ostringstream& arrays) {
     const std::string id = type->id;
     // The defaults: a desktop instance created with no settings (or its completion alone), written back whole.
     const std::string_view completion = completionOf(id);
@@ -201,10 +233,13 @@ std::string typeCase(const rp_node_type* type, std::size_t index, std::ostringst
             const std::uint32_t channels = p.kind == PortKind::Audio ? channelsOf(*layout, p) : 0;
             const bool          queue = p.kind == PortKind::Events || p.kind == PortKind::Bytes;
             // A capacity that matches an input reads as the default here, which is what the planner gives it with that
-            // input unwired: the check wires nothing.
+            // input unwired: the check wires nothing. The queues of a type whose package has memory of its own (a
+            // script pack's, the one kind there is) are the device MIDI input's (above).
+            const std::uint32_t messages =
+                !queue ? 0 : ownMemory ? RP_DEVICE_MIDI_IN_MESSAGES : p.capacity.messageCount();
+            const std::uint32_t bytes = !queue ? 0 : ownMemory ? RP_DEVICE_MIDI_IN_BYTES : p.capacity.byteCount();
             arrays << "    {" << kindName(kind) << ", " << (output ? "true" : "false") << ", " << channels << ", "
-                   << (queue ? p.capacity.messageCount() : 0) << ", " << (queue ? p.capacity.byteCount() : 0)
-                   << "},  // " << p.id << "\n";
+                   << messages << ", " << bytes << "},  // " << p.id << "\n";
         }
         arrays << "};\n";
     }
@@ -235,6 +270,7 @@ int main(int argc, char** argv) {
     std::ostringstream arrays, rows, leftOut;
     std::size_t        index = 0;
     for (const rp_package* package : rp::graph::productPackages()) {
+        const PackageMemory memory(package);
         for (std::uint32_t t = 0; t < package->node_type_count; ++t) {
             const rp_node_type* type = package->node_types[t];
             auto                d = rp::graph::parseDescriptor(type->descriptor(type));
@@ -243,7 +279,7 @@ int main(int argc, char** argv) {
                 leftOut << "//   " << type->id << " (declares " << (d->heap ? "heap" : "threads") << ")\n";
                 continue;
             }
-            rows << typeCase(type, index++, arrays);
+            rows << typeCase(type, package->memory != nullptr, index++, arrays);
         }
     }
     std::ostringstream out;

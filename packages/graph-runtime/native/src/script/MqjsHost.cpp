@@ -1877,6 +1877,8 @@ bool openControl(Pack& pack, Text& why) {
 
 const char* packageRefusal() { return gRefusal; }
 
+std::size_t stateBytes() { return sizeof(PackState); }
+
 std::size_t packageBytes(const rp_mqjs_pack_source& source) {
     return kStateBytes + aligned8(source.bytecode_size) + std::size_t{source.heap_bytes} * kDeviceHalves / 2;
 }

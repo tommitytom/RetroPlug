@@ -178,7 +178,7 @@ test("a device pack the engine runs unlike Node is refused, at the transcript li
 });
 
 test("a device pack whose bytecode does not define its node types in its declared heap is refused", async () => {
-  // devtest defines its node in about 12 KiB of a 64-bit context, and the check's context at 64 bits is 3/2 of the
+  // devtest defines its nodes in about 12 KiB of a 64-bit context, and the check's context at 64 bits is 3/2 of the
   // declared heap (the box's figure): 4096 bytes declared is a 6 KiB context there. (Below 4 KiB, the least context
   // the engine sets itself up in, the host refuses to make one, saying so.)
   const run = await buildPack("../devtest/ts/index.ts", "devtest-small", 4096, "../devtest");

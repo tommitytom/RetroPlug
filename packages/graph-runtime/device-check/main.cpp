@@ -10,13 +10,27 @@
 // by the plan loader in that arena, run for a second in ragged blocks with its params moving, and unloaded, which
 // links the loader and the executor's coupled groups and feedback copies under the trap too.
 //
+// And a script pack (docs/modular-graph-phase-e4-design.md section 8): the devtest pack's TypeScript nodes on the
+// device's MicroQuickJS host, its 32-bit bytecode kept in flash and copied into the arena with the context its
+// registration gives it (RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES, packages.cmake). Its types are checked with the rest; the
+// bench times rp.devtest.script-transpose alone, in the M33's cycles; and, last, its script plan (script-plan.json:
+// the host's MIDI input, fed DeviceCheck.hpp's stimulus, through two of its nodes into a digest) is loaded, run for 40
+// ragged blocks and unloaded, its digest held to the desktop's exactly (it hears messages alone), its pack's context
+// to the declared figure, and its stack measured on its own, its load's and its blocks' apart, the nest node taking the
+// engine to the host's deepest C re-entry every block.
+//
 // It reports the outcome three ways: one line on stdio (the UART, GP0 at 115200) for each check, gDeviceCheck,
-// gN8Protocol and gDevicePlan for a debugger, and the board's LED, lit and steady for a pass and for a failure a count
-// of blinks, repeated after a pause: the failed Step's value for a type, kPlanBlinks plus the PlanStep's for the plan,
-// kN8ProtocolBlinks for the protocol. The plan's line reports its node count and the arena it took, as the device
-// measured them, beside the exporter's estimate, which the check holds it to, and the digest of what reached its end
-// beside the desktop's (DeviceCheck.hpp's kPlanDesktopDigest), which it does not judge: the float tolerance between the
-// two is the audio version's. A fourth line gives the deepest the stack went (stackHighWater below).
+// gN8Protocol, gDevicePlan, gScriptPlan and gScriptBench for a debugger, and the board's LED, lit and steady for a pass
+// and for a failure a count of blinks, repeated after a pause: the failed Step's value for a type, kPlanBlinks plus the
+// PlanStep's for the plan, kN8ProtocolBlinks for the protocol, kScriptPlanBlinks plus the PlanStep's for the script
+// plan (plus kScriptStackBlinks for a stack that left less than kStackReserve), and kBenchBlinks plus the BenchStep's
+// for the bench. The plan's line reports its node count and the arena it
+// took, as the device measured them, beside the exporter's estimate, which the check holds it to, and the digest of
+// what reached its end beside the desktop's (DeviceCheck.hpp's kPlanDesktopDigest), which it does not judge: the float
+// tolerance between the two is the audio version's. The script plan's lines report the same, the load's and the first
+// block's time, the pack's memory and its context's use, and the stack its load and its blocks took, each judged
+// against the stack with kStackReserve kept; the bench's line its cycles. A
+// last line gives the deepest the stack went in all (stackHighWater below).
 //
 // An absent plan line with a dark LED is a hang or a stack overrun, which the stack guard (CMakeLists.txt) turns into a
 // HardFault that halts at isr_hardfault's breakpoint: halted with the probe, the overrun reads CFSR (0xE000ED28) with
@@ -30,12 +44,18 @@
 #include "DeviceCheck.hpp"
 #include "DeviceCheckCases.hpp"
 #include "DeviceCheckPlan.hpp"
+#include "DeviceCheckScriptPlan.hpp"
 #include "N8Protocol.hpp"
 #include "graph/Packages.hpp"
+#include "graph/noinline.hpp"
+#include "hardware/clocks.h"
 #include "hardware/gpio.h"
+#include "hardware/structs/m33.h"
+#include "hardware/structs/xip_ctrl.h"
 #include "hardware/timer.h"
 #include "pico/platform.h"
 #include "pico/stdio.h"
+#include "script/MqjsHost.hpp"
 
 // The cases were generated for one list of package entries, and this image registers its product's: they must be the
 // same list, or a type would meet a case made for another (CMakeLists.txt passes the product's entries).
@@ -69,10 +89,66 @@ constexpr rp::device_check::PlanCase kPlan{kDeviceCheckPlan,
                                            std::size(rp::device_check::kPlanMoves),
                                            rp::device_check::kPlanDigest};
 
-// The blinks a plan failure shows when the types passed, plus its PlanStep's value, and a protocol failure when both
-// passed: past every Step's value.
+// The M33's cycle counter (DWT CYCCNT), which the script checks time with, started by startCycles. It is optional in an
+// M33 (DWT_CTRL.NOCYCCNT, bit 25, says it is absent): the microsecond clock stands in for it then, in cycles at
+// clk_sys, at a microsecond's resolution.
+bool          gCycleCounter = false;
+std::uint32_t gCyclesPerMicro = 1;
+
+std::uint32_t cycles() { return gCycleCounter ? m33_hw->dwt_cyccnt : time_us_32() * gCyclesPerMicro; }
+
+void startCycles() {
+    gCyclesPerMicro = clock_get_hz(clk_sys) / 1000000u;
+    m33_hw->demcr |= M33_DEMCR_TRCENA_BITS;
+    gCycleCounter = (m33_hw->dwt_ctrl & (1u << 25)) == 0;
+    if (gCycleCounter) {
+        m33_hw->dwt_cyccnt = 0;
+        m33_hw->dwt_ctrl |= M33_DWT_CTRL_CYCCNTENA_BITS;
+    }
+}
+
+// Microseconds from cycles at clk_sys.
+unsigned micros(std::uint64_t cycleCount) { return static_cast<unsigned>(cycleCount / gCyclesPerMicro); }
+
+// The clock the script nodes' deadline reads, as the box's host offers its own (pico/host's DeviceHost): its
+// microseconds, at the script host's default deadline for a host's clock (10 ms).
+std::uint64_t hostMicros(void*) { return time_us_64(); }
+const rp_host_clock kClock{nullptr, &hostMicros, 0};
+
+// Reads the script plan's load's stack and paints it again for its blocks (below).
+void afterScriptPlanLoad();
+
+// What the script plan check runs (DeviceCheck.hpp): the embedded script plan, in its ragged blocks, the host's MIDI
+// input carrying the stimulus, its digest held to the desktop's and its pack's context to the image's figure (at 32
+// bits a context is the declared heap exactly), timed by the cycle counter.
+constexpr rp::device_check::PlanCase kScriptPlan{.blob = kDeviceCheckScriptPlan,
+                                                 .blobSize = sizeof kDeviceCheckScriptPlan,
+                                                 .arenaEstimate = kDeviceCheckScriptPlanArenaEstimate,
+                                                 .frames = rp::device_check::kScriptPlanFrames,
+                                                 .splits = rp::device_check::kScriptPlanSplits,
+                                                 .splitCount = std::size(rp::device_check::kScriptPlanSplits),
+                                                 .digest = rp::device_check::kScriptPlanDigest,
+                                                 .stimulus = true,
+                                                 .expectDigest = true,
+                                                 .want = rp::device_check::kScriptPlanWant,
+                                                 .contextBytes = RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES,
+                                                 .cycles = &cycles,
+                                                 .afterLoad = &afterScriptPlanLoad};
+
+// The blinks a plan failure shows when the types passed, plus its PlanStep's value, a protocol failure when both
+// passed, and a script plan's and the bench's failures (plus their steps) when everything before passed: past every
+// Step's value, and each past the one before.
 constexpr unsigned kPlanBlinks = 10;
 constexpr unsigned kN8ProtocolBlinks = 20;
+constexpr unsigned kScriptPlanBlinks = 30;
+constexpr unsigned kBenchBlinks = 40;
+// A script plan whose load or blocks left less than kStackReserve: kScriptPlanBlinks plus this, past every PlanStep's.
+constexpr unsigned kScriptStackBlinks = 9;
+
+// What the script plan's load and blocks must each leave of the stack: room for an interrupt on top of the deepest
+// chain, as the box takes its UART's and USB's (about a hundred bytes of exception frame and a few hundred of handler).
+// The check enables none, so its own runs never need it.
+constexpr std::size_t kStackReserve = 512;
 
 const char* planStepName(rp::device_check::PlanStep step) {
     switch (step) {
@@ -83,6 +159,21 @@ const char* planStepName(rp::device_check::PlanStep step) {
         case rp::device_check::PlanStep::Result: return "result";
         case rp::device_check::PlanStep::Estimate: return "estimate";
         case rp::device_check::PlanStep::Case: return "case";
+        case rp::device_check::PlanStep::Heap: return "heap";
+    }
+    return "?";
+}
+
+const char* benchStepName(rp::device_check::BenchStep step) {
+    switch (step) {
+        case rp::device_check::BenchStep::Ok: return "ok";
+        case rp::device_check::BenchStep::Type: return "type";
+        case rp::device_check::BenchStep::Package: return "package";
+        case rp::device_check::BenchStep::Create: return "create";
+        case rp::device_check::BenchStep::Activate: return "activate";
+        case rp::device_check::BenchStep::Ports: return "ports";
+        case rp::device_check::BenchStep::Process: return "process";
+        case rp::device_check::BenchStep::Result: return "result";
     }
     return "?";
 }
@@ -113,21 +204,29 @@ std::size_t stackHighWater() {
 
 // The outcome, where a debugger finds it.
 volatile rp::device_check::Step gDeviceCheckStep = rp::device_check::Step::Ok;
-rp::device_check::Result        gDeviceCheck;
+rp::device_check::Result           gDeviceCheck;
 rp::device_check::N8ProtocolResult gN8Protocol;
 rp::device_check::PlanResult       gDevicePlan;
+rp::device_check::PlanResult       gScriptPlan;
+rp::device_check::BenchResult      gScriptBench;
 
-int main() {
-    paintStack();
-    stdio_init_all();
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+namespace {
 
-    std::size_t                    count = 0;
-    const rp_package* const* const packages = rp_register_packages(&count);
-    gDeviceCheck = rp::device_check::run(packages, count, rp::device_check::kCases, rp::device_check::kCaseCount,
-                                         gArena, sizeof gArena, rp::device_check::kBlockFrames);
+// The registration every check runs over (rp_register_packages()).
+const rp_package* const* gPackages = nullptr;
+std::size_t              gPackageCount = 0;
+
+// Each check runs in a function of its own and prints in another, none inlined into main, so the frame under each run
+// is main's and its own, both small: a script node's deepest chain (the script plan's nest node, at the engine's last
+// C re-entry) runs on top of them, as the box's runs on top of its loop. The results are the globals above.
+
+RP_NOINLINE void runTypes() {
+    rp::device_check::run(gPackages, gPackageCount, rp::device_check::kCases, rp::device_check::kCaseCount, gArena,
+                          sizeof gArena, rp::device_check::kBlockFrames, &gDeviceCheck);
     gDeviceCheckStep = gDeviceCheck.step;
+}
+
+RP_NOINLINE void printTypes() {
     if (gDeviceCheck.step == rp::device_check::Step::Ok)
         std::printf("rp-device-check: pass, %u types, arena %u bytes\n", static_cast<unsigned>(gDeviceCheck.types),
                     static_cast<unsigned>(gDeviceCheck.arenaBytes));
@@ -135,18 +234,25 @@ int main() {
         std::printf("rp-device-check: step %u at type %u (%s): %s\n", static_cast<unsigned>(gDeviceCheck.step),
                     static_cast<unsigned>(gDeviceCheck.type), gDeviceCheck.id ? gDeviceCheck.id : "-",
                     gDeviceCheck.error.message);
+}
 
+RP_NOINLINE void runN8Protocol() {
     gN8Protocol = rp::device_check::n8Protocol();
     if (gN8Protocol.ok)
         std::printf("rp-device-check: n8 protocol pass, %u bytes\n", static_cast<unsigned>(gN8Protocol.written));
     else
         std::printf("rp-device-check: n8 protocol failed at %s (%u bytes, hash %08x)\n", gN8Protocol.failed,
                     static_cast<unsigned>(gN8Protocol.written), static_cast<unsigned>(gN8Protocol.hash));
+}
 
-    // The plan, in the arena the types used, over the same registration.
+// The plan, in the arena the types used, over the same registration: its microseconds.
+RP_NOINLINE std::uint32_t runPlanCheck() {
     const std::uint32_t start = time_us_32();
-    rp::device_check::runPlan(kPlan, packages, count, gArena, sizeof gArena, &gDevicePlan);
-    const std::uint32_t took = time_us_32() - start;
+    rp::device_check::runPlan(kPlan, gPackages, gPackageCount, gArena, sizeof gArena, &gDevicePlan);
+    return time_us_32() - start;
+}
+
+RP_NOINLINE void printPlan(std::uint32_t took) {
     const rp::device_check::PlanResult& p = gDevicePlan;
     if (p.step == rp::device_check::PlanStep::Ok)
         std::printf("rp-device-check: plan pass, %u nodes, %u arena bytes (the export's estimate %u, the arena %u), "
@@ -170,14 +276,144 @@ int main() {
                     static_cast<unsigned>(p.step), planStepName(p.step), p.error.node,
                     static_cast<unsigned>(p.blocks), p.error.message, static_cast<unsigned>(p.arenaBytes),
                     static_cast<unsigned>(kDeviceCheckPlanArenaEstimate));
+}
 
-    // Every check's deepest stack, their lines' printf included, measured over the paint main laid at boot.
-    std::printf("rp-device-check: stack %u of %u bytes at most\n", static_cast<unsigned>(stackHighWater()),
-                static_cast<unsigned>(__StackTop - __StackBottom));
+// The bench, with the XIP cache's counters read around it: the image runs from flash (the box runs from RAM), so its
+// cycles hold the cache's misses, which these say the share of.
+RP_NOINLINE void runBench() {
+    xip_ctrl_hw->ctr_acc = 0;
+    xip_ctrl_hw->ctr_hit = 0;
+    rp::device_check::benchScript(gPackages, gPackageCount, rp::device_check::kCases, rp::device_check::kCaseCount,
+                                  gArena, sizeof gArena, rp::device_check::kBenchRounds, &cycles, &gScriptBench);
+    const unsigned xipReads = xip_ctrl_hw->ctr_acc, xipHits = xip_ctrl_hw->ctr_hit;
+    const rp::device_check::BenchResult& b = gScriptBench;
+    if (b.step != rp::device_check::BenchStep::Ok) {
+        std::printf("rp-device-check: script bench failed, step %u (%s) after %u blocks: %s\n",
+                    static_cast<unsigned>(b.step), benchStepName(b.step), static_cast<unsigned>(b.blocks),
+                    b.error.message);
+        return;
+    }
+    // Each kind's cycles a block, averaged over the rounds; a message's, its kind's block over the empty one's.
+    const std::uint64_t rounds = rp::device_check::kBenchRounds;
+    const std::uint64_t empty = b.emptyCycles / rounds, notes = b.noteCycles / rounds;
+    const std::uint64_t sysex = b.sysexCycles / rounds;
+    const std::uint64_t perNote = notes > empty && b.noteMessages ? (notes - empty) / b.noteMessages : 0;
+    const std::uint64_t perSysex = sysex > empty && b.sysexMessages ? (sysex - empty) / b.sysexMessages : 0;
+    std::printf("rp-device-check: script bench pass, %s at %u MHz, %u rounds: the first block %u cycles (%u us), an "
+                "empty block %u (%u us), %u per note (%u us) over %u to a block, %u per 64-byte SysEx (%u us) over %u "
+                "to a block, %u messages passed; heap %u of %u bytes in use; XIP cache %u hits of %u reads\n",
+                rp::device_check::kBenchType, static_cast<unsigned>(gCyclesPerMicro), static_cast<unsigned>(rounds),
+                static_cast<unsigned>(b.firstCycles), micros(b.firstCycles), static_cast<unsigned>(empty),
+                micros(empty), static_cast<unsigned>(perNote), micros(perNote), static_cast<unsigned>(b.noteMessages),
+                static_cast<unsigned>(perSysex), micros(perSysex), static_cast<unsigned>(b.sysexMessages),
+                static_cast<unsigned>(b.passed), static_cast<unsigned>(b.inUseBytes),
+                static_cast<unsigned>(b.contextBytes), xipHits, xipReads);
+}
 
+// The script plan's stack, in two phases: the load (the pack's setup among it), read as the plan has loaded, which
+// paints the stack again below its own frame; then the blocks and the unload, read after.
+std::size_t gLoadStack = 0;
+
+void afterScriptPlanLoad() {
+    gLoadStack = stackHighWater();
+    paintStack();
+}
+
+RP_NOINLINE void runScriptPlan() {
+    rp::device_check::runPlan(kScriptPlan, gPackages, gPackageCount, gArena, sizeof gArena, &gScriptPlan);
+}
+
+// The stack judged against its bound with kStackReserve kept: the guard faults a push past the stack's bottom, so a
+// line at all says a run fitted, and what a box's interrupts take on top of a block (or of its boot's load) must come
+// from what is left. "pass" for each phase that leaves at least the reserve.
+const char* fits(std::size_t stack, std::size_t stackSize) {
+    return stack + kStackReserve <= stackSize ? "pass" : "failed";
+}
+
+RP_NOINLINE void printScriptPlan(std::size_t stack, std::size_t stackSize) {
+    const rp::device_check::PlanResult& sp = gScriptPlan;
+    if (sp.step == rp::device_check::PlanStep::Ok)
+        std::printf("rp-device-check: script plan pass, %u nodes, %u arena bytes (the export's estimate %u), %u Hz, "
+                    "%u frames a block: loaded in %u us, the first block %u us, ran %u frames in %u blocks with %u "
+                    "messages and %u drops, unloaded; digest %08x%08x over %u blocks, the desktop's\n",
+                    static_cast<unsigned>(sp.nodes), static_cast<unsigned>(sp.arenaBytes),
+                    static_cast<unsigned>(kDeviceCheckScriptPlanArenaEstimate), static_cast<unsigned>(sp.sampleRate),
+                    static_cast<unsigned>(sp.maxFrames), micros(sp.loadCycles), micros(sp.firstBlockCycles),
+                    static_cast<unsigned>(sp.frames), static_cast<unsigned>(sp.blocks),
+                    static_cast<unsigned>(sp.messages), static_cast<unsigned>(sp.drops),
+                    static_cast<unsigned>(sp.digest >> 32), static_cast<unsigned>(sp.digest),
+                    static_cast<unsigned>(sp.digestBlocks));
+    else
+        std::printf("rp-device-check: script plan failed, step %u (%s) at node %s after %u blocks: %s%s%s (%u arena "
+                    "bytes, the export's estimate %u; digest %08x%08x, the desktop's %08x%08x)\n",
+                    static_cast<unsigned>(sp.step), planStepName(sp.step), sp.error.node,
+                    static_cast<unsigned>(sp.blocks), sp.error.code, sp.error.code[0] ? ": " : "", sp.error.message,
+                    static_cast<unsigned>(sp.arenaBytes), static_cast<unsigned>(kDeviceCheckScriptPlanArenaEstimate),
+                    static_cast<unsigned>(sp.digest >> 32), static_cast<unsigned>(sp.digest),
+                    static_cast<unsigned>(rp::device_check::kScriptPlanWant >> 32),
+                    static_cast<unsigned>(rp::device_check::kScriptPlanWant));
+    for (std::uint32_t i = 0; i < sp.packCount; ++i)
+        std::printf("rp-device-check: script pack %s, %u bytes (the host's state %u of %u reserved, the bytecode's "
+                    "copy and the context): heap %u of %u bytes in use after the run, MicroQuickJS's own %u\n",
+                    sp.packs[i].name, static_cast<unsigned>(sp.packs[i].memoryBytes),
+                    static_cast<unsigned>(rp::mqjs::stateBytes()), static_cast<unsigned>(rp::mqjs::kBoxStateBytes),
+                    static_cast<unsigned>(sp.packs[i].inUseBytes), static_cast<unsigned>(sp.packs[i].contextBytes),
+                    static_cast<unsigned>(sp.packs[i].fixedBytes));
+    std::printf("rp-device-check: script plan stack: the load %s, %u of %u bytes at most, %u left; the blocks %s, %u "
+                "bytes at most, %u left, with %u kept for interrupts\n",
+                fits(gLoadStack, stackSize), static_cast<unsigned>(gLoadStack), static_cast<unsigned>(stackSize),
+                static_cast<unsigned>(stackSize - gLoadStack), fits(stack, stackSize), static_cast<unsigned>(stack),
+                static_cast<unsigned>(stackSize - stack), static_cast<unsigned>(kStackReserve));
+}
+
+}  // namespace
+
+int main() {
+    paintStack();
+    stdio_init_all();
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    startCycles();
+    // Every script node's deadline, the per-type runs' included, by the device's clock (the box's 10 ms).
+    rp::device_check::offerClock(&kClock);
+    gPackages = rp_register_packages(&gPackageCount);
+
+    runTypes();
+    printTypes();
+    runN8Protocol();
+    printPlan(runPlanCheck());
+    runBench();
+
+    // The script plan last, on a stack painted afresh, so its line says the depths its run alone took: the load (the
+    // pack's setup), read and painted again as it has loaded (afterScriptPlanLoad), then every block with the nest
+    // node at the host's deepest C re-entry, and the unload. A run that overran the stack would stop the image there
+    // (the guard's HardFault), after every other line.
+    const std::size_t stackSize = static_cast<std::size_t>(__StackTop - __StackBottom);
+    const std::size_t before = stackHighWater();
+    paintStack();
+    runScriptPlan();
+    const std::size_t scriptStack = stackHighWater();
+    printScriptPlan(scriptStack, stackSize);
+
+    // Every check's deepest stack, their lines' printf included, measured over the paint main laid at boot and the
+    // ones laid again for the script plan's load and its blocks.
+    std::size_t deepest = stackHighWater();
+    if (before > deepest) deepest = before;
+    if (gLoadStack > deepest) deepest = gLoadStack;
+    std::printf("rp-device-check: stack %u of %u bytes at most\n", static_cast<unsigned>(deepest),
+                static_cast<unsigned>(stackSize));
+
+    const rp::device_check::PlanResult&  p = gDevicePlan;
+    const rp::device_check::PlanResult&  sp = gScriptPlan;
+    const rp::device_check::BenchResult& b = gScriptBench;
     unsigned blinks = static_cast<unsigned>(gDeviceCheck.step);
     if (blinks == 0 && p.step != rp::device_check::PlanStep::Ok) blinks = kPlanBlinks + static_cast<unsigned>(p.step);
     if (blinks == 0 && !gN8Protocol.ok) blinks = kN8ProtocolBlinks;
+    if (blinks == 0 && sp.step != rp::device_check::PlanStep::Ok)
+        blinks = kScriptPlanBlinks + static_cast<unsigned>(sp.step);
+    if (blinks == 0 && b.step != rp::device_check::BenchStep::Ok) blinks = kBenchBlinks + static_cast<unsigned>(b.step);
+    if (blinks == 0 && (gLoadStack + kStackReserve > stackSize || scriptStack + kStackReserve > stackSize))
+        blinks = kScriptPlanBlinks + kScriptStackBlinks;
     for (;;) {
         if (blinks == 0) {
             led(true);

@@ -1,0 +1,9 @@
+{"nodes":[
+    {"id":"in","type":"rp.device.midi-in"},
+    {"id":"tp","type":"rp.devtest.script-transpose","settings":{"semitones":7}},
+    {"id":"nest","type":"rp.devtest.script-nest","settings":{"deep":true}},
+    {"id":"dg","type":"rp.devtest.digest"}],
+  "wires":[
+    {"from":"in.midi","to":"tp.in"},
+    {"from":"tp.out","to":"nest.in"},
+    {"from":"nest.out","to":"dg.events"}]}

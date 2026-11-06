@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 #
 # Builds rp-device-check, the RP2350 image that runs every portable node type in device mode (rp.core, rp.dsp, rp.n8,
-# rp.device and rp.devtest) and a multi-node plan through the plan loader, with a link trap on the heap, on exceptions
-# and on RTTI (packages/graph-runtime/device-check, docs/modular-graph-phase-e1-design.md section 7 and the E3 design's
-# section 7), and prints what it costs in flash and RAM. CI's linux-x64 job runs it after the desktop build; nothing is
-# flashed or run here (the rig runs the image by hand, and reads its result lines off the UART).
+# rp.device and rp.devtest, the devtest script pack's TypeScript types on MicroQuickJS among them) and two plans
+# through the plan loader, a multi-node one and one of script nodes, with a link trap on the heap, on exceptions and on
+# RTTI (packages/graph-runtime/device-check, docs/modular-graph-phase-e1-design.md section 7, the E3 design's section 7
+# and the E4 design's section 8), and prints what it costs in flash and RAM. CI's linux-x64 job runs it after the
+# desktop build; nothing is flashed or run here (the rig runs the image by hand, and reads its result lines off the
+# UART).
 #
-#   1. Builds the case generator (rp-device-check-cases) and the plan exporter (retroplug-export-plan) in the desktop
-#      build, which must be configured (./build.sh), and writes the cases header: each type's default settings as
-#      msgpack and the layout they give. The image's build exports its plan (device-check/plan.json) with the
-#      exporter and embeds the blob, so a plan the image could not run or hold fails here.
+#   1. Builds the case generator (rp-device-check-cases) and the plan exporter (retroplug-export-plan-current, which
+#      also builds the script packs' 32-bit bytecode and MicroQuickJS's 32-bit tables the image takes from the same
+#      desktop build) in the desktop build, which must be configured (./build.sh), and writes the cases header: each
+#      type's default settings as msgpack and the layout they give. The image's build exports its plans
+#      (device-check/plan.json and script-plan.json) with the exporter and embeds the blobs, so a plan the image could
+#      not run or hold fails here.
 #   2. Configures the image's own CMake project, on the Pico SDK's toolchain, in a build dir of its own, and builds it.
 #      A link error there naming __wrap_<symbol> is the trap: the object it names reached the heap or a throw.
 #   3. Builds the trap's positive control, rp-device-trap-probe, which allocates with new and malloc, and stops unless
@@ -48,7 +52,7 @@ command -v arm-none-eabi-g++ >/dev/null ||
     die "no arm-none-eabi-g++ (apt: gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib)"
 [ -f "$DESKTOP/CMakeCache.txt" ] || die "$DESKTOP is not a configured desktop build (run ./build.sh first)"
 
-echo "== the cases and the plan exporter (desktop: rp-device-check-cases, retroplug-export-plan)"
+echo "== the cases and the plan exporter (desktop: rp-device-check-cases, retroplug-export-plan-current)"
 cmake --build "$DESKTOP" --target rp-device-check-cases retroplug-export-plan-current -j"$JOBS"
 mkdir -p "$OUT/cases"
 "$DESKTOP/device-check/cases/rp-device-check-cases" "$OUT/cases/DeviceCheckCases.hpp"
@@ -119,6 +123,9 @@ function hex(s,    i, n) {
     else if (file ~ /libretroplug-n8\.a/) owner = "n8: the rp.n8 nodes, the protocol"
     else if (file ~ /libretroplug-device-io-nodes/) owner = "device-io: the rp.device nodes"
     else if (file ~ /libretroplug-devtest-nodes/) owner = "devtest: the rp.devtest nodes"
+    else if (file ~ /libretroplug-devtest-script/) owner = "devtest: the script pack"
+    else if (file ~ /libretroplug-mqjs-engine/) owner = "graph-runtime: MicroQuickJS"
+    else if (file ~ /libretroplug-mqjs-host/) owner = "graph-runtime: the script host"
     else if (file ~ /libretroplug-graph-exec/) owner = "graph-runtime: executor, loader"
     else if (file ~ /rp-device-check\.dir\/(main|DeviceCheck|N8Protocol)\.cpp/ || file ~ /\/packages\/products\//)
         owner = "the check (its cases and arena)"
@@ -129,7 +136,8 @@ function hex(s,    i, n) {
 }
 END {
     n = split("core: the rp.core nodes|dsp: the rp.dsp nodes|dsp: the kernels|n8: the rp.n8 nodes, the protocol|" \
-              "device-io: the rp.device nodes|devtest: the rp.devtest nodes|graph-runtime: executor, loader|" \
+              "device-io: the rp.device nodes|devtest: the rp.devtest nodes|devtest: the script pack|" \
+              "graph-runtime: executor, loader|graph-runtime: MicroQuickJS|graph-runtime: the script host|" \
               "the check (its cases and arena)|the Pico SDK runtime|toolchain (libc, libm, libgcc)", order, "|")
     printf "  %-34s %9s %9s %9s\n", "", "flash", "data", "bss"
     for (i = 1; i <= n; i++) {

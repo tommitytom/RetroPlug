@@ -9,6 +9,7 @@
 
 #include "devtest/DevtestNodes.hpp"
 #include "graph/rp_node.h"
+#include "script/rp_mqjs_pack.h"
 
 extern "C" {
 // rp.core, rp.dsp, rp.n8 and rp.device as a device builds them: CoreNodes.cpp, DspNodes.cpp, N8Node.cpp and
@@ -105,6 +106,33 @@ struct DeviceEntry {
     const char*         entry;
     rp_package_entry_fn desktop;
     rp_package_entry_fn device;
+};
+
+// The device-mode objects' build of the MicroQuickJS host's registration (script/MqjsHost.hpp's package() and
+// packageRefusal(), renamed with the rest of namespace rp: cmake/packages.cmake's retroplug_device_mode_objects): what
+// a device image's generated registration calls, which a test calls with a copy of a pack's source carrying an image's
+// heap.
+namespace rp_devmode::mqjs {
+const rp_package* package(const rp_mqjs_pack_source& source);
+const char*       packageRefusal();
+}  // namespace rp_devmode::mqjs
+
+// The test's own script packs (test/device-mode/script-packs), both builds of each registration.
+extern "C" {
+const rp_package* rp_scripttest_script_package(void);
+const rp_package* rp_scripttest_script_package_device_mode(void);
+extern const rp_mqjs_pack_source rp_script_scripttest;  // its 64-bit source (scripttest.pack64.c)
+}
+
+// A package's script pack's registration (its manifest's `script` member), with both builds of it, as DeviceEntry, and
+// the pack's 64-bit source (rp_script_<package>), which a test may register again with another heap (MqjsHost.hpp's
+// package()) as an image with a figure of its own does. The generated device-entries.cpp lists every one.
+struct ScriptEntry {
+    const char*                package;
+    const char*                entry;
+    rp_package_entry_fn        desktop;
+    rp_package_entry_fn        device;
+    const rp_mqjs_pack_source* source;
 };
 
 // The settings an echo node decoded, as its on_settings copied them: get_interface(kEchoInterface) answers one.

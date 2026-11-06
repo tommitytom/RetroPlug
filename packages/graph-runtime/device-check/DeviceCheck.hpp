@@ -15,12 +15,19 @@
 // desktop exported for the RP2350 (plan.json beside this file, plan.cmake), loaded by the plan loader in the same
 // arena, run in ragged blocks with its params moving, and unloaded, which puts the loader and the executor's coupled
 // groups and feedback copies under the image's trap, and holds the run, on the desktop, to what the test expects.
+//
+// And a script pack (docs/modular-graph-phase-e4-design.md sections 7 and 8): the devtest pack's TypeScript nodes, on
+// the MicroQuickJS host, are types like the rest, each run with its package's memory set up in the arena; a second
+// plan (script-plan.json) runs two of them behind the device MIDI input, fed a fixed stimulus by the host, through the
+// loader, which sets their pack's memory up beside the nodes; and a bench (benchScript) times one of them alone, a
+// block and a message at a time.
 
 #include <cstddef>
 #include <cstdint>
 
 #include "graph/PlanLoader.hpp"
 #include "graph/rp_node.h"
+#include "graph/rp_script.h"
 
 namespace rp::device_check {
 
@@ -56,6 +63,7 @@ enum class Step : std::uint8_t {
     Create,       // create refused the settings
     Activate,
     Process,      // the block faulted the node
+    Package,      // the type's package memory (a script pack's context) was refused, or does not fit the arena
 };
 
 struct Result {
@@ -87,13 +95,45 @@ inline constexpr std::size_t   kArenaBytes = 400 * 1024;
 
 // The host every type is created under: no heap (the types it runs declare none), no guards, a resource table of the
 // one buffer above, and device links of a host that owns no device (every acquire answers null). The case generator
-// creates the desktop's builds of the types under it too.
+// creates the desktop's builds of the types under it too. Beside those it answers:
+// - rp.host.packages/1 with the one package memory openPackage() set up (run() opens each script type's own in the
+//   arena for its run; the case generator opens its own), and refuses every other package;
+// - rp.host.clock/1 with the clock offerClock() gave it, if any: a script node's deadline (the image's, the box's
+//   figure), as the box's host offers its own;
+// - rp.device.midi-in/1 with the check's stimulus (kStimulusCycle): what runPlan stages for each block of a case that
+//   asks for it, and nothing at any other time.
 const rp_host& host();
+
+// Sets `package` up in `memory` (its memory query's size and alignment, zeroed by the caller) and offers it through
+// host() until closePackage(), which tears it down. False, with err's message, when the package refuses; nothing is
+// left open then.
+bool openPackage(const rp_package* package, void* memory, rp_error* err);
+void closePackage();
+
+// The clock host() offers script nodes (rp.host.clock/1), or none (null), for every run from then on.
+void offerClock(const rp_host_clock* clock);
+
+// The stimulus the host's MIDI input carries (rp.device.midi-in/1) and the bench feeds its node, a cycle of five blocks
+// after the device-pack toolchain's runner (packages/graph-runtime/mqjs-run), each as full as the device MIDI input's
+// queue (RP_DEVICE_MIDI_IN_MESSAGES and _BYTES): 64 note messages; 64 SysEx of 64 bytes, the queue's bytes full; two
+// blocks that sweep the first byte, 63 messages each whose first bytes run on from the last sweep's (0x00 to 0xFF and
+// round again, each in the length a parser gives it, a lone F7 and the real-time bytes alone); then a block of none.
+// Each block spreads its messages over its frames in order.
+inline constexpr std::uint32_t kStimulusCycle = 5;
+// How many messages block `block` of the stimulus holds.
+std::uint32_t stimulusCount(std::uint32_t block);
+// Message `k` of block `block` into `out` (64 bytes at least): its size, and its frame in a block of `frames` frames.
+std::uint32_t stimulusMessage(std::uint32_t block, std::uint32_t k, std::uint32_t frames, std::uint8_t* out,
+                              std::uint32_t* frame);
 
 // Runs every type of every package in `packages` (rp_register_packages()'s list) against its case, one block of
 // `frames` frames at 48 kHz each, with `arena` reused from one type to the next.
 Result run(const rp_package* const* packages, std::size_t packageCount, const TypeCase* cases, std::size_t caseCount,
            void* arena, std::size_t arenaBytes, std::uint32_t frames);
+// The same, filling `out`: a result is a few hundred bytes, so the image holds it rather than its own frame, which the
+// deepest chains (a script node's) run on top of.
+void run(const rp_package* const* packages, std::size_t packageCount, const TypeCase* cases, std::size_t caseCount,
+         void* arena, std::size_t arenaBytes, std::uint32_t frames, Result* out);
 
 // ---- the plan ----------------------------------------------------------------------------------------------------
 
@@ -105,10 +145,21 @@ struct PlanMove {
     double        value = 0.0;
 };
 
+// A counter the checks time with (the M33's cycle counter on the image), or null for no timing. Unsigned 32-bit
+// differences, so a wrap between two reads costs nothing.
+using Cycles = std::uint32_t (*)();
+
 // What runPlan runs: an exported plan and the arena the exporter's sizing gave it (its header's <symbol>ArenaEstimate;
 // 0 for none), how many frames, in what block sizes (taken in turn, each held to the plan's maxFrames and to what is
 // left; none given, maxFrames each; a zero refused), the param moves, and the node whose rp.devtest.digest/1 the run
-// must feed (null for none).
+// must feed (null for none). Beside those, all off by default:
+// - stimulus: the host's MIDI input carries the stimulus (stimulusMessage) for each block, block 0 the cycle's first;
+// - expectDigest: the digest must be `want` exactly, a plan whose digest holds no float arithmetic (messages alone);
+// - contextBytes: every package with memory of its own must have made a context of this many bytes (rp.script.heap/1's
+//   `bytes`), the figure its build gives the image's declared heap, so a registration that gave another fails;
+// - cycles: the load and the first block are timed with it;
+// - afterLoad: called once the plan has loaded, before its first block (the image reads its stack's depth there, so
+//   the load's and the blocks' are told apart).
 struct PlanCase {
     const std::uint8_t*  blob = nullptr;
     std::size_t          blobSize = 0;
@@ -119,6 +170,12 @@ struct PlanCase {
     const PlanMove*      moves = nullptr;
     std::size_t          moveCount = 0;
     const char*          digest = nullptr;
+    bool                 stimulus = false;
+    bool                 expectDigest = false;
+    std::uint64_t        want = 0;
+    std::size_t          contextBytes = 0;
+    Cycles               cycles = nullptr;
+    void (*afterLoad)() = nullptr;
 };
 
 // The image's run of its plan (plan.json): a second at 48 kHz, in ragged blocks from 1 frame to the plan's maxFrames
@@ -138,6 +195,19 @@ inline constexpr const char* kPlanDigest = "dg";
 // the device and the desktop being the audio version's.
 inline constexpr std::uint64_t kPlanDesktopDigest = 0xb8854b2cc247318full;
 
+// The image's run of its script plan (script-plan.json): rp.device.midi-in fed the stimulus, then
+// rp.devtest.script-transpose and rp.devtest.script-nest (deep: it drops the real-time messages, from the host's
+// deepest C re-entry, so the digest hears whether the deep path ran), two script nodes of the devtest pack sharing its
+// context, then rp.devtest.digest, for 40 blocks of the splits in turn (eight times the stimulus's cycle, each kind of
+// block at each split). Its digest hears messages alone (the digest's audio and control inputs unwired: a silent
+// channel and a stream that starts at 0 and never moves), integers the script nodes made on whichever engine width ran
+// them, so it is the same on every host and the image holds its own run to it: the device's 32-bit bytecode on the M33
+// against the desktop's 64-bit run (retroplug-device-mode-test pins it, on every host).
+inline constexpr std::uint32_t kScriptPlanSplits[] = {256, 1, 128, 77};
+inline constexpr std::uint32_t kScriptPlanFrames = (256 + 1 + 128 + 77) * 10;
+inline constexpr const char*   kScriptPlanDigest = "dg";
+inline constexpr std::uint64_t kScriptPlanWant = 0xc7248a64d500e6d8ull;
+
 // Where a plan run stopped. Ok is the only pass; each other step names the node at fault in `error.node` ("-" for
 // none: a blob refused whole, a case's own fault) and says what happened in `error.message`.
 enum class PlanStep : std::uint8_t {
@@ -151,6 +221,7 @@ enum class PlanStep : std::uint8_t {
     Estimate,  // the loaded plan took more arena than the exporter's sizing gave it, which the design takes as an upper
                // bound on the device's (its section 11, question 1)
     Case,      // the case cannot run: a block size of 0
+    Heap,      // a script pack's context is not the size the case says its image declares
 };
 
 struct PlanResult {
@@ -170,6 +241,23 @@ struct PlanResult {
     std::uint64_t            digest = 0;
     std::uint32_t            digestBlocks = 0;
     bool                     heard = false;
+    std::uint32_t            messages = 0;  // what the host's MIDI input handed the plan (a stimulus case's)
+    std::uint32_t            loadCycles = 0;        // by the case's counter: the load, the packages' setup included
+    std::uint32_t            firstBlockCycles = 0;  // and the first block, which makes each script node's instance
+    // Each package the plan set memory up for (its first kPackReports), read once the run ends, before the unload:
+    // its name, the memory the loader placed (the host's state, the bytecode's copy and the context), and of the
+    // context (rp.script.heap/1, collected): its bytes, what MicroQuickJS keeps of them for itself and what that and
+    // the live objects take in all.
+    struct Pack {
+        char        name[24];
+        std::size_t memoryBytes;
+        std::size_t contextBytes;
+        std::size_t fixedBytes;
+        std::size_t inUseBytes;
+    };
+    static constexpr std::uint32_t kPackReports = 2;
+    Pack                     packs[kPackReports];
+    std::uint32_t            packCount = 0;
 };
 
 // Loads `c.blob` into `arena` with the loader, over the node types of `packages` (rp_register_packages()'s list) under
@@ -178,5 +266,48 @@ struct PlanResult {
 // bytes is zero by default, so the image's static result lands in .bss and costs no initialised RAM. Allocates nothing.
 void runPlan(const PlanCase& c, const rp_package* const* packages, std::size_t packageCount, void* arena,
              std::size_t arenaBytes, PlanResult* out);
+
+// ---- the script bench --------------------------------------------------------------------------------------------
+
+// What benchScript times: the type `id` (one of `packages`' types, its case among `cases`) created from its case's
+// settings with its package's memory set up in the arena, as run() makes it, its input fed the stimulus's notes and
+// SysEx, `rounds` rounds of an empty block, a block of notes and a block of SysEx, each of kBlockFrames frames, after a
+// first, empty block that makes its instance and its pools.
+inline constexpr const char*   kBenchType = "rp.devtest.script-transpose";
+inline constexpr std::uint32_t kBenchRounds = 16;
+
+enum class BenchStep : std::uint8_t {
+    Ok,
+    Type,     // no registered type has the id, or no case is the type's
+    Package,  // its package memory was refused, or does not fit the arena
+    Create,   // query_memory or create refused its settings, or the instance does not fit
+    Activate,
+    Ports,    // its ports, or an input that carries no messages: the bench feeds one
+    Process,  // a block faulted the node (its script fault's words in error.message)
+    Result,   // the node passed on other than every message it was handed
+};
+
+struct BenchResult {
+    BenchStep     step = BenchStep::Ok;
+    rp_error      error{};
+    std::uint32_t blocks = 0;     // blocks run, the first included
+    std::uint32_t messages = 0;   // messages the node was handed
+    std::uint32_t passed = 0;     // and passed on
+    // By the case's counter, each kind's total over the rounds (the first block alone).
+    std::uint32_t firstCycles = 0;
+    std::uint64_t emptyCycles = 0;
+    std::uint64_t noteCycles = 0;
+    std::uint64_t sysexCycles = 0;
+    std::uint32_t noteMessages = 0;   // the messages in each note block
+    std::uint32_t sysexMessages = 0;  // and in each SysEx block
+    // The pack's context once the rounds are run (rp.script.heap/1, collected).
+    std::size_t   contextBytes = 0;
+    std::size_t   inUseBytes = 0;
+};
+
+// Runs the bench in `arena` (see above), over the host() every type runs under. Allocates nothing; fills `out`.
+void benchScript(const rp_package* const* packages, std::size_t packageCount, const TypeCase* cases,
+                 std::size_t caseCount, void* arena, std::size_t arenaBytes, std::uint32_t rounds, Cycles cycles,
+                 BenchResult* out);
 
 }  // namespace rp::device_check

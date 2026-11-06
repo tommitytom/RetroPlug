@@ -12,8 +12,9 @@ add_executable(rp-device-check-cases EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../DeviceCheck.cpp)
 set_target_properties(rp-device-check-cases PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-# Its cases are the device's C++ types: the packages' script packs are not on its list (NO_SCRIPTS).
-retroplug_product(rp-device-check-cases PACKAGES ${RP_DEVICE_CHECK_PACKAGES} DEVICE NO_SCRIPTS)
+# Its cases are every type the image registers: the packages' C++ device types and their script packs' TypeScript
+# ones (devtest's), as the image's product lists them.
+retroplug_product(rp-device-check-cases PACKAGES ${RP_DEVICE_CHECK_PACKAGES} DEVICE)
 get_property(_rp_entries GLOBAL PROPERTY RP_DEVICE_PRODUCT_rp-device-check-cases_ENTRIES)
 list(JOIN _rp_entries " " _rp_entries)
 target_compile_definitions(rp-device-check-cases PRIVATE "RP_DEVICE_CHECK_ENTRIES=\"${_rp_entries}\"")

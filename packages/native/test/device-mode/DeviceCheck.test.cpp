@@ -22,6 +22,17 @@
 //   type the registration lacks, an arena too small, a node failing part-way through the run-up, a block faulting a
 //   node, a move with no stream to write, a run that does not hold (a move never pushed, a digest missing or deaf), an
 //   arena past the estimate and a block size of 0.
+// - The image's script pack (docs/modular-graph-phase-e4-design.md section 8): the devtest pack, registered as the
+//   image registers it (with its heap, RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES, on the device-mode host), whose two types are
+//   cases at the device MIDI input's queues and run with their package's memory set up in the arena, which stops the
+//   check when it does not fit or the pack refuses it; its script plan (script-plan.json, exported as the image's build
+//   exports it, its golden golden/device-check-script-plan.hex) runs the host's stimulus through both of its nodes,
+//   allocating nothing, to a digest of messages alone that the image holds its own run to, pinned here on every host
+//   (the nest node's deep path drops the real-time messages, so the digest is one only that path gives), with the
+//   pack's context at the image's figure; a context of another size, another digest, a heap that runs out (the script
+//   node's fault, in its words) and a run with no stimulus each stop it; the bench runs its node through the stimulus's
+//   blocks, stopping at a type it cannot find, memory that does not fit, a case with no queue to feed and a heap that
+//   runs out; and a script node that never returns faults by the clock the host offers, as the image's does.
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -30,6 +41,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -42,6 +54,7 @@
 #include "DeviceCheck.hpp"
 #include "DeviceCheckCases.hpp"
 #include "DeviceCheckPlan.hpp"
+#include "DeviceCheckScriptPlan.hpp"
 #include "DeviceModeEntries.hpp"
 #include "N8Protocol.hpp"
 #include "PlanNodes.hpp"
@@ -53,11 +66,15 @@
 #include "graph/PlanBlob.hpp"
 #include "graph/PlanExport.hpp"
 #include "graph/ResourceTable.hpp"
+#include "graph/rp_device_midi_in.h"
 #include "graph/nodes/CoreNodes.hpp"
 #include "graph/nodes/DspNodes.hpp"
+#include "script/MqjsHost.hpp"
 
-// Generated (device-entries.cpp): every manifest's `device` entries, with both builds.
+// Generated (device-entries.cpp): every manifest's `device` entries, with both builds, and every script pack's
+// registration, with both builds and its source.
 std::vector<DeviceEntry> deviceEntries();
+std::vector<ScriptEntry> scriptEntries();
 
 namespace {
 
@@ -101,22 +118,70 @@ std::vector<std::string> portableIds(const DeviceEntry& e, std::size_t* leftOut 
 }
 
 // The entries the cases header names (the image's product), in its order, each as the manifests list it; an entry no
-// manifest marks `device` is left out here, and the test that reads the header refuses it.
-std::vector<DeviceEntry> checkedEntries() {
-    std::vector<DeviceEntry> out;
-    std::istringstream       words(rp::device_check::kEntries);
-    const auto               all = deviceEntries();
-    for (std::string w; words >> w;)
+// manifest marks `device` and no script pack registers through is left out here, and the test that reads the header
+// refuses it. A script pack's entry stands in its order with its source.
+struct CheckedEntry {
+    DeviceEntry                entry;
+    const rp_mqjs_pack_source* script = nullptr;  // the pack's source for a script pack's registration
+};
+std::vector<CheckedEntry> checkedEntries() {
+    std::vector<CheckedEntry> out;
+    std::istringstream        words(rp::device_check::kEntries);
+    const auto                all = deviceEntries();
+    const auto                scripts = scriptEntries();
+    for (std::string w; words >> w;) {
         for (const DeviceEntry& e : all)
-            if (w == e.entry) out.push_back(e);
+            if (w == e.entry) out.push_back({e});
+        for (const ScriptEntry& e : scripts)
+            if (w == e.entry) out.push_back({{e.package, e.entry, e.desktop, e.device}, e.source});
+    }
     return out;
+}
+
+// A script pack as the image registers it (the device check's CMakeLists.txt): its source with the image's own heap,
+// RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES, in place of its manifest's, on the device-mode build of the host. The copy lives
+// as long as the binary, as the host keys a pack on its source's address. `heapBytes` gives another figure.
+const rp_package* imageScriptPackage(const rp_mqjs_pack_source& source,
+                                     std::uint32_t heapBytes = RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES) {
+    static std::deque<rp_mqjs_pack_source> copies;
+    const rp_mqjs_pack_source*             copy = nullptr;
+    for (const rp_mqjs_pack_source& c : copies)
+        if (c.bytecode == source.bytecode && c.heap_bytes == heapBytes) copy = &c;
+    if (!copy) {
+        copies.push_back(source);
+        copies.back().heap_bytes = heapBytes;
+        copy = &copies.back();
+    }
+    const rp_package* p = rp_devmode::mqjs::package(*copy);
+    INFO(rp_devmode::mqjs::packageRefusal());
+    REQUIRE(p);
+    return p;
 }
 
 std::vector<const rp_package*> devicePackages() {
     std::vector<const rp_package*> packages;
-    for (const DeviceEntry& e : checkedEntries()) packages.push_back(e.device());
+    for (const CheckedEntry& e : checkedEntries())
+        packages.push_back(e.script ? imageScriptPackage(*e.script) : e.entry.device());
     return packages;
 }
+
+// The source of the image's script pack (its one), as its manifest built it.
+const rp_mqjs_pack_source& imageScriptSource() {
+    for (const CheckedEntry& e : checkedEntries())
+        if (e.script) return *e.script;
+    FAIL("the device check's cases name no script pack");
+    throw;
+}
+
+// The image's script pack, on the device-mode build, at the image's heap or `heapBytes`.
+const rp_package* imageScriptPack(std::uint32_t heapBytes = RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES) {
+    return imageScriptPackage(imageScriptSource(), heapBytes);
+}
+
+// What a device build of this width makes the image's context: the declared heap times kDeviceHalves halves
+// (MqjsHost.hpp: 3/2 at 64 bits, the toolchain check's; the heap exactly at 32, the image's).
+constexpr std::size_t kImageContextBytes =
+    std::size_t{RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES} * rp::mqjs::kDeviceHalves / 2;
 
 // The check over rp.devtest.fault alone, from `json`: one mono output and no params.
 Result runFault(const char* json) {
@@ -157,10 +222,19 @@ TEST_CASE("the device check carries every device entry, and its cases list their
                                "packages/graph-runtime/device-check/packages.cmake");
         CHECK(std::find(named.begin(), named.end(), e.entry) != named.end());
     }
-    std::vector<std::string> registered;
+    // A script pack's registration is the image's too (its product registers every listed package's), and its types
+    // are cases like the rest, all of them device types.
+    const std::vector<ScriptEntry> scripts = scriptEntries();
+    std::vector<std::string>       registered;
     for (const std::string& n : named) {
+        const auto s = std::find_if(scripts.begin(), scripts.end(), [&](const ScriptEntry& d) { return n == d.entry; });
+        if (s != scripts.end()) {
+            const std::vector<std::string> ids = idsOf(s->desktop());
+            registered.insert(registered.end(), ids.begin(), ids.end());
+            continue;
+        }
         const auto e = std::find_if(entries.begin(), entries.end(), [&](const DeviceEntry& d) { return n == d.entry; });
-        INFO("the cases name " << n << ", which no manifest marks `device`");
+        INFO("the cases name " << n << ", which no manifest marks `device` and no script pack registers through");
         REQUIRE(e != entries.end());
         const std::vector<std::string> portable = portableIds(*e);
         registered.insert(registered.end(), portable.begin(), portable.end());
@@ -648,4 +722,342 @@ TEST_CASE("the device check's plan check stops at the step that fails, and names
         CHECK(wired.result.step == PlanStep::Move);
         CHECK(std::string(wired.result.error.node) == "bq");
     }
+}
+
+// ---- the script pack ------------------------------------------------------------------------------------------------
+
+namespace {
+
+using rp::device_check::BenchResult;
+using rp::device_check::BenchStep;
+
+const std::vector<std::uint8_t> kScriptPlanBlob(std::begin(kDeviceCheckScriptPlan), std::end(kDeviceCheckScriptPlan));
+
+// The export's estimate for the script plan at this width. The exporter sizes a pack's memory at the box's width from
+// its manifest's heap (boxPackageBytes; MqjsHost.hpp), and the image's own is what its registration gives: so on the
+// image the estimate holds the pack's memory with the room between the two heaps, and here the pack's memory at this
+// width stands in for the box's (as BoxHost.test.cpp's arena does for the box's plan).
+std::size_t scriptPlanEstimate() {
+    const rp_package* pack = imageScriptPack();
+    rp_memory_req     req{};
+    rp_error          err{};
+    REQUIRE(pack->memory->query(pack, &req, &err));
+    return kDeviceCheckScriptPlanArenaEstimate - rp::mqjs::boxPackageBytes(imageScriptSource()) + req.size;
+}
+
+// The image's script plan case (main.cpp's kScriptPlan) over `blob`, its context held to this width's figure for the
+// image's heap, its arena to the export's estimate at this width, untimed (the desktop has no cycle counter the check
+// reads).
+PlanCase scriptPlanCase(const std::vector<std::uint8_t>& blob = kScriptPlanBlob) {
+    PlanCase c;
+    c.blob = blob.data();
+    c.blobSize = blob.size();
+    c.arenaEstimate = scriptPlanEstimate();
+    c.frames = rp::device_check::kScriptPlanFrames;
+    c.splits = rp::device_check::kScriptPlanSplits;
+    c.splitCount = std::size(rp::device_check::kScriptPlanSplits);
+    c.digest = rp::device_check::kScriptPlanDigest;
+    c.stimulus = true;
+    c.expectDigest = true;
+    c.want = rp::device_check::kScriptPlanWant;
+    c.contextBytes = kImageContextBytes;
+    return c;
+}
+
+// `packages` with the image's script pack replaced by `pack`.
+std::vector<const rp_package*> withScriptPack(const rp_package* pack) {
+    std::vector<const rp_package*> packages = devicePackages();
+    for (const rp_package*& p : packages)
+        if (p->memory) p = pack;
+    return packages;
+}
+
+// The messages the stimulus hands a run of `blocks` blocks.
+std::uint32_t stimulusMessages(std::uint32_t blocks) {
+    std::uint32_t n = 0;
+    for (std::uint32_t b = 0; b < blocks; ++b) n += rp::device_check::stimulusCount(b);
+    return n;
+}
+
+struct BenchRun {
+    BenchResult result{};
+    int         allocations = -1;
+};
+
+// benchScript as the image runs it, untimed, in an arena of `arenaBytes` made before counting starts.
+BenchRun runBench(const std::vector<const rp_package*>& packages, const std::vector<TypeCase>& cases = kAllCases,
+                  std::size_t arenaBytes = rp::device_check::kArenaBytes, std::uint32_t rounds = 4) {
+    BenchRun                      r;
+    std::vector<std::max_align_t> arena(arenaBytes / sizeof(std::max_align_t) + 1);
+    rp::test::beginCountingAllocations(rp::test::countsCAllocations());
+    rp::device_check::benchScript(packages.data(), packages.size(), cases.data(), cases.size(), arena.data(),
+                                  arenaBytes, rounds, nullptr, &r.result);
+    r.allocations = rp::test::endCountingAllocations().allocations;
+    return r;
+}
+
+}  // namespace
+
+TEST_CASE("the device check registers the devtest script pack with the image's heap, and checks its types with the "
+          "rest",
+          "[device-mode][device-check][script-pack]") {
+    const rp_package* pack = imageScriptPack();
+    REQUIRE(pack->memory);
+    CHECK(std::string(pack->memory->name) == "devtest");
+    CHECK(idsOf(pack) == std::vector<std::string>{"rp.devtest.script-transpose", "rp.devtest.script-nest"});
+    rp_memory_req req{};
+    rp_error      err{};
+    REQUIRE(pack->memory->query(pack, &req, &err));
+    // Its memory is the host's state, the bytecode's copy and a context of the image's figure at this width.
+    CHECK(req.size > kImageContextBytes);
+    CHECK(req.size < kImageContextBytes + 64 * 1024);
+    // At the box's width, the image's figure exactly beside the state and the 32-bit bytecode.
+    REQUIRE(pack->memory->query_target);
+    rp_memory_req box{};
+    REQUIRE(pack->memory->query_target(pack, 4, &box, &err));
+    CHECK(box.size > RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES);
+    CHECK(box.size < std::size_t{RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES} + 32 * 1024);
+
+    // Its cases: a script type's message queues are the device MIDI input's, whatever the planner's default.
+    std::size_t scriptCases = 0;
+    for (const TypeCase& c : kAllCases) {
+        if (std::string(c.id).rfind("rp.devtest.script-", 0) != 0) continue;
+        ++scriptCases;
+        for (std::uint32_t i = 0; i < c.portCount; ++i) {
+            INFO(c.id << " port " << i);
+            CHECK(c.ports[i].messages == RP_DEVICE_MIDI_IN_MESSAGES);
+            CHECK(c.ports[i].bytes == RP_DEVICE_MIDI_IN_BYTES);
+        }
+    }
+    CHECK(scriptCases == 2);
+}
+
+TEST_CASE("the device check stops at a script type whose package memory does not fit, and names it",
+          "[device-mode][device-check][script-pack]") {
+    std::vector<TypeCase> cases;
+    for (const TypeCase& c : kAllCases)
+        if (std::string(c.id).rfind("rp.devtest.script-", 0) == 0) cases.push_back(c);
+    REQUIRE(cases.size() == 2);
+    const Result fits = runCheck({imageScriptPack()}, cases);
+    INFO(fits.error.message);
+    CHECK(fits.step == Step::Ok);
+    CHECK(fits.types == 2);
+    // The pack's memory takes the most of any type's run: the context and the bytecode's copy, beside its nodes.
+    CHECK(fits.arenaBytes > kImageContextBytes);
+
+    const Result r = runCheck({imageScriptPack()}, cases, 16 * 1024);
+    CHECK(r.step == Step::Package);
+    CHECK(std::string(r.id) == "rp.devtest.script-transpose");
+    CHECK(std::string(r.error.message) == "the package's memory does not fit the arena");
+
+    // A context too small for the pack's runtime to define its nodes in: its setup refuses, in its words.
+    const Result small = runCheck({imageScriptPack(4096)}, cases);
+    CHECK(small.step == Step::Package);
+    CHECK(std::string(small.error.message).find("devtest") != std::string::npos);
+}
+
+TEST_CASE("the device check's script plan runs the stimulus through two script nodes behind the device MIDI input, "
+          "to the digest the image holds it to, in the image's arena, allocating nothing",
+          "[device-mode][device-check][script-pack]") {
+    REQUIRE(rp_devtest_plan_live_device_mode() == 0);
+    const PlanRun run = runPlanCase(scriptPlanCase(), devicePackages());
+    const PlanResult& r = run.result;
+    INFO(describe(r) << "; the digest 0x" << std::hex << r.digest << std::dec);
+    REQUIRE(r.step == PlanStep::Ok);
+    CHECK(run.allocations == 0);
+    CHECK(run.frees == 0);
+    CHECK(run.alive == 0);
+    CHECK(r.nodes == 4);
+    CHECK(r.frames == rp::device_check::kScriptPlanFrames);
+    CHECK(r.blocks == 40);
+    CHECK(r.messages == stimulusMessages(40));
+    CHECK(r.drops == 0);
+    CHECK(r.digestBlocks == r.blocks);
+    CHECK(r.heard);
+    // Its digest is of messages alone, integers the script nodes made, so it is the same on every host: the figure the
+    // image holds the RP2350's run to (DeviceCheck.hpp), pinned everywhere.
+    CHECK(r.digest == rp::device_check::kScriptPlanWant);
+    // Its one pack, at the image's heap, with what the run left in it.
+    INFO("the pack: " << r.packs[0].inUseBytes << " of " << r.packs[0].contextBytes << " bytes in use at this width, "
+                      << r.packs[0].memoryBytes << " placed; " << r.arenaBytes << " arena bytes");
+    REQUIRE(r.packCount == 1);
+    CHECK(std::string(r.packs[0].name) == "devtest");
+    CHECK(r.packs[0].contextBytes == kImageContextBytes);
+    CHECK(r.packs[0].memoryBytes > r.packs[0].contextBytes);
+    CHECK(r.packs[0].fixedBytes > 0);
+    CHECK(r.packs[0].inUseBytes > r.packs[0].fixedBytes);
+    CHECK(r.packs[0].inUseBytes < r.packs[0].contextBytes);
+    // The estimate at this width is this width's layout exactly, as the main plan's is; the image's 32-bit layout,
+    // with a pack's memory under the manifest's heap's, is under the export's own figure.
+    CHECK(r.arenaBytes == scriptPlanEstimate());
+    CHECK(rp::mqjs::boxPackageBytes(imageScriptSource()) > std::size_t{RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES});
+}
+
+TEST_CASE("the device check's script plan is its golden's bytes, as the image's build exports and embeds it",
+          "[device-mode][device-check][script-pack]") {
+    std::string hex;
+    char        digits[3];
+    for (std::size_t i = 0; i < kScriptPlanBlob.size(); ++i) {
+        std::snprintf(digits, sizeof digits, "%02x", kScriptPlanBlob[i]);
+        hex += digits;
+        hex += (i % 32 == 31 || i + 1 == kScriptPlanBlob.size()) ? '\n' : ' ';
+    }
+    const std::filesystem::path golden =
+        std::filesystem::path(RP_DEVICE_MODE_GOLDEN_DIR) / "device-check-script-plan.hex";
+    if (const char* update = std::getenv("RP_PLAN_BLOB_UPDATE"); update && std::string(update) == "1") {
+        std::ofstream(golden, std::ios::binary) << hex;
+        WARN("recorded " << golden.string());
+    }
+    std::ifstream     in(golden, std::ios::binary);
+    const std::string want((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(want == hex);
+}
+
+TEST_CASE("the device check's script plan check stops at the step that fails, and says why",
+          "[device-mode][device-check][script-pack]") {
+    REQUIRE(rp_devtest_plan_live_device_mode() == 0);
+
+    SECTION("a pack whose context is not the image's figure") {
+        PlanCase c = scriptPlanCase();
+        c.contextBytes = kImageContextBytes + 8;
+        const PlanRun run = runPlanCase(c, devicePackages());
+        CHECK(run.result.step == PlanStep::Heap);
+        CHECK(std::string(run.result.error.node) == "-");
+        CHECK(std::string(run.result.error.message) ==
+              "a script pack's context is not the size the case says its image declares");
+        CHECK(run.result.packCount == 1);
+        CHECK(run.alive == 0);
+    }
+    SECTION("a digest that is not the desktop's") {
+        PlanCase c = scriptPlanCase();
+        c.want = rp::device_check::kScriptPlanWant ^ 1;
+        const PlanRun run = runPlanCase(c, devicePackages());
+        CHECK(run.result.step == PlanStep::Result);
+        CHECK(std::string(run.result.error.node) == "dg");
+        CHECK(std::string(run.result.error.message) == "the digest is not the one the case expects");
+        CHECK(run.alive == 0);
+    }
+    SECTION("a pack whose heap runs out: the script node's fault, in its words") {
+        const PlanRun run = runPlanCase(scriptPlanCase(), withScriptPack(imageScriptPack(12288)));
+        INFO(describe(run.result));
+        CHECK(run.result.step == PlanStep::Process);
+        CHECK(run.result.blocks == 1);
+        const std::string message = run.result.error.message;
+        CHECK(message.rfind("the block faulted the node: ", 0) == 0);
+        CHECK(message.find("heap") != std::string::npos);
+        CHECK(run.alive == 0);
+        CHECK(run.allocations == 0);
+    }
+    SECTION("a plan without the stimulus: the digest hears nothing") {
+        PlanCase c = scriptPlanCase();
+        c.stimulus = false;
+        const PlanRun run = runPlanCase(c, devicePackages());
+        CHECK(run.result.step == PlanStep::Result);
+        CHECK(run.result.messages == 0);
+        CHECK(std::string(run.result.error.message) == "the digest heard nothing but silence");
+    }
+}
+
+TEST_CASE("the device check's script bench runs its node through the stimulus's blocks in the image's arena, "
+          "allocating nothing",
+          "[device-mode][device-check][script-pack]") {
+    const BenchRun    run = runBench(devicePackages());
+    const BenchResult& r = run.result;
+    INFO(r.error.message);
+    REQUIRE(r.step == BenchStep::Ok);
+    CHECK(run.allocations == 0);
+    CHECK(r.blocks == 1 + 3 * 4);
+    CHECK(r.noteMessages == rp::device_check::stimulusCount(0));
+    CHECK(r.sysexMessages == rp::device_check::stimulusCount(1));
+    CHECK(r.messages == 4 * 2 * RP_DEVICE_MIDI_IN_MESSAGES);
+    CHECK(r.passed == r.messages);
+    CHECK(r.contextBytes == kImageContextBytes);
+    CHECK(r.inUseBytes > 0);
+    CHECK(r.inUseBytes < r.contextBytes);
+    // Untimed here: the desktop passes no counter.
+    CHECK(r.firstCycles == 0);
+    CHECK(r.noteCycles == 0);
+}
+
+TEST_CASE("the device check's script bench stops at the step that fails, and says why",
+          "[device-mode][device-check][script-pack]") {
+    SECTION("no registered type is the bench's") {
+        std::vector<const rp_package*> packages;
+        for (const rp_package* p : devicePackages())
+            if (!p->memory) packages.push_back(p);
+        const BenchRun run = runBench(packages);
+        CHECK(run.result.step == BenchStep::Type);
+        CHECK(std::string(run.result.error.message) == "no registered type, or no case, is the bench's");
+    }
+    SECTION("its package's memory does not fit the arena") {
+        const BenchRun run = runBench(devicePackages(), kAllCases, 16 * 1024);
+        CHECK(run.result.step == BenchStep::Package);
+        CHECK(std::string(run.result.error.message) == "the package's memory does not fit the arena");
+    }
+    SECTION("a case with no queue to feed") {
+        std::vector<TypeCase> cases = kAllCases;
+        for (TypeCase& c : cases)
+            if (std::string(c.id) == rp::device_check::kBenchType) c.portCount = 0;
+        const BenchRun run = runBench(devicePackages(), cases);
+        CHECK(run.result.step == BenchStep::Ports);
+        CHECK(std::string(run.result.error.message) ==
+              "it has no events or bytes input and output to feed and read");
+        CHECK(run.allocations == 0);
+    }
+    SECTION("a heap that runs out: its fault, in its words") {
+        const BenchRun run = runBench(withScriptPack(imageScriptPack(12288)));
+        INFO(run.result.error.message);
+        CHECK(run.result.step == BenchStep::Process);
+        const std::string message = run.result.error.message;
+        CHECK(message.find("heap") != std::string::npos);
+        CHECK(run.allocations == 0);
+    }
+}
+
+TEST_CASE("the device check's host gives a script node the clock the image offers, by which a node past its deadline "
+          "faults, in its words",
+          "[device-mode][device-check][script-pack]") {
+    // rp.scripttest.spins, which never returns, in a plan of its own; its pack at a heap the image's arena holds.
+    const rp_package*       pack = imageScriptPackage(rp_script_scripttest, 65536);
+    rp::graph::NodeRegistry registry;
+    std::string             why;
+    REQUIRE(registry.addPackage(rp_scripttest_script_package(), &why));
+    std::vector<const rp_package*> types = devicePackages();
+    types.push_back(pack);
+    rp::graph::ExportOptions o;
+    o.sampleRate = 48000.0;
+    o.maxFrames = 256;
+    o.arenaBytes = rp::device_check::kArenaBytes;
+    o.trialLoad = false;  // the exporter's own deadline would fault it first
+    const auto exported =
+        rp::graph::exportPlan(R"({"nodes":[{"id":"sp","type":"rp.scripttest.spins"}],"wires":[]})", registry, types, o);
+    REQUIRE(exported.ok());
+
+    // A clock a millisecond further on at each reading, as the engine polls it while the node spins: the image's
+    // (time_us_64) by the host's figure, kHostClockDeadlineMicros, as a block that hands the node no message has it.
+    struct Ticks {
+        static std::uint64_t read(void* ctx) { return *static_cast<std::uint64_t*>(ctx) += 1000; }
+    };
+    std::uint64_t       now = 0;
+    const rp_host_clock clock{&now, &Ticks::read, 0};
+    // Offered for this case alone: taken back as it ends, however it ends, so no later case meets a clock of this
+    // frame's.
+    struct Offered {
+        explicit Offered(const rp_host_clock* c) { rp::device_check::offerClock(c); }
+        ~Offered() { rp::device_check::offerClock(nullptr); }
+    } offered(&clock);
+    PlanCase c;
+    c.blob = exported.blob.data();
+    c.blobSize = exported.blob.size();
+    c.frames = 256;
+    const PlanRun run = runPlanCase(c, types);
+    INFO(describe(run.result));
+    CHECK(run.result.step == PlanStep::Process);
+    CHECK(std::string(run.result.error.node) == "sp");
+    CHECK(std::string(run.result.error.message) ==
+          "the block faulted the node: process ran past its deadline of " +
+              std::to_string(rp::mqjs::kHostClockDeadlineMicros) + " us");
+    CHECK(run.result.blocks == 1);
+    CHECK(run.allocations == 0);
+    CHECK(now > rp::mqjs::kHostClockDeadlineMicros);
 }

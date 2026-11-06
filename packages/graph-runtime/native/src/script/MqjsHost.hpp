@@ -149,8 +149,11 @@ inline constexpr std::uint32_t kDeviceHalves = 2;
 #endif
 // What a pack's state takes of its memory at 32 bits, the box's width: a 32-bit build's state is held to it (a
 // static_assert) and reserves exactly it, so a 64-bit build sizes the box's package memory (boxPackageBytes) as the box
-// itself does. sizeof(PackState) is 416 bytes on the RP2350.
+// itself does. sizeof(PackState) is 416 bytes on the RP2350 (stateBytes() says it on the build that asks; the device
+// check prints it).
 inline constexpr std::size_t kBoxStateBytes = 448;
+// What this build's state takes, unrounded: sizeof the host's state, which kBoxStateBytes reserves at 32 bits.
+std::size_t stateBytes();
 
 // How many instances one pack's context holds at once, all of its types together.
 inline constexpr std::uint32_t kMaxInstances = 64;

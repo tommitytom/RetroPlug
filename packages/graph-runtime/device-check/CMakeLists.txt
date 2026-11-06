@@ -1,17 +1,21 @@
 # rp-device-check (docs/modular-graph-phase-e1-design.md section 7): a Pico SDK firmware for the RP2350 that runs every
 # portable node type of the packages packages.cmake lists (`core`, `dsp`, `n8`, `device-io` and `devtest`), built in
-# device mode (RP_DEVICE, no exceptions, no RTTI), from its default settings as msgpack, and a multi-node plan loaded
-# by the plan loader (plan.json, docs/modular-graph-phase-e3-design.md section 7), and links with a trap on the heap,
-# on exceptions and on RTTI. Its own CMake project on the SDK's toolchain, built in a build dir of its own, never part
-# of the desktop's build/: tools/build-device-check.sh configures and builds it (pnpm device:check), and CI's linux-x64
-# job runs that script.
+# device mode (RP_DEVICE, no exceptions, no RTTI), from its default settings as msgpack, the devtest script pack's
+# TypeScript types among them on the device's MicroQuickJS host (docs/modular-graph-phase-e4-design.md section 8), and
+# two plans loaded by the plan loader (plan.json, docs/modular-graph-phase-e3-design.md section 7, and
+# script-plan.json, two of the script pack's nodes), and links with a trap on the heap, on exceptions and on RTTI. Its
+# own CMake project on the SDK's toolchain, built in a build dir of its own, never part of the desktop's build/:
+# tools/build-device-check.sh configures and builds it (pnpm device:check), and CI's linux-x64 job runs that script.
 #
 # Inputs, given by the script:
 #   PICO_SDK_PATH          the Pico SDK (2.1.1; no submodules needed)
 #   RP_DEVICE_CHECK_CASES  the header rp-device-check-cases wrote (cases/main.cpp): each type's default settings as
 #                          msgpack and its layout.
-#   RP_EXPORT_PLAN_TOOL    retroplug-export-plan, which exports plan.json for this image's arena at build time. With
-#                          the cases header, the two things this project takes from the desktop's build.
+#   RP_EXPORT_PLAN_TOOL    retroplug-export-plan, which exports plan.json and script-plan.json for this image's arena
+#                          at build time. Its desktop build (the tool's directory's parent) is the one the image's
+#                          script pack comes from too: the devtest pack's 32-bit bytecode and MicroQuickJS's 32-bit
+#                          tables, which retroplug-export-plan-current builds beside the tool. With the cases header,
+#                          what this project takes from the desktop's build.
 #   RP_REFLECTCPP_SOURCE_DIR  optional: a checkout of reflect-cpp at the pinned version; without it, it is fetched.
 cmake_minimum_required(VERSION 3.20)
 
@@ -49,6 +53,23 @@ include("${RP_REPO}/cmake/reflectcpp-pin.cmake")
 # The runtime with pico_malloc taken out of pico_runtime, the link trap on the heap, on exceptions and on RTTI, and the
 # stack limit (cmake/device-image.cmake, which says why each is what it is; the box's firmware links under the same).
 include("${CMAKE_CURRENT_SOURCE_DIR}/packages.cmake")
+
+# The plan exporter, a desktop tool of the desktop build, and that build itself, which the image's script pack comes
+# from (cmake/packages.cmake's _retroplug_device_script_targets: its 32-bit bytecode, and MicroQuickJS's 32-bit tables,
+# graph-runtime's), so the pack the image runs is the one the exporter's trial load ran: as the box's firmware derives
+# it (pico/n8-host/CMakeLists.txt).
+set(RP_EXPORT_PLAN_TOOL "${RP_REPO}/build/export-plan/retroplug-export-plan" CACHE FILEPATH
+    "retroplug-export-plan, from the desktop build (cmake --build build --target retroplug-export-plan-current)")
+if(NOT EXISTS "${RP_EXPORT_PLAN_TOOL}")
+    message(FATAL_ERROR "rp-device-check: no plan exporter at RP_EXPORT_PLAN_TOOL (\"${RP_EXPORT_PLAN_TOOL}\"); "
+                        "build it in the desktop build (cmake --build build --target retroplug-export-plan-current), "
+                        "as tools/build-device-check.sh does, or pass -DRP_EXPORT_PLAN_TOOL=<path>")
+endif()
+get_filename_component(RP_DESKTOP_BUILD_DIR "${RP_EXPORT_PLAN_TOOL}" DIRECTORY)
+get_filename_component(RP_DESKTOP_BUILD_DIR "${RP_DESKTOP_BUILD_DIR}" DIRECTORY)
+# The devtest script pack, the one the image carries, with the image's own context (packages.cmake).
+set(RP_SCRIPT_HEAP_BYTES_devtest ${RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES})
+
 set(RP_DEVICE_BUILD ON)
 set(RP_DEVICE_COMPILE_OPTIONS
     "$<TARGET_PROPERTY:pico_standard_link,INTERFACE_COMPILE_OPTIONS>"
@@ -69,35 +90,40 @@ endif()
 # Copied in, so a new header re-runs the configure and rebuilds what includes it.
 configure_file("${RP_DEVICE_CHECK_CASES}" "${CMAKE_BINARY_DIR}/generated/DeviceCheckCases.hpp" COPYONLY)
 
-# The plan the check runs (plan.cmake: plan.json and what it is exported for), exported by retroplug-export-plan, a
-# desktop tool of the desktop build: it plans plan.json for the RP2350 with the desktop's builds of this image's own
-# packages' types (packages.cmake's list, the product below), sizes it with their device builds against the image's
-# arena, and writes the blob as a header, with the arena that sizing gave it. A plan this image could not run or hold
-# fails here, at build time. The header is rewritten only when its bytes change.
+# The plans the check runs (plan.cmake: plan.json, script-plan.json and what they are exported for), exported by
+# retroplug-export-plan, a desktop tool of the desktop build: it plans each for the RP2350 with the desktop's builds of
+# this image's own packages' types (packages.cmake's list, the product below), sizes it with their device builds
+# against the image's arena, and writes the blob as a header, with the arena that sizing gave it. A plan this image
+# could not run or hold fails here, at build time. A header is rewritten only when its bytes change.
 include("${CMAKE_CURRENT_SOURCE_DIR}/plan.cmake")
-set(RP_EXPORT_PLAN_TOOL "${RP_REPO}/build/export-plan/retroplug-export-plan" CACHE FILEPATH
-    "retroplug-export-plan, from the desktop build (cmake --build build --target retroplug-export-plan)")
-if(NOT EXISTS "${RP_EXPORT_PLAN_TOOL}")
-    message(FATAL_ERROR "rp-device-check: no plan exporter at RP_EXPORT_PLAN_TOOL (\"${RP_EXPORT_PLAN_TOOL}\"); "
-                        "build it in the desktop build (cmake --build build --target retroplug-export-plan), as "
-                        "tools/build-device-check.sh does, or pass -DRP_EXPORT_PLAN_TOOL=<path>")
-endif()
-set(_rp_plan_header "${CMAKE_BINARY_DIR}/generated/DeviceCheckPlan.hpp")
 string(REPLACE ";" "," _rp_plan_packages "${RP_DEVICE_CHECK_PACKAGES}")
-add_custom_command(
-    OUTPUT  "${_rp_plan_header}"
-    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/generated"
-    COMMAND "${RP_EXPORT_PLAN_TOOL}" "${RP_DEVICE_CHECK_PLAN}" "${_rp_plan_header}"
-            --arena ${RP_DEVICE_CHECK_ARENA_BYTES} --sample-rate ${RP_DEVICE_CHECK_PLAN_SAMPLE_RATE}
-            --max-frames ${RP_DEVICE_CHECK_PLAN_MAX_FRAMES} --packages ${_rp_plan_packages} --header kDeviceCheckPlan
-    DEPENDS "${RP_DEVICE_CHECK_PLAN}" "${RP_EXPORT_PLAN_TOOL}" "${CMAKE_CURRENT_SOURCE_DIR}/plan.cmake"
-            "${CMAKE_CURRENT_SOURCE_DIR}/packages.cmake"
-    COMMENT "retroplug-export-plan: the device check's plan (plan.json)"
-    VERBATIM)
+set(_rp_plan_headers "")
+foreach(_rp_plan IN ITEMS "plan|${RP_DEVICE_CHECK_PLAN}|kDeviceCheckPlan|DeviceCheckPlan.hpp"
+                          "script plan|${RP_DEVICE_CHECK_SCRIPT_PLAN}|kDeviceCheckScriptPlan|DeviceCheckScriptPlan.hpp")
+    string(REPLACE "|" ";" _rp_plan "${_rp_plan}")
+    list(GET _rp_plan 0 _rp_what)
+    list(GET _rp_plan 1 _rp_json)
+    list(GET _rp_plan 2 _rp_symbol)
+    list(GET _rp_plan 3 _rp_file)
+    set(_rp_header "${CMAKE_BINARY_DIR}/generated/${_rp_file}")
+    add_custom_command(
+        OUTPUT  "${_rp_header}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/generated"
+        COMMAND "${RP_EXPORT_PLAN_TOOL}" "${_rp_json}" "${_rp_header}"
+                --arena ${RP_DEVICE_CHECK_ARENA_BYTES} --sample-rate ${RP_DEVICE_CHECK_PLAN_SAMPLE_RATE}
+                --max-frames ${RP_DEVICE_CHECK_PLAN_MAX_FRAMES} --packages ${_rp_plan_packages} --header ${_rp_symbol}
+        DEPENDS "${_rp_json}" "${RP_EXPORT_PLAN_TOOL}" "${CMAKE_CURRENT_SOURCE_DIR}/plan.cmake"
+                "${CMAKE_CURRENT_SOURCE_DIR}/packages.cmake"
+        COMMENT "retroplug-export-plan: the device check's ${_rp_what} (${_rp_file})"
+        VERBATIM)
+    list(APPEND _rp_plan_headers "${_rp_header}")
+endforeach()
 
-rp_device_executable(rp-device-check main.cpp DeviceCheck.cpp N8Protocol.cpp "${_rp_plan_header}")
+rp_device_executable(rp-device-check main.cpp DeviceCheck.cpp N8Protocol.cpp ${_rp_plan_headers})
 target_include_directories(rp-device-check PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/generated")
-target_compile_definitions(rp-device-check PRIVATE RP_DEVICE_CHECK_ARENA_BYTES=${RP_DEVICE_CHECK_ARENA_BYTES})
+target_compile_definitions(rp-device-check PRIVATE
+    RP_DEVICE_CHECK_ARENA_BYTES=${RP_DEVICE_CHECK_ARENA_BYTES}
+    RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES=${RP_DEVICE_CHECK_SCRIPT_HEAP_BYTES})
 # A 4 KB main stack (the SDK's default is 2 KB): all of SCRATCH_Y, which holds nothing else, as the box's has. The
 # deepest chain is the plan's load: main, runPlan, loadPlan with its run-up inlined, its layout, a node's query_memory
 # and its settings' decode, about 2.7 KB summed from -fstack-usage; a create (2.2 KB), the per-type checks (2.0 KB), the

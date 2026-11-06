@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <span>
 #include <string_view>
@@ -13,6 +14,7 @@
 #include "graph/PlanLoader.hpp"
 #include "graph/Queue.hpp"
 #include "graph/rp_device.h"
+#include "graph/rp_device_midi_in.h"
 
 namespace rp::device_check {
 
@@ -66,12 +68,81 @@ void* acquireDevice(void*, const char*, const char*) { return nullptr; }
 void  releaseDevice(void*, void*) {}
 const rp_host_devices kDevices{nullptr, &acquireDevice, &releaseDevice};
 
+// The one package memory the host answers rp.host.packages/1 with (openPackage): a script type's, set up for its run.
+struct Offered {
+    const rp_package* package = nullptr;
+    void*             memory = nullptr;
+};
+Offered gOffered;
+
+void* packageMemory(void*, const rp_package* package, rp_error* err) {
+    if (package && package == gOffered.package) return gOffered.memory;
+    if (err) std::strcpy(err->message, "the device check's host set no memory up for the package");
+    return nullptr;
+}
+const rp_host_packages kPackages{nullptr, &packageMemory};
+
+// The clock a script node's deadline reads (offerClock), or none.
+const rp_host_clock* gClock = nullptr;
+
+// The host's MIDI input (rp.device.midi-in/1): the stimulus's messages for the block runPlan staged, one a call, none
+// once they are all taken or while no case stages any. The bytes it hands out stay valid until its next call.
+struct Staging {
+    bool          on = false;
+    std::uint32_t block = 0;
+    std::uint32_t taken = 0;
+    std::uint32_t handed = 0;  // every message handed out since the case began
+    std::uint8_t  data[64] = {};
+};
+Staging gStaging;
+
+bool nextMessage(void*, std::uint32_t frames, rp_device_midi_message* out) {
+    if (!gStaging.on || gStaging.taken >= stimulusCount(gStaging.block)) return false;
+    std::uint32_t frame = 0;
+    const std::uint32_t size = stimulusMessage(gStaging.block, gStaging.taken++, frames, gStaging.data, &frame);
+    *out = rp_device_midi_message{frame, size, gStaging.data};
+    ++gStaging.handed;
+    return true;
+}
+const rp_device_midi_in kMidiIn{nullptr, &nextMessage};
+
 void ignoreLog(void*, int, const char*) {}
 const void* hostInterface(const rp_host*, const char* id) {
     if (std::strcmp(id, RP_HOST_RESOURCES_INTERFACE) == 0) return &kResources;
+    if (std::strcmp(id, RP_HOST_PACKAGES_INTERFACE) == 0) return &kPackages;
+    if (std::strcmp(id, RP_HOST_CLOCK_INTERFACE) == 0) return gClock;
+    if (std::strcmp(id, RP_DEVICE_MIDI_IN_INTERFACE) == 0) return &kMidiIn;
     return std::strcmp(id, RP_HOST_DEVICES_INTERFACE) == 0 ? &kDevices : nullptr;
 }
 const rp_host kHost{RP_ABI_VERSION, nullptr, nullptr, nullptr, &ignoreLog, &hostInterface};
+
+// The bytes a parser gives a message whose first byte is `first` (the device-pack toolchain's runner's): a data byte's
+// two, a channel message's two or three, a short SysEx, a system common's, and a real-time byte or a lone F7 alone.
+std::uint32_t messageOf(std::uint8_t first, std::uint8_t* out) {
+    out[0] = first;
+    if (first < 0x80) return out[1] = 0x40, 2;
+    if (first < 0xC0 || (first >= 0xE0 && first < 0xF0)) return out[1] = 0x3C, out[2] = 0x64, 3;
+    if (first < 0xE0) return out[1] = 0x05, 2;
+    if (first == 0xF0) return out[1] = 0x7D, out[2] = 0x01, out[3] = 0xF7, 4;
+    if (first == 0xF1 || first == 0xF3) return out[1] = 0x10, 2;
+    if (first == 0xF2) return out[1] = 0x10, out[2] = 0x20, 3;
+    return 1;
+}
+
+// A script node's fault's words, through rp.script.fault/1, or null for a node that is no script node or has none.
+const char* scriptFault(rp_node* node) {
+    const auto* fault = static_cast<const rp_script_fault*>(node->vt->get_interface(node, RP_SCRIPT_FAULT_INTERFACE));
+    return fault ? fault->reason(node) : nullptr;
+}
+
+// What `what` happened, with a script node's fault's words after it when it has some, into `message`.
+void faultWords(char* message, std::size_t size, const char* what, rp_node* node) {
+    const char* words = scriptFault(node);
+    if (words)
+        std::snprintf(message, size, "%s: %s", what, words);
+    else
+        std::snprintf(message, size, "%s", what);
+}
 
 // The input signal every audio input and the buffer carry: small, deterministic, and not silence, so the kernels run
 // on numbers.
@@ -145,61 +216,101 @@ bool bindPort(Arena& a, const PortCase& p, rp_port_view& view, std::uint32_t fra
     }
 }
 
-// Binds the type's ports and params into a one-step plan and runs one block of it. False if the arena ran out.
-bool runOneBlock(Arena& a, rp_node* node, const TypeCase& c, std::uint32_t frames, bool* faulted) {
-    std::uint32_t inputs = 0, outputs = 0, queues = 0, controls = c.paramCount;
-    for (std::uint32_t i = 0; i < c.portCount; ++i) {
-        const PortCase& p = c.ports[i];
-        (p.output ? outputs : inputs) += 1;
-        if (p.output && (p.kind == RP_PORT_EVENTS || p.kind == RP_PORT_BYTES)) ++queues;
-        if (p.output && p.kind == RP_PORT_CONTROL) ++controls;
-    }
-    auto* in = a.take<rp_port_view>(inputs);
-    auto* out = a.take<rp_port_view>(outputs);
-    auto* params = a.take<rp_control_queue*>(c.paramCount);
-    auto* toClear = a.take<graph::OutputQueue>(queues);
-    auto* toRoll = a.take<rp_control_queue*>(controls);
-    auto* connected = a.take<std::uint8_t>(outputs);
-    if (!in || !out || !params || !toClear || !toRoll || !connected) return false;
-
-    std::uint32_t nIn = 0, nOut = 0, nClear = 0, nRoll = 0;
-    for (std::uint32_t i = 0; i < c.portCount; ++i) {
-        const PortCase& p = c.ports[i];
-        rp_port_view&   view = p.output ? out[nOut++] : in[nIn++];
-        if (!bindPort(a, p, view, frames)) return false;
-        if (!p.output) continue;
-        if (p.kind == RP_PORT_EVENTS || p.kind == RP_PORT_BYTES) toClear[nClear++] = graph::OutputQueue{view.u.queue};
-        if (p.kind == RP_PORT_CONTROL) toRoll[nRoll++] = view.u.control;
-    }
-    for (std::uint32_t k = 0; k < c.paramCount; ++k) {
-        params[k] = controlQueue(a, c.params[k]);
-        if (!params[k]) return false;
-        toRoll[nRoll++] = params[k];
-    }
-
-    // Every output wired, so the node writes each one as it would in a plan that reads it.
-    for (std::uint32_t o = 0; o < outputs; ++o) connected[o] = 1;
-    node->vt->ports_changed(node, connected, outputs);
-
+// A type's node bound into a one-step plan: its ports' views, with the buffers and queues behind them, and its params'
+// streams, in the arena, every output wired, so the node writes each as it would in a plan that reads it.
+struct OneStep {
+    graph::PlanStep            step;
+    graph::OutputQueue*        toClear = nullptr;
+    rp_control_queue**         toRoll = nullptr;
+    std::uint32_t              queues = 0;
+    std::uint32_t              controls = 0;
     std::atomic<bool>          fault{false};
     std::atomic<std::uint32_t> faults{0}, drops{0};
-    graph::PlanStep            step;
-    step.node = node;
-    step.process = rp_process{0, nullptr, in, inputs, out, outputs, params, c.paramCount};
-    step.faulted = &fault;
-    const graph::PlanView plan{std::span<graph::PlanStep>(&step, 1),
-                               std::span<const graph::OutputQueue>(toClear, queues),
-                               std::span<rp_control_queue* const>(toRoll, controls),
-                               {},
-                               &faults,
-                               &drops};
-    const rp_transport transport{kSampleRate, 120.0, 0.0, RP_TRANSPORT_PLAYING};
-    graph::runBlock(plan, frames, transport);
-    *faulted = fault.load(std::memory_order_relaxed);
-    return true;
-}
 
-Step runType(const rp_node_type& type, const TypeCase& c, Arena& a, std::uint32_t frames, Result& r) {
+    // False if the arena ran out.
+    bool bind(Arena& a, rp_node* node, const TypeCase& c, std::uint32_t frames) {
+        std::uint32_t inputs = 0, outputs = 0;
+        controls = c.paramCount;
+        for (std::uint32_t i = 0; i < c.portCount; ++i) {
+            const PortCase& p = c.ports[i];
+            (p.output ? outputs : inputs) += 1;
+            if (p.output && (p.kind == RP_PORT_EVENTS || p.kind == RP_PORT_BYTES)) ++queues;
+            if (p.output && p.kind == RP_PORT_CONTROL) ++controls;
+        }
+        auto* in = a.take<rp_port_view>(inputs);
+        auto* out = a.take<rp_port_view>(outputs);
+        auto* params = a.take<rp_control_queue*>(c.paramCount);
+        toClear = a.take<graph::OutputQueue>(queues);
+        toRoll = a.take<rp_control_queue*>(controls);
+        auto* connected = a.take<std::uint8_t>(outputs);
+        if (!in || !out || !params || !toClear || !toRoll || !connected) return false;
+
+        std::uint32_t nIn = 0, nOut = 0, nClear = 0, nRoll = 0;
+        for (std::uint32_t i = 0; i < c.portCount; ++i) {
+            const PortCase& p = c.ports[i];
+            rp_port_view&   view = p.output ? out[nOut++] : in[nIn++];
+            if (!bindPort(a, p, view, frames)) return false;
+            if (!p.output) continue;
+            if (p.kind == RP_PORT_EVENTS || p.kind == RP_PORT_BYTES)
+                toClear[nClear++] = graph::OutputQueue{view.u.queue};
+            if (p.kind == RP_PORT_CONTROL) toRoll[nRoll++] = view.u.control;
+        }
+        for (std::uint32_t k = 0; k < c.paramCount; ++k) {
+            params[k] = controlQueue(a, c.params[k]);
+            if (!params[k]) return false;
+            toRoll[nRoll++] = params[k];
+        }
+        for (std::uint32_t o = 0; o < outputs; ++o) connected[o] = 1;
+        node->vt->ports_changed(node, connected, outputs);
+        step.node = node;
+        step.process = rp_process{0, nullptr, in, inputs, out, outputs, params, c.paramCount};
+        step.faulted = &fault;
+        return true;
+    }
+
+    // One block; true if the node faulted. Its output queues are emptied after the block, as a plan's are, unless
+    // `keepOutputs` asks that they be left for the caller to read and empty.
+    bool run(std::uint32_t frames, bool keepOutputs = false) {
+        const graph::PlanView plan{std::span<graph::PlanStep>(&step, 1),
+                                   std::span<const graph::OutputQueue>(toClear, keepOutputs ? 0 : queues),
+                                   std::span<rp_control_queue* const>(toRoll, controls),
+                                   {},
+                                   &faults,
+                                   &drops};
+        const rp_transport transport{kSampleRate, 120.0, 0.0, RP_TRANSPORT_PLAYING};
+        graph::runBlock(plan, frames, transport);
+        return fault.load(std::memory_order_relaxed);
+    }
+};
+
+// The type's package's memory (a script pack's context), placed in the arena and set up, which the host offers its
+// nodes until the object goes; nothing for a package with no memory of its own. Step::Package when it is refused or
+// does not fit.
+struct PackageScope {
+    bool open = false;
+
+    Step take(Arena& a, const rp_package& package, rp_error* err) {
+        if (!package.memory) return Step::Ok;
+        rp_memory_req req{};
+        if (!package.memory->query(&package, &req, err)) return Step::Package;
+        void* memory = a.raw(req.size, req.align ? req.align : alignof(std::max_align_t));
+        if (!memory) {
+            std::strcpy(err->message, "the package's memory does not fit the arena");
+            return Step::Package;
+        }
+        if (!openPackage(&package, memory, err)) return Step::Package;
+        open = true;
+        return Step::Ok;
+    }
+    ~PackageScope() {
+        if (open) closePackage();
+    }
+};
+
+Step runType(const rp_package& package, const rp_node_type& type, const TypeCase& c, Arena& a, std::uint32_t frames,
+             Result& r) {
+    PackageScope pack;
+    if (const Step s = pack.take(a, package, &r.error); s != Step::Ok) return s;
     const rp_settings settings{reinterpret_cast<const char*>(c.settings), c.settingsSize, RP_SETTINGS_MSGPACK};
     rp_memory_req req{};
     if (!type.query_memory(&type, &settings, &req, &r.error)) return Step::QueryMemory;
@@ -212,12 +323,20 @@ Step runType(const rp_node_type& type, const TypeCase& c, Arena& a, std::uint32_
         type.destroy(node);
         return Step::Activate;
     }
-    bool       faulted = false;
-    const bool bound = runOneBlock(a, node, c, frames, &faulted);
+    OneStep    one;
+    const bool bound = one.bind(a, node, c, frames);
+    const bool faulted = bound && one.run(frames);
+    if (faulted) faultWords(r.error.message, sizeof r.error.message, "the block faulted the node", node);
     node->vt->deactivate(node);
     type.destroy(node);
     if (!bound) return Step::Arena;
     return faulted ? Step::Process : Step::Ok;
+}
+
+// What a script node's context holds (rp.script.heap/1, collected), or false for a node that has no context.
+bool heapOf(rp_node* node, rp_script_heap_use* use) {
+    const auto* heap = static_cast<const rp_script_heap*>(node->vt->get_interface(node, RP_SCRIPT_HEAP_INTERFACE));
+    return heap && heap->use(node, true, use);
 }
 
 // A node's id (not NUL-terminated, in the blob) into the result's error, cut to fit, with what happened to it.
@@ -239,11 +358,67 @@ rp_control_queue* moveStream(const graph::LoadedPlan& plan, const PlanMove& m) {
 
 const rp_host& host() { return kHost; }
 
+bool openPackage(const rp_package* package, void* memory, rp_error* err) {
+    closePackage();
+    if (!package->memory->setup(package, memory, err)) return false;
+    gOffered = Offered{package, memory};
+    return true;
+}
+
+void closePackage() {
+    if (gOffered.package) gOffered.package->memory->teardown(gOffered.package, gOffered.memory);
+    gOffered = Offered{};
+}
+
+void offerClock(const rp_host_clock* clock) { gClock = clock; }
+
+std::uint32_t stimulusCount(std::uint32_t block) {
+    switch (block % kStimulusCycle) {
+        case 0: return RP_DEVICE_MIDI_IN_MESSAGES;
+        case 1: return RP_DEVICE_MIDI_IN_BYTES / 64;
+        case 4: return 0;
+        default: return RP_DEVICE_MIDI_IN_MESSAGES - 1;
+    }
+}
+
+std::uint32_t stimulusMessage(std::uint32_t block, std::uint32_t k, std::uint32_t frames, std::uint8_t* out,
+                              std::uint32_t* frame) {
+    switch (block % kStimulusCycle) {
+        case 0:
+            *frame = k * frames / RP_DEVICE_MIDI_IN_MESSAGES;
+            out[0] = static_cast<std::uint8_t>(k % 2 ? 0x80 : 0x90);
+            out[1] = static_cast<std::uint8_t>(48 + (block + k) % 24);
+            out[2] = 100;
+            return 3;
+        case 1:
+            *frame = k * frames * 64 / RP_DEVICE_MIDI_IN_BYTES;
+            std::memset(out, 0, 64);
+            out[0] = 0xF0;
+            out[1] = 0x7D;
+            out[63] = 0xF7;
+            return 64;
+        default: {
+            const std::uint32_t sweep = block / kStimulusCycle * 2 + (block % kStimulusCycle - 2);
+            *frame = (k + 1) / 2 * (frames / 32);
+            return messageOf(static_cast<std::uint8_t>((sweep * (RP_DEVICE_MIDI_IN_MESSAGES - 1) + k) % 256), out);
+        }
+    }
+}
+
 Result run(const rp_package* const* packages, std::size_t packageCount, const TypeCase* cases, std::size_t caseCount,
            void* arena, std::size_t arenaBytes, std::uint32_t frames) {
+    Result r;
+    run(packages, packageCount, cases, caseCount, arena, arenaBytes, frames, &r);
+    return r;
+}
+
+void run(const rp_package* const* packages, std::size_t packageCount, const TypeCase* cases, std::size_t caseCount,
+         void* arena, std::size_t arenaBytes, std::uint32_t frames, Result* out) {
     for (std::uint32_t c = 0; c < kBufferChannels; ++c)
         for (std::uint32_t i = 0; i < kBufferFrames; ++i) gBufferData[c][i] = signal(i, c);
-    Result        r;
+    static_assert(std::is_trivially_copyable_v<Result>);
+    Result& r = *out;
+    std::memset(static_cast<void*>(&r), 0, sizeof r);
     std::size_t   matched = 0;
     std::uint32_t index = 0;
     for (std::size_t p = 0; p < packageCount; ++p) {
@@ -254,13 +429,13 @@ Result run(const rp_package* const* packages, std::size_t packageCount, const Ty
             const TypeCase* c = findCase(type.id, cases, caseCount);
             if (!c) {
                 r.step = Step::NoCase;
-                return r;
+                return;
             }
             ++matched;
             Arena a{static_cast<std::byte*>(arena), arenaBytes};
-            r.step = runType(type, *c, a, frames, r);
+            r.step = runType(*packages[p], type, *c, a, frames, r);
             if (a.used > r.arenaBytes) r.arenaBytes = a.used;
-            if (r.step != Step::Ok) return r;
+            if (r.step != Step::Ok) return;
             ++r.types;
         }
     }
@@ -269,10 +444,9 @@ Result run(const rp_package* const* packages, std::size_t packageCount, const Ty
         r.step = Step::CaseUnused;
         r.type = index;
         r.id = nullptr;
-        return r;
+        return;
     }
     r.id = nullptr;
-    return r;
 }
 
 void runPlan(const PlanCase& c, const rp_package* const* packages, std::size_t packageCount, void* arena,
@@ -286,20 +460,26 @@ void runPlan(const PlanCase& c, const rp_package* const* packages, std::size_t p
             nodeAt(r, PlanStep::Case, "-", "a block size of 0 frames, which would never end the run");
             return;
         }
-    graph::LoadedPlan* plan =
+    const std::uint32_t loadStart = c.cycles ? c.cycles() : 0;
+    graph::LoadedPlan*  plan =
         graph::loadPlan(std::span<const std::uint8_t>(c.blob, c.blobSize),
                         std::span<std::byte>(static_cast<std::byte*>(arena), arenaBytes),
                         std::span<const rp_package* const>(packages, packageCount), &kHost, &r.error);
+    r.loadCycles = c.cycles ? c.cycles() - loadStart : 0;
     if (!plan) {
         r.step = PlanStep::Load;
         if (r.error.node[0] == '\0') std::strcpy(r.error.node, "-");  // the blob refused whole: no node at fault
         return;
     }
+    if (c.afterLoad) c.afterLoad();
     r.nodes = static_cast<std::uint32_t>(plan->nodes.size());
     r.arenaBytes = plan->bytes;
     r.sampleRate = plan->sampleRate;
     r.maxFrames = plan->maxFrames;
+    // The host's MIDI input stages nothing outside a stimulus case's blocks, and nothing once the case ends.
+    gStaging = Staging{};
     auto stop = [&](PlanStep step, std::string_view node, const char* what) {
+        gStaging.on = false;
         nodeAt(r, step, node, what);
         graph::unloadPlan(plan);
     };
@@ -328,15 +508,27 @@ void runPlan(const PlanCase& c, const rp_package* const* packages, std::size_t p
         std::uint32_t frames = c.splitCount ? c.splits[split % c.splitCount] : plan->maxFrames;
         if (frames > plan->maxFrames) frames = plan->maxFrames;
         if (frames > c.frames - r.frames) frames = c.frames - r.frames;
+        gStaging.on = c.stimulus;
+        gStaging.block = r.blocks;
+        gStaging.taken = 0;
+        const std::uint32_t blockStart = c.cycles && r.blocks == 0 ? c.cycles() : 0;
         graph::runBlock(plan->view, frames, transport);
+        if (c.cycles && r.blocks == 0) r.firstBlockCycles = c.cycles() - blockStart;
         ++r.blocks;
         r.frames += frames;
+        r.messages = gStaging.handed;
         if (plan->faults.load(std::memory_order_relaxed) != 0) {
             for (const graph::LoadedNode& n : plan->nodes)
-                if (n.faulted.load(std::memory_order_relaxed))
-                    return stop(PlanStep::Process, n.name(), "the block faulted the node");
+                if (n.faulted.load(std::memory_order_relaxed)) {
+                    nodeAt(r, PlanStep::Process, n.name(), "");
+                    faultWords(r.error.message, sizeof r.error.message, "the block faulted the node", n.node);
+                    gStaging.on = false;
+                    graph::unloadPlan(plan);
+                    return;
+                }
         }
     }
+    gStaging.on = false;
     r.drops = plan->drops.load(std::memory_order_relaxed);
     const graph::LoadedNode* d = c.digest ? plan->find(c.digest) : nullptr;
     if (d)
@@ -367,7 +559,137 @@ void runPlan(const PlanCase& c, const rp_package* const* packages, std::size_t p
     if (c.digest && !r.heard) return stop(PlanStep::Result, c.digest, "the digest heard nothing but silence");
     if (c.digest && r.digestBlocks != r.blocks)
         return stop(PlanStep::Result, c.digest, "the digest counted other blocks than ran");
+    if (c.expectDigest && r.digest != c.want)
+        return stop(PlanStep::Result, c.digest ? c.digest : "-", "the digest is not the one the case expects");
+
+    // Each package the plan set memory up for, as one of its nodes reads its context.
+    for (const graph::LoadedPackage& pk : plan->packages) {
+        if (r.packCount == PlanResult::kPackReports) break;
+        PlanResult::Pack& out = r.packs[r.packCount++];
+        const std::string_view name = pk.name();
+        const std::size_t      n = name.size() < sizeof out.name - 1 ? name.size() : sizeof out.name - 1;
+        std::memcpy(out.name, name.data(), n);
+        out.name[n] = '\0';
+        out.memoryBytes = pk.bytes;
+        for (const graph::LoadedNode& node : plan->nodes) {
+            bool ours = false;
+            for (std::uint32_t t = 0; t < pk.package->node_type_count && !ours; ++t)
+                ours = pk.package->node_types[t] == node.type;
+            rp_script_heap_use use{};
+            if (!ours || !heapOf(node.node, &use)) continue;
+            out.contextBytes = use.bytes;
+            out.fixedBytes = use.fixed;
+            out.inUseBytes = use.fixed + use.heap;
+            break;
+        }
+        if (c.contextBytes && out.contextBytes != c.contextBytes)
+            return stop(PlanStep::Heap, "-",
+                        "a script pack's context is not the size the case says its image declares");
+    }
     graph::unloadPlan(plan);
+}
+
+void benchScript(const rp_package* const* packages, std::size_t packageCount, const TypeCase* cases,
+                 std::size_t caseCount, void* arena, std::size_t arenaBytes, std::uint32_t rounds, Cycles cycles,
+                 BenchResult* out) {
+    static_assert(std::is_trivially_copyable_v<BenchResult>);
+    BenchResult& r = *out;
+    std::memset(static_cast<void*>(&r), 0, sizeof r);
+    auto fail = [&](BenchStep step, const char* what) {
+        r.step = step;
+        if (what) std::strncpy(r.error.message, what, sizeof r.error.message - 1);
+    };
+    const rp_package*   package = nullptr;
+    const rp_node_type* type = nullptr;
+    for (std::size_t p = 0; p < packageCount && !type; ++p)
+        for (std::uint32_t t = 0; t < packages[p]->node_type_count && !type; ++t)
+            if (std::strcmp(packages[p]->node_types[t]->id, kBenchType) == 0) {
+                package = packages[p];
+                type = packages[p]->node_types[t];
+            }
+    const TypeCase* c = type ? findCase(kBenchType, cases, caseCount) : nullptr;
+    if (!c) return fail(BenchStep::Type, "no registered type, or no case, is the bench's");
+
+    Arena        a{static_cast<std::byte*>(arena), arenaBytes};
+    PackageScope pack;
+    if (pack.take(a, *package, &r.error) != Step::Ok) return fail(BenchStep::Package, nullptr);
+    const rp_settings settings{reinterpret_cast<const char*>(c->settings), c->settingsSize, RP_SETTINGS_MSGPACK};
+    rp_memory_req     req{};
+    if (!type->query_memory(type, &settings, &req, &r.error)) return fail(BenchStep::Create, nullptr);
+    void* memory = a.raw(req.size, req.align ? req.align : alignof(std::max_align_t));
+    if (!memory) return fail(BenchStep::Create, "the instance does not fit the arena");
+    rp_node* node = type->create(type, &kHost, memory, &settings, &r.error);
+    if (!node) return fail(BenchStep::Create, nullptr);
+    if (!node->vt->activate(node, kSampleRate, kBlockFrames, &r.error)) {
+        type->destroy(node);
+        return fail(BenchStep::Activate, nullptr);
+    }
+    auto finish = [&](BenchStep step, const char* what) {
+        if (step != BenchStep::Ok) fail(step, what);
+        node->vt->deactivate(node);
+        type->destroy(node);
+    };
+
+    // The node's first events or bytes input and output: the queues the bench fills and reads.
+    OneStep one;
+    if (!one.bind(a, node, *c, kBlockFrames)) return finish(BenchStep::Ports, "its ports do not fit the arena");
+    rp_queue* in = nullptr;
+    rp_queue* sent = nullptr;
+    for (std::uint32_t i = 0; i < one.step.process.input_count && !in; ++i)
+        if (one.step.process.inputs[i].kind == RP_PORT_EVENTS || one.step.process.inputs[i].kind == RP_PORT_BYTES)
+            in = one.step.process.inputs[i].u.queue;
+    for (std::uint32_t i = 0; i < one.step.process.output_count && !sent; ++i)
+        if (one.step.process.outputs[i].kind == RP_PORT_EVENTS || one.step.process.outputs[i].kind == RP_PORT_BYTES)
+            sent = one.step.process.outputs[i].u.queue;
+    if (!in || !sent) return finish(BenchStep::Ports, "it has no events or bytes input and output to feed and read");
+
+    // One block of the stimulus's `block` (none for a block of its fifth kind), timed; false if it faulted the node.
+    std::uint8_t bytes[64];
+    auto         block = [&](std::uint32_t stimulus, std::uint32_t* took) {
+        graph::clearQueue(*in);
+        const std::uint32_t count = stimulusCount(stimulus);
+        for (std::uint32_t k = 0; k < count; ++k) {
+            std::uint32_t       frame = 0;
+            const std::uint32_t size = stimulusMessage(stimulus, k, kBlockFrames, bytes, &frame);
+            graph::pushMessage(*in, frame, std::span<const std::uint8_t>(bytes, size));
+        }
+        const std::uint32_t start = cycles ? cycles() : 0;
+        const bool          faulted = one.run(kBlockFrames, true);
+        *took = cycles ? cycles() - start : 0;
+        ++r.blocks;
+        r.messages += in->count;
+        r.passed += sent->count;
+        graph::clearQueue(*sent);
+        return !faulted;
+    };
+    char what[sizeof r.error.message];
+    // The first block (none), which makes the node's instance and its pools; then the rounds: none, notes, SysEx.
+    if (!block(kStimulusCycle - 1, &r.firstCycles)) {
+        faultWords(what, sizeof what, "the first block faulted the node", node);
+        return finish(BenchStep::Process, what);
+    }
+    r.noteMessages = stimulusCount(0);
+    r.sysexMessages = stimulusCount(1);
+    for (std::uint32_t round = 0; round < rounds; ++round) {
+        static constexpr std::uint32_t kKinds[] = {kStimulusCycle - 1, 0, 1};
+        std::uint64_t* totals[] = {&r.emptyCycles, &r.noteCycles, &r.sysexCycles};
+        for (std::size_t k = 0; k < std::size(kKinds); ++k) {
+            std::uint32_t took = 0;
+            if (!block(round * kStimulusCycle + kKinds[k], &took)) {
+                faultWords(what, sizeof what, "a block faulted the node", node);
+                return finish(BenchStep::Process, what);
+            }
+            *totals[k] += took;
+        }
+    }
+    rp_script_heap_use use{};
+    if (heapOf(node, &use)) {
+        r.contextBytes = use.bytes;
+        r.inUseBytes = use.fixed + use.heap;
+    }
+    if (r.passed != r.messages)
+        return finish(BenchStep::Result, "the node passed on other than every message it was handed");
+    finish(BenchStep::Ok, nullptr);
 }
 
 }  // namespace rp::device_check
