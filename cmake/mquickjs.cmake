@@ -88,6 +88,9 @@
 set(MQUICKJS_DIR "${CMAKE_SOURCE_DIR}/deps/mquickjs")
 file(READ "${MQUICKJS_DIR}/mquickjs.c" _mqjs_engine_text)
 string(REPLACE "\r" "" _mqjs_engine_text "${_mqjs_engine_text}")
+# The guard runs at configure, so a change to the engine's text or to the wrapper it guards reruns the configure.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${MQUICKJS_DIR}/mquickjs.c"
+             "${CMAKE_SOURCE_DIR}/packages/graph-runtime/native/src/script/rp_mqjs_engine.c")
 # Each span: what it is, the text it begins with, the text it ends before (neither may hold a semicolon, a list's
 # separator), and its SHA-256.
 set(_mqjs_span_0 "JS_MakeUniqueString" "static JSValue JS_MakeUniqueString(JSContext *ctx, JSValue val)" "\n}\n"
@@ -153,15 +156,22 @@ foreach(_mqjs_span IN ITEMS _mqjs_span_0 _mqjs_span_1 _mqjs_span_2 _mqjs_span_3 
     list(GET ${_mqjs_span} 2 _end)
     list(GET ${_mqjs_span} 3 _expected)
     string(FIND "${_mqjs_engine_text}" "${_begin}" _at)
-    set(_hash "")
-    if(NOT _at EQUAL -1)
-        string(SUBSTRING "${_mqjs_engine_text}" ${_at} -1 _rest)
-        string(FIND "${_rest}" "${_end}" _length)
-        if(NOT _length EQUAL -1)
-            string(SUBSTRING "${_rest}" 0 ${_length} _rest)
-            string(SHA256 _hash "${_rest}")
-        endif()
+    if(_at EQUAL -1)
+        message(FATAL_ERROR "deps/mquickjs/mquickjs.c: the start of ${_what} (the text it begins with) is not found; "
+                            "upstream moved or renamed it, so re-review "
+                            "packages/graph-runtime/native/src/script/rp_mqjs_engine.c's fixes against the new text "
+                            "and update the span's start in cmake/mquickjs.cmake")
     endif()
+    string(SUBSTRING "${_mqjs_engine_text}" ${_at} -1 _rest)
+    string(FIND "${_rest}" "${_end}" _length)
+    if(_length EQUAL -1)
+        message(FATAL_ERROR "deps/mquickjs/mquickjs.c: the end of ${_what} (the text it ends before) is not found "
+                            "after its start; upstream changed what follows it, so re-review "
+                            "packages/graph-runtime/native/src/script/rp_mqjs_engine.c's fixes against the new text "
+                            "and update the span's end in cmake/mquickjs.cmake")
+    endif()
+    string(SUBSTRING "${_rest}" 0 ${_length} _rest)
+    string(SHA256 _hash "${_rest}")
     if(NOT _hash STREQUAL _expected)
         message(FATAL_ERROR "deps/mquickjs/mquickjs.c: ${_what} is not the text "
                             "packages/graph-runtime/native/src/script/rp_mqjs_engine.c's fixes were written against "
