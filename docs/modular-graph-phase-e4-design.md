@@ -181,10 +181,11 @@ ran past its deadline faults with the deadline's words whatever it returned, sin
 engine's interrupt on the way out (the host checks at the end of every outermost entry). The host's interfaces are
 `rp.script.fault/1` (reason; kind: threw, deadline, heap, refused), `rp.script.heap/1`, `rp.host.clock/1` and
 `rp.host.script-log/1` (where `console.log` goes). A pack whose heap runs out (the engine's report, in an entry that
-then ends in an exception) has a dead context, read without allocating, and all of its nodes fault with the same words;
-on the desktop the pack is set up again once its last node is gone (on the host's one control thread, which creates
-and destroys its nodes: `graph/PackageMemory.hpp`). What a node throws does not decide it: `throw null`, or an error
-saying "out of memory", faults that node alone.
+then ends in an exception, past its deadline or not: the heap is read first) has a dead context, read without
+allocating, and all of its nodes fault with the same words; on the desktop the pack is set up again once its last node
+is gone (on the host's one control thread, which creates and destroys its nodes: `graph/PackageMemory.hpp`). What a
+node throws does not decide it: `throw null`, or an error saying "out of memory", faults that node alone, as does the
+engine's out-of-memory error for an array or a buffer past its size limits, with room left.
 
 - **The deadline** is enforced by the engine's interrupt handler against the host's clock: **10 ms a call plus 250 us
   for each message on the block's events and bytes inputs** on the box (26 ms for a full queue of 64), which is the
@@ -320,15 +321,17 @@ auditioned there, and their `[packages]` rows gain it. The desktop's own N8 grap
 
 ## 7. Tests
 
-- **The mquickjs host on the desktop** (`[script-pack]`, 45 cases, most in `ScriptPack.test.cpp`, run on both builds
+- **The mquickjs host on the desktop** (`[script-pack]`, 46 cases, most in `ScriptPack.test.cpp`, run on both builds
   of the host): a node's lifecycle, settings and block API; each fault (a throw, a deadline overrun, a loop over each
   kind of long builtin faulted within a small multiple of its deadline at bliptoaster's heap and devtest's, a getter
-  the host reads, a heap that runs out silencing only its pack while a `throw null` faults only its node, the dropped
-  exceptions, the re-entry cap, the allowance per message); the idle skip read against what the node's last call read,
-  whichever plan step a block comes from; kept objects; a warmed block allocating nothing, counted by the C allocator
-  and by the JS heap's growth; the threaded cases under ThreadSanitizer; `[debug-gc]`, the runner over the engine
-  built with a collection at every allocation held to the ordinary runner's digests.
-- **`retroplug-device-mode-test`**: 90 cases (45 before E4, 84 at its five commits). The box's plan with the
+  the host reads, a heap that runs out silencing only its pack (whatever the call then threw, and past its deadline
+  too) while a `throw null` or a typed array past its size limit faults only its node, the dropped exceptions, the
+  re-entry cap, the allowance per message); the idle skip read against what the node's last call read, whichever plan
+  step a block comes from, and its first block after a reshape on the QuickJS host; kept objects; a warmed block
+  allocating nothing, counted by the C allocator and by the JS heap's growth; the threaded cases under
+  ThreadSanitizer; `[debug-gc]`, the runner over the engine built with a collection at every allocation held to the
+  ordinary runner's digests.
+- **`retroplug-device-mode-test`**: 91 cases (45 before E4, 84 at its five commits). The box's plan with the
   `bliptoaster` pack, exported and loaded into an arena over the device-mode builds and run in ragged blocks, renders
   what GraphHost renders; a pack heap's sizing and its refusals; a C++ package without package memory unchanged;
   `box-plan.hex` re-recorded.

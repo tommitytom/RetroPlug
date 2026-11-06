@@ -443,8 +443,8 @@ TEST_CASE("a node the host skips when idle runs only on a block that brings it s
         clearQueue(n.in(0));
         REQUIRE(n.run() == RP_OK);
         CHECK(calls() == 0);
-        // A change on a control input runs it, and one on a param. Each stream then starts the next block where its last
-        // change left it, as an executor rolls it, which brings the node nothing new.
+        // A change on a control input runs it, and one on a param. Each stream then starts the next block where its
+        // last change left it, as an executor rolls it, which brings the node nothing new.
         REQUIRE(pushControl(n.control(1), 10, 0.5));
         REQUIRE(n.run() == RP_OK);
         CHECK(calls() == 3);
@@ -777,6 +777,9 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
         {"rp.scripttest.throws-as", RP_SCRIPT_FAULT_THREW, "process threw: null", R"({"what":"null"})"},
         {"rp.scripttest.throws-as", RP_SCRIPT_FAULT_THREW, "process threw: Error: out of memory",
          R"({"what":"words"})"},
+        // And the engine's own out-of-memory error for a typed array past its size limit, thrown with room left.
+        {"rp.scripttest.throws-as", RP_SCRIPT_FAULT_THREW, "process threw: InternalError: out of memory",
+         R"({"what":"limit"})"},
         // A getter the host reads of what forward or send is handed: its throw is the node's, never a 0 sent on.
         {"rp.scripttest.forward-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the frame getter threw",
          R"({"field":"frame"})"},
@@ -1139,6 +1142,33 @@ TEST_CASE("a pack whose heap runs out silences every node of the pack, and no ot
         INFO(describe(other.sent(0)) << other.fault());
         CHECK(other.sent(0) == std::vector<Sent>{{4, 0, {0x90, 64, 1}}});
         CHECK(other.fault().empty());
+    }
+}
+
+TEST_CASE("a heap that ran out in a call silences its pack whatever the call then did: threw its own error, or ran "
+          "past its deadline",
+          "[device-mode][script-pack]") {
+    for (const Build& b : builds()) {
+        for (const char* after : {"throw", "spin"}) {
+            INFO(b.name << ", then " << after);
+            // 200 ms of the thread's CPU time: the filling stays well inside it, the spin runs past it.
+            Host host(200000);
+            const std::string settings = std::string(R"({"after":")") + after + R"("})";
+            Made filler(typeOf(b.hog, "rp.hog.filler"), host, msgpackOf(settings.c_str()), {{RP_PORT_EVENTS, true}});
+            Made quiet(typeOf(b.hog, "rp.hog.quiet"), host, {}, {{RP_PORT_EVENTS, true}});
+            REQUIRE(filler.node);
+            REQUIRE(quiet.node);
+            REQUIRE(quiet.run() == RP_OK);
+            // The filler caught the engine's error and let go of what it filled, so the heap has room again; the
+            // engine's report that it ran out decides, not what the call threw nor that it overran.
+            CHECK(filler.run() == RP_FAULT);
+            CHECK(filler.faultKind() == RP_SCRIPT_FAULT_HEAP);
+            CHECK(filler.fault().find("ran out (in a node's process), so every node of the pack is silenced") !=
+                  std::string::npos);
+            CHECK(quiet.run() == RP_FAULT);
+            CHECK(quiet.faultKind() == RP_SCRIPT_FAULT_HEAP);
+            CHECK(quiet.fault() == filler.fault());
+        }
     }
 }
 

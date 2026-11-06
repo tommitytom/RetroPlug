@@ -773,11 +773,11 @@ bool deadlineFault(Node& node, const char* during) {
 // exception's: what is thrown cannot say it (a node may throw null, or an error saying "out of memory", and the engine
 // throws its out-of-memory error for an array or a buffer past its size limits with room left), and once the heap
 // has run out the context is not to be trusted to have kept what it was doing, whatever the entry threw at the end
-// (a node may catch the engine's error and throw its own). `during` names what was called ("process").
+// (a node may catch the engine's error and throw its own), and whether or not it also ran past its deadline: so the
+// heap is read first, the deadline after. `during` names what was called ("process").
 bool faultFromException(Node& node, const char* during) {
     PackState& pk = *node.pack;
     JSContext* ctx = pk.base.ctx;
-    if (pk.base.expired) return deadlineFault(node, during);
     const JSValue e = JS_GetException(ctx);
     if (pk.base.ranOut) {
         if (!pk.dead) {
@@ -788,6 +788,7 @@ bool faultFromException(Node& node, const char* during) {
         }
         return fault(node, RP_SCRIPT_FAULT_HEAP, pk.deadReason);
     }
+    if (pk.base.expired) return deadlineFault(node, during);
     char buf[160];
     Text t(buf, sizeof buf);
     t << during << " threw: ";

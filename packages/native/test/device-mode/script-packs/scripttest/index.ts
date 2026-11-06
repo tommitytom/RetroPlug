@@ -18,8 +18,9 @@
 //                           drop it (a String.replace function's, a hasOwnProperty key's toString's, a sort
 //                           comparator's, a String.repeat count's valueOf's), which must fault the node as any throw
 //                           does
-//   rp.scripttest.throws-as  throws what is no out-of-memory but reads like one (null, or an Error whose words are
-//                           "out of memory"), which must fault the node alone, its pack's heap untouched
+//   rp.scripttest.throws-as  throws what is no out-of-memory but reads like one (null, an Error whose words are "out
+//                           of memory", or the engine's own out-of-memory error for a typed array past its size
+//                           limit, with room left), which must fault the node alone, its pack's heap untouched
 //   rp.scripttest.forward-throws  hands forward an object whose frame or flags getter throws, or send an array-like
 //                           whose length getter throws, which the host reads and must fault the node with
 //   rp.scripttest.sort-spins  a sort comparator that never returns, where MicroQuickJS would drop the deadline's
@@ -420,11 +421,12 @@ export const repeatThrowsNode = defineNode({
 
 export const throwsAsNode = defineNode({
   id: "rp.scripttest.throws-as",
-  settings: s.object({ what: s.enum(["null", "words"], "null") }),
+  settings: s.object({ what: s.enum(["null", "words", "limit"], "null") }),
   ports: quiet,
   create: ({ settings }) => ({
     process() {
       if (settings.what === "null") throw null;
+      if (settings.what === "limit") void new Uint8Array(0x10000000);
       throw new Error("out of memory");
     },
   }),
