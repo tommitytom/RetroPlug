@@ -218,11 +218,14 @@ struct Node {
     State           state = State::Pending;
     std::uint8_t    faultKind = 0;      // RP_SCRIPT_FAULT_*
     bool            activated = false;  // activate ran on a live instance: its hook runs at the next call
-    // Its definition says idle: "skip" (defineNode.ts's host contract), read as its instance is made, and the block
-    // its process last ran on (the plan step's rp_process): from then on a block of the same step that brings it
-    // nothing does not call it.
-    bool               idle = false;
-    const rp_process*  last = nullptr;
+    // Its definition says idle: "skip" (defineNode.ts's host contract), read as its instance is made; whether its
+    // process has run, and where each control input and param stood at the end of its last call's block (its block's
+    // control inputs in order, then its params), which is where the next block of the same plan starts it: from then
+    // on a block that brings it nothing, with every stream starting there, does not call it, whichever plan's step
+    // it comes from (process says why).
+    bool            idle = false;
+    bool            ran = false;
+    double          ends[kMaxPorts] = {};
     double          sampleRate = 48000.0;
     std::uint32_t   maxFrames = 1024;
     char            fault[160] = {};
@@ -1421,17 +1424,40 @@ void portsChanged(rp_node* n, const std::uint8_t* connected, std::uint32_t count
     if (pk.base.expired) deadlineFault(node, "portsChanged");
 }
 
-// Whether a block brings a node nothing: no message on any events or bytes input, no change on any control input or
-// param. Read from the block alone, natively.
-bool idleBlock(const rp_process& b) {
+// Whether two starts are the same value, bit for bit (a NaN the same NaN), with no floating-point compare.
+bool sameStart(double a, double b) {
+    std::uint64_t x = 0, y = 0;
+    std::memcpy(&x, &a, sizeof x);
+    std::memcpy(&y, &b, sizeof y);
+    return x == y;
+}
+
+// Whether a block brings a node nothing it has not read: no message on any events or bytes input, no change on any
+// control input or param, and every such stream starting where the node's last call left it. Read natively, from the
+// block and the node alone.
+bool idleBlock(const Node& node, const rp_process& b) {
+    std::uint32_t k = 0;
     for (std::uint32_t i = 0; i < b.input_count; ++i) {
         const rp_port_view& v = b.inputs[i];
         if ((v.kind == RP_PORT_EVENTS || v.kind == RP_PORT_BYTES) && v.u.queue->count) return false;
-        if (v.kind == RP_PORT_CONTROL && v.u.control->count) return false;
+        if (v.kind != RP_PORT_CONTROL) continue;
+        if (v.u.control->count || k == kMaxPorts || !sameStart(v.u.control->start, node.ends[k])) return false;
+        ++k;
     }
-    for (std::uint32_t i = 0; i < b.param_count; ++i)
-        if (b.params[i]->count) return false;
+    for (std::uint32_t i = 0; i < b.param_count; ++i) {
+        if (b.params[i]->count || k == kMaxPorts || !sameStart(b.params[i]->start, node.ends[k])) return false;
+        ++k;
+    }
     return true;
+}
+
+// Where each control input and param stands at the end of the block the node's process is called on (idleBlock).
+void keepEnds(Node& node, const rp_process& b) {
+    std::uint32_t k = 0;
+    for (std::uint32_t i = 0; i < b.input_count && k < kMaxPorts; ++i)
+        if (b.inputs[i].kind == RP_PORT_CONTROL) node.ends[k++] = graph::controlEnd(*b.inputs[i].u.control);
+    for (std::uint32_t i = 0; i < b.param_count && k < kMaxPorts; ++i) node.ends[k++] = graph::controlEnd(*b.params[i]);
+    node.ran = true;
 }
 
 // The messages a block hands a node: every one on its events and bytes inputs.
@@ -1448,17 +1474,19 @@ std::uint32_t inputMessages(const rp_process& b) {
 // (preparePorts: at the first block, the port's whole pool), then process. One deadline covers the entry, started again
 // once the ports are ready: making a port's pools is the host's work, bounded by the plan, so it never counts against
 // the node's process. A node whose definition says idle: "skip" is not entered at all on a block that brings it
-// nothing, while no hook waits for its next call (the pack still alive), once it has run on this block's rp_process:
-// its process would do nothing there (defineNode.ts's host contract), and the executor clears its outputs as ever.
-// Within a plan a control stream's start moves only through its changes, which bring the node something; a new plan
-// sets each start afresh (a rewired or disconnected input's), and its plan steps are new rp_process objects, so a kept
-// node's first block in a new plan always runs. (A new plan is built while the one it replaces is alive, so its steps
-// never take the replaced plan's addresses.)
+// nothing, once its process has run, while no hook waits for its next call (the pack still alive): its process would
+// do nothing there (defineNode.ts's host contract), and the executor clears its outputs as ever. What a block brings
+// is read against what the node's last call read, never against the plan step it came from: within a plan a control
+// stream starts each block where the last one left it, and moves only through its changes, which bring the node
+// something, but a new plan sets each start afresh (a rewired or disconnected input's), and a new plan's step may lie
+// where an old one's did (a host with no audio thread reclaims a replaced plan at once, so two re-plans on, a kept
+// node that ran no block in the plan between can meet its old step's address). So the node keeps where each stream
+// stood at the end of its last call's block, and a block that starts one elsewhere runs.
 rp_status process(rp_node* n, const rp_process* block) {
     Node& node = *as(n);
     PackState& pk = *node.pack;
-    if (node.idle && node.last == block && node.state == State::Live && !node.activated && !pk.dead &&
-        idleBlock(*block)) {
+    if (node.idle && node.ran && node.state == State::Live && !node.activated && !pk.dead &&
+        idleBlock(node, *block)) {
 #ifndef RP_DEVICE
         if (!node.settingsChanged) return RP_OK;
 #else
@@ -1476,7 +1504,7 @@ rp_status process(rp_node* n, const rp_process* block) {
     pk.running = &node;
     pk.runningSlot = node.slot;
     const bool ready = preparePorts(ctx, pk);
-    node.last = block;
+    if (node.idle) keepEnds(node, *block);
     armed.restart();
     armed.allow(pk.base.perMessage * inputMessages(*block));
     const JSValue r = ready ? invoke(pk.base, fn, self, &blockObject) : JS_EXCEPTION;

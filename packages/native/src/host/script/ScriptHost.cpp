@@ -299,6 +299,11 @@ struct Layout {
     std::vector<Port>   ports;  // inputs and outputs in layout order, then the params
     std::vector<PortJs> js;     // one per port
     bool                bound = false;  // its atoms made (block thread)
+    // An idle-skip node's (process): whether its process has run with this layout, and where each control input and
+    // param stood at the end of its last call's block, its control inputs in order then its params. Sized here, on the
+    // control thread; the block thread only writes into it.
+    bool                ran = false;
+    std::vector<double> ends;
 };
 
 // What prepare_settings prepares and commit_settings swaps: the settings the definition accepted, as JSON, and, from a
@@ -325,6 +330,10 @@ std::unique_ptr<Layout> buildLayout(const std::string& json, std::string& why) {
     for (std::size_t k = 0; k < parsed->params.size(); ++k)
         l->ports.push_back({parsed->params[k].id, PortKind::Control, Side::Param, static_cast<std::uint32_t>(k)});
     l->js.resize(l->ports.size());
+    std::size_t streams = 0;
+    for (const Port& p : l->ports)
+        if (p.kind == PortKind::Control && p.side != Side::Output) ++streams;
+    l->ends.assign(streams, 0.0);
     for (std::size_t i = 0; i < l->ports.size(); ++i)
         if (l->ports[i].kind == PortKind::Audio) l->js[i].buffers.assign(graph::kMaxChannels, JS_UNDEFINED);
     return l;
@@ -420,7 +429,6 @@ struct ScriptHost::Instance {
     bool                    faultNext = false;  // a hook threw under faultOnThrow, or expired twice in a row: fault next block
     std::uint8_t            expiries = 0;       // its calls the deadline stopped in a row (expiryFaults)
     std::uint8_t            cutShorts = 0;      // checkpoints in a row that cut its promise jobs short (chargeJobs)
-    const rp_process*       last = nullptr;     // the block its process was last called on (an idle-skip node's)
     Settings*               settings = nullptr;
     std::unique_ptr<Layout> layout;
     JSValue                 object = JS_UNDEFINED;  // the NodeInstance its definition's create returned
@@ -760,37 +768,63 @@ struct ScriptHost::Glue {
         JS_FreeValue(ctx, mask);
     }
 
-    // Whether a block brings a node nothing (defineNode.ts's host contract): no message on an events or bytes input,
-    // no change on a control input or a param, and no audio output it would have to write.
-    static bool idleBlock(const rp_process& b) {
+    // Whether two starts are the same value, bit for bit (a NaN the same NaN).
+    static bool sameStart(double a, double b) {
+        std::uint64_t x = 0, y = 0;
+        std::memcpy(&x, &a, sizeof x);
+        std::memcpy(&y, &b, sizeof y);
+        return x == y;
+    }
+
+    // Whether a block brings a node nothing it has not read (defineNode.ts's host contract): no message on an events
+    // or bytes input, no change on a control input or a param, every such stream starting where the node's last call
+    // with this layout left it (`l`, which has run), and no audio output it would have to write.
+    static bool idleBlock(const Layout& l, const rp_process& b) {
+        std::size_t k = 0;
         for (std::uint32_t i = 0; i < b.input_count; ++i) {
             const rp_port_view& v = b.inputs[i];
             if ((v.kind == RP_PORT_EVENTS || v.kind == RP_PORT_BYTES) && v.u.queue->count) return false;
-            if (v.kind == RP_PORT_CONTROL && v.u.control->count) return false;
+            if (v.kind != RP_PORT_CONTROL) continue;
+            if (v.u.control->count || k == l.ends.size() || !sameStart(v.u.control->start, l.ends[k])) return false;
+            ++k;
         }
-        for (std::uint32_t i = 0; i < b.param_count; ++i)
-            if (b.params[i]->count) return false;
+        for (std::uint32_t i = 0; i < b.param_count; ++i) {
+            if (b.params[i]->count || k == l.ends.size() || !sameStart(b.params[i]->start, l.ends[k])) return false;
+            ++k;
+        }
         for (std::uint32_t i = 0; i < b.output_count; ++i)
             if (b.outputs[i].kind == RP_PORT_AUDIO) return false;
         return true;
     }
 
+    // Where each control input and param stands at the end of the block the node's process is called on (idleBlock).
+    static void keepEnds(Layout& l, const rp_process& b) {
+        std::size_t k = 0;
+        for (std::uint32_t i = 0; i < b.input_count && k < l.ends.size(); ++i)
+            if (b.inputs[i].kind == RP_PORT_CONTROL) l.ends[k++] = graph::controlEnd(*b.inputs[i].u.control);
+        for (std::uint32_t i = 0; i < b.param_count && k < l.ends.size(); ++i)
+            l.ends[k++] = graph::controlEnd(*b.params[i]);
+        l.ran = true;
+    }
+
     // A node whose definition says idle: "skip" is not called on a block that brings it nothing, once its process has
-    // run on this block's rp_process and while it is live with no fault waiting: no deadline armed, no block filled,
-    // no JS, no checkpoint (the jobs its pack has pending wait for the next call into a node of it, as they would
-    // between blocks). A new plan's steps are new rp_process objects and set each control start afresh, so a kept
-    // node's first block in a new plan always runs (script/MqjsHost.cpp's process says more).
+    // run with its layout and while it is live with no fault waiting: no deadline armed, no block filled, no JS, no
+    // checkpoint (the jobs its pack has pending wait for the next call into a node of it, as they would between
+    // blocks). What a block brings is read against the node's last call, never against the plan step it came from: a
+    // new plan sets each control start afresh, and its step may lie where an old plan's did, so the node's layout
+    // keeps where each stream stood at the end of its last call's block and a block that starts one elsewhere runs
+    // (script/MqjsHost.cpp's process says more). A reshape's new layout has not run, so its first block runs too.
     static rp_status process(rp_node* n, const rp_process* block) {
         Instance& in = instanceOf(n);
-        if (in.type->idleSkip && in.last == block && in.state == Instance::State::Live && !in.faultNext &&
-            idleBlock(*block))
+        if (in.type->idleSkip && in.state == Instance::State::Live && !in.faultNext && in.layout && in.layout->ran &&
+            idleBlock(*in.layout, *block))
             return RP_OK;
         ScriptHost& h = *in.type->host;
         // The whole block, not just the call: the create a fresh instance makes first, the block path (a node may hang
         // a setter on what it fills in), the call, and the jobs they queue.
         const Deadline call(h, packOf(in));
         if (!ensureLive(h, in) || in.faultNext) return RP_FAULT;
-        in.last = block;
+        if (in.type->idleSkip) keepEnds(*in.layout, *block);
         const Pack& pack = packOf(in);
         JSContext* ctx = pack.audio;
         traceBegin(h, in.type->spanLabel);

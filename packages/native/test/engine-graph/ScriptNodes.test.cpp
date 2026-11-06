@@ -469,6 +469,22 @@ TEST_CASE("a script node the host skips when idle runs only on a block that brin
     CHECK(calls.events[0].data.at(1) == 80);
     rig.run();
     CHECK(count() == 0);
+    // Two re-plans on with no audio thread, so each replaced plan is reclaimed at once: one that wires its level back
+    // to the first constant and runs no block, then the same again, which may take the memory of the plan the node
+    // last ran in, and with it that plan's step's address. Its level starts elsewhere than at its last call, so its
+    // first block runs and reads the start.
+    REQUIRE(rig.set(plan(false)).ok);
+    REQUIRE(rig.set(plan(false)).ok);
+    rig.run();
+    CHECK(count() == 6);
+    CHECK(calls.events[0].data.at(1) == 50);  // the document sets the constant to 0.5 again
+    rig.run();
+    CHECK(count() == 0);
+    // A re-plan that leaves its level and its param where it last read them: nothing it reads moved, so its first block
+    // in the new plan is skipped as any idle block is.
+    REQUIRE(rig.set(plan(false)).ok);
+    rig.run();
+    CHECK(count() == 0);
     CHECK(rig.scripts.throwCount() == 0);
 }
 

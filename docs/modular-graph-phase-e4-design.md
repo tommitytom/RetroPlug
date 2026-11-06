@@ -54,7 +54,7 @@ The user's, in order (2026-11-06; the Phase E list is `.superpowers/e-pico/decis
 4. **Everything runs from RAM.** mquickjs and the bytecode run from SRAM like the rest of the image, so latency holds;
    the arena shrinks toward what the box's plans need to make room. Moving cold code back to flash is the reserve
    lever if the measured figures do not fit.
-   *As built:* the arena is **65536** bytes (the box's plan takes about 56.6 KB of it, a pack's heap inside), the
+   *As built:* the arena is **65536** bytes (the box's plan takes about 57 KB of it, a pack's heap inside), the
    pack's bytecode stays in flash until its setup copies it, and the engine is compiled at **-Os** (98.7 KB of code and
    rodata in RAM; the same sources at -O3 are 159 KB of code, 83 KB against 159 KB like for like). The image takes
    347.5 KiB of the 512 KiB SRAM (section 5), and no cold code went back to flash. The latency held to the figures of
@@ -157,10 +157,15 @@ bounds: it throws a TypeError when the running node has no port of that ordinal,
 that port.
 
 **`idle: "skip"`.** A definition may declare it: the host returns before entering the context on a block with no
-message on any events or bytes input, no change on any control input or param, no activate or settings hook waiting
-and the same `rp_process` as the node's last call. The node's first block always runs. A definition with an audio port
-or with no input to wake it is refused. The node keeps no time of its own, which no host can check; the contract says
-so. On the box an idle pass is estimated at about a microsecond (68 instructions); `bliptoaster` sets it.
+message on any events or bytes input, no change on any control input or param, each of those streams starting where it
+stood at the end of the node's last call (the host keeps those values natively: on this host a double for each of up
+to 64 ports, 512 bytes of each script node's instance), and no activate or settings hook waiting. The node's first
+block always runs. A stream starts elsewhere only in a new plan (a rewired or disconnected input's start), so a kept
+node's first block there runs when a start moved, whichever plan step it comes from: a plan's steps are no mark of a
+new plan, since a host with no audio thread reclaims a replaced plan at once and a plan two re-plans on can take its
+memory. A definition with an audio port or with no input to wake it is refused. The node keeps no time of its own,
+which no host can check; the contract says so. On the box an idle pass is estimated at about a microsecond (68
+instructions, before the starts' compare: a few more a control input or param); `bliptoaster` sets it.
 
 **Faults.** A node that throws faults, with no retry (the box has no one to retry for): the executor silences it and
 the box prints it once, with the throw's words on a second `[host]` line. A getter's throw on what the host reads of a
@@ -229,8 +234,9 @@ of the loader's own that answers `rp.host.packages/1`. A plan whose packages do 
 the overrun (codes `package-memory`, `package-setup` and, for an overrun, `arena`); the exporter runs the same sizing,
 so a box plan that cannot fit fails the firmware build. The blob's format is unchanged.
 
-**The arena** is **65536 bytes** (E3: 131072). The export's estimate for the box's plan is 57,288 (25,272 for the
-bridge's three nodes and queues, and 32,016 for the pack: 448 + 6992 + 24576); the box loads it into about 56.6 KB.
+**The arena** is **65536 bytes** (E3: 131072). The export's estimate for the box's plan is 57,800 (25,784 for the
+bridge's three nodes and queues, and 32,016 for the pack: 448 + 6992 + 24576); the box loaded it into about 56.6 KB
+before a script node kept its streams' ends for the idle skip (section 4), 512 bytes more.
 
 **The SRAM budget**, measured, and recorded in `tools/build-box.sh`'s size line:
 
@@ -515,8 +521,12 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
 - **Latency levers.** The estimate at the rig's 120 MHz (not 150) put the script node past E3's line, so `idle: "skip"`
   and `forward()` were added, then measured: averages unchanged, the worst about 50 us higher (section 11.7).
 - **A moving collector.** `sendData` held a copied value across allocations (a regression of a fix pass); it reads
-  through a slot the collector updates. A block of another `rp_process` is never skipped, since a re-planned node's
-  control start can move.
+  through a slot the collector updates.
+- **The idle skip's mark of a new plan.** It first ran a block of another `rp_process` and skipped one of the same, so
+  that a re-planned node read its moved control starts. The code review found that a quiescent host repeats a step's
+  address two re-plans on (the replaced plan is freed at once, and a later plan of its shape may take its memory), so a
+  kept node could skip its first block there and keep a stale start. The node keeps where each control stream stood at
+  the end of its last call instead, and a block that starts one elsewhere runs.
 - **The stack.** The deep-nest run showed 3320 of 4096 bytes at the engine's default depth, so the re-entry cap of 4,
   the box's stack guard and the check's two-phase judgement with a reserve replaced a single measure.
 - **The deadline** scales with the messages a block brings (10 ms + 250 us each on the box), and the desktop's
@@ -587,7 +597,7 @@ the regression line moved to E4's measured figures (section 8). The first gate t
   pack is revived, but a plan that re-plans a script node behind a large source can still run its pack out, until the
   replaced instance is reclaimed.
 - **The exporter's trial load is laxer than the image's figure for devtest** (the manifest's 57344 against the image's
-  45056 through `RP_SCRIPT_HEAP_BYTES_devtest`), and the estimate (106,240) is an upper bound on the image's. An
+  45056 through `RP_SCRIPT_HEAP_BYTES_devtest`), and the estimate (107,264) is an upper bound on the image's. An
   exporter `--script-heap` was left out.
 - **A SysEx past 3 bytes allocates a Uint8Array per message**, and a block's SysEx arrays stay live until the next
   block refills those places, so a SysEx stream makes the box collect in the MIDI path; at 32 bits a node that reads a

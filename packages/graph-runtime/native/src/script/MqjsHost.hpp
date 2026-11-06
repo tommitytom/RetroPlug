@@ -78,7 +78,8 @@
 // arrays and a message's bytes in place (rp_mqjs.h's rp_mqjs_array_get and rp_mqjs_bytes), finds a port named by a
 // constant of the pack's bytecode by the value alone, and passes a port whose pool its queue fits with no JS at all:
 // what a message costs is the interpreter's and the getters'. A node whose definition says idle: "skip" is not entered
-// on a block that brings it no message and no change (defineNode.ts's host contract says when it still is). The host
+// on a block that brings it no message and no change and starts each of its control inputs and params where its last
+// call left it, whichever plan the block is of (defineNode.ts's host contract says when it still is). The host
 // makes a block's arrays and views with the engine's own constructors (rp_mqjs.h), never through a call into
 // JavaScript, so messages() works at any depth of a node's C re-entries, and a pack's own globals (a Uint8Array it
 // reassigned) never reach the host's refill. A node's context holds it to kMaxReentries nested calls into JavaScript on

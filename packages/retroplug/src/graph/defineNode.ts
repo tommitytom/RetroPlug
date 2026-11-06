@@ -167,12 +167,14 @@ export function startValue(stream: ControlStream): number {
 //   MicroQuickJS read-only getters of what the block gave; on the desktop's QuickJS host plain fields, so a node that
 //   assigns one there forwards what it assigned, as send of the field would).
 // - A definition that says `idle: "skip"` promises that its process does nothing on a block that brings it nothing: no
-//   message on any events or bytes input, no change on any control input or param. The host then does not call it there
-//   (no block is filled, no JS runs), after the node's first block, which always runs, as does one whose activate or
-//   onSettings waits, and a kept node's first block in a new plan (which sets each control input's start afresh: a
-//   rewired or disconnected input's). So such a node keeps no time of its own: it cannot count blocks, follow the
-//   transport, or send anything a block did not bring it. Its layout may have no audio port (an audio output is written
-//   every block) and must have an input or a param, or nothing would ever reach it; buildLayout refuses either.
+//   message on any events or bytes input, no change on any control input or param, and each of those streams starting
+//   where it stood at the end of the node's last call. The host then does not call it there (no block is filled, no JS
+//   runs), after the node's first block, which always runs, as does one whose activate or onSettings waits. A stream
+//   starts elsewhere only in a new plan, which sets each start afresh (a rewired or disconnected input's): such a block
+//   runs, and a kept node's first block in a new plan that moves no start is skipped like any other, since nothing the
+//   node would read has moved. So such a node keeps no time of its own: it cannot count blocks, follow the transport, or
+//   send anything a block did not bring it. Its layout may have no audio port (an audio output is written every block)
+//   and must have an input or a param, or nothing would ever reach it; buildLayout refuses either.
 // - A feedback input carries last block's messages at their frames in that block, so a frame can lie at or past
 //   this block's end. No production node reads one: LSDj's serial-out decoder, the one that reads a system's output,
 //   takes its Game Boy's serialOut over a forward wire, each byte at its frame in this block.

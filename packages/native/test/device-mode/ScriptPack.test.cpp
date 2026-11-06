@@ -436,15 +436,16 @@ TEST_CASE("a node the host skips when idle runs only on a block that brings it s
         clearQueue(n.in(0));
         REQUIRE(n.run() == RP_OK);
         CHECK(calls() == 0);
-        // A change on a control input runs it, and one on a param.
+        // A change on a control input runs it, and one on a param. Each stream then starts the next block where its last
+        // change left it, as an executor rolls it, which brings the node nothing new.
         REQUIRE(pushControl(n.control(1), 10, 0.5));
         REQUIRE(n.run() == RP_OK);
         CHECK(calls() == 3);
-        n.control(1).count = 0;
+        rollControl(n.control(1));
         REQUIRE(pushControl(*n.params[0], 0, 0.25));
         REQUIRE(n.run() == RP_OK);
         CHECK(calls() == 4);
-        n.params[0]->count = 0;
+        rollControl(*n.params[0]);
         REQUIRE(n.run() == RP_OK);
         CHECK(calls() == 0);
         // A re-activation's hook waits for its next call, which an idle block then makes.
@@ -476,6 +477,31 @@ TEST_CASE("a node the host skips when idle runs only on a block that brings it s
             REQUIRE(n.run(256, 1) == RP_OK);
             CHECK(calls() == 0);
         }
+        const int ran = b.name == std::string("desktop") ? 7 : 6;
+        // A new plan's step whose level starts where the node last read it, and its param too: nothing it would read
+        // moved, so its first block there is skipped as any idle block is.
+        REQUIRE(n.run(256, 0) == RP_OK);
+        CHECK(calls() == 0);
+        // Its level starts elsewhere (the node last ran on the other step): it runs, and reads the start.
+        n.control(1).start = 0.7;
+        REQUIRE(n.run(256, 0) == RP_OK);
+        REQUIRE(n.sent(2).size() == 1);
+        CHECK(n.sent(2)[0].bytes == std::vector<std::uint8_t>{static_cast<std::uint8_t>(ran + 1), 70});
+        // A step at the address of the one the node last ran on, its level starting elsewhere, as a plan two re-plans
+        // on can be: a host with no audio thread reclaims a replaced plan at once, so a later plan of the same shape
+        // may take its memory while a kept node ran no block in the plan between. It runs, and reads the start.
+        REQUIRE(n.run(256, 0) == RP_OK);
+        CHECK(calls() == 0);
+        n.control(1).start = 0.3;
+        REQUIRE(n.run(256, 0) == RP_OK);
+        REQUIRE(n.sent(2).size() == 1);
+        CHECK(n.sent(2)[0].bytes == std::vector<std::uint8_t>{static_cast<std::uint8_t>(ran + 2), 30});
+        // And a param's start the same way.
+        n.params[0]->start = 0.5;
+        REQUIRE(n.run(256, 0) == RP_OK);
+        CHECK(calls() == ran + 3);
+        REQUIRE(n.run(256, 0) == RP_OK);
+        CHECK(calls() == 0);
         CHECK(n.fault().empty());
     }
 }
