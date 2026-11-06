@@ -37,8 +37,9 @@
 //       exits 0; or says what failed at the declared heap on stderr ("define", "create" or "run", the node and its
 //       words) and exits 1. A node that faults for any reason but the heap running out (one that throws by design, or
 //       wants settings other than its defaults) is reported on stdout as a note, and the run goes on without it.
-//       --deadline-us gives each call into a node that long by the wall clock, in place of the desktop's own deadline:
-//       a build whose every run is slow (DEBUG_GC, a sanitizer) holds its nodes to the same outcome as an ordinary one.
+//       --deadline-us gives each call into a node, and into the pack's control context (its load, its settings
+//       checks), that long by the wall clock, in place of the desktop's own deadlines: a build whose every run is slow
+//       (DEBUG_GC, a sanitizer) holds its pack to the same outcome as an ordinary one.
 
 #include <chrono>
 #include <cstdint>
@@ -385,6 +386,8 @@ int pack(int argc, char** argv) {
                                0,
                                control.empty() ? nullptr : reinterpret_cast<const std::uint8_t*>(controlWords.data()),
                                static_cast<std::uint32_t>(controlSize)};
+    // The pack's registration (its control context: its load, its settings checks) held to the run's deadline too.
+    if (gDeadlineMicros) rp::mqjs::setControlClock(&wallMicros, gDeadlineMicros);
     const rp_package* package = rp::mqjs::exactPackage(source);
     if (!package) {
         std::fprintf(stderr, "define: its bytecode is not a pack this host registers (said above)\n");

@@ -241,6 +241,12 @@ const rp_package* package(const rp_mqjs_pack_source& source);
 const rp_package* exactPackage(const rp_mqjs_pack_source& source);
 // The context a desktop host gives a pack (kDesktopHeapFactor).
 std::size_t desktopContextBytes(const rp_mqjs_pack_source& source);
+// The clock and deadline every desktop control context made from now on holds its calls to (a pack's load at its
+// registration, a settings check, layout_for): by default the thread's CPU time at 2 s. The device-pack toolchain's
+// runner gives it its --deadline-us, as it gives its nodes, so a build whose every run is slow (DEBUG_GC under a
+// sanitizer, where loading scripttest's whole pack takes about 2 s of CPU time) registers a pack where an ordinary
+// build does. Set it before the registrations it is for.
+void setControlClock(std::uint64_t (*clock)(void* ctx), std::uint64_t deadlineMicros);
 #endif
 // Why the last package() or exactPackage() answered null (the registration's own thread), or empty.
 const char* packageRefusal();

@@ -1924,6 +1924,9 @@ void teardownPackage(const rp_package*, void* memory) {
 
 #ifndef RP_DEVICE
 std::mutex gRegistration;
+// What a control context's calls are held to (setControlClock), under gRegistration.
+std::uint64_t (*gControlClock)(void*) = &threadCpuMicros;
+std::uint64_t gControlDeadline = kControlDeadlineMicros;
 
 // The pack's control context made and its descriptors read: false, saying why in `why`, when it cannot be.
 bool openControl(Pack& pack, Text& why) {
@@ -1937,8 +1940,8 @@ bool openControl(Pack& pack, Text& why) {
     c->bytecode.reset(new std::uint64_t[aligned8(size) / sizeof(std::uint64_t)]);
     c->state.api = &kApi;
     c->state.kind = Kind::Control;
-    c->state.clock = &threadCpuMicros;
-    c->state.limit = kControlDeadlineMicros;
+    c->state.clock = gControlClock;
+    c->state.limit = gControlDeadline;
     JSContext* ctx = loadPack(c->state, whole, size, c->memory.get(), kControlBytes,
                               reinterpret_cast<std::uint8_t*>(c->bytecode.get()), why);
     if (ctx) {
@@ -1986,6 +1989,12 @@ std::size_t boxPackageBytes(const rp_mqjs_pack_source& source) {
 std::size_t desktopContextBytes(const rp_mqjs_pack_source& source) {
     const std::uint64_t scaled = std::uint64_t{source.heap_bytes} * kWidthFactor * kDesktopHeapFactor;
     return static_cast<std::size_t>(scaled > kDesktopLeastContextBytes ? scaled : kDesktopLeastContextBytes);
+}
+
+void setControlClock(std::uint64_t (*clock)(void* ctx), std::uint64_t deadlineMicros) {
+    const std::lock_guard<std::mutex> lock(gRegistration);
+    gControlClock = clock;
+    gControlDeadline = deadlineMicros;
 }
 #endif
 
