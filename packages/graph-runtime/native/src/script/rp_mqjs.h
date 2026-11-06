@@ -61,10 +61,11 @@ extern "C" {
 
 /* The host's side of the standard library's C functions, and of the engine's one report (rp_mqjs_engine.c): ran_out,
  * called when an allocation, or a push onto the context's stack, finds no room left in the context's buffer after the
- * engine has collected, once the engine has thrown out of memory for it. What the host tells a heap that ran out
- * from by, since what is thrown cannot tell it: a script may throw null, or an error saying "out of memory", and the
- * engine throws its out-of-memory error, which a script may catch and throw again, for an array or a buffer past the
- * engine's size limits too, with room left. It runs inside the failing allocation: it must not call the engine. */
+ * engine has collected, once the engine has thrown out of memory for it. The host tells a heap that ran out from any
+ * other throw by this alone, since what is thrown cannot say it: a script may throw null, or an error saying "out of
+ * memory", and the engine throws its out-of-memory error (which a script may catch and throw again) for an array or a
+ * buffer past its size limits too, with room left. It runs inside the failing allocation: it must not call the
+ * engine. */
 typedef struct rp_mqjs_api {
     JSValue (*call)(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv, int magic);
     JSValue (*get)(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv, int magic);

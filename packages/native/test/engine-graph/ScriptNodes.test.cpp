@@ -354,6 +354,26 @@ rp.register([rp.defineNode({
 })]);
 )JS";
 
+// Skipped when idle, and reshaped by its settings (`extra` outputs after its own two ports): each call sends on `calls`
+// how many process calls it has had.
+const char* const kSkipShaper = R"JS(
+rp.register([rp.defineNode({
+  id: "rp.toy.skip-shaper",
+  idle: "skip",
+  reshapes: true,
+  settings: rp.s.object({ extra: rp.s.int({ min: 0, max: 2, default: 0 }) }),
+  ports: (s) => {
+    const p = { in: rp.events.in(), calls: rp.events.out() };
+    for (let k = 1; k <= s.extra; ++k) p["x" + k] = rp.events.out();
+    return p;
+  },
+  create: () => {
+    let calls = 0;
+    return { process(b) { b.send("calls", 0, [++calls]); } };
+  },
+})]);
+)JS";
+
 // Nothing to do: for tests that need instances and nothing else.
 const char* const kIdle = R"JS(
 rp.register([rp.defineNode({ id: "rp.toy.idle", ports: { out: rp.events.out() }, create: () => ({ process() {} }) })]);
@@ -483,6 +503,39 @@ TEST_CASE("a script node the host skips when idle runs only on a block that brin
     // A re-plan that leaves its level and its param where it last read them: nothing it reads moved, so its first block
     // in the new plan is skipped as any idle block is.
     REQUIRE(rig.set(plan(false)).ok);
+    rig.run();
+    CHECK(count() == 0);
+    CHECK(rig.scripts.throwCount() == 0);
+}
+
+TEST_CASE("a script node the host skips when idle runs its first block after a reshape, which gives it a layout that "
+          "has not run",
+          "[script]") {
+    ScriptRig rig(kSkipShaper);
+    auto plan = [&](int extra) {
+        return doc(node("feed", "rp.test.feed") + "," +
+                       node("s", "rp.toy.skip-shaper", R"({"extra":)" + std::to_string(extra) + "}") + "," +
+                       node("calls", "rp.test.probe"),
+                   wire("feed.midi", "s.in") + "," + wire("s.calls", "calls.events"));
+    };
+    const auto& calls = [&]() -> const Probe& { return rig.node<Probe>("calls"); };
+    auto count = [&]() -> int { return calls().events.empty() ? 0 : calls().events[0].data.at(0); };
+    REQUIRE(rig.set(plan(0)).ok);
+    rig.run();
+    CHECK(count() == 1);
+    rig.run();
+    CHECK(count() == 0);
+    // A reshape keeps the instance with a new layout, which has no control input to have moved: its first block runs
+    // all the same, and the next is skipped again.
+    const auto reshaped = rig.set(plan(1));
+    INFO(ScriptRig::codes(reshaped));
+    REQUIRE(reshaped.ok);
+    rig.run();
+    CHECK(count() == 2);
+    rig.run();
+    CHECK(count() == 0);
+    // The same layout again moves nothing: skipped.
+    REQUIRE(rig.set(plan(1)).ok);
     rig.run();
     CHECK(count() == 0);
     CHECK(rig.scripts.throwCount() == 0);

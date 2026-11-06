@@ -639,11 +639,11 @@ private:
 };
 
 // A node's msgpack settings as JS: maps as objects (in their order), arrays, strings, numbers, bools and nil as null.
-// JS_EXCEPTION, with an error pending, for a blob that is malformed or nests deeper than kMaxSettingsDepth. Decoded with
-// no recursion, on the thread that runs blocks (a node's first block makes its instance): each open array or object a
-// slot of OpenContainers and a few words here, so the frame is the same however deep the settings nest, and
-// -Werror=stack-usage holds it on the box. Never inlined, so the frame is on the stack only while it runs, not under the
-// create that follows it in materialize.
+// JS_EXCEPTION, with an error pending, for a blob that is malformed or nests deeper than kMaxSettingsDepth. Decoded
+// with no recursion, on the thread that runs blocks (a node's first block makes its instance): each open array or
+// object a slot of OpenContainers and a few words here, so the frame is the same however deep the settings nest, and
+// -Werror=stack-usage holds it on the box. Never inlined, so the frame is on the stack only while it runs, not under
+// the create that follows it in materialize.
 RP_NOINLINE JSValue decodeSettings(JSContext* ctx, const std::uint8_t* data, std::size_t size) {
     using graph::msgpack::Type;
     if (size == 0) return JS_NewObject(ctx);
@@ -702,7 +702,8 @@ RP_NOINLINE JSValue decodeSettings(JSContext* ctx, const std::uint8_t* data, std
         // The value into the container it is part of, and each container it fills closed into its own, in turn.
         for (;;) {
             if (depth == 0) {
-                if (!r.atEnd() || r.truncated()) return JS_ThrowTypeError(ctx, "the settings are not one msgpack value");
+                if (!r.atEnd() || r.truncated())
+                    return JS_ThrowTypeError(ctx, "the settings are not one msgpack value");
                 return v;
             }
             const std::uint32_t at = depth - 1;

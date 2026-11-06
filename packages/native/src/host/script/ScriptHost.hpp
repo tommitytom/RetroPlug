@@ -197,7 +197,9 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // frees. Ports are found by id through atoms made when the instance, or the layout it reshapes to, is bound, so a warm
 // block allocates nothing native, and a node written with indexed loops nothing in JS either. What a block hands out
 // is good for that process call: keep copies. A node whose definition says idle: "skip" is not called on a block that
-// brings it no message and no change, once its process has run (defineNode.ts's host contract).
+// brings it no message and no change and starts each of its control inputs and params where its last call left it,
+// once its process has run with its layout, whichever plan the block is of (defineNode.ts's host contract says when it
+// still is).
 //
 // A node pays for its own promise jobs and memory (docs/modular-graph-phase-c1-design.md section 6). The jobs a call
 // into a node's JS queues (its onSettings, portsChanged, activate or process, and the create a fresh instance's first
