@@ -304,6 +304,13 @@ bool equals(JSContext* ctx, JSValue v, const char* s) {
     return p && n == std::strlen(s) && std::memcmp(p, s, n) == 0;
 }
 
+// A value the host read of what a node handed it (a property, through any getter) as a uint32: false, with the
+// exception pending, when the read threw (a getter's throw, the deadline's interrupt inside it) or the conversion did.
+// JS_ToUint32 alone takes a read's JS_EXCEPTION for a value, converts it to 0 and reports success.
+bool toUint32(JSContext* ctx, JSValue v, std::uint32_t* out) {
+    return !JS_IsException(v) && JS_ToUint32(ctx, out, v) == 0;
+}
+
 bool sameString(JSContext* ctx, JSValue a, JSValue b) {
     if (a == b) return true;
     if (!JS_IsString(ctx, a) || !JS_IsString(ctx, b)) return false;
@@ -1202,9 +1209,10 @@ void eraseMessage(rp_queue& q, std::uint32_t index) {
 // a collection moves what it keeps.
 JSValue sendData(JSContext* ctx, PackState& pk, const Port& p, std::uint32_t frame, JSValue* data,
                  std::uint32_t flags) {
-    // An array's or a typed array's length is read in place; any other array-like's by name (which allocates).
+    // An array's or a typed array's length is read in place; any other array-like's by name (which allocates), a
+    // getter's throw taken as the send's.
     std::uint32_t length = rp_mqjs_length(ctx, *data);
-    if (length == UINT32_MAX && JS_ToUint32(ctx, &length, JS_GetPropertyStr(ctx, *data, "length"))) return JS_EXCEPTION;
+    if (length == UINT32_MAX && !toUint32(ctx, JS_GetPropertyStr(ctx, *data, "length"), &length)) return JS_EXCEPTION;
     rp_queue& q = *pk.block->outputs[p.index].u.queue;
     std::uint8_t* at_ = nullptr;
     if (!graph::reserveMessage(q, frame, length, flags, &at_)) return JS_FALSE;
@@ -1270,10 +1278,10 @@ JSValue blockForward(JSContext* ctx, JSValue* self, int argc, JSValue* argv) {
     }
     Rooted data(ctx);
     std::uint32_t frame = 0, flags = 0;
-    if (JS_ToUint32(ctx, &frame, JS_GetPropertyStr(ctx, argv[1], "frame"))) return JS_EXCEPTION;
+    if (!toUint32(ctx, JS_GetPropertyStr(ctx, argv[1], "frame"), &frame)) return JS_EXCEPTION;
     data.set(JS_GetPropertyStr(ctx, argv[1], "data"));
     if (JS_IsException(data.get())) return JS_EXCEPTION;
-    if (JS_ToUint32(ctx, &flags, JS_GetPropertyStr(ctx, argv[1], "flags"))) return JS_EXCEPTION;
+    if (!toUint32(ctx, JS_GetPropertyStr(ctx, argv[1], "flags"), &flags)) return JS_EXCEPTION;
     return sendData(ctx, *pk, p, frame, data.slot(), flags);
 }
 

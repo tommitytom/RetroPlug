@@ -18,6 +18,8 @@
 //                           drop it (a String.replace function's, a hasOwnProperty key's toString's, a sort
 //                           comparator's, a String.repeat count's valueOf's), which must fault the node as any throw
 //                           does
+//   rp.scripttest.forward-throws  hands forward an object whose frame or flags getter throws, or send an array-like
+//                           whose length getter throws, which the host reads and must fault the node with
 //   rp.scripttest.sort-spins  a sort comparator that never returns, where MicroQuickJS would drop the deadline's
 //                           interrupt: it spins when its settings say `on`, so the toolchain's run of every node on
 //                           its defaults passes it
@@ -410,6 +412,27 @@ export const repeatThrowsNode = defineNode({
   }),
 });
 
+export const forwardThrowsNode = defineNode({
+  id: "rp.scripttest.forward-throws",
+  settings: s.object({ field: s.enum(["frame", "flags", "length"], "frame") }),
+  ports: quiet,
+  create: ({ settings }) => ({
+    process(b) {
+      const fail = (): number => {
+        throw new RangeError("the " + settings.field + " getter threw");
+      };
+      if (settings.field === "length") {
+        b.send("out", 0, { get length(): number { return fail(); } } as unknown as ArrayLike<number>);
+        return;
+      }
+      const message = settings.field === "frame"
+        ? { get frame(): number { return fail(); }, data: [0xf8], flags: 0 }
+        : { frame: 1, data: [0xf8], get flags(): number { return fail(); } };
+      b.forward("out", message as unknown as { frame: number; data: ArrayLike<number>; flags: number });
+    },
+  }),
+});
+
 // The switch a node that spins by design waits for, off by default: the toolchain runs every node on its defaults.
 const spinSwitch = s.object({ on: s.bool(false) });
 
@@ -550,4 +573,4 @@ registerScriptNodes([probeNode, settingsNode, hooksNode, steadyNode, keeperNode,
                      spinsNode, thenableNode, faultNode, noProcessNode, createThrowsNode, skipperNode,
                      throwsLaterNode, sendsNode, replaceThrowsNode, hasOwnThrowsNode, spinsInNode, deepNode,
                      sortThrowsNode, sortSpinsNode, repeatThrowsNode, thenThrowsNode, thenSpinsNode,
-                     processSpinsNode, sendSpinsNode]);
+                     processSpinsNode, sendSpinsNode, forwardThrowsNode]);

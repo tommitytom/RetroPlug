@@ -751,6 +751,13 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
         // faults as it ends.
         {"rp.scripttest.send-spins", RP_SCRIPT_FAULT_DEADLINE, "process ran past its deadline of 50000 us",
          R"({"on":true})"},
+        // A getter the host reads of what forward or send is handed: its throw is the node's, never a 0 sent on.
+        {"rp.scripttest.forward-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the frame getter threw",
+         R"({"field":"frame"})"},
+        {"rp.scripttest.forward-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the flags getter threw",
+         R"({"field":"flags"})"},
+        {"rp.scripttest.forward-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the length getter threw",
+         R"({"field":"length"})"},
     };
     for (const Build& b : builds()) {
         Host host(50000);  // 50 ms of the thread's CPU time: what a preempted thread does not use up
