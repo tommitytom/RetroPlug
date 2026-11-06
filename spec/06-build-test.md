@@ -506,8 +506,8 @@ the config flag alone leaves the function (and the heap) linked; the unreachable
 KB (`PICO_STACK_SIZE=0x1000`; the PIO-USB image, which links `pico_multicore`, keeps core 1's 2 KB reservation, the
 native one has none), asserted only as a reservation of SCRATCH_Y. Both variants, PIO-USB (the rig's; the N8 on
 GP2/GP3) and `RP_NATIVE_USB=ON`, link under the trap, each with a probe that must fail to link; the sizes in flash /
-data / bss are 196688 / 46056 / 120600 and 197056 / 32020 / 114368, the image running from SRAM (`copy_to_ram`: 355824
-and 335880 bytes of the 512 KiB; E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788, 312484 and 292636,
+data / bss are 198848 / 46056 / 120600 and 199216 / 32084 / 114368, the image running from SRAM (`copy_to_ram`: 357936
+and 338120 bytes of the 512 KiB; E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788, 312484 and 292636,
 before MicroQuickJS, the pack and the halved arena; E2's were 48796 / 15324 / 32360 and 48756 / 1560 / 26128). The
 boot prints `[host] plan loaded: 3 nodes, <N> of 65536 arena bytes, 48000 Hz, 256 frames a block`, a line per node, a
 `[host]   pack bliptoaster, <bytes> bytes` line and, after the first block, the pack's heap in use against its

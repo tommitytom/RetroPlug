@@ -601,7 +601,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     byte-stable across hosts, and the new libraries are unbuilt under MSVC `/W4 /WX`. A Windows export may accept a
     `long double` type Linux refuses.
   - **The Pico gate passed** on the rig with BlipToaster (design section 12.7); the image runs from SRAM
-    (`copy_to_ram`, about 305 KiB of 512; E4 took it to 347.5), and the `[stats]` print can still stall a
+    (`copy_to_ram`, about 305 KiB of 512; E4 took it to 349.5), and the `[stats]` print can still stall a
     message for ~13.7 ms, as E2's did. `RP_NATIVE_USB` has never run on hardware.
   - **The Launchpad's `threads` flag** and the E2 template gaps remain.
 - **E4 built: TypeScript nodes on the box, on MicroQuickJS**
@@ -612,7 +612,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `forward()`, `MqjsHost` (one context per pack, a node's deadline of 10 ms and 250 us a message, a re-entry cap of 4),
   package memory (`rp_package`'s `memory`, `rp.host.packages/1`) sized and placed by the loader, `packages/bliptoaster`
   (`rp.bliptoaster.midi-policy` in the box's plan in place of `rp.core.midi-filter`, a 64-message `rp.device.midi-in`,
-  a 64 KiB arena, 347.5 KiB of SRAM in all) and `rp-device-check` running a script pack. Nothing was re-recorded but
+  a 64 KiB arena, 349.5 KiB of SRAM in all) and `rp-device-check` running a script pack. Nothing was re-recorded but
   `[packages]` and `box-plan.hex`. What it leaves:
   - **Windows, macOS and arm64 have never built E4.** The engine's clang-cl objects, the `sys/time.h` shim, the
     thread-time deadline and the names check on macOS are unbuilt, and every desktop product now links the engine.

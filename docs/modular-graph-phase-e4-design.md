@@ -55,9 +55,9 @@ The user's, in order (2026-11-06; the Phase E list is `.superpowers/e-pico/decis
    the arena shrinks toward what the box's plans need to make room. Moving cold code back to flash is the reserve
    lever if the measured figures do not fit.
    *As built:* the arena is **65536** bytes (the box's plan takes about 57 KB of it, a pack's heap inside), the
-   pack's bytecode stays in flash until its setup copies it, and the engine is compiled at **-Os** (98.7 KB of code and
+   pack's bytecode stays in flash until its setup copies it, and the engine is compiled at **-Os** (99.6 KB of code and
    rodata in RAM; the same sources at -O3 are 159 KB of code, 83 KB against 159 KB like for like). The image takes
-   347.5 KiB of the 512 KiB SRAM (section 5), and no cold code went back to flash. The latency held to the figures of
+   349.5 KiB of the 512 KiB SRAM (section 5), and no cold code went back to flash. The latency held to the figures of
    section 8, not to E3's exactly.
 5. **One context per pack.** Each pack's manifest declares its heap; the exporter and the loader size and place it like
    everything else, and refuse a plan that does not fit, naming the pack. A heap that runs out, a throw or a deadline
@@ -270,12 +270,12 @@ before a script node kept its streams' ends for the idle skip (section 4), 512 b
 
 | | E3 | E4 (the PIO-USB image) |
 |---|---|---|
-| Code and data run from RAM | 121.5 KiB (100,628 + 23,832 bytes) | 229.7 KiB (189,112 + 46,056 bytes; mquickjs 98.7 KB, the host 17.8 KB) |
+| Code and data run from RAM | 121.5 KiB (100,628 + 23,832 bytes) | 231.8 KiB (191,272 + 46,056 bytes; mquickjs 99.6 KB, the host 19.9 KB) |
 | Arena | 128 KiB | 64 KiB, the pack's 32,016 bytes inside it |
 | Other bss | 55.6 KiB | 53.8 KiB |
-| In all | about 305 KiB (312,484 bytes) | 347.5 KiB (355,824 bytes) of 512 |
+| In all | about 305 KiB (312,484 bytes) | 349.5 KiB (357,936 bytes) of 512 |
 
-What remains for the audio version's buffers is 168,464 bytes (164.5 KiB); the native-USB image takes 335,880. No cold
+What remains for the audio version's buffers is 166,352 bytes (162.5 KiB); the native-USB image takes 338,120. No cold
 code went back to flash.
 
 ## 6. `defineNode`, the toolchain and the `bliptoaster` pack
@@ -414,13 +414,15 @@ the descriptor goldens of existing types, `buildGraph`'s goldens, `edio-golden.j
 `device-check-plan.hex` were untouched throughout, and none of them was re-recorded; the golden changes are the
 intended ones (the `[packages]` golden gaining `rp.bliptoaster.midi-policy` in each of its nine products,
 `box-plan.hex`, and two new goldens: the policy's descriptor and `device-check-script-plan.hex`). Sections 1 to 9 are
-corrected in place where the build made them false. The counts: `retroplug-device-mode-test` ends at 84 cases (the
-baseline's 45; 1,628,820 assertions under ASan, 39 of the cases `[script-pack]` and run under ThreadSanitizer),
-`retroplug-engine-graph-test` at 334 cases (333), `pnpm test` at 175 files and 1792 cases (174 and 1782), parity
-(250), native, ui and the render and kit legs unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash
-/ data / bss to 277702 / 2004 / 421515, and the box's two images from 101200 / 23832 / 188020 (PIO-USB) and 101576 /
-9836 / 181788 (`RP_NATIVE_USB`) to 196688 / 46056 / 120600 and 197056 / 32020 / 114368, of which 189112 and 189480
-bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SRAM in all (312484 and 292636).
+corrected in place where the build made them false. The counts, after the follow-ups: `retroplug-device-mode-test`
+ends at 92 cases (the baseline's 45, 84 at the five commits; 1,491,755 assertions under ASan, 47 of the cases
+`[script-pack]` and run under ThreadSanitizer), `pnpm test:plugin` at 335 cases in all (333 before E4, 334 at the five
+commits), `pnpm test` at 175 files and 1792 cases (174 and 1782), parity (250), native, ui and the render and kit legs
+unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data / bss to 289910 / 2004 / 421947 (277702
+/ 2004 / 421515 at the five commits), and the box's two images from 101200 / 23832 / 188020 (PIO-USB) and 101576 / 9836
+/ 181788 (`RP_NATIVE_USB`) to 198848 / 46056 / 120600 and 199216 / 32084 / 114368 (196688 / 46056 / 120600 and 197056 /
+32020 / 114368 at the five commits), of which 191272 and 191640 bytes of the flash run from RAM, the images taking
+357936 and 338120 bytes of SRAM in all (312484 and 292636 at E3).
 
 ### 11.1 `defineNode` and the toolchain (commit 1)
 
@@ -433,7 +435,7 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
   **`scripts/build-device-pack.mjs`** with the steps of section 6.
 - **The manifest's `retroplug.script`**, its refusals as scratch manifests (`packages/native/test/packages/refused`),
   and `packages/devtest/ts` as the seed pack (`rp.devtest.script-transpose`).
-- **Tests:** `device-pack.test.ts`, the scenario's 84-line transcript identical on Node and as bytecode, and every
+- **Tests:** `device-pack.test.ts`, the scenario's 86-line transcript identical on Node and as bytecode, and every
   refusal with its words (a missing library call, an `async`, an audio port, an import outside the allowlist, a
   host global, a guarded helper, a runtime bundle that differs).
 
@@ -448,7 +450,7 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
 - **Tests:** `ScriptPack.test.cpp` (`[script-pack]`), a hidden `[script-bench]`, two fixture packs
   (`script-packs/scripttest`, `hog`), the threaded cases under TSan.
 - **Size:** the loader got smaller with the package pass in it (the text builders out of line): the check's image went
-  130232 to 126641 flash, the box's 101200 to 95836; nothing of the host was linked yet.
+  130232 to 126637 flash, the box's 101200 to 95832; nothing of the host was linked yet.
 
 ### 11.3 The `bliptoaster` pack and the box (commit 3)
 
@@ -463,7 +465,7 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
   built to collect at every allocation.
 - **The box build:** `PICO_USE_STACK_GUARDS=1`, `cmake/device-image/no-unwind.c`, the 87-symbol trap holding with the
   engine, and `-Werror=stack-usage=1024` with no per-source exemption.
-- **Size:** the box's flash went 95836 to 196688 and its bss 188020 to 120600 (the arena halved).
+- **Size:** the box's flash went 95832 to 196688 and its bss 188020 to 120600 (the arena halved).
 
 ### 11.4 `rp-device-check` on a script pack (commit 4)
 
@@ -492,7 +494,8 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
   failing.
 - **Build:** `RP_SCRIPT_HEAP_BYTES_devtest` (40960 at the five commits, 45056 since the third node's definition: the
   toolchain's 3/2 check passes the pack at 42680 now), `NO_SCRIPTS` retired, the size table's new owners
-  (MicroQuickJS 98,798 bytes of flash, the script host 18,685, the devtest pack 17,955 at the five commits).
+  (MicroQuickJS 99,040 bytes of flash, the script host 18,485, the devtest pack 18,147 at the five commits;
+  99,626, 20,081 and 21,239 in the final image).
 - **Tests:** 8 new `[device-check]` cases (16 in all, 18 with the deadline case and its failure steps): registration at
   the image's heap, a type whose memory does not fit, the script plan (allocating nothing, 4 nodes, 40 blocks, 2032
   messages, digest pinned on every host), its failure steps, the bench and its failure steps, and the clock case (a
@@ -502,13 +505,14 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
 
 1. **Code size, RAM and frames.** The engine is 98,742 bytes in the box's RAM at -Os (stdlib tables 10,236 + 1,968)
    and 159 KB at -O3 (83 KB against 159 KB like for like: 98.7 KB counts rodata), so the box takes -Os; the host is
-   17,778 bytes plus 204 of bss; a pack's bytecode is 6,988 bytes of flash. The image takes 347.5 KiB of SRAM (section
-   5). No frame passes 1 KiB with no exemption: JS_Parse2 560 at -Os, `js_dump_float64` 352, `build_backtrace` 232,
+   17,778 bytes plus 204 of bss; a pack's bytecode is 6,988 bytes of flash. The image takes 349.5 KiB of SRAM in the final
+   build (347.5 at the prototype; section 5). No frame passes 1 KiB with no exemption: JS_Parse2 560 at -Os,
+   `js_dump_float64` 352, `build_backtrace` 232,
    the host's `materialize` 376 and `setupPackage` 336. The deepest chains, **measured on the device**
    (`rp-device-check`, a node nesting to the cap of 4): a pack's load 2176 of the 4 KB stack, the blocks 2360 (1736
    left with 512 kept); with the engine's default depth of 8 the same chain read 3320, which is why the cap exists.
    The box's block base is about 0.6 KB, so a nesting node leaves it about 1.7 KB for the UART and USB interrupts.
-2. **The per-message cost.** The desktop: 290 to 315 ns a message on either build of the host, against 5 ns for the
+2. **The per-message cost.** The desktop: 245 to 300 ns a message on either build of the host (290 to 315 at the prototype), against 5 ns for the
    C++ filter, a warmed block allocating nothing and the JS heap's top not moving (the compacting collector never runs
    in steady state). The M33 from flash at 150 MHz (the device check): a first block 166.7k cycles (1.1 ms), an empty
    block 67 us, **65 us a note and 48 us a 64-byte SysEx**, XIP hits 99.5%; on the box's own image (from RAM, 120 MHz)
