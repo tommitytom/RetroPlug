@@ -49,7 +49,9 @@ if(MSVC)
         rp-device-check-cases
         # The executor and the plan loader built as a device builds them, and the plan exporter's tool with its device
         # builds of the packages it lists (packages/graph-runtime).
-        retroplug-graph-exec-device retroplug-export-plan retroplug-export-plan-device)
+        retroplug-graph-exec-device retroplug-export-plan retroplug-export-plan-device
+        # The MicroQuickJS script host, its device-mode build and its runner (packages/graph-runtime).
+        retroplug-mqjs-host retroplug-mqjs-host-device retroplug-mqjs-run)
     # And each device entry's device-mode compile (cmake/packages.cmake's _retroplug_device_check).
     get_property(_rp_device_checks GLOBAL PROPERTY RP_DEVICE_CHECK_TARGETS)
     list(APPEND _rp_werror_targets ${_rp_device_checks})

@@ -10,13 +10,17 @@
 #include <utility>
 
 #include "graph/CanonicalJson.hpp"
+#include "graph/Executor.hpp"
 #include "graph/JsonToMsgpack.hpp"
+#include "graph/PackageMemory.hpp"
 #include "graph/PlanBlob.hpp"
 #include "graph/PlanStorage.hpp"
 #include "graph/ResourceTable.hpp"
+#include "graph/ThreadClock.hpp"
 #include "graph/node.hpp"
 #include "graph/rp_device.h"
 #include "graph/rp_device_midi_in.h"
+#include "graph/rp_script.h"
 
 namespace rp::graph {
 
@@ -50,14 +54,21 @@ const rp_resource* refuseResource(void*, std::uint32_t, const char*, rp_error* e
 bool releaseNoResource(void*, std::uint32_t) { return false; }
 const rp_host_resources kResources{nullptr, &refuseResource, &releaseNoResource};
 
+// Its package memory (rp.host.packages/1) is the exporter's own for the plan it makes, its host's ctx: what the
+// desktop's builds of a package with memory (a script pack's) run their planned nodes in. The trial load below sets the
+// device's builds up in the arena, as the device does. Its clock (rp.host.clock/1) is the thread's CPU time at the
+// desktop's deadline, so a script node whose create or first block runs on is faulted there, not left to hang the
+// export.
+const rp_host_clock kTrialClock{nullptr, &threadCpuMicros, RP_SCRIPT_DESKTOP_DEADLINE_MICROS};
 void        ignoreLog(void*, int, const char*) {}
-const void* hostInterface(const rp_host*, const char* id) {
+const void* hostInterface(const rp_host* host, const char* id) {
+    if (std::strcmp(id, RP_HOST_CLOCK_INTERFACE) == 0) return &kTrialClock;
     if (std::strcmp(id, RP_HOST_DEVICES_INTERFACE) == 0) return &kDevices;
     if (std::strcmp(id, RP_DEVICE_MIDI_IN_INTERFACE) == 0) return &kMidiIn;
     if (std::strcmp(id, RP_HOST_RESOURCES_INTERFACE) == 0) return &kResources;
+    if (std::strcmp(id, RP_HOST_PACKAGES_INTERFACE) == 0) return static_cast<PackageMemory*>(host->ctx)->service();
     return nullptr;
 }
-const rp_host kHost{RP_ABI_VERSION, nullptr, nullptr, nullptr, &ignoreLog, &hostInterface};
 
 // ---- the plan, as records -------------------------------------------------------------------------------------------
 
@@ -447,6 +458,9 @@ ExportResult exportPlan(const GraphDocument& document, const NodeRegistry& regis
                 result.errors.push_back({n.id, binding.first, "resource", kNotExported});
     if (!result.errors.empty()) return result;
 
+    // Declared before the plan, so the packages its nodes were made under are torn down after them.
+    PackageMemory                                         packageMemory;
+    const rp_host host{RP_ABI_VERSION, &packageMemory, nullptr, nullptr, &ignoreLog, &hostInterface};
     ResourceTable                                         resources;
     const std::map<std::string, std::shared_ptr<Instance>>      live;
     const std::map<std::string, std::shared_ptr<FeedbackFront>> fronts;
@@ -457,7 +471,7 @@ ExportResult exportPlan(const GraphDocument& document, const NodeRegistry& regis
     in.resources = &resources;
     in.live = &live;
     in.feedback = &fronts;
-    in.host = &kHost;
+    in.host = &host;
     in.sampleRate = options.sampleRate;
     in.maxFrames = options.maxFrames;
     in.target = options.target;
@@ -494,9 +508,23 @@ ExportResult exportPlan(const GraphDocument& document, const NodeRegistry& regis
         std::vector<std::max_align_t> arena(result.size.bytes / sizeof(std::max_align_t) + 1);
         LoadedPlan* loaded = loadPlan(blob, std::span<std::byte>(reinterpret_cast<std::byte*>(arena.data()),
                                                                  result.size.bytes),
-                                      deviceTypes, &kHost, &err);
+                                      deviceTypes, &host, &err);
         if (!loaded) return refuse();
+        // One block, every input empty: a script node is made at its first block (and its pack's heap sized there for
+        // the plan's queues), so what only that refuses is seen here, as its fault.
+        const rp_transport transport{options.sampleRate, 120.0, 0.0, 0};
+        runBlock(loaded->view, options.maxFrames, transport);
+        for (const LoadedNode& n : loaded->nodes) {
+            const auto* fault =
+                static_cast<const rp_script_fault*>(n.node->vt->get_interface(n.node, RP_SCRIPT_FAULT_INTERFACE));
+            const char* words = fault ? fault->reason(n.node) : nullptr;
+            if (words) {
+                result.errors.push_back({std::string(n.name()), "", "create-failed",
+                                         std::string("its first block faulted on the device's build: ") + words});
+            }
+        }
         unloadPlan(loaded);
+        if (!result.errors.empty()) return result;
     }
     result.blob = std::move(blob);
     return result;

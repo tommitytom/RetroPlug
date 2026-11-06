@@ -12,7 +12,7 @@ export const iterates = defineNode({
       if (typeof Symbol === "function") {
         key = 1;
       } else {
-        key = Symbol.iterator;
+        key = (Symbol as unknown as { iterator: unknown }).iterator;  // the else-branch types Symbol as never
       }
       void b.messages(String(key));
     },

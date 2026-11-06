@@ -47,6 +47,7 @@ const void* GraphHost::hostInterface(const rp_host* host, const char* id) {
     const auto* self = static_cast<const GraphHost*>(host->ctx);
     if (std::strcmp(id, RP_HOST_AUDIO_BUFFERS_INTERFACE) == 0) return &kAudioBuffers;
     if (std::strcmp(id, RP_HOST_RESOURCES_INTERFACE) == 0) return &self->resourceService_;
+    if (std::strcmp(id, RP_HOST_PACKAGES_INTERFACE) == 0) return self->packages_.service();
     return self->config_.interfaces ? self->config_.interfaces(self->config_.interfacesCtx, id) : nullptr;
 }
 
@@ -106,6 +107,8 @@ GraphHost::~GraphHost() {
     current_ = nullptr;
     live_.clear();
     feedback_.clear();
+    // After every node: a package's memory outlives the nodes made under it.
+    packages_.clear();
 }
 
 bool GraphHost::push(const Command& c) {

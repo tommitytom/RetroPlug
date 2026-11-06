@@ -8,11 +8,20 @@
 //
 // loadPlan, in order: checks the blob (its magic, its version, its length, its CRC, every index and offset in bounds,
 // every type id registered), then lays it out and sizes it in one pass (each node's own query_memory on its settings,
-// plus every pool, view array, step and counter), refusing a plan over the arena, naming the node that tips it over and
-// by how much, before it creates anything; then runs it up in PlanStorage::adopt's order: create and activate each node
-// in the document's order, bind the steps, tell each linked node its peers, each node its connected outputs, and start
-// each param the document sets. A failure part-way unwinds what it made, in reverse, and names the node and the step.
-// unloadPlan deactivates and destroys the nodes in reverse.
+// each package's own memory, plus every pool, view array, step and counter), refusing a plan over the arena, naming
+// the package or the node that tips it over and by how much, before it creates anything; then sets up each package
+// that has memory of its own and runs the plan up in PlanStorage::adopt's order: create and activate each node in the
+// document's order, bind the steps, tell each linked node its peers, each node its connected outputs, and start each
+// param the document sets. A failure part-way unwinds what it made, in reverse, and names the node (or the package) and
+// the step. unloadPlan deactivates and destroys the nodes in reverse, then tears the packages down.
+//
+// Package memory (rp_package_memory, docs/modular-graph-phase-e4-design.md section 5): the packages the plan's node
+// types come from are found from the types themselves (the blob names no package), and each that has memory of its own
+// is sized once, in the same pass as everything else, and placed after the plan's own structures and before the nodes,
+// in the order the plan first names one of its types. Its block is set up before any node is created and torn down
+// after the last is destroyed. The nodes reach it through the host they are created under: the loader creates them
+// under a host of its own, in the arena, which answers rp.host.packages/1 from the plan's packages and hands every
+// other call to the caller's host.
 //
 // The blob is read in place and must outlive the plan loaded from it (on the device it is in flash): node ids and the
 // masks point into it. The arena must be aligned to kArenaAlign, and a node type that asks for more than the target's
@@ -48,19 +57,36 @@ inline constexpr std::uint64_t kArenaAlign =
 
 // Why a plan was refused: a code (the planner's where it has one: "unknown-type", "settings-invalid", "create-failed",
 // "activate-failed", "link-without-step"; the loader's own: "plan-format", "plan-version", "plan-truncated",
-// "plan-crc", "plan-target", "plan-malformed", "arena", "node-memory", "peers-without-link"), the node's id where one
-// is at fault (cut to fit), and a sentence.
+// "plan-crc", "plan-target", "plan-malformed", "arena", "node-memory", "package-memory", "package-setup",
+// "peers-without-link"), the node's id where one is at fault (cut to fit), and a sentence, which names the package
+// where one is at fault.
 struct PlanLoadError {
     char code[32];
     char node[64];
     char message[256];
 };
 
-// What a plan needs of an arena: `bytes` in all, of which `instanceBytes` are its nodes' own instances.
+// What a plan needs of an arena: `bytes` in all, of which `structureBytes` are its own structures (its buffers, queues,
+// streams, steps and views, first in the arena), `instanceBytes` its nodes' own instances and `packageBytes` its
+// packages' own memory (rp_package_memory).
 struct PlanSize {
     std::size_t   bytes = 0;
+    std::size_t   structureBytes = 0;
     std::size_t   instanceBytes = 0;
+    std::size_t   packageBytes = 0;
     std::uint32_t nodes = 0;
+    std::uint32_t packages = 0;  // the packages with memory of their own that it sets up
+};
+
+// A package with memory of its own that a loaded plan set up (rp_package_memory), in the arena.
+struct LoadedPackage {
+    const rp_package* package = nullptr;
+    void*             memory = nullptr;
+    std::size_t       bytes = 0;
+    bool              setUp = false;
+
+    // The name its memory hook gives it, for what is said of it.
+    std::string_view name() const;
 };
 
 // One node of a loaded plan. Its fault flag and drop counter are the executor's (PlanStep::faulted, OutputQueue::drops)
@@ -88,6 +114,7 @@ struct LoadedPlan {
     std::size_t                bytes = 0;  // what the plan takes of the arena it was laid out in
     std::atomic<std::uint32_t> faults{0};  // nodes that have faulted
     std::atomic<std::uint32_t> drops{0};   // messages full output queues have dropped
+    std::span<LoadedPackage>   packages;   // those with memory of their own, in the order the plan first names them
 
     // The node with this id, or null.
     LoadedNode* find(std::string_view id) const;
@@ -98,6 +125,12 @@ struct LoadedPlan {
 
     rp_control_queue* const* paramViews = nullptr;  // every step's param views, in step order
     const std::uint8_t*      wired = nullptr;       // per param view: a wire drives it
+
+    // The host the nodes were created under: the loader's own, which answers rp.host.packages/1 from `packages` and
+    // hands every other call to `outer`, the host loadPlan was given.
+    rp_host                  host{};
+    rp_host_packages         packageService{};
+    const rp_host*           outer = nullptr;
 };
 
 // Checks the blob and sizes it against an arena of `arenaBytes` (0: any size), creating nothing; `types` are the

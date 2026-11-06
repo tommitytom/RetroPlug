@@ -22,23 +22,29 @@
 // - The bytecode: `mqjs -o` compiles the pack at the host's width (64-bit, for the desktop's mquickjs host) and with
 //   `-m32` (the box's). It is relocated to address 0 and names its source by the bundle's file name alone, so the same
 //   pack builds the same bytes in any checkout.
-// - The engine's run: the pack with the epilogue, compiled as the pack is, runs as bytecode on the engine and must
-//   print Node's transcript byte for byte; and the pack's own 64-bit bytecode must define its node types inside the
-//   heap its manifest declares (`mqjs --memory-limit`, which holds the whole context, so the figure is the context's
-//   size, and a 64-bit context is the larger of the two). The 32-bit bytecode runs on the box alone. Both runs are on
-//   upstream's REPL (mqjs.c and its stdlib), not yet on the box's own stdlib.
+// - The engine's run, on the runner (retroplug-mqjs-run: RetroPlug's own standard library and the MicroQuickJS script
+//   host, as the desktop and the box run a pack, not upstream's REPL): the pack with the epilogue, compiled as the pack
+//   is, runs as bytecode and must print Node's transcript byte for byte; and the pack's own 64-bit bytecode, set up as
+//   a host sets a pack up, must define its node types, create one node of each from its default settings and run each
+//   for a run of blocks with messages on every events or bytes input, inside the heap its manifest declares (the whole
+//   context, so the figure is the context's size). The check is at 64 bits: a 64-bit context is the larger, so a pack
+//   that runs in its heap here runs in it on the box. The runner also finds the least context the same run needs, which
+//   this prints beside the declaration. The 32-bit bytecode runs on the box alone.
 //
 // Writes, under --out-dir and only once every check has passed: <name>.js (the lowered pack, what the bytecode is
-// compiled from), <name>.mqjs64.bin and <name>.mqjs32.bin (the bytecode), and <name>.transcript.txt (the engine run's
-// transcript), each only when its bytes change. Its work files are in a directory of their own beside them, removed
-// whether the pack passes or not. Exits nonzero saying what refused the pack. CMake runs it for a package whose
-// manifest declares a script pack (cmake/packages.cmake, retroplug_script_pack), with the manifest's entry and heap;
-// the tests run it on fixtures of their own (test/graph/device-pack.test.ts).
+// compiled from), <name>.mqjs64.bin and <name>.mqjs32.bin (the bytecode), <name>.pack64.c and <name>.pack32.c (the same
+// bytecode as C, with the node type ids the definitions register and the declared heap, for a binary to carry:
+// graph-runtime's script/rp_mqjs_pack.h), and <name>.transcript.txt (the engine run's transcript), each only when its
+// bytes change. Its work files are in a directory of their own beside them, removed whether the pack passes or not.
+// Exits nonzero saying what refused the pack. CMake runs it for a package whose manifest declares a script pack
+// (cmake/packages.cmake, retroplug_device_script_pack), with the manifest's entry and heap; the tests run it on
+// fixtures of their own (test/graph/device-pack.test.ts).
 //
 // Usage: node build-device-pack.mjs --entry <file.ts> --name <pack> --heap-bytes <n> --out-dir <dir>
-//                                   [--pack-dir <dir>] [--mqjs <path>]
+//                                   [--pack-dir <dir>] [--mqjs <path>] [--runner <path>]
 //   --pack-dir  the pack's own directory, every module under which the bundle may hold (default: the entry's)
 //   --mqjs      the engine's host tool (default: MQJS, else build/bin/mqjs, the desktop build's `mqjs` target)
+//   --runner    the runner (default: RUNNER, else build/bin/retroplug-mqjs-run, the desktop build's target)
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -130,7 +136,7 @@ const EPILOGUE = `
 
 function parseArgs(argv) {
   const known = { "--entry": "entry", "--name": "name", "--heap-bytes": "heapBytes", "--out-dir": "outDir",
-                  "--pack-dir": "packDir", "--mqjs": "mqjs" };
+                  "--pack-dir": "packDir", "--mqjs": "mqjs", "--runner": "runner" };
   const out = {};
   for (let i = 0; i < argv.length; i += 2) {
     const key = known[argv[i]];
@@ -143,7 +149,7 @@ function parseArgs(argv) {
 
 function usage(why) {
   console.error(`build-device-pack: ${why}\nusage: node build-device-pack.mjs --entry <file.ts> --name <pack> ` +
-                "--heap-bytes <n> --out-dir <dir> [--pack-dir <dir>] [--mqjs <path>]");
+                "--heap-bytes <n> --out-dir <dir> [--pack-dir <dir>] [--mqjs <path>] [--runner <path>]");
   process.exit(2);
 }
 
@@ -166,8 +172,18 @@ if (!existsSync(ENTRY)) fail(`no entry ${ENTRY}`);
 const MQJS = args.mqjs ?? process.env.MQJS ??
   join(REPO, "build/bin", process.platform === "win32" ? "mqjs.exe" : "mqjs");
 if (!existsSync(MQJS)) fail(`no mqjs at ${MQJS} (build the desktop build's \`mqjs\` target, or pass --mqjs)`);
+const RUNNER = args.runner ?? process.env.RUNNER ??
+  join(REPO, "build/bin", process.platform === "win32" ? "retroplug-mqjs-run.exe" : "retroplug-mqjs-run");
+if (!existsSync(RUNNER)) {
+  fail(`no runner at ${RUNNER} (build the desktop build's \`retroplug-mqjs-run\` target, or pass --runner)`);
+}
 
 const repoPath = (p) => relative(REPO, p).split(sep).join("/");
+
+// The environment mqjs and the runner run in: leak detection off, as a sanitizer build instruments them as it does
+// everything (upstream's mqjs frees nothing before it exits), and a leak in a build tool is no failure of the pack's.
+const TOOL_ENV = { ...process.env,
+                   ASAN_OPTIONS: [process.env.ASAN_OPTIONS, "detect_leaks=0"].filter(Boolean).join(":") };
 
 // An output written only when its bytes change, so what a build makes from it (the bytecode embedded in an image) is
 // remade only then.
@@ -535,9 +551,10 @@ try {
 // Line ends as "\n" on both sides of the comparison below (the engine's are read the same way, printed()), so a line a
 // definition logs with its own "\r\n" compares as the line it is.
 const reference = (lines.join("\n") + "\n").replace(/\r\n/g, "\n");
-const types = lines.filter((l) => l.startsWith("{")).length;
-if (types === 0) fail("registers no node type (graph/register.ts's registerScriptNodes)");
-console.log(`  ok: defined ${types} node type(s) under Node`);
+// The ids the definitions register, in their order: what a binary that carries the pack registers its types under.
+const typeIds = lines.filter((l) => l.startsWith("{")).map((l) => JSON.parse(l).id);
+if (typeIds.length === 0) fail("registers no node type (graph/register.ts's registerScriptNodes)");
+console.log(`  ok: defined ${typeIds.length} node type(s) under Node`);
 
 // ---- the bytecode ------------------------------------------------------------------------------------------------
 
@@ -549,7 +566,8 @@ writeFileSync(join(WORK, es5Name), es5);
 // compiled from, so an absolute path would make the bytes depend on the checkout. mqjs reports a parse error and still
 // exits 0, writing nothing, so a missing output is the failure.
 function compile(source, out, wide) {
-  const run = spawnSync(MQJS, [...(wide ? [] : ["-m32"]), "-o", out, source], { cwd: WORK, encoding: "utf8" });
+  const run = spawnSync(MQJS, [...(wide ? [] : ["-m32"]), "-o", out, source],
+                        { cwd: WORK, encoding: "utf8", env: TOOL_ENV });
   if (run.status !== 0 || run.stderr || !existsSync(join(WORK, out))) {
     fail(`mqjs could not compile ${source}${wide ? "" : " (-m32)"}:\n${run.stderr}${run.stdout}`);
   }
@@ -576,8 +594,8 @@ const said = (run) => `${run.stderr}${printed(run)}`.replace(/\x1b\[[0-9;]*m/g, 
 
 writeFileSync(join(WORK, `${NAME}.transcript.js`), es5 + EPILOGUE);
 compile(`${NAME}.transcript.js`, `${NAME}.transcript.bin`, true);
-const run = spawnSync(MQJS, ["--memory-limit", String(TRANSCRIPT_HEAP), "-b", `${NAME}.transcript.bin`],
-                      { cwd: WORK, encoding: "utf8" });
+const run = spawnSync(RUNNER, ["script", `${NAME}.transcript.bin`, "--context-bytes", String(TRANSCRIPT_HEAP)],
+                      { cwd: WORK, encoding: "utf8", env: TOOL_ENV });
 if (run.status !== 0) {
   const how = crash(run) ? `the engine crashed (${crash(run)})` : `exit ${run.status}`;
   fail(`its bytecode failed on ${ENGINE} (${how})${said(run) ? `: ${said(run)}` : ""}`);
@@ -592,15 +610,51 @@ if (engineTranscript !== reference) {
 }
 console.log(`  ok: ${ENGINE} runs the bytecode and matches Node byte for byte (${lines.length} lines)`);
 
-const own = spawnSync(MQJS, ["--memory-limit", String(HEAP_BYTES), "-b", `${NAME}.mqjs64.bin`],
-                      { cwd: WORK, encoding: "utf8" });
+const own = spawnSync(RUNNER, ["pack", `${NAME}.mqjs64.bin`, "--name", NAME, "--heap-bytes", String(HEAP_BYTES),
+                                "--types", typeIds.join(",")], { cwd: WORK, encoding: "utf8", env: TOOL_ENV });
 if (own.status !== 0) {
+  // The runner says which step failed first: "define", "create" or "run", then the node and the engine's words.
+  const what = { define: "define its node types", create: "create its nodes", run: "run its nodes" };
+  const said_ = said(own);
+  const step = /^(define|create|run): /.exec(said_);
   const small = HEAP_BYTES < LEAST_CONTEXT ? `, as it does in a context under its least, ${LEAST_CONTEXT} bytes` : "";
-  const how = crash(own) ? `the engine crashed (${crash(own)})${small}${said(own) ? `: ${said(own)}` : ""}` : said(own);
-  fail(`its bytecode does not define its node types in its declared heap of ${HEAP_BYTES} bytes ` +
+  const how = crash(own) ? `the engine crashed (${crash(own)})${small}${said_ ? `: ${said_}` : ""}`
+                         : step ? said_.slice(step[0].length) : said_;
+  fail(`its bytecode does not ${step ? what[step[1]] : "run"} in its declared heap of ${HEAP_BYTES} bytes ` +
        `(the manifest's heapBytes): ${how}`);
 }
-console.log(`  ok: the pack's bytecode defines its node types in its declared heap (${HEAP_BYTES} bytes)`);
+// A node that faulted on its default settings for any reason but the heap is the pack's own business, and said.
+for (const line of printed(own).split("\n")) if (line.startsWith("note: ")) console.log(`  ${line}`);
+const fit = /ok least=(\d+) declared=(\d+) live=(\d+)/.exec(own.stdout);
+console.log(`  ok: the pack defines, creates and runs its nodes in its declared heap (${HEAP_BYTES} bytes at 64 ` +
+            `bits; the same run needs ${fit ? fit[1] : "?"}, and leaves ${fit ? fit[3] : "?"} bytes live)`);
+
+// The bytecode as C, for a binary to carry (script/rp_mqjs_pack.h): one source per width, the same symbol in each, so a
+// binary builds the one of its width. The pack's name is a C identifier there with every character that cannot be one
+// made an underscore.
+const symbol = `rp_script_${NAME.replace(/[^A-Za-z0-9_]/g, "_")}`;
+function packSource(bytecode, width) {
+  const rows = [];
+  for (let i = 0; i < bytecode.length; i += 16) {
+    const row = Array.from(bytecode.subarray(i, i + 16), (b) => `0x${b.toString(16).padStart(2, "0")},`);
+    rows.push(`    ${row.join(" ")}`);
+  }
+  return `/* Generated by packages/retroplug/scripts/build-device-pack.mjs from the ${NAME} script pack: its
+ * ${width}-bit MicroQuickJS bytecode, the node type ids its definitions register and its declared heap. Do not edit. */
+#include "script/rp_mqjs_pack.h"
+
+static const uint8_t bytecode[${bytecode.length}] = {
+${rows.join("\n")}
+};
+
+static const char* const typeIds[${typeIds.length}] = {
+${typeIds.map((id) => `    ${JSON.stringify(id)},`).join("\n")}
+};
+
+const rp_mqjs_pack_source ${symbol} = {
+    ${JSON.stringify(NAME)}, bytecode, ${bytecode.length}, ${HEAP_BYTES}, ${typeIds.length}, typeIds};
+`;
+}
 
 // ---- the outputs, now that every check has passed ----------------------------------------------------------------
 
@@ -608,6 +662,8 @@ mkdirSync(OUT_DIR, { recursive: true });
 keep(join(OUT_DIR, es5Name), es5);
 keep(join(OUT_DIR, `${NAME}.mqjs64.bin`), bytecode64);
 keep(join(OUT_DIR, `${NAME}.mqjs32.bin`), bytecode32);
+keep(join(OUT_DIR, `${NAME}.pack64.c`), packSource(bytecode64, 64));
+keep(join(OUT_DIR, `${NAME}.pack32.c`), packSource(bytecode32, 32));
 keep(join(OUT_DIR, `${NAME}.transcript.txt`), reference);
 rmSync(WORK, { recursive: true, force: true });
 console.log(`device pack ${NAME} OK (${repoPath(OUT_DIR)})`);

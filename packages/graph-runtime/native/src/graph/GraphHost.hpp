@@ -13,6 +13,7 @@
 
 #include "graph/GraphDocument.hpp"
 #include "graph/NodeRegistry.hpp"
+#include "graph/PackageMemory.hpp"
 #include "graph/PlanStorage.hpp"
 #include "graph/Planner.hpp"
 #include "graph/ResourceTable.hpp"
@@ -32,7 +33,7 @@ struct HostConfig {
     // prepare reads its current settings) before answering busy.
     std::uint32_t adoptionTimeoutMs = 2000;
     // The embedder's own host services; GraphHost answers its own ids (rp.host.audio-buffers/1,
-    // rp.host.resources/1) first.
+    // rp.host.resources/1, rp.host.packages/1) first.
     HostInterfaceFn interfaces = nullptr;
     void*           interfacesCtx = nullptr;
 };
@@ -211,6 +212,9 @@ private:
     const NodeRegistry&                                   registry_;
     ResourceTable&                                        resources_;
     rp_host_resources                                     resourceService_{};
+    // rp.host.packages/1: the memory of each package with memory that a node of this host's asks for (a script pack's
+    // context), set up at that first ask and kept for the host's life, torn down after every node is destroyed.
+    PackageMemory                                         packages_;
     HostConfig                                            config_;
     rp_host                                               host_{};
     SpscRing<Command, kCommandCapacity>                   commands_;

@@ -1,8 +1,9 @@
 // The device-pack toolchain (scripts/build-device-pack.mjs, docs/modular-graph-phase-e4-design.md section 6) and
 // defineNode in MicroQuickJS's subset. A device pack's TypeScript is bundled against an allowlist, lowered to ES5,
 // scanned for library calls the engine lacks and compiled to bytecode, and its definitions run under Node and as
-// bytecode on the engine (the desktop build's mqjs, which `pnpm test` builds), whose transcripts must match byte for
-// byte: check:portable's method, on feature/launchpad. Here:
+// bytecode on the engine as the hosts configure it (the desktop build's runner, retroplug-mqjs-run, on RetroPlug's own
+// standard library; `pnpm test` builds it), whose transcripts must match byte for byte: check:portable's method, on
+// feature/launchpad. Here:
 //
 // - test/graph/device-pack/scenario.ts, defineNode and its helpers at work as a device pack (every port kind a device
 //   pack may have, every param type, settings and the ports that follow them, every refusal, a node's process on a
@@ -13,8 +14,8 @@
 //   port; one that imports outside its allowlist, naming the module and its importer; one the engine runs unlike Node,
 //   naming the transcript line; and one whose bytecode does not define its node types in its declared heap;
 // - the devtest package's script pack (packages/devtest/ts), which CMake compiles from its manifest
-//   (retroplug_script_pack in packages/native/cmake/tests.cmake), has its bytecode at both widths, and the toolchain
-//   run by hand on the same entry writes the same bytes.
+//   (_retroplug_script_targets in cmake/packages.cmake), has its bytecode at both widths, and the toolchain run by hand
+//   on the same entry writes the same bytes.
 //
 // The toolchain is Node's (esbuild and TypeScript are not txiki modules), so the test runs it in a node child: the
 // runner's own node (RP_NODE, which scripts/run-tests.mjs sets), else the node on the PATH when run by hand.
@@ -94,7 +95,7 @@ async function buildPack(entry: string, name: string, heapBytes: number, packDir
 }
 
 test("defineNode and its helpers run on MicroQuickJS as on Node, byte for byte", async () => {
-  const run = await buildPack(`${FIXTURES}/scenario.ts`, "scenario", 65536);
+  const run = await buildPack(`${FIXTURES}/scenario.ts`, "scenario", 1048576);
   expect(run.ok, `the toolchain refused the scenario:\n${run.out}${run.err}`).toBe(true);
   contains(run.out, "matches Node byte for byte");
   // The transcript the two engines agreed on: what the scenario prints, then every registered node's descriptor.
@@ -128,8 +129,8 @@ test("a device pack that calls what MicroQuickJS lacks is refused, naming the ca
   const later = await buildPack(`${FIXTURES}/async-process.ts`, "async-process", 65536);
   expect(later.ok).toBe(false);
   contains(later.err, "packages/retroplug/test/graph/device-pack/async-process.ts:14: async (async/await)");
-  // Globals of upstream mqjs's REPL, which the toolchain's own runs have and the box's engine will not; a function the
-  // pack declares itself under one of their names is its own.
+  // Globals of upstream mqjs's REPL, which the box's engine does not have; a function the pack declares itself under
+  // one of their names is its own.
   const host = await buildPack(`${FIXTURES}/host-global.ts`, "host-global", 65536);
   expect(host.ok).toBe(false);
   contains(host.err, "device-pack/host-global.ts:20: setTimeout( (a global of mqjs's REPL");
@@ -164,14 +165,14 @@ test("a device pack the engine runs unlike Node is refused, at the transcript li
   contains(run.err, '"ports":[{"id":"out","dir":"out","kind":"events"}]');
   contains(run.err, '"ports":[{"id":"__proto__","dir":"in","kind":"events"},{"id":"out","dir":"out","kind":"events"}]');
   // Refused after its bytecode was made: nothing of it is left, neither an output nor the work files.
-  for (const file of ["proto-key.js", "proto-key.mqjs64.bin", "proto-key.mqjs32.bin", "proto-key.transcript.txt",
-                      ".proto-key.work"])
+  for (const file of ["proto-key.js", "proto-key.mqjs64.bin", "proto-key.mqjs32.bin", "proto-key.pack64.c",
+                      "proto-key.pack32.c", "proto-key.transcript.txt", ".proto-key.work"])
     expect(await exists(`${OUT}/proto-key/${file}`), file).toBe(false);
 });
 
 test("a device pack whose bytecode does not define its node types in its declared heap is refused", async () => {
-  // devtest defines its node in about 12 KiB of a 64-bit context. (Below about 4 KiB the engine crashes in its own
-  // setup, which the toolchain reports as that.)
+  // devtest defines its node in about 12 KiB of a 64-bit context. (Below 4 KiB, the least context the engine sets
+  // itself up in, the host refuses to make one, saying so.)
   const run = await buildPack("../devtest/ts/index.ts", "devtest-small", 8192, "../devtest");
   expect(run.ok).toBe(false);
   contains(run.err, "its bytecode does not define its node types in its declared heap of 8192 bytes");
@@ -216,7 +217,7 @@ test("devtest's script pack is built from its manifest at both widths, the same 
   // A pointer's width, and no more, between them: the 32-bit form is the smaller.
   expect(narrow.length > 1024 && narrow.length < wide.length).toBe(true);
   // The toolchain by hand, on the entry and heap the manifest names, writes what CMake's target wrote.
-  const run = await buildPack("../devtest/ts/index.ts", "devtest", 16384, "../devtest");
+  const run = await buildPack("../devtest/ts/index.ts", "devtest", 81920, "../devtest");
   expect(run.ok, `${run.out}${run.err}`).toBe(true);
   const same = async (file: string, built: Uint8Array) => {
     const again = await tjs.readFile(`${OUT}/devtest/${file}`);

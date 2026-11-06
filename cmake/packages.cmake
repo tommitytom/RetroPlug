@@ -20,9 +20,10 @@
 #
 # `entry` is a path from the package's directory, as a manifest's other paths are. `device` is required, as an entry's
 # is, so no pack's standing is a default nobody chose: a device pack runs on MicroQuickJS wherever it runs, its
-# definitions held to what the box can run, and retroplug_script_pack() compiles it to bytecode. `device: false`, a
-# desktop script pack, is reserved and refused, as nothing builds one yet. `heapBytes` is a JSON number, a whole number
-# of bytes, the same figure on every host. A package has `native`, `script` or both.
+# definitions held to what the box can run, and retroplug_package() gives it the targets that compile it to bytecode
+# and register it (_retroplug_script_targets). `device: false`, a desktop script pack, is reserved and refused, as
+# nothing builds one yet. `heapBytes` is a JSON number, a whole number of bytes, the same figure on every host: the
+# whole of the pack's MicroQuickJS context. A package has `native`, `script` or both.
 #
 # A product is an executable or a module that constructs an Engine. retroplug_product() generates its registration
 # source, which defines rp_register_packages() (graph/Packages.hpp) as the entries of the packages it lists, in the
@@ -94,6 +95,10 @@ function(retroplug_package name)
         foreach(_target IN LISTS _deviceTargets)
             _retroplug_device_check(${name} ${_target})
         endforeach()
+        get_property(_script GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_ENTRY)
+        if(_script)
+            _retroplug_script_targets(${name})
+        endif()
     endif()
 endfunction()
 
@@ -196,7 +201,7 @@ function(_retroplug_read_manifest name _manifest)
 endfunction()
 
 # _retroplug_read_script(<package> <manifest> <json>): the manifest's script pack, if it has one (the `script` member
-# above), into the global properties retroplug_script_pack() reads: RP_PACKAGE_<package>_SCRIPT_ENTRY (the entry's
+# above), into the global properties _retroplug_script_targets() reads: RP_PACKAGE_<package>_SCRIPT_ENTRY (the entry's
 # absolute path, empty for a package with no script pack), _SCRIPT_DEVICE (ON or OFF) and _SCRIPT_HEAP_BYTES. The entry
 # must exist, so a typo is refused here rather than by the bundler.
 function(_retroplug_read_script name _manifest json)
@@ -361,62 +366,104 @@ function(retroplug_package_library target)
     endif()
 endfunction()
 
-# retroplug_script_pack(<package> [TARGET <target>]): a target that compiles the package's device script pack (its
-# manifest's `script` member) to MicroQuickJS bytecode, through the device-pack toolchain
-# (packages/retroplug/scripts/build-device-pack.mjs: bundled against its allowlist, lowered to ES5, scanned for library
-# calls the engine lacks, its definitions run under Node and its bytecode on the engine, inside the heap the manifest
-# declares). It writes build/packages/<package>/script/<package>.mqjs64.bin, for the desktop's mquickjs host, and
-# <package>.mqjs32.bin, for the box, and names them in the target's RP_BYTECODE_64 and RP_BYTECODE_32 properties; a
-# pack the toolchain refuses fails the target's build, saying why. The default target is
-# retroplug-<package>-script-pack.
-#
-# A product that carries the pack, or a test, calls it. Only the desktop build does: it needs the desktop's mqjs and
-# Node, and a device build takes the 32-bit bytecode from the desktop build, as it takes its exported plan. The target
-# runs the toolchain on every build of it (as packages/native/cmake/bundles.cmake's bundles run esbuild), which rewrites
-# the bytecode only when it changes, so what depends on a file is rebuilt only then.
-function(retroplug_script_pack package)
-    cmake_parse_arguments(P "" "TARGET" "" ${ARGN})
-    if(P_UNPARSED_ARGUMENTS)
-        message(FATAL_ERROR "retroplug_script_pack(${package}): unrecognised argument(s): ${P_UNPARSED_ARGUMENTS}")
-    endif()
-    if(RP_DEVICE_BUILD)
-        message(FATAL_ERROR "retroplug_script_pack(${package}): a device build takes a pack's bytecode from the "
-                            "desktop build, whose mqjs and Node compile it")
-    endif()
-    if(NOT P_TARGET)
-        set(P_TARGET retroplug-${package}-script-pack)
-    endif()
-    get_property(_known GLOBAL PROPERTY RP_PACKAGES)
-    if(NOT package IN_LIST _known)
-        message(FATAL_ERROR "retroplug_script_pack(${package}): no package `${package}` (retroplug_package() adds one)")
-    endif()
+# _retroplug_script_targets(<package>): a package's device script pack (the manifest's `script` member), which
+# retroplug_package() gives its targets in the desktop build (no device image carries a pack yet; one will take its
+# bytecode from the desktop build, as it takes its exported plan): those of
+# retroplug_device_script_pack(<package>), from the manifest's entry and heap. Its registration is the package's script
+# entry, RP_PACKAGE_<package>_SCRIPT_FN (rp_<package>_script_package), and its target RP_PACKAGE_<package>_SCRIPT_TARGET
+# (retroplug-<package>-script): a product that lists the package registers it beside the package's native entries
+# (retroplug_product), and retroplug_device_mode_objects compiles it again as the device does, renamed with the rest.
+# It is not one of the package's `device` entries, which are its C++ node types, the ones a device check carries.
+function(_retroplug_script_targets package)
     get_property(_entry GLOBAL PROPERTY RP_PACKAGE_${package}_SCRIPT_ENTRY)
     get_property(_heap GLOBAL PROPERTY RP_PACKAGE_${package}_SCRIPT_HEAP_BYTES)
-    if(NOT _entry)
-        message(FATAL_ERROR "retroplug_script_pack(${package}): ${RP_PACKAGES_DIR}/${package}/package.json has no "
-                            "retroplug.script")
-    endif()
-    if(NOT TARGET mqjs)
-        message(FATAL_ERROR "retroplug_script_pack(${package}): no mqjs target (cmake/mquickjs.cmake)")
-    endif()
-    set(_out "${CMAKE_BINARY_DIR}/packages/${package}/script")
-    set(_bytecode "${_out}/${package}.mqjs64.bin" "${_out}/${package}.mqjs32.bin")
-    add_custom_target(${P_TARGET}
-        BYPRODUCTS ${_bytecode} "${_out}/${package}.js" "${_out}/${package}.transcript.txt"
-        COMMAND ${NODE_EXECUTABLE} "${RP_PACKAGES_DIR}/retroplug/scripts/build-device-pack.mjs"
-                --entry "${_entry}" --name ${package} --heap-bytes ${_heap} --out-dir "${_out}"
-                --pack-dir "${RP_PACKAGES_DIR}/${package}" --mqjs "$<TARGET_FILE:mqjs>"
-        COMMENT "Compiling the ${package} device script pack (MicroQuickJS bytecode, 64- and 32-bit)"
-        VERBATIM)
-    add_dependencies(${P_TARGET} mqjs)
-    set_target_properties(${P_TARGET} PROPERTIES RP_BYTECODE_64 "${_out}/${package}.mqjs64.bin"
-                                                  RP_BYTECODE_32 "${_out}/${package}.mqjs32.bin")
+    retroplug_device_script_pack(${package} ENTRY "${_entry}" HEAP_BYTES ${_heap}
+                                 PACK_DIR "${RP_PACKAGES_DIR}/${package}")
+    get_target_property(_fn retroplug-${package}-script RP_SCRIPT_FN)
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${package}_SCRIPT_FN ${_fn})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${package}_SCRIPT_TARGET retroplug-${package}-script)
 endfunction()
 
-# retroplug_product(<product> PACKAGES <package>... [TARGETS <target>...] [DEVICE]): declares a product and the packages
-# it carries, in registration order. Generates build/packages/products/<product>.cpp, which defines the product's
-# rp_register_packages(), and adds it to each of TARGETS (default: the target named <product>) with the packages'
-# targets linked. TARGETS is for one product built as several binaries: the plugin's formats, each its own module.
+# retroplug_device_script_pack(<name> ENTRY <file.ts> HEAP_BYTES <n> PACK_DIR <dir> [OUT_DIR <dir>]): a device script
+# pack's targets, desktop build only: a package's (_retroplug_script_targets) or a test's own fixture.
+#
+#   retroplug-<name>-script-pack  compiles the pack through the device-pack toolchain
+#       (packages/retroplug/scripts/build-device-pack.mjs: bundled against its allowlist, PACK_DIR and the node SDK,
+#       lowered to ES5, scanned for library calls the engine lacks, its definitions run under Node and its bytecode on
+#       the runner, retroplug-mqjs-run, inside HEAP_BYTES). It writes OUT_DIR (default build/packages/<name>/script):
+#       <name>.mqjs64.bin and <name>.mqjs32.bin, and the same as C, <name>.pack64.c and <name>.pack32.c (graph-runtime's
+#       script/rp_mqjs_pack.h, rp_script_<name>), and names the bytecode in its RP_BYTECODE_64 and RP_BYTECODE_32
+#       properties; a pack the toolchain refuses fails the target's build, saying why. It runs the toolchain on every
+#       build of it (as packages/native/cmake/bundles.cmake's bundles run esbuild), which rewrites an output only when
+#       it changes, so what depends on one is rebuilt only then.
+#   retroplug-<name>-pack64  the 64-bit C source as a library: what the desktop's host loads.
+#   retroplug-<name>-script  the pack's registration: rp_<name>_script_package() (its RP_SCRIPT_FN property), an
+#       extern "C" function as a native entry is, answering the pack's rp_package on the MicroQuickJS host
+#       (rp::mqjs::package), with the host and the bytecode linked.
+#
+# <name> is a C identifier once each character that cannot be one is an underscore (string(MAKE_C_IDENTIFIER)).
+function(retroplug_device_script_pack name)
+    cmake_parse_arguments(P "" "ENTRY;HEAP_BYTES;PACK_DIR;OUT_DIR" "" ${ARGN})
+    if(P_UNPARSED_ARGUMENTS OR NOT P_ENTRY OR NOT P_HEAP_BYTES OR NOT P_PACK_DIR)
+        message(FATAL_ERROR "retroplug_device_script_pack(${name}): ENTRY, HEAP_BYTES and PACK_DIR are required")
+    endif()
+    if(RP_DEVICE_BUILD)
+        message(FATAL_ERROR "retroplug_device_script_pack(${name}): a device build takes a pack's bytecode from the "
+                            "desktop build, whose mqjs and Node compile it")
+    endif()
+    if(NOT TARGET mqjs OR NOT TARGET retroplug-mqjs-run OR NOT TARGET retroplug-mqjs-host)
+        message(FATAL_ERROR "retroplug_device_script_pack(${name}): a script pack needs mqjs (cmake/mquickjs.cmake) "
+                            "and the MicroQuickJS host (retroplug_package(graph-runtime)) first")
+    endif()
+    if(NOT P_OUT_DIR)
+        set(P_OUT_DIR "${CMAKE_BINARY_DIR}/packages/${name}/script")
+    endif()
+    set(_out "${P_OUT_DIR}")
+    set(_bytecode "${_out}/${name}.mqjs64.bin" "${_out}/${name}.mqjs32.bin")
+    set(_sources "${_out}/${name}.pack64.c" "${_out}/${name}.pack32.c")
+    set(_pack retroplug-${name}-script-pack)
+    add_custom_target(${_pack}
+        BYPRODUCTS ${_bytecode} ${_sources} "${_out}/${name}.js" "${_out}/${name}.transcript.txt"
+        COMMAND ${NODE_EXECUTABLE} "${RP_PACKAGES_DIR}/retroplug/scripts/build-device-pack.mjs"
+                --entry "${P_ENTRY}" --name ${name} --heap-bytes ${P_HEAP_BYTES} --out-dir "${_out}"
+                --pack-dir "${P_PACK_DIR}" --mqjs "$<TARGET_FILE:mqjs>"
+                --runner "$<TARGET_FILE:retroplug-mqjs-run>"
+        COMMENT "Compiling the ${name} device script pack (MicroQuickJS bytecode, 64- and 32-bit)"
+        VERBATIM)
+    add_dependencies(${_pack} mqjs retroplug-mqjs-run)
+    set_target_properties(${_pack} PROPERTIES RP_BYTECODE_64 "${_out}/${name}.mqjs64.bin"
+                                              RP_BYTECODE_32 "${_out}/${name}.mqjs32.bin")
+
+    # The bytecode as C: built as it stands by whatever links it, in the device-mode objects' binary too
+    # (RP_DEVICE_MODE_SHARED), as it names nothing in namespace rp.
+    add_library(retroplug-${name}-pack64 STATIC EXCLUDE_FROM_ALL "${_out}/${name}.pack64.c")
+    add_dependencies(retroplug-${name}-pack64 ${_pack})
+    target_include_directories(retroplug-${name}-pack64 PRIVATE "${RP_PACKAGES_DIR}/graph-runtime/native/src")
+    set_target_properties(retroplug-${name}-pack64 PROPERTIES POSITION_INDEPENDENT_CODE ON RP_DEVICE_MODE_SHARED ON)
+
+    string(MAKE_C_IDENTIFIER "${name}" _id)
+    set(_fn rp_${_id}_script_package)
+    set(_registration "${_out}/${name}-script.cpp")
+    file(GENERATE OUTPUT "${_registration}" CONTENT
+"// Generated by cmake/packages.cmake (retroplug_device_script_pack) from the ${name} script pack: its registration on
+// the MicroQuickJS host, from the bytecode the device-pack toolchain compiled (${name}.pack64.c). Do not edit.
+
+#include \"script/MqjsHost.hpp\"
+
+extern \"C\" const rp_mqjs_pack_source rp_script_${_id};
+
+extern \"C\" const rp_package* ${_fn}(void) { return rp::mqjs::package(rp_script_${_id}); }
+")
+    retroplug_package_library(retroplug-${name}-script "${_registration}")
+    set_target_properties(retroplug-${name}-script PROPERTIES EXCLUDE_FROM_ALL ON RP_SCRIPT_FN ${_fn})
+    target_link_libraries(retroplug-${name}-script PUBLIC retroplug-mqjs-host retroplug-${name}-pack64)
+endfunction()
+
+# retroplug_product(<product> PACKAGES <package>... [TARGETS <target>...] [DEVICE] [NO_SCRIPTS]): declares a product and
+# the packages it carries, in registration order. Generates build/packages/products/<product>.cpp, which defines the
+# product's rp_register_packages(), and adds it to each of TARGETS (default: the target named <product>) with the
+# packages' targets linked. TARGETS is for one product built as several binaries: the plugin's formats, each its own
+# module.
 #
 # DEVICE makes it a device product: it takes each package's `device` entries alone, and their targets, and a package
 # with none is refused, since a device product that names one would carry a node type the device cannot run (as the
@@ -425,8 +472,12 @@ endfunction()
 # the device check's case generator, which lists what the device registers. A device product constructs no engine, so
 # it is not in the engine's registration golden (retroplug_product_table); retroplug-device-mode-test holds what a
 # device registers instead.
+#
+# A listed package's script pack (its manifest's `script` member, _retroplug_script_targets) registers beside its
+# native entries, every script pack being a device's: its registration function among the entries, its target among
+# the targets. NO_SCRIPTS takes the native entries alone: a product whose list is of C++ types (the device check's).
 function(retroplug_product product)
-    cmake_parse_arguments(P "DEVICE" "" "PACKAGES;TARGETS" ${ARGN})
+    cmake_parse_arguments(P "DEVICE;NO_SCRIPTS" "" "PACKAGES;TARGETS" ${ARGN})
     if(P_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "retroplug_product(${product}): unrecognised argument(s): ${P_UNPARSED_ARGUMENTS}")
     endif()
@@ -473,17 +524,29 @@ function(retroplug_product product)
         endif()
         get_property(_e GLOBAL PROPERTY RP_PACKAGE_${_p}_ENTRIES)
         get_property(_t GLOBAL PROPERTY RP_PACKAGE_${_p}_TARGETS)
+        # Its script pack's registration (_retroplug_script_targets), which every script pack's is a device's, unless
+        # the product takes the packages' native entries alone (NO_SCRIPTS).
+        set(_scriptFn "")
+        set(_scriptTarget "")
+        if(NOT P_NO_SCRIPTS)
+            get_property(_scriptFn GLOBAL PROPERTY RP_PACKAGE_${_p}_SCRIPT_FN)
+            get_property(_scriptTarget GLOBAL PROPERTY RP_PACKAGE_${_p}_SCRIPT_TARGET)
+        endif()
         if(P_DEVICE)
             set(_all ${_e})
             get_property(_e GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_ENTRIES)
             get_property(_t GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_TARGETS)
-            if(NOT _e)
+            if(NOT _e AND NOT _scriptFn)
                 message(FATAL_ERROR "retroplug_product(${product}): package `${_p}` has no `device` entry "
                                     "(${RP_PACKAGES_DIR}/${_p}/package.json), so a device product cannot carry it")
             endif()
-            list(REMOVE_ITEM _all ${_e})
+            if(_e)
+                list(REMOVE_ITEM _all ${_e})
+            endif()
             list(APPEND _leftOut ${_all})
         endif()
+        list(APPEND _e ${_scriptFn})
+        list(APPEND _t ${_scriptTarget})
         # Every package's targets exist by the first product (the packages are added before packages/native, whose
         # retroplug-backend comes before its first product), so a name that is not one is a manifest typo, refused here
         # rather than left to the linker as a bare -l flag.
@@ -572,7 +635,8 @@ ${_body}}
 endfunction()
 
 # retroplug_device_mode_objects(<target> PACKAGES <package>... [SOURCES <source>...] [INCLUDES <dir>...]
-#                               [OWNERS <variable>]): the device's build of the packages' `device` entries, for a
+#                               [SCRIPTS <target>...] [OWNERS <variable>]): the device's build of the packages' `device`
+# entries, and of their script packs' registrations, for a
 # desktop binary that holds it beside the desktop's build of the same entries: the device-mode test, and the plan
 # exporter (packages/graph-runtime/export-plan), which plans with the desktop's build of each type and sizes the plan
 # with the device's. An object library, EXCLUDE_FROM_ALL, of the sources of every `device` entry's target of the
@@ -595,8 +659,14 @@ endfunction()
 # code through the C ABI alone, as a device's host would. MSVC keeps its /EHsc: a second /EH option on one command line
 # is the D9025 warning AGENTS.md describes, and the GCC and Clang builds are where -fno-exceptions is proved. OWNERS
 # names a variable set to the desktop targets the objects twin, which the binary links for the desktop's build.
+#
+# A listed package's script pack (_retroplug_script_targets), and each of SCRIPTS (a test's own, made by
+# retroplug_device_script_pack), is compiled the same way: its registration's source and the MicroQuickJS host it links,
+# its function renamed as an entry is, <rp_..._script_package>_device_mode. A library marked RP_DEVICE_MODE_SHARED (the
+# engine and a pack's bytecode, C that names nothing in namespace rp) is not compiled again: the binary links the one
+# the desktop's build links.
 function(retroplug_device_mode_objects target)
-    cmake_parse_arguments(P "" "OWNERS" "PACKAGES;SOURCES;INCLUDES" ${ARGN})
+    cmake_parse_arguments(P "" "OWNERS" "PACKAGES;SOURCES;INCLUDES;SCRIPTS" ${ARGN})
     if(RP_DEVICE_BUILD)
         message(FATAL_ERROR "retroplug_device_mode_objects(${target}): a device build compiles every package in device "
                             "mode already")
@@ -619,52 +689,76 @@ function(retroplug_device_mode_objects target)
     set(_owners "")
     set(_libraries "")
     set(_entries "")
+    set(_ownerQueue "")
+    set(_scriptQueue "")
     foreach(_p IN LISTS P_PACKAGES)
         if(NOT _p IN_LIST _known)
             message(FATAL_ERROR "retroplug_device_mode_objects(${target}): no package `${_p}`")
         endif()
         get_property(_e GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_ENTRIES)
         get_property(_t GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_TARGETS)
-        if(NOT _e)
+        # A script pack's registration is a device's too (_retroplug_script_targets): its source, and the MicroQuickJS
+        # host it links, compiled here as the device compiles them, the bytecode and the engine linked as they are.
+        get_property(_scriptFn GLOBAL PROPERTY RP_PACKAGE_${_p}_SCRIPT_FN)
+        get_property(_scriptTarget GLOBAL PROPERTY RP_PACKAGE_${_p}_SCRIPT_TARGET)
+        if(NOT _e AND NOT _scriptFn)
             message(FATAL_ERROR "retroplug_device_mode_objects(${target}): package `${_p}` has no `device` entry")
         endif()
-        list(APPEND _entries ${_e})
-        foreach(_owner IN LISTS _t)
-            # The owner's <target>-device check holds its sources made absolute (_retroplug_device_check).
+        list(APPEND _entries ${_e} ${_scriptFn})
+        list(APPEND _ownerQueue ${_t})
+        list(APPEND _scriptQueue ${_scriptTarget})
+    endforeach()
+    # SCRIPTS: a script pack's registration that is no package's (retroplug_device_script_pack: a test's fixture).
+    foreach(_scriptTarget IN LISTS P_SCRIPTS)
+        get_target_property(_scriptFn ${_scriptTarget} RP_SCRIPT_FN)
+        if(NOT _scriptFn)
+            message(FATAL_ERROR "retroplug_device_mode_objects(${target}): ${_scriptTarget} is no script pack's "
+                                "registration (retroplug_device_script_pack)")
+        endif()
+        list(APPEND _entries ${_scriptFn})
+        list(APPEND _scriptQueue ${_scriptTarget})
+    endforeach()
+    foreach(_owner IN LISTS _ownerQueue _scriptQueue)
+        # The owner's <target>-device check holds its sources made absolute (_retroplug_device_check); a script pack's
+        # registration is one generated source, absolute already.
+        if(_owner IN_LIST _scriptQueue)
+            get_target_property(_s ${_owner} SOURCES)
+        else()
             get_target_property(_s ${_owner}-device SOURCES)
-            list(APPEND _sources ${_s})
-            list(APPEND _owners ${_owner})
-            list(APPEND _includes $<TARGET_PROPERTY:${_owner},INCLUDE_DIRECTORIES>)
-            list(APPEND _definitions $<TARGET_PROPERTY:${_owner},COMPILE_DEFINITIONS>)
-            # Every static library it links (the rp::dsp kernels), and theirs: renamed with it, so compiled with it, so
-            # a library here is the owner's own and not a vendored one. The SDK is headers alone in device mode, so
-            # retroplug-node-sdk's own sources (the description library) are not the device's.
-            get_target_property(_pending ${_owner} LINK_LIBRARIES)
-            while(_pending)
-                list(POP_FRONT _pending _lib)
-                if(NOT TARGET ${_lib} OR _lib STREQUAL "retroplug-node-sdk" OR _lib IN_LIST _libraries
-                   OR _lib IN_LIST _allOwners)
-                    continue()
-                endif()
-                get_target_property(_type ${_lib} TYPE)
-                if(NOT _type STREQUAL "STATIC_LIBRARY")
-                    continue()
-                endif()
-                list(APPEND _libraries ${_lib})
-                get_target_property(_s ${_lib} SOURCES)
-                get_target_property(_dir ${_lib} SOURCE_DIR)
-                foreach(_one IN LISTS _s)
-                    cmake_path(ABSOLUTE_PATH _one BASE_DIRECTORY "${_dir}" OUTPUT_VARIABLE _one)
-                    list(APPEND _sources ${_one})
-                endforeach()
-                list(APPEND _includes $<TARGET_PROPERTY:${_lib},INCLUDE_DIRECTORIES>)
-                list(APPEND _definitions $<TARGET_PROPERTY:${_lib},COMPILE_DEFINITIONS>)
-                get_target_property(_more ${_lib} LINK_LIBRARIES)
-                if(_more)
-                    list(APPEND _pending ${_more})
-                endif()
-            endwhile()
-        endforeach()
+        endif()
+        list(APPEND _sources ${_s})
+        list(APPEND _owners ${_owner})
+        list(APPEND _includes $<TARGET_PROPERTY:${_owner},INCLUDE_DIRECTORIES>)
+        list(APPEND _definitions $<TARGET_PROPERTY:${_owner},COMPILE_DEFINITIONS>)
+        # Every static library it links (the rp::dsp kernels), and theirs: renamed with it, so compiled with it, so
+        # a library here is the owner's own and not a vendored one. The SDK is headers alone in device mode, so
+        # retroplug-node-sdk's own sources (the description library) are not the device's.
+        get_target_property(_pending ${_owner} LINK_LIBRARIES)
+        while(_pending)
+            list(POP_FRONT _pending _lib)
+            if(NOT TARGET ${_lib} OR _lib STREQUAL "retroplug-node-sdk" OR _lib IN_LIST _libraries
+               OR _lib IN_LIST _allOwners)
+                continue()
+            endif()
+            get_target_property(_type ${_lib} TYPE)
+            get_target_property(_shared ${_lib} RP_DEVICE_MODE_SHARED)
+            if(NOT _type STREQUAL "STATIC_LIBRARY" OR _shared)
+                continue()
+            endif()
+            list(APPEND _libraries ${_lib})
+            get_target_property(_s ${_lib} SOURCES)
+            get_target_property(_dir ${_lib} SOURCE_DIR)
+            foreach(_one IN LISTS _s)
+                cmake_path(ABSOLUTE_PATH _one BASE_DIRECTORY "${_dir}" OUTPUT_VARIABLE _one)
+                list(APPEND _sources ${_one})
+            endforeach()
+            list(APPEND _includes $<TARGET_PROPERTY:${_lib},INCLUDE_DIRECTORIES>)
+            list(APPEND _definitions $<TARGET_PROPERTY:${_lib},COMPILE_DEFINITIONS>)
+            get_target_property(_more ${_lib} LINK_LIBRARIES)
+            if(_more)
+                list(APPEND _pending ${_more})
+            endif()
+        endwhile()
     endforeach()
     list(REMOVE_DUPLICATES _sources)
     set(_renames "")

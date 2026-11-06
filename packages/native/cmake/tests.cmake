@@ -205,10 +205,6 @@ foreach(_rp_read IN ITEMS "${CMAKE_SOURCE_DIR}/packages/n8/package.json"
     endif()
 endforeach()
 
-# The devtest package's device script pack (packages/devtest/ts), compiled to MicroQuickJS bytecode at both widths by
-# the device-pack toolchain: `pnpm test` builds it, and test/graph/device-pack.test.ts holds its two bytecodes.
-retroplug_script_pack(devtest)
-
 # Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive
 # detection, registered-ROM parent-dir watches, and the unregistered-file filter.
 retroplug_add_test_binary(
@@ -317,7 +313,11 @@ retroplug_add_test_binary(
 # what a device host stages, each build alike (DeviceIo.test.cpp), and the box's bridge plan feeds a fake cart link what
 # its filter keeps. The Pico box's portable pieces run here too, over its own plan.json (BoxHost.test.cpp: the block
 # driver, the staging, the cart link and a whole pass, and plan.json's blob golden), and its Edio link over a fake
-# TinyUSB host (UsbCdcTransport.test.cpp).
+# TinyUSB host (UsbCdcTransport.test.cpp). Device script packs run on the MicroQuickJS host, both its builds
+# (ScriptPack.test.cpp, docs/modular-graph-phase-e4-design.md section 7): the block API, settings and hooks, each fault
+# and a heap that runs out silencing its own pack alone, a warmed block allocating nothing (native or JS), and a plan
+# with a script node exported and loaded over the device-mode builds rendering what GraphHost renders, its pack's
+# memory sized, placed and refused as the loader does.
 #
 # Both builds of one source sit in this one binary: the device-mode objects (retroplug_device_mode_objects,
 # cmake/packages.cmake, which says how the rename lets them) are the device's build of every package with a `device`
@@ -342,12 +342,24 @@ include("${CMAKE_SOURCE_DIR}/pico/host/host.cmake")
 include("${CMAKE_SOURCE_DIR}/pico/n8-host/plan.cmake")
 set(_rp_box_dir "${CMAKE_SOURCE_DIR}/pico/n8-host")
 
+# The test's own device script packs (test/device-mode/script-packs, docs/modular-graph-phase-e4-design.md section 7),
+# compiled by the device-pack toolchain as a package's pack is: scripttest holds the MicroQuickJS host to its contract
+# (the block API, settings, the hooks, a fault of each kind) and hog runs its pack's heap out. Both builds of each
+# registration are in the binary, as devtest's script pack's are (ScriptPack.test.cpp).
+set(_rp_script_packs ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/script-packs)
+retroplug_device_script_pack(scripttest ENTRY ${_rp_script_packs}/scripttest/index.ts HEAP_BYTES 524288
+                             PACK_DIR ${_rp_script_packs}/scripttest
+                             OUT_DIR ${CMAKE_BINARY_DIR}/device-mode/script-packs/scripttest)
+retroplug_device_script_pack(hog ENTRY ${_rp_script_packs}/hog/index.ts HEAP_BYTES 81920
+                             PACK_DIR ${_rp_script_packs}/hog OUT_DIR ${CMAKE_BINARY_DIR}/device-mode/script-packs/hog)
+
 retroplug_device_mode_objects(retroplug-device-mode-objects
     PACKAGES ${_rp_device_packages}
     SOURCES  ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/DeviceModeNodes.cpp
              ${_rp_box_dir}/BoxCartLink.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
              ${_rp_box_dir}
+    SCRIPTS  retroplug-scripttest-script retroplug-hog-script
     OWNERS   _rp_device_owners)
 
 # The box's Edio link (pico/n8-host/UsbCdcTransport.cpp) over a fake TinyUSB host: its own objects, so the fake
@@ -468,6 +480,7 @@ retroplug_add_test_binary(
              test/device-mode/DeviceIo.test.cpp
              test/device-mode/BoxHost.test.cpp
              test/device-mode/UsbCdcTransport.test.cpp
+             test/device-mode/ScriptPack.test.cpp
              test/device-mode/FakeTinyUsb.cpp
              ${RP_BOX_HOST_PORTABLE_SOURCES}          # the box host, desktop-built
              ${_rp_box_dir}/BoxCartLink.cpp           # the N8 box's cart link, desktop-built

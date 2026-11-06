@@ -5,6 +5,6 @@
   "description": "Test node types a device image's check runs: a deterministic source, a digest and a coupled pair, and a script pack's transpose. No product that ships lists it.",
   "retroplug": {
     "native": { "target": "retroplug-devtest-nodes", "entry": "rp_devtest_plan_package", "device": true },
-    "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 16384 }
+    "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 81920 }
   }
 }

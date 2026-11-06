@@ -41,8 +41,8 @@
 extern "C" {
 #endif
 
-/* Still 1 though rp_node_type has changed shape (its type-level calls take the type, and it gained ctx): ABI v1
- * has never shipped, so no pack was built against the old one. */
+/* Still 1 though rp_node_type has changed shape (its type-level calls take the type, and it gained ctx) and
+ * rp_package has gained memory and ctx: ABI v1 has never shipped, so no pack was built against the old one. */
 #define RP_ABI_VERSION 1u
 
 /* The symbol a downloaded pack exports (an rp_package_entry_fn), and the visibility it needs. */
@@ -329,12 +329,47 @@ struct rp_node_type {
     void* ctx;
 };
 
-typedef struct rp_package {
+typedef struct rp_package rp_package;
+
+/* A package's own memory (docs/modular-graph-phase-e4-design.md section 5): one block a host sizes, places and sets up
+ * once for the package, before it creates any of the package's nodes, and tears down after it has destroyed the last
+ * of them. A script pack's context lives in it, its heap and the state its nodes share. A host gives each package one
+ * block of its own: a device's loader one per loaded plan, in its arena beside the nodes; a desktop host one for its
+ * life. A node finds the block its host set its package up in through the host (RP_HOST_PACKAGES_INTERFACE). Every C++
+ * package leaves rp_package.memory null and has none. All three are [control]. */
+typedef struct rp_package_memory {
+    const char* name; /* the package's name, which a refusal names ("devtest") */
+    /* What the package needs: one block of out->size bytes aligned to out->align (0: no alignment of its own), the same
+     * for every host of this build. False, with a reason, when the package cannot run anywhere at all. */
+    bool (*query)(const rp_package* package, rp_memory_req* out, rp_error* err);
+    /* Set the package up in `memory`, query's size and alignment, zeroed. False, with a reason, leaving nothing to tear
+     * down. */
+    bool (*setup)(const rp_package* package, void* memory, rp_error* err);
+    /* Undo setup. A host calls it once for each setup that succeeded, after the last node made under that block. */
+    void (*teardown)(const rp_package* package, void* memory);
+} rp_package_memory;
+
+struct rp_package {
     uint32_t                   abi_version;
     const char*                manifest_json;
     uint32_t                   node_type_count;
     const rp_node_type* const* node_types;
-} rp_package;
+    /* The package's own memory, or null for a package that has none (every C++ one). Last, so a package that lists
+     * its fields in order and stops before it leaves it null. */
+    const rp_package_memory*   memory;
+    /* The package's own data, for functions that serve several packages; the host never reads it. */
+    void*                      ctx;
+};
+
+/* The memory a host set a package up in (rp_package_memory), through rp_host.get_interface. [control] The block, or
+ * null with a reason in err->message: a package with no memory has none, and a host that cannot give one (its arena
+ * does not hold it, or the package's setup refused) says why. A host sets the block up before it first answers for
+ * it. */
+#define RP_HOST_PACKAGES_INTERFACE "rp.host.packages/1"
+typedef struct rp_host_packages {
+    void* ctx;
+    void* (*memory)(void* ctx, const rp_package* package, rp_error* err);
+} rp_host_packages;
 
 /* A downloaded pack exports this symbol; statically linked packages hand the same struct to the
  * generated registration list. Declared here, inside the header's C linkage, so a C++ pack that defines

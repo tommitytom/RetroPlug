@@ -26,6 +26,8 @@
     }
   },
   // The workspace packages' TS halves (packages/n8/ts first), whose tests run in this package's mock tier
-  // (scripts/run-tests.mjs sweeps packages/*/ts/test) on its harness, and devtest's script pack.
-  "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../n8/ts", "../devtest/ts"]
+  // (scripts/run-tests.mjs sweeps packages/*/ts/test) on its harness, devtest's script pack, and the script packs the
+  // device-mode test builds (packages/native/test/device-mode/script-packs).
+  "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../n8/ts", "../devtest/ts",
+              "../native/test/device-mode/script-packs"]
 }

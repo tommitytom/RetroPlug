@@ -14,5 +14,6 @@ struct RpExportPackage {
     rp_package_entry_fn device;   // the same entry, as the device builds it (renamed <entry>_device_mode)
 };
 
-// One row per device entry, in the tool's registration order (a package with several entries has several rows).
+// One row per device entry, and one per script pack's registration, in the tool's registration order (a package
+// with several has several rows).
 const RpExportPackage* rp_export_plan_packages(std::size_t* count);

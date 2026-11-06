@@ -6,6 +6,7 @@
 #include <new>
 
 #include "graph/PlanBlob.hpp"
+#include "graph/Text.hpp"
 #include "graph/noinline.hpp"
 
 #if defined(RP_DEVICE) && defined(__GLIBCXX__)
@@ -26,39 +27,6 @@ namespace {
 using namespace blob;
 
 // ---- error text ---------------------------------------------------------------------------------------------------
-
-// A sentence built into a fixed buffer, cut where it no longer fits: the loader's rp_error, with no heap.
-struct Text {
-    char*       out;
-    std::size_t capacity;
-    std::size_t length = 0;
-
-    Text(char* buffer, std::size_t size) : out(buffer), capacity(size) { out[0] = '\0'; }
-    Text& put(const char* s, std::size_t n) {
-        for (std::size_t i = 0; i < n && length + 1 < capacity; ++i) out[length++] = s[i];
-        out[length] = '\0';
-        return *this;
-    }
-    Text& operator<<(const char* s) { return put(s, std::strlen(s)); }
-    Text& operator<<(std::string_view s) { return put(s.data(), s.size()); }
-    Text& operator<<(std::uint64_t v) {
-        char digits[20];
-        std::size_t n = 0;
-        do {
-            digits[n++] = static_cast<char>('0' + v % 10);
-            v /= 10;
-        } while (v);
-        while (n) put(&digits[--n], 1);
-        return *this;
-    }
-    Text& hex(std::uint32_t v) {
-        char digits[10] = {'0', 'x'};
-        for (int i = 0; i < 8; ++i) digits[2 + i] = "0123456789abcdef"[(v >> (28 - 4 * i)) & 0xF];
-        return put(digits, 10);
-    }
-    // A string from the blob, quoted: a type id or a node id, which may hold anything the document did.
-    Text& quoted(std::string_view s) { return *this << "\"" << s << "\""; }
-};
 
 // A node's rp_error text, bounded (a node may leave it unterminated), or the fallback when it gave none.
 std::string_view reason(const rp_error& e, const char* fallback) {
@@ -105,16 +73,25 @@ struct Blob {
     double sampleRate() const { return joinDouble(h.sampleRate); }
 };
 
-const rp_node_type* findType(std::span<const rp_package* const> types, std::string_view id) {
+// The type registered under `id`, and the package it came from (`package`, when asked), or null.
+const rp_node_type* findType(std::span<const rp_package* const> types, std::string_view id,
+                             const rp_package** package = nullptr) {
     for (const rp_package* p : types) {
         if (!p || p->abi_version != RP_ABI_VERSION) continue;
         for (std::uint32_t i = 0; i < p->node_type_count; ++i) {
             const rp_node_type* t = p->node_types[i];
-            if (t && t->id && std::strlen(t->id) == id.size() && std::memcmp(t->id, id.data(), id.size()) == 0)
+            if (t && t->id && std::strlen(t->id) == id.size() && std::memcmp(t->id, id.data(), id.size()) == 0) {
+                if (package) *package = p;
                 return t;
+            }
         }
     }
     return nullptr;
+}
+
+// What a package's memory hook calls it, for what is said of it.
+std::string_view packageName(const rp_package* p) {
+    return p && p->memory && p->memory->name ? std::string_view(p->memory->name) : std::string_view("unnamed");
 }
 
 const char* sectionName(Section s) {
@@ -432,11 +409,84 @@ struct Placed {
     rp_control_queue** rolls = nullptr;
     FeedbackCopy*      feedback = nullptr;
     rp_node**          peers = nullptr;
+    LoadedPackage*     packages = nullptr;
+    std::uint32_t      packageCount = 0;
 };
+
+// Node `i`'s package when it has memory of its own and no earlier node's type comes from it, else null: what places
+// each such package once, where the plan first names it. Out of line, as placePackages is: a device's loader keeps one
+// copy of each.
+RP_NOINLINE const rp_package* newPackage(const Blob& b, std::span<const rp_package* const> types, std::uint32_t i) {
+    const rp_package* package = nullptr;
+    findType(types, b.text(b.node(i).type), &package);  // check() found every one
+    if (!package || !package->memory) return nullptr;
+    for (std::uint32_t j = 0; j < i; ++j) {
+        const rp_package* earlier = nullptr;
+        findType(types, b.text(b.node(j).type), &earlier);
+        if (earlier == package) return nullptr;
+    }
+    return package;
+}
+
+std::uint32_t countPackages(const Blob& b, std::span<const rp_package* const> types) {
+    std::uint32_t n = 0;
+    for (std::uint32_t i = 0; i < b.count(Section::Nodes); ++i)
+        if (newPackage(b, types, i)) ++n;
+    return n;
+}
 
 rp_settings settingsOf(const Blob& b, const NodeRecord& r) {
     return {reinterpret_cast<const char*>(b.bytes(Section::Settings, r.settings.offset)), r.settings.size,
             RP_SETTINGS_MSGPACK};
+}
+
+// What placePackages placed: the packages' memory in all, and the first package whose memory ends past the arena.
+struct Placement {
+    std::uint64_t     bytes = 0;
+    const rp_package* tip = nullptr;
+    std::uint64_t     tipBytes = 0;
+};
+
+// The plan's packages with memory of their own (layout's), each queried and placed: false, with `err` filled, for one
+// that cannot be sized or asks an alignment the target does not give.
+RP_NOINLINE bool placePackages(const Blob& b, std::span<const rp_package* const> types, Bump& bump, Placed& p,
+                               std::uint64_t limit, Placement& out, PlanLoadError* err) {
+    const std::uint32_t nodes = b.count(Section::Nodes);
+    p.packageCount = countPackages(b, types);
+    p.packages = bump.array<LoadedPackage>(p.packageCount);
+    for (std::uint32_t i = 0, k = 0; i < nodes; ++i) {
+        const rp_package* package = newPackage(b, types, i);
+        if (!package) continue;
+        const rp_package_memory& hooks = *package->memory;
+        rp_memory_req req{};
+        rp_error packageErr{};
+        if (!hooks.query || !hooks.setup || !hooks.teardown) {
+            (fail(err, "package-memory") << "the ").quoted(packageName(package))
+                << " pack has package memory without its query, setup and teardown";
+            return false;
+        }
+        if (!hooks.query(package, &req, &packageErr)) {
+            (fail(err, "package-memory") << "the ").quoted(packageName(package))
+                << " pack's memory cannot be sized: " << reason(packageErr, "the package refused");
+            return false;
+        }
+        const std::uint64_t align = req.align ? req.align : kTargetAlign;
+        if ((align & (align - 1)) != 0 || align > kTargetAlign) {
+            (fail(err, "package-memory") << "the ").quoted(packageName(package))
+                << " pack asked for an alignment of " << align << ", where an " << kTargetName
+                << " arena gives a power of two up to " << std::uint64_t{kTargetAlign};
+            return false;
+        }
+        std::byte* memory = bump.raw(req.size ? req.size : 1, align);
+        out.bytes += req.size;
+        if (!out.tip && bump.used > limit) {
+            out.tip = package;
+            out.tipBytes = req.size;
+        }
+        if (p.packages) new (&p.packages[k]) LoadedPackage{package, memory, req.size, false};
+        ++k;
+    }
+    return true;
 }
 
 // The plan's whole layout in the arena: its own structures and pools first, then each node's instance in the
@@ -473,6 +523,15 @@ bool layout(const Blob& b, std::span<const rp_package* const> types, Bump& bump,
     p.feedback = bump.array<FeedbackCopy>(b.count(Section::Feedback));
     p.peers = bump.array<rp_node*>(b.count(Section::PeerNodes));
     const std::uint64_t planBytes = bump.used;
+
+    // The packages with memory of their own: each once, in the order the plan first names one of its types, after the
+    // plan's own structures and before every node, since each is set up before its first node is created.
+    Placement packages;
+    if (!placePackages(b, types, bump, p, limit, packages, err)) return false;
+    const std::uint64_t packageBytes = packages.bytes;
+    const std::uint32_t packageCount = p.packageCount;
+    const rp_package*   packageTip = packages.tip;
+    const std::uint64_t packageTipBytes = packages.tipBytes;
 
     std::uint64_t instanceBytes = 0;
     std::uint32_t tip = kNoNode;  // the first node whose instance ends past the arena
@@ -516,7 +575,10 @@ bool layout(const Blob& b, std::span<const rp_package* const> types, Bump& bump,
         constexpr std::uint64_t kMaxSize = std::numeric_limits<std::size_t>::max();
         size->bytes = static_cast<std::size_t>(bump.used < kMaxSize ? bump.used : kMaxSize);
         size->instanceBytes = static_cast<std::size_t>(instanceBytes < kMaxSize ? instanceBytes : kMaxSize);
+        size->packageBytes = static_cast<std::size_t>(packageBytes < kMaxSize ? packageBytes : kMaxSize);
+        size->structureBytes = static_cast<std::size_t>(planBytes < kMaxSize ? planBytes : kMaxSize);
         size->nodes = nodes;
+        size->packages = packageCount;
     }
     if (bump.used > limit) {
         const std::uint64_t over = bump.used - limit;
@@ -524,6 +586,10 @@ bool layout(const Blob& b, std::span<const rp_package* const> types, Bump& bump,
             fail(err, "arena") << "the plan's buffers, queues and steps take " << planBytes << " bytes, past the "
                                << limit << "-byte arena by " << planBytes - limit
                                << " before any node; the whole plan needs " << bump.used;
+        } else if (packageTip) {
+            (fail(err, "arena") << "the ").quoted(packageName(packageTip))
+                << " pack's memory (" << packageTipBytes << " bytes) does not fit: the plan needs " << bump.used
+                << " bytes, " << over << " past the " << limit << "-byte arena";
         } else {
             const NodeRecord r = b.node(tip);
             fail(err, "arena", b.nodeId(tip))
@@ -594,8 +660,18 @@ void bind(const Blob& b, const Placed& p) {
     }
 }
 
-// Deactivates and destroys nodes [0, made), the last first.
-void unwind(LoadedNode* nodes, std::uint32_t made) {
+// Tears down every package set up, the last first.
+void tearDown(LoadedPackage* packages, std::uint32_t count) {
+    while (count-- > 0) {
+        LoadedPackage& pk = packages[count];
+        if (!pk.setUp) continue;
+        pk.package->memory->teardown(pk.package, pk.memory);
+        pk.setUp = false;
+    }
+}
+
+// Deactivates and destroys nodes [0, made), the last first, then tears the packages down: what a plan unwinds to.
+void unwind(LoadedNode* nodes, std::uint32_t made, LoadedPackage* packages, std::uint32_t packageCount) {
     while (made-- > 0) {
         LoadedNode& n = nodes[made];
         if (!n.node) continue;
@@ -604,13 +680,51 @@ void unwind(LoadedNode* nodes, std::uint32_t made) {
         n.node = nullptr;
         n.active = false;
     }
+    tearDown(packages, packageCount);
 }
 
-// Create and activate every node, bind the steps to them, then what PlanStorage::adopt applies: peers, connected
-// outputs, param starts.
+// The loader's own host, which a loaded plan's nodes are created under: rp.host.packages/1 from the plan's packages,
+// everything else the caller's host's (LoadedPlan::outer).
+const void* loaderInterface(const rp_host* host, const char* id) {
+    const auto* plan = static_cast<const LoadedPlan*>(host->ctx);
+    if (std::strcmp(id, RP_HOST_PACKAGES_INTERFACE) == 0) return &plan->packageService;
+    return plan->outer && plan->outer->get_interface ? plan->outer->get_interface(plan->outer, id) : nullptr;
+}
+void* loaderAlloc(void* ctx, std::size_t size, std::size_t align) {
+    const rp_host* outer = static_cast<const LoadedPlan*>(ctx)->outer;
+    return outer->alloc(outer->ctx, size, align);
+}
+void loaderFree(void* ctx, void* ptr) {
+    const rp_host* outer = static_cast<const LoadedPlan*>(ctx)->outer;
+    outer->free(outer->ctx, ptr);
+}
+void loaderLog(void* ctx, int level, const char* message) {
+    const rp_host* outer = static_cast<const LoadedPlan*>(ctx)->outer;
+    if (outer && outer->log) outer->log(outer->ctx, level, message);
+}
+void* packageMemory(void* ctx, const rp_package* package, rp_error* err) {
+    for (LoadedPackage& pk : static_cast<LoadedPlan*>(ctx)->packages)
+        if (pk.package == package && pk.setUp) return pk.memory;
+    if (err) Text(err->message, sizeof err->message) << "the plan sets up no memory for its package";
+    return nullptr;
+}
+
+// Set up every package, then create and activate every node, bind the steps to them, then what PlanStorage::adopt
+// applies: peers, connected outputs, param starts.
 bool runUp(const Blob& b, const Placed& p, const rp_host* host, PlanLoadError* err) {
     const std::uint32_t nodes = b.count(Section::Nodes);
     const double rate = b.sampleRate();
+    for (std::uint32_t k = 0; k < p.packageCount; ++k) {
+        LoadedPackage& pk = p.packages[k];
+        rp_error packageErr{};
+        if (!pk.package->memory->setup(pk.package, pk.memory, &packageErr)) {
+            (fail(err, "package-setup") << "the ").quoted(pk.name())
+                << " pack would not set up in its memory: " << reason(packageErr, "the package refused");
+            tearDown(p.packages, k);
+            return false;
+        }
+        pk.setUp = true;
+    }
     for (std::uint32_t i = 0; i < nodes; ++i) {
         LoadedNode& n = p.nodes[i];
         const rp_settings settings = settingsOf(b, b.node(i));
@@ -618,12 +732,12 @@ bool runUp(const Blob& b, const Placed& p, const rp_host* host, PlanLoadError* e
         n.node = n.type->create(n.type, host, n.memory, &settings, &nodeErr);
         if (!n.node) {
             fail(err, "create-failed", n.name()) << reason(nodeErr, "the node could not be created");
-            unwind(p.nodes, i);
+            unwind(p.nodes, i, p.packages, p.packageCount);
             return false;
         }
         if (!n.node->vt->activate(n.node, rate, b.h.maxFrames, &nodeErr)) {
             fail(err, "activate-failed", n.name()) << reason(nodeErr, "the node could not be activated");
-            unwind(p.nodes, i + 1);
+            unwind(p.nodes, i + 1, p.packages, p.packageCount);
             return false;
         }
         n.active = true;
@@ -638,7 +752,7 @@ bool runUp(const Blob& b, const Placed& p, const rp_host* host, PlanLoadError* e
             if (!step.step) {
                 fail(err, "link-without-step", n.name())
                     .quoted(n.name()) << " is coupled but does not implement " RP_STEP_INTERFACE;
-                unwind(p.nodes, nodes);
+                unwind(p.nodes, nodes, p.packages, p.packageCount);
                 return false;
             }
         }
@@ -649,7 +763,7 @@ bool runUp(const Blob& b, const Placed& p, const rp_host* host, PlanLoadError* e
         if (!n.node->vt->get_interface(n.node, RP_LINK_INTERFACE)) {
             fail(err, "peers-without-link", n.name()).quoted(n.name()) << " has peers but does not implement "
                                                                           RP_LINK_INTERFACE;
-            unwind(p.nodes, nodes);
+            unwind(p.nodes, nodes, p.packages, p.packageCount);
             return false;
         }
     }
@@ -675,6 +789,8 @@ bool runUp(const Blob& b, const Placed& p, const rp_host* host, PlanLoadError* e
 }
 
 }  // namespace
+
+std::string_view LoadedPackage::name() const { return packageName(package); }
 
 LoadedNode* LoadedPlan::find(std::string_view id) const {
     for (LoadedNode& n : nodes)
@@ -740,19 +856,29 @@ LoadedPlan* loadPlan(std::span<const std::uint8_t> blob, std::span<std::byte> ar
     plan.bytes = size.bytes;
     plan.paramViews = p.paramViews;
     plan.wired = p.wired;
+    plan.packages = std::span<LoadedPackage>(p.packages, p.packageCount);
+    plan.outer = host;
+    plan.packageService = rp_host_packages{&plan, &packageMemory};
+    plan.host = rp_host{RP_ABI_VERSION,
+                        &plan,
+                        host && host->alloc ? &loaderAlloc : nullptr,
+                        host && host->free ? &loaderFree : nullptr,
+                        &loaderLog,
+                        &loaderInterface};
     bind(b, p);
     plan.view = PlanView{std::span<PlanStep>(p.steps, b.count(Section::Steps)),
                          std::span<const OutputQueue>(p.clears, b.count(Section::Clears)),
                          std::span<rp_control_queue* const>(p.rolls, b.count(Section::Rolls)),
                          std::span<const FeedbackCopy>(p.feedback, b.count(Section::Feedback)), &plan.faults,
                          &plan.drops};
-    if (!runUp(b, p, host, error)) return nullptr;
+    if (!runUp(b, p, &plan.host, error)) return nullptr;
     return &plan;
 }
 
 void unloadPlan(LoadedPlan* plan) {
     if (!plan) return;
-    unwind(plan->nodes.data(), static_cast<std::uint32_t>(plan->nodes.size()));
+    unwind(plan->nodes.data(), static_cast<std::uint32_t>(plan->nodes.size()), plan->packages.data(),
+           static_cast<std::uint32_t>(plan->packages.size()));
 }
 
 }  // namespace rp::graph

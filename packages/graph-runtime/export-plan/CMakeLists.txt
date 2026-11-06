@@ -14,14 +14,17 @@
 # naming a type its image does not register is refused here, and the firmware's build with it, rather than at boot.
 set(RP_EXPORT_PLAN_PACKAGES core dsp n8 device-io devtest)
 
-# --packages' table: each listed package's device entries, by package name, with both builds of each (the desktop's
-# from the product's link, the device's from the objects below, which rename every entry <entry>_device_mode).
+# --packages' table: each listed package's device entries and its script pack's registration, by package name, with both
+# builds of each (the desktop's from the product's link, the device's from the objects below, which rename every entry
+# <entry>_device_mode).
 set(_rp_decls "")
 set(_rp_rows "")
 set(_rp_count 0)
 foreach(_p IN LISTS RP_EXPORT_PLAN_PACKAGES)
     get_property(_entries GLOBAL PROPERTY RP_PACKAGE_${_p}_DEVICE_ENTRIES)
-    foreach(_e IN LISTS _entries)
+    # And its script pack's registration, if it has one (cmake/packages.cmake's _retroplug_script_targets).
+    get_property(_scriptFn GLOBAL PROPERTY RP_PACKAGE_${_p}_SCRIPT_FN)
+    foreach(_e IN LISTS _entries _scriptFn)
         string(APPEND _rp_decls "extern \"C\" const rp_package* ${_e}(void);\n"
                                 "extern \"C\" const rp_package* ${_e}_device_mode(void);\n")
         string(APPEND _rp_rows "        {\"${_p}\", &${_e}, &${_e}_device_mode},\n")
