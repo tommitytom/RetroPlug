@@ -41,14 +41,6 @@
 #include <thread>
 #include <vector>
 
-#if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#else
-#include <ctime>
-#endif
-
 #include "DeviceModeEntries.hpp"
 #include "graph/CountingAllocator.hpp"
 #include "graph/Executor.hpp"
@@ -102,20 +94,7 @@ using namespace rp::graph;
 
 // The calling thread's CPU time in microseconds, as the desktop's own deadline clock reads it: what the cases' hosts
 // offer as their clock, so a preempted thread on a loaded machine (a parallel or sanitizer run) costs a node nothing.
-std::uint64_t cpuMicros(void*) {
-#if defined(_WIN32)
-    FILETIME created{}, exited{}, kernel{}, user{};
-    if (!::GetThreadTimes(::GetCurrentThread(), &created, &exited, &kernel, &user)) return 0;
-    const auto us = [](const FILETIME& f) {
-        return ((static_cast<std::uint64_t>(f.dwHighDateTime) << 32) | f.dwLowDateTime) / 10;
-    };
-    return us(kernel) + us(user);
-#else
-    timespec t{};
-    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t) != 0) return 0;
-    return static_cast<std::uint64_t>(t.tv_sec) * 1000000 + static_cast<std::uint64_t>(t.tv_nsec) / 1000;
-#endif
-}
+std::uint64_t cpuMicros(void* ctx) { return threadCpuMicros(ctx); }
 void ignoreLog(void*, int, const char*) {}
 
 // A host for script nodes made by hand: package memory of its own (rp.host.packages/1, set up at a node's first ask

@@ -339,8 +339,9 @@ typedef struct rp_package rp_package;
  * package leaves rp_package.memory null and has none. All three are [control]. */
 typedef struct rp_package_memory {
     const char* name; /* the package's name, which a refusal names ("devtest") */
-    /* What the package needs: one block of out->size bytes aligned to out->align (0: no alignment of its own), the same
-     * for every host of this build. False, with a reason, when the package cannot run anywhere at all. */
+    /* What the package needs: one block of out->size bytes aligned to out->align (0: no alignment of its own),
+     * asked and answered per package, the same for every host. False, with a reason, when the package cannot run
+     * anywhere at all. */
     bool (*query)(const rp_package* package, rp_memory_req* out, rp_error* err);
     /* Set the package up in `memory`, query's size and alignment, zeroed. False, with a reason, leaving nothing to tear
      * down. */
