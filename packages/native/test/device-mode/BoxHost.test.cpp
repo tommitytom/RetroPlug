@@ -4,7 +4,8 @@
 // as its firmware's build exports it and loaded over the device's builds of its types.
 //
 // - The block driver answers the time since the last block at the plan's rate, carrying what passes maxFrames, so the
-//   frames run add up to the time passed: a 12 s wait is 2,250 blocks of 256.
+//   frames run add up to the time passed, carrying what passes maxFrames up to kCarryBlocks blocks: a 12 s wait runs 4
+//   blocks and counts the rest `skipped`.
 // - The staging stages whole messages, each with its status byte and as it came (nothing filtered), a SysEx whole and
 //   the box's own F0 7D 50 commands taken by its hook; it takes no more than a block holds, and loses nothing to that:
 //   a byte it refuses waits for the next pass.
@@ -436,6 +437,63 @@ TEST_CASE("the box's staging takes no more than a block holds, and loses nothing
         CHECK(got[1].bytes == Bytes{0xF6});
         CHECK(got[2].bytes == Bytes{0x90, 0x01, 0x02});
     }
+    SECTION("a host with no plan drops what is staged and what is held, each counted") {
+        for (int i = 0; i < 100; ++i) REQUIRE(feed(*s, {0x90, static_cast<std::uint8_t>(i), 0x40}, at));
+        Bytes sysex(4000, 0x33);
+        sysex.front() = 0xF0;
+        REQUIRE(feed(*s, sysex, at));
+        REQUIRE(feed(*s, {0xF6}, at));  // cuts the SysEx short: both wait for room, as above
+        REQUIRE(s->counts().untaken == 0);
+        s->clearStaged();
+        CHECK(s->counts().untaken == 100 + 1 + 1);  // the staged messages, the held SysEx and the held tune request
+        CHECK(s->staged() == 0);
+        REQUIRE(feed(*s, {0x90, 0x01, 0x02}, at));  // and the staging takes bytes again
+        const auto got = take(*s);
+        REQUIRE(got.size() == 1);
+        CHECK(got[0].bytes == Bytes{0x90, 0x01, 0x02});
+    }
+}
+
+// A link and its hooks, to see what a DeviceHost tells them.
+struct LinkBooks {
+    int acquired = 0;
+    int released = 0;
+    static void onAcquired(void* ctx) { ++static_cast<LinkBooks*>(ctx)->acquired; }
+    static void onReleased(void* ctx) { ++static_cast<LinkBooks*>(ctx)->released; }
+};
+
+TEST_CASE("the box's device host answers the link it installed by name and interface, and nothing else",
+          "[device-mode][box]") {
+    LinkBooks books;
+    int       link = 0, stray = 0;
+    const rp::box::DeviceLink links[] = {{"n8", "rp.n8.cart-link/1", &link, &books, &LinkBooks::onAcquired,
+                                          &LinkBooks::onReleased}};
+    rp::box::DeviceHost host;
+    host.init(links, 1, nullptr, &ignoreLog);
+    const rp_host* h = host.host();
+    const auto*    devices = static_cast<const rp_host_devices*>(h->get_interface(h, RP_HOST_DEVICES_INTERFACE));
+    REQUIRE(devices);
+
+    CHECK(devices->acquire(devices->ctx, "n8", "rp.n8.cart-link/1") == &link);
+    CHECK(books.acquired == 1);
+    // An unknown name, another interface (another version of it too) and a null name or interface: null, no hook.
+    CHECK(devices->acquire(devices->ctx, "pad", "rp.n8.cart-link/1") == nullptr);
+    CHECK(devices->acquire(devices->ctx, "n8", "rp.n8.cart-link/2") == nullptr);
+    CHECK(devices->acquire(devices->ctx, nullptr, "rp.n8.cart-link/1") == nullptr);
+    CHECK(devices->acquire(devices->ctx, "n8", nullptr) == nullptr);
+    CHECK(books.acquired == 1);
+    // A pointer the host never installed, and a null, are ignored; the installed link's release reaches its hook.
+    devices->release(devices->ctx, &stray);
+    devices->release(devices->ctx, nullptr);
+    CHECK(books.released == 0);
+    devices->release(devices->ctx, &link);
+    CHECK(books.released == 1);
+    // No midi interface was given, and no other interface exists.
+    CHECK(h->get_interface(h, RP_DEVICE_MIDI_IN_INTERFACE) == nullptr);
+    CHECK(h->get_interface(h, "rp.host.jobs/1") == nullptr);
+    CHECK(h->get_interface(h, nullptr) == nullptr);
+    CHECK(h->alloc == nullptr);
+    CHECK(h->free == nullptr);
 }
 
 TEST_CASE("staged MIDI reaches the box's plan at the frame its arrival falls on, and the plan keeps what the bridge "
@@ -927,6 +985,36 @@ TEST_CASE("a built-in plan the loader refuses is said, and runs nothing; a node 
         REQUIRE(plan.run(driver));
         CHECK(gLines.size() == 1);
         CHECK(plan.plan()->faults.load() == 1);
+        unloadPlan(plan.plan());
+    }
+    SECTION("faults past the nodes the plan keeps books for are counted, not named") {
+        NodeRegistry registry;
+        std::string  why;
+        REQUIRE(registry.addPackage(rp::graph::devtest::faultPackageDesktop(), &why));
+        const std::vector<const rp_package*> types{rp_devtest_fault_package_device_mode()};
+        constexpr std::uint32_t              kFaulting = rp::box::BuiltInPlan::kNodes + 2;
+        std::string                          doc = R"({"nodes":[)";
+        for (std::uint32_t i = 0; i < kFaulting; ++i)
+            doc += std::string(i ? "," : "") + R"({"id":"f)" + std::to_string(i) +
+                   R"(","type":"rp.devtest.fault","settings":{"at":"process"}})";
+        doc += R"(],"wires":[]})";
+        ExportOptions o;
+        o.arenaBytes = kArenaBytes;
+        const ExportResult r = exportPlan(doc, registry, types, o);
+        REQUIRE(r.ok());
+        rp::box::BuiltInPlan plan;
+        gLines.clear();
+        REQUIRE(plan.load(r.blob, arena.span(kArenaBytes), types, host.host(), &collect));
+        gLines.clear();
+        clock.us = 10'000;
+        REQUIRE(plan.run(driver));
+        REQUIRE(gLines.size() == rp::box::BuiltInPlan::kNodes + 1);
+        CHECK(gLines.front() == "[host] node f0 (rp.devtest.fault) faulted: the executor silences it from here on");
+        CHECK(gLines.back() == "[host] 2 more nodes faulted");
+        CHECK(plan.plan()->faults.load() == kFaulting);
+        clock.us = 20'000;
+        REQUIRE(plan.run(driver));
+        CHECK(gLines.size() == rp::box::BuiltInPlan::kNodes + 1);  // each once
         unloadPlan(plan.plan());
     }
 }
