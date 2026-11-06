@@ -146,8 +146,9 @@ The rules below are the parts that don't fit those.
   ([docs/modular-graph-phase-e3-design.md](docs/modular-graph-phase-e3-design.md), `[plan]`): a document exported by the
   library's `exportPlan` (`retroplug-graph`) and loaded by `loadPlan` into an arena over the device-mode builds renders
   bit for bit what GraphHost renders, allocating nothing from load to unload, every loader refusal says its words,
-  every bit of each blob golden flipped (the CRC resealed) loads or is refused cleanly (`[mutation]`, run in build-asan
-  too), and the three blob goldens (`golden/*.hex`, recorded with `RP_PLAN_BLOB_UPDATE=1`) pin the format. `rp.device.midi-in`
+  every bit of each blob golden flipped (the CRC resealed) loads into an arena of exactly the measured bytes or is
+  refused cleanly (`[mutation]`; its bounds checks bite only under build-asan, which is run by hand), and the three blob
+  goldens (`golden/*.hex`, recorded with `RP_PLAN_BLOB_UPDATE=1`) pin the format. `rp.device.midi-in`
   has four cases (`[device-io]`). The box's host pieces are in it as well (`[box]`: `pico/host/`'s block driver and
   staging, `BoxCartLink`, the volume write and the whole pass over a fake transport, with `plan.json`'s blob, and the
   `retroplug-export-plan` tool run as a process), and `UsbCdcTransport` over a fake TinyUSB (`[usb-cdc]`); the device

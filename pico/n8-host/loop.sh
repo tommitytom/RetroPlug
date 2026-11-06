@@ -89,9 +89,9 @@ if [ $do_build = 1 ]; then
 	# The firmware's build exports its built-in plan (plan.json) with the desktop build's retroplug-export-plan
 	# (RP_DESKTOP_BUILD_DIR, default build/, as tools/build-box.sh reads it), handed to the configure by path. This
 	# script does not build the desktop tree: another session may be building it, and two builds of one tree at once
-	# race. It takes the exporter as that tree last built it (tools/build-box.sh and pnpm test:plugin build it; it is in
-	# no default target, so a plain desktop build does not), and the firmware's export reruns whenever the exporter,
-	# plan.json or plan.cmake changes. The exporter's blob lays out each node's port views by the package sources it
+	# race. It takes the exporter as that tree last built it (tools/build-box.sh and tools/build-device-check.sh bring
+	# it up to date; it is in no default target, so a plain desktop build does not), and the firmware's export reruns
+	# whenever the exporter, plan.json or plan.cmake changes. The exporter's blob lays out each node's port views by the package sources it
 	# was built from while the image compiles the sources as they are now, and the loader cannot tell the two apart
 	# (the blob carries no port signature), so a stale exporter yields a firmware that boots and reads the wrong views.
 	# Hence the refusal below unless the exporter was brought up to date (the stamp the retroplug-export-plan-current
@@ -102,6 +102,10 @@ if [ $do_build = 1 ]; then
 		|| die "no desktop build at ${RP_DESKTOP_BUILD_DIR:-$repo/build} (RP_DESKTOP_BUILD_DIR; ./build.sh makes build/)"
 	tool=$desk/export-plan/retroplug-export-plan
 	stamp=$tool.current
+	# The stamp is compared with this checkout's sources, so the tree must have been configured from it: another
+	# worktree's build dir has a stamp newer than every source here and a tool built from other sources.
+	home=$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' "$desk/CMakeCache.txt" 2>/dev/null)
+	[ "$home" = "$(cd "$repo" && pwd -P)" ] || die "$desk was configured from ${home:-an unknown source tree}, not $repo: use this checkout's build (RP_DESKTOP_BUILD_DIR)"
 	build="cmake --build $desk --target retroplug-export-plan-current -j\$(nproc)"
 	[ -x "$tool" ] || die "no plan exporter at $tool: build it first ($build)"
 	[ -f "$stamp" ] || die "the plan exporter at $tool has not been brought up to date ($stamp is missing): $build"

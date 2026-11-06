@@ -31,6 +31,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <new>
 #include <random>
 #include <sstream>
 #include <string>
@@ -1036,50 +1037,66 @@ std::vector<std::uint8_t> goldenBlob(const char* name) {
 
 // "every read and write in bounds" (PlanLoader.hpp), held by mutation: each of the three golden blobs with each of its
 // bytes flipped, one bit at a time and whole, and the CRC rewritten so the loader reads what the flip made (a flip in
-// the CRC itself is left as it is). Whatever the bytes now say, sizing and loading either refuse in the loader's words
-// or load a plan that unloads, and nothing created is left alive. The cases run under build-asan, where the blob and
-// the arena are exact-size heap blocks, so a read or write past either is the failure.
+// the CRC itself is left as it is). Whatever the bytes now say, sizing either refuses in words or measures the plan, and
+// the loader then agrees: it refuses where sizing did; where sizing measured it, it loads into an arena of exactly the
+// measured bytes and takes exactly them (or refuses a link between nodes, which exists only once they are created), and
+// unloads with no rp.devtest.plan node left alive. Run it under build-asan, by hand (it is no CI or test:plugin leg):
+// the blob and that arena are exact-size heap blocks there, so a read past the blob or a write past the measured
+// layout is the failure; a plain run sees neither.
 TEST_CASE("a blob with any one byte changed loads or is refused cleanly, reading and writing within bounds",
           "[device-mode][plan][mutation]") {
     const char* const kGoldens[] = {"plan-blob.hex", "box-plan.hex", "device-check-plan.hex"};
-    std::size_t       runs = 0, loaded = 0, refused = 0;
-    std::size_t       bytesCovered = 0;
-    std::size_t       leaked = 0, noWords = 0;
+    std::size_t       loaded = 0, refused = 0;
+    std::size_t       leaked = 0, noWords = 0, disagree = 0;
     for (const char* name : kGoldens) {
         const std::vector<std::uint8_t> good = goldenBlob(name);
         INFO(name);
         REQUIRE(good.size() > sizeof(blob::Header));
-        bytesCovered += good.size();
-        Arena                           arena(kArenaBytes);
-        std::vector<std::uint8_t>       b;
-        auto                            attempt = [&](std::size_t at, std::uint8_t mask) {
+        Arena                     refusedArena(kArenaBytes);
+        std::vector<std::uint8_t> b;
+        auto                      attempt = [&](std::size_t at, std::uint8_t mask) {
             b = good;  // exact-size blocks, so an over-read is the sanitizer's
             b[at] ^= mask;
             if (at < b.size() - 4) reseal(b);
             PlanLoadError err{};
             PlanSize      size;
             const bool    sizes = sizePlan(b, deviceTypes(), kArenaBytes, &size, &err);
-            if (!sizes && (err.code[0] == '\0' || err.message[0] == '\0')) ++noWords;
+            if (!sizes) {
+                if (err.code[0] == '\0' || err.message[0] == '\0') ++noWords;
+                err = PlanLoadError{};
+                if (loadPlan(b, refusedArena.span(kArenaBytes), deviceTypes(), &kDeviceHost, &err)) ++disagree;
+                ++refused;
+                if (rp_devtest_plan_live_device_mode() != 0) ++leaked;
+                return;
+            }
+            // The arena the loader is held to: its own block, aligned as it asks, the measured bytes and no more.
+            void* memory = ::operator new(size.bytes, std::align_val_t{kArenaAlign});
             err = PlanLoadError{};
-            LoadedPlan* plan = loadPlan(b, arena.span(kArenaBytes), deviceTypes(), &kDeviceHost, &err);
+            LoadedPlan* plan = loadPlan(b, {static_cast<std::byte*>(memory), size.bytes}, deviceTypes(),
+                                        &kDeviceHost, &err);
             if (plan) {
                 ++loaded;
+                if (plan->bytes != size.bytes) ++disagree;
                 unloadPlan(plan);
             } else {
                 ++refused;
+                // Sizing creates nothing, so what is only seen once nodes exist (the peers and steps of the links)
+                // is the loader's alone; any other refusal here is sizing and loading disagreeing.
+                const std::string code = err.code;
+                if (code != "peers-without-link" && code != "link-without-step") ++disagree;
                 if (err.code[0] == '\0' || err.message[0] == '\0') ++noWords;
             }
+            ::operator delete(memory, std::align_val_t{kArenaAlign});
             if (rp_devtest_plan_live_device_mode() != 0) ++leaked;
-            ++runs;
         };
         for (std::size_t at = 0; at < good.size(); ++at) {
             for (int bit = 0; bit < 8; ++bit) attempt(at, static_cast<std::uint8_t>(1u << bit));
             attempt(at, 0xFF);
         }
     }
-    CHECK(runs == bytesCovered * 9);
-    CHECK(loaded + refused == runs);
+    CHECK(loaded > 0);
     CHECK(refused > loaded);  // most bytes are structure the loader holds to account
+    CHECK(disagree == 0);
     CHECK(noWords == 0);
     CHECK(leaked == 0);
 }

@@ -365,23 +365,24 @@ The exported blob carries resolved sizes, so the device needs nothing new.
 
 ## 8. Tests
 
-- **`retroplug-device-mode-test`** (45 cases): a core and DSP document with a coupled group, a feedback wire and moving
-  params, exported, loaded by the loader over the device-mode builds in an arena and run in ragged blocks, renders bit
-  for bit what GraphHost renders with the desktop builds, with the counting allocator seeing nothing from load to
-  unload (`DevicePlan.test.cpp`, `[plan]`; a second document with events and control feedback, and the bridge plan
-  `rp.device.midi-in` -> filter -> `rp.n8.nes` over a fake cart); a mutation case that flips each bit of each byte of the three golden blobs, and each byte whole, resealing the CRC, and holds sizing and
-  loading to a clean load or a refusal in words with nothing left alive (about 1 s, so the whole sweep runs, and under
-  build-asan the blob and arena are exact-size heap blocks, so an out-of-bounds read or write fails there); every loader
-  refusal with its message (a version, the
-  CRC, a truncated blob, an index out of range, a wired flag, a section past the blob, an unknown type, over budget to
-  the byte, a create or an activate failing part-way and unwinding, an alignment of 16); `rp.device.midi-in` in both
-  builds (`DeviceIo.test.cpp`); the midi-filter's device build against its desktop build (the twin table); the box
-  host's portable pieces built for the host (`BoxHost.test.cpp`, `[box]`: the block driver's arithmetic, carry and
-  bound, the staging and its bounds, staged MIDI reaching `plan.json`'s plan at its frames, the cart link's ring,
-  drops, batching, volume and note-offs, the whole pass over a fake transport with no allocation, the refused plan and
-  the faulting node, the box's commands getting through whatever the plan does, the volume write over a scripted
-  transport); `UsbCdcTransport.test.cpp` (`[usb-cdc]`); and the device check's plan (`DeviceCheck.test.cpp`: the
-  judged steps, the estimate, the refusals).
+- **`retroplug-device-mode-test`** (45 cases): a core and DSP document with a coupled group, a feedback wire and
+  moving params, exported, loaded by the loader over the device-mode builds in an arena and run in ragged blocks,
+  renders bit for bit what GraphHost renders with the desktop builds, with the counting allocator seeing nothing from
+  load to unload (`DevicePlan.test.cpp`, `[plan]`; a second document with events and control feedback, and the bridge
+  plan `rp.device.midi-in` -> filter -> `rp.n8.nes` over a fake cart); a mutation case that flips each bit of each
+  byte of the three golden blobs, and each byte whole, resealing the CRC, and holds sizing and loading to agreement: a
+  refusal in words, or a load into an arena of exactly the measured bytes that takes exactly them and unloads with no
+  `rp.devtest.plan` node left alive (about 1 s, so the whole sweep runs; run under build-asan by hand, where the blob
+  and that arena are exact-size heap blocks, so a read past the blob or a write past the measured layout fails); every
+  loader refusal with its message (a version, the CRC, a truncated blob, an index out of range, a wired flag, a
+  section past the blob, an unknown type, over budget to the byte, a create or an activate failing part-way and
+  unwinding, an alignment of 16); `rp.device.midi-in` in both builds (`DeviceIo.test.cpp`); the midi-filter's device
+  build against its desktop build (the twin table); the box host's portable pieces built for the host
+  (`BoxHost.test.cpp`, `[box]`: the block driver's arithmetic, carry and bound, the staging and its bounds, staged
+  MIDI reaching `plan.json`'s plan at its frames, the cart link's ring, drops, batching, volume and note-offs, the
+  whole pass over a fake transport with no allocation, the refused plan and the faulting node, the box's commands
+  getting through whatever the plan does, the volume write over a scripted transport); `UsbCdcTransport.test.cpp`
+  (`[usb-cdc]`); and the device check's plan (`DeviceCheck.test.cpp`: the judged steps, the estimate, the refusals).
 - **`retroplug-graph-test`** (295 cases): the midi-filter (each kind dropped, order and frames kept, an empty list
   passing everything, the matched capacity, nothing allocated once warmed), `capacity.match` (a chain of matches, a
   feedback-wired one, the loop refusal, the budget text), and `reserveMessage`'s 32-bit wrap.
@@ -673,13 +674,13 @@ anyway.
   writes lays out each node's port views by the package sources it was built from while the image compiles the sources
   as they are, with nothing in the blob for the loader to compare (`bindPorts` reads the views by ordinal). Adding,
   removing or reordering a port of `rp.n8.nes`, the filter or `rp.device.midi-in` and flashing with an old exporter
-  gives a firmware that boots, prints "plan loaded" and reads the wrong views, and the trial load, which uses the same
-  tool's device builds, does not see it. `loop.sh` refuses when a source the exporter compiles (`packages/*/native`,
-  which holds node-sdk and graph-runtime, and the exporter's own directory, tests apart) is newer than the stamp
-  the `retroplug-export-plan-current` target leaves beside the tool (the tool's own mtime does not move when a source
-  it does not link changed), or the stamp is missing; `tools/build-box.sh` and `tools/build-device-check.sh` build that
-  target. The structural fix is the per-node port signature of
-  section 10, checked at load.
+  gives a firmware that boots and prints "plan loaded", whose node then reads the wrong views, and the trial load,
+  which uses the same tool's device builds, does not see it. `loop.sh` refuses when a source the exporter compiles
+  (`packages/*/native`, which holds node-sdk and graph-runtime, and the exporter's own directory, tests apart) is
+  newer than the stamp the `retroplug-export-plan-current` target leaves beside the tool (the tool's own mtime does
+  not move when a source it does not link changed), or the stamp is missing, or the desktop build was configured from
+  another checkout; `tools/build-box.sh` and `tools/build-device-check.sh` build that target. The structural fix is
+  the per-node port signature of section 10, checked at load.
 - **An audio cadence needs blocks off the main loop** (section 10): staging and the link's ring made
   single-producer / single-consumer, or the N8 calls made non-blocking, and `frameOf` on `BlockDriver`.
 - **Windows, macOS and arm64 have never built E3.** The blob goldens' first run there is where question 5 is answered

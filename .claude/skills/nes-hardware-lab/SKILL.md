@@ -304,8 +304,9 @@ staging, the SysEx `7D 50` pick). Notes for running it:
   the N8 OS's 129-130); a volume write that did not go through prints `expansion volume N: write did not go through,
   trying again each second`, which the fail pattern does not match. The pass pattern is `booted by the Pico`; fail on
   `no 'k'` or `FAILED`, and on `the built-in plan was refused`. The firmware's build needs the desktop's
-  `retroplug-export-plan` built first (`cmake --build build
-  --target retroplug-export-plan -j$(nproc)`; `loop.sh` reads `RP_DESKTOP_BUILD_DIR`, default `build/`).
+  `retroplug-export-plan` brought up to date first (`cmake --build build --target retroplug-export-plan-current
+  -j$(nproc)`, which also stamps it for `loop.sh`'s staleness check; `loop.sh` reads `RP_DESKTOP_BUILD_DIR`, default
+  `build/`, and refuses one configured from another checkout).
 - **Read `[stats] lat=` per window.** The figure is the last window's average and maximum in us, not
   cumulative: the final line's 10 ms is the recovery window and the window holding a 40-byte SysEx
   peaks near 21 ms (the SysEx is about 13 ms on the wire; since E3 a SysEx is timed from its F7, so expect that window
