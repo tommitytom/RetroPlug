@@ -259,6 +259,8 @@ std::size_t desktopContextBytes(const rp_mqjs_pack_source& source);
 // sanitizer, where loading scripttest's whole pack takes about 2 s of CPU time) registers a pack where an ordinary
 // build does. Set it before the registrations it is for.
 void setControlClock(std::uint64_t (*clock)(void* ctx), std::uint64_t deadlineMicros);
+// The control contexts' own deadline, by the thread's CPU time: what setControlClock replaces.
+inline constexpr std::uint64_t kControlDeadlineMicros = 2000000;
 #endif
 // Why the last package() or exactPackage() answered null (the registration's own thread), or empty.
 const char* packageRefusal();

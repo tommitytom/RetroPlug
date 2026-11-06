@@ -135,7 +135,7 @@ The rules below are the parts that don't fit those.
   `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp` (and
   `rp.n8.nes`, `rp.device.midi-in` and `rp.devtest`, in the `[device-check]` cases; `rp.core.midi-filter` is a core
   type, held by the twin table) compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library
-  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 87
+  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 90
   cases in eight files. A device-mode node created from msgpack settings renders bit for bit what a desktop-mode node
   renders from the same settings as JSON, with create, process and destroy allocating nothing; the desktop reads
   msgpack the same; the decode defaults a missing field, skips an unknown one and refuses what JSON refuses in the
@@ -146,18 +146,17 @@ The rules below are the parts that don't fit those.
   (the devtest pack's types, a script bench, a 4-node script plan held to the desktop's digest, the clock a node's
   deadline is read from, and the deadline case: a loop over a builtin in the box's pack's heap faulted by its
   deadline). The script host is in it as well
-  ([docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md), `[script-pack]`, 42 cases, with
+  ([docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md), `[script-pack]`, 45 cases, with
   `ScriptPack.test.cpp` and the fixture packs in `test/device-mode/script-packs`): a TS node run on MicroQuickJS in
   both builds of the host (the device build and the desktop's), a lifecycle, the block API, every fault (a throw, a
   deadline, a loop over a builtin held to it, a heap running out silencing only its pack, the engine's dropped
-  exceptions, a getter the host reads, the re-entry cap), kept
-  objects, and a warmed block allocating nothing, a plan exported and loaded over the device-mode builds
-  digest-identical to GraphHost, and the loader's package memory (sizing, placement, refusals); `[bliptoaster]` holds
-  `rp.bliptoaster.midi-policy` to `rp.core.midi-filter` message for message (the twin) and its heap to 64 full blocks;
-  `[debug-gc]` runs the packs on an engine built to collect at every allocation. The engine sources are in
-  `deps/mquickjs` (upstream's, unpatched) and the fixes are wrappers in `rp_mqjs_engine.c`, whose spans a
-  configure-time hash guards; **a bump of the pin that changes one fails the configure** and means regenerating the
-  wrapper, not loosening the guard. It holds the plan loader too
+  exceptions, a getter the host reads, the re-entry cap), kept objects, and a warmed block allocating nothing, a plan
+  exported and loaded over the device-mode builds digest-identical to GraphHost, and the loader's package memory
+  (sizing, placement, refusals); `[bliptoaster]` holds `rp.bliptoaster.midi-policy` to `rp.core.midi-filter` message
+  for message (the twin) and its heap to 64 full blocks; `[debug-gc]` runs the packs on an engine built to collect at
+  every allocation. The engine sources are in `deps/mquickjs` (upstream's, unpatched) and the fixes are wrappers in
+  `rp_mqjs_engine.c`, whose spans a configure-time hash guards; **a bump of the pin that changes one fails the
+  configure** and means regenerating the wrapper, not loosening the guard. It holds the plan loader too
   ([docs/modular-graph-phase-e3-design.md](docs/modular-graph-phase-e3-design.md), `[plan]`): a document exported by
   the library's `exportPlan` (`retroplug-graph`) and loaded by `loadPlan` into an arena over the device-mode builds
   renders bit for bit what GraphHost renders, allocating nothing from load to unload, every loader refusal says its

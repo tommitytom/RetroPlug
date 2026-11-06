@@ -58,6 +58,7 @@
 #include "graph/PackageMemory.hpp"
 #include "graph/PlanExport.hpp"
 #include "graph/PlanLoader.hpp"
+#include "graph/ThreadClock.hpp"
 #include "graph/noinline.hpp"
 #include "graph/Queue.hpp"
 #include "graph/ResourceTable.hpp"
@@ -83,6 +84,7 @@ extern const rp_mqjs_pack_source rp_script_devtest;
 extern const rp_mqjs_pack_source rp_script_hog;
 extern const rp_mqjs_pack_source rp_script_bliptoaster;
 extern const rp_mqjs_pack_source rp_script_scripttest;
+extern const rp_mqjs_pack_source rp_script_slowload;
 // Two of the standard library's functions, called directly (mquickjs_priv.h declares them; rp_mqjs_names.h gives them
 // RetroPlug's names).
 JSValue js_regexp_exec(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv, int magic);
@@ -757,6 +759,14 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
          R"({"on":true})"},
         {"rp.scripttest.process-spins", RP_SCRIPT_FAULT_DEADLINE, "create ran past its deadline of 50000 us",
          R"({"on":true})"},
+        // An overrun whose interrupt a builtin dropped (split's search) and the call then returned from as if nothing
+        // happened is the deadline's, in the words of the call that ran past it, before anything it returned is read.
+        {"rp.scripttest.create-overruns", RP_SCRIPT_FAULT_DEADLINE, "create ran past its deadline of 50000 us",
+         R"({"on":true})"},
+        {"rp.scripttest.layout-overruns", RP_SCRIPT_FAULT_DEADLINE, "layout ran past its deadline of 50000 us",
+         R"({"on":true,"size":12000})"},
+        {"rp.scripttest.ports-overruns", RP_SCRIPT_FAULT_DEADLINE, "portsChanged ran past its deadline of 50000 us",
+         R"({"on":true})"},
         // And wherever else the interrupt is dropped (here, by the host's own read of what send is handed), the entry
         // faults as it ends.
         {"rp.scripttest.send-spins", RP_SCRIPT_FAULT_DEADLINE, "process ran past its deadline of 50000 us",
@@ -798,6 +808,78 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
             CHECK(probe.run() == RP_OK);
         }
         CHECK(probe.fault().empty());
+    }
+}
+
+TEST_CASE("a hook, a settings check or a pack's load that ran past its deadline faults in the deadline's words, "
+          "whatever it then returned",
+          "[device-mode][script-pack]") {
+    // Each overruns in a search split drops the interrupt in, and returns as if nothing happened: only the host's check
+    // as the call returns, or as its entry ends, faults it.
+    for (const Build& b : builds()) {
+        INFO(b.name);
+        {
+            // activate, which waits for the node's next call after a re-activation.
+            Host host(50000);
+            Made n(typeOf(b.scripttest, "rp.scripttest.activate-overruns"), host, msgpackOf(R"({"on":true})"),
+                   {{RP_PORT_EVENTS, true}});
+            REQUIRE(n.node);
+            REQUIRE(n.run() == RP_OK);
+            rp_error err{};
+            REQUIRE(n.node->vt->activate(n.node, 48000.0, 256, &err));
+            CHECK(n.run() == RP_FAULT);
+            CHECK(n.faultKind() == RP_SCRIPT_FAULT_DEADLINE);
+            CHECK(n.fault() == "activate ran past its deadline of 50000 us");
+        }
+    }
+    {
+        // onSettings (the desktop's build alone swaps settings), which waits for the node's next call after a swap.
+        Host host(50000);
+        Made n(typeOf(rp_scripttest_script_package(), "rp.scripttest.settings-overruns"), host, msgpackOf("{}"),
+               {{RP_PORT_EVENTS, true}});
+        REQUIRE(n.node);
+        REQUIRE(n.run() == RP_OK);
+        const std::string next = R"({"on":true,"n":1})";
+        const rp_settings s{next.data(), next.size(), RP_SETTINGS_JSON};
+        void*             prepared = nullptr;
+        rp_error          err{};
+        REQUIRE(n.node->vt->prepare_settings(n.node, &s, &prepared, &err) == RP_PREPARE_SWAP);
+        void* old = nullptr;
+        n.node->vt->commit_settings(n.node, prepared, &old);
+        n.node->vt->release_settings(n.node, old);
+        CHECK(n.run() == RP_FAULT);
+        CHECK(n.faultKind() == RP_SCRIPT_FAULT_DEADLINE);
+        CHECK(n.fault() == "onSettings ran past its deadline of 50000 us");
+    }
+    // The desktop's control context: a settings check whose layout overruns, and a pack whose load does, each in a
+    // registration of its own made while the control contexts are held to a short deadline (setControlClock), then put
+    // back as they were.
+    struct Restore {
+        explicit Restore(std::uint64_t deadline) { rp::mqjs::setControlClock(&cpuMicros, deadline); }
+        ~Restore() { rp::mqjs::setControlClock(&rp::graph::threadCpuMicros, rp::mqjs::kControlDeadlineMicros); }
+    };
+    static std::deque<rp_mqjs_pack_source> copies;  // a registration keys its pack on the source's address
+    {
+        const Restore           restore(200000);
+        copies.push_back(rp_script_scripttest);
+        const rp_package* pack = rp::mqjs::exactPackage(copies.back());
+        INFO(rp::mqjs::packageRefusal());
+        REQUIRE(pack);
+        const rp_node_type* type = typeOf(pack, "rp.scripttest.layout-overruns");
+        REQUIRE(type);
+        const std::string settings = R"({"on":true,"size":40000})";
+        const rp_settings s{settings.data(), settings.size(), RP_SETTINGS_JSON};
+        char     layout[256];
+        rp_error err{};
+        CHECK(type->layout_for(type, &s, layout, sizeof layout, &err) == 0);
+        CHECK(std::string(err.message) == "the settings check ran past its deadline of 200000 us");
+    }
+    {
+        const Restore restore(10000);
+        copies.push_back(rp_script_slowload);
+        CHECK(rp::mqjs::exactPackage(copies.back()) == nullptr);
+        CHECK(std::string(rp::mqjs::packageRefusal()).find("running its bytecode ran past its deadline of 10000 us") !=
+              std::string::npos);
     }
 }
 

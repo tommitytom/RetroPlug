@@ -108,8 +108,7 @@ struct Control {
 };
 // The control context's size and its calls' deadline (the thread's CPU time): it reads definitions and checks settings,
 // on the control thread, where nothing waits on a block.
-constexpr std::size_t   kControlBytes = std::size_t{1} << 20;
-constexpr std::uint64_t kControlDeadlineMicros = 2000000;
+constexpr std::size_t kControlBytes = std::size_t{1} << 20;
 #endif
 
 // How a registration sizes a pack's context (Pack::sizing).
@@ -568,7 +567,7 @@ JSValue definitions(JSContext* ctx, const rp_mqjs_pack_source& source, Text& why
         return JS_EXCEPTION;
     }
     std::uint32_t n = 0;
-    if (JS_ToUint32(ctx, &n, JS_GetPropertyStr(ctx, defs.get(), "length")) || n != source.type_count) {
+    if (!toUint32(ctx, JS_GetPropertyStr(ctx, defs.get(), "length"), &n) || n != source.type_count) {
         why << "its bytecode registers " << std::uint64_t{n} << " node types, its build recorded "
             << std::uint64_t{source.type_count};
         return JS_EXCEPTION;
@@ -880,6 +879,9 @@ bool materialize(Node& node) {
     Rooted fn(ctx, JS_GetPropertyStr(ctx, def.get(), "create"));
     Rooted instance(ctx, invoke(s, fn, def, &context));
     if (JS_IsException(instance.get())) return faultFromException(node, "create");
+    // An overrun create's return dropped (a builtin may, its interrupt left pending) is create's, before anything is
+    // read of what it returned.
+    if (s.expired) return deadlineFault(node, "create");
     if (!isObject(ctx, instance.get()))
         return fault(node, RP_SCRIPT_FAULT_REFUSED, "create returned no object with a process function");
     switch (thenable(ctx, instance.get())) {
@@ -906,12 +908,13 @@ bool materialize(Node& node) {
     fn.set(JS_GetPropertyStr(ctx, def.get(), "layout"));
     Rooted layout(ctx, invoke(s, fn, def, &settings));
     if (JS_IsException(layout.get())) return faultFromException(node, "layout");
+    if (s.expired) return deadlineFault(node, "layout");
     Rooted ports(ctx, JS_GetPropertyStr(ctx, layout.get(), "ports"));
     Rooted params(ctx, JS_GetPropertyStr(ctx, layout.get(), "params"));
     std::uint32_t portCount = 0, paramCount = 0;
-    if (!JS_IsArray(ctx, ports.get()) || JS_ToUint32(ctx, &portCount, JS_GetPropertyStr(ctx, ports.get(), "length")) ||
+    if (!JS_IsArray(ctx, ports.get()) || !toUint32(ctx, JS_GetPropertyStr(ctx, ports.get(), "length"), &portCount) ||
         (JS_IsArray(ctx, params.get()) &&
-         JS_ToUint32(ctx, &paramCount, JS_GetPropertyStr(ctx, params.get(), "length"))))
+         !toUint32(ctx, JS_GetPropertyStr(ctx, params.get(), "length"), &paramCount)))
         return fault(node, RP_SCRIPT_FAULT_REFUSED, "layout returned no ports");
     const std::uint32_t count = portCount + paramCount;
     if (count > kMaxPorts)
@@ -1792,6 +1795,7 @@ bool check(const TypeInfo& info, const rp_settings* settings, std::string& json,
         why = buf;
         return false;
     }
+    if (s.expired) return overran();  // an overrun parseSettings's return dropped, before what it returned is read
     if (!stringify(s, parsed, json)) return threw("its settings do not write as JSON: ");
     // What the device would read: the msgpack the exporter writes from these settings, decoded as the device's build
     // decodes it, so settings only one build takes (a field name past the decode's length, a nesting past its depth)
@@ -1808,6 +1812,7 @@ bool check(const TypeInfo& info, const rp_settings* settings, std::string& json,
     fn.set(JS_GetPropertyStr(ctx, def.get(), "layout"));
     Rooted l(ctx, invoke(s, fn, def, &parsed));
     if (JS_IsException(l.get())) return threw("its layout threw: ");
+    if (s.expired) return overran();
     if (!stringify(s, l, layout)) return threw("its layout does not write as JSON: ");
     // A check that ran past its deadline is refused whatever it returned (process says why).
     if (s.expired) return overran();

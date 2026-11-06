@@ -345,14 +345,18 @@ set(_rp_box_dir "${CMAKE_SOURCE_DIR}/pico/n8-host")
 
 # The test's own device script packs (test/device-mode/script-packs, docs/modular-graph-phase-e4-design.md section 7),
 # compiled by the device-pack toolchain as a package's pack is: scripttest holds the MicroQuickJS host to its contract
-# (the block API, settings, the hooks, a fault of each kind) and hog runs its pack's heap out. Both builds of each
-# registration are in the binary, as devtest's script pack's are (ScriptPack.test.cpp).
+# (the block API, settings, the hooks, a fault of each kind), hog runs its pack's heap out and slowload's load runs
+# past a short deadline. Both builds of each registration are in the binary, as devtest's script pack's are
+# (ScriptPack.test.cpp).
 set(_rp_script_packs ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/script-packs)
 retroplug_device_script_pack(scripttest ENTRY ${_rp_script_packs}/scripttest/index.ts HEAP_BYTES 262144
                              PACK_DIR ${_rp_script_packs}/scripttest
                              OUT_DIR ${CMAKE_BINARY_DIR}/device-mode/script-packs/scripttest)
 retroplug_device_script_pack(hog ENTRY ${_rp_script_packs}/hog/index.ts HEAP_BYTES 40960
                              PACK_DIR ${_rp_script_packs}/hog OUT_DIR ${CMAKE_BINARY_DIR}/device-mode/script-packs/hog)
+retroplug_device_script_pack(slowload ENTRY ${_rp_script_packs}/slowload/index.ts HEAP_BYTES 65536
+                             PACK_DIR ${_rp_script_packs}/slowload
+                             OUT_DIR ${CMAKE_BINARY_DIR}/device-mode/script-packs/slowload)
 
 retroplug_device_mode_objects(retroplug-device-mode-objects
     PACKAGES ${_rp_device_packages}
@@ -360,11 +364,11 @@ retroplug_device_mode_objects(retroplug-device-mode-objects
              ${_rp_box_dir}/BoxCartLink.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
              ${_rp_box_dir}
-    SCRIPTS  retroplug-scripttest-script retroplug-hog-script
+    SCRIPTS  retroplug-scripttest-script retroplug-hog-script retroplug-slowload-script
     OWNERS   _rp_device_owners)
 # The device-mode host's fixed tables (script/MqjsHost.cpp) hold a box's few packs; this binary registers every
-# package's and the tests' own (devtest, bliptoaster, scripttest, hog), and the device check's cases register the
-# devtest pack again at each heap they run it at (DeviceCheck.test.cpp).
+# package's and the tests' own (devtest, bliptoaster, scripttest, hog, slowload), and the device check's cases register
+# the devtest pack again at each heap they run it at (DeviceCheck.test.cpp).
 target_compile_definitions(retroplug-device-mode-objects PRIVATE RP_MQJS_MAX_PACKS=16)
 
 # The box's Edio link (pico/n8-host/UsbCdcTransport.cpp) over a fake TinyUSB host: its own objects, so the fake
@@ -377,7 +381,7 @@ target_link_libraries(retroplug-box-usb-cdc PRIVATE retroplug-n8)
 
 # The test's own scripttest pack defines more node types than a box's few (script/MqjsHost.cpp's RP_MQJS_MAX_TYPES, 16
 # on a device), which the device-mode host's fixed tables are sized for.
-target_compile_definitions(retroplug-device-mode-objects PRIVATE RP_MQJS_MAX_TYPES=32)
+target_compile_definitions(retroplug-device-mode-objects PRIVATE RP_MQJS_MAX_TYPES=48)
 
 set(_rp_device_rows "")
 set(_rp_device_decls "")

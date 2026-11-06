@@ -31,6 +31,10 @@
 //                           node in its own words, not as an instance with no process
 //   rp.scripttest.send-spins  sends an array-like whose `length` getter spins (when `on`), which the host's send
 //                           reads: wherever the interrupt is dropped, the entry's end faults the node with the deadline
+//   rp.scripttest.create-overruns, .layout-overruns, .ports-overruns, .activate-overruns, .settings-overruns: each runs
+//                           past its deadline (when `on`) in create, its layout, portsChanged, activate or onSettings,
+//                           in a search split drops the interrupt in, and then returns as if nothing happened: what
+//                           the host's checks after each call, and at an entry's end, fault in the deadline's words
 //   rp.scripttest.spins-in  spins as .spins does, behind an events and a bytes input: a block's deadline grows with
 //                           the messages on both
 //   rp.scripttest.deep      reads and forwards its messages from the deepest call into JavaScript the host allows on
@@ -529,6 +533,72 @@ export const sendSpinsNode = defineNode({
   }),
 });
 
+// A search that MicroQuickJS's split drops the deadline's interrupt in: it answers "not found", the interrupt left
+// pending, and the script runs on. A text of `size` characters and a needle of half as many and one more, so every
+// position compares about half of it: long enough at 12000 to run past a test's deadline.
+const overrun = (size: number): void => {
+  let text = "a";
+  while (text.length < size) text += text;
+  text.substring(0, size).split(text.substring(0, size >> 1) + "b");
+};
+
+export const createOverrunsNode = defineNode({
+  id: "rp.scripttest.create-overruns",
+  settings: spinSwitch,
+  ports: quiet,
+  create: ({ settings }) => {
+    if (!settings.on) return { process() {} };
+    overrun(12000);
+    return 5 as unknown as { process(): void };
+  },
+});
+
+export const layoutOverrunsNode = defineNode({
+  id: "rp.scripttest.layout-overruns",
+  settings: s.object({ on: s.bool(false), size: s.int({ min: 0, max: 100000, default: 12000 }) }),
+  ports: (settings) => {
+    if (settings.on) overrun(settings.size);
+    return quiet;
+  },
+  create: () => ({ process() {} }),
+});
+
+export const portsOverrunsNode = defineNode({
+  id: "rp.scripttest.ports-overruns",
+  settings: spinSwitch,
+  ports: quiet,
+  create: ({ settings }) => ({
+    portsChanged() {
+      if (settings.on) overrun(12000);
+    },
+    process() {},
+  }),
+});
+
+export const activateOverrunsNode = defineNode({
+  id: "rp.scripttest.activate-overruns",
+  settings: spinSwitch,
+  ports: quiet,
+  create: ({ settings }) => ({
+    activate() {
+      if (settings.on) overrun(12000);
+    },
+    process() {},
+  }),
+});
+
+export const settingsOverrunsNode = defineNode({
+  id: "rp.scripttest.settings-overruns",
+  settings: s.object({ on: s.bool(false), n: s.int({ min: 0, max: 9, default: 0 }) }),
+  ports: quiet,
+  create: () => ({
+    onSettings(next) {
+      if (next.on) overrun(12000);
+    },
+    process() {},
+  }),
+});
+
 export const spinsInNode = defineNode({
   id: "rp.scripttest.spins-in",
   ports: { in: events.in(), raw: bytes.in(), out: events.out() },
@@ -587,4 +657,5 @@ registerScriptNodes([probeNode, settingsNode, hooksNode, steadyNode, keeperNode,
                      spinsNode, thenableNode, faultNode, noProcessNode, createThrowsNode, skipperNode,
                      throwsLaterNode, sendsNode, replaceThrowsNode, hasOwnThrowsNode, spinsInNode, deepNode,
                      sortThrowsNode, sortSpinsNode, repeatThrowsNode, thenThrowsNode, thenSpinsNode,
-                     processSpinsNode, sendSpinsNode, throwsAsNode, forwardThrowsNode]);
+                     processSpinsNode, sendSpinsNode, createOverrunsNode, layoutOverrunsNode, portsOverrunsNode,
+                     activateOverrunsNode, settingsOverrunsNode, throwsAsNode, forwardThrowsNode]);

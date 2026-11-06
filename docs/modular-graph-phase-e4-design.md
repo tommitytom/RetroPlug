@@ -320,7 +320,7 @@ auditioned there, and their `[packages]` rows gain it. The desktop's own N8 grap
 
 ## 7. Tests
 
-- **The mquickjs host on the desktop** (`[script-pack]`, 42 cases, most in `ScriptPack.test.cpp`, run on both builds
+- **The mquickjs host on the desktop** (`[script-pack]`, 45 cases, most in `ScriptPack.test.cpp`, run on both builds
   of the host): a node's lifecycle, settings and block API; each fault (a throw, a deadline overrun, a loop over each
   kind of long builtin faulted within a small multiple of its deadline at bliptoaster's heap and devtest's, a getter
   the host reads, a heap that runs out silencing only its pack while a `throw null` faults only its node, the dropped
@@ -328,7 +328,7 @@ auditioned there, and their `[packages]` rows gain it. The desktop's own N8 grap
   whichever plan step a block comes from; kept objects; a warmed block allocating nothing, counted by the C allocator
   and by the JS heap's growth; the threaded cases under ThreadSanitizer; `[debug-gc]`, the runner over the engine
   built with a collection at every allocation held to the ordinary runner's digests.
-- **`retroplug-device-mode-test`**: 87 cases (45 before E4, 84 at its five commits). The box's plan with the
+- **`retroplug-device-mode-test`**: 90 cases (45 before E4, 84 at its five commits). The box's plan with the
   `bliptoaster` pack, exported and loaded into an arena over the device-mode builds and run in ragged blocks, renders
   what GraphHost renders; a pack heap's sizing and its refusals; a C++ package without package memory unchanged;
   `box-plan.hex` re-recorded.
