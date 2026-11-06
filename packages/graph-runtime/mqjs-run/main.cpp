@@ -105,7 +105,7 @@ struct Host {
     const rp_package* package = nullptr;
     void*             memory = nullptr;
     rp_host_packages  service{this, &Host::give};
-    rp_host_clock     clock{nullptr, &wallMicros, gDeadlineMicros};
+    rp_host_clock     clock{nullptr, &wallMicros, static_cast<std::uint32_t>(gDeadlineMicros)};
     rp_host           host{RP_ABI_VERSION, this, nullptr, nullptr, &Host::log, &Host::interfaceOf};
     static void* give(void* ctx, const rp_package* p, rp_error* err) {
         auto* h = static_cast<Host*>(ctx);
@@ -367,7 +367,11 @@ int pack(int argc, char** argv) {
         else if (a == "--blocks") blocks = static_cast<std::uint32_t>(std::stoul(v));
         else if (a == "--control") control = v;
         else if (a == "--least" && (v == "yes" || v == "no")) least = v == "yes";
-        else if (a == "--deadline-us") gDeadlineMicros = std::stoull(v);
+        else if (a == "--deadline-us") {
+            // The clock interface carries a 32-bit deadline: a value past it is refused, not truncated.
+            gDeadlineMicros = std::stoull(v);
+            if (gDeadlineMicros > UINT32_MAX) usage("--deadline-us does not fit 32 bits (at most 4294967295)");
+        }
         else if (a == "--control-deadline-us") controlDeadline = std::stoull(v);
         else usage(("unknown option " + a).c_str());
     }
