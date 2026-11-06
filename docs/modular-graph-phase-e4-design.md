@@ -145,6 +145,8 @@ holds `RP_MQJS_MAX_PACKS` x `RP_MQJS_MAX_TYPES` in static storage (the box sets 
 **Settings.** The desktop host answers `rp.sdk.settings-json/1` from the control context, so `exportPlan` writes a
 script node's settings as msgpack as it does for a C++ node. On the device the host decodes the msgpack into a JS
 object (depth at most 8, a field name under 64 bytes) and hands it to `create()`; the export applied the defaults.
+The decode runs on the block thread (a node's first block makes its instance) with no recursion, so its frame is the
+same however deep the settings nest.
 The desktop `check()` refuses what the device would not read, so the trial load sees it. A settings change on the
 desktop swaps while the layout holds and rebuilds otherwise; this host takes no reshape.
 

@@ -610,8 +610,13 @@ TEST_CASE("settings reach create as the definition parsed them, from JSON or msg
         REQUIRE(sent.size() == 1);
         return std::string(sent[0].bytes.begin(), sent[0].bytes.end());
     };
+    // The last two nest: arrays and objects within each other, with fields after a nested one, and the deepest the
+    // device's decode reads (8 containers: the settings, extra's object and six arrays) under a 63-byte field name.
+    const std::string deepest = R"({"extra":{")" + std::string(63, 'k') + R"(":[[[[[[1]]]]]]}})";
     for (const char* json : {R"({"count":42,"name":"zz","taps":[9],"inner":{"depth":2}})",
-                             R"({"count":-5,"ratio":1.5,"on":true,"mode":"fast"})", "{}"}) {
+                             R"({"count":-5,"ratio":1.5,"on":true,"mode":"fast"})", "{}",
+                             R"({"taps":[9,8],"extra":{"a":[1,[2,{"b":null,"c":[]}],{}],"d":"e"},"inner":{"depth":3}})",
+                             deepest.c_str()}) {
         INFO(json);
         Host host;
         // The desktop's build from JSON, as a graph document carries them: what it writes back is what it parsed.

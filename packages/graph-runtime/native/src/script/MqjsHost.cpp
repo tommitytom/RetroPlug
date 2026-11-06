@@ -581,11 +581,11 @@ JSValue definitions(JSContext* ctx, const rp_mqjs_pack_source& source, Text& why
 
 // ---- settings as JS -------------------------------------------------------------------------------------------------
 
-constexpr int kMaxSettingsDepth = 8;
+constexpr std::uint32_t kMaxSettingsDepth = 8;
 
-// The msgpack value at the reader's cursor, as JS: maps as objects (in their order), arrays, strings, numbers, bools
-// and nil as null. JS_EXCEPTION, with an error pending, for a blob that is malformed or deeper than kMaxSettingsDepth.
-JSValue decodeMsgpack(JSContext* ctx, graph::msgpack::Reader& r, int depth) {
+// The msgpack scalar at the reader's cursor, as JS: strings, numbers, bools and nil as null. JS_EXCEPTION, with an
+// error pending, for a value a script node cannot read (an array or a map is decodeSettings' to open).
+JSValue decodeScalar(JSContext* ctx, graph::msgpack::Reader& r) {
     using graph::msgpack::Type;
     switch (r.peek()) {
         case Type::Nil: r.readNil(); return JS_NULL;
@@ -611,45 +611,114 @@ JSValue decodeMsgpack(JSContext* ctx, graph::msgpack::Reader& r, int depth) {
             r.readStr(s);
             return JS_NewStringLen(ctx, s.data(), s.size());
         }
-        case Type::Array:
-        case Type::Map: break;
         default: return JS_ThrowTypeError(ctx, "the settings hold a value a script node cannot read");
     }
-    if (depth >= kMaxSettingsDepth) return JS_ThrowTypeError(ctx, "the settings nest deeper than a script node reads");
-    std::uint32_t n = 0;
-    if (r.peek() == Type::Array) {
-        r.readArray(n);
-        Rooted list(ctx, JS_NewArray(ctx, 0));
-        if (JS_IsException(list.get())) return JS_EXCEPTION;
-        for (std::uint32_t i = 0; i < n; ++i) {
-            const JSValue v = decodeMsgpack(ctx, r, depth + 1);
-            if (JS_IsException(v) || JS_IsException(JS_SetPropertyUint32(ctx, list.get(), i, v))) return JS_EXCEPTION;
-        }
-        return list.get();
-    }
-    r.readMap(n);
-    Rooted object(ctx, JS_NewObject(ctx));
-    if (JS_IsException(object.get())) return JS_EXCEPTION;
-    for (std::uint32_t i = 0; i < n; ++i) {
-        std::string_view key;
-        if (!r.readStr(key)) return JS_ThrowTypeError(ctx, "the settings name a field by something not a string");
-        char name[64];
-        if (key.size() >= sizeof name) return JS_ThrowTypeError(ctx, "the settings name a field longer than 63 bytes");
-        std::memcpy(name, key.data(), key.size());
-        name[key.size()] = '\0';
-        const JSValue v = decodeMsgpack(ctx, r, depth + 1);
-        if (JS_IsException(v) || JS_IsException(JS_SetPropertyStr(ctx, object.get(), name, v))) return JS_EXCEPTION;
-    }
-    return object.get();
 }
 
-JSValue decodeSettings(JSContext* ctx, const std::uint8_t* data, std::size_t size) {
+// The arrays and objects a settings decode is filling, kMaxSettingsDepth of them at most, each kept where the collector
+// updates it: their references pushed together as the decode starts and popped together, last first, as it ends.
+class OpenContainers {
+public:
+    explicit OpenContainers(JSContext* ctx) : ctx_(ctx) {
+        for (JSGCRef& ref : refs_) JS_PushGCRef(ctx, &ref);
+    }
+    ~OpenContainers() {
+        for (std::uint32_t i = kMaxSettingsDepth; i-- > 0;) JS_PopGCRef(ctx_, &refs_[i]);
+    }
+    OpenContainers(const OpenContainers&) = delete;
+    OpenContainers& operator=(const OpenContainers&) = delete;
+    JSValue& operator[](std::uint32_t i) { return refs_[i].val; }
+
+private:
+    JSContext* ctx_;
+    JSGCRef    refs_[kMaxSettingsDepth]{};
+};
+
+// A node's msgpack settings as JS: maps as objects (in their order), arrays, strings, numbers, bools and nil as null.
+// JS_EXCEPTION, with an error pending, for a blob that is malformed or nests deeper than kMaxSettingsDepth. Decoded with
+// no recursion, on the thread that runs blocks (a node's first block makes its instance): each open array or object a
+// slot of OpenContainers and a few words here, so the frame is the same however deep the settings nest, and
+// -Werror=stack-usage holds it on the box. Never inlined, so the frame is on the stack only while it runs, not under the
+// create that follows it in materialize.
+RP_NOINLINE JSValue decodeSettings(JSContext* ctx, const std::uint8_t* data, std::size_t size) {
+    using graph::msgpack::Type;
     if (size == 0) return JS_NewObject(ctx);
     graph::msgpack::Reader r(data, size);
-    const JSValue v = decodeMsgpack(ctx, r, 0);
-    if (JS_IsException(v)) return v;
-    if (!r.atEnd() || r.truncated()) return JS_ThrowTypeError(ctx, "the settings are not one msgpack value");
-    return v;
+    OpenContainers open(ctx);
+    // Each open container's length and what is left to read of it, whether it is an object, and (an object's) the
+    // field the value being read goes in, which lies in the settings' bytes.
+    std::uint32_t    length[kMaxSettingsDepth] = {};
+    std::uint32_t    left[kMaxSettingsDepth] = {};
+    bool             object[kMaxSettingsDepth] = {};
+    std::string_view field[kMaxSettingsDepth] = {};
+    std::uint32_t    depth = 0;
+    // The next field's name, read into field[depth - 1]: false, with an error pending, for one the decode refuses.
+    auto nextField = [&]() {
+        std::string_view key;
+        if (!r.readStr(key)) {
+            JS_ThrowTypeError(ctx, "the settings name a field by something not a string");
+            return false;
+        }
+        if (key.size() >= 64) {
+            JS_ThrowTypeError(ctx, "the settings name a field longer than 63 bytes");
+            return false;
+        }
+        field[depth - 1] = key;
+        return true;
+    };
+    for (;;) {
+        // A value: a scalar, or an array or object opened (and, holding nothing, closed again at once).
+        JSValue v = JS_UNDEFINED;
+        const Type t = r.peek();
+        if (t != Type::Array && t != Type::Map) {
+            v = decodeScalar(ctx, r);
+            if (JS_IsException(v)) return JS_EXCEPTION;
+        } else {
+            if (depth >= kMaxSettingsDepth)
+                return JS_ThrowTypeError(ctx, "the settings nest deeper than a script node reads");
+            std::uint32_t n = 0;
+            if (t == Type::Array) {
+                r.readArray(n);
+                v = JS_NewArray(ctx, 0);
+            } else {
+                r.readMap(n);
+                v = JS_NewObject(ctx);
+            }
+            if (JS_IsException(v)) return JS_EXCEPTION;
+            if (n > 0) {
+                open[depth] = v;
+                length[depth] = n;
+                left[depth] = n;
+                object[depth] = t == Type::Map;
+                ++depth;
+                if (object[depth - 1] && !nextField()) return JS_EXCEPTION;
+                continue;
+            }
+        }
+        // The value into the container it is part of, and each container it fills closed into its own, in turn.
+        for (;;) {
+            if (depth == 0) {
+                if (!r.atEnd() || r.truncated()) return JS_ThrowTypeError(ctx, "the settings are not one msgpack value");
+                return v;
+            }
+            const std::uint32_t at = depth - 1;
+            if (object[at]) {
+                char name[64];
+                std::memcpy(name, field[at].data(), field[at].size());
+                name[field[at].size()] = '\0';
+                if (JS_IsException(JS_SetPropertyStr(ctx, open[at], name, v))) return JS_EXCEPTION;
+            } else {
+                if (JS_IsException(JS_SetPropertyUint32(ctx, open[at], length[at] - left[at], v))) return JS_EXCEPTION;
+            }
+            if (--left[at] > 0) {
+                if (object[at] && !nextField()) return JS_EXCEPTION;
+                break;
+            }
+            v = open[at];
+            open[at] = JS_UNDEFINED;
+            --depth;
+        }
+    }
 }
 
 #ifndef RP_DEVICE
