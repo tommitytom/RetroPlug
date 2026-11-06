@@ -606,7 +606,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The Launchpad's `threads` flag** and the E2 template gaps remain.
 - **E4 built: TypeScript nodes on the box, on MicroQuickJS**
   ([modular-graph-phase-e4-design.md](../docs/modular-graph-phase-e4-design.md), five commits): `deps/mquickjs`
-  (vendored, unpatched) with our wrapper (the symbol rename, the fixes for two upstream GC bugs and three swallowed
+  (vendored, unpatched) with our wrapper (the symbol rename, the fixes for two upstream GC bugs and five swallowed
   exceptions guarded by a configure-time hash, our stdlib), the device-pack toolchain
   (`packages/retroplug/scripts/build-device-pack.mjs`), `defineNode` in the ES5 subset with `idle: "skip"` and
   `forward()`, `MqjsHost` (one context per pack, a node's deadline of 10 ms and 250 us a message, a re-entry cap of 4),

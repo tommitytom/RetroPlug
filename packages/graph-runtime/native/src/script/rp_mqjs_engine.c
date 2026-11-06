@@ -17,7 +17,7 @@
  * left unused, and every call reaches RetroPlug's. A bump of deps/mquickjs that adds a call spelt otherwise, or
  * renames the function, fails to compile here rather than quietly reaching the upstream body.
  *
- * Three exceptions the engine loses are RetroPlug's to keep, by the same trick where it can be:
+ * Five exceptions the engine loses are RetroPlug's to keep, by the same trick where it can be:
  * - String.prototype.replace with a function: js_string_replace ignores js_string_concat_subst's failure, so an
  *   exception the replacement function throws (a node's error, the heap running out, the engine refusing a C
  *   re-entry) is dropped and replace returns the string it had built. The engine's own convention is a sticky
@@ -31,7 +31,24 @@
  *   the heap out) answers false with the exception dropped: the standard library's hasOwnProperty is
  *   rp_mqjs_js_object_hasOwnProperty below, which makes the key first and returns on an exception, then hands a key
  *   that converts to itself to the upstream body, compiled under another name.
- * The StringBuffer is a type mquickjs.c declares, so the wrappers take it as a void* before the include. */
+ * - Array.prototype.sort's comparison (js_array_sort_cmp) returns JS_EXCEPTION as a comparison's result when a
+ *   comparator function throws, where its other failures set the sort's exception flag: the sort goes on and returns
+ *   the array, the exception dropped. So a comparator's throw is ignored, and the deadline's interrupt with it (each
+ *   poll of a comparator that never returns lands inside it, and is dropped there, so a sort of such a comparator
+ *   never faults). js_array_sort hands its comparison to the heapsort by name, never calls it: so the definition alone
+ *   is a call of the function-like macro below (its first parameter's type, size_t, tells it from anything else) and
+ *   is compiled under another name, left unused, while the name js_array_sort hands on is RetroPlug's comparison
+ *   below, upstream's body with the comparator's exception setting the flag, which ends the sort: every comparison
+ *   after it answers 0 at once, and js_array_sort returns the exception.
+ * - String.prototype.repeat returns -1, not JS_EXCEPTION, when its count's conversion throws (a valueOf's throw, the
+ *   deadline's interrupt in it, a heap that runs out converting a string): a value the interpreter takes as an
+ *   ordinary result (and, left on its stack, as a catch handler's offset), the exception dropped. The standard
+ *   library's repeat is rp_mqjs_js_string_repeat below, which converts the count first and returns on an exception,
+ *   then hands upstream's body, compiled under another name, a count that converts to itself.
+ * The StringBuffer is a type mquickjs.c declares, so the wrappers take it as a void* before the include. An audit of
+ * every other builtin that converts a value or calls back into JavaScript (the Array iterations and reduce, getters and
+ * setters, toString and valueOf in conversions, JSON, which takes no reviver here) found the rest propagating what they
+ * are handed; what is left drops an out-of-memory alone (docs/modular-graph-phase-e4-design.md section 11.8). */
 #include <stddef.h>
 
 #include "rp_mqjs_names.h"
@@ -56,12 +73,21 @@ static int rp_mqjs_buffer_puts(JSContext* ctx, void* buffer, const char* str);
 #undef js_object_hasOwnProperty
 #define js_object_hasOwnProperty rp_mqjs_upstream_object_hasOwnProperty
 
+#undef js_string_repeat
+#define js_string_repeat rp_mqjs_upstream_string_repeat
+
+static int js_array_sort_cmp(size_t i1, size_t i2, void* opaque);
+#define js_array_sort_cmp(first, ...) RP_MQJS_SORT_CMP_##first, __VA_ARGS__)
+#define RP_MQJS_SORT_CMP_size_t rp_mqjs_upstream_array_sort_cmp(size_t
+
 #include "mquickjs.c"
 
 #undef JS_MakeUniqueString
 #undef js_string_concat_subst
 #undef string_buffer_puts
 #undef js_object_hasOwnProperty
+#undef js_array_sort_cmp
+#undef js_string_repeat
 
 #include "rp_mqjs.h"
 
@@ -182,7 +208,7 @@ uint8_t* rp_mqjs_bytes(JSContext* ctx, JSValue v, uint32_t* length) {
 
 int rp_mqjs_is_fixed(JSContext* ctx, JSValue v) { return JS_IsPtr(v) && JS_IS_ROM_PTR(ctx, JS_VALUE_TO_PTR(v)); }
 
-/* The three wrappers the header comment describes. */
+/* The five wrappers the header comment describes. */
 
 static int rp_mqjs_concat_subst(JSContext* ctx, void* buffer, JSValue* str, JSValue* rep, uint32_t pos,
                                 uint32_t end_of_match, JSValue* capture_buf, uint32_t captures_len, JSValue* needle) {
@@ -211,6 +237,81 @@ JSValue rp_mqjs_js_object_hasOwnProperty(JSContext* ctx, JSValue* this_val, int 
         argv[0] = key;
     }
     return rp_mqjs_upstream_object_hasOwnProperty(ctx, this_val, argc, argv);
+}
+
+JSValue rp_mqjs_js_string_repeat(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv) {
+    /* Upstream's order: a this that is no string is refused before the count is read. */
+    if (JS_IsString(ctx, *this_val)) {
+        int n;
+        if (JS_ToInt32Sat(ctx, &n, argv[0])) return JS_EXCEPTION;
+        const JSValue count = JS_NewInt32(ctx, n);
+        if (JS_IsException(count)) return JS_EXCEPTION;
+        argv[0] = count;
+    }
+    return rp_mqjs_upstream_string_repeat(ctx, this_val, argc, argv);
+}
+
+static int js_array_sort_cmp(size_t i1, size_t i2, void* opaque) {
+    JSArraySortContext* s = opaque;
+    JSContext*          ctx = s->ctx;
+    JSValueArray*       arr;
+    int                 cmp, j1, j2;
+
+    (void)rp_mqjs_upstream_array_sort_cmp;
+    if (s->exception) return 0;
+
+    arr = JS_VALUE_TO_PTR(*s->parr);
+    if (s->pfunc) {
+        JSValue res;
+        /* A comparator is held to answer 0 for the same value: it is not called. */
+        if (arr->arr[2 * i1] == arr->arr[2 * i2]) goto cmp_same;
+        if (JS_StackCheck(ctx, 4)) goto exception;
+        arr = JS_VALUE_TO_PTR(*s->parr);
+
+        JS_PushArg(ctx, arr->arr[2 * i2]);
+        JS_PushArg(ctx, arr->arr[2 * i1]); /* arg0 */
+        JS_PushArg(ctx, *s->pfunc);        /* func */
+        JS_PushArg(ctx, JS_UNDEFINED);     /* this */
+        res = JS_Call(ctx, 2);
+        if (JS_IsException(res)) goto exception;
+        if (JS_IsInt(res)) {
+            int val = JS_VALUE_GET_INT(res);
+            cmp = (val > 0) - (val < 0);
+        } else {
+            double val;
+            if (JS_ToNumber(ctx, &val, res)) goto exception;
+            cmp = (val > 0) - (val < 0);
+        }
+    } else {
+        JSValue  str1, str2;
+        JSGCRef  str1_ref;
+
+        str1 = arr->arr[2 * i1];
+        if (!JS_IsString(ctx, str1)) {
+            str1 = JS_ToString(ctx, str1);
+            if (JS_IsException(str1)) goto exception;
+            arr = JS_VALUE_TO_PTR(*s->parr);
+        }
+        str2 = arr->arr[2 * i2];
+        if (!JS_IsString(ctx, str2)) {
+            JS_PUSH_VALUE(ctx, str1);
+            str2 = JS_ToString(ctx, str2);
+            JS_POP_VALUE(ctx, str1);
+            if (JS_IsException(str2)) goto exception;
+        }
+        cmp = js_string_compare(ctx, str1, str2);
+    }
+    if (cmp != 0) return cmp;
+cmp_same:
+    /* The sort is stable: equal values keep their order. */
+    arr = JS_VALUE_TO_PTR(*s->parr);
+    j1 = JS_VALUE_GET_INT(arr->arr[2 * i1 + 1]);
+    j2 = JS_VALUE_GET_INT(arr->arr[2 * i2 + 1]);
+    return (j1 > j2) - (j1 < j2);
+
+exception:
+    s->exception = TRUE;
+    return 0;
 }
 
 void rp_mqjs_limit_reentries(JSContext* ctx, int calls) {

@@ -113,12 +113,14 @@ generated tables live in the build tree, never beside them. Everything of ours a
   (`rp_mqjs_keep_bytecode_names`). Two are real upstream GC bugs: the run-time
   property-name table can corrupt itself when a collection runs inside its own growth (in `JS_MakeUniqueString`), and a
   loaded bytecode's string constants, marked unique in place, drop out of that table at the next collection (the host
-  marks them kept after relocation). Three are exceptions upstream swallows: `String.prototype.replace` ignoring its
-  callback's throw, `string_buffer_puts` losing an out-of-memory, and `hasOwnProperty` ignoring a throwing key. Typed
-  arrays are built in the engine, with no `JS_Call`, so `messages()` works at any depth. **The fixes are guarded by a
-  configure-time hash**: `cmake/mquickjs.cmake` hashes the text of each span the wrappers replace (CR stripped) and
-  fails on a change naming the file, and counts `js_call_rec_count` mentions (exactly four), so a bump of the pinned
-  source cannot silently drop one.
+  marks them kept after relocation). Five are exceptions upstream swallows: `String.prototype.replace` ignoring its
+  callback's throw, `string_buffer_puts` losing an out-of-memory, `hasOwnProperty` ignoring a throwing key,
+  `Array.prototype.sort` taking a comparator's throw (the deadline's interrupt among them) for a comparison's result,
+  and `String.prototype.repeat` answering -1 for a count whose conversion throws. Typed arrays are built in the engine,
+  with no `JS_Call`, so `messages()` works at any depth. **The fixes are guarded by a configure-time hash**:
+  `cmake/mquickjs.cmake` hashes the text of each span the wrappers replace (CR stripped) and fails on a change naming
+  the file, and counts `js_call_rec_count` mentions (exactly four), so a bump of the pinned source cannot silently drop
+  one.
 - **`rp_mqjs_stdlib.c`**, our standard library for the build tool. It includes upstream's `mqjs_stdlib.c` unpatched
   with its REPL global object and `main` renamed out of the way, so the standard classes are upstream's own tables, and
   its own global object leaves out `print`, `gc`, `load`, the timers, `Date`, `performance` and `eval`. It adds a
@@ -474,9 +476,10 @@ bytes of the flash run from RAM, the images taking 355824 and 335880 bytes of SR
   messages, since the pools follow it.
 - **A critical heap corruption in stage 2:** `listOf` passed an unrooted copy of an array to `set_length`, so a node
   shrinking its messages array corrupted the heap on a collection; it is rooted, with a test that dies without it.
-- **Two engine bugs and three swallowed exceptions** (section 4), found by the toolchain's least-heap search, a
-  collect-at-every-allocation build and the device check's nest. The first fix cannot be reached by any test, so its
-  guard is the configure-time hash (section 11.8).
+- **Two engine bugs and five swallowed exceptions** (section 4), found by the toolchain's least-heap search, a
+  collect-at-every-allocation build, the device check's nest and the code reviews (the sort's, which dropped the
+  deadline too, and then an audit of every builtin that converts a value or calls back into JavaScript, which found
+  repeat's). The first fix cannot be reached by any test, so its guard is the configure-time hash (section 11.8).
 - **Every node context runs the device bundle.** The first cut ran the box's trimmed bytecode nowhere before the rig.
   The runtime bundle is now what every node context loads, the toolchain holds it to the whole pack's output and
   layouts, and the exclusive-group layout bug that comparison found is fixed.
@@ -534,6 +537,12 @@ the regression line moved to E4's measured figures (section 8). The first gate t
   and the rig's boot line is the authority.
 - **Fix 1 of the engine (the name table's growth under a collection) is guarded only by the configure-time hash.** No
   test reaches its condition, a collect-at-every-allocation build included.
+- **What the audit of the engine's builtins left.** Every builtin that converts a value or calls back into JavaScript
+  propagates what it is handed (the sort and repeat are fixed, section 4), but for drops of an out-of-memory alone:
+  `Function.prototype`'s `prototype` getter and setter, an error's backtrace and a thrown error's message
+  (`JS_ThrowError`), each leaving the error pending behind a result; and `RegExp.prototype.exec` (behind `test`,
+  `match`, `search` and `split`), which, when its capture array cannot be made, unlinks a collector root it never
+  linked, so a heap that runs out there corrupts the context's root list. None is fixed yet.
 - **The `[stats]` print stalls the loop.** E3's hazard, unchanged: a message arriving as the 13.7 ms print starts reads
   about 12 ms. The sniff / health USB read (about 2.5 ms) holds the loop the same way. Both are the console, not the
   script node, and they appear as isolated outliers in some E4 latency runs.

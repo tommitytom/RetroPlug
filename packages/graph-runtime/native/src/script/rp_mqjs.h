@@ -113,8 +113,8 @@ int      rp_mqjs_is_fixed(JSContext* ctx, JSValue v);
 
 /* How deep a context's C re-entries go: the calls into JavaScript that may be on the C stack at once, the host's own
  * call into a node (its process, a hook) the first, each native that calls back into JavaScript (Array's iterations and
- * sort, String's replace, a getter, valueOf, JSON.parse's reviver) one more, and the host's refill of a block's arrays
- * none (rp_mqjs_new_uint8_view below). MicroQuickJS allows JS_MAX_CALL_RECURSE (8) and refuses the next with an
+ * sort, String's replace, a getter, valueOf) one more, and the host's refill of a block's arrays none
+ * (rp_mqjs_new_uint8_view below). MicroQuickJS allows JS_MAX_CALL_RECURSE (8) and refuses the next with an
  * InternalError ("C stack overflow"); the host holds every call into a node's context after its load (its nodes'
  * create, hooks and blocks) to RP_MQJS_MAX_REENTRIES (rp_mqjs_limit_reentries; the load, which runs the pack's
  * definitions once at setup, the desktop's control context and the toolchain's script runs keep the engine's 8, as the

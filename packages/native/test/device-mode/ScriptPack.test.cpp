@@ -689,6 +689,7 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
         const char*   id;
         std::uint32_t kind;
         const char*   words;
+        const char*   settings = "{}";
     };
     const std::vector<Case> cases = {
         {"rp.scripttest.throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the throws node threw"},
@@ -698,11 +699,17 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
         {"rp.scripttest.fault", RP_SCRIPT_FAULT_REFUSED, "process returned \"fault\""},
         {"rp.scripttest.no-process", RP_SCRIPT_FAULT_REFUSED, "create returned no object with a process function"},
         {"rp.scripttest.create-throws", RP_SCRIPT_FAULT_THREW, "create threw: TypeError: create would not"},
-        // Throws the engine itself would drop (rp_mqjs_engine.c's wrappers): a String.replace function's, and a
-        // hasOwnProperty key's toString's.
+        // Throws the engine itself would drop (rp_mqjs_engine.c's wrappers): a String.replace function's, a
+        // hasOwnProperty key's toString's, a sort comparator's and a String.repeat count's valueOf's.
         {"rp.scripttest.replace-throws", RP_SCRIPT_FAULT_THREW,
          "process threw: RangeError: the replace function threw"},
         {"rp.scripttest.has-own-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the key's toString threw"},
+        {"rp.scripttest.sort-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the sort comparator threw"},
+        {"rp.scripttest.repeat-throws", RP_SCRIPT_FAULT_THREW,
+         "process threw: RangeError: the repeat count's valueOf threw"},
+        // The deadline's interrupt where the engine would drop it, as any throw there: in a sort comparator.
+        {"rp.scripttest.sort-spins", RP_SCRIPT_FAULT_DEADLINE, "process ran past its deadline of 50000 us",
+         R"({"on":true})"},
     };
     for (const Build& b : builds()) {
         Host host(50000);  // 50 ms of the thread's CPU time: what a preempted thread does not use up
@@ -713,7 +720,7 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
         REQUIRE(probe.node);
         for (const Case& c : cases) {
             INFO(b.name << ": " << c.id);
-            Made n(typeOf(b.scripttest, c.id), host, {}, {{RP_PORT_EVENTS, true}});
+            Made n(typeOf(b.scripttest, c.id), host, msgpackOf(c.settings), {{RP_PORT_EVENTS, true}});
             REQUIRE(n.node);
             const auto start = std::chrono::steady_clock::now();
             CHECK(n.run() == RP_FAULT);

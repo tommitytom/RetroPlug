@@ -44,24 +44,27 @@
 #     weak table drops it at the next collection, since the collector never marks a string outside the heap: a later
 #     lookup of the same text from C makes a second string and finds nothing. rp_mqjs_keep_bytecode_names marks the
 #     bytecode's strings kept after relocation.
-#   - Three exceptions the engine drops: one a String.prototype.replace function throws (js_string_replace ignores
-#     js_string_concat_subst's failure), an out-of-memory in string_buffer_puts, and one a hasOwnProperty key's
-#     toString throws (js_object_hasOwnProperty ignores JS_ToPropertyKey's). rp_mqjs_engine.c routes each through a
-#     wrapper that makes the engine's StringBuffer sticky, or makes the key first.
+#   - Five exceptions the engine drops: one a String.prototype.replace function throws (js_string_replace ignores
+#     js_string_concat_subst's failure), an out-of-memory in string_buffer_puts, one a hasOwnProperty key's toString
+#     throws (js_object_hasOwnProperty ignores JS_ToPropertyKey's), one a sort comparator throws, the deadline's
+#     interrupt among them (js_array_sort_cmp returns it as a comparison's result), and one a String.prototype.repeat
+#     count's conversion throws (js_string_repeat returns -1 for it). rp_mqjs_engine.c routes each through a wrapper
+#     that makes the engine's StringBuffer sticky, converts the key or the count first, or ends the sort.
 #
 # RetroPlug also reaches into the engine in two ways these spans hold: rp_mqjs_limit_reentries caps a context's C
 # re-entries by starting JS_Call's count above 0 (it rests on JS_Call being the count's only writer, which the count of
 # its mentions holds), and the host's views are made by js_typed_array_constructor called with a C array of arguments
 # (it rests on the constructor reading them before it allocates).
 #
-# The first is a copy of upstream's code that reads the context's internals, so a bump that changes upstream's function
-# would still compile and the stale copy would win; the others rest on upstream's text as it stands. So the configure
-# below hashes the text of each (JS_MakeUniqueString's definition, the sweep of unique_strings, replace and its
-# substitution, the StringBuffer and its appends, hasOwnProperty, the typed array's constructor) and fails,
-# naming rp_mqjs_engine.c, when any is not the text the fixes were written against: re-review the fixes against the
-# new text, then record its hash here. retroplug-device-mode-test's [debug-gc] cases hold the second fix (its revert
-# fails them); no test reaches the first's condition on demand (a collection at every allocation, DEBUG_GC, sweeps a
-# dead name before any growth can meet it), so the hash is its guard.
+# The first and the sort's comparison are copies of upstream's code that read the engine's internals, so a bump that
+# changes upstream's function would still compile and the stale copy would win; the others rest on upstream's text as
+# it stands. So the configure below hashes the text of each (JS_MakeUniqueString's definition, the sweep of
+# unique_strings, replace and its substitution, the StringBuffer and its appends, hasOwnProperty, the typed array's
+# constructor, the sort, repeat) and fails, naming rp_mqjs_engine.c, when any is not the text the fixes were written
+# against: re-review the fixes against the new text, then record its hash here. retroplug-device-mode-test's
+# [debug-gc] cases hold the second fix (its revert fails them); no test reaches the first's condition on demand (a
+# collection at every allocation, DEBUG_GC, sweeps a dead name before any growth can meet it), so the hash is its
+# guard.
 set(MQUICKJS_DIR "${CMAKE_SOURCE_DIR}/deps/mquickjs")
 file(READ "${MQUICKJS_DIR}/mquickjs.c" _mqjs_engine_text)
 string(REPLACE "\r" "" _mqjs_engine_text "${_mqjs_engine_text}")
@@ -82,6 +85,11 @@ set(_mqjs_span_4 "js_object_hasOwnProperty" "JSValue js_object_hasOwnProperty(JS
                  "0046d19ecb2384776eda8f8344d8ce7fd87a612307a657278f1de8b7c8e5e2ec")
 set(_mqjs_span_5 "js_typed_array_constructor" "JSValue js_typed_array_constructor(JSContext *ctx, JSValue *this_val,"
                  "\n}\n" "973db0412518887f46e5b757f768229e43658dc6922f07d7bfd07193b38ce11a")
+set(_mqjs_span_6 "Array.prototype.sort, its comparison and its heapsort" "/* heapsort algorithm */"
+                 "/* precondition: a and b are not NaN */"
+                 "2a6140131f92e1617f1321a6d7042a5c59a6fc25c3c3fe531849ce20e1343af8")
+set(_mqjs_span_7 "String.prototype.repeat" "JSValue js_string_repeat(JSContext *ctx, JSValue *this_val," "\n}\n"
+                 "8f79116bfc7fb10ac0c710dfa4b95213e20c18e843be93670d666da00d71e3f8")
 string(REGEX MATCHALL "js_call_rec_count" _mqjs_mentions "${_mqjs_engine_text}")
 list(LENGTH _mqjs_mentions _mqjs_mentions)
 if(NOT _mqjs_mentions EQUAL 4)
@@ -89,7 +97,8 @@ if(NOT _mqjs_mentions EQUAL 4)
                         "(its field, JS_Call's check, increment and decrement) rp_mqjs_limit_reentries was written "
                         "against (cmake/mquickjs.cmake's header says why); re-review it")
 endif()
-foreach(_mqjs_span IN ITEMS _mqjs_span_0 _mqjs_span_1 _mqjs_span_2 _mqjs_span_3 _mqjs_span_4 _mqjs_span_5)
+foreach(_mqjs_span IN ITEMS _mqjs_span_0 _mqjs_span_1 _mqjs_span_2 _mqjs_span_3 _mqjs_span_4 _mqjs_span_5
+                           _mqjs_span_6 _mqjs_span_7)
     list(GET ${_mqjs_span} 0 _what)
     list(GET ${_mqjs_span} 1 _begin)
     list(GET ${_mqjs_span} 2 _end)

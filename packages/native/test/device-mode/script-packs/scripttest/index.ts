@@ -14,8 +14,13 @@
 //   rp.scripttest.throws-later  throws at its second block, with words longer than a fault keeps
 //   rp.scripttest.sends     sends data that is no Uint8Array, whose reads allocate
 //   rp.scripttest.skipper   skipped when idle (idle: "skip"): counts its process calls, and forwards what it gets
-//   rp.scripttest.replace-throws, .has-own-throws: a throw where MicroQuickJS would drop it (a String.replace
-//                           function's, a hasOwnProperty key's toString's), which must fault the node as any throw does
+//   rp.scripttest.replace-throws, .has-own-throws, .sort-throws, .repeat-throws: a throw where MicroQuickJS would
+//                           drop it (a String.replace function's, a hasOwnProperty key's toString's, a sort
+//                           comparator's, a String.repeat count's valueOf's), which must fault the node as any throw
+//                           does
+//   rp.scripttest.sort-spins  a sort comparator that never returns, where MicroQuickJS would drop the deadline's
+//                           interrupt: it spins when its settings say `on`, so the toolchain's run of every node on
+//                           its defaults passes it
 //   rp.scripttest.spins-in  spins as .spins does, behind an events and a bytes input: a block's deadline grows with
 //                           the messages on both
 //   rp.scripttest.deep      reads and forwards its messages from the deepest call into JavaScript the host allows on
@@ -371,6 +376,52 @@ export const hasOwnThrowsNode = defineNode({
   }),
 });
 
+export const sortThrowsNode = defineNode({
+  id: "rp.scripttest.sort-throws",
+  ports: quiet,
+  create: () => ({
+    process(b) {
+      const sorted = [3, 2, 1].sort(() => {
+        throw new RangeError("the sort comparator threw");
+      });
+      b.send("out", 0, sorted);
+    },
+  }),
+});
+
+export const repeatThrowsNode = defineNode({
+  id: "rp.scripttest.repeat-throws",
+  ports: quiet,
+  create: () => ({
+    process() {
+      const count = {
+        valueOf(): number {
+          throw new RangeError("the repeat count's valueOf threw");
+        },
+      };
+      "x".repeat(count as unknown as number);
+    },
+  }),
+});
+
+// The switch a node that spins by design waits for, off by default: the toolchain runs every node on its defaults.
+const spinSwitch = s.object({ on: s.bool(false) });
+
+export const sortSpinsNode = defineNode({
+  id: "rp.scripttest.sort-spins",
+  settings: spinSwitch,
+  ports: quiet,
+  create: ({ settings }) => ({
+    process(b) {
+      if (!settings.on) return;
+      const sorted = [3, 2, 1].sort((x, y) => {
+        for (;;) if (x === y) return 0;
+      });
+      b.send("out", 0, sorted);
+    },
+  }),
+});
+
 export const spinsInNode = defineNode({
   id: "rp.scripttest.spins-in",
   ports: { in: events.in(), raw: bytes.in(), out: events.out() },
@@ -427,4 +478,5 @@ export const deepNode = defineNode({
 
 registerScriptNodes([probeNode, settingsNode, hooksNode, steadyNode, keeperNode, readerNode, busyNode, throwsNode,
                      spinsNode, thenableNode, faultNode, noProcessNode, createThrowsNode, skipperNode,
-                     throwsLaterNode, sendsNode, replaceThrowsNode, hasOwnThrowsNode, spinsInNode, deepNode]);
+                     throwsLaterNode, sendsNode, replaceThrowsNode, hasOwnThrowsNode, spinsInNode, deepNode,
+                     sortThrowsNode, sortSpinsNode, repeatThrowsNode]);
