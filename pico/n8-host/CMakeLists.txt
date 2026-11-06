@@ -8,9 +8,9 @@ endif()
 
 # -DRP_NATIVE_USB=ON drives the N8 over the RP2350's SILICON USB host controller (native
 # rhport 0, the Pico's own USB D+/D- pins) instead of the software PIO-USB (rhport 1 on
-# GP2/GP3). Native is a hardware host like a PC's - use it to test whether the N8's cart
-# FIFO write works there (it does not over PIO-USB; see ../pico-n8-fifo-write-bug.md). The
-# wiring differs: see README.md.
+# GP2/GP3). Native is a hardware host like a PC's, and its PHY's pads are not affected by the
+# RP2350 A2's E9 erratum; it is built (pnpm device:box) but has not run on the rig, which is
+# wired for PIO-USB. The wiring differs: see README.md.
 option(RP_NATIVE_USB "Use the RP2350 native USB host instead of PIO-USB" OFF)
 
 include(pico_sdk_import.cmake)
