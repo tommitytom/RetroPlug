@@ -91,8 +91,11 @@
 // tempo, ppq and sampleRate when they are not whole, and any such number the node computes. A node that keeps to
 // bytes, frames, flags and integers (a MIDI policy) allocates nothing at either width.
 //
-// Faults (design section 4). A throw from process (or from create, layout or a hook), a process that returns a promise
-// or a thenable, a create that returns no process, and an entry that runs past its deadline each fault the node: its
+// Faults (design section 4). A throw from process (or from create, layout or a hook, or from a getter the host reads of
+// what they return: a result's then, an instance's process and hooks), a process that returns a promise or a thenable,
+// a create that returns no process, and an entry that runs past its deadline each fault the node. An overrun faults it
+// whatever the entry then returns: the engine's interrupt cannot be caught, but a builtin or a getter the host reads
+// may drop it on the way out, so the host faults an entry that ran past its deadline as it ends. A faulted node's
 // process answers RP_FAULT from then on, so the executor silences it and counts it once, and the node keeps the first
 // fault's words (graph/rp_script.h's rp.script.fault/1). A node does not run again after a throw, unlike the desktop's
 // QuickJS host: the box has no one to retry for. A heap that runs out (an out-of-memory error that reaches the host)

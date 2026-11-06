@@ -21,6 +21,12 @@
 //   rp.scripttest.sort-spins  a sort comparator that never returns, where MicroQuickJS would drop the deadline's
 //                           interrupt: it spins when its settings say `on`, so the toolchain's run of every node on
 //                           its defaults passes it
+//   rp.scripttest.then-throws, .then-spins: a process result whose `then` getter throws, or spins (when `on`), which
+//                           the host reads to refuse a thenable: the getter's throw and the deadline fault the node
+//   rp.scripttest.process-spins  a create result whose `process` getter spins (when `on`): the deadline faults the
+//                           node in its own words, not as an instance with no process
+//   rp.scripttest.send-spins  sends an array-like whose `length` getter spins (when `on`), which the host's send
+//                           reads: wherever the interrupt is dropped, the entry's end faults the node with the deadline
 //   rp.scripttest.spins-in  spins as .spins does, behind an events and a bytes input: a block's deadline grows with
 //                           the messages on both
 //   rp.scripttest.deep      reads and forwards its messages from the deepest call into JavaScript the host allows on
@@ -422,6 +428,70 @@ export const sortSpinsNode = defineNode({
   }),
 });
 
+export const thenThrowsNode = defineNode({
+  id: "rp.scripttest.then-throws",
+  ports: quiet,
+  create: () => ({
+    process() {
+      return {
+        get then(): unknown {
+          throw new RangeError("the then getter threw");
+        },
+      } as unknown as void;
+    },
+  }),
+});
+
+export const thenSpinsNode = defineNode({
+  id: "rp.scripttest.then-spins",
+  settings: spinSwitch,
+  ports: quiet,
+  create: ({ settings }) => ({
+    process() {
+      if (!settings.on) return;
+      let n = 0;
+      return {
+        get then(): unknown {
+          for (;;) n++;
+        },
+      } as unknown as void;
+    },
+  }),
+});
+
+export const processSpinsNode = defineNode({
+  id: "rp.scripttest.process-spins",
+  settings: spinSwitch,
+  ports: quiet,
+  create: ({ settings }) => {
+    if (!settings.on) return { process() {} };
+    let n = 0;
+    return {
+      get process(): () => void {
+        for (;;) n++;
+      },
+    };
+  },
+});
+
+export const sendSpinsNode = defineNode({
+  id: "rp.scripttest.send-spins",
+  settings: spinSwitch,
+  ports: quiet,
+  create: ({ settings }) => ({
+    process(b) {
+      if (!settings.on) return;
+      let n = 0;
+      const data = {
+        get length(): number {
+          for (;;) n++;
+        },
+      };
+      b.send("out", 0, data as unknown as ArrayLike<number>);
+    },
+  }),
+});
+
 export const spinsInNode = defineNode({
   id: "rp.scripttest.spins-in",
   ports: { in: events.in(), raw: bytes.in(), out: events.out() },
@@ -479,4 +549,5 @@ export const deepNode = defineNode({
 registerScriptNodes([probeNode, settingsNode, hooksNode, steadyNode, keeperNode, readerNode, busyNode, throwsNode,
                      spinsNode, thenableNode, faultNode, noProcessNode, createThrowsNode, skipperNode,
                      throwsLaterNode, sendsNode, replaceThrowsNode, hasOwnThrowsNode, spinsInNode, deepNode,
-                     sortThrowsNode, sortSpinsNode, repeatThrowsNode]);
+                     sortThrowsNode, sortSpinsNode, repeatThrowsNode, thenThrowsNode, thenSpinsNode,
+                     processSpinsNode, sendSpinsNode]);

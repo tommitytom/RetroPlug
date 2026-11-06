@@ -477,9 +477,13 @@ JSContext* loadPack(ContextState& s, const std::uint8_t* bytecode, std::uint32_t
         Rooted main(ctx, JS_LoadBytecode(ctx, code));
         if (!JS_IsException(main.get())) {
             const Armed armed(s);
-            ran = !JS_IsException(JS_Run(ctx, main.get()));
+            ran = !JS_IsException(JS_Run(ctx, main.get())) && !s.expired;
         }
-        if (!ran) {
+        if (s.expired) {
+            // Said as an overrun whatever the run returned (process says why).
+            JS_GetException(ctx);
+            why << "running its bytecode ran past its deadline of " << s.limit << " us";
+        } else if (!ran) {
             why << "running its bytecode threw: ";
             describe(ctx, JS_GetException(ctx), why);
         }
@@ -627,17 +631,24 @@ bool fault(Node& node, std::uint8_t kind, const char* what, const char* more = "
     return false;
 }
 
+// The deadline's fault: `during` (what was called, "process") ran past it. Said as an overrun whatever ended the call,
+// since the engine's own words for one are only "interrupted", and a builtin or a getter the host read may have dropped
+// even those on the way out; an exception the entry left pending is taken.
+bool deadlineFault(Node& node, const char* during) {
+    const PackState& pk = *node.pack;
+    JS_GetException(pk.base.ctx);
+    char buf[96];
+    Text(buf, sizeof buf) << " ran past its deadline of " << pk.base.limit + pk.base.extra << " us";
+    return fault(node, RP_SCRIPT_FAULT_DEADLINE, during, buf);
+}
+
 // A call into the pack that ended in an exception, which this takes: the node faults, and an out-of-memory error kills
 // the pack's context first. `during` names what was called ("process").
 bool faultFromException(Node& node, const char* during) {
     PackState& pk = *node.pack;
     JSContext* ctx = pk.base.ctx;
+    if (pk.base.expired) return deadlineFault(node, during);
     const JSValue e = JS_GetException(ctx);
-    if (pk.base.expired) {
-        char buf[96];
-        Text(buf, sizeof buf) << " ran past its deadline of " << pk.base.limit + pk.base.extra << " us";
-        return fault(node, RP_SCRIPT_FAULT_DEADLINE, during, buf);
-    }
     if (outOfMemory(ctx, e)) {
         if (!pk.dead) {
             pk.dead = true;
@@ -654,10 +665,14 @@ bool faultFromException(Node& node, const char* during) {
     return fault(node, RP_SCRIPT_FAULT_THREW, buf);
 }
 
-// A value a call returned that says the call is not done (a promise, or anything with a then): a device pack's node
-// runs synchronously.
-bool thenable(JSContext* ctx, JSValue v) {
-    return isObject(ctx, v) && isFunction(ctx, JS_GetPropertyStr(ctx, v, "then"));
+// Whether a value a call returned says the call is not done (a promise, or anything with a then: 1), or not (0): a
+// device pack's node runs synchronously. -1, with the exception pending, when reading its then threw (a getter's
+// throw, or the deadline's interrupt), which is the node's fault like any throw, never an answer.
+int thenable(JSContext* ctx, JSValue v) {
+    if (!isObject(ctx, v)) return 0;
+    const JSValue then = JS_GetPropertyStr(ctx, v, "then");
+    if (JS_IsException(then)) return -1;
+    return isFunction(ctx, then) ? 1 : 0;
 }
 
 // ---- the instance ---------------------------------------------------------------------------------------------------
@@ -736,16 +751,24 @@ bool materialize(Node& node) {
     if (JS_IsException(instance.get())) return faultFromException(node, "create");
     if (!isObject(ctx, instance.get()))
         return fault(node, RP_SCRIPT_FAULT_REFUSED, "create returned no object with a process function");
-    if (thenable(ctx, instance.get())) {
-        return fault(node, RP_SCRIPT_FAULT_REFUSED,
-                     "create returned a promise or a thenable: a device pack's node is made synchronously");
+    switch (thenable(ctx, instance.get())) {
+        case -1: return faultFromException(node, "create");
+        case 1:
+            return fault(node, RP_SCRIPT_FAULT_REFUSED,
+                         "create returned a promise or a thenable: a device pack's node is made synchronously");
+        default: break;
     }
+    // What the instance holds, read through any getter it has: a getter's throw, or an overrun in it, is create's.
     Rooted process(ctx, JS_GetPropertyStr(ctx, instance.get(), "process"));
+    if (JS_IsException(process.get())) return faultFromException(node, "create");
     if (!isFunction(ctx, process.get()))
         return fault(node, RP_SCRIPT_FAULT_REFUSED, "create returned no object with a process function");
     Rooted portsChanged(ctx, JS_GetPropertyStr(ctx, instance.get(), "portsChanged"));
+    if (JS_IsException(portsChanged.get())) return faultFromException(node, "create");
     Rooted onSettings(ctx, JS_GetPropertyStr(ctx, instance.get(), "onSettings"));
+    if (JS_IsException(onSettings.get())) return faultFromException(node, "create");
     Rooted activate(ctx, JS_GetPropertyStr(ctx, instance.get(), "activate"));
+    if (JS_IsException(activate.get())) return faultFromException(node, "create");
 
     // Its ports and params, by ordinal: their ids (what a block method is given), and what each is in the node's own
     // metas (Node::metas).
@@ -781,6 +804,8 @@ bool materialize(Node& node) {
         }
         node.metas[i] = side | (kind << 2) | (index << 8);
     }
+    // An overrun the making of the instance ran into and a builtin or a getter dropped is create's all the same.
+    if (s.expired) return deadlineFault(node, "create");
     Rooted block(ctx, JS_NewObjectClassUser(ctx, RP_MQJS_CLASS_BLOCK, 0));
     if (JS_IsException(block.get())) return faultFromException(node, "create");
     JS_SetOpaque(ctx, block.get(), encode(slot, 0, 0));
@@ -813,6 +838,7 @@ bool runHooks(Node& node) {
             Rooted frames(ctx, JS_NewUint32(ctx, node.maxFrames));
             const JSValue r = invoke(pk.base, fn, self, &rate, &frames);
             if (JS_IsException(r)) return faultFromException(node, "activate");
+            if (pk.base.expired) return deadlineFault(node, "activate");
             if (r == JS_FALSE)
                 return fault(node, RP_SCRIPT_FAULT_REFUSED, "activate refused the sample rate or block size");
         }
@@ -827,6 +853,7 @@ bool runHooks(Node& node) {
             Rooted settings(ctx, parseJson(ctx, *node.settings));
             if (JS_IsException(settings.get())) return faultFromException(node, "onSettings");
             if (JS_IsException(invoke(pk.base, fn, self, &settings))) return faultFromException(node, "onSettings");
+            if (pk.base.expired) return deadlineFault(node, "onSettings");
         }
     }
 #endif
@@ -1339,7 +1366,12 @@ void portsChanged(rp_node* n, const std::uint8_t* connected, std::uint32_t count
     }
     for (std::uint32_t i = 0; i < count; ++i) JS_SetPropertyUint32(ctx, flags.get(), i, JS_NewBool(connected[i] != 0));
     Rooted self(ctx, at(ctx, rec.get(), kRecInstance));
-    if (JS_IsException(invoke(pk.base, fn, self, &flags))) faultFromException(node, "portsChanged");
+    if (JS_IsException(invoke(pk.base, fn, self, &flags))) {
+        faultFromException(node, "portsChanged");
+        return;
+    }
+    // An entry that ran past its deadline faults whatever it returned (process says why).
+    if (pk.base.expired) deadlineFault(node, "portsChanged");
 }
 
 // Whether a block brings a node nothing: no message on any events or bytes input, no change on any control input or
@@ -1408,13 +1440,27 @@ rp_status process(rp_node* n, const rp_process* block) {
         faultFromException(node, ready ? "process" : "port pools");
         return RP_FAULT;
     }
-    if (equals(ctx, r, "fault")) {
-        fault(node, RP_SCRIPT_FAULT_REFUSED, "process returned \"fault\"");
-        return RP_FAULT;
+    if (!pk.base.expired) {
+        if (equals(ctx, r, "fault")) {
+            fault(node, RP_SCRIPT_FAULT_REFUSED, "process returned \"fault\"");
+            return RP_FAULT;
+        }
+        const int then = thenable(ctx, r);
+        if (then < 0) {
+            faultFromException(node, "process");
+            return RP_FAULT;
+        }
+        if (then > 0) {
+            fault(node, RP_SCRIPT_FAULT_REFUSED,
+                  "process returned a promise or a thenable: a device pack's node runs synchronously");
+            return RP_FAULT;
+        }
     }
-    if (thenable(ctx, r)) {
-        fault(node, RP_SCRIPT_FAULT_REFUSED,
-              "process returned a promise or a thenable: a device pack's node runs synchronously");
+    // An entry that ran past its deadline faults whatever it returned: the interrupt is uncatchable, but a builtin or a
+    // getter the host read may have dropped it on the way out, and the deadline is the node's whatever its script made
+    // of it (design decision 5: a deadline faults the node, never the box).
+    if (pk.base.expired) {
+        deadlineFault(node, "process");
         return RP_FAULT;
     }
     return RP_OK;
@@ -1599,6 +1645,8 @@ bool check(const TypeInfo& info, const rp_settings* settings, std::string& json,
     Rooted l(ctx, invoke(s, fn, def, &parsed));
     if (JS_IsException(l.get())) return threw("its layout threw: ");
     if (!stringify(s, l, layout)) return threw("its layout does not write as JSON: ");
+    // A check that ran past its deadline is refused whatever it returned (process says why).
+    if (s.expired) return overran();
     return true;
 }
 

@@ -710,6 +710,17 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
         // The deadline's interrupt where the engine would drop it, as any throw there: in a sort comparator.
         {"rp.scripttest.sort-spins", RP_SCRIPT_FAULT_DEADLINE, "process ran past its deadline of 50000 us",
          R"({"on":true})"},
+        // What the host reads of a result to refuse a thenable, and of an instance to find its process: a getter's
+        // throw is the node's, and an overrun there is the deadline's, never an answer.
+        {"rp.scripttest.then-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the then getter threw"},
+        {"rp.scripttest.then-spins", RP_SCRIPT_FAULT_DEADLINE, "process ran past its deadline of 50000 us",
+         R"({"on":true})"},
+        {"rp.scripttest.process-spins", RP_SCRIPT_FAULT_DEADLINE, "create ran past its deadline of 50000 us",
+         R"({"on":true})"},
+        // And wherever else the interrupt is dropped (here, by the host's own read of what send is handed), the entry
+        // faults as it ends.
+        {"rp.scripttest.send-spins", RP_SCRIPT_FAULT_DEADLINE, "process ran past its deadline of 50000 us",
+         R"({"on":true})"},
     };
     for (const Build& b : builds()) {
         Host host(50000);  // 50 ms of the thread's CPU time: what a preempted thread does not use up

@@ -163,7 +163,10 @@ or with no input to wake it is refused. The node keeps no time of its own, which
 so. On the box an idle pass is estimated at about a microsecond (68 instructions); `bliptoaster` sets it.
 
 **Faults.** A node that throws faults, with no retry (the box has no one to retry for): the executor silences it and
-the box prints it once, with the throw's words on a second `[host]` line. The host's interfaces are
+the box prints it once, with the throw's words on a second `[host]` line. A getter's throw on what the host reads of a
+call's result (a result's `then`, an instance's `process` and hooks) is the node's like any other, and an entry that
+ran past its deadline faults with the deadline's words whatever it returned, since a builtin or a getter may drop the
+engine's interrupt on the way out (the host checks at the end of every outermost entry). The host's interfaces are
 `rp.script.fault/1` (reason; kind: threw, deadline, heap, refused), `rp.script.heap/1`, `rp.host.clock/1` and
 `rp.host.script-log/1` (where `console.log` goes). A pack whose heap runs out has a dead context, read without
 allocating, and all of its nodes fault with the same words; on the desktop the pack is set up again once its last node
