@@ -9,7 +9,7 @@
 #   1. Builds the plan exporter (retroplug-export-plan) in the desktop build, which must be configured (./build.sh):
 #      the firmware's build exports its built-in plan (pico/n8-host/plan.json) with it and embeds the blob, so a plan
 #      the box could not run or hold fails here. That build is shared with a concurrent ./build.sh, and two builds of
-#      one tree at once race (loop.sh refuses to build it for that reason), so where another session builds, point
+#      one tree at once race (loop.sh does not build it, for that reason), so where another session builds, point
 #      RP_DESKTOP_BUILD_DIR at a tree of your own.
 #   2. For each variant, PIO-USB (the rig's: the N8 on GP2/GP3) and RP_NATIVE_USB=ON (the chip's own controller):
 #      configures the firmware's CMake project on the Pico SDK's toolchain, in a build dir of its own, and builds it.

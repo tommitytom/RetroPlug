@@ -158,8 +158,9 @@ real time), a SysEx past 4 KB and anything no block took, counted at the staging
 plan (one read high, only while `linkfull` moves); `notready` is what the link refused while no game ran; `linkfull`
 counts pushes refused for a full link ring (0 expected) and `skipped` the frames the block driver dropped past its
 carry of four blocks: cumulative since boot, it grows by hundreds of thousands across a boot (the main loop waits on the
-N8 for seconds) and by about 150 to 1,100 frames when a stall (a console line) outruns the carry, so judge it by its
-growth across a case, which `stress.sh` does not do. `-DN8_BRIDGE_VERBOSE=1` also prints each
+N8 for seconds) and by about 150 to 1,100 frames over a stress rerun, where a hold outruns the carry (an N8 call such as
+the sniff's read, about 150 to 176 frames a pass), so judge it by its growth across a case, which `stress.sh` does not
+do. `-DN8_BRIDGE_VERBOSE=1` also prints each
 forwarded batch. The L6 capture's ch3 measures the pitch
 (`retroplug-cli analyze-capture <wav> --channel 3 --expect-hz 440`).
 Don't confuse it with the **L6's** own MIDI ports (`L6 MIDI I/O Port` etc.): those are USB
@@ -409,9 +410,8 @@ bytes of SRAM in all; E2's were 48796 / 15324 / 32360 and 48756 / 1560 / 26128, 
 the arena and the code in RAM). It builds the desktop's `retroplug-export-plan` first (CI needs it), so `build/` must be
 configured, and that build shares `build/` with a concurrent `./build.sh`: two builds of one tree at once race, so on a
 box where another session builds, point `RP_DESKTOP_BUILD_DIR` at a tree of your own. It needs the SDK's TinyUSB
-(`PICO_SDK_PATH` when it carries one, else
-`/workspaces/pico-sdk`) and Pico-PIO-USB at `5a37a66`; it builds an ELF only (`PICO_NO_PICOTOOL`) and runs in CI beside
-`device:check`. It proves the image links and traps; the rig's gate (`loop.sh`, `stress.sh`, `faults.sh`, with
+(`PICO_SDK_PATH` when it carries one, else `/workspaces/pico-sdk`) and Pico-PIO-USB at `5a37a66`; it builds an ELF only
+(`PICO_NO_PICOTOOL`) and runs in CI beside `device:check`. It proves the image links and traps; the rig's gate (`loop.sh`, `stress.sh`, `faults.sh`, with
 BlipToaster) proves it works.
 
 ## Build + flash + verify

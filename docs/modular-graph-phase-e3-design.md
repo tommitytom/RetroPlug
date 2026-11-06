@@ -113,8 +113,7 @@ in the ordinary desktop build, so a non-portable line in the loader fails there.
   the device asks and a type that truly needs 16 is seen at export and refused (`node-memory`: "node asked for an
   alignment of 16, where an rp2350 arena gives a power of two up to 8") by the exporter and the loader alike. The
   arena itself must be aligned to `kArenaAlign` (`PlanLoader.hpp`, which a firmware declares its arena with), the
-  larger of `kTargetAlign` and the compiler's `max_align_t`, which is
-  also the buffer stride. (A portable type holding a `long double` or an `alignas(max_align_t)` member reads 16 on
+  larger of `kTargetAlign` and the compiler's `max_align_t`, which is also the buffer stride. (A portable type holding a `long double` or an `alignas(max_align_t)` member reads 16 on
   x86-64 and 8 on the M33 and is refused for it: the safe direction. The `static_assert` that `kDeviceAlign` equals
   the device's `max_align_t` holds the Arm build only; the RP2350's Hazard3 cores are riscv32, where it is 16, and a
   RISC-V build would need its own figure.)
@@ -641,8 +640,17 @@ what led to the fix of question 3. The table is the second run, on the final ima
 | audio on the L6's channel 3 | A4 440.30 Hz +1.2 c, C5 522.16 Hz -3.6 c, identical | identical: A4 440.30 Hz +1.2 c, C5 522.16 Hz -3.6 c, -32.84 dBFS |
 | `faults.sh --rounds 8` | 8 of 8; stuck menus 0, recovery reboots 0, uploads 0 | 8 of 8, stuck 0, abandoned boots 6. Two earlier attempts never started: `loop.sh`'s 5 s power reset landed as a short off (the Zigbee plug's late cut), which leaves the N8 menu stuck at the first boot, the documented quirk; after a clean manual 16 s off the box booted by itself and the run passed. (On the first image it was 7 of 8 twice, each failure the same short-off quirk.) |
 | the upload path | two ROMs staged, SysEx `7D 50` pick and an NES power-cycle: uploaded in about 4.9 s and booted; the next cycle booted the saved choice by CRC skip | pick 1 uploaded in 4922 ms, the next cycle saved 1 with no upload; pick 0 uploaded in 4930 ms (E2 4929), the next saved 0 with no upload; the volume written each time, the VRC6 ROM included |
-| `rp-device-check` flashed once (e14a1849) | the four lines of section 9 | `pass, 20 types, arena 386192 bytes` (the delay default fits 400 KiB); `n8 protocol pass, 1390 bytes`; `plan pass, 10 nodes, 54360 arena bytes (the export's estimate 56064, the arena 409600), 48000 Hz, 256 frames a block: loaded, ran 48000 frames in 467 blocks with 8 param moves and 0 drops, unloaded`, 91 to 125 ms for that second of audio, digest `46e21691d4d54687` against the desktop's `b8854b2cc247318f` (they differ, as FMA contraction may); `stack 2688 of 4096 bytes at most` |
+| `rp-device-check` flashed once (e14a1849; the final image afd366d3, flashed once more, gave the same lines) | the four lines of section 9 | `pass, 20 types, arena 386192 bytes` (the delay default fits 400 KiB); `n8 protocol pass, 1390 bytes`; `plan pass, 10 nodes, 54360 arena bytes (the export's estimate 56064, the arena 409600), 48000 Hz, 256 frames a block: loaded, ran 48000 frames in 467 blocks with 8 param moves and 0 drops, unloaded`, 91 to 125 ms for that second of audio, digest `46e21691d4d54687` against the desktop's `b8854b2cc247318f` (they differ, as FMA contraction may); `stack 2688 of 4096 bytes at most`. The two images differ only in the arena's alignment, 16 and then `kArenaAlign` (8); the final one read 91142 us and digest `46e21691d4d54687` |
 | the box flashed back | its image, as the gate ran it | the final image `ffadfb26...`, saved choice 0 (BlipToaster), left on the rig |
+
+The acceptance gate was run again by the controller on the box image `ffadfb26...` at the follow-ups' HEAD (b28668095),
+with the same figures: boot in 5.3 s with the plan loaded (29976 of 131072 arena bytes) and the volume written;
+`stress.sh` with every case's counts as above, and the isolated latency within the budget on the reruns (616 to 680 us
+average, 1034 to 1128 us worst), except for two outliers that are known hazards, not regressions: a 11.5 ms worst, a
+message landing in the console's `[stats]` print stall, and a 2.5 ms worst, the ~2.5 ms sniff / health USB read (E2's
+too); `faults.sh` 8 of 8; the audio at 440.30 and 522.16 Hz; the picks uploaded in 4922 and 4926 ms, each next cycle
+booting the saved choice with no upload. The final `rp-device-check` image (afd366d3) was flashed once there (section
+12.7's last row).
 
 After a power cut under a live stream (stress's recovery case, `faults.sh`) a freshly booted ROM now receives a few
 note-offs (`8c nn 00`) before anything else, paid by `rp.n8.nes`; both scripts send their `B0 07 7F` primer afterwards

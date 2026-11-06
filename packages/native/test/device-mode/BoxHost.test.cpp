@@ -3,9 +3,9 @@
 // and the N8 box's cart link (pico/n8-host/BoxCartLink.cpp), over the box's own plan (pico/n8-host/plan.json) exported
 // as its firmware's build exports it and loaded over the device's builds of its types.
 //
-// - The block driver answers the time since the last block at the plan's rate, carrying what passes maxFrames, so the
-//   frames run add up to the time passed, carrying what passes maxFrames up to kCarryBlocks blocks: a 12 s wait runs 4
-//   blocks and counts the rest `skipped`.
+// - The block driver answers the time since the last block at the plan's rate, carrying what passes maxFrames up to
+//   kCarryBlocks blocks, so the frames run add up to the time passed within that: a 12 s wait runs 4 blocks and counts
+//   the rest `skipped`.
 // - The staging stages whole messages, each with its status byte and as it came (nothing filtered), a SysEx whole and
 //   the box's own F0 7D 50 commands taken by its hook; it takes no more than a block holds, and loses nothing to that:
 //   a byte it refuses waits for the next pass.
@@ -444,6 +444,7 @@ TEST_CASE("the box's staging takes no more than a block holds, and loses nothing
         REQUIRE(feed(*s, sysex, at));
         REQUIRE(feed(*s, {0xF6}, at));  // cuts the SysEx short: both wait for room, as above
         REQUIRE(s->counts().untaken == 0);
+        REQUIRE(s->staged() == 100);  // the SysEx and the tune request are held, not staged
         s->clearStaged();
         CHECK(s->counts().untaken == 100 + 1 + 1);  // the staged messages, the held SysEx and the held tune request
         CHECK(s->staged() == 0);

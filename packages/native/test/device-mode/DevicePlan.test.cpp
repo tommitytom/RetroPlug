@@ -871,7 +871,7 @@ TEST_CASE("the loader refuses a blob it cannot run, in its own words, creating n
         auto inPair = [&](std::uint32_t i) { return i >= pairStart && i < pairEnd; };
         std::uint32_t first = 0;
         while (first + 1 < steps.count && (inPair(first) || inPair(first + 1))) ++first;
-        REQUIRE(first < steps.count);
+        REQUIRE(first + 1 < steps.count);
         blob::StepRecord lead = stepAt(first);
         lead.groupSize = 2;
         std::memcpy(b.data() + steps.offset + first * sizeof lead, &lead, sizeof lead);

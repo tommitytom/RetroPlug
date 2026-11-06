@@ -313,8 +313,7 @@ staging, the SysEx `7D 50` pick). Notes for running it:
   (`skipped` is frames the block driver dropped past its carry of four blocks, cumulative since boot: a boot or a
   recovery adds hundreds of thousands and each stress rerun about 150 to 1,100, so judge it by its growth across a
   case, which `stress.sh` does not do; `linkfull` stays 0), and `filtered` counts what the plan's filter dropped
-  (aftertouch, system common,
-  real time) among other things.
+  (aftertouch, system common, real time) among other things.
 - **`pnpm device:box` needs no hardware**: it proves the firmware links under the heap/exception/RTTI trap and is CI's
   check; the scripts above are what prove it behaves.
 

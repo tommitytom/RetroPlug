@@ -109,8 +109,8 @@ set_property(GLOBAL PROPERTY RP_DEVICE_CHECK_TRAP "${CMAKE_CURRENT_LIST_DIR}/che
 # -Wstack-usage as an error, so a frame past it (or one GCC cannot bound, a variable-length array or an alloca) fails
 # the build naming the function. That bounds each frame of a node's query_memory and create, as E1 asked, and not a
 # chain of them: every frame is held to 1 KiB at build time, and the chains are still summed by hand, the images' own
-# word (pico/n8-host/CMakeLists.txt's for the box). 1 KiB is a quarter of the 4 KB main stack the box gives. The limit is
-# on in every build type, and both the shipped Release (-O3) and the Debug Probe's Debug (-Og) builds of both images
+# word (pico/n8-host/CMakeLists.txt's for the box). 1 KiB is a quarter of the 4 KB main stack the box gives. The limit
+# is on in every build type, and both the shipped Release (-O3) and the Debug Probe's Debug (-Og) builds of both images
 # hold it: the deepest frames are bootRom's battery path (writeBattery, 864 bytes at -O3 and 840 at -Og, which the box
 # never calls), sizePlan for a caller that asks for no error (792 at -O3), loadPlan (768 at -O3, 504 at -Og; its
 # no-error path is a frame of its own, graph/PlanLoader.cpp) and a dither's or a normalize's create in rp-device-check
