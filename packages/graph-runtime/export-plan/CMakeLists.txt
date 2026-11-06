@@ -50,3 +50,13 @@ retroplug_product(retroplug-export-plan PACKAGES ${RP_EXPORT_PLAN_PACKAGES} DEVI
 retroplug_device_mode_objects(retroplug-export-plan-device PACKAGES ${RP_EXPORT_PLAN_PACKAGES})
 target_sources(retroplug-export-plan PRIVATE $<TARGET_OBJECTS:retroplug-export-plan-device>)
 target_link_libraries(retroplug-export-plan PRIVATE retroplug-graph retroplug-node-sdk)
+
+# "The exporter is up to date": building this target builds the tool, then stamps a file beside it. The tool's own mtime
+# cannot say it, since a source the tool does not link (a desktop-only file of a package) is newer than the tool after
+# a build that had nothing to relink. pico/n8-host/loop.sh compares the packages' sources against the stamp.
+add_custom_target(retroplug-export-plan-current
+    COMMAND ${CMAKE_COMMAND} -E touch "$<TARGET_FILE_DIR:retroplug-export-plan>/retroplug-export-plan.current"
+    DEPENDS retroplug-export-plan
+    COMMENT "retroplug-export-plan is current"
+    VERBATIM)
+add_dependencies(retroplug-export-plan-current retroplug-export-plan)

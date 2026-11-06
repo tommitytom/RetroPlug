@@ -65,7 +65,7 @@ command -v arm-none-eabi-g++ >/dev/null ||
 [ -f "$DESKTOP/CMakeCache.txt" ] || die "$DESKTOP is not a configured desktop build (run ./build.sh first)"
 
 echo "== the plan exporter (desktop: retroplug-export-plan)"
-cmake --build "$DESKTOP" --target retroplug-export-plan -j"$JOBS"
+cmake --build "$DESKTOP" --target retroplug-export-plan-current -j"$JOBS"
 exporter="$DESKTOP/export-plan/retroplug-export-plan"
 [ -x "$exporter" ] || die "no $exporter after building it"
 

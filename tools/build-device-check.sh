@@ -49,7 +49,7 @@ command -v arm-none-eabi-g++ >/dev/null ||
 [ -f "$DESKTOP/CMakeCache.txt" ] || die "$DESKTOP is not a configured desktop build (run ./build.sh first)"
 
 echo "== the cases and the plan exporter (desktop: rp-device-check-cases, retroplug-export-plan)"
-cmake --build "$DESKTOP" --target rp-device-check-cases retroplug-export-plan -j"$JOBS"
+cmake --build "$DESKTOP" --target rp-device-check-cases retroplug-export-plan-current -j"$JOBS"
 mkdir -p "$OUT/cases"
 "$DESKTOP/device-check/cases/rp-device-check-cases" "$OUT/cases/DeviceCheckCases.hpp"
 exporter="$DESKTOP/export-plan/retroplug-export-plan"

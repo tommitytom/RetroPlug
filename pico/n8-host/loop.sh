@@ -94,18 +94,23 @@ if [ $do_build = 1 ]; then
 	# plan.json or plan.cmake changes. The exporter's blob lays out each node's port views by the package sources it
 	# was built from while the image compiles the sources as they are now, and the loader cannot tell the two apart
 	# (the blob carries no port signature), so a stale exporter yields a firmware that boots and reads the wrong views.
-	# Hence the refusal below when a source the exporter compiles is newer than it.
+	# Hence the refusal below unless the exporter was brought up to date (the stamp the retroplug-export-plan-current
+	# target leaves beside it) after the last change to any source it compiles. The tool's own mtime cannot say that: a
+	# desktop-only source it does not link is newer than it after a build with nothing to relink.
 	# Absolute, as CMake stores the tool's path in the build dir's cache, so the comparison below sees the same path.
 	desk=$(cd "${RP_DESKTOP_BUILD_DIR:-$repo/build}" 2>/dev/null && pwd) \
 		|| die "no desktop build at ${RP_DESKTOP_BUILD_DIR:-$repo/build} (RP_DESKTOP_BUILD_DIR; ./build.sh makes build/)"
 	tool=$desk/export-plan/retroplug-export-plan
-	[ -x "$tool" ] || die "no plan exporter at $tool: build it first (cmake --build $desk --target retroplug-export-plan)"
+	stamp=$tool.current
+	build="cmake --build $desk --target retroplug-export-plan-current -j\$(nproc)"
+	[ -x "$tool" ] || die "no plan exporter at $tool: build it first ($build)"
+	[ -f "$stamp" ] || die "the plan exporter at $tool has not been brought up to date ($stamp is missing): $build"
 	# Every source the exporter compiles: the packages' native sources (node-sdk and graph-runtime among them) and its
 	# own directory, their tests apart.
 	newer=$(find "$repo"/packages/*/native "$repo"/packages/graph-runtime/export-plan -path '*/test' -prune -o -type f \
-		\( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.c' -o -name CMakeLists.txt \) -newer "$tool" \
+		\( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.c' -o -name CMakeLists.txt \) -newer "$stamp" \
 		-print -quit)
-	[ -z "$newer" ] || die "the plan exporter at $tool is older than $newer: build it first, as the firmware's export would run a stale one (cmake --build $desk --target retroplug-export-plan -j\$(nproc))"
+	[ -z "$newer" ] || die "$newer is newer than the plan exporter's last build: build it first, as the firmware's export would run a stale one ($build)"
 	if [ ! -f "$bdir/build.ninja" ]; then
 		# reflect-cpp's headers from the desktop build's checkout when there is one: no clone at configure.
 		reflect=$(sed -n 's/^reflectcpp_SOURCE_DIR:STATIC=//p' "$desk/CMakeCache.txt" 2>/dev/null)

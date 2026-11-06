@@ -112,8 +112,10 @@ and capture the timestamped console until a verdict:
 The firmware's build exports its plan with the desktop build's `retroplug-export-plan`: `loop.sh` takes it from
 `RP_DESKTOP_BUILD_DIR` (default `build/`, which must exist) as `export-plan/retroplug-export-plan`, stops with how to
 build it when it is missing, builds no desktop tree itself (another session may be building it) and refuses when a
-source the exporter compiles (`packages/*/native` and the exporter's own directory, tests apart) is newer than it, so
-after a package change build the exporter first (`cmake --build build --target retroplug-export-plan -j$(nproc)`). The
+source the exporter compiles (`packages/*/native` and the exporter's own directory, tests apart) is newer than the
+stamp the `retroplug-export-plan-current` target leaves beside the tool, or the stamp is missing, so after a package
+change build that target first (`cmake --build build --target retroplug-export-plan-current -j$(nproc)`; it builds
+the tool, and stamps it even when nothing relinked). The
 check is there because the loader cannot see a stale exporter: the blob carries no port signature, so a node whose
 ports changed since the exporter was built boots and reads the wrong views. The export reruns whenever the exporter, `plan.json` or `plan.cmake` changes, so a
 `plan.json` change alone needs nothing built first.
@@ -380,7 +382,7 @@ transport live in static storage, and so does the plan's arena (128 KiB of `.bss
 loader lays it out in the arena (`[host] plan loaded: 3 nodes, <N> of 131072 arena bytes, 48000 Hz, 256 frames a
 block`, then a line per node); a plan it refuses prints `the built-in plan was refused: ...` and `no plan runs, and
 nothing is forwarded`, with the error LED. The exporter is `build/export-plan/retroplug-export-plan` in the desktop
-build, which must be built first (`cmake --build build --target retroplug-export-plan -j$(nproc)`; `pnpm device:box`
+build, which must be built first (`cmake --build build --target retroplug-export-plan-current -j$(nproc)`; `pnpm device:box`
 builds it, `loop.sh` checks for it, and `RP_EXPORT_PLAN_TOOL` points the configure at another one).
 `CMakeLists.txt` declares `retroplug_product(n8-host DEVICE PACKAGES core device-io n8 TARGETS n8_host)`: the
 packages' portable

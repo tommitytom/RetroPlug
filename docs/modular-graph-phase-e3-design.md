@@ -675,8 +675,10 @@ anyway.
   removing or reordering a port of `rp.n8.nes`, the filter or `rp.device.midi-in` and flashing with an old exporter
   gives a firmware that boots, prints "plan loaded" and reads the wrong views, and the trial load, which uses the same
   tool's device builds, does not see it. `loop.sh` refuses when a source the exporter compiles (`packages/*/native`,
-  which holds node-sdk and graph-runtime, and the exporter's own directory, tests apart) is newer than the tool, and
-  `tools/build-box.sh` and `pnpm test:plugin` build it first. The structural fix is the per-node port signature of
+  which holds node-sdk and graph-runtime, and the exporter's own directory, tests apart) is newer than the stamp
+  the `retroplug-export-plan-current` target leaves beside the tool (the tool's own mtime does not move when a source
+  it does not link changed), or the stamp is missing; `tools/build-box.sh` and `tools/build-device-check.sh` build that
+  target. The structural fix is the per-node port signature of
   section 10, checked at load.
 - **An audio cadence needs blocks off the main loop** (section 10): staging and the link's ring made
   single-producer / single-consumer, or the N8 calls made non-blocking, and `frameOf` on `BlockDriver`.
