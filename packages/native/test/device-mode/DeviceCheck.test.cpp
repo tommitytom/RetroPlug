@@ -1114,12 +1114,16 @@ TEST_CASE("the device check's deadline case faults every loop over a builtin by 
     CHECK(r.contextBytes == std::size_t{rp::device_check::kLoopHeapBytes} * rp::mqjs::kDeviceHalves / 2);
     for (std::uint32_t k = 0; k < rp::device_check::kLoopCount; ++k) {
         INFO(rp::device_check::kLoops[k].loop);
-        // The sort's and forEach's data takes a block for each 256 numbers first; the search's string, one.
+        // An array's data takes a block for each 256 elements first, and its strings (the search's, indexOf's, the
+        // callback's) one.
         const std::uint32_t count = rp::device_check::kLoops[k].count;
         const std::string   loop = rp::device_check::kLoops[k].loop;
-        const bool          numbers = loop == "sort" || loop == "forEach" || loop == "stringify";
-        const std::uint32_t data = numbers ? (count + 255) / 256 : loop == "search" ? 1u : 0u;
+        const bool listed = loop == "sort" || loop == "forEach" || loop == "stringify" || loop == "indexOf" ||
+                            loop == "callback";
+        const bool strings = loop == "search" || loop == "indexOf" || loop == "callback";
+        const std::uint32_t data = (listed ? (count + 255) / 256 : 0u) + (strings ? 1u : 0u);
         CHECK(r.blocks[k] == data + 1);
+        CHECK(r.entered[k]);
         // Its last block ran to its deadline (10 ms of CPU time) and not much past it: a generous bound by the wall
         // clock, which a loaded machine stretches.
         CHECK(r.micros[k] >= rp::mqjs::kHostClockDeadlineMicros);

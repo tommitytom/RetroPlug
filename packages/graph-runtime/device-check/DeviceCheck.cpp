@@ -106,8 +106,17 @@ bool nextMessage(void*, std::uint32_t frames, rp_device_midi_message* out) {
 }
 const rp_device_midi_in kMidiIn{nullptr, &nextMessage};
 
+// A script node's console.log (rp.host.script-log/1): the lines it ends, counted. The loop node logs a line as its
+// loop begins, which is how the deadline case knows the loop was entered before the deadline faulted it.
+std::uint32_t gLogLines = 0;
+void          countLines(void*, const char* text, std::size_t size) {
+    for (std::size_t i = 0; i < size; ++i) gLogLines += text[i] == '\n';
+}
+const rp_host_script_log kScriptLog{nullptr, &countLines};
+
 void ignoreLog(void*, int, const char*) {}
 const void* hostInterface(const rp_host*, const char* id) {
+    if (std::strcmp(id, RP_HOST_SCRIPT_LOG_INTERFACE) == 0) return &kScriptLog;
     if (std::strcmp(id, RP_HOST_RESOURCES_INTERFACE) == 0) return &kResources;
     if (std::strcmp(id, RP_HOST_PACKAGES_INTERFACE) == 0) return &kPackages;
     if (std::strcmp(id, RP_HOST_CLOCK_INTERFACE) == 0) return gClock;
@@ -694,11 +703,12 @@ void benchScript(const rp_package* const* packages, std::size_t packageCount, co
 
 namespace {
 
-// A loop case's settings as the msgpack a device reads: {"loop": <its name, under 32 bytes>, "count": <its count>,
-// "warm": <its warm-up>}.
+// A loop case's settings as the msgpack a device reads: {"loop": <its name, 31 bytes at most>, "count": <its count>,
+// "warm": <its warm-up>, "length": <its strings' length>, "rounds": 0}: at most kLoopSettingsBytes.
+constexpr std::uint32_t kLoopSettingsBytes = 1 + (1 + 4) + (1 + 31) + 2 * ((1 + 5) + 5) + (1 + 6) + 5 + (1 + 6) + 1;
 std::uint32_t loopSettings(const LoopCase& c, std::uint8_t* out) {
     std::uint32_t n = 0;
-    out[n++] = 0x83;
+    out[n++] = 0x85;
     out[n++] = 0xa4;
     std::memcpy(out + n, "loop", 4);
     n += 4;
@@ -716,6 +726,15 @@ std::uint32_t loopSettings(const LoopCase& c, std::uint8_t* out) {
     n += 4;
     out[n++] = 0xce;
     for (int shift = 24; shift >= 0; shift -= 8) out[n++] = static_cast<std::uint8_t>(c.warm >> shift);
+    out[n++] = 0xa6;
+    std::memcpy(out + n, "length", 6);
+    n += 6;
+    out[n++] = 0xce;
+    for (int shift = 24; shift >= 0; shift -= 8) out[n++] = static_cast<std::uint8_t>(c.length >> shift);
+    out[n++] = 0xa6;
+    std::memcpy(out + n, "rounds", 6);
+    n += 6;
+    out[n++] = 0x00;  // for ever
     return n;
 }
 
@@ -754,7 +773,7 @@ void loopDeadline(const rp_package* package, const TypeCase* cases, std::size_t 
     for (std::uint32_t k = 0; k < kLoopCount; ++k) {
         r.loop = k;
         a.used = afterPack;
-        std::uint8_t      bytes[48];
+        std::uint8_t      bytes[kLoopSettingsBytes];
         const rp_settings settings{reinterpret_cast<const char*>(bytes), loopSettings(kLoops[k], bytes),
                                    RP_SETTINGS_MSGPACK};
         rp_memory_req     req{};
@@ -768,6 +787,7 @@ void loopDeadline(const rp_package* package, const TypeCase* cases, std::size_t 
             return fail(LoopStep::Activate, nullptr);
         }
         // Its blocks until one faults it (the data's first, then the loop), the last timed.
+        gLogLines = 0;
         OneStep    one;
         const bool bound = one.bind(a, node, *c, kBlockFrames);
         bool       faulted = false;
@@ -780,12 +800,14 @@ void loopDeadline(const rp_package* package, const TypeCase* cases, std::size_t 
         char what[sizeof r.error.message];
         faultWords(what, sizeof what, "its blocks did not end in its process call's deadline", node);
         const bool ended = faulted && processDeadline(node);
+        r.entered[k] = gLogLines > 0;
         rp_script_heap_use use{};
         if (k == 0 && heapOf(node, &use)) r.contextBytes = use.bytes;
         node->vt->deactivate(node);
         type->destroy(node);
         if (!bound) return fail(LoopStep::Ports, "its ports do not fit the arena");
         if (!ended) return fail(LoopStep::Result, what);
+        if (!r.entered[k]) return fail(LoopStep::Result, "its deadline faulted it before its loop began");
     }
 }
 

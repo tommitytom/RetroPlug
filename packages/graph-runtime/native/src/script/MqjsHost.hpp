@@ -175,8 +175,8 @@ inline constexpr std::uint32_t kPlacedLengths = 3;
 // An entry's deadline by a host's clock that names none (the box's): 10 ms. A MIDI-rate node's process takes
 // microseconds, the box's block is about a millisecond and its watchdog 3 s, so a node this far over is stuck. The
 // box's other nodes lose this long before it is silenced, and kHostClockMessageMicros more for each message the block
-// hands it (26 ms at a full queue of the device MIDI input's 64), and the overrun past it, which kPollCapDivisor bounds
-// (at most 156 units of work and one builtin call).
+// hands it (26 ms at a full queue of the device MIDI input's 64), and the overrun past it, which kPollCapDivisor says
+// the bound of (at most 156 units of work, and what runs between the count running out and the next poll).
 inline constexpr std::uint32_t kHostClockDeadlineMicros = 10000;
 // What a block's entry gets on top of it by a host's clock, for each message the block hands the node on its events and
 // bytes inputs: 250 us. A node's work grows with its messages, and one node's cost on the RP2350 at 150 MHz, run from
@@ -186,28 +186,35 @@ inline constexpr std::uint32_t kHostClockDeadlineMicros = 10000;
 // has none.
 inline constexpr std::uint32_t kHostClockMessageMicros = 250;
 // How an entry polls its deadline. MicroQuickJS calls the interrupt handler once every so many units of work, 10000 by
-// its own count: each call and branch of its interpreter, and (RetroPlug's, script/rp_mqjs_engine.c) each allocation
-// and each push of a frame, and the builtins whose one call can run long count off the same counter in their loops (the
-// sort a comparison, the string searches a position, join on what is no array an element, match a match). At the
-// engine's interval a loop over a builtin ran 10000 of its calls between polls: in bliptoaster's 24576 bytes `for (;;)
-// a.sort()` on the desktop ran 0.7 s past a deadline of 10 ms, seconds on the box, past its 3 s watchdog. So the
-// handler sets each next poll's distance (script/rp_mqjs.h's rp_mqjs_set_poll_interval): an entry first polls after its
-// deadline in microseconds over kFirstPollDivisor units, at least kLeastPoll (8 on the box's 10 ms, 244 at the
-// desktop's 500 ms); each poll before the deadline sets the next twice as far, but never past the deadline in
-// microseconds over kPollCapDivisor units (156 on the box, 7812 at the desktop's 500 ms, kMostPoll at most), and no
-// further than the rate since the last poll says fits in half of what is left; and a poll past the deadline sets the
-// next at once, so an interrupt a builtin dropped is thrown again at the interpreter's next call or branch. The cap is
-// what bounds a phase change, plain code whose cheap units let the polls grow apart and then a loop over a builtin
-// whose one call is many of them (a forEach over a plain callback, JSON.stringify): its calls and its allocations
-// count, so the overrun past a deadline IS at most the cap's units, each a call, a branch, an allocation, a push or a
-// builtin's own loop step (a collection the costliest, linear in the heap), plus the rest of the builtin call the count
-// ran out in, since a poll waits for the interpreter's next call or branch: one call, linear in what the pack's heap
-// holds. The box's figure is the device check's deadline case (rp-device-check, the worst of its loops, a phase change
-// among them, against a third of the watchdog). The residual: a single builtin call that neither allocates nor polls
-// and is not bounded by the heap runs to its end; none is known in the standard library (join's generic loop polls). A
-// node that finishes its entry in microseconds reads the clock a few times (the first poll and its doublings): the
-// desktop's [script-bench], a transpose's 16-message block, about 272 to 280 ns a message at the desktop's deadline
-// (A's 275), 305 at the box's 10 ms, where it reads its clock every 156 units; on the box a read is a few dozen cycles.
+// its own count: each call and branch of its interpreter, and (RetroPlug's, script/rp_mqjs_engine.c) each allocation,
+// each push of a frame, every 64 bytes a string comparison reads (equality, order: indexOf, ===, <), and the steps of
+// the builtins whose one call can run long, which count in their loops (the sort a comparison, the string searches a
+// position, join on what is no array an element, match a match); a call from C into JavaScript (a callback, a getter, a
+// conversion) polls as it returns when the count has run out, so the callback builtins (forEach and the other
+// iterations, reduce, sort's comparator, replace's function) are polled between their callbacks. At the engine's own
+// interval a loop over a builtin ran 10000 of its calls between polls: in bliptoaster's 24576 bytes `for (;;) a.sort()`
+// on the desktop ran 0.7 s past a deadline of 10 ms, seconds on the box, past its 3 s watchdog. So the handler sets
+// each next poll's distance (script/rp_mqjs.h's rp_mqjs_set_poll_interval): an entry first polls after its deadline in
+// microseconds over kFirstPollDivisor units, at least kLeastPoll (8 on the box's 10 ms, 244 at the desktop's 500 ms);
+// each poll before the deadline sets the next twice as far, but never past the deadline in microseconds over
+// kPollCapDivisor units (156 on the box, 7812 at the desktop's 500 ms, kMostPoll at most), and no further than the rate
+// since the last poll says fits in half of what is left; and a poll past the deadline sets the next at once, so an
+// interrupt a builtin dropped is thrown again at the next poll. What the bound IS: an entry faults at most the cap's
+// units of work past its deadline, plus what the engine runs between the unit that runs the count out and the next
+// place it polls. One unit can still cost a collection (an allocation that lands on a heap with no room collects first,
+// linear in what the heap holds, and on a nearly full heap every allocation may; the device check measures no such
+// loop) or a builtin call whose own work counts nothing, at most linear in the heap (Array's indexOf over numbers or
+// objects, reverse, slice, concat). Between the count running out and the next poll run: the rest of the builtin call
+// it ran out in (a callback builtin's next callback's return; the rest of one indexOf over references to long strings,
+// whose compared bytes counted but which polls only when it returns, the references it holds times the string's length,
+// each of which the heap bounds), and the rest of a straight-line run of code to its next call or branch (its length
+// times what each of its operations costs). The box's figure for the classes measured is the device check's deadline
+// case (rp-device-check: nine loops at this pack's heap, four of them phase changes from plain code into forEach,
+// JSON.stringify, indexOf over long strings and a callback that makes strings, the worst judged against a third of the
+// watchdog). A node that finishes its entry in microseconds reads the clock a few times (the first poll and its
+// doublings): the desktop's [script-bench], a transpose's 16-message block, 266 to 286 ns a message at the desktop's
+// deadline, about 300 at the box's 10 ms, where its polls come every 156 units (256 messages: 245 to 262 and 268). On
+// the box one poll is about 60 instructions and two calls (the handler, the clock), about a microsecond at 150 MHz.
 inline constexpr std::uint32_t kFirstPollDivisor = 2048;
 inline constexpr std::uint32_t kPollCapDivisor = 64;
 inline constexpr std::uint32_t kLeastPoll = 8;

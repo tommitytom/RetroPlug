@@ -51,20 +51,27 @@
  * replace's and split's js_string_indexof, both n times m) once a position, counting about one for every eight
  * characters it compares, join on what is no array (whose loop runs to the object's length, which nothing bounds) once
  * an element, and match once a match. rp_mqjs_poll is their poll, the interpreter's counted off the same counter, and
- * check_free_mem below counts each allocation and each push of a frame off it too (down to 0: the poll is then the
- * interpreter's next call or branch), so a builtin that allocates or calls back for each element (forEach over a plain
- * callback, JSON.stringify) brings the next poll nearer as it works; rp_mqjs_set_poll_interval is how the host's
- * handler sets the next poll's distance. Each search is upstream's body with the poll in its loop: js_string_indexOf
- * replaces the standard library's under its own name, as hasOwnProperty does; js_string_indexof's definition is told
- * from its calls as JS_MakeUniqueString's is (the calls pass `ctx`), and join's too, since js_array_toString calls it.
- * A search the interrupt stops answers -1, as one that found nothing, with the interrupt pending: replace and split
- * cannot fail there, and the host's handler, once the deadline is past, asks the next poll at once, so the interpreter
- * throws it again at its next call or branch. match is upstream's body too, under its own name, which also moves past
- * an empty match a code point, as replace does, and ends after one at the string's end: upstream's added the same empty
- * match until the heap ran out.
+ * check_free_mem below counts each allocation and each push of a frame off it too, and the string comparisons
+ * (js_string_eq and js_string_compare: Array's indexOf, includes and lastIndexOf over strings, ===, <, a switch) one
+ * for every 64 bytes they read, all down to 0, the poll then at the interpreter's next call or branch or at JS_Call's
+ * return: JS_Call, the one way a builtin calls into JavaScript (a callback, a getter, a conversion), is RetroPlug's,
+ * upstream's body with a poll after it once the count has run out, so a builtin that calls back for each element
+ * (forEach and the other iterations, reduce, a sort's comparator, replace's function) is polled between its callbacks,
+ * and one that allocates for each (JSON.stringify) brings the next poll nearer as it works; rp_mqjs_set_poll_interval
+ * is how the host's handler sets the next poll's distance. Each search is upstream's body with the poll in its loop:
+ * js_string_indexOf replaces the standard library's under its own name, as hasOwnProperty does; js_string_indexof's
+ * definition is told from its calls as JS_MakeUniqueString's is (the calls pass `ctx`), and join's too, since
+ * js_array_toString calls it, and so are the comparisons' and JS_Call's (whose calls all pass `ctx`; rp_mqjs_names.h's
+ * macro that prefixes the name is set aside around them, and the name it gives is RetroPlug's). A search the interrupt
+ * stops answers -1, as one that found nothing, with the interrupt pending: replace and split cannot fail there, and the
+ * host's handler, once the deadline is past, asks the next poll at once, so the interpreter throws it again at its next
+ * call or branch. match is upstream's body too, under its own name, which also moves past an empty match a code point,
+ * as replace does, and ends after one at the string's end: upstream's added the same empty match until the heap ran
+ * out. What a comparison counts is counted, not polled: one call of Array's indexOf runs to its end. What one unit and
+ * that run can still cost is MqjsHost.hpp's (kPollCapDivisor).
  * RegExp.prototype.exec (and test, search, match and split, which run it) jumped, when its capture array could not be
  * made, past its push of the array's root to the pop of it, which set the context's list of roots to whatever that
- * stack word held, and the next collection walked it. Every call (the standard library's and the four inside the
+ * stack word held, and the next collection walked it. Every call (the standard library's and the five inside the
  * engine, told from the definition as join's are) reaches rp_mqjs_js_regexp_exec, which keeps the list as it was and
  * sets it back as upstream's body returns: on every other path the body's pushes and pops balance.
  * And the engine tells its host when its heap runs out (rp_mqjs.h's rp_mqjs_api.ran_out), which nothing it throws can
@@ -129,6 +136,21 @@ JSValue rp_mqjs_js_regexp_exec(JSContext* ctx, JSValue* this_val, int argc, JSVa
 #undef js_string_match
 #define js_string_match rp_mqjs_upstream_string_match
 
+static int js_string_eq(JSContext* ctx, JSValue val1, JSValue val2);
+#define js_string_eq(first, ...) RP_MQJS_STR_EQ_##first, __VA_ARGS__)
+#define RP_MQJS_STR_EQ_JSContext rp_mqjs_upstream_string_eq(JSContext
+#define RP_MQJS_STR_EQ_ctx js_string_eq(ctx
+
+static int js_string_compare(JSContext* ctx, JSValue val1, JSValue val2);
+#define js_string_compare(first, ...) RP_MQJS_STR_CMP_##first, __VA_ARGS__)
+#define RP_MQJS_STR_CMP_JSContext rp_mqjs_upstream_string_compare(JSContext
+#define RP_MQJS_STR_CMP_ctx js_string_compare(ctx
+
+#undef JS_Call
+#define JS_Call(first, ...) RP_MQJS_CALL_##first, __VA_ARGS__)
+#define RP_MQJS_CALL_JSContext rp_mqjs_upstream_call(JSContext
+#define RP_MQJS_CALL_ctx rp_mqjs_JS_Call(ctx
+
 static int check_free_mem(JSContext* ctx, JSValue* stack_bottom, uint32_t size);
 #define check_free_mem(first, ...) RP_MQJS_FREE_##first, __VA_ARGS__)
 #define RP_MQJS_FREE_JSContext rp_mqjs_upstream_check_free_mem(JSContext
@@ -147,6 +169,10 @@ static int check_free_mem(JSContext* ctx, JSValue* stack_bottom, uint32_t size);
 #undef js_array_join
 #undef js_regexp_exec
 #undef js_string_match
+#undef js_string_eq
+#undef js_string_compare
+#undef JS_Call
+#define JS_Call rp_mqjs_JS_Call
 #undef check_free_mem
 
 #include "rp_mqjs.h"
@@ -384,6 +410,42 @@ JSValue rp_mqjs_js_string_match(JSContext* ctx, JSValue* this_val, int argc, JSV
     }
     JS_PopGCRef(ctx, &result_ref);
     return JS_PopGCRef(ctx, &A_ref);
+}
+
+/* `bytes` read by a comparison, counted toward the next poll a unit for every 64 (the header comment), never below 0:
+ * the poll itself waits for the interpreter's next call or branch, or a callback's return. */
+static void rp_mqjs_count_bytes(JSContext* ctx, uint32_t bytes) {
+    const uint32_t units = bytes / 64;
+    if (units == 0) return;
+    ctx->interrupt_counter = units >= (uint32_t)ctx->interrupt_counter ? 0 : (int16_t)(ctx->interrupt_counter - units);
+}
+
+static int js_string_eq(JSContext* ctx, JSValue val1, JSValue val2) {
+    JSStringCharBuf buf1, buf2;
+    const JSString* p1 = get_string_ptr(ctx, &buf1, val1);
+    const JSString* p2 = get_string_ptr(ctx, &buf2, val2);
+    if (p1->len == p2->len) rp_mqjs_count_bytes(ctx, p1->len);
+    return rp_mqjs_upstream_string_eq(ctx, val1, val2);
+}
+
+static int js_string_compare(JSContext* ctx, JSValue val1, JSValue val2) {
+    JSStringCharBuf buf1, buf2;
+    const JSString* p1 = get_string_ptr(ctx, &buf1, val1);
+    const JSString* p2 = get_string_ptr(ctx, &buf2, val2);
+    rp_mqjs_count_bytes(ctx, p1->len < p2->len ? p1->len : p2->len);
+    return rp_mqjs_upstream_string_compare(ctx, val1, val2);
+}
+
+JSValue JS_Call(JSContext* ctx, int call_flags) {
+    /* A call into JavaScript from C (a builtin's callback, a getter, a conversion, the host's own) that returns with
+     * the count run out polls there, as the interpreter would at its next call or branch: a callback builtin (forEach
+     * and the other iterations, reduce, sort's comparator, replace's function) is then polled between its callbacks,
+     * whose work the count saw. The call has returned and left the stack as it does on any return, so an interrupt
+     * only replaces its result with the exception, which every caller of JS_Call takes as it takes a throw. */
+    const JSValue result = rp_mqjs_upstream_call(ctx, call_flags);
+    if (!JS_IsException(result) && ctx->interrupt_counter <= 0 && JS_IsException(__js_poll_interrupt(ctx)))
+        return JS_EXCEPTION;
+    return result;
 }
 
 static int rp_mqjs_concat_subst(JSContext* ctx, void* buffer, JSValue* str, JSValue* rep, uint32_t pos,

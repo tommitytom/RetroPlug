@@ -947,6 +947,7 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
         const char*   loop;
         std::uint32_t count;
         std::uint32_t warm = 0;
+        std::uint32_t length = 4096;  // indexOf's and callback's strings
     };
     struct Heap {
         const char*       pack;
@@ -962,7 +963,10 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
           {"forEach", 1500},
           {"stringify", 400},
           {"forEach", 1500, 100000},
-          {"stringify", 400, 100000}}},
+          {"stringify", 400, 100000},
+          {"indexOf", 1000, 100000},
+          {"indexOf", 1000, 3000000},
+          {"callback", 1500, 100000, 1024}}},
         {"devtest",
          57344,
          {{"sort", 2000},
@@ -971,7 +975,10 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
           {"forEach", 6000},
           {"stringify", 1500},
           {"forEach", 6000, 100000},
-          {"stringify", 1500, 100000}}},
+          {"stringify", 1500, 100000},
+          {"indexOf", 3500, 100000, 10240},
+          {"indexOf", 3500, 3000000, 10240},
+          {"callback", 6000, 100000, 2048}}},
     };
     constexpr std::uint32_t kDeadline = 50000;
     static std::deque<rp_mqjs_pack_source> copies;  // a registration keys its pack on the source's address
@@ -985,11 +992,13 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
         REQUIRE(device);
         for (const auto& [build, pack] : {std::pair{"desktop", desktop}, std::pair{"device", device}}) {
             for (const Loop& l : heap.loops) {
-                INFO(build << ", " << heap.pack << "'s heap: " << l.loop << " of " << l.count << " after " << l.warm);
+                INFO(build << ", " << heap.pack << "'s heap: " << l.loop << " of " << l.count << " after " << l.warm << " ("
+                           << l.length << ")");
                 Host host(kDeadline);
-                char settings[96];
-                std::snprintf(settings, sizeof settings, R"({"loop":"%s","count":%u,"warm":%u})", l.loop, l.count,
-                              l.warm);
+                char settings[128];
+                std::snprintf(settings, sizeof settings,
+                              R"({"loop":"%s","count":%u,"warm":%u,"length":%u,"rounds":0})", l.loop, l.count, l.warm,
+                              l.length);
                 Made n(typeOf(pack, "rp.devtest.script-loop"), host, msgpackOf(settings), {{RP_PORT_EVENTS, true}});
                 INFO(n.error);
                 REQUIRE(n.node);
@@ -1010,6 +1019,58 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
                 CHECK(spent < kDeadline + kDeadline / 4);
                 CHECK(std::chrono::steady_clock::now() - wall < std::chrono::seconds(5));
             }
+        }
+    }
+}
+
+TEST_CASE("the bytes a comparison reads count toward the next poll, and a callback builtin polls between callbacks",
+          "[device-mode][script-pack]") {
+    // By a clock a millisecond on at each reading once the node's data is made (the entry's start and its restart are
+    // its first two), a node held to 30 ms faults at the 33rd. Each case runs a fixed number of calls that would take
+    // the box past its watchdog from a phase change, and must read the clock at least once a call: indexOf over 3500
+    // references to a 10240-character string, for a needle that differs at its end (about 35 MB compared a call, one
+    // call and branch of the interpreter's), whose comparisons count a unit a 64 bytes; and forEach over 6000 numbers
+    // with a straight-line callback that makes strings, whose callbacks the engine's polls never see between, polled
+    // when a callback returns with the count run out. Without either, a call was a few units and the polls came after
+    // hundreds of them: the node ran its calls to the end.
+    struct Ticks {
+        bool          live = false;
+        std::uint32_t calls = 0;
+        static std::uint64_t read(void* c) {
+            auto& t = *static_cast<Ticks*>(c);
+            if (!t.live) return cpuMicros(nullptr);
+            return std::uint64_t{++t.calls} * 1000;
+        }
+    };
+    struct Case {
+        const char*   settings;
+        std::uint32_t dataBlocks;  // the blocks that make its strings and fill its array
+    };
+    static constexpr Case kCases[] = {
+        {R"({"loop":"indexOf","count":3500,"warm":0,"length":10240,"rounds":200})", 1 + (3500 + 255) / 256},
+        {R"({"loop":"callback","count":6000,"warm":0,"length":64,"rounds":3})", 1 + (6000 + 255) / 256},
+    };
+    static std::deque<rp_mqjs_pack_source> copies;  // a registration keys its pack on the source's address
+    copies.push_back(rp_script_devtest);
+    copies.back().heap_bytes = 57344;
+    const rp_package* desktop = rp::mqjs::exactPackage(copies.back());
+    const rp_package* device = rp_devmode::mqjs::package(copies.back());
+    REQUIRE(desktop);
+    REQUIRE(device);
+    for (const auto& [build, pack] : {std::pair{"desktop", desktop}, std::pair{"device", device}}) {
+        for (const Case& c : kCases) {
+            INFO(build << ": " << c.settings);
+            Ticks clock;
+            Host  host(30000);
+            host.clock.ctx = &clock;
+            host.clock.micros = &Ticks::read;
+            Made n(typeOf(pack, "rp.devtest.script-loop"), host, msgpackOf(c.settings), {{RP_PORT_EVENTS, true}});
+            REQUIRE(n.node);
+            for (std::uint32_t block = 0; block < c.dataBlocks; ++block) REQUIRE(n.run() == RP_OK);
+            clock.live = true;
+            CHECK(n.run() == RP_FAULT);
+            CHECK(n.fault() == "process ran past its deadline of 30000 us");
+            CHECK(clock.calls == 33);
         }
     }
 }

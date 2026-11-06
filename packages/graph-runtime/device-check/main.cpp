@@ -367,9 +367,12 @@ RP_NOINLINE void printLoops() {
     }
     const std::uint32_t worst = worstLoop();
     const bool          fits = l.micros[worst] <= rp::device_check::kLoopBoundMicros;
-    std::printf("rp-device-check: script deadline %s, %s in a context of %u bytes (the box's pack's heap), each loop "
-                "faulted by its deadline of %u us:",
+    std::uint32_t entered = 0;
+    for (std::uint32_t k = 0; k < rp::device_check::kLoopCount; ++k) entered += l.entered[k] ? 1 : 0;
+    std::printf("rp-device-check: script deadline %s, %s in a context of %u bytes (the box's pack's heap), %u of %u "
+                "loops entered and each faulted by its deadline of %u us:",
                 fits ? "pass" : "failed", rp::device_check::kLoopType, static_cast<unsigned>(l.contextBytes),
+                static_cast<unsigned>(entered), static_cast<unsigned>(rp::device_check::kLoopCount),
                 static_cast<unsigned>(rp::mqjs::kHostClockDeadlineMicros));
     for (std::uint32_t k = 0; k < rp::device_check::kLoopCount; ++k)
         std::printf("%s %s of %u%s in %u us (%u blocks)", k ? "," : "", rp::device_check::kLoops[k].loop,

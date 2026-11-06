@@ -314,25 +314,31 @@ void benchScript(const rp_package* const* packages, std::size_t packageCount, co
 // ---- the deadline over a loop of builtins ---------------------------------------------------------------------
 
 // What loopDeadline runs (docs/modular-graph-phase-e4-design.md section 4, the deadline): rp.devtest.script-loop made
-// from each kLoops case's settings in a package of the image's script pack registered again at kLoopHeapBytes, the
-// heap the box's bliptoaster pack declares, so its context is the box's pack's size; its blocks run until one faults
-// it, each time the deadline's: a loop over one builtin, whose every call is work the interpreter's polls never see
-// into, is the longest a node can hold the block thread before its deadline faults it. Each case's last block, the one
-// the deadline ended, is timed. The cases' data is about what that heap holds beside devtest's definitions at either
-// width: an array's sort of 600 numbers, a search in 4000 characters, join of an array-like of a billion elements
-// (whose loop nothing but its length bounds), forEach over 2000 numbers and JSON.stringify of 400; and forEach and
-// JSON.stringify again after `warm` turns of plain code, a few milliseconds of the box's 10 ms deadline, which let the
-// polls grow apart before the builtin's loop starts (a phase change, MqjsHost.hpp's kPollCapDivisor).
+// from each kLoops case's settings in a package of the image's script pack registered again at kLoopHeapBytes, the heap
+// the box's bliptoaster pack declares, so its context is the box's pack's size; its blocks run until one faults it,
+// each time the deadline's: a loop over one builtin, whose every call is work the interpreter's polls never see into,
+// is the longest a node can hold the block thread before its deadline faults it. Each case's last block, the one the
+// deadline ended, is timed, and the node logs a line as its loop begins (rp.host.script-log/1, which the check's host
+// counts), so a case the deadline faulted before its loop began fails. The cases' data is about what that heap holds
+// beside devtest's definitions at either width: an array's sort of 600 numbers, a search in 4000 characters, join of an
+// array-like of a billion elements (whose loop nothing but its length bounds), forEach over 2000 numbers and
+// JSON.stringify of 400; then, each after 300 turns of plain code, which let the polls grow to their cap before the
+// builtin's loop starts (a phase change, MqjsHost.hpp's kPollCapDivisor): forEach and JSON.stringify again, indexOf
+// over 1000 references to a 4096-character string for a needle that differs at its end (4 MB compared a call, which the
+// comparisons' count of their bytes brings into the polls), and forEach over 1500 numbers with a callback that makes
+// strings of 1024 characters and more (whose callbacks the polls see between).
 inline constexpr const char*   kLoopType = "rp.devtest.script-loop";
 inline constexpr std::uint32_t kLoopHeapBytes = 24576;
 struct LoopCase {
     const char*   loop;
     std::uint32_t count;
     std::uint32_t warm = 0;
+    std::uint32_t length = 4096;  // indexOf's and callback's strings
 };
-inline constexpr LoopCase kLoops[] = {{"sort", 600},          {"search", 4000},           {"join", 1000000000},
-                                      {"forEach", 2000},      {"stringify", 400},         {"forEach", 2000, 2500},
-                                      {"stringify", 400, 2500}};
+inline constexpr LoopCase kLoops[] = {
+    {"sort", 600},           {"search", 4000},          {"join", 1000000000},      {"forEach", 2000},
+    {"stringify", 400},      {"forEach", 2000, 300},    {"stringify", 400, 300},   {"indexOf", 1000, 300, 4096},
+    {"callback", 1500, 300, 1024}};
 inline constexpr std::uint32_t kLoopCount = sizeof kLoops / sizeof kLoops[0];
 // How many blocks a case may take to fault (its data is made a few hundred numbers a block first).
 inline constexpr std::uint32_t kLoopBlocks = 32;
@@ -356,6 +362,7 @@ struct LoopResult {
     std::uint32_t loop = 0;                  // the case that failed
     std::uint64_t micros[kLoopCount] = {};   // each case's last block, by the case's clock (0 untimed)
     std::uint32_t blocks[kLoopCount] = {};   // and how many blocks it ran, the last included
+    bool          entered[kLoopCount] = {};  // whether its loop began (the node logged it) before the deadline
     std::size_t   contextBytes = 0;          // the pack's context (rp.script.heap/1)
 };
 

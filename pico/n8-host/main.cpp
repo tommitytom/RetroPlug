@@ -147,9 +147,10 @@ static uint64_t micros(void) { return time_us_64(); }
 // the script host's own figures for a host's clock (script/MqjsHost.hpp: 10 ms a call, and 250 us more for each
 // message a block hands the node, so 26 ms at a full queue of 64), far past the microseconds the policy takes. A node
 // past it is faulted at its next poll, at most 156 of the engine's units of work later (a call, a branch, an
-// allocation), plus the rest of one builtin call, linear in the pack's heap (MqjsHost.hpp's kPollCapDivisor):
-// rp-device-check's deadline case times the worst at this pack's heap, plain code before a loop over a builtin among
-// them, against a third of the watchdog's 3 s.
+// allocation, 64 bytes compared, a callback's return), plus what runs from the count running out to that poll (the
+// rest of one builtin call, or of a straight-line run of code to its next branch) and any collection a unit makes,
+// which nothing measures: MqjsHost.hpp's kPollCapDivisor says the bound. rp-device-check's deadline case times nine
+// loops at this pack's heap, four after plain code, against a third of the watchdog's 3 s.
 static const rp_host_clock script_clock{nullptr, clock_us, 0};
 static uint32_t frame_of(void *, uint32_t us) { return driver.frameOf(us); }
 static uint32_t now_us(void *) { return time_us_32(); }

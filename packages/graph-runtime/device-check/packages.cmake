@@ -11,7 +11,7 @@ set(RP_DEVICE_CHECK_PACKAGES core dsp n8 device-io devtest)
 # rp.devtest.script-nest and rp.devtest.script-loop), in place of its manifest's heapBytes, which is the desktop
 # device-mode tests' figure behind the planner's 256-place queues. The image runs two of the pack's nodes at once behind
 # the device MIDI input's 64-place queue (script-plan.json), for which the device-pack toolchain's 3/2 check passes the
-# pack at 42088 bytes (every node of it, its three definitions among them).
+# pack at 42680 bytes (every node of it, its three definitions among them).
 # The image registers the pack with it (cmake/packages.cmake's RP_SCRIPT_HEAP_BYTES_<package>),
 # retroplug-device-mode-test runs the check's script plan and bench over a registration of the same, and the image
 # prints what the RP2350 holds of it after its script plan's run.

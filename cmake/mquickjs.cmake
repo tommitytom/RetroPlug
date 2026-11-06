@@ -60,9 +60,12 @@
 #     nothing, which never ended) ran unpolled however long it took. RetroPlug's sort comparison, string searches
 #     (js_string_indexOf, and js_string_indexof, which replace and split use), join and match are upstream's bodies with
 #     a poll in their loops (match's also moving past an empty match, as replace does), counted off the interpreter's
-#     own counter, which RetroPlug's check_free_mem also counts each allocation and push off; and
-#     rp_mqjs_set_poll_interval lets the handler set the next poll's distance (it rests on __js_poll_interrupt setting
-#     the counter before it calls the handler, so what the handler sets stands).
+#     own counter, which RetroPlug's check_free_mem also counts each allocation and push off, and RetroPlug's string
+#     comparisons (js_string_eq, js_string_compare: upstream's bodies under other names) every 64 bytes they read;
+#     JS_Call (upstream's body under another name) polls as it returns once the count has run out, so a callback
+#     builtin is polled between its callbacks; and rp_mqjs_set_poll_interval lets the handler set the next poll's
+#     distance (it rests on __js_poll_interrupt setting the counter before it calls the handler, so what the handler
+#     sets stands).
 #   - RegExp.prototype.exec's out-of-memory (js_regexp_exec jumps from its capture array's allocation past the push of
 #     its root to the pop of it, which sets the context's list of roots to a stack word). Every call reaches RetroPlug's
 #     js_regexp_exec, upstream's body under another name with the list set back as it returns.
@@ -77,11 +80,11 @@
 # others rest on upstream's text as it stands. So the configure below hashes the text of each (JS_MakeUniqueString's
 # definition, the sweep of unique_strings, replace and its substitution, the StringBuffer and its appends,
 # hasOwnProperty, the typed array's constructor, the sort, repeat, the string searches, join, the interpreter's poll,
-# the check for room, whose three mentions, its definition and its two calls, are counted as well, exec and match) and
-# fails, naming rp_mqjs_engine.c, when any is not the text the fixes were written against: re-review the fixes against
-# the new text, then record its hash here. retroplug-device-mode-test's [debug-gc] cases hold the second fix (its revert
-# fails them); no test reaches the first's condition on demand (a collection at every allocation, DEBUG_GC, sweeps a
-# dead name before any growth can meet it), so the hash is its guard.
+# the check for room, whose three mentions, its definition and its two calls, are counted as well, exec, match, the
+# string equality and order, and JS_Call) and fails, naming rp_mqjs_engine.c, when any is not the text the fixes were
+# written against: re-review the fixes against the new text, then record its hash here. retroplug-device-mode-test's
+# [debug-gc] cases hold the second fix (its revert fails them); no test reaches the first's condition on demand (a
+# collection at every allocation, DEBUG_GC, sweeps a dead name before any growth can meet it), so the hash is its guard.
 set(MQUICKJS_DIR "${CMAKE_SOURCE_DIR}/deps/mquickjs")
 file(READ "${MQUICKJS_DIR}/mquickjs.c" _mqjs_engine_text)
 string(REPLACE "\r" "" _mqjs_engine_text "${_mqjs_engine_text}")
@@ -136,9 +139,15 @@ set(_mqjs_span_12 "RegExp.prototype.exec" "JSValue js_regexp_exec(JSContext *ctx
                   "4a8c4ccc9541dfe9e369492799a9d160ed93721b1b34ac2f8ef93e04ab56411c")
 set(_mqjs_span_13 "String.prototype.match" "JSValue js_string_match(JSContext *ctx, JSValue *this_val," "\n}\n"
                   "f7c2a4d839d9fd4f901e9732f10f5a06dde8f54aec3448f634f94459f20130d8")
+set(_mqjs_span_14 "the string equality a comparison runs" "static BOOL js_string_eq(JSContext *ctx, JSValue val1,"
+                  "\n}\n" "0f2b371b8d849ec36106d75eefe9c034922916d49dd07ecd8cb8e04dfc2ff471")
+set(_mqjs_span_15 "the string order a comparison runs" "static int js_string_compare(JSContext *ctx, JSValue val1,"
+                  "\n}\n" "d0e72144c338da7c9188dc713638359f6e245207074bd1980b4ab66736be2bda")
+set(_mqjs_span_16 "JS_Call, the interpreter" "JSValue JS_Call(JSContext *ctx, int call_flags)" "\n}\n"
+                  "785d7028df8ec297747ecd277665a8faafef08428b30a97b1104cb9ca9a5119e")
 foreach(_mqjs_span IN ITEMS _mqjs_span_0 _mqjs_span_1 _mqjs_span_2 _mqjs_span_3 _mqjs_span_4 _mqjs_span_5
                            _mqjs_span_6 _mqjs_span_7 _mqjs_span_8 _mqjs_span_9 _mqjs_span_10 _mqjs_span_11
-                           _mqjs_span_12 _mqjs_span_13)
+                           _mqjs_span_12 _mqjs_span_13 _mqjs_span_14 _mqjs_span_15 _mqjs_span_16)
     list(GET ${_mqjs_span} 0 _what)
     list(GET ${_mqjs_span} 1 _begin)
     list(GET ${_mqjs_span} 2 _end)
