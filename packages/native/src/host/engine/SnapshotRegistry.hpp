@@ -31,7 +31,7 @@ class SystemBase;
 // dropped the system), never on the audio thread. publishSystem only ever writes a slot whose system
 // is still in the running plan, which is exactly the window before its release, so a published-to
 // slot is never concurrently freed. A claim writes only the slot it claims, before its id is published,
-// and publishSystem only the slot it matched by id plus sramScratch_, which nothing else touches: no
+// and publishSystem only the slot it matched by id: no
 // buffer is shared between the two threads, so a claim inside a setGraph cannot move memory a running
 // plan's publish is writing.
 //
@@ -51,9 +51,9 @@ public:
     // Returns false only if the pool is full (the caller fails the construct).
     bool claim(SystemId id, SystemBase& sys);
 
-    // Copy each live system's latest frame (every block) + savestate/SRAM (on a coarse interval)
-    // into its slot. Runs at the end of Engine::processBlock, on the block-driving thread.
-    // One system's; the engine calls it for each of the running plan's systems, in slot order.
+    // Copy one live system's latest frame, work RAM and core-sourced battery (every block) + its savestate and any
+    // savestate-sliced battery (on a coarse interval) into its slot. Runs at the end of Engine::processBlock, on the
+    // block-driving thread; the engine calls it for each of the running plan's systems, in slot order.
     void publishSystem(SystemBase& system, std::uint32_t frames, double sampleRate);
     // Just the work RAM's copy, on the thread that owns the core: what a capability write completed while no audio
     // thread runs republishes, so the read the control plane makes next sees it without a block (Engine::submitJob).
@@ -73,6 +73,16 @@ public:
     // The published WRAM length WITHOUT copying it - so a bounds check costs nothing. 0 when the id is
     // gone or the core publishes no RAM (a region past kMaxRamBytes is skipped, so readRam is null too).
     std::size_t ramSize(SystemId id);
+    // The published battery length, likewise copy-free. 0 when the id is gone or the cart has none.
+    std::size_t sramSize(SystemId id);
+
+    // Republish `sys`'s battery NOW instead of at its next publish - for a host write into it (Engine::writeSram,
+    // applied as a capability write), after which a stale copy would hand the TS auto-save mirror the PRE-write
+    // battery to flush over the file. Same threading as publishSystem: the thread that owns the core (the block
+    // thread, or the control thread while quiescent). The live battery is copied at once; a savestate-sliced one
+    // (SameBoy) also has a fresh savestate capture forced onto the next block's publish, which would otherwise slice
+    // the pre-write battery back over it.
+    void republishSram(SystemBase& sys);
 
     // Free a slot when its system is deleted (control thread). Idempotent (no-op for an unknown id).
     void release(SystemId id);
@@ -123,7 +133,6 @@ private:
     static void writeSized(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len);
 
     std::array<Slot, kMaxSlots> slots_;
-    std::vector<std::uint8_t>   sramScratch_;       // block-thread reuse for a live saveSramBytes() copy
     std::vector<std::uint8_t>   stateReadScratch_;  // control-thread reuse for readState (strips the prefix)
     std::vector<std::uint8_t>   ramReadScratch_;    // control-thread reuse for readRam (strips the prefix)
 };

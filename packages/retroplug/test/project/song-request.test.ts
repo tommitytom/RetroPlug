@@ -130,11 +130,15 @@ test("a Songs-menu request arrives confirmed (the menu guarded its own row) and 
   d.project.requestSong({ index: 1, confirmed: true });
   expect(d.project.settleSong()).toBe("loaded");
   expect(d.working()).toEqual(block(2));
+  // A load is "landing" until the next frame sees its writes in work RAM (requests wait that out); the app
+  // runs the watcher every frame, so do the same between requests here.
+  d.project.systems.observeWorkingSongs();
   // ...whereas by NAME a "DUP" is already the working song, whichever DUP it is: the rows are
   // indistinguishable in the list too, and a name request does not pretend to tell them apart.
   d.project.requestSong({ name: "DUP", confirmed: true });
   expect(d.project.settleSong()).toBe("loaded");
   expect(d.working()).toEqual(block(2)); // untouched
+  d.project.systems.observeWorkingSongs();
   d.project.requestSong({ index: 0, confirmed: true });
   expect(d.project.settleSong()).toBe("loaded");
   expect(d.working()).toEqual(block(1)); // the index says exactly which

@@ -116,6 +116,21 @@ export function App() {
     if (empty) setMenuSystemId(null);
   }, [empty]);
 
+  // Keep the instance menu on its system: re-anchor it when an in-place rebuild gave the system a new id,
+  // and CLOSE it when the system is gone for good. Leaving a dead id in place used to strand the menu
+  // open-but-invisible, so the next Esc was spent closing a menu nobody could see.
+  useEffect(() => {
+    if (!menuOpen || menuSystemId == null) return;
+    const cur = stores.project.systems.currentId(menuSystemId);
+    if (cur === menuSystemId) return;
+    if (cur === null) {
+      setMenuOpen(empty);
+      setMenuSystemId(null);
+    } else {
+      setMenuSystemId(cur);
+    }
+  }, [menuOpen, menuSystemId, systems, empty]);
+
   // Close the HD player if the system it's showing goes away (removed, or the project reloaded) - a stale
   // id would otherwise strand the UI on a screen with nothing to draw.
   useEffect(() => {
@@ -236,11 +251,14 @@ export function App() {
       case "loadRom":
         modals.loadRomAsProject(action.romPath, action.explicitSav);
         break;
+      // Both replace what the target cart holds, so an unsaved work-RAM song there is offered a save first.
       case "replace":
-        stores.project.systems.replaceSystem(action.id, action.romPath, action.explicitSav ? { explicitSav: action.explicitSav } : undefined);
+        modals.guardSongReplace(action.id, () =>
+          stores.project.systems.replaceSystem(action.id, action.romPath, action.explicitSav ? { explicitSav: action.explicitSav } : undefined),
+        );
         break;
       case "loadSram":
-        stores.project.systems.loadSram(action.id, action.sav);
+        modals.guardSongReplace(action.id, () => stores.project.systems.loadSram(action.id, action.sav));
         break;
       case "patchSongs": {
         const sys = systems.find((s) => s.id === action.id);
@@ -284,11 +302,15 @@ export function App() {
     return <LsdjHdScreen systemId={hdSystemId} width={width} height={height} testId="lsdj-hd" />;
   }
 
-  const anchored = menuOpen && menuSystemId != null ? systems.find((sys) => sys.id === menuSystemId) : undefined;
+  // The anchor FOLLOWS its system through an in-place rebuild (a keep-open row like FM Audio resets the
+  // cart, which comes back under a new id): resolved here so this render already shows the rebuilt cart's
+  // menu, and synced into state by the effect above.
+  const anchorId = menuOpen && menuSystemId != null ? stores.project.systems.currentId(menuSystemId) : null;
+  const anchored = anchorId != null ? systems.find((sys) => sys.id === anchorId) : undefined;
   const menuTree = anchored ? buildInstanceMenu({ ...ctx, system: anchored }) : undefined;
   return (
     <SystemGrid
-      menuSystemId={menuTree ? menuSystemId : null}
+      menuSystemId={menuTree ? anchorId : null}
       menuTree={menuTree}
       onMenuClose={() => {
         setMenuOpen(false);

@@ -55,6 +55,15 @@ import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettings
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
 import { protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
+import { resolveSongCatalog, resolveTracker } from "./tracker/trackerIntegration";
+import type { TrackedSlot, WorkingSongImage } from "./tracker/songCatalog";
+
+// Frames the slot watcher waits for a landed carry's queued writes to appear before it trusts the cart
+// again; they normally appear on the next audio block, so this only bounds a cart that moved on.
+const LANDING_FRAMES = 120;
+// Frames a clean working song that matched no saved slot is re-checked before the verdict sticks (~1 s):
+// long enough to outlast a battery that lags work RAM by a block or two, short enough to cost nothing.
+const UNMATCHED_RECHECKS = 60;
 
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
@@ -173,6 +182,31 @@ export class SystemsStore {
    *  chain ends in does (remove, discard, clear), and the whole map is capped, because a session that resets one system
    *  a thousand times would otherwise keep a thousand dead ids. */
   private readonly replacedBy = new Map<number, number>();
+  // Working songs being carried across a reboot, keyed by the NEW system id - see carryWorkingSong.
+  // No time budget: a carry is keyed by a system id, which dies with its system, so one that waits can
+  // only ever land in the cart it was made for. (A budget used to drop it after ~15 s of UI frames, which
+  // a host that stops processing audio - the cart frozen mid-boot - spent without the cart moving at all.)
+  private carries = new Map<number, { song: WorkingSongImage }>();
+  // Each system's last OBSERVED clean working song: its change signal, whether it matched a saved slot,
+  // and how many more frames an unmatched one is re-checked - see observeWorkingSongs.
+  private observed = new Map<number, { signal: number; dir: number; matched: boolean; retries: number }>();
+  // A carry's writes are queued, so for a block or so the cart still holds the blank song it booted into.
+  // Until the restored song shows up the CARRIED song is the working song: the watcher must not read the
+  // blank as an in-cart NEW, and Save, the unsaved prompt and an export must not read it as the song.
+  // id -> the restored song, the change signal of the BLANK it is replacing, frames waited. Keyed on the
+  // blank, not on the restored song: the window is exactly "RAM still shows the blank", so the moment
+  // anything else is there - the restore, or an edit already made on top of it - the cart speaks for
+  // itself again. Keyed on the restored song instead, an edit landing with the restore kept the window
+  // open, and a Save in it stored the pre-edit song and marked the newer one saved.
+  private landing = new Map<number, { song: WorkingSongImage; blank: number; blankEdited: boolean; frames: number }>();
+  // Each system's observed `edited` alongside its signal (see observeWorkingSongs).
+  private observedEdited = new Map<number, boolean>();
+  // Old id -> the id its in-place replacement was built under, for ANY in-place change (a rebuild, a ROM swap or
+  // replace, a load over the focused tile) - see currentId. Unlike `replacedBy`, which only `reset` follows and only
+  // a rebuild records, this follows a system the user still sees in that slot; capped like it.
+  private readonly successors = new Map<number, number>();
+  // A battery a project load must write over its system's restored savestate once the engine places it (see adopt).
+  private readonly heldSram = new Map<number, Uint8Array>();
 
   constructor(
     private readonly backend: ControlPlaneBackend,
@@ -180,6 +214,21 @@ export class SystemsStore {
     private readonly registry?: RoleRegistry,
   ) {
     this.pool = new ResourcePool(backend);
+  }
+
+  /** The id system `id` goes by NOW. Every in-place rebuild - reset, reload, Load SRAM / State, a ROM
+   *  swap or replace - builds the replacement under a NEW id in the same slot, so anything holding the old
+   *  one (the instance menu anchored to it) follows it here instead of holding a dead id. `id` itself when
+   *  it is still live; null when it is gone for good (removed, or its project closed). */
+  currentId(id: number): number | null {
+    let cur = id;
+    for (let hops = 0; hops <= this.successors.size; hops++) {
+      if (findById(this.entries, cur)) return cur;
+      const next = this.successors.get(cur);
+      if (next === undefined) return null;
+      cur = next;
+    }
+    return null;
   }
 
   /** Snapshot for the UI, with live focus + missing flags. */
@@ -347,15 +396,19 @@ export class SystemsStore {
     if (!prev) return null;
     const sramBytes = this.backend.readSram(id) ?? undefined;
     this.flushBeforeDrop(prev); // the OLD cart's sav — the carried battery lands on the new ROM's
+    // The working song rides along too, for the same reason the battery does - a version bump that keeps
+    // your save should keep your song. Dropped at settle if the new ROM is not a cart that can take it.
+    const song = this.takeWorkingSong(prev);
     const prepared = this.construct(romPath, "", this.replacementSuffix(id, romPath), undefined, sramBytes);
     if (!prepared) return null;
-    return this.replaceWith(id, prev, prepared);
+    return this.carryWorkingSong(this.replaceWith(id, prev, prepared), song);
   }
 
   /** Put `prepared` in system `id`'s slot, replacing `prev`: the slot and the focus are kept, its resources given
    *  back only once the document that stops naming them has planned. Null when that document was refused. The
    *  `replacedBy` map `reset` follows is `rebuildInPlace`'s, since that is the in-place change that keeps the
-   *  system's identity; a caller here may be swapping in a different game. */
+   *  system's identity; a caller here may be swapping in a different game. The `successors` map `currentId` follows
+   *  is recorded here, for every in-place change: what the user sees in that slot is the new system either way. */
   private replaceWith(id: number, prev: SystemEntry, prepared: Prepared): number | null {
     const focused = this.focusedId === id;
     if (!this.commitEdit("replace", {
@@ -364,6 +417,8 @@ export class SystemsStore {
       put: prepared.handles,
       drop: systemHandles(prev.resources),
     })) return null;
+    this.rememberSuccessor(id, prepared.entry.id);
+    this.forgetWorkingSongState(id);
     this.markDirty();
     return prepared.entry.id;
   }
@@ -429,6 +484,7 @@ export class SystemsStore {
       drop: systemHandles(e.resources),
     })) return false;
     this.forgetReplacementsEndingIn(id);
+    this.forgetWorkingSongState(id);
     this.markDirty();
     return true;
   }
@@ -440,7 +496,8 @@ export class SystemsStore {
     const prev = findById(this.entries, id);
     if (!prev) return null;
     this.flushBeforeDrop(prev);
-    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
+    const song = this.takeWorkingSong(prev);
+    return this.carryWorkingSong(this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined }), song);
   }
 
   /** Reconstruct system `id` in place from seed bytes: capture the source's spec, build a fresh core
@@ -476,11 +533,16 @@ export class SystemsStore {
     // Every rebuild reads the ROM again from its source (a fresh put by path, embedded marker or the asset roles'
     // folded bytes), so a file a user rebuilt on disk is what Reset, New SRAM, Load SRAM, Load State and a
     // construct-time edit boot. The old entry's handles go with the old entry once the new document has planned.
+    // The tracked slot does NOT survive a rebuild: Load State / Load SRAM / New SRAM / a Songs-menu edit
+    // all replace or renumber what the cart holds, and a stale slot let a Save write a restored song over
+    // the unrelated one it had named. Reset and reload, which keep the song, hand the slot on with it in
+    // the carried image (see carryWorkingSong).
     const prepared = this.boot(spec, {
       ...src,
       id: newId,
       savPath: override,
       roles,
+      workingSlot: undefined,
     });
     if (!prepared) return null;
     const rebuilt = this.replaceWith(id, src, prepared);
@@ -518,6 +580,13 @@ export class SystemsStore {
    *  the battery (smsggdj) uses to load a song without rewriting the `.sav` or rebooting the cart. */
   writeRam(id: number, offset: number, bytes: Uint8Array): boolean {
     return this.backend.writeRam(id, offset, bytes);
+  }
+
+  /** Poke bytes into system `id`'s live battery, at the offsets `readSram` returns, with no reboot. Lands
+   *  between blocks like `writeRam`; `readSram` reflects it once it has. What saving a work-RAM working
+   *  song (smsggdj) into the cart uses, so the cart and its `.sav` agree without a cold boot. */
+  writeSram(id: number, offset: number, bytes: Uint8Array, expect?: Uint8Array): boolean {
+    return this.backend.writeSram(id, offset, bytes, expect);
   }
 
   /** Dump system `id`'s battery SRAM to `path`. False when the id has no SRAM published, or the write fails. */
@@ -571,7 +640,266 @@ export class SystemsStore {
     const live = this.liveEntryFor(id);
     if (!live) return null;
     this.flushBeforeDrop(live);
-    return this.rebuildInPlace(live.id, { sramBytes: this.backend.readSram(live.id) ?? undefined });
+    const song = this.takeWorkingSong(live);
+    return this.carryWorkingSong(
+      this.rebuildInPlace(live.id, { sramBytes: this.backend.readSram(live.id) ?? undefined }),
+      song,
+    );
+  }
+
+  // --- the working song across a reboot ------------------------------------
+  //
+  // Reset and a ROM-watch reload carry the BATTERY forward, which for LSDj and risa carries the working
+  // song with it - so on those consoles neither reboot costs the user their song. smsggdj keeps its
+  // working song in work RAM and boots blank, so the same two reboots used to erase it, silently. They
+  // now carry it explicitly: lifted out of the old core as an image before the teardown, parked under
+  // the new id, and written back once the new cart is past its boot (the write has to wait - `song_new`
+  // blanks the block on the way up). Load SRAM / Load State / New SRAM are NOT carries: replacing what
+  // the cart holds is what the user asked for, so those confirm instead.
+
+  /** The working song `id` holds that lives outside its battery, from a carry still in flight if there is
+   *  one (the live cart is still booting and holds nothing yet), else from live work RAM. Null for a
+   *  console whose working song is in the battery, or a cart with nothing readable. */
+  workingSongImage(id: number): WorkingSongImage | null {
+    const pending = this.carries.get(id);
+    if (pending) return pending.song;
+    const e = findById(this.entries, id);
+    const catalog = e ? resolveSongCatalog(e.roles) : undefined;
+    if (!catalog?.readWorkingSong) return null;
+    const ram = this.backend.readRam(id);
+    const song = ram ? catalog.readWorkingSong(ram) : null;
+    const land = this.landing.get(id);
+    if (land && (!song || (catalog.fingerprintOf?.(song) === land.blank && song.edited === land.blankEdited))) return land.song;
+    return song && e!.workingSlot ? { ...song, slot: e!.workingSlot } : song;
+  }
+
+  /** Record that system `id`'s working song is the saved song at `index` - it was just loaded from there,
+   *  or saved into it - as the battery holds that slot NOW. What a later Save writes back over instead of
+   *  appending a copy. Stored on the system, so it is persisted with the project and survives a reset or
+   *  a savestate restore; it is bookkeeping, not an edit, so it does not dirty the project. */
+  noteSongSlot(id: number, index: number): void {
+    const e = findById(this.entries, id);
+    const sram = e ? this.backend.readSram(id) : null;
+    const catalog = e ? resolveSongCatalog(e.roles) : undefined;
+    const slot = e && sram ? (catalog?.trackSlot?.(sram, index) ?? null) : null;
+    this.setWorkingSlot(id, slot ?? undefined);
+    // The battery just moved by OUR hand (a host save): rebase the watcher's directory baseline, so its next
+    // look does not take this change for the CART saving - which it lets an exact match win over drift.
+    const seen = this.observed.get(id);
+    if (seen && sram && catalog?.directorySignal) seen.dir = catalog.directorySignal(sram);
+  }
+
+  /** Keep each tracked slot true to what the cart did ITSELF, every frame (the UI calls it per frame).
+   *  Only an UNEDITED song says anything: the cart clears its unsaved flag exactly when its working song
+   *  is replaced wholesale - its own LOAD, SAVE, NEW. Then the song either matches a saved slot (track
+   *  it) or matches none (a NEW song, or one from outside the battery: track nothing, so Save appends).
+   *  It has to run this often, not on the half-second song poll: an in-cart NEW followed by an edit
+   *  inside one poll interval kept the OLD slot, and Save then wrote the new song over the old one.
+   *  Cheap while nothing changes: a work-RAM snapshot and a fingerprint, the battery read only when the
+   *  clean song's content moves. */
+  observeWorkingSongs(): void {
+    for (const e of this.entries) {
+      if (this.carries.has(e.id)) continue; // the booting cart holds nothing of its own yet
+      const catalog = resolveSongCatalog(e.roles);
+      if (!catalog?.readWorkingSong || !catalog.slotOfCleanSong || !catalog.fingerprintOf) continue;
+      const ram = this.backend.readRam(e.id);
+      const song = ram ? catalog.readWorkingSong(ram) : null;
+      if (!song) continue;
+      const fp = catalog.fingerprintOf(song);
+      const land = this.landing.get(e.id);
+      if (land) {
+        // Still the pre-restore blank: wait for the carry's writes (bounded, in case the cart moved on).
+        if (fp === land.blank && song.edited === land.blankEdited && ++land.frames < LANDING_FRAMES) continue;
+        this.landing.delete(e.id);
+        // Landed as written: the song is where it was meant to go - track that slot and settle this state.
+        // An edited song is trusted to its slot (it is the host's own record of where it came from); a clean
+        // one only while that slot still holds it, or holds it but for drift that happened before the
+        // reboot - else it is a song the cart had just loaded from elsewhere, and normal matching decides.
+        const intended = land.song.slot;
+        if (fp === catalog.fingerprintOf(land.song) && song.edited === land.song.edited && intended && this.slotStillFits(e.id, intended, song)) {
+          this.setWorkingSlot(e.id, intended);
+          this.observed.set(e.id, { signal: fp, dir: catalog.directorySignal?.(this.backend.readSram(e.id) ?? new Uint8Array(0)) ?? 0, matched: true, retries: 0 });
+          this.observedEdited.set(e.id, song.edited);
+          continue;
+        }
+      }
+      const sram = this.backend.readSram(e.id);
+      if (!sram) continue;
+      // The battery's directory is part of the question too: a song the cart SAVES to a new row without
+      // being edited changes the battery and not the working song, and keying on the song alone left the
+      // tracking on the old row - where the next host Save then wrote, over the original.
+      const dir = catalog.directorySignal?.(sram) ?? 0;
+      const seen = this.observed.get(e.id);
+      // An unchanged song is settled once it matched a slot. One that matched NONE is re-checked for a
+      // while: a cart that saves clears its unsaved flag in the same routine that writes its battery, and
+      // reading the two a block apart once took a just-saved song for a NEW one and dropped its slot for
+      // good, because the verdict was cached.
+      const same = seen && seen.signal === fp && seen.dir === dir && this.observedEdited.get(e.id) === song.edited;
+      if (same && (seen.matched || seen.retries-- <= 0)) continue;
+      // Only an UNEDITED song moves the tracking. An edited one says nothing about which slot it is - even
+      // byte-identical to a saved song: that is also what one frame of an edit passing through an older
+      // copy's value looks like, and taking it as a load moved the tracking onto the old copy for good, so
+      // Save overwrote it. The cart's own loads clear its flag a few blocks after writing the song, and
+      // THAT observation retargets.
+      if (song.edited) {
+        this.observed.set(e.id, { signal: fp, dir, matched: true, retries: 0 });
+        this.observedEdited.set(e.id, true);
+        continue;
+      }
+      // Still the tracked song with only what PLAYBACK rewrites changed (a `T` command rewrites the active
+      // groove inside the block, and never sets the flag): keep the tracking - and keep it even when that
+      // drift happens to make the song byte-identical to ANOTHER saved slot (an older version that differed
+      // only in tempo), which a plain match took for an in-cart load, moving Save onto the older version.
+      // Unless the battery's directory moved too: then the cart SAVED (the drifted song, to a new row), and
+      // the exact match is where it went.
+      const dirMoved = !!seen && seen.dir !== dir;
+      const drift = !dirMoved && e.workingSlot && catalog.isPlaybackDrift?.(sram, e.workingSlot, song) ? e.workingSlot : null;
+      const slot = drift ?? catalog.slotOfCleanSong(sram, { ...song, slot: e.workingSlot });
+      if (!same) this.observed.set(e.id, { signal: fp, dir, matched: !!slot, retries: UNMATCHED_RECHECKS });
+      else seen!.matched = !!slot;
+      this.observedEdited.set(e.id, false);
+      this.setWorkingSlot(e.id, slot ?? undefined);
+    }
+  }
+
+  /** Set (or clear) a system's tracked slot - quietly: no dirty, no change signal (nothing renders it). */
+  private setWorkingSlot(id: number, slot: TrackedSlot | undefined): void {
+    const e = findById(this.entries, id);
+    if (e) this.entries = replaceById(this.entries, id, { ...e, workingSlot: slot });
+    for (const held of [this.carries.get(id), this.landing.get(id)]) if (held) held.song = { ...held.song, slot };
+  }
+
+  /** The song a carry for `id` is holding has just been saved into the battery, so when it lands it
+   *  must land clean rather than re-raising the unsaved flag it was captured with. */
+  markCarriedSongSaved(id: number): void {
+    for (const held of [this.carries.get(id), this.landing.get(id)]) if (held) held.song = { ...held.song, edited: false };
+  }
+
+  hasCarries(): boolean {
+    return this.carries.size > 0;
+  }
+
+  /** Host writes that put `song` into system `id`'s work RAM have been QUEUED: until they show up, `song`
+   *  is the working song as far as Save, the unsaved prompt, an export and a song request are concerned -
+   *  not whatever the cart still holds. Used for a carry landing and for a host Load: a Save in the gap
+   *  after a Load (the audio thread stalled, the writes not applied) stored the very song the user had just
+   *  agreed to discard, over its own saved slot. The window is "RAM unchanged from when the writes were
+   *  queued" (content AND unsaved flag), so any other change - the writes landing, or the cart moving on -
+   *  ends it. None at all when RAM already equals `song`: there is nothing to wait out, and a window keyed
+   *  on the song's own content swallowed the cart's next same-content LOAD. */
+  expectSong(id: number, song: WorkingSongImage, ramNow?: Uint8Array): void {
+    const e = findById(this.entries, id);
+    const catalog = e ? resolveSongCatalog(e.roles) : undefined;
+    if (!catalog?.fingerprintOf || !catalog.readWorkingSong) return;
+    const ram = ramNow ?? this.backend.readRam(id) ?? undefined;
+    const before = ram ? catalog.readWorkingSong(ram) : null;
+    if (!before) return;
+    const blank = catalog.fingerprintOf(before);
+    // `song.slot` is where this song belongs - the carried slot, or the slot a Load is loading. It becomes
+    // the tracking when the writes are seen to land (observeWorkingSongs), or now if RAM already holds the
+    // song. Leaving it to the watcher's own matching instead let an exact twin elsewhere win: an explicit
+    // Load of row 0 onto a cart already holding row 0's content kept tracking another row, and a session
+    // reopened from a stale-transport savestate lost the drift relation and retargeted to a twin.
+    if (blank === catalog.fingerprintOf(song) && before.edited === song.edited) {
+      if (song.slot && this.slotStillFits(id, song.slot, song)) this.setWorkingSlot(id, song.slot);
+      return;
+    }
+    this.landing.set(id, { song: { ...song }, blank, blankEdited: before.edited, frames: 0 });
+  }
+
+  /** Whether `slot` is still where `song` belongs: always for an edited song (the host's own record of where
+   *  it came from), and for a clean one while that slot holds it - or holds it but for groove drift that
+   *  happened before a reboot (a restore does not carry the transport flag, so the content alone decides). */
+  private slotStillFits(id: number, slot: TrackedSlot, song: WorkingSongImage): boolean {
+    if (song.edited) return true;
+    const e = findById(this.entries, id);
+    const catalog = e ? resolveSongCatalog(e.roles) : undefined;
+    const sram = this.backend.readSram(id);
+    if (!catalog || !sram) return false;
+    return catalog.slotOfCleanSong?.(sram, { ...song, slot })?.index === slot.index || !!catalog.isPlaybackDrift?.(sram, slot, song, true);
+  }
+
+  /** True while a carry for `id` is pending OR has landed but its queued writes have not shown up in work
+   *  RAM yet - the window in which the cart's RAM is not its song. A song request waits it out. */
+  isRestoringSong(id: number): boolean {
+    return this.carries.has(id) || this.landing.has(id);
+  }
+
+  /** The working song system `id` is still waiting to have put back. */
+  pendingCarry(id: number): WorkingSongImage | null {
+    return this.carries.get(id)?.song ?? null;
+  }
+
+  /** The working song a project export must ship BESIDE the savestate, for a console that keeps it in work
+   *  RAM: always, read live (or the carry still to land). The savestate is republished only every ~0.5 s,
+   *  while the battery, the tracked slot and this song are all current - so a session saved in that lag
+   *  reopened as a mix of moments: a song saved since but reading clean over a battery that predated the
+   *  save (silent loss), or a stale song tracked to a slot it never came from (Save overwrote it). Shipped
+   *  live with the battery written over the savestate's on load, the reopened cart is one moment again. */
+  exportableWorkingSong(id: number): WorkingSongImage | null {
+    return this.pendingCarry(id) ?? this.workingSongImage(id);
+  }
+
+  /** Write each battery a project load adopted for a system whose graph it held back (adopt's `freshSram`) over the
+   *  savestate's own, now that the engine places the system: the ProjectStore calls it once the load's systems are
+   *  placed. A system the engine still does not place keeps nothing: its battery is the savestate's. */
+  writeHeldBatteries(): void {
+    for (const [id, bytes] of this.heldSram) {
+      if (!this.backend.writeSram(id, 0, bytes))
+        console.warn(`[systems] system ${id}: the battery its project carried could not be written over its savestate`);
+    }
+    this.heldSram.clear();
+  }
+
+  /** Write every parked working song whose cart has finished booting back into it. Called once per frame
+   *  by the UI while any are parked; a carry whose system has gone is dropped. */
+  settleCarries(): void {
+    for (const [id, c] of this.carries) {
+      const e = findById(this.entries, id);
+      const catalog = e ? resolveSongCatalog(e.roles) : undefined;
+      const tracker = e ? resolveTracker(e.roles) : undefined;
+      if (!e || !catalog || !tracker?.restoreWorkingSong) {
+        this.carries.delete(id);
+        continue;
+      }
+      const ram = this.backend.readRam(id) ?? undefined;
+      if (!catalog.workingSongReady?.(ram)) continue;
+      this.carries.delete(id);
+      this.setWorkingSlot(id, c.song.slot);
+      this.expectSong(id, { ...c.song, slot: c.song.slot ?? e.workingSlot }, ram);
+      const rom = e.romPath ? this.backend.readFile(e.romPath) : null;
+      const writes = rom ? tracker.restoreWorkingSong(rom, c.song, ram) : null;
+      if (!writes) {
+        console.warn(`[systems] working song for system ${id} dropped: this build has no layout to restore it into`);
+        continue;
+      }
+      for (const w of writes) if (!this.backend.writeRam(id, w.offset, w.bytes)) break;
+    }
+  }
+
+  /** Lift the working song out of `e` ahead of its teardown. A carry still pending for it wins: a second
+   *  reset inside the boot window would otherwise lift the blank song the cart is still booting into. */
+  private takeWorkingSong(e: SystemEntry): WorkingSongImage | null {
+    const song = this.workingSongImage(e.id);
+    this.carries.delete(e.id);
+    // Flagged edited but byte-identical to a saved song: a song the cart has just LOADED and not yet
+    // marked clean (it clears the flag a few blocks after writing the song) - or an edit that happens to
+    // match a saved copy. Either way nothing is lost by carrying it clean, and carried edited it would
+    // land "unsaved" forever on a cart that will never clear that flag. The slot is NOT moved here: once
+    // it lands clean, the watcher's first observation retargets it from the cart's own state.
+    const catalog = resolveSongCatalog(e.roles);
+    const sram = song?.edited ? this.backend.readSram(e.id) : null;
+    // Content only: the OPTIONS differing (the dirty predicate counts those) does not make the SONG new,
+    // and counting it here carried a just-loaded song as edited with the slot it replaced.
+    if (song && sram && catalog?.slotOfCleanSong?.(sram, { ...song, edited: false })) {
+      return { ...song, edited: false };
+    }
+    return song;
+  }
+
+  private carryWorkingSong(newId: number | null, song: WorkingSongImage | null): number | null {
+    if (newId !== null && song) this.carries.set(newId, { song });
+    return newId;
   }
 
   /** Wipe system `id`'s battery SRAM (a fresh cartridge) and cold-boot it in place. Seeds an all-zero
@@ -687,9 +1015,12 @@ export class SystemsStore {
         if (before.params[param] !== value) params.push([param, value]);
     }
     if (roleKind === e.core && canonicalJson(before.construct) !== canonicalJson(after.construct)) {
-      // A construct-time edit IS a reset, and a reset carries the battery: the same rows the System menu's Reset runs.
+      // A construct-time edit IS a reset, and a reset carries the battery and a work-RAM working song (see reset):
+      // the same rows the System menu's Reset runs. (SMS FM Audio is one: read only at construct.)
       this.flushBeforeDrop(e);
-      return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined }, { roles }) !== null;
+      const song = this.takeWorkingSong(e);
+      const rebuilt = this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined }, { roles });
+      return this.carryWorkingSong(rebuilt, song) !== null;
     }
     const entries = replaceById(this.entries, id, { ...e, roles });
     const settingMoved = roleKind === e.core && canonicalJson(before.settings) !== canonicalJson(after.settings);
@@ -747,6 +1078,12 @@ export class SystemsStore {
     this.focusedId = 0;
     // Every chain ends in a system that no longer exists, so no old id can name anything a later document places.
     this.replacedBy.clear();
+    this.carries.clear();
+    this.successors.clear();
+    this.observed.clear();
+    this.observedEdited.clear();
+    this.landing.clear();
+    this.heldSram.clear();
     if (had) {
       // A refused empty document leaves the old plan running and the entries already gone, so nothing else will ever
       // release these handles: warn, then give them back anyway. The old plan keeps its own pins until it is reclaimed.
@@ -785,6 +1122,7 @@ export class SystemsStore {
       }
     }
     this.forgetReplacementsEndingIn(id);
+    this.forgetWorkingSongState(id);
     return e;
   }
 
@@ -807,8 +1145,12 @@ export class SystemsStore {
       embeddedRom?: string;
       settings?: Partial<CommonSettings>;
       roles?: RoleInstance[];
+      workingSlot?: TrackedSlot;
     },
-    blobs?: { sramBytes?: Uint8Array; stateBytes?: Uint8Array },
+    // `song`: a working song the exported project was still carrying across a reboot (see
+    // ProjectStore.buildArchive) - parked again on the adopted system, to land once its cart is up.
+    // `freshSram`: a battery newer than the savestate's own, written over it once the core is built.
+    blobs?: { sramBytes?: Uint8Array; stateBytes?: Uint8Array; song?: WorkingSongImage; freshSram?: Uint8Array },
   ): number | null {
     const embeddedRom = config.embeddedRom ?? "";
     const romPath = config.romPath ?? "";
@@ -881,6 +1223,7 @@ export class SystemsStore {
       battery,
       settings,
       roles,
+      workingSlot: config.workingSlot ? { ...config.workingSlot } : undefined,
     });
     if (!prepared) return null; // its LSDj capture, if any, comes with the document that places it
     // The stored core config stays as written, so the system node leaves out a value its node would refuse (or a
@@ -914,6 +1257,11 @@ export class SystemsStore {
       focusedId: wasEmpty ? id : this.focusedId,
       put: prepared.handles,
     })) return null;
+    // A working song the archive carried lands once the cart is up (settleCarries), and a battery newer than the
+    // savestate's own is written over it, live, once the engine places the system: at once when this adopt's own
+    // publish placed it, else (a project load holds the graph until every system is built) by writeHeldBatteries.
+    if (blobs?.freshSram && !this.backend.writeSram(id, 0, blobs.freshSram)) this.heldSram.set(id, blobs.freshSram);
+    if (blobs?.song) this.carryWorkingSong(id, { ...blobs.song, slot: blobs.song.slot ?? prepared.entry.workingSlot });
     return id;
   }
 
@@ -1273,6 +1621,24 @@ export class SystemsStore {
     const dead: number[] = [];
     for (const oldId of this.replacedBy.keys()) if (this.chainEnd(oldId) === id) dead.push(oldId);
     for (const oldId of dead) this.replacedBy.delete(oldId);
+  }
+
+  /** Remember that an in-place change put `newId` in `oldId`'s slot (see currentId), capped like rememberReplacement. */
+  private rememberSuccessor(oldId: number, newId: number): void {
+    this.successors.set(oldId, newId);
+    for (const key of this.successors.keys()) {
+      if (this.successors.size <= SystemsStore.REPLACED_LIMIT) break;
+      this.successors.delete(key);
+    }
+  }
+
+  /** Drop the working-song bookkeeping of `id`, which has stopped being live (removed, discarded or replaced). */
+  private forgetWorkingSongState(id: number): void {
+    this.carries.delete(id);
+    this.observed.delete(id);
+    this.observedEdited.delete(id);
+    this.landing.delete(id);
+    this.heldSram.delete(id);
   }
 
   // Boot `spec` and make the entry it becomes: the one place a store boot goes through, so every verb puts its

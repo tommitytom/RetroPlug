@@ -169,6 +169,7 @@ export function createEmulatorClient(): EmulatorBackend {
     readSram: (id) => bytesOrNull(call("readSram", id)),
     readRam: (id) => bytesOrNull(call("readRam", id)),
     writeRam: (id, offset, bytes) => call("writeRam", id, offset, bytes) as boolean,
+    writeSram: (id, offset, bytes, expect) => call("writeSram", id, offset, bytes, expect ?? new Uint8Array(0)) as boolean,
     capability: (nodeId, op, args, onProgress) => jobs.run(nodeId, op, args, onProgress),
     // One pump for both kinds: the UI tick's, and the one after each submission.
     pumpJobs: () => jobs.pump() + offline.pump(),

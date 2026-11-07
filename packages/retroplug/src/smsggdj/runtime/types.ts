@@ -47,6 +47,9 @@ export interface SmsggdjLayout {
    *  would otherwise stall the clock). */
   grooveSel: number;
   groovePos: number;
+  /** The scratch groove a CONT tempo glide plays from, which `groove_sel = 16` selects instead of a
+   *  block groove. Read, never written: the load does not touch it, so a glide carries on through. */
+  glideScratch: number;
 
   // --- repaint, needed for EVERY load, running or stopped --------------------------------------------
   // The cart redraws only rows it has been told are dirty, and its own load ends in `mark_all_dirty`
@@ -71,7 +74,7 @@ export interface SmsggdjLayout {
 
   // --- boot completion: when the working song is the cart's to keep ---------------------------------
   // Work RAM is readable from the moment the core exists, but for the cart's first seconds it is not yet
-  // the cart's: `init` zero-fills it, `song_new` seeds the blank song, v0.46+ `boot_autoload` reloads
+  // the cart's: `init` zero-fills it, `song_new` seeds the blank song, the cur-slot build's `boot_autoload` (unreleased) reloads
   // the last slot. A name read in that window is nothing, and a song written in it is wiped.
 
   /** 1 once the main loop is about to start - written exactly once, after every boot-time overwrite of

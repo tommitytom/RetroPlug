@@ -227,7 +227,8 @@ of up to 4 bytes rides inline), `setBpm`, `setTransport`, `setPpq`, `pressButton
 they are simply dropped (a lost edge, never a leak), as is a `setParam`'s, which answers false then.
 Heavy commands carry an **owning heap payload**: a `stageMidi` longer than 4 bytes boxes a `new`-ed
 buffer (deleted after apply or, if the push fails, immediately), and `stageNodeMidi` carries the node id and
-the bytes as one owning payload (`DspCommand::stageNodeMidi`). A `writeRam`, like any capability job's write,
+the bytes as one owning payload (`DspCommand::stageNodeMidi`). A `writeRam` or `writeSram` (the battery's
+compare-and-swap twin, which republishes the battery's snapshot as it applies), like any capability job's write,
 carries a pointer to a job record the control thread owns and frees once the block thread has marked it finished
 (`host/engine/CapabilityJobs.hpp`), so applying one allocates and frees nothing. A staged host MIDI message
 lands in the engine's staging at drain, where the plan's `rp.host.midi-in` takes it at the top of the next block;

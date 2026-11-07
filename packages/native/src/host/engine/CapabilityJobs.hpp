@@ -95,6 +95,7 @@ struct Job {
         Discarded,   // the engine dropped the queued command at teardown, never applying it
         Device,      // a device thread failed it, the reason in `error`
         Overflow,    // more writes were applied than the engine's table of unpublished writes holds (a broken bound)
+        Changed,     // a battery write's compare-and-swap found the battery changed since its snapshot (Engine::writeSram)
     };
 
     std::uint32_t id = 0;
@@ -104,8 +105,12 @@ struct Job {
     std::string   nodeId;      // what its completion's error names
     SystemId      system = 0;
     std::size_t   region = 0;  // an index into the core's MemoryCapability::regions()
+    // A write into the battery through SramCapability::write instead of a memory region (Engine::writeSram, always
+    // detached): `region` is unused, and a non-empty `expect` (as long as `bytes`) is what the battery must still hold.
+    bool          battery = false;
     std::uint32_t offset = 0;
-    std::vector<std::uint8_t> bytes;  // the write's: read by the block thread, owned and freed here
+    std::vector<std::uint8_t> bytes;   // the write's: read by the block thread, owned and freed here
+    std::vector<std::uint8_t> expect;  // a battery write's compare-and-swap snapshot, likewise
     // The core the write was applied to: the block thread's (or the control thread's while no audio thread runs), set
     // at the apply and only compared at the confirm, never followed, so a system id re-added with a new core between
     // the two cannot pass for the one written.

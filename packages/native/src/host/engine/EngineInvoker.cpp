@@ -69,6 +69,12 @@ bool QueuedInvoker::writeRam(SystemId id, std::uint32_t offset, std::vector<std:
     return engine_->writeRam(id, offset, std::move(bytes));
 }
 
+bool QueuedInvoker::writeSram(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes,
+                              std::vector<std::uint8_t> expect) {
+    // The same, aimed at the battery (Engine::writeSram).
+    return engine_->writeSram(id, offset, std::move(bytes), std::move(expect));
+}
+
 // --- consumer half: apply every queued command into the Engine (audio loop, or the inline flush) -----
 
 void QueuedInvoker::drainInto(Engine& engine) { engine.drainCommands(); }

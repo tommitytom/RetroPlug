@@ -17,6 +17,8 @@ export const PROJECT_JSON = "project.json";
 export const romKey = (i: number) => `systems/${i}/rom`;
 export const sramKey = (i: number) => `systems/${i}/sram`;
 export const stateKey = (i: number) => `systems/${i}/state`;
+/** A working song still being carried across a reboot when the archive was made - see workingSongBlob. */
+export const songKey = (i: number) => `systems/${i}/song`;
 
 /** The set of blob keys present in an archive — fed to scanMissingFiles so a system
  *  whose save/state ships in the zip isn't flagged missing. Excludes `project.json`. */

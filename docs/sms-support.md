@@ -1162,9 +1162,8 @@ behave wrongly.
   Start is a real Start, and A/B are buttons 2/1.
 - **No SMS/GG rows in `app-mesen-persistence` / `app-mesen-settings`** - the construct-blob and
   live-knob proofs where NES has them.
-- **Documentation is silent.** Zero mentions of SMS/GG in `README.md`, `RELEASE_TESTING.md` or
-  `spec/`. `renderArgs.ts:24` still says "Render a Game Boy (.gb/.gbc), or NES (.nes) ROM" - it never
-  got `.gba` either, so fix both.
+- ~~**Documentation is silent.**~~ **FIXED.** `README.md` and `spec/` cover SMS/GG, and the render
+  help text names `.gba`, `.sms` and `.gg`.
 - **`pressButtonAt`** (sample-offset button presses). Generic Tier 2 item; not needed for sync, which
   rides `pushCoreBytes`.
 - **Nothing shows which roles a system has.** The union above stops a stale project from being
@@ -1257,7 +1256,7 @@ every build.)
 Work RAM is readable from the moment the core is constructed (the snapshot registry seeds it at claim,
 and SMS RAM powers on zeroed), but for the cart's first ~2.3 s it is the boot sequence's, not the
 cart's: `init` zero-fills `$C000-$DFEE`, the splash runs, `song_new` seeds the blank song (and
-`rle_name_default` writes eight spaces into `song_name`), v0.46+ `boot_autoload` reloads the last slot,
+`rle_name_default` writes eight spaces into `song_name`), the unreleased cur-slot build's `boot_autoload` reloads the last slot,
 `editor_init` and `init_paint` follow. Three bugs in the Recent list were this one fact:
 
 - a song picked from a Recent row did not load - the live write was made at frame 0 of the project
@@ -1272,8 +1271,16 @@ cart's: `init` zero-fills `$C000-$DFEE`, the splash runs, `song_new` seeds the b
 The cart says when it is up. `ints_on` (main.asm) is written exactly once, `ld a,1 / ld (ints_on),a /
 ei` right before the main loop and after everything above; `vdp_set_addr` reads it. It is in the symbol
 table with `frame` (the main-loop counter), regenerated from a v0.45 link that is **byte-identical** to
-the vendored ROM, and both were also read straight out of the v0.46 binaries from the code that writes
-them - `$DF13` / `$DF02` everywhere, so the 0.46 alias holds.
+the vendored ROM, and both were also read straight out of the local cur-slot binaries from the code
+that writes them - `$DF13` / `$DF02` everywhere.
+
+**"v0.46" names two different builds.** The cur-slot branch stamps itself v0.46, and so does the
+upstream RELEASE tagged v0.46 - which has no `cur_slot` and no `boot_autoload` at all (it stopped
+drawing the frame counter; v0.47 then fixed the `J` command's play count). The first alias table was
+certified against the local branch. It has since been re-certified against the release TAGS by linking
+each with `wlalink -S`: every generated label sits at the same address in 0.45, 0.46 and 0.47, so both
+releases alias 0.45. No released build restores a song at boot, so nothing in RetroPlug may key a
+capability on "0.46 or later"; `supportsCurSlot` did, had no callers left, and is gone.
 
 `SongCatalog.workingSongReady(ram)` is that latch (absent = always ready: LSDj and risa keep the working
 song in the battery). Before it reads 1, smsggdj's `workingName` and `workingSongDirty` answer "no
@@ -1484,13 +1491,13 @@ the pixel: the load moved **0** of 48,903 non-animating pixels before the fix an
 a forced repaint afterwards went from 271 to 2. Both halves are asserted, so a regression that quietly
 stops repainting fails on the first number and one that repaints only partially fails on the second.
 
-**One divergence found by reading, not measured.** `isGrooveEmpty(block, sel)` treats an out-of-range
-`sel` as empty, and `groove_sel = NUM_GROOVES` (16) is not out of range - it is the CONT tempo-glide
-SENTINEL, which `groove_base` (`engine.asm:1021-1036`) resolves to `glide_scratch` in RAM rather than to
-a groove in the block. So during a tempo glide the cart keeps the scratch groove and a host-side load
-resets `groove_sel` to 0, aborting the glide. Narrow (it needs a Songs > Load landing inside a CONT
-glide) and the fix is small - either leave the groove alone when `sel >= 16`, or read `glide_scratch`
-out of the RAM snapshot the way the cart reads it - but it is a real difference from `load_rebase`.
+**A tempo glide survives a load (fixed; found by reading).** `groove_sel = NUM_GROOVES` (16) is the
+CONT tempo-glide SENTINEL, which `groove_base` (`engine.asm:1021-1036`) resolves to `glide_scratch` in
+RAM rather than to a groove in the block. The host used to ask the block, where groove 16 begins exactly
+at the block's end, so it read as empty and EVERY mid-glide load reset `groove_sel` to 0, aborting the
+glide. `glide_scratch` is now a generated symbol and `liveLoad` asks it, as the cart does: a live
+scratch groove is kept, an empty one still falls back to 0. Guarded in `smsggdj-catalog.test.ts`; the
+negative control (asking the block again) fails it.
 
 #### Rendering: there is no song end to detect, and three things were missing
 
@@ -1513,7 +1520,7 @@ no diagnostic. Three independent gaps, all "SMS was never added to the render":
   It is a TOGGLE, so it first reads `play_state` and presses only when stopped.
 - `validateRenderOpts` rejected `--song`/`--song-index` for anything but gb/nes, which had also left the
   `resolveSmsggdjSongSeed` below it **unreachable**. That seed wrote the superblock's `cur_slot` byte, which
-  is the right durable record but only a v0.46+ cart reads at boot - so on the shipped v0.45 it selected
+  is the right durable record but only the unreleased cur-slot build reads at boot - so on the shipped v0.45 it selected
   nothing. Selection now resolves to an index and the song is written into the booted core through the same
   `liveLoad` the Songs menu uses.
 - Nothing warned. A bare render now says the cart boots blank and lists the songs it could have played; a
@@ -1573,9 +1580,171 @@ Two things found while building it, both pre-existing and unrelated to this work
   clean build reproduces the vendored v0.45 ROMs byte-for-byte apart from the embedded git-hash build
   stamp and its checksum.
 
+#### The working song outside the battery: close, reset, and the rows that replace it
+
+The Songs menu learned that every battery edit destroys a work-RAM working song. Four other paths had
+not, and each lost an unsaved song without a word:
+
+- **Closing the window** (and New / Open / a Recent project). The close prompt asked about the project
+  and the battery, and this song is in neither. It is now a third channel (`unsavedChanges`, item kind
+  `song`), listed as `Song: MYSONG -> smsggdj.sav`, with ` (new slot)` when Save will add it rather
+  than write it back. **Save** writes it INTO the battery the way the cart's own SAVE would - back over
+  the slot it was loaded from or last saved into, else appended - plus the OPTIONS block the cart's
+  `config_save` writes beside it, then the usual flush takes it to disk. When the cart cannot take it,
+  the row says why up front (`cart full`, `old save format`, `damaged save`), Save leaves the prompt open
+  rather than quitting without it, and the menu's Save row says so too.
+- **Which slot is "back".** Tracked per system as an index AND a fingerprint (FNV-1a over the decoded
+  block) of the song that slot held when it was tracked; Save writes back only while the slot still holds
+  exactly that song and carries the song's name, and appends otherwise. Set by a host Load and a host
+  Save; kept true to the cart's own screens by a PER-FRAME watcher (`observeWorkingSongs`) that acts only
+  when the cart reports its song unedited - which it does exactly when the song was replaced wholesale
+  (its own LOAD, SAVE, NEW): a song matching a saved slot is tracked, one matching none (NEW) clears the
+  tracking. Persisted on the system in the project (`workingSlot`), so a session reopened from a
+  savestate - where the song arrives already edited and nothing could re-derive the slot - still saves
+  back over it. Two adversarial passes shaped this. The first version matched by NAME: an untitled song
+  appended a new copy on every save, and a new song sharing a saved one's name overwrote it. The second
+  tracked index + name: an in-cart FILES CLEAR shifts every later song down a slot, so two untitled songs
+  let a Save write the edited A over the B that moved in; and the half-second poll missed an in-cart NEW
+  followed quickly by an edit, so the new song overwrote the loaded one. The fingerprint closes the
+  first, the per-frame watcher the second. A third pass found the slot's LIFETIME wrong: kept across Load
+  State / Load SRAM (a restored song then saved over the slot the old song came from) - a rebuild now
+  drops it, and only reset / reload hand it on inside the carried image; and cleared on the frame a
+  carry landed (the watcher saw the not-yet-overwritten blank and took it for an in-cart NEW) - the
+  watcher now waits for the restore to appear. The watcher gates on a cheap word-sum change signal and
+  computes the real fingerprint only when it moves (a full FNV per frame measured ~0.4 ms on x86).
+  Residual: a NEW and an edit inside ONE frame (not reachable through the cart's menus) would still be
+  read as the old song.
+- **The battery is published every block.** Mesen's core-sourced battery rode the 0.5 s savestate
+  interval while work RAM went out every block, so the two could describe different moments - found only
+  by the fourth review pass, run against the REAL core rather than the mock (the headless UI harness
+  publishes on every block regardless, which is why no app test caught it). On the block the cart's own
+  SAVE finished, RAM said "saved" and the battery still showed the old directory: the host read a song
+  saved nowhere and dropped its slot, and a reset in that window carried the stale battery and lost the
+  song silently. It is now a plain memcpy off the live accessor at the end of every block
+  (`SnapshotRegistry::publishSystem`; no allocation on the audio thread, where it used to copy through a
+  fresh vector). Parity's risa cases, whose cart uses its battery-backed RAM as live memory, read the
+  battery fresher for it: their audio, work RAM and MIDI are unchanged, their SRAM digest moved. The slot watcher also re-checks a clean
+  song that matched nothing for ~1 s instead of caching that verdict, and Save finds a tracked song an
+  in-cart CLEAR above it shifted down. Echo is compared SANITIZED on both sides: the cart's PROJECT
+  load sanitizes it and its FILES load does not, and a slot written with echo 0 never matched otherwise.
+- **Fifth pass.** The slot fingerprint now covers the WHOLE song (block, sanitized echo, displayed name),
+  so an echo A/B pair is two songs even when a CLEAR shifts both; relocating a shifted song is bounded by
+  how many songs disappeared (`TrackedSlot.count`), so a deliberate backup copy is never taken for the
+  moved original; a landing carry answers for the song only while RAM still shows the exact blank it is
+  replacing, so an edit made the instant it lands is what Save stores; and a song flagged edited but
+  byte-identical to a saved one (the cart writes a song it LOADS a few blocks before clearing its flag)
+  is treated as clean when tracked and when carried. The Songs menu no longer shows a "[working]" row for
+  smsggdj (it was built from cur_slot, the last song SAVED), and its load guard's "Save Working Song &
+  Load" saves through saveWorkingSong and then loads live, instead of reporting "no free slot".
+- **Sixth pass: fewer guesses.** Each heuristic about where the working song came from had opened a hole,
+  so they were made conservative. Only an UNEDITED song moves the tracking (an edit passing through an
+  older copy's bytes for one frame had retargeted Save onto that copy); a carried edited-but-identical
+  song is carried clean but keeps its slot, and the watcher's first clean look after it lands retargets
+  it. A clean song that differs from its tracked slot only in the groove table keeps its tracking
+  (playback's `T` command rewrites it without setting the flag). Relocation additionally requires the
+  slots ABOVE the tracked one to have changed (`TrackedSlot.above`), so clearing the original itself
+  never sends Save to a backup above it. A Songs-menu load names its target system (`SongRequest.systemId`,
+  followed through rebuilds): it used to settle into whichever instance was focused when it settled, and
+  arrived confirmed, replacing that instance's unsaved song. And the OPTIONS block counts: a CONT change
+  (the cart sets song_edited, the block does not change) is unsaved work, and Save writes just the
+  options into the battery rather than a second copy of the song.
+- **A randomized cart model.** A fuzzer driving a model of the cart's own SAVE / LOAD / NEW / CLEAR /
+  rename / playback drift against host Save, reset and export (~20,000 steps, invariants: no silent loss,
+  no clobber of a non-origin song, Save really saves, reset restores exactly) found two more: the watcher
+  keyed only on the working song, so an unedited song the cart saved to a new row left the tracking on
+  the old row (it now also keys on a fingerprint of the battery's directory, ~0.12 ms per frame on the
+  real core); and a re-carried song the cart already held opened a landing window keyed on its own
+  signal (no window now). Remaining reports were identical twin copies and the empty default song,
+  where overwriting the "wrong" one loses nothing.
+- **A permanent fuzzer.** `test/tracker/working-song-fuzz.test.ts` models the cart (edits incl. echo, name
+  and CONT; FILES SAVE with its free-before-write hole and a late flag clear; FILES LOAD writing name/echo,
+  then block, then flag; NEW / CLEAR / rename; playback drift while the transport runs; a reboot mid-routine)
+  across TWO instances, against every host path (Save, Songs-menu Load / Delete / Move / Add / Replace,
+  Recent, Load SRAM / State, New SRAM, reset, reload, FM, Swap ROM, export/import over a lagging savestate,
+  the close prompt), checking six invariants after every step. 16 fixed seeds run in `pnpm test` (~8 s);
+  env vars (`FUZZ_ITER`, `FUZZ_STALL`, `FUZZ_RACE`, `FUZZ_REPLAY`, ...) drive long campaigns. Its first
+  1.4M steps found seven bugs (listed at the bottom of the file); the fixes: a work-RAM song always ships
+  in an export and the live battery is written over the savestate's on reopen, so a reopened session is one
+  moment; a host Load stands its song in until its writes land (`SystemsStore.expectSong`) and tracks its
+  target slot then; drift counts only while playing, keeps precedence over an exact twin unless the
+  directory moved (and a host save rebases that baseline); a save waits out the cart's own routines
+  (directory hole, or a working song still changing); a rebuilt target drops a request's confirmation and
+  index requests are re-checked by index. ~414k further steps on the fixed code came back clean except one
+  case: a host Save while the audio thread is stalled exactly mid-way through the cart's own LOAD unpack,
+  where the half-loaded song holds still.
+- **"Saved" means the whole song.** The block, its echo settings and its displayed name all have to
+  match a slot. The cart's ECHO screen changes only the echo and sets `song_edited`; comparing the block
+  alone called that saved, so an echo edit got no prompt and Save stored nothing.
+- **A fresh cart.** The dirty check required an SMDJ4 directory, which a cart only writes on its first
+  SAVE or visit to FILES (`rle_dir_ensure`) - so a new user's first song read as clean, everywhere. A battery with no directory now holds
+  no songs, so an edited song on it is unsaved. Saving into it creates the directory
+  (`ensureSongDirectory`); an older SMDJ1-3 image is refused rather than flattened, which is stricter
+  than the cart's own `rle_dir_ensure` on purpose.
+- **A directory with holes.** A save carried forward from the fixed-slot days can have free entries
+  before used ones until the cart's FILES screen next packs it (`rle_dir_pack`). `listSongs` stops at a
+  hole, so the heap rebuild behind every save used to drop every song after it - confirmed by execution:
+  three songs with entry 0 cleared came back as only the new one. Saves now pack the directory exactly as
+  the cart does first (`packDirectory`), and every heap op refuses a holed image outright
+  (`hasDirectoryHoles` in `detachAll`), which also closes the same hole in the Songs menu's Add / Import.
+- **Reset, a ROM-watch reload, a ROM swap.** Each carries the battery, which carries LSDj's and risa's
+  working song - but not this one. They now carry it explicitly: lifted out as a `WorkingSongImage`
+  before the teardown, parked under the new id, written back (`restoreWorkingSong`, the same writes as a
+  Load) on the first frame the new cart's boot latch is up, still marked unsaved. While it is parked the
+  image answers for it, so a close inside the boot window still sees the song, and a project exported in
+  that window (a DAW saving its session, possibly with the editor already closed so nothing settles the
+  carry) ships it as a `systems/{i}/song` archive entry that loading parks again - the savestate beside
+  it holds the blank booting cart. Any other export ships the live song the same way (the savestate lags
+  by up to 0.5 s), with the battery, and loading writes that battery over the savestate's own once the
+  engine places the system (`SystemsStore.writeHeldBatteries`: a project load publishes its graph only
+  after every system is built). A song request (a Recent row, a Songs-menu
+  Load) waits until the carry has landed AND shown up in work RAM, then asks before discarding it. A carry has no time limit: it is keyed by its system's id and dies
+  with it.
+- **Load SRAM, Load State, New SRAM, Replace / Remove Instance** replace what the cart holds, so a carry
+  would be wrong; they confirm first when the song is unsaved. So does dropping a `.sav` or a ROM onto
+  that cart's tile, which offers *Save song first* / *Discard song* / *Cancel*.
+
+Two things found on the way:
+
+- **`System > FM Audio` never took effect on a running cart** on the engine this was found on:
+  `applyRoleConfig("mesen")` sent only NES fields, which an SMS core dropped at the `MesenNesSystem` cast,
+  and `enableFm` is read only at construct. On the graph engine it is a construct-time setting of the
+  system node, so `setRoleConfig` rebuilds the core for it as Reset does; that rebuild carries the working
+  song as Reset does too, so the toggle costs nothing.
+- **The instance menu stranded on any in-place rebuild.** A rebuild gives a system a new id; the menu
+  stayed anchored to the dead one, open but invisible, and the next Esc was spent closing it.
+  `SystemsStore.currentId` follows an id through its successors and `App` re-anchors on it (at the top
+  level - tiles are keyed by id, so the rebuilt cart's menu mounts fresh).
+
+**Why the save writes the LIVE battery, conditionally.** The teardown flush and the auto-save mirror both
+write `readSram` to disk, so a save made only to the file is overwritten by the stale battery on the very
+close it was for. `writeSram` is the battery twin of `writeRam`: `Engine::writeSram` takes it as a detached
+capability write on the same job path (`host/engine/CapabilityJobs.hpp`), applied between blocks through
+the core's `rp.system.sram/1` (`SramCapability::write`), and the apply republishes the SRAM snapshot
+immediately (`SnapshotRegistry::republishSram`) rather than at its next publish - without that the
+snapshot would still hold the pre-save battery for the flush to find. The image is built from that
+snapshot, though, which can be half a second old, and it replaces the whole battery: written blind it
+would revert an in-cart SAVE, LOAD or FILES delete made in between. So the write carries the snapshot it
+was built from and native applies it only if the battery still holds it - a compare-and-swap on the
+block thread, atomic with respect to the cart. A refusal (the job fails `Changed`, which nobody collects)
+republishes the battery too, and `saveWorkingSong`
+rebuilds from it (three attempts, then "busy"). The cart's unsaved flag is cleared only once the write
+has landed. `saveWorkingSong` waits on the UI's timer, which `LvglJsEngine::tick` pumps every frame; the
+headless native test host does not pump timers while a test awaits, so it sets `__rp_timersPumped =
+false` and the first, synchronous look decides (a write there applies inline). On SameBoy, whose battery
+is sliced out of a savestate the core refreshes on its own cadence, the republish copies the live cart
+RAM and re-arms the core's capture, so the next coarse publish cannot slice the pre-write battery back. A live battery write while the cart sits on its FILES screen leaves that screen's list
+stale until it is redrawn; the cart re-reads the directory on every visit.
+
+Guarded by `test/tracker/working-song-save.test.ts` (codec, catalog, slot tracking, holes, OPTIONS, the
+compare-and-swap retry, prompt rows, carry, menu guards), `test-native/sms-working-song-save.test.ts` (both machines on the real core: `writeSram`, a save
+that survives the teardown flush, a carry through the boot) and `test-ui/working-song-smsggdj.test.ts`
+(the real app: FM Audio, the close prompt's row, Save & Quit into the `.sav`). Each fix has a negative
+control that fails its test.
+
 ### Suggested order
 
 All three defects are closed, the tracker integration is built, and the Songs menu is live on the
-vendored v0.45 - Load included, via the symbol-driven work-RAM write. Next is assets (which need
-neither a ROM change nor a layout), then the Tier 2 polish in any order. The ROM branch lands whenever
+vendored v0.45 - Load included, via the symbol-driven work-RAM write. An unsaved working song can no
+longer be lost silently. Next is assets (which need neither a ROM change nor a layout), then the Tier 2
+polish in any order. The ROM branch lands whenever
 its author is happy with it; nothing in RetroPlug is waiting on it now.

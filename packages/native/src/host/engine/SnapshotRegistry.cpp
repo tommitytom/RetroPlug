@@ -1,6 +1,7 @@
 #include "host/engine/SnapshotRegistry.hpp"
 
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
 
 #include "system/SystemBase.hpp"
@@ -69,8 +70,8 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
     // out — cheap, no extra core read. Its OFFSET is model-dependent and is therefore not cached here;
     // only the SIZE is, because that comes from the cart header and no model changes it. A core whose savestate exposes no
     // SRAM region (Mesen's streamed format leaves stateRegions() empty) publishes its battery straight
-    // from the live core via saveSramBytes() — sourced HERE on the control thread, republished on the
-    // coarse interval. A no-battery cart reports empty → no slot → readSram stays null (correct).
+    // from the live core via saveSramBytes() - sourced HERE on the control thread, then republished off the
+    // live accessor every block (publishAll). A no-battery cart reports empty → no slot → readSram stays null.
     const auto& reg = sys.stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
     if (reg.size > 0 && static_cast<std::size_t>(reg.offset) + reg.size <= bootLen) {
         s->sram = std::make_unique<MemorySnapshotTriple>(reg.size);
@@ -128,7 +129,21 @@ void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, d
     // only a region that would overflow the capacity is skipped.
     publishRamFor(*s, system);
 
-    // State + SRAM on the coarse interval: the core only republishes its savestate every ~0.5s,
+    // Core-sourced SRAM (Mesen) EVERY block, like WRAM, straight off the live accessor: a memcpy, no allocation. It
+    // used to ride the coarse interval below, which left the battery up to 0.5 s behind work RAM: a cart that saved a
+    // song cleared its unsaved flag (visible next block) while the battery still showed the old directory, so the host
+    // read "an unsaved song in no slot" and lost track of it; a reset in that window carried the stale battery and
+    // dropped the song outright. The two now publish together at the end of the same block, so they always describe
+    // one moment. Safe here: the block thread owns the core, and SRAM size is fixed for a cart, so a mismatch skips.
+    if (s->sram && s->sramFromCore) {
+        rp::MemoryAccessor live = system.getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+        if (live.valid() && live.size() == s->sram->size()) {
+            std::memcpy(s->sram->writeSlot(), live.data(), live.size());
+            s->sram->publish();
+        }
+    }
+
+    // State (+ savestate-sliced SRAM) on the coarse interval: the core only republishes its savestate every ~0.5s,
     // so per-block copies would be redundant. Matches publishStateSnapshot's cadence.
     s->sampleAccum += frames;
     if (interval == 0 || s->sampleAccum < interval) return;
@@ -157,18 +172,6 @@ void SnapshotRegistry::publishSystem(SystemBase& system, std::uint32_t frames, d
                 s->sram->publish();
             }
             s->state->publish();
-        }
-    }
-
-    // Core-sourced SRAM (Mesen): read the live battery straight off the core. Safe here: the block
-    // thread owns it and every system has finished its block (publishSystem is the tail of processBlock,
-    // like captureStateSnapshot). SRAM size is fixed for a cart, so a mismatch just skips. Independent
-    // of the savestate read above (a no-savestate core could still carry a battery).
-    if (s->sram && s->sramFromCore) {
-        sramScratch_ = system.saveSramBytes();
-        if (sramScratch_.size() == s->sram->size()) {
-            std::memcpy(s->sram->writeSlot(), sramScratch_.data(), sramScratch_.size());
-            s->sram->publish();
         }
     }
 }
@@ -232,6 +235,38 @@ std::optional<std::vector<std::uint8_t>> SnapshotRegistry::readRam(SystemId id) 
     if (len == 0 || static_cast<std::size_t>(len) + kRamLenPrefix > slotSize) return std::nullopt;
     return std::vector<std::uint8_t>(ramReadScratch_.begin() + kRamLenPrefix,
                                      ramReadScratch_.begin() + kRamLenPrefix + len);
+}
+
+std::size_t SnapshotRegistry::sramSize(SystemId id) {
+    // The SRAM triple has no length prefix - it is sized to the cart's battery at claim, and a cart
+    // cannot change its battery size - so the slot size IS the length.
+    Slot* s = find(id);
+    return s && s->sram ? s->sram->size() : 0;
+}
+
+void SnapshotRegistry::republishSram(SystemBase& sys) {
+    Slot* s = find(sys.id());
+    if (!s || !s->sram) return;
+    if (s->sramFromCore) {
+        rp::MemoryAccessor live = sys.getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+        if (live.valid() && live.size() == s->sram->size()) {
+            std::memcpy(s->sram->writeSlot(), live.data(), live.size());
+            s->sram->publish();
+        }
+        return;
+    }
+    // Sliced from the savestate. Publish the live cart RAM now, so a read sees the write even with no
+    // block to run (the inline flush while the audio thread is stopped). Then make the core capture a
+    // FRESH savestate on its next block and that block's publishSystem slice it: left alone, the core's own
+    // triple refreshes on a ~0.5 s cadence, and the next coarse publish would slice the PRE-write battery
+    // straight back over this one. Half the range, so `+= frames` cannot wrap it below the interval.
+    rp::MemoryAccessor live = sys.getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+    if (live.valid() && live.size() == s->sram->size()) {
+        std::memcpy(s->sram->writeSlot(), live.data(), live.size());
+        s->sram->publish();
+    }
+    sys.rearmStateSnapshot();
+    s->sampleAccum = UINT64_MAX / 2;
 }
 
 std::size_t SnapshotRegistry::ramSize(SystemId id) {

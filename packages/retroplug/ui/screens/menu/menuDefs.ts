@@ -91,14 +91,17 @@ import {
   type AssetOverride,
   type AssetTypeInfo,
   type TrackerIntegration,
+  savEditWouldDiscard,
+  songLoadWouldDiscard,
 } from "../../../src/tracker";
+import { saveWorkingSong } from "../../../src/tracker/liveSav";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../host/openPath";
 import { native } from "../../host/nativeHooks";
 import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../host/render";
 import { saveProjectInteractive } from "../../app/saveProjectInteractive";
-import { flushDirtySram } from "../../../src/sramAutoSave";
-import { hasUnsavedChanges } from "../../../src/unsavedChanges";
+import { hasUnsavedChanges, unsavedChanges } from "../../../src/unsavedChanges";
+import { SONG_BLOCKED } from "../../app/unsavedRows";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
@@ -626,10 +629,40 @@ const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm — battery saves (some NES/r
 
 const SPLIT_LABELS: Record<SplitMode, string> = { mix: "Mix", channels: "Channels", pins: "Pins" };
 
+// --- item helpers -------------------------------------------------------------------------------------
+/** `action`, behind a yes/no confirm when running it would throw away an unsaved working song that lives
+ *  outside the battery (smsggdj). For the rows that REPLACE what the cart holds - Load SRAM, Load State,
+ *  New SRAM, Replace / Remove Instance - so carrying the song across, as Reset does, would be wrong; but
+ *  saying nothing lost the song. Asked when the menu is built, and only on a positive signal (see
+ *  savEditWouldDiscard): elsewhere it is exactly `action`. Confirms BEFORE any file picker, as the Songs
+ *  menu does, so cancelling the picker costs nothing. */
+function songGuardedAction(ctx: MenuContext, sys: SystemView, id: string, label: string, run: () => void): MenuItem {
+  if (!savEditWouldDiscard(ctx.stores.project.systems, sys)) return action(id, label, run);
+  return {
+    id,
+    label,
+    kind: "prompt" as const,
+    keepOpen: true,
+    prompt: {
+      title: `${label.replace(/\.\.\.$/, "")}? The working song has unsaved changes - they will be lost.`,
+      hint: "Enter to continue  |  Esc to cancel",
+      confirm: true,
+      onConfirm: () => {
+        run();
+        return null;
+      },
+    },
+  };
+}
+
 /** "Save Project", with a trailing " *" when the project or any battery SRAM is unsaved (the same signal the
  *  close guard asks). The star is the file's established "modified" marker (cf. the asset-override rows). */
 function saveProjectLabel(ctx: MenuContext): string {
-  return `Save Project${hasUnsavedChanges(ctx.stores.backend, ctx.stores.project) ? " *" : ""}`;
+  if (!hasUnsavedChanges(ctx.stores.backend, ctx.stores.project)) return "Save Project";
+  // A working song Save cannot store (a full cart, an old save format) stays unsaved however often the row
+  // is pressed - say so here, where the press visibly did nothing, rather than only in the log.
+  const blocked = unsavedChanges(ctx.stores.backend, ctx.stores.project).find((i) => i.kind === "song" && i.blocked);
+  return blocked?.kind === "song" && blocked.blocked ? `Save Project * (song: ${SONG_BLOCKED[blocked.blocked]})` : "Save Project *";
 }
 
 /** The shared "Load…" leaf (start + instance): browse a ROM/sav (resolve-only), then apply the pick behind
@@ -825,7 +858,8 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
 function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
   // Reset reboots carrying the battery — pathless, reconstructing in place (no live GB_reset). It leads the
-  // menu; the Render submenu (a WAV background job) sits right below it, then a separator.
+  // menu; the Render submenu (a WAV background job) sits right below it, then a separator. A working song
+  // that lives outside the battery (smsggdj) is carried across too - see SystemsStore.reset.
   const items: MenuItem[] = [action("sys-reset", "Reset", () => void systems.reset(sys.id))];
   if (sys.romPath) items.push(renderSubmenu(ctx, sys));
   items.push(
@@ -887,7 +921,10 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     );
   }
   // SMS/GG-only core knobs (same "mesen" role, gated on platform for the same reason as above).
-  // FM Audio is applied at construct, so flipping it reboots the core (configureSms runs before LoadRom).
+  // FM Audio is read only at construct (configureSms runs before LoadRom), so flipping it rebuilds the core:
+  // setRoleConfig's construct-time edit is a reset, which carries the battery and the working song.
+  // On Game Gear too: stock hardware has no YM2413, but Mesen's Game Gear port map falls through to the
+  // SMS ports (WriteGameGearPort's default) and so reaches it, and smsggdj drives it there for GG FM mods.
   if (sys.platform === "sms" || sys.platform === "gg") {
     const cfg = mesenConfig(sys);
     items.push(
@@ -915,7 +952,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   items.push(action("sys-swaprom", "Swap ROM (Preserve SRAM)...", () => void ctx.stores.fileSelection.browseSwap(sys.id)));
   if (sys.romPath && !noSave)
     items.push(
-      action("sys-newsram", "New SRAM...", () =>
+      songGuardedAction(ctx, sys, "sys-newsram", "New SRAM...", () =>
         browseThen(
           ctx,
           { title: "New SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: sramName },
@@ -924,7 +961,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       ),
     );
   items.push(
-    action("sys-loadsram", "Load SRAM...", () =>
+    songGuardedAction(ctx, sys, "sys-loadsram", "Load SRAM...", () =>
       browseThen(ctx, { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
     ),
   );
@@ -940,7 +977,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
         browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${romStem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
       noSave,
     ),
-    action("sys-loadstate", "Load State...", () =>
+    songGuardedAction(ctx, sys, "sys-loadstate", "Load State...", () =>
       browseThen(ctx, { title: "Load State", patterns: STATE_PATTERNS }, (p) => void systems.loadState(sys.id, p)),
     ),
   );
@@ -1636,6 +1673,31 @@ function loadGuard(
   };
 
   const saveRow = ((): MenuItem => {
+    // A working song OUTSIDE the battery (smsggdj) cannot be saved by a byte transform on the sav - it is
+    // not in it. Save it the way the close prompt does (into the live battery, no reboot), then load the
+    // picked song through the same request every Load goes through. Offered only when a dry run says the
+    // cart can take it, and greyed with the real reason when not - this row used to say "no free slot"
+    // on a cart with thirty.
+    const catalog = spec.catalog;
+    if (catalog.commitWorkingSong) {
+      const systems = ctx.stores.project.systems;
+      const image = systems.workingSongImage(sys.id);
+      const dry = image ? catalog.commitWorkingSong(sav, image) : null;
+      if (!dry || !dry.ok) {
+        return infoRow(`${idp}-save-unavailable`, `Save Working Song & Load (${dry ? SONG_BLOCKED[dry.reason] : "nothing to save"})`);
+      }
+      return action(`${idp}-save`, "Save Working Song & Load", () => {
+        void (async () => {
+          const r = await saveWorkingSong(ctx.stores.backend, systems, sys).catch(() => null);
+          if (!r || r.kind === "refused") {
+            console.warn(`[songs] working song not saved${r ? `: ${r.reason}` : ""}; nothing loaded`);
+            return;
+          }
+          ctx.stores.project.requestSong({ index: song.index, confirmed: true, systemId: sys.id });
+          ctx.stores.project.settleSong();
+        })();
+      });
+    }
     if (!spec.commitWorking || !(spec.canCommitWorking?.(sav) ?? true)) {
       // Not offerable: no such op, or the catalog can't take it (full). Say why rather than fail on click.
       return infoRow(`${idp}-save-unavailable`, "Save Working Song & Load (no free slot)");
@@ -1680,7 +1742,10 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
   // property of the working song, not of the row you're pointing at. Loading the song you're already on
   // still overwrites working memory from the stored slot, so every row is guarded, including that one.
   const ram = cat.workingSongOutsideBattery ? (ctx.stores.project.systems.readRam(sys.id) ?? undefined) : undefined;
-  const discards = bytes ? (cat.workingSongDirty?.(bytes, ram) ?? false) : false;
+  // Asked of the working song as an IMAGE (songLoadWouldDiscard), not of live RAM: inside a reset's boot
+  // window the cart holds nothing yet but the song being carried back is real, and a RAM-only check turned
+  // every row into a plain action there - Move Up then cold-booted the cart and dropped the carry.
+  const discards = bytes ? songLoadWouldDiscard(ctx.stores.project.systems, sys) : false;
   const workingLabel = (bytes ? cat.workingName(bytes, ram) : null) || "the working song";
   // Every row below rewrites the battery and cold-boots the cart. On a console whose working song lives
   // OUTSIDE the battery that boot destroys it, so Delete / Replace / Move are as destructive as Load -
@@ -1699,7 +1764,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     // itself, by NAME, so the row is at the top before the user gets back there. `confirmed`: this row was
     // already guarded (loadGuard below) or had nothing to guard, so the store must not ask again.
     const doLoad = (): void => {
-      ctx.stores.project.requestSong({ index: s.index, confirmed: true });
+      ctx.stores.project.requestSong({ index: s.index, confirmed: true, systemId: sys.id });
       ctx.stores.project.settleSong();
     };
     const items: MenuItem[] = [
@@ -2067,10 +2132,11 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     // saved everything except the battery.
     if (project.currentPath()) items.push(action("proj-save", saveProjectLabel(ctx), () => void saveProjectInteractive(ctx.stores)));
     items.push(action("proj-saveas", "Save Project As...", () =>
-      browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) => {
-        flushDirtySram(ctx.stores.backend, project.systems.systems());
-        project.save(p);
-      }),
+      // Through the same save as every other route, so an unsaved work-RAM working song is saved into its
+      // battery first - flushing and saving directly here skipped it, and the user believed they had saved.
+      browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) =>
+        void saveProjectInteractive(ctx.stores, p),
+      ),
     ));
     items.push(action("proj-export", "Export Zip...", () =>
       browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.rplg.zip" }, (p) => project.export(p)),
@@ -2423,8 +2489,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       // Replace / Remove only make sense with a peer instance — hidden for a lone instance.
       ...(multi
         ? [
-            action("inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
-            action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
+            songGuardedAction(ctx, sys, "inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
+            songGuardedAction(ctx, sys, "inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
           ]
         : []),
       // Link Group is SameBoy-only (the GB serial link cable); on a NES/GBA peer it would be a dead

@@ -1,16 +1,20 @@
 // saveProjectInteractive — resolve a path (opening a Save-As dialog when the project has no path yet),
-// then flush dirty SRAM and save the project. Returns true if it saved, false if the Save-As was
-// cancelled. Every route that saves a project goes through here — the close guard (Save & Quit), the
+// save every unsaved working song into its cart's battery, flush dirty SRAM and save the project. Returns
+// true if EVERYTHING saved; false if the Save-As was cancelled, or a working song could not be stored (a
+// full cart, an older save format) - the rest is still saved, and the caller keeps its prompt up, which
+// now lists only that song and why. Every route that saves a project goes through here - the close guard (Save & Quit), the
 // New/Load discard guard, and the Project + instance menu Save rows — because saving a project and
 // saving the batteries it contains are one user action, not two.
 
 import type { AppStores } from "../../src/appStores";
 import { flushDirtySram } from "../../src/sramAutoSave";
+import { saveWorkingSong } from "../../src/tracker/liveSav";
 
 const PROJECT_SAVE_PATTERNS = ["*.rplg"];
 
-export async function saveProjectInteractive(stores: AppStores): Promise<boolean> {
-  let path = stores.project.currentPath();
+/** `saveAs` names the file outright (Save Project As..., which has already asked), skipping the dialog. */
+export async function saveProjectInteractive(stores: AppStores, saveAs?: string): Promise<boolean> {
+  let path = saveAs ?? stores.project.currentPath();
   if (!path) {
     path =
       (await stores.backend.openFileBrowser({
@@ -23,7 +27,20 @@ export async function saveProjectInteractive(stores: AppStores): Promise<boolean
   }
   // AFTER the cancel check: a dismissed Save-As should leave the disk exactly as it found it, and this
   // used to write every dirty battery before the user had agreed to save anything.
-  flushDirtySram(stores.backend, stores.project.systems.systems()); // battery → sibling .sav
-  stores.project.save(path);
-  return true;
+  // Working songs FIRST: one that lives outside the battery (smsggdj) is saved INTO it, and the flush
+  // below is what then carries it to the `.sav`. The other way round, the flush writes the old battery.
+  const systems = stores.project.systems;
+  let songsSaved = true;
+  for (const sys of systems.systems()) {
+    const r = await saveWorkingSong(stores.backend, systems, sys);
+    if (r.kind === "refused") {
+      console.warn(`[project] working song on system ${sys.id} not saved: ${r.reason}`);
+      songsSaved = false;
+    }
+  }
+  flushDirtySram(stores.backend, systems.systems()); // battery → sibling .sav
+  // A project file that could not be written is a failed save, not a successful one: Save & Quit used
+  // to quit on it.
+  if (!stores.project.save(path)) return false;
+  return songsSaved;
 }

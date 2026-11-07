@@ -9,6 +9,7 @@
 // "is this pick my sibling?" override test; findSiblingRom's candidate loop.
 
 import { siblingSavPath, siblingRomCandidates } from "./savPaths";
+import type { TrackedSlot } from "./tracker/songCatalog";
 import type { Platform, Core } from "./platform";
 import type { CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
@@ -37,6 +38,9 @@ export interface SystemEntry {
    *  its ROM, and the seed its core starts with. Every boot puts its own, so a rebuild replaces both and a duplicate
    *  holds resources of its own. */
   resources: SystemResources;
+  /** The saved song slot a work-RAM working song (smsggdj) came from, when known - see
+   *  SystemsStore.noteSongSlot. Persisted, so a reopened session saves back over the same slot. */
+  workingSlot?: TrackedSlot;
 }
 
 /** The live system with `id`, or undefined. */

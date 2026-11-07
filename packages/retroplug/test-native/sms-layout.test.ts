@@ -46,7 +46,7 @@ const PAUSE = 7;
  *  This used to be `renderAudio(3000)`, a stopwatch - which is precisely the bug the rest of this branch
  *  went and removed from the app. The shipped v0.45 flips `ints_on` at ~2.3 s, so the constant carried
  *  700 ms of margin, no statement of what it was waiting FOR, and no way to notice when it ran out: a
- *  slower boot (v0.46 does an autoload before the loop) turns every write below into a write the boot
+ *  slower boot (the cur-slot build autoloads before the loop) turns every write below into a write the boot
  *  then erases, and the test fails on an attenuation reading four steps downstream. Waiting on the latch
  *  asks the cart, and a cart that never answers fails saying so.
  *

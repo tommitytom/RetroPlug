@@ -12,10 +12,23 @@ import { basename } from "../../src/pathUtil";
 import type { MenuItem } from "../screens/menu/menuTree";
 import { infoRow, separator } from "../screens/menu/menuItems";
 
+/** Why Save cannot store a working song, as the row says it. */
+export const SONG_BLOCKED: Record<"full" | "format" | "corrupt", string> = {
+  full: "cart full, can't save",
+  format: "old save format, can't save",
+  corrupt: "damaged save, can't save",
+};
+
 /** The row text for one unsaved item: "Project: song.rplg" / "Project: (not saved yet)" /
- *  "Battery: lsdj.sav" / "Battery: lsdj-2.sav (new file)". */
+ *  "Battery: lsdj.sav" / "Battery: lsdj-2.sav (new file)" / "Song: MYSONG -> smsggdj.sav" /
+ *  "Song: MYSONG (cart full, can't save)". */
 export function unsavedLabel(item: UnsavedItem): string {
   if (item.kind === "project") return `Project: ${basename(item.path) || "(not saved yet)"}`;
+  if (item.kind === "song") {
+    const name = item.name || "(untitled)";
+    if (item.blocked) return `Song: ${name} (${SONG_BLOCKED[item.blocked]})`;
+    return `Song: ${name} -> ${basename(item.savPath)}${item.newSlot ? " (new slot)" : ""}`;
+  }
   return `Battery: ${basename(item.savPath)}${item.isNew ? " (new file)" : ""}`;
 }
 

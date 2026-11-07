@@ -229,6 +229,18 @@ export interface Backend {
    *  a confused ROM. Treat it as the debugger-style tool it is. */
   writeRam(id: number, offset: number, bytes: Uint8Array): boolean;
 
+  /** `writeRam`'s twin for the battery: poke bytes into system `id`'s cart SRAM, at the offsets `readSram`
+   *  returns. Same queued, between-blocks apply and the same refusals (gone id, no battery, out of bounds).
+   *  The apply republishes the SRAM snapshot, so `readSram` reflects the write once it has LANDED - which
+   *  is the moment a caller can safely flush it to disk, since the auto-save mirror flushes readSram and
+   *  would otherwise write the pre-write battery straight back. The same "can confuse a running program"
+   *  caveat applies: a cart that caches anything about its own battery is walked past.
+   *
+   *  `expect` (same length as `bytes`) makes it a compare-and-swap: applied only if the battery STILL holds
+   *  `expect` there - the snapshot the caller built `bytes` from. A battery the cart has written since is
+   *  left alone and its snapshot republished, so the caller sees the current battery and can rebuild. */
+  writeSram(id: number, offset: number, bytes: Uint8Array, expect?: Uint8Array): boolean;
+
   // --- Capability jobs (src/capability.ts, docs/modular-graph-phase-c5-design.md section 6) ----------
   // A node of the running graph asked to read, write or dump something of the system behind it: the same for an
   // emulated system node (`sys-<id>`) as for a device's node. readSram, readRam and writeRam above are the system-id
@@ -480,7 +492,7 @@ export type EmulatorBackend = Pick<
   Backend,
   | "putResource" | "releaseResource"
   | "setGraph" | "loadScriptPack" | "setParam"
-  | "pressButton" | "stageNodeMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
+  | "pressButton" | "stageNodeMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "writeSram" | "getFrame"
   | "capability" | "pumpJobs" | "rejectPendingJobs" | "offlineRun" | "engineRun"
 >;
 

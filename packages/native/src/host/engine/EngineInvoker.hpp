@@ -45,6 +45,9 @@ public:
     void pressButton(SystemId id, std::uint8_t button, bool down);
     // A write into a system's work RAM (Engine::writeRam): false, queuing nothing, when the engine refuses it.
     bool writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
+    // Its twin aimed at the battery (Engine::writeSram): `expect` non-empty (as long as `bytes`) makes it conditional.
+    bool writeSram(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes,
+                   std::vector<std::uint8_t> expect = {});
 
     // consumer: apply every queued command (the block thread, or the control thread while quiescent).
     void drainInto(Engine& engine);

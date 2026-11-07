@@ -209,7 +209,7 @@ private:
     // rom_ is never changed after construction, which is what lets romCap_ hand its bytes to any thread. Its title:
     // none: an iNES header carries no title.
     rp::CoreMemory         memoryCap_{*this};
-    rp::CoreSram           sramCap_;
+    rp::CoreSram           sramCap_{*this};
     rp::CoreRom            romCap_{rom_, 0, 0};
     std::unique_ptr<Emulator>         emu_;
     std::shared_ptr<MesenAudioDevice> audioDevice_;

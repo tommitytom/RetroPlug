@@ -264,6 +264,10 @@ function rebuild(template: Uint8Array, songs: DetachedSong[], cur: number): Uint
  *  song stored after it, during an edit aimed at a completely different slot. One bad byte may cost the
  *  user that one song; it may never cost them the rest of the cart. */
 function detachAll(sav: Uint8Array): DetachedSong[] | null {
+  // A HOLE is the same failure in another shape: listSongs stops at it, so every song after it would be
+  // missing from the list and therefore from the rebuilt image. Refuse; packDirectory closes holes the
+  // way the cart does, and callers that can should pack first.
+  if (hasDirectoryHoles(sav)) return null;
   const out: DetachedSong[] = [];
   for (const s of listSongs(sav)) {
     const d = detach(sav, s.index);
@@ -271,6 +275,174 @@ function detachAll(sav: Uint8Array): DetachedSong[] | null {
     out.push(d);
   }
   return out;
+}
+
+/** True when a valid entry sits after a free one. The cart keeps its directory packed, but only since
+ *  SMDJ4's packed model; a save carried forward from the fixed-slot days can still have holes until the
+ *  cart's FILES screen next packs it (`rle_dir_pack`). listSongs stops at the first hole, so anything
+ *  after one is invisible to every op that lists. */
+export function hasDirectoryHoles(sav: Uint8Array): boolean {
+  if (!isSmsggdjSav(sav)) return false;
+  const n = entryCount(sav);
+  let free = false;
+  for (let slot = 0; slot < n; slot++) {
+    const valid = sav[entryAt(slot) + E_VALID] === VALID;
+    if (valid && free) return true;
+    if (!valid) free = true;
+  }
+  return false;
+}
+
+/** The cart's own `rle_dir_pack` (rle.asm), as a NEW image: every valid entry slid down over the free
+ *  ones in directory order and the tail cleared, heap untouched - the blobs do not move, only the
+ *  entries pointing at them. What the cart runs on every visit to FILES. The loaded-slot marker follows
+ *  its song. A packed image comes back as-is (same array). */
+export function packDirectory(sav: Uint8Array): Uint8Array {
+  if (!hasDirectoryHoles(sav)) return sav;
+  const out = sav.slice();
+  const n = entryCount(sav);
+  const cur = sav[SUPER_CUR_SLOT] - 1;
+  let dst = 0;
+  let nextCur = -1;
+  for (let slot = 0; slot < n; slot++) {
+    if (sav[entryAt(slot) + E_VALID] !== VALID) continue;
+    if (slot === cur) nextCur = dst;
+    out.set(sav.subarray(entryAt(slot), entryAt(slot) + DIR_ENTRY_LEN), entryAt(dst));
+    dst++;
+  }
+  out.fill(0, entryAt(dst), entryAt(n));
+  out[SUPER_CUR_SLOT] = nextCur + 1;
+  return out;
+}
+
+/** The slot holding exactly `block`, or -1. isSongSaved's question with the answer kept: checksums
+ *  narrow it, a full compare decides. The first match wins when two slots hold the same song.
+ *
+ *  `meta`, when given, must match too (see slotHolds): a song whose echo or name changed and nothing else
+ *  is NOT saved, though its block is. */
+export function savedSlotOf(sav: Uint8Array, block: Uint8Array, meta?: SongMeta): number {
+  if (block.length !== SMDJ4_BLOCK_LEN) return -1;
+  for (const s of listSongs(sav)) if (slotHolds(sav, s.index, block, meta)) return s.index;
+  return -1;
+}
+
+/** The per-song metadata the cart keeps in the directory entry, beside the block. */
+export interface SongMeta {
+  echo: Uint8Array;
+  name: string; // as the cart displays it (trailing padding dropped)
+}
+
+/** Does slot `index` hold exactly this song - its block, and with `meta` its echo settings and displayed
+ *  name? Echo is compared SANITIZED on both sides: the cart's PROJECT-screen load runs echo_sanitize and
+ *  its FILES-screen load does not, so the same song can sit in work RAM either way, and a slot saved by
+ *  a tool that wrote echo 0 (taps of 0, which sanitize to 1) would otherwise never match again. */
+export function slotHolds(sav: Uint8Array, index: number, block: Uint8Array, meta?: SongMeta): boolean {
+  if (block.length !== SMDJ4_BLOCK_LEN || storedChecksum(sav, index) !== blockChecksum(block)) return false;
+  if (meta) {
+    const e = entryAt(index);
+    const stored = sanitizeEcho(sav.subarray(e + E_ECHO, e + E_ECHO + ECHO_LEN));
+    const live = sanitizeEcho(meta.echo.subarray(0, ECHO_LEN));
+    if (!stored.every((b, i) => b === live[i])) return false;
+    if (readName(sav, index) !== meta.name) return false;
+  }
+  const saved = readSongBlock(sav, index);
+  return !!saved && saved.every((b, i) => b === block[i]);
+}
+
+/** A 32-bit FNV-1a over a WHOLE song - the decoded block, its echo settings (sanitized, as every echo
+ *  comparison here is) and its displayed name: what identifies "the song that was in this slot" for the
+ *  host's slot tracking. The directory's own 16-bit sum is too weak for that (two untitled songs colliding
+ *  on it let a Save overwrite the wrong one), and the block alone cannot tell an echo A/B pair apart. */
+export function songFingerprint(block: Uint8Array, meta: SongMeta): number {
+  let h = 0x811c9dc5;
+  const mix = (b: number): void => {
+    h = Math.imul(h ^ b, 0x01000193) >>> 0;
+  };
+  for (let i = 0; i < block.length; i++) mix(block[i]);
+  for (const b of sanitizeEcho(meta.echo.subarray(0, ECHO_LEN))) mix(b);
+  for (let i = 0; i < meta.name.length; i++) mix(meta.name.charCodeAt(i) & 0xff);
+  return h;
+}
+
+/** True when `a` and `b` are the same song block except inside the groove table - the one region the
+ *  cart's PLAYBACK rewrites without marking the song edited (a `T` command, engine.asm set_tempo). */
+export function sameBlockOutsideGrooves(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== SMDJ4_BLOCK_LEN || b.length !== SMDJ4_BLOCK_LEN) return false;
+  for (let i = 0; i < SMDJ4_BLOCK_LEN; i++) {
+    if (i === GROOVE_OFF) i += 16 * GROOVE_STRIDE;
+    if (i < SMDJ4_BLOCK_LEN && a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/** A fingerprint of the directory ABOVE slot `index` - each entry's stored checksum and name, in order.
+ *  Changes exactly when a song above was deleted, inserted or replaced; unchanged when only `index` or
+ *  later moved, which is what tells "shifted up by a delete above" from "the original itself cleared". */
+export function prefixFingerprint(sav: Uint8Array, index: number): number {
+  let h = 0x811c9dc5;
+  const mix = (b: number): void => {
+    h = Math.imul(h ^ b, 0x01000193) >>> 0;
+  };
+  for (const s of listSongs(sav)) {
+    if (s.index >= index) break;
+    const sum = storedChecksum(sav, s.index) ?? 0;
+    mix(sum & 0xff);
+    mix(sum >> 8);
+    for (let i = 0; i < s.name.length; i++) mix(s.name.charCodeAt(i) & 0xff);
+    mix(0);
+  }
+  return h;
+}
+
+/** A cheap fingerprint of the superblock + directory (the first 1,056 bytes): it moves on every song the
+ *  cart saves, clears, renames or reorders - each rewrites an entry's checksum, offset or name - and on
+ *  nothing else. What tells the slot watcher the BATTERY changed when the working song did not. */
+export function directoryFingerprint(sav: Uint8Array): number {
+  let h = 0x811c9dc5;
+  const end = Math.min(sav.length, HEAP_OFF);
+  for (let i = 0; i < end; i++) h = Math.imul(h ^ sav[i], 0x01000193) >>> 0;
+  return h;
+}
+
+/** Slot `index`'s echo settings and displayed name, as slotHolds / songFingerprint compare them. */
+export function slotMeta(sav: Uint8Array, index: number): SongMeta {
+  const e = entryAt(index);
+  return { echo: sav.slice(e + E_ECHO, e + E_ECHO + ECHO_LEN), name: readName(sav, index) };
+}
+
+/** The seven settings of the battery's OPTIONS block (the inverse of withConfig), or null when it holds
+ *  no valid block - no "CF" header, or a checksum that does not add up (config_load refuses those too). */
+export function readConfig(sav: Uint8Array): Uint8Array | null {
+  const at = configOffset(sav.length);
+  if (sav.length < at + CONFIG_LEN || sav[at] !== 0x43 || sav[at + 1] !== 0x46) return null;
+  const settings = sav.slice(at + 2, at + 9);
+  let sum = 0;
+  for (const b of settings) sum = (sum + b) & 0xff;
+  return sum === sav[at + 9] ? settings : null;
+}
+
+/** `config_save` (engine.asm) as a NEW image: "CF", the seven settings in the cart's order (palette,
+ *  sync, video, FM, CONT, key delay, key speed), then their 8-bit sum. The cart writes this on every
+ *  SAVE; a host-side save that skipped it would boot back into whatever options the cart last saved. */
+export function withConfig(sav: Uint8Array, settings: Uint8Array): Uint8Array | null {
+  if (!isSmsggdjSav(sav) || settings.length !== 7) return null;
+  const out = sav.slice();
+  const at = configOffset(out.length);
+  let sum = 0;
+  out[at] = 0x43; // 'C'
+  out[at + 1] = 0x46; // 'F'
+  for (let i = 0; i < 7; i++) {
+    out[at + 2 + i] = settings[i];
+    sum = (sum + settings[i]) & 0xff;
+  }
+  out[at + 9] = sum;
+  return out;
+}
+
+/** True when every song the directory lists decodes - the precondition every heap op has (see
+ *  detachAll). Lets a caller whose edit was refused tell "damaged save" from "no room". */
+export function allSongsReadable(sav: Uint8Array): boolean {
+  return detachAll(sav) !== null;
 }
 
 /** Delete the song at `slot`, compacting the heap and packing the directory down. Returns a NEW image,
@@ -317,15 +489,42 @@ export function importSongs(target: Uint8Array, source: Uint8Array, indices: num
   return rebuild(target, [...songs, ...add], curSlot(target));
 }
 
-/** Append one song. Returns a NEW image, or null when it does not fit / the block is the wrong size. */
-export function addSong(sav: Uint8Array, block: Uint8Array, name: string): Uint8Array | null {
+/** Append one song. Returns a NEW image, or null when it does not fit / the block is the wrong size.
+ *  `name` is a string, or the cart's 8 raw name bytes (carried verbatim, as the cart's own SAVE does);
+ *  `echo` defaults to all-zero (echo off). */
+export function addSong(sav: Uint8Array, block: Uint8Array, name: string | Uint8Array, echo?: Uint8Array): Uint8Array | null {
   if (!isSmsggdjSav(sav) || block.length !== SMDJ4_BLOCK_LEN) return null;
   const songs = detachAll(sav);
   if (!songs) return null;
   const nameBytes = new Uint8Array(NAME_LEN);
-  for (let i = 0; i < NAME_LEN && i < name.length; i++) nameBytes[i] = name.charCodeAt(i) & 0xff;
-  songs.push({ block: block.slice(), name: nameBytes, echo: new Uint8Array(ECHO_LEN) });
+  if (typeof name === "string") {
+    for (let i = 0; i < NAME_LEN && i < name.length; i++) nameBytes[i] = name.charCodeAt(i) & 0xff;
+  } else {
+    nameBytes.set(name.subarray(0, NAME_LEN));
+  }
+  const echoBytes = new Uint8Array(ECHO_LEN);
+  if (echo) echoBytes.set(echo.subarray(0, ECHO_LEN));
+  songs.push({ block: block.slice(), name: nameBytes, echo: echoBytes });
   return rebuild(sav, songs, curSlot(sav));
+}
+
+/** The battery as an SMDJ4 image a song can be saved into: `sav` itself when it already is one (packed,
+ *  as the cart's FILES screen packs it, if its directory has holes), a
+ *  fresh empty directory over it when it carries no SMDJ format at all, and NULL when it is an OLDER
+ *  SMDJ format (SMDJ1-3).
+ *
+ *  The fresh case is the common one, not an edge: a cart only writes its directory on its first SAVE
+ *  (`rle_dir_ensure`), so every new user's battery has none until then. The cart's own rule is "not
+ *  SMDJ4 -> initialise", which would also flatten an SMDJ3 save; this is stricter on purpose, since a
+ *  host-side save is one the user did not watch happen. Those songs belong in tools/migrate.html. The
+ *  OPTIONS block is preserved either way (`rebuild` lifts it out and puts it back). */
+export function ensureSongDirectory(sav: Uint8Array): Uint8Array | null {
+  if (isSmsggdjSav(sav)) return packDirectory(sav);
+  if (sav.length < HEAP_OFF) return null;
+  if (MAGIC.slice(0, 4).every((m, i) => sav[i] === m)) return null; // "SMDJ" + an older version digit
+  const fresh = sav.slice();
+  fresh.fill(0, 0, SUPER_LEN); // the reserved superblock bytes are whatever the battery powered on with
+  return rebuild(fresh, [], -1);
 }
 
 /** Rename the song at `slot` in place - no heap movement, so no re-layout. */
@@ -408,14 +607,7 @@ export function storedChecksum(sav: Uint8Array, slot: number): number | null {
  *  costs nothing. Checksums narrow it to a candidate, and only that candidate is decoded - a false match
  *  on a 16-bit sum is possible, so the full compare is what decides. */
 export function isSongSaved(sav: Uint8Array, block: Uint8Array): boolean {
-  if (block.length !== SMDJ4_BLOCK_LEN) return false;
-  const want = blockChecksum(block);
-  for (const s of listSongs(sav)) {
-    if (storedChecksum(sav, s.index) !== want) continue;
-    const saved = readSongBlock(sav, s.index);
-    if (saved && saved.every((b, i) => b === block[i])) return true;
-  }
-  return false;
+  return savedSlotOf(packDirectory(sav), block) >= 0;
 }
 
 // --- fields WITHIN the song block, for a host-side load ------------------------
@@ -426,6 +618,9 @@ const SONG_OFF = 0x1300; // 128 rows x 4 chain numbers, $FF = empty
 const SONG_LEN = 512;
 const GROOVE_OFF = 0x1a00; // 16 grooves x 16 tick bytes
 const GROOVE_STRIDE = 16;
+/** NUM_GROOVES (engine.asm), and therefore also the value of `groove_sel` that means "a CONT tempo glide
+ *  is running": `groove_base` resolves it to `glide_scratch` in work RAM, not to a groove in the block. */
+export const GLIDE_GROOVE_SEL = 16;
 
 /** The song's length in ROWS, by the cart's own rule (`load_rebase`, engine.asm:2282-2308): scan the
  *  grid backwards for the last byte that is not $FF, then `ceil(bytes / 4)`, minimum 1. A song of
@@ -442,7 +637,8 @@ export function songLengthRows(block: Uint8Array): number {
 }
 
 /** True when the groove at `sel` is empty, i.e. its first tick is 0. The cart falls back to groove 0 in
- *  that case, because an empty groove gives the clock nothing to advance on. */
+ *  that case, because an empty groove gives the clock nothing to advance on. Block grooves only: the
+ *  glide sentinel (GLIDE_GROOVE_SEL) lives in work RAM, so the caller has to answer that one itself. */
 export function isGrooveEmpty(block: Uint8Array, sel: number): boolean {
   const at = GROOVE_OFF + sel * GROOVE_STRIDE;
   return at + 1 > block.length || block[at] === 0;

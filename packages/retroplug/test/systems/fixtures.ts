@@ -287,7 +287,7 @@ export function blipToasterMultiKitRom(): Uint8Array {
 /** An smsggdj build's ROM as the providers and the version gate see it: a "TMR SEGA" header whose region
  *  nibble says SMS, the SMSGGDJ marker at $3640 and a `V<version>` string at $367B - where the real v0.45
  *  build puts them (the version is NOT adjacent to the marker; the UI string table sits between). A
- *  supported version (0.45 / 0.46) resolves a work-RAM layout, so the live song path is open. */
+ *  supported version (0.45 / 0.46 / 0.47) resolves a work-RAM layout, so the live song path is open. */
 export function smsggdjRom(version = "0.45"): Uint8Array {
   const b = new Uint8Array(0x8200);
   b.set([0x54, 0x4d, 0x52, 0x20, 0x53, 0x45, 0x47, 0x41], 0x7ff0); // "TMR SEGA"

@@ -9,16 +9,20 @@ import { SMDJ4_BLOCK_LEN } from "../codec/sav";
 import type { SmsggdjLayout } from "./types";
 
 // Versions whose work-RAM layout is byte-identical to another's, so they can share a snapshot instead
-// of needing that build's label file. Verified by comparing the linker's symbol output for both:
+// of needing that build's label file. Verified by linking the upstream release TAGS with `wlalink -S`
+// and comparing every label gen-smsggdj-symbols.mjs asks for:
 //
-//   0.46 -> 0.45   wave_ram c000, phrase_pool c100, echo_mode db6d, song_edited ddc0, prj_slot dd58,
-//                  song_name dea4, ints_on df13, frame df02 - identical in both, because the v0.46
-//                  cur_slot change adds ROM code and no RAM variables. (ints_on / frame / song_name were
-//                  also read straight out of the v0.46 BINARIES, from the code that writes them.)
+//   0.46 -> 0.45   all identical. v0.46 stopped DRAWING the frame counter (draw_frame_counter is gone)
+//                  but kept the `frame` variable, so nothing after $DF02 moved.
+//   0.47 -> 0.45   all identical. v0.47 is the J-command play-count fix, engine.asm code only.
+//
+// The tags, not a local build that happens to carry the same number: the unreleased cur_slot branch
+// also stamps itself "v0.46", and the first version of this table was certified against THAT build
+// rather than the release. Same addresses as it turned out, but by luck, not by check.
 //
 // An alias is a claim about two builds, so it is only ever added after that comparison, never on the
 // assumption that a small change cannot move anything.
-const VERSION_ALIASES: Record<string, string> = { "0.46": "0.45" };
+const VERSION_ALIASES: Record<string, string> = { "0.46": "0.45", "0.47": "0.45" };
 
 /** `version` is the ROM's real version (what the splash and identifySmsggdjVersion report);
  *  `symbolsKey` is the snapshot the addresses come from - the same, unless resolved via an alias. */
@@ -44,6 +48,7 @@ function layoutFrom(symbolsKey: string, version: string = symbolsKey): SmsggdjLa
     liveQLen: s.live_q_len,
     grooveSel: s.groove_sel,
     groovePos: s.groove_pos,
+    glideScratch: s.glide_scratch,
     dirtyRows: s.dirty_rows,
     dirtyRowsLen: s.dirty_rows_len,
     labelDirty: s.label_dirty,
@@ -81,13 +86,42 @@ function commonOffset(pick: (s: SmsggdjSymbols) => number): number | null {
   return all.every((s) => pick(s) === first) ? first : null;
 }
 
-/** Where `song_name` sits, for `SongCatalog.workingName`. Agreed today: 0.45 and 0.46 both put it at
+/** Where `song_name` sits, for `SongCatalog.workingName`. Agreed today: 0.45, 0.46 and 0.47 all put it at
  *  +$1EA4. Null makes the catalog fall back to the save's own cur_slot - degraded, but never naming a
  *  song after bytes that might be something else. */
 export function commonSongNameOffset(): { offset: number; length: number } | null {
   const offset = commonOffset((s) => s.song_name);
   const length = commonOffset((s) => s.song_name_len);
   return offset === null || length === null ? null : { offset, length };
+}
+
+/** Where the 8 echo bytes sit (`echo_mode` onward), for reading the working song's echo settings out of
+ *  work RAM without the ROM - see commonSongNameOffset for why a caller would have RAM and no ROM. */
+export function commonEchoOffset(): { offset: number; length: number } | null {
+  const offset = commonOffset((s) => s.echo_mode);
+  const length = commonOffset((s) => s.echo_len);
+  return offset === null || length === null ? null : { offset, length };
+}
+
+/** Where the seven OPTIONS the cart's `config_save` persists sit, in the order it writes them: palette,
+ *  sync, video, FM, CONT, key delay, key speed. Null when the builds disagree on any of them. */
+export function commonConfigOffsets(): number[] | null {
+  const picks: ((s: SmsggdjSymbols) => number)[] = [
+    (s) => s.pal_sel,
+    (s) => s.sync_mode,
+    (s) => s.vid_sel,
+    (s) => s.fm_on,
+    (s) => s.cont_play,
+    (s) => s.key_delay,
+    (s) => s.key_speed,
+  ];
+  const out = picks.map(commonOffset);
+  return out.every((o): o is number => o !== null) ? out : null;
+}
+
+/** Where `play_state` sits (nonzero while the transport runs). */
+export function commonPlayStateOffset(): number | null {
+  return commonOffset((s) => s.play_state);
 }
 
 /** Where `song_edited` sits, for `SongCatalog.workingSongDirty` - the cart's own "song data changed

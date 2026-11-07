@@ -38,26 +38,3 @@ export function identifySmsggdjVersion(rom: Uint8Array): string | null {
   }
   return null;
 }
-
-/** Comparable key for a version string: major, minor, then the point-release letter ("" sorts first). */
-function versionKey(v: string): [number, number, string] {
-  const m = /^(\d+)\.(\d+)([a-z]?)$/.exec(v);
-  return m ? [Number(m[1]), Number(m[2]), m[3]] : [0, 0, ""];
-}
-
-/** The first build that maintains the SMDJ4 superblock's currently-loaded-slot byte, and so the first
- *  one whose songs RetroPlug can load: the whole Songs menu turns on writing that byte and cold-booting,
- *  because the working song lives in work RAM and the cart otherwise boots blank (main.asm:238).
- *
- *  An older build is not broken here, it is simply not driveable - the integration reports it
- *  unsupported and the menu greys out, rather than offering rows that would appear to work and load
- *  nothing. Same contract risa uses for a version with no bundled RAM layout. */
-export const SMSGGDJ_CUR_SLOT_VERSION = "0.46";
-
-/** Whether this build honours the currently-loaded-slot byte. */
-export function supportsCurSlot(version: string | null): boolean {
-  if (!version) return false;
-  const [maj, min] = versionKey(version);
-  const [rMaj, rMin] = versionKey(SMSGGDJ_CUR_SLOT_VERSION);
-  return maj > rMaj || (maj === rMaj && min >= rMin);
-}

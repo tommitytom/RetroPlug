@@ -26,6 +26,16 @@ bool CoreMemory::write(std::size_t region, std::uint32_t offset, const std::uint
     return true;
 }
 
+SramCapability::WriteResult CoreSram::write(std::uint32_t offset, const std::uint8_t* data, std::size_t size,
+                                            const std::uint8_t* expect) {
+    MemoryAccessor acc = core_.getMemory(MemoryType::Sram, AccessType::ReadWrite);
+    if (!data || size == 0 || !acc.valid() || static_cast<std::size_t>(offset) + size > acc.size())
+        return WriteResult::OutOfRange;
+    if (expect && std::memcmp(acc.data() + offset, expect, size) != 0) return WriteResult::Changed;
+    std::memcpy(acc.data() + offset, data, size);
+    return WriteResult::Written;
+}
+
 std::string CoreRom::title() const {
     std::string out;
     for (std::size_t i = titleOffset_; i < titleOffset_ + titleLength_ && i < rom_.size(); ++i) {

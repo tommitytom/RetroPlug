@@ -49,6 +49,7 @@ void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::readSram>(e);
     s.template addMethod<&EngineRpcService::readRam>(e);
     s.template addMethod<&EngineRpcService::writeRam>(e);
+    s.template addMethod<&EngineRpcService::writeSram>(e);
     s.template addMethod<&EngineRpcService::submitJob>(e);
     s.template addMethod<&EngineRpcService::drainJobs>(e);
     s.template addMethod<&EngineRpcService::submitOfflineJob>(e);

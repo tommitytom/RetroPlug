@@ -69,6 +69,7 @@ export interface SystemThin {
   embeddedRom?: string; // e.g. "mgb"
   settings?: Partial<CommonSettings>; // only non-default universal settings
   roles?: RoleInstance[]; // the generic roles (core-config + feature); absent = re-derive
+  workingSlot?: { index: number; fingerprint: number; count?: number; above?: number }; // which saved slot a work-RAM working song is (smsggdj)
 }
 
 export interface ProjectConfig {
@@ -132,6 +133,16 @@ const systemThinSchema = z.object({
   embeddedRom: z.string().optional(),
   settings: commonSettingsSchema.optional(),
   roles: z.array(roleInstanceSchema).optional(),
+  // Additive, so no migration: an older project simply has no tracked slot, and Save appends.
+  workingSlot: z
+    .object({
+      index: z.number().int().min(0),
+      fingerprint: z.number().int(),
+      count: z.number().int().min(0).optional(),
+      above: z.number().int().optional(),
+    })
+    .optional()
+    .catch(undefined),
 });
 
 // The root: schemaVersion coerced to a string; settings/systems validated separately
@@ -301,6 +312,7 @@ export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], n
       const settings = thinSettings(e.settings);
       if (settings) t.settings = settings;
       if (e.roles && e.roles.length) t.roles = e.roles;
+      if (e.workingSlot) t.workingSlot = { ...e.workingSlot };
       return t;
     }),
   };

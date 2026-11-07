@@ -1127,6 +1127,27 @@ bool Engine::writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_
     return true;
 }
 
+bool Engine::writeSram(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes,
+                       std::vector<std::uint8_t> expect) {
+    sweepJobs();
+    if (bytes.empty() || (!expect.empty() && expect.size() != bytes.size()) || !publishedTable_) return false;
+    const auto* entry = publishedTable_->find(id);
+    if (!entry || !entry->core->sram()) return false;
+    auto job = std::make_unique<rp::host::Job>();
+    job->detached = true;
+    job->battery = true;
+    job->system = id;
+    job->offset = offset;
+    job->bytes = std::move(bytes);
+    job->expect = std::move(expect);
+    DspCommand c;
+    c.kind = DspCommand::Kind::CapabilityWrite;
+    c.capabilityWrite = {job.get()};
+    if (!pushCommand(c)) return false;  // full ring: drop the write, freeing the record here
+    jobs_.push_back(std::move(job));
+    return true;
+}
+
 std::vector<rp::host::JobCompletion> Engine::drainJobs() {
     settleQuiescent();
     sweepJobs();
@@ -1188,11 +1209,26 @@ void Engine::sweepJobs() {
 void Engine::applyJob(rp::host::Job& job, const rp::host::SystemTable& table) {
     using rp::host::Job;
     const rp::host::SystemEntry* e = table.find(job.system);
-    rp::MemoryCapability* memory = e ? e->core->memory() : nullptr;
     const auto fail = [&job](Job::Failure why) {
         job.failure.store(why, std::memory_order_relaxed);
         job.state.store(Job::Failed, std::memory_order_release);
     };
+    if (job.battery) {
+        // Engine::writeSram's, detached. Written or refused, the battery is republished here, on the thread that owns
+        // the core: a written one so that the TS auto-save mirror, which flushes readSram, cannot flush the pre-write
+        // battery back over the file this write was made for (a savestate-sliced battery would otherwise lag ~0.5 s),
+        // and a changed one so that the caller's next read shows the battery it must rebuild from.
+        rp::SramCapability* sram = e ? e->core->sram() : nullptr;
+        if (!sram) return fail(Job::Removed);
+        const auto written = sram->write(job.offset, job.bytes.data(), job.bytes.size(),
+                                         job.expect.empty() ? nullptr : job.expect.data());
+        registry_.republishSram(*e->core);
+        if (written == rp::SramCapability::WriteResult::OutOfRange) return fail(Job::OutOfRange);
+        if (written == rp::SramCapability::WriteResult::Changed) return fail(Job::Changed);
+        job.state.store(Job::Done, std::memory_order_release);
+        return;
+    }
+    rp::MemoryCapability* memory = e ? e->core->memory() : nullptr;
     if (!memory) return fail(Job::Removed);
     if (!memory->write(job.region, job.offset, job.bytes.data(), job.bytes.size())) return fail(Job::OutOfRange);
     // An old write is collected by nobody, so it is done once applied; a job's write waits for the publish.
@@ -1238,7 +1274,7 @@ std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
-    return registry_.readSram(id);    // SRAM sliced from the published savestate, not a live read
+    return registry_.readSram(id);    // published copy: per block for Mesen, per savestate for SameBoy; never live
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readRam(SystemId id) {
@@ -1247,6 +1283,10 @@ std::optional<std::vector<std::uint8_t>> Engine::readRam(SystemId id) {
 
 std::size_t Engine::ramSize(SystemId id) {
     return registry_.ramSize(id);     // published copy, like readRam - no live core
+}
+
+std::size_t Engine::sramSize(SystemId id) {
+    return registry_.sramSize(id);    // published copy, like readSram - no live core
 }
 
 bool Engine::screenshot(SystemId id, const std::string& path) {

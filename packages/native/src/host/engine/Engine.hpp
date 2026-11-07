@@ -132,10 +132,13 @@ public:
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);
     std::optional<std::vector<std::uint8_t>> readSram(SystemId id);
     // Work RAM (WRAM), from the registry's per-block published copy — safe while the audio thread runs,
-    // and fresh EVERY block (unlike readState/readSram), so a runtime overlay tracks per-frame state.
+    // and fresh EVERY block (unlike readState, and readSram on a savestate-sliced battery), so a runtime overlay
+    // tracks per-frame state.
     std::optional<std::vector<std::uint8_t>> readRam(SystemId id);
     /** The published WRAM length, for a bounds check that costs no copy. 0 = no writable RAM. */
     std::size_t ramSize(SystemId id);
+    /** The published battery length, likewise. 0 = no battery. */
+    std::size_t sramSize(SystemId id);
     bool screenshot(SystemId id, const std::string& path);
     // The system's latest video frame (raw XRGB8888). Reads the concurrent FrameBufferTriple, so it is
     // safe while the audio thread writes; width/height are 0 (published false) for an unknown system.
@@ -177,6 +180,14 @@ public:
     // empty write, a system the last published plan does not place, and a full command ring; a write past the region is
     // dropped where it applies, as the RPC refuses one first from the published size.
     bool writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
+    // writeRam's twin aimed at the battery, at the offsets readSram returns (EngineRpcService::writeSram,
+    // QueuedInvoker::writeSram): a detached job applied through SramCapability::write. A non-empty `expect` (as long
+    // as `bytes`) makes it a compare-and-swap: applied only if the battery still holds `expect` there, the snapshot the
+    // caller built its bytes from. Applied or refused, the apply republishes the battery (SnapshotRegistry::
+    // republishSram), so the caller's next readSram shows what it holds now: the write, or the cart's change to
+    // rebuild from. False, queuing nothing, for an empty write, an `expect` of another length, a system the last
+    // published plan does not place or that presents no battery, and a full command ring.
+    bool writeSram(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes, std::vector<std::uint8_t> expect);
 
     // --- offline jobs (host/engine/OfflineJobs.hpp, docs/modular-graph-phase-d2-design.md section 3), control
     // thread ---

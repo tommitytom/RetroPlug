@@ -33,6 +33,22 @@ export interface SmsggdjSymbols {
   groove_sel_len: number;
   groove_pos: number;
   groove_pos_len: number;
+  glide_scratch: number;
+  glide_scratch_len: number;
+  pal_sel: number;
+  pal_sel_len: number;
+  sync_mode: number;
+  sync_mode_len: number;
+  vid_sel: number;
+  vid_sel_len: number;
+  fm_on: number;
+  fm_on_len: number;
+  cont_play: number;
+  cont_play_len: number;
+  key_delay: number;
+  key_delay_len: number;
+  key_speed: number;
+  key_speed_len: number;
   psg_vols: number;
   psg_vols_len: number;
   sram_ok: number;
@@ -78,6 +94,22 @@ export const SMSGGDJ_SYMBOLS: Record<string, SmsggdjSymbols> = {
     groove_sel_len: 0x1,
     groove_pos: 0x1b08,
     groove_pos_len: 0x1,
+    glide_scratch: 0x1b16,
+    glide_scratch_len: 0x10,
+    pal_sel: 0x1f0b,
+    pal_sel_len: 0x1,
+    sync_mode: 0x1b2d,
+    sync_mode_len: 0x1,
+    vid_sel: 0x1f0c,
+    vid_sel_len: 0x1,
+    fm_on: 0x1f0e,
+    fm_on_len: 0x1,
+    cont_play: 0x1dc1,
+    cont_play_len: 0x1,
+    key_delay: 0x1f09,
+    key_delay_len: 0x1,
+    key_speed: 0x1f0a,
+    key_speed_len: 0x1,
     psg_vols: 0x1f4c,
     psg_vols_len: 0x4,
     sram_ok: 0x1c7e,

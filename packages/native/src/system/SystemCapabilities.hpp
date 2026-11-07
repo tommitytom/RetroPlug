@@ -14,8 +14,8 @@ class SystemBase;
 // section 6), each named by its versioned id and asked for through a nullable accessor on SystemBase, as ChannelTap
 // is: rp.system.memory/1 through memory(), rp.system.sram/1 through sram(), rp.system.rom/1 through rom(). A caller
 // branches on null, so the engine runs a job without naming the console. Each covers what the control plane does with
-// a system and no more: the work RAM it reads and pokes (readRam / writeRam), the battery it dumps (readSram) and the
-// ROM header it reads (readFilePrefix on the file the core was built from).
+// a system and no more: the work RAM it reads and pokes (readRam / writeRam), the battery it dumps and saves a song
+// into (readSram / writeSram) and the ROM header it reads (readFilePrefix on the file the core was built from).
 //
 // The control plane never reads a live core: the engine serves every read of an emulated system from its snapshot
 // registry's published copy (SnapshotRegistry), and applies every write on the block thread at a block boundary, or
@@ -48,10 +48,26 @@ public:
 // rp.system.sram/1: the cartridge's battery RAM, dumped whole and restored whole. An emulated core's dump is the
 // registry's published copy; its restore is a rebuild that seeds the battery (docs/modular-graph-phase-c3-design.md
 // section 5, SystemsStore.loadSram), never a live write, so the engine refuses that operation for a system node at
-// submission. A core presents this to say it has a battery the registry publishes; there is nothing to call on it.
+// submission. A core presents this to say it has a battery the registry publishes.
+//
+// The one live write is the old system-id one (Engine::writeSram, the writeSram RPC): a tracker's host saving a song
+// INTO the running cart's battery, where a rebuild would reboot the cart and drop the song still in its work RAM. It
+// is a compare-and-swap, since the caller built its bytes from a published copy the cart may have written since.
 class SramCapability {
 public:
+    enum class WriteResult : std::uint8_t {
+        Written,
+        OutOfRange,  // no battery, or the range runs past its end: nothing written
+        Changed,     // the battery no longer holds `expect` there: nothing written
+    };
+
     virtual ~SramCapability() = default;
+
+    // [block, or control while quiescent] Copy `size` bytes into the live battery at `offset`, but only if it still
+    // holds the `size` bytes at `expect` there (none to compare when `expect` is null). The compare and the write run
+    // between two blocks, so they are atomic with respect to the emulated program. Allocates nothing.
+    virtual WriteResult write(std::uint32_t offset, const std::uint8_t* data, std::size_t size,
+                              const std::uint8_t* expect) = 0;
 };
 
 // rp.system.rom/1: the ROM the core was built from. Its bytes are immutable for the core's life, so every member is a
@@ -67,8 +83,8 @@ public:
     virtual std::string title() const = 0;
 };
 
-// The three, as every emulated core presents them: the work RAM through SystemBase::getMemory, a battery that is only
-// dumped, and the ROM vector the core keeps. A console holds one of each as members and returns their addresses.
+// The three, as every emulated core presents them: the work RAM through SystemBase::getMemory, a battery that is
+// dumped (and written live only by Engine::writeSram), and the ROM vector the core keeps. A console holds one of each as members and returns their addresses.
 class CoreMemory final : public MemoryCapability {
 public:
     explicit CoreMemory(SystemBase& core) : core_(core) {}
@@ -79,7 +95,15 @@ private:
     SystemBase& core_;
 };
 
-class CoreSram final : public SramCapability {};
+class CoreSram final : public SramCapability {
+public:
+    explicit CoreSram(SystemBase& core) : core_(core) {}
+    WriteResult write(std::uint32_t offset, const std::uint8_t* data, std::size_t size,
+                      const std::uint8_t* expect) override;
+
+private:
+    SystemBase& core_;
+};
 
 class CoreRom final : public RomCapability {
 public:

@@ -20,6 +20,8 @@ function setup() {
     handleOutcome: () => calls.push("outcome"),
     onClose: () => calls.push("close"),
     proceedSong: () => calls.push("proceedSong"),
+    saveSongThen: () => calls.push("saveSongThen"),
+    saveThen: () => calls.push("saveThen"),
   };
   return { be, project, stores, calls, h };
 }
@@ -61,4 +63,14 @@ test("relink opens on the first Locate, with Cancel last", () => {
   const tree = buildProjectModal({ kind: "relink", missing: [{ systemIndex: 0, itemKind: "rom", path: "/gone/a.gb" }] }, stores, h);
   expect(openingRow(tree).id).toBe("relink-0");
   expect(tree.items[tree.items.length - 1].id).toBe("relink-cancel");
+});
+
+test("an unsaved-song replace opens on Save song first, after the read-only line saying why", () => {
+  const { stores, calls, h } = setup();
+  const tree = buildProjectModal({ kind: "songReplace", id: 1, proceed: () => calls.push("proceed") }, stores, h);
+  expect(tree.items[0].disabled).toBe(true);
+  const first = openingRow(tree);
+  expect(first.id).toBe("song-replace-save");
+  first.onSelect!();
+  expect(calls).toEqual(["saveSongThen"]);
 });

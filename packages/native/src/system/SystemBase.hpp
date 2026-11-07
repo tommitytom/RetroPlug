@@ -341,6 +341,15 @@ public:
     // (stateSnapshotSize() is the backend's ceiling).
     std::size_t stateSnapshotCapacity() const;
 
+    // DSP thread (or the control thread while quiescent): the published blob no longer describes the core - a
+    // SameBoy model switch rebuilt it in place, or a host write into its battery (Engine::writeSram, through
+    // SnapshotRegistry::republishSram) changed it. Arms an immediate republish, which refreshes the blob and region
+    // table together within one block instead of up to kStateSnapshotIntervalSec later. Allocates NOTHING: the
+    // triple was sized to a ceiling covering every model the backend can switch into, which is exactly what makes
+    // this callable from the audio thread (where a system node applies its settings while the audio thread owns the
+    // Engine).
+    void rearmStateSnapshot();
+
 protected:
     /** Seed a freshly-built core from its construct spec: cartridge battery first, then a savestate over
      *  the top if one was supplied. The Mesen backends end onActivate with exactly this, so it lives here
@@ -362,14 +371,6 @@ protected:
     std::uint32_t blockFrames(std::uint32_t fallback) const {
         return maxBlockFrames_ != 0 ? maxBlockFrames_ : fallback;
     }
-
-    // DSP thread (or the control thread while quiescent): the backend has rebuilt its core in place —
-    // a SameBoy model switch — so the published blob and region table now describe a core that is gone.
-    // Arms an immediate republish, which refreshes both together within one block instead of up to
-    // kStateSnapshotIntervalSec later. Allocates NOTHING: the triple was sized to a ceiling covering
-    // every model the backend can switch into, which is exactly what makes this callable from the audio
-    // thread (where a system node applies its settings while the audio thread owns the Engine).
-    void rearmStateSnapshot();
 
     // State-snapshot backend hooks (default: unsupported). Overridden by
     // SameBoySystem (with region offsets) and the Mesen systems (full state,

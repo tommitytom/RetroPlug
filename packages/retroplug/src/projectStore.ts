@@ -19,7 +19,7 @@ import { EngineGraph } from "./engineGraph";
 import type { SystemEntry } from "./systemsList";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
-import { resolveSongCatalog, resolveTracker, workingSongReady, songLoadByNameWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker";
+import { resolveSongCatalog, resolveTracker, workingSongReady, songLoadByNameWouldDiscard, songLoadWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker";
 import { workingSongSignature, savSyncMode, songRowTicksFromSav } from "./lsdj/playback/fromSav";
 import type { GraphController } from "./graph/controller";
 import { parseAppConfig } from "./controller/registry";
@@ -50,7 +50,8 @@ import {
   AUDIO_ROUTING_VALUES,
 } from "./settingsEnums";
 import { scanMissingFiles, autoFindSiblings, relinkInConfig, type MissingFile } from "./projectMissing";
-import { PROJECT_JSON, sramKey, stateKey, partitionEntries } from "./projectBinaries";
+import { PROJECT_JSON, sramKey, stateKey, songKey, partitionEntries } from "./projectBinaries";
+import { encodeWorkingSong, decodeWorkingSong } from "./tracker/workingSongBlob";
 
 export type LoadOutcome =
   | { kind: "loaded"; systems: number }
@@ -87,6 +88,11 @@ const ZOOM_MAX = 6;
 export interface SongRequest {
   name?: string;
   index?: number;
+  /** The system to load into. A Songs-menu row names the instance whose menu it is; a Recent row leaves
+   *  it unset and means the primary one. Without it, a request parked while a cart booted settled into
+   *  whichever instance was focused by then - and, arriving confirmed, replaced that instance's unsaved
+   *  song with no prompt. Followed through in-place rebuilds (SystemsStore.currentId). */
+  systemId?: number;
   /** Whether discarding unsaved working-song work has already been agreed to. A Songs-menu Load was
    *  guarded before it got here; a Recent row's was not, so `settleSong` asks once. */
   confirmed: boolean;
@@ -397,10 +403,24 @@ export class ProjectStore {
   settleSong(): SongSettle {
     const req = this.songRequest;
     if (!req) return "idle";
-    const sys = this.primarySystem();
+    // The named system (followed through a reset or reload), else the primary - and a named system that is
+    // GONE drops the request rather than falling back to some other instance.
+    const targetId = req.systemId !== undefined ? this.systems.currentId(req.systemId) : undefined;
+    // Rebuilt under it (Load State, Load SRAM, a reset): whatever the confirmation agreed to discard is not
+    // what the cart holds now - a Load State can restore unsaved work - so ask again if there is anything.
+    if (targetId !== undefined && targetId !== null && targetId !== req.systemId) {
+      req.systemId = targetId;
+      req.confirmed = false;
+      req.asked = false;
+    }
+    const sys = req.systemId !== undefined
+      ? this.systems.systems().find((e) => e.id === targetId)
+      : this.primarySystem();
     const catalog = sys ? resolveSongCatalog(sys.roles) : undefined;
     if (!sys || !catalog) return this.dropSongRequest();
-    if (!workingSongReady(this.systems, sys)) {
+    // A reset's carry still to land is the cart's song too: applied first, the request would be
+    // overwritten by it a frame later - the Load silently undone, the song "discarded" coming back.
+    if (!workingSongReady(this.systems, sys) || this.systems.isRestoringSong(sys.id)) {
       if (++req.ticks <= SONG_REQUEST_BUDGET) return "waiting";
       console.warn(`[project] song request ${req.name ?? `#${req.index}`} dropped: the cart never became ready`);
       return this.dropSongRequest();
@@ -417,7 +437,13 @@ export class ProjectStore {
     }
     if (!req.confirmed) {
       if (req.asked) return "waiting"; // the prompt is up
-      if (songLoadByNameWouldDiscard(this.systems, sys, target.name)) {
+      // By index (a Songs-menu row) the question is plain "would this load lose work"; the by-NAME form
+      // treats the working song sharing the target's name as "already loaded, nothing to lose", which for a
+      // DIFFERENT song of the same name let a re-asked request load over unsaved work without asking.
+      const discards = req.index !== undefined
+        ? songLoadWouldDiscard(this.systems, sys)
+        : songLoadByNameWouldDiscard(this.systems, sys, target.name);
+      if (discards) {
         req.asked = true;
         const working = catalog.workingName(sram, this.backend.readRam(sys.id) ?? undefined) || "the working song";
         return { kind: "discard", song: target.name, working };
@@ -651,6 +677,10 @@ export class ProjectStore {
       if (state && state.length) entries.push({ name: stateKey(i), bytes: state });
       const sram = this.backend.readSram(sys.id);
       if (sram && sram.length) entries.push({ name: sramKey(i), bytes: sram });
+      // Exported inside a reset's boot window (or the half second after it, before the savestate catches
+      // up), the savestate holds the blank cart: ship the song beside it, so loading lands it after all.
+      const carried = this.systems.exportableWorkingSong(sys.id);
+      if (carried) entries.push({ name: songKey(i), bytes: encodeWorkingSong(carried) });
     });
     return this.backend.zip(entries);
   }
@@ -750,7 +780,12 @@ export class ProjectStore {
         // runtime state (e.g. an LSDj armed in "wait for MIDI"). The sram blob only seeds a system that
         // has no savestate (a thin load, or a battery-only export).
         const sysBlobs = state ? { stateBytes: state } : sram ? { sramBytes: sram } : undefined;
-        this.systems.adopt(s, sysBlobs);
+        const songBytes = blobs.get(songKey(i));
+        const song = songBytes ? decodeWorkingSong(songBytes) : null;
+        // With a working-song blob the archive is one moment only if the battery is too: the savestate's own
+        // battery lags by up to 0.5 s, so the exported battery (current, like the song and the tracked slot)
+        // is written over it once the core exists - live, so the restored runtime state is kept.
+        this.systems.adopt(s, song ? { ...sysBlobs, song, freshSram: state ? sram : undefined } : sysBlobs);
       });
     } catch (e) {
       // The systems adopted before the throw are built and listed, so place them as the final publish would, with
@@ -775,6 +810,7 @@ export class ProjectStore {
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     try {
       this.placeLoadedSystems(); // place the loaded systems, with the loaded project's routing
+      this.systems.writeHeldBatteries(); // a working-song archive's battery, over the restored savestate's own
     } catch (e) {
       // Every system is adopted by now, so the observers hear of them as the rebuild's failure path tells them:
       // once, here, as the success path below is not reached.

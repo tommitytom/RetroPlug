@@ -6,9 +6,9 @@ import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
 import { lsdjSongCatalog } from "../../src/tracker/lsdjSongCatalog";
 import { risaSongCatalog } from "../../src/tracker/risaSongCatalog";
 import { smsggdjIntegration } from "../../src/tracker/trackerIntegration";
-import { buildSav, curSlot, SMDJ4_BLOCK_LEN, songLengthRows, sanitizeEcho } from "../../src/smsggdj/codec/sav";
+import { buildSav, curSlot, SMDJ4_BLOCK_LEN, songLengthRows, sanitizeEcho, isGrooveEmpty, GLIDE_GROOVE_SEL } from "../../src/smsggdj/codec/sav";
 import { resolveSmsggdjLayout, supportedSmsggdjVersions, commonBootedOffset } from "../../src/smsggdj/runtime/layout";
-import { identifySmsggdjVersion, supportsCurSlot } from "../../src/smsggdj/romDetect";
+import { identifySmsggdjVersion } from "../../src/smsggdj/romDetect";
 import { smsggdjRom as rom, smsggdjRam } from "../systems/fixtures";
 
 const CART = 32 * 1024;
@@ -49,7 +49,9 @@ test("load names the slot rather than moving the song, because the cart does the
   const loaded = smsggdjSongCatalog.load(sav, 1)!;
   expect(curSlot(loaded)).toBe(1);
   expect(smsggdjSongCatalog.workingName(loaded)).toBe("BETA");
-  expect(smsggdjSongCatalog.workingSong!(loaded)).toEqual({ name: "BETA", linked: true });
+  // No synthetic "[working]" row: the battery cannot describe a working song that lives in work RAM, and
+  // answering from cur_slot named the last song SAVED, not the one being edited.
+  expect(smsggdjSongCatalog.workingSong).toBe(undefined);
 
   // Only the marker byte moved: no song was rewritten, so every blob is where it was.
   const a = sav.slice(), b = loaded.slice();
@@ -71,13 +73,18 @@ test("workingSongDirty needs work RAM, and says CLEAN when it has none", () => {
 test("a working song that matches a saved slot is clean; one that matches none is dirty", () => {
   const sav = twoSongs();
   // A running cart (booted), edited since its last save/load. The song block is at the base of work RAM.
-  const ram = smsggdjRam({ block: song(2), edited: true }); // exactly BETA
+  // Exactly BETA - its block and its name, as a cart that loaded BETA holds them. The name and echo are
+  // part of the song (the cart saves both per song), so a block match alone is not "saved".
+  const ram = smsggdjRam({ block: song(2), edited: true, name: "BETA" });
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
 
   ram[5] ^= 0xff; // ...now edited, and saved nowhere
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(true);
 
-  ram.set(song(1), 0); // exactly ALPHA - a different slot, still saved
+  ram.set(song(1), 0); // ALPHA's block under BETA's name: a song saved nowhere
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(true);
+  const at = resolveSmsggdjLayout("0.45")!;
+  ram.set(smsggdjRam({ name: "ALPHA" }).subarray(at.name, at.name + at.nameLen), at.name); // exactly ALPHA - still saved
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
 });
 
@@ -102,7 +109,7 @@ test("a cart that has not been edited is clean, whatever its work RAM holds", ()
 
 test("nothing in work RAM is the cart's until it has booted: not a name, not an edit, not ready", () => {
   // Work RAM is readable from the moment the core exists, and for the cart's first seconds it is the
-  // boot sequence's: `init` zero-fills it, `song_new` seeds the blank song, v0.46 `boot_autoload` reloads
+  // boot sequence's: `init` zero-fills it, `song_new` seeds the blank song, the cur-slot build's `boot_autoload` reloads
   // the last slot. `ints_on` is written once, right before the main loop, after all of that - the latch
   // every reader waits on. Before it, even a whole song with a name and the edited flag set is not
   // evidence of anything (it is what a poll caught mid-boot), and the answers are the empty ones.
@@ -175,21 +182,16 @@ test("romName reads the version, which is NOT adjacent to the build marker", () 
 });
 
 test("supported means we have that build's RAM layout, not that the cart autoloads", () => {
-  // The gate was originally keyed on supportsCurSlot - whether the CART restores a song at boot - which
+  // The gate was originally keyed on whether the CART restores a song at boot (cur_slot), which
   // greyed out the whole submenu for v0.45, including Export / Delete / Move / Add / Import, none of
   // which need the cart's help. The right question is risa's: do we have this build's symbol snapshot,
   // and therefore know where to write. An unknown build still greys out; only the question changed.
   expect(smsggdjIntegration.isVersionSupported!(rom("0.45"))).toBe(true); // committed snapshot
   expect(smsggdjIntegration.isVersionSupported!(rom("0.46"))).toBe(true); // alias to 0.45's
-  expect(smsggdjIntegration.isVersionSupported!(rom("0.47"))).toBe(false); // no snapshot, no alias
+  expect(smsggdjIntegration.isVersionSupported!(rom("0.47"))).toBe(true); // alias to 0.45's
+  expect(smsggdjIntegration.isVersionSupported!(rom("0.48"))).toBe(false); // no snapshot, no alias
   expect(smsggdjIntegration.isVersionSupported!(rom("1.0"))).toBe(false);
   expect(smsggdjIntegration.isVersionSupported!(new Uint8Array(0x8000))).toBe(false); // not an smsggdj ROM
-
-  // supportsCurSlot survives, because it still answers a real and different question - whether the CART
-  // restores a song at boot - which is what the ROM branch and the docs are about.
-  expect(supportsCurSlot("0.45")).toBe(false);
-  expect(supportsCurSlot("0.46")).toBe(true);
-  expect(supportsCurSlot(null)).toBe(false);
 });
 
 test("the layout resolves for the snapshot version and for its alias, and for nothing else", () => {
@@ -206,7 +208,15 @@ test("the layout resolves for the snapshot version and for its alias, and for no
   expect(l46.name).toBe(l45.name);
   expect(l46.echo).toBe(l45.echo);
 
-  expect(resolveSmsggdjLayout("0.47")).toBe(null);
+  // Both upstream releases after 0.45 alias it - checked by linking the tags, not assumed.
+  for (const v of ["0.46", "0.47"]) {
+    const l = resolveSmsggdjLayout(v)!;
+    expect(l.version).toBe(v);
+    expect(l.booted).toBe(l45.booted);
+    expect(l.grooveSel).toBe(l45.grooveSel);
+  }
+
+  expect(resolveSmsggdjLayout("0.48")).toBe(null);
   expect(resolveSmsggdjLayout(null)).toBe(null);
   expect(supportedSmsggdjVersions().includes("0.45")).toBe(true);
 });
@@ -254,6 +264,44 @@ test("liveLoad reproduces load_rebase only when the transport is RUNNING", () =>
   expect(at(layout.liveQ)!.bytes).toEqual(new Uint8Array(layout.liveQLen).fill(0xff)); // stale cells cleared
 });
 
+test("liveLoad leaves a CONT tempo glide running, as the cart's own groove_base does", () => {
+  // groove_sel = 16 is the glide sentinel: groove_base resolves it to glide_scratch in WORK RAM, so
+  // load_rebase's empty-groove check asks about RAM the load does not touch. Asked of the block, groove
+  // 16 begins exactly at the block's end and read as empty, so every mid-glide load reset the groove.
+  const sav = buildSav([{ block: song(1), name: "ALPHA" }], CART)!;
+  const layout = resolveSmsggdjLayout("0.45")!;
+  const resets = (ram: Uint8Array) =>
+    smsggdjIntegration.liveLoad!(rom("0.45"), sav, 0, ram)!.some((w) => w.offset === layout.grooveSel);
+
+  const gliding = new Uint8Array(8192);
+  gliding[layout.playState] = 1;
+  gliding[layout.grooveSel] = GLIDE_GROOVE_SEL;
+  gliding[layout.glideScratch] = 6; // a live scratch groove
+  expect(resets(gliding)).toBe(false);
+
+  // ...and the same rule the cart applies: an EMPTY scratch groove still stalls the clock, so it resets.
+  gliding[layout.glideScratch] = 0;
+  expect(resets(gliding)).toBe(true);
+
+  // A block groove is still asked of the NEW block: kept when it has ticks, reset to 0 when it is empty.
+  const ordinary = new Uint8Array(8192);
+  ordinary[layout.playState] = 1;
+  ordinary[layout.grooveSel] = 3;
+  expect(resets(ordinary)).toBe(false); // song(1) fills every groove's first tick
+
+  const hollow = song(1);
+  hollow[0x1a00 + 3 * 16] = 0; // groove 3's first tick
+  expect(isGrooveEmpty(hollow, 3)).toBe(true);
+  const hollowSav = buildSav([{ block: hollow, name: "HOLLOW" }], CART)!;
+  const w = smsggdjIntegration.liveLoad!(rom("0.45"), hollowSav, 0, ordinary)!;
+  expect(w.find((x) => x.offset === layout.grooveSel)!.bytes).toEqual(Uint8Array.of(0));
+
+  // A stray sel above 16: groove_base computes sel * 16 in 8 bits, so 19 is groove 3 to the cart. It used
+  // to read past the block end here, call that empty, and reset a groove the cart would have kept.
+  ordinary[layout.grooveSel] = 19;
+  expect(resets(ordinary)).toBe(false);
+});
+
 test("songLengthRows follows the cart's own scan, including its minimum of 1", () => {
   // engine.asm:2282-2308: scan the 128x4 grid backwards for the last byte that is not $FF, then
   // ceil(bytes / 4), floored at 1. A zero would stall the sequencer, so an empty song is one row long.
@@ -287,7 +335,7 @@ test("echo is sanitized the way the cart sanitizes it, so a bad entry cannot rea
 
 test("liveLoad declines rather than guessing", () => {
   const sav = buildSav([{ block: song(1), name: "ALPHA" }], CART)!;
-  expect(smsggdjIntegration.liveLoad!(rom("0.47"), sav, 0)).toBe(null); // no layout for that build
+  expect(smsggdjIntegration.liveLoad!(rom("0.48"), sav, 0)).toBe(null); // no layout for that build
   expect(smsggdjIntegration.liveLoad!(new Uint8Array(0x8000), sav, 0)).toBe(null); // not an smsggdj ROM
   expect(smsggdjIntegration.liveLoad!(rom("0.45"), sav, 3)).toBe(null); // no song in that slot
 
@@ -298,19 +346,19 @@ test("liveLoad declines rather than guessing", () => {
 });
 
 test("workingName is the cart's own song_name when there is a live cart, the save's record only without one", () => {
-  // What makes the working-song row, per-song recents and the window title work on v0.45, which has no
-  // cur_slot byte at all.
+  // What makes the working-song row, per-song recents and the window title work on every released build,
+  // none of which has a cur_slot byte.
   const sav = twoSongs();
   expect(smsggdjSongCatalog.workingName(sav, smsggdjRam({ name: "MYSONG" }))).toBe("MYSONG");
 
   // Blank work RAM means the cart has loaded nothing, which is not a song called "".
   expect(smsggdjSongCatalog.workingName(sav, smsggdjRam())).toBe(null);
-  // No RAM at all (an offline .sav): fall back to the save's own record, which v0.45 does not carry.
+  // No RAM at all (an offline .sav): fall back to the save's own record, which no released cart writes.
   expect(smsggdjSongCatalog.workingName(sav)).toBe(null);
-  const named = smsggdjSongCatalog.load(sav, 1)!; // ...but v0.46 does
+  const named = smsggdjSongCatalog.load(sav, 1)!; // ...but RetroPlug's load does
   expect(smsggdjSongCatalog.workingName(named)).toBe("BETA");
   // A live cart answers ALONE: cur_slot says what the cart will autoload at boot, not what it holds now,
-  // so a blank or still-booting cart is "no song" even when the save names one. (A v0.46 cart that DID
+  // so a blank or still-booting cart is "no song" even when the save names one. (A cur-slot cart that DID
   // autoload it has the name in RAM, and answers from there.)
   expect(smsggdjSongCatalog.workingName(named, smsggdjRam())).toBe(null);
   expect(smsggdjSongCatalog.workingName(named, smsggdjRam({ name: "BETA", booted: false }))).toBe(null);
