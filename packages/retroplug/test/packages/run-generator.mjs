@@ -15,7 +15,8 @@
 //   run             { registered: [<the ids the generated entry registers, in order>] }
 //   missing-node    { error: <the generated entry's own refusal> }
 //   order | cycle | unlisted-contributes | unlisted-plain | depends-on-shell | duplicate | duplicate-type |
-//   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unknown-key | half-wired
+//   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unknown-key | half-wired |
+//   extra-node
 //                   { error: <the generator's message, or null when it did not refuse> }
 //                   (unlisted-plain generates, and reports files like generate)
 //

@@ -1,0 +1,11 @@
+{
+  "name": "@retroplug/other",
+  "private": true,
+  "retroplug": {
+    "native": {
+      "target": "retroplug-other-nodes",
+      "entry": "rp_other_package",
+      "device": true
+    }
+  }
+}

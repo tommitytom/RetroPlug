@@ -23,6 +23,7 @@ import { build } from "esbuild";
 import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush, parseTap } from "./lib/testPool.mjs";
 import { checkSkipBaseline } from "./lib/skipBaseline.mjs";
 import { generate } from "./lib/packages.mjs";
+import { reportBoundaries } from "./check-boundaries.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -36,6 +37,12 @@ process.env.RP_NODE = process.execPath;
 // The generated package registries first (src/generated, docs/modular-graph-phase-f1-design.md section 3): the tests
 // bundle src, which imports them, so they must exist before the first esbuild run. A fresh checkout has none.
 generate();
+
+// The packages' boundaries next (scripts/check-boundaries.mjs, docs/modular-graph-phase-f1-design.md section 4): a
+// package that imports what it does not declare, or the shell at all, is refused by name here, before a file bundles and
+// fails on a module that is there but not the package's to reach. The exceptions' allowed lines print only when asked
+// (RP_BOUNDARIES_VERBOSE), so an ordinary run says what it found, not what it forgave.
+if (reportBoundaries({ verbose: Boolean(process.env.RP_BOUNDARIES_VERBOSE) })) process.exit(1);
 
 const TJS =
   process.env.RETROPLUG_TJS ||

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "The rp.core node types: routing, delay, constants and the buffer player and recorder.",
+  "dependencies": {
+    "@retroplug/node-sdk": "workspace:*"
+  },
   "retroplug": {
     "native": { "target": "retroplug-core-nodes", "entry": "rp_core_package", "device": true }
   }

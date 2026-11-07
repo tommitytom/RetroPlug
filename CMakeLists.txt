@@ -383,6 +383,11 @@ add_subdirectory(packages/graph-runtime/device-check/cases "${CMAKE_BINARY_DIR}/
 # The plan exporter, the desktop tool a device image's build runs to embed its built-in plan (a device product of the
 # packages above, with their device builds beside it to size the plan as the device will).
 add_subdirectory(packages/graph-runtime/export-plan "${CMAKE_BINARY_DIR}/export-plan")
+# Every package's native targets, held to what its manifest declares, deferred to the end of this directory as the
+# product check is: a check run while a package is configured sees only the targets defined before it, and links to a
+# later package or to the shell below would pass unseen. Every target is attributed to the package whose directory holds
+# its SOURCE_DIR, so a helper no manifest names is still that package's.
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_package_boundaries)
 
 # The packages a desktop product carries (retroplug_product), every one today; a product that differs lists its own.
 # The LIST is the root package.json's retroplug.products.desktop, read here and by the TS generator

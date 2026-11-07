@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/alpha",
+  "private": true,
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/iota",
+  "private": true,
+  "dependencies": {
+    "@retroplug/retroplug": "workspace:*"
+  }
+}

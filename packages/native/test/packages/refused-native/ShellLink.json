@@ -1,0 +1,15 @@
+{
+  "package": "scratch",
+  "declared": [
+    "node-sdk"
+  ],
+  "devDeclared": [],
+  "test": false,
+  "links": [
+    "scratch-nodes=retroplug-backend"
+  ],
+  "includes": [],
+  "owners": [
+    "retroplug-backend=native"
+  ]
+}

@@ -30,17 +30,41 @@ importers:
 
   packages/bliptoaster: {}
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
 
-  packages/device-io: {}
+  packages/device-io:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
 
-  packages/devtest: {}
+  packages/devtest:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
 
-  packages/dsp: {}
+  packages/dsp:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
 
-  packages/graph-runtime: {}
+  packages/graph-runtime:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
 
-  packages/n8: {}
+  packages/n8:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
 
   packages/native: {}
 

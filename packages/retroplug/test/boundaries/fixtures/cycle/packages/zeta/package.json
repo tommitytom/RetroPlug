@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/zeta",
+  "private": true,
+  "dependencies": {
+    "@retroplug/epsilon": "workspace:*"
+  }
+}

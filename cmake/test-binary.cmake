@@ -60,5 +60,8 @@ function(retroplug_add_test_binary)
     set_target_properties(${T_NAME} PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
+        # A test binary may link its package's devDependencies, as a test file may import them (cmake/packages.cmake's
+        # boundary check reads this).
+        RP_TEST_BINARY ON
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 endfunction()

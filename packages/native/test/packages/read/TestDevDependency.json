@@ -1,0 +1,17 @@
+{
+  "package": "scratch",
+  "declared": [
+    "node-sdk"
+  ],
+  "devDeclared": [
+    "testing"
+  ],
+  "test": true,
+  "links": [
+    "scratch-nodes=retroplug-testing"
+  ],
+  "includes": [],
+  "owners": [
+    "retroplug-testing=testing"
+  ]
+}

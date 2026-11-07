@@ -1,0 +1,7 @@
+{
+  "package": "scratch",
+  "declared": ["node-sdk"],
+  "links": [],
+  "includes": ["scratch-nodes=@PACKAGES@/graph-runtime/native/src"],
+  "owners": ["retroplug-node-sdk=node-sdk", "retroplug-graph=graph-runtime"]
+}

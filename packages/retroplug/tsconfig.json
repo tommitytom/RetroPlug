@@ -30,7 +30,8 @@
   // packs the device-mode test builds (packages/native/test/device-mode/script-packs).
   "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../n8/ts", "../devtest/ts",
               "../bliptoaster/ts", "../native/test/device-mode/script-packs"],
-  // The package generator's fixture tree and its expected modules: data it reads and writes, laid out as a workspace
-  // root and a shell package are, not modules of this program (their imports name a fixture tree's files, not ours).
-  "exclude": ["test/packages/fixtures"]
+  // The package generator's and the boundary check's fixture trees: data they read (and the generator writes), laid out
+  // as a workspace root and its packages are, not modules of this program (their imports name a fixture tree's files,
+  // not ours, and a fixture package is meant to break a rule this program keeps).
+  "exclude": ["test/packages/fixtures", "test/boundaries/fixtures"]
 }

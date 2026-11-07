@@ -119,6 +119,9 @@ function(retroplug_package name)
     elseif(_script AND RP_DESKTOP_BUILD_DIR)
         _retroplug_device_script_targets(${name})
     endif()
+    # Its links and include directories, held to the packages its manifest declares, are checked once at the end of the
+    # root configure (retroplug_check_package_boundaries): a check here would see only the targets defined before this
+    # package, so a link to a later package's target, or to the shell added last, went unnoticed.
 endfunction()
 
 # _retroplug_read_manifest(<name> <manifest>): reads one package's manifest into the global properties the products
@@ -146,6 +149,7 @@ function(_retroplug_read_manifest name _manifest)
         foreach(_p TARGETS ENTRIES DEVICE_ENTRIES DEVICE_TARGETS PROVIDERS)
             set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_${_p} "")
         endforeach()
+        _retroplug_read_declarations(${name} "${_json}")
         return()
     endif()
     string(JSON _native GET "${_json}" retroplug native)
@@ -222,6 +226,7 @@ function(_retroplug_read_manifest name _manifest)
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_ENTRIES ${_device})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_TARGETS ${_deviceTargets})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_PROVIDERS ${_providers})
+    _retroplug_read_declarations(${name} "${_json}")
 
 endfunction()
 
@@ -319,6 +324,196 @@ function(_retroplug_read_provider name entry isDevice noProvider provider noRpc 
     set_property(GLOBAL PROPERTY RP_PROVIDER_${provider}_REGISTER "${_register}")
 endfunction()
 
+# _retroplug_read_declarations(<package> <json>): the packages a manifest declares, from its `dependencies` and its
+# `devDependencies` (`@retroplug/<name>` entries only), into RP_PACKAGE_<package>_DECLARATIONS and
+# RP_PACKAGE_<package>_DEV_DECLARATIONS. `dependencies` are what the package's library targets may link and include from
+# (the boundary check below), and what its TS may import (the TS check,
+# packages/retroplug/scripts/check-boundaries.mjs); `devDependencies` are its test targets' and its test files' alone:
+# ONE reading for both languages, which is why it is read here and not spelled again in a CMakeLists.
+function(_retroplug_read_declarations package json)
+    set(_declared "")
+    set(_dev "")
+    foreach(_member dependencies devDependencies)
+        string(JSON _deps ERROR_VARIABLE _none GET "${json}" ${_member})
+        if(_none)
+            continue()
+        endif()
+        string(JSON _count ERROR_VARIABLE _err LENGTH "${_deps}")
+        if(_err OR _count EQUAL 0)
+            continue()
+        endif()
+        math(EXPR _last "${_count} - 1")
+        foreach(_i RANGE ${_last})
+            string(JSON _specifier MEMBER "${_deps}" ${_i})
+            if(_specifier MATCHES "^@retroplug/(.+)$")
+                if(_member STREQUAL "dependencies")
+                    list(APPEND _declared "${CMAKE_MATCH_1}")
+                else()
+                    list(APPEND _dev "${CMAKE_MATCH_1}")
+                endif()
+            endif()
+        endforeach()
+    endforeach()
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${package}_DECLARATIONS "${_declared}")
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${package}_DEV_DECLARATIONS "${_dev}")
+endfunction()
+
+# _retroplug_check_native_boundaries(<package> LINKS <target=linked>... INCLUDES <target=dir>...
+#                                    DECLARED <package>... DEV_DECLARED <package>... [TEST]
+#                                    OWNERS <target=package>...): a package's native targets may link the targets of the
+# packages its manifest declares, and add include directories inside its own tree or a declared package's. A TEST target
+# (retroplug_add_test_binary's) may also link its package's devDependencies, as a test file may import them; a library
+# target may not. Nothing may link the shell (packages/native, packages/retroplug). Anything else is refused, naming the
+# package, the target and the dependency, because a package that reaches past its manifest makes the split a convention
+# again (docs/modular-graph-phase-f1-design.md section 4).
+#
+# It takes plain lists so a configure-time fixture can drive it (cmake/check-native-boundaries.cmake, held by
+# packages/native/cmake/tests.cmake): a target's real properties need a target, which script mode has none of.
+function(_retroplug_check_native_boundaries package)
+    cmake_parse_arguments(B "TEST" "" "LINKS;INCLUDES;DECLARED;DEV_DECLARED;OWNERS" ${ARGN})
+    if(B_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "_retroplug_check_native_boundaries(${package}): unrecognised argument(s): "
+                            "${B_UNPARSED_ARGUMENTS}")
+    endif()
+    set(_allowed ${B_DECLARED} node-sdk)  # the SDK, which every package's library is built on
+    if(B_TEST)
+        list(APPEND _allowed ${B_DEV_DECLARED})
+    endif()
+    set(_shells native retroplug)
+    # The package that owns each target, by where its directory lies. A target with no package's directory (a vendored
+    # library, an imported one) is nobody's to judge here.
+    foreach(_pair IN LISTS B_OWNERS)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _owned)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _owner)
+        set(_owner_of_${_owned} "${_owner}")
+    endforeach()
+    foreach(_pair IN LISTS B_LINKS)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _linked)
+        if(NOT DEFINED _owner_of_${_linked} OR "${_owner_of_${_linked}}" STREQUAL "${package}")
+            continue()  # not a package's target, or this package's own
+        endif()
+        if(_owner_of_${_linked} IN_LIST _shells)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} links ${_linked}, a target of the shell "
+                                "(packages/${_owner_of_${_linked}}): no package may use the shell")
+        endif()
+        if(NOT _owner_of_${_linked} IN_LIST _allowed)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} links ${_linked}, a target of the "
+                                "${_owner_of_${_linked}} package, which ${package} does not declare (its package.json "
+                                "dependencies)")
+        endif()
+    endforeach()
+    foreach(_pair IN LISTS B_INCLUDES)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _dir)
+        file(RELATIVE_PATH _rel "${RP_PACKAGES_DIR}" "${_dir}")
+        if(IS_ABSOLUTE "${_rel}" OR _rel MATCHES "^\\.\\.")
+            continue()  # outside the packages' trees: a vendored dep's headers, or the build's own
+        endif()
+        string(REGEX REPLACE "/.*$" "" _owner "${_rel}")
+        if(_owner STREQUAL package OR _owner IN_LIST _allowed)
+            continue()
+        endif()
+        if(_owner IN_LIST _shells)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} adds the include directory ${_dir}, which "
+                                "is in the shell (packages/${_owner}): no package may use the shell")
+        endif()
+        message(FATAL_ERROR "retroplug_package(${package}): ${_target} adds the include directory ${_dir}, which is "
+                            "in the ${_owner} package's tree, which ${package} does not declare (its package.json "
+                            "dependencies)")
+    endforeach()
+endfunction()
+
+# retroplug_check_package_boundaries(): the boundary check over every package's native targets, from what the build
+# holds. Deferred to the end of the root's CMakeLists (cmake_language(DEFER), as retroplug_check_products is), because a
+# package's check run while it is configured sees only the targets defined before it: a link to a later package's
+# target, or to the shell added last, would pass. Every target is attributed to the package whose directory holds its
+# SOURCE_DIR, so a helper a manifest never names (retroplug-dsp-kernels, retroplug-graph-exec, retroplug-mqjs-host)
+# belongs to its package and is judged like the rest.
+#
+# A device build defines a manifest's `device` targets alone, so a target it does not define is skipped; a target
+# marked RP_BOUNDARY_SKIP (a `-device` twin, a script pack's generated registration) is not judged of its own. A
+# `-device` twin copies its target's include directories through a generator expression and links the SDK's headers
+# alone, and a script pack's registration targets are generated by this file and link the engine's MicroQuickJS host by
+# construction (a pack's own boundary is its TypeScript's, which the TS check holds).
+#
+# A PRODUCT target is not judged either: retroplug_product() links every listed package's targets into it, and its
+# PACKAGES is that link's declaration. The device check's case generator is the one product in a package's directory, and
+# it carries the device check's own package list rather than its directory package's manifest.
+function(retroplug_check_package_boundaries)
+    get_property(_packages GLOBAL PROPERTY RP_PACKAGES)
+    if(NOT _packages)
+        return()
+    endif()
+    get_property(_product_targets GLOBAL PROPERTY RP_PRODUCT_TARGETS)
+    get_property(_device_products GLOBAL PROPERTY RP_DEVICE_PRODUCTS)
+    _retroplug_build_targets(_targets "${CMAKE_SOURCE_DIR}")
+    set(_owners "")
+    foreach(_target IN LISTS _targets)
+        get_target_property(_skip ${_target} RP_BOUNDARY_SKIP)
+        if(_skip OR _target IN_LIST _product_targets OR _target IN_LIST _device_products)
+            continue()
+        endif()
+        get_target_property(_dir ${_target} SOURCE_DIR)
+        if(NOT _dir OR _dir MATCHES "-NOTFOUND$")
+            continue()
+        endif()
+        file(RELATIVE_PATH _rel "${RP_PACKAGES_DIR}" "${_dir}")
+        if(IS_ABSOLUTE "${_rel}" OR _rel MATCHES "^\\.\\.")
+            continue()
+        endif()
+        string(REGEX REPLACE "/.*$" "" _owner "${_rel}")
+        if(NOT _owner IN_LIST _packages)
+            continue()
+        endif()
+        list(APPEND _owners "${_target}=${_owner}")
+        list(APPEND _targets_of_${_owner} "${_target}")
+    endforeach()
+    foreach(_package IN LISTS _packages)
+        if(_package STREQUAL "native" OR _package STREQUAL "retroplug")
+            continue()  # the shells: they may use every package
+        endif()
+        get_property(_declared GLOBAL PROPERTY RP_PACKAGE_${_package}_DECLARATIONS)
+        get_property(_dev GLOBAL PROPERTY RP_PACKAGE_${_package}_DEV_DECLARATIONS)
+        foreach(_target IN LISTS _targets_of_${_package})
+            get_target_property(_test ${_target} RP_TEST_BINARY)
+            set(_links "")
+            set(_includes "")
+            foreach(_property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+                get_target_property(_value ${_target} ${_property})
+                foreach(_item IN LISTS _value)
+                    # A generator expression resolves per configuration (the device twin's copies), and only a target
+                    # can be attributed to a package.
+                    if(_item MATCHES "^\\$<" OR NOT TARGET ${_item})
+                        continue()
+                    endif()
+                    list(APPEND _links "${_target}=${_item}")
+                endforeach()
+            endforeach()
+            get_target_property(_value ${_target} INCLUDE_DIRECTORIES)
+            foreach(_item IN LISTS _value)
+                if(_item MATCHES "^\\$<" OR NOT IS_ABSOLUTE "${_item}")
+                    continue()
+                endif()
+                list(APPEND _includes "${_target}=${_item}")
+            endforeach()
+            set(_test_arg "")
+            if(_test)
+                set(_test_arg TEST)
+            endif()
+            _retroplug_check_native_boundaries(${_package} LINKS ${_links} INCLUDES ${_includes}
+                                               DECLARED ${_declared} DEV_DECLARED ${_dev} ${_test_arg}
+                                               OWNERS ${_owners})
+        endforeach()
+    endforeach()
+endfunction()
+
 # _retroplug_device_check(<package> <target>): the desktop build's check of a `device` entry. An entry the manifest
 # marks `device` is one a device product compiles, so the desktop's default build compiles its target's sources a
 # second time, as the device does (graph/node.hpp under RP_DEVICE, no exceptions, no RTTI), into an object library
@@ -353,7 +548,8 @@ function(_retroplug_device_check package target)
         list(APPEND _absolute "${_source}")
     endforeach()
     add_library(${target}-device OBJECT ${_absolute})
-    set_target_properties(${target}-device PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    set_target_properties(${target}-device PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
+                                                      RP_BOUNDARY_SKIP "the device twin of ${target}")
     # The target's own definitions, options (/bigobj on MSVC among them, retroplug_package_library's) and include
     # directories, read when the build is generated, so a package that adds one after this ran is still copied; then
     # the device mode on top.
@@ -527,14 +723,16 @@ function(retroplug_device_script_pack name)
         VERBATIM)
     add_dependencies(${_pack} mqjs retroplug-mqjs-run)
     set_target_properties(${_pack} PROPERTIES RP_BYTECODE_64 "${_out}/${name}.mqjs64.bin"
-                                              RP_BYTECODE_32 "${_out}/${name}.mqjs32.bin")
+                                              RP_BYTECODE_32 "${_out}/${name}.mqjs32.bin"
+                                              RP_BOUNDARY_SKIP "a generated script pack's toolchain")
 
     # The bytecode as C: built as it stands by whatever links it, in the device-mode objects' binary too
     # (RP_DEVICE_MODE_SHARED), as it names nothing in namespace rp.
     add_library(retroplug-${name}-pack64 STATIC EXCLUDE_FROM_ALL "${_out}/${name}.pack64.c")
     add_dependencies(retroplug-${name}-pack64 ${_pack})
     target_include_directories(retroplug-${name}-pack64 PRIVATE "${RP_PACKAGES_DIR}/graph-runtime/native/src")
-    set_target_properties(retroplug-${name}-pack64 PROPERTIES POSITION_INDEPENDENT_CODE ON RP_DEVICE_MODE_SHARED ON)
+    set_target_properties(retroplug-${name}-pack64 PROPERTIES POSITION_INDEPENDENT_CODE ON RP_DEVICE_MODE_SHARED ON
+                                                             RP_BOUNDARY_SKIP "a generated script pack's bytecode")
 
     string(MAKE_C_IDENTIFIER "${name}" _id)
     set(_fn rp_${_id}_script_package)
@@ -550,7 +748,8 @@ extern \"C\" const rp_mqjs_pack_source rp_script_${_id};
 extern \"C\" const rp_package* ${_fn}(void) { return rp::mqjs::package(rp_script_${_id}); }
 ")
     retroplug_package_library(retroplug-${name}-script "${_registration}")
-    set_target_properties(retroplug-${name}-script PROPERTIES EXCLUDE_FROM_ALL ON RP_SCRIPT_FN ${_fn})
+    set_target_properties(retroplug-${name}-script PROPERTIES EXCLUDE_FROM_ALL ON RP_SCRIPT_FN ${_fn}
+                                                             RP_BOUNDARY_SKIP "a generated script pack's registration")
     target_link_libraries(retroplug-${name}-script PUBLIC retroplug-mqjs-host retroplug-${name}-pack64)
 endfunction()
 

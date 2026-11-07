@@ -1,0 +1,11 @@
+{
+  "name": "@retroplug/theta",
+  "private": true,
+  "retroplug": {
+    "native": {
+      "target": "retroplug-theta-nodes",
+      "entry": "rp_theta_package",
+      "device": true
+    }
+  }
+}

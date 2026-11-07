@@ -207,6 +207,81 @@ foreach(_rp_read IN ITEMS "${CMAKE_SOURCE_DIR}/packages/n8/package.json"
     endif()
 endforeach()
 
+# What a package's native targets may not reach (docs/modular-graph-phase-f1-design.md section 4,
+# cmake/packages.cmake's _retroplug_check_native_boundaries): a target of a package its manifest does not declare, and an
+# include directory in such a package's tree, are each refused with the package, the target and the dependency named.
+# Held the way the manifest rules above are: cmake/check-native-boundaries.cmake runs one fixture package in script mode
+# (a real target's properties need a target, which script mode has none of), each must be refused with its own reason,
+# and one that declares what it reaches must hold, so a rule that started refusing everything fails the configure too.
+set(_rp_refused_native
+    "UndeclaredLink|links retroplug-graph, a target of the graph-runtime package, which scratch does not declare"
+    "UndeclaredInclude|which is in the graph-runtime package's tree, which scratch does not declare"
+    "DevDependencyLink|links retroplug-testing, a target of the testing package, which scratch does not declare"
+    "ShellLink|links retroplug-backend, a target of the shell (packages/native): no package may use the shell"
+    "ShellInclude|which is in the shell (packages/native): no package may use the shell")
+foreach(_rp_refused IN LISTS _rp_refused_native)
+    string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
+    list(GET _rp_refused 0 _rp_fixture)
+    list(GET _rp_refused 1 _rp_reason)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -DRP_BOUNDARY_FIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/refused-native/${_rp_fixture}.json
+                -P ${CMAKE_SOURCE_DIR}/cmake/check-native-boundaries.cmake
+        RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+    if(_rp_result EQUAL 0)
+        message(FATAL_ERROR "test/packages/refused-native/${_rp_fixture}.json was accepted; the configure must refuse it")
+    endif()
+    string(REGEX REPLACE "[ \t\r\n]+" " " _rp_folded "${_rp_output}")
+    string(FIND "${_rp_folded}" "${_rp_reason}" _rp_at)
+    if(_rp_at EQUAL -1)
+        message(FATAL_ERROR "test/packages/refused-native/${_rp_fixture}.json was refused, but not with \"${_rp_reason}\":\n"
+                            "${_rp_output}")
+    endif()
+endforeach()
+foreach(_rp_read IN ITEMS DeclaredBoundaries TestDevDependency)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -DRP_BOUNDARY_FIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/${_rp_read}.json
+                -P ${CMAKE_SOURCE_DIR}/cmake/check-native-boundaries.cmake
+        RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+    if(NOT _rp_result EQUAL 0)
+        message(FATAL_ERROR "test/packages/read/${_rp_read}.json did not hold:\n${_rp_output}")
+    endif()
+endforeach()
+
+# The gatherer itself (cmake/packages.cmake's retroplug_check_package_boundaries), which the rule fixtures above cannot
+# reach: it reads targets and their SOURCE_DIR. A project of its own under test/packages/gather, configured here, defines
+# alpha before beta, so a link from alpha to beta's helper is to a target defined later, and attributes a helper its
+# manifest never names to beta. Each case is one shape; a refusal case must fail with its reason, a read case must hold.
+set(_rp_gather_cases
+    "later|refused|links retroplug-beta-helper, a target of the beta package"
+    "shell|refused|a target of the shell (packages/native)"
+    "dev-library|refused|links retroplug-testing, a target of the testing package"
+    "declared|holds|"
+    "test-dev|holds|")
+foreach(_rp_case IN LISTS _rp_gather_cases)
+    string(REPLACE "|" ";" _rp_case "${_rp_case}")
+    list(GET _rp_case 0 _rp_name)
+    list(GET _rp_case 1 _rp_expect)
+    list(GET _rp_case 2 _rp_reason)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather
+                -B ${CMAKE_BINARY_DIR}/packages/gather-${_rp_name}
+                -DRP_GATHER_CASE=${_rp_name} -DRP_ROOT=${CMAKE_SOURCE_DIR}
+        RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+    if(_rp_expect STREQUAL "refused")
+        if(_rp_result EQUAL 0)
+            message(FATAL_ERROR "test/packages/gather (${_rp_name}) held; the configure must refuse it:\n${_rp_output}")
+        endif()
+        string(REGEX REPLACE "[ \t\r\n]+" " " _rp_folded "${_rp_output}")
+        string(FIND "${_rp_folded}" "${_rp_reason}" _rp_at)
+        if(_rp_at EQUAL -1)
+            message(FATAL_ERROR "test/packages/gather (${_rp_name}) was refused, but not with \"${_rp_reason}\":\n"
+                                "${_rp_output}")
+        endif()
+    elseif(NOT _rp_result EQUAL 0)
+        message(FATAL_ERROR "test/packages/gather (${_rp_name}) did not hold:\n${_rp_output}")
+    endif()
+endforeach()
+
 # Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive
 # detection, registered-ROM parent-dir watches, and the unregistered-file filter.
 retroplug_add_test_binary(
