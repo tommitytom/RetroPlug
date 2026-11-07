@@ -4,7 +4,9 @@
 // the lossy decoded-song model for song management): it takes the live SRAM image and returns a NEW image
 // (or null), never mutating the input. The file-dialog actions (Export / Replace / Add) live in the UI
 // menu layer (per-console, since they own file formats + browseThen). Concrete catalogs:
-// ./lsdjSongCatalog, ./risaSongCatalog; resolution: ../trackerRegistry (resolveSongCatalog).
+// the carts' own catalogs, still the shell's (packages/retroplug/src/tracker/lsdjSongCatalog and
+// .../risaSongCatalog) while neither cart has a package of its own; resolution: the shell's
+// packages/retroplug/src/trackerRegistry (resolveSongCatalog).
 
 export interface SongInfo {
   index: number;
@@ -87,8 +89,8 @@ export interface SongCatalog {
    *  Absent (the default) means always ready: LSDj and risa keep the working song in the battery, which
    *  is complete from the first frame. smsggdj keeps it in work RAM, and work RAM is readable from the
    *  moment the core exists but is NOT the cart's for its first seconds - `init` zero-fills it, the splash
-   *  runs, `song_new` seeds the blank song, the cur-slot build's `boot_autoload` (unreleased) reloads the last slot. A name read in
-   *  that window is nothing; a song written in it is silently wiped. Everything that reads the working
+   *  runs, `song_new` seeds the blank song, the cur-slot build's `boot_autoload` (unreleased) reloads the last slot. A
+   *  name read in that window is nothing; a song written in it is silently wiped. Everything that reads the working
    *  song (recents, titles, the Songs menu, the load guards) and everything that writes it (a live load)
    *  waits on this. `ram` is the live work RAM; no RAM at all is "not ready", the safe polarity for a
    *  write. */

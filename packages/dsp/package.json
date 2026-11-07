@@ -12,13 +12,15 @@
     "./chain": "./ts/chain.ts",
     "./kitContract": "./ts/kitContract.ts",
     "./kitEffect": "./ts/kitEffect.ts",
-    "./offlineJob": "./ts/offlineJob.ts",
     "./pack": "./ts/pack.ts",
     "./packageContributions": "./ts/packageContributions.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/node-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   },
   "retroplug": {
     "native": [

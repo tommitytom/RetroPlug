@@ -8,7 +8,7 @@
 // Empty rather than making `TrackerIntegration.assets` optional: `types: []` already means "this
 // console contributes no asset submenus", every consumer handles it, and widening the interface for one
 // temporary case would push the same emptiness check into the menu instead.
-import type { AssetCatalog, AssetSlot } from "./assetCatalog";
+import type { AssetCatalog, AssetSlot } from "@retroplug/tracker/assetCatalog";
 
 export const smsggdjAssetCatalog: AssetCatalog = {
   assetRole: "sms-assets", // reserved; no role registers under it yet, so no overrides can exist

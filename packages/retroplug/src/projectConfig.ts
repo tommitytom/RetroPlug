@@ -14,23 +14,14 @@ import { defaultCoreFor, type Platform, type Core } from "./platform";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
 import { commonSettingsSchema, type CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
-import { z, clampedInt, boolField, stringField, enumField, stringifyConfig } from "./configSchema";
+import { z } from "zod";
+import { clampedInt, boolField, stringField, enumField } from "@retroplug/core/configFields";
+import { stringifyConfig } from "./configSchema";
 import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
-import {
-  type SystemLayout,
-  type MidiRouting,
-  type AudioRouting,
-  type ControllerTarget,
-  LAYOUT_VALUES,
-  MIDI_ROUTING_VALUES,
-  AUDIO_ROUTING_VALUES,
-  CONTROLLER_TARGET_VALUES,
-  MODEL_VALUES,
-  HIGHPASS_VALUES,
-  REGION_VALUES,
-  CHANNEL_EXPORT_VALUES,
-  LSDJ_MODE_VALUES,
-} from "./settingsEnums";
+import { MODEL_VALUES, HIGHPASS_VALUES } from "@retroplug/sameboy/enums";
+import { REGION_VALUES, CHANNEL_EXPORT_VALUES } from "@retroplug/mesen/enums";
+import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
+import { type SystemLayout, type AudioRouting, type ControllerTarget, LAYOUT_VALUES, AUDIO_ROUTING_VALUES, CONTROLLER_TARGET_VALUES, LSDJ_MODE_VALUES } from "./settingsEnums";
 
 /** Project-level settings. The three routing/layout enums are string-valued (see settingsEnums);
  *  `zoom` is a magnitude (0 = inherit the user default, else 1..6). */
@@ -81,7 +72,7 @@ export interface ProjectConfig {
 
 // --- zod validation schemas -----------------------------------------------
 // STRICT schemas (unknown keys stripped). Forward-tolerance across config versions
-// is field `.default()`s + refuse-newer detection, not passthrough (see configSchema.ts).
+// is field `.default()`s (core's configFields builders) + refuse-newer detection, not passthrough.
 // A malformed/partial config is coerced (clamp/default), not rejected. The role
 // `config` stays an open record — its per-kind RoleType schema validates it elsewhere.
 

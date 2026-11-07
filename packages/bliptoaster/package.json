@@ -9,6 +9,9 @@
   "dependencies": {
     "@retroplug/core": "workspace:*"
   },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
   "retroplug": {
     "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 24576 }
   }

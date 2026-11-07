@@ -5,7 +5,7 @@
 // why the kit type is ROM-aware (resolveTypes): Replace-only on NROM, addable/16 on a banking cart. Themes and
 // fonts are never addable: both tables are fixed-size, so a replace overwrites an entry and can never grow the
 // list. The file-dialog Export/Replace stay in the menu (they own the .rit/.rkit/.chr formats).
-import { readAssetOverrides, type AssetCatalog, type AssetSlot, type AssetTypeInfo } from "./assetCatalog";
+import { readAssetOverrides, type AssetCatalog, type AssetSlot, type AssetTypeInfo } from "@retroplug/tracker/assetCatalog";
 import type { ConstructCaps } from "@retroplug/core/systemRoles";
 import { BlipToasterRom } from "../bliptoaster/rom";
 import { applyConfigToRom, readSettings } from "../bliptoasterAssetsRole";

@@ -32,12 +32,12 @@ struct MesenNesConfig {
     using Tag = rfl::Literal<"nes">;
 
     float         gainDb   = 0.0f;
-    // TS-owned "mesen" system-role knobs (coreRoles.ts). region = ConsoleRegion
+    // TS-owned "mesen" system-role knobs (packages/mesen/ts/app.ts). region = ConsoleRegion
     // (0=Auto,1=Ntsc,2=Pal,3=Dendy,4=NtscJapan) - configureNes runs before LoadRom, so it is a construct-time field, and
     // a change is a rebuilt system (setRoleConfig). removeSpriteLimit toggles the PPU 8-sprites/line cap (live).
     std::uint32_t region            = 0;
     bool          removeSpriteLimit = false;
-    // Cartridge-accuracy switches (TS enums, 0 = "chip", 1 = "n8"). Default to "n8" to match coreRoles.ts:
+    // Cartridge-accuracy switches (TS enums, 0 = "chip", 1 = "n8"). Default to "n8" to match the role schema:
     // this is music software and NES music is played back through an Everdrive N8 Pro, whose FPGA cores
     // measurably differ from the documented chips. Live knobs.
     // s5bNoise: the 5B's noise generator (the N8 has none, and its tone-AND-noise mixer then mutes).

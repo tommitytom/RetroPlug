@@ -216,6 +216,7 @@ function keep(file, bytes) {
 // ---- the bundle and its allowlist --------------------------------------------------------------------------------
 
 const esbuild = require("esbuild");
+const { tsOptions } = require("../../../tools/ts-options.js");
 const bundleOptions = {
   absWorkingDir: REPO, // metafile and source-map paths are relative to this; run from anywhere and they still resolve
   bundle: true,
@@ -224,6 +225,11 @@ const bundleOptions = {
   format: "iife",
   platform: "neutral",
   target: "es2020",
+  // The options the pack is compiled with, named rather than discovered: esbuild would otherwise read the nearest
+  // tsconfig.json above the pack's entry, so a package's (or the workspace's) compiler settings would decide the pack's
+  // bytes - an implied alwaysStrict alone heads the iife with a "use strict" directive, and this toolchain prepends its
+  // own below. A pack's bytecode is what the box runs, and the packbytes and device-image legs hold it unchanged.
+  tsconfigRaw: tsOptions(),
   logLevel: "silent",
   define: { RP_DEVICE_PACK: "true" },
 };

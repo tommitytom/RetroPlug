@@ -1,6 +1,6 @@
 // The risa implementation of SongCatalog — thin wrappers over the existing pure ops. risa's delete/move
 // throw on a bad index (unlike LSDj's), so they're wrapped to the catalog's null-on-failure contract.
-import type { SongCatalog } from "./songCatalog";
+import type { SongCatalog } from "@retroplug/tracker/songCatalog";
 import { listSongs, workingSongName, workingSongInfo, isRisaSav } from "../risa/codec/sav";
 import {
   loadSongToWorkingInSav,

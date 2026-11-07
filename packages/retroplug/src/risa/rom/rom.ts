@@ -9,21 +9,9 @@
 // kit banks are position-deterministic (chrOffset / kitOffset + slot*0x2000).
 
 import { isRisaRomHeader } from "../romDetect";
-import { findMagicInRange } from "./find";
 import {
-  HEADER_SIZE,
-  PRG_16K_SIZE,
-  PRG_8K_SIZE,
   PRG_FIXED_SIZE,
   KIT_BANK_COUNT,
-  KIT_BANK_SIZE,
-  KIT_MAGIC,
-  KIT_MAGIC_OFFSET,
-  CHR_BANK_SIZE,
-  THEME_META_MAGIC,
-  THEME_COUNT,
-  THEME_RECORD_SIZE,
-  THEME_NAME_SIZE,
   KIT_META_MAGIC,
   KIT_META_TOTAL_SIZE,
   KIT_META_HINT_OFFSETS,
@@ -33,9 +21,24 @@ import {
   KIT_META_SAMPLE_NAMES_STRIDE,
   KIT_META_SLOT_PRESENT_STRIDE,
 } from "./constants";
-import { decodeThemeFromRom } from "./theme";
-import { bankToModel, deriveMetaFromBank, type KitModel } from "./kit";
-import type { RisaTheme } from "./types";
+import {
+  HEADER_SIZE,
+  PRG_16K_SIZE,
+  PRG_8K_SIZE,
+  KIT_BANK_SIZE,
+  KIT_MAGIC,
+  KIT_MAGIC_OFFSET,
+  CHR_BANK_SIZE,
+  THEME_META_MAGIC,
+  THEME_COUNT,
+  THEME_RECORD_SIZE,
+  THEME_NAME_SIZE,
+} from "@retroplug/tracker/nes/constants";
+import { findMagicInRange } from "@retroplug/tracker/nes/find";
+import { decodeThemeFromRom } from "@retroplug/tracker/nes/theme";
+import { bankToModel, type KitModel } from "@retroplug/tracker/nes/kitBank";
+import type { RisaTheme } from "@retroplug/tracker/nes/types";
+import { deriveMetaFromBank } from "./kit";
 
 interface Layout {
   kitOffset: number;

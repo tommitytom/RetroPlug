@@ -1,7 +1,8 @@
 // The shape of an offline graph job (docs/modular-graph-phase-d2-design.md section 5): a graph document run to
 // completion on a host of its own. It is the engine's job API (the backend's offlineRun, native's OfflineJobs), so it
 // lives here beside the graph document, which a package that runs a job has anyway; the queue that runs them, with its
-// limits and its wait hooks, stays the shell's (src/offline.ts re-exports these names), and dsp's kit compilers take it
+// limits and its wait hooks, stays the shell's (packages/retroplug/src/offline.ts re-exports these names), and
+// dsp's kit compilers take it
 // as what they run their chains on. Nothing here imports anything: a job is data.
 
 /** How a file input's frame cap scales a frame count at a kit rate to the decoded rate: LSDj's window computes it in

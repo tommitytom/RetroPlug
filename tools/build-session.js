@@ -15,6 +15,7 @@
 // packages/retroplug/test/script/bundle-no-zod.test.ts holds the script-node bundle to a list without zod.
 const { buildSync } = require("esbuild");
 const { resolve } = require("path");
+const { tsOptions } = require("./ts-options");
 
 // The session, bundled (esm for the CLI's module eval, or iife global-code for the render worker). Config-
 // dir / resource paths are NOT baked in: a session resolves paths at runtime through the backend.
@@ -26,6 +27,9 @@ function buildOptions(entry, outFile, format = "esm") {
     platform: "neutral",
     mainFields: ["module", "main"],
     target: "es2020",
+    // The entries are the shell's (cli/sessions, test/script) and the iife bundles built from them carry a
+    // "use strict" directive today, so it is pinned on: tools/ts-options.js says why a bundle names its own options.
+    tsconfigRaw: tsOptions({ alwaysStrict: true }),
     outfile: resolve(outFile),
     define: {
       "process.env.NODE_ENV": '"production"',

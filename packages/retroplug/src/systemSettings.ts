@@ -1,6 +1,7 @@
 // The UNIVERSAL per-system settings — the ones every core has, so they live on the system itself
 // rather than in a core-config role. Core-specific knobs (SameBoy model/highpass/…) are system roles
-// (coreRoles.ts); LSDj etc. are feature roles. ("Common" here = common to all cores; not to be confused
+// (@retroplug/sameboy, @retroplug/mesen); LSDj etc. are feature roles. ("Common" here = common to all cores; not to be
+// confused
 // with the `Core` emulator axis in platform.ts.)
 //
 // The shape + defaults + clamping are a zod schema (the load-time validator); the
@@ -8,8 +9,8 @@
 // are STRIPPED - forward compatibility is handled by version stamping (a file written by a
 // newer build is refused and latched read-only), not by carrying fields we do not know.
 
-import { z, clampedNumber, boolField } from "./configSchema";
-
+import { z } from "zod";
+import { clampedNumber, boolField } from "@retroplug/core/configFields";
 export const GAIN_MIN = -90;
 export const GAIN_MAX = 12;
 

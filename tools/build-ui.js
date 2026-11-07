@@ -11,6 +11,7 @@ const {
     writeDepfile,
     WORKSPACE_NODE_MODULES,
 } = require("./esbuild-shared");
+const { tsOptions } = require("./ts-options");
 
 // Args from CMake (or default to writing into ../build/ui/ for ad-hoc runs).
 //   node build-ui.js <bundle.js> [bundle.d] [ui-entry.tsx]
@@ -39,6 +40,13 @@ esbuild
         platform: "neutral",          // default format is ESM, which tjsc consumes
         mainFields: bundleMainFields, // neutral has none by default; see esbuild-shared
         target: quickjsTarget,
+        // No tsconfigRaw, unlike every other embedded bundle (tools/ts-options.js says why they name one): esbuild
+        // reads a tsconfig per MODULE, and this bundle's modules come from two trees with different ones - the shell's
+        // (target ES2020, so a class field is assigned) and dpf.js's lv_binding_js (no target, so esbuild's default is
+        // define semantics, with its __publicField helper). One pinned set would flatten that difference, which is a
+        // change to how every dpf.js component class initialises, not a bundler preference.
+        // Pinned rather than discovered: the entry is the shell's, whose tsconfig implies alwaysStrict. ESM output
+        // carries no directive either way, and tools/ts-options.js says why the bytes are named here.
         absWorkingDir: REPO_ROOT,     // native alias values resolve vs the working dir
         external: ["tjs:path"],
         jsx: "automatic",

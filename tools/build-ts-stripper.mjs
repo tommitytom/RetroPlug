@@ -20,6 +20,7 @@
 // SILENTLY returned empty output on 2 more. An empty test file reports "1..0" and passes.)
 import { buildSync } from "esbuild";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { tsOptions } from "./ts-options.js";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -98,6 +99,9 @@ buildSync({
   platform: "neutral",
   mainFields: ["module", "main"],
   target: "es2020",
+  // Pinned rather than discovered (tools/ts-options.js). The entry is generated under build/, so nothing above it names
+  // a tsconfig today and the bundle carries no "use strict" directive; keep it that way whatever tsconfig appears.
+  tsconfigRaw: tsOptions(),
   minify: true,
   outfile: outFile,
   define: { "process.env.NODE_ENV": '"production"' },

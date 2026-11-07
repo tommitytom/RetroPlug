@@ -1,5 +1,6 @@
-// The N8 CHR <-> grayscale-PNG codec (src/risa/rom/chrImage.ts): dump a CHR bank as an editable tile grid and encode
-// it back. Pure, no hardware. Checks the SHADE4 ramp, the row-major tile layout, and a lossless roundtrip.
+// The CHR bank <-> grayscale-PNG codec (packages/tracker/ts/nes/chrImage.ts): dump a CHR bank as an editable tile
+// grid and encode it back. Pure, no hardware. Checks the SHADE4 ramp, the row-major tile layout, and a lossless
+// roundtrip.
 import { test, expect } from "@retroplug/testing";
 import {
   chrToPng,
@@ -9,8 +10,8 @@ import {
   SHADE4,
   grayToPixel,
   type ChrImage,
-} from "../../src/risa/rom/chrImage";
-import { encodeTile } from "../../src/risa/rom";
+} from "../nes/chrImage";
+import { encodeTile } from "../nes/font";
 
 const px = (img: ChrImage, x: number, y: number): number[] => {
   const o = (y * img.width + x) * 4;

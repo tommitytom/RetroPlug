@@ -1,6 +1,7 @@
-// Plain interfaces for the risa ROM asset views. Like ../../lsdj/rom/types.ts there is no zod SSOT — the
-// RisaRom view reads these out and patches bytes in place. Theme roles are risa's own "0xNN" strings (the
-// form its .rit files + the inline .rplg override use), so a .rit round-trips verbatim.
+// The plain types the NES asset formats are read into. Like the LSDj ROM views
+// (packages/retroplug/src/lsdj/rom/types.ts) there is no zod SSOT: a ROM view reads these out and patches bytes in
+// place. A theme's roles are "0xNN" strings (the form a .rit file and the inline asset override use), so a .rit
+// round-trips verbatim.
 
 import type { ThemeRole } from "./constants";
 

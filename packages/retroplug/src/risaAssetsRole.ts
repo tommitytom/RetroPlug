@@ -11,11 +11,11 @@
 // Applying reuses the pure-TS patcher (src/risa/rom).
 import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
 import type { ConstructSpec } from "./backend";
-import { z } from "./configSchema";
+import { z } from "zod";
 import { RisaRom } from "./risa/rom";
-import { applyRitOverride, ritOverrideSchema, CHR_BANK_SIZE, type RitAssetOverride } from "./ritAssetsRole";
+import { applyRitOverride, ritOverrideSchema, CHR_BANK_SIZE, type RitAssetOverride } from "@retroplug/tracker/ritAssets";
 
-/** @deprecated Use CHR_BANK_SIZE from ./ritAssetsRole - kept because it is a public export. */
+/** @deprecated Use CHR_BANK_SIZE from @retroplug/tracker/ritAssets - kept because it is a public export. */
 export const RISA_CHR_BANK_SIZE = CHR_BANK_SIZE;
 
 /** One asset override for `slot`. THEMES are palette indices, stored INLINE as a readable `theme` object

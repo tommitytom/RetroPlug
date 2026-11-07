@@ -5,6 +5,7 @@
 //   node tools/build-controlplane.js OUT.js
 const { buildSync } = require("esbuild");
 const { resolve } = require("path");
+const { tsOptions } = require("./ts-options");
 
 const PKG = resolve(__dirname, "../packages/retroplug");
 const outFile = process.argv[2] || resolve(__dirname, "../build/native/cp-bundle.js");
@@ -17,6 +18,8 @@ buildSync({
   platform: "neutral",
   mainFields: ["module", "main"],
   target: "es2020",
+  // Pinned rather than discovered (tools/ts-options.js): the entry is the shell's, whose tsconfig implies alwaysStrict.
+  tsconfigRaw: tsOptions({ alwaysStrict: true }),
   outfile: outFile,
   define: {
     "process.env.NODE_ENV": '"production"',

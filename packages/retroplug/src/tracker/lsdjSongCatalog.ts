@@ -1,5 +1,5 @@
 // The LSDj implementation of SongCatalog — thin wrappers over the existing pure ops (no logic here).
-import type { SongCatalog } from "./songCatalog";
+import type { SongCatalog } from "@retroplug/tracker/songCatalog";
 import { listProjects, workingSongName, isLsdjSav, workingSongDirty, activeSlot, savSongName } from "../lsdj/codec/sav";
 import { loadSongToWorking, deleteSongInSav, moveSongInSav, importSongsFromSav } from "../lsdjSongOps";
 

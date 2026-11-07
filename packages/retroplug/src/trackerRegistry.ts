@@ -4,9 +4,9 @@
 // src/romProviders.ts, for the same reason: a package exports to the registry, never the other way. What an
 // integration IS is tracker's contract (./tracker/trackerIntegration.ts), which reads nothing here.
 import type { RoleInstance } from "@retroplug/core/systemRoles";
-import type { AssetCatalog } from "./tracker/assetCatalog";
-import type { SongCatalog } from "./tracker/songCatalog";
-import type { TrackerIntegration } from "./tracker/trackerIntegration";
+import type { AssetCatalog } from "@retroplug/tracker/assetCatalog";
+import type { SongCatalog } from "@retroplug/tracker/songCatalog";
+import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import { TRACKER_INTEGRATIONS } from "./generated/packages";
 
 // The integrations themselves are the app contributions (./tracker/integrations), re-exported here because a leaf

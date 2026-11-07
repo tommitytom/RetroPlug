@@ -56,7 +56,7 @@ import type { RoleRegistry, RoleInstance } from "@retroplug/core/systemRoles";
 import { protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
-import type { TrackedSlot, WorkingSongImage } from "./tracker/songCatalog";
+import type { TrackedSlot, WorkingSongImage } from "@retroplug/tracker/songCatalog";
 
 // Frames the slot watcher waits for a landed carry's queued writes to appear before it trusts the cart
 // again; they normally appear on the next audio block, so this only bounds a cart that moved on.
@@ -1363,7 +1363,8 @@ export class SystemsStore {
    *  system's already are. A node's settings are strict, and the planner refuses the whole document for one node's, so
    *  a value the file holds that this build does not read (a newer build's added mode, which is additive and so no
    *  version bump; a v2 file's out-of-range mode index, which the v3 step leaves for this schema; a hand edit) would
-   *  silence the project. A field the schema's helpers repair (configSchema.ts: an unknown enum defaults, an integer
+   *  silence the project. A field the schema's helpers repair (@retroplug/core/configFields: an unknown enum defaults,
+   *  an integer
    *  clamps) is repaired. A config the schema refuses outright becomes what this ROM's providers suggest for the role
    *  (`suggested`: a Game Gear smsggdj's sms-sync is "gg", where the schema's default is "sms"), or the schema's
    *  defaults when they suggest none. A config it accepts keeps the value of every field the schema reads and gains

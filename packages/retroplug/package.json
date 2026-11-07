@@ -11,6 +11,9 @@
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/dsp": "workspace:*",
+    "@retroplug/mesen": "workspace:*",
+    "@retroplug/sameboy": "workspace:*",
+    "@retroplug/tracker": "workspace:*",
     "@retroplug/n8": "workspace:*",
     "zod": "^4.4.3"
   },

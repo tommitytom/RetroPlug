@@ -68,7 +68,7 @@ struct SameBoyConfig {
     SameBoyModel              model    = SameBoyModel::CgbC;
     SameBoyHighpass           highpass = SameBoyHighpass::Accurate;
     bool                      fastBoot = true;
-    // --- display knobs (TS "sameboy" role; see coreRoles.ts) ---------------
+    // --- display knobs (the TS "sameboy" role; packages/sameboy/ts/app.ts) --
     // Every default below reproduces what SameBoySystem hardcoded before these were configurable, so
     // an old project renders identically. All are live — none needs a core restart.
     SameBoyColorCorrection    colorCorrection = SameBoyColorCorrection::Disabled;

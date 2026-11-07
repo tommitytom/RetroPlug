@@ -19,7 +19,7 @@ import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { MemoryRegion } from "../src/backend";
-import { MODEL_VALUES } from "../src/settingsEnums";
+import { MODEL_VALUES } from "@retroplug/sameboy/enums";
 import { directGraph } from "../src/graph/directGraph";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).

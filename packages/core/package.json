@@ -11,6 +11,7 @@
     ".": "./ts/index.ts",
     "./canonicalJson": "./ts/canonicalJson.ts",
     "./clock": "./ts/clock.ts",
+    "./configFields": "./ts/configFields.ts",
     "./constructSpec": "./ts/constructSpec.ts",
     "./defineNode": "./ts/defineNode.ts",
     "./definePackage": "./ts/definePackage.ts",
@@ -28,11 +29,12 @@
     "./ticks": "./ts/ticks.ts"
   },
   "dependencies": {
-    "@retroplug/node-sdk": "workspace:*"
+    "@retroplug/node-sdk": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@retroplug/testing": "workspace:*",
-    "zod": "^4.4.3"
+    "typescript": "^7.0.2",
+    "@retroplug/testing": "workspace:*"
   },
   "retroplug": {
     "native": { "target": "retroplug-core-nodes", "entry": "rp_core_package", "device": true },

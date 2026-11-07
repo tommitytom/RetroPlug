@@ -28,7 +28,7 @@ import { LsdjReader, type LsdjState, CHANNELS, type ChannelName } from "../src/l
 import { directGraph } from "../src/graph/directGraph";
 import type { GraphController } from "../src/graph/controller";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
-import type { MidiRouting } from "../src/settingsEnums";
+import { MidiRouting } from "@retroplug/core/midiRouting";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).
 const graph = directGraph();

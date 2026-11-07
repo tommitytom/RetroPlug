@@ -3,7 +3,6 @@
 // (src/generated/packages.ts) concatenated every package's. The shell carries what no package owns yet, in the order
 // the app registered it; a package that grows an app module contributes its own list from there.
 import { definePackage } from "@retroplug/core/definePackage";
-import { CORE_ROLES } from "./coreRoles";
 import { DSP_ROLES } from "./dspRoles";
 import { LSDJ_ASSETS_ROLE } from "./lsdjAssetsRole";
 import { RISA_ROLE } from "./risaRole";
@@ -22,14 +21,15 @@ import { blipToasterIntegration, lsdjIntegration, risaIntegration, smsggdjIntegr
 import { LSDJ_KIT_FORMAT, RISA_KIT_FORMAT } from "./kit/compile";
 // The keys the owner packages add to the contract (their modules augment PackageContributions): type-only, so nothing
 // loads at run time.
-import type {} from "./tracker/packageContributions";
+import type {} from "@retroplug/tracker/packageContributions";
 import type {} from "@retroplug/dsp/packageContributions";
 
 export default definePackage({
-  // The backend "system" roles (coreRoles), the feature roles that have a protocol node (dspRoles), and those that
-  // have none (asset overrides, a ROM's facts), in the order buildAppRegistry registered them.
+  // The feature roles that have a protocol node (dspRoles) and those that have none (asset overrides, a ROM's
+  // facts), in the order buildAppRegistry registered them. The two core-config "system" roles are no longer here:
+  // @retroplug/sameboy and @retroplug/mesen contribute them from their own app modules, and the product list places
+  // those packages ahead of the shell, so the generated registry hands the same order to the registry.
   roles: [
-    ...CORE_ROLES,
     ...DSP_ROLES,
     LSDJ_ASSETS_ROLE,
     RISA_ROLE,

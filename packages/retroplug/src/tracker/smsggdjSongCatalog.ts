@@ -23,7 +23,7 @@
 // `load`. See `workingSongOutsideBattery` below, which is how the shared Songs menu learns to warn about
 // Delete and Move Up as well. It also means the reverse: after a project LOAD the cart has only just
 // booted, so its working song is the cart's, not the user's, and `workingSongDirty` has to say so.
-import type { SongCatalog, TrackedSlot, WorkingSongCommit, WorkingSongImage } from "./songCatalog";
+import type { SongCatalog, TrackedSlot, WorkingSongCommit, WorkingSongImage } from "@retroplug/tracker/songCatalog";
 import {
   commonBootedOffset,
   commonConfigOffsets,

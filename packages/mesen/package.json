@@ -1,0 +1,25 @@
+{
+  "name": "@retroplug/mesen",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The Mesen core's half of the app: the mesen core-config role every Mesen system carries (NES, GBA, SMS/GG) - region, sprite limit, FM, APU latency, the cartridge-accuracy switches, expansion volume, the per-channel export mode, the emulated N8's SD root, FIFO profile and reliable link, and driving a real cart - and the settings enums its schema reads. Its native half (rp_mesen_package) is still packages/native's until F2.",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./app": "./ts/app.ts",
+    "./enums": "./ts/enums.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "ts/app.ts"
+  }
+}

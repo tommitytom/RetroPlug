@@ -10,6 +10,9 @@
     "@retroplug/core": "workspace:*",
     "@retroplug/node-sdk": "workspace:*"
   },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
   "retroplug": {
     "native": { "target": "retroplug-devtest-nodes", "entry": "rp_devtest_plan_package", "device": true },
     "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 57344 }

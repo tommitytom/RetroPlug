@@ -1,15 +1,24 @@
-// The tracker-integration layer: a console-agnostic view of a music-tracker cart (LSDj, risa, …). Each console
-// is one TrackerIntegration bundling its SONG catalog (the battery — shared song menu + recent-song names) and
-// ASSET catalog (the ROM's replaceable kits/palettes/fonts — shared asset menu). New consoles add their
-// integration to the product's list (src/trackerRegistry.ts), the one extension point (like the CLI `tools` array).
-// This module is the layer's front door: it only re-exports, so a leaf (./liveSav) can import the contract from
-// ./trackerIntegration without an import cycle through here, and the resolvers from ../trackerRegistry.
+// The shell's front door to the tracker layer: @retroplug/tracker's contracts and formats, the consoles' concrete
+// catalogs (each cart's own, still in the shell's src/ while neither cart has a package of its own), and the
+// store-facing helpers that
+// read a running system (./liveSav, which needs the shell's backend and stores). The contracts live in the package and
+// are re-exported here so the UI and the stores keep one door; a package imports @retroplug/tracker directly.
+//
+// A console is one TrackerIntegration bundling its SONG catalog (the battery - the shared song menu and recent-song
+// names) and its ASSET catalog (the ROM's replaceable kits/palettes/fonts - the shared asset menu). A cart adds its
+// integration to the product's list through its app module; the resolvers over that list are src/trackerRegistry.ts.
 
-export type { SongCatalog, SongInfo } from "./songCatalog";
-export { workingSongTargets } from "./songCatalog";
-export type { AssetCatalog, AssetSlot, AssetSlotRow, AssetOverride, AssetTypeInfo } from "./assetCatalog";
-export { effectiveAssets, readAssetOverrides } from "./assetCatalog";
-export type { TrackerIntegration } from "./trackerIntegration";
+export type { SongCatalog, SongInfo } from "@retroplug/tracker/songCatalog";
+export { workingSongTargets } from "@retroplug/tracker/songCatalog";
+export type {
+  AssetCatalog,
+  AssetSlot,
+  AssetSlotRow,
+  AssetOverride,
+  AssetTypeInfo,
+} from "@retroplug/tracker/assetCatalog";
+export { effectiveAssets, readAssetOverrides } from "@retroplug/tracker/assetCatalog";
+export type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 export { lsdjSongCatalog } from "./lsdjSongCatalog";
 export { risaSongCatalog } from "./risaSongCatalog";
 export { lsdjAssetCatalog } from "./lsdjAssetCatalog";

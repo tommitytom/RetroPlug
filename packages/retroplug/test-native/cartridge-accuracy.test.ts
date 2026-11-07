@@ -1,5 +1,5 @@
 // The two "mesen" role switches that choose between the documented CHIP behaviour and an Everdrive N8
-// Pro's FPGA core. Both default to "n8" (coreRoles.ts: RetroPlug is music software, and NES music is
+// Pro's FPGA core. Both default to "n8" (@retroplug/mesen':s Mesen role: RetroPlug is music software, and NES music is
 // overwhelmingly played back through that cartridge), so what you hear here is what the cartridge does;
 // "chip" is the documented behaviour, for playback accuracy on a stock cartridge.
 //

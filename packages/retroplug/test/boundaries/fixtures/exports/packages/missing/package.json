@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/missing",
+  "private": true,
+  "exports": {
+    ".": "./ts/gone.ts"
+  }
+}

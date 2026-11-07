@@ -11,7 +11,7 @@ import { ControllerSession, isPredictive, lsdjMidiMapTarget, type ControllerApp,
 import { Palette, palette } from "../../src/launchpad";
 import { SongSchema } from "../../src/lsdj/model";
 import { PredictedLsdjModel } from "../../src/lsdj/playback";
-import { idlePosition, type PlaybackModel } from "../../src/tracker/playbackModel";
+import { idlePosition, type PlaybackModel } from "@retroplug/tracker/playbackModel";
 
 const RED = { mode: "static", colour: palette(Palette.red) } as const;
 

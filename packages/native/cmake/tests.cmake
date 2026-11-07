@@ -84,6 +84,28 @@ retroplug_add_test_binary(
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
 
+# The TS sources the [settings] oracle reads (test/engine-graph/SystemNode.test.cpp's tsValues, tsRange, tsConstant),
+# gathered rather than spelled out: every package's own TS - its enums, and its role schema's clamped fields - plus the
+# three files of the app's that still hold knobs of their own. A package that takes an enum or a range from the shell
+# therefore needs no change here; the oracle reads whichever source declares the name, and fails the case when two do.
+# A package's test files stay out: an enum declared in one is a fixture, not the label list a knob takes. Joined with
+# commas because a CMake list's separator would split the definition into one per path, and globbed with
+# CONFIGURE_DEPENDS so the build re-reads it when a package's TS tree grows.
+file(GLOB_RECURSE _rp_settings_ts CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/packages/*/ts/*.ts")
+set(_rp_settings_ts_sources "")
+foreach(_rp_settings_ts_file IN LISTS _rp_settings_ts)
+    if(_rp_settings_ts_file MATCHES "/ts/test/" OR _rp_settings_ts_file MATCHES "\\.test\\.ts$")
+        continue()
+    endif()
+    list(APPEND _rp_settings_ts_sources "${_rp_settings_ts_file}")
+endforeach()
+list(APPEND _rp_settings_ts_sources
+     "${CMAKE_SOURCE_DIR}/packages/retroplug/src/settingsEnums.ts"     # the app's own enums: layout, routing, LSDj mode
+     "${CMAKE_SOURCE_DIR}/packages/retroplug/src/systemSettings.ts"    # and the gain range every system's mix reads
+     "${CMAKE_SOURCE_DIR}/packages/retroplug/src/graph/buildGraph.ts")  # the document's own knob and field tables
+list(SORT _rp_settings_ts_sources)
+string(REPLACE ";" "," _rp_settings_ts "${_rp_settings_ts_sources}")
+
 # Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md, -b3b-design.md,
 # -c2-design.md): each system node renders exactly what its core renders driven directly, its inputs and its settings'
 # knobs included, the engine places, re-arms and frees what the documents TS builds say, the host MIDI I/O nodes move
@@ -98,6 +120,7 @@ retroplug_add_test_binary(
 # Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
 # CountingAllocator.cpp is shared with retroplug-graph-test, for the no-allocation checks. The script tests' bundle
 # (the authoring layer for their toy nodes) is embedded here alone: cmake/bundles.cmake, retroplug-script-test-bundle.
+
 retroplug_add_test_binary(
     NAME     retroplug-engine-graph-test
     SOURCES  test/engine-graph/Deterministic.cpp
@@ -140,13 +163,11 @@ retroplug_add_test_binary(
              RP_SMS_SAV_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sav"
              RP_BUILD_GRAPH_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph.json"
              RP_BUILD_GRAPH_ROLE_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph-roles.json"
-             RP_SETTINGS_ENUMS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/settingsEnums.ts"  # the labels a knob takes
-             RP_BUILD_GRAPH_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/graph/buildGraph.ts"  # the knob ranges
-             RP_CORE_ROLES_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/coreRoles.ts"  # their ranges
-             RP_SYSTEM_SETTINGS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/systemSettings.ts"  # gain's range
+             RP_SETTINGS_TS_PATHS="${_rp_settings_ts}"  # the TS the [settings] oracle reads, listed above
              RP_PORTS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/core/ts/ports.ts"  # the queue capacities
              RP_PRODUCT_REGISTRATIONS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph/golden/product-registrations.json"
              RP_BUILD_TYPE="$<CONFIG>")                 # the bench prints the configuration it was built in
+
 add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
 # The providers header retroplug_product() would generate for a product listing no package with a provider, which
 # Providers.test.cpp holds to starting and mounting nothing beside this binary's own (it lists the N8 pack).
@@ -264,6 +285,9 @@ set(_rp_gather_cases
     "genex-declared|holds|"
     "interface-include|refused|which is in the beta package's tree, which alpha does not declare"
     "source-outside|refused|compiles ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src/x.cpp, which is in the beta"
+    "alias|refused|links retroplug-beta, a target of the beta package, which alpha does not declare"
+    "alias-declared|holds|"
+    "copt|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
     "unjudged|refused|a generator expression the boundary check cannot evaluate")
 foreach(_rp_case IN LISTS _rp_gather_cases)
     string(REPLACE "|" ";" _rp_case "${_rp_case}")

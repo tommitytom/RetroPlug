@@ -8,7 +8,8 @@
 // The control plane's view: each app's runtime (apps/index.ts, zod-free, which the audio side imports alone) with
 // its label and its config's schema.
 
-import { z, boolField, clampedInt, enumField } from "../configSchema";
+import { z } from "zod";
+import { boolField, clampedInt, enumField } from "@retroplug/core/configFields";
 import type { RoleConfigSchema } from "@retroplug/core/systemRoles";
 import type { ControllerApp } from "./session";
 import { CONTROLLER_APPS, type ControllerAppRuntime } from "./apps";

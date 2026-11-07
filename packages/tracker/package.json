@@ -1,0 +1,35 @@
+{
+  "name": "@retroplug/tracker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The cart-neutral half of the tracker layer: the song and asset catalog contracts, a cart's TrackerIntegration, the playback-position model a controller surface codes against, a working song as bytes, the shared \"rit\" asset override contract and its patcher, and the NES asset formats every tracker cart reads the same way (iNES header and bank sizes, the 8 KB DMC kit bank, the CHR font banks, the 7-role theme record and the NES master palette).",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./assetCatalog": "./ts/assetCatalog.ts",
+    "./nes/chrImage": "./ts/nes/chrImage.ts",
+    "./nes/constants": "./ts/nes/constants.ts",
+    "./nes/find": "./ts/nes/find.ts",
+    "./nes/font": "./ts/nes/font.ts",
+    "./nes/kitBank": "./ts/nes/kitBank.ts",
+    "./nes/theme": "./ts/nes/theme.ts",
+    "./nes/types": "./ts/nes/types.ts",
+    "./packageContributions": "./ts/packageContributions.ts",
+    "./playbackModel": "./ts/playbackModel.ts",
+    "./ritAssets": "./ts/ritAssets.ts",
+    "./songCatalog": "./ts/songCatalog.ts",
+    "./trackerIntegration": "./ts/trackerIntegration.ts",
+    "./workingSongBlob": "./ts/workingSongBlob.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
+  }
+}

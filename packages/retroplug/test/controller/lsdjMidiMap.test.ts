@@ -12,7 +12,7 @@ import {
 import { Palette, palette, type Led } from "../../src/launchpad";
 import { SongSchema, type Song } from "../../src/lsdj/model";
 import { PredictedLsdjModel } from "../../src/lsdj/playback";
-import { idlePosition, type PlaybackModel, type PlaybackPosition } from "../../src/tracker/playbackModel";
+import { idlePosition, type PlaybackModel, type PlaybackPosition } from "@retroplug/tracker/playbackModel";
 
 const CONTENT: Led = { mode: "static", colour: palette(Palette.greenDim) };
 const PLAYHEAD: Led = { mode: "static", colour: palette(Palette.greenBright) };

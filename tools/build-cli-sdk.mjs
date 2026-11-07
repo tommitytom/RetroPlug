@@ -17,6 +17,7 @@ import { mkdirSync, copyFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generate } from "../packages/retroplug/scripts/lib/packages.mjs";
+import { tsOptions } from "./ts-options.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
@@ -39,6 +40,9 @@ buildSync({
   platform: "neutral",
   mainFields: ["module", "main"],
   target: "es2020",
+  // Pinned rather than discovered (tools/ts-options.js): this file is what a CONSUMER runs, in a checkout whose
+  // packages may carry any tsconfig, and the SDK it writes is shipped.
+  tsconfigRaw: tsOptions({ alwaysStrict: true }),
   outfile: jsOut,
   define: {
     "process.env.NODE_ENV": '"production"',

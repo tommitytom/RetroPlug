@@ -8,7 +8,8 @@
 // The bindings PROFILE files (bindings/<name>.json) are a separate concern — this owns
 // only config.json, holding the active-profile names as plain strings.
 
-import { z, clampedInt, stringField, enumField } from "./configSchema";
+import { z } from "zod";
+import { clampedInt, stringField, enumField } from "@retroplug/core/configFields";
 import type { SplitMode } from "./render";
 
 /** The persisted render-menu selections (System > Render): what to split into, the output sample rate, and

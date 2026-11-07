@@ -13,5 +13,8 @@
   },
   "dependencies": {
     "@retroplug/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }

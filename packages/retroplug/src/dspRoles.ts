@@ -6,7 +6,8 @@
 
 import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
 import type { ConstructSpec } from "./backend";
-import { z, clampedInt, boolField, enumField } from "./configSchema";
+import { z } from "zod";
+import { clampedInt, boolField, enumField } from "@retroplug/core/configFields";
 import { LSDJ_MODE_VALUES } from "./settingsEnums";
 
 // lsdj-sync load-time hook: a fresh LSDj cart with no SRAM runs a 12–15 s cartridge self-test on boot.

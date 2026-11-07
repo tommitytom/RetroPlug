@@ -1,0 +1,25 @@
+{
+  "name": "@retroplug/sameboy",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The SameBoy core's half of the app: the sameboy core-config role (model, highpass, colour correction, DMG palette, fast boot, light temperature) and the settings enums its schema reads, each tuple's position the native enum's. Its native half (rp_sameboy_package) is still packages/native's until F2.",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./app": "./ts/app.ts",
+    "./enums": "./ts/enums.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "ts/app.ts"
+  }
+}

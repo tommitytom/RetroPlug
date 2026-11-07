@@ -5,7 +5,8 @@
 import { runGroup, type ParityCase } from "./group";
 import { even, type Rig } from "./rig";
 import { BOOT_MS, frames, mgb, mgbFile, ROMS } from "./scenes";
-import type { AudioRouting, ChannelExportMode } from "../../src/settingsEnums";
+import type { ChannelExportMode } from "@retroplug/mesen/enums";
+import type { AudioRouting } from "../../src/settingsEnums";
 
 const SR = 48000;
 const boot = { blocks: even(frames(SR, BOOT_MS), 512) };

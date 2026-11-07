@@ -14,6 +14,9 @@
 #   genex-declared  $<LINK_ONLY:> and $<BUILD_INTERFACE:> around beta's target and include directory: holds
 #   interface-include  alpha's INTERFACE_INCLUDE_DIRECTORIES is beta's tree: refused
 #   source-outside  alpha's target compiles beta's source: refused
+#   alias        alpha links rp::beta, an alias of beta's target, which alpha does not declare: refused
+#   alias-declared  the same alias with beta declared: holds (an alias is judged as the target behind it)
+#   copt         alpha's compile options add -Ibeta's tree: refused like an include directory would be
 #   unjudged     alpha links a generator expression the check cannot evaluate: refused
 cmake_minimum_required(VERSION 3.19)
 project(retroplug_package_gather NONE)
@@ -31,7 +34,8 @@ set(RP_PACKAGES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/packages")
 set_property(GLOBAL PROPERTY RP_PACKAGES alpha beta testing native)
 # What alpha's manifest declares: beta for the cases that reach it and must hold, nothing for the ones that must be
 # refused (a reach it does not declare).
-if(RP_GATHER_CASE STREQUAL "declared" OR RP_GATHER_CASE STREQUAL "genex-declared")
+if(RP_GATHER_CASE STREQUAL "declared" OR RP_GATHER_CASE STREQUAL "genex-declared"
+   OR RP_GATHER_CASE STREQUAL "alias-declared")
     set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS beta)
 else()
     set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS "")

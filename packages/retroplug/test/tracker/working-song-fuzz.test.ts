@@ -45,8 +45,8 @@ import {
   wrapSong,
   SMDJ4_BLOCK_LEN,
 } from "../../src/smsggdj/codec/sav";
-import type { WorkingSongImage } from "../../src/tracker/songCatalog";
-import { decodeWorkingSong } from "../../src/tracker/workingSongBlob";
+import type { WorkingSongImage } from "@retroplug/tracker/songCatalog";
+import { decodeWorkingSong } from "@retroplug/tracker/workingSongBlob";
 import { smsggdjRom, smsggdjRam } from "../systems/fixtures";
 
 /** What the model needs of a core a document built: the system whose slot it took, and the seeds it booted from. */

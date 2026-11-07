@@ -1,5 +1,6 @@
 // What the `risa-assets` and `bliptoaster-assets` roles have in common, which turned out to be nearly all
-// of it: the override shape, its zod schema, and the patcher that folds one override onto an open ROM.
+// of it: the override shape, its zod schema, and the patcher that folds one override onto an open ROM. The roles
+// themselves are the carts' (they name their own ROM view); this is the shared "rit" asset contract.
 //
 // The two carts expose the same asset surface - a 7-role theme table, 8 KB CHR font banks, 8 KB DMC kit
 // banks - so the two roles had grown ~120 verbatim lines apart from the class name and one constant that
@@ -10,12 +11,14 @@
 // than a theme, and it validates by trial-applying to a parsed ROM rather than by length. Sharing a name
 // with it would cost more than it saved.
 import type { ConstructCaps } from "@retroplug/core/systemRoles";
-import type { RisaTheme } from "./risa/rom";
-import { z } from "./configSchema";
-import { encodeThemeRecord, encodeThemeName, normalizeTheme, KIT_BANK_SIZE, CHR_BANK_SIZE, isBankPopulated } from "./risa/rom";
+import type { RisaTheme } from "./nes/types";
+import { z } from "zod";
+import { CHR_BANK_SIZE, KIT_BANK_SIZE } from "./nes/constants";
+import { encodeThemeRecord, encodeThemeName, normalizeTheme } from "./nes/theme";
+import { isBankPopulated } from "./nes/kitBank";
 
-// One font slot = one 8 KB CHR bank, on both carts. Re-exported rather than redeclared: risa/rom already
-// owns it, and BlipToaster's role was already importing it from there.
+// One font slot = one 8 KB CHR bank, on both carts. Re-exported rather than redeclared: ./nes/constants already owns
+// it, and both carts' asset roles import it from here.
 export { CHR_BANK_SIZE };
 
 /** One asset override for `slot`. THEMES are palette indices, stored INLINE as a readable `theme` object
@@ -79,7 +82,7 @@ export function applyRitOverride(rom: RitAssetRom, ov: RitAssetOverride, caps: C
     if (!bank) throw new Error(`kit override slot ${ov.slot}: cannot read ${ov.path}`);
     if (bank.length !== KIT_BANK_SIZE) throw new Error(`kit override slot ${ov.slot}: .rkit must be exactly 8 KB`);
     if (!isBankPopulated(bank)) throw new Error(`kit override slot ${ov.slot}: not a populated kit bank`);
-    rom.setKit(ov.slot, bank); // dual-writes the resident metadata mirror
+    rom.setKit(ov.slot, bank); // the cart's own view of a kit write; risa's keeps its metadata mirror in step
     return;
   }
   // font

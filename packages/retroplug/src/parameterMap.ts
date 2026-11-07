@@ -14,7 +14,7 @@
 // The CC tables are transcribed from each ROM's own documentation, not guessed: mGB's from the MIDI
 // implementation map in trash80/mGB's README, BlipToaster's from the per-chip tables in its
 // docs/chips/*.md, each of which lists every CC that build responds to and on which channels.
-import { MidiRouting } from "./settingsEnums";
+import { MidiRouting } from "@retroplug/core/midiRouting";
 
 /** One control a ROM exposes, expanded to a single automation lane. */
 export interface RomParameter {

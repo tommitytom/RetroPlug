@@ -5,7 +5,7 @@
 import { runGroup, type ParityCase } from "./group";
 import { even } from "./rig";
 import { frames, mgb, mgbFile, BOOT_MS, phrase, ROMS } from "./scenes";
-import { MIDI_ROUTING_VALUES, type MidiRouting } from "../../src/settingsEnums";
+import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
 
 const SR = 48000;
 const blocks = (n: number) => even(n, 512);

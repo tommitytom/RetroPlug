@@ -28,9 +28,11 @@ import type { SystemNodeType } from "../../src/platform";
 import { outNodeOf, protocolPipeline } from "../../src/graph/protocolNodes";
 import type { GraphController } from "../../src/graph/controller";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
-import { CHANNEL_EXPORT_VALUES, MIDI_ROUTING_VALUES, type ControllerTarget } from "../../src/settingsEnums";
+import { CHANNEL_EXPORT_VALUES } from "@retroplug/mesen/enums";
+import { MIDI_ROUTING_VALUES } from "@retroplug/core/midiRouting";
+import { type ControllerTarget } from "../../src/settingsEnums";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
-import { registerCoreRoles } from "../../src/coreRoles";
+import { registerCoreRoles } from "../_coreRoles";
 import golden from "./golden/build-graph-roles.json";
 
 declare const tjs: { env: Record<string, string | undefined>; writeFile(path: string, data: string): Promise<void> };
@@ -110,7 +112,8 @@ const model = (systems: GraphSystem[], over: Partial<GraphModel> = {}): GraphMod
   ...over,
 });
 
-// A core-config role's config as a store holds it, its role's schema parsed (coreRoles.ts), and a gain: what the
+// A core-config role's config as a store holds it, its role's schema parsed (@retroplug/sameboy, @retroplug/mesen),
+// and a gain: what the
 // store's projection hands buildGraph beside the pipeline (SystemsStore.graphSystems), which the system node carries
 // as its settings and params (docs/modular-graph-phase-c2-design.md section 3).
 const CORE_ROLES = new RoleRegistry();

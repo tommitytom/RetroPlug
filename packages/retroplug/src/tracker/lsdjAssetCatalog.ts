@@ -1,7 +1,7 @@
 // The LSDj implementation of AssetCatalog — the base-ROM asset parse (relocated verbatim from the menu's old
 // lsdjInventory). No overrides here (that's the role config, read live at the menu) and no memoization (the UI
 // caches the file read). The file-dialog Export/Replace stay in the menu (they own the .kit/.lsdpal/.png formats).
-import { readAssetOverrides, type AssetCatalog, type AssetSlot } from "./assetCatalog";
+import { readAssetOverrides, type AssetCatalog, type AssetSlot } from "@retroplug/tracker/assetCatalog";
 import type { ConstructCaps } from "@retroplug/core/systemRoles";
 import { LsdjRom, KIT_COUNT } from "../lsdj/rom";
 import { applyOverridesToRom, type LsdjAssetOverride } from "../lsdjAssetsRole";

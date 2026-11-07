@@ -72,7 +72,7 @@
   },
   "retroplug": {
     "products": {
-      "desktop": ["core", "dsp", "graph-runtime", "n8", "native", "bliptoaster"]
+      "desktop": ["core", "sameboy", "mesen", "dsp", "graph-runtime", "n8", "native", "bliptoaster"]
     }
   },
   "dependencies": {

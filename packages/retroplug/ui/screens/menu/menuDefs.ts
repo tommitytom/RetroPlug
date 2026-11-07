@@ -8,23 +8,18 @@ import type { SystemView } from "../../../src/systemsStore";
 import { drivesRealCartOf } from "../../../src/graph/buildGraph";
 import type { ProjectSettings } from "../../../src/projectConfig";
 import {
-  LAYOUT_VALUES,
-  MIDI_ROUTING_VALUES,
-  AUDIO_ROUTING_VALUES,
   MODEL_VALUES,
   HIGHPASS_VALUES,
-  REGION_VALUES,
-  LSDJ_MODE_VALUES,
   COLOR_CORRECTION_VALUES,
   DMG_PALETTE_VALUES,
-  type AudioRouting,
   type SameBoyModel,
   type SameBoyHighpass,
   type SameBoyColorCorrection,
   type SameBoyDmgPalette,
-  type ConsoleRegion,
-  type LsdjSyncMode,
-} from "../../../src/settingsEnums";
+} from "@retroplug/sameboy/enums";
+import { REGION_VALUES, type ConsoleRegion } from "@retroplug/mesen/enums";
+import { MIDI_ROUTING_VALUES } from "@retroplug/core/midiRouting";
+import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, LSDJ_MODE_VALUES, type AudioRouting, type LsdjSyncMode } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
 import type { SplitMode } from "../../../src/render";

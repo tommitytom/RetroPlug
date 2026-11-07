@@ -33,6 +33,7 @@
 #include <functional>
 #include <memory>
 #include <random>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -884,13 +885,55 @@ void run(NodeRig& rig, std::uint32_t frames = 512, int blocks = 1) {
     for (int b = 0; b < blocks; ++b) rig.host->processBlock(frames, t, out.ptrs.data(), 2);
 }
 
-// The quoted strings of `export const <name> = [...] as const;` in packages/retroplug/src/settingsEnums.ts.
+// The TS sources the configure lists for this oracle (packages/native/cmake/tests.cmake): every package's own TS, with
+// the app's settingsEnums.ts and systemSettings.ts beside them. Split on the comma the list is joined with, because a
+// `;` in a compile definition is CMake's own list separator.
+const std::vector<std::string>& settingsTsSources() {
+    static const std::vector<std::string> sources = [] {
+        std::vector<std::string> out;
+        std::stringstream split(RP_SETTINGS_TS_PATHS);
+        for (std::string path; std::getline(split, path, ',');) out.push_back(path);
+        return out;
+    }();
+    return sources;
+}
+
+// A listed source's text.
+std::string readText(const std::string& path) {
+    const auto bytes = readFile(path.c_str());
+    return std::string(bytes.begin(), bytes.end());
+}
+
+// The one listed source whose path contains `where` - how a case names a package's or the app's file without the
+// configure having to name each one. Two matches would read the first of them in some run and the other in the next.
+std::string settingsTsSource(const std::string& where) {
+    std::vector<std::string> hits;
+    for (const auto& path : settingsTsSources())
+        if (path.find(where) != std::string::npos) hits.push_back(path);
+    INFO("settings TS source named by \"" << where << "\"");
+    REQUIRE(hits.size() == 1);
+    return hits.front();
+}
+
+// The quoted strings of `export const <name> = [...] as const;`, read from whichever source declares it: an enum lives
+// with the package that owns the knob reading it (SameBoy's MODEL_VALUES is @retroplug/sameboy's, the app's own enums
+// are settingsEnums.ts's). A name no source spells leaves the case failing on an empty list; one two sources spell
+// fails too, because the stale copy of a moved enum is exactly the thing that would otherwise be silently compared.
 std::vector<std::string> tsValues(const std::string& name) {
-    const auto bytes = readFile(RP_SETTINGS_ENUMS_PATH);
-    const std::string ts(bytes.begin(), bytes.end());
     const std::string head = "export const " + name + " = [";
+    std::vector<std::string> declared;
+    for (const auto& path : settingsTsSources()) {
+        const std::string ts = readText(path);
+        if (ts.find(head) == std::string::npos) continue;
+        declared.push_back(path);
+        if (declared.size() > 1) break;  // the refusal names both, and reading further says nothing more
+    }
+    std::string where;
+    for (const auto& path : declared) where += (where.empty() ? ": " : " and ") + path;
+    INFO("enum " << name << " is declared by " << declared.size() << " source(s)" << where);
+    REQUIRE(declared.size() == 1);
+    const std::string ts = readText(declared[0]);
     const auto start = ts.find(head);
-    if (start == std::string::npos) return {};
     const auto end = ts.find("] as const;", start);
     std::vector<std::string> values;
     for (auto q = ts.find('"', start); q < end; q = ts.find('"', q + 1)) {
@@ -931,13 +974,12 @@ rfl::Generic::Object knobSchema(const rfl::Generic::Object& schema, const char* 
 }
 
 // The numbers a TS field's own entry spells: `name: helper(<numbers>)`, e.g. `lightTemperature: within(-1, 1)` in
-// buildGraph.ts's SETTING_FIELDS, or `expansionVolume: clampedInt(0, 200, 100)` in coreRoles.ts's mesen schema. A
+// buildGraph.ts's SETTING_FIELDS, or `expansionVolume: clampedInt(0, 200, 100)` in @retroplug/mesen's role schema. A
 // knob's entry has the range's two, a zod clamped field those and its default. A match behind a `//` is skipped, so a
 // comment above the entry may spell it too; the first match outside one wins, and no match leaves the case failing on
 // an empty list.
-std::vector<double> tsNumbers(const char* path, const std::string& entry) {
-    const auto bytes = readFile(path);
-    const std::string ts(bytes.begin(), bytes.end());
+std::vector<double> tsNumbers(const std::string& where, const std::string& entry) {
+    const std::string ts = readText(settingsTsSource(where));
     auto at = ts.find(entry);
     while (at != std::string::npos) {
         const auto lineStart = ts.rfind('\n', at);
@@ -963,15 +1005,14 @@ std::vector<double> tsNumbers(const char* path, const std::string& entry) {
 }
 
 // The range a knob's numbers spell: its first two, whether or not a default follows.
-std::vector<double> tsRange(const char* path, const std::string& entry) {
-    const auto numbers = tsNumbers(path, entry);
+std::vector<double> tsRange(const std::string& where, const std::string& entry) {
+    const auto numbers = tsNumbers(where, entry);
     return numbers.size() >= 2 ? std::vector<double>{numbers[0], numbers[1]} : std::vector<double>{};
 }
 
 // The number an exported TS constant spells, e.g. systemSettings.ts's `export const GAIN_MIN = -90;`.
-double tsConstant(const char* path, const std::string& name) {
-    const auto bytes = readFile(path);
-    const std::string ts(bytes.begin(), bytes.end());
+double tsConstant(const std::string& where, const std::string& name) {
+    const std::string ts = readText(settingsTsSource(where));
     const auto at = ts.find("export const " + name + " =");
     if (at == std::string::npos) return 0.0;
     return std::strtod(ts.c_str() + ts.find('=', at) + 1, nullptr);
@@ -987,8 +1028,7 @@ struct TsConstructField {
 };
 
 std::vector<TsConstructField> tsConstructFields(const std::string& type) {
-    const auto bytes = readFile(RP_BUILD_GRAPH_TS_PATH);
-    const std::string ts(bytes.begin(), bytes.end());
+    const std::string ts = readText(settingsTsSource("src/graph/buildGraph.ts"));
     const auto table = ts.find("const CONSTRUCT_FIELDS:");
     if (table == std::string::npos) return {};
     const auto at = ts.find("\"" + type + "\": {", table);
@@ -1082,7 +1122,8 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
     CHECK(labelsOf(knobSchema(nesSchema, "mmc5PhaseReset")) == tsValues("CARTRIDGE_ACCURACY_VALUES"));
     CHECK(*knobSchema(nesSchema, "removeSpriteLimit").get("type")->to_string() == "boolean");
     CHECK(tsValues("MODEL_VALUES").size() == 14);  // the reader found them
-    // A range's bounds, each its own allOf branch.
+    // A range's bounds, each its own allOf branch. (The numbers a role schema clamps are read from the console package
+    // whose role declares the field.)
     const auto bounds = [](const rfl::Generic::Object& knob) {
         std::vector<double> b;
         const auto branches = knob.get("allOf")->to_array();
@@ -1094,14 +1135,14 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
     };
     // Each range is TS's, in all three copies: buildGraph's SETTING_FIELDS, which picks a value for the document, the
     // role schema's clamped field, which a stored or edited config comes through, and the node's own declaration.
-    CHECK(bounds(knobSchema(gb, "lightTemperature")) == tsRange(RP_BUILD_GRAPH_TS_PATH, "lightTemperature:"));
-    CHECK(bounds(knobSchema(gb, "lightTemperature")) == tsRange(RP_CORE_ROLES_TS_PATH, "lightTemperature:"));
+    CHECK(bounds(knobSchema(gb, "lightTemperature")) == tsRange("src/graph/buildGraph.ts", "lightTemperature:"));
+    CHECK(bounds(knobSchema(gb, "lightTemperature")) == tsRange("packages/sameboy/ts/app.ts", "lightTemperature:"));
     CHECK(bounds(knobSchema(gb, "lightTemperature")) == std::vector<double>{-1.0, 1.0});
-    CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == tsRange(RP_BUILD_GRAPH_TS_PATH, "apuLatencyMs:"));
-    CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == tsRange(RP_CORE_ROLES_TS_PATH, "apuLatencyMs:"));
+    CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == tsRange("src/graph/buildGraph.ts", "apuLatencyMs:"));
+    CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == tsRange("packages/mesen/ts/app.ts", "apuLatencyMs:"));
     CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == std::vector<double>{0.25, 6.0});
     // The NES's one param whose value comes from its core config, whole percent, the same range its role schema clamps.
-    const auto roleRange = tsNumbers(RP_CORE_ROLES_TS_PATH, "expansionVolume:");
+    const auto roleRange = tsNumbers("packages/mesen/ts/app.ts", "expansionVolume:");
     REQUIRE(roleRange.size() == 3);
     const auto nesType = rig.registry.find("rp.mesen.nes")->type;
     const auto descriptor = rp::graph::parseJson(nesType->descriptor(nesType));
@@ -1120,8 +1161,8 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
     }
     REQUIRE(found);
     // Every type's gain param holds the range systemSettings.ts spells, the one the store clamps a saved gain to.
-    const std::vector<double> gainRange = {tsConstant(RP_SYSTEM_SETTINGS_TS_PATH, "GAIN_MIN"),
-                                           tsConstant(RP_SYSTEM_SETTINGS_TS_PATH, "GAIN_MAX")};
+    const std::vector<double> gainRange = {tsConstant("src/systemSettings.ts", "GAIN_MIN"),
+                                           tsConstant("src/systemSettings.ts", "GAIN_MAX")};
     REQUIRE(gainRange == std::vector<double>{-90.0, 12.0});  // the reader found them
     for (const char* type : {"rp.sameboy.gb", "rp.mesen.nes", "rp.mesen.gba", "rp.mesen.sms"}) {
         INFO(type);

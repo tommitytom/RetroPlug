@@ -32,7 +32,7 @@ import {
 } from "@retroplug/dsp/chain";
 import { compileDmc, compileKit, type KitJobRunner } from "../../src/kit";
 import { buildKitBank } from "../../src/lsdj/rom/buildKit";
-import { assembleKitBank } from "../../src/risa/rom/kit";
+import { assembleKitBank } from "@retroplug/tracker/nes/kitBank";
 import type { KitEffect, KitSampleSpec } from "../../src/audioDriver";
 import { OfflineRunError, type OfflineRunRequest, type OfflineRunResult } from "../../src/offline";
 import gainDescriptor from "../../../native/test/graph/golden/rp.dsp.gain.descriptor.json";

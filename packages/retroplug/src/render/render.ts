@@ -25,7 +25,7 @@ import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
 import { isRisaRomHeader, runtime as risaRuntime } from "../risa";
 import { lsdjSongCatalog, risaSongCatalog, smsggdjSongCatalog } from "../tracker";
 import { smsggdjIntegration } from "../trackerRegistry"; // the shell registry: an integration is its package's app contribution
-import type { ChannelExportMode } from "../settingsEnums";
+import type { ChannelExportMode } from "@retroplug/mesen/enums";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import {
   type Platform,
@@ -56,7 +56,6 @@ const NR52_ADDR = 0xff26;
 const NR52_ON = 0x80; // bit 7 = all-sound-on
 const DETECT_CHUNK_MS = 100; // the play gestures' hold, and the pull (so the poll granularity) unless pullMs says
 const DETECT_OFF_CHUNKS = 2; // NR52 must read off this many consecutive chunks to count as the HFF stop
-
 
 
 // Per-mode stream labels, matching each system's channelLayout() order.

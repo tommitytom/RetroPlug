@@ -31,7 +31,7 @@ import {
   type PlaybackGrid,
   type PlaybackPosition,
   type PredictivePlaybackModel,
-} from "../../tracker/playbackModel";
+} from "@retroplug/tracker/playbackModel";
 
 /** MEASURED (B2): steps per phrase, and the fallback tick count for a step. */
 const STEPS_PER_PHRASE = 16;

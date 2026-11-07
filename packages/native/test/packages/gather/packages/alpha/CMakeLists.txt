@@ -23,6 +23,15 @@ elseif(RP_GATHER_CASE STREQUAL "interface-include")
 elseif(RP_GATHER_CASE STREQUAL "source-outside")
     # A source of beta's compiled into alpha's target: the same boundary as an include directory.
     target_sources(retroplug-alpha INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src/x.cpp)
+elseif(RP_GATHER_CASE STREQUAL "alias")
+    # An alias is not a target of its own: the check that attributes a target to a package reads the target behind it.
+    target_link_libraries(retroplug-alpha INTERFACE rp::beta)
+elseif(RP_GATHER_CASE STREQUAL "alias-declared")
+    # The same alias with beta declared: resolved to beta's target, and held.
+    target_link_libraries(retroplug-alpha INTERFACE rp::beta)
+elseif(RP_GATHER_CASE STREQUAL "copt")
+    # An include directory smuggled into the compile options: judged like one its include property would name.
+    target_compile_options(retroplug-alpha INTERFACE -I${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src)
 elseif(RP_GATHER_CASE STREQUAL "unjudged")
     # A generator expression only the build generator resolves: refused rather than passed unseen.
     target_link_libraries(retroplug-alpha INTERFACE

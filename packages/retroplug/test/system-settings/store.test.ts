@@ -8,8 +8,9 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
-import { registerCoreRoles } from "../../src/coreRoles";
-import { z, clampedInt } from "../../src/configSchema";
+import { registerCoreRoles } from "../_coreRoles";
+import { z } from "zod";
+import { clampedInt } from "@retroplug/core/configFields";
 import { gbRom, nesRom, sameboyRoleConfig } from "../systems/fixtures";
 import { canonicalJson } from "@retroplug/core/canonicalJson";
 

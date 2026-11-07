@@ -15,7 +15,8 @@ export interface KitCompileResult {
 
 /** What the compilers run their jobs on: a backend's offline jobs (every native host has them; the mock rejects), of
  *  which the compilers need only the promise, not the handle's cancel.
- *  The promises settle only in a host that pumps or waits for its offline jobs (src/offline.ts): one with a UI tick
+ *  The promises settle only in a host that pumps or waits for its offline jobs
+ *  (packages/retroplug/src/offline.ts): one with a UI tick
  *  pumps from it, and one without needs the poll's native wait, which createAudioDriver turns on as it is made (or
  *  setOfflineWait). In a host with neither, a compile never settles. */
 export interface KitJobRunner {

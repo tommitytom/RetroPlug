@@ -38,7 +38,8 @@ namespace rp::host {
 // ---- settings ---------------------------------------------------------------------------------------------------
 
 // The knobs' value types. An enum knob is a label as the role configs spell it
-// (packages/retroplug/src/settingsEnums.ts), which is the name of its C++ enumerator with the first letter lowercased:
+// (packages/sameboy/ts/enums.ts, packages/mesen/ts/enums.ts), which is the name of its C++ enumerator with the first
+// letter lowercased:
 // SameBoyModel::CgbC is "cgbC", SameBoyHighpass::RemoveDcOffset "removeDcOffset", SameBoyModel::Auto "auto". So the
 // enumerators are native's one spelling of every label: Label<E> is the rfl::Literal made of them, which reads exactly
 // those strings (anything else refuses the settings), lists them in the descriptor's schema, and maps back to its
@@ -83,7 +84,7 @@ struct LightTemperatureRange {
     static constexpr double min = -1.0, max = 1.0;  // SameBoy's own: applyDisplayConfig clamps to it
 };
 struct ApuLatencyRange {
-    // The store's own bounds (packages/retroplug/src/coreRoles.ts clampedNumber(0.25, 6.0, 1.4)).
+    // The store's own bounds (packages/mesen/ts/app.ts clampedNumber(0.25, 6.0, 1.4)).
     static constexpr double min = 0.25, max = 6.0;  // milliseconds
 };
 
@@ -100,7 +101,7 @@ using LightTemperature = rfl::Validator<double, Within<LightTemperatureRange>>;
 // refuses, so a field that ever defaulted it with rfl::DefaultIfMissing would throw instead of taking a value.
 using ApuLatencyMs = rfl::Validator<double, Within<ApuLatencyRange>>;
 
-// The construct-time fields' labels (packages/retroplug/src/settingsEnums.ts): the cart FIFO's profile, the N8
+// The construct-time fields' labels (packages/mesen/ts/enums.ts): the cart FIFO's profile, the N8
 // reliable link's mode, and the NES per-channel export mode. As with C2's knobs, an enumerator's name is its label
 // with the first letter lowercased, and the ordinals are the ones the core's config takes.
 enum class FifoProfile : std::uint32_t { Instant = 0, Hardware = 1 };
@@ -110,7 +111,7 @@ enum class ChannelExportMode : std::uint32_t { Mix = 0, StereoModPins = 1, PinsP
 template <class E>
 using Label = decltype(literalOf<E>(std::make_index_sequence<rfl::get_enumerator_array<E>().size()>{}));
 
-// The ranges the store clamps its ints to (packages/retroplug/src/coreRoles.ts clampedInt), refused outside rather than
+// The ranges the store clamps its ints to (packages/mesen/ts/app.ts clampedInt), refused outside rather than
 // clamped, as C2's numbers are: 0 means "take the profile's value" for the two FIFO overrides, so 0 is in range.
 struct FifoDepthRange {
     static constexpr int min = 0, max = 1 << 20;

@@ -11,7 +11,8 @@
 // the graph's model with the publisher's own systems. It is safe only while the session's stores place nothing, the
 // two publishing in turn, as test-native/parity/render-blocks.test.ts and cli/sessions/analyze-lsdj-sync.ts do.
 import { createRealBackend } from "../realBackend";
-import type { AudioRouting, MidiRouting } from "../settingsEnums";
+import { MidiRouting } from "@retroplug/core/midiRouting";
+import type { AudioRouting } from "../settingsEnums";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { ConstructSpec, EmulatorBackend, HostBackend } from "../backend";
 import { EngineGraph } from "../engineGraph";
@@ -114,7 +115,8 @@ export class DirectGraph {
     return this.change(() => (this.controller = parsed), false);
   }
 
-  /** Edit system `id`'s core config as the stores' core-config role spells it (`sameboy` or `mesen`, coreRoles.ts: an
+  /** Edit system `id`'s core config as the stores' core-config role spells it (`sameboy` or `mesen`,
+   *  @retroplug/sameboy and @retroplug/mesen: an
    *  enum as its label, never an ordinal), merged over what this graph gave it before: none at first, so its node
    *  carries no setting field and its core keeps the settings it was built with (the params it does not name start at
    *  their defaults at its first block). Its setting fields ride its node's settings and a NES's expansionVolume its

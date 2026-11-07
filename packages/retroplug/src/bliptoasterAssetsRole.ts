@@ -18,14 +18,14 @@
 // runs" and "what Patch ROM in Place writes" cannot drift apart.
 import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
 import type { ConstructSpec } from "./backend";
-import { z } from "./configSchema";
+import { z } from "zod";
 import {
   BlipToasterRom,
   SETTINGS_THEME_COUNT,
   SETTINGS_FONT_COUNT,
   type BlipToasterSettingsPatch,
 } from "./bliptoaster/rom";
-import { applyRitOverride, ritOverrideSchema, type RitAssetOverride } from "./ritAssetsRole";
+import { applyRitOverride, ritOverrideSchema, type RitAssetOverride } from "@retroplug/tracker/ritAssets";
 
 /** One asset override for `slot`. KITS and FONTS are binary, so they LINK their file on disk by `path` (a
  *  pre-built 8 KB `.rkit` DMC bank / an 8 KB `.chr` CHR bank, read at construct). A kit override with

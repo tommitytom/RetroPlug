@@ -4,7 +4,8 @@
 // a zod schema (each entry defaulted/coerced; malformed ones skipped). Reads stay
 // tolerant: absent / garbage / newer-than-us all yield an empty list.
 
-import { z, stringifyConfig } from "./configSchema";
+import { z } from "zod";
+import { stringifyConfig } from "./configSchema";
 import { parseVersionedRoot, type MigrationMap, type RootRefusal } from "./migrate";
 import { MAX_ENTRIES, type RecentEntry } from "./recentList";
 

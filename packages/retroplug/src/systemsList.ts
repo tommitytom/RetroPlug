@@ -9,7 +9,7 @@
 // "is this pick my sibling?" override test; findSiblingRom's candidate loop.
 
 import { siblingSavPath, siblingRomCandidates } from "./savPaths";
-import type { TrackedSlot } from "./tracker/songCatalog";
+import type { TrackedSlot } from "@retroplug/tracker/songCatalog";
 import type { Platform, Core } from "./platform";
 import type { CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "@retroplug/core/systemRoles";

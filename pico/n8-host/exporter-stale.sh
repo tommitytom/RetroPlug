@@ -15,8 +15,10 @@
 #
 #   - every package's native sources (the exporter links graph-runtime and the SDK, and its device-mode objects compile
 #     every package's device entries and script packs' registrations), the exporter's own directory among them;
-#   - the TypeScript a device pack is bundled from: each script pack's own ts/ tree, its toolchain
-#     (packages/retroplug/scripts/build-device-pack.mjs) and the portable node SDK;
+#   - the TypeScript a device pack is bundled from: each script pack's own ts/ tree, the manifest that names its entry
+#     and heap, its toolchain (packages/retroplug/scripts/build-device-pack.mjs) with the TypeScript options that
+#     toolchain pins (tools/ts-options.js), and the portable node SDK. The tsconfigs are NOT on this list: a pack is
+#     bundled with the options tools/ts-options.js spells, so a compiler-settings edit moves no pack's bytes;
 #   - the CMake that builds either (cmake/, the root CMakeLists.txt);
 #   - MicroQuickJS and its generated 32-bit tables, which the image takes from the same desktop build.
 #
@@ -49,14 +51,16 @@ roots=(
 	"$repo"/packages/graph-runtime/export-plan
 	"$repo"/packages/core/ts
 	"$toolchain"
+	"$repo"/tools/ts-options.js
 	"$repo"/cmake
 	"$repo"/CMakeLists.txt
 	"$repo"/deps/mquickjs
 )
-# Each package whose manifest declares a script pack: the pack is bundled from its own ts/ tree.
+# Each package whose manifest declares a script pack: the pack is bundled from its own ts/ tree, and the manifest names
+# the entry and the heap the bundle and the bytecode are built for.
 for manifest in "$repo"/packages/*/package.json; do
 	if grep -q '"script"' "$manifest"; then
-		roots+=("${manifest%/package.json}/ts")
+		roots+=("${manifest%/package.json}/ts" "$manifest")
 	fi
 done
 # A path this checkout does not hold yet (a package without a native tree, a manifest read before ts/ exists) is not a
@@ -69,6 +73,6 @@ done
 newer=$(find "${existing[@]}" \
 	-path '*/test' -prune -o -path '*/node_modules' -prune -o -type f \
 	\( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.c' -o -name CMakeLists.txt -o -name '*.ts' \
-	-o -name '*.mjs' -o -name '*.cmake' \) -newer "$stamp" -print -quit)
+	-o -name '*.mjs' -o -name '*.js' -o -name '*.cmake' -o -name package.json \) -newer "$stamp" -print -quit)
 [ -z "$newer" ] || { echo "$newer"; exit 1; }
 exit 0

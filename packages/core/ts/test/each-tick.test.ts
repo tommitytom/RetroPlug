@@ -1,7 +1,7 @@
-// walkTicks (src/ticks.ts), the TS twin of native PpqUtil::eachTick. Proves the drift-free 24-PPQN clock:
+// walkTicks (../ticks.ts), the TS twin of native PpqUtil::eachTick. Proves the drift-free 24-PPQN clock:
 // two consecutive half-second blocks at 44100/120 each span exactly 1 beat = 24 ticks, the boundary tick
 // fires exactly once (contiguous 0..47, no double/miss), and a stopped transport emits none. The clock a
-// protocol node keeps over it is test/script/nodes/tick-clock.test.ts's.
+// protocol node keeps over it is ./tick-clock.test.ts's.
 import { test, expect } from "@retroplug/testing";
 import { walkTicks, type TickBlock } from "../ticks";
 

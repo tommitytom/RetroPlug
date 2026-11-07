@@ -10,6 +10,10 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@retroplug/testing": "workspace:*"
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
   }
 }

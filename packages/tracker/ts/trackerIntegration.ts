@@ -2,8 +2,8 @@
 // and ASSET catalog (the ROM's replaceable kits/palettes/fonts). One integration per console (LSDj, risa, ...),
 // resolved from a system's roles by its markerRole. The menu builds the Songs + asset submenus generically
 // over these; the file-dialog actions (which own file formats) stay per-console in the UI. A console's
-// integration is its package's app contribution, so the product's list of them and the resolvers over it are the
-// shell's (src/trackerRegistry.ts); this module is the contract one satisfies, and reads nothing.
+// integration is its cart's app contribution, so the product's list of them and the resolvers over it are the
+// shell's (packages/retroplug/src/trackerRegistry.ts); this module is the contract one satisfies, reads nothing.
 import type { SongCatalog, WorkingSongImage } from "./songCatalog";
 import type { AssetCatalog } from "./assetCatalog";
 
@@ -40,7 +40,8 @@ export interface TrackerIntegration {
    *  where `romName` / `isVersionSupported` take one. Returns null when the version has no layout, the
    *  index names no song, or the song will not decode - the caller then leaves the cart alone.
    *
-   *  Stays PURE: it returns writes, it does not perform them. `loadSongLive` (./liveSav) applies them,
+   *  Stays PURE: it returns writes, it does not perform them. The shell's `loadSongLive`
+   *  (packages/retroplug/src/tracker/liveSav.ts) applies them,
    *  which keeps this testable without a core and keeps I/O out of the console-specific layer. */
   liveLoad?(rom: Uint8Array, sav: Uint8Array, index: number, ram?: Uint8Array): RamWrite[] | null;
   /** Put a working song lifted out of a PREVIOUS core (see SongCatalog.readWorkingSong) back into this

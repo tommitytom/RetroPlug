@@ -1,19 +1,13 @@
 {
   // The compiler options every workspace package's TS half is checked with: the shell's tsconfig extends this, and so
   // does each package's own, so `pnpm typecheck` (pnpm -r typecheck) checks every package with the options the shell
-  // checks it with. Target ES2020 and the bundler resolution the shell bundles with, so a package's nodes compile the
-  // same inside a device pack, the script bundle and the UI.
+  // checks it with. These decide what `tsc` accepts and nothing else: the bundles a package's TS goes into name the
+  // options they compile with (tools/ts-options.js), so an edit here moves no pack's and no bundle's bytes.
   "compilerOptions": {
     "target": "ES2020",
     "module": "ES2020",
     "moduleResolution": "bundler",
     "strict": true,
-    // Off on purpose, and not to loosen any check below: `strict` implies `alwaysStrict`, and a package's own
-    // tsconfig.json is what esbuild reads when it bundles that package's TS into a device pack (it discovers the
-    // nearest one per entry point). An implied `alwaysStrict` therefore makes esbuild head the pack's iife bundle with
-    // a "use strict" directive, and that directive is bytes of the pack's bytecode. TypeScript's own checks are
-    // `strict`'s and unaffected; the shell opts back in, where the bundle esbuild builds from it already carries one.
-    "alwaysStrict": false,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitOverride": true,

@@ -5,13 +5,21 @@
 //
 // Two callers share it: the Songs submenu (menuDefs) and the Recent list, whose per-song rows reopen a
 // project with that song loaded.
+//
+// It is the shell's, not @retroplug/tracker's, and it is not a split waiting to happen: every entry point here is
+// orchestration over a RUNNING system - it reads the published SRAM through SystemsStore, resolves the `.sav` the edit
+// writes (savPaths), cold-boots or writes work RAM, and polls for a conditional battery write landing - and the byte
+// transforms it schedules are already the tracker contract's (SongCatalog.load, commitWorkingSong, slotImage), which
+// are what moved. What it takes as arguments (readSram/loadSram/writeSram/readRam/writeRam/workingSongImage/
+// expectSong, ControlPlaneBackend.writeFile/writeFileAtomic, resolveTracker/resolveSongCatalog over the generated
+// registry) are the shell's types and the shell's registry.
 
 import type { ControlPlaneBackend } from "../backend";
 import type { SystemsStore } from "../systemsStore";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import { resolveSavPath } from "../savPaths";
 import { resolveSongCatalog, resolveTracker } from "../trackerRegistry"; // the shell registry: the list is generated
-import type { WorkingSongImage } from "./songCatalog";
+import type { WorkingSongImage } from "@retroplug/tracker/songCatalog";
 
 /** The per-system fields a live-sav edit needs - SystemView and SystemEntry both satisfy it. */
 export interface LiveSavTarget {

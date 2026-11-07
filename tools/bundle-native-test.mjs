@@ -9,6 +9,7 @@ import { build } from "esbuild";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generate } from "../packages/retroplug/scripts/lib/packages.mjs";
+import { tsOptions } from "./ts-options.js";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PKG = join(REPO, "packages/retroplug");
@@ -27,6 +28,8 @@ await build({
   entryPoints: [join(PKG, "test-native", slug + ".test.ts")],
   bundle: true, format: "esm", platform: "neutral", mainFields: ["module", "main"],
   target: "es2020", outfile: out,
+  // Pinned rather than discovered (tools/ts-options.js): the entry is the shell's, whose tsconfig implies alwaysStrict.
+  tsconfigRaw: tsOptions({ alwaysStrict: true }),
   define: {
     "process.env.NODE_ENV": '"production"',
     __CONFIG_DIR__: JSON.stringify(cfgDir),

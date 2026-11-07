@@ -27,8 +27,8 @@ import {
   packDirectory,
   SMDJ4_BLOCK_LEN,
 } from "../../src/smsggdj/codec/sav";
-import type { TrackedSlot, WorkingSongImage } from "../../src/tracker/songCatalog";
-import { encodeWorkingSong, decodeWorkingSong } from "../../src/tracker/workingSongBlob";
+import type { TrackedSlot, WorkingSongImage } from "@retroplug/tracker/songCatalog";
+import { encodeWorkingSong, decodeWorkingSong } from "@retroplug/tracker/workingSongBlob";
 import { setCurSlot as setCurSlotFor, sanitizeEcho } from "../../src/smsggdj/codec/sav";
 import { smsggdjRom, smsggdjRam } from "../systems/fixtures";
 import { commonConfigOffsets } from "../../src/smsggdj/runtime/layout";

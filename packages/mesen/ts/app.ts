@@ -1,58 +1,26 @@
-// The built-in core-config "system" roles — a core's tunable emulator settings, carried as roles
-// rather than baked into the generic system config (so core-specific knobs like SameBoy's `highpass`
-// never sit in the generic config). Keyed by the `core` value (platform.ts), so the role's kind IS its
-// core. These are built-in, but ride the same generic registry a third-party extension would use. Each
-// role's config is a zod schema (roleSchema.ts): shape + defaults + clamping in one place. Ranges mirror the native
-// enums where the field reaches a core (SameBoyConfig.hpp: model 0..13, highpass 0..2); linkGroupId is the graph's own,
-// turned into the Game Boy's link wires by buildGraph.ts (linkGroupOf), never a core setting.
+// Mesen's app contribution: the core-config "system" role whose kind IS the core (platform.ts's `Core` value). It is
+// keyed by the core, so this ONE role attaches to any Mesen system (NES, GBA, SMS/GG). The knobs are per-platform and
+// the app's settings menu gates each group on `platform` (its menuDefs.ts): the first three are NES-only, enableFm is
+// SMS/GG-only, and GBA has none of its own yet - it carries them all as inert bytes until it does, at which point the
+// schema grows again.
+//
+// The system node reads the fields each platform reads (the shell's graph/buildGraph.ts CONSTRUCT_FIELDS and
+// SETTING_FIELDS), so a field that means nothing on a platform is simply never placed in its settings. The native side
+// is the shell's still: `rp_mesen_package` registers the NES, GBA and SMS nodes from packages/native until F2 gives
+// this package its native half.
 
-import type { RoleRegistry, RoleType } from "@retroplug/core/systemRoles";
-import { z, clampedInt, clampedNumber, boolField, enumField, stringField } from "./configSchema";
+import type { RoleType } from "@retroplug/core/systemRoles";
+import { definePackage } from "@retroplug/core/definePackage";
+import { z } from "zod";
+import { clampedInt, clampedNumber, boolField, enumField, stringField } from "@retroplug/core/configFields";
 import {
-  MODEL_VALUES,
-  HIGHPASS_VALUES,
   REGION_VALUES,
-  CHANNEL_EXPORT_VALUES,
   CARTRIDGE_ACCURACY_VALUES,
-  COLOR_CORRECTION_VALUES,
-  DMG_PALETTE_VALUES,
+  CHANNEL_EXPORT_VALUES,
   FIFO_PROFILE_VALUES,
   N8_LINK_VALUES,
-} from "./settingsEnums";
+} from "./enums";
 
-// SameBoy: model / highpass / link group / fast boot, plus the display knobs below. model, highpass,
-// colorCorrection and dmgPalette are string enums; the system node's settings spell them as labels (knobs::Label), so
-// the store hands them over as they are.
-//
-// The display group is additive and every default reproduces what the core did when these were
-// hardcoded (SameBoySystem.cpp), so an existing project loads pixel-identical and needs no migration.
-// Which one bites is decided by the model, and the split is exact rather than a guess: the core
-// applies colour correction and light temperature only when GB_is_cgb (model >= GB_MODEL_CGB_0) and
-// the DMG palette only when it isn't. `auto` is not ambiguous here - RetroPlug maps it to CGB-C
-// (toSameBoyModel), so it counts as CGB. The menu gates the palette row on that (menuDefs.ts).
-export const SAMEBOY_ROLE: RoleType = {
-  kind: "sameboy",
-  category: "system",
-  schema: z.object({
-    model: enumField(MODEL_VALUES, "cgbC"),
-    highpass: enumField(HIGHPASS_VALUES, "accurate"),
-    linkGroupId: clampedInt(0, 255, 0),
-    fastBoot: boolField(true),
-    // --- display ---
-    colorCorrection: enumField(COLOR_CORRECTION_VALUES, "disabled"),
-    dmgPalette: enumField(DMG_PALETTE_VALUES, "grey"),
-    // Ambient light tint, CGB only. SameBoy's own range: -1 (cool/blue) .. +1 (warm/red), 0 neutral.
-    lightTemperature: clampedNumber(-1, 1, 0),
-  }),
-};
-
-// Mesen: keyed by core ("mesen"), so this ONE role attaches to any Mesen system (NES, GBA, SMS/GG).
-// The knobs are per-platform and the settings menu gates each group on `platform` (menuDefs.ts): the
-// first three are NES-only, enableFm is SMS/GG-only, and GBA has none of its own yet - it carries
-// them all as inert bytes until it does, at which point the schema grows again.
-//
-// The system node reads the fields each platform reads (graph/buildGraph.ts's CONSTRUCT_FIELDS and SETTING_FIELDS),
-// so a field that means nothing on a platform is simply never placed in its settings.
 export const MESEN_ROLE: RoleType = {
   kind: "mesen",
   category: "system",
@@ -64,14 +32,14 @@ export const MESEN_ROLE: RoleType = {
     // buffer, so a tracker that writes $F2 = $01 at boot goes silent on the PSG with this on.
     enableFm: boolField(true),
     // APU flush window as a latency in ms (the worst-case NES audio latency the resampler batching adds).
-    // Live knob; native converts ms→CPU cycles per region clock. ~1.4ms ≈ the historical 2500-cycle window.
+    // Live knob; native converts ms->CPU cycles per region clock. ~1.4ms = the historical 2500-cycle window.
     apuLatencyMs: clampedNumber(0.25, 6.0, 1.4),
     // Cartridge-accuracy switches. Both default to "n8", NOT to the documented chip behaviour: RetroPlug
     // is music software, and NES music is overwhelmingly played back through an Everdrive N8 Pro, so the
     // useful default is the one where what you hear here is what the cartridge will do. Choose "chip" for
     // playback accuracy on a stock cartridge.
     //
-    // The N8's FPGA cores measurably differ (both verified on hardware, see cartridge-accuracy.test.ts):
+    // The N8's FPGA cores measurably differ (both verified on hardware, see the shell's cartridge-accuracy test):
     // its 5B has no noise generator, so enabling noise MUTES the channel rather than rasping (the mixer
     // ANDs tone with noise); and its MMC5 pulse does not restart the duty sequencer on a $5003 write, so
     // a phase-reset hack holds a 50% duty and full level and only shifts pitch.
@@ -126,10 +94,4 @@ export const MESEN_ROLE: RoleType = {
   }),
 };
 
-/** The core-config roles the app registers, in the order buildAppRegistry took them: SameBoy's, then Mesen's. */
-export const CORE_ROLES: readonly RoleType[] = [SAMEBOY_ROLE, MESEN_ROLE];
-
-/** Register the built-in core-config system roles into `registry`. */
-export function registerCoreRoles(registry: RoleRegistry): void {
-  for (const role of CORE_ROLES) registry.registerRole(role);
-}
+export default definePackage({ roles: [MESEN_ROLE] });

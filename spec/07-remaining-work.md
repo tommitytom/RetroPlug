@@ -664,7 +664,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Readers that decide "is this system LSDj" (or mGB) by a role's presence, not its placement.** In the rare
     case a ROM path changed between an LSDj and an mGB build, a system holds both `mgb` and `lsdj-sync`, and the
     pipeline places one (the one the ROM calls for). The graph is right; these readers are not:
-    `trackerIntegrationFor` ([trackerIntegration.ts](../packages/retroplug/src/tracker/trackerIntegration.ts), by
+    `trackerIntegrationFor` ([trackerIntegration.ts](../packages/tracker/ts/trackerIntegration.ts), by
     `markerRole` presence), so the LSDj menu's sync cyclers
     ([menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts)) edit a left-out `lsdj-sync` on an mGB cart;
     `hasRole(..., "lsdj-sync")` in `ui/App.tsx`, `ui/screens/grid/useLsdjRuntime.ts`,

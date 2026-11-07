@@ -5,8 +5,8 @@
 // its zod validator + the hardcoded default; parse/serialize live in
 // bindingSerialization.ts and the profile CRUD in bindingsStore.ts.
 
-import { z, stringField } from "./configSchema";
-
+import { z } from "zod";
+import { stringField } from "@retroplug/core/configFields";
 /** One binding profile: a display name, the two GB-button channel maps, and the two app-action channel maps
  *  (open the menu / cycle instances — keyed by AppAction id rather than GB button). `schemaVersion` is a
  *  serialization concern (see bindingSerialization.ts), not part of the model. */

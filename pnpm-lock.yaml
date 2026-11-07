@@ -33,19 +33,26 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/core:
     dependencies:
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@retroplug/testing':
         specifier: workspace:*
         version: link:../testing
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/device-io:
     dependencies:
@@ -61,6 +68,10 @@ importers:
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/dsp:
     dependencies:
@@ -70,12 +81,29 @@ importers:
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/graph-runtime:
     dependencies:
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
+
+  packages/mesen:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/n8:
     dependencies:
@@ -86,6 +114,9 @@ importers:
       '@retroplug/testing':
         specifier: workspace:*
         version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/native:
     devDependencies:
@@ -103,9 +134,18 @@ importers:
       '@retroplug/dsp':
         specifier: workspace:*
         version: link:../dsp
+      '@retroplug/mesen':
+        specifier: workspace:*
+        version: link:../mesen
       '@retroplug/n8':
         specifier: workspace:*
         version: link:../n8
+      '@retroplug/sameboy':
+        specifier: workspace:*
+        version: link:../sameboy
+      '@retroplug/tracker':
+        specifier: workspace:*
+        version: link:../tracker
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -117,11 +157,44 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/sameboy:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/testing:
     dependencies:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/tracker:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
 packages:
 

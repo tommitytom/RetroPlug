@@ -1,4 +1,4 @@
-// The zod-free settings schema (src/graph/settingsSchema.ts), held to zod: each builder against its zod twin (the same
+// The zod-free settings schema (../settingsSchema.ts), held to zod: each builder against its zod twin (the same
 // shape, each field with a .default), for the JSON Schema it writes and for what defineNode makes of a document's
 // settings through it, defaults filled and refusals worded alike.
 import { test, expect } from "@retroplug/testing";

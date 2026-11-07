@@ -1,6 +1,6 @@
-// A protocol node's clock (src/script/nodes/clock.ts) over the tick walk (src/ticks.ts, the TS twin of native
-// PpqUtil::eachTick, whose own cases are test/dsp/each-tick.test.ts's): the counter carried across blocks, the same
-// ticks however the blocks are cut, and a walk a callback throws out of leaving the counter where it was.
+// A protocol node's clock (../clock.ts) over the tick walk (../ticks.ts, the TS twin of native PpqUtil::eachTick,
+// which has no cases of its own): the counter carried across blocks, the same ticks however the blocks are cut, and a
+// walk a callback throws out of leaving the counter where it was.
 import { test, expect } from "@retroplug/testing";
 import type { TickBlock } from "../ticks";
 import { TickClock } from "../clock";

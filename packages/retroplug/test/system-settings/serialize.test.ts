@@ -6,7 +6,7 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
-import { registerCoreRoles } from "../../src/coreRoles";
+import { registerCoreRoles } from "../_coreRoles";
 import { buildConfig, serializeConfig, parseConfig, DEFAULT_SETTINGS } from "../../src/projectConfig";
 import { gbRom, nesRom, sameboyRoleConfig } from "../systems/fixtures";
 

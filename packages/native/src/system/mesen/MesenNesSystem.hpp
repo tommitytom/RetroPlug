@@ -130,7 +130,8 @@ public:
 
     void setGainDb(float dB, bool immediate = false) override;
 
-    // "mesen" system-role knobs (coreRoles.ts), applied live by the NES's system node (its settings, and its
+    // "mesen" system-role knobs (packages/mesen/ts/app.ts), applied live by the NES's system node (its settings, and
+    // its
     // expansionVolume param). Each but setRemoveSpriteLimit is value-guarded, and that one is a plain flag write.
     // removeSpriteLimit is a live PPU toggle; region reconfigures timing so it forces a reset.
     void setRemoveSpriteLimit(bool on);

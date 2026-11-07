@@ -1,7 +1,7 @@
 // The risa implementation of AssetCatalog — the base-ROM asset parse (relocated verbatim from the menu's old
 // risaInventory). No overrides here (that's the role config, read live at the menu) and no memoization (the UI
 // caches the file read). The file-dialog Export/Replace stay in the menu (they own the .rit/.chr/.rkit formats).
-import { readAssetOverrides, type AssetCatalog, type AssetSlot } from "./assetCatalog";
+import { readAssetOverrides, type AssetCatalog, type AssetSlot } from "@retroplug/tracker/assetCatalog";
 import type { ConstructCaps } from "@retroplug/core/systemRoles";
 import { RisaRom, KIT_BANK_COUNT } from "../risa/rom";
 import { applyOverridesToRom, type RisaAssetOverride } from "../risaAssetsRole";

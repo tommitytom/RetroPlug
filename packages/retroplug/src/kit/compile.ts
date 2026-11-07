@@ -31,8 +31,8 @@ import { OfflineRunError, type OfflineCap, type OfflineRunRequest } from "../off
 import type { KitCompileResult, KitFormat, KitJobRunner } from "@retroplug/dsp/kitContract";
 import { buildKitBankPlaced } from "../lsdj/rom/buildKit";
 import { KIT_MAX_SAMPLES, KIT_MAX_SAMPLE_SPACE } from "../lsdj/rom/constants";
-import { assembleKitBankPlaced, type AssembleSlot } from "../risa/rom/kit";
-import { KIT_SAMPLE_REGION, KIT_SLOT_COUNT } from "../risa/rom/constants";
+import { assembleKitBankPlaced, type AssembleSlot } from "@retroplug/tracker/nes/kitBank";
+import { KIT_SAMPLE_REGION, KIT_SLOT_COUNT } from "@retroplug/tracker/nes/constants";
 import {
   KitSpecError,
   dpcmJob,

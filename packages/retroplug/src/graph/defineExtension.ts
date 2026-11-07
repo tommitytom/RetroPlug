@@ -6,8 +6,8 @@
 // base graph the builder made itself. collect() reports a second claim as a conflict naming every claimant,
 // and does the same for two contributors inserting nodes with the same id, instead of silently picking one.
 import type { z } from "zod";
-import type { AssetCatalog } from "../tracker/assetCatalog";
-import type { SongCatalog } from "../tracker/songCatalog";
+import type { AssetCatalog } from "@retroplug/tracker/assetCatalog";
+import type { SongCatalog } from "@retroplug/tracker/songCatalog";
 import { plainId } from "@retroplug/core/descriptor";
 import { checkNode, checkWire, type NodeDoc, type WireDoc } from "@retroplug/core/graphDocument";
 

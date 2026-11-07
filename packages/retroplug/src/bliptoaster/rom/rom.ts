@@ -10,9 +10,9 @@
 // KIT15 regions in the bliptoaster repo's cfg/nes-banked.cfg), with the CHR fonts after PRG. A flat NROM
 // build is still READ correctly (one fixed kit at $C000, no banking) — kitBankCapacity() derives which from
 // the iNES header rather than assuming. Unlike risa there is NO kit-metadata mirror (the ROM reads the kit
-// index directly at boot), so setKit is a plain bank splice. The kit + font + theme FORMATS are identical to
-// risa's, so the pure codecs (bankToModel / the 8 KB bank + CHR layout / the theme record) are all reused —
-// only the theme table's STRIDE is BlipToaster's own (see THEME_ENTRY_SIZE).
+// index directly at boot), so setKit is a plain bank splice. The kit + font + theme FORMATS are the ones risa
+// carries too, so the pure codecs (bankToModel / the 8 KB bank + CHR layout / the theme record) come from
+// @retroplug/tracker, which owns them; only the theme table's STRIDE is BlipToaster's own (see THEME_ENTRY_SIZE).
 
 import { isBlipToasterRomHeader } from "../romDetect";
 import {
@@ -26,12 +26,11 @@ import {
   THEME_COUNT,
   THEME_RECORD_SIZE,
   THEME_NAME_SIZE,
-  bankToModel,
-  decodeThemeFromRom,
-  findMagicInRange,
-  type KitModel,
-  type RisaTheme,
-} from "../../risa/rom";
+} from "@retroplug/tracker/nes/constants";
+import { bankToModel, type KitModel } from "@retroplug/tracker/nes/kitBank";
+import { decodeThemeFromRom } from "@retroplug/tracker/nes/theme";
+import { findMagicInRange } from "@retroplug/tracker/nes/find";
+import type { RisaTheme } from "@retroplug/tracker/nes/types";
 import {
   SETTINGS_MAGIC,
   SETTINGS_BLOCK_SIZE,

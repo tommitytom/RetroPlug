@@ -12,6 +12,7 @@
     "@retroplug/node-sdk": "workspace:*"
   },
   "devDependencies": {
+    "typescript": "^7.0.2",
     "@retroplug/testing": "workspace:*"
   },
   "retroplug": {

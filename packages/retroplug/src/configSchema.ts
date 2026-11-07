@@ -1,26 +1,10 @@
-// Shared zod schema builders for the config surface — role configs,
-// per-system settings, project files, recent files. A config's shape, defaults, and
-// clamping all live in one zod schema, so every user config is validated + coerced
-// declaratively (a malformed/partial/stale value snaps to a sane one rather than
-// being ad-hoc guarded).
+// The shell's config write side: the one formatter every JSON root RetroPlug writes goes through, so the files stay
+// formatted the same way. The read side (the zod field builders a config's shape, defaults and clamping are made of) is
+// @retroplug/core's, next to the role contract whose schemas they build - a console package owns a role and writes its
+// schema with them, and a package may not import this module.
 //
-// Config object schemas are STRICT (z.object — unknown keys stripped). Forward-
-// tolerance across config versions comes from field `.default()`s (an old config
-// missing a newly-added field gets the default) plus the version-stamp/refuse-newer
-// detection, NOT from passthrough: an older reader never sees a newer writer's fields
-// (they're refused), and additive fields are filled by defaults. The only other
-// writer is native C++ (a richer/different shape) — that's a translation concern for
-// the real adapter, not loose passthrough. Breaking format changes bump the version
-// and get an explicit raw migration at the load seam.
-//
-// These fields CLAMP rather than throw (a settings knob shouldn't reject an overflow
-// value — it snaps to the nearest bound), and default when missing or the wrong type,
-// so `schema.parse({})` yields a full default config.
-//
-// The read side is zod; the one write-side helper lives here too (stringifyConfig), so every JSON root
-// RetroPlug writes is formatted the same way.
-
-import { z } from "zod";
+// Parsers ignore whitespace, so a file written by an older compact build still loads unchanged. RPC payloads (role
+// config, the DSP system struct, a render spec) are NOT files and stay compact.
 
 /** A primitive-only array shorter than this (including its indent) stays on one line. Plain
  *  `JSON.stringify(v, null, 2)` puts every element on its own line, which turns a bindings profile —
@@ -53,49 +37,7 @@ function formatJson(value: unknown, indent: string): string {
 /** Serialize a config / project root for writing: pretty-printed with a trailing newline, so the files
  *  RetroPlug writes stay readable, hand-editable and diffable. EVERY on-disk JSON root goes through this —
  *  config.json, bindings/<name>.json, recent.json, and the project config (the thin `.rplg` plus the
- *  `project.json` inside an exported zip / the plugin's DPF state chunk). Parsers ignore the whitespace, so
- *  a file written by an older compact build still loads unchanged.
- *
- *  RPC payloads (role config, the DSP system struct, a render spec) are NOT files and stay compact. */
+ *  `project.json` inside an exported zip / the plugin's DPF state chunk). */
 export function stringifyConfig(value: unknown): string {
   return formatJson(value, "") + "\n";
 }
-
-/** An integer field: missing/non-number → `def`, out-of-range → nearest bound, a fraction → the nearest whole.
- *  A fraction means nothing for any of these fields (a level, an index, a duration, a percentage of unity), and for
- *  `expansionVolume`, the one that reaches the engine as an int param, rounding is also what `ParamType::Int` does.
- *  Where 0 is a sentinel (`zoom` 0 inherits the user default, a controller's `systemId` 0 is the first system, an
- *  ungrouped `linkGroupId` 0), a hand-edited fraction in [0.5, 1) rounds up to 1, the first real value; such a value
- *  is a hand edit the integer contract does not allow. */
-export function clampedInt(min: number, max: number, def: number) {
-  return z.preprocess((v) => {
-    const n = typeof v === "number" && Number.isFinite(v) ? Math.round(v) : def;
-    return Math.max(min, Math.min(max, n));
-  }, z.number());
-}
-
-/** A (non-integer) number field: missing/non-number → `def`, out-of-range → bound. */
-export function clampedNumber(min: number, max: number, def: number) {
-  return z.preprocess((v) => {
-    const n = typeof v === "number" && Number.isFinite(v) ? v : def;
-    return Math.max(min, Math.min(max, n));
-  }, z.number());
-}
-
-/** A boolean field: non-boolean → `def`. */
-export function boolField(def: boolean) {
-  return z.preprocess((v) => (typeof v === "boolean" ? v : def), z.boolean());
-}
-
-/** A string field: non-string → `def`. */
-export function stringField(def: string) {
-  return z.preprocess((v) => (typeof v === "string" ? v : def), z.string());
-}
-
-/** A string-enum field: value must be one of `values`; missing/unknown → `def` (same tolerance as
- *  clampedInt's clamp — a stale/garbage enum snaps to the default rather than failing the parse). */
-export function enumField<T extends readonly [string, ...string[]]>(values: T, def: T[number]) {
-  return z.enum(values).catch(def).default(def);
-}
-
-export { z };

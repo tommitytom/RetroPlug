@@ -354,7 +354,7 @@ function renderPackages({ packages, outDir }) {
     "// search, and the kit formats the audio driver dispatches to. The protocol tables buildGraph reads are apart, in",
     "// ./protocol.ts, so a module that needs them imports no package's app.",
     'import type { RoleType, RomProvider } from "@retroplug/core";',
-    'import type { TrackerIntegration } from "../tracker/trackerIntegration";',
+    'import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";',
     'import type { KitFormat } from "@retroplug/dsp/kitContract";',
   );
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);

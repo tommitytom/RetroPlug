@@ -42,17 +42,11 @@ import {
   parseConfig,
   toAbsolute,
 } from "./projectConfig";
-import {
-  type SystemLayout,
-  type MidiRouting,
-  type AudioRouting,
-  LAYOUT_VALUES,
-  MIDI_ROUTING_VALUES,
-  AUDIO_ROUTING_VALUES,
-} from "./settingsEnums";
+import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
+import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALUES } from "./settingsEnums";
 import { scanMissingFiles, autoFindSiblings, relinkInConfig, type MissingFile } from "./projectMissing";
 import { PROJECT_JSON, sramKey, stateKey, songKey, partitionEntries } from "./projectBinaries";
-import { encodeWorkingSong, decodeWorkingSong } from "./tracker/workingSongBlob";
+import { encodeWorkingSong, decodeWorkingSong } from "@retroplug/tracker/workingSongBlob";
 
 export type LoadOutcome =
   | { kind: "loaded"; systems: number }
@@ -119,7 +113,6 @@ const SETTING_VALUES = {
   midiRouting: MIDI_ROUTING_VALUES,
   audioRouting: AUDIO_ROUTING_VALUES,
 } as const;
-
 
 export class ProjectStore {
   readonly systems: SystemsStore;

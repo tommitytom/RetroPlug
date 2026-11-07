@@ -38,7 +38,7 @@ import {
   decodeSaveState,
   type N8SaveState,
 } from "@retroplug/n8";
-import { chrToPng, chrToPngColor, pngToChr } from "../../src/risa/rom/chrImage";
+import { chrToPng, chrToPngColor, pngToChr } from "@retroplug/tracker/nes/chrImage";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 

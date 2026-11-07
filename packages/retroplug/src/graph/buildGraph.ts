@@ -13,19 +13,16 @@
 // expansion volume as params. Pure, and held to test/graph/golden/build-graph.json, whose audio wiring is the B1
 // native translator's, so every audio node id, the document order (which is the plan order on ties) and every
 // per-lane sum is the translator's.
+import { COLOR_CORRECTION_VALUES, DMG_PALETTE_VALUES, HIGHPASS_VALUES, MODEL_VALUES } from "@retroplug/sameboy/enums";
 import {
   CARTRIDGE_ACCURACY_VALUES,
   CHANNEL_EXPORT_VALUES,
-  COLOR_CORRECTION_VALUES,
-  DMG_PALETTE_VALUES,
   FIFO_PROFILE_VALUES,
-  HIGHPASS_VALUES,
-  MODEL_VALUES,
   N8_LINK_VALUES,
   REGION_VALUES,
-  type AudioRouting,
-  type MidiRouting,
-} from "../settingsEnums";
+} from "@retroplug/mesen/enums";
+import { type AudioRouting } from "../settingsEnums";
+import { type MidiRouting } from "@retroplug/core/midiRouting";
 import { type Platform, type SystemNodeType } from "../platform";
 import { resourceRef, type SystemResources } from "./systemResources";
 import type { GraphDocument, NodeDoc, WireDoc } from "@retroplug/core/graphDocument";
@@ -72,7 +69,8 @@ export interface GraphSystem {
    *  as that node's settings (graph/protocolNodes.ts protocolPipeline, which leaves out a role with no node and one
    *  whose node would write an input an earlier role's does; ProtocolRole says who parsed the config). */
   pipeline: ProtocolRole[];
-  /** The config of the system's core-config role, the one whose kind is its core (`sameboy` or `mesen`, coreRoles.ts):
+  /** The config of the system's core-config role, the one whose kind is its core (`sameboy` or `mesen`,
+   *  @retroplug/sameboy and @retroplug/mesen):
    *  where its node's setting fields and a NES's expansionVolume come from (systemKnobs), and where a NES's "drive the
    *  real cart" setting decides whether the document places its rp.n8.nes at all. Absent for a system with
    *  none (a DirectGraph's, a store's with no registry, the B1 goldens' models), whose node carries none of the live
@@ -135,7 +133,8 @@ const protocolId = (system: number, kind: string): string => `${systemNodeId(sys
  *  the system's id alone (the UI stages a settings message at it, and reads its capabilities, without the document). */
 export const cartNodeId = (system: number): string => `cart-${system}`;
 
-/** Whether a system drives a physical N8: its core config's `driveRealCart` (coreRoles.ts). An absent value drives one,
+/** Whether a system drives a physical N8: its core config's `driveRealCart` (@retroplug/mesen's Mesen role). An
+ *  absent value drives one,
  *  which is what a project saved before the setting existed did - the first NES's traffic reached the cart whether or
  *  not one was plugged in - and what a DirectGraph's system, built from a spec with no core config, still does. */
 export function drivesRealCartOf(config: Readonly<Record<string, unknown>> | undefined): boolean {
@@ -156,7 +155,8 @@ export function drivenCartSystem<T extends { platform: Platform; coreConfig?: Re
 // ---- the system nodes' knobs ----------------------------------------------------------------------------------------
 //
 // A system node's knobs (docs/modular-graph-phase-c2-design.md section 3): the setting fields each type takes from its
-// core config, under the names and in the labels the role config spells them (coreRoles.ts), which are what the C++
+// core config, under the names and in the labels the role config spells them (@retroplug/sameboy, @retroplug/mesen),
+// which are what the C++
 // node reads (SystemNodes.cpp), and the params it takes from the system. A value the node would refuse (another label,
 // a number out of its range, another type) is left out rather than sent: the planner refuses the whole document for
 // one node's settings, and a loaded project keeps its core config as written (SystemsStore.adopt), so a hand edit or a
@@ -203,7 +203,8 @@ const CONFIG_PARAMS: Readonly<Record<SystemNodeType, readonly string[]>> = {
 
 /** A construct-time field: whether the node takes the stored value as written, and the value written when it does not.
  *  The fallback is the node's own default (SystemNodes.cpp's config structs), which the role schema fills for a fresh
- *  config (coreRoles.ts), so a document names the same value whether or not the stored config held one. */
+ *  config (@retroplug/sameboy, @retroplug/mesen), so a document names the same value whether or not the stored config
+ *  held one. */
 interface ConstructField {
   takes: Knob;
   fallback: unknown;

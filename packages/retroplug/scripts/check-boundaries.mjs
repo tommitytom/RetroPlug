@@ -15,7 +15,8 @@
 // compile on its own, not what survives a bundler.
 //
 //   1. a relative import (or reference path) that leaves the package's own tree (a ../../retroplug/... reach into the
-//      shell, a ../other/ts/... reach into another package's files);
+//      shell, a ../other/ts/... reach into another package's files), or one that stays inside it and lands on a test
+//      file while the importing file is not a test itself;
 //   2. an @retroplug/<name> (or `reference types`) the package does not declare in its dependencies (a test file's
 //      devDependencies count);
 //   3. a third-party module (zod, anything under node_modules) the package does not declare; a subpath ("zod/v4") is
@@ -24,13 +25,21 @@
 //   5. a cycle in the declared dependencies;
 //   6. an #include in the package's native sources that climbs out of the package (a `..` segment, or an absolute path
 //      into another package), quoted or angled, or a declared @retroplug dependency that names no package;
-//   7. an `exports` target under ts/test/, which would publish a test module whose devDependencies another package's
-//      source could then reach, or one outside the package's ts/ tree, which no check reads.
+//   7. an `exports` entry that publishes a test module (a target, or a pattern's reach, that covers ts/test/ or a
+//      *.test.ts), handing a test file's devDependencies to another package's source; one that reaches outside the
+//      package's ts/ tree, which no check reads; or one naming no file, an entry still saying the package publishes a
+//      module that moved away.
+//
+// Rule 1's second half and rule 7's first are one leak: a test file may use its package's devDependencies, so source
+// that reaches a test file - by a relative import, or because the test file is published - hands those devDependencies
+// to every importer of that source.
 //
 // A declared dependency no file uses is a warning, not a refusal: the native check (cmake/packages.cmake) reads the same
 // declaration, so a package whose native targets link a dependency's library declares it without its TS importing
 // anything of it. A dependency's target named in the package's native/CMakeLists.txt counts as that use (a textual
-// search: CMake is the truthful source, but this warning does not deserve the machinery to ask it).
+// search: CMake is the truthful source, but this warning does not deserve the machinery to ask it), and so does a
+// dependency the package's own scripts run - the `typescript` every package now declares, which its `typecheck` script
+// runs as `tsc` and no file imports.
 //
 // packages/retroplug/src/generated is the shell's (the generator writes it from the manifests, packages.mjs), so a
 // generated module is not judged either, and the shell is where a generated read lives.
@@ -43,7 +52,7 @@
 // passes verbose only when RP_BOUNDARIES_VERBOSE asks, so `pnpm test` says what it found, not what it forgave.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -157,10 +166,14 @@ function describeOwner(name) {
   return isShell(name) ? `the shell (packages/${name})` : `the ${name} package (packages/${name})`;
 }
 
-/** A test file may use its package's devDependencies: a file under ts/test, or one named *.test.ts(x). */
-function isTestFile(pkg, file) {
-  const rel = relative(pkg.dir, file).split("\\").join("/");
+/** Whether a path under a package's directory names one of its test modules: under ts/test/, or named *.test.ts(x). */
+function isTestPath(rel) {
   return rel.startsWith("ts/test/") || /\.test\.(ts|tsx)$/.test(rel);
+}
+
+/** A test file may use its package's devDependencies, so it is judged against a looser manifest than a source is. */
+function isTestFile(pkg, file) {
+  return isTestPath(relative(pkg.dir, file).split("\\").join("/"));
 }
 
 /** Whether an import of `name` (a nameOf name) by `file` is declared: dependencies everywhere, devDependencies in a
@@ -233,8 +246,11 @@ function importsOf(root, pkg, files, problems) {
   return imports;
 }
 
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /** A manifest's `exports` as its entries: the key ("." for the string form) and every target string it maps to, so a
- *  conditional export's members are judged too. A pattern key ("ts/*") is read as the literal target it spells. */
+ *  conditional export's members are judged too. A pattern target ("./ts/*.ts") keeps its `*`: Node lets it stand for
+ *  any characters, `/` included, so the entry publishes a subtree, and rule 7 judges that subtree. */
 function exportTargets(manifest) {
   const exports = manifest.exports;
   if (typeof exports === "string") return [{ key: ".", target: exports }];
@@ -320,25 +336,47 @@ export function checkBoundaries({ root = REPO } = {}) {
     if (isShell(pkg.name)) continue;
 
     // Rule 7: what a package publishes. The checks read ts/, so an export outside it publishes code no check judges;
-    // an export under ts/test/ publishes a test module, and a test file may import devDependencies, which a source of
-    // another package reaching through the export would then get transitively.
+    // an export that reaches a test module hands it to other packages, and a test file may import devDependencies,
+    // which a source of another package reaching through the export then gets transitively. A pattern entry is judged
+    // by every path its `*` can name rather than by the literal it spells: "./ts/*.ts" publishes
+    // ts/test/anything.ts as surely as the file it was written for. The comparisons are lexical, as every path
+    // judgement here is, so a symlinked checkout judges the same tree.
     for (const { key, target } of exportTargets(pkg.manifest)) {
       const rel = target.replace(/^\.\//, "");
-      if (rel.startsWith("ts/test/")) {
+      const star = rel.indexOf("*");
+      const isPattern = star !== -1;
+      // The fixed part of the spelling: the tree a pattern's `*` may wander from, and the whole file a literal names.
+      const prefix = posix.normalize(isPattern ? rel.slice(0, star) : rel);
+      // Whether the entry can hand `probe` - one of the paths it could name - to a consumer.
+      const canName = isPattern
+        ? (probe) => new RegExp(`^${rel.split("*").map(escapeRegExp).join(".*")}$`).test(probe)
+        : (probe) => prefix === probe;
+      if (!prefix.startsWith("ts/")) {
         refuse(
           "exports",
           shown(root, pkg.manifestPath),
           target,
-          `${shown(root, pkg.manifestPath)}: exports "${key}" at ${target}, which is a test module: a test file may ` +
-            "use devDependencies, so publishing one lets another package's source reach them through it",
+          `${shown(root, pkg.manifestPath)}: exports "${key}" at ${target}, which ${
+            isPattern ? "can name files" : "is"
+          } outside packages/${pkg.name}/ts, so no check reads the code it publishes`,
         );
-      } else if (!rel.startsWith("ts/")) {
+      } else if (isTestPath(prefix) || canName("ts/test/probe.ts") || canName("ts/probe.test.ts")) {
         refuse(
           "exports",
           shown(root, pkg.manifestPath),
           target,
-          `${shown(root, pkg.manifestPath)}: exports "${key}" at ${target}, which is outside packages/${pkg.name}/ts, ` +
-            "so no check reads the code it publishes",
+          `${shown(root, pkg.manifestPath)}: exports "${key}" at ${target}, which ${
+            isPattern ? "can name a test module" : "is a test module"
+          }: a test file may use devDependencies, so publishing one lets another package's source reach them through ` +
+            "it",
+        );
+      } else if (!isPattern && !existsSync(join(pkg.dir, target))) {
+        refuse(
+          "exports",
+          shown(root, pkg.manifestPath),
+          target,
+          `${shown(root, pkg.manifestPath)}: exports "${key}" at ${target}, which names no file: the module moved or ` +
+            "was never there, and the entry is the one thing still saying the package publishes it",
         );
       }
     }
@@ -371,14 +409,29 @@ export function checkBoundaries({ root = REPO } = {}) {
       if (!isBare(specifier)) {
         // A relative import (or reference path), resolved against the importing file: it must stay in the package's
         // own tree, so a package reaches another as a declared @retroplug/<name> and the shell not at all.
-        if (target !== null && under(pkg.ts, target)) continue;
+        if (target !== null && under(pkg.ts, target)) {
+          // Staying inside the package is not the whole rule: a test file may use the package's devDependencies, so
+          // source that imports one hands them to every importer of the source, by an edge no manifest declares.
+          if (!isTestFile(pkg, file) && isTestFile(pkg, target)) {
+            refuse(
+              "test-module",
+              shown(root, file),
+              specifier,
+              `${shown(root, file)}: ${
+                form === "reference" ? `a /// <reference path> "${specifier}"` : `imports "${specifier}"`
+              }, which is a test module of its own package, from a file that is not a test: a test file may use the ` +
+                "package's devDependencies, so importing one from source hands them to every importer of the source",
+            );
+          }
+          continue;
+        }
         refuse(
           "relative",
           shown(root, file),
           specifier,
           `${shown(root, file)}: ${form === "reference" ? `a /// <reference path> "${specifier}"` : `imports "${specifier}"`}, ` +
             `which resolves into ${describeOwner(ownerOf(packages, root, target ?? ""))}, outside ` +
-            `${shown(root, pkg.ts)}: a package reaches another as @retroplug/<name>, and the shell not at all`,
+            `${shown(root, pkg.ts)}: a package reaches another as @retroplug/<name>; the shell not at all`,
         );
         continue;
       }
@@ -477,7 +530,13 @@ export function checkBoundaries({ root = REPO } = {}) {
   // The warnings: a declared dependency nothing uses.
   for (const pkg of packages.values()) {
     if (isShell(pkg.name)) continue;
+    // The compiler a package's `typecheck` script runs is that script's use of it: one TypeScript checks the whole
+    // workspace, and a package declares it so `pnpm -r typecheck` runs it from the install the shell declares.
+    const runsTsc = Object.values(pkg.manifest.scripts ?? {}).some((script) =>
+      /(^|\s)tsc(\s|$)/.test(String(script)),
+    );
     for (const name of [...pkg.dependencies, ...pkg.devDependencies]) {
+      if (name === "typescript" && runsTsc) continue;
       if (!used.get(pkg.name)?.has(name)) {
         warnings.push(`${pkg.name}: declares ${name}, which no file of its imports and no native target of it names`);
       }

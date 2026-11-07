@@ -17,7 +17,7 @@ import {
   type PlaybackGrid,
   type PlaybackModel,
   type PlaybackPosition,
-} from "../../tracker/playbackModel";
+} from "@retroplug/tracker/playbackModel";
 import { PredictedLsdjModel } from "./predict";
 
 /** Narrow a decoded `LsdjState` to a row-level position.

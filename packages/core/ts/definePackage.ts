@@ -10,7 +10,8 @@
 // them.
 //
 // definePackage holds no registry and does nothing at run time: it is the identity function with types, so a package
-// states its contributions where they are defined and the generated registry (src/generated/packages.ts) only has to
+// states its contributions where they are defined and the generated registry
+// (packages/retroplug/src/generated/packages.ts) only has to
 // concatenate them in product order. It is deliberately not generic: a type parameter inferred from the literal would
 // swallow a misspelt key, where the parameter's own type refuses it (test/packages/define-package.test.ts).
 import type { RoleType, RomProvider } from "./systemRoles";

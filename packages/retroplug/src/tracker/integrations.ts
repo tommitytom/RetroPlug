@@ -2,7 +2,7 @@
 // menus are built over, as the pure list the app's contributions carry (app.ts). trackerIntegration.ts holds the
 // contract and resolves a system's roles through this list; the objects are here rather than there so the generated
 // registry can import them without the module that reads it (src/generated/packages.ts).
-import type { TrackerIntegration, RamWrite } from "./trackerIntegration";
+import type { TrackerIntegration, RamWrite } from "@retroplug/tracker/trackerIntegration";
 import { lsdjSongCatalog } from "./lsdjSongCatalog";
 import { risaSongCatalog } from "./risaSongCatalog";
 import { lsdjAssetCatalog } from "./lsdjAssetCatalog";

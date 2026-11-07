@@ -6,10 +6,12 @@
 import { test, expect } from "@retroplug/testing";
 import { RoleRegistry, type RoleType } from "@retroplug/core/systemRoles";
 import { buildAppRegistry } from "../../src/appHost";
+import { ROLES } from "../../src/generated/packages";
 import { protocolNodeOf } from "../../src/graph/protocolNodes";
-import { registerCoreRoles } from "../../src/coreRoles";
+import { registerCoreRoles } from "../_coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
-import { z, clampedInt } from "../../src/configSchema";
+import { z } from "zod";
+import { clampedInt } from "@retroplug/core/configFields";
 import { systemKnobs } from "../../src/graph/buildGraph";
 import type { SystemNodeType } from "../../src/platform";
 import { sameboyRoleConfig } from "../systems/fixtures";
@@ -47,6 +49,17 @@ test("systemRoleFor: the core registers a SameBoy and a Mesen system role", () =
   expect(mesen?.kind).toBe("mesen");
   expect(mesen?.category).toBe("system");
   expect(mesen?.schema.parse({})).toEqual({ region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200, driveRealCart: true });
+});
+
+test("the product's role registrations open with the sameboy and mesen roles, before the shell's own", () => {
+  // SameBoy's and Mesen's role kinds are their packages' app contributions now, and the product list (the root
+  // package.json's retroplug.products.desktop) places those two packages ahead of the shell - so the generated list
+  // buildAppRegistry applies opens exactly as the shell's own list did. The native registration golden cannot see a
+  // reordering here: these packages register no native type at all.
+  expect(ROLES.map((role) => role.kind)).toEqual([
+    "sameboy", "mesen", "mgb", "nes-n8-midi", "risa-sync", "sms-sync", "lsdj-sync",
+    "lsdj-assets", "risa", "risa-assets", "bliptoaster", "bliptoaster-assets",
+  ]);
 });
 
 test("every field a system role's schema fills reaches some system node", () => {

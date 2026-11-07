@@ -22,7 +22,7 @@ import {
   PRO_MK3, Surface, decodeMessage, enterProgrammerMode, exitToLiveMode,
   type LaunchpadProfile, type SurfaceEvent,
 } from "../launchpad";
-import type { PlaybackModel, PredictivePlaybackModel } from "../tracker/playbackModel";
+import type { PlaybackModel, PredictivePlaybackModel } from "@retroplug/tracker/playbackModel";
 import type { TrackerTarget } from "./trackerTarget";
 
 /** What an app sees. Everything here is read-only except `surface` (paint it) and `state` (remember

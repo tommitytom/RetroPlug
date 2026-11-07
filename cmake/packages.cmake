@@ -563,7 +563,54 @@ function(retroplug_check_package_boundaries)
                     if(NOT TARGET ${_item})
                         continue()
                     endif()
+                    # An alias (`foo::foo`, the way a library is usually exported) is not a target of its own: the one
+                    # it
+                    # stands for has the SOURCE_DIR that decides its package, and the owner table is keyed by those.
+                    get_target_property(_aliased ${_item} ALIASED_TARGET)
+                    if(_aliased)
+                        set(_item "${_aliased}")
+                    endif()
                     list(APPEND _links "${_target}=${_item}")
+                endforeach()
+            endforeach()
+            # A -I (or -isystem, or MSVC's /I) in the compile options is an include directory by another door, so it is
+            # judged like one. What a generator expression hides is left alone HERE, unlike a link or a directory:
+            # this property legitimately holds configuration expressions (retroplug_package_library's
+            # $<$<COMPILE_LANGUAGE:CXX>:/bigobj>), and refusing those would refuse a build that declared nothing.
+            set(_flag_dir "")
+            foreach(_property COMPILE_OPTIONS INTERFACE_COMPILE_OPTIONS)
+                get_target_property(_value ${_target} ${_property})
+                if(NOT _value OR _value MATCHES "-NOTFOUND$")
+                    continue()
+                endif()
+                foreach(_item IN LISTS _value)
+                    _retroplug_unwrap_item(_item "${_item}" _unwrapable)
+                    if(NOT _unwrapable)
+                        continue()
+                    endif()
+                    if(_flag_dir)
+                        # The directory the bare flag on the previous item named.
+                        set(_dir "${_item}")
+                        set(_flag_dir "")
+                    elseif(_item MATCHES "^-I(.+)$")
+                        set(_dir "${CMAKE_MATCH_1}")
+                    elseif(_item MATCHES "^-isystem(.+)$")
+                        set(_dir "${CMAKE_MATCH_1}")
+                    elseif(_item MATCHES "^/I(.+)$")
+                        set(_dir "${CMAKE_MATCH_1}")
+                    elseif(_item STREQUAL "-I" OR _item STREQUAL "-isystem" OR _item STREQUAL "/I")
+                        set(_flag_dir TRUE)
+                        continue()
+                    else()
+                        continue()
+                    endif()
+                    # A relative -I is the compiler's to resolve against the consuming directory, as a relative include
+                    # directory is: the one below the target's own, which no package of another's can be.
+                    if(NOT IS_ABSOLUTE "${_dir}")
+                        continue()
+                    endif()
+                    get_filename_component(_dir "${_dir}" ABSOLUTE)
+                    list(APPEND _includes "${_target}=${_dir}")
                 endforeach()
             endforeach()
             # The interface directories are what a CONSUMER of the target adds, so they are judged like the target's own.
@@ -581,6 +628,9 @@ function(retroplug_check_package_boundaries)
                     if(NOT IS_ABSOLUTE "${_item}")
                         continue()
                     endif()
+                    # Normalised lexically, as a source is below: a directory spelled with a `..` in it would otherwise
+                    # be attributed to the directory it starts out in, which is what an escaped path hides best.
+                    get_filename_component(_item "${_item}" ABSOLUTE)
                     list(APPEND _includes "${_target}=${_item}")
                 endforeach()
             endforeach()
@@ -604,8 +654,11 @@ function(retroplug_check_package_boundaries)
                         endif()
                         set(_item "${_dir}/${_item}")
                     endif()
-                    # Normalised, so a relative source's `..` does not reach the message or the owner's spelling.
-                    file(REAL_PATH "${_item}" _item)
+                    # Normalised LEXICALLY, so a relative source's `..` does not reach the message or the owner's
+                    # spelling. Not file(REAL_PATH): that follows symlinks, and RP_PACKAGES_DIR is a lexical path, so a
+                    # checkout configured through a symlinked directory would have its sources judged against a path no
+                    # package owns and pass unseen.
+                    get_filename_component(_item "${_item}" ABSOLUTE)
                     list(APPEND _sources "${_target}=${_item}")
                 endforeach()
             endforeach()

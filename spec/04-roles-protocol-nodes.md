@@ -140,9 +140,12 @@ The control-plane registry ([appHost.ts](../packages/retroplug/src/appHost.ts) `
 takes `registerCoreRoles`, `registerDspRoles`, the asset and marker roles (`lsdj-assets`, `risa`,
 `risa-assets`, `bliptoaster`, `bliptoaster-assets`) and `registerRomProviders`.
 
-**System roles** ([coreRoles.ts](../packages/retroplug/src/coreRoles.ts)), keyed by core
-value, each enum a label mirroring a native enum ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)),
-which is what a `.rplg` saves and what the system node reads:
+**System roles** ([@retroplug/sameboy](../packages/sameboy/ts/app.ts),
+[@retroplug/mesen](../packages/mesen/ts/app.ts)), each owned by the package whose core it configures, keyed by core
+value, each enum a label mirroring a native enum (the label tuples in
+[@retroplug/sameboy/ts/enums.ts](../packages/sameboy/ts/enums.ts) and
+[@retroplug/mesen/ts/enums.ts](../packages/mesen/ts/enums.ts)), which is what a `.rplg` saves and what the system
+node reads:
 
 | Role | Config (zod, defaults) |
 |---|---|
@@ -480,7 +483,8 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
 
 - [systemRoles.ts](../packages/core/ts/systemRoles.ts): `RoleInstance` / `RoleType` /
   `RoleRegistry` / `RomProvider` / `ConstructCaps`.
-- [coreRoles.ts](../packages/retroplug/src/coreRoles.ts): the `sameboy` and `mesen` system-roles.
+- [packages/sameboy/ts/app.ts](../packages/sameboy/ts/app.ts) and [packages/mesen/ts/app.ts](../packages/mesen/ts/app.ts): the
+  `sameboy` and `mesen` system-roles, each contributed by the package whose core it configures.
 - [dspRoles.ts](../packages/retroplug/src/dspRoles.ts): the roles that have a protocol node (kind, schema)
   + the LSDj `onConstruct` seed.
 - [romProviders.ts](../packages/retroplug/src/romProviders.ts): feature-role attachment by ROM identity.

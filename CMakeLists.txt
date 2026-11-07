@@ -362,42 +362,22 @@ add_subdirectory(deps/catch2 "${CMAKE_BINARY_DIR}/deps/catch2" EXCLUDE_FROM_ALL)
 retroplug_silence_dep_warnings(Catch2 Catch2WithMain)
 
 # --- the workspace packages (cmake/packages.cmake, docs/modular-graph-phase-e1-design.md section 4): each reads its
-# manifest from its package.json and adds its native/ tree. The node SDK first, as every other package links it.
+# manifest from its package.json and adds its native/ tree.
 include(cmake/packages.cmake)
 # The shape every native test binary shares (see the file for why), for packages/native's and the packs' alike.
 include(cmake/test-binary.cmake)
-retroplug_package(node-sdk)        # rp_node.h, node.hpp and the description library: what a pack depends on
-retroplug_package(graph-runtime)   # the executor, the planner, the registry, GraphHost, rp.host.audio-out
-retroplug_package(core)            # the rp.core nodes
-retroplug_package(dsp)             # the kernels, the rp.dsp nodes and rp.dsp.resample
-retroplug_package(n8)              # the Everdrive N8 Pro: rp.n8.nes and the desktop's serial link to the cart
-retroplug_package(device-io)       # a device host's own I/O (rp.device.midi-in): the exporter's and the devices'
-retroplug_package(devtest)         # test types for a plan's host (rp.devtest.plan): the device check's, no product's
-retroplug_package(bliptoaster)     # the BlipToaster cart's MIDI policy, a device script pack: the box's plan runs it
-# The node types not yet carved into packages of their own (sameboy, mesen, host.io, launchpad) register from
-# packages/native, the engine's tree, whose manifest names their entries; its targets are defined below.
-retroplug_package(native)
-# The device check's case generator, a desktop tool listing what the RP2350 check registers (a device product of the
-# packages above); the check itself is packages/graph-runtime/device-check, a Pico SDK project of its own.
-add_subdirectory(packages/graph-runtime/device-check/cases "${CMAKE_BINARY_DIR}/device-check/cases")
-# The plan exporter, the desktop tool a device image's build runs to embed its built-in plan (a device product of the
-# packages above, with their device builds beside it to size the plan as the device will).
-add_subdirectory(packages/graph-runtime/export-plan "${CMAKE_BINARY_DIR}/export-plan")
-# Every package's native targets, held to what its manifest declares, deferred to the end of this directory as the
-# product check is: a check run while a package is configured sees only the targets defined before it, and links to a
-# later package or to the shell below would pass unseen. Every target is attributed to the package whose directory holds
-# its SOURCE_DIR, so a helper no manifest names is still that package's.
-cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_package_boundaries)
 
 # The packages a desktop product carries (retroplug_product), every one today; a product that differs lists its own.
 # The LIST is the root package.json's retroplug.products.desktop, read here and by the TS generator
 # (packages/retroplug/scripts/lib/packages.mjs), so the two languages cannot register different products, and a package
 # follows the ones it depends on (the generator refuses a list that does not).
-# The ORDER is load-bearing: it is the order the products register in, which the registration golden holds
-# (packages/native/test/engine-graph/golden/product-registrations.json). The carved packages come first, in the order
-# they were carved: rp.core, rp.dsp, rp.dsp.resample, rp.host (graph-runtime, after dsp for that reason alone), then
-# rp.n8 (the n8 pack's rp.n8.nes, after rp.host.audio-out and before rp.sameboy.gb); then the types still in
-# packages/native; then the device script packs, rp.bliptoaster last, so a pack's types move none of the others.
+# The ORDER is load-bearing in both languages that read it. In CMake it is the order a product's node types register,
+# which the registration golden holds (packages/native/test/engine-graph/golden/product-registrations.json): the carved
+# packages come first, in the order they were carved - rp.core, rp.dsp, rp.dsp.resample, rp.host (graph-runtime, after
+# dsp for that reason alone), then rp.n8 (the n8 pack's rp.n8.nes, after rp.host.audio-out and before rp.sameboy.gb) -
+# then the types still in packages/native, then the device script packs, rp.bliptoaster last, so a pack's types move
+# none of the others. In the generator it is the order that product's TS registries are built in, so the role list the
+# shell reads (packages/retroplug/src/generated) opens with the roles in the same sequence.
 set(_rp_root_manifest "${CMAKE_SOURCE_DIR}/package.json")
 # A configure input, so editing the list re-runs the configure retroplug_product() needs before it reads it. The whole
 # file is the input (CMake cannot depend on one JSON member), so an edit to its scripts reconfigures too; that is the
@@ -428,27 +408,67 @@ foreach(_rp_i RANGE ${_rp_products_last})
     list(APPEND RP_DESKTOP_PACKAGES "${_rp_package}")
 endforeach()
 
-# A package that contributes an app module or protocol nodes is imported by the shell's generated modules BY ITS PACKAGE
-# NAME (packages/retroplug/src/generated, packages/retroplug/scripts/lib/packages.mjs), and pnpm links it into the
-# shell's node_modules only when the shell declares it. The generator refuses a contribution the shell does not declare;
-# the LINK can still be missing in a checkout pulled before that declaration, and the bundler's bare "Could not resolve"
-# is no help there, so configure says what to do. A package that contributes nothing is not imported, so it needs no link.
-foreach(_rp_ts_package IN LISTS RP_DESKTOP_PACKAGES)
-    set(_rp_ts_manifest "${CMAKE_SOURCE_DIR}/packages/${_rp_ts_package}/package.json")
-    file(READ "${_rp_ts_manifest}" _rp_ts_json)
-    set(_rp_ts_contributes FALSE)
-    foreach(_rp_ts_member app protocol)
-        string(JSON _rp_ts_kind ERROR_VARIABLE _rp_ts_error TYPE "${_rp_ts_json}" retroplug ${_rp_ts_member})
-        if(NOT _rp_ts_error)
-            set(_rp_ts_contributes TRUE)
-        endif()
-    endforeach()
-    if(_rp_ts_contributes AND NOT EXISTS
-       "${CMAKE_SOURCE_DIR}/packages/retroplug/node_modules/@retroplug/${_rp_ts_package}")
-        message(FATAL_ERROR "packages/retroplug/node_modules/@retroplug/${_rp_ts_package} is missing: the shell's "
-                            "generated modules import ${_rp_ts_package}'s contribution by name, so run `pnpm install`")
+# The shell imports every workspace package it declares BY PACKAGE NAME (its sources, and the modules the generator
+# writes into packages/retroplug/src/generated), and pnpm links a workspace package into the shell's node_modules only
+# when the shell declares it. A missing link is esbuild's bare "Could not resolve" with no hint of the cause, so
+# configure says what to do: the declaration and the link must both be there, for every @retroplug/* the shell names -
+# including a package that contributes no registration and so never appears in a product list, which the generator's
+# own refusal only covers for packages that contribute.
+file(READ "${CMAKE_SOURCE_DIR}/packages/retroplug/package.json" _rp_shell_manifest_json)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${CMAKE_SOURCE_DIR}/packages/retroplug/package.json")
+string(JSON _rp_shell_deps_kind ERROR_VARIABLE _rp_shell_error TYPE "${_rp_shell_manifest_json}" dependencies)
+if(_rp_shell_error)
+    message(FATAL_ERROR "packages/retroplug/package.json has no dependencies object (${_rp_shell_error}): every "
+                        "@retroplug/* it imports must be declared, or this configure cannot check the links")
+endif()
+# Read from the packages' side, because CMake's JSON reader enumerates an array's members and not an object's keys:
+# every workspace package, kept when the shell declares it. A declaration of a name that is no package here is the
+# boundary check's to refuse.
+file(GLOB _rp_workspace_dirs LIST_DIRECTORIES TRUE "${CMAKE_SOURCE_DIR}/packages/*")
+foreach(_rp_dir IN LISTS _rp_workspace_dirs)
+    if(NOT EXISTS "${_rp_dir}/package.json")
+        continue()
+    endif()
+    get_filename_component(_rp_declared "${_rp_dir}" NAME)
+    string(JSON _rp_dep_kind ERROR_VARIABLE _rp_dep_error TYPE "${_rp_shell_manifest_json}"
+           dependencies "@retroplug/${_rp_declared}")
+    if(_rp_dep_error)
+        continue()
+    endif()
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/packages/retroplug/node_modules/@retroplug/${_rp_declared}")
+        message(FATAL_ERROR "packages/retroplug/node_modules/@retroplug/${_rp_declared} is missing: the shell "
+                            "declares and imports @retroplug/${_rp_declared} by name, so run `pnpm install`")
     endif()
 endforeach()
+
+# Every package a desktop product lists is registered by iterating that list, so a new package's registration is its
+# manifest plus the list entry and no CMake edit a third-party pack can forget. The two lists around it are the packages
+# no product lists and a device build needs, placed where the loop's own ordering requires them: the node SDK first,
+# because every other package's library is built on it; a device host's own I/O (rp.device.midi-in, the plan exporter's
+# and the devices') and the device check's test types (rp.devtest.plan) last, because registering a script pack needs
+# the
+# MicroQuickJS host the graph-runtime package adds. packages/native is in the product list and registers the node types
+# not yet carved into packages of their own (sameboy, mesen, host.io, launchpad); its targets are defined below, where
+# the root adds the engine's own tree. @retroplug/tracker is in neither list: it contributes no registration of any
+# kind, only modules the shell and the cart packages import, so CMake is never told about it.
+set(_rp_first_packages node-sdk)          # first: every other package's library is built on it
+set(_rp_last_packages device-io devtest)  # after the list: a script pack needs graph-runtime's host
+foreach(_rp_package IN LISTS _rp_first_packages RP_DESKTOP_PACKAGES _rp_last_packages)
+    retroplug_package(${_rp_package})
+endforeach()
+
+# The device check's case generator, a desktop tool listing what the RP2350 check registers (a device product of the
+# packages above); the check itself is packages/graph-runtime/device-check, a Pico SDK project of its own.
+add_subdirectory(packages/graph-runtime/device-check/cases "${CMAKE_BINARY_DIR}/device-check/cases")
+# The plan exporter, the desktop tool a device image's build runs to embed its built-in plan (a device product of the
+# packages above, with their device builds beside it to size the plan as the device will).
+add_subdirectory(packages/graph-runtime/export-plan "${CMAKE_BINARY_DIR}/export-plan")
+# Every package's native targets, held to what its manifest declares, deferred to the end of this directory as the
+# product check is: a check run while a package is configured sees only the targets defined before it, and links to a
+# later package or to the shell below would pass unseen. Every target is attributed to the package whose directory holds
+# its SOURCE_DIR, so a helper no manifest names is still that package's.
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_package_boundaries)
 
 # --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
 # + the DPF plugin + the test host / cli / ui-test.

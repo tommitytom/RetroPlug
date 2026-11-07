@@ -22,7 +22,7 @@
 
 import { Palette, palette, type Led } from "../../launchpad";
 import type { ControllerApp, ControllerCtx } from "../session";
-import type { PlaybackPosition } from "../../tracker/playbackModel";
+import type { PlaybackPosition } from "@retroplug/tracker/playbackModel";
 
 /** Columns of channels per pane, and the two panes that make up the 16-row window. */
 export const CHANNELS_ACROSS = 4;

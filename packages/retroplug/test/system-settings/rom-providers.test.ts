@@ -4,7 +4,7 @@
 // through defaultRoles so the sameboy system role + provider features compose as they do live.
 import { test, expect } from "@retroplug/testing";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
-import { registerCoreRoles } from "../../src/coreRoles";
+import { registerCoreRoles } from "../_coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";

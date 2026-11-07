@@ -9,7 +9,7 @@
 import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
 import type { ConstructSpec } from "./backend";
 import type { RomColorSet } from "./lsdj/rom";
-import { z } from "./configSchema";
+import { z } from "zod";
 import { LsdjRom, encodeLsdpal } from "./lsdj/rom";
 import { lsdprjKitBank } from "./lsdjSav";
 

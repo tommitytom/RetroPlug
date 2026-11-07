@@ -1,4 +1,4 @@
-// rp.midi.route (src/script/nodes/midiRoute.ts): the host's MIDI fanned to one output a system, by the routing mode.
+// rp.midi.route (../midiRoute.ts): the host's MIDI fanned to one output a system, by the routing mode.
 // What the DSP kernel's midi-routing stage did until B3b, at the node, and each mode's decision held to routeBlock, the
 // pure oracle. With no routing node placed, no system gets the host's MIDI: buildGraph's (test/graph/build-graph.test.ts).
 import { test, expect } from "@retroplug/testing";

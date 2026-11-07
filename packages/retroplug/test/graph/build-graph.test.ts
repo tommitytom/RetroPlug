@@ -12,7 +12,7 @@ import { buildGraph, exportModeOf, type GraphModel, type GraphSystem, type HostS
 import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
 import { controllerSyncOverride, serialOutCaptureFor, type GraphController } from "../../src/graph/controller";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
-import { registerCoreRoles } from "../../src/coreRoles";
+import { registerCoreRoles } from "../_coreRoles";
 import { MIDI_ROUTE_NODE_TYPE } from "@retroplug/core/midiRoute";
 import { CONTROLLER_SESSION_NODE_TYPE } from "../../src/script/nodes/controllerSession";
 import { MGB_MIDI_NODE_TYPE } from "../../src/script/nodes/mgbMidi";
@@ -21,7 +21,8 @@ import { RISA_SYNC_NODE_TYPE } from "../../src/script/nodes/risaSync";
 import { SMS_SYNC_NODE_TYPE } from "../../src/script/nodes/smsSync";
 import { LSDJ_SYNC_NODE_TYPE } from "../../src/script/nodes/lsdjSync";
 import { LSDJ_SERIAL_OUT_NODE_TYPE } from "../../src/script/nodes/lsdjSerialOut";
-import { LSDJ_MODE_VALUES, type AudioRouting, type MidiRouting } from "../../src/settingsEnums";
+import { LSDJ_MODE_VALUES, type AudioRouting } from "../../src/settingsEnums";
+import { type MidiRouting } from "@retroplug/core/midiRouting";
 
 // A system as the store hands buildGraph one: its id doubles as its ROM resource's, so a document names `res:<id>`.
 const gb = (id: number, linkGroup = 0, pipeline: ProtocolRole[] = []): GraphSystem => ({
@@ -521,7 +522,8 @@ test("the override leaves the model's own pipeline as it was", () => {
 
 // --- the system nodes' knobs (docs/modular-graph-phase-c2-design.md sections 3 and 5) ----------------------------
 
-// A core-config role's config as a store holds it, its role's schema parsed (coreRoles.ts): every field filled.
+// A core-config role's config as a store holds it, its role's schema parsed (@retroplug/sameboy, @retroplug/mesen):
+// every field filled.
 const CORE_ROLES = new RoleRegistry();
 registerCoreRoles(CORE_ROLES);
 const coreConfig = (kind: "sameboy" | "mesen", over: Record<string, unknown> = {}): Record<string, unknown> =>

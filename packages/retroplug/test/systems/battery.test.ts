@@ -6,7 +6,7 @@ import { romHasBattery } from "../../src/platform";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
-import { registerCoreRoles } from "../../src/coreRoles";
+import { registerCoreRoles } from "../_coreRoles";
 import { gbRom, gbRomBattery, nesRom, nesRomBattery, gbaRom } from "./fixtures";
 
 // A raw GB header prefix carrying a given cartridge-type byte at $147.

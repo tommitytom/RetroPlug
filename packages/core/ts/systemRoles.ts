@@ -3,7 +3,8 @@
 // system (a backend's own knobs, or an optional feature like LSDj) is a role, so the
 // core stays free of backend/LSDj knowledge. Extensions populate a kind-keyed
 // RoleRegistry; a console package contributes its own system roles through its app module, and the generated registry
-// (the shell's src/generated/packages.ts) hands them over. Ports the shape of native RoleConfig (RoleConfig.hpp), a
+// (packages/retroplug/src/generated/packages.ts) hands them over. Ports the shape of native RoleConfig
+// (RoleConfig.hpp), a
 // tagged union on "kind", into a runtime registry, minus the hardcoded if/else chains.
 //
 // Two categories: "system" roles carry a backend's emulator settings (attached by

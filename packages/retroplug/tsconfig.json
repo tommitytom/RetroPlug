@@ -4,10 +4,6 @@
   // needs; the runtime's ambient globals come from the base's `files`.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    // Back on for the shell alone, against the base's reason: the iife bundles esbuild builds FROM THIS PACKAGE (the
-    // built-in script pack, tools/build-session.js) are headed with a "use strict" directive today, because this
-    // tsconfig has implied it all along. Keep implying it, so sharing the base's options moves no bundle's bytes.
-    "alwaysStrict": true,
     // Resolve the bare specifier a CONSUMER uses to the shipped declaration file, exactly as their
     // tsconfig does. Nothing in the app imports it; it exists so cli/sdkSurfaceCheck.ts can be
     // type-checked against the .d.ts, which is hand-maintained and has twice shipped out of step
