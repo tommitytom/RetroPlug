@@ -885,23 +885,27 @@ void run(NodeRig& rig, std::uint32_t frames = 512, int blocks = 1) {
     for (int b = 0; b < blocks; ++b) rig.host->processBlock(frames, t, out.ptrs.data(), 2);
 }
 
-// The TS sources the configure lists for this oracle (packages/native/cmake/tests.cmake): every package's own TS, with
-// the app's settingsEnums.ts and systemSettings.ts beside them. Split on the comma the list is joined with, because a
-// `;` in a compile definition is CMake's own list separator.
-const std::vector<std::string>& settingsTsSources() {
-    static const std::vector<std::string> sources = [] {
-        std::vector<std::string> out;
-        std::stringstream split(RP_SETTINGS_TS_PATHS);
-        for (std::string path; std::getline(split, path, ',');) out.push_back(path);
-        return out;
-    }();
-    return sources;
-}
-
 // A listed source's text.
 std::string readText(const std::string& path) {
     const auto bytes = readFile(path.c_str());
     return std::string(bytes.begin(), bytes.end());
+}
+
+// The TS sources the configure lists for this oracle (packages/native/cmake/tests.cmake): every package's own TS, with
+// the app's settingsEnums.ts, systemSettings.ts and graph/buildGraph.ts beside them. The list is a file the configure
+// writes, one path a line, which the oracle reads at run time: a package's new TS file rewrites that list and leaves
+// this binary alone.
+const std::vector<std::string>& settingsTsSources() {
+    static const std::vector<std::string> sources = [] {
+        std::vector<std::string> out;
+        std::istringstream lines(readText(RP_SETTINGS_TS_LIST));
+        for (std::string path; std::getline(lines, path);) {
+            if (!path.empty() && path.back() == '\r') path.pop_back();  // a list written on Windows
+            if (!path.empty()) out.push_back(path);
+        }
+        return out;
+    }();
+    return sources;
 }
 
 // The one listed source whose path contains `where` - how a case names a package's or the app's file without the

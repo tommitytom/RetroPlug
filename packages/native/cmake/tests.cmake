@@ -88,9 +88,10 @@ retroplug_add_test_binary(
 # gathered rather than spelled out: every package's own TS - its enums, and its role schema's clamped fields - plus the
 # three files of the app's that still hold knobs of their own. A package that takes an enum or a range from the shell
 # therefore needs no change here; the oracle reads whichever source declares the name, and fails the case when two do.
-# A package's test files stay out: an enum declared in one is a fixture, not the label list a knob takes. Joined with
-# commas because a CMake list's separator would split the definition into one per path, and globbed with
-# CONFIGURE_DEPENDS so the build re-reads it when a package's TS tree grows.
+# A package's test files stay out: an enum declared in one is a fixture, not the label list a knob takes. Globbed with
+# CONFIGURE_DEPENDS so the build re-reads it when a package's TS tree grows, and written to a file the oracle reads at
+# run time rather than compiled in: adding a package's TS file rewrites the list (only when its content changed) and
+# recompiles nothing, where a definition would rebuild every translation unit of the binary that carries it.
 file(GLOB_RECURSE _rp_settings_ts CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/packages/*/ts/*.ts")
 set(_rp_settings_ts_sources "")
 foreach(_rp_settings_ts_file IN LISTS _rp_settings_ts)
@@ -104,7 +105,9 @@ list(APPEND _rp_settings_ts_sources
      "${CMAKE_SOURCE_DIR}/packages/retroplug/src/systemSettings.ts"    # and the gain range every system's mix reads
      "${CMAKE_SOURCE_DIR}/packages/retroplug/src/graph/buildGraph.ts")  # the document's own knob and field tables
 list(SORT _rp_settings_ts_sources)
-string(REPLACE ";" "," _rp_settings_ts "${_rp_settings_ts_sources}")
+list(JOIN _rp_settings_ts_sources "\n" _rp_settings_ts_text)
+set(_rp_settings_ts_list "${CMAKE_CURRENT_BINARY_DIR}/settings-ts.txt")
+file(CONFIGURE OUTPUT "${_rp_settings_ts_list}" CONTENT "${_rp_settings_ts_text}\n")
 
 # Guards the engine's graph (docs/modular-graph-phase-b1-design.md, -b2-design.md, -b3a-design.md, -b3b-design.md,
 # -c2-design.md): each system node renders exactly what its core renders driven directly, its inputs and its settings'
@@ -163,10 +166,11 @@ retroplug_add_test_binary(
              RP_SMS_SAV_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sav"
              RP_BUILD_GRAPH_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph.json"
              RP_BUILD_GRAPH_ROLE_GOLDENS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/graph/golden/build-graph-roles.json"
-             RP_SETTINGS_TS_PATHS="${_rp_settings_ts}"  # the TS the [settings] oracle reads, listed above
+             RP_SETTINGS_TS_LIST="${_rp_settings_ts_list}"  # the TS the [settings] oracle reads, written above
              RP_PORTS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/core/ts/ports.ts"  # the queue capacities
              RP_PRODUCT_REGISTRATIONS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph/golden/product-registrations.json"
              RP_BUILD_TYPE="$<CONFIG>")                 # the bench prints the configuration it was built in
+
 
 add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
 # The providers header retroplug_product() would generate for a product listing no package with a provider, which
