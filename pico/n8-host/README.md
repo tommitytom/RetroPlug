@@ -21,7 +21,7 @@ PIO-USB - they don't contend.
 | 2.5 | **done (HW-verified 2026-10-30)** | BlipToaster parity with the PC bridge: **SysEx** forwarded verbatim, the **expansion master volume** set when the cart needs it, aftertouch still filtered (BlipToaster ignores it). See "BlipToaster parity" below - Test G through the Pico matches the console numbers BlipToaster documented from the PC. |
 | 2.6 | **done (HW-verified 2026-10-30)** | the standalone box (`box.cpp`): status LED, watchdog + recovery reboots with backoff, several ROMs staged in flash and picked over MIDI (`F0 7D 50 01 <n> F7`), the choice saved on the SD. `faults.sh`: random NES power cuts, 8/8 rounds recovered and played. See "The standalone box". |
 | 2.7 | **done, HW-verified 2026-11-05 (E3)** | the box as a graph host: `../host/` plus `plan.json` (MIDI in -> `rp.core.midi-filter` -> `rp.n8.nes`) exported at build time and loaded into a 128 KiB arena; the forwarding, the volume check and the aftertouch drop that 2.4 and 2.5 describe are now that plan and the box cart link |
-| 2.8 | **done, HW-verified 2026-11-06 (E4)** | the cart's MIDI policy as a TypeScript node: `plan.json` is MIDI in -> `rp.bliptoaster.midi-policy` (a `packages/bliptoaster` pack on MicroQuickJS) -> `rp.n8.nes`, in a 64 KiB arena; the `rp.core.midi-filter` it replaced stays in `rp.core` |
+| 2.8 | **done, HW-verified 2026-11-07 (E4, final images)** | the cart's MIDI policy as a TypeScript node: `plan.json` is MIDI in -> `rp.bliptoaster.midi-policy` (a `packages/bliptoaster` pack on MicroQuickJS) -> `rp.n8.nes`, in a 64 KiB arena; the `rp.core.midi-filter` it replaced stays in `rp.core` |
 
 ## Dependencies (not in the repo yet - see "one-time setup")
 
@@ -260,10 +260,14 @@ average, ~1.04 ms worst** (it was ~4.6 ms typical with 11-19 ms outliers). Four 
 - **The TypeScript policy node (E4).** A message now passes through MicroQuickJS: an isolated message pays its
   block's base plus one message (estimated at about 40 us: callgrind on i386, scaled by the first block's timing; 65
   us a note from flash at 150 MHz in the device check), and an idle pass is estimated at about a microsecond because
-  the node declares `idle: "skip"`. The isolated latency over 13 runs on three images reads averages of 550-743 us and
-  worsts of 1122-1170 us (E3: 610-680 / 1086-1128), a cost the user accepted ([E4's
+  the node declares `idle: "skip"`. The isolated latency over 22 runs on five images reads averages of 550-788 us and
+  worsts of 1120-1170 us (E3: 610-680 / 1086-1128; the final gate's nine runs on d4f89834 and 4b4f9abc: 588-788 /
+  1120-1170, mean average 701 and 716, two averages over the ~780 us line by under 10 us), a cost the user accepted ([E4's
   design](../../docs/modular-graph-phase-e4-design.md) section 8 states the new line: a worst above about 1200 us, or
-  averages above about 780 us; the worst is the primary signal, as averages vary about 190 us from run to run). The
+  averages above about 780 us; the worst is the primary signal, as averages vary about 190 us from run to run, and
+  the gate judged on it). The final gate ran on the box image 4b4f9abc (plan 57152 of 65536 arena bytes, heap 11636 of
+  24576, load 10.75 ms, first block 0.97 ms; stress 34 ok, faults 8/8, pick 4922 / 4927 ms); `RP_NATIVE_USB` (af36f223)
+  was built and not flashed. The
   image takes 350.3 KiB of SRAM (338824 bytes for `RP_NATIVE_USB`), its arena is 64 KiB, and the MIDI input queue
   holds 64 messages (and 4096 bytes). A node's budget is its author's: about 250 us a message, and a stack nesting
   limited by a re-entry cap of 4.

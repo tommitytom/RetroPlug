@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-06 · **Branch:** `feature/modularize` · **Status:** built (E4, five commits, then the code reviews'
 and the final review's follow-ups); section 11 records the build, answers section 10 and carries what was left, and
-sections 1 to 9 are corrected in place
+sections 1 to 9 are corrected in place; the hardware gate ran on the final images (section 11.7)
 
 Phase E is the Pico runtime ([modular-graph-phase-e1-design.md](modular-graph-phase-e1-design.md) section 3). E1 made a
 C++ node's source build for the RP2350, E2 put the first pack behind the package boundary, and E3 made a graph run on
@@ -205,7 +205,7 @@ engine's out-of-memory error for an array or a buffer past its size limits, with
 
 - **The deadline** is enforced by the engine's interrupt handler against the host's clock: **10 ms a call plus 250 us
   for each message on the block's events and bytes inputs** on the box (26 ms for a full queue of 64), which is the
-  author's budget; the device check measured 65 us a note and 48 us a 64-byte SysEx from flash. A host with no clock
+  author's budget; the prototype's device check measured 65 us a note and 48 us a 64-byte SysEx from flash (88 and 56 us on the final image, from the follow-ups' finer polls). A host with no clock
   times by the thread's CPU time at **500 ms** on the desktop (Windows counts thread time in 15.6 ms ticks, so a
   deadline must be many ticks to be measured at all). A reading of 0 is no reading.
 - **The polls.** MicroQuickJS polls the handler once every so many units of work, 10000 by its own count: each call and
@@ -292,7 +292,7 @@ before a script node kept its streams' ends for the idle skip (section 4), 512 b
 
 | | E3 | E4 (the PIO-USB image) |
 |---|---|---|
-| Code and data run from RAM | 121.5 KiB (100,628 + 23,832 bytes) | 232.5 KiB (191,960 + 46,120 bytes; mquickjs 99.6 KB, the host 19.9 KB, at the gated image) |
+| Code and data run from RAM | 121.5 KiB (100,628 + 23,832 bytes) | 232.5 KiB (191,960 + 46,120 bytes; mquickjs 99.6 KB, the host 19.9 KB, at the final gated image 4b4f9abc) |
 | Arena | 128 KiB | 64 KiB, the pack's 32,016 bytes inside it |
 | Other bss | 55.6 KiB | 53.8 KiB |
 | In all | about 305 KiB (312,484 bytes) | 350.3 KiB (358,704 bytes) of 512 |
@@ -403,7 +403,9 @@ first gate read near E3's line): the script node costs the isolated-latency path
 550 to 743 us (E3: 610 to 680) and worsts of 1122 to 1170 us (E3: 1086 to 1128)**, so averages are near E3's and the
 worst about 50 us higher. The regression line is therefore **a worst above about 1200 us, or averages above about
 780 us**, to report and fix; the worst is the primary signal, since averages vary about 190 us from run to run. A lone
-run of several milliseconds is the `[stats]` print's known stall (section 11.8), not a regression.
+run of several milliseconds is the `[stats]` print's known stall (section 11.8), not a regression. The final gate (section
+11.7) read nine runs with every worst under 1200 us (1120 to 1170) and two averages (785 and 788) over the 780 us line
+by under 10 us: the worst is the judged signal.
 
 **How it is built** (as E1 to E3, Anthropic models only): a verified prototype on the local branch `proto/e4-mqjs`,
 stages 1 to 4 by Opus and stage 5 by Sonnet, each reviewed by Opus with a fix pass, the Pico gate run by the controller
@@ -554,9 +556,10 @@ RAM, the images taking 358704 and 338824 bytes of SRAM in all (312484 and 292636
 2. **The per-message cost.** The desktop: 245 to 300 ns a message on either build of the host (290 to 315 at the prototype), against 5 ns for the
    C++ filter, a warmed block allocating nothing and the JS heap's top not moving (the compacting collector never runs
    in steady state). The M33 from flash at 150 MHz (the device check): a first block 166.7k cycles (1.1 ms), an empty
-   block 67 us, **65 us a note and 48 us a 64-byte SysEx**, XIP hits 99.5%; on the box's own image (from RAM, 120 MHz)
-   the pack's load took 9.6 ms and its first block 1.0 ms on the final image (4.2 ms on the stage-3 images, before
-   the arrays were made in the engine), outside any node deadline, printed. With `idle: "skip"` an
+   block 67 us, **65 us a note and 48 us a 64-byte SysEx** (the prototype's; the final image's finer polls read 88, 56
+   and 91 us), XIP hits 99.5%; on the box's own image (from RAM, 120 MHz) the pack's load took 9.6 ms (10.75 ms) and its
+   first block 1.0 ms on the final image, gated at 4b4f9abc (4.2 ms on the stage-3 images, before the arrays were made
+   in the engine), outside any node deadline, printed. With `idle: "skip"` an
    idle pass costs 68 instructions, and `forward()` took a message from 4,213 to 2,886 instructions (callgrind, i386);
    the latency the rig measured is in section 11.7, and the deadline's allowance of 250 us a message is about four
    times a note's measured cost.
@@ -633,19 +636,19 @@ RAM, the images taking 358704 and 338824 bytes of SRAM in all (312484 and 292636
 
 ### 11.7 The gate
 
-Run by the controller on the prototype's image (BlipToaster, never `n8-midi.nes`), against section 12.7 of [E3's
-design](modular-graph-phase-e3-design.md) as the baseline. The first run, on the first stage-3 image (8ec41346),
+Run by the controller (BlipToaster, never `n8-midi.nes`), against section 12.7 of [E3's
+design](modular-graph-phase-e3-design.md) as the baseline: first on the prototype's images, then again on the final
+ones, whose table follows the prototype's. The first run, on the first stage-3 image (8ec41346),
 loaded the plan on the device (arena 56312 of 65536, the pack's heap 11600 of 24576 after the first block, the load
 9235 us and the first block 4247 us), then **the box failed to boot three times at the menu handshake** (`*t`
 unanswered). The E3 control image, rebuilt from E3's commit with today's exporter, failed identically, so it was not
 E4's code; the video showed no signal (mean luma 0.0 at 35 s and 75 s after power-on). After a clean 12 s off and 35
 s, the E3 control image booted BlipToaster through the menu. **The cause of that stuck-menu episode is unknown**: the
 NES or N8 not running after the USB cable was moved back, or the SD damaged by a desktop leg, were suspected; it did
-not recur, and the gate ran on. The table is the last full run, on the stage-4 fix pass image (fdbce8ba), which is the
-last image the gate ran on; stage 3 and 4's final fixes after it move the box image by 32 bytes of a range check
-(c554df45), and acceptance gates that final image.
+not recur, and the gate ran on. The first table is the prototype's last full run, on the stage-4 fix pass image
+(fdbce8ba); the final-image table after it is the gate that counts (the box 4b4f9abc, the device check 8cc7ae7d).
 
-| Leg | What it must show | E4 (fdbce8ba unless noted) |
+| Leg | What it must show | E4 prototype (fdbce8ba unless noted) |
 |---|---|---|
 | boot | the plan line, the node lines, the pack line and its first-block heap line | booted; the plan 56.6 KB of 65536 arena bytes, 3 nodes, `pack bliptoaster, 32016 bytes`, heap 11636 of 24576 after the first block, load 9613 us and first block 1016 us (on ec6cb4c0 the first block was 4242 us, load 9601 us), volume 128 written |
 | `stress.sh` | every case's counts as E3's, fail 0, ring and link loss 0, isolated latency within the new line (section 8) | 33 functional cases ok, fail 0, ringfull 0, `filtered` 6; latency avg/worst 743/1166, 664/1124, 719/1166, 667/1125 us, and one 901/10581 run whose window right after the case started held 12 messages: the `[stats]` print stall (E3's flash image read 12.6 ms and an earlier E4 run 8.1 ms in the same window) |
@@ -654,7 +657,26 @@ last image the gate ran on; stage 3 and 4's final fixes after it move the box im
 | `faults.sh --rounds 8` | 8 of 8; stuck 0 | 8 of 8, stuck 0 on the re-run (the first run's 7 of 8 was the stuck round alone, the only cut with a 2.9 s effective off against 4.9 to 5.0 for the rest: the plug's short-off quirk); abandoned boots 8 and 12 on two images |
 | the upload path | two ROMs, SysEx `7D 50` pick, an NES power cycle | uploaded in 4922 and 4926 ms (E3 4922 and 4930), saved choices honoured with no upload |
 | `rp-device-check` flashed once (2126adf5) | the lines of section 11.4 | `pass, 22 types`; `n8 protocol pass`; `plan pass` 54,408 arena bytes (the export's estimate 56,144), digest `46e21691` against the desktop's `b8854b2c` as before; `script bench pass` (section 11.5, question 2); `script plan pass`, 4 nodes, 87,416 arena bytes, first block 9.1 ms, 4620 frames in 40 blocks with 2032 messages and 0 drops, digest `c7248a64d500e6d8` = the desktop's; `script pack devtest`, heap 22,084 of 40,960; stack load 2176, blocks 2360 of 4096 |
-| the box flashed back | its image | the final gate image, saved choice 0, left on the rig |
+| the box flashed back | its image | the final gate image, saved choice 0, left on the rig (the final gate's is above) |
+
+
+**The final gate** ran on the image after the final review's follow-ups: the box 4b4f9abc (the PIO-USB variant, the
+rig's; the native-USB image af36f223 was built and not flashed, so `RP_NATIVE_USB` is still owed on hardware) and
+`rp-device-check` 8cc7ae7d. A rebuild of the tree at the gate's HEAD gives the same normalised sha256s (4b4f9abc,
+af36f223, 8cc7ae7d), so the documented images are the ones the rig ran. The legs ran first on d4f89834, the image of
+the follow-up before the final review's (the baseline), and the ones the later follow-ups could move were run again on
+4b4f9abc.
+
+| Leg | Result |
+|---|---|
+| boot (4b4f9abc) | plan 57152 of 65536 arena bytes (57144 on d4f89834: 512 bytes more than the prototype's, a script node's kept stream ends), policy node 1273 bytes, `pack bliptoaster, 32016 bytes`, heap 11636 of 24576 after the first block, load 10750 us and first block 969 us (d4f89834: 10748 and 968), volume 128 written |
+| `stress.sh` full | PASS 34 ok on both d4f89834 and 4b4f9abc. d4f89834 ended fail=10: one 10-message batch in flight at the recovery case's power cut (forwarded +10, writes +11), which `stress.sh` does not judge and earlier gates happened to miss; 4b4f9abc read fail=0 |
+| latency (average/worst us) | 4b4f9abc: 731/1143, 702/1145, 788/1120, 642/1169 (mean average 716). d4f89834: 715/1162, 588/1149, 785/1170, 740/1162, 675/1145 (mean 701). Every worst is under the 1200 us line. Two of the nine runs' averages (785 and 788) crossed the ~780 us line by under 10 us. The worst is the judged signal (section 8), so decision A holds; the means sit about 18 us above the prototype's, from the deadline's finer polls |
+| audio on the L6's channel 3 | 440.30 Hz +1.2 c and 522.16 Hz -3.6 c, rms -32.81 dBFS: identical to the record |
+| `faults.sh --rounds 8` | 8 of 8 on both images; abandoned boots 7, stuck 0, reboots 0, uploads 0 |
+| the upload path | uploaded in 4922 and 4927 ms on 4b4f9abc (4949 and 4936 on d4f89834), saved choices honoured with no upload, volume written each time |
+| `rp-device-check` 8cc7ae7d, flashed once | ten lines, 23 types; the deadline step 10 of 10, worst `indexOf` after plain code 71.65 ms; the policy heap 11636 after the first block and the same at the last of 2335 messages; the script plan's digest `c7248a64d500e6d8`, the desktop's; stack 2432 of 4096 (the load pass 2296); the bench 88 to 89 us a note, 56 us a 64-byte SysEx and 88 to 91 us an empty block (the prototype's 65 / 48 / 67: the follow-ups' finer polls), the first block 1113 us |
+| the box flashed back | 4b4f9abc: plan 57152, heap 11636, load 10751 us, first block 969 us, saved choice 0, two ROMs staged |
 
 **The latency verdict** was the user's (decision A, 2026-11-06): accept the script node's cost on the MIDI path, with
 the regression line moved to E4's measured figures (section 8). The first gate that measured latency (ae291e38, with

@@ -631,8 +631,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Packs in plans that are not built in** (a live upload or an SD plan) need the per-node port signature and a
     trust model for bytecode mquickjs does not verify; the desktop's N8 graphs do not use the policy node, and
     `feature/launchpad` has not adopted the toolchain.
-  - **The Pico gate passed** with the new latency line (design section 11.7): averages near E3's, the worst about
-    50 us higher. The first stuck-menu episode on the rig stayed unexplained (the E3 control image failed the same way
+  - **The Pico gate passed** with the new latency line (design section 11.7): averages near E3's (two of
+    nine final-gate runs' averages crossed the ~780 us line by under 10 us), the worst about 50 us higher and under the
+    1200 us line in all of them, on the final images (box 4b4f9abc; `RP_NATIVE_USB`'s af36f223 still unflashed). The first stuck-menu episode on the rig stayed unexplained (the E3 control image failed the same way
     and booted after a power cut).
 - **Left by LSDj's serial-out node, as they are** (its design's sections 11 and 12):
   - **The core's serial byte timing moves with the block split.** The frame SameBoy completes a captured byte at

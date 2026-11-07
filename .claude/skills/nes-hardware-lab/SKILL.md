@@ -294,10 +294,10 @@ staging, the SysEx `7D 50` pick). Notes for running it:
   message, hangs on a Launchpad's flood and is broken on ch2); `N8_ROM_PATH` still defaults to it in the firmware, so a
   bare flash with no `--rom` boots that file if it is on the card.
 - **The boot line to match.** The console prints `[n8-host] USB host up (PIO-USB D+=GP2, D-=GP3)
-  ...`, then `[host] plan loaded: 3 nodes, <N> of 65536 arena bytes, 48000 Hz, 256 frames a block` (N near 56,600), a
+  ...`, then `[host] plan loaded: 3 nodes, <N> of 65536 arena bytes, 48000 Hz, 256 frames a block` (N near 57,150), a
   `[host] node ...` line per node (three spaces after `[host]`), `[host]   pack bliptoaster, 32016 bytes` and, after
   the first block, `[host]   pack bliptoaster: heap <X> of 24576 bytes in use after the first block; the load took <us>
-  us and the first block <us> us` (X near 11,600, about 9.6 ms and 1.0 ms): the box runs its bridge as a built-in plan,
+  us and the first block <us> us` (X near 11,600, about 10.7 ms and 1.0 ms): the box runs its bridge as a built-in plan,
   and its MIDI policy is a TypeScript node on MicroQuickJS, so a node that faults prints `[host] node ... faulted` and
   its words on the next `[host]` line (a refused plan prints `the built-in plan was
   refused` and forwards nothing), and a good boot ends `[n8-host] usb-games/pico/bliptoaster.nes booted by the
@@ -315,7 +315,8 @@ staging, the SysEx `7D 50` pick). Notes for running it:
   (the SysEx is about 13 ms on the wire; since E3 a SysEx is timed from its F7, so expect that window lower). Isolated
   notes sit near 0.6 to 0.7 ms average and 1.1 to 1.17 ms worst since E4's script node (E3: 0.6 / 1.1; a worst past
   about 1.2 ms, or an average past about 0.78 ms, is a regression, the worst being the primary signal since averages
-  vary about 0.19 ms from run to run; an isolated 8 to 12 ms worst is the `[stats]` print's stall). `[stats]` also
+  vary about 0.19 ms from run to run: two of the final gate's nine runs averaged 0.785 and 0.788 ms with every worst
+  under 1.17 ms, and passed; an isolated 8 to 12 ms worst is the `[stats]` print's stall). `[stats]` also
   carries `linkfull=` and `skipped=`
   (`skipped` is frames the block driver dropped past its carry of four blocks, cumulative since boot: a boot or a
   recovery adds hundreds of thousands and each stress rerun about 150 to 1,100, so judge it by its growth across a
