@@ -6,7 +6,7 @@ import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { Session } from "../cli/session";
 import { risaRomTool } from "../cli/sessions/risa-rom";
-import { RisaRom, bankToModel, decodeThemeFromRom } from "../src/risa/rom";
+import { RisaRom, bankToModel, decodeThemeFromRom } from "@retroplug/risa/rom";
 import { encodeWav } from "../cli/wav";
 import { directGraph } from "../src/graph/directGraph";
 

@@ -89,8 +89,8 @@ The two config surfaces are distinct and easy to confuse:
 - **The `lsdj-sync` role config**: RetroPlug's own behaviour, its `mode` one of `"off"`, `"midiSync"`,
   `"midiSyncArduinoboy"`, `"midiMap"`, `"keyboard"`, `"keyboardMidi"`, `"midiPassthrough"`, `"midiOut"`,
   `"masterSync"` (`LSDJ_MODE_VALUES` in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts), run by
-  the role's two protocol nodes: [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts) before the
-  Game Boy, host to cart, and [lsdjSerialOut.ts](../packages/retroplug/src/script/nodes/lsdjSerialOut.ts)
+  the role's two protocol nodes: [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts) before the
+  Game Boy, host to cart, and [lsdjSerialOut.ts](../packages/lsdj/ts/lsdjSerialOutNode.ts)
   after it, MI.OUT and master sync from the cart to the host). A feature role: it is set with the store's
   `setRoleConfig` and handed to both nodes as their settings in the graph the project publishes, which also
   gives the Game Boy's own node the serial-out capture that mode needs (below). The core's own knobs, the
@@ -130,7 +130,7 @@ Reading LSDj's *transient* playback/UI state — is-playing (per channel), the s
 phrase number + row each channel is on, the active screen, the cursor, the tempo — is a
 separate concern from the sav codec above (that decodes the *saved song*; this reads the
 live Game Boy **WRAM**, `0xC000+`, region `MemoryRegion.Ram`). The pure-TS reader lives at
-[packages/retroplug/src/lsdj/runtime/](../packages/retroplug/src/lsdj/runtime/):
+[packages/lsdj/ts/runtime/](../packages/lsdj/ts/runtime/):
 
 ```ts
 import { LsdjReader } from "./lsdj/runtime";
@@ -143,17 +143,17 @@ const state = reader.read(wramBytes);                  // -> LsdjState (supporte
 - **Offsets (layered).** WRAM addresses split into a POSITIONAL block (playing flags +
   phrase/chain/song per channel) and a DRIFTING block (tempo/screen/cursors). Sources, in
   resolution precedence:
-  - [driftLayouts.generated.ts](../packages/retroplug/src/lsdj/runtime/driftLayouts.generated.ts)
+  - [driftLayouts.generated.ts](../packages/lsdj/ts/runtime/driftLayouts.generated.ts)
     — the **FULL per-field drift layout** (CURRENT_SCREEN + TEMPO + all five per-screen cursors),
     detected field-by-field on a real core, **v4.3.0+** (422 builds). AUTHORITATIVE. The drifting
     block is **not rigid**: screen and the tight song/chain/phrase/instrument cursor cluster shift
     together, but TEMPO and the TABLE cursor drift independently (e.g. 8.5.1's real tempo is
     `0xC537`, not the shift-predicted `0xC526`), so a single shift can't reproduce it.
-  - [legacyOffsets.generated.ts](../packages/retroplug/src/lsdj/runtime/legacyOffsets.generated.ts)
+  - [legacyOffsets.generated.ts](../packages/lsdj/ts/runtime/legacyOffsets.generated.ts)
     — the old `ecs` `OffsetLookupData` ported to `version → [active, phraseRows, chainRows,
     songRows, songCursorCol, songCursorRow]`, giving exact POSITIONS + SONG cursor for
     **v4.0.0–9.2.x**.
-  - [driftShifts.generated.ts](../packages/retroplug/src/lsdj/runtime/driftShifts.generated.ts)
+  - [driftShifts.generated.ts](../packages/lsdj/ts/runtime/driftShifts.generated.ts)
     — the older rigid per-version SHIFT of the drifting block vs the LSDisJ 9.2.L reference,
     v8.2.1–9.4.2; a FALLBACK for any build not in driftLayouts.
   - a modern positional band for versions past the legacy table (9.2-letter builds, 9.3+).
@@ -169,7 +169,7 @@ const state = reader.read(wramBytes);                  // -> LsdjState (supporte
   `OffsetLookupData` — the two agree byte-for-byte (e.g. `224=0xC0E0` playing flags,
   `512=0xC200` song rows). Prior art: [GBPresenter](https://github.com/YourFriendJimmy/gbpresenter).
 - **Regenerating the table.** `pnpm lsdj:gen-offsets [filterSubstrings]` boots each corpus ROM
-  on `retroplug-host` and runs `detectDriftLayout` (in [detect.ts](../packages/retroplug/src/lsdj/runtime/detect.ts)):
+  on `retroplug-host` and runs `detectDriftLayout` (in [detect.ts](../packages/lsdj/ts/runtime/detect.ts)):
   it authors a 4-channel song at the ROM's **era sav-format** (the companion sav's `0x7FFF`
   byte — an authored song boots to SONG and navigates on every era, unlike a companion sav on
   some builds), finds CURRENT_SCREEN via the SONG→CHAIN→PHRASE→INSTRUMENT→TABLE enum walk, TEMPO
@@ -185,8 +185,8 @@ const state = reader.read(wramBytes);                  // -> LsdjState (supporte
   [useLsdjRuntime.ts](../packages/retroplug/ui/screens/grid/useLsdjRuntime.ts)) reads `readRam`
   each frame and renders the state over the emulator tile.
 
-Tests: [test/lsdj/runtime.test.ts](../packages/retroplug/test/lsdj/runtime.test.ts) +
-[test/lsdj/detect.test.ts](../packages/retroplug/test/lsdj/detect.test.ts) (pure-TS — the reader
+Tests: [test/lsdj/runtime.test.ts](../packages/lsdj/ts/test/runtime.test.ts) +
+[test/lsdj/detect.test.ts](../packages/lsdj/ts/test/detect.test.ts) (pure-TS — the reader
 + a fake-driver unit for both the scalar and full-layout detectors),
 [test-native/lsdj-runtime.test.ts](../packages/retroplug/test-native/lsdj-runtime.test.ts) +
 [lsdj-wram-seam.test.ts](../packages/retroplug/test-native/lsdj-wram-seam.test.ts) +
@@ -202,7 +202,7 @@ third concern, distinct from the `.sav` song codec and the live WRAM reader. Unl
 model round-trip), a ROM is mostly opaque program code, so the module is a **view/patcher over the
 raw bytes**: it reads the asset sections out and patches editable metadata *in place*, leaving
 everything else byte-identical. Pure TS at
-[packages/retroplug/src/lsdj/rom/](../packages/retroplug/src/lsdj/rom/):
+[packages/lsdj/ts/rom/](../packages/lsdj/ts/rom/):
 
 ```ts
 import { LsdjRom } from "./lsdj/rom";               // or: import { rom } from "./lsdj"
@@ -284,10 +284,10 @@ backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
   `.rplg` (role config, additive — no migration). A moved/deleted asset file just skips that override. Menu
   + role live in
   [ui/screens/menu/menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts) `lsdjAssetMenus` +
-  [src/lsdjAssetsRole.ts](../packages/retroplug/src/lsdjAssetsRole.ts). (Applied at construct/reload — live
+  [src/lsdjAssetsRole.ts](../packages/lsdj/ts/lsdjAssetsRole.ts). (Applied at construct/reload — live
   in-place patching of a running core is a planned follow-up.)
 
-Tests: [test/lsdj/rom.test.ts](../packages/retroplug/test/lsdj/rom.test.ts) (pure — decode incl.
+Tests: [test/lsdj/rom.test.ts](../packages/lsdj/ts/test/rom.test.ts) (pure — decode incl.
 invert+rotation, patch round-trips, `buildKitBank`/budget, font tile↔RGBA mapping + variant regen,
 `.lsdpal`/`.kit` file round-trips on synthetic buffers) +
 [test-native/lsdj-rom.test.ts](../packages/retroplug/test-native/lsdj-rom.test.ts) (real
@@ -564,7 +564,7 @@ contains `aboy` — check the stderr line `[RetroPlug] LSDJ sync role attached
 ### PROJECT-screen SYNC cycle (aboy v9.3.3)
 
 The on-screen SYNC value is the working-song byte at `0x3fbd`. `SyncModeNames` +
-`SYNC_TO_BYTE` ([lsdj/model.ts](../packages/retroplug/src/lsdj/model.ts)) carry the
+`SYNC_TO_BYTE` ([lsdj/model.ts](../packages/lsdj/ts/model.ts)) carry the
 verbatim on-disk byte and `settings.syncMode` authors ALL of them by name (verified:
 author each, screenshot the PROJECT screen, read `0x3fbd`). **The stored byte is NOT
 the on-screen cycle position** — the cycle steps 0..7 but skips bytes 2 and 4. Full
@@ -693,12 +693,12 @@ LSDJ-side effect commands that drive this protocol (placed in note/table cells):
 - **Nxx** — sends a NoteOn absolute (N00 = NoteOff, N01–N6F = MIDI notes 1–112).
 - **Qxx** — sends a NoteOn relative to the channel's current pitch.
 - **Xxx** — sends a CC. (Arduinoboy supports several CC-encoding modes; the
-  [lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)
+  [lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)
   decoder uses the simplest mapping `CC# = m`; refine when there's a use case.)
 - **Yxx** — sends a Program/Patch change.
 
 The decoder moved to TS with the rest of the role layer and is unit-tested in
-[test/dsp/lsdj-arduinoboy.test.ts](../packages/retroplug/test/dsp/lsdj-arduinoboy.test.ts),
+[test/dsp/lsdj-arduinoboy.test.ts](../packages/lsdj/ts/test/lsdjArduinoboy.test.ts),
 with the real-core end-to-end proof in
 [test-native/lsdj-arduinoboy-slave.test.ts](../packages/retroplug/test-native/lsdj-arduinoboy-slave.test.ts).
 

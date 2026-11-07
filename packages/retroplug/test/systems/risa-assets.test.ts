@@ -1,18 +1,18 @@
 // The risa-assets role: non-destructive theme/font ROM overrides stored in the project and applied to the
 // base ROM at construct (onConstruct → spec.romBytes). Proven through the REAL store path the menu uses
 // (setRoleConfig + reloadSystem): the base .nes on disk is never written; the reload hands native a patched
-// effective ROM. Byte-level correctness of the patch is test/risa/rom.test.ts; native honoring romBytes is
+// effective ROM. Byte-level correctness of the patch is packages/risa/ts/test/rom.test.ts; native honoring romBytes is
 // test-native/risa-rom. Mirrors test/systems/lsdj-assets.test.ts.
 import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerRisaRole } from "../../src/risaRole";
-import { registerRisaAssetsRole } from "../../src/risaAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerRisaRole } from "@retroplug/risa/risaRole";
+import { registerRisaAssetsRole } from "@retroplug/risa/risaAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { RisaRom, decodeThemeFromRom } from "../../src/risa/rom";
+import { RisaRom, decodeThemeFromRom } from "@retroplug/risa/rom";
 import { risaRomFull } from "./fixtures";
 
 const THEME_NEON = {
@@ -24,7 +24,7 @@ function newStore() {
   const be = new MockBackend("/cfg");
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerRisaRole(reg);
   registerRisaAssetsRole(reg);
   registerRomProviders(reg);

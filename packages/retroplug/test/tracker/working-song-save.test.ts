@@ -12,8 +12,8 @@ import { buildAppRegistry } from "../../src/appHost";
 import { hasUnsavedChanges, unsavedChanges } from "../../src/unsavedChanges";
 import { unsavedLabel } from "../../ui/app/unsavedRows";
 import { saveWorkingSong, loadSongLive, songLoadByNameWouldDiscard } from "../../src/tracker/liveSav";
-import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
-import { resolveSmsggdjLayout } from "../../src/smsggdj/runtime/layout";
+import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
+import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
 import {
   addSong,
   buildSav,
@@ -26,12 +26,12 @@ import {
   hasDirectoryHoles,
   packDirectory,
   SMDJ4_BLOCK_LEN,
-} from "../../src/smsggdj/codec/sav";
+} from "@retroplug/smsggdj/codec/sav";
 import type { TrackedSlot, WorkingSongImage } from "@retroplug/tracker/songCatalog";
 import { encodeWorkingSong, decodeWorkingSong } from "@retroplug/tracker/workingSongBlob";
-import { setCurSlot as setCurSlotFor, sanitizeEcho } from "../../src/smsggdj/codec/sav";
+import { setCurSlot as setCurSlotFor, sanitizeEcho } from "@retroplug/smsggdj/codec/sav";
 import { smsggdjRom, smsggdjRam } from "../systems/fixtures";
-import { commonConfigOffsets } from "../../src/smsggdj/runtime/layout";
+import { commonConfigOffsets } from "@retroplug/smsggdj/runtime/layout";
 import { composeAppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";

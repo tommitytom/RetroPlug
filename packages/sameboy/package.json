@@ -10,6 +10,7 @@
   "exports": {
     ".": "./ts/index.ts",
     "./app": "./ts/app.ts",
+    "./cartridge": "./ts/cartridge.ts",
     "./enums": "./ts/enums.ts"
   },
   "dependencies": {

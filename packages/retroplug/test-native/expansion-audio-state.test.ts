@@ -42,7 +42,7 @@ test("getExpansionAudioState reports 'none' for a cart without expansion audio",
 // Both mapper-69 BlipToaster builds present the SAME expansion audio to the emulator: the hardware is on
 // the cart either way, the base build simply never writes to it. So not even Mesen's view of the sound
 // chip can say which build a ROM is - which is exactly why the build is read from the SIG chip tag
-// instead of the mapper (src/bliptoaster/romDetect.ts).
+// instead of the mapper (packages/bliptoaster/ts/romDetect.ts).
 test("the base and S5B builds are indistinguishable by their expansion audio", () => {
   const s = bootSession();
   if (!s.backend.fileExists(NES) || !s.backend.fileExists(S5B)) skip("no NES rom");

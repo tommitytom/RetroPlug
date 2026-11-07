@@ -1,4 +1,4 @@
-// Generate packages/retroplug/src/risa/runtime/symbols.generated.ts from risa's cc65/VICE label files.
+// Generate packages/risa/ts/runtime/symbols.generated.ts from risa's cc65/VICE label files.
 // risa emits build/risa-pal.lbl + build/ntsc/risa-ntsc.lbl (al <hex-addr> .<name>). The runtime-state
 // variables all live in the NES internal 2 KB RAM ($0000-$07FF) and — verified here — sit at IDENTICAL
 // addresses in the PAL and NTSC builds (the region only changes tables/timing, not the BSS/ZP layout),
@@ -17,7 +17,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 const RISA_SRC = process.env.RISA_SRC || "/workspaces/risa-v2.2.1-source";
-const OUT = new URL("../src/risa/runtime/symbols.generated.ts", import.meta.url);
+const OUT = new URL("../../risa/ts/runtime/symbols.generated.ts", import.meta.url);
 
 // cc65 prefixes C symbols with "_"; the runtime-state variables we read (see src/seq.h / ui_common.h).
 const WANT = [

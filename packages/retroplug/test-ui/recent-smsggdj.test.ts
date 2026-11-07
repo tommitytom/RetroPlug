@@ -14,7 +14,7 @@
 
 import { test, expect, skip, ui, navTo, Key } from "ui-harness";
 import { createRealBackend } from "../src/realBackend";
-import { buildSav } from "../src/smsggdj/codec/sav";
+import { buildSav } from "@retroplug/smsggdj/codec/sav";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "../test-native/smsSyncSong";
 
 const ROM = () => ui.romDir() + "/smsggdj_v0_45.sms";

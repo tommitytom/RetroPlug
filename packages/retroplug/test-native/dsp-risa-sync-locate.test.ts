@@ -12,8 +12,8 @@
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { runtime } from "../src/risa";
-import { risaLocate } from "../src/risaSync";
+import { runtime } from "@retroplug/risa";
+import { risaLocate } from "@retroplug/risa/risaSync";
 import { buildRisaMetronomeSav } from "./risaSyncSong";
 import { directGraph } from "../src/graph/directGraph";
 

@@ -7,7 +7,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuAction, MenuItem } from "../../ui/screens/menu/menuTree";
-import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
+import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "@retroplug/lsdj/rom";
 import { gbRomBattery, nesRom } from "../systems/fixtures";
 
 function ctxOf(stores: AppStores): MenuContext {

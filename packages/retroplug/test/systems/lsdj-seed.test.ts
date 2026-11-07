@@ -8,8 +8,8 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerLsdjAssetsRole } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 import { gbRom, lsdjRom } from "./fixtures";
 
@@ -17,7 +17,7 @@ function newStore() {
   const be = new MockBackend("/cfg");
   const reg = new RoleRegistry();
   registerCoreRoles(reg); // sameboy system role
-  registerDspRoles(reg); // lsdj-sync (with the seed hook) + mgb
+  registerFeatureRoles(reg); // lsdj-sync (with the seed hook) + mgb
   registerLsdjAssetsRole(reg);
   registerRomProviders(reg); // LSDj/mGB identity → feature roles
   return { be, store: new SystemsStore(be, () => {}, reg) };

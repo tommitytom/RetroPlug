@@ -8,12 +8,12 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerBlipToasterRole } from "../../src/bliptoasterRole";
-import { registerBlipToasterAssetsRole } from "../../src/bliptoasterAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerBlipToasterRole } from "@retroplug/bliptoaster/bliptoasterRole";
+import { registerBlipToasterAssetsRole } from "@retroplug/bliptoaster/bliptoasterAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { BlipToasterRom } from "../../src/bliptoaster/rom";
-import { decodeThemeFromRom } from "../../src/risa/rom";
+import { BlipToasterRom } from "@retroplug/bliptoaster/rom";
+import { decodeThemeFromRom } from "@retroplug/risa/rom";
 import { blipToasterRom, blipToasterMultiKitRom } from "./fixtures";
 
 const THEME_NEON = {
@@ -25,7 +25,7 @@ function newStore() {
   const be = new MockBackend("/cfg");
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerBlipToasterRole(reg);
   registerBlipToasterAssetsRole(reg);
   registerRomProviders(reg);

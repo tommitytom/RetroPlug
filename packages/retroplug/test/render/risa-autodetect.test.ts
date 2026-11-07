@@ -18,7 +18,7 @@ import {
   type RenderContext,
   type RenderOpts,
 } from "../../src/render";
-import { runtime as risaRuntime } from "../../src/risa";
+import { runtime as risaRuntime } from "@retroplug/risa";
 
 const SR = 44100;
 const NES_SELECT = 6; // NesButton::Select — risa plays a song on SELECT+START; SELECT-down begins playback.

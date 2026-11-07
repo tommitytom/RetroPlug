@@ -15,7 +15,7 @@ cause, which also stops a stopped LSDj from ever playing again, so this change f
 
 ## 1. What was pinned
 
-The decoder (`arduinoboyMasterSyncBlock`, [lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) took a
+The decoder (`arduinoboyMasterSyncBlock`, [lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)) took a
 block holding more than 16 bytes (`MASTER_SYNC_IDLE_FLOOD`) to be a stopped LSDj's "idle flood", dropped it, and
 sent one 0xFC. How many bytes a block holds depends on how long the block is, not on LSDj: in 1-frame blocks every
 flood byte decoded as a clock (10497 MIDI messages on `lsdj-modes`' master-sync scene at 44.1 kHz, against 101 in
@@ -113,7 +113,7 @@ with the fixtures present and `RP_FAIL_ON_SKIP=1`.
 
 ## 7. Tests
 
-- **Unit** (`pnpm test`, [lsdj-arduinoboy.test.ts](../packages/retroplug/test/dsp/lsdj-arduinoboy.test.ts)). Around a
+- **Unit** (`pnpm test`, [lsdj-arduinoboy.test.ts](../packages/lsdj/ts/test/lsdjArduinoboy.test.ts)). Around a
   helper that takes absolute byte times and a block partition and feeds the decoder one block late, as the wire does:
   every byte a clock, the first opening the run; a silence of 200 ms closing it with one 0xFC, and a silence just
   short of it not; a byte after the stop opening a fresh run; the 0xFC landing in the first block that starts more

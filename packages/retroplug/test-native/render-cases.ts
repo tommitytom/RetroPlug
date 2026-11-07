@@ -13,8 +13,8 @@
 // (ecoli_soul to its HFF stop, at PAL and NTSC; blumarbl's split renders, fixed). The GBA fixture (nanoloop) renders
 // silence without a BIOS, so no GBA case is here.
 import { createRealBackend } from "../src/realBackend";
-import { buildSav } from "../src/smsggdj/codec/sav";
-import { savBytes } from "../test/risa/fixtures";
+import { buildSav } from "@retroplug/smsggdj/codec/sav";
+import { savBytes } from "@retroplug/risa/testFixtures";
 import type { EngineRunResult } from "../src/offline";
 import {
   buildMetronomeBlock,

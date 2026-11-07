@@ -6,13 +6,13 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerLsdjAssetsRole, readOverrides } from "../../src/lsdjAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerLsdjAssetsRole, readOverrides } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 import { importSongFiles } from "../../src/lsdjSongImport";
-import { savFrom, encodeLsdsngRaw, encodeLsdprj, decompressSlot, listProjects } from "../../src/lsdjSav";
-import { LsdjRom, buildKitBank, ROM_SIZE } from "../../src/lsdj/rom";
-import { deepEqual } from "../lsdj/_assert";
+import { savFrom, encodeLsdsngRaw, encodeLsdprj, decompressSlot, listProjects } from "@retroplug/lsdj";
+import { LsdjRom, buildKitBank, ROM_SIZE } from "@retroplug/lsdj/rom";
+import { deepEqual } from "@retroplug/testing/deepEqual";
 import { gbRomBattery } from "./fixtures";
 
 function lsdjRom1M(): Uint8Array {
@@ -32,7 +32,7 @@ function newStore() {
   const be = new MockBackend("/cfg");
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerLsdjAssetsRole(reg);
   registerRomProviders(reg);
   return { be, store: new SystemsStore(be, () => {}, reg) };

@@ -10,7 +10,7 @@ import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { unsavedChanges } from "../src/unsavedChanges";
 import { flushDirtySram } from "../src/sramAutoSave";
-import { savFrom, type SavInput } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
 
 declare const __RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;

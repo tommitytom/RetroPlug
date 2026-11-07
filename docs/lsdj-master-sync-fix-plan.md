@@ -2366,7 +2366,7 @@ index 92673ac9..b3e8527f 100644
 -- **The master-sync fix, before B3b.** The eighth item of design section 2.5 of
 -  [modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md), the last of its five recorded
 -  defects: LSDj master sync's decoder
--  ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts), `arduinoboyMasterSyncBlock`) calls a
+-  ([lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts), `arduinoboyMasterSyncBlock`) calls a
 -  block carrying more than `MASTER_SYNC_IDLE_FLOOD` (16) serial-out bytes a stopped LSDj's idle flood, so
 -  what it decodes depends on the host block's length: in small blocks a stopped LSDj's flood reads as
 -  clocks, and a fast tempo in long blocks could pass 16 and read as stopped. The fix needs a window across

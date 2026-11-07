@@ -7,10 +7,10 @@ import { composeAppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { lsdjRom } from "../systems/fixtures";
-import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
+import { savFrom, loadSongToWorking, type SavInput } from "@retroplug/lsdj";
 import { lsdjSongCatalog } from "../../src/tracker";
-import { savSongName, decompressSlot, freeSongSlot, injectSong } from "../../src/lsdj/codec/sav";
-import { canSaveWorkingToCatalog } from "../../src/lsdjSongOps";
+import { savSongName, decompressSlot, freeSongSlot, injectSong } from "@retroplug/lsdj/codec/sav";
+import { canSaveWorkingToCatalog } from "@retroplug/lsdj/lsdjSongOps";
 
 const findItem = (items: MenuItem[], id: string): MenuItem | undefined => items.find((i) => i.id === id);
 const submenuChildren = (items: MenuItem[], id: string): MenuItem[] => findItem(items, id)?.children ?? [];

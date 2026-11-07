@@ -376,8 +376,10 @@ include(cmake/test-binary.cmake)
 # packages come first, in the order they were carved - rp.core, rp.dsp, rp.dsp.resample, rp.host (graph-runtime, after
 # dsp for that reason alone), then rp.n8 (the n8 pack's rp.n8.nes, after rp.host.audio-out and before rp.sameboy.gb) -
 # then the types still in packages/native, then the device script packs, rp.bliptoaster last, so a pack's types move
-# none of the others. In the generator it is the order that product's TS registries are built in, so the role list the
-# shell reads (packages/retroplug/src/generated) opens with the roles in the same sequence.
+# none of the others. In the generator it is the order that product's TS contributions concatenate in. There it is
+# behaviour for the ROM providers alone (the first to match a ROM fixes a system's role-list order); roles, kit formats
+# and tracker integrations are looked up by kind, id or an exclusive marker role, so a duplicate of one of those is
+# what the generated module refuses, not a reordering.
 set(_rp_root_manifest "${CMAKE_SOURCE_DIR}/package.json")
 # A configure input, so editing the list re-runs the configure retroplug_product() needs before it reads it. The whole
 # file is the input (CMake cannot depend on one JSON member), so an edit to its scripts reconfigures too; that is the
@@ -447,8 +449,8 @@ endforeach()
 # no product lists and a device build needs, placed where the loop's own ordering requires them: the node SDK first,
 # because every other package's library is built on it; a device host's own I/O (rp.device.midi-in, the plan exporter's
 # and the devices') and the device check's test types (rp.devtest.plan) last, because registering a script pack needs
-# the
-# MicroQuickJS host the graph-runtime package adds. packages/native is in the product list and registers the node types
+# the MicroQuickJS host the graph-runtime package adds. packages/native is in the product list and registers the node
+# types
 # not yet carved into packages of their own (sameboy, mesen, host.io, launchpad); its targets are defined below, where
 # the root adds the engine's own tree. @retroplug/tracker is in neither list: it contributes no registration of any
 # kind, only modules the shell and the cart packages import, so CMake is never told about it.

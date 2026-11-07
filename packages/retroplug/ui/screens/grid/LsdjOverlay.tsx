@@ -6,7 +6,7 @@
 import { DebugReadout, hex2 } from "./DebugReadout";
 import { useLsdjRuntime } from "./useLsdjRuntime";
 import { useLsdjDebugVisible } from "./lsdjDebug";
-import type { LsdjChannelState, LsdjState } from "../../../src/lsdj/runtime";
+import type { LsdjChannelState, LsdjState } from "@retroplug/lsdj/runtime";
 
 // "9.4.2" / "9.2.L-aboy" from the parsed version (patchLabel keeps the raw component, e.g. "2" or "L").
 function versionStr(v: LsdjState["version"]): string {

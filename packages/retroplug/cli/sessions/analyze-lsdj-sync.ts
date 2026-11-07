@@ -6,7 +6,7 @@
 //   retroplug-cli build/cli/analyze-lsdj-sync.js <lsdjRom> [outPrefix]
 import { runSession, hostArgs } from "../session";
 import { encodeWav } from "../wav";
-import { savFrom, type SongSettings } from "../../src/lsdjSav";
+import { savFrom, type SongSettings } from "@retroplug/lsdj";
 import { DirectGraph } from "../../src/graph/directGraph";
 
 const START = 7; // GameboyButton::Start

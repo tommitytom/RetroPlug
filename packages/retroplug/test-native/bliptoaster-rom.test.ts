@@ -11,8 +11,8 @@ import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
-import { BlipToasterRom } from "../src/bliptoaster/rom";
-import { blipToasterInfo, isBlipToasterRomHeader, BLIPTOASTER_MARKER } from "../src/bliptoaster/romDetect";
+import { BlipToasterRom } from "@retroplug/bliptoaster/rom";
+import { blipToasterInfo, isBlipToasterRomHeader, BLIPTOASTER_MARKER } from "@retroplug/bliptoaster/romDetect";
 import { directGraph } from "../src/graph/directGraph";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).

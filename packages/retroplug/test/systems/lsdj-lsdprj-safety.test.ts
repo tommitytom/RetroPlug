@@ -6,16 +6,16 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerLsdjAssetsRole } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { planLsdprjImport } from "../../src/lsdjLsdprjImport";
+import { planLsdprjImport } from "@retroplug/lsdj/lsdjLsdprjImport";
 import { importSongFiles } from "../../src/lsdjSongImport";
-import { savFrom, encodeLsdprj, encodeLsdsngRaw, injectSong, listProjects, decompressSlot } from "../../src/lsdjSav";
-import { LsdjRom, buildKitBank, ROM_SIZE, KIT_COUNT } from "../../src/lsdj/rom";
-import { readOverrides, type LsdjAssetOverride } from "../../src/lsdjAssetsRole";
+import { savFrom, encodeLsdprj, encodeLsdsngRaw, injectSong, listProjects, decompressSlot } from "@retroplug/lsdj";
+import { LsdjRom, buildKitBank, ROM_SIZE, KIT_COUNT } from "@retroplug/lsdj/rom";
+import { readOverrides, type LsdjAssetOverride } from "@retroplug/lsdj/lsdjAssetsRole";
 import { gbRomBattery } from "./fixtures";
-import { sameBytes } from "../_bytes";
+import { sameBytes } from "@retroplug/testing/bytes";
 
 // A 1 MiB LSDj ROM (all kit slots free).
 function lsdjRom1M(): Uint8Array {
@@ -37,7 +37,7 @@ function newStore() {
   const be = new MockBackend("/cfg");
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerLsdjAssetsRole(reg);
   registerRomProviders(reg);
   return { be, store: new SystemsStore(be, () => {}, reg) };

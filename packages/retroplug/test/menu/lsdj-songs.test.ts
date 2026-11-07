@@ -7,8 +7,8 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { savFrom, injectSong, listProjects, loadSongToWorking, decompressSlot, decodeLsdsngRaw } from "../../src/lsdjSav";
-import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
+import { savFrom, injectSong, listProjects, loadSongToWorking, decompressSlot, decodeLsdsngRaw } from "@retroplug/lsdj";
+import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "@retroplug/lsdj/rom";
 import { gbRomBattery } from "../systems/fixtures";
 
 function ctxOf(stores: AppStores): MenuContext {

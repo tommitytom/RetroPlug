@@ -3,7 +3,7 @@
 // trusts (renderAudio), that it places lanes, and that it refuses what a DAW never sends.
 import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../../src/bootSession";
-import { savFrom, type SavInput } from "../../src/lsdjSav";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
 import type { RenderBlock } from "../../src/audioDriver";
 import { DirectGraph } from "../../src/graph/directGraph";
 

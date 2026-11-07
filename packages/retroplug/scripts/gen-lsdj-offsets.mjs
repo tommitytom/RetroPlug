@@ -2,7 +2,7 @@
 // LSDj FULL drift-layout generator. Bundles tools-src/lsdj-detect-offsets.ts with esbuild and runs it on
 // the retroplug-host binary (real cores + readMemory) over the LSDj ROM corpus, then writes the per-
 // version drift layout (CURRENT_SCREEN + TEMPO + all five cursors) to
-// src/lsdj/runtime/driftLayouts.generated.ts.
+// @retroplug/lsdj's runtime/driftLayouts.generated.ts.
 //
 //   node scripts/gen-lsdj-offsets.mjs [filterSubstrings] [--limit N] [--dry-run]
 //
@@ -23,7 +23,7 @@ const REPO = resolve(PKG, "../..");
 const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../resources");
 const CORPUS_DIR = join(RESOURCES_DIR, "roms/lsdj");
 const HOST = process.env.RETROPLUG_HOST || join(REPO, "build/bin/retroplug-host" + (process.platform === "win32" ? ".exe" : ""));
-const OUT = join(PKG, "src/lsdj/runtime/driftLayouts.generated.ts");
+const OUT = join(REPO, "packages/lsdj/ts/runtime/driftLayouts.generated.ts");
 const ENTRY = join(PKG, "tools-src/lsdj-detect-offsets.ts");
 
 const args = process.argv.slice(2);

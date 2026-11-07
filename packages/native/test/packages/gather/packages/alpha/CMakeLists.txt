@@ -32,6 +32,39 @@ elseif(RP_GATHER_CASE STREQUAL "alias-declared")
 elseif(RP_GATHER_CASE STREQUAL "copt")
     # An include directory smuggled into the compile options: judged like one its include property would name.
     target_compile_options(retroplug-alpha INTERFACE -I${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src)
+elseif(RP_GATHER_CASE STREQUAL "copt-genex")
+    # A condition around a literal is the literal: the language expression says WHEN, not what.
+    target_compile_options(retroplug-alpha INTERFACE
+        $<$<COMPILE_LANGUAGE:CXX>:-I${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src>)
+elseif(RP_GATHER_CASE STREQUAL "copt-relative")
+    # A relative -I is not absolutised as an include directory is: the check reads it from this target's SOURCE_DIR,
+    # which is this directory, and it climbs into beta from there.
+    target_compile_options(retroplug-alpha INTERFACE -I../beta/native/src)
+elseif(RP_GATHER_CASE STREQUAL "copt-iquote")
+    target_compile_options(retroplug-alpha INTERFACE -iquote${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src)
+elseif(RP_GATHER_CASE STREQUAL "copt-idirafter")
+    target_compile_options(retroplug-alpha INTERFACE -idirafter${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src)
+elseif(RP_GATHER_CASE STREQUAL "copt-isystem")
+    target_compile_options(retroplug-alpha INTERFACE -isystem${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src)
+elseif(RP_GATHER_CASE STREQUAL "copt-external")
+    # MSVC's spelling of -isystem.
+    target_compile_options(retroplug-alpha INTERFACE /external:I${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src)
+elseif(RP_GATHER_CASE STREQUAL "copt-shell")
+    # CMake's SHELL: form of the separated flag, which is one item with a space in it.
+    target_compile_options(retroplug-alpha INTERFACE "SHELL:-I ${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src")
+elseif(RP_GATHER_CASE STREQUAL "link-path")
+    # A library linked by its file path: where it lies decides, as the target it comes from would.
+    target_link_libraries(retroplug-alpha INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src/libretroplug-beta.a)
+elseif(RP_GATHER_CASE STREQUAL "link-path-shell")
+    target_link_libraries(retroplug-alpha INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../native/src/libretroplug-backend.a)
+elseif(RP_GATHER_CASE STREQUAL "link-options-dir")
+    # A search directory in beta's tree lets the linker find beta's library.
+    target_link_options(retroplug-alpha INTERFACE -L${CMAKE_CURRENT_SOURCE_DIR}/../beta/lib)
+elseif(RP_GATHER_CASE STREQUAL "link-options-name")
+    # A library name the build's own target of that name attributes to beta.
+    target_link_options(retroplug-alpha INTERFACE -lretroplug-beta)
+elseif(RP_GATHER_CASE STREQUAL "link-options-name-shell")
+    target_link_options(retroplug-alpha INTERFACE -lretroplug-backend)
 elseif(RP_GATHER_CASE STREQUAL "unjudged")
     # A generator expression only the build generator resolves: refused rather than passed unseen.
     target_link_libraries(retroplug-alpha INTERFACE

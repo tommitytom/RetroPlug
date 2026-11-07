@@ -76,6 +76,75 @@ The build declares `clap`, `vst3`, `vst2`, `au`, and `jack` (the `dpf_add_plugin
 **LV2** is not built — its out-of-process DSP/UI split doesn't fit RetroPlug
 ([07-remaining-work.md](07-remaining-work.md)).
 
+## The packages
+
+Every package under `packages/` is a workspace package: `@retroplug/<name>`, `private`, type `module`, a
+`package.json` whose `retroplug` member carries the contributions its language builds, and (where it has TypeScript) a
+`ts/` tree with a `tsconfig.json` that extends [tsconfig.base.json](../tsconfig.base.json). The members are `native`
+(a C++ target, [cmake/packages.cmake](../cmake/packages.cmake)'s), `script` (a device script pack),
+`app` (`ts/app.ts`, the module default-exporting `definePackage({ roles, romProviders, trackerIntegrations,
+kitFormats })`) and `protocol` (`ts/protocol.ts`, the module default-exporting the package's `DefinedNode`s, beside
+each node's `type` and span `label` and the role kinds it places). A package may have any combination; a manifest
+naming no member at all is refused at configure.
+
+**The registries are generated, not written.** [packages/retroplug/scripts/lib/packages.mjs](../packages/retroplug/scripts/lib/packages.mjs)
+writes the shell's `src/generated/{packages,protocol,scriptNodes}.ts` from the product list
+(`retroplug.products.desktop` in the root [package.json](../package.json)): `packages.ts` concatenates each package's
+`app` contribution, `protocol.ts` is the table `buildGraph` and the stores wire a role through, and `scriptNodes.ts`
+is the script-node bundle's entry, in span-label order. The product list is the **dependency order and the registration
+order both** (a package before the ones that use it, the shell last), and only a ROM provider's place in it is
+behaviour: the providers run in that order, and the first to match a ROM fixes a system's role-list order. A role's
+kind, a kit format's id and a tracker integration's marker role are looked up rather than sequenced (one package's
+roles interleave another's without consequence, and the markers are exclusive), so for those a duplicate is the
+hazard: the generated module refuses a role kind, a kit format id or a marker role declared twice, each with its own
+message. The generator itself refuses a list that puts a package before a dependency, a dependency the product does
+not carry whose contribution would be lost, a dependency on the shell, a duplicate product entry, a node type or span
+label declared twice, a label that is below 16 or leaves a gap, a role naming a node no package wires, a manifest that
+names a missing module or one its `exports` do not publish, and a contributing package the shell does not declare.
+The generated modules are gitignored and rewritten on every build (`retroplug-ts-packages`, which the three bundle
+targets depend on).
+
+**Fixtures are a package's, published for tests by name.** A cart's synthetic ROM images live in its `ts/fixtures.ts`
+and a manifest that publishes them names the subpath `./testFixtures`, never `./fixtures`: the name says what it is,
+and the boundary check still sees the file as the package's source (it is outside `ts/test`, so it may use no
+`devDependencies`). The shell's own tests ([test/systems/fixtures.ts](../packages/retroplug/test/systems/fixtures.ts))
+re-export the ones they share, so a store or menu test keeps one import.
+
+**The shell keeps four doors, until F4.** A shell module may re-export a name a package owns where the shell's own
+modules and tests import it through that module rather than the package's subpath: `src/kit/compile.ts` (each cart's
+compiler and kit format), `src/audioDriver.ts` (the kit effect and compile specs), `src/tracker/index.ts` (the tracker
+contracts and the carts' catalogs) and `src/trackerRegistry.ts` (the carts' integrations and the generated list). These
+are the shell's front door, not a package's: a pack imports `@retroplug/<name>` directly, and nothing else in the shell
+re-exports another package's name (the settings enums' door went in F1). They stay because their call sites are the
+shell's own - `menuDefs.ts`, `render.ts`, the stores and `test-native` - and retargeting them is the UI/store work F4
+does, not the split's.
+
+**The two boundary checks.** `pnpm check:boundaries`
+([check-boundaries.mjs](../packages/retroplug/scripts/check-boundaries.mjs)) judges every file under a package's
+`ts/` tree, tests included, by TypeScript's own scanner: a relative import that leaves the package, an `@retroplug/x`
+or third-party module the manifest does not declare (a test may use `devDependencies`), any dependency on a shell
+(`@retroplug/retroplug` or `@retroplug/native`), a cycle in the declared dependencies, an `#include` that climbs out
+of the package, an `exports` entry that publishes a test module or names no file, and a `workspace:`/`npm:`/`link:`
+dependency whose spec names a shell or a package the workspace does not have (an alias of a package that exists is
+refused too: every other rule reads the key). A declared dependency no file uses is a warning, not a refusal. The
+native twin is `cmake/packages.cmake`'s: a package's targets may link, include and search only declared packages'
+trees, by target, by a library path, or through an include flag (`-I`, `-iquote`, `-idirafter`, `-isystem`,
+`/external:I`, a `SHELL:` list) or a link option (`-L`, `-l`), and the configure refuses anything else. Both run with an
+empty allowlist, and each has its own fixtures ([test/boundaries](../packages/retroplug/test/boundaries);
+`packages/native/test/packages`) that fail one rule each. They guard against accident and drift, not a determined
+author: each checker's header lists what it deliberately does not cover.
+
+**A package's tests are its own.** A test whose subject is wholly in a package lives in its `ts/test/`, runs on the
+package's `tsconfig` and keeps its fixtures and goldens beside it
+([packages/lsdj/ts/test/golden](../packages/lsdj/ts/test/golden) and the `.sav` corpus under `ts/test/savs`,
+[packages/risa/ts/test/golden](../packages/risa/ts/test/golden)); the runner's slug for one is `<package>/<path>`
+(`lsdj/sav`, `risa/record`, `bliptoaster/rom`, `smsggdj/rle`, `n8/n8MidiToFifo`), so a filter's spelling follows the
+move. Tests of the stores, the menus, `buildGraph`, the engine, `test-native` and `test-ui` stay with the shell, as do
+the ones that drive its registry (`test/system-settings/*`, `test/risa/detect`, `test/bliptoaster/romDetect`,
+`test/dsp/sms-sync`), whose subjects are the shell's provider dispatch and generated lists. The skip baseline
+([scripts/skip-baseline.json](../packages/retroplug/scripts/skip-baseline.json)) records nothing for the ts tier, so a
+move between it and the shell needs no entry.
+
 ## Hosts → test tiers
 
 Three of the C++ hosts (see [01-architecture.md](01-architecture.md)) each back a headless TS test

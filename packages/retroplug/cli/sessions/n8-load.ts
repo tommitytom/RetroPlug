@@ -39,8 +39,8 @@ import {
   type N8SaveState,
 } from "@retroplug/n8";
 import { chrToPng, chrToPngColor, pngToChr } from "@retroplug/tracker/nes/chrImage";
-import { isRisaSav, listSongs } from "../../src/risa";
-import { isLsdjSav, listProjects } from "../../src/lsdj";
+import { isRisaSav, listSongs } from "@retroplug/risa";
+import { isLsdjSav, listProjects } from "@retroplug/lsdj";
 
 const DEFAULT_ROM = "resources/roms/bliptoaster.nes";
 const VALUE_FLAGS = new Set([

@@ -8,7 +8,7 @@ import { startSystemRender, renderBaseName, pickActiveRenderJob, renderBadgeLabe
 import { outBase, type RenderOpts } from "../../src/render";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { RENDER_MAX_DURATION_MAX_SEC, RENDER_MAX_DURATION_MIN_SEC } from "../../src/userConfig";
-import { savFrom, type SavInput } from "../../src/lsdjSav";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
 import type { SystemView } from "../../src/systemsStore";
 import { RenderJobs } from "../../src/renderJobs";
 import { jobHandle, type EngineRunResult } from "../../src/offline";

@@ -1,6 +1,6 @@
 // The LSDj HD player screen - a full-window view of one LSDj instance showing the song order, all four
 // channels' chains and all four channels' phrases at once, drawn in the cartridge's own font and palette.
-// Ported from the old C++ LsdjHdPlayer; the renderer itself lives in src/lsdj/hd.
+// Ported from the old C++ LsdjHdPlayer; the renderer itself lives in @retroplug/lsdj's hd.
 //
 // It sits alongside SystemGrid in App: the cart keeps playing underneath and keys still reach its joypad
 // (App leaves useGameInput active), so this is a display over the running system, not a modal. Esc closes

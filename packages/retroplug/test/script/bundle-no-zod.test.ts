@@ -68,16 +68,26 @@ test("the script-node bundle imports no zod module", async () => {
   // B3a's bundle was 660 KB with zod; this one is about 78 KB. A loose ceiling, for zod inlined where no path says so.
   expect(bytes < 200 * 1024, `the bundle is ${bytes} bytes, past 200 KB`).toBe(true);
   // Every production node type is in it, so an entry that bundled nothing cannot pass. The MIDI routing node is core's
-  // (its protocol member, label 16); the rest are the shell's, which is where their modules still are.
+  // (its protocol member, label 16); the rest are their owners' - a cart's package where it has one, the shell's
+  // src/script/nodes otherwise. Each is named by the exact path esbuild reports, so a cart's helper module (which a
+  // node imports) cannot stand in for the node whose type it serves.
   expect(inputs.includes("../core/ts/midiRoute.ts"), "midiRoute").toBe(true);
-  for (const node of ["mgbMidi", "n8MidiToFifo", "risaSync", "smsSync", "lsdjSync", "controllerSession", "lsdjSerialOut"])
-    expect(inputs.includes(`src/script/nodes/${node}.ts`), node).toBe(true);
+  for (const node of [
+    "../mgb/ts/mgbMidiNode.ts",
+    "../n8/ts/n8MidiToFifoNode.ts",
+    "../risa/ts/risaSyncNode.ts",
+    "../smsggdj/ts/smsSyncNode.ts",
+    "../lsdj/ts/lsdjSyncNode.ts",
+    "../lsdj/ts/lsdjSerialOutNode.ts",
+    "src/script/nodes/controllerSession.ts",
+  ])
+    expect(inputs.includes(node), node).toBe(true);
   // zod from node_modules, however the package manager lays it out (node_modules/zod/..., .pnpm/zod@x/...).
   const zod = inputs.filter((path) => /(^|[\\/])zod(@[^\\/]*)?[\\/]/.test(path));
   expect(zod.length, `${zod.length} zod modules in the bundle, the first ${zod[0]}`).toBe(0);
   // Nor anything of the app's that is built on it: the zod config helpers, matched by module name wherever they live
-  // (they moved out of src/ - configFields and systemRoles are core's, dspRoles is the app's).
-  const builtOnZod = /(^|[\\/])(configFields|configSchema|systemRoles|dspRoles|projectConfig)\.ts$/;
+  // (they moved out of src/ - configFields and systemRoles are core's; the app's role modules are covered above).
+  const builtOnZod = /(^|[\\/])(configFields|configSchema|systemRoles|projectConfig)\.ts$/;
   expect(inputs.filter((path) => builtOnZod.test(path))).toEqual([]);
   // And no package's role registration: the modules the desktop product's manifests contribute as their `app` member,
   // each one a zod schema. From the manifests, so a cart package that contributes a role is denied the moment the

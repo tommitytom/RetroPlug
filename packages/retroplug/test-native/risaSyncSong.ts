@@ -7,9 +7,9 @@
 //
 // Shared by the native grid test (dsp-risa-sync-grid) and the real-Reaper fixture (author-risa-rplg), so
 // both measure the same song.
-import { initWorkingDefaults, makeEmptySave } from "../src/risaSav";
+import { initWorkingDefaults, makeEmptySave } from "@retroplug/risa/risaSav";
 
-// Working-image geometry (src/seq_data.h; mirrored in src/risa/codec/constants.ts). Bank 1 holds chains,
+// Working-image geometry (src/seq_data.h; mirrored in packages/risa/ts/codec/constants.ts). Bank 1 holds chains,
 // the song grid and instruments; bank 0 holds phrases 0x00..0x7F.
 const BANK = 0x2000;
 const B1 = 1 * BANK;

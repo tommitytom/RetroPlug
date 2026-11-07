@@ -19,9 +19,9 @@ Things a user could reasonably expect that aren't wired yet. None block shipping
 
 `lsdj-sync` implements every sync mode except raw **Keyboard**: MidiSync, MidiSyncArduinoboy, MidiMap,
 KeyboardMidi and MidiPassthrough ship in
-[script/nodes/lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts), the role's protocol
+[script/nodes/lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts), the role's protocol
 node, and MidiOut (ArduinoboyMaster) and MasterSync in
-[script/nodes/lsdjSerialOut.ts](../packages/retroplug/src/script/nodes/lsdjSerialOut.ts), the role's
+[script/nodes/lsdjSerialOut.ts](../packages/lsdj/ts/lsdjSerialOutNode.ts), the role's
 second node, after its Game Boy. Raw Keyboard sends nothing because it needs a per-block **`keys`
 feed**, which nothing supplies yet: `rp.lsdj.sync` has no input for host keys (the DSP kernel carried
 empty `buttons` and `keys` arrays until B3b deleted it), and no host stages any. A `keys` input on the
@@ -522,10 +522,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     is (a plan is refused where its arena cannot hold it: the box's 64 KiB arena refuses a defaulted delay).
   - **E4 is built** (below): MicroQuickJS on the box and the desktop, `defineNode` made portable, package memory in
     the SDK and the loader, and BlipToaster's MIDI policy as a TypeScript node.
-  - **The rest of the package split** (the main design's section 11): `sameboy`, `mesen` (per console), `lsdj`, `mgb`,
-    `risa`, `smsggdj`, `bliptoaster` (its MIDI policy node is the one part built, E4) and `launchpad` as packages, the
-    TS halves of `core` and `dsp`, per-product esbuild
-    bundles, downloadable packs.
+  - **The rest of the package split** (the main design's section 11): its TypeScript half is F1's (below); what it
+    leaves is `sameboy` and `mesen`'s native trees (F2), `launchpad`, the controller and the controller session node
+    (F3), and per-product esbuild bundles, downloadable packs and the menus on extensions (F4).
   - **Windows and MSVC have never built E1's targets.** The `<target>-device` object libraries are in the default build
     under `/W4 /WX`, so a Windows problem breaks `build.bat` itself: a `build.bat` and `test.bat` run is owed. Device
     mode no longer relies on an inline namespace (MSVC does not extend one through a later `namespace rp::graph`, CWG
@@ -728,3 +727,26 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     [tools/build-ts-stripper.mjs](../tools/build-ts-stripper.mjs) runs in the binary dir and sets no
     esbuild `absWorkingDir`, so its `typescript-5` alias resolves from there (unlike
     [tools/build-ui.js](../tools/build-ui.js), which sets it to the repo root).
+
+- **F1 built: the TypeScript package split** ([modular-graph-phase-f1-design.md](../docs/modular-graph-phase-f1-design.md),
+  five commits, prototype on `feature/modularize`): every package whose code is TypeScript has a `ts/` tree, a
+  `tsconfig.json` and a `package.json` its manifest members describe (`native`, `script`, `app`, `protocol`), and no
+  package imports `packages/retroplug` (the shell) any more. The app's registrations are generated from the product
+  list (`packages/retroplug/scripts/lib/packages.mjs` writes `src/generated/{packages,protocol,scriptNodes}.ts`), the
+  product list is the registration order too (behaviour for the ROM providers alone; a duplicate key in the other
+  lists is refused), and the two boundary checks (`pnpm check:boundaries` for TS,
+  [cmake/packages.cmake](../cmake/packages.cmake) for the native trees) run with an empty allowlist. Every golden, baseline, protocol table, node registration and device image is unchanged.
+  What it leaves:
+  - **The native halves are F2's**: `sameboy`'s and `mesen`'s C++ still live on `retroplug-backend` under
+    `packages/native` (both packages have no `native` member), so `rp_sameboy_package` and `rp_mesen_package` are still
+    the shell's, and `[packages]` still lists them where it did.
+  - **F3 owns the controller**: `src/controller` and `src/launchpad`, the controller's LSDj app (`lsdjMidiMap`,
+    `trackerTarget`) and its `rp.controller.session` node (span label 22) are the shell's, along with
+    `CONTROLLER_TARGET_VALUES`. `packages/retroplug/src/app.ts` is empty until then, and its `protocol` member
+    carries that one node.
+  - **F4 owns what the stores and the UI reach through**: the menu item model, `TRACKER_UI`, the HD player and the
+    overlays still deep-import their carts by package name (not through a registration), and there is one bundle per
+    product, not per extension.
+  - **A package's tests run from its own `ts/test`** on its own `tsconfig`, so the runner's slug for one is
+    `<package>/<path>` (`lsdj/sav`, `risa/kit`, `bliptoaster/rom`, `n8/n8MidiToFifo`). The ts tier's skip baseline
+    records nothing, so a move between it and the shell changes no baseline entry.

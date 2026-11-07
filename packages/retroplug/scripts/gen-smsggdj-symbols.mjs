@@ -1,4 +1,4 @@
-// Generate packages/retroplug/src/smsggdj/runtime/symbols.generated.ts from a WLA-DX symbol file.
+// Generate packages/smsggdj/ts/runtime/symbols.generated.ts from a WLA-DX symbol file.
 //
 // smsggdj is WLA-DX/Z80, so the label file comes from the LINKER rather than the assembler, and the
 // Makefile doesn't ask for one. Produce it in the smsggdj tree after a normal `make`:
@@ -24,7 +24,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 const SYM = process.env.SMSGGDJ_SYM || "/workspaces/smsggdj/build/smsggdj.sym";
-const OUT = new URL("../src/smsggdj/runtime/symbols.generated.ts", import.meta.url);
+const OUT = new URL("../../smsggdj/ts/runtime/symbols.generated.ts", import.meta.url);
 
 // The RAM labels a host-side load needs. wave_ram is the working-song block base; song_name and
 // echo_mode are the per-song metadata SMDJ4 keeps in the DIRECTORY ENTRY rather than the block

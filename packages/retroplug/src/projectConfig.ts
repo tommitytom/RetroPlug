@@ -21,7 +21,8 @@ import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
 import { MODEL_VALUES, HIGHPASS_VALUES } from "@retroplug/sameboy/enums";
 import { REGION_VALUES, CHANNEL_EXPORT_VALUES } from "@retroplug/mesen/enums";
 import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
-import { type SystemLayout, type AudioRouting, type ControllerTarget, LAYOUT_VALUES, AUDIO_ROUTING_VALUES, CONTROLLER_TARGET_VALUES, LSDJ_MODE_VALUES } from "./settingsEnums";
+import { type SystemLayout, type AudioRouting, type ControllerTarget, LAYOUT_VALUES, AUDIO_ROUTING_VALUES, CONTROLLER_TARGET_VALUES } from "./settingsEnums";
+import { LSDJ_MODE_VALUES } from "@retroplug/lsdj/enums";
 
 /** Project-level settings. The three routing/layout enums are string-valued (see settingsEnums);
  *  `zoom` is a magnitude (0 = inherit the user default, else 1..6). */

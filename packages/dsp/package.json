@@ -12,6 +12,7 @@
     "./chain": "./ts/chain.ts",
     "./kitContract": "./ts/kitContract.ts",
     "./kitEffect": "./ts/kitEffect.ts",
+    "./kitJobs": "./ts/kitJobs.ts",
     "./pack": "./ts/pack.ts",
     "./packageContributions": "./ts/packageContributions.ts"
   },

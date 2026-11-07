@@ -7,7 +7,7 @@ import { useMemo } from "react";
 import { useStores, useSystem } from "../../stores/useStores";
 import { useFrameSampled } from "../../lvgl/useFramePoll";
 import { hasRole } from "@retroplug/core/systemRoles";
-import { LsdjReader, type LsdjState } from "../../../src/lsdj/runtime";
+import { LsdjReader, type LsdjState } from "@retroplug/lsdj/runtime";
 
 // A compact signature of EXACTLY the fields LsdjOverlay renders — used to skip no-op re-renders. It shows
 // the screen + cursor position, play-stop, song row, tempo, and each channel's playing phrase.row, so the

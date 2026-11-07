@@ -16,7 +16,7 @@ struct BackendZipInput { std::string name; rfl::Bytestring bytes; };  // zip inp
 
 // A raw RGBA8888 image (4 bytes/pixel, row-major, top-to-bottom) — the wire form for the host-facet PNG
 // codec (pngEncode/pngDecode). Used both as the encode input and the decode output; `rgba` is
-// width*height*4 bytes. The LSDJ font tile↔pixel mapping lives in TS (src/lsdj/rom); this is just the
+// width*height*4 bytes. The LSDJ font tile↔pixel mapping lives in TS (packages/lsdj/ts/rom); this is just the
 // generic codec crossing so font import/export works from the plugin as well as the CLI.
 struct PngImage { std::uint32_t width; std::uint32_t height; rfl::Bytestring rgba; };
 

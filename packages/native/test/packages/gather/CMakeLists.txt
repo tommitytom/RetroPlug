@@ -17,6 +17,15 @@
 #   alias        alpha links rp::beta, an alias of beta's target, which alpha does not declare: refused
 #   alias-declared  the same alias with beta declared: holds (an alias is judged as the target behind it)
 #   copt         alpha's compile options add -Ibeta's tree: refused like an include directory would be
+#   copt-genex   the same behind $<$<COMPILE_LANGUAGE:CXX>:...>: still the literal, so refused
+#   copt-relative  the same spelled relative to alpha's own directory: attributed there and refused
+#   copt-iquote  -iquote, and copt-idirafter -idirafter, copt-isystem -isystem, copt-external /external:I and copt-shell
+#                SHELL:-I: every spelling an include flag takes, each judged like -I
+#   link-path    alpha links a library by its path inside beta's tree: refused like a target of beta's
+#   link-path-shell  the same for a library in the shell's tree
+#   link-options-dir  alpha's LINK_OPTIONS add -L into beta's tree: refused like an include directory
+#   link-options-name  alpha's LINK_OPTIONS name a library of beta's with -l: refused
+#   link-options-name-shell  the same for a library of the shell's
 #   unjudged     alpha links a generator expression the check cannot evaluate: refused
 cmake_minimum_required(VERSION 3.19)
 project(retroplug_package_gather NONE)

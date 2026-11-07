@@ -1,13 +1,13 @@
 # Design: a pure-TypeScript LSDj `.sav` codec
 
 Status: **IMPLEMENTED** (pure-TS option, all formats fmt 0..22). The codec ships in
-[packages/retroplug/src/lsdj/](../packages/retroplug/src/lsdj/) and the architecture is
+[packages/lsdj/ts/](../packages/lsdj/ts/) and the architecture is
 documented in [spec/05-data-persistence.md](../spec/05-data-persistence.md). This document is
 retained as the design rationale + the evidence behind the decision.
 
 Owner decisions taken (resolving §10): **pure TS** is the destination; **all LSDj versions**
 are supported (not descoped). The liblsdj differential + C++ codec were used to **certify**
-the golden vectors, then **deleted** — the frozen goldens ([test/lsdj/golden/](../packages/retroplug/test/lsdj/golden/),
+the golden vectors, then **deleted** — the frozen goldens ([test/lsdj/golden/](../packages/lsdj/ts/test/golden/),
 covering every decode branch) + the 549-sav corpus byte-identity sweep are the permanent
 oracle; the shipping build and test suite link no C++ sav codec. The hybrid (native RLE) was
 evaluated and **not** adopted — pure-TS RLE is fast enough and native would forfeit the
@@ -65,16 +65,17 @@ The **only** thing crossing to TS is encode, via one RPC method:
 `savFromJson(jsonString) → Uint8Array(128 KiB)`
 (`HostRpcService.cpp:168`,
 `BackendRpcRegistration.hpp:29`).
-TS called it through [lsdjSav.ts](../packages/retroplug/src/lsdjSav.ts), which is now an
-8-line re-export of the pure-TS codec in [src/lsdj/](../packages/retroplug/src/lsdj/).
+TS calls it through the LSDj package's pure-TS codec
+([packages/lsdj/ts/](../packages/lsdj/ts/), re-exported by its index).
 
 Critical facts, verified by grep + the research briefs:
 
 - **Decode is dead code.** `decodeSav` / `decodeSong` / `savToJson` / `songToJson` have
   **zero callers** anywhere and are not wired over RPC. The codec is write-only from TS's
   perspective; decode has never been exercised or validated.
-- **One production caller.** [dspRoles.ts](../packages/retroplug/src/dspRoles.ts)
-  calls `caps.savFromJson("{}")` to seed an empty sav at LSDj construct — once per system,
+- **One production caller.** The `lsdj-sync` role's seed hook
+  ([packages/lsdj/ts/app.ts](../packages/lsdj/ts/app.ts)) calls `caps.savFromJson("{}")` to seed an empty sav at
+  LSDj construct - once per system,
   on the main thread. The other 14 callers are `test-native/*.ts` + CLI fixtures.
 - **TS has no typed model.** The `tools/gen-sav-ts.js` promised in
   `SavSerialization.hpp:15` **does not
@@ -257,7 +258,7 @@ The repo uses zod ^4.4.3. The reflect-cpp JSON contract maps cleanly:
 | struct field defaults | `.default(v)` so `Schema.parse({})` yields a full default sav |
 | `rfl::DefaultIfMissing` lenient parse | every field defaulted ⇒ `parse({})` is a full object |
 
-The model is a **standalone module** (`packages/retroplug/src/lsdj/model.ts`), **not** a
+The model is a **standalone module** (`packages/lsdj/ts/model.ts`), **not** a
 `migrate.ts` persistence root — it transcodes binary and defers to LSDj's own on-disk
 `formatVersion` (an explicit exception to the zod-migration rails in AGENTS.md / spec/05).
 `KitInstrument` (song metadata) is **in scope**; the kit/sample *compiler* is not (§ scope).

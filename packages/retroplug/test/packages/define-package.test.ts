@@ -16,7 +16,7 @@ import { SAMEBOY_ROLE } from "@retroplug/sameboy";
 import { MESEN_ROLE } from "@retroplug/mesen";
 import type {} from "@retroplug/tracker/packageContributions";
 import type {} from "@retroplug/dsp/packageContributions";
-import { lsdjIntegration } from "../../src/tracker/integrations";
+import { lsdjIntegration } from "@retroplug/lsdj/lsdjIntegration";
 import { LSDJ_KIT_FORMAT } from "../../src/kit/compile";
 
 test("definePackage is the identity", () => {

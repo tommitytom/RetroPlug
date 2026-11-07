@@ -12,9 +12,9 @@
 // so the live-core readMemory stays valid (the single-threaded direct-render regime).
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFrom } from "../src/lsdjSav";
+import { savFrom } from "@retroplug/lsdj";
 import { MemoryRegion } from "../src/backend";
-import { detectDriftLayout, type DetectDriver, type DriftLayoutResult } from "../src/lsdj/runtime/detect";
+import { detectDriftLayout, type DetectDriver, type DriftLayoutResult } from "@retroplug/lsdj/runtime/detect";
 import { directGraph } from "../src/graph/directGraph";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).

@@ -5,10 +5,10 @@
 // (test/graph/build-graph.test.ts).
 import { test, expect } from "@retroplug/testing";
 import { CONTROLLER_SESSION_NODE_TYPE, controllerSessionNode } from "../../../src/script/nodes/controllerSession";
-import { lsdjSyncNode } from "../../../src/script/nodes/lsdjSync";
+import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
 import { ControllerRegistry, registerControllerApps } from "../../../src/controller";
-import { songRowTicks } from "../../../src/lsdj/playback";
-import { SongSchema } from "../../../src/lsdj/model";
+import { songRowTicks } from "@retroplug/lsdj/playback";
+import { SongSchema } from "@retroplug/lsdj/model";
 import { PRO_MK3, Palette, enterProgrammerMode, padIndex } from "../../../src/launchpad";
 import { NodeRig, bytesOn, type BlockSpec, type In, type Sent } from "./_rig";
 

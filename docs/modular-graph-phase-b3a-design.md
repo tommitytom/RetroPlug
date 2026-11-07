@@ -790,7 +790,7 @@ Before B3b started, the LSDj master-sync fix landed on its own (§10).
   capture was armed. The flip deleted the gather in the same change, and a plan with no `rp.host.midi-in` (or
   `controller-in`) now drops what was staged at the block's end rather than letting it grow.
 - **LSDj master sync's stopped-LSDj detector depends on the block size.** `arduinoboyMasterSyncBlock`
-  ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) calls a block holding more than 16 serial-out
+  ([lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)) calls a block holding more than 16 serial-out
   bytes (`MASTER_SYNC_IDLE_FLOOD`) the stopped LSDj's idle flood. A stopped LSDj sends a few thousand bytes a second,
   so no block of fewer than about 150 frames at 44.1 kHz ever holds 16, and the handshake decodes as clocks: 10497
   MIDI messages in 1-frame blocks against 101 in 1024-frame ones; and at a fast tempo an 8192-frame block can pass 16

@@ -9,12 +9,29 @@ import { buildAppRegistry } from "../../src/appHost";
 import { ROLES } from "../../src/generated/packages";
 import { protocolNodeOf } from "../../src/graph/protocolNodes";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
+import { registerFeatureRoles } from "../_featureRoles";
 import { z } from "zod";
 import { clampedInt } from "@retroplug/core/configFields";
 import { systemKnobs } from "../../src/graph/buildGraph";
 import type { SystemNodeType } from "../../src/platform";
-import { sameboyRoleConfig } from "../systems/fixtures";
+import {
+  blipToasterRom,
+  gbRom,
+  gbaRom,
+  lsdjRom,
+  nesRom,
+  risaRom,
+  sameboyRoleConfig,
+  smsggdjRom,
+} from "../systems/fixtures";
+
+// risa's host-sync capability tag ("RISA230") in the header prefix, which a real 2.3.0+ build carries.
+function risaRomWithSyncMarker(): Uint8Array {
+  const rom = risaRom();
+  const marker = "RISA230";
+  for (let i = 0; i < marker.length; i++) rom[0x10 + i] = marker.charCodeAt(i);
+  return rom;
+}
 
 // A ROM header (0x150 bytes) carrying an ASCII cartridge title at 0x134.
 function headerWithTitle(title: string): Uint8Array {
@@ -51,15 +68,37 @@ test("systemRoleFor: the core registers a SameBoy and a Mesen system role", () =
   expect(mesen?.schema.parse({})).toEqual({ region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0, n8Link: "auto", n8LinkRttUs: 2200, driveRealCart: true });
 });
 
-test("the product's role registrations open with the sameboy and mesen roles, before the shell's own", () => {
-  // SameBoy's and Mesen's role kinds are their packages' app contributions now, and the product list (the root
-  // package.json's retroplug.products.desktop) places those two packages ahead of the shell - so the generated list
-  // buildAppRegistry applies opens exactly as the shell's own list did. The native registration golden cannot see a
-  // reordering here: these packages register no native type at all.
-  expect(ROLES.map((role) => role.kind)).toEqual([
-    "sameboy", "mesen", "mgb", "nes-n8-midi", "risa-sync", "sms-sync", "lsdj-sync",
-    "lsdj-assets", "risa", "risa-assets", "bliptoaster", "bliptoaster-assets",
+test("the app's roles are the product's kinds, and a duplicate is what the generated module refuses", () => {
+  // The registry holds roles in a Map keyed by kind and never iterates it, so the order the app registers them in is
+  // unobservable: the generated module checks that each kind appears once, and that is the property this pins. A kind
+  // lost by a package's app contribution would still show here, whatever order the list is in.
+  expect(ROLES.map((role) => role.kind).sort()).toEqual([
+    "bliptoaster", "bliptoaster-assets", "lsdj-assets", "lsdj-sync", "mesen", "mgb", "nes-n8-midi",
+    "risa", "risa-assets", "risa-sync", "sameboy", "sms-sync",
   ]);
+});
+
+test("the product's ROM providers fix a system's role-list order", () => {
+  // A ROM provider's place in the product list IS behaviour: defaultRoles walks the providers in that order, and the
+  // first to match a ROM fixes its feature roles' order. The n8 package's always-on NES provider stands before the
+  // carts' (risa's and BlipToaster's), so a NES gets the MIDI passthrough ahead of whatever the cart contributes.
+  const reg = buildAppRegistry();
+  const kinds = (core: string, platform: string, rom: Uint8Array): string[] =>
+    reg.defaultRoles(core as never, platform as never, rom).map((role) => role.kind);
+
+  expect(kinds("mesen", "nes", nesRom())).toEqual(["mesen", "nes-n8-midi"]);
+  expect(kinds("mesen", "nes", blipToasterRom())).toEqual([
+    "mesen", "nes-n8-midi", "bliptoaster", "bliptoaster-assets",
+  ]);
+  expect(kinds("mesen", "nes", risaRom())).toEqual(["mesen", "nes-n8-midi", "risa", "risa-assets"]);
+  // A sync-capable build adds risa-sync after the two roles risa's provider attaches first.
+  expect(kinds("mesen", "nes", risaRomWithSyncMarker())).toEqual([
+    "mesen", "nes-n8-midi", "risa", "risa-assets", "risa-sync",
+  ]);
+  expect(kinds("sameboy", "gb", lsdjRom())).toEqual(["sameboy", "lsdj-sync", "lsdj-assets"]);
+  expect(kinds("sameboy", "gb", gbRom())).toEqual(["sameboy"]);
+  expect(kinds("mesen", "sms", smsggdjRom())).toEqual(["mesen", "sms-sync"]);
+  expect(kinds("mesen", "gba", gbaRom())).toEqual(["mesen"]);
 });
 
 test("every field a system role's schema fills reaches some system node", () => {
@@ -173,13 +212,13 @@ function kindsRegisteredBy(register: () => void): RoleType[] {
   return types;
 }
 
-test("the protocol-node table names a node for exactly the roles registerDspRoles registers", () => {
+test("the protocol-node table names a node for exactly the feature roles that have one", () => {
   // The stores place what graph/protocolNodes.ts says, not what a registry says, so the two must agree for every role
-  // the app registers: each kind registerDspRoles registers (the roles whose work is the audio thread's) has a node,
-  // and no other kind the app registers does: not a core's config role, not a feature with none (an asset override,
-  // a ROM's facts). A role registered there with no node, a node for a role registered elsewhere, or a kind renamed
-  // on either side fails here.
-  const dsp = kindsRegisteredBy(() => registerDspRoles(new RoleRegistry())).map((t) => t.kind);
+  // the app registers: each kind registerFeatureRoles registers (the roles whose work is the audio thread's) has a
+  // node, and no other kind the app registers does: not a core's config role, not a feature with none (an asset
+  // override, a ROM's facts). A role registered there with no node, a node for a role registered elsewhere, or a kind
+  // renamed on either side fails here.
+  const dsp = kindsRegisteredBy(() => registerFeatureRoles(new RoleRegistry())).map((t) => t.kind);
   expect(dsp).toEqual(["mgb", "nes-n8-midi", "risa-sync", "sms-sync", "lsdj-sync"]);
   const app = kindsRegisteredBy(() => buildAppRegistry());
   expect(app.length).toBeGreaterThan(10);

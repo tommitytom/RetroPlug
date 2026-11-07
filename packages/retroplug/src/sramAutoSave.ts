@@ -12,7 +12,7 @@ import type { ControlPlaneBackend } from "./backend";
 import type { SystemsStore } from "./systemsStore";
 import type { UserConfigStore } from "./userConfigStore";
 import { resolveSavPath } from "./savPaths";
-import { decodeSong, encodeSong } from "./lsdj";
+import { decodeSong, encodeSong } from "@retroplug/lsdj";
 
 function fnvInto(h: number, bytes: Uint8Array): number {
   for (let i = 0; i < bytes.length; i++) {

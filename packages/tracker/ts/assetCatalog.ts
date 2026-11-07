@@ -4,10 +4,9 @@
 // ride a per-system NON-DESTRUCTIVE override list (the `*-assets` role config); the catalog knows only the
 // base ROM's slots (baseSlots) + the asset types it exposes. The effective view (base overlaid with overrides)
 // is effectiveAssets. The per-console FILE actions (Export/Replace — which own file formats + the file dialog)
-// stay in the UI menu layer, exactly like SongCatalog's Export/Replace/Add. Concrete catalogs:
-// the carts' own catalogs, still the shell's (packages/retroplug/src/tracker/lsdjAssetCatalog and
-// .../risaAssetCatalog) while neither cart has a package of its own; resolution rides the shell's
-// packages/retroplug/src/trackerRegistry (resolveAssetCatalog).
+// stay in the UI menu layer, exactly like SongCatalog's Export/Replace/Add. Concrete catalogs: each cart's own
+// (packages/lsdj's and risa's ts/ trees), contributed through its package's app module; resolution rides the shell's
+// packages/retroplug/src/trackerRegistry (resolveAssetCatalog), over the product's generated list.
 import type { ConstructCaps } from "@retroplug/core/systemRoles";
 
 /** A base-ROM asset slot: its index + a display name (name-fallbacks already applied). */

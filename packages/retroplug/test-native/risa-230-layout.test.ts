@@ -14,7 +14,7 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { runtime } from "../src/risa";
+import { runtime } from "@retroplug/risa";
 
 declare const __RESOURCES_DIR__: string;
 const ROM_230 = __RESOURCES_DIR__ + "/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes";

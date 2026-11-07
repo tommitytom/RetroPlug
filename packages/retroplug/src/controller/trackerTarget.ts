@@ -5,7 +5,7 @@
 // the caller injects:
 //
 //   emulated cart   send goes out on the controller node's `launches` port into the cart's lsdj-sync
-//                   node, whose `midiMap` mode (script/nodes/lsdjSync.ts) turns it into link-port bytes
+//                   node, whose `midiMap` mode (@retroplug/lsdj's lsdjSyncNode.ts) turns it into link-port bytes
 //                   exactly as it always has
 //   real Game Boy   send goes out on the node's `midiOut` port, and an Arduinoboy on the other end does
 //                   the same job

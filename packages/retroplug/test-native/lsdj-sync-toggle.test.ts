@@ -10,7 +10,7 @@
 
 import { test, expect } from "@retroplug/testing";
 import { LsdjProbe, ABOY_ROM, TICK_MS } from "./lsdjPlaybackProbe";
-import type { SavInput, SongSettings } from "../src/lsdj/model";
+import type { SavInput, SongSettings } from "@retroplug/lsdj/model";
 import { createRealBackend } from "../src/realBackend";
 
 const B = { Right: 0, Left: 1, Up: 2, Down: 3, A: 4, B: 5, Select: 6, Start: 7 } as const;

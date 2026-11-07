@@ -3,11 +3,11 @@
 import { test, expect } from "@retroplug/testing";
 import { lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
 import { resolveSongCatalog } from "../../src/trackerRegistry";
-import { loadSongToWorkingInSav } from "../../src/risaSongOps";
-import { normalizeSaveContainer } from "../../src/risaSav";
-import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
-import { savFrom, type SavInput } from "../../src/lsdjSav";
-import { savBytes } from "../risa/fixtures";
+import { loadSongToWorkingInSav } from "@retroplug/risa/risaSongOps";
+import { normalizeSaveContainer } from "@retroplug/risa/risaSav";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "@retroplug/risa/codec/constants";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
+import { savBytes } from "@retroplug/risa/testFixtures";
 
 test("resolveSongCatalog selects the catalog by marker role (undefined for a non-tracker system)", () => {
   expect(resolveSongCatalog([{ kind: "lsdj-sync", config: {} }])).toBe(lsdjSongCatalog);

@@ -9,12 +9,17 @@
     "typecheck": "node scripts/lib/packages.mjs && tsc --noEmit && tsc --noEmit -p tsconfig.ui.json"
   },
   "dependencies": {
+    "@retroplug/bliptoaster": "workspace:*",
     "@retroplug/core": "workspace:*",
     "@retroplug/dsp": "workspace:*",
+    "@retroplug/lsdj": "workspace:*",
     "@retroplug/mesen": "workspace:*",
+    "@retroplug/mgb": "workspace:*",
     "@retroplug/sameboy": "workspace:*",
     "@retroplug/tracker": "workspace:*",
     "@retroplug/n8": "workspace:*",
+    "@retroplug/risa": "workspace:*",
+    "@retroplug/smsggdj": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -25,25 +30,8 @@
     "app": "src/app.ts",
     "protocol": {
       "module": "src/script/shellNodes.ts",
-      "nodes": [
-        { "type": "rp.mgb.midi", "label": 17, "midiIn": "midi", "writes": ["serialIn"] },
-        { "type": "rp.n8.midi-to-fifo", "label": 18, "midiIn": "midiIn", "writes": ["midi"] },
-        { "type": "rp.risa.sync", "label": 19, "midiIn": null, "writes": ["bytes"] },
-        { "type": "rp.sms.sync", "label": 20, "midiIn": null, "writes": ["bytes"] },
-        {
-          "type": "rp.lsdj.sync", "label": 21, "midiIn": "midi", "writes": ["serialIn", "buttons"], "launches": true,
-          "out": "rp.lsdj.serial-out"
-        },
-        { "type": "rp.controller.session", "label": 22 },
-        { "type": "rp.lsdj.serial-out", "label": 23, "midiIn": null, "writes": [], "serialOut": true, "midiOut": true }
-      ],
-      "roles": {
-        "mgb": "rp.mgb.midi",
-        "nes-n8-midi": "rp.n8.midi-to-fifo",
-        "risa-sync": "rp.risa.sync",
-        "sms-sync": "rp.sms.sync",
-        "lsdj-sync": "rp.lsdj.sync"
-      }
+      "nodes": [{ "type": "rp.controller.session", "label": 22 }],
+      "roles": {}
     }
   }
 }

@@ -597,7 +597,7 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 | Z80 CPU-state virtuals | `MesenSmsSystem.cpp` | medium | low | ~80 lines, no core edits. `SmsCpuState` (`SmsTypes.h:22-63`) is a plain Z80 file; `SmsCpu::GetState()` returns a **mutable ref** so `setCpuRegister` writes directly with no pipeline-reload dance; `SmsCpu::Exec()` is a plain single-instruction step; `readCpuByte` -> `SmsMemoryManager::DebugRead(uint16_t)`. Separate from `IDebugTarget`, so basic peek/poke/step works with no debug session. Largely free once D2's step loop exists, since it already holds the `SmsCpu*`. |
 | `MesenSmsDebugSession` | new | large | low | Strictly optional. `debugTarget()` defaults to nullptr (`SystemBase.hpp:263`), GBA implements none, and every `DebugRpcService` entry point null-checks. `deps/mesen/Core/SMS/Debugger/` already compiles and links, and the RetroPlug single-threaded `Debugger` patches are console-agnostic. But `IDebugTarget::getApuState`/`getPpuState`/`getExpansionAudioState` are NES-shaped structs (`DebugTarget.hpp:83-197`), so SMS would leave them `{}`. |
 | `SYNC: OUT` (tracker as master, DAW follows) | `MesenSmsSystem.cpp`, a new TS role | medium | medium | The mirror of section 2.4. No per-write callback exists, but polling `SmsControlManager::GetState().ControlPort` in the fine phase of the step loop is one read per instruction and would give sample-accurate OUT detection **with no core edit**. Note only export (non-Japanese) SMS hardware can drive the port via `$3F` (`DESIGN.md:452-454`), and Mesen has a `//TODOSMS add UI option for japan vs overseas model` at `SmsControlManager.cpp:104` - the emulated read path currently behaves as export. |
-| smsggdj tracker integration | `src/tracker/trackerIntegration.ts:65` + a marker-role provider + an assets role | large | **high** | See section 11. Scale reference: the risa integration was 69 commits, +17,577 lines. |
+| smsggdj tracker integration | `packages/tracker/ts/trackerIntegration.ts` + a marker-role provider + an assets role | large | **high** | See section 11. Scale reference: the risa integration was 69 commits, +17,577 lines. |
 
 ---
 
@@ -1188,7 +1188,7 @@ behave wrongly.
 
 ### Tracker integration, as built (songs)
 
-`TRACKER_INTEGRATIONS` has its third console. What ships: the SMDJ4 codec (`src/smsggdj/codec/`), the
+`TRACKER_INTEGRATIONS` has its third console. What ships: the SMDJ4 codec (`packages/smsggdj/ts/codec/`), the
 `SongCatalog`, the Songs submenu with `.smdj4` Export / Replace / Add, per-song recents, and
 `retroplug-cli render --song / --song-index / --list-songs`.
 
@@ -1350,7 +1350,7 @@ Every caveat above except the last is closed, by taking the write offsets from t
 rather than guessing at them - the same answer risa uses for cc65.
 
 `wlalink -S` emits every RAM label with `_sizeof_*`, so
-`scripts/gen-smsggdj-symbols.mjs` -> `src/smsggdj/runtime/symbols.generated.ts` mirrors
+`scripts/gen-smsggdj-symbols.mjs` -> `packages/smsggdj/ts/runtime/symbols.generated.ts` mirrors
 `gen-risa-symbols.mjs` exactly, merge behaviour and all. Nothing in the smsggdj repo changes: the flag
 is passed at generation time rather than baked into its Makefile.
 

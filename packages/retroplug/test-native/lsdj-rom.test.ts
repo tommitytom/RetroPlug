@@ -1,4 +1,4 @@
-// The LSDj ROM asset module (src/lsdj/rom) against a REAL ROM: read kits/palettes/fonts out of
+// The LSDj ROM asset module (packages/lsdj/ts/rom) against a REAL ROM: read kits/palettes/fonts out of
 // lsdj9_4_2.gb, patch a kit name, write the .gb back, re-open and confirm — and assert the patch is
 // surgical (only the intended bytes changed) and the patched ROM still boots on a real core.
 import { test, expect, skip } from "@retroplug/testing";
@@ -6,10 +6,10 @@ import { lsdjRomTool } from "../cli/sessions/lsdj-rom";
 import type { Session } from "../cli/session";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { LsdjRom } from "../src/lsdj/rom";
-import { KitView, decodeNibbles } from "../src/lsdj/rom/kit";
-import { KIT_LOOKUP, BANK_SIZE, ROM_SIZE } from "../src/lsdj/rom/constants";
-import { buildKitBank, sampleBytesFromBank, kitSampleSpace } from "../src/lsdj/rom";
+import { LsdjRom } from "@retroplug/lsdj/rom";
+import { KitView, decodeNibbles } from "@retroplug/lsdj/rom/kit";
+import { KIT_LOOKUP, BANK_SIZE, ROM_SIZE } from "@retroplug/lsdj/rom/constants";
+import { buildKitBank, sampleBytesFromBank, kitSampleSpace } from "@retroplug/lsdj/rom";
 import { encodeWav } from "../cli/wav";
 import { directGraph } from "../src/graph/directGraph";
 

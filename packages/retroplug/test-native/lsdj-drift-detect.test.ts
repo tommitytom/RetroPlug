@@ -1,5 +1,5 @@
 // Validates detectDriftLayout() — the full per-field drift detector that feeds driftLayouts.generated.ts
-// — on real cores across every era (v4.3.0 → v9.4.2). Drives the pure detector (src/lsdj/runtime/detect.ts)
+// — on real cores across every era (v4.3.0 → v9.4.2). Drives the pure detector (packages/lsdj/ts/runtime/detect.ts)
 // through a DetectDriver wired to the real backend + audio, booting an authored era-format song at two
 // distinct tempos (the TEMPO differential). Three independent cross-checks pin the result down:
 //   * the detected SONG cursor equals the ported legacy table (offsets.ts invariant #1);
@@ -11,12 +11,12 @@
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { decodeSav, savFrom } from "../src/lsdjSav";
+import { decodeSav, savFrom } from "@retroplug/lsdj";
 import { MemoryRegion } from "../src/backend";
-import { detectDriftLayout } from "../src/lsdj/runtime/detect";
-import type { DetectDriver } from "../src/lsdj/runtime/detect";
-import { legacyOffsets } from "../src/lsdj/runtime/legacyOffsets.generated";
-import { driftShifts } from "../src/lsdj/runtime/driftShifts.generated";
+import { detectDriftLayout } from "@retroplug/lsdj/runtime/detect";
+import type { DetectDriver } from "@retroplug/lsdj/runtime/detect";
+import { legacyOffsets } from "@retroplug/lsdj/runtime/legacyOffsets.generated";
+import { driftShifts } from "@retroplug/lsdj/runtime/driftShifts.generated";
 import { directGraph } from "../src/graph/directGraph";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).

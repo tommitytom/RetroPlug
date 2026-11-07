@@ -4,7 +4,7 @@
 import { test, expect } from "@retroplug/testing";
 import { MidiRouting } from "@retroplug/core/midiRouting";
 
-import { blipToasterChip, inesMapper } from "../../src/bliptoaster/romDetect";
+import { blipToasterChip, inesMapper } from "@retroplug/bliptoaster/romDetect";
 import {
   CC_SLOTS_PER_SYSTEM,
   MAX_PARAMETER_SYSTEMS,

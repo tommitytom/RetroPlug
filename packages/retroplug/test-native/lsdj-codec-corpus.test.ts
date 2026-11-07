@@ -1,11 +1,11 @@
-// Phase 4 native gate: the PURE-TS codec (src/lsdj/codec) round-trips the entire
+// Phase 4 native gate: the PURE-TS codec (packages/lsdj/ts/codec) round-trips the entire
 // per-version LSDj sav corpus (fmt 0..22, ~549 savs at ../resources/roms/lsdj)
 // byte-identically — the exhaustive losslessness proof that can't run in the
 // disk-less pure tier. Runs the pure-TS codec inside retroplug-host; the native
 // backend is used only to list/read files, never to encode.
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
-import { decodeSav, encodeSav } from "../src/lsdj/codec/sav";
+import { decodeSav, encodeSav } from "@retroplug/lsdj/codec/sav";
 
 declare const __RESOURCES_DIR__: string;
 const DIR = __RESOURCES_DIR__ + "/roms/lsdj";

@@ -4353,13 +4353,13 @@ index 66ec50dc..7bad8dc9 100644
  - **The `lsdj-sync` role config**: RetroPlug's own behaviour, its `mode` one of `"off"`, `"midiSync"`,
    `"midiSyncArduinoboy"`, `"midiMap"`, `"keyboard"`, `"keyboardMidi"`, `"midiPassthrough"`, `"midiOut"`,
 -  `"masterSync"` (`LSDJ_MODE_VALUES` in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts), run
--  by the role's protocol node, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)). A feature
+-  by the role's protocol node, [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts)). A feature
 -  role: it is set with the store's `setRoleConfig` and handed to that node as its settings in the graph the
 -  project publishes, while native's `applyRoleConfig` takes only the `sameboy` and `mesen` system roles (any
 -  other kind returns false).
 +  `"masterSync"` (`LSDJ_MODE_VALUES` in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts), run by
-+  the role's two protocol nodes: [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts) before the
-+  Game Boy, host to cart, and [lsdjSerialOut.ts](../packages/retroplug/src/script/nodes/lsdjSerialOut.ts)
++  the role's two protocol nodes: [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts) before the
++  Game Boy, host to cart, and [lsdjSerialOut.ts](../packages/lsdj/ts/lsdjSerialOutNode.ts)
 +  after it, MI.OUT and master sync from the cart to the host). A feature role: it is set with the store's
 +  `setRoleConfig` and handed to both nodes as their settings in the graph the project publishes, while
 +  native's `applyRoleConfig` takes only the `sameboy` and `mesen` system roles (any other kind returns false).
@@ -4945,7 +4945,7 @@ index 2b93fc39..f4dc4943 100644
 +  pending command are kept on the instance across mode changes; master sync's state is dropped outside that
 +  mode, so coming back opens a fresh run. Its settings are the role's config through the schema
 +  `rp.lsdj.sync` takes too
-+  ([nodes/lsdjSyncSettings.ts](../packages/retroplug/src/script/nodes/lsdjSyncSettings.ts)); it reads only
++  ([nodes/lsdjSyncSettings.ts](../packages/lsdj/ts/lsdjSyncSettings.ts)); it reads only
 +  `mode`.
  - **`rp.controller.session`** runs a `ControllerSession` ([controller/session.ts](../packages/retroplug/src/controller/session.ts))
    for the app its settings name (`controller/apps/index.ts`, the apps' runtime, zod-free): the surface's
@@ -5171,7 +5171,7 @@ index 9385c148..3a7f48b6 100644
 +    DAW each message at its frame (`writeMidiEvent`). Scheduling it is the standalone's own work.
  - **Found while building B3b, left as they are:**
 -  - The MI.OUT and master-sync decoders (`arduinoboyDecodeSerialOut`, `arduinoboyMasterSyncBlock` in
--    [lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) build each message they emit as a new
+-    [lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)) build each message they emit as a new
 -    array, about 3 JS allocations for every host MIDI message they decode: the one per-block JS allocation
 -    left on a production path (every other protocol node allocates nothing in a warm block,
 -    [08-profiling.md](08-profiling.md)). Emitting into a reused buffer is the decoders' own change.
@@ -5235,13 +5235,13 @@ index 5fba0dab..f99bfd81 100644
 +and tick counter on its instance, so the routing, mGB, N8 and LSDj MIDI-sync nodes, and LSDj's serial-out
 +decoder (`rp.lsdj.serial-out`) in master sync and MI.OUT, allocate **nothing** in a warm block, JS or
 +native, and `dsp-bench` and `nes-bench` measure 0 allocations a block (section 9). The decoders
-+([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) hand each message over byte by byte,
++([lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)) hand each message over byte by byte,
 +`emit(frame, len, b0, b1, b2)`, and the node sends it from one of three arrays it made once, one a message
 +length. What still allocates is work that makes something:
  
  | Site | Allocates |
  |---|---|
--| the MI.OUT and master-sync decoders' `emit([...])` ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)), run by `rp.lsdj.sync` in its two MIDI-out modes | about 3 JS objects for every host MIDI message decoded: the one per-block allocation left on a production path |
+-| the MI.OUT and master-sync decoders' `emit([...])` ([lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)), run by `rp.lsdj.sync` in its two MIDI-out modes | about 3 JS objects for every host MIDI message decoded: the one per-block allocation left on a production path |
  | `rp.risa.sync`'s arm ([risaSync.ts](../packages/retroplug/src/risaSync.ts)) | two objects on a start or a seek: `risaLocate`'s object and `risaArmPacket`'s array |
  | `rp.controller.session`'s surface diff and launches ([controller/session.ts](../packages/retroplug/src/controller/session.ts)) | per LED change and per launch, while a surface is in use |
  
@@ -5335,8 +5335,8 @@ index 5fba0dab..f99bfd81 100644
  TypeScript ([packages/retroplug/](../packages/retroplug/)):
  - [src/audioDriver.ts](../packages/retroplug/src/audioDriver.ts) — `renderAudio` /
    `stageMidiIn` / `setBpm` / `setTransport` (the bench's injection surface).
--- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts): the protocol nodes the benchmarks drive, and the decoders that are the per-block allocation site left (§3).
-+- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts): the protocol nodes the benchmarks drive, and the MI.OUT and master-sync decoders `rp.lsdj.serial-out` runs (§3).
+-- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts): the protocol nodes the benchmarks drive, and the decoders that are the per-block allocation site left (§3).
++- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts): the protocol nodes the benchmarks drive, and the MI.OUT and master-sync decoders `rp.lsdj.serial-out` runs (§3).
  - [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts) —
    the setup template to copy.
  - [scripts/run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) — how a

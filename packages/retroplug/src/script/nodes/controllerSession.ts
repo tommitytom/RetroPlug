@@ -22,7 +22,7 @@ import { lsdjMidiMapTarget } from "../../controller/trackerTarget";
 import { controllerApp } from "../../controller/apps";
 // The leaf, not the lsdj/playback barrel: that also exports the observed model and the sav-derived table builder,
 // which would pull the WRAM reader and the whole sav codec into the bundle.
-import { PredictedLsdjModel, normaliseRowTicks } from "../../lsdj/playback/predict";
+import { PredictedLsdjModel, normaliseRowTicks } from "@retroplug/lsdj/playback/predict";
 import { CONTROLLER_OUT, LAUNCHES, MIDI_OUT } from "@retroplug/core/ports";
 
 export const CONTROLLER_SESSION_NODE_TYPE = "rp.controller.session";

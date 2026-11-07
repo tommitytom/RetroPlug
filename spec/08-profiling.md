@@ -48,13 +48,13 @@ written that way: each reads the `Message` views it is handed, sends on its own 
 and tick counter on its instance, so the routing, mGB, N8 and LSDj MIDI-sync nodes, and LSDj's serial-out
 decoder (`rp.lsdj.serial-out`) in master sync and MI.OUT, allocate **nothing** in a warm block, JS or
 native, and `dsp-bench` and `nes-bench` measure 0 allocations a block (section 9). The decoders
-([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) hand each message over byte by byte,
+([lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)) hand each message over byte by byte,
 `emit(frame, len, b0, b1, b2)`, and the node sends it from one of three arrays it made once, one a message
 length. What still allocates is work that makes something:
 
 | Site | Allocates |
 |---|---|
-| `rp.risa.sync`'s arm ([risaSync.ts](../packages/retroplug/src/risaSync.ts)) | two objects on a start or a seek: `risaLocate`'s object and `risaArmPacket`'s array |
+| `rp.risa.sync`'s arm ([risaSync.ts](../packages/risa/ts/risaSync.ts)) | two objects on a start or a seek: `risaLocate`'s object and `risaArmPacket`'s array |
 | `rp.controller.session`'s surface diff and launches ([controller/session.ts](../packages/retroplug/src/controller/session.ts)) | per LED change and per launch, while a surface is in use |
 
 **The cores.** Since C4 a system core allocates nothing in a warmed block either, Mesen's per-frame video and input
@@ -160,7 +160,7 @@ top-N is what fits an agent's context and yields a trustworthy diff.
 
 mGB is 4 monophonic voices + a poly voice (MIDI ch1→PU1, ch2→PU2, ch3→WAV, ch4→NOISE, ch5→POLY), fed raw
 MIDI-over-serial; the `mgb` role's node forwards every byte verbatim
-([nodes/mgbMidi.ts](../packages/retroplug/src/script/nodes/mgbMidi.ts)). It responds to note on/off
+([nodes/mgbMidi.ts](../packages/mgb/ts/mgbMidiNode.ts)). It responds to note on/off
 (velocity 0 = note-off), a handful of CCs (pulse-width, envelope, sweep, PB-range, preset, pan, sustain),
 pitch bend, and program change (1–15 = preset). Profiles:
 
@@ -397,7 +397,7 @@ Native ([packages/native/src/](../packages/native/src/)):
 TypeScript ([packages/retroplug/](../packages/retroplug/)):
 - [src/audioDriver.ts](../packages/retroplug/src/audioDriver.ts) — `renderAudio` /
   `stageMidiIn` / `setBpm` / `setTransport` (the bench's injection surface).
-- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/core/ts/midiRouting.ts): the protocol nodes the benchmarks drive, and the MI.OUT and master-sync decoders `rp.lsdj.serial-out` runs (§3).
+- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/core/ts/midiRouting.ts): the protocol nodes the benchmarks drive, and the MI.OUT and master-sync decoders `rp.lsdj.serial-out` runs (§3).
 - [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts) —
   the setup template to copy.
 - [scripts/run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) — how a

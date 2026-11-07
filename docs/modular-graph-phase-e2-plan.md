@@ -8932,7 +8932,7 @@ index 9da96b0b8..101322a2f 100644
 @@ -294,7 +294,7 @@ Because a row launch is immediate and repeatable, the model can force truth to m
  | Project-scope behaviours run **regardless of system count** | `dspKernel.ts:399` (deleted in B3b) | A device-only project (real GB, no emulated system) works structurally |
  | SysEx already contemplated in TS routing | [`midiRouting.ts:43`](../packages/retroplug/src/midiRouting.ts#L43) | Long messages broadcast unchanged; no TS-side change needed |
- | Pure-TS LSDj sav codec + runtime WRAM reader | [`src/lsdj/`](../packages/retroplug/src/lsdj/) | Both `PlaybackModel` implementations are built from existing parts |
+ | Pure-TS LSDj sav codec + runtime WRAM reader | [`src/lsdj/`](../packages/lsdj/ts/) | Both `PlaybackModel` implementations are built from existing parts |
 -| **`N8Link`**: audio thread -> SpscRing -> dedicated device thread, injected `PortFactory` so it is testable hardware-free | [`N8Link.hpp`](../packages/native/src/host/n8/N8Link.hpp) | **The direct architectural precedent** for a device-scoped link |
 +| **`N8Link`**: audio thread -> SpscRing -> dedicated device thread, injected `PortFactory` so it is testable hardware-free | [`N8Link.hpp`](../packages/n8/native/src/n8/desktop/N8Link.hpp) | **The direct architectural precedent** for a device-scoped link |
  | `Engine::setCoreByteSink` - mirror a role-generated stream to external hardware, in sync by construction | [`Engine.hpp:92`](../packages/native/src/host/engine/Engine.hpp#L92) | Exactly the shape of "emulated cart and real cart get the same bytes" |

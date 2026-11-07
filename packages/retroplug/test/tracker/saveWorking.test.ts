@@ -4,13 +4,13 @@
 // would save, be prompted again, and reasonably conclude the save did nothing.
 import { test, expect } from "@retroplug/testing";
 import { lsdjSongCatalog, risaSongCatalog, workingSongTargets, type SongCatalog } from "../../src/tracker";
-import { savBytes as lsdjSav } from "../lsdj/fixtures";
-import { savBytes as risaSav } from "../risa/fixtures";
-import { loadSongToWorking, decompressSlot, savSongName } from "../../src/lsdj/codec/sav";
-import { saveWorkingToCatalog, canSaveWorkingToCatalog } from "../../src/lsdjSongOps";
-import { saveWorkingToCatalog as risaSaveWorking, loadSongToWorkingInSav, workingSongSlot } from "../../src/risaSongOps";
-import { sameBytes } from "../_bytes";
-import { normalizeSaveContainer } from "../../src/risaSav";
+import { savBytes as lsdjSav } from "@retroplug/lsdj/testFixtures";
+import { savBytes as risaSav } from "@retroplug/risa/testFixtures";
+import { loadSongToWorking, decompressSlot, savSongName } from "@retroplug/lsdj/codec/sav";
+import { saveWorkingToCatalog, canSaveWorkingToCatalog } from "@retroplug/lsdj/lsdjSongOps";
+import { saveWorkingToCatalog as risaSaveWorking, loadSongToWorkingInSav, workingSongSlot } from "@retroplug/risa/risaSongOps";
+import { sameBytes } from "@retroplug/testing/bytes";
+import { normalizeSaveContainer } from "@retroplug/risa/risaSav";
 
 test("lsdj: saving a LINKED working song updates its own slot and clears the dirty flag", () => {
   const sav = lsdjSav("all");

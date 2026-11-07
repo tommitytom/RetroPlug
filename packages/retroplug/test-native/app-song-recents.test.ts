@@ -10,7 +10,7 @@ import { buildAppRegistry } from "../src/appHost";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { loadSongByName, lsdjSongCatalog } from "../src/tracker";
-import { savFrom, type SavInput } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
 
 declare const __RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;

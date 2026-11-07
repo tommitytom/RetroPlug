@@ -1,5 +1,5 @@
 // `retroplug-cli lsdj-rom` — inspect, extract and edit the static assets (sample kits, palettes, fonts)
-// inside an LSDj `.gb` ROM, headlessly. Backed by the pure-TS src/lsdj/rom module; this is just the CLI
+// inside an LSDj `.gb` ROM, headlessly. Backed by @retroplug/lsdj's pure-TS rom module; this is just the CLI
 // surface (arg parsing + file I/O via the backend + WAV/JSON output).
 //
 // ONE JSON schema drives every editing verb (see LSDJ_ROM_HELP): a manifest of kit/palette/font entries,
@@ -20,7 +20,7 @@ import type { Session } from "../session";
 import type { KitEffect } from "../../src/audioDriver";
 import { NO_SLOT_REASON } from "../../src/kit";
 import { encodeWav } from "../wav";
-import { LsdjRom, buildKitBank, sampleBytesFromBank, kitSampleSpace, KIT_MAX_SAMPLE_SPACE, type KitSample } from "../../src/lsdj/rom";
+import { LsdjRom, buildKitBank, sampleBytesFromBank, kitSampleSpace, KIT_MAX_SAMPLE_SPACE, type KitSample } from "@retroplug/lsdj/rom";
 
 // LSDj kit samples carry no intrinsic rate (pitch is set by the note played); export at a nominal
 // reference rate — overridable with --rate. 11468 Hz is LSDj's middle-note playback rate.

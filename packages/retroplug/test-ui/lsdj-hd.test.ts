@@ -21,7 +21,7 @@ const LSDJ = () => ui.romDir() + "/lsdj9_4_2.gb";
  *  solid block still puts 6 colours on screen against a correct render's 8, and the obvious pixel
  *  statistics don't separate them either (max scanline colour-transitions measures 207 broken vs 265
  *  correct - the sparse mid-shade pixels swamp the signal). That check belongs where it can be exact:
- *  test/lsdj/hd.test.ts asserts the shade -> colour mapping on a known glyph and fails outright if the
+ *  packages/lsdj/ts/test/hd.test.ts asserts the shade -> colour mapping on a known glyph and fails outright if the
  *  font shades are mapped wrong. */
 // snapshot().pixels is a Uint8Array of ARGB8888 BYTES (B,G,R,A in memory), width*height*4 - not a word
 // array. Index it by byte.

@@ -4,9 +4,10 @@
 // (docs/modular-graph-phase-c2-design.md section 5). Pure and registry-free: the publisher (ProjectStore, or a
 // DirectGraph) parses the app's config with the app's own schema before it gets here, so neither buildGraph nor the
 // node it places imports a zod schema.
-import { LsdjSyncMode, type ControllerTarget } from "../settingsEnums";
-import type { RowTicksTable } from "../lsdj/playback/predict";
-import type { ControllerAnchor } from "../lsdj/playback/anchor";
+import { type ControllerTarget } from "../settingsEnums";
+import { LsdjSyncMode } from "@retroplug/lsdj/enums";
+import type { RowTicksTable } from "@retroplug/lsdj/playback/predict";
+import type { ControllerAnchor } from "@retroplug/lsdj/playback/anchor";
 import type { ProtocolRole } from "./protocolNodes";
 
 /** An enabled controller: the user's choices, and what the control plane derived for it. */

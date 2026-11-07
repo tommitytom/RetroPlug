@@ -41,6 +41,7 @@
 
 import { setQueueLive, type JobQueue } from "./capability";
 import {
+  OfflineRunError,
   type OfflineCap,
   type OfflineInputReport,
   type OfflineOutput,
@@ -65,13 +66,9 @@ export {
   type OfflineSamplesInput,
 } from "@retroplug/core/offlineJob";
 
-/** A job that failed: native's reason, and the reports of the file inputs it decoded before it stopped. */
-export class OfflineRunError extends Error {
-  constructor(message: string, readonly inputs: OfflineInputReport[]) {
-    super(message);
-    this.name = "OfflineRunError";
-  }
-}
+// The failure type a job rejects with is the job shape's (core/offlineJob.ts), so a package's compiler can catch it
+// without the shell; re-exported here beside the queue that raises it.
+export { OfflineRunError };
 
 // The wire shapes (native BackendTypes.hpp: RpcOfflineRequest, RpcOfflineSubmitResult, RpcOfflineCompletion). An
 // absent optional is left out, which native reads as nullopt.

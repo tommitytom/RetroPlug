@@ -16,7 +16,7 @@
 // once after eval to run this top-level, then calls the globals directly with no further pumping.
 import { composeAppStores, type StoreChannel, type AppStores } from "./appStores";
 import { FileWatcher } from "./fileWatcher";
-import { LsdjSyncMode } from "./settingsEnums";
+import { LsdjSyncMode } from "@retroplug/lsdj/enums";
 import { placedRole } from "./graph/protocolNodes";
 import { projectParameterMap } from "./parameterMap";
 import { b64encode, b64decode } from "./base64";

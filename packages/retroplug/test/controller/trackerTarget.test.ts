@@ -6,7 +6,7 @@
 // similar.
 import { test, expect } from "@retroplug/testing";
 import { lsdjMidiMapTarget, launchMessage, nullTarget, LSDJ_MAX_ROW } from "../../src/controller";
-import { midiMapRow } from "../../src/lsdjSyncBytes";
+import { midiMapRow } from "@retroplug/lsdj/lsdjSyncBytes";
 
 const collect = () => {
   const sent: number[][] = [];

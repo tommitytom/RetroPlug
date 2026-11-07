@@ -5,8 +5,8 @@
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { RisaRom, bankToModel, isBankPopulated, dpcmDecode, assembleKitBank } from "../src/risa/rom";
-import { applyOverridesToRom, type RisaAssetOverride } from "../src/risaAssetsRole";
+import { RisaRom, bankToModel, isBankPopulated, dpcmDecode, assembleKitBank } from "@retroplug/risa/rom";
+import { applyOverridesToRom, type RisaAssetOverride } from "@retroplug/risa/risaAssetsRole";
 import { encodeWav } from "../cli/wav";
 import { directGraph } from "../src/graph/directGraph";
 

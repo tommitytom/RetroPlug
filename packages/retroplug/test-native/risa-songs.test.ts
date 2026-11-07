@@ -7,8 +7,8 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { listSongs } from "../src/risaSav";
-import { savBytes } from "../test/risa/fixtures";
+import { listSongs } from "@retroplug/risa/risaSav";
+import { savBytes } from "@retroplug/risa/testFixtures";
 
 declare const __RISA_SRC__: string;
 const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";

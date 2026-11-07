@@ -1,6 +1,6 @@
 // `retroplug-cli risa-rom` — inspect, extract and edit the static assets (DPCM sample kits, themes, fonts)
 // inside a risa (NES/MMC5) `.nes` ROM, headlessly. The risa twin of ./lsdj-rom.ts, backed by the pure-TS
-// src/risa/rom module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile
+// packages/risa's rom module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile
 // is the TypeScript kit compiler (s.audio.compileDmc - the risa analog of compileKit); sample splicing
 // re-packs existing DPCM + a freshly-compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
 //
@@ -38,7 +38,7 @@ import {
   KIT_SLOT_COUNT,
   CHR_BANK_SIZE,
   type AssembleSlot,
-} from "../../src/risa/rom";
+} from "@retroplug/risa/rom";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();

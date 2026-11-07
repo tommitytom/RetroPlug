@@ -58,8 +58,8 @@ Controllers set rate (`ani_speed`), direction (`dir`), position (`ScreenNumber`)
 - [NesN8FifoRole.hpp](../packages/native/src/system/mesen/roles/NesN8FifoRole.hpp) -
   `pushBytes(offset, data, count, flush)` schedules bytes into the FIFO at sample offsets,
   released in true order by `pumpUntil`. The same queue feeds host MIDI and a raw protocol.
-- [risaSync.ts](../packages/retroplug/src/risaSync.ts) + the `risa-sync` role in
-  [dspRoles.ts](../packages/retroplug/src/dspRoles.ts) - turn the DAW transport into a raw byte
+- [risaSync.ts](../packages/risa/ts/risaSync.ts) + the `risa-sync` role in
+  [risaRole.ts](../packages/risa/ts/risaRole.ts) - turn the DAW transport into a raw byte
   stream over `ctx.pushCoreBytes` -> the FIFO: `0xFA` start, `0xF8` clock (24 PPQN), `0xFC`
   stop, `0xF9 0x52 ss cc tt` locate.
 - [romProviders.ts](../packages/retroplug/src/romProviders.ts) - detects a ROM by header/marker
@@ -254,7 +254,7 @@ Two small pieces mirroring risa:
 
 1. **Role** - a dedicated `nesflix-sync` (recommended) or reuse `risa-sync` verbatim:
    - *Dedicated* (`nesflixSync.ts` + a `SystemBehavior` in
-     [dspRoles.ts](../packages/retroplug/src/dspRoles.ts)): ~40 lines mirroring `risaSync`. On
+     [dspRoles.ts](../packages/risa/ts/app.ts)): ~40 lines mirroring `risaSync`. On
      transport rise / seek send `0xFA` (Minimal) or a locate; while playing emit `0xF8` at 24
      PPQN via `c.eachTick`; on transport fall send `0xFC`. Config `{ clocksPerFrame: number }`
      (default e.g. 6). Clearer, and carries NESFlix-specific config + Option 3 later.
@@ -265,8 +265,8 @@ Two small pieces mirroring risa:
 2. **Detection + attach** ([romProviders.ts](../packages/retroplug/src/romProviders.ts)): bake a
    marker (e.g. `NFXSYNC`) into the patched ROM at a fixed offset and add a detector
    (`isNesflixSyncRom`) + one provider line, mirroring `isEverMidiRomHeader`
-   ([bliptoaster/romDetect.ts](../packages/retroplug/src/bliptoaster/romDetect.ts)) and `isRisaSyncRom`
-   ([risa/index.ts](../packages/retroplug/src/risa/index.ts)):
+   ([bliptoaster/romDetect.ts](../packages/bliptoaster/ts/romDetect.ts)) and `isRisaSyncRom`
+   ([risa/index.ts](../packages/risa/ts/index.ts)):
 
    ```ts
    registry.registerRomProvider((rom: RomContext): RoleInstance[] =>

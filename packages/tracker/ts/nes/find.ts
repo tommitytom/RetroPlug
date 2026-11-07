@@ -1,5 +1,5 @@
 // The marker scanner (port of risa's rom.js findMagicInRange), the NES analog of the LSDj ROM's finder in
-// packages/retroplug/src/lsdj/rom/find.ts.
+// packages/lsdj/ts/rom/find.ts.
 // risa asset tables (the theme table) aren't at a static offset: a distinctive 6-byte magic marks the
 // table head, so a bounded scan finds it without a per-version offset map.
 

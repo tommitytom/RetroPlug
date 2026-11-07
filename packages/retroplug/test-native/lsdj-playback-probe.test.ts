@@ -9,8 +9,8 @@
 //
 // Run: pnpm test:native lsdj-playback-probe
 import { test, expect, skip } from "@retroplug/testing";
-import { type SavInput } from "../src/lsdjSav";
-import { CHANNELS } from "../src/lsdj/runtime";
+import { type SavInput } from "@retroplug/lsdj";
+import { CHANNELS } from "@retroplug/lsdj/runtime";
 import { LsdjProbe, MAP_CLOCK, MAP_NOTEOFF, transitions, changeTicks, gaps, fmtSample, type ProbeSample } from "./lsdjPlaybackProbe";
 
 const pulse = { type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } } as const;

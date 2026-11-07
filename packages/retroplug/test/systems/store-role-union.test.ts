@@ -18,8 +18,8 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerLsdjAssetsRole } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 import { buildAppRegistry } from "../../src/appHost";
 import { warned } from "../_warnings";
@@ -29,7 +29,7 @@ function newStore() {
   const be = new MockBackend("/cfg");
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerLsdjAssetsRole(reg); // as buildAppRegistry does - lsdj-assets lives in its own module
   registerRomProviders(reg);
   return { be, store: new SystemsStore(be, undefined, reg) };

@@ -19,7 +19,8 @@ import { toGraphJson, type GraphDocument } from "@retroplug/core/graphDocument";
 import { canonicalJson } from "@retroplug/core/canonicalJson";
 import { buildAppRegistry } from "../../src/appHost";
 import { MidiRouting } from "@retroplug/core/midiRouting";
-import { LsdjSyncMode, type AudioRouting } from "../../src/settingsEnums";
+import { type AudioRouting } from "../../src/settingsEnums";
+import { LsdjSyncMode } from "@retroplug/lsdj/enums";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { EngineGraph } from "../../src/engineGraph";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
@@ -28,7 +29,7 @@ import { clampedInt } from "@retroplug/core/configFields";
 import type { DefinedNode } from "@retroplug/core/defineNode";
 import { ROLE_NODES, type LeftOutRole } from "../../src/graph/protocolNodes";
 import { SCRIPT_NODES_GLOBAL } from "@retroplug/core/register";
-import { lsdjSyncNode } from "../../src/script/nodes/lsdjSync";
+import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
 // The production bundle's entry point: importing it registers its node types on SCRIPT_NODES_GLOBAL, as it does in each
 // of the script host's contexts.
 import "../../src/script/bundle";

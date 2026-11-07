@@ -17,7 +17,7 @@
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFrom, type SavInput } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
 import { MemoryRegion } from "../src/backend";
 import { MODEL_VALUES } from "@retroplug/sameboy/enums";
 import { directGraph } from "../src/graph/directGraph";

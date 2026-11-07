@@ -4,27 +4,13 @@
 // imports the node modules; which type a package contributes, and where its label sits, is the manifest's statement, so
 // the bundle's order does not depend on this file's order.
 import type { DefinedNode } from "@retroplug/core/defineNode";
-import { mgbMidiNode } from "./nodes/mgbMidi";
-import { n8MidiToFifoNode } from "./nodes/n8MidiToFifo";
-import { risaSyncNode } from "./nodes/risaSync";
-import { smsSyncNode } from "./nodes/smsSync";
-import { lsdjSyncNode } from "./nodes/lsdjSync";
 import { controllerSessionNode } from "./nodes/controllerSession";
-import { lsdjSerialOutNode } from "./nodes/lsdjSerialOut";
 
-// The production script node types (spec/08-profiling.md: one span label each, 16 up, a type added goes last): a
-// protocol node for each role that has one, the control-surface session
-// (docs/modular-graph-phase-b3b-design.md section 2), and LSDj's serial-out decoder, which buildGraph places after
-// the systems (docs/lsdj-serial-out-design.md). Nothing here registers roles or imports zod: a node's settings are
-// @retroplug/core/settingsSchema's, and test/script/bundle-no-zod.test.ts holds the bundle to that.
-const shellNodes: readonly DefinedNode<any>[] = [
-  mgbMidiNode,
-  n8MidiToFifoNode,
-  risaSyncNode,
-  smsSyncNode,
-  lsdjSyncNode,
-  controllerSessionNode,
-  lsdjSerialOutNode,
-];
+// The one production script node type still the shell's (spec/08-profiling.md: one span label each, 16 up, a type
+// added goes last): the control-surface session (docs/modular-graph-phase-b3b-design.md section 2), which moves with
+// the controller in F3. Every cart's node - and the NES's, and the MIDI routing core's - is its package's protocol
+// module. Nothing here registers roles or imports zod: a node's settings are @retroplug/core/settingsSchema's, and
+// test/script/bundle-no-zod.test.ts holds the bundle to that.
+const shellNodes: readonly DefinedNode<any>[] = [controllerSessionNode];
 
 export default shellNodes;

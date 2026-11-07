@@ -1,6 +1,6 @@
 // `retroplug-cli bliptoaster-rom` — inspect, extract and edit the static assets (DPCM sample kits, the theme,
 // the CHR font) inside a BlipToaster `.nes` ROM, headlessly. The BlipToaster twin of ./risa-rom.ts (BlipToaster is
-// also NES/DMC, so it reuses the exact same risa asset codecs), backed by the pure-TS src/bliptoaster/rom
+// also NES/DMC, so it reuses the exact same risa asset codecs), backed by the pure-TS @retroplug/bliptoaster/rom
 // module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile is the
 // TypeScript kit compiler (s.audio.compileDmc - the generic DMC compiler); sample splicing re-packs existing
 // DPCM + a freshly-compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
@@ -29,7 +29,7 @@ import {
   SETTINGS_THEME_COUNT,
   SETTINGS_FONT_COUNT,
   type BlipToasterSettingsPatch,
-} from "../../src/bliptoaster/rom";
+} from "@retroplug/bliptoaster/rom";
 import {
   bankToModel,
   isBankPopulated,
@@ -46,7 +46,7 @@ import {
   KIT_SLOT_COUNT,
   CHR_BANK_SIZE,
   type AssembleSlot,
-} from "../../src/risa/rom";
+} from "@retroplug/risa/rom";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -271,7 +271,7 @@ function info(s: Session, args: string[]): void {
 
 // --- settings: print the baked block, or patch named fields into a copy -----------------------------------
 // Every field is a BOOT default the cart's own CCs still move live; the ROM clamps anything out of range back
-// to that field's power-on default, and so does the writer (src/bliptoaster/rom/settings.ts), so the value
+// to that field's power-on default, and so does the writer (@retroplug/bliptoaster/rom/settings.ts), so the value
 // printed back is always the one the cart will really boot with.
 const SETTINGS_FLAGS: Record<string, string> = {
   "--base-channel": "1-16",

@@ -11,7 +11,7 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { savFrom, type SavInput } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
 
 declare const __RESOURCES_DIR__: string;
 

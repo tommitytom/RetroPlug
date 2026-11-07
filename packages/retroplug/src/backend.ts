@@ -454,7 +454,7 @@ export interface Backend {
   unzip(bytes: Uint8Array): ZipEntry[] | null;
 
   /** Encode a raw RGBA8888 image (`width*height*4` bytes, row-major) to PNG bytes, or `null` on failure.
-   *  Backed by native lodepng; used by the LSDj font import/export (src/lsdj/rom) — the tile↔pixel
+   *  Backed by native lodepng; used by the LSDj font import/export (@retroplug/lsdj's rom) - the tile↔pixel
    *  mapping stays in TS, this is just the codec so it works from the plugin as well as the CLI. */
   pngEncode(width: number, height: number, rgba: Uint8Array): Uint8Array | null;
 
@@ -464,7 +464,7 @@ export interface Backend {
   // --- LSDj sav codec -----------------------------------------------------
 
   /** Encode an LSDj `.sav` image from a JSON `Sav` model (lenient — unset cells default). Backed by
-   *  the pure-TS codec (src/lsdj); kept on the Backend seam so the load-time seed stays one call.
+   *  the pure-TS codec (@retroplug/lsdj); kept on the Backend seam so the load-time seed stays one call.
    *  `savFromJson("{}")` yields a valid, self-test-skipping 128 KiB image (the codec always stamps the
    *  `jk` + `rb` validity markers), which is how a load-time role seeds a fresh LSDj ROM. */
   savFromJson(json: string): Uint8Array;

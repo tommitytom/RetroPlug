@@ -7,12 +7,12 @@ import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuAction, MenuItem } from "../../ui/screens/menu/menuTree";
 import { risaRom, risaRomFull, nesRom, setRisaVersionMarker } from "../systems/fixtures";
-import { RisaRom } from "../../src/risa/rom";
-import { savBytes } from "../risa/fixtures";
-import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, decodeRecord, CURRENT_LAYOUT, kSaveSize } from "../../src/risaSav";
-import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
+import { RisaRom } from "@retroplug/risa/rom";
+import { savBytes } from "@retroplug/risa/testFixtures";
+import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, decodeRecord, CURRENT_LAYOUT, kSaveSize } from "@retroplug/risa/risaSav";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "@retroplug/risa/codec/constants";
 import { risaSongCatalog } from "../../src/tracker";
-import { loadSongToWorkingInSav } from "../../src/risaSongOps";
+import { loadSongToWorkingInSav } from "@retroplug/risa/risaSongOps";
 
 // A leaf that browses (Export) fires openFileBrowser fire-and-forget; flush the microtask chain it kicks off.
 const flush = async () => {

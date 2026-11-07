@@ -1,7 +1,7 @@
 # The package split
 
-**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1 designed
-([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md)), F2 to F4 not yet designed
+**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1 designed and prototyped
+([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records the build), F2 to F4 not yet designed
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
 workspace packages would take. E1 started it (`node-sdk`, `graph-runtime`, `core`, `dsp`), E2 carved `n8`, and E4 made
@@ -17,10 +17,12 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
 ## 2. The phases
 
 - **F1: the TS package mechanism and the leaf TS moves.** A TS half for `core` and `dsp`; new packages `sameboy` and
-  `mesen` (TS only), `tracker`, `lsdj`, `mgb`, `risa`, `smsggdj`; `bliptoaster` and `n8` widened. The dependencies are
-  the packages' `package.json` dependencies, enforced in both languages. The registries that are pure data (roles, ROM
-  providers, protocol-node tables, tracker integrations, kit formats) are generated from a product's package list. No
-  behaviour changes.
+  `mesen` (TS only), `tracker`, `testing`, `lsdj`, `mgb`, `risa`, `smsggdj`; `bliptoaster` and `n8` widened. The
+  dependencies are the packages' `package.json` dependencies (what a package imports, which is less than the first design
+  guessed: no cart depends on another, nor on a console package), checked in both languages against accident and drift.
+  The registries that are pure data (roles, ROM providers, protocol-node tables, tracker integrations, kit formats) are
+  generated from a product's package list, which is both the dependency order and the registration order. No behaviour
+  changes: every baseline held unmodified.
 - **F3: the Launchpad pack.** A port, not a merge, of `feature/launchpad` (merge-base `cfeb80e00`, 2026-09-29, before the
   graph existed) into `packages/launchpad`: the controller's host half, its portable core on MicroQuickJS, its
   provider and facet, with a headless proof on the fake Launchpad and a real-device check when the user is at the desk.
@@ -42,9 +44,10 @@ per-product lists, so it is last.
 
 ## 4. Rules for every phase
 
-- **Boundaries are enforced in both languages.** A pack's TS may import only its own tree, its declared
+- **Boundaries are checked in both languages.** A pack's TS may import only its own tree, its declared
   `@retroplug/*` dependencies and its declared third-party dependencies; its native targets may link and include only its
-  declared packages. A cycle is refused. The checks are tests, not review.
+  declared packages. A cycle is refused. The checks are tests, not review, and they guard against accident and drift, not a determined author (each one's header lists what
+  it does not cover).
 - **The one-way shell rule.** `packages/retroplug` and `packages/native` are shells: they may depend on every pack, and no
   pack depends on either. What a pack needs from the shell moves down into a pack or is passed in as a registration.
 - **Each phase proves itself against the oracles that already exist** (parity, the kit and render baselines, the
@@ -58,7 +61,8 @@ Section 11 listed two backlog items that the tree no longer needs:
   (`packages/retroplug/src/kit/compile.ts`).
 - *The risa DMC codec's dependency on LSDj files*: `rp.dsp.dpcm` in `packages/dsp` includes nothing of LSDj's.
 
-What is left of the TS kit side is a coupling in the other direction (`src/kit/compile.ts` imports
-`../lsdj/rom/buildKit` and `../risa/rom/kit`), which F1 resolves with registered kit formats. Section 11 also gives
+What was left of the TS kit side was a coupling in the other direction (`src/kit/compile.ts` imported
+`../lsdj/rom/buildKit` and `../risa/rom/kit`), which F1 resolved with registered kit formats: the chain half of the driver
+is `dsp`'s, each cart's format is its package's, and the shell keeps the door. Section 11 also gives
 `menuDefs.ts` "240 cart-specific lines"; `ui/screens/menu/menuDefs.ts` is now 2532 lines with `TRACKER_UI` at line 2073, and the survey
 counted about 650 cart-specific lines in it; F4 will count them afresh.

@@ -3,6 +3,7 @@
 // a compiler takes a `KitJobRunner` (a host's offline jobs) rather than a backend, so nothing here names the shell.
 // compile.ts, which stays the shell's with the formats registered, re-exports these names.
 import type { OfflineRunRequest, OfflineRunResult } from "@retroplug/core/offlineJob";
+import type { KitEffect } from "./kitEffect";
 
 /** A compiled kit: the bank, and each spec sample's reason in spec order, null exactly when the bank holds that
  *  sample whole. A reason is a failure (the slot is empty), or why a slot that compiled is still empty or short (an
@@ -11,6 +12,17 @@ import type { OfflineRunRequest, OfflineRunResult } from "@retroplug/core/offlin
 export interface KitCompileResult {
   bytes: Uint8Array;
   errors: (string | null)[];
+}
+
+/** One source sample a format compiles: a source audio file (WAV/MP3/FLAC, decoded natively), a slot name, an optional
+ *  source-frame window, and an effect chain. The slot's own shape is the format's (`KitFormat`'s parameter), which
+ *  extends this with what its encoder takes. */
+export interface KitSampleSpec {
+  path: string;
+  name: string;
+  offset?: number;
+  length?: number;
+  effects: KitEffect[];
 }
 
 /** What the compilers run their jobs on: a backend's offline jobs (every native host has them; the mock rejects), of

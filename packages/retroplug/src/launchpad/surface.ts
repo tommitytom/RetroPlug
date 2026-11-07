@@ -1,7 +1,7 @@
 // The write side: a shadow buffer of what every LED SHOULD look like, and a flush that emits only the
 // difference from what the device was last told.
 //
-// Same shape as the LSDj HD canvas (src/lsdj/hd/canvas.ts), for the same reason. Draw calls are cheap
+// Same shape as the LSDj HD canvas (@retroplug/lsdj's hd/canvas.ts), for the same reason. Draw calls are cheap
 // writes into an array; `flush()` diffs against the last flushed frame and emits messages for the
 // changed entries alone. An app can therefore repaint the whole surface every frame in the obvious
 // declarative way, and the steady-state cost is a handful of bytes - or, when nothing moved, none at

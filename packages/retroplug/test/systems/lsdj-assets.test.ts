@@ -8,10 +8,10 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerLsdjAssetsRole } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { LsdjRom, buildKitBank, encodeLsdpal, ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
+import { LsdjRom, buildKitBank, encodeLsdpal, ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "@retroplug/lsdj/rom";
 import { gbRomBattery } from "./fixtures";
 
 // A 1 MiB image LsdjRom accepts: GB logo + battery header (classifies as GB), a version title so
@@ -36,7 +36,7 @@ function newStore() {
   const be = new MockBackend("/cfg");
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerLsdjAssetsRole(reg);
   registerRomProviders(reg);
   return { be, store: new SystemsStore(be, () => {}, reg) };

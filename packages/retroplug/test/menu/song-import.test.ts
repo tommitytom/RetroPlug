@@ -13,12 +13,12 @@ import { planImport, buildImportModal, applyImport, type PickState, type ImportP
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import type { SystemView } from "../../src/systemsStore";
-import { savFrom, injectSong, listProjects, isLsdjSav } from "../../src/lsdjSav";
-import { sameBytes } from "../_bytes";
-import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
+import { savFrom, injectSong, listProjects, isLsdjSav } from "@retroplug/lsdj";
+import { sameBytes } from "@retroplug/testing/bytes";
+import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "@retroplug/lsdj/rom";
 import { gbRomBattery, risaRom } from "../systems/fixtures";
-import { savBytes } from "../risa/fixtures";
-import { normalizeSaveContainer, listSongs, isRisaSav } from "../../src/risaSav";
+import { savBytes } from "@retroplug/risa/testFixtures";
+import { normalizeSaveContainer, listSongs, isRisaSav } from "@retroplug/risa/risaSav";
 
 const findItem = (items: MenuItem[], id: string) => items.find((i) => i.id === id);
 const noop = () => {};

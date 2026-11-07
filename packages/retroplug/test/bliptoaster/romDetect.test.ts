@@ -8,7 +8,7 @@ import {
   BLIPTOASTER_MARKER,
   BLIPTOASTER_CHIP_SCAN_LEN,
   needsChipLabelScan,
-} from "../../src/bliptoaster/romDetect";
+} from "@retroplug/bliptoaster/romDetect";
 import { buildAppRegistry } from "../../src/appHost";
 import { blipToasterRom, nesRom, garbage } from "../systems/fixtures";
 

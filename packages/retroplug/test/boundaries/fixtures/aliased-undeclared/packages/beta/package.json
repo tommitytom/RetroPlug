@@ -1,0 +1,8 @@
+{
+  "name": "@retroplug/beta",
+  "private": true,
+  "exports": "./ts/index.ts",
+  "dependencies": {
+    "ghostdep": "npm:@retroplug/ghost@1.0.0"
+  }
+}

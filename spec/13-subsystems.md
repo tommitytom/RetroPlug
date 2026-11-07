@@ -13,10 +13,10 @@ is unimportant.
 
 ## Trackers
 
-### `src/tracker/` — the common tracker interface
+### `@retroplug/tracker` - the common tracker interface
 
 The four music carts RetroPlug knows (LSDj, risa, smsggdj, BlipToaster) each have songs in a
-battery and swappable ROM assets. `src/tracker/` is the shape they share, so the menus and the
+battery and swappable ROM assets. `packages/tracker/ts/` is the shape they share, so the menus and the
 import/export paths are written once:
 
 - **`SongCatalog`** — the slots in a cart's `.sav`: list, load, import, export, reorder. Backed by a
@@ -48,9 +48,9 @@ DPCM, themes, fonts), and host sync — the cart follows the DAW **transport**, 
 the `risa-sync` role turns transport into risa's arm / start / 24-PPQN clock / stop byte stream over
 the emulated EverDrive N8 FIFO. Layout support covers risa 2.3.0.
 
-- Code: `src/risa/` (codec + ROM + runtime), `src/risaRole.ts`, `src/risaSync.ts`,
-  `src/tracker/risa*Catalog.ts`. The DMC kit encode is `rp.dsp.dpcm` in the kit chain, and the bank packer is
-  `src/risa/rom/kit.ts`; there is no native risa codec.
+- Code: `packages/risa/ts/` (codec + ROM + runtime), `risaRole.ts`, `risaSync.ts`, `risaSongCatalog.ts` and
+  `risaAssetCatalog.ts`. The DMC kit encode is `rp.dsp.dpcm` in the kit chain, and the bank packer is
+  `ts/rom/kit.ts`; there is no native risa codec.
 - **Prove a change:** `pnpm test risa` / `pnpm test:native risa`, and `pnpm reaper:risa-sync` for
   the real-DAW drift render (not in CI).
 - Deeper: [docs/risa-integration-plan.md](../docs/risa-integration-plan.md) (design rationale; the
@@ -62,7 +62,7 @@ The SMS/GG tracker, on the Mesen SMS core. Like risa it follows the DAW transpor
 `sms-sync` drives a 2-bit counter on controller port 2. The Game Gear build is the same project
 shape one layer down — it reads its EXT parallel port (`$01`/PC4-PC6) instead.
 
-- Code: `src/smsSync.ts`, `src/tracker/smsggdj*Catalog.ts`; the core is
+- Code: `packages/smsggdj/ts/smsSync.ts`, `smsggdjSongCatalog.ts` and `smsggdjAssetCatalog.ts`; the core is
   `src/system/mesen/MesenSmsSystem.*`.
 - **Prove a change:** `pnpm test:native dsp-sms-sync-drift` (measures the ROM's own row counter),
   then `pnpm reaper:sms-sync` / `reaper:gg-sync` for the real-DAW halves.
@@ -75,7 +75,7 @@ new native code — it polls `readRam` through the snapshot registry on a frame 
 copying 128 KiB and decoding a song every frame is too expensive (see the live-memory entry in
 [07-remaining-work.md](07-remaining-work.md)).
 
-- Code: `src/lsdj/hd/` (tiles, render, canvas), `ui/screens/hd/`.
+- Code: `packages/lsdj/ts/hd/` (tiles, render, canvas), `ui/screens/hd/`.
 - **Prove a change:** `pnpm test:ui lsdj-hd`, `pnpm test lsdj/hd`.
 
 ---

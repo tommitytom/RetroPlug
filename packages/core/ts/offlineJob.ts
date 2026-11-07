@@ -5,6 +5,16 @@
 // dsp's kit compilers take it
 // as what they run their chains on. Nothing here imports anything: a job is data.
 
+/** A job that failed: native's reason, and the reports of the file inputs it decoded before it stopped. It is a value
+ *  (not only a type) because a compiler catches it to say a source's failure without the job's own input numbering, so
+ *  it lives with the job shape rather than with the shell's queue. */
+export class OfflineRunError extends Error {
+  constructor(message: string, readonly inputs: OfflineInputReport[]) {
+    super(message);
+    this.name = "OfflineRunError";
+  }
+}
+
 /** How a file input's frame cap scales a frame count at a kit rate to the decoded rate: LSDj's window computes it in
  *  float with the ratio first ("float-ratio"), risa's in double with the product first ("double-scale"). */
 export type OfflineCapArithmetic = "float-ratio" | "double-scale";

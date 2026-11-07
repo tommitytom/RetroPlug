@@ -20,8 +20,8 @@ import { createRealBackend } from "../src/realBackend";
 import { makeCall } from "../src/rpcClient";
 import { compileKit, type KitCompileResult } from "../src/kit";
 import { encodeWav } from "../cli/wav";
-import { KitView } from "../src/lsdj/rom/kit";
-import { BANK_SIZE, KIT_LOOKUP, ROM_SIZE } from "../src/lsdj/rom/constants";
+import { KitView } from "@retroplug/lsdj/rom/kit";
+import { BANK_SIZE, KIT_LOOKUP, ROM_SIZE } from "@retroplug/lsdj/rom/constants";
 
 test("the plugin's facet set compiles a kit, with no harness facet bound", async () => {
   expect(ui.boot()).toBeTruthy();

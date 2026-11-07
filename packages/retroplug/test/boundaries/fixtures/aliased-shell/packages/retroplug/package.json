@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/retroplug",
+  "private": true,
+  "exports": "./ts/index.ts"
+}

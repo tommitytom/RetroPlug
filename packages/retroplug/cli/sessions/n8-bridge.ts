@@ -9,7 +9,7 @@ import type { Session } from "../session";
 import { keepAlive, exitProcess } from "../session";
 import { createMidiClient } from "../../src/realBackend";
 import { makeCall } from "../../src/rpcClient";
-import { RisaSyncTranslator } from "../../src/risaSyncTranslator";
+import { RisaSyncTranslator } from "@retroplug/risa/risaSyncTranslator";
 import { createN8Client, type N8Port } from "@retroplug/n8";
 
 // txiki provides this libuv-backed global at runtime (deps/.../txiki timers); the TS lib config omits it.

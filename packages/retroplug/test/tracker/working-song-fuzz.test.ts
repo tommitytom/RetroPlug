@@ -28,8 +28,8 @@ import { ProjectStore } from "../../src/projectStore";
 import { buildAppRegistry } from "../../src/appHost";
 import { hasUnsavedChanges, unsavedChanges } from "../../src/unsavedChanges";
 import { saveWorkingSong, savEditWouldDiscard, songLoadWouldDiscard, mutateLiveSav } from "../../src/tracker/liveSav";
-import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
-import { resolveSmsggdjLayout, commonConfigOffsets } from "../../src/smsggdj/runtime/layout";
+import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
+import { resolveSmsggdjLayout, commonConfigOffsets } from "@retroplug/smsggdj/runtime/layout";
 import {
   addSong,
   buildSav,
@@ -44,7 +44,7 @@ import {
   unwrapSong,
   wrapSong,
   SMDJ4_BLOCK_LEN,
-} from "../../src/smsggdj/codec/sav";
+} from "@retroplug/smsggdj/codec/sav";
 import type { WorkingSongImage } from "@retroplug/tracker/songCatalog";
 import { decodeWorkingSong } from "@retroplug/tracker/workingSongBlob";
 import { smsggdjRom, smsggdjRam } from "../systems/fixtures";

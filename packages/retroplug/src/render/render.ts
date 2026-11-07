@@ -16,13 +16,13 @@
 import { createWavWriter, type WavWriter } from "./wav";
 import { extensionLower, basename, dirname, stem, joinPath, uniqueBase } from "../pathUtil";
 import { siblingSavPath } from "../savPaths";
-import { decodeSav, encodeSav, kSavSize } from "../lsdj";
-import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
-import { loadSongToWorkingInSav } from "../risaSongOps";
-import { listSongs as smsggdjListSongs, isSmsggdjSav } from "../smsggdj/codec/sav";
-import { identifySmsggdjVersion } from "../smsggdj/romDetect";
-import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
-import { isRisaRomHeader, runtime as risaRuntime } from "../risa";
+import { decodeSav, encodeSav, kSavSize } from "@retroplug/lsdj";
+import { listSongs as risaListSongs, type RisaSongInfo } from "@retroplug/risa/risaSav";
+import { loadSongToWorkingInSav } from "@retroplug/risa/risaSongOps";
+import { listSongs as smsggdjListSongs, isSmsggdjSav } from "@retroplug/smsggdj/codec/sav";
+import { identifySmsggdjVersion } from "@retroplug/smsggdj/romDetect";
+import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
+import { isRisaRomHeader, runtime as risaRuntime } from "@retroplug/risa";
 import { lsdjSongCatalog, risaSongCatalog, smsggdjSongCatalog } from "../tracker";
 import { smsggdjIntegration } from "../trackerRegistry"; // the shell registry: an integration is its package's app contribution
 import type { ChannelExportMode } from "@retroplug/mesen/enums";
@@ -38,7 +38,7 @@ import {
 } from "./types";
 // Re-exported as well as used: this module used to declare its own copy, spelled in literals
 // (0x20000 / 0x813e) where the codec spells it in named constants, and that copy has importers.
-import { isLsdjSav } from "../lsdj";
+import { isLsdjSav } from "@retroplug/lsdj";
 export { isLsdjSav };
 
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
@@ -224,7 +224,7 @@ export function readSmsggdjSongs(ctx: RenderContext, o: RenderOpts): { path: str
 
 /** smsggdj: unlike LSDj and risa, the seed does NOT move the song anywhere. This cart's working song is
  *  work RAM and it boots blank on purpose, so the save NAMES the slot and the cart loads it on the way
- *  up - the same mechanism the Songs menu uses. See src/tracker/smsggdjSongCatalog. */
+ *  up - the same mechanism the Songs menu uses. See packages/smsggdj/ts/smsggdjSongCatalog. */
 // --- smsggdj (SMS / GG) song selection --------------------------------------------------------------
 //
 // Unlike LSDj and risa this CANNOT be a seed. Those two keep the working song in the battery, so writing

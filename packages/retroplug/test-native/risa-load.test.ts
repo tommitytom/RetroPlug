@@ -9,9 +9,9 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { loadSongToWorkingInSav } from "../src/risaSongOps";
-import { listSongs, decodeSongName, expandRecordToWorking, recordBytesAt, normalizeSaveContainer, CURRENT_LAYOUT } from "../src/risaSav";
-import { savBytes } from "../test/risa/fixtures";
+import { loadSongToWorkingInSav } from "@retroplug/risa/risaSongOps";
+import { listSongs, decodeSongName, expandRecordToWorking, recordBytesAt, normalizeSaveContainer, CURRENT_LAYOUT } from "@retroplug/risa/risaSav";
+import { savBytes } from "@retroplug/risa/testFixtures";
 
 declare const __RISA_SRC__: string;
 const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";

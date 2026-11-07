@@ -1,0 +1,93 @@
+{
+  "name": "@retroplug/lsdj",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "LSDj's half of the app: the .sav/.lsdsng/.lsdprj codecs and the live/codec model they carry, the ROM asset codec (kits, palettes, fonts), the runtime layout reader and drift detector, the playback predictor, the HD screen model, the lsdj-sync and lsdj-assets roles, its Songs/Assets tracker integration, its kit bank format, its ROM provider, and the rp.lsdj.sync (span label 21) and rp.lsdj.serial-out (23) protocol nodes with the Arduinoboy/kernel-message helpers they read.",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./app": "./ts/app.ts",
+    "./codec/bits": "./ts/codec/bits.ts",
+    "./codec/lsdprj": "./ts/codec/lsdprj.ts",
+    "./codec/lsdsng": "./ts/codec/lsdsng.ts",
+    "./codec/regions": "./ts/codec/regions.ts",
+    "./codec/rle": "./ts/codec/rle.ts",
+    "./codec/sav": "./ts/codec/sav.ts",
+    "./codec/song": "./ts/codec/song.ts",
+    "./enums": "./ts/enums.ts",
+    "./testFixtures": "./ts/fixtures.ts",
+    "./hd": "./ts/hd/index.ts",
+    "./hd/canvas": "./ts/hd/canvas.ts",
+    "./hd/render": "./ts/hd/render.ts",
+    "./hd/tiles": "./ts/hd/tiles.ts",
+    "./kitFormat": "./ts/kitFormat.ts",
+    "./lsdjArduinoboy": "./ts/lsdjArduinoboy.ts",
+    "./lsdjAssetCatalog": "./ts/lsdjAssetCatalog.ts",
+    "./lsdjAssetsRole": "./ts/lsdjAssetsRole.ts",
+    "./lsdjIntegration": "./ts/lsdjIntegration.ts",
+    "./lsdjKeyboardMap": "./ts/lsdjKeyboardMap.ts",
+    "./lsdjLsdprjImport": "./ts/lsdjLsdprjImport.ts",
+    "./lsdjSerialOutNode": "./ts/lsdjSerialOutNode.ts",
+    "./lsdjSongCatalog": "./ts/lsdjSongCatalog.ts",
+    "./lsdjSongOps": "./ts/lsdjSongOps.ts",
+    "./lsdjSyncBytes": "./ts/lsdjSyncBytes.ts",
+    "./lsdjSyncNode": "./ts/lsdjSyncNode.ts",
+    "./lsdjSyncSettings": "./ts/lsdjSyncSettings.ts",
+    "./model": "./ts/model.ts",
+    "./playback": "./ts/playback/index.ts",
+    "./playback/anchor": "./ts/playback/anchor.ts",
+    "./playback/fromSav": "./ts/playback/fromSav.ts",
+    "./playback/observe": "./ts/playback/observe.ts",
+    "./playback/predict": "./ts/playback/predict.ts",
+    "./protocol": "./ts/protocol.ts",
+    "./rom": "./ts/rom/index.ts",
+    "./rom/buildKit": "./ts/rom/buildKit.ts",
+    "./rom/constants": "./ts/rom/constants.ts",
+    "./rom/find": "./ts/rom/find.ts",
+    "./rom/font": "./ts/rom/font.ts",
+    "./rom/kit": "./ts/rom/kit.ts",
+    "./rom/names": "./ts/rom/names.ts",
+    "./rom/palette": "./ts/rom/palette.ts",
+    "./rom/rom": "./ts/rom/rom.ts",
+    "./rom/types": "./ts/rom/types.ts",
+    "./romProvider": "./ts/romProvider.ts",
+    "./runtime": "./ts/runtime/index.ts",
+    "./runtime/detect": "./ts/runtime/detect.ts",
+    "./runtime/driftLayouts.generated": "./ts/runtime/driftLayouts.generated.ts",
+    "./runtime/driftShifts.generated": "./ts/runtime/driftShifts.generated.ts",
+    "./runtime/identify": "./ts/runtime/identify.ts",
+    "./runtime/layout": "./ts/runtime/layout.ts",
+    "./runtime/legacyOffsets.generated": "./ts/runtime/legacyOffsets.generated.ts",
+    "./runtime/offsets": "./ts/runtime/offsets.ts",
+    "./runtime/reader": "./ts/runtime/reader.ts",
+    "./runtime/types": "./ts/runtime/types.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/dsp": "workspace:*",
+    "@retroplug/sameboy": "workspace:*",
+    "@retroplug/tracker": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "ts/app.ts",
+    "protocol": {
+      "module": "ts/protocol.ts",
+      "nodes": [
+        {
+          "type": "rp.lsdj.sync", "label": 21, "midiIn": "midi", "writes": ["serialIn", "buttons"], "launches": true,
+          "out": "rp.lsdj.serial-out"
+        },
+        { "type": "rp.lsdj.serial-out", "label": 23, "midiIn": null, "writes": [], "serialOut": true, "midiOut": true }
+      ],
+      "roles": { "lsdj-sync": "rp.lsdj.sync" }
+    }
+  }
+}

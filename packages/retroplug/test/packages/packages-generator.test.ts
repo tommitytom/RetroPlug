@@ -12,6 +12,8 @@
 //   contribution its exports do not publish, a manifest whose name is not its directory's, a contribution outside ts/
 //   and a contributing package the shell does not declare. A dependency that contributes nothing, and one whose
 //   manifest has no retroplug member, are left out of the ordering rather than refused;
+// - the generated module itself refuses a duplicate key in the lists the registries look up rather than sequence: a
+//   role kind, a kit format's id and a tracker integration's marker role, each with its own message;
 // - an unchanged input leaves the generated files untouched, mtime and all, so a build that changes nothing rewrites
 //   nothing.
 //
@@ -200,6 +202,29 @@ test("a role kind two packages declare is refused, naming both", async () => {
   const { error } = await drive("duplicate-role");
   console.log(`# duplicate role kind: ${error}`);
   expect(error).toBe("two packages declare the role kind alpha-midi: alpha and retroplug");
+});
+
+test("the generated module refuses two roles of one kind", async () => {
+  // The registry holds roles in a Map keyed by kind, so the second would replace the first without a word: the kind is
+  // looked up, never sequenced, which is why a duplicate - not the order - is what the generated module checks.
+  const { error } = await drive("duplicate-role-kind");
+  console.log(`# duplicate role kind (app lists): ${error}`);
+  expect(error).toBe("the app's roles declare the role kind shared-role twice");
+});
+
+test("the generated module refuses two kit formats of one id", async () => {
+  // The audio driver dispatches a kit by its format's id, so a second format of one id could never be reached.
+  const { error } = await drive("duplicate-kit-format");
+  console.log(`# duplicate kit id: ${error}`);
+  expect(error).toBe("the app's kit formats declare the id shared-kit twice");
+});
+
+test("the generated module refuses two tracker integrations of one marker role", async () => {
+  // resolveTracker takes the first integration whose marker a system has, and the markers are exclusive by design, so
+  // a duplicate would leave the second unreachable.
+  const { error } = await drive("duplicate-marker-role");
+  console.log(`# duplicate marker role: ${error}`);
+  expect(error).toBe("the app's tracker integrations declare the marker role shared-marker twice");
 });
 
 test("a gap in the span labels is refused, naming the missing label", async () => {

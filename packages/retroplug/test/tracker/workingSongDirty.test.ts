@@ -8,12 +8,12 @@
 // test-native/tracker-working-dirty.test.ts.
 import { test, expect } from "@retroplug/testing";
 import { lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
-import { savBytes as lsdjSav } from "../lsdj/fixtures";
-import { savBytes as risaSav } from "../risa/fixtures";
-import { loadSongToWorking } from "../../src/lsdj/codec/sav";
-import { loadSongToWorkingInSav, workingSongSlot } from "../../src/risaSongOps";
-import { normalizeSaveContainer } from "../../src/risaSav";
-import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
+import { savBytes as lsdjSav } from "@retroplug/lsdj/testFixtures";
+import { savBytes as risaSav } from "@retroplug/risa/testFixtures";
+import { loadSongToWorking } from "@retroplug/lsdj/codec/sav";
+import { loadSongToWorkingInSav, workingSongSlot } from "@retroplug/risa/risaSongOps";
+import { normalizeSaveContainer } from "@retroplug/risa/risaSav";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "@retroplug/risa/codec/constants";
 
 const LSDJ_KEYS = ["all", "happy_birthday", "lsdj499", "lsdj620", "lsdj668", "lsdj671", "lsdj690", "lsdj732", "lsdj790", "lsdj798", "lsdj834", "lsdj888"];
 

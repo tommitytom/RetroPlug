@@ -5,13 +5,12 @@
 // where the graph needs the mode as a number (exportModeOf).
 //
 // A console's or a cart's enum lives with its owner, and this file re-exports none of them: the SameBoy ones are
-// @retroplug/sameboy's, the Mesen ones @retroplug/mesen's, MIDI routing's are @retroplug/core's, and a reader names the
-// package for each. What is left here is the app's own: layout, audio routing, the controller's launch target, and the
-// cart enums whose owner package does not exist yet - LSDj's and risa's live here because the shells' src/lsdj and
-// src/risa still own those cores' settings.
+// @retroplug/sameboy's, the Mesen ones @retroplug/mesen's, the LSDj ones @retroplug/lsdj's, MIDI routing's are
+// @retroplug/core's, and a reader names the package for each. What is left here is the app's own: layout, audio
+// routing and the controller's launch target (CONTROLLER_TARGET_VALUES stays with the controller until F3).
 //
-// So the file imports nothing and is imported by the schema, the domain modules (layout, dspRoles), the stores, the
-// menu and the project migration.
+// So the file imports nothing and is imported by the schema, the domain modules (layout), the stores, the menu and the
+// project migration.
 
 // --- project-level settings ------------------------------------------------
 
@@ -50,30 +49,3 @@ export const AUDIO_ROUTING_VALUES = [
 ] as const;
 export type AudioRouting = (typeof AUDIO_ROUTING_VALUES)[number];
 
-// --- per-system role enums -------------------------------------------------
-
-// LSDj sync mode (LsdjSyncMode 0..8). The lsdj-sync DSP role switches on these members, and the
-// serial-out capture gate / host-sync latency compare against MidiOut/MasterSync/MidiSync/…
-export const LSDJ_MODE_VALUES = [
-  "off",
-  "midiSync",
-  "midiSyncArduinoboy",
-  "midiMap",
-  "keyboard",
-  "keyboardMidi",
-  "midiPassthrough",
-  "midiOut",
-  "masterSync",
-] as const;
-export type LsdjSyncMode = (typeof LSDJ_MODE_VALUES)[number];
-export const LsdjSyncMode = {
-  Off: "off",
-  MidiSync: "midiSync",
-  MidiSyncArduinoboy: "midiSyncArduinoboy",
-  MidiMap: "midiMap",
-  Keyboard: "keyboard",
-  KeyboardMidi: "keyboardMidi",
-  MidiPassthrough: "midiPassthrough",
-  MidiOut: "midiOut",
-  MasterSync: "masterSync",
-} as const satisfies Record<string, LsdjSyncMode>;

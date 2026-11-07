@@ -27,9 +27,9 @@ import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { smsggdjIntegration } from "../src/trackerRegistry";
-import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
-import { identifySmsggdjVersion } from "../src/smsggdj/romDetect";
-import { buildSav, SMDJ4_BLOCK_LEN, songLengthRows } from "../src/smsggdj/codec/sav";
+import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
+import { identifySmsggdjVersion } from "@retroplug/smsggdj/romDetect";
+import { buildSav, SMDJ4_BLOCK_LEN, songLengthRows } from "@retroplug/smsggdj/codec/sav";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF, P_SONG } from "./smsSyncSong";
 import { directGraph } from "../src/graph/directGraph";
 

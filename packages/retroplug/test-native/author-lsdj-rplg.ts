@@ -14,8 +14,8 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { savFrom, type SavInput, type SongSettings } from "../src/lsdjSav";
-import type { LsdjSyncMode } from "../src/settingsEnums";
+import { savFrom, type SavInput, type SongSettings } from "@retroplug/lsdj";
+import type { LsdjSyncMode } from "@retroplug/lsdj/enums";
 
 declare const __SCENARIO__: string;
 declare const __LSDJ_ROM__: string;

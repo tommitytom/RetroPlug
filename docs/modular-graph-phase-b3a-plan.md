@@ -22317,7 +22317,7 @@ Before B3b starts, the LSDj master-sync fix lands on its own (§10).
   capture was armed. The flip deleted the gather in the same change, and a plan with no `rp.host.midi-in` (or
   `controller-in`) now drops what was staged at the block's end rather than letting it grow.
 - **LSDj master sync's stopped-LSDj detector depends on the block size.** `arduinoboyMasterSyncBlock`
-  ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) calls a block holding more than 16 serial-out
+  ([lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)) calls a block holding more than 16 serial-out
   bytes (`MASTER_SYNC_IDLE_FLOOD`) the stopped LSDj's idle flood. A stopped LSDj sends a few thousand bytes a second,
   so no block of fewer than about 150 frames at 44.1 kHz ever holds 16, and the handshake decodes as clocks: 10497
   MIDI messages in 1-frame blocks against 101 in 1024-frame ones; and at a fast tempo an 8192-frame block can pass 16
@@ -24352,7 +24352,7 @@ index f5f5d80c..dd343297 100644
 +
 +- **The master-sync fix, before B3b.** The eighth recorded defect of design section 2.5 of
 +  [modular-graph-phase-b0-design.md](../docs/modular-graph-phase-b0-design.md): LSDj master sync's decoder
-+  ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts), `arduinoboyMasterSyncBlock`) calls a
++  ([lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts), `arduinoboyMasterSyncBlock`) calls a
 +  block carrying more than `MASTER_SYNC_IDLE_FLOOD` (16) serial-out bytes a stopped LSDj's idle flood, so
 +  what it decodes depends on the host block's length: in small blocks a stopped LSDj's flood reads as
 +  clocks, and a fast tempo in long blocks could pass 16 and read as stopped. The fix needs a window across

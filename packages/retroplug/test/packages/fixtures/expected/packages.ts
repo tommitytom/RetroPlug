@@ -13,26 +13,42 @@ import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
 
-/** The app's roles, in product order: the role contract's objects, which the registry holds. */
+/** The app's roles, in product order: the role contract's objects, which the registry holds by kind. */
 export const ROLES: readonly RoleType[] = [
   ...(app_alpha.roles ?? []),
   ...(app_beta.roles ?? []),
   ...(app_retroplug.roles ?? []),
 ];
+const roleKinds = new Set<string>();
+for (const role of ROLES) {
+  if (roleKinds.has(role.kind)) {
+    throw new Error(`the app's roles declare the role kind ${role.kind} twice`);
+  }
+  roleKinds.add(role.kind);
+}
 
-/** The ROM providers, in product order: a ROM's feature roles are attached by the first matches' order. */
+/** The ROM providers, in product order: the first to match a ROM fixes its feature roles' order, so this list's
+ *  order is behaviour. */
 export const ROM_PROVIDERS: readonly RomProvider[] = [
   ...(app_alpha.romProviders ?? []),
   ...(app_beta.romProviders ?? []),
   ...(app_retroplug.romProviders ?? []),
 ];
 
-/** The tracker integrations, in product order: a system takes the first whose markerRole it has. */
+/** The tracker integrations, in product order: a system takes the first whose markerRole it has, and the marker
+ *  roles are exclusive, so a duplicate is the hazard, not the order. */
 export const TRACKER_INTEGRATIONS: readonly TrackerIntegration[] = [
   ...(app_alpha.trackerIntegrations ?? []),
   ...(app_beta.trackerIntegrations ?? []),
   ...(app_retroplug.trackerIntegrations ?? []),
 ];
+const markerRoles = new Set<string>();
+for (const integration of TRACKER_INTEGRATIONS) {
+  if (markerRoles.has(integration.markerRole)) {
+    throw new Error(`the app's tracker integrations declare the marker role ${integration.markerRole} twice`);
+  }
+  markerRoles.add(integration.markerRole);
+}
 
 /** The kit bank formats, by the id the audio driver dispatches with. */
 export const KIT_FORMATS: readonly KitFormat<any>[] = [
@@ -40,3 +56,10 @@ export const KIT_FORMATS: readonly KitFormat<any>[] = [
   ...(app_beta.kitFormats ?? []),
   ...(app_retroplug.kitFormats ?? []),
 ];
+const kitIds = new Set<string>();
+for (const format of KIT_FORMATS) {
+  if (kitIds.has(format.id)) {
+    throw new Error(`the app's kit formats declare the id ${format.id} twice`);
+  }
+  kitIds.add(format.id);
+}

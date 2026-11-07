@@ -4,7 +4,7 @@
 import type { ParityCase } from "./group";
 import { even, type Rig, type Segment } from "./rig";
 import { frames, type Blocks } from "./scenes";
-import { savFrom, type SavInput, type SongSettings } from "../../src/lsdjSav";
+import { savFrom, type SavInput, type SongSettings } from "@retroplug/lsdj";
 
 export const SR = 48000;
 export const blocks = (n: number) => even(n, 512);

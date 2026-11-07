@@ -7,12 +7,12 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerLsdjAssetsRole } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { savFrom, injectSong, decompressSlot, listProjects, encodeLsdsngRaw, loadSongToWorking, savSongVersion } from "../../src/lsdjSav";
-import { deleteSongInSav, addLsdsngToSav, replaceSongInSav, importAllSongsFromSav, moveSongInSav } from "../../src/lsdjSongOps";
-import { deepEqual } from "../lsdj/_assert";
+import { savFrom, injectSong, decompressSlot, listProjects, encodeLsdsngRaw, loadSongToWorking, savSongVersion } from "@retroplug/lsdj";
+import { deleteSongInSav, addLsdsngToSav, replaceSongInSav, importAllSongsFromSav, moveSongInSav } from "@retroplug/lsdj/lsdjSongOps";
+import { deepEqual } from "@retroplug/testing/deepEqual";
 import { gbRomBattery } from "./fixtures";
 
 // A valid 0x8000 song with a sentinel byte poked into a region the Song MODEL drops (first no-template diff
@@ -113,7 +113,7 @@ function newStore() {
   const be = new MockBackend("/cfg");
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerLsdjAssetsRole(reg);
   registerRomProviders(reg);
   return { be, store: new SystemsStore(be, () => {}, reg) };

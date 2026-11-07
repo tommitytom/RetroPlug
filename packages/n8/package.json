@@ -6,16 +6,29 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "The Everdrive N8 Pro: the rp.n8.nes node type, the Edio protocol, the cart's link and the desktop's serial host around it.",
-  "exports": "./ts/index.ts",
+  "description": "The Everdrive N8 Pro: the rp.n8.nes node type, the Edio protocol, the cart's link and the desktop's serial host around it, plus the NES host-MIDI half of the app - the nes-n8-midi role, the ROM provider that attaches it to every NES, and the rp.n8.midi-to-fifo node (span label 18) that runs it on the audio thread.",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./app": "./ts/app.ts",
+    "./n8MidiToFifoNode": "./ts/n8MidiToFifoNode.ts",
+    "./protocol": "./ts/protocol.ts"
+  },
   "dependencies": {
-    "@retroplug/node-sdk": "workspace:*"
+    "@retroplug/core": "workspace:*",
+    "@retroplug/node-sdk": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
     "@retroplug/testing": "workspace:*"
   },
   "retroplug": {
+    "app": "ts/app.ts",
+    "protocol": {
+      "module": "ts/protocol.ts",
+      "nodes": [{ "type": "rp.n8.midi-to-fifo", "label": 18, "midiIn": "midiIn", "writes": ["midi"] }],
+      "roles": { "nes-n8-midi": "rp.n8.midi-to-fifo" }
+    },
     "native": [
       { "target": "retroplug-n8", "entry": "rp_n8_package", "device": true },
       {

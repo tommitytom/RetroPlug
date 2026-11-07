@@ -31,7 +31,7 @@ import {
   type ParamRange,
 } from "@retroplug/dsp/chain";
 import { compileDmc, compileKit, type KitJobRunner } from "../../src/kit";
-import { buildKitBank } from "../../src/lsdj/rom/buildKit";
+import { buildKitBank } from "@retroplug/lsdj/rom/buildKit";
 import { assembleKitBank } from "@retroplug/tracker/nes/kitBank";
 import type { KitEffect, KitSampleSpec } from "../../src/audioDriver";
 import { OfflineRunError, type OfflineRunRequest, type OfflineRunResult } from "../../src/offline";

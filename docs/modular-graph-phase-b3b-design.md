@@ -308,7 +308,7 @@ the limitation it found".
 - **The `midi-routing` and `launchpad` roles are gone, and with them `RoleType`'s `dsp` and `scope` and
   `isSystemStage`.** Only the kernel read them as roles: the MIDI routing and the controller are project settings, which
   `kernelProjection` synthesized into those roles and `buildGraph` now places as nodes, so nothing persisted names
-  them. [dspRoles.ts](../packages/retroplug/src/dspRoles.ts) keeps the five roles that have a protocol node, each its
+  them. [dspRoles.ts](../packages/lsdj/ts/app.ts) keeps the five roles that have a protocol node, each its
   kind, its zod config schema and, for LSDj, the empty-sav seed hook; `registerDspRoles` keeps its name, since what it
   registers are still the roles whose work is the audio thread's.
 - **`DirectGraph`'s `setProjectStages` became `setMidiRouting` and `setController`.** The flip mapped it onto the new

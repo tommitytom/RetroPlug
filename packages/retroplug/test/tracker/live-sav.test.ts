@@ -7,11 +7,11 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";
 import { mutateLiveSav, loadSongByName, loadSongInPrimary, lsdjSongCatalog, songLoadWouldDiscard, songLoadByNameWouldDiscard, savEditWouldDiscard, loadSongLive, workingSongReady } from "../../src/tracker";
-import { buildSav, SMDJ4_BLOCK_LEN } from "../../src/smsggdj/codec/sav";
-import { resolveSmsggdjLayout } from "../../src/smsggdj/runtime/layout";
-import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
+import { buildSav, SMDJ4_BLOCK_LEN } from "@retroplug/smsggdj/codec/sav";
+import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
+import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
 import { lsdjRom, gbRomBattery, smsggdjRom, smsggdjRam } from "../systems/fixtures";
-import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
+import { savFrom, loadSongToWorking, type SavInput } from "@retroplug/lsdj";
 
 const SONG = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
 

@@ -1,7 +1,7 @@
 // risa ROM detection (M2 UI plumbing): the iNES-header fingerprint + the provider that attaches the
 // `risa` marker role. Pure-TS (no core) — mirrors how the LSDj provider is exercised via the registry.
 import { test, expect } from "@retroplug/testing";
-import { isRisaRomHeader, isRisaSyncRom, risaMarkerVersion } from "../../src/risa";
+import { isRisaRomHeader, isRisaSyncRom, risaMarkerVersion } from "@retroplug/risa";
 import { buildAppRegistry } from "../../src/appHost";
 
 // The real risa 2.2.1 iNES 2.0 header (bytes 0..15): NES2.0, mapper 5, battery, 512KB PRG, 32KB CHR,

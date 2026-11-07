@@ -2,13 +2,13 @@
 // and the version gate that stops a build which cannot honour it from showing a dead menu.
 import { test, expect } from "@retroplug/testing";
 import { resolveSongCatalog, resolveTracker } from "../../src/trackerRegistry";
-import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
-import { lsdjSongCatalog } from "../../src/tracker/lsdjSongCatalog";
-import { risaSongCatalog } from "../../src/tracker/risaSongCatalog";
+import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
+import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
+import { risaSongCatalog } from "@retroplug/risa/risaSongCatalog";
 import { smsggdjIntegration } from "../../src/trackerRegistry";
-import { buildSav, curSlot, SMDJ4_BLOCK_LEN, songLengthRows, sanitizeEcho, isGrooveEmpty, GLIDE_GROOVE_SEL } from "../../src/smsggdj/codec/sav";
-import { resolveSmsggdjLayout, supportedSmsggdjVersions, commonBootedOffset } from "../../src/smsggdj/runtime/layout";
-import { identifySmsggdjVersion } from "../../src/smsggdj/romDetect";
+import { buildSav, curSlot, SMDJ4_BLOCK_LEN, songLengthRows, sanitizeEcho, isGrooveEmpty, GLIDE_GROOVE_SEL } from "@retroplug/smsggdj/codec/sav";
+import { resolveSmsggdjLayout, supportedSmsggdjVersions, commonBootedOffset } from "@retroplug/smsggdj/runtime/layout";
+import { identifySmsggdjVersion } from "@retroplug/smsggdj/romDetect";
 import { smsggdjRom as rom, smsggdjRam } from "../systems/fixtures";
 
 const CART = 32 * 1024;

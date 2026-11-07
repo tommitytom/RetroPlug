@@ -2,7 +2,7 @@
 // detectPlatform, so a fixture only needs the right magic at the right offset.
 // (Not a *.test.ts, so the runner ignores it; imported by the store tests.)
 
-import { resolveSmsggdjLayout } from "../../src/smsggdj/runtime/layout";
+import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
 
 const GB_LOGO = [
   0xce, 0xed, 0x66, 0x66, 0xcc, 0x0d, 0x00, 0x0b, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0c, 0x00, 0x0d,
@@ -77,212 +77,19 @@ export function nesRomBattery(): Uint8Array {
   return b;
 }
 
-/** A minimal ROM carrying the real risa 2.2.1 iNES 2.0 header fingerprint (NES 2.0, mapper 5 / MMC5,
- *  battery, 512 KB PRG, 32 KB CHR, 64 KB PRG-NVRAM) so the risa ROM provider attaches the `risa` role.
- *  Detection reads only the header; the body is padding (the mock ignores it). */
-export function risaRom(): Uint8Array {
-  const b = new Uint8Array(0x200); // >= ROLE_HEADER_LEN so the provider sees a full header prefix
-  b.set([0x4e, 0x45, 0x53, 0x1a, 0x20, 0x04, 0x53, 0x08, 0x00, 0x00, 0xa0], 0);
-  setRisaVersionMarker(b, "2.2.1"); // a supported version, so the tracker submenu is live (not greyed out)
-  return b;
-}
+// The risa ROM fixtures are @retroplug/risa's (a synthetic risa image is that cart's own knowledge: its theme table,
+// kit bank and version marker), re-exported here so this tree's store, menu and registry tests keep one import.
+export { risaRom, risaRomFull, setRisaVersionMarker } from "@retroplug/risa/testFixtures";
 
-/** Write the ASCII "RISA V<version>" marker identifyRisaVersion() scans for, at a fixed PRG offset (0x20,
- *  clear of the iNES header). Lets a synthetic fixture pose as a specific risa app version. */
-export function setRisaVersionMarker(rom: Uint8Array, version: string): void {
-  const s = `RISA V${version}`;
-  for (let i = 0; i < s.length; i++) rom[0x20 + i] = s.charCodeAt(i);
-}
-
-/** A full-size synthetic risa ROM (16 + 512 KB PRG + 32 KB CHR = 0x88010) carrying a THEME_META_MAGIC
- *  theme table (16 distinct themes) in the fixed bank + a distinct CHR region per font slot. Enough for
- *  RisaRom.isRisa + theme/font read/patch (the on-ROM asset layer); the PRG body is otherwise zeros. */
-export function risaRomFull(): Uint8Array {
-  const PRG = 0x80000; // 32 × 16 KB
-  const CHR = 0x8000; // 4 × 8 KB
-  const rom = new Uint8Array(0x10 + PRG + CHR);
-  rom.set([0x4e, 0x45, 0x53, 0x1a, 0x20, 0x04, 0x53, 0x08, 0x00, 0x00, 0xa0], 0);
-  setRisaVersionMarker(rom, "2.2.1"); // a supported version → the tracker submenu is live
-
-  // Theme table at the fixed bank (lastPrgBank 63): magic + 16×7 records + 16×4 names.
-  const fixedOffset = 0x10 + 63 * 0x2000;
-  rom.set([0xa5, 0x5a, 0x54, 0x48, 0x4d, 0x45], fixedOffset);
-  const recordBase = fixedOffset + 6;
-  const namesOff = recordBase + 16 * 7;
-  for (let i = 0; i < 16; i++) {
-    for (let r = 0; r < 7; r++) rom[recordBase + i * 7 + r] = (i * 7 + r) & 0x3f; // distinct role indices
-    const nm = `TH${i.toString(16).toUpperCase()}`.slice(0, 4);
-    for (let c = 0; c < 4; c++) rom[namesOff + i * 4 + c] = c < nm.length ? nm.charCodeAt(c) : 0x20; // space-padded
-  }
-
-  // CHR: 4 × 8 KB slots, each filled with a slot-distinct pattern.
-  const chrOffset = 0x10 + PRG;
-  for (let s = 0; s < 4; s++)
-    for (let b = 0; b < 0x2000; b++) rom[chrOffset + s * 0x2000 + b] = (s * 13 + b) & 0xff;
-
-  // Kit region: banks 31..62 (kitOffset 0x3E010). One populated kit in slot 0 ("TEST" with a "KIK" sample),
-  // the other 15 index entries marked empty (0xFF). All 32 banks are otherwise zero (unpopulated).
-  const kitOffset = 0x10 + 31 * 0x2000;
-  rom[kitOffset + 0] = 0xff; // slot-0 DPCM data (1 byte)
-  rom.fill(0x20, kitOffset + 0x1ed0, kitOffset + 0x1ed0 + 16 * 3); // sample-names region = spaces
-  for (const [i, c] of Array.from("TEST").entries()) rom[kitOffset + 0x1ec0 + i] = c.charCodeAt(0); // kit name
-  for (const [i, c] of Array.from("KIK").entries()) rom[kitOffset + 0x1ed0 + i] = c.charCodeAt(0); // sample 0 name
-  rom.set([0, 0, 12, 0], kitOffset + 0x1f00); // index[0] = [addr 0, lenReg 0, rate 12, flags 0]
-  for (let slot = 1; slot < 16; slot++) rom[kitOffset + 0x1f00 + slot * 4] = 0xff; // empty index entries
-  rom[kitOffset + 0x1f40] = 0xa5; // populated magic
-
-  // Kit-metadata mirror, placed at 0x30000 — PAST both hint offsets (0x20010, 0x10010) so the locator's
-  // bounded scan is exercised (as in real risa 2.2.1). Magic + kit_names[32][16] + kit_sample_names[32][48]
-  // + kit_slot_present[32][16]; slot 0 mirrors the populated kit, the present sub-table is all 0/1.
-  const metaBase = 0x30000;
-  rom.set([0xa5, 0x5a, 0x4b, 0x54, 0x4d, 0x45], metaBase);
-  const base = metaBase + 6;
-  for (const [i, c] of Array.from("TEST").entries()) rom[base + i] = c.charCodeAt(0); // kit_names[0]
-  rom.fill(0x20, base + 512, base + 512 + 48); // kit_sample_names[0] = spaces
-  for (const [i, c] of Array.from("KIK").entries()) rom[base + 512 + i] = c.charCodeAt(0);
-  rom[base + 512 + 1536] = 1; // kit_slot_present[0][0] = 1 (the rest stay 0)
-  return rom;
-}
-
-const CHR_BANK_BYTES = 0x2000; // one font slot = one 8 KB CHR bank
-
-// The real ROM's 16 theme names, in table order (`g_themeTable`, the bliptoaster repo's src/core/sys.c). The
-// fixtures carry them verbatim so a menu / inventory test asserts the labels a user actually reads.
-const BLIPTOASTER_THEME_NAMES = [
-  "DFLT", "DARK", "NEON", "LITE", "CRT ", "ICE ", "FIRE", "GB  ",
-  "AQUA", "MONO", "PLSM", "MTRX", "FOG ", "SUN ", "MOON", "AMBR",
-];
-
-/** The BlipToaster theme table as the ROM bakes it: the `\xA5\x5ATHME` magic, then `count` INTERLEAVED entries
- *  of [7 role bytes + a 4-char name] — 11 bytes each, the name right behind its own record. That stride is
- *  BlipToaster's own and is NOT risa's layout (16 records, then 16 names), so a fixture written risa-style
- *  reads only entry 0 correctly. Role 0 (bg) is per-slot so a test can tell the entries apart; slot 0 is the
- *  real DFLT's 0x0D/0x30. `count` below 16 is for the table-bound check. */
-export function blipToasterThemeTable(count = 16): Uint8Array {
-  const ENTRY = 7 + 4;
-  const out = new Uint8Array(6 + count * ENTRY);
-  out.set([0xa5, 0x5a, 0x54, 0x48, 0x4d, 0x45], 0); // THEME_META_MAGIC
-  for (let i = 0; i < count; i++) {
-    const off = 6 + i * ENTRY;
-    out.set([0x0d + i, 0x30, 0x00, 0x10, 0x30, 0x21, 0x11], off); // bg, normal, shaded, alternate, status, cursor, selection
-    for (const [k, c] of Array.from(BLIPTOASTER_THEME_NAMES[i % 16]).entries()) out[off + 7 + k] = c.charCodeAt(0);
-  }
-  return out;
-}
-
-/** The baked settings block as the ROM bakes it (src/core/settings.c): the `\xA5\x5ASETT` magic, the format
- *  byte, then the rig fields; +8 and +13..15 stay reserved 0xFF. Defaults are the power-on ones the ROM bakes -
- *  all zero except `ppu`, which is 1 (the screen draws), i.e. the block of a ROM straight out of the build. */
-export function blipToasterSettingsBlock(
-  fields: { version?: number; baseChannel?: number; ppu?: number; velCurve?: number; theme?: number; font?: number } = {},
-): Uint8Array {
-  const out = new Uint8Array(16);
-  out.set([0xa5, 0x5a, 0x53, 0x45, 0x54, 0x54], 0); // "\xA5\x5ASETT"
-  out[6] = fields.version ?? 1;
-  out[7] = fields.baseChannel ?? 0;
-  out[8] = 0xff; // reserved — held the default kit slot before the kit became CC-only
-  out[9] = fields.ppu ?? 1; // the one non-zero power-on default: PPU enabled
-  out[10] = fields.velCurve ?? 0;
-  out[11] = fields.theme ?? 0;
-  out[12] = fields.font ?? 0;
-  out.fill(0xff, 13);
-  return out;
-}
-
-// The theme table + settings block, spliced at `at` exactly as the ROM lays them out: ADJACENT, the settings
-// magic starting the byte after the table's last entry. That adjacency is load-bearing for the fixtures — it
-// is the case that bounds the theme count (countThemes stops on the $A5 it cannot read as a palette index),
-// so a fixture that left slack there would not exercise it.
-function splicePrgBlocks(rom: Uint8Array, at: number, themeCount = 16): void {
-  const table = blipToasterThemeTable(themeCount);
-  rom.set(table, at);
-  rom.set(blipToasterSettingsBlock(), at + table.length);
-}
-
-/** A full-size synthetic BlipToaster ROM (16 + 32 KB PRG + 8 KB CHR = 0xA010, NROM) carrying the "bliptoaster"
- *  marker at the ROM head + the theme table + settings block + one populated DMC kit at $C000 (PRG offset
- *  0x4000) + a distinct CHR font region. The flat single-kit, single-font cart: every SHIPPED build banks
- *  (see blipToasterMultiKitRom), so this one exists to hold the NROM read path — capacity 1, fonts 1 — which
- *  BlipToasterRom still derives from the header rather than assuming. */
-export function blipToasterRom(): Uint8Array {
-  const PRG = 0x8000; // 2 × 16 KB (NROM, 32 KB)
-  const CHR = 0x2000; // 1 × 8 KB
-  const rom = new Uint8Array(0x10 + PRG + CHR);
-  rom.set([0x4e, 0x45, 0x53, 0x1a], 0); // "NES\x1A"
-  rom[4] = 0x02; // 2 × 16 KB PRG
-  rom[5] = 0x01; // 1 × 8 KB CHR
-  rom[6] = 0x01; // vertical mirroring, mapper 0 (NROM)
-
-  // The BlipToaster SIG block at the ROM head ($8000 = file offset 0x10), as the SIG segment bakes it:
-  // the "bliptoaster" marker (also the display name) + semver(0.1.0).
-  const MARK = "bliptoaster";
-  for (let i = 0; i < MARK.length; i++) rom[0x10 + i] = MARK.charCodeAt(i);
-  let p = 0x10 + MARK.length;
-  rom[p++] = 0x00; rom[p++] = 0x01; rom[p++] = 0x00; // semantic version 0.1.0
-
-  // The theme table + settings block in the code region (before the kit at 0x4010), at a fixed offset for
-  // tests — the code region is exactly where the ROM puts them, and where both magic scans look.
-  splicePrgBlocks(rom, 0x100);
-
-  // One populated DMC kit at $C000 (PRG offset 0x4000): a "TEST" kit with a "KIK" sample-0 name, one index
-  // entry, the other 15 empty (0xFF), and the 0xA5 populated magic — the same 8 KB bank layout risa uses.
-  const kitOffset = 0x10 + 0x4000;
-  rom[kitOffset + 0] = 0xff; // slot-0 DPCM data (1 byte)
-  rom.fill(0x20, kitOffset + 0x1ed0, kitOffset + 0x1ed0 + 16 * 3); // sample-names region = spaces
-  for (const [i, c] of Array.from("TEST").entries()) rom[kitOffset + 0x1ec0 + i] = c.charCodeAt(0); // kit name
-  for (const [i, c] of Array.from("KIK").entries()) rom[kitOffset + 0x1ed0 + i] = c.charCodeAt(0); // sample 0 name
-  rom.set([0, 0, 12, 0], kitOffset + 0x1f00); // index[0] = [addr 0, lenReg 0, rate 12, flags 0]
-  for (let slot = 1; slot < 16; slot++) rom[kitOffset + 0x1f00 + slot * 4] = 0xff; // empty index entries
-  rom[kitOffset + 0x1f40] = 0xa5; // populated magic
-
-  // CHR: one 8 KB font slot, filled with a distinct pattern (for font read/patch tests).
-  const chrOffset = 0x10 + PRG;
-  for (let b = 0; b < CHR; b++) rom[chrOffset + b] = (b * 7 + 3) & 0xff;
-  return rom;
-}
-
-/** A full-size synthetic BlipToaster BANKING ROM — the SHIPPED shape: 16 + 256 KB PRG + 32 KB CHR, mapper 69
- *  (FME-7), carrying the "bliptoaster" marker + the 16-entry theme table + the settings block + one populated
- *  DMC kit in slot 0, with slots 1..15 reserved (unpopulated). The banking header (PRG 16 × 16 KB, mapper != 0)
- *  drives BlipToasterRom.kitBankCapacity() to 16, so the assets menu goes addable/16-slot; the 4 declared CHR
- *  banks give it the real build's 4 fonts. Kit slot k sits at PRG offset 0x4000 + k*0x2000 (banks 2..17), and
- *  the geometry throughout is the real cfg/nes-banked.cfg's. */
-export function blipToasterMultiKitRom(): Uint8Array {
-  const PRG = 0x40000; // 16 × 16 KB (256 KB banking build)
-  const CHR = 0x8000; // 4 × 8 KB — one font each
-  const rom = new Uint8Array(0x10 + PRG + CHR);
-  rom.set([0x4e, 0x45, 0x53, 0x1a], 0); // "NES\x1A"
-  rom[4] = 0x10; // 16 × 16 KB PRG (256 KB)
-  rom[5] = 0x04; // 4 × 8 KB CHR (32 KB)
-  rom[6] = 0x51; // vertical mirroring, mapper 69 low nibble (Sunsoft 5B / FME-7)
-  rom[7] = 0x40; // mapper 69 high nibble
-
-  const MARK = "bliptoaster"; // marker (also the display name)
-  for (let i = 0; i < MARK.length; i++) rom[0x10 + i] = MARK.charCodeAt(i);
-  let p = 0x10 + MARK.length;
-  rom[p++] = 0x00; rom[p++] = 0x01; rom[p++] = 0x00; // semantic version 0.1.0
-
-  // Theme table + settings block in the code region (same placement as blipToasterRom()).
-  splicePrgBlocks(rom, 0x100);
-
-  // Kit slot 0 populated at bank 2 (PRG offset 0x4000). Slots 1..15 (banks 3..17) stay unpopulated (their
-  // magic byte is 0x00 ≠ 0xA5), matching the real ROM's reserved-fill banks.
-  const kitOffset = 0x10 + 0x4000;
-  rom[kitOffset + 0] = 0xff; // slot-0 DPCM data (1 byte)
-  rom.fill(0x20, kitOffset + 0x1ed0, kitOffset + 0x1ed0 + 16 * 3); // sample-names region = spaces
-  for (const [i, c] of Array.from("TEST").entries()) rom[kitOffset + 0x1ec0 + i] = c.charCodeAt(0); // kit name
-  for (const [i, c] of Array.from("KIK").entries()) rom[kitOffset + 0x1ed0 + i] = c.charCodeAt(0); // sample 0 name
-  rom.set([0, 0, 12, 0], kitOffset + 0x1f00); // index[0] = [addr 0, lenReg 0, rate 12, flags 0]
-  for (let slot = 1; slot < 16; slot++) rom[kitOffset + 0x1f00 + slot * 4] = 0xff; // empty index entries
-  rom[kitOffset + 0x1f40] = 0xa5; // populated magic (slot 0 only)
-
-  // CHR: 4 × 8 KB font slots, each a distinct pattern whose FIRST byte is its own slot index — so a test that
-  // reads or splices a font can say which bank it got rather than just "some 8 KB".
-  const chrOffset = 0x10 + PRG;
-  for (let b = 0; b < CHR; b++) rom[chrOffset + b] = (b * 7 + 3) & 0xff;
-  for (let slot = 0; slot * CHR_BANK_BYTES < CHR; slot++) rom[chrOffset + slot * CHR_BANK_BYTES] = slot;
-  return rom;
-}
+// The BlipToaster ROM fixtures are @retroplug/bliptoaster's (a synthetic BlipToaster image is that cart's own
+// knowledge: its SIG block, theme table stride and bank geometry), re-exported here so this tree's store, menu and
+// registry tests keep one import.
+export {
+  blipToasterRom,
+  blipToasterMultiKitRom,
+  blipToasterThemeTable,
+  blipToasterSettingsBlock,
+} from "@retroplug/bliptoaster/testFixtures";
 
 /** An smsggdj build's ROM as the providers and the version gate see it: a "TMR SEGA" header whose region
  *  nibble says SMS, the SMSGGDJ marker at $3640 and a `V<version>` string at $367B - where the real v0.45

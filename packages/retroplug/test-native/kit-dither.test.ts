@@ -15,8 +15,8 @@ import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { KitEffect } from "../src/audioDriver";
-import { KitView } from "../src/lsdj/rom/kit";
-import { KIT_LOOKUP, BANK_SIZE, ROM_SIZE } from "../src/lsdj/rom/constants";
+import { KitView } from "@retroplug/lsdj/rom/kit";
+import { KIT_LOOKUP, BANK_SIZE, ROM_SIZE } from "@retroplug/lsdj/rom/constants";
 import { encodeWav } from "../cli/wav";
 
 const WAV = "/tmp/rp-kit-dither.wav";

@@ -16,7 +16,7 @@ decoders out of `rp.lsdj.sync` into a node of their own that runs after the Game
 
 `rp.lsdj.sync` runs before its Game Boy, because in the MIDI-sync, MI.MAP, keyboard and passthrough modes it feeds
 the system's `serialIn` and `buttons`. So it reads the system's `serialOut` over a feedback wire: last block's
-captured bytes, each with its frame in that block ([lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)).
+captured bytes, each with its frame in that block ([lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts)).
 Its `emitMidiOut` sends every decoded message at frame 0, so a byte captured at frame `f` of block N goes out at
 frame 0 of block N + 1. LSDj at tempo 128 sends about 51 clocks a second, one per 861 frames at 44.1 kHz; a
 2048-frame block (46 ms) holds two or three, and they go out together, at frame 0, a block late. A case's last
@@ -288,9 +288,9 @@ The commits' reviews found more, fixed in the commits after them:
   old `lastAt + stop + 1`, so a constant rate, every parity case among them, sends what it sent. The mark is clamped
   at 0, which only a rise needs: it can put a mark less than an old-rate frame before the block, where the old rate
   had it at the block's first frame.
-  [lsdj-arduinoboy.test.ts](../packages/retroplug/test/dsp/lsdj-arduinoboy.test.ts) holds a drop, a rise, the clamp
+  [lsdj-arduinoboy.test.ts](../packages/lsdj/ts/test/lsdjArduinoboy.test.ts) holds a drop, a rise, the clamp
   and two changes in one silence, and
-  [lsdj-serial-out.test.ts](../packages/retroplug/test/script/nodes/lsdj-serial-out.test.ts) a drop and a rise
+  [lsdj-serial-out.test.ts](../packages/lsdj/ts/test/lsdjSerialOut.test.ts) a drop and a rise
   through the node's transport.
 - **The rig's re-record re-blessed what reached the systems.** Its one digest hashed the system inputs and the host
   outputs together, so re-recording the three cases whose host MIDI out moved (the LSDj modes and the controller's

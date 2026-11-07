@@ -9,9 +9,9 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { LsdjRom, ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
+import { LsdjRom, ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "@retroplug/lsdj/rom";
 import { lsdjAssetCatalog } from "../../src/tracker";
-import { BlipToasterRom } from "../../src/bliptoaster/rom";
+import { BlipToasterRom } from "@retroplug/bliptoaster/rom";
 import { gbRomBattery, risaRomFull, blipToasterRom } from "../systems/fixtures";
 
 // A row that browses (Export) fires openFileBrowser fire-and-forget; flush the microtask chain it kicks off.

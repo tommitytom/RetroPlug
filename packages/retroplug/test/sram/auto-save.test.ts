@@ -7,7 +7,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, dirtySramTargets, flushDirtySram, lsdjSramSignature, sramSignature } from "../../src/sramAutoSave";
-import { savFrom } from "../../src/lsdj";
+import { savFrom } from "@retroplug/lsdj";
 import { gbRom, gbRomBattery } from "../systems/fixtures";
 
 const bytes = (...b: number[]) => new Uint8Array(b);

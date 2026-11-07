@@ -9,8 +9,8 @@ import { test, expect } from "@retroplug/testing";
 import { FakeLaunchpad } from "./_fakeDevice";
 import { ControllerSession, isPredictive, lsdjMidiMapTarget, type ControllerApp, type ControllerCtx } from "../../src/controller";
 import { Palette, palette } from "../../src/launchpad";
-import { SongSchema } from "../../src/lsdj/model";
-import { PredictedLsdjModel } from "../../src/lsdj/playback";
+import { SongSchema } from "@retroplug/lsdj/model";
+import { PredictedLsdjModel } from "@retroplug/lsdj/playback";
 import { idlePosition, type PlaybackModel } from "@retroplug/tracker/playbackModel";
 
 const RED = { mode: "static", colour: palette(Palette.red) } as const;

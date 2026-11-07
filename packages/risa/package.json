@@ -1,0 +1,62 @@
+{
+  "name": "@retroplug/risa",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "risa's half of the app: the RSav catalog and song-payload codec, the .rkit-compatible ROM asset layer (kits, themes, fonts), the RAM-layout reader and drift detector, the risa, risa-assets and risa-sync roles, its Songs/Assets tracker integration, its DMC kit bank format, its ROM provider, and the rp.risa.sync protocol node (span label 19) that drives its host-sync receive path.",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./app": "./ts/app.ts",
+    "./codec/bytes": "./ts/codec/bytes.ts",
+    "./codec/constants": "./ts/codec/constants.ts",
+    "./codec/record": "./ts/codec/record.ts",
+    "./codec/sav": "./ts/codec/sav.ts",
+    "./codec/working": "./ts/codec/working.ts",
+    "./testFixtures": "./ts/fixtures.ts",
+    "./kitFormat": "./ts/kitFormat.ts",
+    "./protocol": "./ts/protocol.ts",
+    "./risaAssetCatalog": "./ts/risaAssetCatalog.ts",
+    "./risaAssetsRole": "./ts/risaAssetsRole.ts",
+    "./risaIntegration": "./ts/risaIntegration.ts",
+    "./risaRole": "./ts/risaRole.ts",
+    "./risaSav": "./ts/risaSav.ts",
+    "./risaSongCatalog": "./ts/risaSongCatalog.ts",
+    "./risaSongOps": "./ts/risaSongOps.ts",
+    "./risaSync": "./ts/risaSync.ts",
+    "./risaSyncNode": "./ts/risaSyncNode.ts",
+    "./risaSyncTranslator": "./ts/risaSyncTranslator.ts",
+    "./rom": "./ts/rom/index.ts",
+    "./rom/constants": "./ts/rom/constants.ts",
+    "./rom/kit": "./ts/rom/kit.ts",
+    "./rom/rom": "./ts/rom/rom.ts",
+    "./romDetect": "./ts/romDetect.ts",
+    "./romProvider": "./ts/romProvider.ts",
+    "./runtime": "./ts/runtime/index.ts",
+    "./runtime/identify": "./ts/runtime/identify.ts",
+    "./runtime/layout": "./ts/runtime/layout.ts",
+    "./runtime/reader": "./ts/runtime/reader.ts",
+    "./runtime/symbols.generated": "./ts/runtime/symbols.generated.ts",
+    "./runtime/types": "./ts/runtime/types.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/dsp": "workspace:*",
+    "@retroplug/tracker": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "ts/app.ts",
+    "protocol": {
+      "module": "ts/protocol.ts",
+      "nodes": [{ "type": "rp.risa.sync", "label": 19, "midiIn": null, "writes": ["bytes"] }],
+      "roles": { "risa-sync": "rp.risa.sync" }
+    }
+  }
+}

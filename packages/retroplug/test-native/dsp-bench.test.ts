@@ -16,7 +16,7 @@ import { test, expect, skip } from "@retroplug/testing";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";
 import { directGraph } from "../src/graph/directGraph";
-import { savFrom, type SavInput } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
 import { createRealBackend } from "../src/realBackend";
 
 declare const __RESOURCES_DIR__: string;

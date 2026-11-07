@@ -73,7 +73,7 @@ codec, persistence, tests) and a good template to pattern-match against.
   breaking bump), zod schemas, `projectConfig`/`projectStore`, the `.rplg` project file. spec/05.
   **Never embed opaque binary in `.rplg` — link assets by path** (like `romPath`/`savPath`).
 - **Assets / file interop + watching** — `fileWatcher.ts` / `NativeFileWatcher`; the LSDj ROM-assets path
-  (`packages/retroplug/src/lsdj/`, `lsdjAssetsRole.ts`) is the reference for injecting/overriding console
+  (`packages/lsdj/ts/`, `lsdjAssetsRole.ts`) is the reference for injecting/overriding console
   assets in-memory at construct without rewriting the on-disk ROM.
 - **Harness + build/sync** — `retroplug-cli` (`cli/session`, the SDK), `run-native-tests.mjs`, C++ Catch2
   (`pnpm test:plugin`); `build.sh` / `node scripts/cmake-build.js <target>`;

@@ -6,12 +6,12 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerLsdjAssetsRole } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { planLsdprjImport } from "../../src/lsdjLsdprjImport";
-import { decodeSav, encodeLsdprj, savFrom } from "../../src/lsdjSav";
-import { LsdjRom, buildKitBank, ROM_SIZE } from "../../src/lsdj/rom";
+import { planLsdprjImport } from "@retroplug/lsdj/lsdjLsdprjImport";
+import { decodeSav, encodeLsdprj, savFrom } from "@retroplug/lsdj";
+import { LsdjRom, buildKitBank, ROM_SIZE } from "@retroplug/lsdj/rom";
 import { gbRomBattery } from "./fixtures";
 
 // A minimal 1 MiB image LsdjRom accepts (GB logo + a version title); all kit slots start free.
@@ -57,7 +57,7 @@ function newStore() {
   const be = new MockBackend("/cfg");
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerLsdjAssetsRole(reg);
   registerRomProviders(reg);
   return { be, store: new SystemsStore(be, () => {}, reg) };

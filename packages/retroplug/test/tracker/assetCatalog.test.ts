@@ -8,7 +8,7 @@ import { effectiveAssets,
   type AssetSlot,
 } from "../../src/tracker";
 import { resolveTracker, resolveAssetCatalog } from "../../src/trackerRegistry";
-import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
+import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "@retroplug/lsdj/rom";
 import { risaRomFull, gbRomBattery } from "../systems/fixtures";
 
 // A 1 MiB image LsdjRom accepts (mirrors systems/lsdj-assets.test): GB logo + battery header, a version

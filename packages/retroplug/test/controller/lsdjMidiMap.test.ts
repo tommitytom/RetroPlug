@@ -10,8 +10,8 @@ import {
   WINDOW_ROWS, MAX_PAGE,
 } from "../../src/controller";
 import { Palette, palette, type Led } from "../../src/launchpad";
-import { SongSchema, type Song } from "../../src/lsdj/model";
-import { PredictedLsdjModel } from "../../src/lsdj/playback";
+import { SongSchema, type Song } from "@retroplug/lsdj/model";
+import { PredictedLsdjModel } from "@retroplug/lsdj/playback";
 import { idlePosition, type PlaybackModel, type PlaybackPosition } from "@retroplug/tracker/playbackModel";
 
 const CONTENT: Led = { mode: "static", colour: palette(Palette.greenDim) };
@@ -19,7 +19,7 @@ const PLAYHEAD: Led = { mode: "static", colour: palette(Palette.greenBright) };
 const CUED: Led = { mode: "pulse", colour: palette(Palette.yellow) };
 const OFF: Led = { mode: "off" };
 
-/** A song from a per-row chain table, as test/lsdj/playback.test.ts builds them. */
+/** A song from a per-row chain table, as packages/lsdj/ts/test/playback.test.ts builds them. */
 function song(rows: (number | null)[][], chains: (number | null)[][]): Song {
   return SongSchema.parse({
     formatVersion: 22,

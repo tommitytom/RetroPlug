@@ -117,7 +117,7 @@ ROM-gated), transforming the resolved `ConstructSpec` before its resources are p
 structurally, so the store passes itself. What it writes into the spec is what the system's node names: its `romBytes`
 become the `rom` resource's bytes, its `sramBytes` a battery seed's.
 
-LSDj's empty-sav seed ([dspRoles.ts:16](../packages/retroplug/src/dspRoles.ts#L16)) is the plainest: a
+LSDj's empty-sav seed ([dspRoles.ts:16](../packages/lsdj/ts/app.ts#L26)) is the plainest: a
 fresh LSDj cart with no save data runs a 12-15 s cartridge self-test on boot. When nothing else will seed
 the battery (no savestate, no SRAM blob, no on-disk `.sav` for the boot to read) the hook hands it a valid
 empty sav via `savFromJson("{}")`, which becomes an `sram` resource, so LSDj boots straight to the song screen. It
@@ -177,7 +177,7 @@ cannot lose a byte never has its recovery path exercised, and one handed a whole
 never starved mid-structure. `getCoreTransportStats` reports both queue depths and the cumulative
 drop count ([09](09-cli-debugging.md)).
 
-**Roles with a protocol node** ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)): each registers its
+**Roles with a protocol node** ([dspRoles.ts](../packages/lsdj/ts/app.ts)): each registers its
 kind, its zod config schema (the shape the stores parse, persist and hand the node as its settings) and,
 for LSDj, the seed hook. What each does on the audio thread is its node's
 ([The protocol nodes](#the-protocol-nodes)):
@@ -317,7 +317,7 @@ routing node's outputs follow the systems); a system removed and added again get
   from one of three arrays made with the instance, one a message length. MI.OUT's bit accumulator and pending
   command are kept on the instance across mode changes; master sync's state is dropped outside that mode, so coming
   back opens a fresh run. Its settings are the role's config through the schema `rp.lsdj.sync` takes too
-  ([nodes/lsdjSyncSettings.ts](../packages/retroplug/src/script/nodes/lsdjSyncSettings.ts)); it reads only `mode`.
+  ([nodes/lsdjSyncSettings.ts](../packages/lsdj/ts/lsdjSyncSettings.ts)); it reads only `mode`.
 - **`rp.controller.session`** runs a `ControllerSession` ([controller/session.ts](../packages/retroplug/src/controller/session.ts))
   for the app its settings name (`controller/apps/index.ts`, the apps' runtime, zod-free): the surface's
   traffic and the block's clock in (its tick derived from ppq at 24 PPQN), its LED bytes out on
@@ -485,7 +485,7 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   `RoleRegistry` / `RomProvider` / `ConstructCaps`.
 - [packages/sameboy/ts/app.ts](../packages/sameboy/ts/app.ts) and [packages/mesen/ts/app.ts](../packages/mesen/ts/app.ts): the
   `sameboy` and `mesen` system-roles, each contributed by the package whose core it configures.
-- [dspRoles.ts](../packages/retroplug/src/dspRoles.ts): the roles that have a protocol node (kind, schema)
+- [dspRoles.ts](../packages/lsdj/ts/app.ts): the roles that have a protocol node (kind, schema)
   + the LSDj `onConstruct` seed.
 - [romProviders.ts](../packages/retroplug/src/romProviders.ts): feature-role attachment by ROM identity.
 - [script/nodes/](../packages/retroplug/src/script/nodes): the eight node types, `lsdjSyncSettings.ts` (the

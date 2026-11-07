@@ -17,6 +17,8 @@
 // - a devDependency a source file imports, which only a test file may;
 // - source that imports one of its own package's test modules: the same devDependency leak, reached by a relative path;
 // - a declared package that does not exist;
+// - a `workspace:` or `link:` alias of the shell, which the key alone would present as a third-party name;
+// - an `npm:` alias naming a package the workspace does not have;
 //
 // and two positive trees: one where a package declares a package it imports by name, a declared third-party subpath, a
 // devDependency from a test file (a type package's globals included), its own interface by a relative path, the
@@ -235,6 +237,28 @@ test(
     ]);
   },
 );
+
+test("an alias of the shell is refused, spelled workspace: or link:", async () => {
+  const report = await drive("aliased-shell");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/beta/package.json: declares app as "workspace:@retroplug/retroplug@*", which is the shell ' +
+      "(packages/retroplug): no package may depend on the shell",
+    'packages/beta/package.json: declares @retroplug/core as "link:../retroplug", which is the shell ' +
+      "(packages/retroplug): no package may depend on the shell",
+  ]);
+});
+
+test("an alias naming a package the workspace does not have is refused, naming the alias", async () => {
+  const report = await drive("aliased-undeclared");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/beta/package.json: declares ghostdep as "npm:@retroplug/ghost@1.0.0", which names @retroplug/ghost, ' +
+      "not a package in packages",
+  ]);
+});
 
 test("a declared package that does not exist is refused on its own", async () => {
   const report = await drive("declared-missing");

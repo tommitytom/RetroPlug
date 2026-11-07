@@ -23,8 +23,8 @@
 
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFrom, type SavInput } from "../src/lsdjSav";
-import { LsdjReader, type LsdjState, CHANNELS, type ChannelName } from "../src/lsdj/runtime";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
+import { LsdjReader, type LsdjState, CHANNELS, type ChannelName } from "@retroplug/lsdj/runtime";
 import { directGraph } from "../src/graph/directGraph";
 import type { GraphController } from "../src/graph/controller";
 import type { RoleInstance } from "@retroplug/core/systemRoles";

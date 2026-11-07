@@ -4,7 +4,8 @@
 //
 //   packages/retroplug/src/generated/packages.ts     the app's registrations, in product order (the list's, then the
 //                                                    shell): the roles buildAppRegistry applies, the ROM providers, the
-//                                                    tracker integrations and the kit formats
+//                                                    tracker integrations and the kit formats, and a duplicate in any
+//                                                    list a key or an exclusive marker identifies refused at load
 //   packages/retroplug/src/generated/protocol.ts     PROTOCOL_NODES and ROLE_NODES, the wiring buildGraph reads. It
 //                                                    imports nothing but types, so a bundle of buildGraph carries the
 //                                                    tables without a single node's code or role's schema
@@ -24,7 +25,12 @@
 //
 // A package's contributions are its manifest's retroplug.app (a module default-exporting definePackage's lists) and
 // retroplug.protocol (its node definitions' module, the nodes' wiring and labels, and which role kind each is placed
-// as). A @retroplug dependency the list does not carry is refused only when it contributes (its manifest has an app or
+// as). The app's lists are the product order's, and only a ROM provider's place in it is behaviour: the providers run
+// in order, and the first to match a ROM fixes the feature roles' order. A role's kind, a kit format's id and a
+// tracker integration's marker role are looked up, not sequenced (one package's roles interleave another's without
+// consequence), so the generated module refuses a duplicate rather than let one silently replace another.
+//
+// A @retroplug dependency the list does not carry is refused only when it contributes (its manifest has an app or
 // protocol member), which would silently lose it; one that contributes nothing (a native library a package links, a
 // pure TS library with no retroplug member) is left out of the ordering.
 //
@@ -360,25 +366,48 @@ function renderPackages({ packages, outDir }) {
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   lines.push(
     "",
-    "/** The app's roles, in product order: the role contract's objects, which the registry holds. */",
+    "/** The app's roles, in product order: the role contract's objects, which the registry holds by kind. */",
     "export const ROLES: readonly RoleType[] = [",
     ...contributionLines(app, "roles"),
     "];",
+    "const roleKinds = new Set<string>();",
+    "for (const role of ROLES) {",
+    "  if (roleKinds.has(role.kind)) {",
+    "    throw new Error(`the app's roles declare the role kind ${role.kind} twice`);",
+    "  }",
+    "  roleKinds.add(role.kind);",
+    "}",
     "",
-    "/** The ROM providers, in product order: a ROM's feature roles are attached by the first matches' order. */",
+    "/** The ROM providers, in product order: the first to match a ROM fixes its feature roles' order, so this list's",
+    " *  order is behaviour. */",
     "export const ROM_PROVIDERS: readonly RomProvider[] = [",
     ...contributionLines(app, "romProviders"),
     "];",
     "",
-    "/** The tracker integrations, in product order: a system takes the first whose markerRole it has. */",
+    "/** The tracker integrations, in product order: a system takes the first whose markerRole it has, and the marker",
+    " *  roles are exclusive, so a duplicate is the hazard, not the order. */",
     "export const TRACKER_INTEGRATIONS: readonly TrackerIntegration[] = [",
     ...contributionLines(app, "trackerIntegrations"),
     "];",
+    "const markerRoles = new Set<string>();",
+    "for (const integration of TRACKER_INTEGRATIONS) {",
+    "  if (markerRoles.has(integration.markerRole)) {",
+    "    throw new Error(`the app's tracker integrations declare the marker role ${integration.markerRole} twice`);",
+    "  }",
+    "  markerRoles.add(integration.markerRole);",
+    "}",
     "",
     "/** The kit bank formats, by the id the audio driver dispatches with. */",
     "export const KIT_FORMATS: readonly KitFormat<any>[] = [",
     ...contributionLines(app, "kitFormats"),
     "];",
+    "const kitIds = new Set<string>();",
+    "for (const format of KIT_FORMATS) {",
+    "  if (kitIds.has(format.id)) {",
+    "    throw new Error(`the app's kit formats declare the id ${format.id} twice`);",
+    "  }",
+    "  kitIds.add(format.id);",
+    "}",
     "",
   );
   return lines.join("\n");
@@ -589,7 +618,10 @@ export function generate({ root = REPO } = {}) {
     .sort((a, b) => a.label - b.label || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 
   const files = [
-    { path: join(outDir, "packages.ts"), content: renderPackages({ packages: contributionsOf, outDir }) },
+    {
+      path: join(outDir, "packages.ts"),
+      content: renderPackages({ packages: contributionsOf, outDir }),
+    },
     { path: join(outDir, "protocol.ts"), content: renderProtocol({ byType, roles }) },
     { path: join(outDir, "scriptNodes.ts"), content: renderScriptNodes({ packages: contributionsOf, outDir }) },
   ];

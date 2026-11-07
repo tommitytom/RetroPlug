@@ -12,12 +12,12 @@ import type { DefinedNode } from "@retroplug/core/defineNode";
 import type { PortDesc } from "@retroplug/core/descriptor";
 import { PROTOCOL_NODES, ROLE_NODES, outNodeOf, protocolNodeOf, type ProtocolNodeSpec, type ProtocolNodeType } from "../../src/graph/protocolNodes";
 import { SCRIPT_NODES_GLOBAL } from "@retroplug/core/register";
-import { mgbMidiNode } from "../../src/script/nodes/mgbMidi";
-import { n8MidiToFifoNode } from "../../src/script/nodes/n8MidiToFifo";
-import { risaSyncNode } from "../../src/script/nodes/risaSync";
-import { smsSyncNode } from "../../src/script/nodes/smsSync";
-import { lsdjSyncNode } from "../../src/script/nodes/lsdjSync";
-import { lsdjSerialOutNode } from "../../src/script/nodes/lsdjSerialOut";
+import { mgbMidiNode } from "@retroplug/mgb/mgbMidiNode";
+import { n8MidiToFifoNode } from "@retroplug/n8/n8MidiToFifoNode";
+import { risaSyncNode } from "@retroplug/risa/risaSyncNode";
+import { smsSyncNode } from "@retroplug/smsggdj/smsSyncNode";
+import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
+import { lsdjSerialOutNode } from "@retroplug/lsdj/lsdjSerialOutNode";
 // The production bundle's entry point: importing it registers its node types on SCRIPT_NODES_GLOBAL, as it does in each
 // of the script host's contexts.
 import "../../src/script/bundle";

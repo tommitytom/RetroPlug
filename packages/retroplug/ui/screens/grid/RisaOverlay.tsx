@@ -6,7 +6,7 @@
 import { DebugReadout, hex2 } from "./DebugReadout";
 import { useRisaRuntime } from "./useRisaRuntime";
 import { useLsdjDebugVisible } from "./lsdjDebug";
-import type { RisaTrackState } from "../../../src/risa/runtime";
+import type { RisaTrackState } from "@retroplug/risa/runtime";
 
 const TRACK_LABELS = ["1", "2", "T", "N", "D"]; // pulse1, pulse2, triangle, noise, dmc
 

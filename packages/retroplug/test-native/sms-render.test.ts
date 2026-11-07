@@ -21,7 +21,7 @@ import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
 import { runRenderJob, decodeWav, validateRenderOpts, type RenderContext, type RenderOpts } from "../src/render";
-import { buildSav } from "../src/smsggdj/codec/sav";
+import { buildSav } from "@retroplug/smsggdj/codec/sav";
 import { smsggdjIntegration } from "../src/trackerRegistry";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
 

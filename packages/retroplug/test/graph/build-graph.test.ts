@@ -15,13 +15,14 @@ import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
 import { MIDI_ROUTE_NODE_TYPE } from "@retroplug/core/midiRoute";
 import { CONTROLLER_SESSION_NODE_TYPE } from "../../src/script/nodes/controllerSession";
-import { MGB_MIDI_NODE_TYPE } from "../../src/script/nodes/mgbMidi";
-import { N8_MIDI_TO_FIFO_NODE_TYPE } from "../../src/script/nodes/n8MidiToFifo";
-import { RISA_SYNC_NODE_TYPE } from "../../src/script/nodes/risaSync";
-import { SMS_SYNC_NODE_TYPE } from "../../src/script/nodes/smsSync";
-import { LSDJ_SYNC_NODE_TYPE } from "../../src/script/nodes/lsdjSync";
-import { LSDJ_SERIAL_OUT_NODE_TYPE } from "../../src/script/nodes/lsdjSerialOut";
-import { LSDJ_MODE_VALUES, type AudioRouting } from "../../src/settingsEnums";
+import { MGB_MIDI_NODE_TYPE } from "@retroplug/mgb/mgbMidiNode";
+import { N8_MIDI_TO_FIFO_NODE_TYPE } from "@retroplug/n8/n8MidiToFifoNode";
+import { RISA_SYNC_NODE_TYPE } from "@retroplug/risa/risaSyncNode";
+import { SMS_SYNC_NODE_TYPE } from "@retroplug/smsggdj/smsSyncNode";
+import { LSDJ_SYNC_NODE_TYPE } from "@retroplug/lsdj/lsdjSyncNode";
+import { LSDJ_SERIAL_OUT_NODE_TYPE } from "@retroplug/lsdj/lsdjSerialOutNode";
+import { type AudioRouting } from "../../src/settingsEnums";
+import { LSDJ_MODE_VALUES } from "@retroplug/lsdj/enums";
 import { type MidiRouting } from "@retroplug/core/midiRouting";
 
 // A system as the store hands buildGraph one: its id doubles as its ROM resource's, so a document names `res:<id>`.

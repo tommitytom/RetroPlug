@@ -6,10 +6,13 @@ Start with these — all short:
 - [spec/](spec/README.md) - the architecture (one doc per concern). The build lives in `packages/native/` (C++ host:
   `src/` core + `src/host/` layer + `plugin/`) + `packages/retroplug/` (TS/UI), with the graph libraries in the
   workspace packages `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (formerly
-  `native/src/graph` and `native/src/dsp`), the box's device nodes in `packages/device-io/`, BlipToaster's MIDI policy
-  as a TypeScript node in `packages/bliptoaster/`, and the device check's test nodes in `packages/devtest/` (listed by
-  no product), and everything about the Everdrive N8 Pro in `packages/n8/`. The older **legacy** build has been removed;
-  [spec/07-remaining-work.md](spec/07-remaining-work.md) tracks the residual cleanup + feature gaps.
+  `native/src/graph` and `native/src/dsp`), the console halves in `packages/sameboy/` and `packages/mesen/`, the carts
+  in `packages/lsdj/`, `packages/mgb/`, `packages/risa/` and `packages/smsggdj/`, the tracker layer they share in
+  `packages/tracker/`, BlipToaster's app half and its MicroQuickJS MIDI policy in `packages/bliptoaster/`, the test
+  harness in `packages/testing/`, the box's device nodes in `packages/device-io/`, the device check's test nodes in
+  `packages/devtest/` (listed by no product), and everything about the Everdrive N8 Pro in `packages/n8/`. The older
+  **legacy** build has been removed; [spec/07-remaining-work.md](spec/07-remaining-work.md) tracks the residual
+  cleanup + feature gaps.
 - [docs/lsdj.md](docs/lsdj.md) — the LSDj domain reference + how to test LSDj sync /
   DAW timing / audio quality headlessly.
 
@@ -181,6 +184,25 @@ The rules below are the parts that don't fit those.
   such target, so a missed guard or a non-portable `Settings` fails the ordinary build. A custom `rfl::Reflector<E>`
   is not seen by the device decode. Details:
   [docs/modular-graph-phase-e1-design.md](docs/modular-graph-phase-e1-design.md).
+- **A package's TypeScript half is its `ts/` tree, and its manifest says what it contributes.** Every package with TS
+  has `ts/` (sources), a `tsconfig.json` extending `tsconfig.base.json`, a `typecheck` script, `ts/test/` where it has
+  tests of its own (the runner's slug for one is `<package>/<path>`) and an `exports` map with no wildcard (the
+  boundary check refuses one whose reach could publish a test module) where another package imports it. `retroplug.app`
+  names the module that default-exports `definePackage({ roles, romProviders, trackerIntegrations, kitFormats })` -
+  the lists the app used to hardcode - and `retroplug.protocol` names the module that default-exports a package's
+  `DefinedNode`s beside the `nodes` (type, span label: 16 up with no gaps, unique) and the role kinds it places. Both
+  are generated registries' inputs: [packages/retroplug/scripts/lib/packages.mjs](packages/retroplug/scripts/lib/packages.mjs)
+  writes `packages/retroplug/src/generated/{packages,protocol,scriptNodes}.ts` from `retroplug.products.desktop`, which
+  is a **dependency order** (a package before the ones using it, the shell last) AND the registration order. Only a ROM
+  provider's place in it is behaviour: the providers run in that order, and the first to match a ROM fixes a system's
+  role-list order. Roles, kit formats and tracker integrations are looked up by kind, id or an exclusive marker role,
+  so for those a duplicate - refused by the generated module - is the hazard, not the order. Two checks hold the
+  boundary, both with an empty allowlist: `pnpm check:boundaries`
+  ([check-boundaries.mjs](packages/retroplug/scripts/check-boundaries.mjs): a package imports only what its
+  `dependencies` declare, nothing imports a shell, and a cycle is refused) and
+  [cmake/packages.cmake](cmake/packages.cmake)'s native twin (a package's targets link and include only declared
+  packages' trees). Details: [spec/06-build-test.md](spec/06-build-test.md) and
+  [docs/modular-graph-phase-f1-design.md](docs/modular-graph-phase-f1-design.md).
 - **A device pack is TypeScript on MicroQuickJS, and it runs the same bytes on the desktop and the box.** A package
   whose manifest has a `retroplug.script` member (`entry`, `device: true`, `heapBytes`, the box's 32-bit context) is
   built at build time by the custom target `retroplug-<name>-script-pack` (`retroplug_device_script_pack`, which runs

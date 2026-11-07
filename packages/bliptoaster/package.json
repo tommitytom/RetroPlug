@@ -5,14 +5,32 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },
-  "description": "The BlipToaster cart's MIDI policy as a device script pack: rp.bliptoaster.midi-policy, which passes the box's MIDI on to the cart less what the ROM's FIFO is not fed.",
+  "type": "module",
+  "description": "The BlipToaster cart: the MIDI policy the box's built-in plan runs as a device script pack (rp.bliptoaster.midi-policy), and the cart's half of the app - the ROM's SIG block and chip detection, the DMC kit/theme/CHR-font asset view and the in-memory patcher that applies its overrides and baked rig settings, the bliptoaster and bliptoaster-assets roles, its ROM provider, and its asset-only tracker integration.",
+  "exports": {
+    "./app": "./ts/app.ts",
+    "./bliptoasterAssetCatalog": "./ts/bliptoasterAssetCatalog.ts",
+    "./bliptoasterAssetsRole": "./ts/bliptoasterAssetsRole.ts",
+    "./bliptoasterIntegration": "./ts/bliptoasterIntegration.ts",
+    "./bliptoasterRole": "./ts/bliptoasterRole.ts",
+    "./testFixtures": "./ts/fixtures.ts",
+    "./rom": "./ts/rom/index.ts",
+    "./rom/rom": "./ts/rom/rom.ts",
+    "./rom/settings": "./ts/rom/settings.ts",
+    "./romDetect": "./ts/romDetect.ts",
+    "./romProvider": "./ts/romProvider.ts"
+  },
   "dependencies": {
-    "@retroplug/core": "workspace:*"
+    "@retroplug/core": "workspace:*",
+    "@retroplug/tracker": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@retroplug/testing": "workspace:*",
     "typescript": "^7.0.2"
   },
   "retroplug": {
+    "app": "ts/app.ts",
     "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 24576 }
   }
 }

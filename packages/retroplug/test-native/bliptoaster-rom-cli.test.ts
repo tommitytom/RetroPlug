@@ -8,8 +8,8 @@ import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { Session } from "../cli/session";
 import { blipToasterRomTool } from "../cli/sessions/bliptoaster-rom";
-import { BlipToasterRom } from "../src/bliptoaster/rom";
-import { bankToModel, isBankPopulated, decodeThemeFromRom } from "../src/risa/rom";
+import { BlipToasterRom } from "@retroplug/bliptoaster/rom";
+import { bankToModel, isBankPopulated, decodeThemeFromRom } from "@retroplug/risa/rom";
 import { encodeWav } from "../cli/wav";
 import { directGraph } from "../src/graph/directGraph";
 

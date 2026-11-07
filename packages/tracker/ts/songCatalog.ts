@@ -3,10 +3,9 @@
 // (Load / Delete / reorder) can be built once. Every op is BYTE-LEVEL (both consoles deliberately avoid
 // the lossy decoded-song model for song management): it takes the live SRAM image and returns a NEW image
 // (or null), never mutating the input. The file-dialog actions (Export / Replace / Add) live in the UI
-// menu layer (per-console, since they own file formats + browseThen). Concrete catalogs:
-// the carts' own catalogs, still the shell's (packages/retroplug/src/tracker/lsdjSongCatalog and
-// .../risaSongCatalog) while neither cart has a package of its own; resolution: the shell's
-// packages/retroplug/src/trackerRegistry (resolveSongCatalog).
+// menu layer (per-console, since they own file formats + browseThen). Concrete catalogs: each cart's own
+// (packages/lsdj's, risa's and smsggdj's ts/ trees), contributed through its package's app module; resolution: the
+// shell's packages/retroplug/src/trackerRegistry (resolveSongCatalog), over the product's generated list.
 
 export interface SongInfo {
   index: number;

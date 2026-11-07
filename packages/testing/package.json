@@ -6,9 +6,11 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "The TAP test harness and the script-node rig under txiki.js: what every package's tests import as @retroplug/testing, and its node tests as @retroplug/testing/rig.",
+  "description": "The TAP test harness, the script-node rig under txiki.js, the byte-array and structural deep-equal helpers the cart tests share: what every package's tests import as @retroplug/testing, its node tests as @retroplug/testing/rig, and its byte or golden comparisons as @retroplug/testing/bytes and @retroplug/testing/deepEqual.",
   "exports": {
     ".": "./ts/harness.ts",
+    "./bytes": "./ts/bytes.ts",
+    "./deepEqual": "./ts/deepEqual.ts",
     "./rig": "./ts/rig.ts"
   },
   "dependencies": {

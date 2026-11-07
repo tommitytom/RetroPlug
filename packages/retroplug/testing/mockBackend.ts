@@ -5,7 +5,7 @@
 // and nothing else.
 
 import type { ApuState, ApuSquareState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, ResourceType, TraceLine, ZipEntry } from "../src/backend";
-import { savFromJson } from "../src/lsdj";
+import { savFromJson } from "@retroplug/lsdj";
 import {
   jobHandle,
   type EngineJobKind,

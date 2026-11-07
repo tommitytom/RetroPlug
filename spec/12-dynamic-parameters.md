@@ -234,7 +234,7 @@ the same size, and not iNES 2.0 (so there is no submapper to split them); their 
 loaders that implement it (byte 7's high nibble is discarded, so mapper 69 reads as 5), and adopting
 iNES 2.0 for its submapper field re-reads bytes 9 and 10 with different meanings. So the identifier
 lives in the ROM's own SIG block instead, and
-[romDetect.ts](../packages/retroplug/src/bliptoaster/romDetect.ts) reads three sources in order:
+[romDetect.ts](../packages/bliptoaster/ts/romDetect.ts) reads three sources in order:
 
 1. **The SIG chip tag.** 4 bytes of NUL-padded ASCII at `+14` from the `bliptoaster` marker, at a
    fixed offset inside the `0x150` prefix everything already reads. `sig.s` bakes it from the same

@@ -6,9 +6,9 @@
 // working memory, so the LAST file dropped is the one showing after the reboot.
 import type { HostBackend } from "./backend";
 import type { SystemsStore, SystemView } from "./systemsStore";
-import { addLsdsngToSav } from "./lsdjSongOps";
-import { planLsdprjImport } from "./lsdjLsdprjImport";
-import { applyOverridesToRom, readOverrides, type LsdjAssetOverride } from "./lsdjAssetsRole";
+import { addLsdsngToSav } from "@retroplug/lsdj/lsdjSongOps";
+import { planLsdprjImport } from "@retroplug/lsdj/lsdjLsdprjImport";
+import { applyOverridesToRom, readOverrides, type LsdjAssetOverride } from "@retroplug/lsdj/lsdjAssetsRole";
 import { resolveSavPath } from "./savPaths";
 
 /** A `.lsdsng` / `.lsdprj` path (the file types this importer handles). */

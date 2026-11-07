@@ -100,7 +100,7 @@ foreach(_rp_settings_ts_file IN LISTS _rp_settings_ts)
     list(APPEND _rp_settings_ts_sources "${_rp_settings_ts_file}")
 endforeach()
 list(APPEND _rp_settings_ts_sources
-     "${CMAKE_SOURCE_DIR}/packages/retroplug/src/settingsEnums.ts"     # the app's own enums: layout, routing, LSDj mode
+     "${CMAKE_SOURCE_DIR}/packages/retroplug/src/settingsEnums.ts"     # the app's own enums: layout, routing
      "${CMAKE_SOURCE_DIR}/packages/retroplug/src/systemSettings.ts"    # and the gain range every system's mix reads
      "${CMAKE_SOURCE_DIR}/packages/retroplug/src/graph/buildGraph.ts")  # the document's own knob and field tables
 list(SORT _rp_settings_ts_sources)
@@ -242,7 +242,7 @@ set(_rp_refused_native
     "ShellInclude|which is in the shell (packages/native): no package may use the shell"
     "UndeclaredSource|compiles ${CMAKE_SOURCE_DIR}/packages/graph-runtime/native/src/foo.cpp, which is in the graph-runtime package's tree"
     "ShellSource|compiles ${CMAKE_SOURCE_DIR}/packages/native/src/foo.cpp, which is in the shell (packages/native)"
-    "Unjudged|a generator expression the boundary check cannot evaluate")
+    "Unjudged|which the boundary check cannot evaluate")
 foreach(_rp_refused IN LISTS _rp_refused_native)
     string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
     list(GET _rp_refused 0 _rp_fixture)
@@ -288,7 +288,19 @@ set(_rp_gather_cases
     "alias|refused|links retroplug-beta, a target of the beta package, which alpha does not declare"
     "alias-declared|holds|"
     "copt|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
-    "unjudged|refused|a generator expression the boundary check cannot evaluate")
+    "copt-genex|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
+    "copt-relative|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
+    "copt-iquote|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
+    "copt-idirafter|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
+    "copt-isystem|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
+    "copt-shell|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
+    "copt-external|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
+    "link-path|refused|which is in the beta package's tree, which alpha does not declare"
+    "link-path-shell|refused|which is in the shell (packages/native)"
+    "link-options-dir|refused|adds the link directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/lib, which is in the beta"
+    "link-options-name|refused|links -lretroplug-beta, a library of the beta package, which alpha does not declare"
+    "link-options-name-shell|refused|links -lretroplug-backend, a library of the shell (packages/native)"
+    "unjudged|refused|which the boundary check cannot evaluate")
 foreach(_rp_case IN LISTS _rp_gather_cases)
     string(REPLACE "|" ";" _rp_case "${_rp_case}")
     list(GET _rp_case 0 _rp_name)

@@ -16,11 +16,11 @@ import { useMemo } from "react";
 
 import { useStores, useSystem } from "../../stores/useStores";
 import { hasRole, roleConfig } from "@retroplug/core/systemRoles";
-import { LsdjReader } from "../../../src/lsdj/runtime";
-import { decodeSong, type Song } from "../../../src/lsdj";
-import { LsdjRom } from "../../../src/lsdj/rom";
-import { applyOverridesToRom, readOverrides } from "../../../src/lsdjAssetsRole";
-import { LsdjHdCanvas, HD_COLS, HD_ROWS, renderMode2, type KitSampleNameLookup } from "../../../src/lsdj/hd";
+import { LsdjReader } from "@retroplug/lsdj/runtime";
+import { decodeSong, type Song } from "@retroplug/lsdj";
+import { LsdjRom } from "@retroplug/lsdj/rom";
+import { applyOverridesToRom, readOverrides } from "@retroplug/lsdj/lsdjAssetsRole";
+import { LsdjHdCanvas, HD_COLS, HD_ROWS, renderMode2, type KitSampleNameLookup } from "@retroplug/lsdj/hd";
 import type { ControlPlaneBackend } from "../../../src/backend";
 
 /** The working song is the first 0x8000 bytes of the sav image (codec/sav.ts's kWorkingSong..kSongBytes). */

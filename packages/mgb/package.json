@@ -1,0 +1,34 @@
+{
+  "name": "@retroplug/mgb",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "mGB's half of the app: the mgb feature role (every routed MIDI byte into the Game Boy's serial port), the ROM provider that attaches it to the embedded synth or a file-backed mGB cart, and the rp.mgb.midi protocol node (span label 17) that runs it on the audio thread.",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./app": "./ts/app.ts",
+    "./mgbMidiNode": "./ts/mgbMidiNode.ts",
+    "./protocol": "./ts/protocol.ts",
+    "./romProvider": "./ts/romProvider.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/sameboy": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "ts/app.ts",
+    "protocol": {
+      "module": "ts/protocol.ts",
+      "nodes": [{ "type": "rp.mgb.midi", "label": 17, "midiIn": "midi", "writes": ["serialIn"] }],
+      "roles": { "mgb": "rp.mgb.midi" }
+    }
+  }
+}

@@ -1,21 +1,21 @@
 #!/usr/bin/env node
-// Regenerates packages/retroplug/test/lsdj/fixtures.ts — a base64-embedded set of
+// Regenerates packages/lsdj/ts/fixtures.ts — a base64-embedded set of
 // real LSDj .sav bytes for the pure-TS test tier (which cannot read disk). The
-// matching decode reference lives as JSON under test/lsdj/golden/ and is imported
+// matching decode reference lives as JSON under packages/lsdj/ts/test/golden/ and is imported
 // directly (esbuild inlines JSON). Source savs are the committed liblsdj content
-// fixtures under test/lsdj/savs/, so this is deterministic.
+// fixtures under packages/lsdj/ts/test/savs/, so this is deterministic.
 // Run: node tools/gen-lsdj-fixtures.mjs
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SAV_DIR = resolve(REPO, "packages/retroplug/test/lsdj/savs");
+const SAV_DIR = resolve(REPO, "packages/lsdj/ts/test/savs");
 
 // The full set of liblsdj content-bearing savs — content-rich AND spanning EVERY
 // decode branch (the version predicates sit at fmt 4/5/6/7/8/9/10/11/16, with
 // nothing between; fmt12..15/17..22 share fmt11/16's paths). Goldens:
-// test/lsdj/golden/<key>.json. Embedding all of them makes the pure-TS decode
+// packages/lsdj/ts/test/golden/<key>.json. Embedding all of them makes the pure-TS decode
 // oracle self-sufficient — it covers the same branch surface as the (deletable)
 // C++/liblsdj differential.
 const FIXTURES = [
@@ -61,6 +61,6 @@ export function savBytes(key: keyof typeof B64): Uint8Array {
 export const FIXTURE_KEYS = ${JSON.stringify(FIXTURES.map((f) => f[0]))} as const;
 `;
 
-const OUT = resolve(REPO, "packages/retroplug/test/lsdj/fixtures.ts");
+const OUT = resolve(REPO, "packages/lsdj/ts/fixtures.ts");
 writeFileSync(OUT, body);
 console.error(`wrote ${OUT} (${FIXTURES.length} savs)`);

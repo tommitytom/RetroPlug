@@ -5,7 +5,7 @@
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFrom, type SavInput } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
 import { LsdjProbe, transitions, changeMs, gaps, fmtSample } from "./lsdjPlaybackProbe";
 import { directGraph } from "../src/graph/directGraph";
 

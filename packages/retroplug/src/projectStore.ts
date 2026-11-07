@@ -21,11 +21,11 @@ import type { RoleRegistry } from "@retroplug/core/systemRoles";
 import type { RecentStore } from "./recentStore";
 import { workingSongReady, songLoadByNameWouldDiscard, songLoadWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
-import { workingSongSignature, savSyncMode, songRowTicksFromSav } from "./lsdj/playback/fromSav";
+import { workingSongSignature, savSyncMode, songRowTicksFromSav } from "@retroplug/lsdj/playback/fromSav";
 import type { GraphController } from "./graph/controller";
 import { parseAppConfig } from "./controller/registry";
-import { anchorRowsFromState, anyChannelPlaying, type ControllerAnchor } from "./lsdj/playback/anchor";
-import { LsdjReader } from "./lsdj/runtime";
+import { anchorRowsFromState, anyChannelPlaying, type ControllerAnchor } from "@retroplug/lsdj/playback/anchor";
+import { LsdjReader } from "@retroplug/lsdj/runtime";
 import { basename, dirname, stem } from "./pathUtil";
 import { siblingRplgPath, resolveSavPath } from "./savPaths";
 import {

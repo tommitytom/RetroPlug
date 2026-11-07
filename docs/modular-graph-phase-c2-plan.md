@@ -6121,8 +6121,8 @@ index 715f5ef7..8f97a41a 100644
  audio.renderAudio(6000);                                 // MILLISECONDS of emulated audio, not frames
  audio.pressButton(1, 7 /* Start */, true);               // START on the leader only
 @@ -92,8 +92,10 @@ The two config surfaces are distinct and easy to confuse:
-   the role's two protocol nodes: [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts) before the
-   Game Boy, host to cart, and [lsdjSerialOut.ts](../packages/retroplug/src/script/nodes/lsdjSerialOut.ts)
+   the role's two protocol nodes: [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts) before the
+   Game Boy, host to cart, and [lsdjSerialOut.ts](../packages/lsdj/ts/lsdjSerialOutNode.ts)
    after it, MI.OUT and master sync from the cart to the host). A feature role: it is set with the store's
 -  `setRoleConfig` and handed to both nodes as their settings in the graph the project publishes, while
 -  native's `applyRoleConfig` takes only the `sameboy` and `mesen` system roles (any other kind returns false).
@@ -7239,7 +7239,7 @@ index c8c7a718..469dd3b9 100644
 -  pending command are kept on the instance across mode changes; master sync's state is dropped outside that
 -  mode, so coming back opens a fresh run. Its settings are the role's config through the schema
 -  `rp.lsdj.sync` takes too
--  ([nodes/lsdjSyncSettings.ts](../packages/retroplug/src/script/nodes/lsdjSyncSettings.ts)); it reads only
+-  ([nodes/lsdjSyncSettings.ts](../packages/lsdj/ts/lsdjSyncSettings.ts)); it reads only
 -  `mode`.
 +  other mode it sends nothing and reads nothing of its input, which is empty: the core captures for the two decoded
 +  modes alone, its node's capture following the mode this node runs, so a cart stored in MI.OUT or master sync that
@@ -7247,7 +7247,7 @@ index c8c7a718..469dd3b9 100644
 +  from one of three arrays made with the instance, one a message length. MI.OUT's bit accumulator and pending
 +  command are kept on the instance across mode changes; master sync's state is dropped outside that mode, so coming
 +  back opens a fresh run. Its settings are the role's config through the schema `rp.lsdj.sync` takes too
-+  ([nodes/lsdjSyncSettings.ts](../packages/retroplug/src/script/nodes/lsdjSyncSettings.ts)); it reads only `mode`.
++  ([nodes/lsdjSyncSettings.ts](../packages/lsdj/ts/lsdjSyncSettings.ts)); it reads only `mode`.
  - **`rp.controller.session`** runs a `ControllerSession` ([controller/session.ts](../packages/retroplug/src/controller/session.ts))
    for the app its settings name (`controller/apps/index.ts`, the apps' runtime, zod-free): the surface's
    traffic and the block's clock in (its tick derived from ppq at 24 PPQN), its LED bytes out on

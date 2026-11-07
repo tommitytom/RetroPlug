@@ -12,10 +12,10 @@ import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore, type SongSettle } from "../../src/projectStore";
 import { buildAppRegistry } from "../../src/appHost";
-import { buildSav, SMDJ4_BLOCK_LEN } from "../../src/smsggdj/codec/sav";
-import { resolveSmsggdjLayout } from "../../src/smsggdj/runtime/layout";
+import { buildSav, SMDJ4_BLOCK_LEN } from "@retroplug/smsggdj/codec/sav";
+import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
 import { lsdjSongCatalog } from "../../src/tracker";
-import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
+import { savFrom, loadSongToWorking, type SavInput } from "@retroplug/lsdj";
 import { smsggdjRom, smsggdjRam, lsdjRom, gbRomBattery } from "../systems/fixtures";
 
 const CART = 32 * 1024;

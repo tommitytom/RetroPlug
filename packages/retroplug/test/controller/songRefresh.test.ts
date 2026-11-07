@@ -14,10 +14,10 @@
 import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores } from "../../src/appStores";
-import { workingSongSignature } from "../../src/lsdj/playback/fromSav";
-import * as R from "../../src/lsdj/codec/regions";
+import { workingSongSignature } from "@retroplug/lsdj/playback/fromSav";
+import * as R from "@retroplug/lsdj/codec/regions";
 import { gbRom } from "../systems/fixtures";
-import { identifyLsdj, resolveLayout } from "../../src/lsdj/runtime";
+import { identifyLsdj, resolveLayout } from "@retroplug/lsdj/runtime";
 
 /** Count the project's publishes from here on, sent or not (the graph sends only a document that changed). */
 function countPublishes(stores: ReturnType<typeof composeAppStores>): { n: number } {

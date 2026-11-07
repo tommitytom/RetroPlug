@@ -1,5 +1,5 @@
 // The plain types the NES asset formats are read into. Like the LSDj ROM views
-// (packages/retroplug/src/lsdj/rom/types.ts) there is no zod SSOT: a ROM view reads these out and patches bytes in
+// (packages/lsdj/ts/rom/types.ts) there is no zod SSOT: a ROM view reads these out and patches bytes in
 // place. A theme's roles are "0xNN" strings (the form a .rit file and the inline asset override use), so a .rit
 // round-trips verbatim.
 

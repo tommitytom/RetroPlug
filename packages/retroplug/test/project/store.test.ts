@@ -10,7 +10,7 @@ import { buildAppRegistry } from "../../src/appHost";
 import { K_PROJECT } from "../../src/projectConfig";
 import type { SystemLayout } from "../../src/settingsEnums";
 import { gbRom, gbRomBattery, lsdjRom } from "../systems/fixtures";
-import { savFrom, type SavInput } from "../../src/lsdjSav";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
 
 function newProject(be = new MockBackend("/cfg")) {
   const recent = new RecentStore(be);

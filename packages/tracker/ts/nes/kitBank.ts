@@ -2,7 +2,7 @@
 // populated (isBankPopulated), pack slots into one (assembleKitBank, whose fit rule is the kit compiler's own per-slot
 // reason), and decode a DPCM stream to audio (dpcmDecode) for round-trip verification. A bank is produced by the kit
 // compiler (dsp's chain, over the offline jobs) or re-packed here; risa's own addition - the rows its resident
-// metadata mirror carries - stays with risa (packages/retroplug/src/risa/rom/kit.ts). Ported from risa's
+// metadata mirror carries - stays with risa (@retroplug/risa/rom/kit). Ported from risa's
 // tools/rom_patcher/src/{kit_bank_parser.js, kit_editor/decoder.js}.
 
 import {

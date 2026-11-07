@@ -19,7 +19,8 @@ import {
 } from "@retroplug/sameboy/enums";
 import { REGION_VALUES, type ConsoleRegion } from "@retroplug/mesen/enums";
 import { MIDI_ROUTING_VALUES } from "@retroplug/core/midiRouting";
-import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, LSDJ_MODE_VALUES, type AudioRouting, type LsdjSyncMode } from "../../../src/settingsEnums";
+import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, type AudioRouting } from "../../../src/settingsEnums";
+import { LSDJ_MODE_VALUES, type LsdjSyncMode } from "@retroplug/lsdj/enums";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
 import type { SplitMode } from "../../../src/render";
@@ -30,14 +31,14 @@ import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath, SAV_PATTERNS, isSavPath } from "../../../src/savPaths";
 import { stem, dirname, basename, extension, joinPath, shortenMiddle } from "../../../src/pathUtil";
 import { ROM_PATTERNS } from "../../../src/fileSelection";
-import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
-import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
+import { LsdjRom, decodeLsdpal, encodeLsdpal } from "@retroplug/lsdj/rom";
+import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "@retroplug/lsdj";
 import {
   replaceSongInSav,
   saveWorkingToCatalog as lsdjSaveWorkingToCatalog,
   canSaveWorkingToCatalog,
-} from "../../../src/lsdjSongOps";
-import { activeSlot as lsdjActiveSlot } from "../../../src/lsdj/codec/sav";
+} from "@retroplug/lsdj/lsdjSongOps";
+import { activeSlot as lsdjActiveSlot } from "@retroplug/lsdj/codec/sav";
 import { importSongFiles } from "../../../src/lsdjSongImport";
 import {
   songRecordBytes,
@@ -46,18 +47,26 @@ import {
   workingSongRecord,
   saveWorkingToCatalog,
   canSaveWorkingToCatalog as canRisaSaveWorking,
-} from "../../../src/risaSongOps";
-import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
-import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
+} from "@retroplug/risa/risaSongOps";
+import {
+  RisaRom,
+  serializeRit,
+  parseRit,
+  decodeThemeFromRom,
+  isBankPopulated,
+  bankToModel,
+  KIT_BANK_SIZE,
+} from "@retroplug/risa/rom";
+import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "@retroplug/risa/risaAssetsRole";
 import {
   BlipToasterRom,
   blipToasterSettingsSysex,
   type BlipToasterSettings,
   type BlipToasterSettingsPatch,
-} from "../../../src/bliptoaster/rom";
-import { readSettings as readBlipToasterSettingsConfig } from "../../../src/bliptoasterAssetsRole";
-import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
-import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
+} from "@retroplug/bliptoaster/rom";
+import { readSettings as readBlipToasterSettingsConfig } from "@retroplug/bliptoaster/bliptoasterAssetsRole";
+import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "@retroplug/lsdj/lsdjAssetsRole";
+import { planLsdprjImport } from "@retroplug/lsdj/lsdjLsdprjImport";
 // Aliased: `replaceSong` and `addSong` are already taken here by the LSDj row helpers.
 import {
   readSongBlock as readSmdjSongBlock,
@@ -66,7 +75,7 @@ import {
   unwrapSong as unwrapSmdjSong,
   replaceSong as replaceSmdjSong,
   addSong as addSmdjSong,
-} from "../../../src/smsggdj/codec/sav";
+} from "@retroplug/smsggdj/codec/sav";
 import {
   mutateLiveSav,
   effectiveAssets,
@@ -1451,7 +1460,8 @@ const blipToasterAssetSpec: AssetMenuSpec = {
 
 // --- BlipToaster settings rows (the cart's baked rig defaults) -----------------------------------------
 // BlipToaster has no settings memory - no battery, and nothing survives a RESET on purpose - so what you would
-// set once for your rig is baked into the `.nes`: a 16-byte block in its code bank (src/bliptoaster/rom/settings).
+// set once for your rig is baked into the `.nes`: a 16-byte block in its code bank
+// (@retroplug/bliptoaster/rom/settings).
 // These rows edit it exactly the way the asset rows edit assets: the pick is persisted on the
 // `bliptoaster-assets` role and folded into the ROM IN MEMORY at construct, and the file on disk is untouched.
 //

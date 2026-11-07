@@ -33,7 +33,16 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+      '@retroplug/tracker':
+        specifier: workspace:*
+        version: link:../tracker
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -92,6 +101,31 @@ importers:
         specifier: workspace:*
         version: link:../node-sdk
 
+  packages/lsdj:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/dsp':
+        specifier: workspace:*
+        version: link:../dsp
+      '@retroplug/sameboy':
+        specifier: workspace:*
+        version: link:../sameboy
+      '@retroplug/tracker':
+        specifier: workspace:*
+        version: link:../tracker
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/mesen:
     dependencies:
       '@retroplug/core':
@@ -105,11 +139,36 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/mgb:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/sameboy':
+        specifier: workspace:*
+        version: link:../sameboy
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/n8:
     dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@retroplug/testing':
         specifier: workspace:*
@@ -128,21 +187,58 @@ importers:
 
   packages/retroplug:
     dependencies:
+      '@retroplug/bliptoaster':
+        specifier: workspace:*
+        version: link:../bliptoaster
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
       '@retroplug/dsp':
         specifier: workspace:*
         version: link:../dsp
+      '@retroplug/lsdj':
+        specifier: workspace:*
+        version: link:../lsdj
       '@retroplug/mesen':
         specifier: workspace:*
         version: link:../mesen
+      '@retroplug/mgb':
+        specifier: workspace:*
+        version: link:../mgb
       '@retroplug/n8':
         specifier: workspace:*
         version: link:../n8
+      '@retroplug/risa':
+        specifier: workspace:*
+        version: link:../risa
       '@retroplug/sameboy':
         specifier: workspace:*
         version: link:../sameboy
+      '@retroplug/smsggdj':
+        specifier: workspace:*
+        version: link:../smsggdj
+      '@retroplug/tracker':
+        specifier: workspace:*
+        version: link:../tracker
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/risa:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/dsp':
+        specifier: workspace:*
+        version: link:../dsp
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
@@ -166,6 +262,25 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/smsggdj:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/tracker':
+        specifier: workspace:*
+        version: link:../tracker
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

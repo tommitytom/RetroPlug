@@ -8,8 +8,8 @@
 
 import { test, expect, skip, ui, navTo, Key } from "ui-harness";
 import { createRealBackend } from "../src/realBackend";
-import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
-import { listSongs, readSongBlock, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/sav";
+import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
+import { listSongs, readSongBlock, SMDJ4_BLOCK_LEN } from "@retroplug/smsggdj/codec/sav";
 import { buildMetronomeBlock } from "../test-native/smsSyncSong";
 
 const ROM = () => ui.romDir() + "/smsggdj_v0_45.sms";

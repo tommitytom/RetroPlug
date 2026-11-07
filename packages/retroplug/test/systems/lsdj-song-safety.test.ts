@@ -5,7 +5,7 @@
 // long SEQUENTIAL chain of edits re-validating after every step, and cover the malformed-input / full / empty
 // / single-song edges + swapProjectSlots directly.
 import { test, expect } from "@retroplug/testing";
-import { savBytes } from "../lsdj/fixtures";
+import { savBytes } from "@retroplug/lsdj/testFixtures";
 import {
   listProjects,
   decompressSlot,
@@ -16,10 +16,10 @@ import {
   swapProjectSlots,
   loadSongToWorking,
   savSongName,
-} from "../../src/lsdjSav";
-import { workingSongName } from "../../src/lsdj/codec/sav";
-import { deleteSongInSav, addLsdsngToSav, replaceSongInSav, importAllSongsFromSav, importSongsFromSav, moveSongInSav } from "../../src/lsdjSongOps";
-import { sameBytes, firstDiff } from "../_bytes";
+} from "@retroplug/lsdj";
+import { workingSongName } from "@retroplug/lsdj/codec/sav";
+import { deleteSongInSav, addLsdsngToSav, replaceSongInSav, importAllSongsFromSav, importSongsFromSav, moveSongInSav } from "@retroplug/lsdj/lsdjSongOps";
+import { sameBytes, firstDiff } from "@retroplug/testing/bytes";
 
 // all.sav: two REAL multi-block stored projects — [0] "HAPPY BD", [1] "YOURULE" (each 0x8000 decompressed).
 const ALL = () => savBytes("all");

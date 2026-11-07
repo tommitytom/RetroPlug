@@ -10,10 +10,10 @@
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFrom, type SavInput } from "../src/lsdjSav";
-import { LsdjReader } from "../src/lsdj/runtime";
-import { SongSchema } from "../src/lsdj/model";
-import { songRowTicks } from "../src/lsdj/playback";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
+import { LsdjReader } from "@retroplug/lsdj/runtime";
+import { SongSchema } from "@retroplug/lsdj/model";
+import { songRowTicks } from "@retroplug/lsdj/playback";
 import { padIndex } from "../src/launchpad";
 import { directGraph } from "../src/graph/directGraph";
 

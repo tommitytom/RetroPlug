@@ -13131,7 +13131,7 @@ index 15312570..1dc199d3 100644
  ### Verdict
  
 -Feasible, and most of it is pure TS on rails that already exist. The LSDj side needs **no new tracker code at all**: [`dspRoles.ts:103`](../packages/retroplug/src/dspRoles.ts#L103) already implements MI.MAP byte-for-byte. The native work is bounded and enumerable (§6).
-+Feasible, and most of it is pure TS on rails that already exist. The LSDj side needs **no new tracker code at all**: `dspRoles.ts:103` already implements MI.MAP byte-for-byte (since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)). The native work is bounded and enumerable (§6).
++Feasible, and most of it is pure TS on rails that already exist. The LSDj side needs **no new tracker code at all**: `dspRoles.ts:103` already implements MI.MAP byte-for-byte (since B3b, [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts)). The native work is bounded and enumerable (§6).
  
  ### The one real complication
  
@@ -13140,7 +13140,7 @@ index 15312570..1dc199d3 100644
  ### 2.2 RetroPlug already implements exactly this
  
 -[`dspRoles.ts:103-121`](../packages/retroplug/src/dspRoles.ts#L103-L121) (`midiMap`) is a byte-for-byte match, including the `0xFE` handshake and the `lastRow` cross-block state. `midiMapRow` ([`dspRoles.ts:62`](../packages/retroplug/src/dspRoles.ts#L62)) does the two-channel row extension. **The Launchpad app produces the MIDI this role already consumes** - it does not reimplement LSDj.
-+`dspRoles.ts:103-121` (`midiMap`; since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)) is a byte-for-byte match, including the `0xFE` handshake and the `lastRow` cross-block state. `midiMapRow` (`dspRoles.ts:62`; now [lsdjSyncBytes.ts](../packages/retroplug/src/lsdjSyncBytes.ts)) does the two-channel row extension. **The Launchpad app produces the MIDI this role already consumes** - it does not reimplement LSDj.
++`dspRoles.ts:103-121` (`midiMap`; since B3b, [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts)) is a byte-for-byte match, including the `0xFE` handshake and the `lastRow` cross-block state. `midiMapRow` (`dspRoles.ts:62`; now [lsdjSyncBytes.ts](../packages/lsdj/ts/lsdjSyncBytes.ts)) does the two-channel row extension. **The Launchpad app produces the MIDI this role already consumes** - it does not reimplement LSDj.
  
  ### 2.3 Correction: LIVEMAP no longer exists
  
@@ -13149,12 +13149,12 @@ index 15312570..1dc199d3 100644
  | Rail | Where | Relevance |
  |---|---|---|
 -| MI.MAP implementation | [`dspRoles.ts:103`](../packages/retroplug/src/dspRoles.ts#L103) | The LSDj side is done |
-+| MI.MAP implementation | `dspRoles.ts:103` (since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)) | The LSDj side is done |
++| MI.MAP implementation | `dspRoles.ts:103` (since B3b, [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts)) | The LSDj side is done |
  | Role registry + zod-validated config, testable with zero C++ | [`systemRoles.ts`](../packages/retroplug/src/systemRoles.ts), [`dspRoles.ts`](../packages/retroplug/src/dspRoles.ts) | The template for the controller-app registry |
 -| Project-scope behaviours run **regardless of system count** | [`dspKernel.ts:399`](../packages/retroplug/src/dspKernel.ts#L399) | A device-only project (real GB, no emulated system) works structurally |
 +| Project-scope behaviours run **regardless of system count** | `dspKernel.ts:399` (deleted in B3b) | A device-only project (real GB, no emulated system) works structurally |
  | SysEx already contemplated in TS routing | [`midiRouting.ts:43`](../packages/retroplug/src/midiRouting.ts#L43) | Long messages broadcast unchanged; no TS-side change needed |
- | Pure-TS LSDj sav codec + runtime WRAM reader | [`src/lsdj/`](../packages/retroplug/src/lsdj/) | Both `PlaybackModel` implementations are built from existing parts |
+ | Pure-TS LSDj sav codec + runtime WRAM reader | [`src/lsdj/`](../packages/lsdj/ts/) | Both `PlaybackModel` implementations are built from existing parts |
  | **`N8Link`**: audio thread -> SpscRing -> dedicated device thread, injected `PortFactory` so it is testable hardware-free | [`N8Link.hpp`](../packages/native/src/host/n8/N8Link.hpp) | **The direct architectural precedent** for a device-scoped link |
 @@ -343,7 +343,7 @@ list each render, so a device that goes away while idle takes its menu with it.)
  
@@ -16008,7 +16008,7 @@ index 382b5f25..2b4b535f 100644
 -  by [dspRoles.ts](../packages/retroplug/src/dspRoles.ts)). A feature role: it is set with the store's
 -  `setRoleConfig` and read by the DSP kernel, while native's `applyRoleConfig` takes only the `sameboy` and
 -  `mesen` system roles (any other kind returns false).
-+  by the role's protocol node, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)). A feature
++  by the role's protocol node, [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts)). A feature
 +  role: it is set with the store's `setRoleConfig` and handed to that node as its settings in the graph the
 +  project publishes, while native's `applyRoleConfig` takes only the `sameboy` and `mesen` system roles (any
 +  other kind returns false).
@@ -16811,7 +16811,7 @@ index 9cd89257..046b5099 100644
 -`buttons`/`keys` inputs are present but unfed. Feeding host keys/buttons per block (a port on the kernel
 -node, or on the protocol node that replaces it) unblocks this mode. (See
 -[04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).)
-+([script/nodes/lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts), the role's protocol
++([script/nodes/lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts), the role's protocol
 +node). Raw Keyboard sends nothing because it needs a per-block **`keys` feed**, which nothing supplies
 +yet: `rp.lsdj.sync` has no input for host keys (the DSP kernel carried empty `buttons` and `keys`
 +arrays until B3b deleted it), and no host stages any. A `keys` input on the node, and a host I/O node
@@ -16897,7 +16897,7 @@ index 9cd89257..046b5099 100644
 +  nodes users write (Phase C, the Reaktor-scale aim). B3b made that seven nodes a project, not one.
 +- **Found while building B3b, left as they are:**
 +  - The MI.OUT and master-sync decoders (`arduinoboyDecodeSerialOut`, `arduinoboyMasterSyncBlock` in
-+    [lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)) build each message they emit as a new
++    [lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)) build each message they emit as a new
 +    array, about 3 JS allocations for every host MIDI message they decode: the one per-block JS allocation
 +    left on a production path (every other protocol node allocates nothing in a warm block,
 +    [08-profiling.md](08-profiling.md)). Emitting into a reused buffer is the decoders' own change.
@@ -17020,7 +17020,7 @@ index 11232dd3..547d31e2 100644
 -indexed-loop `mgb`). That cut Profile A from **~171 to ~32 allocs/block** (−81%). The residual per-block
 -churn is now the kernel node's `BlockInput` copy (the marshalling row above) plus QuickJS per-call
 -internals.
-+| the MI.OUT and master-sync decoders' `emit([...])` ([lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts)), run by `rp.lsdj.sync` in its two MIDI-out modes | about 3 JS objects for every host MIDI message decoded: the one per-block allocation left on a production path |
++| the MI.OUT and master-sync decoders' `emit([...])` ([lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts)), run by `rp.lsdj.sync` in its two MIDI-out modes | about 3 JS objects for every host MIDI message decoded: the one per-block allocation left on a production path |
 +| `rp.risa.sync`'s arm packet ([risaSync.ts](../packages/retroplug/src/risaSync.ts) `risaArmPacket`) | one array on a start or a seek |
 +| `rp.controller.session`'s surface diff and launches ([controller/session.ts](../packages/retroplug/src/controller/session.ts)) | per LED change and per launch, while a surface is in use |
 +
@@ -17057,7 +17057,7 @@ index 11232dd3..547d31e2 100644
 -MIDI-over-serial; the `mgb` role forwards every byte verbatim
 -([dspRoles.ts:29](../packages/retroplug/src/dspRoles.ts#L29)). It responds to note on/off
 +MIDI-over-serial; the `mgb` role's node forwards every byte verbatim
-+([nodes/mgbMidi.ts](../packages/retroplug/src/script/nodes/mgbMidi.ts)). It responds to note on/off
++([nodes/mgbMidi.ts](../packages/mgb/ts/mgbMidiNode.ts)). It responds to note on/off
  (velocity 0 = note-off), a handful of CCs (pulse-width, envelope, sweep, PB-range, preset, pan, sustain),
  pitch bend, and program change (1–15 = preset). Profiles:
  
@@ -17189,7 +17189,7 @@ index 11232dd3..547d31e2 100644
  - [src/audioDriver.ts](../packages/retroplug/src/audioDriver.ts) — `renderAudio` /
    `stageMidiIn` / `setBpm` / `setTransport` (the bench's injection surface).
 -- `src/script/kernelNode.ts` / `src/dspKernel.ts` (both deleted in B3b) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts) / [src/dspRoles.ts](../packages/retroplug/src/dspRoles.ts): the per-block allocation sites (§3), the kernel node's `blockInput` and its role tracer among them.
-+- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts): the protocol nodes the benchmarks drive, and the decoders that are the per-block allocation site left (§3).
++- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts): the protocol nodes the benchmarks drive, and the decoders that are the per-block allocation site left (§3).
  - [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts) —
    the setup template to copy.
  - [scripts/run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) — how a

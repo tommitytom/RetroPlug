@@ -5,8 +5,8 @@
 import { test, expect } from "@retroplug/testing";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
-import { registerDspRoles } from "../../src/dspRoles";
-import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
+import { registerFeatureRoles } from "../_featureRoles";
+import { registerLsdjAssetsRole } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 import { sameboyRoleConfig } from "../systems/fixtures";
 
@@ -20,7 +20,7 @@ function headerWithTitle(title: string): Uint8Array {
 function registry(): RoleRegistry {
   const reg = new RoleRegistry();
   registerCoreRoles(reg); // sameboy system role
-  registerDspRoles(reg); // mgb / nes-n8-midi / risa-sync / sms-sync / lsdj-sync role types (schemas)
+  registerFeatureRoles(reg); // mgb / nes-n8-midi / risa-sync / sms-sync / lsdj-sync role types (schemas)
   registerLsdjAssetsRole(reg); // lsdj-assets role type (schema)
   registerRomProviders(reg); // the providers under test
   return reg;

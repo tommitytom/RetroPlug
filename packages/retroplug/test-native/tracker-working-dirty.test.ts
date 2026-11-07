@@ -18,7 +18,7 @@ import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
 import { mutateLiveSav, lsdjSongCatalog, risaSongCatalog } from "../src/tracker";
-import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../src/risa/codec/constants";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "@retroplug/risa/codec/constants";
 
 declare const __RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;

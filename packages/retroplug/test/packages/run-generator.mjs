@@ -16,7 +16,8 @@
 //   missing-node    { error: <the generated entry's own refusal> }
 //   order | cycle | unlisted-contributes | unlisted-plain | depends-on-shell | duplicate | duplicate-type |
 //   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unexported-app | name-mismatch |
-//   outside-ts | shell-undeclared | unknown-key | half-wired | extra-node
+//   outside-ts | shell-undeclared | unknown-key | half-wired | extra-node | duplicate-role-kind |
+//   duplicate-kit-format | duplicate-marker-role
 //                   { error: <the generator's message, or null when it did not refuse> }
 //                   (unlisted-plain generates, and reports files like generate)
 //
@@ -71,6 +72,53 @@ function refusal() {
     return { error: e.message };
   }
   return { error: null };
+}
+
+/** The fixture apps, each contributing a role and one entry of every other list: every entry carries the package's
+ *  name, and the integration its marker role, since those are the keys the generated module checks for a duplicate. */
+function contributionApp(name) {
+  const role = name === "retroplug" ? "shell-role" : `${name}-role`;
+  return (
+    "export default {\n" +
+    `  roles: [{ kind: "${role}" }],\n` +
+    `  romProviders: [{ id: "${name}" }],\n` +
+    `  trackerIntegrations: [{ id: "${name}", markerRole: "${name}-marker" }],\n` +
+    `  kitFormats: [{ id: "${name}" }],\n` +
+    "};\n"
+  );
+}
+
+/** A fixture app whose four lists the mode writes: a shared key in one list is what the generated module refuses. */
+function appWith({ kind, provider, markerRole, kitId }) {
+  return (
+    "export default {\n" +
+    `  roles: [{ kind: "${kind}" }],\n` +
+    `  romProviders: [{ id: "${provider}" }],\n` +
+    `  trackerIntegrations: [{ id: "${markerRole}", markerRole: "${markerRole}" }],\n` +
+    `  kitFormats: [{ id: "${kitId}" }],\n` +
+    "};\n"
+  );
+}
+
+// The generated packages.ts, bundled and loaded: the lists are plain data (the apps it imports are plain objects), so
+// loading reports exactly what a build's registries would see.
+async function loadPackages() {
+  const out = join(work, "packages.mjs");
+  const { buildSync } = require("esbuild");
+  buildSync({
+    ...buildOptions(join(generated, "packages.ts"), out, "esm"),
+    alias: {
+      "@retroplug/alpha/app": join(root, "packages/alpha/ts/app.ts"),
+      "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
+    },
+  });
+  const loaded = await import(pathToFileURL(out).href);
+  return {
+    roles: loaded.ROLES.map((role) => role.kind),
+    romProviders: loaded.ROM_PROVIDERS.map((provider) => provider.id),
+    trackerIntegrations: loaded.TRACKER_INTEGRATIONS.map((integration) => integration.id),
+    kitFormats: loaded.KIT_FORMATS.map((format) => format.id),
+  };
 }
 
 // The generated entry, bundled and loaded as the build loads it. Loading it runs its checks and registers.
@@ -306,6 +354,62 @@ try {
         delete json.dependencies["@retroplug/alpha"];
       });
       result = refusal();
+      break;
+    case "duplicate-role-kind":
+      // Two apps register one role kind: the registry holds roles by kind, so the second would replace the first
+      // without a word.
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        appWith({ kind: "shared-role", provider: "alpha", markerRole: "alpha", kitId: "alpha" }),
+      );
+      writeTree(
+        "packages/beta/ts/app.ts",
+        appWith({ kind: "shared-role", provider: "beta", markerRole: "beta", kitId: "beta" }),
+      );
+      writeTree("packages/retroplug/src/app.ts", "export default {};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "duplicate-kit-format":
+      // Two formats with one id: the audio driver dispatches by id, so one would be unreachable.
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        appWith({ kind: "alpha-role", provider: "alpha", markerRole: "alpha", kitId: "shared-kit" }),
+      );
+      writeTree(
+        "packages/beta/ts/app.ts",
+        appWith({ kind: "beta-role", provider: "beta", markerRole: "beta", kitId: "shared-kit" }),
+      );
+      writeTree("packages/retroplug/src/app.ts", "export default {};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "duplicate-marker-role":
+      // Two integrations with one marker role: resolveTracker takes the first whose marker a system has, and the
+      // markers are exclusive by design, so the second could never be reached.
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        appWith({ kind: "alpha-role", provider: "alpha", markerRole: "shared-marker", kitId: "alpha" }),
+      );
+      writeTree(
+        "packages/beta/ts/app.ts",
+        appWith({ kind: "beta-role", provider: "beta", markerRole: "shared-marker", kitId: "beta" }),
+      );
+      writeTree("packages/retroplug/src/app.ts", "export default {};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
       break;
     default:
       console.error(`run-generator.mjs: unknown mode "${MODE}"`);

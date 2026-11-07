@@ -8,8 +8,8 @@ import { useMemo } from "react";
 import { useStores, useSystem } from "../../stores/useStores";
 import { useFrameSampled } from "../../lvgl/useFramePoll";
 import { hasRole } from "@retroplug/core/systemRoles";
-import { runtime } from "../../../src/risa";
-import type { RisaState } from "../../../src/risa/runtime";
+import { runtime } from "@retroplug/risa";
+import type { RisaState } from "@retroplug/risa/runtime";
 
 // A compact signature of exactly the fields RisaOverlay renders — skip no-op re-renders. Covers screen +
 // cursor, play/mode, tempo, and each track's playing phrase.row (excludes chain/song rows, not shown).

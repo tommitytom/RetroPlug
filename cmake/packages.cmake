@@ -378,23 +378,90 @@ function(_retroplug_unwrap_item out item unwrapable)
     set(${unwrapable} "${_ok}" PARENT_SCOPE)
 endfunction()
 
-# _retroplug_check_native_boundaries(<package> LINKS <target=linked>... INCLUDES <target=dir>... SOURCES <target=file>...
-#                                    UNJUDGED <target=item>... DECLARED <package>... DEV_DECLARED <package>... [TEST]
-#                                    OWNERS <target=package>...): a package's native targets may link the targets of the
-# packages its manifest declares, add include directories inside its own tree or a declared package's, and compile
-# sources inside its own tree. A TEST target (retroplug_add_test_binary's) may also link its package's devDependencies,
-# as a test file may import them; a library target may not. Nothing may link or include the shell (packages/native,
+# _retroplug_unwrap_option(<out> <item> <unwrapable>): an option as a literal when the generator expressions around it
+# are forms this check evaluates: the ones _retroplug_unwrap_item knows, and a condition's own value
+# ($<$<COMPILE_LANGUAGE:CXX>:-Ifoo>, $<$<CONFIG:Debug>:-Ifoo>), whose inner value is a literal. An option hidden behind
+# anything else (a target property, a configuration expression) is not evaluated, and the caller passes it unseen: a
+# compile option legitimately holds such an expression ($<COMPILE_LANGUAGE:CXX>:/bigobj), and refusing every one would
+# refuse a build that declared nothing. The header says what that leaves unjudged.
+function(_retroplug_unwrap_option out item unwrapable)
+    set(_value "${item}")
+    set(_ok TRUE)
+    while(_value MATCHES "^\\$<")
+        if(_value MATCHES "^\\$<(BUILD_INTERFACE|LINK_ONLY|TARGET_NAME):(.+)>$")
+            set(_value "${CMAKE_MATCH_2}")
+        elseif(_value MATCHES "^\\$<\\$<(COMPILE_LANGUAGE|CONFIG):[^>]+>:(.+)>$")
+            set(_value "${CMAKE_MATCH_2}")
+        else()
+            set(_ok FALSE)
+            break()
+        endif()
+    endwhile()
+    set(${out} "${_value}" PARENT_SCOPE)
+    set(${unwrapable} "${_ok}" PARENT_SCOPE)
+endfunction()
+
+# _retroplug_include_flag(<dir> <wants> <isFlag> <item>): whether an option is an include flag, the directory it spells,
+# and whether that directory is the next item (a bare -I). The spellings the compilers take are all judged: -I, -iquote,
+# -idirafter and -isystem, attached (-Ifoo) or apart (-I foo), MSVC's /I and /external:I, and CMake's SHELL: form of the
+# separated ones (SHELL:-I foo). A SHELL: command that is none of these is no include flag.
+function(_retroplug_include_flag dir wants isFlag item)
+    set(_dir "")
+    set(_wants FALSE)
+    set(_is FALSE)
+    if(item MATCHES "^SHELL:-(I|iquote|idirafter|isystem) (.+)$")
+        set(_dir "${CMAKE_MATCH_2}")
+        set(_is TRUE)
+    elseif(item MATCHES "^(/external:I|-iquote|-idirafter|-isystem|-I|/I)(.+)$")
+        set(_dir "${CMAKE_MATCH_2}")
+        set(_is TRUE)
+    elseif(item STREQUAL "/external:I" OR item STREQUAL "-iquote" OR item STREQUAL "-idirafter"
+           OR item STREQUAL "-isystem" OR item STREQUAL "-I" OR item STREQUAL "/I")
+        set(_wants TRUE)
+        set(_is TRUE)
+    endif()
+    set(${dir} "${_dir}" PARENT_SCOPE)
+    set(${wants} "${_wants}" PARENT_SCOPE)
+    set(${isFlag} "${_is}" PARENT_SCOPE)
+endfunction()
+
+# _retroplug_check_native_boundaries(<package> LINKS <target=linked>... LINK_PATHS <target=file>...
+#                                    LINK_DIRS <target=dir>... LIBS <target=name>... INCLUDES <target=dir>...
+#                                    SOURCES <target=file>... UNJUDGED <target=item>... DECLARED <package>...
+#                                    DEV_DECLARED <package>... [TEST] OWNERS <target=package>...): a package's native
+# targets may link the targets of the packages its manifest declares, link a library of a declared package's by path,
+# add include or link-search directories inside its own tree or a declared package's, and compile sources inside its own
+# tree. A TEST target (retroplug_add_test_binary's) may also link its package's devDependencies, as a test file may
+# import them; a library target may not. Nothing may link, include or search the shell (packages/native,
 # packages/retroplug). Anything else is refused, naming the package, the target and the dependency, because a package
 # that reaches past its manifest makes the split a convention again (docs/modular-graph-phase-f1-design.md section 4).
 #
 # UNJUDGED is what the gatherer could not evaluate (a generator expression outside the forms _retroplug_unwrap_item
-# knows), for a target that is not vouched for by RP_BOUNDARY_SKIP: refused here, so the message is held with the rest
-# of the rules rather than live in the gatherer alone.
+# knows, or a bare flag whose value it cannot attribute), for a target that is not vouched for by RP_BOUNDARY_SKIP:
+# refused here, so the message is held with the rest of the rules rather than live in the gatherer alone.
+#
+# What this guards is ACCIDENT AND DRIFT, NOT A DETERMINED AUTHOR. It reads the target properties CMake has already
+# computed and the OWNERS table the build's target directories give it: a review's first pass, not a sandbox. The places
+# it deliberately does not look, so a later author does not read the list as a promise:
+#
+#   - a per-source property (set_source_files_properties' COMPILE_OPTIONS or INCLUDE_DIRECTORIES), which is not the
+#     target's, and the cache flags that apply to every target (CMAKE_CXX_FLAGS and its sisters), which are the root's;
+#   - a generator expression whose value only the build generator knows ($<TARGET_PROPERTY:...>,
+#     $<TARGET_OBJECTS:...>, a condition with more than one operand such as $<$<AND:...>:-Ifoo>): a compile or link
+#     OPTION in one is passed unseen, as the comment in the gatherer says, because a build legitimately holds one that
+#     names no path;
+#   - a linker flag wrapped in -Xlinker or -Wl (the options this reads are the plain -L, -l and -I spellings);
+#   - a library name that matches no target of the build (a system library, a name a -L elsewhere resolves),
+#     `LINK_DIRECTORIES`, an IMPORTED target's location, and a target's OUTPUT_NAME or LINK_DEPENDS;
+#   - `include()` of another package's CMake file, and a target whose properties another package's CMakeList sets: the
+#     owner table attributes a target by its SOURCE_DIR, which such a file does not move.
 #
 # It takes plain lists so a configure-time fixture can drive it (cmake/check-native-boundaries.cmake, held by
 # packages/native/cmake/tests.cmake): a target's real properties need a target, which script mode has none of.
 function(_retroplug_check_native_boundaries package)
-    cmake_parse_arguments(B "TEST" "" "LINKS;INCLUDES;SOURCES;UNJUDGED;DECLARED;DEV_DECLARED;OWNERS" ${ARGN})
+    cmake_parse_arguments(B "TEST" ""
+                          "LINKS;LINK_PATHS;LINK_DIRS;LIBS;INCLUDES;SOURCES;UNJUDGED;DECLARED;DEV_DECLARED;OWNERS"
+                          ${ARGN})
     if(B_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "_retroplug_check_native_boundaries(${package}): unrecognised argument(s): "
                             "${B_UNPARSED_ARGUMENTS}")
@@ -429,6 +496,76 @@ function(_retroplug_check_native_boundaries package)
             message(FATAL_ERROR "retroplug_package(${package}): ${_target} links ${_linked}, a target of the "
                                 "${_owner_of_${_linked}} package, which ${package} does not declare (its package.json "
                                 "dependencies)")
+        endif()
+    endforeach()
+    # A library linked by its file path is the same door as a linked target: what the path is in decides.
+    foreach(_pair IN LISTS B_LINK_PATHS)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _path)
+        file(RELATIVE_PATH _rel "${RP_PACKAGES_DIR}" "${_path}")
+        if(IS_ABSOLUTE "${_rel}" OR _rel MATCHES "^\\.\\.")
+            continue()  # outside the packages' trees: a vendored or system library, or the build's own output
+        endif()
+        string(REGEX REPLACE "/.*$" "" _owner "${_rel}")
+        if(_owner STREQUAL package)
+            continue()
+        endif()
+        if(_owner IN_LIST _shells)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} links ${_path}, which is in the shell "
+                                "(packages/${_owner}): no package may use the shell")
+        endif()
+        if(NOT _owner IN_LIST _allowed)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} links ${_path}, which is in the "
+                                "${_owner} package's tree, which ${package} does not declare (its package.json "
+                                "dependencies)")
+        endif()
+    endforeach()
+    # A link search directory (-L) and a library name (-l) are the same door as a path: the directory a package's
+    # library is found in, and the name it is found by.
+    foreach(_pair IN LISTS B_LINK_DIRS)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _dir)
+        file(RELATIVE_PATH _rel "${RP_PACKAGES_DIR}" "${_dir}")
+        if(IS_ABSOLUTE "${_rel}" OR _rel MATCHES "^\\.\\.")
+            continue()
+        endif()
+        string(REGEX REPLACE "/.*$" "" _owner "${_rel}")
+        if(_owner STREQUAL package)
+            continue()
+        endif()
+        if(_owner IN_LIST _shells)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} adds the link directory ${_dir}, which "
+                                "is in the shell (packages/${_owner}): no package may use the shell")
+        endif()
+        if(NOT _owner IN_LIST _allowed)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} adds the link directory ${_dir}, which is "
+                                "in the ${_owner} package's tree, which ${package} does not declare (its package.json "
+                                "dependencies)")
+        endif()
+    endforeach()
+    foreach(_pair IN LISTS B_LIBS)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _name)
+        if(NOT DEFINED _owner_of_${_name})
+            continue()  # not a target of the build, so no package's to judge (a system library)
+        endif()
+        set(_owner "${_owner_of_${_name}}")
+        if(_owner STREQUAL package)
+            continue()
+        endif()
+        if(_owner IN_LIST _shells)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} links -l${_name}, a library of the shell "
+                                "(packages/${_owner}): no package may use the shell")
+        endif()
+        if(NOT _owner IN_LIST _allowed)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} links -l${_name}, a library of the "
+                                "${_owner} package, which ${package} does not declare (its package.json dependencies)")
         endif()
     endforeach()
     foreach(_pair IN LISTS B_INCLUDES)
@@ -483,8 +620,8 @@ function(_retroplug_check_native_boundaries package)
         string(SUBSTRING "${_pair}" 0 ${_at} _target)
         math(EXPR _at "${_at} + 1")
         string(SUBSTRING "${_pair}" ${_at} -1 _item)
-        message(FATAL_ERROR "retroplug_package(${package}): ${_target} names ${_item}, a generator expression the "
-                            "boundary check cannot evaluate (a link, an include directory or a source): mark the "
+        message(FATAL_ERROR "retroplug_package(${package}): ${_target} names ${_item}, which the boundary check cannot "
+                            "evaluate (a generator expression, or a flag whose value it cannot attribute): mark the "
                             "target RP_BOUNDARY_SKIP if it is nobody's to declare")
     endforeach()
 endfunction()
@@ -543,6 +680,9 @@ function(retroplug_check_package_boundaries)
         foreach(_target IN LISTS _targets_of_${_package})
             get_target_property(_test ${_target} RP_TEST_BINARY)
             set(_links "")
+            set(_link_paths "")
+            set(_link_dirs "")
+            set(_libs "")
             set(_includes "")
             set(_sources "")
             set(_unjudged "")
@@ -559,13 +699,27 @@ function(retroplug_check_package_boundaries)
                         list(APPEND _unjudged "${_target}=${_item}")
                         continue()
                     endif()
-                    # Only a target can be attributed to a package.
+                    # A target is attributed by its SOURCE_DIR; a link item spelled as a path (a package's static
+                    # library, "${CMAKE_BINARY_DIR}/packages/beta/libretroplug-beta.a") is attributed by where it lies,
+                    # so it takes the same judgement. A plain name (pthread, m) is the linker's, not a package's.
                     if(NOT TARGET ${_item})
+                        if(_item MATCHES "[\\\\/]")
+                            get_target_property(_bin_dir ${_target} BINARY_DIR)
+                            if(IS_ABSOLUTE "${_item}")
+                                set(_path "${_item}")
+                            elseif(_bin_dir AND NOT _bin_dir MATCHES "-NOTFOUND$")
+                                set(_path "${_bin_dir}/${_item}")
+                            else()
+                                list(APPEND _unjudged "${_target}=${_item}")
+                                continue()
+                            endif()
+                            get_filename_component(_path "${_path}" ABSOLUTE)
+                            list(APPEND _link_paths "${_target}=${_path}")
+                        endif()
                         continue()
                     endif()
                     # An alias (`foo::foo`, the way a library is usually exported) is not a target of its own: the one
-                    # it
-                    # stands for has the SOURCE_DIR that decides its package, and the owner table is keyed by those.
+                    # it stands for has the SOURCE_DIR that decides its package, and the owner table is keyed by those.
                     get_target_property(_aliased ${_item} ALIASED_TARGET)
                     if(_aliased)
                         set(_item "${_aliased}")
@@ -573,10 +727,10 @@ function(retroplug_check_package_boundaries)
                     list(APPEND _links "${_target}=${_item}")
                 endforeach()
             endforeach()
-            # A -I (or -isystem, or MSVC's /I) in the compile options is an include directory by another door, so it is
-            # judged like one. What a generator expression hides is left alone HERE, unlike a link or a directory:
-            # this property legitimately holds configuration expressions (retroplug_package_library's
-            # $<$<COMPILE_LANGUAGE:CXX>:/bigobj>), and refusing those would refuse a build that declared nothing.
+            # An include flag in the compile options (-I, -iquote, -idirafter, -isystem, MSVC's /I and /external:I, and
+            # CMake's SHELL: form) is an include directory by another door, so it is judged like one. An option a
+            # generator expression merely conditions ($<$<COMPILE_LANGUAGE:CXX>:-Ifoo>) is still that literal, and is
+            # judged; one it hides behind another form is passed unseen, as the header says.
             set(_flag_dir "")
             foreach(_property COMPILE_OPTIONS INTERFACE_COMPILE_OPTIONS)
                 get_target_property(_value ${_target} ${_property})
@@ -584,7 +738,7 @@ function(retroplug_check_package_boundaries)
                     continue()
                 endif()
                 foreach(_item IN LISTS _value)
-                    _retroplug_unwrap_item(_item "${_item}" _unwrapable)
+                    _retroplug_unwrap_option(_item "${_item}" _unwrapable)
                     if(NOT _unwrapable)
                         continue()
                     endif()
@@ -592,27 +746,84 @@ function(retroplug_check_package_boundaries)
                         # The directory the bare flag on the previous item named.
                         set(_dir "${_item}")
                         set(_flag_dir "")
-                    elseif(_item MATCHES "^-I(.+)$")
-                        set(_dir "${CMAKE_MATCH_1}")
-                    elseif(_item MATCHES "^-isystem(.+)$")
-                        set(_dir "${CMAKE_MATCH_1}")
-                    elseif(_item MATCHES "^/I(.+)$")
-                        set(_dir "${CMAKE_MATCH_1}")
-                    elseif(_item STREQUAL "-I" OR _item STREQUAL "-isystem" OR _item STREQUAL "/I")
-                        set(_flag_dir TRUE)
-                        continue()
                     else()
+                        _retroplug_include_flag(_dir _wants _is_flag "${_item}")
+                        if(NOT _is_flag)
+                            continue()
+                        endif()
+                        if(_wants)
+                            set(_flag_dir "${_item}")
+                            continue()
+                        endif()
+                    endif()
+                    # A value the SHELL: form splits with a space in it is no one directory this can attribute.
+                    if(_dir MATCHES " ")
+                        list(APPEND _unjudged "${_target}=${_item}")
                         continue()
                     endif()
-                    # A relative -I is the compiler's to resolve against the consuming directory, as a relative include
-                    # directory is: the one below the target's own, which no package of another's can be.
+                    # A relative flag is not absolutised as an include directory is: the compiler resolves it against
+                    # its working directory, which is the target's own. Reading it from the target's SOURCE_DIR is the
+                    # attribution this check can make, and a relative spelling that climbs into another package from
+                    # there is refused as its absolute spelling would be.
                     if(NOT IS_ABSOLUTE "${_dir}")
-                        continue()
+                        get_target_property(_source_dir ${_target} SOURCE_DIR)
+                        if(NOT _source_dir OR _source_dir MATCHES "-NOTFOUND$")
+                            list(APPEND _unjudged "${_target}=${_item}")
+                            continue()
+                        endif()
+                        set(_dir "${_source_dir}/${_dir}")
                     endif()
                     get_filename_component(_dir "${_dir}" ABSOLUTE)
                     list(APPEND _includes "${_target}=${_dir}")
                 endforeach()
             endforeach()
+            # A bare include flag at the end of the list names no directory this can attribute: refused, not passed.
+            if(_flag_dir)
+                list(APPEND _unjudged "${_target}=${_flag_dir}")
+            endif()
+            # A link option is another door: -L<dir> adds a search directory (a package's build tree there is a link
+            # into it), and -l<name> names a library the linker finds in one, which this attributes by the build's
+            # target of that name. An option a generator expression hides is passed unseen, as a compile option's is.
+            set(_lib_dir "")
+            foreach(_property LINK_OPTIONS INTERFACE_LINK_OPTIONS)
+                get_target_property(_value ${_target} ${_property})
+                if(NOT _value OR _value MATCHES "-NOTFOUND$")
+                    continue()
+                endif()
+                foreach(_item IN LISTS _value)
+                    _retroplug_unwrap_option(_item "${_item}" _unwrapable)
+                    if(NOT _unwrapable)
+                        continue()
+                    endif()
+                    if(_lib_dir)
+                        set(_dir "${_item}")
+                        set(_lib_dir "")
+                    elseif(_item MATCHES "^-L(.+)$")
+                        set(_dir "${CMAKE_MATCH_1}")
+                    elseif(_item STREQUAL "-L")
+                        set(_lib_dir "${_item}")
+                        continue()
+                    elseif(_item MATCHES "^-l(.+)$")
+                        list(APPEND _libs "${_target}=${CMAKE_MATCH_1}")
+                        continue()
+                    else()
+                        continue()
+                    endif()
+                    if(NOT IS_ABSOLUTE "${_dir}")
+                        get_target_property(_bin_dir ${_target} BINARY_DIR)
+                        if(NOT _bin_dir OR _bin_dir MATCHES "-NOTFOUND$")
+                            list(APPEND _unjudged "${_target}=${_item}")
+                            continue()
+                        endif()
+                        set(_dir "${_bin_dir}/${_dir}")
+                    endif()
+                    get_filename_component(_dir "${_dir}" ABSOLUTE)
+                    list(APPEND _link_dirs "${_target}=${_dir}")
+                endforeach()
+            endforeach()
+            if(_lib_dir)
+                list(APPEND _unjudged "${_target}=${_lib_dir}")
+            endif()
             # The interface directories are what a CONSUMER of the target adds, so they are judged like the target's own.
             foreach(_property INCLUDE_DIRECTORIES INTERFACE_INCLUDE_DIRECTORIES)
                 get_target_property(_value ${_target} ${_property})
@@ -666,7 +877,8 @@ function(retroplug_check_package_boundaries)
             if(_test)
                 set(_test_arg TEST)
             endif()
-            _retroplug_check_native_boundaries(${_package} LINKS ${_links} INCLUDES ${_includes}
+            _retroplug_check_native_boundaries(${_package} LINKS ${_links} LINK_PATHS ${_link_paths}
+                                               LINK_DIRS ${_link_dirs} LIBS ${_libs} INCLUDES ${_includes}
                                                SOURCES ${_sources} UNJUDGED ${_unjudged}
                                                DECLARED ${_declared} DEV_DECLARED ${_dev} ${_test_arg}
                                                OWNERS ${_owners})

@@ -9,8 +9,8 @@
 // activation to one armed on the core directly, bit for bit.)
 import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../src/bootSession";
-import { savFrom, type SavInput } from "../src/lsdjSav";
-import { LsdjSyncMode } from "../src/settingsEnums";
+import { savFrom, type SavInput } from "@retroplug/lsdj";
+import { LsdjSyncMode } from "@retroplug/lsdj/enums";
 import type { GraphDocument } from "@retroplug/core/graphDocument";
 
 declare const __RESOURCES_DIR__: string;

@@ -16,10 +16,10 @@
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { buildSav, isSongSaved, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/sav";
-import { SMSGGDJ_SYMBOLS } from "../src/smsggdj/runtime/symbols.generated";
-import { commonSongEditedOffset } from "../src/smsggdj/runtime/layout";
-import { smsggdjSongCatalog } from "../src/tracker/smsggdjSongCatalog";
+import { buildSav, isSongSaved, SMDJ4_BLOCK_LEN } from "@retroplug/smsggdj/codec/sav";
+import { SMSGGDJ_SYMBOLS } from "@retroplug/smsggdj/runtime/symbols.generated";
+import { commonSongEditedOffset } from "@retroplug/smsggdj/runtime/layout";
+import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
 import { directGraph } from "../src/graph/directGraph";
 

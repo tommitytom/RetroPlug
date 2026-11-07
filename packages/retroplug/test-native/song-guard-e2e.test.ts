@@ -7,8 +7,8 @@ import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
 import { mutateLiveSav, lsdjSongCatalog, songLoadWouldDiscard } from "../src/tracker";
-import { saveWorkingToCatalog } from "../src/lsdjSongOps";
-import { decompressSlot, activeSlot } from "../src/lsdj/codec/sav";
+import { saveWorkingToCatalog } from "@retroplug/lsdj/lsdjSongOps";
+import { decompressSlot, activeSlot } from "@retroplug/lsdj/codec/sav";
 
 declare const __RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;

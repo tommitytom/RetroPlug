@@ -7,7 +7,7 @@ import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuAction, MenuItem } from "../../ui/screens/menu/menuTree";
 import { blipToasterRom, blipToasterMultiKitRom, nesRom } from "../systems/fixtures";
-import { BlipToasterRom } from "../../src/bliptoaster/rom";
+import { BlipToasterRom } from "@retroplug/bliptoaster/rom";
 
 function ctxOf(stores: AppStores): MenuContext {
   return {

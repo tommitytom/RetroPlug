@@ -218,7 +218,7 @@ the user changed. Additive with a `.default({})`, so it needed no migration step
 edit are folded onto the base ROM in memory by the one patcher (`applyConfigToRom`), which is also
 what the menu's bake rows write out, so the image the cart runs and the image "Patch ROM in Place"
 writes cannot drift apart. The block's format is in
-[bliptoaster/rom/settings.ts](../packages/retroplug/src/bliptoaster/rom/settings.ts); feature roles
+[bliptoaster/rom/settings.ts](../packages/bliptoaster/ts/rom/settings.ts); feature roles
 and their construct hooks are [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md).
 
 Additive-only changes still need no step: the strict zod schemas fill a missing field from
@@ -246,7 +246,7 @@ version (below).
 RetroPlug has a hand-written, version-aware codec for the 128 KiB LSDj `.sav`
 image (working-memory song at offset 0 + a 512-byte header at `0x8000` + the
 RLE-compressed stored-project archive). It is **pure TypeScript**
-([packages/retroplug/src/lsdj/](../packages/retroplug/src/lsdj/): `model.ts` is the
+([packages/lsdj/ts/](../packages/lsdj/ts/): `model.ts` is the
 zod SSOT; `codec/{bits,regions,rle,song,sav}.ts` is the byte codec), supporting
 every LSDj format version (fmt 0..22). The model — a zod schema mirroring the
 reflect-cpp JSON contract exactly — is the single source of truth for the on-disk
@@ -254,8 +254,8 @@ shape, JSON, and TS types; the codec reads/writes the bytes. It runs in every
 runtime with no native host (the pure-TS test tier, the plugin, a future web
 build), and the model + decode are usable directly in TS.
 
-**TS authoring.** `savFromJson(json)` (a local function in `src/lsdj`, re-exported
-by [lsdjSav.ts](../packages/retroplug/src/lsdjSav.ts); also on the `Backend` seam
+**TS authoring.** `savFromJson(json)` (a function of the LSDj package's `ts/` codec,
+published by [its index](../packages/lsdj/ts/index.ts); also on the `Backend` seam
 for the load-time seed) encodes a `.sav` from a JSON `Sav` model. It decodes
 **leniently** — every field has a default so a fixture specifies only the cells it
 sets and everything else takes its model default. `savFromJson("{}")` yields a
@@ -266,12 +266,12 @@ inverse — the read direction TS never had before the port.
 **Correctness rationale (frozen goldens + corpus byte-identity).**
 Byte-identical round-tripping only proves *losslessness*, not that the old-format
 decode branches interpret the bytes correctly. The decode semantics are pinned by
-**frozen golden JSON** ([test/lsdj/golden/](../packages/retroplug/test/lsdj/golden/)):
+**frozen golden JSON** ([test/lsdj/golden/](../packages/lsdj/ts/test/golden/)):
 one per liblsdj content sav spanning fmt 3..11 + 16 — which cover EVERY version-decode
 branch (predicates sit at fmt 4/5/6/7/8/9/10/11/16; fmt12..15/17..22 share fmt11/16's
 paths). Those goldens were certified against **liblsdj** (the known-correct reference
 for song format versions ≤ 16) by a differential oracle, then frozen. The pure-TS codec
-is asserted byte-for-byte against them ([test/lsdj/corpus.test.ts](../packages/retroplug/test/lsdj/corpus.test.ts))
+is asserted byte-for-byte against them ([test/lsdj/corpus.test.ts](../packages/lsdj/ts/test/corpus.test.ts))
 and byte-identity round-trips all ~549 per-version corpus savs
 ([test-native/lsdj-codec-corpus.test.ts](../packages/retroplug/test-native/lsdj-codec-corpus.test.ts)).
 The C++ codec + liblsdj were retired once the goldens were frozen — the shipping build
@@ -355,5 +355,5 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 - [configSchema.ts](../packages/retroplug/src/configSchema.ts) — the clamp/default zod builders (TS forward-tolerance).
 - [migrate.ts](../packages/retroplug/src/migrate.ts) + [projectConfig.ts](../packages/retroplug/src/projectConfig.ts) — the raw-JSON migration framework + the version constants / `checkVersion` / `parseProjectVersion` (TS is the single source of truth; native does no version check).
 - [HostRpcService.cpp](../packages/native/src/host/rpc/HostRpcService.cpp) — native file I/O, `zip`/`unzip`, `configDir`.
-- [src/lsdj/](../packages/retroplug/src/lsdj/) — the pure-TS sav model (`model.ts`) + codec (`codec/`); [test/lsdj/](../packages/retroplug/test/lsdj/) holds the frozen goldens + branch-covering fixtures.
+- [src/lsdj/](../packages/lsdj/ts/) — the pure-TS sav model (`model.ts`) + codec (`codec/`); [test/lsdj/](../packages/lsdj/ts/test/) holds the frozen goldens + branch-covering fixtures.
 - [sramAutoSave.ts](../packages/retroplug/src/sramAutoSave.ts) — the loose-`.sav` auto-save policy (+ the LSDj semantic dirty signature).

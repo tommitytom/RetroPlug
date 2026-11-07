@@ -1,0 +1,45 @@
+{
+  "name": "@retroplug/smsggdj",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "smsggdj's half of the app: the SMDJ4 battery codec and its RLE stream, the version detector and the work-RAM layout reader, the 2-bit port-level sync transport (SMS controller port 2 / Game Gear EXT), the sms-sync role, its Songs/Assets tracker integration (a live load is a work-RAM poke), its ROM provider, and the rp.sms.sync protocol node (span label 20).",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./app": "./ts/app.ts",
+    "./codec/rle": "./ts/codec/rle.ts",
+    "./codec/sav": "./ts/codec/sav.ts",
+    "./protocol": "./ts/protocol.ts",
+    "./romDetect": "./ts/romDetect.ts",
+    "./romProvider": "./ts/romProvider.ts",
+    "./runtime": "./ts/runtime/index.ts",
+    "./runtime/layout": "./ts/runtime/layout.ts",
+    "./runtime/symbols.generated": "./ts/runtime/symbols.generated.ts",
+    "./runtime/types": "./ts/runtime/types.ts",
+    "./smsSync": "./ts/smsSync.ts",
+    "./smsSyncNode": "./ts/smsSyncNode.ts",
+    "./smsggdjAssetCatalog": "./ts/smsggdjAssetCatalog.ts",
+    "./smsggdjIntegration": "./ts/smsggdjIntegration.ts",
+    "./smsggdjSongCatalog": "./ts/smsggdjSongCatalog.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/tracker": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "ts/app.ts",
+    "protocol": {
+      "module": "ts/protocol.ts",
+      "nodes": [{ "type": "rp.sms.sync", "label": 20, "midiIn": null, "writes": ["bytes"] }],
+      "roles": { "sms-sync": "rp.sms.sync" }
+    }
+  }
+}

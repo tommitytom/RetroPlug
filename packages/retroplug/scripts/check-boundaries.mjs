@@ -28,11 +28,30 @@
 //   7. an `exports` entry that publishes a test module (a target, or a pattern's reach, that covers ts/test/ or a
 //      *.test.ts), handing a test file's devDependencies to another package's source; one that reaches outside the
 //      package's ts/ tree, which no check reads; or one naming no file, an entry still saying the package publishes a
-//      module that moved away.
+//      module that moved away;
+//   8. a dependency whose SPEC names a package under another key (`workspace:@retroplug/x@*`, `npm:@retroplug/x@1`, a
+//      `link:`/`file:`/`portal:` path into a package's directory): the package it names is judged as rules 2 and 4 judge
+//      a key (the shell, a package the workspace does not have), and an alias of a package that exists is refused,
+//      because a file imports the KEY and every other rule here reads the key.
 //
 // Rule 1's second half and rule 7's first are one leak: a test file may use its package's devDependencies, so source
 // that reaches a test file - by a relative import, or because the test file is published - hands those devDependencies
 // to every importer of that source.
+//
+// What this guards is ACCIDENT AND DRIFT, NOT A DETERMINED AUTHOR. It reads the manifest and the compiler's scanner:
+// it is a review's first pass, not a sandbox. Deliberately not covered, with the reason each is out of reach:
+//
+//   - a specifier a scanner cannot see: a computed `import(name)`, a `require` of a variable, an import a bundler
+//     plugin or a loader adds. TypeScript's scanner lists literal specifiers, and that is all this reads.
+//   - a module a tsconfig `paths` entry resolves, a package's `imports` map, or a symlink that moves a file at load
+//     time: the relative-import rule is lexical, as every path judgement here is.
+//   - a dependency declared under `peerDependencies` or `optionalDependencies`: only `dependencies` and
+//     `devDependencies` are read (as the generator and the native check read them), so an import of one is refused as
+//     undeclared rather than resolved through it.
+//   - what an `exports` target means to Node: a condition's `require`/`import` split is read as its targets, not
+//     resolved, and a package's `files`/`publishConfig` is nobody's boundary here.
+//   - the ORDER a dependency's spec or an import reaches a package in, and anything a build's tooling decides: this
+//     check judges the declaration, not the build.
 //
 // A declared dependency no file uses is a warning, not a refusal: the native check (cmake/packages.cmake) reads the same
 // declaration, so a package whose native targets link a dependency's library declares it without its TS importing
@@ -63,8 +82,9 @@ const PACKAGES = "packages";
 // neither may be imported.
 const SHELLS = ["retroplug", "native"];
 
-// TypeScript's scanner, resolved from the workspace root's devDependency. The package's own `typescript` (7) works too,
-// but its API is the one the typechecker runs, so the check reads imports with the compiler that will see them.
+// TypeScript's scanner, resolved from the workspace root's `typescript-5` alias. The packages typecheck with TypeScript
+// 7, which exports no `preProcessFile`: the scanner this check reads imports with is 5.7's, kept beside the typechecker
+// as an alias rather than pinned into every package, and the alias is why "one TypeScript" stops at the typechecker.
 const ts = createRequire(import.meta.url)("typescript-5");
 
 /** Imports that break a rule and are allowed until the change that moves the code they reach. Each entry names the
@@ -134,6 +154,12 @@ function workspace(root) {
       // "zod" is the package "zod/v4" names too.
       dependencies: Object.keys(manifest.dependencies ?? {}).map(nameOf),
       devDependencies: Object.keys(manifest.devDependencies ?? {}).map(nameOf),
+      // The declarations as written, key and spec alike: a `workspace:` or `npm:` alias, or a `link:` into a package's
+      // directory, names a package under a key that is not its name, which no rule reading the key can see.
+      declarations: [
+        ...Object.entries(manifest.dependencies ?? {}).map(([key, spec]) => ({ key, spec, dev: false })),
+        ...Object.entries(manifest.devDependencies ?? {}).map(([key, spec]) => ({ key, spec, dev: true })),
+      ],
       // The CMake targets its manifest names: one way a dependency counts as used.
       targets: entries.map((entry) => entry.target).filter((target) => typeof target === "string"),
     });
@@ -181,6 +207,31 @@ function isTestFile(pkg, file) {
 function declares(pkg, file, name) {
   if (pkg.dependencies.includes(name)) return true;
   return pkg.devDependencies.includes(name) && isTestFile(pkg, file);
+}
+
+/** The package a dependency's spec names, when its spec is not a plain version: `workspace:<name>@<range>` and
+ *  `npm:<name>@<range>` are aliases (a key a file imports, standing for another package), and `link:`/`file:`/`portal:`
+ *  name a directory, whose manifest's name is the package's. A plain version names the key's own package, which the
+ *  rules reading the key already see, so it resolves to null. */
+function aliasedPackage(pkg, key, spec) {
+  const text = String(spec);
+  const workspace = /^(?:workspace|npm):(.+)$/.exec(text);
+  if (workspace) {
+    const rest = workspace[1];
+    const at = rest.lastIndexOf("@");
+    // `workspace:*` and `workspace:^` carry no name: the key's own package, which the key names already.
+    if (at === -1 && !rest.startsWith("@")) return null;
+    return at > 0 ? rest.slice(0, at) : rest;
+  }
+  const path = /^(?:link|file|portal):(.+)$/.exec(text);
+  if (!path) return null;
+  const dir = resolve(pkg.dir, path[1]);
+  const manifest = join(dir, "package.json");
+  if (existsSync(manifest)) {
+    const name = readJson(manifest).name;
+    if (typeof name === "string") return name;
+  }
+  return dir.split(/[\\/]/).pop() ?? null;
 }
 
 // A relative import's target, tried the way TypeScript and esbuild resolve one: the specifier itself, then each
@@ -314,7 +365,46 @@ export function checkBoundaries({ root = REPO } = {}) {
   };
 
   for (const pkg of packages.values()) {
-    for (const name of [...pkg.dependencies, ...pkg.devDependencies]) {
+    for (const { key, spec } of pkg.declarations) {
+      // A `workspace:`/`npm:` alias or a `link:` into a package is a package reached under another name: the shell and
+      // missing-package rules read what the spec names, and an alias of a package that exists is refused, because every
+      // other rule here (and the generator's product order) reads the KEY, which would hide the dependency.
+      const target = aliasedPackage(pkg, key, spec);
+      const aliased = target === null ? null : packageOf(target);
+      if (aliased !== null) {
+        if (isShell(aliased)) {
+          refuse(
+            "shell",
+            shown(root, pkg.manifestPath),
+            key,
+            `${shown(root, pkg.manifestPath)}: declares ${key} as ${JSON.stringify(spec)}, which is ` +
+              `${describeOwner(aliased)}: no package may depend on the shell`,
+          );
+          continue;
+        }
+        if (!packages.has(aliased)) {
+          refuse(
+            "declaration",
+            shown(root, pkg.manifestPath),
+            key,
+            `${shown(root, pkg.manifestPath)}: declares ${key} as ${JSON.stringify(spec)}, which names ` +
+              `@retroplug/${aliased}, not a package in ${PACKAGES}`,
+          );
+          continue;
+        }
+        if (nameOf(key) !== target) {
+          refuse(
+            "alias",
+            shown(root, pkg.manifestPath),
+            key,
+            `${shown(root, pkg.manifestPath)}: declares ${key} as ${JSON.stringify(spec)}, an alias of ` +
+              `${target}: a file imports "${key}", which every rule here reads as another package, so the dependency ` +
+              "it reaches and the order the product lists it in would both be hidden",
+          );
+          continue;
+        }
+      }
+      const name = nameOf(key);
       // Rule 4, the declared half: the shell is no package a product lists, so no package may name it.
       if (isShell(packageOf(name))) {
         refuse(

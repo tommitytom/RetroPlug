@@ -33,7 +33,7 @@ Three layers, all pure TypeScript except a thin native device seam:
 
 ### Verdict
 
-Feasible, and most of it is pure TS on rails that already exist. The LSDj side needs **no new tracker code at all**: `dspRoles.ts:103` already implements MI.MAP byte-for-byte (since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)). The native work is bounded and enumerable (§6).
+Feasible, and most of it is pure TS on rails that already exist. The LSDj side needs **no new tracker code at all**: `dspRoles.ts:103` already implements MI.MAP byte-for-byte (since B3b, [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts)). The native work is bounded and enumerable (§6).
 
 ### The one real complication
 
@@ -57,7 +57,7 @@ Nothing is read back. The row readout LSDj shows top-right on the song screen is
 
 ### 2.2 RetroPlug already implements exactly this
 
-`dspRoles.ts:103-121` (`midiMap`; since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)) is a byte-for-byte match, including the `0xFE` handshake and the `lastRow` cross-block state. `midiMapRow` (`dspRoles.ts:62`; now [lsdjSyncBytes.ts](../packages/retroplug/src/lsdjSyncBytes.ts)) does the two-channel row extension. **The Launchpad app produces the MIDI this role already consumes** - it does not reimplement LSDj.
+`dspRoles.ts:103-121` (`midiMap`; since B3b, [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts)) is a byte-for-byte match, including the `0xFE` handshake and the `lastRow` cross-block state. `midiMapRow` (`dspRoles.ts:62`; now [lsdjSyncBytes.ts](../packages/lsdj/ts/lsdjSyncBytes.ts)) does the two-channel row extension. **The Launchpad app produces the MIDI this role already consumes** - it does not reimplement LSDj.
 
 ### 2.3 Correction: LIVEMAP no longer exists
 
@@ -116,7 +116,7 @@ Two consequences worth pulling out:
 
 ### 2.6 RESULT: dead reckoning is exact at row level
 
-M0 is built and measured. [`PredictedLsdjModel`](../packages/retroplug/src/lsdj/playback/predict.ts) runs
+M0 is built and measured. [`PredictedLsdjModel`](../packages/lsdj/ts/playback/predict.ts) runs
 the rules above against a real cart in
 [lsdj-playback-differential.test.ts](../packages/retroplug/test-native/lsdj-playback-differential.test.ts),
 driven byte-for-byte off the same clock:
@@ -246,8 +246,8 @@ Two sources, both direct:
 
 | Want | Read |
 |---|---|
-| Playhead: per-channel song row / chain / phrase row / playing | WRAM, decoded by [`LsdjReader`](../packages/retroplug/src/lsdj/runtime/) |
-| Which song rows hold chains | SRAM offset `0x1290`, 1024 bytes (256 rows x 4 channels), raw - no codec ([`regions.ts:85`](../packages/retroplug/src/lsdj/codec/regions.ts#L85); the working song sits uncompressed at sav offset 0) |
+| Playhead: per-channel song row / chain / phrase row / playing | WRAM, decoded by [`LsdjReader`](../packages/lsdj/ts/runtime/) |
+| Which song rows hold chains | SRAM offset `0x1290`, 1024 bytes (256 rows x 4 channels), raw - no codec ([`regions.ts:85`](../packages/lsdj/ts/codec/regions.ts#L85); the working song sits uncompressed at sav offset 0) |
 
 The SRAM read needs **no decode and no config push**, and it tracks the user's live edits in LSDj for free.
 
@@ -289,11 +289,11 @@ Because a row launch is immediate and repeatable, the model can force truth to m
 
 | Rail | Where | Relevance |
 |---|---|---|
-| MI.MAP implementation | `dspRoles.ts:103` (since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)) | The LSDj side is done |
-| Role registry + zod-validated config, testable with zero C++ | [`systemRoles.ts`](../packages/core/ts/systemRoles.ts), [`dspRoles.ts`](../packages/retroplug/src/dspRoles.ts) | The template for the controller-app registry |
+| MI.MAP implementation | `dspRoles.ts:103` (since B3b, [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts)) | The LSDj side is done |
+| Role registry + zod-validated config, testable with zero C++ | [`systemRoles.ts`](../packages/core/ts/systemRoles.ts), [`dspRoles.ts`](../packages/mgb/ts/app.ts) | The template for the controller-app registry |
 | Project-scope behaviours run **regardless of system count** | `dspKernel.ts:399` (deleted in B3b) | A device-only project (real GB, no emulated system) works structurally |
 | SysEx already contemplated in TS routing | [`midiRouting.ts:43`](../packages/core/ts/midiRouting.ts#L43) | Long messages broadcast unchanged; no TS-side change needed |
-| Pure-TS LSDj sav codec + runtime WRAM reader | [`src/lsdj/`](../packages/retroplug/src/lsdj/) | Both `PlaybackModel` implementations are built from existing parts |
+| Pure-TS LSDj sav codec + runtime WRAM reader | [`src/lsdj/`](../packages/lsdj/ts/) | Both `PlaybackModel` implementations are built from existing parts |
 | **`N8Link`**: audio thread -> SpscRing -> dedicated device thread, injected `PortFactory` so it is testable hardware-free | [`N8Link.hpp`](../packages/n8/native/src/n8/desktop/N8Link.hpp) | **The direct architectural precedent** for a device-scoped link |
 | `Engine::setCoreByteSink` - mirror a role-generated stream to external hardware, in sync by construction | [`Engine.hpp:92`](../packages/native/src/host/engine/Engine.hpp#L92) | Exactly the shape of "emulated cart and real cart get the same bytes" |
 | Device picker UI pattern | [`n8Devices.ts`](../packages/retroplug/ui/screens/menu/n8Devices.ts), [`midiDevices.ts`](../packages/retroplug/ui/screens/menu/midiDevices.ts) | Copy for the Launchpad picker |

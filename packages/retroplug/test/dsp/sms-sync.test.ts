@@ -7,7 +7,7 @@
 // Protocol reference: smsggdj's GGSYNC.md and src/engine.asm:576-590 / :646-661.
 import { test, expect } from "@retroplug/testing";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
-import { registerDspRoles } from "../../src/dspRoles";
+import { registerFeatureRoles } from "../_featureRoles";
 import { registerRomProviders } from "../../src/romProviders";
 import {
   isSmsggdjRom,
@@ -16,7 +16,7 @@ import {
   SMS_SYNC_IDLE_LEVELS,
   GG_SYNC_IDLE_LEVELS,
   SMS_SYNC_COUNTER_MOD,
-} from "../../src/smsSync";
+} from "@retroplug/smsggdj/smsSync";
 
 // --- the encoding ------------------------------------------------------------
 
@@ -70,7 +70,7 @@ test("the marker must be inside the prefix the caller actually read", () => {
 
 test("the provider attaches sms-sync to smsggdj only, on both machines", () => {
   const reg = new RoleRegistry();
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerRomProviders(reg);
   const kinds = (platform: string, header: Uint8Array) =>
     reg.defaultRoles("mesen" as never, platform as never, header, "").map((r) => r.kind);
@@ -96,7 +96,7 @@ test("the provider tags each machine with its own wire format", () => {
   // the platform rather than defaulting. A `.gg` tagged "sms" would drive $DD's bit layout onto the
   // EXT port: pins the ROM does not read, so it would arm and then sit in WAIT forever.
   const reg = new RoleRegistry();
-  registerDspRoles(reg);
+  registerFeatureRoles(reg);
   registerRomProviders(reg);
   const marked = new Uint8Array(0x8200);
   for (let i = 0; i < "SMSGGDJ".length; i++) marked[0x3640 + i] = "SMSGGDJ".charCodeAt(i);

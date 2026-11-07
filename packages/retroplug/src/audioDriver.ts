@@ -8,7 +8,8 @@
 import { pumpAllJobs, setJobWait } from "./capability";
 import { kitFormat } from "./kitFormats";
 import type { KitCompileResult } from "./kit/compile";
-import type { KitEffect } from "@retroplug/dsp/kitEffect";
+import type { KitCompileSpec } from "@retroplug/lsdj/kitFormat";
+import type { RisaKitCompileSpec } from "@retroplug/risa/kitFormat";
 import { setOfflineWait, setOfflineYield } from "./offline";
 import { makeCall } from "./rpcClient";
 import { offlineRunner } from "./realBackend";
@@ -51,35 +52,13 @@ export interface DspTraceSpan {
 // driver and the compile specs it declares re-export the names, so a caller keeps one spelling.
 export type { KitDitherEffect, KitEffect, KitFilterEffect, KitGainEffect } from "@retroplug/dsp/kitEffect";
 
-/** One source sample for compileKit: a source audio file (WAV/MP3/FLAC, decoded natively), a 3-char slot
- *  name, an optional source-frame window, and an effect chain. */
-export interface KitSampleSpec {
-  path: string;
-  name: string;
-  offset?: number;
-  length?: number;
-  effects: KitEffect[];
-}
-/** A whole-kit compile: a 6-char kit name + up to 15 samples. `rotate` = the LSDj 9.2.0+ frame rotation,
- *  set from the target ROM's version (omitted → true / 9.2.0+). */
-export interface KitCompileSpec {
-  name: string;
-  samples: KitSampleSpec[];
-  rotate?: boolean;
-}
-
-/** One source sample for the risa DMC compiler: a kit sample plus the PAL DPCM playback-rate index (0..15,
- *  default 12), a loop flag, and whether to peak-normalize into the 7-bit domain (default true). */
-export interface RisaDmcSampleSpec extends KitSampleSpec {
-  rate?: number;
-  loop?: boolean;
-  normalize?: boolean;
-}
-/** A whole risa DMC kit compile: a 6-char kit name + up to 16 samples. */
-export interface RisaKitCompileSpec {
-  name: string;
-  samples: RisaDmcSampleSpec[];
-}
+// A kit's source sample and each cart's whole spec are their owners': the slot is the kit contract's
+// (@retroplug/dsp/kitContract, beside the format a cart contributes), the LSDj spec is @retroplug/lsdj/kitFormat's and
+// the risa one @retroplug/risa/kitFormat's. They are re-exported here, as the effect spec above is, so a caller of this
+// driver keeps one spelling.
+export type { KitSampleSpec } from "@retroplug/dsp/kitContract";
+export type { KitCompileSpec } from "@retroplug/lsdj/kitFormat";
+export type { RisaDmcSampleSpec, RisaKitCompileSpec } from "@retroplug/risa/kitFormat";
 
 /** One host block for renderBlocks: what a DAW hands the plugin per process call. */
 export interface RenderBlock {

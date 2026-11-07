@@ -13,9 +13,9 @@ import { buildAppRegistry } from "../src/appHost";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore, type SongSettle } from "../src/projectStore";
 import type { Platform } from "../src/platform";
-import { buildSav, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/sav";
-import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
-import { smsggdjSongCatalog } from "../src/tracker/smsggdjSongCatalog";
+import { buildSav, SMDJ4_BLOCK_LEN } from "@retroplug/smsggdj/codec/sav";
+import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
+import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF, P_PHRASES, STEPS_PER_PHRASE, SMS_ROWS_PER_BEAT } from "./smsSyncSong";
 
 declare const __REPO_RESOURCES_DIR__: string;

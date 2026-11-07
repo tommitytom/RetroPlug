@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One-off port of the old RetroPlug `ecs` LSDj offset table into the TS runtime reader. Fetches
 // OffsetLookupData.h from the ecs branch and emits
-// packages/retroplug/src/lsdj/runtime/legacyOffsets.generated.ts — a per-version map of the POSITIONAL
+// packages/lsdj/ts/runtime/legacyOffsets.generated.ts — a per-version map of the POSITIONAL
 // block (active/phrase/chain/song) + the SONG cursor (cursorX/cursorY), for v4.0.0..9.2.x.
 //
 //   node tools/port-legacy-lsdj-offsets.mjs [path-to-OffsetLookupData.h]
@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const URL = "https://raw.githubusercontent.com/tommitytom/RetroPlug/ecs/src/lsdj/OffsetLookupData.h";
-const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../packages/retroplug/src/lsdj/runtime/legacyOffsets.generated.ts");
+const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../packages/lsdj/ts/runtime/legacyOffsets.generated.ts");
 
 const src = process.argv[2]
   ? readFileSync(process.argv[2], "utf8")

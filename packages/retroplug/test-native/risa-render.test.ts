@@ -11,7 +11,7 @@ import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob, readRisaSongs, decodeWav, type RenderOpts } from "../src/render";
 import { dirname, joinPath } from "../src/pathUtil";
-import { savBytes } from "../test/risa/fixtures";
+import { savBytes } from "@retroplug/risa/testFixtures";
 import { RISA_ROM, rms, newCtx, baseOpts } from "./risa-render-lib";
 
 // Scratch sav for the short blumarbl renders. Named for this file — the sibling risa-render-*
