@@ -3,7 +3,7 @@
 // whole backend RPC surface (every facet, over HostServices' Engine and cores) - the same
 // namespace the plugin host uses, so one TS adapter (realBackend.ts) serves both.
 //
-// The harness (packages/retroplug/testing/harness.ts) self-reports
+// The harness (@retroplug/testing's harness.ts) self-reports
 // TAP via console.log (txiki's console -> stdout, left untouched) and sets the process exit
 // code via globalThis.tjs.exit(code). We provide that exit hook (recording the code rather
 // than terminating) and drive the job loop until it fires.

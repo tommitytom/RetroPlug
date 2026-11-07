@@ -8,7 +8,6 @@
   "type": "module",
   "description": "The cart-neutral half of the tracker layer: the song and asset catalog contracts, a cart's TrackerIntegration, the playback-position model a controller surface codes against, a working song as bytes, the shared \"rit\" asset override contract and its patcher, and the NES asset formats every tracker cart reads the same way (iNES header and bank sizes, the 8 KB DMC kit bank, the CHR font banks, the 7-role theme record and the NES master palette).",
   "exports": {
-    ".": "./ts/index.ts",
     "./assetCatalog": "./ts/assetCatalog.ts",
     "./nes/chrImage": "./ts/nes/chrImage.ts",
     "./nes/constants": "./ts/nes/constants.ts",

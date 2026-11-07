@@ -39,9 +39,9 @@ export interface ProtocolNodeSpec {
   out?: string;
 }
 
-// Each type's id as its node module spells it (script/nodes/*.ts), and each port name as that module declares it, which
-// test/graph/build-graph.test.ts and test/graph/protocol-nodes.test.ts hold these to: importing the modules would pull
-// every protocol into whatever imports buildGraph.
+// Each type's id as its node module spells it (the owning package's protocol module), and each port name as that
+// module declares it, which test/graph/build-graph.test.ts and test/graph/protocol-nodes.test.ts hold these to:
+// importing the modules would pull every protocol into whatever imports buildGraph.
 //
 // One writer per system input: the planner refuses a second producer wired into one input, and with it the whole
 // document, so the project would go silent for one system's roles. The roles a provider attaches never collide, but a

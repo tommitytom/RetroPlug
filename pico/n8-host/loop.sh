@@ -109,8 +109,8 @@ if [ $do_build = 1 ]; then
 	build="cmake --build $desk --target retroplug-export-plan-current -j\$(nproc)"
 	[ -x "$tool" ] || die "no plan exporter at $tool: build it first ($build)"
 	[ -f "$stamp" ] || die "the plan exporter at $tool has not been brought up to date ($stamp is missing): $build"
-	# What the exporter was built from: its own comparison, beside this script (exporter-stale.sh, which its header
-	# lists the sources apiece). It prints the first newer source and exits 1, 2 when it cannot judge the tree.
+	# What the exporter was built from: its own comparison, beside this script (exporter-stale.sh, which lists the sources
+	# apiece in its header). It prints the first newer source and exits 1, 2 when it cannot judge the tree.
 	stale=0
 	newer=$(bash "$here/exporter-stale.sh" "$stamp" "$repo") || stale=$?
 	case $stale in

@@ -450,9 +450,8 @@ endforeach()
 # because every other package's library is built on it; a device host's own I/O (rp.device.midi-in, the plan exporter's
 # and the devices') and the device check's test types (rp.devtest.plan) last, because registering a script pack needs
 # the MicroQuickJS host the graph-runtime package adds. packages/native is in the product list and registers the node
-# types
-# not yet carved into packages of their own (sameboy, mesen, host.io, launchpad); its targets are defined below, where
-# the root adds the engine's own tree. @retroplug/tracker is in neither list: it contributes no registration of any
+# types not yet carved into packages of their own (sameboy, mesen, host.io, launchpad); its targets are defined below,
+# where the root adds the engine's own tree. @retroplug/tracker is in neither list: it contributes no registration of any
 # kind, only modules the shell and the cart packages import, so CMake is never told about it.
 set(_rp_first_packages node-sdk)          # first: every other package's library is built on it
 set(_rp_last_packages device-io devtest)  # after the list: a script pack needs graph-runtime's host

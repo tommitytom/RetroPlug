@@ -8,7 +8,6 @@
   "type": "module",
   "description": "smsggdj's half of the app: the SMDJ4 battery codec and its RLE stream, the version detector and the work-RAM layout reader, the 2-bit port-level sync transport (SMS controller port 2 / Game Gear EXT), the sms-sync role, its Songs/Assets tracker integration (a live load is a work-RAM poke), its ROM provider, and the rp.sms.sync protocol node (span label 20).",
   "exports": {
-    ".": "./ts/index.ts",
     "./app": "./ts/app.ts",
     "./codec/rle": "./ts/codec/rle.ts",
     "./codec/sav": "./ts/codec/sav.ts",

@@ -1,6 +1,7 @@
 // The flagship: the TS `lsdj-sync` role, running as its script node in the real engine, is the SOLE advancing clock
 // for a real LSDj instance. Its MidiSync behaviour is exactly doc-06's shape: a 0xF8 on the serial input
-// every 24th of a quarter note, which its TickClock / walkTicks (script/nodes/lsdjSync.ts) put there.
+// every 24th of a quarter note, which its TickClock / walkTicks (packages/lsdj/ts/lsdjSyncNode.ts, over
+// @retroplug/core's clock and ticks) put there.
 //
 // LSDj in SYNC=MIDI is a serial slave: a START press arms it ("wait for MIDI"), then the 0xF8 clock
 // advances it. The core constructs bare (no C++ roles) so nothing but the node clocks it. The graph

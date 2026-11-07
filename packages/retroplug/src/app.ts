@@ -10,6 +10,7 @@ import { definePackage } from "@retroplug/core/definePackage";
 // The keys the owner packages add to the contract (their modules augment PackageContributions): type-only, so nothing
 // loads at run time.
 import type {} from "@retroplug/tracker/packageContributions";
+import type {} from "@retroplug/dsp/packageContributions";
 
 export default definePackage({
   roles: [],

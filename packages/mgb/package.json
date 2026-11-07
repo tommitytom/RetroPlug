@@ -8,7 +8,6 @@
   "type": "module",
   "description": "mGB's half of the app: the mgb feature role (every routed MIDI byte into the Game Boy's serial port), the ROM provider that attaches it to the embedded synth or a file-backed mGB cart, and the rp.mgb.midi protocol node (span label 17) that runs it on the audio thread.",
   "exports": {
-    ".": "./ts/index.ts",
     "./app": "./ts/app.ts",
     "./mgbMidiNode": "./ts/mgbMidiNode.ts",
     "./protocol": "./ts/protocol.ts",

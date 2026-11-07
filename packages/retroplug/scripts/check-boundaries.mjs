@@ -24,17 +24,18 @@
 //   4. a dependency on the shell, @retroplug/retroplug or @retroplug/native, imported or declared: no package may;
 //   5. a cycle in the declared dependencies;
 //   6. an #include in the package's native sources that climbs out of the package (a `..` segment, or an absolute path
-//      into another package), quoted or angled, or a declared @retroplug dependency that names no package;
-//   7. an `exports` entry that publishes a test module (a target, or a pattern's reach, that covers ts/test/ or a
+//      into another package), quoted or angled;
+//   7. a declared @retroplug dependency that names no package, a dependency whose SPEC names a package under another
+//      key (`workspace:@retroplug/x@*`, `npm:@retroplug/x@1`, a `link:`/`file:`/`portal:` path into a package's
+//      directory): the package it names is judged as rules 2 and 4 judge a key (the shell, a package the workspace does
+//      not have), and an alias of a package that exists is refused, because a file imports the KEY and every other rule
+//      here reads the key;
+//   8. an `exports` entry that publishes a test module (a target, or a pattern's reach, that covers ts/test/ or a
 //      *.test.ts), handing a test file's devDependencies to another package's source; one that reaches outside the
 //      package's ts/ tree, which no check reads; or one naming no file, an entry still saying the package publishes a
-//      module that moved away;
-//   8. a dependency whose SPEC names a package under another key (`workspace:@retroplug/x@*`, `npm:@retroplug/x@1`, a
-//      `link:`/`file:`/`portal:` path into a package's directory): the package it names is judged as rules 2 and 4 judge
-//      a key (the shell, a package the workspace does not have), and an alias of a package that exists is refused,
-//      because a file imports the KEY and every other rule here reads the key.
+//      module that moved away.
 //
-// Rule 1's second half and rule 7's first are one leak: a test file may use its package's devDependencies, so source
+// Rule 1's second half and rule 8's first are one leak: a test file may use its package's devDependencies, so source
 // that reaches a test file - by a relative import, or because the test file is published - hands those devDependencies
 // to every importer of that source.
 //
@@ -315,7 +316,7 @@ const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** A manifest's `exports` as its entries: the key ("." for the string form) and every target string it maps to, so a
  *  conditional export's members are judged too. A pattern target ("./ts/*.ts") keeps its `*`: Node lets it stand for
- *  any characters, `/` included, so the entry publishes a subtree, and rule 7 judges that subtree. */
+ *  any characters, `/` included, so the entry publishes a subtree, and rule 8 judges that subtree. */
 function exportTargets(manifest) {
   const exports = manifest.exports;
   if (typeof exports === "string") return [{ key: ".", target: exports }];
@@ -439,7 +440,7 @@ export function checkBoundaries({ root = REPO } = {}) {
     }
     if (isShell(pkg.name)) continue;
 
-    // Rule 7: what a package publishes. The checks read ts/, so an export outside it publishes code no check judges;
+    // Rule 8: what a package publishes. The checks read ts/, so an export outside it publishes code no check judges;
     // an export that reaches a test module hands it to other packages, and a test file may import devDependencies,
     // which a source of another package reaching through the export then gets transitively. A pattern entry is judged
     // by every path its `*` can name rather than by the literal it spells: "./ts/*.ts" publishes

@@ -1,7 +1,7 @@
 // Port of legacy test/ts/gb/lsdj/midimap.test.ts: the TS `lsdj-sync` role in MidiMap
 // mode (3), running as its script node, turns host MIDI NoteOn into LSDj row bytes (ch0 → row,
-// ch1 → row+128, NoteOff → 0xFE - script/nodes/lsdjSync.ts) and feeds a real LSDj core in SYNC=MI.MAP. A row byte
-// triggers that song row live, so mapping a row that has a note makes the core sing.
+// ch1 → row+128, NoteOff → 0xFE, in packages/lsdj/ts/lsdjSyncNode.ts) and feeds a real LSDj core
+// in SYNC=MI.MAP. A row byte triggers that song row live, so mapping a row that has a note makes the core sing.
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
