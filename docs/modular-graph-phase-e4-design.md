@@ -1,7 +1,8 @@
 # Phase E4: TypeScript nodes on the box, on MicroQuickJS
 
-**Date:** 2026-11-06 · **Branch:** `feature/modularize` · **Status:** built (E4, five commits); section 11 records
-the build, answers section 10 and carries what was left, and sections 1 to 9 are corrected in place
+**Date:** 2026-11-06 · **Branch:** `feature/modularize` · **Status:** built (E4, five commits, then the code reviews'
+and the final review's follow-ups); section 11 records the build, answers section 10 and carries what was left, and
+sections 1 to 9 are corrected in place
 
 Phase E is the Pico runtime ([modular-graph-phase-e1-design.md](modular-graph-phase-e1-design.md) section 3). E1 made a
 C++ node's source build for the RP2350, E2 put the first pack behind the package boundary, and E3 made a graph run on
@@ -57,7 +58,7 @@ The user's, in order (2026-11-06; the Phase E list is `.superpowers/e-pico/decis
    *As built:* the arena is **65536** bytes (the box's plan takes about 57 KB of it, a pack's heap inside), the
    pack's bytecode stays in flash until its setup copies it, and the engine is compiled at **-Os** (99.6 KB of code and
    rodata in RAM; the same sources at -O3 are 159 KB of code, 83 KB against 159 KB like for like). The image takes
-   349.5 KiB of the 512 KiB SRAM (section 5), and no cold code went back to flash. The latency held to the figures of
+   350.3 KiB of the 512 KiB SRAM (section 5), and no cold code went back to flash. The latency held to the figures of
    section 8, not to E3's exactly.
 5. **One context per pack.** Each pack's manifest declares its heap; the exporter and the loader size and place it like
    everything else, and refuse a plan that does not fit, naming the pack. A heap that runs out, a throw or a deadline
@@ -130,7 +131,11 @@ generated tables live in the build tree, never beside them. Everything of ours a
   bump of the pinned source cannot silently drop a fix.
 - **`rp_mqjs_stdlib.c`**, our standard library for the build tool. It includes upstream's `mqjs_stdlib.c` unpatched
   with its REPL global object and `main` renamed out of the way, so the standard classes are upstream's own tables, and
-  its own global object leaves out `print`, `gc`, `load`, the timers, `Date`, `performance` and `eval`. It adds a
+  its own global object leaves out `print`, `gc`, `load`, the timers, `Date`, `performance` and `eval`, but keeps the
+  `Function` class, which every function's prototype chain needs, and with it its constructor, an eval of a function
+  body by another name: deliberately, since it runs the engine's own parser, which recurses on no C stack (as
+  `JSON.parse` does, `rp_mqjs_device.c`), and what a pack may run is held by the build alone making its bytecode, not
+  by the absence of eval. It adds a
   `console` (`log` only) and the block API's classes (`RpBlock`, `RpMessage`, `RpTransport`, `RpControlStream`,
   `RpControlChange`), whose constructors refuse. `rp_mqjs_table.c` holds the generated tables with two dispatchers that
   hand every method and getter to the host through the context's opaque, so one table serves both builds of the host.
@@ -279,7 +284,7 @@ of the loader's own that answers `rp.host.packages/1`. A plan whose packages do 
 the overrun (codes `package-memory`, `package-setup` and, for an overrun, `arena`); the exporter runs the same sizing,
 so a box plan that cannot fit fails the firmware build. The blob's format is unchanged.
 
-**The arena** is **65536 bytes** (E3: 131072). The export's estimate for the box's plan is 57,800 (25,784 for the
+**The arena** is **65536 bytes** (E3: 131072). The export's estimate for the box's plan is 57,808 (25,792 for the
 bridge's three nodes and queues, and 32,016 for the pack: 448 + 6992 + 24576); the box loaded it into about 56.6 KB
 before a script node kept its streams' ends for the idle skip (section 4), 512 bytes more.
 
@@ -287,12 +292,12 @@ before a script node kept its streams' ends for the idle skip (section 4), 512 b
 
 | | E3 | E4 (the PIO-USB image) |
 |---|---|---|
-| Code and data run from RAM | 121.5 KiB (100,628 + 23,832 bytes) | 231.8 KiB (191,272 + 46,056 bytes; mquickjs 99.6 KB, the host 19.9 KB) |
+| Code and data run from RAM | 121.5 KiB (100,628 + 23,832 bytes) | 232.5 KiB (191,960 + 46,120 bytes; mquickjs 99.6 KB, the host 19.9 KB, at the gated image) |
 | Arena | 128 KiB | 64 KiB, the pack's 32,016 bytes inside it |
 | Other bss | 55.6 KiB | 53.8 KiB |
-| In all | about 305 KiB (312,484 bytes) | 349.5 KiB (357,936 bytes) of 512 |
+| In all | about 305 KiB (312,484 bytes) | 350.3 KiB (358,704 bytes) of 512 |
 
-What remains for the audio version's buffers is 166,352 bytes (162.5 KiB); the native-USB image takes 338,120. No cold
+What remains for the audio version's buffers is 165,584 bytes (161.7 KiB); the native-USB image takes 338,824. No cold
 code went back to flash.
 
 ## 6. `defineNode`, the toolchain and the `bliptoaster` pack
@@ -428,21 +433,21 @@ files in the gitignored `.superpowers/e4pro`, `e4plan` and `e4exec`.
 
 ## 11. As built
 
-Five commits on `feature/modularize`: the toolchain, the script host and package memory, the `bliptoaster` pack and
-the box, the device check on a script pack, and these docs. Parity bit for bit, the kit goldens, the render baseline,
-the descriptor goldens of existing types, `buildGraph`'s goldens, `edio-golden.json`, `plan-blob.hex` and
-`device-check-plan.hex` were untouched throughout, and none of them was re-recorded; the golden changes are the
-intended ones (the `[packages]` golden gaining `rp.bliptoaster.midi-policy` in each of its nine products,
-`box-plan.hex`, and two new goldens: the policy's descriptor and `device-check-script-plan.hex`). Sections 1 to 9 are
-corrected in place where the build made them false. The counts, after the follow-ups: `retroplug-device-mode-test`
-ends at 95 cases (the baseline's 45, 84 at the five commits; 1,491,755 assertions under ASan, 50 of the cases
-`[script-pack]` and run under ThreadSanitizer), `pnpm test:plugin` at 335 cases in all (333 before E4, 334 at the five
-commits), `pnpm test` at 175 files and 1792 cases (174 and 1782), parity (250), native, ui and the render and kit legs
-unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data / bss to 289910 / 2004 / 421947 (277702
-/ 2004 / 421515 at the five commits), and the box's two images from 101200 / 23832 / 188020 (PIO-USB) and 101576 / 9836
-/ 181788 (`RP_NATIVE_USB`) to 198848 / 46056 / 120600 and 199216 / 32084 / 114368 (196688 / 46056 / 120600 and 197056 /
-32020 / 114368 at the five commits), of which 191272 and 191640 bytes of the flash run from RAM, the images taking
-357936 and 338120 bytes of SRAM in all (312484 and 292636 at E3).
+Five commits on `feature/modularize`: the toolchain, the script host and package memory, the `bliptoaster` pack and the
+box, the device check on a script pack, and these docs. Parity bit for bit, the kit goldens, the render baseline, the
+descriptor goldens of existing types, `buildGraph`'s goldens, `edio-golden.json`, `plan-blob.hex` and
+`device-check-plan.hex` were untouched throughout, and none of them was re-recorded; the golden changes are the intended
+ones (the `[packages]` golden gaining `rp.bliptoaster.midi-policy` in each of its nine products, `box-plan.hex`, and two
+new goldens: the policy's descriptor and `device-check-script-plan.hex`). Sections 1 to 9 are corrected in place where
+the build made them false. The counts, after the follow-ups: `retroplug-device-mode-test` ends at 95 cases (the
+baseline's 45, 84 at the five commits; 1,504,358 assertions under ASan, 50 of the cases `[script-pack]` and run under
+ThreadSanitizer), `retroplug-engine-graph-test` at 335 cases (333 before E4, 334 at the five commits; `pnpm test:plugin`
+901 over its eleven binaries), `pnpm test` at 175 files and 1792 cases (174 and 1782), parity (250), native, ui and the
+render and kit legs unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data / bss to 302469 /
+2004 / 422275 (277702 / 2004 / 421515 at the five commits), and the box's two images from 101200 / 23832 / 188020
+(PIO-USB) and 101576 / 9836 / 181788 (`RP_NATIVE_USB`) to 199536 / 46120 / 120600 and 199920 / 32084 / 114368 (196688 /
+46056 / 120600 and 197056 / 32020 / 114368 at the five commits), of which 191960 and 192344 bytes of the flash run from
+RAM, the images taking 358704 and 338824 bytes of SRAM in all (312484 and 292636 at E3).
 
 ### 11.1 `defineNode` and the toolchain (commit 1)
 
@@ -525,7 +530,7 @@ unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data 
 - **Build:** `RP_SCRIPT_HEAP_BYTES_devtest` (40960 at the five commits, 45056 since the third node's definition: the
   toolchain's 3/2 check passes the pack at 42840 now), `NO_SCRIPTS` retired, the size table's new owners
   (MicroQuickJS 99,040 bytes of flash, the script host 18,485, the devtest pack 18,147 at the five commits;
-  99,626, 20,081 and 21,239 in the final image).
+  99,810, 20,549 and 22,503 in the final image, with the `bliptoaster` pack's 7,067 for the policy case).
 - **Tests:** 8 new `[device-check]` cases (16 in all, 18 with the deadline case and its failure steps, 19 with the
   policy case): registration at
   the image's heap, a type whose memory does not fit, the script plan (allocating nothing, 4 nodes, 40 blocks, 2032
@@ -536,7 +541,7 @@ unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data 
 
 1. **Code size, RAM and frames.** The engine is 98,742 bytes in the box's RAM at -Os (stdlib tables 10,236 + 1,968)
    and 159 KB at -O3 (83 KB against 159 KB like for like: 98.7 KB counts rodata), so the box takes -Os; the host is
-   17,778 bytes plus 204 of bss; a pack's bytecode is 6,988 bytes of flash. The image takes 349.5 KiB of SRAM in the final
+   17,778 bytes plus 204 of bss; a pack's bytecode is 6,988 bytes of flash. The image takes 350.3 KiB of SRAM in the final
    build (347.5 at the prototype; section 5). No frame passes 1 KiB with no exemption: JS_Parse2 560 at -Os,
    `js_dump_float64` 352, `build_backtrace` 232,
    the host's `materialize` 376 and `setupPackage` 336. The deepest chains, **measured on the device**
@@ -584,10 +589,12 @@ unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data 
   messages, since the pools follow it.
 - **A critical heap corruption in stage 2:** `listOf` passed an unrooted copy of an array to `set_length`, so a node
   shrinking its messages array corrupted the heap on a collection; it is rooted, with a test that dies without it.
-- **Two engine bugs and five swallowed exceptions** (section 4), found by the toolchain's least-heap search, a
-  collect-at-every-allocation build, the device check's nest and the code reviews (the sort's, which dropped the
-  deadline too, and then an audit of every builtin that converts a value or calls back into JavaScript, which found
-  repeat's). The first fix cannot be reached by any test, so its guard is the configure-time hash (section 11.8).
+- **Two engine bugs, five swallowed exceptions, an out-of-memory that corrupted the root list and the polls**
+  (section 4), found by the toolchain's least-heap search, a collect-at-every-allocation build, the device check's
+  nest and the code reviews (the sort's, which dropped the deadline too, and then an audit of every builtin that
+  converts a value or calls back into JavaScript, which found repeat's; the final review's, a call of `apply` that
+  hands on the same call for ever, unpolled). The first fix cannot be reached by any test, so its guard is the
+  configure-time hash (section 11.8).
 - **Every node context runs the device bundle.** The first cut ran the box's trimmed bytecode nowhere before the rig.
   The runtime bundle is now what every node context loads, the toolchain holds it to the whole pack's output and
   layouts, and the exclusive-group layout bug that comparison found is fixed.

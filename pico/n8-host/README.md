@@ -251,7 +251,7 @@ average, ~1.04 ms worst** (it was ~4.6 ms typical with 11-19 ms outliers). Four 
   isolated message can read ~12 ms; a non-blocking ring console removed that and cost ~100 us at the worst of every
   message, so it was dropped.
 - **Running from SRAM (E3).** The image is `copy_to_ram`: copied from flash at boot and run from SRAM, which takes
-  about 305 KiB of the 512 KiB (286 KiB for `RP_NATIVE_USB`) at E3, 349.5 KiB (330.2 KiB) with E4's engine. Run from
+  about 305 KiB of the 512 KiB (286 KiB for `RP_NATIVE_USB`) at E3, 350.3 KiB (330.9 KiB) with E4's engine. Run from
   flash, the plan's longer message path cost ~95 us
   average and ~130 us worst in XIP cache refills; from SRAM the box is back at E2's latency (five runs 610-680 /
   1086-1128
@@ -264,7 +264,7 @@ average, ~1.04 ms worst** (it was ~4.6 ms typical with 11-19 ms outliers). Four 
   worsts of 1122-1170 us (E3: 610-680 / 1086-1128), a cost the user accepted ([E4's
   design](../../docs/modular-graph-phase-e4-design.md) section 8 states the new line: a worst above about 1200 us, or
   averages above about 780 us; the worst is the primary signal, as averages vary about 190 us from run to run). The
-  image takes 349.5 KiB of SRAM (338120 bytes for `RP_NATIVE_USB`), its arena is 64 KiB, and the MIDI input queue
+  image takes 350.3 KiB of SRAM (338824 bytes for `RP_NATIVE_USB`), its arena is 64 KiB, and the MIDI input queue
   holds 64 messages (and 4096 bytes). A node's budget is its author's: about 250 us a message, and a stack nesting
   limited by a re-entry cap of 4.
 
@@ -439,9 +439,9 @@ compile of the image, the SDK's, TinyUSB's and Pico-PIO-USB's included, takes `-
 
 **`pnpm device:box`** ([`../../tools/build-box.sh`](../../tools/build-box.sh)) builds both variants under the trap, in
 `build-box/{pio,native}/`, each with `n8_host_trap_probe` (an allocating program that must fail to link naming
-`__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss: PIO-USB 198848 / 46056 / 120600,
-`RP_NATIVE_USB` 199216 / 32084 / 114368, with 191272 and 191640 bytes of the flash running from RAM and 357936 and
-338120 bytes of SRAM in all; E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788 (312484 and 292636 bytes),
+`__wrap__Znwj` and `__wrap_malloc`), and prints the sizes (flash / data / bss: PIO-USB 199536 / 46120 / 120600,
+`RP_NATIVE_USB` 199920 / 32084 / 114368, with 191960 and 192344 bytes of the flash running from RAM and 358704 and
+338824 bytes of SRAM in all; E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788 (312484 and 292636 bytes),
 before MicroQuickJS, the pack and the halved arena; E2's were 48796 / 15324 / 32360 and 48756 / 1560 / 26128). It
 builds the desktop's `retroplug-export-plan` first (CI needs it), so `build/` must be
 configured, and that build shares `build/` with a concurrent `./build.sh`: two builds of one tree at once race, so on a

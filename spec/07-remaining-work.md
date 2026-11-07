@@ -601,24 +601,29 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     byte-stable across hosts, and the new libraries are unbuilt under MSVC `/W4 /WX`. A Windows export may accept a
     `long double` type Linux refuses.
   - **The Pico gate passed** on the rig with BlipToaster (design section 12.7); the image runs from SRAM
-    (`copy_to_ram`, about 305 KiB of 512; E4 took it to 349.5), and the `[stats]` print can still stall a
+    (`copy_to_ram`, about 305 KiB of 512; E4 took it to 350.3), and the `[stats]` print can still stall a
     message for ~13.7 ms, as E2's did. `RP_NATIVE_USB` has never run on hardware.
   - **The Launchpad's `threads` flag** and the E2 template gaps remain.
 - **E4 built: TypeScript nodes on the box, on MicroQuickJS**
-  ([modular-graph-phase-e4-design.md](../docs/modular-graph-phase-e4-design.md), five commits): `deps/mquickjs`
-  (vendored, unpatched) with our wrapper (the symbol rename, the fixes for two upstream GC bugs and five swallowed
-  exceptions guarded by a configure-time hash, our stdlib), the device-pack toolchain
+  ([modular-graph-phase-e4-design.md](../docs/modular-graph-phase-e4-design.md), five commits and the reviews'
+  follow-ups): `deps/mquickjs` (vendored, unpatched) with our wrapper (the symbol rename; the fixes for two upstream GC
+  bugs, `RegExp.prototype.exec`'s root list on out-of-memory and five swallowed exceptions; the polls that hold a node
+  to its deadline inside the long builtins, a callback's return and the calls `call`, `apply` and a bound function hand
+  on; all guarded by a configure-time hash; our stdlib), the device-pack toolchain
   (`packages/retroplug/scripts/build-device-pack.mjs`), `defineNode` in the ES5 subset with `idle: "skip"` and
   `forward()`, `MqjsHost` (one context per pack, a node's deadline of 10 ms and 250 us a message, a re-entry cap of 4),
   package memory (`rp_package`'s `memory`, `rp.host.packages/1`) sized and placed by the loader, `packages/bliptoaster`
   (`rp.bliptoaster.midi-policy` in the box's plan in place of `rp.core.midi-filter`, a 64-message `rp.device.midi-in`,
-  a 64 KiB arena, 349.5 KiB of SRAM in all) and `rp-device-check` running a script pack. Nothing was re-recorded but
+  a 64 KiB arena, 350.3 KiB of SRAM in all) and `rp-device-check` running a script pack. Nothing was re-recorded but
   `[packages]` and `box-plan.hex`. What it leaves:
   - **Windows, macOS and arm64 have never built E4.** The engine's clang-cl objects, the `sys/time.h` shim, the
     thread-time deadline and the names check on macOS are unbuilt, and every desktop product now links the engine.
   - **No 32-bit runner is in the build**: the 3/2 sizing of a 64-bit device build is a heuristic and the box's boot
     line and the device check's policy case are the authority. The first engine fix is guarded only by the
     configure-time hash, since no test reaches it.
+  - **The deadline's residual**: a node faults at most 156 units of work past its deadline on the box, plus the rest of
+    the one builtin call or straight-line run the count ran out in; a collection inside a unit and an `indexOf` at the
+    heap's size are unmeasured, and the watchdog is the backstop (design section 4).
   - **Every context runs a private copy of its bytecode** (running writes into it), and a desktop re-plan holds two
     instances of a pack at once (contexts are 4x `heapBytes` with a 1 MiB floor, a dead pack is revived).
   - **A SysEx past 3 bytes allocates a view per message**, which dies with its block, and at 32 bits a non-whole number

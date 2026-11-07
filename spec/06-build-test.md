@@ -486,10 +486,12 @@ ragged blocks and judges it (within the export's estimate, every move pushed, no
 desktop's digest is printed beside the device's and not judged (FMA contraction may differ). The script builds the
 exporter in the desktop build first (`build/` must be configured), and the image's 4 KB stack with `MSPLIM` as a guard
 (`PICO_USE_STACK_GUARDS`) is in its CMakeLists, and `-Werror=stack-usage=1024` comes from `cmake/device-image.cmake`.
-Release sizes: core, dsp and the executor were about 42 KB of flash and no static RAM; the whole image is 286 KB flash
-(MicroQuickJS 99 KB, the script host 19 KB, the executor and the loader about 25 KB, the devtest script pack 20 KB, the
-pack's nodes and Edio about 13 KB, the devtest nodes 7.5 KB) and about 424 KB RAM (data and bss), almost all of it the
-arena. The image takes a script pack's heap from `RP_SCRIPT_HEAP_BYTES_devtest` (45056) in its registration, and
+Release sizes: core, dsp and the executor were about 42 KB of flash and no static RAM; the whole image is 302 KB flash
+(MicroQuickJS 100 KB, the script host 20.5 KB, the executor and the loader about 25 KB, the devtest script pack 22.5 KB,
+the N8 pack's nodes and Edio about 14 KB, the devtest nodes 7.5 KB, the bliptoaster script pack 7 KB) and about 424 KB
+RAM (data and bss), almost all of it the arena. The image takes a script pack's heap from
+`RP_SCRIPT_HEAP_BYTES_devtest` (45056) in its registration, links the bliptoaster pack's bytecode for its policy case
+(which registers it at 20480, the box's 24576 less 4096), and
 `RP_DESKTOP_BUILD_DIR` (derived from `RP_EXPORT_PLAN_TOOL`) names the desktop build whose generated pack sources it
 embeds.
 
@@ -508,8 +510,8 @@ the config flag alone leaves the function (and the heap) linked; the unreachable
 KB (`PICO_STACK_SIZE=0x1000`; the PIO-USB image, which links `pico_multicore`, keeps core 1's 2 KB reservation, the
 native one has none), asserted only as a reservation of SCRATCH_Y. Both variants, PIO-USB (the rig's; the N8 on
 GP2/GP3) and `RP_NATIVE_USB=ON`, link under the trap, each with a probe that must fail to link; the sizes in flash /
-data / bss are 198848 / 46056 / 120600 and 199216 / 32084 / 114368, the image running from SRAM (`copy_to_ram`: 357936
-and 338120 bytes of the 512 KiB; E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788, 312484 and 292636,
+data / bss are 199536 / 46120 / 120600 and 199920 / 32084 / 114368, the image running from SRAM (`copy_to_ram`: 358704
+and 338824 bytes of the 512 KiB; E3's were 101200 / 23832 / 188020 and 101576 / 9836 / 181788, 312484 and 292636,
 before MicroQuickJS, the pack and the halved arena; E2's were 48796 / 15324 / 32360 and 48756 / 1560 / 26128). The
 boot prints `[host] plan loaded: 3 nodes, <N> of 65536 arena bytes, 48000 Hz, 256 frames a block`, a line per node, a
 `[host]   pack bliptoaster, <bytes> bytes` line and, after the first block, the pack's heap in use against its
