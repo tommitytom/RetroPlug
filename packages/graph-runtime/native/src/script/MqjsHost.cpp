@@ -1466,8 +1466,8 @@ JSValue apiGet(JSContext* ctx, JSValue* self, int, JSValue*, int magic) {
         case RP_MQJS_MESSAGE_DATA: {
             PackState* pk = running(ctx, *self, RP_MQJS_CLASS_MESSAGE);
             if (!pk) return JS_EXCEPTION;
-            // data is the message's own value, in the JS heap: a kept message reads what it last held, and nothing
-            // native, so it is not checked against the block.
+            // data is the message's own value, in the JS heap: a kept message reads what it last held (the empty view,
+            // for a SysEx's array released as its block ended), and nothing native, so it is not checked.
             if (magic == RP_MQJS_MESSAGE_DATA) return JS_GetUserValue(ctx, *self, 0);
             void* opaque = JS_GetOpaque(ctx, *self);
             Port p;

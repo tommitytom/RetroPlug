@@ -71,11 +71,12 @@
 // and a change's frame and value are read through the port its object names, checked against the running node's layout
 // and block (integers the host keeps natively), so an object a pack kept past its block, of a node whose slot another
 // now holds, never reads out of bounds: it throws a TypeError when the new node has no port of that ordinal, side and
-// kind, and reads that port's when it has one. A message's data is its own value in the JS heap, what it last held, and
-// is not checked. send copies the data into the output queue at the call (a Uint8Array's bytes as they lie, any other
-// array-like's element by element), so a node may refill and send one array again; a frame earlier than the port's last
-// is raised to it, and a negative one wraps through ToUint32, as the desktop's host does. forward(port, message) is
-// send(port, message.frame, message.data, message.flags), a message the block handed out read natively as its getters
+// kind, and reads that port's when it has one. A message's data is its own value in the JS heap, what it last held (or
+// the empty view, once the block that made a SysEx's array has ended), and is not checked. send copies the data into
+// the output queue at the call (a Uint8Array's bytes as they lie, any other array-like's element by element), so a node
+// may refill and send one array again; a frame earlier than the port's last is raised to it, and a negative one wraps
+// through ToUint32, as the desktop's host does. forward(port, message) is send(port, message.frame, message.data,
+// message.flags), a message the block handed out read natively as its getters
 // read it. A warmed block reads its own arrays and a message's bytes in place (rp_mqjs.h's rp_mqjs_array_get and
 // rp_mqjs_bytes), finds a port named by a constant of the pack's bytecode by the value alone, and passes a port whose
 // pool its queue fits with no JS at all: what a message costs is the interpreter's and the getters'. A node whose

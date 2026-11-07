@@ -1449,6 +1449,30 @@ TEST_CASE("an object a pack kept past its block, read by the node that took its 
     }
 }
 
+TEST_CASE("a message kept past its block reads the data it held, but a SysEx's array has died with its block",
+          "[device-mode][script-pack]") {
+    for (const Build& b : builds()) {
+        INFO(b.name);
+        Host host;
+        Made n(typeOf(b.scripttest, "rp.scripttest.sysex-keeper"), host, {},
+               {{RP_PORT_EVENTS, false}, {RP_PORT_EVENTS, true}});
+        REQUIRE(n.node);
+        // A message of three bytes is held in its place and keeps them; a longer one is made for its block.
+        for (const std::vector<std::uint8_t>& bytes : {std::vector<std::uint8_t>{0xF0, 1, 2, 3, 4, 0xF7},
+                                                       std::vector<std::uint8_t>{0x90, 60, 100}}) {
+            clearQueue(n.in(0));
+            push(n.in(0), 1, bytes);
+            REQUIRE(n.run() == RP_OK);
+            clearQueue(n.in(0));
+            REQUIRE(n.run() == RP_OK);
+            INFO(n.fault());
+            const bool         placed = bytes.size() <= rp::mqjs::kPlacedLengths;
+            const std::uint8_t kept = placed ? static_cast<std::uint8_t>(bytes.size()) : 0;
+            CHECK(n.sent(0) == std::vector<Sent>{{0, 0, {kept}}});
+        }
+    }
+}
+
 // ---- plans ----------------------------------------------------------------------------------------------------------
 
 namespace {

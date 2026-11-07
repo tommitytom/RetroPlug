@@ -291,11 +291,11 @@ TEST_CASE("the bliptoaster pack's heap holds its policy behind the box's input, 
 
 TEST_CASE("a block's SysEx payloads die with it: the policy's heap holds no block's past its end",
           "[device-mode][script-pack][bliptoaster]") {
-    // A payload longer than three bytes is a Uint8Array made for its block. A place kept it until a later block refilled
-    // the place, so blocks that each put a SysEx at a place the blocks after them fill no further (k notes and then a
-    // SysEx of the queue's other bytes, k from 63 down to 1) kept one at every place: the device build's context, 3/2 of
-    // the box's 24576 bytes, ran out within a few blocks, at any heap the box could give it. Each block's payloads are
-    // let go of as it ends, so what the context holds after every block, collected, is what it held after a block of
+    // A payload longer than three bytes is a Uint8Array made for its block. A place kept it until a later block
+    // refilled the place, so blocks that each put a SysEx at a place the blocks after them fill no further (k notes
+    // and then a SysEx of the queue's other bytes, k from 63 down to 1) kept one at every place: the device build's
+    // context, 3/2 of the box's 24576 bytes, ran out within a few blocks, at any heap the box could give it. Each
+    // block's payloads are let go of as it ends, so what the context holds after every block, collected, is what it held after a block of
     // notes, on both builds; and every message comes out.
     for (const rp_package* pack : {rp_bliptoaster_script_package(), rp_bliptoaster_script_package_device_mode()}) {
         INFO((pack == rp_bliptoaster_script_package() ? "desktop" : "device"));

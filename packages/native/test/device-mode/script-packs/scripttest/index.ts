@@ -9,6 +9,7 @@
 //   rp.scripttest.steady    the whole block API with nothing made a block: what a warmed block is held to
 //   rp.scripttest.keeper    keeps a message, a stream and a change of its block in the pack's globals
 //   rp.scripttest.reader    reads what the keeper kept, as another node, and sends what each read did
+//   rp.scripttest.sysex-keeper  keeps a message and sends, a block later, the length of its data
 //   rp.scripttest.busy      a fixed count of work a block, long enough for the engine to poll its interrupt handler
 //   rp.scripttest.throws, .spins, .thenable, .fault, .no-process, .create-throws: one fault each
 //   rp.scripttest.throws-later  throws at its second block, with words longer than a fault keeps
@@ -230,6 +231,23 @@ export const readerNode = defineNode({
       b.send("out", 0, codes);
     },
   }),
+});
+
+// Keeps the last message of a block and sends, a block later, the length of its data: a SysEx's array dies with its
+// block, so it reads empty by then (a message of a few bytes keeps what it held).
+export const sysexKeeperNode = defineNode({
+  id: "rp.scripttest.sysex-keeper",
+  ports: { ev: events.in(), out: events.out() },
+  create: () => {
+    let kept: { data: Uint8Array } | null = null;
+    return {
+      process(blk) {
+        if (kept) blk.send("out", 0, [kept.data.length]);
+        const ev = blk.messages("ev");
+        kept = ev.length > 0 ? ev[ev.length - 1] : null;
+      },
+    };
+  },
 });
 
 const quiet = { out: events.out() };
@@ -669,4 +687,4 @@ registerScriptNodes([probeNode, settingsNode, hooksNode, steadyNode, keeperNode,
                      throwsLaterNode, sendsNode, replaceThrowsNode, hasOwnThrowsNode, spinsInNode, deepNode,
                      sortThrowsNode, sortSpinsNode, repeatThrowsNode, thenThrowsNode, thenSpinsNode,
                      processSpinsNode, sendSpinsNode, createOverrunsNode, layoutOverrunsNode, portsOverrunsNode,
-                     activateOverrunsNode, settingsOverrunsNode, throwsAsNode, forwardThrowsNode]);
+                     activateOverrunsNode, settingsOverrunsNode, throwsAsNode, forwardThrowsNode, sysexKeeperNode]);
