@@ -82,6 +82,10 @@ retroplug_package(graph-runtime)
 foreach(_rp_package IN LISTS RP_DEVICE_CHECK_PACKAGES)
     retroplug_package(${_rp_package})
 endforeach()
+# The bliptoaster script pack, which no case or plan of the check names (it is not on packages.cmake's list, so the
+# image's product does not register it): the policy case (DeviceCheck.hpp's policyHeap) registers its source at a heap of
+# its own, to run the box's policy over the blocks that fill its heap most at the box's width.
+retroplug_package(bliptoaster)
 
 if(NOT RP_DEVICE_CHECK_CASES OR NOT EXISTS "${RP_DEVICE_CHECK_CASES}")
     message(FATAL_ERROR "rp-device-check: RP_DEVICE_CHECK_CASES names no header (\"${RP_DEVICE_CHECK_CASES}\"); "
@@ -142,7 +146,7 @@ retroplug_product(rp-device-check PACKAGES ${RP_DEVICE_CHECK_PACKAGES} DEVICE)
 get_property(_rp_entries GLOBAL PROPERTY RP_DEVICE_PRODUCT_rp-device-check_ENTRIES)
 list(JOIN _rp_entries " " _rp_entries)
 target_compile_definitions(rp-device-check PRIVATE "RP_DEVICE_CHECK_ENTRIES=\"${_rp_entries}\"")
-target_link_libraries(rp-device-check PRIVATE retroplug-graph-exec)
+target_link_libraries(rp-device-check PRIVATE retroplug-graph-exec retroplug-bliptoaster-script)
 target_link_options(rp-device-check PRIVATE "LINKER:-Map=${CMAKE_BINARY_DIR}/rp-device-check.map")
 # The result goes out on the UART (stdio, GP0 at 115200), which also keeps stdio and printf in the image the trap
 # judges. pico_minimize_runtime drops the runtime services the check uses none of (the default alarm pool, the FPGA

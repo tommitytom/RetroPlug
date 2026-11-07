@@ -617,11 +617,12 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Windows, macOS and arm64 have never built E4.** The engine's clang-cl objects, the `sys/time.h` shim, the
     thread-time deadline and the names check on macOS are unbuilt, and every desktop product now links the engine.
   - **No 32-bit runner is in the build**: the 3/2 sizing of a 64-bit device build is a heuristic and the box's boot
-    line is the authority. The first engine fix is guarded only by the configure-time hash, since no test reaches it.
+    line and the device check's policy case are the authority. The first engine fix is guarded only by the
+    configure-time hash, since no test reaches it.
   - **Every context runs a private copy of its bytecode** (running writes into it), and a desktop re-plan holds two
     instances of a pack at once (contexts are 4x `heapBytes` with a 1 MiB floor, a dead pack is revived).
-  - **A SysEx past 3 bytes allocates a view per message**, and at 32 bits a non-whole number read allocates, so a
-    SysEx stream makes the box collect in the MIDI path.
+  - **A SysEx past 3 bytes allocates a view per message**, which dies with its block, and at 32 bits a non-whole number
+    read allocates, so a SysEx stream makes the box collect in the MIDI path.
   - **Packs in plans that are not built in** (a live upload or an SD plan) need the per-node port signature and a
     trust model for bytecode mquickjs does not verify; the desktop's N8 graphs do not use the policy node, and
     `feature/launchpad` has not adopted the toolchain.

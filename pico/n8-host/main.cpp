@@ -51,6 +51,7 @@ extern "C" bool pio_usb_root_attached(void);   // pio_usb_root.c: pio_usb_ll.h i
 #include "n8/Menu.hpp"
 #include "n8/Ops.hpp"
 #include "n8_host_plan.hpp"   // kBuiltInPlan: plan.json, exported by retroplug-export-plan at build time
+#include "script/MqjsHost.hpp"
 
 using rp::n8::Edio;
 
@@ -731,6 +732,11 @@ int main(void) {
     host.init(links, sizeof links / sizeof links[0], staging.interface(), host_log, &script_clock);
     size_t package_count = 0;
     const rp_package *const *packages = rp_register_packages(&package_count);
+    // A script pack the host could not register (past the RP_MQJS_MAX_PACKS or RP_MQJS_MAX_TYPES this image sets,
+    // CMakeLists.txt) is an entry the loader skips, which it would refuse the plan for as naming an unknown type: the
+    // pack's refusal, which names the cap, comes first.
+    for (size_t i = 0; i < package_count; ++i)
+        if (!packages[i]) printf("[host] a script pack was not registered: %s\n", rp::mqjs::packageRefusal());
     if (plan.load({kBuiltInPlan, sizeof kBuiltInPlan}, {arena, sizeof arena}, {packages, package_count}, host.host(),
                   print_line, micros))
         driver.start(clock_us, nullptr, (uint32_t)plan.plan()->sampleRate, plan.plan()->maxFrames);
@@ -810,8 +816,13 @@ int main(void) {
         if (forward_ok) { sniff_report(); health_check(); }
         LAT(mark(lat::Watch));
         link_watch();
-        led_set_mode(boot_error || !plan.plan() ? LED_ERROR : !n8_ready ? LED_NO_N8 : !forward_ok ? LED_BUSY
-                                                                                                   : LED_READY);
+        // A plan that is refused, or whose node faulted (the policy's pack ran out, a deadline), forwards nothing for
+        // the rest of the box's power-on: the error LED says so beside the console's line, and the box goes on (no
+        // recovery reboot, which would only meet the same fault again).
+        led_set_mode(boot_error || !plan.plan() || plan.faulted() ? LED_ERROR
+                     : !n8_ready                                  ? LED_NO_N8
+                     : !forward_ok                                ? LED_BUSY
+                                                                  : LED_READY);
         LAT(mark(lat::Stats));
         stats_report();
         LAT(passEnd(rp::box::uartMidiLastRx()));

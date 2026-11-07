@@ -9,7 +9,8 @@
 // each package with memory of its own: a script pack, its bytes and its heap), or why the loader refused it, after
 // which it runs nothing; after its first block, how much of each script pack's heap its nodes took there (a script
 // node makes its port pools at its first block, so that is the pack's heap for the plan) and how long that block
-// took; and a node the executor silences for faulting, once, with a script node's words for why.
+// took; and a node the executor silences for faulting, once, with a script node's words for why (and faulted() says
+// one has, for the box's LED).
 //
 // Portable (no Pico SDK), so the desktop's tests build it as the box does; the product gives it the line printer.
 
@@ -43,6 +44,9 @@ public:
 
     graph::LoadedPlan*          plan() const { return plan_; }
     const graph::PlanLoadError& error() const { return error_; }
+    // Whether a node of the plan has faulted: the executor silences it for the plan's life, which on a box is until it
+    // is powered off, so the box shows it (its status LED) as well as saying it once.
+    bool faulted() const { return plan_ && plan_->faults.load(std::memory_order_relaxed) != 0; }
 
 private:
     void printLoaded(std::size_t arenaBytes) const;

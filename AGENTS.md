@@ -135,18 +135,18 @@ The rules below are the parts that don't fit those.
   `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp` (and
   `rp.n8.nes`, `rp.device.midi-in` and `rp.devtest`, in the `[device-check]` cases; `rp.core.midi-filter` is a core
   type, held by the twin table) compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library
-  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 93
+  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 95
   cases in eight files. A device-mode node created from msgpack settings renders bit for bit what a desktop-mode node
   renders from the same settings as JSON, with create, process and destroy allocating nothing; the desktop reads
   msgpack the same; the decode defaults a missing field, skips an unknown one and refuses what JSON refuses in the
   same words, naming the field (two inputs part by choice, pinned: design section 6); the converter writes each number
-  as the JSON spells it; and eighteen `[device-check]` cases hold the image's cases to the manifests' device entries,
+  as the JSON spells it; and nineteen `[device-check]` cases hold the image's cases to the manifests' device entries,
   run the whole check in its arena with no allocation, stop it at each of its failure steps, run the check's 10-node
   plan and drive the N8 pack's Edio, menu commands and operations over a scripted cart, and run the script pack's side
   (the devtest pack's types, a script bench, a 4-node script plan held to the desktop's digest, the clock a node's
-  deadline is read from, and the deadline case: a loop over a builtin in the box's pack's heap faulted by its
-  deadline). The script host is in it as well
-  ([docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md), `[script-pack]`, 48 cases, with
+  deadline is read from, the deadline case: a loop over a builtin in the box's pack's heap faulted by its deadline,
+  and the policy case: the box's policy over the blocks that fill its heap most). The script host is in it as well
+  ([docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md), `[script-pack]`, 50 cases, with
   `ScriptPack.test.cpp` and the fixture packs in `test/device-mode/script-packs`): a TS node run on MicroQuickJS in
   both builds of the host (the device build and the desktop's), a lifecycle, the block API, every fault (a throw, a
   deadline, a loop over a builtin held to it, a comparison's bytes and a callback's returns counted toward the next

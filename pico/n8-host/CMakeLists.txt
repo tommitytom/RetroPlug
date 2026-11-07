@@ -85,13 +85,33 @@ retroplug_package(device-io)
 retroplug_package(n8)
 retroplug_package(bliptoaster)
 # The box registers one script pack of one node type, so the host's static tables hold that many
-# (script/MqjsHost.cpp's RP_MQJS_MAX_PACKS and RP_MQJS_MAX_TYPES, 4 and 16 on a device by default).
-target_compile_definitions(retroplug-mqjs-host PRIVATE RP_MQJS_MAX_PACKS=1 RP_MQJS_MAX_TYPES=1)
+# (script/MqjsHost.cpp's RP_MQJS_MAX_PACKS and RP_MQJS_MAX_TYPES, 4 and 16 on a device by default). A pack past them
+# would register as nothing, and the plan be refused at boot as naming a type no package has: so the configure counts
+# the product's script packs against the first, and the boot says a pack's refusal, which names the cap, before the
+# plan's load (main.cpp), for a pack with more types than the second.
+set(N8_HOST_SCRIPT_PACKS 1)
+set(N8_HOST_SCRIPT_TYPES 1)
+target_compile_definitions(retroplug-mqjs-host PRIVATE RP_MQJS_MAX_PACKS=${N8_HOST_SCRIPT_PACKS}
+                                                       RP_MQJS_MAX_TYPES=${N8_HOST_SCRIPT_TYPES})
 
 # --- the generic box host (../host: the device rp_host, the built-in plan's load and blocks, the block driver, the
 # UART MIDI path), and the built-in plan, exported when the firmware is built.
 include("${CMAKE_CURRENT_LIST_DIR}/../host/host.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/plan.cmake")
+# The product's script packs, counted against N8_HOST_SCRIPT_PACKS (above).
+set(_n8_script_packs "")
+foreach(_package IN LISTS N8_HOST_PACKAGES)
+    get_property(_script GLOBAL PROPERTY RP_PACKAGE_${_package}_SCRIPT_ENTRY)
+    if(_script)
+        list(APPEND _n8_script_packs ${_package})
+    endif()
+endforeach()
+list(LENGTH _n8_script_packs _n8_script_count)
+if(_n8_script_count GREATER N8_HOST_SCRIPT_PACKS)
+    message(FATAL_ERROR "n8-host: the box lists ${_n8_script_count} script packs (${_n8_script_packs}), past the "
+                        "${N8_HOST_SCRIPT_PACKS} its script host holds (RP_MQJS_MAX_PACKS, N8_HOST_SCRIPT_PACKS in "
+                        "pico/n8-host/CMakeLists.txt): raise it, which costs a pack's tables of static RAM")
+endif()
 
 # The built-in plan, exported by the tool above when the firmware is built.
 set(_n8_plan_header "${CMAKE_BINARY_DIR}/generated/n8_host_plan.hpp")

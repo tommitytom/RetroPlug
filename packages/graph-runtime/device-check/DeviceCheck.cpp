@@ -811,4 +811,112 @@ void loopDeadline(const rp_package* package, const TypeCase* cases, std::size_t 
     }
 }
 
+namespace {
+
+// The policy's ports: an events input of the device MIDI input's capacity, and an output that matches it.
+constexpr PortCase kPolicyPorts[] = {
+    {RP_PORT_EVENTS, false, 0, RP_DEVICE_MIDI_IN_MESSAGES, RP_DEVICE_MIDI_IN_BYTES},
+    {RP_PORT_EVENTS, true, 0, RP_DEVICE_MIDI_IN_MESSAGES, RP_DEVICE_MIDI_IN_BYTES}};
+constexpr std::uint8_t kPolicySettings[] = {0x80};  // {}: it has none
+constexpr TypeCase     kPolicyCase{kPolicyType, kPolicySettings, sizeof kPolicySettings, kPolicyPorts, 2, nullptr, 0};
+
+// A note on, made where it lies in the queue.
+void pushNote(rp_queue& q, std::uint32_t k) {
+    const std::uint8_t note[3] = {0x90, static_cast<std::uint8_t>(36 + k % 48), 100};
+    graph::pushMessage(q, k, std::span<const std::uint8_t>(note, 3));
+}
+
+// A SysEx of `size` bytes (F0, data, F7), written where it lies in the queue: the largest is the queue's 4096 bytes,
+// which no stack of the box's could hold to copy from.
+void pushSysEx(rp_queue& q, std::uint32_t frame, std::uint32_t size) {
+    if (q.count == q.capacity || size < 2 || q.bytes_capacity - q.bytes_used < size) return;
+    std::uint8_t* p = q.bytes + q.bytes_used;
+    p[0] = 0xF0;
+    for (std::uint32_t i = 1; i + 1 < size; ++i) p[i] = static_cast<std::uint8_t>((frame + i) & 0x7F);
+    p[size - 1] = 0xF7;
+    q.items[q.count++] = rp_message{frame, size, q.bytes_used, 0};
+    q.bytes_used += size;
+}
+
+// Block `b` of the run policyHeap describes, into `q`.
+void policyBlock(rp_queue& q, std::uint32_t b) {
+    graph::clearQueue(q);
+    if (b == 0) {
+        for (std::uint32_t k = 0; k < q.capacity; ++k) pushNote(q, k);
+    } else if (b <= 63) {
+        const std::uint32_t notes = 64 - b;
+        for (std::uint32_t k = 0; k < notes; ++k) pushNote(q, k);
+        pushSysEx(q, notes, q.bytes_capacity - 3 * notes);
+    } else if (b == 64) {
+        for (std::uint32_t k = 0; k < 63; ++k) pushSysEx(q, k, 64);
+    } else if (b == 65) {
+        pushSysEx(q, 0, q.bytes_capacity);
+    } else {
+        for (std::uint32_t k = 0; k < q.capacity; ++k) pushSysEx(q, k, 64);
+    }
+}
+
+}  // namespace
+
+void policyHeap(const rp_package* package, void* arena, std::size_t arenaBytes, PolicyResult* out) {
+    static_assert(std::is_trivially_copyable_v<PolicyResult>);
+    PolicyResult& r = *out;
+    std::memset(static_cast<void*>(&r), 0, sizeof r);
+    auto fail = [&](PolicyStep step, const char* what) {
+        r.step = step;
+        if (what) std::strncpy(r.error.message, what, sizeof r.error.message - 1);
+    };
+    const rp_node_type* type = nullptr;
+    for (std::uint32_t t = 0; package && t < package->node_type_count && !type; ++t)
+        if (std::strcmp(package->node_types[t]->id, kPolicyType) == 0) type = package->node_types[t];
+    if (!type) return fail(PolicyStep::Type, "the package has no such type");
+
+    Arena        a{static_cast<std::byte*>(arena), arenaBytes};
+    PackageScope pack;
+    if (pack.take(a, *package, &r.error) != Step::Ok) return fail(PolicyStep::Package, nullptr);
+    const rp_settings settings{reinterpret_cast<const char*>(kPolicySettings), sizeof kPolicySettings,
+                               RP_SETTINGS_MSGPACK};
+    rp_memory_req     req{};
+    if (!type->query_memory(type, &settings, &req, &r.error)) return fail(PolicyStep::Create, nullptr);
+    void* memory = a.raw(req.size, req.align ? req.align : alignof(std::max_align_t));
+    if (!memory) return fail(PolicyStep::Create, "the instance does not fit the arena");
+    rp_node* node = type->create(type, &kHost, memory, &settings, &r.error);
+    if (!node) return fail(PolicyStep::Create, nullptr);
+    if (!node->vt->activate(node, kSampleRate, kBlockFrames, &r.error)) {
+        type->destroy(node);
+        return fail(PolicyStep::Activate, nullptr);
+    }
+    auto finish = [&](PolicyStep step, const char* what) {
+        if (step != PolicyStep::Ok) fail(step, what);
+        node->vt->deactivate(node);
+        type->destroy(node);
+    };
+    OneStep one;
+    if (!one.bind(a, node, kPolicyCase, kBlockFrames))
+        return finish(PolicyStep::Ports, "its ports do not fit the arena");
+    rp_queue& in = *one.step.process.inputs[0].u.queue;
+    rp_queue& sent = *one.step.process.outputs[0].u.queue;
+    char      what[sizeof r.error.message];
+    rp_script_heap_use use{};
+    for (std::uint32_t b = 0; b < kPolicyBlocks; ++b) {
+        policyBlock(in, b);
+        const bool faulted = one.run(kBlockFrames, true);
+        ++r.blocks;
+        r.messages += in.count;
+        r.passed += sent.count;
+        graph::clearQueue(sent);
+        if (faulted) {
+            faultWords(what, sizeof what, "a block faulted the node", node);
+            return finish(PolicyStep::Process, what);
+        }
+        if (b == 0 && heapOf(node, &use)) r.firstInUseBytes = use.fixed + use.heap;
+    }
+    if (heapOf(node, &use)) {
+        r.contextBytes = use.bytes;
+        r.inUseBytes = use.fixed + use.heap;
+    }
+    if (r.passed != r.messages) return finish(PolicyStep::Result, "the node passed on other than every message");
+    finish(PolicyStep::Ok, nullptr);
+}
+
 }  // namespace rp::device_check

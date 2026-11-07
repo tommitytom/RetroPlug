@@ -298,7 +298,7 @@ rig; what was not is said so at the end.
 | short blip once a second | no N8 on the socket, or the NES is off |
 | 4 Hz blink | N8 up, not forwarding yet: probe, menu, upload, boot |
 | solid, dropping out briefly per batch | forwarding MIDI |
-| double blink | the boot failed, the menu is stuck (power-cycle the NES), or the built-in plan was refused |
+| double blink | the boot failed, the menu is stuck (power-cycle the NES), the built-in plan was refused, or a node of it faulted (the console says which and why; it forwards nothing until the box is powered off and on) |
 | n quick blinks | acknowledging a ROM pick (n = ROM index + 1) |
 
 **Watchdog and recovery.** A 3 s hardware watchdog reboots a hung Pico; every wait of the transport pumps it
@@ -399,7 +399,9 @@ loader lays it out in the arena (`[host] plan loaded: 3 nodes, <N> of 65536 aren
 block`, a line per node, `[host]   pack bliptoaster, <bytes> bytes` for the script pack's memory, and after the first
 block `[host]   pack bliptoaster: heap <X> of 24576 bytes in use after the first block; the load took <us> us and the
 first block <us> us`, X near 11,600 and the times near 9.6 ms and 1.0 ms on the rig; a script node that faults prints
-`[host] node <id> (<type>) faulted: ...` and its words on a `[host]` line below); a plan it refuses prints `the
+`[host] node <id> (<type>) faulted: ...` and its words on a `[host]` line below, and the LED shows the error from then
+on, since the executor silences the node for the plan's life and nothing is forwarded past it until a power cycle;
+the box does not reboot itself for it, as a deterministic fault would meet it again); a plan it refuses prints `the
 built-in plan was refused: ...` and `no plan runs, and nothing is forwarded`, with the error LED. The exporter is
 `build/export-plan/retroplug-export-plan` in the desktop build, which must be built first (`cmake --build build
 --target retroplug-export-plan-current -j$(nproc)`; `pnpm device:box` builds it, `loop.sh` checks it is current, and
@@ -411,7 +413,9 @@ checkout. The `bliptoaster` pack is TypeScript: the desktop build the exporter c
 derived from `RP_EXPORT_PLAN_TOOL`) compiles it with `build-device-pack.mjs`, and the image embeds its 32-bit bytecode
 in flash (`.flashdata`, not copied to RAM) beside MicroQuickJS (the engine, compiled at -Os and wrapped by
 `rp_mqjs_engine.c`, about 99 KB in RAM) and the script host, with the stack guards on (`PICO_USE_STACK_GUARDS=1`) and
-`RP_MQJS_MAX_PACKS=1`, `RP_MQJS_MAX_TYPES=1`. At boot the host registers the pack's type, the loader sizes its memory
+`RP_MQJS_MAX_PACKS=1`, `RP_MQJS_MAX_TYPES=1` (`N8_HOST_SCRIPT_PACKS` and `N8_HOST_SCRIPT_TYPES`: the configure refuses a
+product with more script packs, and a pack with more types prints `[host] a script pack was not registered: ...`, the
+cap named, before the plan's load). At boot the host registers the pack's type, the loader sizes its memory
 (448 + its bytecode copy + the declared heap of 24576) and sets it up in the arena, and a
 node runs under a deadline of 10 ms and 250 us a message read from `time_us_64`. `abort` is wrapped to the SDK's panic
 and the ARM unwinder `setjmp` drags in is stubbed (`cmake/device-image/no-unwind.c`), so the trap holds with the

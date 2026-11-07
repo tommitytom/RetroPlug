@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Builds rp-device-check, the RP2350 image that runs every portable node type in device mode (rp.core, rp.dsp, rp.n8,
-# rp.device and rp.devtest, the devtest script pack's TypeScript types on MicroQuickJS among them) and two plans
-# through the plan loader, a multi-node one and one of script nodes, with a link trap on the heap, on exceptions and on
+# rp.device and rp.devtest, the devtest script pack's TypeScript types on MicroQuickJS among them, and the bliptoaster
+# pack's policy over its worst blocks at a heap under the box's) and two plans through the plan loader, a multi-node one and one of script nodes, with a link trap on the heap, on exceptions and on
 # RTTI (packages/graph-runtime/device-check, docs/modular-graph-phase-e1-design.md section 7, the E3 design's section 7
 # and the E4 design's section 8), and prints what it costs in flash and RAM. CI's linux-x64 job runs it after the
 # desktop build; nothing is flashed or run here (the rig runs the image by hand, and reads its result lines off the
@@ -124,6 +124,7 @@ function hex(s,    i, n) {
     else if (file ~ /libretroplug-device-io-nodes/) owner = "device-io: the rp.device nodes"
     else if (file ~ /libretroplug-devtest-nodes/) owner = "devtest: the rp.devtest nodes"
     else if (file ~ /libretroplug-devtest-script/) owner = "devtest: the script pack"
+    else if (file ~ /libretroplug-bliptoaster-script/) owner = "bliptoaster: the script pack"
     else if (file ~ /libretroplug-mqjs-engine/) owner = "graph-runtime: MicroQuickJS"
     else if (file ~ /libretroplug-mqjs-host/) owner = "graph-runtime: the script host"
     else if (file ~ /libretroplug-graph-exec/) owner = "graph-runtime: executor, loader"
@@ -137,6 +138,7 @@ function hex(s,    i, n) {
 END {
     n = split("core: the rp.core nodes|dsp: the rp.dsp nodes|dsp: the kernels|n8: the rp.n8 nodes, the protocol|" \
               "device-io: the rp.device nodes|devtest: the rp.devtest nodes|devtest: the script pack|" \
+              "bliptoaster: the script pack|" \
               "graph-runtime: executor, loader|graph-runtime: MicroQuickJS|graph-runtime: the script host|" \
               "the check (its cases and arena)|the Pico SDK runtime|toolchain (libc, libm, libgcc)", order, "|")
     printf "  %-34s %9s %9s %9s\n", "", "flash", "data", "bss"

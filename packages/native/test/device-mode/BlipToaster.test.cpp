@@ -289,6 +289,53 @@ TEST_CASE("the bliptoaster pack's heap holds its policy behind the box's input, 
     }
 }
 
+TEST_CASE("a block's SysEx payloads die with it: the policy's heap holds no block's past its end",
+          "[device-mode][script-pack][bliptoaster]") {
+    // A payload longer than three bytes is a Uint8Array made for its block. A place kept it until a later block refilled
+    // the place, so blocks that each put a SysEx at a place the blocks after them fill no further (k notes and then a
+    // SysEx of the queue's other bytes, k from 63 down to 1) kept one at every place: the device build's context, 3/2 of
+    // the box's 24576 bytes, ran out within a few blocks, at any heap the box could give it. Each block's payloads are
+    // let go of as it ends, so what the context holds after every block, collected, is what it held after a block of
+    // notes, on both builds; and every message comes out.
+    for (const rp_package* pack : {rp_bliptoaster_script_package(), rp_bliptoaster_script_package_device_mode()}) {
+        INFO((pack == rp_bliptoaster_script_package() ? "desktop" : "device"));
+        Host host;
+        Node policy(typeOf(pack, "rp.bliptoaster.midi-policy"), &host.host, "{}");
+        const auto* heap =
+            static_cast<const rp_script_heap*>(policy.node->vt->get_interface(policy.node, RP_SCRIPT_HEAP_INTERFACE));
+        REQUIRE(heap);
+        auto inUse = [&] {
+            rp_script_heap_use use{};
+            REQUIRE(heap->use(policy.node, true, &use));
+            return use.fixed + use.heap;
+        };
+        auto sysex = [](std::uint32_t frame, std::uint32_t size) {
+            std::vector<std::uint8_t> bytes(size, static_cast<std::uint8_t>(frame & 0x7f));
+            bytes.front() = 0xF0;
+            bytes.back() = 0xF7;
+            return Message{frame, 0, bytes};
+        };
+        std::vector<Message> notes;
+        for (std::uint32_t k = 0; k < kCapacity; ++k)
+            notes.push_back({k, 0, {0x90, static_cast<std::uint8_t>(36 + k % 48), 100}});
+        CHECK(policy.run(notes).size() == notes.size());
+        const std::size_t settled = inUse();
+        for (std::uint32_t k = kCapacity - 1; k >= 1; --k) {
+            INFO(k << " notes and a SysEx");
+            std::vector<Message> block(notes.begin(), notes.begin() + k);
+            block.push_back(sysex(k, kBytes - 3 * k));
+            CHECK(policy.run(block).size() == block.size());
+            CHECK(inUse() == settled);
+        }
+        std::vector<Message> full;
+        for (std::uint32_t k = 0; k < kCapacity; ++k) full.push_back(sysex(k, kBytes / kCapacity));
+        CHECK(policy.run(full).size() == full.size());
+        CHECK(inUse() == settled);
+        CHECK(policy.run({sysex(0, kBytes)}).size() == 1);
+        CHECK(inUse() == settled);
+    }
+}
+
 TEST_CASE("on the desktop, the policy behind a 256-place source runs through re-plans that hold two of it",
           "[device-mode][script-pack][bliptoaster]") {
     // Re-plans on a GraphHost, the policy behind rp.devtest.source's events (the planner's default 256 places): a new

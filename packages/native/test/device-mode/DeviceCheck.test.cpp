@@ -1165,3 +1165,60 @@ TEST_CASE("the device check's deadline case stops at the step that fails, and sa
         CHECK(run.allocations == 0);
     }
 }
+
+extern "C" const rp_mqjs_pack_source rp_script_bliptoaster;  // its 64-bit source (bliptoaster.pack64.c)
+
+namespace {
+
+struct PolicyRun {
+    rp::device_check::PolicyResult result{};
+    int                            allocations = -1;
+};
+
+// The policy case as the image runs it, in an arena of the image's size made before counting starts, over the
+// bliptoaster pack registered on the device-mode build at `heapBytes`.
+PolicyRun runPolicy(std::uint32_t heapBytes) {
+    const rp_package*             pack = imageScriptPackage(rp_script_bliptoaster, heapBytes);
+    PolicyRun                     r;
+    std::vector<std::max_align_t> arena(rp::device_check::kArenaBytes / sizeof(std::max_align_t) + 1);
+    rp::test::beginCountingAllocations(rp::test::countsCAllocations());
+    rp::device_check::policyHeap(pack, arena.data(), rp::device_check::kArenaBytes, &r.result);
+    r.allocations = rp::test::endCountingAllocations().allocations;
+    return r;
+}
+
+}  // namespace
+
+TEST_CASE("the device check's policy case runs the box's policy through the blocks that fill its heap most, "
+          "allocating nothing, every payload gone with its block",
+          "[device-mode][device-check][script-pack][bliptoaster]") {
+    // At this width at the box's own figure (3/2 of it, kDeviceHalves): the image runs it at kPolicyHeapBytes, the
+    // box's less kPolicyMarginBytes, which is too little here, where a pointer takes twice the bytes and a payload's
+    // bytes the same (the toolchain's run of full SysEx blocks needs 31680 bytes at 64 bits and 19296 at 32).
+    const PolicyRun                       run = runPolicy(rp::device_check::kPolicyBoxHeapBytes);
+    const rp::device_check::PolicyResult& r = run.result;
+    INFO(r.error.message);
+    REQUIRE(r.step == rp::device_check::PolicyStep::Ok);
+    CHECK(run.allocations == 0);
+    CHECK(r.blocks == rp::device_check::kPolicyBlocks);
+    // 64 notes; 63 + 62 + ... + 1 notes and a SysEx after each run of them; 63 SysEx, then one; 64 SysEx twice.
+    CHECK(r.messages == 64 + (63 * 64 / 2 + 63) + (63 + 1) + 2 * 64);
+    CHECK(r.passed == r.messages);
+    CHECK(r.contextBytes == std::size_t{rp::device_check::kPolicyBoxHeapBytes} * rp::mqjs::kDeviceHalves / 2);
+    // What the context holds after its last block is what it held after its first: no block's payload outlived it.
+    CHECK(r.inUseBytes == r.firstInUseBytes);
+
+    SECTION("a heap too small for a block's payloads stops it at the block, in the heap's words") {
+        const PolicyRun small = runPolicy(12288);
+        INFO(small.result.error.message);
+        CHECK(small.result.step == rp::device_check::PolicyStep::Process);
+        CHECK(std::string(small.result.error.message).rfind("a block faulted the node: the pack's heap of ", 0) == 0);
+        CHECK(small.allocations == 0);
+    }
+    SECTION("a package with no policy stops it at the type") {
+        rp::device_check::PolicyResult none{};
+        std::vector<std::max_align_t>  arena(rp::device_check::kArenaBytes / sizeof(std::max_align_t) + 1);
+        rp::device_check::policyHeap(imageScriptPack(), arena.data(), rp::device_check::kArenaBytes, &none);
+        CHECK(none.step == rp::device_check::PolicyStep::Type);
+    }
+}

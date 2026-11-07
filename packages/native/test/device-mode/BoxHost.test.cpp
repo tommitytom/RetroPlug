@@ -1028,15 +1028,18 @@ TEST_CASE("a built-in plan the loader refuses is said, and runs nothing; a node 
         rp::box::BuiltInPlan plan;
         gLines.clear();
         REQUIRE(plan.load(r.blob, arena.span(kArenaBytes), types, host.host(), &collect));
+        CHECK_FALSE(plan.faulted());
         gLines.clear();
         clock.us = 10'000;
         REQUIRE(plan.run(driver));
         REQUIRE(gLines.size() == 1);
         CHECK(gLines[0] == "[host] node f (rp.devtest.fault) faulted: the executor silences it from here on");
+        CHECK(plan.faulted());  // what the box's LED shows
         clock.us = 20'000;
         REQUIRE(plan.run(driver));
         CHECK(gLines.size() == 1);
         CHECK(plan.plan()->faults.load() == 1);
+        CHECK(plan.faulted());
         unloadPlan(plan.plan());
     }
     SECTION("a script node's fault is said with its words, cut to a line of the console") {

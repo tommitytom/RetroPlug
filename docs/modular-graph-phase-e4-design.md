@@ -144,7 +144,9 @@ the types from the recorded ids and runs no JavaScript; setup checks the bytecod
 refuses a mismatch naming the type. The desktop's control context runs the whole pack once per process to answer
 `descriptor` and `layout_for`. The host makes one `rp_node_type` per definition in one `rp_package` per pack, with the
 node's `query_memory` the native shim and the pack's memory declared at package level (section 5). The device build
-holds `RP_MQJS_MAX_PACKS` x `RP_MQJS_MAX_TYPES` in static storage (the box sets 1 x 1; the default is 4 x 16).
+holds `RP_MQJS_MAX_PACKS` x `RP_MQJS_MAX_TYPES` in static storage (the box sets 1 x 1; the default is 4 x 16). A pack
+past them registers as nothing, so the box's configure refuses a product with more script packs than its cap, naming
+it, and its boot prints a pack's refusal (which names the cap it passed) before the plan's load.
 
 **Settings.** The desktop host answers `rp.sdk.settings-json/1` from the control context, so `exportPlan` writes a
 script node's settings as msgpack as it does for a C++ node. On the device the host decodes the msgpack into a JS
@@ -160,8 +162,11 @@ message the running block handed out. Message, change and stream objects are use
 sets no JS property. A node's input pools are **preallocated to its queue's capacity at its first block** (a message
 object per place with Uint8Array views of 1 to 3 bytes, the power-of-two arrays), so the pack's heap need is fixed by
 the plan and the trial load measures it. A warmed block then allocates nothing at 64 bits, except a payload longer than
-3 bytes (its view is made for the block); at 32 bits MicroQuickJS boxes every number that is not a 31-bit integer, so
-reading a non-whole stream start, change value or tempo allocates. An object kept past its block never reads out of
+3 bytes (its view is made for the block, and the place lets go of it as the block ends, so a pack's heap holds one
+block's payloads at most: a place once kept its view until a later block refilled it, and blocks that each left a SysEx
+at a place the blocks after them filled no further ran `bliptoaster`'s pack out at any heap the box could give); at 32
+bits MicroQuickJS boxes every number that is not a 31-bit integer, so reading a non-whole stream start, change value or
+tempo allocates. An object kept past its block never reads out of
 bounds: it throws a TypeError when the running node has no port of that ordinal, side and kind, and otherwise reads
 that port.
 
@@ -177,7 +182,9 @@ which no host can check; the contract says so. On the box an idle pass is estima
 instructions, before the starts' compare: a few more a control input or param); `bliptoaster` sets it.
 
 **Faults.** A node that throws faults, with no retry (the box has no one to retry for): the executor silences it and
-the box prints it once, with the throw's words on a second `[host]` line. A getter's throw on what the host reads of a
+the box prints it once, with the throw's words on a second `[host]` line, and shows its error LED from then on, since
+nothing is forwarded past the node until the box is powered off (it does not reboot itself for it, which a
+deterministic fault would only meet again). A getter's throw on what the host reads of a
 call's result (a result's `then`, an instance's `process` and hooks), or of what `send` and `forward` are handed (an
 array-like's `length`, an object's `frame` and `flags`), is the node's like any other, and an entry that
 ran past its deadline faults with the deadline's words whatever it returned, since a builtin or a getter may drop the
@@ -341,7 +348,7 @@ auditioned there, and their `[packages]` rows gain it. The desktop's own N8 grap
 
 ## 7. Tests
 
-- **The mquickjs host on the desktop** (`[script-pack]`, 48 cases, most in `ScriptPack.test.cpp`, run on both builds of
+- **The mquickjs host on the desktop** (`[script-pack]`, 50 cases, most in `ScriptPack.test.cpp`, run on both builds of
   the host): a node's lifecycle, settings and block API; each fault (a throw, a deadline overrun, a loop over each kind
   of long builtin faulted within a small multiple of its deadline at bliptoaster's heap and devtest's (a quarter past
   it, and two of Windows' 15.6 ms clock ticks more there), the bytes a comparison reads and a callback builtin's returns
@@ -353,12 +360,14 @@ auditioned there, and their `[packages]` rows gain it. The desktop's own N8 grap
   after a reshape on the QuickJS host; kept objects; a warmed block allocating nothing, counted by the C allocator and
   by the JS heap's growth; the threaded cases under ThreadSanitizer; `[debug-gc]`, the runner over the engine built with
   a collection at every allocation held to the ordinary runner's digests.
-- **`retroplug-device-mode-test`**: 93 cases (45 before E4, 84 at its five commits). The box's plan with the
+- **`retroplug-device-mode-test`**: 95 cases (45 before E4, 84 at its five commits). The box's plan with the
   `bliptoaster` pack, exported and loaded into an arena over the device-mode builds and run in ragged blocks, renders
   what GraphHost renders; a pack heap's sizing and its refusals; a C++ package without package memory unchanged;
   `box-plan.hex` re-recorded.
 - **The twin test** (`[bliptoaster]`): `rp.bliptoaster.midi-policy` against `rp.core.midi-filter` with the same kinds
-  dropped, message for message, over every first byte and 400 seeded blocks, desktop and device builds of both.
+  dropped, message for message, over every first byte and 400 seeded blocks, desktop and device builds of both; and
+  the policy's heap after every block of SysEx left at each place in turn, a full queue of SysEx and one of 4096 bytes,
+  collected, what it held after a block of notes, on both builds (every block's payloads gone with it).
 - **`defineNode` on both engines:** the TS tests on Node, and `device-pack.test.ts` (the toolchain's refusals, each with
   its message, and the scenario's transcript identical on Node and as bytecode).
 - **The device builds:** `rp-device-check` runs a script pack through the loader on the device (section 11.4);
@@ -426,7 +435,7 @@ the descriptor goldens of existing types, `buildGraph`'s goldens, `edio-golden.j
 intended ones (the `[packages]` golden gaining `rp.bliptoaster.midi-policy` in each of its nine products,
 `box-plan.hex`, and two new goldens: the policy's descriptor and `device-check-script-plan.hex`). Sections 1 to 9 are
 corrected in place where the build made them false. The counts, after the follow-ups: `retroplug-device-mode-test`
-ends at 93 cases (the baseline's 45, 84 at the five commits; 1,491,755 assertions under ASan, 48 of the cases
+ends at 95 cases (the baseline's 45, 84 at the five commits; 1,491,755 assertions under ASan, 50 of the cases
 `[script-pack]` and run under ThreadSanitizer), `pnpm test:plugin` at 335 cases in all (333 before E4, 334 at the five
 commits), `pnpm test` at 175 files and 1792 cases (174 and 1782), parity (250), native, ui and the render and kit legs
 unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data / bss to 289910 / 2004 / 421947 (277702
@@ -504,11 +513,21 @@ unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data 
   against 1 s, a third of the box's watchdog. The LED blinks 50 + its step, or 59 for a worst over the bound. A loop the
   deadline failed to end would hang the image there: a run that stops after the bench's line, with no LED, is this case
   failing.
+- **The policy case** (after the final review, its line after the deadline case's, so the check prints ten lines):
+  `rp.bliptoaster.midi-policy` in the `bliptoaster` pack registered at 20,480 bytes, the box's 24,576 less 4,096 (the
+  pack's bytecode is linked into the image for it, with no case or plan naming it), behind a queue of the device MIDI
+  input's capacity, over the blocks that fill its heap most: 64 notes, then 63 blocks of k notes and a SysEx of the
+  queue's other bytes, k from 63 down to 1, then 63 SysEx of 64 bytes and one of 4096, and two full queues of 64-byte
+  SysEx (2,335 messages, every one passed); a pass says the box's pack holds its worst blocks with 4 KB to spare at the
+  box's width. On an i386 model of that width the run needs 19,264 bytes (the full queues; the review's 4 KB SysEx
+  after 63 short ones 19,160), and before a block's payloads died with it, 23,232 for the review's run and more than
+  128 KB for the staircase. The LED blinks 60 + its step.
 - **Build:** `RP_SCRIPT_HEAP_BYTES_devtest` (40960 at the five commits, 45056 since the third node's definition: the
   toolchain's 3/2 check passes the pack at 42840 now), `NO_SCRIPTS` retired, the size table's new owners
   (MicroQuickJS 99,040 bytes of flash, the script host 18,485, the devtest pack 18,147 at the five commits;
   99,626, 20,081 and 21,239 in the final image).
-- **Tests:** 8 new `[device-check]` cases (16 in all, 18 with the deadline case and its failure steps): registration at
+- **Tests:** 8 new `[device-check]` cases (16 in all, 18 with the deadline case and its failure steps, 19 with the
+  policy case): registration at
   the image's heap, a type whose memory does not fit, the script plan (allocating nothing, 4 nodes, 40 blocks, 2032
   messages, digest pinned on every host), its failure steps, the bench and its failure steps, and the clock case (a
   spinning node faults with the deadline's words).
@@ -596,6 +615,11 @@ unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data 
   (section 4).
 - **The desktop re-plan holds two instances of a pack at once** (the replaced one waits to be reclaimed), so the
   desktop's contexts are 4x `heapBytes` with a 1 MiB floor, and a dead pack is set up again once its last node is gone.
+- **A block's payloads.** The final review measured nothing of the box's worst case and estimated the policy's heap
+  after a 4 KB SysEx that followed 63 short ones at about 22.5 KB of 24,576; looking for worse found blocks that each
+  left a SysEx at a place the blocks after them filled no further, which kept one at every place and ran the pack out at
+  any heap the box could give it. A block's payloads now die with it (section 4), the device check runs the worst blocks
+  on the M33 with 4 KB to spare, and a faulted plan shows on the box's LED.
 
 ### 11.7 The gate
 
@@ -663,9 +687,11 @@ the regression line moved to E4's measured figures (section 8). The first gate t
 - **The exporter's trial load is laxer than the image's figure for devtest** (the manifest's 57344 against the image's
   45056 through `RP_SCRIPT_HEAP_BYTES_devtest`), and the estimate (107,264) is an upper bound on the image's. An
   exporter `--script-heap` was left out.
-- **A SysEx past 3 bytes allocates a Uint8Array per message**, and a block's SysEx arrays stay live until the next
-  block refills those places, so a SysEx stream makes the box collect in the MIDI path; at 32 bits a node that reads a
-  non-whole stream start, change value or tempo allocates too.
+- **A SysEx past 3 bytes allocates a Uint8Array per message**, which dies with its block, so a SysEx stream makes the
+  box collect in the MIDI path; the worst a block can hand the box's policy (a full queue of SysEx) needs 19,264 of its
+  24,576 bytes on an i386 model of the box's width, and the device check's policy case holds the M33 to the box's
+  figure less 4 KB (section 11.4). At 32 bits a node that reads a non-whole stream start, change value or tempo
+  allocates too.
 - **A node's budget is its author's:** about 250 us a message, and a nest of native callbacks (`replace`, `forEach`) no
   deeper than the cap of 4; the deadline faults the node, never the box, within the bound section 4 states: a cap's
   units past the deadline, plus what runs to the next poll (the rest of one builtin call, such as an `indexOf` over

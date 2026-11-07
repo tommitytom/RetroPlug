@@ -57,40 +57,42 @@
 // to kPlacedLengths over three bytes of a buffer of the port's, and every array messages() hands out), each control
 // stream's to its capacity, so what a node's ports take of the heap is fixed by the plan it is in, and its first block,
 // which the exporter's trial load runs, measures it. What a block's contents take is not: a payload longer than
-// kPlacedLengths gets a Uint8Array made for its block, and a node may make things a message; the toolchain's heap
+// kPlacedLengths gets a Uint8Array made for its block, which the place lets go of as the block ends, so the heap holds
+// one block's at most (a queue's bytes and a view each), and a node may make things a message; the toolchain's heap
 // check, which fills every input to the device MIDI input's capacity, SysEx included, on the node's default settings,
-// is what holds a pack to a full block. (The box loads one plan and keeps it. A desktop host that re-plans makes a
-// replacing instance's pools at its first block, while the instance it replaces waits for its plan to be reclaimed, so
-// for that while the pack's heap holds both: hence the desktop's larger context.) messages(port) is one of a set of
-// arrays the port keeps, by the power of two that holds the count (its length set within half its capacity, so the
-// engine neither grows nor shrinks it, on a rooted slot, so it is right if JS spliced the array meanwhile), over the
-// pool, whose frame and flags are getters on the block's queue and whose data is the place's view of the payload's
-// length, refilled. control(id) is the port's stream object, whose changes are kept as the messages are. A message's
-// frame and flags, a stream's start and changes and a change's frame and value are read through the port its object
-// names, checked against the running node's layout and block (integers the host keeps natively), so an object a pack
-// kept past its block, of a node whose slot another now holds, never reads out of bounds: it throws a TypeError when
-// the new node has no port of that ordinal, side and kind, and reads that port's when it has one. A message's data is
-// its own value in the JS heap, what it last held, and is not checked. send copies the data into the output queue at
-// the call (a Uint8Array's bytes as they lie, any other array-like's element by element), so a node may refill and
-// send one array again; a frame earlier than the port's last is raised to it, and a negative one wraps through
-// ToUint32, as the desktop's host does. forward(port, message) is send(port, message.frame, message.data,
-// message.flags), a message the block handed out read natively as its getters read it. A warmed block reads its own
-// arrays and a message's bytes in place (rp_mqjs.h's rp_mqjs_array_get and rp_mqjs_bytes), finds a port named by a
-// constant of the pack's bytecode by the value alone, and passes a port whose pool its queue fits with no JS at all:
-// what a message costs is the interpreter's and the getters'. A node whose definition says idle: "skip" is not entered
-// on a block that brings it no message and no change and starts each of its control inputs and params where its last
-// call left it, whichever plan the block is of (defineNode.ts's host contract says when it still is). The host
-// makes a block's arrays and views with the engine's own constructors (rp_mqjs.h), never through a call into
-// JavaScript, so messages() works at any depth of a node's C re-entries, and a pack's own globals (a Uint8Array it
-// reassigned) never reach the host's refill. A node's context holds it to kMaxReentries nested calls into JavaScript on
-// the C stack (rp_mqjs.h's RP_MQJS_MAX_REENTRIES says why): a native's callback past them throws an InternalError.
+// is what holds a pack to a full block (and the device check's policy case holds the box's pack to its worst blocks).
+// (The box loads one plan and keeps it. A desktop host that re-plans makes a replacing instance's pools at its first
+// block, while the instance it replaces waits for its plan to be reclaimed, so for that while the pack's heap holds
+// both: hence the desktop's larger context.) messages(port) is one of a set of arrays the port keeps, by the power of
+// two that holds the count (its length set within half its capacity, so the engine neither grows nor shrinks it, on a
+// rooted slot, so it is right if JS spliced the array meanwhile), over the pool, whose frame and flags are getters on
+// the block's queue and whose data is the place's view of the payload's length, refilled. control(id) is the port's
+// stream object, whose changes are kept as the messages are. A message's frame and flags, a stream's start and changes
+// and a change's frame and value are read through the port its object names, checked against the running node's layout
+// and block (integers the host keeps natively), so an object a pack kept past its block, of a node whose slot another
+// now holds, never reads out of bounds: it throws a TypeError when the new node has no port of that ordinal, side and
+// kind, and reads that port's when it has one. A message's data is its own value in the JS heap, what it last held, and
+// is not checked. send copies the data into the output queue at the call (a Uint8Array's bytes as they lie, any other
+// array-like's element by element), so a node may refill and send one array again; a frame earlier than the port's last
+// is raised to it, and a negative one wraps through ToUint32, as the desktop's host does. forward(port, message) is
+// send(port, message.frame, message.data, message.flags), a message the block handed out read natively as its getters
+// read it. A warmed block reads its own arrays and a message's bytes in place (rp_mqjs.h's rp_mqjs_array_get and
+// rp_mqjs_bytes), finds a port named by a constant of the pack's bytecode by the value alone, and passes a port whose
+// pool its queue fits with no JS at all: what a message costs is the interpreter's and the getters'. A node whose
+// definition says idle: "skip" is not entered on a block that brings it no message and no change and starts each of its
+// control inputs and params where its last call left it, whichever plan the block is of (defineNode.ts's host contract
+// says when it still is). The host makes a block's arrays and views with the engine's own constructors (rp_mqjs.h),
+// never through a call into JavaScript, so messages() works at any depth of a node's C re-entries, and a pack's own
+// globals (a Uint8Array it reassigned) never reach the host's refill. A node's context holds it to kMaxReentries nested
+// calls into JavaScript on the C stack (rp_mqjs.h's RP_MQJS_MAX_REENTRIES says why): a native's callback past them
+// throws an InternalError.
 //
 // What a warmed block allocates: nothing native, ever; in the JS heap, nothing at 64 bits for the whole API but a
-// payload longer than kPlacedLengths (a SysEx), whose Uint8Array is made for its block. At 32 bits, the box's width,
-// MicroQuickJS boxes every number that is not a 31-bit integer (it has short floats at 64 bits alone), so there each
-// read of a non-integer number allocates its box: a control stream's start and a change's value, the transport's
-// tempo, ppq and sampleRate when they are not whole, and any such number the node computes. A node that keeps to
-// bytes, frames, flags and integers (a MIDI policy) allocates nothing at either width.
+// payload longer than kPlacedLengths (a SysEx), whose Uint8Array is made for its block and dies with it. At 32 bits,
+// the box's width, MicroQuickJS boxes every number that is not a 31-bit integer (it has short floats at 64 bits alone),
+// so there each read of a non-integer number allocates its box: a control stream's start and a change's value, the
+// transport's tempo, ppq and sampleRate when they are not whole, and any such number the node computes. A node that
+// keeps to bytes, frames, flags and integers (a MIDI policy) allocates nothing at either width.
 //
 // Faults (design section 4). A throw from process (or from create, layout or a hook, or from a getter the host reads of
 // what they return: a result's then, an instance's process and hooks), a process that returns a promise or a thenable,

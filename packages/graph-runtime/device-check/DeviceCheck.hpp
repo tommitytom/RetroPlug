@@ -377,4 +377,50 @@ using Micros = std::uint64_t (*)();
 void loopDeadline(const rp_package* package, const TypeCase* cases, std::size_t caseCount, void* arena,
                   std::size_t arenaBytes, Micros micros, LoopResult* out);
 
+// ---- the box's policy over the worst blocks its input hands it ------------------------------------------------------
+
+// What policyHeap runs (docs/modular-graph-phase-e4-design.md sections 6 and 11.8): rp.bliptoaster.midi-policy, the
+// box's MIDI policy, in a package of the bliptoaster pack registered at the caller's heap, behind a queue of the device
+// MIDI input's capacity (64 messages, 4096 bytes), over the blocks that make its heap hold the most: a payload longer
+// than three bytes (a SysEx) is a Uint8Array made for its block, so the most a block makes is a full queue of SysEx,
+// 64 of 64 bytes, and before a block's payloads died with it (graph-runtime's script/MqjsHost.cpp, releasePayloads) a
+// place kept its payload until a later block refilled it, so what ran a pack out was blocks that left one at every
+// place: kPolicyBlocks blocks, a block of 64 notes, then 63 blocks each of k notes and one SysEx of the queue's other
+// bytes, k from 63 down to 1 (each SysEx at a place the blocks after it fill no further), then 63 SysEx of 64 bytes
+// and a block of one SysEx of 4096, and two blocks of 64 SysEx of 64 bytes. Every message passes the policy, so every
+// one must come out. The image registers the pack at kPolicyHeapBytes, the box's figure less kPolicyMarginBytes, so a
+// pass on the box says the box's pack holds its worst blocks with that much to spare at its own width.
+inline constexpr const char*   kPolicyType = "rp.bliptoaster.midi-policy";
+inline constexpr std::uint32_t kPolicyBoxHeapBytes = 24576;  // packages/bliptoaster's heapBytes, the box's
+inline constexpr std::uint32_t kPolicyMarginBytes = 4096;
+inline constexpr std::uint32_t kPolicyHeapBytes = kPolicyBoxHeapBytes - kPolicyMarginBytes;
+inline constexpr std::uint32_t kPolicyBlocks = 1 + 63 + 2 + 2;
+
+enum class PolicyStep : std::uint8_t {
+    Ok,
+    Type,     // the package has no such type
+    Package,  // its package memory was refused, or does not fit the arena
+    Create,   // query_memory or create refused it, or the instance does not fit
+    Activate,
+    Ports,    // its ports do not fit the arena
+    Process,  // a block faulted the node (its fault's words in the error)
+    Result,   // a message did not come out
+};
+
+struct PolicyResult {
+    PolicyStep    step = PolicyStep::Ok;
+    rp_error      error{};
+    std::uint32_t blocks = 0;    // the blocks run, the one that faulted included
+    std::uint32_t messages = 0;  // what they handed the node
+    std::uint32_t passed = 0;    // and what came out
+    // The pack's context (rp.script.heap/1), and what it holds, collected, after the first block and after the last.
+    std::size_t contextBytes = 0;
+    std::size_t firstInUseBytes = 0;
+    std::size_t inUseBytes = 0;
+};
+
+// Runs the blocks (see above) in `arena` over `package` (the bliptoaster pack, registered at the heap to judge),
+// under host(). Allocates nothing; fills `out`.
+void policyHeap(const rp_package* package, void* arena, std::size_t arenaBytes, PolicyResult* out);
+
 }  // namespace rp::device_check

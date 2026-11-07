@@ -20,21 +20,23 @@
 // engine to the host's deepest C re-entry every block. Before that plan, the deadline case (DeviceCheck.hpp's
 // loopDeadline) runs rp.devtest.script-loop's loops over a builtin in the pack registered again at the box's pack's
 // heap, times how long each holds the block thread before its deadline faults it, and judges the worst against
-// kLoopBoundMicros, a third of the box's watchdog.
+// kLoopBoundMicros, a third of the box's watchdog. Then the policy case (DeviceCheck.hpp's policyHeap) runs the box's
+// MIDI policy, the bliptoaster pack registered at the box's heap less kPolicyMarginBytes, over the blocks that fill its
+// heap most, so a pass says the box's pack holds them with that much to spare at the box's width.
 //
 // It reports the outcome three ways: one line on stdio (the UART, GP0 at 115200) for each check, gDeviceCheck,
-// gN8Protocol, gDevicePlan, gScriptPlan and gScriptBench for a debugger, and the board's LED, lit and steady for a pass
-// and for a failure a count of blinks, repeated after a pause: the failed Step's value for a type, kPlanBlinks plus the
-// PlanStep's for the plan, kN8ProtocolBlinks for the protocol, kScriptPlanBlinks plus the PlanStep's for the script
-// plan (plus kScriptStackBlinks for a stack that left less than kStackReserve), and kBenchBlinks plus the BenchStep's
-// for the bench, and kLoopBlinks plus the LoopStep's for the deadline case (kLoopBoundBlinks over its bound). The
-// plan's line reports its node count and the arena it
-// took, as the device measured them, beside the exporter's estimate, which the check holds it to, and the digest of
-// what reached its end beside the desktop's (DeviceCheck.hpp's kPlanDesktopDigest), which it does not judge: the float
-// tolerance between the two is the audio version's. The script plan's lines report the same, the load's and the first
-// block's time, the pack's memory and its context's use, and the stack its load and its blocks took, each judged
-// against the stack with kStackReserve kept; the bench's line its cycles. A
-// last line gives the deepest the stack went in all (stackHighWater below).
+// gN8Protocol, gDevicePlan, gScriptPlan, gScriptBench, gLoops and gPolicy for a debugger, and the board's LED, lit and
+// steady for a pass and for a failure a count of blinks, repeated after a pause: the failed Step's value for a type,
+// kPlanBlinks plus the PlanStep's for the plan, kN8ProtocolBlinks for the protocol, kScriptPlanBlinks plus the
+// PlanStep's for the script plan (plus kScriptStackBlinks for a stack that left less than kStackReserve), and
+// kBenchBlinks plus the BenchStep's for the bench, kLoopBlinks plus the LoopStep's for the deadline case
+// (kLoopBoundBlinks over its bound), and kPolicyBlinks plus the PolicyStep's for the policy case. The plan's line
+// reports its node count and the arena it took, as the device measured them, beside the exporter's estimate, which the
+// check holds it to, and the digest of what reached its end beside the desktop's (DeviceCheck.hpp's
+// kPlanDesktopDigest), which it does not judge: the float tolerance between the two is the audio version's. The script
+// plan's lines report the same, the load's and the first block's time, the pack's memory and its context's use, and the
+// stack its load and its blocks took, each judged against the stack with kStackReserve kept; the bench's line its
+// cycles. A last line gives the deepest the stack went in all (stackHighWater below).
 //
 // An absent plan line with a dark LED is a hang or a stack overrun, which the stack guard (CMakeLists.txt) turns into a
 // HardFault that halts at isr_hardfault's breakpoint: halted with the probe, the overrun reads CFSR (0xE000ED28) with
@@ -67,8 +69,10 @@ static_assert(std::string_view(RP_DEVICE_CHECK_ENTRIES) == rp::device_check::kEn
               "DeviceCheckCases.hpp was generated for other package entries than this image registers: regenerate it "
               "with rp-device-check-cases from the same packages.cmake (tools/build-device-check.sh)");
 
-// The image's script pack's 32-bit source (its pack32.c), which the deadline case registers again at another heap.
+// The image's script pack's 32-bit source (its pack32.c), which the deadline case registers again at another heap, and
+// the bliptoaster pack's, which the policy case registers at kPolicyHeapBytes.
 extern "C" const rp_mqjs_pack_source rp_script_devtest;
+extern "C" const rp_mqjs_pack_source rp_script_bliptoaster;
 
 // The stack's bounds (the SDK's linker script: the 4 KB of SCRATCH_Y, PICO_STACK_SIZE).
 extern "C" char __StackBottom[];
@@ -153,6 +157,7 @@ constexpr unsigned kN8ProtocolBlinks = 20;
 constexpr unsigned kScriptPlanBlinks = 30;
 constexpr unsigned kBenchBlinks = 40;
 constexpr unsigned kLoopBlinks = 50;
+constexpr unsigned kPolicyBlinks = 60;
 // A deadline case whose worst loop took longer than kLoopBoundMicros: kLoopBlinks plus this, past every LoopStep's.
 constexpr unsigned kLoopBoundBlinks = 9;
 // A script plan whose load or blocks left less than kStackReserve: kScriptPlanBlinks plus this, past every PlanStep's.
@@ -223,6 +228,7 @@ rp::device_check::PlanResult       gDevicePlan;
 rp::device_check::PlanResult       gScriptPlan;
 rp::device_check::BenchResult      gScriptBench;
 rp::device_check::LoopResult       gLoops;
+rp::device_check::PolicyResult     gPolicy;
 
 namespace {
 
@@ -384,6 +390,52 @@ RP_NOINLINE void printLoops() {
                 fits ? "within" : "over", static_cast<unsigned>(rp::device_check::kLoopBoundMicros));
 }
 
+const char* policyStepName(rp::device_check::PolicyStep step) {
+    switch (step) {
+        case rp::device_check::PolicyStep::Ok: return "ok";
+        case rp::device_check::PolicyStep::Type: return "type";
+        case rp::device_check::PolicyStep::Package: return "package";
+        case rp::device_check::PolicyStep::Create: return "create";
+        case rp::device_check::PolicyStep::Activate: return "activate";
+        case rp::device_check::PolicyStep::Ports: return "ports";
+        case rp::device_check::PolicyStep::Process: return "process";
+        case rp::device_check::PolicyStep::Result: return "result";
+    }
+    return "?";
+}
+
+// The policy case: the bliptoaster pack registered at kPolicyHeapBytes (a registration of its own, keyed on this copy
+// of its source), its policy run in the arena over the blocks that fill its heap most.
+rp_mqjs_pack_source gPolicySource;
+
+RP_NOINLINE void runPolicy() {
+    gPolicySource = rp_script_bliptoaster;
+    gPolicySource.heap_bytes = rp::device_check::kPolicyHeapBytes;
+    rp::device_check::policyHeap(rp::mqjs::package(gPolicySource), gArena, sizeof gArena, &gPolicy);
+}
+
+RP_NOINLINE void printPolicy() {
+    const rp::device_check::PolicyResult& p = gPolicy;
+    if (p.step != rp::device_check::PolicyStep::Ok) {
+        std::printf("rp-device-check: script policy heap failed, step %u (%s) after %u blocks, in a context of %u "
+                    "bytes (the box's %u less %u): %s\n",
+                    static_cast<unsigned>(p.step), policyStepName(p.step), static_cast<unsigned>(p.blocks),
+                    static_cast<unsigned>(rp::device_check::kPolicyHeapBytes),
+                    static_cast<unsigned>(rp::device_check::kPolicyBoxHeapBytes),
+                    static_cast<unsigned>(rp::device_check::kPolicyMarginBytes), p.error.message);
+        return;
+    }
+    std::printf("rp-device-check: script policy heap pass, %s in a context of %u bytes (the box's %u less %u): %u "
+                "blocks of notes, SysEx after notes at each place, 63 SysEx of 64 bytes then one of 4096, and full "
+                "queues of SysEx, %u messages, %u passed; heap %u bytes in use after the first block and %u after "
+                "the last\n",
+                rp::device_check::kPolicyType, static_cast<unsigned>(p.contextBytes),
+                static_cast<unsigned>(rp::device_check::kPolicyBoxHeapBytes),
+                static_cast<unsigned>(rp::device_check::kPolicyMarginBytes), static_cast<unsigned>(p.blocks),
+                static_cast<unsigned>(p.messages), static_cast<unsigned>(p.passed),
+                static_cast<unsigned>(p.firstInUseBytes), static_cast<unsigned>(p.inUseBytes));
+}
+
 // The script plan's stack, in two phases: the load (the pack's setup among it), read as the plan has loaded, which
 // paints the stack again below its own frame; then the blocks and the unload, read after.
 std::size_t gLoadStack = 0;
@@ -459,6 +511,8 @@ int main() {
     runBench();
     runLoops();
     printLoops();
+    runPolicy();
+    printPolicy();
 
     // The script plan last, on a stack painted afresh, so its line says the depths its run alone took: the load (the
     // pack's setup), read and painted again as it has loaded (afterScriptPlanLoad), then every block with the nest
@@ -483,6 +537,7 @@ int main() {
     const rp::device_check::PlanResult&  sp = gScriptPlan;
     const rp::device_check::BenchResult& b = gScriptBench;
     const rp::device_check::LoopResult&  l = gLoops;
+    const rp::device_check::PolicyResult& pol = gPolicy;
     unsigned blinks = static_cast<unsigned>(gDeviceCheck.step);
     if (blinks == 0 && p.step != rp::device_check::PlanStep::Ok) blinks = kPlanBlinks + static_cast<unsigned>(p.step);
     if (blinks == 0 && !gN8Protocol.ok) blinks = kN8ProtocolBlinks;
@@ -492,6 +547,8 @@ int main() {
     if (blinks == 0 && l.step != rp::device_check::LoopStep::Ok) blinks = kLoopBlinks + static_cast<unsigned>(l.step);
     if (blinks == 0 && l.micros[worstLoop()] > rp::device_check::kLoopBoundMicros)
         blinks = kLoopBlinks + kLoopBoundBlinks;
+    if (blinks == 0 && pol.step != rp::device_check::PolicyStep::Ok)
+        blinks = kPolicyBlinks + static_cast<unsigned>(pol.step);
     if (blinks == 0 && (gLoadStack + kStackReserve > stackSize || scriptStack + kStackReserve > stackSize))
         blinks = kScriptPlanBlinks + kScriptStackBlinks;
     for (;;) {

@@ -12,7 +12,8 @@ typedef enum {
     LED_NO_N8,   // no N8 on the socket (or the NES is off): a short blip once a second
     LED_BUSY,    // N8 up, not forwarding yet (probe, menu, upload, boot): 4 Hz blink
     LED_READY,   // forwarding: solid, dropping out briefly on each forwarded batch
-    LED_ERROR,   // the boot failed, or recovery is backing off: a double blink
+    LED_ERROR,   // the boot failed, recovery is backing off, or the plan was refused or a node of it faulted: a double
+                 // blink
 } led_mode;
 
 void led_init(void);

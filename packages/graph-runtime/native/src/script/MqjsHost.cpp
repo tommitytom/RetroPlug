@@ -238,6 +238,9 @@ struct Node {
     // more passes the port by, with no JS read.
     std::uint64_t   readied = 0;
     std::uint32_t   pooled[kMaxPorts] = {};
+    // The inputs (a bit a port) a place of whose holds a payload made for the running block, a Uint8Array longer than
+    // kPlacedLengths: let go as the block ends (releasePayloads).
+    std::uint64_t   payloads = 0;
     // The port names its blocks have asked for that never move (rp_mqjs_is_fixed: a constant of the pack's bytecode,
     // `b.send("out", ...)`), each with its port's ordinal: found by the value alone, where any other name is compared
     // as text (findPort).
@@ -1181,8 +1184,9 @@ JSValue listOf(JSContext* ctx, PackState& pk, std::uint32_t ordinal, std::uint32
 }
 
 // A message's data for this block, refilled with the payload: the shared empty view, the message's own view of the
-// payload's length up to kPlacedLengths, or, for a longer payload (a SysEx), a Uint8Array made for this block.
-// The bytes are copied into the view where it lies (rp_mqjs_bytes), which allocates nothing.
+// payload's length up to kPlacedLengths, or, for a longer payload (a SysEx), a Uint8Array made for this block, which
+// the place lets go of as the block ends (releasePayloads). The bytes are copied into the view where it lies
+// (rp_mqjs_bytes), which allocates nothing.
 bool fillData(JSContext* ctx, JSValue message, JSValue empty, const std::uint8_t* bytes, std::uint32_t size) {
     Rooted m(ctx, message);
     Rooted data(ctx, size == 0 ? empty : size <= kPlacedLengths ? JS_GetUserValue(ctx, message, size) : JS_UNDEFINED);
@@ -1267,9 +1271,33 @@ JSValue blockMessages(JSContext* ctx, JSValue* self, int argc, JSValue* argv) {
     Rooted empty(ctx, at(ctx, portState(ctx, *pk, p.ordinal), kStateHead));
     for (std::uint32_t k = 0; k < q.count; ++k) {
         const rp_message& m = q.items[k];
+        if (m.size > kPlacedLengths) pk->running->payloads |= std::uint64_t{1} << p.ordinal;
         if (!fillData(ctx, at(ctx, list.get(), k), empty.get(), q.bytes + m.offset, m.size)) return JS_EXCEPTION;
     }
     return list.get();
+}
+
+// The payloads a block made (fillData's Uint8Arrays longer than kPlacedLengths) let go of as it ends: each place that
+// holds one is given its port's empty view, so they die with the block, collected at the next allocation that wants
+// their room, and the pack's heap holds at most one block's (a queue's bytes and a view for each message), whatever the
+// blocks before it held at the places past its count. A place kept a block's payload until a later block refilled it,
+// so a SysEx after notes at each place in turn kept one at every place: bliptoaster's pack ran out at any heap.
+// Allocates nothing; a message the node kept past its block reads an empty payload, as it would read another
+// block's.
+void releasePayloads(JSContext* ctx, PackState& pk, Node& node) {
+    for (std::uint32_t i = 0; node.payloads && i < node.portCount; ++i) {
+        if (!(node.payloads >> i & 1u)) continue;
+        node.payloads &= ~(std::uint64_t{1} << i);
+        const JSValue st = at(ctx, at(ctx, record(pk, pk.runningSlot), kRecPortState), i);
+        const JSValue empty = at(ctx, st, kStateHead);
+        const JSValue pool = at(ctx, st, kStatePool);
+        for (std::uint32_t k = 0; k < node.pooled[i]; ++k) {
+            const JSValue m = at(ctx, pool, k);
+            std::uint32_t length = 0;
+            if (rp_mqjs_bytes(ctx, JS_GetUserValue(ctx, m, 0), &length) && length > kPlacedLengths)
+                JS_SetUserValue(ctx, m, 0, empty);
+        }
+    }
 }
 
 // Message `index` taken back out of a queue, the ones after it moved down with their bytes.
@@ -1603,6 +1631,8 @@ rp_status process(rp_node* n, const rp_process* block) {
     armed.restart();
     armed.allow(pk.base.perMessage * inputMessages(*block));
     const JSValue r = ready ? invoke(pk.base, fn, self, &blockObject) : JS_EXCEPTION;
+    if (!pk.base.ranOut) releasePayloads(ctx, pk, node);
+    node.payloads = 0;
     pk.block = nullptr;
     pk.running = nullptr;
     pk.runningSlot = -1;
