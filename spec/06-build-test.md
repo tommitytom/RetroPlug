@@ -85,7 +85,10 @@ Every package under `packages/` is a workspace package: `@retroplug/<name>`, `pr
 `app` (`ts/app.ts`, the module default-exporting `definePackage({ roles, romProviders, trackerIntegrations,
 kitFormats })`) and `protocol` (`ts/protocol.ts`, the module default-exporting the package's `DefinedNode`s, beside
 each node's `type` and span `label` and the role kinds it places). A package may have any combination; a manifest
-naming no member at all is refused at configure.
+naming no member at all is refused at configure for a package CMake registers through `retroplug_package` (the product
+list's, the SDK's, a device build's extras). `tracker` and `testing` carry no `retroplug` member and are added as
+libraries only: tracker is a module library no product lists, and testing is a devDependency of every package with
+tests.
 
 **The registries are generated, not written.** [packages/retroplug/scripts/lib/packages.mjs](../packages/retroplug/scripts/lib/packages.mjs)
 writes the shell's `src/generated/{packages,protocol,scriptNodes}.ts` from the product list
@@ -101,8 +104,9 @@ message. The generator itself refuses a list that puts a package before a depend
 not carry whose contribution would be lost, a dependency on the shell, a duplicate product entry, a node type or span
 label declared twice, a label that is below 16 or leaves a gap, a role naming a node no package wires, a manifest that
 names a missing module or one its `exports` do not publish, and a contributing package the shell does not declare.
-The generated modules are gitignored and rewritten on every build (`retroplug-ts-packages`, which the three bundle
-targets depend on).
+The generated modules are gitignored, and `retroplug-ts-packages` writes them only when their content changes. Seven
+targets depend on it, so they exist before the first esbuild run of a fresh checkout: the control-plane, UI, script,
+render-worker and CLI bundles, the example sessions and the CLI SDK assets.
 
 **Fixtures are a package's, published for tests by name.** A cart's synthetic ROM images live in its `ts/fixtures.ts`
 and a manifest that publishes them names the subpath `./testFixtures`, never `./fixtures`: the name says what it is,
@@ -132,7 +136,8 @@ trees, by target, by a library path, or through an include flag (`-I`, `-iquote`
 `/external:I`, a `SHELL:` list) or a link option (`-L`, `-l`), and the configure refuses anything else. Both run with an
 empty allowlist, and each has its own fixtures ([test/boundaries](../packages/retroplug/test/boundaries);
 `packages/native/test/packages`) that fail one rule each. They guard against accident and drift, not a determined
-author: each checker's header lists what it deliberately does not cover.
+author: each checker's header lists what it deliberately does not cover. `pnpm test` runs the TS check before it
+bundles a single test file, so a boundary a change broke is named as such rather than surfacing as a bundler error.
 
 **A package's tests are its own.** A test whose subject is wholly in a package lives in its `ts/test/`, runs on the
 package's `tsconfig` and keeps its fixtures and goldens beside it
@@ -144,6 +149,31 @@ the ones that drive its registry (`test/system-settings/*`, `test/risa/detect`, 
 `test/dsp/sms-sync`), whose subjects are the shell's provider dispatch and generated lists. The skip baseline
 ([scripts/skip-baseline.json](../packages/retroplug/scripts/skip-baseline.json)) records nothing for the ts tier, so a
 move between it and the shell needs no entry.
+
+**Adding a package.** In the order a configure demands it:
+
+1. The directory's name is the package's name: `packages/<name>` is `@retroplug/<name>`.
+2. `package.json`: `private`, `type: "module"`, the `retroplug` member(s) it contributes (`native`, `script`, `app`,
+   `protocol`), an `exports` map of explicit entries with no wildcard, and a `typecheck` script (`tsc -p
+   tsconfig.json`) when it has TypeScript. `typescript` is a devDependency for that script, `zod` a dependency where it
+   is imported, and `@retroplug/testing` a devDependency when it has tests (a test may use no other devDependency).
+3. The shell declares it: add it to [packages/retroplug/package.json](../packages/retroplug/package.json)'s
+   `dependencies` as `workspace:*` and run a plain `pnpm install` (not `--frozen-lockfile`); the configure refuses a
+   contributing package the shell does not declare.
+4. Its place in `retroplug.products.desktop` (the root [package.json](../package.json)) is after its dependencies: the
+   list is the dependency order and the registration order both, and the generator refuses a package listed before one
+   it depends on. Only a ROM provider's place is behaviour.
+5. `tsconfig.json` extends [tsconfig.base.json](../tsconfig.base.json) in two lines, so the package typechecks alone.
+6. A protocol node's span label is the next free one (24 today: 16 up, with no gaps), which the manifest's `label` and
+   the generator's check demand.
+7. A new contribution KIND is not data. It means editing `renderPackages` in
+   [packages.mjs](../packages/retroplug/scripts/lib/packages.mjs) (the list and its type import), a
+   `declare module "@retroplug/core/definePackage"` augmentation in the owning package, the type-only import of the
+   owning package's `packageContributions` in each app module that uses the key, and the generator fixture's
+   [expected/packages.ts](../packages/retroplug/test/packages/fixtures/expected/packages.ts).
+8. A device pack's imports are limited to `build-device-pack.mjs`'s four-file core SDK (`defineNode`,
+   `settingsSchema`, `descriptor`, `register`), and `pico/n8-host/exporter-stale.sh` watches `packages/core/ts` plus
+   each pack's own `ts/`.
 
 ## Hosts → test tiers
 
@@ -400,8 +430,11 @@ Each pnpm script first builds its runner via `cmake-build.js` (mock → `tjs-cli
 invocation is self-contained. The mock tier is decoupled from the C++ plugin build entirely — it
 needs only the `tjs` binary and esbuild, which is what lets the whole application layer (project /
 systems / paths / recent / config / SRAM / kits) be tested without an emulator in the loop.
-The script nodes are tested there too, each over a `Block` stand-in (`test/script/nodes/`, a file per type, where
-the role tests that drove the DSP kernel moved when it was deleted; `lsdj-serial-out.test.ts` holds MI.OUT's and
+The script nodes are tested there too, each over a `Block` stand-in, in the package whose node it is
+([lsdj/ts/test/lsdjSerialOut.test.ts](../packages/lsdj/ts/test/lsdjSerialOut.test.ts),
+[mgb/ts/test/mgbMidi.test.ts](../packages/mgb/ts/test/mgbMidi.test.ts) and each cart's beside them, where the role
+tests that drove the DSP kernel moved when it was deleted; the controller session's stays with the shell, in
+[test/script/nodes/](../packages/retroplug/test/script/nodes): `lsdjSerialOut.test.ts` holds MI.OUT's and
 master sync's messages each at its frame in its own block, and master sync's stop 200 ms after its byte across a
 change in the host's rate, read off each block's transport), and so are the pure functions they run (`test/dsp/`,
 where `lsdj-arduinoboy.test.ts` feeds the MI.OUT and master-sync decoders one byte stream cut into 1-frame, FL-style

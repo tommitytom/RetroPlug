@@ -516,8 +516,10 @@ wire could drive; everything else, display knobs, accuracy switches and latencie
   for its battery (a node that sends none stages under `system-<id>`). Every setting is optional: absent, the node
   leaves the core as it was built, or as the last document that carried the field left it. A param is optional too:
   absent, the stream is left where it is (its default, at a new node's first block), so a node's gain starts at
-  0 dB and a NES's expansion volume at 100%. An enum is a label as the role configs spell it
-  ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), which is its C++ enumerator's name with the first
+  0 dB and a NES's expansion volume at 100%. An enum is a label as the role configs spell it (the label tuples in
+  each package's `ts/enums.ts`: [sameboy](../packages/sameboy/ts/enums.ts), [mesen](../packages/mesen/ts/enums.ts),
+  [lsdj](../packages/lsdj/ts/enums.ts), and the app's own [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)
+  for routing and layout), which is its C++ enumerator's name with the first
   letter lowercased (`SameBoyModel::CgbC` is `"cgbC"`, `SameBoyHighpass::RemoveDcOffset` is `"removeDcOffset"`):
   `knobs::Label<E>`, an `rfl::Literal` generated at compile time from reflect-cpp's enumerator list, reads exactly
   those strings, lists them in the descriptor's schema and maps one back to its enumerator by position, so native has
@@ -910,8 +912,9 @@ A pack has an id, a bundle that registers its node definitions, a package of its
 no JS value with each other or with another pack's: a control-side one that only checks settings and lays
 out a node's ports, and an audio-side one that holds every instance of the pack's types and runs `process`.
 
-- **The built-in pack.** The first pack, `rp.script`, runs the script-node bundle
-  ([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)), esbuilt to a global-code IIFE and
+- **The built-in pack.** The first pack, `rp.script`, runs the script-node bundle (the generated
+  `src/generated/scriptNodes.ts`, the entry every package's `ts/protocol.ts` feeds; `script/bundle.ts` is its fixed
+  name for the build's own checks), esbuilt to a global-code IIFE and
   compiled to bytecode at build time by the `retroplug-script-bundle` target
   ([bundles.cmake](../packages/native/cmake/bundles.cmake)), whose derived C array is compiled into
   `retroplug-backend`: every Engine loads it at construction, so every host has the same node types
@@ -1379,7 +1382,7 @@ is one automatable parameter applied post-render across all 8 channels
   (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
 - [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.
-- [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime and its packs, + the compiler a pack's source and the tests' toys go through; [`src/script/`](../packages/retroplug/src/script) (`bundle.ts`, `register.ts`, `nodes/`): the bundle every Engine embeds, how it registers its nodes, and the script nodes themselves.
+- [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime and its packs, + the compiler a pack's source and the tests' toys go through; the generated `src/generated/scriptNodes.ts` with [`script/bundle.ts`](../packages/retroplug/src/script/bundle.ts) and [`@retroplug/core/register`](../packages/core/ts/register.ts): the bundle every Engine embeds and how it registers its nodes; and each package's `ts/protocol.ts` (with the shell's [`script/shellNodes.ts`](../packages/retroplug/src/script/shellNodes.ts)) for the script nodes themselves.
 - [`HostRpcService.cpp`](../packages/native/src/host/rpc/HostRpcService.cpp), [`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp), [`DebugRpcService.cpp`](../packages/native/src/host/rpc/DebugRpcService.cpp), [`AudioDriverRpcService.cpp`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp) — the RPC services behind the facets.
 - [`plugin/PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp), [`plugin/PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp), [`src/main.cpp`](../packages/native/src/main.cpp), [`test/ui/UiHarness.hpp`](../packages/native/test/ui/UiHarness.hpp) — the three hosts.
 - [`CMakeLists.txt`](../packages/native/CMakeLists.txt), [`plugin/DistrhoPluginInfo.h`](../packages/native/plugin/DistrhoPluginInfo.h) — build wiring + plugin identity.

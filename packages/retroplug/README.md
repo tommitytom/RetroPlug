@@ -27,7 +27,7 @@ config / SRAM / kits) is testable with no emulator in the loop.
 | `src/` | The application logic. Pure TS over the `Backend` interface; no React. |
 | `src/backend.ts` | The **single** native contract - fs bytes, atomic writes, path canonicalisation, config dir, dialogs, emulator construction, live reads. Grow it only when a feature genuinely needs the OS or a core. |
 | `src/script/` | The one script node still the shell's, the controller session (`nodes/`); every cart's, the NES's and the MIDI routing's are their packages' `protocol` modules. The generated bundle entry (`src/generated/scriptNodes.ts`) collects them all, so the bundle's order is the span labels', not this tree's ([spec/04](../../spec/04-roles-protocol-nodes.md)). |
-| `src/graph/` | The graph TS builds for the engine: `buildGraph`, the node contract (`defineNode`) and its zod-free settings schema, and which role is placed as which node. |
+| `src/graph/` | The graph TS builds for the engine: `buildGraph`, which role is placed as which node, and the controller's target. The node contract (`defineNode`) and its zod-free settings schema are `@retroplug/core`'s. |
 | `ui/` | The React/LVGL UI, bundled by `tools/build-ui.js` and embedded in the plugin. |
 | `cli/` | The `retroplug-cli` session SDK, its `.d.ts`, and the TS stripper the CLI embeds ([spec/09](../../spec/09-cli-debugging.md)). |
 | `test/` | Mock-backend tests - `pnpm test`. No native build, no emulator. The harness itself is `@retroplug/testing`. |

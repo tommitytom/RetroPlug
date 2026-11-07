@@ -22,7 +22,7 @@ and **parses** it back. The model lives in
 | Type | Fields | Notes |
 |---|---|---|
 | `ProjectConfig` | `schemaVersion: string`, `name?`, `settings`, `systems[]` | The root; `schemaVersion` is a *string* (`"1"`) for historical reasons. `name` is present ONLY when the user named the project (`Project` > `Name`); the display name a nameless project shows is derived from its systems at runtime and never written (see [03-ts-layer.md](03-ts-layer.md)) |
-| `ProjectSettings` | `layout`, `midiRouting`, `audioRouting` (string enums; see [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), `zoom 0-6` | Three string enums + a `zoom` magnitude (`0` = inherit the user default). Native's numeric enums are recovered at the RPC boundary |
+| `ProjectSettings` | `layout`, `midiRouting`, `audioRouting` (string enums; `layout`/`audioRouting` in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts), `midiRouting` in [@retroplug/core's midiRouting.ts](../packages/core/ts/midiRouting.ts)), `zoom 0-6` | Three string enums + a `zoom` magnitude (`0` = inherit the user default). Native's numeric enums are recovered at the RPC boundary |
 | `SystemThin` | `platform`, `romPath?`, `savPath?`, `savSuffix?`, `embeddedRom?`, `settings?`, `roles?` | One serialized system |
 
 **"Thin"** means the model carries no binary blobs (ROM/SRAM/savestate/kit
@@ -201,9 +201,10 @@ JSON**, backed by two mechanisms:
    object, **before** the (latest) zod schema validates. Steps must be idempotent-safe (an
    unstamped file floors to current). The project **v1→v2** (`PROJECT_MIGRATIONS[1]`)
    backfills each system's `core` from `platform`; **v2→v3** (`PROJECT_MIGRATIONS[2]`)
-   rewrites the integer enum settings — the project `layout`/`midiRouting`/`audioRouting`
-   and the per-system role-config enums (`model`/`highpass`/`region`/`channelExportMode`/
-   lsdj `mode`) — to their string values ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)).
+   rewrites the integer enum settings (the project `layout`/`midiRouting`/`audioRouting`
+   and the per-system role-config enums (`model`/`highpass`/`region`/`channelExportMode`/lsdj `mode`)) to their string
+   values (the label tuples in each package's `ts/enums.ts`, plus the project's
+   own in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts) and [midiRouting.ts](../packages/core/ts/midiRouting.ts)).
    **v3→v4** (`PROJECT_MIGRATIONS[3]`) renames the two role kinds the EverMIDI → BlipToaster
    rename moved: `evermidi` → `bliptoaster` and `evermidi-assets` → `bliptoaster-assets`. Role
    `kind` is persisted verbatim, so this is the case a rename of any role kind must follow: an

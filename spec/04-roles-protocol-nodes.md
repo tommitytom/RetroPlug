@@ -117,7 +117,7 @@ ROM-gated), transforming the resolved `ConstructSpec` before its resources are p
 structurally, so the store passes itself. What it writes into the spec is what the system's node names: its `romBytes`
 become the `rom` resource's bytes, its `sramBytes` a battery seed's.
 
-LSDj's empty-sav seed ([dspRoles.ts:16](../packages/lsdj/ts/app.ts#L26)) is the plainest: a
+LSDj's empty-sav seed ([@retroplug/lsdj's app module](../packages/lsdj/ts/app.ts)) is the plainest: a
 fresh LSDj cart with no save data runs a 12-15 s cartridge self-test on boot. When nothing else will seed
 the battery (no savestate, no SRAM blob, no on-disk `.sav` for the boot to read) the hook hands it a valid
 empty sav via `savFromJson("{}")`, which becomes an `sram` resource, so LSDj boots straight to the song screen. It
@@ -137,8 +137,13 @@ folds each attached role's `onConstruct` over the spec before the boot puts its 
 ## The built-in roles
 
 The control-plane registry ([appHost.ts](../packages/retroplug/src/appHost.ts) `buildAppRegistry`)
-takes `registerCoreRoles`, `registerDspRoles`, the asset and marker roles (`lsdj-assets`, `risa`,
-`risa-assets`, `bliptoaster`, `bliptoaster-assets`) and `registerRomProviders`.
+applies the generated `ROLES` list (`src/generated/packages.ts`) and
+then the ROM providers (`registerRomProviders`). The list is every package's `app` module concatenated in the
+product's order (docs/modular-graph-phase-f1-design.md section 3), so a role is an object its owning package
+exports (a `RoleType`, not a `register*` call): the system roles, the sync roles, the asset and marker roles
+(`lsdj-assets`, `risa`, `risa-assets`, `bliptoaster`, `bliptoaster-assets`) and their packages' providers all
+arrive that way. The shell's own `app` module ([app.ts](../packages/retroplug/src/app.ts)) contributes nothing
+until the controller's package exists (F3).
 
 **System roles** ([@retroplug/sameboy](../packages/sameboy/ts/app.ts),
 [@retroplug/mesen](../packages/mesen/ts/app.ts)), each owned by the package whose core it configures, keyed by core
@@ -177,9 +182,12 @@ cannot lose a byte never has its recovery path exercised, and one handed a whole
 never starved mid-structure. `getCoreTransportStats` reports both queue depths and the cumulative
 drop count ([09](09-cli-debugging.md)).
 
-**Roles with a protocol node** ([dspRoles.ts](../packages/lsdj/ts/app.ts)): each registers its
-kind, its zod config schema (the shape the stores parse, persist and hand the node as its settings) and,
-for LSDj, the seed hook. What each does on the audio thread is its node's
+**Roles with a protocol node**: each is its package's `app` module contribution
+(`mgb` in [@retroplug/mgb](../packages/mgb/ts/app.ts), `nes-n8-midi` in [@retroplug/n8](../packages/n8/ts/app.ts),
+`risa-sync` in [@retroplug/risa](../packages/risa/ts/app.ts), `sms-sync` in
+[@retroplug/smsggdj](../packages/smsggdj/ts/app.ts), `lsdj-sync` in [@retroplug/lsdj](../packages/lsdj/ts/app.ts)),
+and each states its kind, its zod config schema (the shape the stores parse, persist and hand the node as its
+settings) and, for LSDj, the seed hook. What each does on the audio thread is its node's
 ([The protocol nodes](#the-protocol-nodes)):
 
 | Role | Node | Config |
@@ -236,10 +244,15 @@ block and no byte captured in one mode is decoded in the other.
 
 ## The protocol nodes
 
-Eight TS node types ([src/script/nodes/](../packages/retroplug/src/script/nodes)), each a `defineNode`
-in the script-node bundle ([script/bundle.ts](../packages/retroplug/src/script/bundle.ts)): the MIDI
-routing, a protocol node for each role that has one, the control-surface session, and LSDj's serial-out
-decoder, the `lsdj-sync` role's second node. Each is its protocol's glue around pure functions that stay
+Eight TS node types, each a `defineNode` the script-node bundle registers: the MIDI routing, a protocol
+node for each role that has one, the control-surface session, and LSDj's serial-out decoder, the `lsdj-sync`
+role's second node. Seven are their packages' protocol modules (`core`'s `rp.midi.route`, then `mgb`'s, `lsdj`'s
+two, `n8`'s, `smsggdj`'s and `risa`'s), which the generated bundle entry
+(`src/generated/scriptNodes.ts`) imports and sorts by span label;
+the eighth, `rp.controller.session`, is the shell's ([script/shellNodes.ts](../packages/retroplug/src/script/shellNodes.ts),
+its node module [script/nodes/controllerSession.ts](../packages/retroplug/src/script/nodes/controllerSession.ts))
+until the controller's package exists (F3). [script/bundle.ts](../packages/retroplug/src/script/bundle.ts) is the
+entry point only: importing it registers. Each is its protocol's glue around pure functions that stay
 where they were (the Arduinoboy and master-sync decoders in `lsdjArduinoboy.ts`, `routeTarget` in
 `midiRouting.ts`, `risaLocate` / `risaArmPacket` in `risaSync.ts`, `syncLevelsFor` in `smsSync.ts`,
 `walkTicks` in `ticks.ts`, the LSDj keyboard map and link bytes), and each is held to the kernel it
@@ -407,8 +420,8 @@ Which role kind is placed as which node, and how each type is wired, is one pure
 [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) (`protocolNodeOf`,
 `protocolPipeline`, and `outNodeOf` for a type's `out`): both stores and a `DirectGraph` read it, with or
 without a role registry, and a role with no node is left out, so an edit to it (a model, a palette, an
-asset override) leaves the document as it was. `test/system-settings/registry.test.ts` holds it to what
-`registerDspRoles` registers, and `test/graph/protocol-nodes.test.ts` to the ports each node module
+asset override) leaves the document as it was. `test/system-settings/registry.test.ts` holds it to the roles the
+generated `ROLES` list carries, and `test/graph/protocol-nodes.test.ts` to the ports each node module
 declares and to the bundle's node types; `golden/build-graph-roles.json` records the documents it makes
 `buildGraph` build.
 
@@ -485,12 +498,19 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   `RoleRegistry` / `RomProvider` / `ConstructCaps`.
 - [packages/sameboy/ts/app.ts](../packages/sameboy/ts/app.ts) and [packages/mesen/ts/app.ts](../packages/mesen/ts/app.ts): the
   `sameboy` and `mesen` system-roles, each contributed by the package whose core it configures.
-- [dspRoles.ts](../packages/lsdj/ts/app.ts): the roles that have a protocol node (kind, schema)
-  + the LSDj `onConstruct` seed.
-- [romProviders.ts](../packages/retroplug/src/romProviders.ts): feature-role attachment by ROM identity.
-- [script/nodes/](../packages/retroplug/src/script/nodes): the eight node types, `lsdjSyncSettings.ts` (the
-  `lsdj-sync` schema both its nodes take), `clock.ts` (the tick counter) and `ports.ts` (the capacities);
-  [ticks.ts](../packages/core/ts/ticks.ts): `walkTicks`.
+- the sync roles, each in its package's `app` module: [mgb](../packages/mgb/ts/app.ts),
+  [n8](../packages/n8/ts/app.ts), [risa](../packages/risa/ts/app.ts), [smsggdj](../packages/smsggdj/ts/app.ts) and
+  [lsdj](../packages/lsdj/ts/app.ts) (which also carries the `onConstruct` seed). Their nodes are the same packages'
+  protocol modules ([mgb](../packages/mgb/ts/protocol.ts), [n8](../packages/n8/ts/protocol.ts),
+  [risa](../packages/risa/ts/protocol.ts), [smsggdj](../packages/smsggdj/ts/protocol.ts),
+  [lsdj](../packages/lsdj/ts/protocol.ts)), which the manifests' span labels order.
+- [romProviders.ts](../packages/retroplug/src/romProviders.ts): feature-role attachment by ROM identity, over the
+  generated `ROM_PROVIDERS`.
+- [script/shellNodes.ts](../packages/retroplug/src/script/shellNodes.ts): the shell's one node type,
+  `rp.controller.session` ([script/nodes/controllerSession.ts](../packages/retroplug/src/script/nodes/controllerSession.ts)).
+  The MIDI routing node is [core](../packages/core/ts/protocol.ts); `lsdjSyncSettings.ts` (the `lsdj-sync` schema both
+  its nodes take) is [lsdj](../packages/lsdj/ts/lsdjSyncSettings.ts)'s, and the tick counter `clock.ts` and the
+  capacities `ports.ts` ([ticks.ts](../packages/core/ts/ticks.ts): `walkTicks`) are core's.
 - [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) /
   [graph/controller.ts](../packages/retroplug/src/graph/controller.ts) /
   [graph/buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts): store → graph, the protocol node per

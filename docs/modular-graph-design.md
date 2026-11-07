@@ -1367,6 +1367,10 @@ here so it is not lost.
 
 ### Package split
 
+The split is now its own roadmap, [package-split.md](package-split.md): F1 (the TS package mechanism and the leaf TS
+moves) is built, F2 (the native carve) and F4 (the UI onto extensions) are designed there, and F3 (the Launchpad pack)
+runs between them.
+
 - E1 began it: `node-sdk`, `graph-runtime`, `core` and `dsp` are workspace packages (`packages/<name>/{native,ts}`
   with a `retroplug` manifest in `package.json`), and `packages/native`'s own manifest lists the types not yet carved.
   E2 carved `n8` (with its provider mechanism). Carve `sameboy`, `mesen` (per console), `lsdj`, `mgb`, `risa`,

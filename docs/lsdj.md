@@ -88,9 +88,9 @@ The two config surfaces are distinct and easy to confuse:
   `"Keyboard"`, `"AnalogIn"`, `"AnalogOut"`. Part of the song data.
 - **The `lsdj-sync` role config**: RetroPlug's own behaviour, its `mode` one of `"off"`, `"midiSync"`,
   `"midiSyncArduinoboy"`, `"midiMap"`, `"keyboard"`, `"keyboardMidi"`, `"midiPassthrough"`, `"midiOut"`,
-  `"masterSync"` (`LSDJ_MODE_VALUES` in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts), run by
-  the role's two protocol nodes: [lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts) before the
-  Game Boy, host to cart, and [lsdjSerialOut.ts](../packages/lsdj/ts/lsdjSerialOutNode.ts)
+  `"masterSync"` (`LSDJ_MODE_VALUES` in [@retroplug/lsdj's enums](../packages/lsdj/ts/enums.ts), run by
+  the role's two protocol nodes: [lsdjSyncNode.ts](../packages/lsdj/ts/lsdjSyncNode.ts) before the
+  Game Boy, host to cart, and [lsdjSerialOutNode.ts](../packages/lsdj/ts/lsdjSerialOutNode.ts)
   after it, MI.OUT and master sync from the cart to the host). A feature role: it is set with the store's
   `setRoleConfig` and handed to both nodes as their settings in the graph the project publishes, which also
   gives the Game Boy's own node the serial-out capture that mode needs (below). The core's own knobs, the

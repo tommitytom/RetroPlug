@@ -253,8 +253,8 @@ owns the default and can expose it.
 Two small pieces mirroring risa:
 
 1. **Role** - a dedicated `nesflix-sync` (recommended) or reuse `risa-sync` verbatim:
-   - *Dedicated* (`nesflixSync.ts` + a `SystemBehavior` in
-     [dspRoles.ts](../packages/risa/ts/app.ts)): ~40 lines mirroring `risaSync`. On
+   - *Dedicated* (`nesflixSync.ts` + a `RoleType` in a package's `app` module, as
+     [@retroplug/risa's](../packages/risa/ts/app.ts) carries `risa-sync`): ~40 lines mirroring `risaSync`. On
      transport rise / seek send `0xFA` (Minimal) or a locate; while playing emit `0xF8` at 24
      PPQN via `c.eachTick`; on transport fall send `0xFC`. Config `{ clocksPerFrame: number }`
      (default e.g. 6). Clearer, and carries NESFlix-specific config + Option 3 later.

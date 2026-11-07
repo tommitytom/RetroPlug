@@ -34,7 +34,7 @@ Two consequences show up everywhere and are worth stating once here:
 - **Cores are built bare.** (The legacy build did it with `setSniffDefaultRoles(false)`; no such call
   exists now.) No feature behaviour is baked into C++. LSDj
   sync, mGB and Arduinoboy behaviour live in TypeScript **protocol script nodes**,
-  one per role ([src/script/nodes/](../packages/retroplug/src/script/nodes); B3b
+  one per role (each in its package's `ts/protocol.ts`, except the controller session's, the shell's; B3b
   deleted the DSP role kernel they replaced), which run in the engine's graph, in
   the bare QuickJS runtime of the Engine's script host. (Kit-patch is the exception: the `lsdj-assets` role's `onConstruct` folds the
   overrides into the ROM in memory when the core is constructed; it has no protocol
@@ -160,4 +160,4 @@ this is specified in [01-architecture.md](01-architecture.md).
 - [`packages/retroplug/src/realBackend.ts`](../packages/retroplug/src/realBackend.ts) — the adapter that binds `Symbol.for("plugin").__rpcSend`.
 - [`packages/native/src/host/engine/Engine.hpp`](../packages/native/src/host/engine/Engine.hpp): the single-threaded owner of the graph the cores run on, the script host its TS nodes (the MIDI routing, the controller session and each role's protocol node) run in, and the snapshot registry.
 - [`packages/retroplug/src/graph/buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts): the engine's graph document, built in TS from the stores' systems, routing and host shape.
-- [`packages/retroplug/src/script/nodes/`](../packages/retroplug/src/script/nodes): the MIDI routing, each role's protocol node and the controller session, the script nodes buildGraph places (B3b deleted the DSP role kernel they replaced).
+- [`packages/*/ts/protocol.ts`](../packages/core/ts/protocol.ts): the script nodes buildGraph places, a package each: core's MIDI routing, then the carts' protocol nodes (B3b deleted the DSP role kernel they replaced). The shell's one node, the controller session, is [`packages/retroplug/src/script/shellNodes.ts`](../packages/retroplug/src/script/shellNodes.ts).

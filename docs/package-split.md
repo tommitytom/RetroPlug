@@ -1,7 +1,8 @@
 # The package split
 
-**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1 designed and prototyped
-([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records the build), F2 to F4 not yet designed
+**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1 built
+([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records it and its follow-up
+pass), F3 next, F2 and F4 not yet designed
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
 workspace packages would take. E1 started it (`node-sdk`, `graph-runtime`, `core`, `dsp`), E2 carved `n8`, and E4 made

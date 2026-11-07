@@ -460,7 +460,8 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    its own `HermiteResampler` → host, mirroring the mix's path). Guarded behind a capture flag so the
    mixed path stays byte-identical when off; the tap only READS `_currentOutput`. `MesenNesSystem`
    reports a 3-mono `channelLayout()` (Pulse/TND/Expansion) under a new `MesenNesConfig.channelExportMode`
-   (set at construct via the "mesen" role blob — `coreRoles.ts` `clampedInt(0,1,0)` → `MesenBackend` →
+   (set at construct via the "mesen" role blob: [@retroplug/mesen's app module](../packages/mesen/ts/app.ts)
+   `clampedInt(0,1,0)` → `MesenBackend` →
    config; additive, no migration), gates the block pull loop on the capture streams for a block that drains them
    (the lanes the node wires, `SystemBase::setBlockLanes`) and on the mix ring for one that does not, and fans them into
    the lanes in `finishBlock`. CLI-only — `renderAudioPerChannel` needs no change (it sizes N from

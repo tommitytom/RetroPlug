@@ -19,9 +19,9 @@ Things a user could reasonably expect that aren't wired yet. None block shipping
 
 `lsdj-sync` implements every sync mode except raw **Keyboard**: MidiSync, MidiSyncArduinoboy, MidiMap,
 KeyboardMidi and MidiPassthrough ship in
-[script/nodes/lsdjSync.ts](../packages/lsdj/ts/lsdjSyncNode.ts), the role's protocol
+[packages/lsdj/ts/lsdjSyncNode.ts](../packages/lsdj/ts/lsdjSyncNode.ts), the role's protocol
 node, and MidiOut (ArduinoboyMaster) and MasterSync in
-[script/nodes/lsdjSerialOut.ts](../packages/lsdj/ts/lsdjSerialOutNode.ts), the role's
+[packages/lsdj/ts/lsdjSerialOutNode.ts](../packages/lsdj/ts/lsdjSerialOutNode.ts), the role's
 second node, after its Game Boy. Raw Keyboard sends nothing because it needs a per-block **`keys`
 feed**, which nothing supplies yet: `rp.lsdj.sync` has no input for host keys (the DSP kernel carried
 empty `buttons` and `keys` arrays until B3b deleted it), and no host stages any. A `keys` input on the
@@ -729,7 +729,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     [tools/build-ui.js](../tools/build-ui.js), which sets it to the repo root).
 
 - **F1 built: the TypeScript package split** ([modular-graph-phase-f1-design.md](../docs/modular-graph-phase-f1-design.md),
-  five commits, prototype on `feature/modularize`): every package whose code is TypeScript has a `ts/` tree, a
+  five commits, prototyped on `proto/f1-packages` and executed on `feature/modularize`): every package whose code is
+  TypeScript has a `ts/` tree, a
   `tsconfig.json` and a `package.json` its manifest members describe (`native`, `script`, `app`, `protocol`), and no
   package imports `packages/retroplug` (the shell) any more. The app's registrations are generated from the product
   list (`packages/retroplug/scripts/lib/packages.mjs` writes `src/generated/{packages,protocol,scriptNodes}.ts`), the

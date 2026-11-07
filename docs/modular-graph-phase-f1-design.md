@@ -243,8 +243,9 @@ says, and each one's header lists what it does not cover (below). They are tests
 with TypeScript's scanner (`ts.preProcessFile`, from the root's `typescript-5` alias because TypeScript 7 exports none),
 not esbuild's metafile, because esbuild drops a type-only import. The scan covers `import`, `export ... from`,
 `import type`, a type-position `import("x").T`, `require`, and the **triple-slash `reference` path and types
-directives**; a relative specifier resolves against the importing file, and an import that cannot be resolved is
-reported without hiding the rest. Each refusal has its own message naming the file and the import:
+directives**; a relative specifier resolves against the importing file (one that spells the module the compiler emits
+also resolves to its source: `./x.js` is `x.ts` or `x.tsx`, as the bundlers and `tsc`'s bundler resolution read it), and
+an import that cannot be resolved is reported without hiding the rest. Each refusal has its own message naming the file and the import:
 
 1. a relative import, or a `reference path`, that leaves the package's own `ts/` tree (a `../../retroplug/...` reach);
 2. an `@retroplug/x` the package does not declare (a test file, a file under `ts/test/` or named `*.test.ts(x)`, may also
@@ -272,7 +273,9 @@ holds its `SOURCE_DIR` (an `ALIAS` is resolved to its real target), and judges, 
 `LINK_LIBRARIES` and `INTERFACE_LINK_LIBRARIES` (a link item spelled as a file path is judged by where it lies),
 `INCLUDE_DIRECTORIES` and `INTERFACE_INCLUDE_DIRECTORIES`, `SOURCES` (a relative source resolved against the
 `SOURCE_DIR`), `COMPILE_OPTIONS` (the `-I` family: `-I`, `-iquote`, `-idirafter`, `-isystem`, `/I`, `/external:I` and the
-`SHELL:` form, a relative one read from the `SOURCE_DIR`) and `LINK_OPTIONS` (`-L<dir>`, `-l<name>`). A link to a target
+`SHELL:` form, each judged as an absolute path; a relative one is refused as unjudged, because the compiler resolves it
+against the build generator's working directory, which is not the target's `SOURCE_DIR`) and `LINK_OPTIONS` (`-L<dir>`,
+`-l<name>`). A link to a target
 of another package the manifest does not declare, an include or source or search directory in another package's tree, and
 a link to a target of the shell (named as such) are refused, each naming the package, the target and the dependency.
 `devDependencies` count only for a target a `retroplug_add_test_binary` marked, and `node-sdk` is always allowed.
@@ -289,9 +292,10 @@ their reason, all at every configure.
 **What neither covers** (the headers list them, so a later hardening starts from the list): TS, computed specifiers and
 bundler plugins, `tsconfig` `paths`, `imports` and symlinks, `peerDependencies` and `optionalDependencies`, an `exports`
 condition's resolution, and the order a declaration reaches a package in; native, per-source properties, cache flags and
-`LINK_DIRECTORIES`, generator expressions whose value only the build generator knows (a compound condition included),
-`-Xlinker` and `-Wl` wrapping, a library name matching no target, `OUTPUT_NAME` and `LINK_DEPENDS`, and an `include()` of
-another package's CMake file.
+`LINK_DIRECTORIES`, generator expressions whose value only the build generator knows (a compound condition included), a relative include
+or search flag (its working directory is the build generator's, so it is refused rather than attributed), `-Xlinker`
+and `-Wl` wrapping, a library name matching no target, `OUTPUT_NAME` and `LINK_DEPENDS`, and an `include()` of another
+package's CMake file.
 
 **`@retroplug/testing`.** `packages/testing` (`ts/harness.ts`, `rig.ts`, `bytes.ts`, `deepEqual.ts`, published as
 `@retroplug/testing`, `/rig`, `/bytes`, `/deepEqual`), a devDependency of every package with tests, so `n8` and the cart
@@ -330,10 +334,11 @@ own). **The UI bundle keeps discovery** (`tools/build-ui.js`): its modules come 
 tsconfigs, the shell's (`target: ES2020`, class fields assigned) and `lv_binding_js`'s (no `target`, define semantics),
 and one pin would change how every dpf.js component class initialises, a behaviour change and not a bundler preference.
 
-**Checks that read the manifests, not a list.** The C++ `[settings]` oracle's source list is one place: it globs
-`packages/*/ts/**/*.ts` (test files excluded) with the shell's `settingsEnums.ts`, `systemSettings.ts` and
-`graph/buildGraph.ts`, and an enum or range must be declared in exactly one of them (a second declaration fails naming
-both). `test/script/bundle-no-zod` spawns `test/script/bundleInputs.mjs`, which builds the bundle as `bundles.cmake`
+**Checks that read the manifests, not a list.** The C++ `[settings]` oracle's source list is one place: the configure
+globs `packages/*/ts/**/*.ts` (test files excluded) with the shell's `settingsEnums.ts`, `systemSettings.ts` and
+`graph/buildGraph.ts`, writes the list to `build/native/settings-ts.txt` (only when its content changed) and passes
+that path, which the oracle reads at run time; an enum or range must be declared in exactly one of the files (a second
+declaration fails naming both). `test/script/bundle-no-zod` spawns `test/script/bundleInputs.mjs`, which builds the bundle as `bundles.cmake`
 does, and denies every `retroplug.app` module of the product's packages, refusing a run where that list is empty (a
 protocol module is a script node, so it is not denied; the node modules are matched by exact path). The hardware
 loop's staleness check is `pico/n8-host/exporter-stale.sh`, which `loop.sh` calls: every package's `native/`, the
@@ -631,6 +636,14 @@ summary byte-identical. The legs:
 Windows, macOS and arm64 builds of F1 were never run, and CI was not triggered; the TS side is portable by construction
 (the generator's retried rename is for Windows) but the first run on those platforms is owed.
 
+**Execution, and the follow-up pass.** The plan (`7f3039184`) was six tasks: five implementation commits whose trees
+are `proto/f1-packages`' five stage trees plus the plan document, and an acceptance run. Flash-Next at `--thinking
+xhigh` implemented them and Opus reviewed the final tree. Acceptance passed with findings, both of them plan-quote slips (a spec line quoted with a
+pre-F1 label, and a comment naming a file the plan had moved): the follow-up pass fixed those, the review's own
+Important and Minor items (a prose sweep of the living specs, the "Adding a package" checklist, the checker's `.js`
+resolution), scoped the `[settings]` oracle's list to a generated file, refused a relative include flag, and tested
+`exporter-stale.sh`. Windows, macOS and arm64, CI, and the Reaper and Renoise legs are still owed.
+
 **Residuals `core` still names**, all as approved and changing no behaviour, for whichever phase opens them:
 `core/ts/platform.ts`'s `Platform` and `Core` are closed unions of the consoles and the two emulators, so a third-party
 console cannot add one and `sameboy` and `mesen` own their role kinds but not these; `ConstructCaps` carries `savFromJson`
@@ -642,9 +655,8 @@ and `pngDecode`, which are LSDj's capabilities; and `core/ts/ports.ts` sizes the
 stays with the stores. F2: the carts' console edge (they would depend on `mesen`'s enums only if they took them), the
 native halves, and the native check's uncovered cases (per-source properties, cache flags, `LINK_DIRECTORIES`) if the
 carve adds doors. F4: the four shell doors; every registry consumer evaluating every app module (a per-kind generated
-module, or per-product bundles); `@retroplug/tracker`'s barrel re-exporting `ritAssets`, so importing the bare package
-pulls zod (the `bundle-no-zod` test denies the role modules by manifest, and the modules the barrel exists for are
-zod-free); the script bundle's text churning with the product order (the loaded nodes are the invariant). Left as it is:
-the `RisaTheme`, `RisaFontSlot` and `PlacedRisaKitBank` type names, which carry risa's name inside `tracker` (a rename is
-a diff of its own), and pnpm's `cyclic workspace dependencies` warning for `core` and `testing`, which is the
-devDependency edge section 4 intends.
+module, or per-product bundles); the script bundle's text churning with the product order (the loaded nodes are the
+invariant). Left as it is: the `RisaTheme`, `RisaFontSlot` and `PlacedRisaKitBank` type names, which carry risa's name
+inside `tracker` (a rename is a diff of its own). `tracker`, `mgb` and `smsggdj`'s bare barrels were removed in the
+follow-up pass (nothing imported one, and tracker's pulled zod through `ritAssets`); pnpm's `cyclic workspace
+dependencies` warning is silenced by `ignoreWorkspaceCycles` in `pnpm-workspace.yaml`, with the reason beside it.

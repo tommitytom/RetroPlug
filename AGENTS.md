@@ -186,8 +186,10 @@ The rules below are the parts that don't fit those.
   [docs/modular-graph-phase-e1-design.md](docs/modular-graph-phase-e1-design.md).
 - **A package's TypeScript half is its `ts/` tree, and its manifest says what it contributes.** Every package with TS
   has `ts/` (sources), a `tsconfig.json` extending `tsconfig.base.json`, a `typecheck` script, `ts/test/` where it has
-  tests of its own (the runner's slug for one is `<package>/<path>`) and an `exports` map with no wildcard (the
-  boundary check refuses one whose reach could publish a test module) where another package imports it. `retroplug.app`
+  tests of its own (the runner's slug for one is `<package>/<path>`) and an `exports` map with no wildcard (the API
+  convention: each entry is public deliberately, and the boundary check refuses one that could publish a test module
+  or names no file) where another package imports it. Adding one has a checklist, spec/06's "Adding a package", which
+  is what a new pack is copied from. `retroplug.app`
   names the module that default-exports `definePackage({ roles, romProviders, trackerIntegrations, kitFormats })` -
   the lists the app used to hardcode - and `retroplug.protocol` names the module that default-exports a package's
   `DefinedNode`s beside the `nodes` (type, span label: 16 up with no gaps, unique) and the role kinds it places. Both
@@ -416,7 +418,7 @@ on Windows — without it the scripts die on `spawnSync cmake ENOENT`, which loo
 broken tree but is not.
 
 **A case that cannot run SKIPS, and the skip is counted.** `skip(reason)` (exported by
-`testing/harness.ts`, and by the CLI SDK) reports the case as TAP `ok N - name # SKIP reason`
+`@retroplug/testing`'s `harness.ts`, and by the CLI SDK) reports the case as TAP `ok N - name # SKIP reason`
 rather than as a pass — the convention it replaced was a `console.log("# SKIP ...")` plus a bare
 `return`, which printed `ok` and counted as coverage. It THROWS, so it works from inside a helper
 or a loop; call it only from code the test body runs or awaits, since any `catch` between it and

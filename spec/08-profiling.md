@@ -43,7 +43,8 @@ refilled in place, its payloads copied into one JS-owned buffer:
 with indexed loops allocates nothing per block once warm: a message's `data` view is made again only when
 its place in the payload buffer moves, and the pool and the buffer grow only past their largest block.
 
-**The protocol nodes** ([src/script/nodes/](../packages/retroplug/src/script/nodes), since B3b) are
+**The protocol nodes** (each package's `ts/protocol.ts` with its node module beside it, since B3b; the
+shell's controller session is the one left) are
 written that way: each reads the `Message` views it is handed, sends on its own ports, and keeps its state
 and tick counter on its instance, so the routing, mGB, N8 and LSDj MIDI-sync nodes, and LSDj's serial-out
 decoder (`rp.lsdj.serial-out`) in master sync and MI.OUT, allocate **nothing** in a warm block, JS or
@@ -397,7 +398,7 @@ Native ([packages/native/src/](../packages/native/src/)):
 TypeScript ([packages/retroplug/](../packages/retroplug/)):
 - [src/audioDriver.ts](../packages/retroplug/src/audioDriver.ts) — `renderAudio` /
   `stageMidiIn` / `setBpm` / `setTransport` (the bench's injection surface).
-- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/core/ts/midiRouting.ts): the protocol nodes the benchmarks drive, and the MI.OUT and master-sync decoders `rp.lsdj.serial-out` runs (§3).
+- [packages/*/ts/protocol.ts](../packages/core/ts/protocol.ts) with the node modules beside them / [lsdjArduinoboy.ts](../packages/lsdj/ts/lsdjArduinoboy.ts) / [core's midiRouting.ts](../packages/core/ts/midiRouting.ts): the protocol nodes the benchmarks drive, and the MI.OUT and master-sync decoders `rp.lsdj.serial-out` runs (§3).
 - [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts) —
   the setup template to copy.
 - [scripts/run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) — how a

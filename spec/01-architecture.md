@@ -375,9 +375,10 @@ shared, and no JS value passes between any two:
 | Data | full JS objects over `__rpcSend` | settings JSON in, layout JSON out | the plan's queues and control streams, and copies of its audio buffers, through one reused `Block` object per instance; a JSValue never crosses out |
 
 The built-in pack, `rp.script`, is the first: both its runtimes are loaded at the Engine's construction
-with the script-node bundle ([`bundle.ts`](../packages/retroplug/src/script/bundle.ts)), compiled to
-bytecode at build time and embedded in `retroplug-backend`, so every host's Engines have the same node
-types with no boot call. Each of a pack's script types is a node type of the package named by the
+with the script-node bundle (the generated `src/generated/scriptNodes.ts`, which every package's `ts/protocol.ts`
+feeds and [`script/bundle.ts`](../packages/retroplug/src/script/bundle.ts) names for the build), compiled to bytecode
+at build time and embedded in `retroplug-backend`, so every host's Engines have the same node types with no boot
+call. Each of a pack's script types is a node type of the package named by the
 pack's id, and each script node of a plan is a native shim the planner creates, activates and destroys
 like any node; its JS instance is made on the block thread when its plan is adopted, before that plan's
 first `process`, and released there at the start of a later block once the shim is destroyed (at once
@@ -598,7 +599,7 @@ lost mutation.
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
 | [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), its one `SystemFactory`, the staged host MIDI, the host outputs and the registry; `buildSystem` / `destroySystem` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
 | [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in packs, each two bare QuickJS runtimes of its own (the built-in pack first, more loaded and reloaded at runtime), and the audio runtimes' profiling |
-| [`nodes/`](../packages/retroplug/src/script/nodes) / [`bundle.ts`](../packages/retroplug/src/script/bundle.ts) | the script nodes buildGraph places (the MIDI routing, each role's protocol node, the controller session), and the script-node bundle every Engine embeds |
+| [`packages/*/ts/protocol.ts`](../packages/core/ts/protocol.ts) / `src/generated/scriptNodes.ts` | the script nodes buildGraph places, a package each (core's MIDI routing, the carts' protocol nodes; the controller session is the shell's), and the generated bundle entry every Engine embeds |
 | [`packages/dsp/native/src/dsp/`](../packages/dsp/native/src/dsp) | the `rp.dsp` nodes' kernels, core-free: gain and peak, the normalising gain, the RBJ biquads, dither and quantise, the DMC encode, and the r8brain resampler |
 | [`DspNodes.cpp`](../packages/dsp/native/src/graph/nodes/DspNodes.cpp) / [`DspResampleNodes.cpp`](../packages/dsp/native/src/graph/nodes/DspResampleNodes.cpp) | the `rp.dsp` package (gain, biquad, dither, normalize, dpcm) and the `rp.dsp.resample` package beside it |
 | [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp) | the offline job pool: a document run to completion on a host of its own, or a render (an engine job: a `RenderHost` and `Engine` of its own), its inputs, outputs and completion (the request and completion types are in [`OfflineTypes.hpp`](../packages/native/src/host/engine/OfflineTypes.hpp), which `Engine.hpp` includes in place of the pool) |

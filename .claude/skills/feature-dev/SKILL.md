@@ -55,10 +55,11 @@ codec, persistence, tests) and a good template to pattern-match against.
   `packages/native/src/system/{mesen,sameboy}/` (`SystemBase`, per-console system + roles). New emulator
   behavior for a console feature lives here.
 - **Audio / DSP** — `packages/native/src/host/{engine,dsp}/` (`Engine::processBlock`, per-system /
-  per-channel mixing); roles are TS (`packages/retroplug/src/{dspRoles,coreRoles}.ts`),
-  and each audio-thread role runs as a protocol script node (`packages/retroplug/src/script/nodes/`, placed by
-  `src/graph/buildGraph.ts` from `src/graph/protocolNodes.ts`). Per-channel stems: spec/10. Offline render:
-  `src/host/render` + `packages/retroplug/src/render/`.
+  per-channel mixing); roles are TS, each a `RoleType` its package's `ts/app.ts` exports (the generated
+  `src/generated/packages.ts` applies them in product order), and each audio-thread role runs as a protocol script
+  node in its package's `ts/protocol.ts` (placed by `src/graph/buildGraph.ts` from
+  `src/graph/protocolNodes.ts`; the controller session is the shell's, in `src/script/`). Per-channel stems:
+  spec/10. Offline render: `src/host/render` + `packages/retroplug/src/render/`.
 - **MIDI + transport** — host MIDI → `Engine::stageMidi` → the system's ingress (SameBoy serial; NES N8
   FIFO role in `system/mesen/roles/`); routing in `packages/core/ts/midiRouting.ts`.
 - **Debug / introspection** (the consumer's observability) — `packages/native/src/system/DebugTarget.hpp`
@@ -67,8 +68,10 @@ codec, persistence, tests) and a good template to pattern-match against.
 - **RPC + SDK surface** (what a consumer/CLI can call) — `packages/native/src/host/rpc/` (scoped capability
   facets) ↔ `packages/retroplug/src/{backend,realBackend}.ts` ↔ the CLI SDK
   `packages/retroplug/cli/{sdk-types.d.ts,sdk.ts}`. This seam is what a consumer feature most often extends.
-- **Roles + per-system config** - `coreRoles.ts` / `dspRoles.ts` register the roles (a feature role's behaviour is its protocol node);
-  role-config crosses to native (reflect-cpp `DefaultIfMissing`-tolerant). spec/04.
+- **Roles + per-system config** - a role is a package's `app` member (`@retroplug/<name>/app`, its `RoleType`); a
+  feature role's behaviour is its protocol node. Adding one to a running product means adding the package to
+  `retroplug.products.desktop` (spec/06's "Adding a package"); role-config crosses to native
+  (reflect-cpp `DefaultIfMissing`-tolerant). spec/04.
 - **Persistence / config** — TS-owned, versioned raw-JSON; `migrate.ts` (one idempotent raw step per
   breaking bump), zod schemas, `projectConfig`/`projectStore`, the `.rplg` project file. spec/05.
   **Never embed opaque binary in `.rplg` — link assets by path** (like `romPath`/`savPath`).
@@ -88,9 +91,9 @@ codec, persistence, tests) and a good template to pattern-match against.
   `test-native` guard. reflect-cpp auto-serializes; C++ field names must equal the TS keys.
 - **Expose an existing backend method to consumers** → declare it in `cli/sdk-types.d.ts` + re-export in
   `cli/sdk.ts` (`realBackend` may already implement it — the SDK surface is hand-maintained and can lag).
-- **New per-system audio/MIDI behavior** → a role (`coreRoles`/`dspRoles`) + any role-config, and its
-  protocol script node (`src/script/nodes/`, registered in `script/bundle.ts`, its kind in
-  `graph/protocolNodes.ts`). spec/04.
+- **New per-system audio/MIDI behavior** → a role in its package's `ts/app.ts` (the `app` manifest member) + any
+  role-config, and its protocol script node in that package's `ts/protocol.ts` (the `protocol` member: its type,
+  span label and kind), wired in `graph/protocolNodes.ts`. spec/04.
 - **New emulator behavior** → the vendored core (edit `deps/mesen` directly; `deps/sameboy` via its tracked
   patch) + the wrapping system. Revert temporary instrumentation.
 - **New persisted state** → the TS persistence layer + a `migrate.ts` step if the change is breaking. spec/05.
