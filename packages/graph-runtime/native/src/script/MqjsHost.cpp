@@ -140,6 +140,7 @@ std::uint32_t heapOf(const Pack& pack) {
         case Sizing::Desktop: return static_cast<std::uint32_t>(desktopContextBytes(source));
         case Sizing::Check: return static_cast<std::uint32_t>(std::uint64_t{source.heap_bytes} * kCheckHalves / 2);
 #endif
+        case Sizing::Device:
         default: return static_cast<std::uint32_t>(std::uint64_t{source.heap_bytes} * kDeviceHalves / 2);
     }
 }
