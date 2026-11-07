@@ -122,9 +122,12 @@ generated tables live in the build tree, never beside them. Everything of ours a
   memory"). And `RegExp.prototype.exec`, when its capture array cannot be made, popped a collector root it never pushed,
   setting the context's root list to a stack word: the wrapper sets the list back as exec returns. Typed arrays are
   built in the engine, with no `JS_Call`, so `messages()` works at any depth. **The fixes are guarded by a
-  configure-time hash**: `cmake/mquickjs.cmake` hashes the text of each span the wrappers replace (CR stripped) and
-  fails on a change naming the file, and counts `js_call_rec_count` mentions (exactly four) and `check_free_mem`'s
-  (three), so a bump of the pinned source cannot silently drop one.
+  configure-time hash**: `cmake/mquickjs.cmake` hashes the text of each span the wrappers replace or rest on (CR
+  stripped) and fails on a change naming the file, and counts `js_call_rec_count` mentions (exactly four),
+  `check_free_mem`'s (three), the poll counter's (four), the regular expression engine's polls (five), and each builtin
+  the wrapper renames as an object-like macro (one, its definition, so a new call of one inside the engine cannot reach
+  upstream's body unseen); `_Static_assert`s hold the counter to an `int16_t` and its start to what one holds. So a
+  bump of the pinned source cannot silently drop a fix.
 - **`rp_mqjs_stdlib.c`**, our standard library for the build tool. It includes upstream's `mqjs_stdlib.c` unpatched
   with its REPL global object and `main` renamed out of the way, so the standard classes are upstream's own tables, and
   its own global object leaves out `print`, `gc`, `load`, the timers, `Date`, `performance` and `eval`. It adds a
@@ -178,7 +181,8 @@ the box prints it once, with the throw's words on a second `[host]` line. A gett
 call's result (a result's `then`, an instance's `process` and hooks), or of what `send` and `forward` are handed (an
 array-like's `length`, an object's `frame` and `flags`), is the node's like any other, and an entry that
 ran past its deadline faults with the deadline's words whatever it returned, since a builtin or a getter may drop the
-engine's interrupt on the way out (the host checks at the end of every outermost entry). The host's interfaces are
+engine's interrupt on the way out (the host checks at the end of every outermost entry); so does a throw whose words,
+which the host makes by calling back into the pack (a thrown object's `toString`), run past the deadline. The host's interfaces are
 `rp.script.fault/1` (reason; kind: threw, deadline, heap, refused), `rp.script.heap/1`, `rp.host.clock/1` and
 `rp.host.script-log/1` (where `console.log` goes). A pack whose heap runs out (the engine's report, in an entry that
 then ends in an exception, past its deadline or not: the heap is read first) has a dead context, read without
@@ -205,11 +209,15 @@ engine's out-of-memory error for an array or a buffer past its size limits, with
   again at the next poll. The builtins whose one call can run long poll in their own loops, off the same count: the sort
   a comparison, the string searches (`indexOf`, `lastIndexOf`, and the search of `replace` and `split`) a position,
   `join` on what is no array (whose length nothing bounds) an element, `match` a match (and it moves past an empty
-  match, where upstream's added the same one until the heap ran out). And `JS_Call`, the one way C calls into
-  JavaScript, polls as it returns once the count has run out, so a callback builtin (`forEach` and the other iterations,
-  `reduce`, a sort's comparator, `replace`'s function) is polled between its callbacks. **What the bound is:** a node
-  faults at most a cap's units of work after its deadline, each a call, a branch, an allocation, a push, a builtin's
-  loop step, a callback's return or 64 bytes compared, plus what runs from the unit that runs the count out to the next
+  match, where upstream's added the same one until the heap ran out). `Function.prototype.call` and `apply` and a
+  bound function's call poll once each: each hands its call back to the interpreter as a tail call, which it runs with
+  no call opcode, so with no poll of its own (a call of `apply` on an array that applies `apply` to itself, three lines
+  of script, ran for ever, and a chain of `call` moved its arguments the square of its length in one unit). And
+  `JS_Call`, the one way C calls into JavaScript, polls as it returns once the count has run out, so a callback builtin
+  (`forEach` and the other iterations, `reduce`, a sort's comparator, `replace`'s function) is polled between its
+  callbacks. **What the bound is:** a node faults at most a cap's units of work after its deadline, each a call, a
+  branch, an allocation, a push, a builtin's loop step, a callback's return, a call `call`, `apply` or a bound function
+  hands on, or 64 bytes compared, plus what runs from the unit that runs the count out to the next
   place it polls. What one unit can still cost: a collection (an allocation on a heap with no room collects first,
   linear in what the heap holds, and on a nearly full heap every allocation may: unmeasured, since no loop in the device
   check runs near a full heap), or a builtin call whose own work counts nothing, linear in the heap (an array's
@@ -218,10 +226,11 @@ engine's out-of-memory error for an array or a buffer past its size limits, with
   returns: the references it holds times the string's length, which the heap bounds: at bliptoaster's heap up to about
   25 MB compared, by estimate on the order of 100 ms on the M33; the device check's `indexOf` case compares 1000
   references to 4096 bytes, 4 MB a call), and the rest of a straight-line run of code to its next call or branch. On the
-  desktop each of the seven loop kinds, five of them after plain code too, faulted within about 0.2 ms of a 50 ms
-  deadline at bliptoaster's heap and devtest's, on both builds of the host; the device check times nine loops on the M33
-  in a context of bliptoaster's heap, four after plain code (into `forEach`, `JSON.stringify`, `indexOf` over long
-  strings and a callback that makes strings), and judges the worst against a third of the watchdog. A node that finishes
+  desktop each of the eight loop kinds, five of them after plain code too, faulted within about 0.2 ms of a 50 ms
+  deadline at bliptoaster's heap and devtest's, on both builds of the host; the device check times ten loops on the M33
+  in a context of bliptoaster's heap, five after plain code (into `forEach`, `JSON.stringify`, `indexOf` over long
+  strings, a callback that makes strings and `apply` handing on its own call for ever), and judges the worst against
+  a third of the watchdog. A node that finishes
   in microseconds reads the clock a few times a block (the desktop's bench: a transpose's 16-message block 266 to 286 ns
   a message at the desktop's deadline, about 300 at the box's 10 ms where its polls come every 156 units; 256 messages,
   245 to 262 and 268). One poll on the box is about 60 instructions and two calls (the handler and `time_us_64`), about
@@ -331,18 +340,19 @@ auditioned there, and their `[packages]` rows gain it. The desktop's own N8 grap
 
 ## 7. Tests
 
-- **The mquickjs host on the desktop** (`[script-pack]`, 47 cases, most in `ScriptPack.test.cpp`, run on both builds of
+- **The mquickjs host on the desktop** (`[script-pack]`, 48 cases, most in `ScriptPack.test.cpp`, run on both builds of
   the host): a node's lifecycle, settings and block API; each fault (a throw, a deadline overrun, a loop over each kind
   of long builtin faulted within a small multiple of its deadline at bliptoaster's heap and devtest's (a quarter past
   it, and two of Windows' 15.6 ms clock ticks more there), the bytes a comparison reads and a callback builtin's returns
-  counted toward the next poll by a clock that ticks a millisecond a reading, a getter the host reads, a heap that runs
+  counted toward the next poll by a clock that ticks a millisecond a reading, and so the calls `call`, `apply` and a
+  bound function hand on (a ring of `apply` among the loops), a getter the host reads, a heap that runs
   out silencing only its pack (whatever the call then threw, and past its deadline too) while a `throw null` or a typed
   array past its size limit faults only its node, the dropped exceptions, the re-entry cap, the allowance per message);
   the idle skip read against what the node's last call read, whichever plan step a block comes from, and its first block
   after a reshape on the QuickJS host; kept objects; a warmed block allocating nothing, counted by the C allocator and
   by the JS heap's growth; the threaded cases under ThreadSanitizer; `[debug-gc]`, the runner over the engine built with
   a collection at every allocation held to the ordinary runner's digests.
-- **`retroplug-device-mode-test`**: 92 cases (45 before E4, 84 at its five commits). The box's plan with the
+- **`retroplug-device-mode-test`**: 93 cases (45 before E4, 84 at its five commits). The box's plan with the
   `bliptoaster` pack, exported and loaded into an arena over the device-mode builds and run in ragged blocks, renders
   what GraphHost renders; a pack heap's sizing and its refusals; a C++ package without package memory unchanged;
   `box-plan.hex` re-recorded.
@@ -415,7 +425,7 @@ the descriptor goldens of existing types, `buildGraph`'s goldens, `edio-golden.j
 intended ones (the `[packages]` golden gaining `rp.bliptoaster.midi-policy` in each of its nine products,
 `box-plan.hex`, and two new goldens: the policy's descriptor and `device-check-script-plan.hex`). Sections 1 to 9 are
 corrected in place where the build made them false. The counts, after the follow-ups: `retroplug-device-mode-test`
-ends at 92 cases (the baseline's 45, 84 at the five commits; 1,491,755 assertions under ASan, 47 of the cases
+ends at 93 cases (the baseline's 45, 84 at the five commits; 1,491,755 assertions under ASan, 48 of the cases
 `[script-pack]` and run under ThreadSanitizer), `pnpm test:plugin` at 335 cases in all (333 before E4, 334 at the five
 commits), `pnpm test` at 175 files and 1792 cases (174 and 1782), parity (250), native, ui and the render and kit legs
 unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data / bss to 289910 / 2004 / 421947 (277702
@@ -481,11 +491,12 @@ unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data 
   4096 bytes with 512 kept for interrupts. The LED blinks 30 + the plan step (Heap is 7), 40 + the bench step and 39 for
   a stack phase under its reserve.
 - **The deadline case** (after the code reviews, before the script plan, its line after the bench's, so the check prints
-  nine lines): `rp.devtest.script-loop`, a third devtest node, runs nine loops over a builtin (a sort of 600 numbers, a
+  nine lines): `rp.devtest.script-loop`, a third devtest node, runs ten loops over a builtin (a sort of 600 numbers, a
   search in 4000 characters, `join` of an array-like a billion long, `forEach` over 2000 numbers and `JSON.stringify` of
   400, then, each after 300 turns of plain code, a phase change that lets the polls grow apart first, `forEach` and
   `JSON.stringify` again, `indexOf` over 1000 references to a string of 4096 characters for one that differs at its end,
-  and `forEach` over 1500 elements with a callback that makes three strings of about 2048 characters) in the pack
+  `forEach` over 1200 elements with a callback that makes three strings of about 2048 characters, and `apply` called on
+  an array that applies `apply` to itself, one call handing on the same call for ever) in the pack
   registered again at 24576 bytes, bliptoaster's heap, each until its 10 ms deadline faults it; the node logs a line as
   its loop begins, which the check's host counts, so a loop the deadline faulted before it began fails the case, and the
   line says how many loops were entered; each loop's faulting block is timed by `time_us_64` and the worst judged
@@ -493,7 +504,7 @@ unchanged. `device:check`'s image went from 130232 / 2000 / 416830 flash / data 
   deadline failed to end would hang the image there: a run that stops after the bench's line, with no LED, is this case
   failing.
 - **Build:** `RP_SCRIPT_HEAP_BYTES_devtest` (40960 at the five commits, 45056 since the third node's definition: the
-  toolchain's 3/2 check passes the pack at 42680 now), `NO_SCRIPTS` retired, the size table's new owners
+  toolchain's 3/2 check passes the pack at 42840 now), `NO_SCRIPTS` retired, the size table's new owners
   (MicroQuickJS 99,040 bytes of flash, the script host 18,485, the devtest pack 18,147 at the five commits;
   99,626, 20,081 and 21,239 in the final image).
 - **Tests:** 8 new `[device-check]` cases (16 in all, 18 with the deadline case and its failure steps): registration at
@@ -653,7 +664,7 @@ the regression line moved to E4's measured figures (section 8). The first gate t
   deeper than the cap of 4; the deadline faults the node, never the box, within the bound section 4 states: a cap's
   units past the deadline, plus what runs to the next poll (the rest of one builtin call, such as an `indexOf` over
   references to a long string, or of a straight-line run of code). A collection inside one unit is unmeasured, and so is
-  an `indexOf` at the size the heap allows; the device check times nine loops at bliptoaster's heap on the M33, four of
+  an `indexOf` at the size the heap allows; the device check times ten loops at bliptoaster's heap on the M33, five of
   them phase changes. The watchdog stays the backstop.
 - **A stale exporter** is guarded as in E3 (`loop.sh`'s stamp), now also against a pack's TS sources, the SDK's TS,
   `deps/mquickjs` and the toolchain.

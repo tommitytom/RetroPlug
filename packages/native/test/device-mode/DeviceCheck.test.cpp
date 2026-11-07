@@ -1115,13 +1115,15 @@ TEST_CASE("the device check's deadline case faults every loop over a builtin by 
     for (std::uint32_t k = 0; k < rp::device_check::kLoopCount; ++k) {
         INFO(rp::device_check::kLoops[k].loop);
         // An array's data takes a block for each 256 elements first, and its strings (the search's, indexOf's, the
-        // callback's) one.
+        // callback's) one; a chain of tail calls a block for its seed and one for each 256 links.
         const std::uint32_t count = rp::device_check::kLoops[k].count;
         const std::string   loop = rp::device_check::kLoops[k].loop;
         const bool listed = loop == "sort" || loop == "forEach" || loop == "stringify" || loop == "indexOf" ||
                             loop == "callback";
         const bool strings = loop == "search" || loop == "indexOf" || loop == "callback";
-        const std::uint32_t data = (listed ? (count + 255) / 256 : 0u) + (strings ? 1u : 0u);
+        const bool chained = loop == "apply" || loop == "call" || loop == "bound";
+        const std::uint32_t data = (listed ? (count + 255) / 256 : 0u) + (strings ? 1u : 0u) +
+                                   (chained ? 1 + (count + 255) / 256 : 0u);
         CHECK(r.blocks[k] == data + 1);
         CHECK(r.entered[k]);
         // Its last block ran to its deadline (10 ms of CPU time) and not much past it: a generous bound by the wall

@@ -63,7 +63,9 @@
 #     own counter, which RetroPlug's check_free_mem also counts each allocation and push off, and RetroPlug's string
 #     comparisons (js_string_eq, js_string_compare: upstream's bodies under other names) every 64 bytes they read;
 #     JS_Call (upstream's body under another name) polls as it returns once the count has run out, so a callback
-#     builtin is polled between its callbacks; and rp_mqjs_set_poll_interval lets the handler set the next poll's
+#     builtin is polled between its callbacks; Function.prototype.call and apply and a bound function's call, each of
+#     which hands its call on as a tail call that no call opcode polls, poll first (upstream's bodies under other
+#     names); and rp_mqjs_set_poll_interval lets the handler set the next poll's
 #     distance (it rests on __js_poll_interrupt setting the counter before it calls the handler, so what the handler
 #     sets stands).
 #   - RegExp.prototype.exec's out-of-memory (js_regexp_exec jumps from its capture array's allocation past the push of
@@ -81,10 +83,14 @@
 # definition, the sweep of unique_strings, replace and its substitution, the StringBuffer and its appends,
 # hasOwnProperty, the typed array's constructor, the sort, repeat, the string searches, join, the interpreter's poll,
 # the check for room, whose three mentions, its definition and its two calls, are counted as well, exec, match, the
-# string equality and order, and JS_Call) and fails, naming rp_mqjs_engine.c, when any is not the text the fixes were
-# written against: re-review the fixes against the new text, then record its hash here. retroplug-device-mode-test's
-# [debug-gc] cases hold the second fix (its revert fails them); no test reaches the first's condition on demand (a
-# collection at every allocation, DEBUG_GC, sweeps a dead name before any growth can meet it), so the hash is its guard.
+# string equality and order, JS_Call, and call, apply and a bound function's call) and fails, naming rp_mqjs_engine.c,
+# when any is not the text the fixes were written against: re-review the fixes against the new text, then record its
+# hash here. It counts what a span cannot hold: the mentions of the poll's counter and of the regular expression
+# engine's polls (rp_mqjs_engine.c holds the counter's width and start with _Static_asserts), and of each builtin the
+# wrapper renames as an object-like macro, which a call inside the engine would reach upstream's body by.
+# retroplug-device-mode-test's [debug-gc] cases hold the second fix (its revert fails them); no test reaches the first's
+# condition on demand (a collection at every allocation, DEBUG_GC, sweeps a dead name before any growth can meet it), so
+# the hash is its guard.
 set(MQUICKJS_DIR "${CMAKE_SOURCE_DIR}/deps/mquickjs")
 file(READ "${MQUICKJS_DIR}/mquickjs.c" _mqjs_engine_text)
 string(REPLACE "\r" "" _mqjs_engine_text "${_mqjs_engine_text}")
@@ -138,6 +144,33 @@ if(NOT _mqjs_mentions EQUAL 3)
                         "definition, JS_StackCheck's call and js_malloc's) rp_mqjs_engine.c's report of a heap that "
                         "ran out was written against (cmake/mquickjs.cmake's header says why); re-review it")
 endif()
+# The counts the polls rest on, beside the spans: the counter's mentions (its field, which rp_mqjs_engine.c holds to
+# int16_t and its start to what an int16_t holds, the interpreter's poll's reset of it and its two decrements, the
+# interpreter's and the regular expression engine's), the regular expression engine's polls (its macro and its four
+# sites, where a backtracking match polls the deadline), and each name rp_mqjs_engine.c renames as an object-like macro
+# (a builtin the standard library's table names, whose definition alone mquickjs.c mentions): a call of one inside the
+# engine would reach upstream's body, not RetroPlug's, and nothing would fail.
+# A count matches a name and the character after it (no part of a longer name), the text's semicolons, a list's
+# separator, made commas first.
+string(REPLACE ";" "," _mqjs_engine_words "${_mqjs_engine_text}")
+foreach(_mqjs_count IN ITEMS "interrupt_counter|4|its field, the poll's reset and the two decrements"
+                             "LRE_POLL_INTERRUPT|5|the regular expression engine's macro and its four polls"
+                             "js_object_hasOwnProperty|1|its definition" "js_string_repeat|1|its definition"
+                             "js_string_indexOf|1|its definition" "js_string_match|1|its definition"
+                             "js_function_call|1|its definition" "js_function_apply|1|its definition"
+                             "js_function_bound|1|its definition")
+    string(REPLACE "|" ";" _mqjs_count "${_mqjs_count}")
+    list(GET _mqjs_count 0 _name)
+    list(GET _mqjs_count 1 _expected)
+    list(GET _mqjs_count 2 _what)
+    string(REGEX MATCHALL "${_name}[^A-Za-z0-9_]" _mqjs_mentions "${_mqjs_engine_words}")
+    list(LENGTH _mqjs_mentions _mqjs_mentions)
+    if(NOT _mqjs_mentions EQUAL _expected)
+        message(FATAL_ERROR "deps/mquickjs/mquickjs.c mentions ${_name} ${_mqjs_mentions} times, not the "
+                            "${_expected} (${_what}) packages/graph-runtime/native/src/script/rp_mqjs_engine.c's "
+                            "polls were written against (cmake/mquickjs.cmake's header says why); re-review them")
+    endif()
+endforeach()
 set(_mqjs_span_12 "RegExp.prototype.exec" "JSValue js_regexp_exec(JSContext *ctx, JSValue *this_val," "\n}\n"
                   "4a8c4ccc9541dfe9e369492799a9d160ed93721b1b34ac2f8ef93e04ab56411c")
 set(_mqjs_span_13 "String.prototype.match" "JSValue js_string_match(JSContext *ctx, JSValue *this_val," "\n}\n"
@@ -148,9 +181,16 @@ set(_mqjs_span_15 "the string order a comparison runs" "static int js_string_com
                   "\n}\n" "d0e72144c338da7c9188dc713638359f6e245207074bd1980b4ab66736be2bda")
 set(_mqjs_span_16 "JS_Call, the interpreter" "JSValue JS_Call(JSContext *ctx, int call_flags)" "\n}\n"
                   "785d7028df8ec297747ecd277665a8faafef08428b30a97b1104cb9ca9a5119e")
+set(_mqjs_span_17 "Function.prototype.call" "JSValue js_function_call(JSContext *ctx, JSValue *this_val," "\n}\n"
+                  "d7a99216ec54e4913e053b06537b4017ab70f6e431b502b100d2b3af2c01613d")
+set(_mqjs_span_18 "Function.prototype.apply" "JSValue js_function_apply(JSContext *ctx, JSValue *this_val," "\n}\n"
+                  "ec1da498be9e23866c9efaebcc205a4a0ea283f54f7456668998e52c7e6c4bb7")
+set(_mqjs_span_19 "a bound function's call" "JSValue js_function_bound(JSContext *ctx, JSValue *this_val," "\n}\n"
+                  "a8bb227bb9a8ae68ee223f09ed2e0c330cc0a2e62df359a75fcb23d115ae10c2")
 foreach(_mqjs_span IN ITEMS _mqjs_span_0 _mqjs_span_1 _mqjs_span_2 _mqjs_span_3 _mqjs_span_4 _mqjs_span_5
                            _mqjs_span_6 _mqjs_span_7 _mqjs_span_8 _mqjs_span_9 _mqjs_span_10 _mqjs_span_11
-                           _mqjs_span_12 _mqjs_span_13 _mqjs_span_14 _mqjs_span_15 _mqjs_span_16)
+                           _mqjs_span_12 _mqjs_span_13 _mqjs_span_14 _mqjs_span_15 _mqjs_span_16 _mqjs_span_17
+                           _mqjs_span_18 _mqjs_span_19)
     list(GET ${_mqjs_span} 0 _what)
     list(GET ${_mqjs_span} 1 _begin)
     list(GET ${_mqjs_span} 2 _end)

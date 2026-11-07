@@ -325,8 +325,10 @@ void benchScript(const rp_package* const* packages, std::size_t packageCount, co
 // JSON.stringify of 400; then, each after 300 turns of plain code, which let the polls grow to their cap before the
 // builtin's loop starts (a phase change, MqjsHost.hpp's kPollCapDivisor): forEach and JSON.stringify again, indexOf
 // over 1000 references to a 4096-character string for a needle that differs at its end (4 MB compared a call, which the
-// comparisons' count of their bytes brings into the polls), and forEach over 1500 numbers with a callback that makes
-// strings of 1024 characters and more (whose callbacks the polls see between).
+// comparisons' count of their bytes brings into the polls), forEach over 1200 numbers with a callback that makes
+// strings of 1024 characters and more (whose callbacks the polls see between), and an array that applies
+// Function.prototype.apply to itself, a call of apply that hands on the same call for ever, each a tail call the
+// interpreter runs with no poll of its own (which apply's own poll sees).
 inline constexpr const char*   kLoopType = "rp.devtest.script-loop";
 inline constexpr std::uint32_t kLoopHeapBytes = 24576;
 struct LoopCase {
@@ -336,9 +338,9 @@ struct LoopCase {
     std::uint32_t length = 4096;  // indexOf's and callback's strings
 };
 inline constexpr LoopCase kLoops[] = {
-    {"sort", 600},           {"search", 4000},          {"join", 1000000000},      {"forEach", 2000},
-    {"stringify", 400},      {"forEach", 2000, 300},    {"stringify", 400, 300},   {"indexOf", 1000, 300, 4096},
-    {"callback", 1500, 300, 1024}};
+    {"sort", 600},          {"search", 4000},       {"join", 1000000000},         {"forEach", 2000},
+    {"stringify", 400},     {"forEach", 2000, 300}, {"stringify", 400, 300},      {"indexOf", 1000, 300, 4096},
+    {"callback", 1200, 300, 1024},                  {"apply", 1, 300}};
 inline constexpr std::uint32_t kLoopCount = sizeof kLoops / sizeof kLoops[0];
 // How many blocks a case may take to fault (its data is made a few hundred numbers a block first).
 inline constexpr std::uint32_t kLoopBlocks = 32;

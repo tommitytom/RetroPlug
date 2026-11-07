@@ -794,6 +794,10 @@ bool faultFromException(Node& node, const char* during) {
     Text t(buf, sizeof buf);
     t << during << " threw: ";
     describe(ctx, e, t);
+    // The words call back into the pack (a thrown object's toString), which may run past the deadline in turn, reach a
+    // poll that finds the entry already past it, or run the heap out: then the fault is the deadline's or the heap's,
+    // as above, not a throw that cannot be printed.
+    if (pk.base.ranOut || pk.base.expired) return faultFromException(node, during);
     return fault(node, RP_SCRIPT_FAULT_THREW, buf);
 }
 

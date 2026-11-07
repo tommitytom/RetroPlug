@@ -120,15 +120,20 @@ export const scriptNestNode = defineNode({
 // join of an array-like whose length is `count`, forEach over `count` numbers, JSON.stringify of them, an array's
 // indexOf over `count` references to a string of `length` characters for a needle as long that differs at its end (so
 // every element compares the whole string), or forEach over `count` elements with a callback that makes three strings
-// of about twice `length` each (`loop`; "none", the default, does nothing, so the device check's run of each type and
-// the toolchain's pass it). indexOf's and callback's loops end after `rounds` calls when it is not 0 (a test that
-// counts the polls). Every call is work the engine's interpreter does not poll its deadline within, so the loop is held
-// to its deadline only by the host's polls between calls and the engine's own inside them (graph-runtime's
-// script/MqjsHost.hpp, kFirstPollDivisor): what the device check's deadline case times on the box
-// (packages/graph-runtime/device-check, loopDeadline) and the device-mode tests time at a pack's declared heaps. Its
-// blocks make its data first, the strings in one and kLoopFill elements a block after, well inside a block's deadline
-// on the box; then a block runs `warm` turns of a cheap loop (a phase of plain code, which lets the polls grow apart),
-// logs a line naming the loop, and loops over the builtin until the deadline faults the node.
+// of about twice `length` each; or a call the engine hands on as a tail call, with no call of the interpreter's for
+// each hop: Function.prototype.apply through a chain of `count` arrays, each applying apply to the next, call through
+// `count` copies of itself (each hop moving the arguments left, so a chain costs the square of its length), or a chain
+// of `count` bound functions (`loop`; "none", the default, does nothing, so the device check's run of each type and the
+// toolchain's pass it). indexOf's, callback's and the tail calls' loops end after `rounds` calls when it is not 0 (a
+// test that counts the polls); apply's, with `rounds` 0, is a ring of `count` arrays that never returns (at 1, one
+// array applying apply to itself: `var ap = Function.prototype.apply; var x = [ap, null]; x[1] = x; ap.apply(ap, x)`).
+// Every call is work the engine's interpreter does not poll its deadline within, so the loop is held to its deadline
+// only by the host's polls between calls and the engine's own inside them (graph-runtime's script/MqjsHost.hpp,
+// kFirstPollDivisor): what the device check's deadline case times on the box (packages/graph-runtime/device-check,
+// loopDeadline) and the device-mode tests time at a pack's declared heaps. Its blocks make its data first, the strings
+// or a chain's seed in one and kLoopFill elements a block after, well inside a block's deadline on the box; then a
+// block runs `warm` turns of a cheap loop (a phase of plain code, which lets the polls grow apart), logs a line naming
+// the loop, and loops over the builtin until the deadline faults the node.
 const kLoopFill = 256;
 
 export const scriptLoopNode = defineNode({
@@ -136,7 +141,10 @@ export const scriptLoopNode = defineNode({
   name: "Script builtin loop (devtest)",
   category: "test",
   settings: s.object({
-    loop: s.enum(["none", "sort", "search", "join", "forEach", "stringify", "indexOf", "callback"], "none"),
+    loop: s.enum(
+      ["none", "sort", "search", "join", "forEach", "stringify", "indexOf", "callback", "apply", "call", "bound"],
+      "none",
+    ),
     count: s.int({ min: 0, max: 1000000000, default: 0 }),
     warm: s.int({ min: 0, max: 1000000000, default: 0 }),
     length: s.int({ min: 1, max: 65536, default: 4096 }),
@@ -146,7 +154,7 @@ export const scriptLoopNode = defineNode({
   create: ({ settings }) => {
     const loop = settings.loop;
     const count = settings.count;
-    const rounds = settings.rounds;  // indexOf's and callback's calls, or 0 for ever
+    const rounds = settings.rounds;  // indexOf's, callback's and the tail calls' calls, or 0 for ever
     const listed = loop === "sort" || loop === "forEach" || loop === "stringify" || loop === "indexOf" ||
       loop === "callback";
     const numbers = new Array<number | string>(listed ? count : 0);
@@ -162,6 +170,12 @@ export const scriptLoopNode = defineNode({
       made = text + made;
       made = made + text;
     };
+    // The tail calls' data, made by their loops alone (the callback loop's strings fill bliptoaster's heap): apply's
+    // chain (each array [apply, the next], the last [visit, [undefined, []]], which ends in visit()) or ring, call's
+    // arguments ([call, call, ..., visit]), or the bound chain's head (its one element); `linked` -1 until the seed is
+    // made.
+    let chain: unknown[] = [];
+    let linked = loop === "apply" || loop === "call" || loop === "bound" ? -1 : count;
     return {
       process() {
         // The strings first: a text of `count` characters and a needle of half as many and one more ("search"); a
@@ -173,6 +187,29 @@ export const scriptLoopNode = defineNode({
           while (text.length < length) text += text;
           text = text.substring(0, length);
           needle = loop === "search" ? text.substring(0, count >> 1) + "b" : text.substring(0, length - 1) + "b";
+          return;
+        }
+        if (linked < count) {
+          const apply = Function.prototype.apply;
+          if (linked < 0) {
+            chain = loop === "apply" ? [visit, [undefined, []]] : loop === "bound" ? [visit] : [];
+            linked = 0;
+            return;
+          }
+          const end = linked + kLoopFill < count ? linked + kLoopFill : count;
+          for (; linked < end; linked++) {
+            if (loop === "apply") chain = [apply, chain];
+            else if (loop === "call") chain.push(Function.prototype.call);
+            else chain[0] = (chain[0] as () => void).bind(null);
+          }
+          if (linked < count) return;
+          if (loop === "call") chain.push(visit);
+          if (loop === "apply" && rounds === 0) {
+            // The ring: the chain's last array, the one that ends it, applies apply to the first instead.
+            let last = chain;
+            while (last[0] === apply && (last[1] as unknown[])[0] === apply) last = last[1] as unknown[];
+            last[1] = chain;
+          }
           return;
         }
         if (filled < numbers.length) {
@@ -203,6 +240,21 @@ export const scriptLoopNode = defineNode({
           case "callback":
             for (let r = 0; rounds === 0 || r < rounds; r++) numbers.forEach(heavy);
             return;
+          case "apply": {
+            const apply = Function.prototype.apply;
+            for (let r = 0; rounds === 0 || r < rounds; r++) apply.apply(apply, chain);
+            return;
+          }
+          case "call": {
+            const call = Function.prototype.call;
+            for (let r = 0; rounds === 0 || r < rounds; r++) call.apply(call, chain);
+            return;
+          }
+          case "bound": {
+            const bound = chain[0] as () => void;
+            for (let r = 0; rounds === 0 || r < rounds; r++) bound();
+            return;
+          }
           default:
             return;
         }

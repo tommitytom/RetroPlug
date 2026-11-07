@@ -57,7 +57,14 @@
  * return: JS_Call, the one way a builtin calls into JavaScript (a callback, a getter, a conversion), is RetroPlug's,
  * upstream's body with a poll after it once the count has run out, so a builtin that calls back for each element
  * (forEach and the other iterations, reduce, a sort's comparator, replace's function) is polled between its callbacks,
- * and one that allocates for each (JSON.stringify) brings the next poll nearer as it works; rp_mqjs_set_poll_interval
+ * and one that allocates for each (JSON.stringify) brings the next poll nearer as it works. Function.prototype.call
+ * and apply and a bound function's call (js_function_call, js_function_apply, js_function_bound) hand the call they
+ * make back to the interpreter as a tail call, which it runs past its call opcode's poll, so with no poll of their own
+ * a chain of them is one unpolled call however long (a chain of call moving its arguments the square of its length)
+ * and a ring of applies never polls at all: each is RetroPlug's, a poll, then upstream's body, compiled under another
+ * name as hasOwnProperty's is (bound's array, handed by value, rooted across a poll that is due). Whatever a wrapper
+ * holds across a poll is rooted (or is its caller's frame, which the collector sees), JS_Call's result among them, so
+ * the handler may allocate, and the throw of its interrupt does. rp_mqjs_set_poll_interval
  * is how the host's handler sets the next poll's distance. Each search is upstream's body with the poll in its loop:
  * js_string_indexOf replaces the standard library's under its own name, as hasOwnProperty does; js_string_indexof's
  * definition is told from its calls as JS_MakeUniqueString's is (the calls pass `ctx`), and join's too, since
@@ -136,6 +143,15 @@ JSValue rp_mqjs_js_regexp_exec(JSContext* ctx, JSValue* this_val, int argc, JSVa
 #undef js_string_match
 #define js_string_match rp_mqjs_upstream_string_match
 
+#undef js_function_call
+#define js_function_call rp_mqjs_upstream_function_call
+
+#undef js_function_apply
+#define js_function_apply rp_mqjs_upstream_function_apply
+
+#undef js_function_bound
+#define js_function_bound rp_mqjs_upstream_function_bound
+
 static int js_string_eq(JSContext* ctx, JSValue val1, JSValue val2);
 #define js_string_eq(first, ...) RP_MQJS_STR_EQ_##first, __VA_ARGS__)
 #define RP_MQJS_STR_EQ_JSContext rp_mqjs_upstream_string_eq(JSContext
@@ -169,6 +185,9 @@ static int check_free_mem(JSContext* ctx, JSValue* stack_bottom, uint32_t size);
 #undef js_array_join
 #undef js_regexp_exec
 #undef js_string_match
+#undef js_function_call
+#undef js_function_apply
+#undef js_function_bound
 #undef js_string_eq
 #undef js_string_compare
 #undef JS_Call
@@ -176,6 +195,13 @@ static int check_free_mem(JSContext* ctx, JSValue* stack_bottom, uint32_t size);
 #undef check_free_mem
 
 #include "rp_mqjs.h"
+
+/* The poll's counter as the wrappers count it (rp_mqjs_poll, rp_mqjs_count_bytes, rp_mqjs_set_poll_interval): an
+ * int16_t, which every value they store must fit, its start among them. cmake/mquickjs.cmake counts its mentions. */
+_Static_assert(_Generic(((JSContext*)0)->interrupt_counter, int16_t: 1, default: 0),
+               "the engine's interrupt counter is no longer an int16_t: re-review rp_mqjs_engine.c's polls");
+_Static_assert(JS_INTERRUPT_COUNTER_INIT > 0 && JS_INTERRUPT_COUNTER_INIT <= INT16_MAX,
+               "the engine's interrupt counter starts past an int16_t: re-review rp_mqjs_engine.c's polls");
 
 static JSValue rp_mqjs_make_unique_string(JSContext* ctx, JSValue val) {
     JSString* p;
@@ -441,11 +467,16 @@ JSValue JS_Call(JSContext* ctx, int call_flags) {
      * the count run out polls there, as the interpreter would at its next call or branch: a callback builtin (forEach
      * and the other iterations, reduce, sort's comparator, replace's function) is then polled between its callbacks,
      * whose work the count saw. The call has returned and left the stack as it does on any return, so an interrupt
-     * only replaces its result with the exception, which every caller of JS_Call takes as it takes a throw. */
-    const JSValue result = rp_mqjs_upstream_call(ctx, call_flags);
-    if (!JS_IsException(result) && ctx->interrupt_counter <= 0 && JS_IsException(__js_poll_interrupt(ctx)))
-        return JS_EXCEPTION;
-    return result;
+     * only replaces its result with the exception, which every caller of JS_Call takes as it takes a throw. The result
+     * is rooted across the poll, since the handler may allocate and an interrupt's throw does. */
+    JSGCRef result_ref;
+    JSValue result = rp_mqjs_upstream_call(ctx, call_flags);
+    int     stopped;
+    if (JS_IsException(result) || ctx->interrupt_counter > 0) return result;
+    JS_PUSH_VALUE(ctx, result);
+    stopped = JS_IsException(__js_poll_interrupt(ctx));
+    JS_POP_VALUE(ctx, result);
+    return stopped ? JS_EXCEPTION : result;
 }
 
 static int rp_mqjs_concat_subst(JSContext* ctx, void* buffer, JSValue* str, JSValue* rep, uint32_t pos,
@@ -487,6 +518,35 @@ JSValue rp_mqjs_js_string_repeat(JSContext* ctx, JSValue* this_val, int argc, JS
         argv[0] = count;
     }
     return rp_mqjs_upstream_string_repeat(ctx, this_val, argc, argv);
+}
+
+/* Function.prototype.call and apply, and a bound function's call: a poll each (the header comment), then upstream's
+ * body, which pushes the call it hands on and returns it as a tail call, so the interpreter runs it with no call opcode
+ * and no poll of its own. this and the arguments are the caller's frame, which the collector sees. */
+JSValue rp_mqjs_js_function_call(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv) {
+    if (rp_mqjs_poll(ctx, 1)) return JS_EXCEPTION;
+    return rp_mqjs_upstream_function_call(ctx, this_val, argc, argv);
+}
+
+JSValue rp_mqjs_js_function_apply(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv) {
+    if (rp_mqjs_poll(ctx, 1)) return JS_EXCEPTION;
+    return rp_mqjs_upstream_function_apply(ctx, this_val, argc, argv);
+}
+
+JSValue rp_mqjs_js_function_bound(JSContext* ctx, JSValue* this_val, int argc, JSValue* argv, JSValue params) {
+    /* The bound function's array is handed by value (the function object's own, which the frame roots, but the throw
+     * of a poll that is due allocates and may move it), so it is rooted across one. */
+    if (rp_mqjs_poll_due(ctx, 1)) {
+        JSGCRef params_ref;
+        int     stopped;
+        JS_PUSH_VALUE(ctx, params);
+        stopped = rp_mqjs_poll(ctx, 1);
+        JS_POP_VALUE(ctx, params);
+        if (stopped) return JS_EXCEPTION;
+    } else {
+        rp_mqjs_poll(ctx, 1);
+    }
+    return rp_mqjs_upstream_function_bound(ctx, this_val, argc, argv, params);
 }
 
 static int js_array_sort_cmp(size_t i1, size_t i2, void* opaque) {

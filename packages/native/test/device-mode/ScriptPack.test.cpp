@@ -759,6 +759,9 @@ TEST_CASE("a script node faults on a throw (one the engine would drop among them
         // And the engine's own out-of-memory error for a typed array past its size limit, thrown with room left.
         {"rp.scripttest.throws-as", RP_SCRIPT_FAULT_THREW, "process threw: InternalError: out of memory",
          R"({"what":"limit"})"},
+        // A throw whose words run past the deadline as the host makes them (its toString spins): the deadline's.
+        {"rp.scripttest.throws-as", RP_SCRIPT_FAULT_DEADLINE, "process ran past its deadline of 50000 us",
+         R"({"what":"spins"})"},
         // A getter the host reads of what forward or send is handed: its throw is the node's, never a 0 sent on.
         {"rp.scripttest.forward-throws", RP_SCRIPT_FAULT_THREW, "process threw: RangeError: the frame getter threw",
          R"({"field":"frame"})"},
@@ -921,7 +924,9 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
     // 3/2 of it), over data of about what that heap holds (made by its first blocks), some after `warm` turns of plain
     // code, and its block that loops must fault with the deadline's words having spent under a quarter more than its
     // deadline of the thread's CPU time, by which the deadline is read (a generous bound: each overruns by about one of
-    // its builtin's calls, well under a millisecond here, where plain code first let a forEach run 35 ms over).
+    // its builtin's calls, well under a millisecond here, where plain code first let a forEach run 35 ms over). The
+    // last two loops are a call of Function.prototype.apply that hands on the same call for ever, as a tail call the
+    // interpreter runs with no poll of its own: before apply polled, it never faulted at all.
     struct Loop {
         const char*   loop;
         std::uint32_t count;
@@ -945,7 +950,9 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
           {"stringify", 400, 100000},
           {"indexOf", 1000, 100000},
           {"indexOf", 1000, 3000000},
-          {"callback", 1500, 100000, 1024}}},
+          {"callback", 1200, 100000, 1024},
+          {"apply", 1},
+          {"apply", 1, 100000}}},
         {"devtest",
          57344,
          {{"sort", 2000},
@@ -957,7 +964,9 @@ TEST_CASE("a loop over a builtin faults within a small multiple of its deadline,
           {"stringify", 1500, 100000},
           {"indexOf", 3500, 100000, 10240},
           {"indexOf", 3500, 3000000, 10240},
-          {"callback", 6000, 100000, 2048}}},
+          {"callback", 6000, 100000, 2048},
+          {"apply", 1},
+          {"apply", 1, 100000}}},
     };
     constexpr std::uint32_t kDeadline = 50000;
     // The thread's CPU time moves in steps of the platform's clock: a microsecond on Linux and macOS, a scheduler tick
@@ -1058,6 +1067,52 @@ TEST_CASE("the bytes a comparison reads count toward the next poll, and a callba
             CHECK(n.run() == RP_FAULT);
             CHECK(n.fault() == "process ran past its deadline of 30000 us");
             CHECK(clock.calls == 33);
+        }
+    }
+}
+
+TEST_CASE("Function.prototype.apply and call, and a bound function, poll each call they hand on",
+          "[device-mode][script-pack]") {
+    // Each hands the call it makes back to the interpreter as a tail call, which the interpreter runs with no call
+    // opcode, so with no poll of its own: a chain of them is one call of the interpreter's, however long, and a ring of
+    // applies (`var ap = Function.prototype.apply; var x = [ap, null]; x[1] = x; ap.apply(ap, x);`) never polled at all
+    // and ran for ever past its deadline (the loop case before this one runs that ring). By a clock a millisecond on at
+    // each reading once the node's data is made (the entry's start and its restart are its first two), a node held to
+    // 4 ms faults at the 7th, which a chain of 1000 hops reaches only if its hops poll: one call of each kind, which
+    // without the hops' polls ran to its end, read the clock once more and returned. call's chain moves its arguments
+    // left at each hop, so it costs the square of its length in what was one unit; the same poll ends it.
+    struct Ticks {
+        bool          live = false;
+        std::uint32_t calls = 0;
+        static std::uint64_t read(void* c) {
+            auto& t = *static_cast<Ticks*>(c);
+            if (!t.live) return cpuMicros(nullptr);
+            return std::uint64_t{++t.calls} * 1000;
+        }
+    };
+    static std::deque<rp_mqjs_pack_source> copies;  // a registration keys its pack on the source's address
+    copies.push_back(rp_script_devtest);
+    copies.back().heap_bytes = 131072;
+    const rp_package* desktop = rp::mqjs::exactPackage(copies.back());
+    const rp_package* device = rp_devmode::mqjs::package(copies.back());
+    REQUIRE(desktop);
+    REQUIRE(device);
+    for (const auto& [build, pack] : {std::pair{"desktop", desktop}, std::pair{"device", device}}) {
+        for (const char* loop : {"apply", "call", "bound"}) {
+            INFO(build << ": " << loop);
+            char settings[128];
+            std::snprintf(settings, sizeof settings, R"({"loop":"%s","count":1000,"warm":0,"rounds":1})", loop);
+            Ticks clock;
+            Host  host(4000);
+            host.clock.ctx = &clock;
+            host.clock.micros = &Ticks::read;
+            Made n(typeOf(pack, "rp.devtest.script-loop"), host, msgpackOf(settings), {{RP_PORT_EVENTS, true}});
+            REQUIRE(n.node);
+            for (std::uint32_t block = 0; block < 1 + (1000 + 255) / 256; ++block) REQUIRE(n.run() == RP_OK);
+            clock.live = true;
+            CHECK(n.run() == RP_FAULT);
+            CHECK(n.fault() == "process ran past its deadline of 4000 us");
+            CHECK(clock.calls == 7);
         }
     }
 }
