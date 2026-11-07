@@ -271,22 +271,22 @@ Outcome runPack(const rp_package* package, std::uint32_t blocks, std::vector<std
         for (const auto& p : layout->ports) {
             rp_port_view v{};
             v.kind = static_cast<std::uint32_t>(p.kind);
-            const bool out = p.dir == rp::graph::PortDir::Out;
+            const bool isOutput = p.dir == rp::graph::PortDir::Out;
             switch (p.kind) {
                 case rp::graph::PortKind::Events:
                 case rp::graph::PortKind::Bytes:
-                    v.u.queue = out ? rig->queue(rp::graph::kDefaultQueueMessages, rp::graph::kDefaultQueueBytes)
-                                    : rig->queue(RP_DEVICE_MIDI_IN_MESSAGES, RP_DEVICE_MIDI_IN_BYTES);
-                    (out ? rig->drains : rig->feeds).push_back(v.u.queue);
+                    v.u.queue = isOutput ? rig->queue(rp::graph::kDefaultQueueMessages, rp::graph::kDefaultQueueBytes)
+                                         : rig->queue(RP_DEVICE_MIDI_IN_MESSAGES, RP_DEVICE_MIDI_IN_BYTES);
+                    (isOutput ? rig->drains : rig->feeds).push_back(v.u.queue);
                     break;
                 case rp::graph::PortKind::Control:
                     v.u.control = rig->stream(0.0);
-                    (out ? rig->rolls : rig->moves).push_back(v.u.control);
+                    (isOutput ? rig->rolls : rig->moves).push_back(v.u.control);
                     break;
                 case rp::graph::PortKind::Resource: v.u.resource = &rig->slot; break;
                 default: break;
             }
-            (out ? rig->outputs : rig->inputs).push_back(v);
+            (isOutput ? rig->outputs : rig->inputs).push_back(v);
         }
         for (const auto& p : layout->params) {
             rig->params.push_back(rig->stream(p.def));

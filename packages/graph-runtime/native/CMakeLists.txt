@@ -139,9 +139,8 @@ target_link_libraries(retroplug-mqjs-run PRIVATE retroplug-mqjs-host retroplug-n
 # fixes rp_mqjs_engine.c makes to the engine (cmake/mquickjs.cmake's header) from being reverted unseen.
 retroplug_mquickjs_engine(retroplug-mqjs-engine-gc STDLIB rp_mqjs_stdlib SOURCES ${_rp_script_dir}/rp_mqjs_table.c
                           ENGINE ${_rp_script_dir}/rp_mqjs_engine.c INCLUDES ${_rp_script_dir}
-                          FIRST ${_rp_script_dir}/rp_mqjs_names.h)
+                          FIRST ${_rp_script_dir}/rp_mqjs_names.h DEFINES DEBUG_GC)
 set_target_properties(retroplug-mqjs-engine-gc PROPERTIES EXCLUDE_FROM_ALL ON)
-target_compile_definitions(retroplug-mqjs-engine-gc PRIVATE DEBUG_GC)
 add_executable(retroplug-mqjs-run-gc EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/../mqjs-run/main.cpp
                                                       ${_rp_script_dir}/MqjsHost.cpp)
 set_target_properties(retroplug-mqjs-run-gc PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON

@@ -1077,7 +1077,9 @@ struct LoopRun {
 // The deadline case as the image runs it, in an arena of `arenaBytes` made before counting starts, over the image's
 // script pack registered at `heapBytes`, under a clock of the thread's CPU time at the host's default deadline (the
 // image offers the box's, time_us_64; with none, a device build's script node has no deadline, and a loop no end),
-// its blocks timed by the steady clock.
+// its blocks timed by the steady clock. On Windows the node's clock is the steady clock too: a thread's CPU time moves
+// there in ticks of about 15.6 ms (GetThreadTimes), longer than the box's 10 ms deadline, so a loop would fault at the
+// first tick after its block began, anywhere from at once to 15.6 ms in.
 std::uint64_t steadyMicros() {
     return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                           std::chrono::steady_clock::now().time_since_epoch())
@@ -1086,7 +1088,11 @@ std::uint64_t steadyMicros() {
 LoopRun runLoops(std::uint32_t heapBytes = rp::device_check::kLoopHeapBytes,
                  const std::vector<TypeCase>& cases = kAllCases,
                  std::size_t arenaBytes = rp::device_check::kArenaBytes) {
+#if defined(_WIN32)
+    const rp_host_clock clock{nullptr, [](void*) { return steadyMicros(); }, 0};
+#else
     const rp_host_clock clock{nullptr, &rp::graph::threadCpuMicros, 0};
+#endif
     struct Offered {
         explicit Offered(const rp_host_clock* c) { rp::device_check::offerClock(c); }
         ~Offered() { rp::device_check::offerClock(nullptr); }

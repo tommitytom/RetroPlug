@@ -255,8 +255,9 @@ constant used as a key is marked unique in place), so the copy is made and reloc
 stays in flash.
 
 **The heap** is declared in the pack's manifest as `heapBytes`, a whole number from 4096 to 524288, the **box's 32-bit
-context**. The least a context can be is 4096 bytes at 64 bits and 2560 at 32 (below it the engine writes past its
-buffer rather than throwing), and the host and the loader's query refuse below it in words. A 64-bit device build
+context**. The least a context can be is 4096 bytes at 64 bits (4104 on Windows, where the MSVC ABI's bitfield layout
+makes the engine's `JSContext` 8 bytes larger) and 2560 at 32 (below it the engine writes past its buffer rather than
+throwing), and the host and the loader's query refuse below it in words. A 64-bit device build
 (the exporter's trial load and the device-mode tests) gives a pack 3/2 of `heapBytes`, a heuristic that fails for a
 pack whose heap is mostly payload bytes (`bliptoaster` ratios 1.64 under full SysEx) or mostly floats (boxed at 32 bits
 only); the toolchain's check applies the same 3/2, printing "the check would pass X". The box's boot line and the device
@@ -629,9 +630,14 @@ the regression line moved to E4's measured figures (section 8). The first gate t
 ### 11.8 What is left
 
 - **Windows, macOS and arm64 have never built E4.** The Windows path for the engine (clang-cl objects with a forced
-  include of `rp_mqjs_names.h`, the `sys/time.h` shim, `GetThreadTimes`, `mquickjs.h`'s `##__VA_ARGS__` under cl) is
-  written to a pattern and unbuilt; `cmake/mquickjs-names.cmake`'s macOS branch has never run; every desktop product
-  now links the engine beside QuickJS, so the first Windows build of any product is its test.
+  include of `rp_mqjs_names.h`, the `sys/time.h` shim with its `gettimeofday` and `nanosleep`, `GetThreadTimes`,
+  `mquickjs.h`'s `##__VA_ARGS__` under cl, the custom commands' header dependencies and definitions, `DEBUG_GC` among
+  them) is written to a pattern, read and configured here with a stand-in compiler, and unbuilt; E4's own sources were
+  compiled here with GCC's `-Wshadow` and Clang's `-Wshadow-all`, which found the two hidings `/W4` would have failed
+  on; the tests' Windows halves (the least context under the MSVC ABI's bitfields, measured with `-mms-bitfields`, a
+  steady clock where a thread's CPU time ticks in 15.6 ms, the goldens pinned to LF) are unrun.
+  `cmake/mquickjs-names.cmake`'s macOS branch has never run; every desktop product now links the engine beside
+  QuickJS, so the first Windows build of any product is its test.
 - **The 32-bit runner is absent from the build.** The i386 harness that measured the 32-bit figures needs lib32
   libraries a fresh devcontainer, CI and macOS and Windows do not provide; it was a scratch measurement. The 32-bit
   bytecode runs nowhere in CI (the device check is built there and never run), so the 3/2 factor is a heuristic

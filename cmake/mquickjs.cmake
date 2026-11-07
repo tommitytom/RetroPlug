@@ -28,8 +28,8 @@
 #
 # Windows: MSVC's cl cannot compile the engine (GNU attributes and __builtin_*_overflow), so on Windows the tools are
 # compiled with clang-cl, MSVC-ABI compatible, as SameBoy's core is (cmake/sameboy.cmake), and mqjs.c gets the one
-# header MSVC's C runtime lacks from cmake/mquickjs-win-shim (its gettimeofday). That half has not been built yet: it is
-# written to the SameBoy pattern, and the first Windows build is its test.
+# header MSVC's C runtime lacks from cmake/mquickjs-win-shim (its gettimeofday, and nanosleep). That half has not been
+# built yet: it is written to the SameBoy pattern, and the first Windows build is its test.
 #
 # Upstream bugs are fixed outside the tree, in graph-runtime's script/rp_mqjs_engine.c, which the host's engine
 # compiles in place of mquickjs.c (retroplug_mquickjs_engine's ENGINE, below):
@@ -237,7 +237,11 @@ if(MSVC)
     # /MT: the project's static CRT. -w: upstream's warnings are not ours to act on.
     set(_mqjs_cl_flags /nologo /c /MT /O2 /DNDEBUG -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS
         "-I${CMAKE_SOURCE_DIR}/cmake/mquickjs-win-shim" "-I${MQUICKJS_HOST_GEN}" "-I${MQUICKJS_DIR}" -w)
-    # _mqjs_clang_objects(<var> <generated headers the sources include> <sources>...)
+    # _mqjs_clang_objects(<var> <headers the sources include> <sources>...). A custom command knows no header it is not
+    # told of, so each object depends on the headers given (the generated tables, and an engine's own: its forced
+    # include and its directories' headers) and on every header of the vendored tree, which change only with the pin:
+    # more than an object includes, so a change rebuilds a few objects too many, never one too few.
+    file(GLOB _mqjs_vendored_headers "${MQUICKJS_DIR}/*.h")
     function(_mqjs_clang_objects var headers)
         set(_objs "")
         foreach(_src IN LISTS ARGN)
@@ -246,7 +250,8 @@ if(MSVC)
             add_custom_command(
                 OUTPUT "${_obj}"
                 COMMAND "${MQUICKJS_CLANG_CL}" ${_mqjs_cl_flags} "/Fo${_obj}" "${_src}"
-                DEPENDS "${_src}" ${headers} "${CMAKE_SOURCE_DIR}/cmake/mquickjs-win-shim/sys/time.h"
+                DEPENDS "${_src}" ${headers} ${_mqjs_vendored_headers}
+                        "${CMAKE_SOURCE_DIR}/cmake/mquickjs-win-shim/sys/time.h"
                 COMMENT "clang-cl (mquickjs) ${_n}"
                 VERBATIM)
             list(APPEND _objs "${_obj}")
@@ -308,9 +313,18 @@ function(retroplug_mquickjs_stdlib name)
     set(_tool ${name}-tool)
     if(MSVC)
         # The tool is upstream C, which cl cannot compile: clang-cl, as the other tools above, into objects of its own.
+        # SOURCE includes upstream's mqjs_stdlib.c whole, and the headers of its INCLUDES as the GNU branch's does.
         set(_mqjs_objdir "${CMAKE_BINARY_DIR}/deps/mquickjs/${_tool}")
         file(MAKE_DIRECTORY "${_mqjs_objdir}")
-        _mqjs_clang_objects(_objs "" "${P_SOURCE}" "${MQUICKJS_DIR}/mquickjs_build.c")
+        set(_saved_flags ${_mqjs_cl_flags})
+        set(_includes "${MQUICKJS_DIR}/mqjs_stdlib.c")
+        foreach(_inc IN LISTS P_INCLUDES)
+            list(APPEND _mqjs_cl_flags "-I${_inc}")
+            file(GLOB _inc_headers "${_inc}/*.h")
+            list(APPEND _includes ${_inc_headers})
+        endforeach()
+        _mqjs_clang_objects(_objs "${_includes}" "${P_SOURCE}" "${MQUICKJS_DIR}/mquickjs_build.c")
+        set(_mqjs_cl_flags ${_saved_flags})
         add_executable(${_tool} EXCLUDE_FROM_ALL ${_objs})
         set_target_properties(${_tool} PROPERTIES LINKER_LANGUAGE C)
     else()
@@ -344,7 +358,8 @@ function(retroplug_mquickjs_stdlib name)
     endforeach()
 endfunction()
 
-# retroplug_mquickjs_engine(<target> STDLIB <name> SOURCES <c>... [ENGINE <c>] [FIRST <h>]): the engine as a static
+# retroplug_mquickjs_engine(<target> STDLIB <name> SOURCES <c>... [ENGINE <c>] [FIRST <h>] [DEFINES <d>...]): the
+# engine as a static
 # library for the desktop's own width, with the standard library <name> (retroplug_mquickjs_stdlib) whose run-time half
 # SOURCES are (the C file that compiles the generated tables with the functions they name). ENGINE, if given, is
 # compiled in place of mquickjs.c: a file that includes mquickjs.c whole and defines after it what must read the
@@ -357,9 +372,11 @@ endfunction()
 # no external name outside rp_mqjs_ (cmake/mquickjs-names.cmake), with the toolchain's nm on Linux, and on macOS with
 # Xcode's (its `-g --defined-only` and Mach-O's leading underscore are handled, but no macOS build has run it yet). Not
 # on MSVC: CMAKE_NM is empty there, and though clang-cl's install carries llvm-nm, which reads its objects, the Windows
-# build has not linked the renamed engine yet, so the names are held there only by the products' link.
+# build has not linked the renamed engine yet, so the names are held there only by the products' link. DEFINES are
+# compile definitions of every source (DEBUG_GC, for a test's engine): on MSVC the objects are custom commands, which a
+# target's own definitions never reach, so they are given here.
 function(retroplug_mquickjs_engine target)
-    cmake_parse_arguments(P "" "STDLIB;ENGINE;FIRST" "SOURCES;INCLUDES" ${ARGN})
+    cmake_parse_arguments(P "" "STDLIB;ENGINE;FIRST" "SOURCES;INCLUDES;DEFINES" ${ARGN})
     if(NOT P_STDLIB OR NOT P_SOURCES OR P_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "retroplug_mquickjs_engine(${target}): STDLIB and SOURCES are required")
     endif()
@@ -377,21 +394,32 @@ function(retroplug_mquickjs_engine target)
         # clang-cl, as the tools above; the generated tables and the sources' own directories first.
         set(_saved_flags ${_mqjs_cl_flags})
         set(_mqjs_cl_flags ${_mqjs_cl_flags} "-I${_dir}")
+        # What the objects include beyond the vendored tree: the forced include, the include directories' headers and,
+        # for an ENGINE that includes it whole, mquickjs.c.
+        set(_includes ${_headers} ${P_FIRST})
         if(P_FIRST)
             list(APPEND _mqjs_cl_flags "/FI${P_FIRST}")
         endif()
         foreach(_inc IN LISTS P_INCLUDES)
             list(APPEND _mqjs_cl_flags "-I${_inc}")
+            file(GLOB _inc_headers "${_inc}/*.h")
+            list(APPEND _includes ${_inc_headers})
+        endforeach()
+        if(NOT P_ENGINE STREQUAL "${MQUICKJS_DIR}/mquickjs.c")
+            list(APPEND _includes "${MQUICKJS_DIR}/mquickjs.c")
+        endif()
+        foreach(_def IN LISTS P_DEFINES)
+            list(APPEND _mqjs_cl_flags "-D${_def}")
         endforeach()
         set(_mqjs_objdir "${CMAKE_BINARY_DIR}/deps/mquickjs/${target}")
         file(MAKE_DIRECTORY "${_mqjs_objdir}")
-        _mqjs_clang_objects(_objs "${_headers}" ${_engine} ${P_SOURCES})
+        _mqjs_clang_objects(_objs "${_includes}" ${_engine} ${P_SOURCES})
         set(_mqjs_cl_flags ${_saved_flags})
         add_library(${target} STATIC ${_objs})
         set_target_properties(${target} PROPERTIES LINKER_LANGUAGE C)
     else()
         add_library(${target} STATIC ${_engine} ${P_SOURCES} ${_headers})
-        target_compile_definitions(${target} PRIVATE _GNU_SOURCE)
+        target_compile_definitions(${target} PRIVATE _GNU_SOURCE ${P_DEFINES})
         target_compile_options(${target} PRIVATE -fno-math-errno -fno-trapping-math)
         # The generated tables before the vendored tree: mquickjs.c includes "mquickjs_atom.h" by a quoted name.
         target_include_directories(${target} PRIVATE "${_dir}" ${P_INCLUDES})

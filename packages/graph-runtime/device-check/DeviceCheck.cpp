@@ -574,24 +574,24 @@ void runPlan(const PlanCase& c, const rp_package* const* packages, std::size_t p
     // Each package the plan set memory up for, as one of its nodes reads its context.
     for (const graph::LoadedPackage& pk : plan->packages) {
         if (r.packCount == PlanResult::kPackReports) break;
-        PlanResult::Pack& out = r.packs[r.packCount++];
+        PlanResult::Pack& pack = r.packs[r.packCount++];
         const std::string_view name = pk.name();
-        const std::size_t      n = name.size() < sizeof out.name - 1 ? name.size() : sizeof out.name - 1;
-        std::memcpy(out.name, name.data(), n);
-        out.name[n] = '\0';
-        out.memoryBytes = pk.bytes;
+        const std::size_t      n = name.size() < sizeof pack.name - 1 ? name.size() : sizeof pack.name - 1;
+        std::memcpy(pack.name, name.data(), n);
+        pack.name[n] = '\0';
+        pack.memoryBytes = pk.bytes;
         for (const graph::LoadedNode& node : plan->nodes) {
             bool ours = false;
             for (std::uint32_t t = 0; t < pk.package->node_type_count && !ours; ++t)
                 ours = pk.package->node_types[t] == node.type;
             rp_script_heap_use use{};
             if (!ours || !heapOf(node.node, &use)) continue;
-            out.contextBytes = use.bytes;
-            out.fixedBytes = use.fixed;
-            out.inUseBytes = use.fixed + use.heap;
+            pack.contextBytes = use.bytes;
+            pack.fixedBytes = use.fixed;
+            pack.inUseBytes = use.fixed + use.heap;
             break;
         }
-        if (c.contextBytes && out.contextBytes != c.contextBytes)
+        if (c.contextBytes && pack.contextBytes != c.contextBytes)
             return stop(PlanStep::Heap, "-",
                         "a script pack's context is not the size the case says its image declares");
     }

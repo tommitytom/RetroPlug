@@ -244,8 +244,14 @@ inline constexpr std::size_t   kDesktopLeastContextBytes = std::size_t{1} << 20;
 // of 4088 crashes (ScriptPack.test.cpp holds the figure); at 32 bits, on i386 (the box's word width), 2552 and 2544.
 // On ARM's EABI a uint64_t aligns to 8 in a struct, where i386 aligns it to 4, and MicroQuickJS's JSContext holds one,
 // so the M33's floor may be a few bytes higher than the 32-bit figure here: the device check settles it on the box.
+// On Windows the engine is compiled by clang-cl to the MSVC ABI, whose layout of a bitfield gives each of JSContext's
+// two `BOOL x : 8` fields an int of its own, so the struct is 256 bytes where SysV and Darwin make it 248, and the
+// floor moves with it: the engine built with -mms-bitfields, that layout, crashes at 4096 bytes and sets itself up at
+// 4104. The struct is the engine's own (no header declares it), so its size cannot be read here.
 inline constexpr std::uint32_t kBoxLeastContextBytes = 2560;
-#if INTPTR_MAX >= INT64_MAX
+#if INTPTR_MAX >= INT64_MAX && defined(_WIN32)
+inline constexpr std::uint32_t kLeastContextBytes = 4104;
+#elif INTPTR_MAX >= INT64_MAX
 inline constexpr std::uint32_t kLeastContextBytes = 4096;
 #else
 inline constexpr std::uint32_t kLeastContextBytes = kBoxLeastContextBytes;
