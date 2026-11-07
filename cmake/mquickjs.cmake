@@ -150,6 +150,8 @@ endif()
 # sites, where a backtracking match polls the deadline), and each name rp_mqjs_engine.c renames as an object-like macro
 # (a builtin the standard library's table names, whose definition alone mquickjs.c mentions): a call of one inside the
 # engine would reach upstream's body, not RetroPlug's, and nothing would fail.
+# JS_NewTailCall's six mentions are the builtins that hand on a call (call, apply, bound, which poll) and the
+# accessors' two: a seventh is a producer whose chain nothing polls.
 # A count matches a name and the character after it (no part of a longer name), the text's semicolons, a list's
 # separator, made commas first.
 string(REPLACE ";" "," _mqjs_engine_words "${_mqjs_engine_text}")
@@ -158,7 +160,8 @@ foreach(_mqjs_count IN ITEMS "interrupt_counter|4|its field, the poll's reset an
                              "js_object_hasOwnProperty|1|its definition" "js_string_repeat|1|its definition"
                              "js_string_indexOf|1|its definition" "js_string_match|1|its definition"
                              "js_function_call|1|its definition" "js_function_apply|1|its definition"
-                             "js_function_bound|1|its definition")
+                             "js_function_bound|1|its definition"
+                             "JS_NewTailCall|6|its definition, two accessors' calls and call's, apply's and bound's")
     string(REPLACE "|" ";" _mqjs_count "${_mqjs_count}")
     list(GET _mqjs_count 0 _name)
     list(GET _mqjs_count 1 _expected)
