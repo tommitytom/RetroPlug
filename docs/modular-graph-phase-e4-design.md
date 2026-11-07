@@ -194,13 +194,13 @@ call's result (a result's `then`, an instance's `process` and hooks), or of what
 array-like's `length`, an object's `frame` and `flags`), is the node's like any other, and an entry that
 ran past its deadline faults with the deadline's words whatever it returned, since a builtin or a getter may drop the
 engine's interrupt on the way out (the host checks at the end of every outermost entry); so does a throw whose words,
-which the host makes by calling back into the pack (a thrown object's `toString`), run past the deadline. The host's interfaces are
-`rp.script.fault/1` (reason; kind: threw, deadline, heap, refused), `rp.script.heap/1`, `rp.host.clock/1` and
-`rp.host.script-log/1` (where `console.log` goes). A pack whose heap runs out (the engine's report, in an entry that
+which the host makes by calling back into the pack (a thrown object's `toString`), run past the deadline. The host's
+interfaces are `rp.script.fault/1` (reason; kind: threw, deadline, heap, refused), `rp.script.heap/1`, `rp.host.clock/1`
+and `rp.host.script-log/1` (where `console.log` goes). A pack whose heap runs out (the engine's report, in an entry that
 then ends in an exception, past its deadline or not: the heap is read first) has a dead context, read without
 allocating, and all of its nodes fault with the same words; on the desktop the pack is set up again once its last node
-is gone (on the host's one control thread, which creates and destroys its nodes: `graph/PackageMemory.hpp`). What a
-node throws does not decide it: `throw null`, or an error saying "out of memory", faults that node alone, as does the
+is gone (on the host's one control thread, which creates and destroys its nodes: `graph/PackageMemory.hpp`). What a node
+throws does not decide it: `throw null`, or an error saying "out of memory", faults that node alone, as does the
 engine's out-of-memory error for an array or a buffer past its size limits, with room left.
 
 - **The deadline** is enforced by the engine's interrupt handler against the host's clock: **10 ms a call plus 250 us
@@ -526,7 +526,10 @@ RAM, the images taking 358704 and 338824 bytes of SRAM in all (312484 and 292636
   SysEx (2,335 messages, every one passed); a pass says the box's pack holds its worst blocks with 4 KB to spare at the
   box's width. On an i386 model of that width the run needs 19,264 bytes (the full queues; the review's 4 KB SysEx
   after 63 short ones 19,160), and before a block's payloads died with it, 23,232 for the review's run and more than
-  128 KB for the staircase. The LED blinks 60 + its step.
+  128 KB for the staircase. The LED blinks 60 + its step. The step also fails (step 8, heap) when the heap in use after
+  the last block differs from the one after the first, so a payload outliving its block shows on the image and not only
+  to a reader of its two figures; a pack the host refused to register fails at the package step, in the host's words
+  (`packageRefusal()`), and not as a missing type.
 - **Build:** `RP_SCRIPT_HEAP_BYTES_devtest` (40960 at the five commits, 45056 since the third node's definition: the
   toolchain's 3/2 check passes the pack at 42840 now), `NO_SCRIPTS` retired, the size table's new owners
   (MicroQuickJS 99,040 bytes of flash, the script host 18,485, the devtest pack 18,147 at the five commits;
@@ -541,8 +544,8 @@ RAM, the images taking 358704 and 338824 bytes of SRAM in all (312484 and 292636
 
 1. **Code size, RAM and frames.** The engine is 98,742 bytes in the box's RAM at -Os (stdlib tables 10,236 + 1,968)
    and 159 KB at -O3 (83 KB against 159 KB like for like: 98.7 KB counts rodata), so the box takes -Os; the host is
-   17,778 bytes plus 204 of bss; a pack's bytecode is 6,988 bytes of flash. The image takes 350.3 KiB of SRAM in the final
-   build (347.5 at the prototype; section 5). No frame passes 1 KiB with no exemption: JS_Parse2 560 at -Os,
+   17,778 bytes plus 204 of bss; a pack's bytecode is 6,988 bytes of flash. The image takes 350.3 KiB of SRAM in the
+   final build (347.5 at the prototype; section 5). No frame passes 1 KiB with no exemption: JS_Parse2 560 at -Os,
    `js_dump_float64` 352, `build_backtrace` 232,
    the host's `materialize` 376 and `setupPackage` 336. The deepest chains, **measured on the device**
    (`rp-device-check`, a node nesting to the cap of 4): a pack's load 2176 of the 4 KB stack, the blocks 2360 (1736

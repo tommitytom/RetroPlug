@@ -1221,4 +1221,10 @@ TEST_CASE("the device check's policy case runs the box's policy through the bloc
         rp::device_check::policyHeap(imageScriptPack(), arena.data(), rp::device_check::kArenaBytes, &none);
         CHECK(none.step == rp::device_check::PolicyStep::Type);
     }
+    SECTION("no package at all (a registration the host refused) stops it at the package, not at a missing type") {
+        rp::device_check::PolicyResult none{};
+        std::vector<std::max_align_t>  arena(rp::device_check::kArenaBytes / sizeof(std::max_align_t) + 1);
+        rp::device_check::policyHeap(nullptr, arena.data(), rp::device_check::kArenaBytes, &none);
+        CHECK(none.step == rp::device_check::PolicyStep::Package);
+    }
 }

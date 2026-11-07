@@ -867,7 +867,8 @@ void policyHeap(const rp_package* package, void* arena, std::size_t arenaBytes, 
         if (what) std::strncpy(r.error.message, what, sizeof r.error.message - 1);
     };
     const rp_node_type* type = nullptr;
-    for (std::uint32_t t = 0; package && t < package->node_type_count && !type; ++t)
+    if (!package) return fail(PolicyStep::Package, "the pack was not registered");
+    for (std::uint32_t t = 0; t < package->node_type_count && !type; ++t)
         if (std::strcmp(package->node_types[t]->id, kPolicyType) == 0) type = package->node_types[t];
     if (!type) return fail(PolicyStep::Type, "the package has no such type");
 
@@ -916,6 +917,8 @@ void policyHeap(const rp_package* package, void* arena, std::size_t arenaBytes, 
         r.inUseBytes = use.fixed + use.heap;
     }
     if (r.passed != r.messages) return finish(PolicyStep::Result, "the node passed on other than every message");
+    if (r.inUseBytes != r.firstInUseBytes)
+        return finish(PolicyStep::Heap, "the heap in use after the last block is not the heap after the first");
     finish(PolicyStep::Ok, nullptr);
 }
 

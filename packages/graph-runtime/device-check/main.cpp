@@ -45,6 +45,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string_view>
 
 #include "DeviceCheck.hpp"
@@ -400,6 +401,7 @@ const char* policyStepName(rp::device_check::PolicyStep step) {
         case rp::device_check::PolicyStep::Ports: return "ports";
         case rp::device_check::PolicyStep::Process: return "process";
         case rp::device_check::PolicyStep::Result: return "result";
+        case rp::device_check::PolicyStep::Heap: return "heap";
     }
     return "?";
 }
@@ -411,7 +413,10 @@ rp_mqjs_pack_source gPolicySource;
 RP_NOINLINE void runPolicy() {
     gPolicySource = rp_script_bliptoaster;
     gPolicySource.heap_bytes = rp::device_check::kPolicyHeapBytes;
-    rp::device_check::policyHeap(rp::mqjs::package(gPolicySource), gArena, sizeof gArena, &gPolicy);
+    const rp_package* pack = rp::mqjs::package(gPolicySource);
+    rp::device_check::policyHeap(pack, gArena, sizeof gArena, &gPolicy);
+    // A registration the host refused (its pack or type cap, a heap too small) says why, in the host's words.
+    if (!pack) std::strncpy(gPolicy.error.message, rp::mqjs::packageRefusal(), sizeof gPolicy.error.message - 1);
 }
 
 RP_NOINLINE void printPolicy() {

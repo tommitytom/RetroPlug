@@ -399,12 +399,13 @@ inline constexpr std::uint32_t kPolicyBlocks = 1 + 63 + 2 + 2;
 enum class PolicyStep : std::uint8_t {
     Ok,
     Type,     // the package has no such type
-    Package,  // its package memory was refused, or does not fit the arena
+    Package,  // there is no package (its registration refused), its package memory was refused, or it does not fit
     Create,   // query_memory or create refused it, or the instance does not fit
     Activate,
     Ports,    // its ports do not fit the arena
     Process,  // a block faulted the node (its fault's words in the error)
     Result,   // a message did not come out
+    Heap,     // the heap after the last block is not the heap after the first: a block's payload outlived it
 };
 
 struct PolicyResult {

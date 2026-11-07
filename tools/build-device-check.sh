@@ -2,9 +2,10 @@
 #
 # Builds rp-device-check, the RP2350 image that runs every portable node type in device mode (rp.core, rp.dsp, rp.n8,
 # rp.device and rp.devtest, the devtest script pack's TypeScript types on MicroQuickJS among them, and the bliptoaster
-# pack's policy over its worst blocks at a heap under the box's) and two plans through the plan loader, a multi-node one and one of script nodes, with a link trap on the heap, on exceptions and on
-# RTTI (packages/graph-runtime/device-check, docs/modular-graph-phase-e1-design.md section 7, the E3 design's section 7
-# and the E4 design's section 8), and prints what it costs in flash and RAM. CI's linux-x64 job runs it after the
+# pack's policy over its worst blocks at a heap under the box's) and two plans through the plan loader, a multi-node
+# one and one of script nodes, with a link trap on the heap, on exceptions and on RTTI (packages/graph-runtime/
+# device-check, docs/modular-graph-phase-e1-design.md section 7, the E3 design's section 7 and the E4 design's
+# section 8), and prints what it costs in flash and RAM. CI's linux-x64 job runs it after the
 # desktop build; nothing is flashed or run here (the rig runs the image by hand, and reads its result lines off the
 # UART).
 #

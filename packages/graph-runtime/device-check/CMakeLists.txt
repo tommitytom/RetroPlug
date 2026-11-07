@@ -83,8 +83,8 @@ foreach(_rp_package IN LISTS RP_DEVICE_CHECK_PACKAGES)
     retroplug_package(${_rp_package})
 endforeach()
 # The bliptoaster script pack, which no case or plan of the check names (it is not on packages.cmake's list, so the
-# image's product does not register it): the policy case (DeviceCheck.hpp's policyHeap) registers its source at a heap of
-# its own, to run the box's policy over the blocks that fill its heap most at the box's width.
+# image's product does not register it): the policy case (DeviceCheck.hpp's policyHeap) registers its source at a
+# heap of its own, to run the box's policy over the blocks that fill its heap most at the box's width.
 retroplug_package(bliptoaster)
 
 if(NOT RP_DEVICE_CHECK_CASES OR NOT EXISTS "${RP_DEVICE_CHECK_CASES}")
