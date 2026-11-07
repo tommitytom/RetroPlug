@@ -190,7 +190,7 @@ export const scriptLoopNode = defineNode({
           return;
         }
         if (linked < count) {
-          const apply = Function.prototype.apply;
+          const apply: Function = Function.prototype.apply;
           if (linked < 0) {
             chain = loop === "apply" ? [visit, [undefined, []]] : loop === "bound" ? [visit] : [];
             linked = 0;
@@ -241,12 +241,12 @@ export const scriptLoopNode = defineNode({
             for (let r = 0; rounds === 0 || r < rounds; r++) numbers.forEach(heavy);
             return;
           case "apply": {
-            const apply = Function.prototype.apply;
+            const apply: Function = Function.prototype.apply;
             for (let r = 0; rounds === 0 || r < rounds; r++) apply.apply(apply, chain);
             return;
           }
           case "call": {
-            const call = Function.prototype.call;
+            const call: Function = Function.prototype.call;
             for (let r = 0; rounds === 0 || r < rounds; r++) call.apply(call, chain);
             return;
           }
