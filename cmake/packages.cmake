@@ -761,17 +761,13 @@ function(retroplug_check_package_boundaries)
                         list(APPEND _unjudged "${_target}=${_item}")
                         continue()
                     endif()
-                    # A relative flag is not absolutised as an include directory is: the compiler resolves it against
-                    # its working directory, which is the target's own. Reading it from the target's SOURCE_DIR is the
-                    # attribution this check can make, and a relative spelling that climbs into another package from
-                    # there is refused as its absolute spelling would be.
+                    # A relative flag names no directory this check can attribute: the compiler resolves it against
+                    # its working directory, which the build generator decides (Ninja compiles from the build root,
+                    # Makefiles from the target's binary dir) and never from the target's SOURCE_DIR. Reading it from
+                    # SOURCE_DIR would attribute a path the compiler does not use, so it is refused as unjudged.
                     if(NOT IS_ABSOLUTE "${_dir}")
-                        get_target_property(_source_dir ${_target} SOURCE_DIR)
-                        if(NOT _source_dir OR _source_dir MATCHES "-NOTFOUND$")
-                            list(APPEND _unjudged "${_target}=${_item}")
-                            continue()
-                        endif()
-                        set(_dir "${_source_dir}/${_dir}")
+                        list(APPEND _unjudged "${_target}=${_item}")
+                        continue()
                     endif()
                     get_filename_component(_dir "${_dir}" ABSOLUTE)
                     list(APPEND _includes "${_target}=${_dir}")

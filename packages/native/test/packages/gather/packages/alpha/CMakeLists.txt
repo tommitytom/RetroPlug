@@ -37,8 +37,8 @@ elseif(RP_GATHER_CASE STREQUAL "copt-genex")
     target_compile_options(retroplug-alpha INTERFACE
         $<$<COMPILE_LANGUAGE:CXX>:-I${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src>)
 elseif(RP_GATHER_CASE STREQUAL "copt-relative")
-    # A relative -I is not absolutised as an include directory is: the check reads it from this target's SOURCE_DIR,
-    # which is this directory, and it climbs into beta from there.
+    # A relative -I names no directory the check can attribute: the compiler resolves it against the build generator's
+    # working directory (Ninja's is the build root, Makefiles' the target's binary dir), never this target's SOURCE_DIR.
     target_compile_options(retroplug-alpha INTERFACE -I../beta/native/src)
 elseif(RP_GATHER_CASE STREQUAL "copt-iquote")
     target_compile_options(retroplug-alpha INTERFACE -iquote${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src)

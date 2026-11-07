@@ -18,7 +18,8 @@
 #   alias-declared  the same alias with beta declared: holds (an alias is judged as the target behind it)
 #   copt         alpha's compile options add -Ibeta's tree: refused like an include directory would be
 #   copt-genex   the same behind $<$<COMPILE_LANGUAGE:CXX>:...>: still the literal, so refused
-#   copt-relative  the same spelled relative to alpha's own directory: attributed there and refused
+#   copt-relative  the same spelled relative to alpha's own directory: the compiler resolves a relative flag from the
+#                build generator's working directory, which this check cannot know, so it is refused as unjudged
 #   copt-iquote  -iquote, and copt-idirafter -idirafter, copt-isystem -isystem, copt-external /external:I and copt-shell
 #                SHELL:-I: every spelling an include flag takes, each judged like -I
 #   link-path    alpha links a library by its path inside beta's tree: refused like a target of beta's
