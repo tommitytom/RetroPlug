@@ -10,7 +10,7 @@ import type { ControlPlaneBackend } from "../backend";
 import type { SystemsStore } from "../systemsStore";
 import type { RoleInstance } from "../systemRoles";
 import { resolveSavPath } from "../savPaths";
-import { resolveSongCatalog, resolveTracker } from "./trackerIntegration"; // the leaf, not ./index - this module IS re-exported there
+import { resolveSongCatalog, resolveTracker } from "../trackerRegistry"; // the shell registry: the list is generated
 import type { WorkingSongImage } from "./songCatalog";
 
 /** The per-system fields a live-sav edit needs - SystemView and SystemEntry both satisfy it. */

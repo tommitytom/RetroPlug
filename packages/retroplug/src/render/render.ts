@@ -24,7 +24,7 @@ import { identifySmsggdjVersion } from "../smsggdj/romDetect";
 import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
 import { isRisaRomHeader, runtime as risaRuntime } from "../risa";
 import { lsdjSongCatalog, risaSongCatalog, smsggdjSongCatalog } from "../tracker";
-import { smsggdjIntegration } from "../tracker/trackerIntegration"; // the leaf: the barrel exports catalogs, not integrations
+import { smsggdjIntegration } from "../trackerRegistry"; // the shell registry: an integration is its package's app contribution
 import type { ChannelExportMode } from "../settingsEnums";
 import type { RoleInstance } from "../systemRoles";
 import {

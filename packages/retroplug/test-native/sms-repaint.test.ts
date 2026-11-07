@@ -17,7 +17,7 @@ import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildSav } from "../src/smsggdj/codec/sav";
-import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
+import { smsggdjIntegration } from "../src/trackerRegistry";
 import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF, P_SONG } from "./smsSyncSong";
 import { directGraph } from "../src/graph/directGraph";

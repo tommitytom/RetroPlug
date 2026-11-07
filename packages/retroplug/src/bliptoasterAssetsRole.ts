@@ -16,7 +16,7 @@
 //
 // Both ride the one patcher (applyConfigToRom), which is also what the menu bakes with — so "what the cart
 // runs" and "what Patch ROM in Place writes" cannot drift apart.
-import type { RoleRegistry, ConstructCaps } from "./systemRoles";
+import type { RoleRegistry, RoleType, ConstructCaps } from "./systemRoles";
 import type { ConstructSpec } from "./backend";
 import { z } from "./configSchema";
 import {
@@ -26,8 +26,6 @@ import {
   type BlipToasterSettingsPatch,
 } from "./bliptoaster/rom";
 import { applyRitOverride, ritOverrideSchema, type RitAssetOverride } from "./ritAssetsRole";
-
-export const BLIPTOASTER_ASSETS_ROLE = "bliptoaster-assets";
 
 /** One asset override for `slot`. KITS and FONTS are binary, so they LINK their file on disk by `path` (a
  *  pre-built 8 KB `.rkit` DMC bank / an 8 KB `.chr` CHR bank, read at construct). A kit override with
@@ -124,12 +122,16 @@ function applyAssetOverrides(spec: ConstructSpec, caps: ConstructCaps, config: R
   return patched !== base ? { ...spec, romBytes: patched } : spec;
 }
 
-/** Register the `bliptoaster-assets` feature role (no DSP behaviour; a construct-time asset patcher). */
+/** The `bliptoaster-assets` feature role (no DSP behaviour; a construct-time asset patcher): the app's
+ *  contribution. */
+export const BLIPTOASTER_ASSETS_ROLE: RoleType = {
+  kind: "bliptoaster-assets",
+  category: "feature",
+  schema: blipToasterAssetsSchema,
+  onConstruct: applyAssetOverrides,
+};
+
+/** Register the role into `registry`, for a registry a test or a host builds by hand. */
 export function registerBlipToasterAssetsRole(registry: RoleRegistry): void {
-  registry.registerRole({
-    kind: BLIPTOASTER_ASSETS_ROLE,
-    category: "feature",
-    schema: blipToasterAssetsSchema,
-    onConstruct: applyAssetOverrides,
-  });
+  registry.registerRole(BLIPTOASTER_ASSETS_ROLE);
 }

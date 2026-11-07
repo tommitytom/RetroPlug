@@ -5,7 +5,7 @@
 // base ROM's slots (baseSlots) + the asset types it exposes. The effective view (base overlaid with overrides)
 // is effectiveAssets. The per-console FILE actions (Export/Replace — which own file formats + the file dialog)
 // stay in the UI menu layer, exactly like SongCatalog's Export/Replace/Add. Concrete catalogs:
-// ./lsdjAssetCatalog, ./risaAssetCatalog; resolution rides ./trackerIntegration (resolveAssetCatalog).
+// ./lsdjAssetCatalog, ./risaAssetCatalog; resolution rides ../trackerRegistry (resolveAssetCatalog).
 import type { ConstructCaps } from "../systemRoles";
 
 /** A base-ROM asset slot: its index + a display name (name-fallbacks already applied). */

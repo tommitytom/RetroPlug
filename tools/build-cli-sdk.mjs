@@ -16,6 +16,7 @@ import { buildSync } from "esbuild";
 import { mkdirSync, copyFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { generate } from "../packages/retroplug/scripts/lib/packages.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
@@ -23,6 +24,10 @@ const PKG = resolve(REPO, "packages/retroplug");
 const outDir = resolve(process.argv[2] ?? resolve(REPO, "build/cli-sdk"));
 
 mkdirSync(outDir, { recursive: true });
+
+// The generated package registries first (docs/modular-graph-phase-f1-design.md section 3): cli/sdk.ts reaches them
+// through src, so a standalone run of this builder in a fresh checkout has none to bundle.
+generate();
 
 // The authoring layer barrel (cli/sdk.ts) as a reusable ES module. zod and every internal src/ dep are
 // inlined; the only runtime externals are the CLI host globals (resolved by the retroplug-cli binary).

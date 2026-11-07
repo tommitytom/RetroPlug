@@ -27,7 +27,7 @@ import { buildSav, isSmsggdjSav, listSongs, readSongBlock, SMDJ4_BLOCK_LEN } fro
 import { SMSGGDJ_SYMBOLS } from "../src/smsggdj/runtime/symbols.generated";
 import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
 import { identifySmsggdjVersion } from "../src/smsggdj/romDetect";
-import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
+import { smsggdjIntegration } from "../src/trackerRegistry";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
 import { directGraph } from "../src/graph/directGraph";
 

@@ -1,0 +1,12 @@
+{
+  "name": "@retroplug/retroplug",
+  "private": true,
+  "retroplug": {
+    "app": "src/app.ts",
+    "protocol": {
+      "module": "src/script/nodes.ts",
+      "nodes": [{ "type": "rp.fixture.shell", "label": 17 }],
+      "roles": {}
+    }
+  }
+}

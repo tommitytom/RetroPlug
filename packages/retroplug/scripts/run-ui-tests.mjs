@@ -16,11 +16,16 @@ import { tmpdir } from "node:os";
 import { build } from "esbuild";
 import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush, parseTap } from "./lib/testPool.mjs";
 import { checkSkipBaseline } from "./lib/skipBaseline.mjs";
+import { generate } from "./lib/packages.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
 const TEST_DIR = join(PKG, "test-ui");
 const OUT_DIR = join(PKG, ".ui-build");
+
+// The generated package registries first (src/generated, docs/modular-graph-phase-f1-design.md section 3): a test
+// bundles src, which imports them, so they must exist before the first esbuild run. A fresh checkout has none.
+generate();
 
 const HOST =
   process.env.RETROPLUG_UI_TEST ||

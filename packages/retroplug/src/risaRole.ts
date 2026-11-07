@@ -6,8 +6,12 @@
 // M2: just the marker. M3 will grow this (or a sibling `risa-assets` role) an `onConstruct` hook to
 // apply non-destructive kit/theme/font overrides via the spec.romBytes channel, mirroring lsdj-assets.
 import { z } from "zod";
-import type { RoleRegistry } from "./systemRoles";
+import type { RoleRegistry, RoleType } from "./systemRoles";
 
+/** The `risa` marker role: the app's contribution. */
+export const RISA_ROLE: RoleType = { kind: "risa", category: "feature", schema: z.object({}) };
+
+/** Register the role into `registry`, for a registry a test or a host builds by hand. */
 export function registerRisaRole(registry: RoleRegistry): void {
-  registry.registerRole({ kind: "risa", category: "feature", schema: z.object({}) });
+  registry.registerRole(RISA_ROLE);
 }

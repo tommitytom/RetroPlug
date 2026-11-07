@@ -69,6 +69,11 @@
     "renoise:probe": "node scripts/cmake-build.js retroplug-vst3 && powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-renoise-render.ps1 -Mode probe",
     "renoise:render": "node scripts/cmake-build.js retroplug-vst3 && powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-renoise-render.ps1 -Mode render"
   },
+  "retroplug": {
+    "products": {
+      "desktop": ["core", "dsp", "graph-runtime", "n8", "native", "bliptoaster"]
+    }
+  },
   "dependencies": {
     "@msgpack/msgpack": "^3.0.0",
     "zod": "^4.4.3"

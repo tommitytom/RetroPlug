@@ -385,12 +385,43 @@ add_subdirectory(packages/graph-runtime/device-check/cases "${CMAKE_BINARY_DIR}/
 add_subdirectory(packages/graph-runtime/export-plan "${CMAKE_BINARY_DIR}/export-plan")
 
 # The packages a desktop product carries (retroplug_product), every one today; a product that differs lists its own.
+# The LIST is the root package.json's retroplug.products.desktop, read here and by the TS generator
+# (packages/retroplug/scripts/lib/packages.mjs), so the two languages cannot register different products, and a package
+# follows the ones it depends on (the generator refuses a list that does not).
 # The ORDER is load-bearing: it is the order the products register in, which the registration golden holds
 # (packages/native/test/engine-graph/golden/product-registrations.json). The carved packages come first, in the order
 # they were carved: rp.core, rp.dsp, rp.dsp.resample, rp.host (graph-runtime, after dsp for that reason alone), then
 # rp.n8 (the n8 pack's rp.n8.nes, after rp.host.audio-out and before rp.sameboy.gb); then the types still in
 # packages/native; then the device script packs, rp.bliptoaster last, so a pack's types move none of the others.
-set(RP_DESKTOP_PACKAGES core dsp graph-runtime n8 native bliptoaster)
+set(_rp_root_manifest "${CMAKE_SOURCE_DIR}/package.json")
+# A configure input, so editing the list re-runs the configure retroplug_product() needs before it reads it. The whole
+# file is the input (CMake cannot depend on one JSON member), so an edit to its scripts reconfigures too; that is the
+# price of the list living where both languages read it, and a reconfigure of this tree is cheap.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_rp_root_manifest}")
+file(READ "${_rp_root_manifest}" _rp_root_json)
+string(JSON _rp_products_kind ERROR_VARIABLE _rp_products_error TYPE "${_rp_root_json}" retroplug products desktop)
+if(_rp_products_error)
+    message(FATAL_ERROR "${_rp_root_manifest} has no retroplug.products.desktop list (${_rp_products_error})")
+endif()
+if(NOT _rp_products_kind STREQUAL "ARRAY")
+    message(FATAL_ERROR "retroplug.products.desktop in ${_rp_root_manifest} is a ${_rp_products_kind}, not a list")
+endif()
+string(JSON _rp_products_count LENGTH "${_rp_root_json}" retroplug products desktop)
+if(_rp_products_count EQUAL 0)
+    message(FATAL_ERROR "retroplug.products.desktop in ${_rp_root_manifest} lists no package")
+endif()
+set(RP_DESKTOP_PACKAGES "")
+math(EXPR _rp_products_last "${_rp_products_count} - 1")
+foreach(_rp_i RANGE ${_rp_products_last})
+    string(JSON _rp_package GET "${_rp_root_json}" retroplug products desktop ${_rp_i})
+    # Read as JSON, so a number or an object would arrive as its JSON text and name no package directory.
+    string(JSON _rp_package_kind ERROR_VARIABLE _rp_package_error TYPE "${_rp_root_json}" retroplug products desktop ${_rp_i})
+    if(_rp_package_error OR NOT _rp_package_kind STREQUAL "STRING")
+        message(FATAL_ERROR "retroplug.products.desktop's entry ${_rp_i} in ${_rp_root_manifest} is a "
+                            "${_rp_package_kind}, not a package name")
+    endif()
+    list(APPEND RP_DESKTOP_PACKAGES "${_rp_package}")
+endforeach()
 
 # --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
 # + the DPF plugin + the test host / cli / ui-test.

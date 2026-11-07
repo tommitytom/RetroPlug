@@ -35,6 +35,9 @@ mkdirSync(dirname(OUT), { recursive: true });
 const bundle = resolve(REPO, `build/native/author-${MACHINE}-rplg.js`);
 mkdirSync(dirname(bundle), { recursive: true });
 
+// The generated package registries first (docs/modular-graph-phase-f1-design.md section 3): the author script
+// reaches them through src/appHost, so a standalone run in a tree nothing has built yet has none to bundle.
+execFileSync(process.execPath, [resolve(PKG, "scripts/lib/packages.mjs")], { stdio: "inherit" });
 buildSync({
   entryPoints: [resolve(PKG, "test-native/author-sms-rplg.ts")],
   bundle: true,

@@ -29,5 +29,8 @@
   // (scripts/run-tests.mjs sweeps packages/*/ts/test) on its harness, devtest's and bliptoaster's script packs, and the script
   // packs the device-mode test builds (packages/native/test/device-mode/script-packs).
   "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../n8/ts", "../devtest/ts",
-              "../bliptoaster/ts", "../native/test/device-mode/script-packs"]
+              "../bliptoaster/ts", "../native/test/device-mode/script-packs"],
+  // The package generator's fixture tree and its expected modules: data it reads and writes, laid out as a workspace
+  // root and a shell package are, not modules of this program (their imports name a fixture tree's files, not ours).
+  "exclude": ["test/packages/fixtures"]
 }

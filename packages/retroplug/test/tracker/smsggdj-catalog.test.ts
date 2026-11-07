@@ -1,11 +1,11 @@
 // The smsggdj SongCatalog + its TrackerIntegration: resolution, the Load-by-naming-a-slot mechanism,
 // and the version gate that stops a build which cannot honour it from showing a dead menu.
 import { test, expect } from "../../testing/harness";
-import { resolveSongCatalog, resolveTracker } from "../../src/tracker";
+import { resolveSongCatalog, resolveTracker } from "../../src/trackerRegistry";
 import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
 import { lsdjSongCatalog } from "../../src/tracker/lsdjSongCatalog";
 import { risaSongCatalog } from "../../src/tracker/risaSongCatalog";
-import { smsggdjIntegration } from "../../src/tracker/trackerIntegration";
+import { smsggdjIntegration } from "../../src/trackerRegistry";
 import { buildSav, curSlot, SMDJ4_BLOCK_LEN, songLengthRows, sanitizeEcho, isGrooveEmpty, GLIDE_GROOVE_SEL } from "../../src/smsggdj/codec/sav";
 import { resolveSmsggdjLayout, supportedSmsggdjVersions, commonBootedOffset } from "../../src/smsggdj/runtime/layout";
 import { identifySmsggdjVersion } from "../../src/smsggdj/romDetect";

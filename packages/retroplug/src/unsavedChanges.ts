@@ -11,7 +11,7 @@ import type { ControlPlaneBackend } from "./backend";
 import type { ProjectStore } from "./projectStore";
 import { dirtySramTargets, sramDirtyCount } from "./sramAutoSave";
 import { resolveSavPath } from "./savPaths";
-import { resolveSongCatalog } from "./tracker/trackerIntegration";
+import { resolveSongCatalog } from "./trackerRegistry";
 import { savEditWouldDiscard } from "./tracker/liveSav";
 
 /** One unsaved thing: the project file, or one system's battery. `path` is "" for a project that has

@@ -24,7 +24,9 @@
 # and register it (_retroplug_script_targets). `device: false`, a desktop script pack, is reserved and refused, as
 # nothing builds one yet. `heapBytes` is a JSON number, a whole number of bytes: the whole of the pack's MicroQuickJS
 # context as the box runs it, at 32 bits; a 64-bit device build gives 3/2 of it (script/MqjsHost.hpp's kDeviceHalves)
-# and a desktop host more (desktopContextBytes). A package has `native`, `script` or both.
+# and a desktop host more (desktopContextBytes). A package has any of `native`, `script`, `app` and `protocol`: the
+# last two are its TypeScript contributions to the app (docs/modular-graph-phase-f1-design.md section 3), a module the
+# generator reads, and a package with no native part registers nothing and adds no target here.
 #
 # A product is an executable or a module that constructs an Engine. retroplug_product() generates its registration
 # source, which defines rp_register_packages() (graph/Packages.hpp) as the entries of the packages it lists, in the
@@ -129,11 +131,17 @@ function(_retroplug_read_manifest name _manifest)
     string(JSON _kind ERROR_VARIABLE _err TYPE "${_json}" retroplug native)
     if(_err)
         get_property(_script GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_ENTRY)
-        if(NOT _script)
-            message(FATAL_ERROR "retroplug_package(${name}): ${_manifest} has neither a retroplug.native nor a "
-                                "retroplug.script field (${_err})")
+        # A package may contribute to the app and carry no native part at all: a TS-only package (every cart's in F1)
+        # has an `app` member, a `protocol` member or both, and a product carries its contribution through the
+        # generated TS registries (docs/modular-graph-phase-f1-design.md section 3). It registers nothing here and
+        # adds no target; what it names is the TS generator's to read, not this file's.
+        string(JSON _appKind ERROR_VARIABLE _noApp TYPE "${_json}" retroplug app)
+        string(JSON _protocolKind ERROR_VARIABLE _noProtocol TYPE "${_json}" retroplug protocol)
+        if(NOT _script AND _noApp AND _noProtocol)
+            message(FATAL_ERROR "retroplug_package(${name}): ${_manifest} has none of a retroplug.native, "
+                                "retroplug.script, retroplug.app or retroplug.protocol field (${_err})")
         endif()
-        # A script pack alone: no targets, no entries.
+        # No native entry: no targets, no entries, whatever else the manifest contributes.
         set_property(GLOBAL APPEND PROPERTY RP_PACKAGES ${name})
         foreach(_p TARGETS ENTRIES DEVICE_ENTRIES DEVICE_TARGETS PROVIDERS)
             set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_${_p} "")
@@ -562,7 +570,8 @@ endfunction()
 #
 # A listed package's script pack (its manifest's `script` member, _retroplug_script_targets) registers beside its
 # native entries, every script pack being a device's: its registration function among the entries, its target among
-# the targets.
+# the targets. A package with no native part (its contributions are its `app` and `protocol` members, TypeScript's) has
+# no entries and no targets, so listing it here contributes nothing to the registration and nothing to link.
 function(retroplug_product product)
     cmake_parse_arguments(P "DEVICE" "" "PACKAGES;TARGETS" ${ARGN})
     if(P_UNPARSED_ARGUMENTS)

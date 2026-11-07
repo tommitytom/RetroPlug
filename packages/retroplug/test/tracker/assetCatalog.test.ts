@@ -2,14 +2,12 @@
 // effective-asset merge (overlay / erase / add / name precedence / sort), and each console's baseSlots parse
 // over a fixture ROM. The deep ROM parse (kits/palettes/fonts) is covered by test/{lsdj,risa}/rom.test.ts.
 import { test, expect } from "../../testing/harness";
-import {
-  resolveTracker,
-  resolveAssetCatalog,
-  effectiveAssets,
+import { effectiveAssets,
   lsdjAssetCatalog,
   risaAssetCatalog,
   type AssetSlot,
 } from "../../src/tracker";
+import { resolveTracker, resolveAssetCatalog } from "../../src/trackerRegistry";
 import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
 import { risaRomFull, gbRomBattery } from "../systems/fixtures";
 

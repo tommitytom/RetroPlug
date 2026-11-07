@@ -73,7 +73,6 @@ import {
   addSong as addSmdjSong,
 } from "../../../src/smsggdj/codec/sav";
 import {
-  resolveTracker,
   mutateLiveSav,
   effectiveAssets,
   readAssetOverrides,
@@ -94,6 +93,7 @@ import {
   savEditWouldDiscard,
   songLoadWouldDiscard,
 } from "../../../src/tracker";
+import { resolveTracker } from "../../../src/trackerRegistry";
 import { saveWorkingSong } from "../../../src/tracker/liveSav";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../host/openPath";

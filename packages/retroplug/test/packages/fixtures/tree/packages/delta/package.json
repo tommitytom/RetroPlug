@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/delta",
+  "private": true,
+  "retroplug": { "native": { "entry": "rp_delta_package" } }
+}

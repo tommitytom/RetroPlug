@@ -6,7 +6,7 @@
   "description": "TS-first reimplementation of RetroPlug's orchestration layer (project/systems/paths/recent/config/SRAM/kits), developed test-driven against a mocked native backend. No C++ in the loop — see README.",
   "scripts": {
     "test": "node scripts/run-tests.mjs",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.ui.json"
+    "typecheck": "node scripts/lib/packages.mjs && tsc --noEmit && tsc --noEmit -p tsconfig.ui.json"
   },
   "dependencies": {
     "@retroplug/n8": "workspace:*",
@@ -14,5 +14,31 @@
   },
   "devDependencies": {
     "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "src/app.ts",
+    "protocol": {
+      "module": "src/script/shellNodes.ts",
+      "nodes": [
+        { "type": "rp.midi.route", "label": 16 },
+        { "type": "rp.mgb.midi", "label": 17, "midiIn": "midi", "writes": ["serialIn"] },
+        { "type": "rp.n8.midi-to-fifo", "label": 18, "midiIn": "midiIn", "writes": ["midi"] },
+        { "type": "rp.risa.sync", "label": 19, "midiIn": null, "writes": ["bytes"] },
+        { "type": "rp.sms.sync", "label": 20, "midiIn": null, "writes": ["bytes"] },
+        {
+          "type": "rp.lsdj.sync", "label": 21, "midiIn": "midi", "writes": ["serialIn", "buttons"], "launches": true,
+          "out": "rp.lsdj.serial-out"
+        },
+        { "type": "rp.controller.session", "label": 22 },
+        { "type": "rp.lsdj.serial-out", "label": 23, "midiIn": null, "writes": [], "serialOut": true, "midiOut": true }
+      ],
+      "roles": {
+        "mgb": "rp.mgb.midi",
+        "nes-n8-midi": "rp.n8.midi-to-fifo",
+        "risa-sync": "rp.risa.sync",
+        "sms-sync": "rp.sms.sync",
+        "lsdj-sync": "rp.lsdj.sync"
+      }
+    }
   }
 }

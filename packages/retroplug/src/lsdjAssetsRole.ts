@@ -6,14 +6,12 @@
 // asset FILE on disk by path (a `.kit` bank / `.lsdpal` / `.png`) — NEVER embedded bytes — mirroring how the
 // project references its ROM/sav by path; the file is read at construct. Applying reuses the pure-TS patcher
 // (src/lsdj/rom).
-import type { RoleRegistry, ConstructCaps } from "./systemRoles";
+import type { RoleRegistry, RoleType, ConstructCaps } from "./systemRoles";
 import type { ConstructSpec } from "./backend";
 import type { RomColorSet } from "./lsdj/rom";
 import { z } from "./configSchema";
 import { LsdjRom, encodeLsdpal } from "./lsdj/rom";
 import { lsdprjKitBank } from "./lsdjSav";
-
-export const LSDJ_ASSETS_ROLE = "lsdj-assets";
 
 /** One asset override for `slot`. KITS and FONTS are binary, so they LINK to the file on disk by `path`
  *  (read at construct — never embedded bytes). PALETTES are just colours, so they're stored INLINE as
@@ -119,12 +117,15 @@ function applyAssetOverrides(spec: ConstructSpec, caps: ConstructCaps, config: R
   return patched !== base ? { ...spec, romBytes: patched } : spec;
 }
 
-/** Register the `lsdj-assets` feature role (no DSP behaviour; a construct-time asset patcher). */
+/** The `lsdj-assets` feature role (no DSP behaviour; a construct-time asset patcher): the app's contribution. */
+export const LSDJ_ASSETS_ROLE: RoleType = {
+  kind: "lsdj-assets",
+  category: "feature",
+  schema: lsdjAssetsSchema,
+  onConstruct: applyAssetOverrides,
+};
+
+/** Register the role into `registry`, for a registry a test or a host builds by hand. */
 export function registerLsdjAssetsRole(registry: RoleRegistry): void {
-  registry.registerRole({
-    kind: LSDJ_ASSETS_ROLE,
-    category: "feature",
-    schema: lsdjAssetsSchema,
-    onConstruct: applyAssetOverrides,
-  });
+  registry.registerRole(LSDJ_ASSETS_ROLE);
 }

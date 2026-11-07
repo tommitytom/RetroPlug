@@ -13,6 +13,10 @@
 # Goldens compared line for line on every platform: a Windows checkout must not turn them CRLF.
 packages/retroplug/test/graph/golden/*.json text eol=lf
 
+# The package generator's expected modules: its tests hold what it writes to these byte for byte, line for line, and it
+# writes LF.
+packages/retroplug/test/packages/fixtures/expected/* text eol=lf
+
 # The device-mode test's goldens: the blobs, read in binary and compared with LF-joined hex, and the descriptors,
 # compared byte for byte with what the type writes (LF-joined, a newline at the end).
 packages/native/test/device-mode/golden/*.hex text eol=lf

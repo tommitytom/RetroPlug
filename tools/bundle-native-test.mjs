@@ -8,6 +8,7 @@
 import { build } from "esbuild";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { generate } from "../packages/retroplug/scripts/lib/packages.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PKG = join(REPO, "packages/retroplug");
@@ -17,6 +18,10 @@ if (!slug || !out) {
   process.exit(1);
 }
 const RES = join(REPO, "resources"); // dsp-bench uses the EMBEDDED mGB, so this is only a placeholder
+
+// The generated package registries first (docs/modular-graph-phase-f1-design.md section 3): a test-native file reaches
+// them through src, so a run in a fresh checkout has none to bundle.
+generate();
 
 await build({
   entryPoints: [join(PKG, "test-native", slug + ".test.ts")],

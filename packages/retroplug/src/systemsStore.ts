@@ -55,7 +55,7 @@ import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettings
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
 import { protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
-import { resolveSongCatalog, resolveTracker } from "./tracker/trackerIntegration";
+import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
 import type { TrackedSlot, WorkingSongImage } from "./tracker/songCatalog";
 
 // Frames the slot watcher waits for a landed carry's queued writes to appear before it trusts the cart

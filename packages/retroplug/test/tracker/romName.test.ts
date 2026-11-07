@@ -1,7 +1,7 @@
 // A tracker cart's OWN name — its internal ROM title / version marker, distinct from the on-disk filename.
 // LSDj reads the GB cartridge title at 0x134; risa scans the PRG for the ASCII "RISA V<x>.<y>.<z>" marker.
 import { test, expect } from "../../testing/harness";
-import { resolveTracker } from "../../src/tracker";
+import { resolveTracker } from "../../src/trackerRegistry";
 import { lsdjRom } from "../systems/fixtures";
 
 const lsdjTracker = resolveTracker([{ kind: "lsdj-sync", config: {} }])!;

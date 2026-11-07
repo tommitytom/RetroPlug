@@ -26,7 +26,7 @@
 import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
+import { smsggdjIntegration } from "../src/trackerRegistry";
 import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
 import { identifySmsggdjVersion } from "../src/smsggdj/romDetect";
 import { buildSav, SMDJ4_BLOCK_LEN, songLengthRows } from "../src/smsggdj/codec/sav";

@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/gamma",
+  "private": true,
+  "retroplug": { "app": "ts/app.ts" }
+}

@@ -246,3 +246,17 @@ export async function compileDmc(runner: KitJobRunner, spec: RisaKitCompileSpec)
   });
   return { bytes: bank, errors: [...errors, ...dropped] };
 }
+
+/** One kit bank format a cart contributes (its package's app's `kitFormats`): the compiler an id names, so the
+ *  driver dispatches by what the product registered rather than by importing a cart's assembler itself. `id` is the
+ *  format's, not the cart's: risa and BlipToaster share "risa", one DMC bank. */
+export interface KitFormat<S = unknown> {
+  readonly id: string;
+  compile(runner: KitJobRunner, spec: S): Promise<KitCompileResult>;
+}
+
+/** The LSDj kit: a 16 KB bank of 15 rotated 4-bit samples. */
+export const LSDJ_KIT_FORMAT: KitFormat<KitCompileSpec> = { id: "lsdj", compile: compileKit };
+
+/** The risa DMC kit: an 8 KB bank of 16 DPCM samples, which BlipToaster's kits are too. */
+export const RISA_KIT_FORMAT: KitFormat<RisaKitCompileSpec> = { id: "risa", compile: compileDmc };

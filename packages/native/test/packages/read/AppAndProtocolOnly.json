@@ -1,0 +1,12 @@
+{
+  "name": "@retroplug/read-app-and-protocol-only",
+  "private": true,
+  "retroplug": {
+    "app": "app.ts",
+    "protocol": {
+      "module": "nodes.ts",
+      "nodes": [{ "type": "rp.scratch.node", "label": 24 }],
+      "roles": {}
+    }
+  }
+}

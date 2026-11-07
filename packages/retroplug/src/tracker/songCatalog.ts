@@ -4,7 +4,7 @@
 // the lossy decoded-song model for song management): it takes the live SRAM image and returns a NEW image
 // (or null), never mutating the input. The file-dialog actions (Export / Replace / Add) live in the UI
 // menu layer (per-console, since they own file formats + browseThen). Concrete catalogs:
-// ./lsdjSongCatalog, ./risaSongCatalog; resolution: ./index (resolveSongCatalog).
+// ./lsdjSongCatalog, ./risaSongCatalog; resolution: ../trackerRegistry (resolveSongCatalog).
 
 export interface SongInfo {
   index: number;

@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { buildSync } from "esbuild";
+import { generate } from "./lib/packages.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -41,6 +42,9 @@ if (!existsSync(CORPUS_DIR)) {
 }
 
 const outFile = join(mkdtempSync(join(tmpdir(), "rp-gen-")), "detect.js");
+// The generated package registries first (docs/modular-graph-phase-f1-design.md section 3): the detector reaches them
+// through src, so a standalone run in a tree nothing has built yet has none to bundle.
+generate();
 buildSync({
   entryPoints: [ENTRY],
   bundle: true,

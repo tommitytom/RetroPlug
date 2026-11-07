@@ -22,6 +22,7 @@ import { dirname, join, resolve, relative } from "node:path";
 import { build } from "esbuild";
 import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush, parseTap } from "./lib/testPool.mjs";
 import { checkSkipBaseline } from "./lib/skipBaseline.mjs";
+import { generate } from "./lib/packages.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -31,6 +32,10 @@ const OUT_DIR = join(PKG, ".test-build");
 // The node running this runner, for a test that needs a Node child (the script-node bundle's build): handed down so it
 // is this node and not whichever the PATH names. spawnBuffered's children inherit the environment.
 process.env.RP_NODE = process.execPath;
+
+// The generated package registries first (src/generated, docs/modular-graph-phase-f1-design.md section 3): the tests
+// bundle src, which imports them, so they must exist before the first esbuild run. A fresh checkout has none.
+generate();
 
 const TJS =
   process.env.RETROPLUG_TJS ||

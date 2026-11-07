@@ -6,7 +6,7 @@
 // enums where the field reaches a core (SameBoyConfig.hpp: model 0..13, highpass 0..2); linkGroupId is the graph's own,
 // turned into the Game Boy's link wires by buildGraph.ts (linkGroupOf), never a core setting.
 
-import type { RoleRegistry } from "./systemRoles";
+import type { RoleRegistry, RoleType } from "./systemRoles";
 import { z, clampedInt, clampedNumber, boolField, enumField, stringField } from "./configSchema";
 import {
   MODEL_VALUES,
@@ -20,111 +20,116 @@ import {
   N8_LINK_VALUES,
 } from "./settingsEnums";
 
+// SameBoy: model / highpass / link group / fast boot, plus the display knobs below. model, highpass,
+// colorCorrection and dmgPalette are string enums; the system node's settings spell them as labels (knobs::Label), so
+// the store hands them over as they are.
+//
+// The display group is additive and every default reproduces what the core did when these were
+// hardcoded (SameBoySystem.cpp), so an existing project loads pixel-identical and needs no migration.
+// Which one bites is decided by the model, and the split is exact rather than a guess: the core
+// applies colour correction and light temperature only when GB_is_cgb (model >= GB_MODEL_CGB_0) and
+// the DMG palette only when it isn't. `auto` is not ambiguous here - RetroPlug maps it to CGB-C
+// (toSameBoyModel), so it counts as CGB. The menu gates the palette row on that (menuDefs.ts).
+export const SAMEBOY_ROLE: RoleType = {
+  kind: "sameboy",
+  category: "system",
+  schema: z.object({
+    model: enumField(MODEL_VALUES, "cgbC"),
+    highpass: enumField(HIGHPASS_VALUES, "accurate"),
+    linkGroupId: clampedInt(0, 255, 0),
+    fastBoot: boolField(true),
+    // --- display ---
+    colorCorrection: enumField(COLOR_CORRECTION_VALUES, "disabled"),
+    dmgPalette: enumField(DMG_PALETTE_VALUES, "grey"),
+    // Ambient light tint, CGB only. SameBoy's own range: -1 (cool/blue) .. +1 (warm/red), 0 neutral.
+    lightTemperature: clampedNumber(-1, 1, 0),
+  }),
+};
+
+// Mesen: keyed by core ("mesen"), so this ONE role attaches to any Mesen system (NES, GBA, SMS/GG).
+// The knobs are per-platform and the settings menu gates each group on `platform` (menuDefs.ts): the
+// first three are NES-only, enableFm is SMS/GG-only, and GBA has none of its own yet - it carries
+// them all as inert bytes until it does, at which point the schema grows again.
+//
+// The system node reads the fields each platform reads (graph/buildGraph.ts's CONSTRUCT_FIELDS and SETTING_FIELDS),
+// so a field that means nothing on a platform is simply never placed in its settings.
+export const MESEN_ROLE: RoleType = {
+  kind: "mesen",
+  category: "system",
+  schema: z.object({
+    region: enumField(REGION_VALUES, "auto"), // ConsoleRegion: auto / ntsc / pal / dendy / ntscJapan
+    removeSpriteLimit: boolField(false),
+    // SMS/GG: route the YM2413 (FM). Applied at construct (configureSms runs before LoadRom). Not a
+    // cosmetic toggle - Mesen models the $F2 audio-control port as a MUX whose PSG branch memsets the
+    // buffer, so a tracker that writes $F2 = $01 at boot goes silent on the PSG with this on.
+    enableFm: boolField(true),
+    // APU flush window as a latency in ms (the worst-case NES audio latency the resampler batching adds).
+    // Live knob; native converts ms→CPU cycles per region clock. ~1.4ms ≈ the historical 2500-cycle window.
+    apuLatencyMs: clampedNumber(0.25, 6.0, 1.4),
+    // Cartridge-accuracy switches. Both default to "n8", NOT to the documented chip behaviour: RetroPlug
+    // is music software, and NES music is overwhelmingly played back through an Everdrive N8 Pro, so the
+    // useful default is the one where what you hear here is what the cartridge will do. Choose "chip" for
+    // playback accuracy on a stock cartridge.
+    //
+    // The N8's FPGA cores measurably differ (both verified on hardware, see cartridge-accuracy.test.ts):
+    // its 5B has no noise generator, so enabling noise MUTES the channel rather than rasping (the mixer
+    // ANDs tone with noise); and its MMC5 pulse does not restart the duty sequencer on a $5003 write, so
+    // a phase-reset hack holds a 50% duty and full level and only shifts pitch.
+    s5bNoise: enumField(CARTRIDGE_ACCURACY_VALUES, "n8"),
+    mmc5PhaseReset: enumField(CARTRIDGE_ACCURACY_VALUES, "n8"),
+    // NES-only: the level of the CARTRIDGE's own sound chip (VRC6 / VRC7 / N163 / S5B / MMC5 / FDS), as a
+    // percentage of unity - never the console's 2A03. Mesen mixes each expansion chip through a per-channel
+    // volume; this sets all six together, since a cart has at most one. Live.
+    //
+    // It is also what a connected Everdrive N8 Pro is set to: the FPGA has the same control (`master_vol`,
+    // 128 = unity) and the cart node rescales this value into it (`expansionVolumeRegister`), so one knob decides
+    // how loud the chip is whether you are hearing the emulator or the console. 100 = the chip as the hardware
+    // mixes it.
+    expansionVolume: clampedInt(0, 200, 100),
+    // CLI-only per-channel export mode (spec/10 §5/§5b): mix, stereoModPins (Pulse | TND + Expansion),
+    // individualMono (5 core channels). Construct-time: a render's adopt sets it, an edit rebuilds the system, and
+    // the settings menu does not surface it. Additive. (pinsPlusRef = pins + a mix reference, native/test-only.)
+    channelExportMode: enumField(CHANNEL_EXPORT_VALUES, "mix"),
+    // NES-only: the host directory the emulated EverDrive N8 SD card maps to ("/" on the card), for a
+    // ROM that pulls its data off the cartridge rather than over MIDI. Empty means a per-process
+    // scratch directory - deliberately NOT the working directory, which made the card depend on where
+    // the process was started and let a file one test wrote become every later run's card.
+    //
+    // Construct-time, unlike `region` (which the NES node applies live: a region change resets the core): the FIFO
+    // is built when the core activates, so an edit needs a rebuild, which setRoleConfig makes itself (the system's
+    // node reads it once), carrying the battery.
+    sdRoot: stringField(""),
+    // NES-only: how faithfully the emulated cart FIFO behaves like the device's (see
+    // FIFO_PROFILE_VALUES). Default "instant" - unbounded and immediate - because that is the
+    // transport every existing test assumes, and because a lossy queue is something a test should
+    // ASK for rather than inherit. "hardware" makes two hardware-only bug classes reachable in CI:
+    // a dropped byte (so a ROM's recovery path can be exercised) and a wire that trickles (so a
+    // copy loop can be starved mid-structure rather than only between chunks).
+    //
+    // The two overrides are 0 = "take the profile's value", so a rate sweep can vary one without
+    // restating the other. Construct-time, like `sdRoot`: an edit rebuilds the system.
+    fifo: enumField(FIFO_PROFILE_VALUES, "instant"),
+    fifoDepth: clampedInt(0, 1 << 20, 0),
+    fifoBytesPerSecond: clampedInt(0, 100_000_000, 0),
+    // NES-only: BlipToaster's reliable link (see N8_LINK_VALUES) and the round trip the emulator models for a
+    // re-send, in microseconds - the host->cart->host latency of a physical N8 over USB, so a hit the link recovers
+    // lands as late in the plugin as on the cartridge: 2200 = a real N8 Pro's fastest round trip (the ROM's ack out,
+    // the re-sent frame back), measured 2026-10-22. Construct-time: an edit rebuilds the system.
+    n8Link: enumField(N8_LINK_VALUES, "auto"),
+    n8LinkRttUs: clampedInt(0, 100_000, 2200),
+    // NES-only: drive a real Everdrive N8 Pro from this system, so the same MIDI and generated bytes the emulated
+    // core is played with reach the cart's FIFO too (buildGraph places its rp.n8.nes and fans them out, and the
+    // engine's graph does the rest). Additive, and ON by default: it is what every project did before the setting
+    // existed - the first NES's traffic reached a cart whatever its state - and the node is placed only for the
+    // FIRST NES in slot order, so a second system's traffic reaches the cart only if this one lets go of it.
+    driveRealCart: boolField(true),
+  }),
+};
+
+/** The core-config roles the app registers, in the order buildAppRegistry took them: SameBoy's, then Mesen's. */
+export const CORE_ROLES: readonly RoleType[] = [SAMEBOY_ROLE, MESEN_ROLE];
+
 /** Register the built-in core-config system roles into `registry`. */
 export function registerCoreRoles(registry: RoleRegistry): void {
-  // SameBoy: model / highpass / link group / fast boot, plus the display knobs below. model, highpass,
-  // colorCorrection and dmgPalette are string enums; the system node's settings spell them as labels (knobs::Label), so
-  // the store hands them over as they are.
-  //
-  // The display group is additive and every default reproduces what the core did when these were
-  // hardcoded (SameBoySystem.cpp), so an existing project loads pixel-identical and needs no migration.
-  // Which one bites is decided by the model, and the split is exact rather than a guess: the core
-  // applies colour correction and light temperature only when GB_is_cgb (model >= GB_MODEL_CGB_0) and
-  // the DMG palette only when it isn't. `auto` is not ambiguous here - RetroPlug maps it to CGB-C
-  // (toSameBoyModel), so it counts as CGB. The menu gates the palette row on that (menuDefs.ts).
-  registry.registerRole({
-    kind: "sameboy",
-    category: "system",
-    schema: z.object({
-      model: enumField(MODEL_VALUES, "cgbC"),
-      highpass: enumField(HIGHPASS_VALUES, "accurate"),
-      linkGroupId: clampedInt(0, 255, 0),
-      fastBoot: boolField(true),
-      // --- display ---
-      colorCorrection: enumField(COLOR_CORRECTION_VALUES, "disabled"),
-      dmgPalette: enumField(DMG_PALETTE_VALUES, "grey"),
-      // Ambient light tint, CGB only. SameBoy's own range: -1 (cool/blue) .. +1 (warm/red), 0 neutral.
-      lightTemperature: clampedNumber(-1, 1, 0),
-    }),
-  });
-
-  // Mesen: keyed by core ("mesen"), so this ONE role attaches to any Mesen system (NES, GBA, SMS/GG).
-  // The knobs are per-platform and the settings menu gates each group on `platform` (menuDefs.ts): the
-  // first three are NES-only, enableFm is SMS/GG-only, and GBA has none of its own yet - it carries
-  // them all as inert bytes until it does, at which point the schema grows again.
-  //
-  // The system node reads the fields each platform reads (graph/buildGraph.ts's CONSTRUCT_FIELDS and SETTING_FIELDS),
-  // so a field that means nothing on a platform is simply never placed in its settings.
-  registry.registerRole({
-    kind: "mesen",
-    category: "system",
-    schema: z.object({
-      region: enumField(REGION_VALUES, "auto"), // ConsoleRegion: auto / ntsc / pal / dendy / ntscJapan
-      removeSpriteLimit: boolField(false),
-      // SMS/GG: route the YM2413 (FM). Applied at construct (configureSms runs before LoadRom). Not a
-      // cosmetic toggle - Mesen models the $F2 audio-control port as a MUX whose PSG branch memsets the
-      // buffer, so a tracker that writes $F2 = $01 at boot goes silent on the PSG with this on.
-      enableFm: boolField(true),
-      // APU flush window as a latency in ms (the worst-case NES audio latency the resampler batching adds).
-      // Live knob; native converts ms→CPU cycles per region clock. ~1.4ms ≈ the historical 2500-cycle window.
-      apuLatencyMs: clampedNumber(0.25, 6.0, 1.4),
-      // Cartridge-accuracy switches. Both default to "n8", NOT to the documented chip behaviour: RetroPlug
-      // is music software, and NES music is overwhelmingly played back through an Everdrive N8 Pro, so the
-      // useful default is the one where what you hear here is what the cartridge will do. Choose "chip" for
-      // playback accuracy on a stock cartridge.
-      //
-      // The N8's FPGA cores measurably differ (both verified on hardware, see cartridge-accuracy.test.ts):
-      // its 5B has no noise generator, so enabling noise MUTES the channel rather than rasping (the mixer
-      // ANDs tone with noise); and its MMC5 pulse does not restart the duty sequencer on a $5003 write, so
-      // a phase-reset hack holds a 50% duty and full level and only shifts pitch.
-      s5bNoise: enumField(CARTRIDGE_ACCURACY_VALUES, "n8"),
-      mmc5PhaseReset: enumField(CARTRIDGE_ACCURACY_VALUES, "n8"),
-      // NES-only: the level of the CARTRIDGE's own sound chip (VRC6 / VRC7 / N163 / S5B / MMC5 / FDS), as a
-      // percentage of unity - never the console's 2A03. Mesen mixes each expansion chip through a per-channel
-      // volume; this sets all six together, since a cart has at most one. Live.
-      //
-      // It is also what a connected Everdrive N8 Pro is set to: the FPGA has the same control (`master_vol`,
-      // 128 = unity) and the cart node rescales this value into it (`expansionVolumeRegister`), so one knob decides
-      // how loud the chip is whether you are hearing the emulator or the console. 100 = the chip as the hardware
-      // mixes it.
-      expansionVolume: clampedInt(0, 200, 100),
-      // CLI-only per-channel export mode (spec/10 §5/§5b): mix, stereoModPins (Pulse | TND + Expansion),
-      // individualMono (5 core channels). Construct-time: a render's adopt sets it, an edit rebuilds the system, and
-      // the settings menu does not surface it. Additive. (pinsPlusRef = pins + a mix reference, native/test-only.)
-      channelExportMode: enumField(CHANNEL_EXPORT_VALUES, "mix"),
-      // NES-only: the host directory the emulated EverDrive N8 SD card maps to ("/" on the card), for a
-      // ROM that pulls its data off the cartridge rather than over MIDI. Empty means a per-process
-      // scratch directory - deliberately NOT the working directory, which made the card depend on where
-      // the process was started and let a file one test wrote become every later run's card.
-      //
-      // Construct-time, unlike `region` (which the NES node applies live: a region change resets the core): the FIFO
-      // is built when the core activates, so an edit needs a rebuild, which setRoleConfig makes itself (the system's
-      // node reads it once), carrying the battery.
-      sdRoot: stringField(""),
-      // NES-only: how faithfully the emulated cart FIFO behaves like the device's (see
-      // FIFO_PROFILE_VALUES). Default "instant" - unbounded and immediate - because that is the
-      // transport every existing test assumes, and because a lossy queue is something a test should
-      // ASK for rather than inherit. "hardware" makes two hardware-only bug classes reachable in CI:
-      // a dropped byte (so a ROM's recovery path can be exercised) and a wire that trickles (so a
-      // copy loop can be starved mid-structure rather than only between chunks).
-      //
-      // The two overrides are 0 = "take the profile's value", so a rate sweep can vary one without
-      // restating the other. Construct-time, like `sdRoot`: an edit rebuilds the system.
-      fifo: enumField(FIFO_PROFILE_VALUES, "instant"),
-      fifoDepth: clampedInt(0, 1 << 20, 0),
-      fifoBytesPerSecond: clampedInt(0, 100_000_000, 0),
-      // NES-only: BlipToaster's reliable link (see N8_LINK_VALUES) and the round trip the emulator models for a
-      // re-send, in microseconds - the host->cart->host latency of a physical N8 over USB, so a hit the link recovers
-      // lands as late in the plugin as on the cartridge: 2200 = a real N8 Pro's fastest round trip (the ROM's ack out,
-      // the re-sent frame back), measured 2026-10-22. Construct-time: an edit rebuilds the system.
-      n8Link: enumField(N8_LINK_VALUES, "auto"),
-      n8LinkRttUs: clampedInt(0, 100_000, 2200),
-      // NES-only: drive a real Everdrive N8 Pro from this system, so the same MIDI and generated bytes the emulated
-      // core is played with reach the cart's FIFO too (buildGraph places its rp.n8.nes and fans them out, and the
-      // engine's graph does the rest). Additive, and ON by default: it is what every project did before the setting
-      // existed - the first NES's traffic reached a cart whatever its state - and the node is placed only for the
-      // FIRST NES in slot order, so a second system's traffic reaches the cart only if this one lets go of it.
-      driveRealCart: boolField(true),
-    }),
-  });
+  for (const role of CORE_ROLES) registry.registerRole(role);
 }

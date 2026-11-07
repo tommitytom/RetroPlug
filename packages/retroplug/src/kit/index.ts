@@ -1,4 +1,16 @@
 // The kit compilers as offline graph jobs (docs/modular-graph-phase-d2-design.md section 5): compile.ts runs a kit's
 // slots, chain.ts builds each pass's document, pack.ts packs what the passes recorded.
-export { compileKit, compileDmc, NO_SLOT_REASON, type KitCompileResult, type KitJobRunner } from "./compile";
+//
+// Which formats exist is the product's (each cart's app contribution registers its own, src/generated/packages.ts), so
+// the id lookup and the driver that dispatches through it are the shell's (src/kitFormats.ts), and nothing here reads
+// the registry: a compiler is handed the format it compiles.
+export {
+  compileKit,
+  compileDmc,
+  LSDJ_KIT_FORMAT,
+  RISA_KIT_FORMAT,
+  NO_SLOT_REASON,
+  type KitCompileResult,
+  type KitJobRunner,
+} from "./compile";
 export { KitSpecError } from "./chain";

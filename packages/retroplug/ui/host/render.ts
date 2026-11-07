@@ -5,7 +5,7 @@
 
 import type { SystemView } from "../../src/systemsStore";
 import type { SplitMode, OnExists } from "../../src/render";
-import { resolveSongCatalog } from "../../src/tracker";
+import { resolveSongCatalog } from "../../src/trackerRegistry";
 import { stem } from "../../src/pathUtil";
 import { resolveSavPath } from "../../src/savPaths";
 import type { RenderJobs, RenderJobStatus } from "../../src/renderJobs";

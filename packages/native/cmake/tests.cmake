@@ -158,13 +158,14 @@ retroplug_providers_header("${CMAKE_BINARY_DIR}/packages/test/without/rp_product
 # refused by the reader retroplug_package() runs (cmake/packages.cmake's _retroplug_read_manifest, run here in script
 # mode by cmake/check-manifest.cmake) with its own reason, so a rule that stopped firing fails the configure rather than
 # going unnoticed; and the manifests that must read do: the N8 pack's, whose desktop entry names a provider and its
-# facet, devtest's, with a native entry and a script pack, and a scratch package that is a script pack alone.
+# facet, devtest's, with a native entry and a script pack, a scratch package that is a script pack alone, and one
+# whose contributions are its app and protocol members, the TS half with no native part.
 set(_rp_refused_manifests
     "ProviderOnDevice|entry rp_scratch_package is `device` and names a provider or an rpc"
     "RpcOnDevice|entry scratch-desktop is `device` and names a provider or an rpc"
     "RpcWithoutProvider|entry scratch-desktop names an rpc and no provider"
     "ProviderWithoutDevice|entry scratch-desktop needs \"device\": true or false"
-    "NeitherNativeNorScript|has neither a retroplug.native nor a retroplug.script field"
+    "NoContributionMember|has none of a retroplug.native, retroplug.script, retroplug.app or retroplug.protocol field"
     "ScriptNotObject|retroplug.script is a STRING, not an object"
     "ScriptWithoutEntry|retroplug.script needs an \"entry\""
     "ScriptEntryMissing|retroplug.script's entry nope.ts does not exist"
@@ -196,7 +197,8 @@ foreach(_rp_refused IN LISTS _rp_refused_manifests)
 endforeach()
 foreach(_rp_read IN ITEMS "${CMAKE_SOURCE_DIR}/packages/n8/package.json"
                           "${CMAKE_SOURCE_DIR}/packages/devtest/package.json"
-                          "${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/ScriptOnly.json")
+                          "${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/ScriptOnly.json"
+                          "${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/AppAndProtocolOnly.json")
     execute_process(
         COMMAND ${CMAKE_COMMAND} -DRP_MANIFEST=${_rp_read} -P ${CMAKE_SOURCE_DIR}/cmake/check-manifest.cmake
         RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)

@@ -6,7 +6,7 @@
 import type { AppStores } from "../../src/appStores";
 import type { SystemView } from "../../src/systemsStore";
 import type { SongCatalog, SongInfo } from "../../src/tracker";
-import { resolveTracker } from "../../src/tracker";
+import { resolveTracker } from "../../src/trackerRegistry";
 import { resolveSavPath } from "../../src/savPaths";
 import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
 import { button, infoRow, noticeTree, separator } from "../screens/menu/menuItems";

@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/fixture-root",
+  "private": true,
+  "retroplug": {
+    "products": { "desktop": ["alpha", "beta"] }
+  }
+}

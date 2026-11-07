@@ -6,7 +6,8 @@
 
 
 import { pumpAllJobs, setJobWait } from "./capability";
-import { compileDmc, compileKit, type KitCompileResult } from "./kit";
+import { kitFormat } from "./kitFormats";
+import type { KitCompileResult } from "./kit/compile";
 import { setOfflineWait, setOfflineYield } from "./offline";
 import { makeCall } from "./rpcClient";
 import { offlineRunner } from "./realBackend";
@@ -317,8 +318,10 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
         },
         () => [],
       ),
-    compileKit: (spec) => compileKit(kitRunner, spec), // the 16 KB kit bank and each slot's reason
-    compileDmc: (spec) => compileDmc(kitRunner, spec), // the 8 KB risa DMC kit bank, and each slot's reason
+    // The 16 KB kit bank and each slot's reason, and the 8 KB risa DMC bank's: the formats the product's packages
+    // register, by the ids they name (each cart's app contribution, src/generated/packages.ts).
+    compileKit: (spec) => kitFormat<KitCompileSpec>("lsdj").compile(kitRunner, spec),
+    compileDmc: (spec) => kitFormat<RisaKitCompileSpec>("risa").compile(kitRunner, spec),
     sampleRate: () => call("sampleRate") as number,
     setSampleRate: (sampleRate) => call("setSampleRate", sampleRate) as boolean,
     setTransport: (running) => call("setTransport", running) as boolean,

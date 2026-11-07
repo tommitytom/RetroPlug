@@ -16,11 +16,16 @@ import { tmpdir } from "node:os";
 import { build } from "esbuild";
 import { runPool, spawnBuffered, resolveJobs, stripRunnerFlags, flush, parseTap } from "./lib/testPool.mjs";
 import { checkSkipBaseline } from "./lib/skipBaseline.mjs";
+import { generate } from "./lib/packages.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
 const TEST_DIR = join(PKG, "test-native");
 const OUT_DIR = join(PKG, ".native-build");
+
+// The generated package registries first (src/generated, docs/modular-graph-phase-f1-design.md section 3): a test
+// bundles src, which imports them, so they must exist before the first esbuild run. A fresh checkout has none.
+generate();
 
 // The sibling resources dir (ROMs/manuals/…), overridable — mirrors the repo-wide convention.
 // Injected into the bundle so a test can locate real ROMs by absolute path (native slurps them).

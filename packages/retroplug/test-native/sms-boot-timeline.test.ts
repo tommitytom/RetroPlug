@@ -24,7 +24,7 @@ import type { Platform } from "../src/platform";
 import { buildSav, isSongSaved, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/sav";
 import { resolveSmsggdjLayout } from "../src/smsggdj/runtime/layout";
 import { SMSGGDJ_SYMBOLS } from "../src/smsggdj/runtime/symbols.generated";
-import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
+import { smsggdjIntegration } from "../src/trackerRegistry";
 import { smsggdjSongCatalog } from "../src/tracker/smsggdjSongCatalog";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
 import { directGraph } from "../src/graph/directGraph";

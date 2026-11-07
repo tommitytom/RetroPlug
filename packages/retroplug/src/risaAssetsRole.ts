@@ -9,13 +9,12 @@
 // build-kit compiles one, and a kit override just splices that ready-made bank with rom.setKit (which
 // dual-writes the resident metadata mirror). src/kit can compile a .rkit in the plugin too, though no UI row does.
 // Applying reuses the pure-TS patcher (src/risa/rom).
-import type { RoleRegistry, ConstructCaps } from "./systemRoles";
+import type { RoleRegistry, RoleType, ConstructCaps } from "./systemRoles";
 import type { ConstructSpec } from "./backend";
 import { z } from "./configSchema";
 import { RisaRom } from "./risa/rom";
 import { applyRitOverride, ritOverrideSchema, CHR_BANK_SIZE, type RitAssetOverride } from "./ritAssetsRole";
 
-export const RISA_ASSETS_ROLE = "risa-assets";
 /** @deprecated Use CHR_BANK_SIZE from ./ritAssetsRole - kept because it is a public export. */
 export const RISA_CHR_BANK_SIZE = CHR_BANK_SIZE;
 
@@ -77,12 +76,15 @@ function applyAssetOverrides(spec: ConstructSpec, caps: ConstructCaps, config: R
   return patched !== base ? { ...spec, romBytes: patched } : spec;
 }
 
-/** Register the `risa-assets` feature role (no DSP behaviour; a construct-time asset patcher). */
+/** The `risa-assets` feature role (no DSP behaviour; a construct-time asset patcher): the app's contribution. */
+export const RISA_ASSETS_ROLE: RoleType = {
+  kind: "risa-assets",
+  category: "feature",
+  schema: risaAssetsSchema,
+  onConstruct: applyAssetOverrides,
+};
+
+/** Register the role into `registry`, for a registry a test or a host builds by hand. */
 export function registerRisaAssetsRole(registry: RoleRegistry): void {
-  registry.registerRole({
-    kind: RISA_ASSETS_ROLE,
-    category: "feature",
-    schema: risaAssetsSchema,
-    onConstruct: applyAssetOverrides,
-  });
+  registry.registerRole(RISA_ASSETS_ROLE);
 }

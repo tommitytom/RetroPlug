@@ -1,7 +1,8 @@
 // The tracker song-catalog layer: resolution by marker role + the risa adapter's list/workingName over a
 // real battery fixture. The LSDj/risa workingName round-trips against a booted core are in test-native.
 import { test, expect } from "../../testing/harness";
-import { resolveSongCatalog, lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
+import { lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
+import { resolveSongCatalog } from "../../src/trackerRegistry";
 import { loadSongToWorkingInSav } from "../../src/risaSongOps";
 import { normalizeSaveContainer } from "../../src/risaSav";
 import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
