@@ -8,8 +8,8 @@
 import type { z } from "zod";
 import type { AssetCatalog } from "../tracker/assetCatalog";
 import type { SongCatalog } from "../tracker/songCatalog";
-import { plainId } from "./descriptor";
-import { checkNode, checkWire, type NodeDoc, type WireDoc } from "./graphDocument";
+import { plainId } from "@retroplug/core/descriptor";
+import { checkNode, checkWire, type NodeDoc, type WireDoc } from "@retroplug/core/graphDocument";
 
 /** What a matcher sees: the node type plus the ROM identity rp.system.rom/1 publishes (when it has one). */
 export interface NodeInfo {

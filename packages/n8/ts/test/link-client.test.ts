@@ -3,7 +3,7 @@
 // is read tolerantly as the UI read the hook object it replaces, and a host that did not mount the facet throws from
 // the call, which is what the UI's hasN8 takes for "no N8 seam". The facet itself is held in C++ (retroplug-n8-test's
 // [n8-rpc] cases); this is the TS half alone, so it runs in the mock tier, with no native host.
-import { test, expect } from "../../../retroplug/testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createN8Client, type N8Call } from "../index";
 
 function recordingCall(answers: Record<string, unknown>): { call: N8Call; sent: unknown[][] } {

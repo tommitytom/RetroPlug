@@ -7,7 +7,7 @@
 //
 // The risa ROM + demo saves are NOT in this repo; build risa (`make` in the risa source tree) then
 // point the paths below at it. The test SKIPs cleanly when they're absent so CI stays green.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

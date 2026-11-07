@@ -3,7 +3,7 @@
 // path rebasing. Ports schemaVersions.ts + the ProjectConfig shape. TS owns the
 // config (produces + consumes the JSON); a thin config drops ids + default fields so
 // a fresh project round-trips faithfully (native restores the rest via DefaultIfMissing).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   K_PROJECT,
   VersionCheck,

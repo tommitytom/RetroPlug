@@ -6,7 +6,7 @@
 //
 // This is the headless twin of the real-Reaper `reaper:risa-sync` leg, which renders the SAME song
 // through an actual DAW transport and pairs each onset to a ReaSynth click. This one runs in test:native.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildRisaMetronomeSav } from "./risaSyncSong";

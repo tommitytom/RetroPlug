@@ -4,7 +4,7 @@
 // files spread around the disk; these rows write the EFFECTIVE ROM out so the cart stands alone. Same harness
 // shape as menu/lsdj-assets.test.ts: build the MenuContext the way App.tsx does, drive the rows, assert the
 // fake disk + the role config.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

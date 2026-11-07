@@ -7,7 +7,7 @@
 // loaded. A Recent load only ever worked because the discard prompt in front of it cost the user a
 // couple of seconds. Here the request waits on the cart's own readiness latch, is guarded at APPLY
 // time (when the working song is real), and records its Recent row itself.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore, type SongSettle } from "../../src/projectStore";

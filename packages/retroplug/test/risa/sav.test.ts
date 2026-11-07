@@ -1,7 +1,7 @@
 // risa save-catalog reader (M1) — golden tests. Fixtures are real risa batteries; goldens are risa's
 // own SaveImage/analyze_save.py output (two independent oracles agree — see fixtures.ts). Mirrors
 // test/lsdj/lsdsng.test.ts (listSongs is the risa analog of LSDj listProjects).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { deepEqual } from "./_assert";
 import { savBytes } from "./fixtures";
 import {

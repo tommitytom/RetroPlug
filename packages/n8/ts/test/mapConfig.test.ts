@@ -5,7 +5,7 @@
 // really produced it. It is also the regression fixture for the bug this module exists to close: --dump-chr
 // read CHR bank 0 at ADDR_CHR for every cart, which on a CHR-RAM cart is not the game's pixels at all but
 // leftover N8 OS file-browser font - 8192 plausible bytes, no error.
-import { test, expect } from "../../../retroplug/testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { decodeMapConfig, resolveChrWindow, chrBankAddr, describeChrWindow } from "../mapConfig";
 import { ADDR_CHR, CHR_RAM_OFFSET } from "../constants";
 

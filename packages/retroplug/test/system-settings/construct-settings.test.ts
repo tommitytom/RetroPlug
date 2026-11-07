@@ -3,13 +3,13 @@
 // builds its core with, so a loaded non-default model/highpass is applied AT the boot (not via a post-construct restart
 // that would nuke a just-restored savestate). The store stays generic: it forwards whichever role's kind === the core.
 // A fresh add sends the same defaults, which are the core's own.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { gbRom, nesRom } from "../systems/fixtures";
-import { canonicalJson } from "../../src/graph/canonicalJson";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
 
 // `v` as a document carries it: canonical JSON, its keys sorted.
 const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));

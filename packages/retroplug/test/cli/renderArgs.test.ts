@@ -1,6 +1,6 @@
 // Guards the `retroplug-cli render` flag parser (renderArgs.ts) — the pure front of the compiled-in
 // render subcommand. Covers defaults, every value/boolean flag, the --split whitelist, and bad usage.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { parseRenderArgs } from "../../cli/renderArgs";
 
 test("render args: bare <rom> yields the documented defaults", () => {

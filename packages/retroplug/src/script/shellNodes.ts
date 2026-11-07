@@ -3,8 +3,7 @@
 // (src/generated/scriptNodes.ts) registers, in the span-label order the manifest gives each type. This module only
 // imports the node modules; which type a package contributes, and where its label sits, is the manifest's statement, so
 // the bundle's order does not depend on this file's order.
-import type { DefinedNode } from "../graph/defineNode";
-import { midiRouteNode } from "./nodes/midiRoute";
+import type { DefinedNode } from "@retroplug/core/defineNode";
 import { mgbMidiNode } from "./nodes/mgbMidi";
 import { n8MidiToFifoNode } from "./nodes/n8MidiToFifo";
 import { risaSyncNode } from "./nodes/risaSync";
@@ -13,13 +12,12 @@ import { lsdjSyncNode } from "./nodes/lsdjSync";
 import { controllerSessionNode } from "./nodes/controllerSession";
 import { lsdjSerialOutNode } from "./nodes/lsdjSerialOut";
 
-// The production script node types (spec/08-profiling.md: one span label each, 16 up, a type added goes last): the
-// MIDI routing, a protocol node for each role that has one, the control-surface session
+// The production script node types (spec/08-profiling.md: one span label each, 16 up, a type added goes last): a
+// protocol node for each role that has one, the control-surface session
 // (docs/modular-graph-phase-b3b-design.md section 2), and LSDj's serial-out decoder, which buildGraph places after
 // the systems (docs/lsdj-serial-out-design.md). Nothing here registers roles or imports zod: a node's settings are
-// graph/settingsSchema.ts's, and test/script/bundle-no-zod.test.ts holds the bundle to that.
+// @retroplug/core/settingsSchema's, and test/script/bundle-no-zod.test.ts holds the bundle to that.
 const shellNodes: readonly DefinedNode<any>[] = [
-  midiRouteNode,
   mgbMidiNode,
   n8MidiToFifoNode,
   risaSyncNode,

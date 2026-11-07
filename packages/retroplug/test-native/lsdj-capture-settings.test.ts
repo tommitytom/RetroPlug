@@ -7,11 +7,11 @@
 // capture ever driven it: clocked while stopped, it stops answering START). (lsdj-midiout.test.ts and
 // lsdj-mastersync.test.ts prove the decoders themselves, and retroplug-engine-graph-test holds a capture applied at
 // activation to one armed on the core directly, bit for bit.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../src/bootSession";
 import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjSyncMode } from "../src/settingsEnums";
-import type { GraphDocument } from "../src/graph/graphDocument";
+import type { GraphDocument } from "@retroplug/core/graphDocument";
 
 declare const __RESOURCES_DIR__: string;
 

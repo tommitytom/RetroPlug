@@ -5,7 +5,7 @@
 
 // The LSDj kit bank's numbers: a 16 KB bank whose data region is up to 0x3fa0 bytes of packed 4-bit nibbles (two
 // samples a byte, stored inverted), resampled to kGameboySampleRate. The TypeScript kit compiler packs one
-// (packages/retroplug/src/kit/pack.ts), and native reads or writes none: the tests name these numbers, Dither.test.cpp
+// (packages/dsp/ts/pack.ts), and native reads or writes none: the tests name these numbers, Dither.test.cpp
 // for the kit rate and OfflineJobs.test.cpp for the seam's float-ratio cap, which is measured in kit frames.
 
 namespace rp::lsdj {

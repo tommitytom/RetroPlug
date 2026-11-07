@@ -2,7 +2,7 @@
 // Proves the write counterpart of the spec/09 observe surface: a byte written into zero-page RAM reads
 // back with the same value, and a write to a live id is served (true). (The mock ordering lives in the
 // pure-TS suite; this is the native round-trip.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 

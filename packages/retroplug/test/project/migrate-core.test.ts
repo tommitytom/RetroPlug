@@ -1,7 +1,7 @@
 // The v1→v2 project migration: `core` is backfilled from `platform` when loading a pre-v2
 // config, and round-trips once stored. The tightened systemThin schema requires both
 // structural fields (platform + core) but keeps the genuine either-ors optional.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { parseConfig, serializeConfig, buildConfig, DEFAULT_SETTINGS, K_PROJECT } from "../../src/projectConfig";
 import type { SystemEntry } from "../../src/systemsList";
 

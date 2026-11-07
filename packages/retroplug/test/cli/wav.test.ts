@@ -3,7 +3,7 @@
 // stereo-stream interleave/deinterleave helpers that derive the multichannel + mono export shapes, and the
 // streaming createWavWriter (header placeholder → appended PCM batches → header patch) the render session
 // uses to write WAVs without buffering the whole song.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { encodeWav, decodeWav, interleaveStereoStreams, deinterleaveStereo, createWavWriter } from "../../cli/wav";
 import { MockBackend } from "../../testing/mockBackend";
 

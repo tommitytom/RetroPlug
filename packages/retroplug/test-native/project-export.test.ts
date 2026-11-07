@@ -2,7 +2,7 @@
 // pump reads real savestate/SRAM, frames a real-miniz PKZIP, and round-trips. Savestates are
 // always present (any booted core); SRAM only for battery carts, so the file-backed system
 // uses gbRomBattery() and we don't assume mGB has SRAM. Observable outcomes only.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";

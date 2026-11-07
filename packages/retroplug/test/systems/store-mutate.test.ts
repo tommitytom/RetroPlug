@@ -2,7 +2,7 @@
 // Duplicate clones live state with a fresh suffix; remove splices + refocuses; reload + loadState/
 // loadSram swap in place preserving identity with a new id; saveState/saveSram dump the registry read
 // to disk; resolveSiblingRom pairs a picked .sav.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";

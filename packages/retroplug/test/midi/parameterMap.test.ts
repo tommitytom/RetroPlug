@@ -1,7 +1,7 @@
 // The per-ROM DAW parameter projection (spec/12-dynamic-parameters.md). Locks the slot arithmetic, the
 // routing-mode reachability rule (a lane that cannot reach the ROM must not be claimed), the per-system
 // budget, the per-chip BlipToaster sets, and the invariants the native side depends on.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MidiRouting } from "../../src/settingsEnums";
 import { blipToasterChip, inesMapper } from "../../src/bliptoaster/romDetect";
 import {

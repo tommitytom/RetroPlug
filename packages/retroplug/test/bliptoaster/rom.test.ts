@@ -1,7 +1,7 @@
 // BlipToaster ROM asset view/patch layer — pure byte-level tests. Mirrors test/risa/rom.test.ts: read the kit +
 // font, prove setKit/setChrFontSlot splice ONLY the intended bytes (byte-diff), and that isBlipToaster accepts a
 // full ROM but rejects a marker-less / truncated / garbage buffer. No emulator or real ROM needed.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   blipToasterRom,
   blipToasterMultiKitRom,

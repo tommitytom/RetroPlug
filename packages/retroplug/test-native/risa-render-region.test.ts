@@ -14,7 +14,7 @@
 // check is no weaker: a carried role that never reached the core leaves NTSC at the PAL length, i.e. a ratio
 // of exactly 1.000, which is nowhere near the tolerance below.
 // It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob } from "../src/render";
 import { RISA_ROM, ECOLI_SRM, ECOLI_PAL_MS, newCtx, baseOpts } from "./risa-render-lib";

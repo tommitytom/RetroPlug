@@ -1,5 +1,9 @@
 {
   "name": "@retroplug/alpha",
+  "exports": {
+    "./app": "./ts/app.ts",
+    "./nodes": "./ts/nodes.ts"
+  },
   "private": true,
   "retroplug": {
     "app": "ts/app.ts",

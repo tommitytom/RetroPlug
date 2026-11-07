@@ -3,10 +3,10 @@
 // menu uses (setRoleConfig + reloadSystem): the base .gb on disk is never written; the reload hands native
 // a patched effective ROM. Byte-level correctness of the patch is the pure rom module's own tests; native
 // honoring romBytes is test-native/lsdj-rom.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";

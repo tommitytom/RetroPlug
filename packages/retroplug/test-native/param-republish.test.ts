@@ -5,7 +5,7 @@
 // it publishes rather than setting the param live) and a DirectGraph's setCoreConfig repeating its value.
 //
 // The value is watched where only the core can show it: the expansion chip's own level, 200% against a live 100%.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../src/bootSession";
 import { createAudioDriver } from "../src/audioDriver";
 import { DirectGraph } from "../src/graph/directGraph";

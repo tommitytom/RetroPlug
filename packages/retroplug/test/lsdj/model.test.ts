@@ -3,7 +3,7 @@
 // - fixed(elem,N): short/omitted pads to N with the element default; > N throws.
 // - bounded sub-byte fields REJECT out-of-range (not silently clamp/truncate).
 // - optional struct fields (table/length) omit; optional array cells are null.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { deepEqual } from "./_assert";
 import {
   SavSchema,

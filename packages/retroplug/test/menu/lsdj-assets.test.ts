@@ -2,7 +2,7 @@
 // the risa asset menu was structurally tested (menu/risa.test.ts) but the LSDj one wasn't. Both now render
 // through the generic assetMenu (src/tracker AssetCatalog), so this also guards the unified builder for LSDj.
 // Build the MenuContext the way App.tsx does, read the tree, and drive the no-dialog actions.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

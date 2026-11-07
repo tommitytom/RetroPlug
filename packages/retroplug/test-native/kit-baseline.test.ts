@@ -23,7 +23,7 @@
 // RP_KIT_GOLDEN_UPDATE=1 re-records the golden from this compiler, refused anywhere but the target, for any case whose
 // two compiles disagree and for a run whose source check did not hold, and written through a sibling temp file. Without
 // the variable the file is only ever read.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver, type KitEffect } from "../src/audioDriver";
 import { compileKit, compileDmc, type KitCompileResult } from "../src/kit";

@@ -2,7 +2,7 @@
 //
 // That is the property the whole design rests on. An app should be able to describe the entire surface
 // declaratively each frame; the surface's job is to notice that nearly nothing changed and stay quiet.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { Surface, BULK_THRESHOLD, PRO_MK3, Palette, palette, rgb, type Led } from "../../src/launchpad";
 
 const RED: Led = { mode: "static", colour: palette(Palette.red) };

@@ -4,7 +4,7 @@
 // are the ones about tolerance: a stale or garbage config must snap to something sane rather than fail the
 // parse, because these values come off disk and a user should never be locked out of their own controller
 // by a bad enum.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { APP_CONFIGS } from "../../src/controller/registry";
 import { ControllerRegistry, registerControllerApps, lsdjMidiMap, MAX_PAGE, CONTROLLER_APPS, controllerApp } from "../../src/controller";
 

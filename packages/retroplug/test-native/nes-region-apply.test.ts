@@ -6,7 +6,7 @@
 //
 // This exists because a hardware comparison had to run PAL (the bench NES is PAL) and it was not obvious
 // whether the region knob was landing.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { ApuState } from "../src/backend";

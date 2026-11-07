@@ -4,7 +4,7 @@
 // separators (the plugin is cross-platform); output is forward-slash form. These
 // underpin every sibling-.sav/.rplg derivation, so the edge cases (no extension,
 // multi-dot, dotfiles, backslashes) are locked here.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   dirname,
   basename,

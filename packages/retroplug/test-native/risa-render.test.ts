@@ -7,7 +7,7 @@
 // concurrently instead of serializing behind each other; shared fixtures are in risa-render-lib.ts.
 // Everything here is a short render, so this file stays a few seconds.
 // It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob, readRisaSongs, decodeWav, type RenderOpts } from "../src/render";
 import { dirname, joinPath } from "../src/pathUtil";

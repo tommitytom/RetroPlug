@@ -3,7 +3,7 @@
 // command remap + fmt<11 fill; fmt7 archive; fmt11; fmt16 synth-nibble). The
 // exhaustive per-format corpus sweep (fmt 0..22, all 549 savs) runs in the
 // native tier (test-native/lsdj-codec-corpus.test.ts).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { deepEqual } from "./_assert";
 import { savBytes } from "./fixtures";
 import { decodeSong, encodeSong } from "../../src/lsdj/codec/song";

@@ -14,7 +14,7 @@
 // stay live rather than move its node's rebuild key under a live id.
 //
 // Run with: `pnpm test:native app-construct-edit`.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { MemoryRegion, type Backend } from "../src/backend";
 import { createAudioDriver, type AudioDriver } from "../src/audioDriver";

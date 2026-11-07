@@ -3,7 +3,7 @@
 // instruction line (address + mnemonic + hex bytes), beginProfile→run→readProfile captures hot functions
 // (sorted hottest-first, inclusive >= exclusive), and getCallStack returns a sane frame list. Mirrors the
 // legacy nes/observe.test.ts + nes/profile.test.ts assertions. (The mock counterpart is mockBackend.ts.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { CallFrame, DisasmLine, ProfiledFunction } from "../src/backend";

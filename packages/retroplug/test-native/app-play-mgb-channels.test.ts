@@ -4,7 +4,7 @@
 // each channel. Guards the RPC shape + marshaling and — crucially — real per-channel SEPARATION: a
 // 3-note chord on the pulse voices lights the pulse channels while Noise stays quiet, which a mix
 // duplicated four ways could never show. spec/10 §5.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

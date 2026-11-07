@@ -6,7 +6,7 @@
 // asset FILE on disk by path (a `.kit` bank / `.lsdpal` / `.png`) — NEVER embedded bytes — mirroring how the
 // project references its ROM/sav by path; the file is read at construct. Applying reuses the pure-TS patcher
 // (src/lsdj/rom).
-import type { RoleRegistry, RoleType, ConstructCaps } from "./systemRoles";
+import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
 import type { ConstructSpec } from "./backend";
 import type { RomColorSet } from "./lsdj/rom";
 import { z } from "./configSchema";

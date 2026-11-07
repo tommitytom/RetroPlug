@@ -21,7 +21,7 @@
 //
 // The toolchain is Node's (esbuild and TypeScript are not txiki modules), so the test runs it in a node child: the
 // runner's own node (RP_NODE, which scripts/run-tests.mjs sets), else the node on the PATH when run by hand.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 
 // Just enough of txiki's spawn, a child's pipe and its file reads, declared locally as bundle-no-zod.test.ts does.
 interface ByteStream {
@@ -202,7 +202,7 @@ test("a device pack that imports outside its allowlist is refused, naming the mo
   expect(run.ok).toBe(false);
   contains(
     run.err,
-    "packages/retroplug/src/graph/canonicalJson.ts " +
+    "packages/core/ts/canonicalJson.ts " +
       "(imported by packages/retroplug/test/graph/device-pack/outside-import.ts)",
   );
 });

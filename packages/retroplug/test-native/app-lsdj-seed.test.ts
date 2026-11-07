@@ -5,7 +5,7 @@
 // image stamped with LSDj's `jk` SRAM-init magic; (2) after a store-driven addSystem with no sav, the
 // core's battery (readSram) carries that same `jk` magic — i.e. the seed reached a real SameBoy core.
 // (A cold-booted fresh cart, self-test not yet run, has a zeroed battery — no `jk`.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { buildAppRegistry } from "../src/appHost";
 import { SystemsStore } from "../src/systemsStore";

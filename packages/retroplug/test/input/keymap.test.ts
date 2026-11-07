@@ -1,7 +1,7 @@
 // The keycode→button resolver: symbolic key names (as stored in bindings JSON) resolve to DPF codes,
 // and buildKeyToButton inverts a resolved keyboard map into the DPF-code → GameboyButton lookup the game
 // -input hook indexes per keystroke. Values mirror native InputTypes.hpp (Right=0 … Start=7).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { resolveKeyName, dpfCodeToKeyName, keyDisplayName, buildKeyToButton, buildKeyToAction, BUTTON_VALUE } from "../../src/keyCodes";
 

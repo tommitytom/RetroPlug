@@ -1,6 +1,6 @@
 // LSDj ROM asset module (src/lsdj/rom): pure-TS units over synthetic ROM buffers. Real-ROM extraction
 // is covered by test-native/lsdj-rom.test.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { findPattern, findPatternAnywhere } from "../../src/lsdj/rom/find";
 import { KitView, decodeNibbles } from "../../src/lsdj/rom/kit";
 import { buildKitBank, sampleBytesFromBank, kitSampleSpace } from "../../src/lsdj/rom/buildKit";

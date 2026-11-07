@@ -10,6 +10,11 @@
 #   dev-library  alpha's library links its devDependency: refused
 #   declared     alpha links beta's manifest target, declared: holds
 #   test-dev     alpha's TEST target links its devDependency: holds
+#   genex        alpha links $<BUILD_INTERFACE:beta's helper>, which it does not declare: refused
+#   genex-declared  $<LINK_ONLY:> and $<BUILD_INTERFACE:> around beta's target and include directory: holds
+#   interface-include  alpha's INTERFACE_INCLUDE_DIRECTORIES is beta's tree: refused
+#   source-outside  alpha's target compiles beta's source: refused
+#   unjudged     alpha links a generator expression the check cannot evaluate: refused
 cmake_minimum_required(VERSION 3.19)
 project(retroplug_package_gather NONE)
 
@@ -24,10 +29,12 @@ include("${RP_ROOT}/cmake/packages.cmake")
 # The fixture's packages tree, not this checkout's: the gatherer attributes a target by its SOURCE_DIR under this.
 set(RP_PACKAGES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/packages")
 set_property(GLOBAL PROPERTY RP_PACKAGES alpha beta testing native)
-if(RP_GATHER_CASE STREQUAL "later")
-    set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS "")
-else()
+# What alpha's manifest declares: beta for the cases that reach it and must hold, nothing for the ones that must be
+# refused (a reach it does not declare).
+if(RP_GATHER_CASE STREQUAL "declared" OR RP_GATHER_CASE STREQUAL "genex-declared")
     set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS beta)
+else()
+    set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS "")
 endif()
 set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DEV_DECLARATIONS testing)
 set_property(GLOBAL PROPERTY RP_PACKAGE_beta_DECLARATIONS "")

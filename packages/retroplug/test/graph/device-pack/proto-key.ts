@@ -2,8 +2,8 @@
 // which sets the object's prototype under Node and makes an own key under MicroQuickJS, so the node lays out one port
 // on the reference and two on the engine. The device-pack toolchain must refuse it, naming the transcript line where
 // the two disagree (test/graph/device-pack.test.ts).
-import { defineNode, events } from "../../../src/graph/defineNode";
-import { registerScriptNodes } from "../../../src/script/register";
+import { defineNode, events } from "@retroplug/core/defineNode";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 export const protoKey = defineNode({
   id: "rp.test.device.proto-key",

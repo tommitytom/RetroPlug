@@ -2,7 +2,7 @@
 // Which format an id names is a package's app contribution, so the driver resolves it through the generated list
 // rather than importing a cart's assembler; here: the two ids the driver dispatches with resolve to the shell's
 // formats, an id nothing registers is refused, and an id two formats name is refused rather than resolved by luck.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { KIT_FORMATS, kitFormat, resolveKitFormat } from "../../src/kitFormats";
 import { LSDJ_KIT_FORMAT, RISA_KIT_FORMAT, type KitFormat } from "../../src/kit/compile";
 

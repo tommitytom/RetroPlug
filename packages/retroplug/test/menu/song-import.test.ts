@@ -6,7 +6,7 @@
 // The write cycle (applyImport) is asserted against the last constructCall's sramBytes — the bytes handed
 // to the rebuild — because MockBackend doesn't round-trip a loadSram back through readSram (see
 // lsdj-songs.test.ts, which asserts the same way).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { planImport, buildImportModal, applyImport, type PickState, type ImportPending } from "../../ui/app/songImport";

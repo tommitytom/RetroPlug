@@ -6,7 +6,7 @@
 // fan-out past the engine's 64 outstanding jobs all come back.
 // The pool, the threading, the windows and the live plan's isolation are held by retroplug-engine-graph-test
 // "[offline]".
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { OfflineRunError, offlineInputRef, offlineOutputRef, type OfflineRunRequest } from "../src/offline";

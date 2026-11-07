@@ -9,7 +9,7 @@
 // Why byte-identity rather than just round-tripping: the cart decodes anything well-formed, so a
 // "better" packer would appear to work here and produce streams `tools/savetool.html` and the on-cart
 // Z80 decoder might not read the same way. Interop is the requirement, not compression ratio.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { rleCompress, rleDecompress, rlePack, RLE_UNIT } from "../../src/smsggdj/codec/rle";
 
 const U = (arr: number[][]): Uint8Array => Uint8Array.from(arr.flat());

@@ -5,7 +5,7 @@
 // it auto-detects, the device info, mkdir, a file put, listed, got back and removed, a ROM booted with its battery
 // through the menu, the running cart's config block read back, and the failures the CLI prints in the TS client's
 // words. Each run opens and closes its own session, as each CLI process does.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { n8LoadTool } from "../cli/sessions/n8-load";
 import { makeCall } from "../src/rpcClient";

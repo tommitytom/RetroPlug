@@ -4,7 +4,7 @@
 // snapshot into screen / tempo / per-screen cursor. Boots an authored era-format song, drives it with
 // renderAudio only (never startAudio — the single-threaded direct-render regime that keeps readMemory
 // live), navigates screens, and asserts the reader tracks the real on-screen state.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { decodeSav, savFrom } from "../src/lsdjSav";

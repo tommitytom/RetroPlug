@@ -6,7 +6,7 @@
 // background audio thread, lets it publish a snapshot, duplicates through the store, and asserts a second
 // instance actually lands. Resource-free (embedded mGB). Ownership discipline (per dsp-threaded):
 // construct BEFORE startAudio; read systemCount only AFTER stopAudio.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

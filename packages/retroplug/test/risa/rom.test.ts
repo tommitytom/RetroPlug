@@ -2,7 +2,7 @@
 // themes/fonts, prove setTheme/setChrFontSlot splice ONLY the intended bytes (byte-diff), and round-trip
 // the .rit / .chr / planar-tile codecs. Uses a full synthetic risa ROM (theme table + CHR) so no emulator
 // or real ROM is needed.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { risaRomFull, risaRom, garbage } from "../systems/fixtures";
 import { RisaRom, decodeThemeFromRom, encodeThemeRecord, encodeThemeName, parseRit, serializeRit, decodeTile, encodeTile } from "../../src/risa/rom";
 

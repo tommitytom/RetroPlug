@@ -6,7 +6,7 @@
 // store them, and a slot's chain of jobs over a scripted runner (what it submits, where it stops short, what it does
 // with a failure). The banks themselves are held by test-native/kit-baseline (all 39 golden cases) and
 // test-native/kit-compile.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import {
   LSDJ_MAX_SAMPLE_FRAMES,
@@ -17,7 +17,7 @@ import {
   palDmcRate,
   resampledLength,
   trimToFrames,
-} from "../../src/kit/pack";
+} from "@retroplug/dsp/pack";
 import {
   BIQUAD_FREQUENCY_RANGE,
   BIQUAD_GAIN_DB_RANGE,
@@ -29,7 +29,7 @@ import {
   resampleDocument,
   resolveEffects,
   type ParamRange,
-} from "../../src/kit/chain";
+} from "@retroplug/dsp/chain";
 import { compileDmc, compileKit, type KitJobRunner } from "../../src/kit";
 import { buildKitBank } from "../../src/lsdj/rom/buildKit";
 import { assembleKitBank } from "../../src/risa/rom/kit";

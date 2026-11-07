@@ -1,6 +1,6 @@
 // F2 (cli/dsp.ts): the FFT core is correct - a synthesized sine peaks in the right bin, and Parseval's
 // theorem holds (time energy == one-sided spectrum energy) within rounding. Pure DSP, no emulator.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { magnitudeSpectrum, fft, nextPow2, toMono, window } from "../cli/dsp";
 
 const SR = 44100;

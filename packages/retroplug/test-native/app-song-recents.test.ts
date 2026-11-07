@@ -4,7 +4,7 @@
 // syncRecent reads the published bytes back and records the row. That read-back is exactly what
 // catches a song the user loads on LSDj's own FILE screen (identical battery bytes - LSDj's load writes
 // the same active-project byte), which nothing else in the app can see.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { buildAppRegistry } from "../src/appHost";
 import { RecentStore } from "../src/recentStore";

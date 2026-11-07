@@ -10,7 +10,7 @@
 // The second half is what makes this more than a duplicate: it does not stop at "the role is attached",
 // it runs the sync node and the transport and asserts the sequencer MOVES. A union that produced a
 // correctly-named role with a wrong or empty config would pass the pure test and fail here.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { ProjectStore } from "../src/projectStore";

@@ -5,7 +5,7 @@
 // no input. (NES is silent until MIDI-driven and the host has no NES-MIDI path yet; Nanoloop GBA
 // doesn't auto-play; an idle smsggdj plays nothing - so audio can't prove liveness here.) Each ROM is
 // guarded with fileExists so a resource-less CI skips.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

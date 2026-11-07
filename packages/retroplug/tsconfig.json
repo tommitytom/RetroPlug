@@ -1,19 +1,13 @@
 {
+  // The shell's own program: the app, its tests, the UI harness and every workspace package's TS half. The compiler
+  // options are tsconfig.base.json's (the same ones each package's tsconfig extends), plus the two path aliases the app
+  // needs; the runtime's ambient globals come from the base's `files`.
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ES2020",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitOverride": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
-    // ES2022.Array only, for Array.prototype.at() in the UI tests. NOT the whole of ES2022: the app
-    // runs on QuickJS, and a blanket lib bump would let src reach for APIs the runtime may not have.
-    "lib": ["ES2020", "ES2022.Array"],
-    "types": [],
+    // Back on for the shell alone, against the base's reason: the iife bundles esbuild builds FROM THIS PACKAGE (the
+    // built-in script pack, tools/build-session.js) are headed with a "use strict" directive today, because this
+    // tsconfig has implied it all along. Keep implying it, so sharing the base's options moves no bundle's bytes.
+    "alwaysStrict": true,
     // Resolve the bare specifier a CONSUMER uses to the shipped declaration file, exactly as their
     // tsconfig does. Nothing in the app imports it; it exists so cli/sdkSurfaceCheck.ts can be
     // type-checked against the .d.ts, which is hand-maintained and has twice shipped out of step
@@ -25,11 +19,11 @@
       "ui-harness": ["./test-ui/uiHarness.ts"]
     }
   },
-  // The workspace packages' TS halves (packages/n8/ts first), whose tests run in this package's mock tier
-  // (scripts/run-tests.mjs sweeps packages/*/ts/test) on its harness, devtest's and bliptoaster's script packs, and the script
-  // packs the device-mode test builds (packages/native/test/device-mode/script-packs).
-  "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../n8/ts", "../devtest/ts",
-              "../bliptoaster/ts", "../native/test/device-mode/script-packs"],
+  // The shell's own trees, and every workspace package's TS half by one glob, so a package added to the workspace is
+  // type-checked without an entry here: its own ts/ tree, sources and ts/test alike. packages/native's device-mode
+  // fixture packs stay listed (they are fixtures of a native test, not a package).
+  "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../*/ts",
+              "../native/test/device-mode/script-packs"],
   // The package generator's and the boundary check's fixture trees: data they read (and the generator writes), laid out
   // as a workspace root and its packages are, not modules of this program (their imports name a fixture tree's files,
   // not ours, and a fixture package is meant to break a rule this program keeps).

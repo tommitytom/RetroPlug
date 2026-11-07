@@ -14,9 +14,9 @@ import {
   type OfflineRunHandle,
   type OfflineRunRequest,
 } from "../src/offline";
-import type { GraphDocument, NodeDoc } from "../src/graph/graphDocument";
+import type { GraphDocument, NodeDoc } from "@retroplug/core/graphDocument";
 import { rebuildKeyOf } from "../src/graph/buildGraph";
-import { canonicalJson } from "../src/graph/canonicalJson";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
 import {
   CapabilityJobs,
   type CapabilityArgs,

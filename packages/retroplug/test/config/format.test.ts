@@ -3,7 +3,7 @@
 // + the project.json inside an export zip / the DPF state chunk) — goes through stringifyConfig, so files
 // are pretty-printed with a trailing newline: readable, hand-editable, diffable. Reads stay indifferent to
 // whitespace, so a compact file from an older build still loads.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { stringifyConfig } from "../../src/configSchema";
 import { DEFAULT_USER_CONFIG } from "../../src/userConfig";
 import { parseUserConfig, serializeUserConfig } from "../../src/userConfigSerialization";

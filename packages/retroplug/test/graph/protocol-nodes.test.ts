@@ -7,11 +7,11 @@
 // since a port the table does not name is one buildGraph never wires. And every type the table names, every type a
 // role kind is placed as and every type an entry names as the node after its system (`out`) is one the script-node
 // bundle registers.
-import { test, expect } from "../../testing/harness";
-import type { DefinedNode } from "../../src/graph/defineNode";
-import type { PortDesc } from "../../src/graph/descriptor";
+import { test, expect } from "@retroplug/testing";
+import type { DefinedNode } from "@retroplug/core/defineNode";
+import type { PortDesc } from "@retroplug/core/descriptor";
 import { PROTOCOL_NODES, ROLE_NODES, outNodeOf, protocolNodeOf, type ProtocolNodeSpec, type ProtocolNodeType } from "../../src/graph/protocolNodes";
-import { SCRIPT_NODES_GLOBAL } from "../../src/script/register";
+import { SCRIPT_NODES_GLOBAL } from "@retroplug/core/register";
 import { mgbMidiNode } from "../../src/script/nodes/mgbMidi";
 import { n8MidiToFifoNode } from "../../src/script/nodes/n8MidiToFifo";
 import { risaSyncNode } from "../../src/script/nodes/risaSync";

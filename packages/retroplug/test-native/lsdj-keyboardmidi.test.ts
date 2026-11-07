@@ -13,7 +13,7 @@
 //      the song is running" — LSDj only polls the keyboard (arms SC=0xfc) once playing. So we author a
 //      one-note song and press START; the sparse song is mostly silent between its notes, and the
 //      keyboard notes fill every window with audio.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";

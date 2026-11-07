@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/epsilon",
+  "private": true,
+  "exports": {
+    "./app": "./app.ts"
+  }
+}

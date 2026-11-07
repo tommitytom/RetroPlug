@@ -4,7 +4,7 @@
 //
 // This is a HAND-CURATED public surface, not a mechanical dump of the whole package — it types exactly
 // what a ROM developer touches (drive a system, render, read live core state, assert). It mirrors the
-// real signatures in cli/{session,timeline,wav}.ts, testing/harness.ts and src/{backend,audioDriver,
+// real signatures in cli/{session,timeline,wav}.ts, packages/testing/ts/harness.ts and src/{backend,audioDriver,
 // systemsStore}.ts; tools/build-cli-sdk.mjs copies it verbatim. Keep it in step with cli/sdk.ts (the
 // runtime barrel, which re-exports the real implementations and is typechecked by tsc).
 

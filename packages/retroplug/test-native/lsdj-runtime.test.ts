@@ -2,7 +2,7 @@
 // bundled stock 9.4.2, identify it from its real header, read WRAM via readMemory(Ram), and decode.
 // Also the per-version confirmation that the DRIFTING screen offset (CURRENT_SCREEN 0xC402, seeded from
 // LSDisJ 9.2.L) is correct on 9.4.2 — the reader reports "song" while parked on the SONG screen.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";

@@ -4,9 +4,9 @@
 // empties the array messages() hands it every block, which the host must then grow again on a rooted slot, run in a
 // heap that collects at every allocation. A test fixture of the device-pack toolchain
 // (packages/native/cmake/tests.cmake), never built by a product.
-import { defineNode, events } from "../../../../../retroplug/src/graph/defineNode";
-import { s } from "../../../../../retroplug/src/graph/settingsSchema";
-import { registerScriptNodes } from "../../../../../retroplug/src/script/register";
+import { defineNode, events } from "@retroplug/core/defineNode";
+import { s } from "@retroplug/core/settingsSchema";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 // It keeps what it makes only when its settings say `grow`, so the toolchain's heap check, which runs every node on
 // its default settings, passes the pack.

@@ -588,7 +588,7 @@ export const lsdjSync = defineNode({
   Two shared golden descriptors pin the byte-for-byte agreement.
 - **Settings are validated on the control plane.** The audio-thread code receives plain, already-checked
   objects, so **zod leaves the audio-thread bundle**: a node's settings are a zod-free schema
-  ([settingsSchema.ts](../packages/retroplug/src/graph/settingsSchema.ts), `s.object`, `s.enum`, `s.int`, ...,
+  ([settingsSchema.ts](../packages/core/ts/settingsSchema.ts), `s.object`, `s.enum`, `s.int`, ...,
   each parsing and writing its JSON Schema as its zod twin does), `defineNode` imports no zod at all (it takes
   any schema with `safeParse` and `toJSONSchema`, so a zod one still serves on the control plane), and the
   descriptor's schema comes from the definition's own schema object (`toJSONSchema({ io: "input" })`, the

@@ -13,7 +13,7 @@
 // an idle interval and 36 for a load that had done nothing at all. So build an ANIMATION MASK from
 // several idle samples with no input, and compare only the pixels outside it. That is reproducible to
 // the pixel across runs.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildSav } from "../src/smsggdj/codec/sav";

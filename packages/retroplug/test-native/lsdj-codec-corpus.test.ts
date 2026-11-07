@@ -3,7 +3,7 @@
 // byte-identically — the exhaustive losslessness proof that can't run in the
 // disk-less pure tier. Runs the pure-TS codec inside retroplug-host; the native
 // backend is used only to list/read files, never to encode.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { decodeSav, encodeSav } from "../src/lsdj/codec/sav";
 

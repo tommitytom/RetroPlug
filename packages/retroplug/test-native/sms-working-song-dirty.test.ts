@@ -13,7 +13,7 @@
 // `echo_mode`). A wrong address here fails silently in the worst direction: the flag would read 0
 // forever and the guard would never fire again, losing work with no prompt at all. So both edges are
 // driven on the real ROM - boot says clean, a real keypress on the SONG grid says dirty.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildSav, isSongSaved, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/sav";

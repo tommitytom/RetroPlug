@@ -2,7 +2,7 @@
 // FileSelection through the COMPOSED store graph (composeAppStores now carries `fileSelection`). This
 // mirrors browse.test.ts but exercises the menu wiring: build the MenuContext the way App.tsx does,
 // invoke a leaf's onSelect, and assert the store mutated once the (mocked) dialog settled.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildStartMenu, buildInstanceMenu, composeWindowTitle, type MenuContext } from "../../ui/screens/menu/menuDefs";

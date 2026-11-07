@@ -4,16 +4,16 @@
 // driven with host MIDI in, sends the MIDI out its code makes; reloaded, that node runs the new code while the
 // routing's own output is as it was; and each refusal comes back in the result's shape, changing nothing. The toy packs
 // are source strings whose nodes are plain objects in the shape defineNode makes, appended to the global the script
-// host reads (packages/retroplug/src/script/register.ts), as the engine-graph tests' toys are
+// host reads (packages/core/ts/register.ts), as the engine-graph tests' toys are
 // (packages/native/test/engine-graph/ScriptPacks.test.cpp, which holds packs to their isolation, jobs, memory and
 // freeing). No fixtures, so CI runs every case. One Engine serves the file and a pack stays loaded (there is no
 // unload), so each case loads ids of its own.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { LoadScriptPackRequest, LoadScriptPackResult } from "../src/backend";
-import type { TypeDescriptor } from "../src/graph/descriptor";
-import { toGraphJson } from "../src/graph/graphDocument";
+import type { TypeDescriptor } from "@retroplug/core/descriptor";
+import { toGraphJson } from "@retroplug/core/graphDocument";
 
 const be = createRealBackend();
 // No graph of its own: it renders whatever this file last published, which places the host's stereo pair.

@@ -2,7 +2,7 @@
 // bank → decode the DPCM back to audio (round-trip, the r8brain path is not byte-parity with wav2dmc so we
 // gate on the delta/pack/decode invariants) → splice it into a real risa ROM via setKit (bank + mirror) →
 // the patched ROM boots. SKIPs when the built risa ROM is absent.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RisaRom, bankToModel, isBankPopulated, dpcmDecode, assembleKitBank } from "../src/risa/rom";

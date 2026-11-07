@@ -2,7 +2,7 @@
 // risaInventory). No overrides here (that's the role config, read live at the menu) and no memoization (the UI
 // caches the file read). The file-dialog Export/Replace stay in the menu (they own the .rit/.chr/.rkit formats).
 import { readAssetOverrides, type AssetCatalog, type AssetSlot } from "./assetCatalog";
-import type { ConstructCaps } from "../systemRoles";
+import type { ConstructCaps } from "@retroplug/core/systemRoles";
 import { RisaRom, KIT_BANK_COUNT } from "../risa/rom";
 import { applyOverridesToRom, type RisaAssetOverride } from "../risaAssetsRole";
 

@@ -428,6 +428,28 @@ foreach(_rp_i RANGE ${_rp_products_last})
     list(APPEND RP_DESKTOP_PACKAGES "${_rp_package}")
 endforeach()
 
+# A package that contributes an app module or protocol nodes is imported by the shell's generated modules BY ITS PACKAGE
+# NAME (packages/retroplug/src/generated, packages/retroplug/scripts/lib/packages.mjs), and pnpm links it into the
+# shell's node_modules only when the shell declares it. The generator refuses a contribution the shell does not declare;
+# the LINK can still be missing in a checkout pulled before that declaration, and the bundler's bare "Could not resolve"
+# is no help there, so configure says what to do. A package that contributes nothing is not imported, so it needs no link.
+foreach(_rp_ts_package IN LISTS RP_DESKTOP_PACKAGES)
+    set(_rp_ts_manifest "${CMAKE_SOURCE_DIR}/packages/${_rp_ts_package}/package.json")
+    file(READ "${_rp_ts_manifest}" _rp_ts_json)
+    set(_rp_ts_contributes FALSE)
+    foreach(_rp_ts_member app protocol)
+        string(JSON _rp_ts_kind ERROR_VARIABLE _rp_ts_error TYPE "${_rp_ts_json}" retroplug ${_rp_ts_member})
+        if(NOT _rp_ts_error)
+            set(_rp_ts_contributes TRUE)
+        endif()
+    endforeach()
+    if(_rp_ts_contributes AND NOT EXISTS
+       "${CMAKE_SOURCE_DIR}/packages/retroplug/node_modules/@retroplug/${_rp_ts_package}")
+        message(FATAL_ERROR "packages/retroplug/node_modules/@retroplug/${_rp_ts_package} is missing: the shell's "
+                            "generated modules import ${_rp_ts_package}'s contribution by name, so run `pnpm install`")
+    endif()
+endforeach()
+
 # --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
 # + the DPF plugin + the test host / cli / ui-test.
 add_subdirectory(packages/native native)

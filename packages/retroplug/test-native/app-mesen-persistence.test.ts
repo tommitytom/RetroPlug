@@ -3,7 +3,7 @@
 // that passes the NES magic gate but fails Mesen's LoadRom must fail the construct (no zombie tile),
 // and a battery cart's SRAM must read back through the registry (F2). bliptoaster.nes is committed
 // in-repo; the battery NES fixture is authored inline (no real-core battery ROM ships).
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

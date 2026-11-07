@@ -23,7 +23,7 @@ export type { AudioDriver } from "../src/audioDriver";
 
 export { encodeWav } from "./wav";
 
-export { test, expect, skip } from "../testing/harness";
+export { test, expect, skip } from "@retroplug/testing";
 
 // Audio analysis DSP for tuning/timbre verification (F2-F7). Pure TS over rendered PCM; prefer the decoded
 // Hz readouts (getExpansionAudioState().frequency / getApuState) for pitch when available - these are the

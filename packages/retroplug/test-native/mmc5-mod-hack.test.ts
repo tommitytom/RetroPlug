@@ -30,7 +30,7 @@
 // their APU counterparts", which would predict the 2A03's skew - the hardware says otherwise, so either the
 // wiki is imprecise or the Everdrive N8's MMC5 core does not implement the sequencer reset. That cannot be
 // told apart without a real MMC5 cartridge, exactly like the 5B noise question.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 

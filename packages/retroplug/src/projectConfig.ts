@@ -13,7 +13,7 @@ import type { SystemEntry } from "./systemsList";
 import { defaultCoreFor, type Platform, type Core } from "./platform";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
 import { commonSettingsSchema, type CommonSettings } from "./systemSettings";
-import type { RoleInstance } from "./systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 import { z, clampedInt, boolField, stringField, enumField, stringifyConfig } from "./configSchema";
 import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
 import {

@@ -8,7 +8,7 @@
 
 import type { ControlPlaneBackend } from "../backend";
 import type { SystemsStore } from "../systemsStore";
-import type { RoleInstance } from "../systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 import { resolveSavPath } from "../savPaths";
 import { resolveSongCatalog, resolveTracker } from "../trackerRegistry"; // the shell registry: the list is generated
 import type { WorkingSongImage } from "./songCatalog";

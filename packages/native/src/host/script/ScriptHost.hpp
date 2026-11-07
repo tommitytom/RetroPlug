@@ -95,7 +95,7 @@ inline constexpr std::uint32_t kDspSpanLabels = 1024;
 // The script host (docs/modular-graph-phase-b3a-design.md section 2): every TS node one Engine runs, behind the
 // same C ABI as a native node. It holds them in packs (docs/modular-graph-phase-c1-design.md section 4), the unit it
 // isolates and loads: a pack has an id, a bundle that registers its node definitions (defineNode results, appended to
-// the global __rp_scriptNodes: packages/retroplug/src/script/register.ts), and a package of its own, named by its id,
+// the global __rp_scriptNodes: packages/core/ts/register.ts), and a package of its own, named by its id,
 // in which the host registers an rp_node_type for each definition, whose instances are native shims. The first pack is
 // the built-in one, "rp.script", which load fills with a bundle (an Engine's is embeddedBundle()); loadPack loads
 // more beside it, each under an id of its own that names its types: every type id a loaded pack registers is the

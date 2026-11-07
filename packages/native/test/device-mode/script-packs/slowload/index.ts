@@ -2,8 +2,8 @@
 // answers "not found" with the interrupt left pending, and the script runs on), for ScriptPack.test.cpp's case that a
 // pack whose load runs past its deadline is refused in the deadline's words though its script returned. A test fixture
 // of the device-pack toolchain (packages/native/cmake/tests.cmake), never built by a product.
-import { defineNode, events } from "../../../../../retroplug/src/graph/defineNode";
-import { registerScriptNodes } from "../../../../../retroplug/src/script/register";
+import { defineNode, events } from "@retroplug/core/defineNode";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 export const restNode = defineNode({
   id: "rp.slowload.rest",

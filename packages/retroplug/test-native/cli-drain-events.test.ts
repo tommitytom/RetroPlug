@@ -5,7 +5,7 @@
 // this, every call returned the whole retained frame pair and a 5 ms poll saw each event ~3 times; the
 // only dedupe key available (scanline:cycle:address) collapsed writes landing on the same dot in
 // consecutive frames, which a deterministic idle loop does (BlipToaster's HARNESS-NOTES 2.1).
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { DebugEvent } from "../src/backend";

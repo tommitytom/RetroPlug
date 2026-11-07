@@ -2,7 +2,7 @@
 // UserConfigStore. Covers first-run defaults, the name-forced save/load round-trip,
 // rename (repointing the active ref, refusing clobber), delete (refusing the active
 // profile), and the synthesized resolved bindings with default fallback.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { BindingsStore } from "../../src/bindingsStore";

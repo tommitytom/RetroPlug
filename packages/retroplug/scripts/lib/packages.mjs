@@ -94,6 +94,13 @@ function readPackage(root, name) {
   if (!existsSync(manifest)) throw new Error(`the package ${name} has no ${manifest}`);
   const json = readJson(manifest);
   if (!isObject(json.retroplug)) throw new Error(`${manifest} has no retroplug field`);
+  // The name a consumer imports is the directory's, here and in the boundary check (which reads packages/<name>): a
+  // manifest that names another package would have one of the two say something neither the tree nor pnpm links.
+  const expected = `@retroplug/${name}`;
+  if (json.name !== expected) {
+    throw new Error(`${manifest} names the package ${JSON.stringify(json.name)}, not ${expected}: a package's name is ` +
+      "its directory's");
+  }
   return { name, dir, manifest, manifestJson: json, retroplug: json.retroplug };
 }
 
@@ -150,6 +157,19 @@ function order(root, names) {
             "dependencies",
         );
       }
+    }
+  }
+
+  // A package that contributes an app module or protocol nodes is imported by the generated modules BY ITS PACKAGE NAME,
+  // and pnpm links it into the shell's node_modules only when the shell's own manifest declares it: without the
+  // declaration the bundle cannot resolve it, and the bundler's message names no manifest. The shell is last in
+  // `packages`, so its own manifest is the list's own.
+  const shell = packages[packages.length - 1];
+  const shellDeps = isObject(shell.manifestJson.dependencies) ? Object.keys(shell.manifestJson.dependencies) : [];
+  for (const pkg of packages.slice(0, -1)) {
+    if (contributes(pkg) && !shellDeps.includes(`@retroplug/${pkg.name}`)) {
+      throw new Error(`${SHELL} does not declare @retroplug/${pkg.name} in its dependencies, which its generated ` +
+        "modules import by name: a package that contributes to the app is the shell's dependency");
     }
   }
 
@@ -279,6 +299,44 @@ function identifier(name) {
   return `app_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
 }
 
+/** A manifest's `exports` as its entries: the key and the target string it maps to. Only a plain string target is read:
+ *  a package that publishes a contribution under a condition (`{ "import": ... }`) must spell it plainly, because this
+ *  is the one place a generated import's specifier is decided. */
+function exportEntries(manifest) {
+  const exports = manifest.exports;
+  if (typeof exports === "string") return [{ key: ".", target: exports }];
+  if (!isObject(exports)) return [];
+  const entries = [];
+  for (const [key, value] of Object.entries(exports)) {
+    if (typeof value === "string") entries.push({ key, target: value });
+  }
+  return entries;
+}
+
+/** How a generated module imports a package's contribution: the shell's by a relative path (it is the tree the
+ *  generated file lives in), every other package by its name and the export key its manifest publishes the file at
+ *  ("ts/app.ts", published at "./app", is "@retroplug/core/app"; at ".", just the name). The manifest names a FILE, and
+ *  a consumer resolves the name and path a package's `exports` declare, so the contribution must be published at the key
+ *  whose target is that same file: a convention-derived specifier would load another module (a wrong target) or nothing
+ *  (a missing key), and only the bundler would say so. */
+function moduleSpecifier(outDir, pkg, file) {
+  if (pkg.name === SHELL) return specifier(outDir, file);
+  const rel = relative(pkg.dir, file).split(/[\\/]/).join("/");
+  if (!rel.startsWith("ts/")) {
+    throw new Error(`${pkg.name}: ${rel} is outside its ts/ tree, so its exports cannot publish it`);
+  }
+  const target = `./${rel}`;
+  const entries = exportEntries(pkg.manifestJson);
+  const published = entries.find((entry) => entry.target === target);
+  if (!published) {
+    const listed = entries.length ? entries.map((entry) => `${entry.key} -> ${entry.target}`).join(", ") : "none";
+    throw new Error(`${pkg.name}: its manifest names ${rel}, which its exports do not publish: the generated import ` +
+      `needs the entry whose target is ${target} (its exports: ${listed})`);
+  }
+  const name = pkg.manifestJson.name;
+  return published.key === "." ? name : `${name}/${published.key.replace(/^\.\//, "")}`;
+}
+
 function contributionLines(packages, member) {
   return packages.filter((p) => p.app).map((p) => `  ...(${identifier(p.pkg.name)}.${member} ?? []),`);
 }
@@ -295,11 +353,11 @@ function renderPackages({ packages, outDir }) {
     "// buildAppRegistry applies, the ROM providers it offers, the tracker integrations the Songs and Assets menus",
     "// search, and the kit formats the audio driver dispatches to. The protocol tables buildGraph reads are apart, in",
     "// ./protocol.ts, so a module that needs them imports no package's app.",
-    'import type { RoleType, RomProvider } from "../systemRoles";',
+    'import type { RoleType, RomProvider } from "@retroplug/core";',
     'import type { TrackerIntegration } from "../tracker/trackerIntegration";',
-    'import type { KitFormat } from "../kit/compile";',
+    'import type { KitFormat } from "@retroplug/dsp/kitContract";',
   );
-  for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${specifier(outDir, p.app)}";`);
+  for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   lines.push(
     "",
     "/** The app's roles, in product order: the role contract's objects, which the registry holds. */",
@@ -386,7 +444,7 @@ function renderScriptNodes({ packages, outDir }) {
   if (!spec.length) {
     return [
       ...head,
-      'import { registerScriptNodes } from "../script/register";',
+      'import { registerScriptNodes } from "@retroplug/core/register";',
       "",
       "// No package in the desktop product contributes a protocol node.",
       "registerScriptNodes([]);",
@@ -395,12 +453,12 @@ function renderScriptNodes({ packages, outDir }) {
   }
   const lines = [
     ...head,
-    'import type { DefinedNode } from "../graph/defineNode";',
-    'import { registerScriptNodes } from "../script/register";',
+    'import type { DefinedNode } from "@retroplug/core/defineNode";',
+    'import { registerScriptNodes } from "@retroplug/core/register";',
   ];
   for (const p of spec) {
     const id = identifier(p.pkg.name).slice(4);
-    lines.push(`import nodes_${id} from "${specifier(outDir, p.protocol)}";`);
+    lines.push(`import nodes_${id} from "${moduleSpecifier(outDir, p.pkg, p.protocol)}";`);
   }
   lines.push(
     "",

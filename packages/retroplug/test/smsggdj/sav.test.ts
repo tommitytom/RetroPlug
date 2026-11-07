@@ -5,7 +5,7 @@
 // carts - and the oracle's `readSav` reads images this module writes. What is pinned here is the
 // behaviour that certification cannot cover: the incremental ops (delete / reorder / import / add),
 // which the oracle has no equivalent of, and the invariants a rebuild is easy to break.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   SMDJ4_BLOCK_LEN,
   isSmsggdjSav,

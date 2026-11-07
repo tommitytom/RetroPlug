@@ -1,6 +1,6 @@
 // The smsggdj SongCatalog + its TrackerIntegration: resolution, the Load-by-naming-a-slot mechanism,
 // and the version gate that stops a build which cannot honour it from showing a dead menu.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { resolveSongCatalog, resolveTracker } from "../../src/trackerRegistry";
 import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
 import { lsdjSongCatalog } from "../../src/tracker/lsdjSongCatalog";

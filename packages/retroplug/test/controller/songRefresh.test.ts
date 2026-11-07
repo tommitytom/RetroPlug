@@ -11,7 +11,7 @@
 // enough to sit on the same 0.5 s timer as the recents song-watch, and it has to be quiet: a publish on
 // every instrument tweak would re-derive the table (a whole sav decode) for a change that cannot affect
 // it. Hence a signature over only the four regions row timing actually depends on.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores } from "../../src/appStores";
 import { workingSongSignature } from "../../src/lsdj/playback/fromSav";

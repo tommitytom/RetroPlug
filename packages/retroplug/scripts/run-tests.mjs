@@ -41,8 +41,10 @@ generate();
 // The packages' boundaries next (scripts/check-boundaries.mjs, docs/modular-graph-phase-f1-design.md section 4): a
 // package that imports what it does not declare, or the shell at all, is refused by name here, before a file bundles and
 // fails on a module that is there but not the package's to reach. The exceptions' allowed lines print only when asked
-// (RP_BOUNDARIES_VERBOSE), so an ordinary run says what it found, not what it forgave.
-if (reportBoundaries({ verbose: Boolean(process.env.RP_BOUNDARIES_VERBOSE) })) process.exit(1);
+// (RP_BOUNDARIES_VERBOSE), so an ordinary run says what it found, not what it forgave. Any value but an explicit off
+// asks for them, so `=0` cannot turn them on.
+const boundariesVerbose = process.env.RP_BOUNDARIES_VERBOSE;
+if (reportBoundaries({ verbose: boundariesVerbose !== undefined && boundariesVerbose !== "0" })) process.exit(1);
 
 const TJS =
   process.env.RETROPLUG_TJS ||

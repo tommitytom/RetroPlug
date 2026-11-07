@@ -15,7 +15,7 @@
 // COVERAGE LIMIT: the GBA leg is the one that actually reproduces the bug, and it needs a GBA ROM that is
 // not in this repo, so it SKIPS on a clean checkout and in CI. The NES leg runs everywhere but would have
 // passed before the fix too - it guards against a future regression on the core that is always available.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { directGraph } from "../src/graph/directGraph";

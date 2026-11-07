@@ -15,8 +15,8 @@
 //   run             { registered: [<the ids the generated entry registers, in order>] }
 //   missing-node    { error: <the generated entry's own refusal> }
 //   order | cycle | unlisted-contributes | unlisted-plain | depends-on-shell | duplicate | duplicate-type |
-//   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unknown-key | half-wired |
-//   extra-node
+//   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unexported-app | name-mismatch |
+//   outside-ts | shell-undeclared | unknown-key | half-wired | extra-node
 //                   { error: <the generator's message, or null when it did not refuse> }
 //                   (unlisted-plain generates, and reports files like generate)
 //
@@ -77,7 +77,15 @@ function refusal() {
 async function loadEntry() {
   const out = join(work, "scriptNodes.mjs");
   const { buildSync } = require("esbuild");
-  buildSync(buildOptions(join(generated, "scriptNodes.ts"), out, "esm"));
+  // The fixture tree is not a workspace: alias core's modules the way a pnpm link would resolve them.
+  buildSync({
+    ...buildOptions(join(generated, "scriptNodes.ts"), out, "esm"),
+    alias: {
+      "@retroplug/core/defineNode": join(root, "packages/core/ts/defineNode.ts"),
+      "@retroplug/core/register": join(root, "packages/core/ts/register.ts"),
+      "@retroplug/alpha/nodes": join(root, "packages/alpha/ts/nodes.ts"),
+    },
+  });
   await import(pathToFileURL(out).href);
   return { registered: globalThis.__rp_registered };
 }
@@ -156,6 +164,7 @@ try {
           {
             name: "@retroplug/beta",
             private: true,
+            exports: { "./app": "./ts/app.ts" },
             dependencies: {
               "@retroplug/alpha": "workspace:*",
               "@retroplug/delta": "workspace:*",
@@ -262,6 +271,39 @@ try {
     case "missing-module":
       editManifest("alpha", (json) => {
         json.retroplug.protocol.module = "ts/nope.ts";
+      });
+      result = refusal();
+      break;
+    case "unexported-app":
+      // The manifest names an app module its exports do not publish: a generated import of it would resolve to nothing
+      // (or, worse, to another file if the key pointed elsewhere).
+      editManifest("alpha", (json) => {
+        delete json.exports["./app"];
+      });
+      result = refusal();
+      break;
+    case "name-mismatch":
+      // A package whose manifest names another package: the generator would import that name, and the checker would
+      // judge the directory's.
+      editManifest("alpha", (json) => {
+        json.name = "@retroplug/alfa";
+      });
+      result = refusal();
+      break;
+    case "outside-ts":
+      // A contribution beside ts/, which the package's exports may not publish (the boundary check refuses it): the
+      // generated import cannot name it.
+      writeTree("packages/alpha/app.ts", "export default { roles: [] };\n");
+      editManifest("alpha", (json) => {
+        json.retroplug.app = "app.ts";
+      });
+      result = refusal();
+      break;
+    case "shell-undeclared":
+      // A contributing package the shell does not declare: pnpm would not link it, and the generated module's import
+      // would not resolve.
+      editManifest("retroplug", (json) => {
+        delete json.dependencies["@retroplug/alpha"];
       });
       result = refusal();
       break;

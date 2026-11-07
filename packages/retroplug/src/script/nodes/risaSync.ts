@@ -8,7 +8,7 @@
 // The glue the role ran under the DSP kernel, ported line for line, with its state and its system's tick counter on
 // the instance. A block allocates nothing except on an arm (risaLocate's
 // object and risaArmPacket's array); START, STOP and CLOCK are built once, where the role built them each time it sent one.
-import { bytes, defineNode, type Block } from "../../graph/defineNode";
+import { bytes, defineNode, type Block } from "@retroplug/core/defineNode";
 import {
   RISA_CLOCK,
   RISA_PPQN,
@@ -18,8 +18,8 @@ import {
   risaArmPacket,
   risaLocate,
 } from "../../risaSync";
-import { TickClock } from "./clock";
-import { CORE_BYTES, FLUSH } from "./ports";
+import { TickClock } from "@retroplug/core/clock";
+import { CORE_BYTES, FLUSH } from "@retroplug/core/ports";
 
 export const RISA_SYNC_NODE_TYPE = "rp.risa.sync";
 

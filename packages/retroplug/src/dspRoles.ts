@@ -4,7 +4,7 @@
 // parse, persist and hand the node as its settings), and a load-time hook. Registered into a RoleRegistry like
 // registerCoreRoles; test/system-settings/registry.test.ts holds these kinds to protocolNodes.ts's table.
 
-import type { RoleRegistry, RoleType, ConstructCaps } from "./systemRoles";
+import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
 import type { ConstructSpec } from "./backend";
 import { z, clampedInt, boolField, enumField } from "./configSchema";
 import { LSDJ_MODE_VALUES } from "./settingsEnums";

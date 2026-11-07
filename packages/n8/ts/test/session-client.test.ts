@@ -5,7 +5,7 @@
 // the load helpers' direct writes are a memWR and a read-back memRD. The protocol itself is held in C++
 // (retroplug-n8-test), and the facet end to end in test:native (n8-session); this is the TS half alone, in the mock
 // tier.
-import { test, expect } from "../../../retroplug/testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   createN8Client,
   N8TimeoutError,

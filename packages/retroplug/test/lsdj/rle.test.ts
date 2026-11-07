@@ -4,7 +4,7 @@
 // (0xF1) — and span multiple 512-byte blocks (so the block-jump path is hit).
 // Byte-exact validation against real compressed archives happens in the native
 // tier (Phase 4 full-corpus sav round-trip).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { compressProject, decompressProject } from "../../src/lsdj/codec/rle";
 
 const kSongBytes = 0x8000;

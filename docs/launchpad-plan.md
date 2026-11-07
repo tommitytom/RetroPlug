@@ -28,7 +28,7 @@ The general layer is device-agnostic by construction, but only the Pro [MK3] pro
 Three layers, all pure TypeScript except a thin native device seam:
 
 1. **A Launchpad protocol module** - no I/O, no RetroPlug knowledge. Grid addressing, colour palette, mode entry/exit, message decode, and a diffing surface that emits minimal byte batches.
-2. **A controller-app seam** - a registry of TS modules that consume surface events and produce surface lighting, mirroring how [`RoleRegistry`](../packages/retroplug/src/systemRoles.ts) holds DSP behaviours today.
+2. **A controller-app seam** - a registry of TS modules that consume surface events and produce surface lighting, mirroring how [`RoleRegistry`](../packages/core/ts/systemRoles.ts) holds DSP behaviours today.
 3. **An LSDj MI.MAP app** - the first consumer. Pads launch song rows; LEDs show the song grid and the playhead.
 
 ### Verdict
@@ -290,9 +290,9 @@ Because a row launch is immediate and repeatable, the model can force truth to m
 | Rail | Where | Relevance |
 |---|---|---|
 | MI.MAP implementation | `dspRoles.ts:103` (since B3b, [lsdjSync.ts](../packages/retroplug/src/script/nodes/lsdjSync.ts)) | The LSDj side is done |
-| Role registry + zod-validated config, testable with zero C++ | [`systemRoles.ts`](../packages/retroplug/src/systemRoles.ts), [`dspRoles.ts`](../packages/retroplug/src/dspRoles.ts) | The template for the controller-app registry |
+| Role registry + zod-validated config, testable with zero C++ | [`systemRoles.ts`](../packages/core/ts/systemRoles.ts), [`dspRoles.ts`](../packages/retroplug/src/dspRoles.ts) | The template for the controller-app registry |
 | Project-scope behaviours run **regardless of system count** | `dspKernel.ts:399` (deleted in B3b) | A device-only project (real GB, no emulated system) works structurally |
-| SysEx already contemplated in TS routing | [`midiRouting.ts:43`](../packages/retroplug/src/midiRouting.ts#L43) | Long messages broadcast unchanged; no TS-side change needed |
+| SysEx already contemplated in TS routing | [`midiRouting.ts:43`](../packages/core/ts/midiRouting.ts#L43) | Long messages broadcast unchanged; no TS-side change needed |
 | Pure-TS LSDj sav codec + runtime WRAM reader | [`src/lsdj/`](../packages/retroplug/src/lsdj/) | Both `PlaybackModel` implementations are built from existing parts |
 | **`N8Link`**: audio thread -> SpscRing -> dedicated device thread, injected `PortFactory` so it is testable hardware-free | [`N8Link.hpp`](../packages/n8/native/src/n8/desktop/N8Link.hpp) | **The direct architectural precedent** for a device-scoped link |
 | `Engine::setCoreByteSink` - mirror a role-generated stream to external hardware, in sync by construction | [`Engine.hpp:92`](../packages/native/src/host/engine/Engine.hpp#L92) | Exactly the shape of "emulated cart and real cart get the same bytes" |

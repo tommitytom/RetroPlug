@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/delta",
+  "private": true,
+  "exports": {
+    "./test/rig": "./ts/test/rig.ts"
+  }
+}

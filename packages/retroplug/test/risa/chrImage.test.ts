@@ -1,6 +1,6 @@
 // The N8 CHR <-> grayscale-PNG codec (src/risa/rom/chrImage.ts): dump a CHR bank as an editable tile grid and encode
 // it back. Pure, no hardware. Checks the SHADE4 ramp, the row-major tile layout, and a lossless roundtrip.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   chrToPng,
   chrToPngColor,

@@ -8,24 +8,24 @@
 // (docs/modular-graph-phase-c2-design.md section 5): an edit of a setting (a core config's setting field, an LSDj's
 // mode and with it its Game Boy's capture) publishes, an edit of a param (a gain, a NES's expansion volume) is set live
 // with no publish, and nothing else publishes.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { ProjectStore } from "../../src/projectStore";
 import { RecentStore } from "../../src/recentStore";
 import { SystemsStore } from "../../src/systemsStore";
 import { DirectGraph } from "../../src/graph/directGraph";
 import { buildGraph, type HostShape } from "../../src/graph/buildGraph";
-import { toGraphJson, type GraphDocument } from "../../src/graph/graphDocument";
-import { canonicalJson } from "../../src/graph/canonicalJson";
+import { toGraphJson, type GraphDocument } from "@retroplug/core/graphDocument";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
 import { buildAppRegistry } from "../../src/appHost";
 import { LsdjSyncMode, MidiRouting, type AudioRouting } from "../../src/settingsEnums";
-import type { RoleInstance } from "../../src/systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { EngineGraph } from "../../src/engineGraph";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
 import { z, clampedInt } from "../../src/configSchema";
-import type { DefinedNode } from "../../src/graph/defineNode";
+import type { DefinedNode } from "@retroplug/core/defineNode";
 import { ROLE_NODES, type LeftOutRole } from "../../src/graph/protocolNodes";
-import { SCRIPT_NODES_GLOBAL } from "../../src/script/register";
+import { SCRIPT_NODES_GLOBAL } from "@retroplug/core/register";
 import { lsdjSyncNode } from "../../src/script/nodes/lsdjSync";
 // The production bundle's entry point: importing it registers its node types on SCRIPT_NODES_GLOBAL, as it does in each
 // of the script host's contexts.

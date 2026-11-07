@@ -1,10 +1,10 @@
 // Data-safety for the .lsdprj import path: planLsdprjImport (pure) must return null on ANY failure without
 // mutating its inputs (the caller then writes nothing), and importSongFiles (the store orchestrator) must
 // never clobber the live SAV / role config on a skip, a partial batch, or a failed disk write.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";

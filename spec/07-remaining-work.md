@@ -655,7 +655,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
 - **Found while building B3b, left as they are:**
   - `defineNode` kept to ES2015's library (`Set`, `Object.entries`, `includes`), so the script-node bundle held no zod
     but was not MicroQuickJS-ready; E4 rewrote it to the ES5 subset (`settingsSchema.ts` already kept to it).
-  - `routeBlockInto` in [midiRouting.ts](../packages/retroplug/src/midiRouting.ts) has no caller since B3b:
+  - `routeBlockInto` in [midiRouting.ts](../packages/core/ts/midiRouting.ts) has no caller since B3b:
     the routing node routes each message with `routeTarget`, the same arithmetic, and `routeBlock`, its pure
     twin, stays as the reference the routing node's test holds every mode to. It can be deleted.
   - `DirectGraph.setPipeline` hands a node its role's config as given, where a store hands the config its
@@ -688,7 +688,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     [Engine.cpp](../packages/native/src/host/engine/Engine.cpp)), an allocation on the block thread for
     every message out; a flat arena, as the staging has, would remove it. The surface's output node hands each
     message straight to its link, so it allocates nothing.
-  - The script node `Block` ([defineNode.ts](../packages/retroplug/src/graph/defineNode.ts)) has no
+  - The script node `Block` ([defineNode.ts](../packages/core/ts/defineNode.ts)) has no
     resource accessor and no link peers yet.
   - With commits to script nodes never making `setGraph` wait (their prepare is stateless), the
     GraphHost's command ring (256 slots, 255 usable, shared with params and the engine's commands) is what
@@ -706,7 +706,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - `rp.lsdj.serial-out`'s `midiOut` (the kernel node's before B3b, then `rp.lsdj.sync`'s) is sized for a
     decoded MI.OUT stream at its densest up to 8192-frame blocks (1024 messages, a captured byte every 8 frames),
     while `serialOut` is sized for 65536: in a larger block the decoded stream can pass 1024 messages, and the
-    rest is dropped and counted ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts) `MIDI_OUT`).
+    rest is dropped and counted ([nodes/ports.ts](../packages/core/ts/ports.ts) `MIDI_OUT`).
   - `rp.host.midi-in`'s sort at the source merges two frame runs in linear time, which is what real
     plugin hosts stage (the DAW's events, then the automation CCs at frame 0); a staging of three or more
     runs falls back to an in-place insertion sort, quadratic in what was staged, on the block thread. The

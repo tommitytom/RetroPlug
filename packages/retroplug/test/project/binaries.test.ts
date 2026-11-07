@@ -1,7 +1,7 @@
 // projectBinaries: the pure `.rplg` blob key contract + entry-list transforms (no
 // Backend, no IO). Locks the key spellings native shares and the partition/blobKeys
 // helpers the import path leans on.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   PROJECT_JSON,
   romKey,

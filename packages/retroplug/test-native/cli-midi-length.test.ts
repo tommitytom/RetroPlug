@@ -7,7 +7,7 @@
 // sits at note 64's period; dropped whole, pulse1 stays silent. (ch1 -> pulse1 is proven by cli-observe.)
 // A second case sends a 5-byte SysEx immediately followed by a note in the same run - the note still plays,
 // so the whole run arrived in order and the ROM's parser carried on past the F7.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { ApuState } from "../src/backend";

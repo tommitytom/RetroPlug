@@ -11,7 +11,7 @@ import { ProjectStore } from "./projectStore";
 import { createAudioDriver } from "./audioDriver";
 import { buildAppRegistry } from "./appHost";
 import type { Backend } from "./backend";
-import type { RoleRegistry } from "./systemRoles";
+import type { RoleRegistry } from "@retroplug/core/systemRoles";
 import type { AudioDriver } from "./audioDriver";
 
 /** Everything a session drives: the wired control plane over the real backend. */

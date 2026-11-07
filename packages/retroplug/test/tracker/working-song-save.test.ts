@@ -3,7 +3,7 @@
 // rows that replace what the cart holds. This file covers the host side of all three over the mock
 // backend - the codec and catalog pieces, saving the song INTO the battery, the unsaved-changes list, and
 // a reset carrying the song across the reboot. The real-core proofs are test-native/sms-working-song-save.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";

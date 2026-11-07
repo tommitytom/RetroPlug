@@ -4,7 +4,7 @@
 // store will compose them. Ports of the native list ordering (PluginDSP.cpp:406-458),
 // the assignSavSuffix ownership predicate, buildSystemFromPath's weakly_canonical
 // override test, and findSiblingRom's candidate loop.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   type SystemEntry,
   findById,

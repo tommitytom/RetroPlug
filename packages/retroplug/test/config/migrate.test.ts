@@ -1,6 +1,6 @@
 // The raw-JSON migration framework (migrate.ts): ordered application from the file's
 // stamped version up to current, identity when already-current or a step is absent.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { migrateRaw, readNumericVersion, type MigrationMap } from "../../src/migrate";
 
 const STEPS: MigrationMap = {

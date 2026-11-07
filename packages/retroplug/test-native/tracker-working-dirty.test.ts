@@ -11,7 +11,7 @@
 // Every cart is copied into the test's temp config dir first: the Load path WRITES the .sav, so pointing
 // this at the shared resources tree would destroy the fixture's working song (which is exactly the bug
 // under test, and exactly how it was destroyed once already).
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

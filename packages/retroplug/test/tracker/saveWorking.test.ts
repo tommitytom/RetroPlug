@@ -2,7 +2,7 @@
 // The property that matters: after saving, the working song must read CLEAN (it is now committed), and
 // every other saved song must be untouched. If saving didn't actually clear the dirty flag, the user
 // would save, be prompted again, and reasonably conclude the save did nothing.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { lsdjSongCatalog, risaSongCatalog, workingSongTargets, type SongCatalog } from "../../src/tracker";
 import { savBytes as lsdjSav } from "../lsdj/fixtures";
 import { savBytes as risaSav } from "../risa/fixtures";

@@ -1,7 +1,7 @@
 // Binding map: the model + serialization tolerance + profile-name validation. The
 // on-disk shape + field spellings + defaultBindingMap values match native's
 // BindingMapJson, so a real bindings/*.json round-trips.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { parseBindingMap, serializeBindingMap, BINDINGS_SCHEMA } from "../../src/bindingSerialization";
 import { isValidProfileName } from "../../src/bindingsStore";

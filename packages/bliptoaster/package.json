@@ -2,7 +2,13 @@
   "name": "@retroplug/bliptoaster",
   "version": "0.1.0",
   "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
   "description": "The BlipToaster cart's MIDI policy as a device script pack: rp.bliptoaster.midi-policy, which passes the box's MIDI on to the cart less what the ROM's FIFO is not fed.",
+  "dependencies": {
+    "@retroplug/core": "workspace:*"
+  },
   "retroplug": {
     "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 24576 }
   }

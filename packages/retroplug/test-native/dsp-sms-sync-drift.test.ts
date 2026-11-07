@@ -23,7 +23,7 @@
 // (116.1 / 133.5 ms) either side of the ideal. That alternation is inherent to the protocol - the DAW
 // cannot place a row between frames. What it must NOT do is accumulate, which is what the mean spacing
 // and the grid-anchored residual below actually test.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { encodeWav } from "../src/render/wav";

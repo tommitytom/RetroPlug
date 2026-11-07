@@ -56,8 +56,8 @@ constexpr std::uint32_t kFrames = 256;
 
 // What every toy pack's source starts with. The production bundle, which is every Engine's built-in pack, carries no
 // authoring layer, so a toy defines its nodes as plain objects in the shape defineNode makes
-// (packages/retroplug/src/graph/defineNode.ts: id, descriptor(), parseSettings, layout, create and the flags) and
-// appends them to the global the script host reads (packages/retroplug/src/script/register.ts). A node's ports are its
+// (packages/core/ts/defineNode.ts: id, descriptor(), parseSettings, layout, create and the flags) and
+// appends them to the global the script host reads (packages/core/ts/register.ts). A node's ports are its
 // layout whatever its settings.
 const std::string kToy = R"JS(
 var toy = (function () {

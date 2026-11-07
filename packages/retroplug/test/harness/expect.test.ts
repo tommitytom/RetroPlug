@@ -1,7 +1,7 @@
 // The harness's own matchers. The point of the newer ones (toBeGreaterThan / toBeLessThan / toBeCloseTo and
 // the optional message) is that a FAILURE carries the numbers: `expect(x > y).toBeTruthy()` fails as
 // "expected truthy, got false" and the case has to be re-run with a console.log to learn what x was.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 
 const failureOf = (fn: () => void): string => {
   try {

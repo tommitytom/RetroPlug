@@ -6,7 +6,7 @@
 // the `.ts` it came from, or a sibling `./helper.js` resolves somewhere else. The "." vs ".." case below
 // is not hypothetical: getting it wrong made every test fail to resolve its imports.
 // (The SDK is exempt - it is a bare specifier served from the module registry, never a path.)
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { buildDirFor, isStrippableTs, outputName, buildTsDir, resolveBuildDir } from "../../cli/tsStrip";
 import { sdkDirFor } from "../../cli/sdkAssets";

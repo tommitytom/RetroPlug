@@ -2,7 +2,7 @@
 // RGBA. Pure, no hardware. Synths a couple of known tiles to check the port of edlink MenuImage.MakeImage:
 // the 2bpp bit order, attr bits 0-1 = palette group, attr bit 2 = 2nd-CHR-bank select, and the palette->
 // NES-master-palette->RGB chain.
-import { test, expect } from "../../../retroplug/testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { menuScreenToRgba } from "../menuImage";
 
 // NES master-palette indices (into edlink's pal_nes): 0x20 = white (ff,ff,ff), 0x0F = black (00,00,00).

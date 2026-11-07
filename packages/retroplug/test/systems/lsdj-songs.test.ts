@@ -2,10 +2,10 @@
 // Song model (the model is only a lossless byte round-trip WITH a template, which stored projects don't get,
 // so the old model-based path silently corrupted ~300 bytes/song → wrong instruments). These tests prove the
 // edits AND the key regression: an op must leave every untouched song byte-identical.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";

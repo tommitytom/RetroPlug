@@ -14,7 +14,7 @@ import type { ControlPlaneBackend } from "../../../src/backend";
 import type { SystemView } from "../../../src/systemsStore";
 import { cartNodeId, drivenCartSystem } from "../../../src/graph/buildGraph";
 import { basename } from "../../../src/pathUtil";
-import { roleConfig } from "../../../src/systemRoles";
+import { roleConfig } from "@retroplug/core/systemRoles";
 
 /** One card operation, as the menu row renders it: what is running, how far it has got, and how the last one ended. */
 export interface N8CartJob {

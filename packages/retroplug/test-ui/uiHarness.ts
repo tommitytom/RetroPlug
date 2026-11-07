@@ -1,5 +1,5 @@
 // Front door for headless UI tests. Mirrors the legacy test/harness/ui.ts, but reuses the
-// package's own self-contained test/expect (testing/harness.ts) — so the UI
+// package's own self-contained test/expect (packages/testing/ts/harness.ts), so the UI
 // suite has NO dependency on the legacy emu harness graph (@retroplug/retroplug etc.).
 //
 // Usage:
@@ -10,7 +10,7 @@
 // black-box assert on the rendered LVGL tree + snapshot. Only the render-tree surface is exposed (no
 // legacy loadRom/loadProject/… — system state is driven through the stores over BackendFacade).
 
-export { test, expect, skip } from "../testing/harness";
+export { test, expect, skip } from "@retroplug/testing";
 
 /** A located widget's geometry (absolute/screen coords) + content. */
 export interface WidgetInfo {

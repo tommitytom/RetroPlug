@@ -8,7 +8,7 @@
 // them either. That leaves the direct ingress as the only way a UI knob can address the cart whose menu it is.
 //
 // Runs on the real Mesen core through the real backend, and SKIPS when the BlipToaster ROM isn't built.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { directGraph } from "../src/graph/directGraph";

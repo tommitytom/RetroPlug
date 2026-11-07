@@ -12,5 +12,5 @@
       "lvgljs-ui": ["./ui/types/lvgljs-ui.d.ts"]
     }
   },
-  "include": ["ui", "src/env.d.ts"]
+  "include": ["ui"]
 }

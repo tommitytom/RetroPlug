@@ -1,7 +1,7 @@
 // SystemsStore.loadRom / loadMgb / replaceSystem — the "load" family: replace the
 // focused tile in place (adopt into an empty project), defer to a sibling <rom>.rplg
 // when one exists (unless a save was paired), and build the embedded mGB.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { gbRom } from "./fixtures";

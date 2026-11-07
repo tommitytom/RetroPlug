@@ -2,7 +2,7 @@
 // ran them until B3b. The cases its kernel-level tests held of every mode that feeds the cart, at the node, with what
 // the kernel node's own tests held of the serial-in runs. MI.OUT and master sync, the Game Boy's serial out decoded to
 // host MIDI, are rp.lsdj.serial-out's (lsdj-serial-out.test.ts); here they send nothing.
-import { test, expect } from "../../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { LSDJ_SYNC_NODE_TYPE, lsdjSyncNode } from "../../../src/script/nodes/lsdjSync";
 import { NodeRig, bytesOn, on, type BlockSpec, type In, type Sent } from "./_rig";
 

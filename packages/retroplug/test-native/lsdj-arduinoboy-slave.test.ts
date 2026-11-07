@@ -3,7 +3,7 @@
 // slave. The contract (script/nodes/lsdjSync.ts): a `play` note (24) arms the clock, `stop`
 // (25) disarms it; the 0xF8 clock only flows while playing AND transport runs. So LSDj sings only
 // after the play command — the gating the legacy screenshots only implied, asserted here via RMS.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";

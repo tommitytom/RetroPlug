@@ -73,7 +73,7 @@ project's.
 
 ## 3. Settings without zod, and the bundle
 
-[`graph/settingsSchema.ts`](../packages/retroplug/src/graph/settingsSchema.ts), zod-free, is what `defineNode` takes:
+[`graph/settingsSchema.ts`](../packages/core/ts/settingsSchema.ts), zod-free, is what `defineNode` takes:
 
 - `s.object`, `s.enum(values, default)`, `s.int({ min, max, default })`, `s.bool(default)`, `s.number(default)`,
   `s.string(default)`, `s.array(item, default)` (the item carries a default of its own, section 9), and
@@ -124,7 +124,7 @@ inputs as the kernel emitted: the controller's `midiOut` first (under its resolv
 `rp.lsdj.sync` in slot order. The 4-byte system prefix goes with the kernel; every host MIDI out message stays at
 frame 0, as before. `rp.host.controller-out` is unchanged (one producer).
 
-**Capacities**, port for port as the kernel's ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts)):
+**Capacities**, port for port as the kernel's ([nodes/ports.ts](../packages/core/ts/ports.ts)):
 `serialIn` and `midi` 4096 messages / 72 KiB, `bytes` 256 / 1 KiB, `buttons` 64 / 128 bytes, `midiOut` 1024 / 8 KiB,
 `controllerOut` 256 / 4 KiB. A routing output takes `rp.host.midi-in`'s capacity (2048 messages / 64 KiB), since
 under send-to-all it carries everything the input passed; `launches` is small (64 messages / 256 bytes). Drops stay

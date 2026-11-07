@@ -7,7 +7,7 @@
 // The expected numbers all come from the measured rules in docs/launchpad-plan.md 2.5: 6 ticks/step,
 // 96 ticks per 16-step phrase, one row per chain, wrap at the end of the song, chain ends at its first
 // empty slot.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { SongSchema, type Song } from "../../src/lsdj/model";
 import { PredictedLsdjModel, phraseTicks, chainPhraseCount, songRowTicks, normaliseRowTicks } from "../../src/lsdj/playback";
 

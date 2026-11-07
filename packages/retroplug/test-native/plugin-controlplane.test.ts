@@ -2,7 +2,7 @@
 // stores + defining the __rp_* globals; the script nodes are in the bundle the engine embeds), then drive
 // project I/O through those globals. Proves the bundle boots, autoloads a real .rplg (reaper's seed path), plays through
 // the script nodes, and round-trips a base64 state chunk (DPF getState/setState).
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";

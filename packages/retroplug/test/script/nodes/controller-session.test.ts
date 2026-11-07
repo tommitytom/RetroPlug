@@ -3,7 +3,7 @@
 // launches, through its real MI.MAP mode, or out of the host), LEDs on controllerOut, the device taken on its connect
 // edge, and the re-push rules. Its default target ("0 is the first system") is buildGraph's
 // (test/graph/build-graph.test.ts).
-import { test, expect } from "../../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { CONTROLLER_SESSION_NODE_TYPE, controllerSessionNode } from "../../../src/script/nodes/controllerSession";
 import { lsdjSyncNode } from "../../../src/script/nodes/lsdjSync";
 import { ControllerRegistry, registerControllerApps } from "../../../src/controller";

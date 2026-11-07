@@ -1,6 +1,6 @@
 // End-to-end on a REAL cart: the guard fires on genuinely dirty work, Save & Load preserves it, and a
 // .bak lands next to the sav. Operates on a temp copy.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

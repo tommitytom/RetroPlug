@@ -1,8 +1,8 @@
 // The graph document's endpoint rule, shared with C++: node ids carry no ".", so an endpoint splits at
 // its first dot and a port id may itself contain dots ("pins.pulse").
-import { test, expect } from "../../testing/harness";
-import { canonicalJson } from "../../src/graph/canonicalJson";
-import { endpoint, parseEndpoint, toGraphJson, type GraphDocument, type NodeDoc } from "../../src/graph/graphDocument";
+import { test, expect } from "@retroplug/testing";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
+import { endpoint, parseEndpoint, toGraphJson, type GraphDocument, type NodeDoc } from "@retroplug/core/graphDocument";
 import golden from "../../../native/test/graph/golden/graph-document.json";
 
 test("an endpoint splits at its first dot", () => {

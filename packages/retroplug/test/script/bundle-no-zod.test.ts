@@ -1,7 +1,7 @@
 // The script-node bundle holds no zod (docs/modular-graph-phase-b3b-design.md section 3). It is embedded in every
 // Engine and loaded into both of its script runtimes, the audio thread's among them, so what it imports costs every
 // host twice: B3a's bundle was 660 KB, about 567 KB of it zod, which came in with the role registry the kernel node
-// built. The nodes take their settings through graph/settingsSchema.ts instead, and the app's zod schemas (the role
+// built. The nodes take their settings through core/settingsSchema.ts instead, and the app's zod schemas (the role
 // configs, the project files, the controller apps') stay on the control plane.
 //
 // The bundle is built here as packages/native/cmake/bundles.cmake builds it, through tools/build-session.js with its
@@ -11,7 +11,7 @@
 // the test runs it in a node child: the runner's own node (RP_NODE, which scripts/run-tests.mjs sets), else the node
 // on the PATH when the test is run by hand. This catches zod and the like arriving; it does not prove what the
 // script host can run.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 
 // Just enough of txiki's spawn and a child's pipe, declared locally as cli/childSession.ts declares them.
 interface ByteStream {
@@ -67,8 +67,10 @@ test("the script-node bundle imports no zod module", async () => {
   console.log(`# script-node bundle: ${inputs.length} modules, ${bytes} bytes`);
   // B3a's bundle was 660 KB with zod; this one is about 78 KB. A loose ceiling, for zod inlined where no path says so.
   expect(bytes < 200 * 1024, `the bundle is ${bytes} bytes, past 200 KB`).toBe(true);
-  // Every production node type is in it, so an entry that bundled nothing cannot pass.
-  for (const node of ["midiRoute", "mgbMidi", "n8MidiToFifo", "risaSync", "smsSync", "lsdjSync", "controllerSession", "lsdjSerialOut"])
+  // Every production node type is in it, so an entry that bundled nothing cannot pass. The MIDI routing node is core's
+  // (its protocol member, label 16); the rest are the shell's, which is where their modules still are.
+  expect(inputs.includes("../core/ts/midiRoute.ts"), "midiRoute").toBe(true);
+  for (const node of ["mgbMidi", "n8MidiToFifo", "risaSync", "smsSync", "lsdjSync", "controllerSession", "lsdjSerialOut"])
     expect(inputs.includes(`src/script/nodes/${node}.ts`), node).toBe(true);
   // zod from node_modules, however the package manager lays it out (node_modules/zod/..., .pnpm/zod@x/...).
   const zod = inputs.filter((path) => /(^|[\\/])zod(@[^\\/]*)?[\\/]/.test(path));

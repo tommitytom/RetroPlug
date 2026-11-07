@@ -5,7 +5,7 @@
 // its submission; with the audio driver's thread running, a write completes at a block boundary, and the submission
 // waits through the driver's native sleep until it does, since this host fires no timer and has no frame tick. The
 // queue, the block-boundary completion and the threading are held by retroplug-engine-graph-test "[capability]".
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { setJobWait } from "../src/capability";
 import { createAudioDriver } from "../src/audioDriver";

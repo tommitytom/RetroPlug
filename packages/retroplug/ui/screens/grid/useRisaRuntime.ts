@@ -7,7 +7,7 @@ import { useMemo } from "react";
 
 import { useStores, useSystem } from "../../stores/useStores";
 import { useFrameSampled } from "../../lvgl/useFramePoll";
-import { hasRole } from "../../../src/systemRoles";
+import { hasRole } from "@retroplug/core/systemRoles";
 import { runtime } from "../../../src/risa";
 import type { RisaState } from "../../../src/risa/runtime";
 

@@ -14,8 +14,8 @@
 // sequence number. As the role did, the work happens in the first process after the change.
 //
 // A block allocates nothing here beyond what the session does (its surface diff, and a launch's message).
-import { control, defineNode, events, startValue, type Block } from "../../graph/defineNode";
-import { s, type Infer } from "../../graph/settingsSchema";
+import { control, defineNode, events, startValue, type Block } from "@retroplug/core/defineNode";
+import { s, type Infer } from "@retroplug/core/settingsSchema";
 import { CONTROLLER_TARGET_VALUES } from "../../settingsEnums";
 import { ControllerSession } from "../../controller/session";
 import { lsdjMidiMapTarget } from "../../controller/trackerTarget";
@@ -23,7 +23,7 @@ import { controllerApp } from "../../controller/apps";
 // The leaf, not the lsdj/playback barrel: that also exports the observed model and the sav-derived table builder,
 // which would pull the WRAM reader and the whole sav codec into the bundle.
 import { PredictedLsdjModel, normaliseRowTicks } from "../../lsdj/playback/predict";
-import { CONTROLLER_OUT, LAUNCHES, MIDI_OUT } from "./ports";
+import { CONTROLLER_OUT, LAUNCHES, MIDI_OUT } from "@retroplug/core/ports";
 
 export const CONTROLLER_SESSION_NODE_TYPE = "rp.controller.session";
 

@@ -3,7 +3,7 @@
 // (native only compresses); load routes it back (by the `.rplg.zip` extension) through the
 // same scan/relink tail, its blobs seeding each reconstructed emulator. Path-backed ROMs
 // stay referenced by path (not embedded); embedded ROMs reconstruct from their marker.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";

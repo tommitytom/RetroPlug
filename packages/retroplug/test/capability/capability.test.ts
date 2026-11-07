@@ -4,7 +4,7 @@
 // rejects with its error, a long job's progress reaches its listener, and closing the project rejects what is still
 // pending. The native half (the queue, the threading, the agreement with readRam / readSram) is held by
 // retroplug-engine-graph-test "[capability]" and test-native/capability.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { ProjectStore } from "../../src/projectStore";
 import { RecentStore } from "../../src/recentStore";

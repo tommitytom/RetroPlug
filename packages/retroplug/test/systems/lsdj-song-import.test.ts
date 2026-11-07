@@ -1,10 +1,10 @@
 // importSongFiles — the batch importer behind the Songs menu Add and drag-and-drop: fold multiple
 // .lsdsng/.lsdprj into a live LSDj SAV in ONE readSram→write→loadSram cycle. Byte-level; .lsdprj kits
 // accumulate as lsdj-assets overrides. Routing (which drops reach here) is in test/file-drop/route.test.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole, readOverrides } from "../../src/lsdjAssetsRole";

@@ -8,7 +8,7 @@
 //
 // Uses `adopt` (mode 3 arms capture at CONSTRUCT), whose publish places the system's protocol nodes.
 // See app-play-nes-channels.test.ts for the same construct-time-capture rationale.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

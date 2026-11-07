@@ -3,7 +3,7 @@
 // observes what a MIDI-driven ROM programmed into the mapper sound chip. Proves the end-to-end RPC +
 // per-chip decode: a cart with no sound mapper reports "none"; the VRC6 ROM reports its 3 voices, and a
 // sounding pulse reads back enabled with a non-zero normalized volume.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { type ExpansionAudioState } from "../src/backend";

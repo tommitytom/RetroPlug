@@ -1,7 +1,7 @@
 // Unit tests for the offline drift detector via a FAKE emulator driver — no host needed, runs on the mock
 // tier (`pnpm test`). The end-to-end detection against real cores is exercised by `pnpm lsdj:gen-offsets`
 // (whose output is driftLayouts.generated.ts) and the native test test-native/lsdj-old-drift.test.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { detectDriftShift, detectDriftLayout, type DetectDriver } from "../../src/lsdj/runtime/detect";
 
 const RIGHT = 0, LEFT = 1, UP = 2, DOWN = 3, SELECT = 6, START = 7;

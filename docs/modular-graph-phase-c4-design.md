@@ -322,7 +322,7 @@ mode bound 1 to 3 is the other console name `Engine` keeps (section 12).
   order against a reference stable insertion sort over two thousand random runs, and its bound: a full reversed queue
   (the Master System's 74752 levels) costs at most n * (ceil(log2 n) + 1) entry moves and allocates nothing, where the
   in-place insertion sort it replaced cost n * n / 2; a case reads `ports.ts`'s four
-  declarations ([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts)) and compares
+  declarations ([nodes/ports.ts](../packages/core/ts/ports.ts)) and compares
   them with `InputCapacity.hpp`, so either side drifting is visible; and a `[input-drops]` case has a section per core
   queue (NES, SMS, GBA and Game Boy presses, a Game Boy's serial bytes and runs, an SMS's levels, a NES's N8 runs and
   bytes) that pushes past the bound, holds the refused count and the accepted count exactly, and then runs a block so

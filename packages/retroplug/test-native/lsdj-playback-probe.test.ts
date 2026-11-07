@@ -8,7 +8,7 @@
 // exists to be held to it.
 //
 // Run: pnpm test:native lsdj-playback-probe
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { type SavInput } from "../src/lsdjSav";
 import { CHANNELS } from "../src/lsdj/runtime";
 import { LsdjProbe, MAP_CLOCK, MAP_NOTEOFF, transitions, changeTicks, gaps, fmtSample, type ProbeSample } from "./lsdjPlaybackProbe";

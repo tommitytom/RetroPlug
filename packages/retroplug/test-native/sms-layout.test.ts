@@ -23,7 +23,7 @@
 // byte for byte. If it ever fails ONLY under the parallel suite, suspect a resource shared between host
 // PROCESSES rather than anything here: it did exactly that until Mesen's scratch folder was given a pid
 // (MesenGlobalInit.cpp), because every concurrent host was staging its ROM over the same /tmp path.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { smsggdjIntegration } from "../src/trackerRegistry";

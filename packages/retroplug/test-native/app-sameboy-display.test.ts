@@ -7,7 +7,7 @@
 // GB_palette_changed skips for non-CGB) and the DMG palette only when it isn't. Each knob is asserted
 // on the model where it bites AND on the one where it must not, so if that split ever moved, the menu
 // would be hiding the wrong row and this fails rather than the UI quietly going wrong.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

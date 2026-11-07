@@ -43,9 +43,9 @@
 //                           the messages on both
 //   rp.scripttest.deep      reads and forwards its messages from the deepest call into JavaScript the host allows on
 //                           the C stack, and says how deep that was
-import { type Block, bytes, control, defineNode, events, param } from "../../../../../retroplug/src/graph/defineNode";
-import { s } from "../../../../../retroplug/src/graph/settingsSchema";
-import { registerScriptNodes } from "../../../../../retroplug/src/script/register";
+import { type Block, bytes, control, defineNode, events, param } from "@retroplug/core/defineNode";
+import { s } from "@retroplug/core/settingsSchema";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 const byte = (v: number): number => v & 0xff;
 

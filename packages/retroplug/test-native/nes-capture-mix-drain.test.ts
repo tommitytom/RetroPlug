@@ -10,7 +10,7 @@
 // Reproduced on n8-midi (adopt without a sav → reliable per-channel path in the test host, unlike a
 // sav/seed adopt): sound a note, drain ~1.5 s through the MIX path (fills the capture streams), then switch
 // to renderAudioPerChannel. Before the fix the pins are dead; after it the note still rings on the Pulse pin.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

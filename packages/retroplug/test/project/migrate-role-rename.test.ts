@@ -2,7 +2,7 @@
 // are persisted verbatim as `systems[].roles[].kind`, so every project saved before the rename carries the
 // old spelling. On load those kinds are rewritten; everything else (the role CONFIG, other roles, other
 // systems) is left exactly as it was.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { parseConfig, serializeConfig, buildConfig, DEFAULT_SETTINGS, K_PROJECT } from "../../src/projectConfig";
 import type { SystemEntry } from "../../src/systemsList";
 

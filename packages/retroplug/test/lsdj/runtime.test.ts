@@ -3,7 +3,7 @@
 // this runs on the mock tier (`pnpm test`). The end-to-end proof against a live core is the native
 // test (test-native/lsdj-runtime.test.ts). Decode-logic cases use an explicit TEST_LAYOUT so they test
 // the DECODER independently of the seeded offsets table (offsets.ts).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { LsdjReader, parseLsdjVersion, identifyLsdj, decodeLsdjState, screenFromByte } from "../../src/lsdj/runtime";
 import type { OffsetLayout } from "../../src/lsdj/runtime";
 

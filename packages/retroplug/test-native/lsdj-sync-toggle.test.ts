@@ -8,7 +8,7 @@
 // Changing the setting has to go through LSDj's own UI: switching SYNC is what reconfigures the link
 // hardware, and poking the byte in SRAM behind LSDj's back runs none of that code.
 
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { LsdjProbe, ABOY_ROM, TICK_MS } from "./lsdjPlaybackProbe";
 import type { SavInput, SongSettings } from "../src/lsdj/model";
 import { createRealBackend } from "../src/realBackend";

@@ -1,0 +1,381 @@
+// defineNode: a TS node declares the same contract a C++ node does.
+import { test, expect } from "@retroplug/testing";
+import { z } from "zod";
+import { canonicalJson } from "../canonicalJson";
+import { audio, bytes, channels, control, defineNode, events, param, resource, startValue } from "../defineNode";
+import { s } from "../settingsSchema";
+
+const noop = () => ({ process() {} });
+
+test("ports list inputs before outputs, each in declaration order", () => {
+  const n = defineNode({
+    id: "rp.test.order",
+    ports: { out: audio.out(channels.stereo()), in: audio.in(), midi: events.in(), level: control.out() },
+    create: noop,
+  });
+  expect(n.descriptor().ports.map((p) => p.id)).toEqual(["in", "midi", "out", "level"]);
+});
+
+test("ports and params can follow settings", () => {
+  const add = defineNode({
+    id: "rp.test.add",
+    settings: s.object({ inputs: s.int({ min: 1, max: 16, default: 2 }) }),
+    ports: (settings) => {
+      const ports: Record<string, ReturnType<typeof audio.in>> = {};
+      for (let k = 1; k <= settings.inputs; ++k) ports[`in${k}`] = audio.in(k === 1 ? channels.any() : channels.match("in1"));
+      ports.out = audio.out(channels.match("in1"));
+      return ports;
+    },
+    create: noop,
+  });
+  expect(add.descriptor().ports.length).toBe(3);
+  expect(add.layout(add.parseSettings({ inputs: 4 })).ports.length).toBe(5);
+  expect(() => add.parseSettings({ inputs: 99 })).toThrow();
+});
+
+test("a node without settings declares the same empty schema C++ does", () => {
+  const n = defineNode({ id: "rp.test.bare", ports: {}, create: noop });
+  expect(n.descriptor().settings).toEqual({ type: "object" });
+});
+
+test("a node with settings ships the JSON Schema of what a document may write", () => {
+  const n = defineNode({
+    id: "rp.test.schema",
+    settings: s.object({ maxSamples: s.int({ min: 1, default: 48000 }) }),
+    ports: {},
+    create: noop,
+  });
+  const schema = n.descriptor().settings as { properties?: Record<string, unknown>; required?: string[]; additionalProperties?: unknown };
+  expect(Object.keys(schema.properties ?? {})).toEqual(["maxSamples"]);
+  // A defaulted field is optional and extra keys are allowed, as parseSettings (and C++) treat them.
+  expect(schema.required).toBe(undefined);
+  expect(schema.additionalProperties).toBe(undefined);
+  expect(n.parseSettings({}).maxSamples).toBe(48000);
+  expect(n.parseSettings({ maxSamples: 5, extra: 1 }).maxSamples).toBe(5);
+});
+
+test("settings are a JSON object or nothing", () => {
+  const n = defineNode({ id: "rp.test.bare", ports: {}, create: noop });
+  expect(n.parseSettings(undefined)).toEqual({});
+  expect(() => n.parseSettings("x")).toThrow("JSON object");
+  expect(() => n.parseSettings(null)).toThrow("JSON object");
+  expect(() => n.parseSettings([1])).toThrow("JSON object");
+});
+
+test("refused settings say which field and why, in one line a planner error can carry", () => {
+  const n = defineNode({
+    id: "rp.test.refused",
+    settings: s.object({ outs: s.int({ min: 1, max: 4, default: 2 }), name: s.string("a") }),
+    ports: {},
+    create: noop,
+  });
+  expect(() => n.parseSettings({ outs: 9 })).toThrow(`node type "rp.test.refused": settings: outs: Too big: expected number to be <=4`);
+  expect(() => n.parseSettings({ name: 5 })).toThrow(`settings: name: Invalid input: expected string, received number`);
+  let message = "";
+  try {
+    n.parseSettings({ outs: 0, name: 5 });
+  } catch (e) {
+    message = (e as Error).message;
+  }
+  expect(message.includes("\n")).toBe(false);
+});
+
+// defineNode still takes a zod schema, which has the same safeParse and toJSONSchema: no production node has used one
+// since B3b took zod out of the script-node bundle, but a node author outside it may. And a zod field can lack a
+// default, which an `s` one cannot.
+test("a zod schema serves as settings too, and every field needs a default", () => {
+  const n = defineNode({
+    id: "rp.test.zod",
+    settings: z.object({ outs: z.number().int().min(1).max(4).default(2), mode: z.enum(["a", "b"]).default("a") }),
+    ports: (settings) => ({ out: events.out({ messages: settings.mode === "b" ? settings.outs : 1 }) }),
+    create: noop,
+  });
+  expect(n.parseSettings({ mode: "b", extra: 1 })).toEqual({ outs: 2, mode: "b" });
+  expect(n.layout(n.parseSettings({ mode: "b", outs: 3 })).ports[0].capacity).toEqual({ messages: 3 });
+  expect(() => n.parseSettings({ outs: 9 })).toThrow(`node type "rp.test.zod": settings: outs: Too big: expected number to be <=4`);
+  expect(n.descriptor().settings).toEqual({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+      outs: { default: 2, type: "integer", minimum: 1, maximum: 4 },
+      mode: { default: "a", type: "string", enum: ["a", "b"] },
+    },
+  });
+  expect(() => defineNode({ id: "rp.test.nodefault", settings: z.object({ rom: z.string() }), ports: {}, create: noop })).toThrow(
+    "needs a default (rom: Invalid input: expected string, received undefined)",
+  );
+});
+
+test("duplicate ids and bad enum defaults are rejected", () => {
+  const dup = defineNode({
+    id: "rp.test.dup",
+    ports: { gain: audio.in() },
+    params: { gain: param.float({ name: "Gain", min: 0, max: 1, default: 0 }) },
+    create: noop,
+  });
+  expect(() => dup.descriptor()).toThrow("more than one");
+  const badEnum = defineNode({
+    id: "rp.test.enum",
+    ports: {},
+    params: { mode: param.enum({ name: "Mode", values: ["a", "b"], default: "c" }) },
+    create: noop,
+  });
+  expect(() => badEnum.descriptor()).toThrow("not one of its values");
+});
+
+test("param ranges and channel specs are checked as the C++ parser checks them", () => {
+  const bad = (params: Record<string, ReturnType<typeof param.float>>, ports = {}) =>
+    () => defineNode({ id: "rp.test.bad", ports, params, create: noop }).descriptor();
+  expect(bad({ g: param.float({ name: "G", min: 5, max: 1, default: 1 }) })).toThrow("min must not exceed max");
+  expect(bad({ g: param.float({ name: "G", min: 0, max: 1, default: 2 }) })).toThrow("within");
+  expect(bad({ n: param.int({ name: "N", min: 0.5, max: 3, default: 1 }) })).toThrow("whole-number");
+  expect(bad({ m: param.enum({ name: "M", values: ["a", "a"], default: "a" }) })).toThrow("twice");
+  expect(bad({}, { out: audio.out(channels.any() as never) })).toThrow('cannot be "any"');  // (a type error too)
+  expect(bad({}, { out: audio.out(channels.match("nope")) })).toThrow("not another audio port");
+  expect(bad({}, { in: audio.in(channels.fixed(2, "mono")) })).toThrow("is 1 channels");
+  expect(bad({ g: param.float({ name: "G", min: 0, max: Infinity, default: 0 }) })).toThrow("finite");
+  // an unknown layout name, not an Object.prototype key
+  expect(bad({}, { in: audio.in(channels.fixed(2, "constructor")) })().ports[0].channels).toEqual({ count: 2, layout: "constructor" });
+  expect(bad({}, { in: audio.in(channels.fixed(3, "discrete(03)")) })).toThrow("not a discrete(n)");
+  expect(() =>
+    defineNode({ id: "rp.test.ex", ports: { "pins.a": events.out() }, exclusive: [["pins.*", "pins.a"]], create: noop }).descriptor(),
+  ).toThrow("overlap");
+  expect(() => defineNode({ id: "rp.test\tx", ports: {}, create: noop })).toThrow("whitespace");
+  expect(() => defineNode({ id: "rp.test\u0000x", ports: {}, create: noop })).toThrow("control characters");
+  expect(() => defineNode({ id: "rp.test\u007f", ports: {}, create: noop })).toThrow("control characters");
+  defineNode({ id: "rp.test.caf\u00e9\u00a0", ports: {}, create: noop });  // non-ASCII is fine, as in C++
+  const unitless = defineNode({ id: "rp.test.unitless", ports: {}, params: { g: param.float({ name: "G", min: 0, max: 1, default: 0, unit: "" }) }, create: noop });
+  expect("unit" in unitless.descriptor().params[0]).toBe(false);
+});
+
+test("resource ports carry their type and write access", () => {
+  const rec = defineNode({
+    id: "rp.test.rec",
+    ports: { target: resource.write("audio-buffer"), buffer: resource.out("audio-buffer") },
+    create: noop,
+  });
+  expect(rec.descriptor().ports).toEqual([
+    { id: "target", dir: "in", kind: "resource", resourceType: "audio-buffer", access: "write" },
+    { id: "buffer", dir: "out", kind: "resource", resourceType: "audio-buffer" },
+  ]);
+});
+
+test("port shapes are checked as the C++ parser checks them", () => {
+  const shaped = (spec: unknown) => () => defineNode({ id: "rp.test.shape", ports: { p: spec as never }, create: noop }).descriptor();
+  expect(shaped({ dir: "in", kind: "audio" })).toThrow("needs channels");
+  expect(shaped({ dir: "in", kind: "events", channels: { any: true } })).toThrow("only audio ports");
+  expect(shaped({ dir: "in", kind: "link" })).toThrow("link ports");
+  expect(shaped({ dir: "out", kind: "resource", resourceType: "t", access: "write" })).toThrow("only a resource input");
+  expect(shaped({ dir: "in", kind: "events", resourceType: "t" })).toThrow("only resource ports");
+  expect(shaped({ dir: "in", kind: "audio", channels: { any: true, count: 2, layout: "stereo" } })).toThrow("exactly one");
+  expect(shaped({ dir: "in", kind: "audio", channels: { any: false } })).toThrow("must be true");
+  expect(shaped({ dir: "in", kind: "audio", channels: { count: 4294967296, layout: "discrete(4294967296)" } })).toThrow("whole channel count");
+  expect(shaped({ dir: "in", kind: "resource" })).toThrow("resourceType");
+  expect(shaped({ dir: "sideways", kind: "events" })).toThrow("unknown dir");
+});
+
+test("an events or bytes output declares its queue capacity, either part, as C++ writes it", () => {
+  const n = defineNode({
+    id: "rp.test.capacity",
+    ports: {
+      midi: events.in(),
+      sysex: bytes.out({ messages: 4, bytes: 65536 }),
+      serial: bytes.out({ bytes: 1 }),
+      notes: events.out(),
+    },
+    create: noop,
+  });
+  expect(n.descriptor().ports).toEqual([
+    { id: "midi", dir: "in", kind: "events" },
+    { id: "sysex", dir: "out", kind: "bytes", capacity: { messages: 4, bytes: 65536 } },
+    { id: "serial", dir: "out", kind: "bytes", capacity: { bytes: 1 } },
+    { id: "notes", dir: "out", kind: "events" },
+  ]);
+  const port = (spec: unknown) => () => defineNode({ id: "rp.test.cap", ports: { q: spec as never }, create: noop }).descriptor();
+  // the caps themselves; an undefined part is no part, as canonicalJson (and so C++) sees it
+  expect(port(events.out({ messages: 1048576, bytes: 16777216 }))().ports[0].capacity).toEqual({ messages: 1048576, bytes: 16777216 });
+  expect(port(events.out({ messages: 2, bytes: undefined }))().ports[0]).toEqual({ id: "q", dir: "out", kind: "events", capacity: { messages: 2 } });
+});
+
+test("a queue capacity is refused where Descriptor.cpp refuses it", () => {
+  const port = (spec: unknown) => () => defineNode({ id: "rp.test.cap", ports: { q: spec as never }, create: noop }).descriptor();
+  expect(port(events.out({ messages: 1048577 }))).toThrow('port "q": capacity.messages must be a whole number from 1 to 1048576');
+  expect(port(bytes.out({ bytes: 16777217 }))).toThrow('port "q": capacity.bytes must be a whole number from 1 to 16777216');
+  expect(port(events.out({ messages: 0 }))).toThrow("from 1 to 1048576");
+  expect(port(events.out({ messages: 2.5 }))).toThrow("whole number");
+  expect(port(events.out({ bytes: -1 }))).toThrow("from 1 to 16777216");
+  expect(port({ dir: "out", kind: "events", capacity: { messages: "2" } })).toThrow("whole number");
+  expect(port(events.out({}))).toThrow("capacity needs messages, bytes or both");
+  expect(port(events.out({ messages: undefined }))).toThrow("capacity needs messages, bytes or both");
+  expect(port({ dir: "out", kind: "events", capacity: 8 })).toThrow("capacity must be an object");
+  expect(port({ dir: "out", kind: "events", capacity: [2] })).toThrow("capacity must be an object");
+  expect(port({ dir: "out", kind: "events", capacity: { mesages: 2 } })).toThrow('capacity: unknown field "mesages"');
+  expect(port({ dir: "out", kind: "control", capacity: { messages: 2 } })).toThrow("only events and bytes ports have capacity");
+  expect(port({ dir: "in", kind: "audio", channels: { any: true }, capacity: { messages: 2 } })).toThrow("only events and bytes ports have capacity");
+});
+
+test("an events or bytes output may take its capacity from an input of its own kind, refused where Descriptor.cpp refuses it", () => {
+  const n = defineNode({ id: "rp.test.pass", ports: { midi: events.in(), out: events.out({ match: "midi" }) }, create: noop });
+  expect(n.descriptor().ports[1]).toEqual({ id: "out", dir: "out", kind: "events", capacity: { match: "midi" } });
+  const ports = (p: Record<string, unknown>) => () => defineNode({ id: "rp.test.cap", ports: p as never, create: noop }).descriptor();
+  expect(ports({ raw: bytes.in(), q: bytes.out({ match: "raw" }) })().ports[1].capacity).toEqual({ match: "raw" });
+  // Worded as Descriptor.cpp words them, after the port.
+  const both = { dir: "out", kind: "events", capacity: { match: "midi", messages: 2 } };
+  expect(ports({ midi: events.in(), q: both })).toThrow('port "q": "capacity" takes "match" or a size, not both');
+  const named = 'port "q": "capacity.match" must name an input, with no whitespace or control characters';
+  expect(ports({ q: events.out({ match: "" }) })).toThrow(named);
+  expect(ports({ q: { dir: "out", kind: "events", capacity: { match: 7 } } })).toThrow(named);
+  expect(ports({ q: events.out({ match: "nope" }) })).toThrow(
+    'rp.test.cap: port "q": "capacity.match" names "nope", which is not an events input',
+  );
+  expect(ports({ o: events.out(), q: events.out({ match: "o" }) })).toThrow("which is not an events input");
+  expect(ports({ c: { dir: "in", kind: "control" }, q: events.out({ match: "c" }) })).toThrow("which is not an events input");
+  // Of its own kind: events from events, bytes from bytes.
+  expect(ports({ raw: bytes.in(), q: events.out({ match: "raw" }) })).toThrow('"capacity.match" names "raw", which is not an events input');
+  expect(ports({ midi: events.in(), q: bytes.out({ match: "midi" }) })).toThrow('"capacity.match" names "midi", which is not a bytes input');
+  // @ts-expect-error a match and a size together is no QueueCapacity
+  expect(ports({ midi: events.in(), q: events.out({ match: "midi", bytes: 8 }) })).toThrow('takes "match" or a size');
+});
+
+test("an input's capacity is refused: a wire carries its source's queue", () => {
+  const port = (spec: unknown) => () => defineNode({ id: "rp.test.cap", ports: { q: spec as never }, create: noop }).descriptor();
+  // Worded as Descriptor.cpp words it after the port.
+  const why = `port "q": only an output declares a capacity: a wire carries its source's queue`;
+  expect(port({ dir: "in", kind: "events", capacity: { messages: 512 } })).toThrow(why);
+  expect(port({ dir: "in", kind: "bytes", capacity: { bytes: 8192 } })).toThrow(why);
+  expect(port({ dir: "in", kind: "control", capacity: { messages: 2 } })).toThrow("only events and bytes ports have capacity");
+  expect(port(events.in())().ports[0]).toEqual({ id: "q", dir: "in", kind: "events" });
+  // @ts-expect-error an input takes no capacity, so naming one does not type-check
+  expect(port(bytes.in({ bytes: 8192 }))().ports[0]).toEqual({ id: "q", dir: "in", kind: "bytes" });
+});
+
+test("a capacity a ports function computes from settings is checked as each layout is made", () => {
+  const n = defineNode({
+    id: "rp.test.sized",
+    settings: s.object({ messages: s.int({ default: 256 }) }),
+    ports: (settings) => ({ out: events.out({ messages: settings.messages }) }),
+    create: noop,
+  });
+  expect(n.descriptor().ports[0].capacity).toEqual({ messages: 256 });
+  expect(n.layout(n.parseSettings({ messages: 1048576 })).ports[0].capacity).toEqual({ messages: 1048576 });
+  expect(() => n.layout(n.parseSettings({ messages: 1048577 }))).toThrow(
+    'rp.test.sized: port "out": capacity.messages must be a whole number from 1 to 1048576',
+  );
+  expect(() => n.layout(n.parseSettings({ messages: 0 }))).toThrow("from 1 to 1048576");
+});
+
+test("ids are plain, unambiguous and keep their order", () => {
+  const node = (ports: Record<string, unknown>) => () => defineNode({ id: "rp.test.ids", ports: ports as never, create: noop }).descriptor();
+  expect(node({ "a b": events.in() })).toThrow("whitespace");
+  expect(node({ ".*": events.out() })).toThrow("'*'");
+  expect(node({ "1": events.in() })).toThrow("in order");
+  expect(node({ "x\udc00": events.in() })).toThrow("control characters");  // a lone surrogate C++ cannot read
+  expect(() => defineNode({ id: "rp.p.\ud800", ports: {}, create: noop })).toThrow("control characters");
+  expect(defineNode({ id: "rp.p.\ud83c\udfb5", ports: {}, create: noop }).descriptor().id).toBe("rp.p.\ud83c\udfb5");  // a whole pair is fine
+});
+
+test("metadata, params and settings are typed and readable as C++ reads them", () => {
+  const meta = (extra: Record<string, unknown>) => () => defineNode({ id: "rp.test.meta", ports: {}, create: noop, ...extra } as never).descriptor();
+  expect(meta({ version: 5 })).toThrow("version must be a string");
+  expect(meta({ name: "Gain\ud800" })).toThrow("name must be a string");
+  expect(meta({ requires: { heap: "yes" } })).toThrow("true or false");
+  // `unique` is the planner's one-per-plan rule (C++'s TypeDescriptor.unique), emitted only when declared.
+  expect(meta({ unique: false })).toThrow("unique is true or absent");
+  expect(meta({})().unique).toBe(undefined);
+  expect(meta({ unique: true })().unique).toBe(true);
+  expect(meta({ params: { b: { type: "bool", name: "B", default: false, unit: 5 } } })).toThrow("unit must be a string");
+  // a stray field is not emitted (C++ would drop it when it spells the descriptor back), a missing name is the id
+  const stray = meta({ params: { b: { type: "bool", default: true, min: 3, foo: 1 } } })();
+  expect(stray.params[0]).toEqual({ id: "b", name: "b", type: "bool", default: true });
+  expect(meta({ settings: s.object({ tag: s.string("\ud800") }) })).toThrow("lone surrogate");
+  // an undefined member is no member, as canonicalJson (and so C++) sees it
+  expect(meta({ ports: { in: { dir: "in", kind: "audio", channels: { any: true, count: undefined } } } })().ports[0].channels).toEqual({ any: true, count: undefined });
+  expect(meta({ ports: { r: resource.in("audio buffer") } })).toThrow("resourceType");
+  expect(() => defineNode({ id: "rp.test.rootless", settings: s.number(0) as never, ports: {}, create: noop })).toThrow(
+    "needs a default (Invalid input: expected number, received object)",
+  );
+});
+
+test("how the script host runs a node is the definition's, never its descriptor's", () => {
+  const settings = s.object({ outs: s.int({ min: 1, max: 4, default: 1 }) });
+  const ports = (o: { outs: number }) => Object.fromEntries(Array.from({ length: o.outs }, (_, i) => [`out${i + 1}`, events.out()]));
+  const kept = defineNode({
+    id: "rp.test.kept",
+    reshapes: true,
+    faultOnThrow: true,
+    settings,
+    ports,
+    create: ({ settings: first }) => {
+      let outs = first.outs;
+      return {
+        process() {},
+        // The new settings, already checked, typed as the definition's.
+        onSettings(next) {
+          outs = next.outs;
+        },
+        portsChanged() {
+          void outs;
+        },
+      };
+    },
+  });
+  expect(kept.reshapes).toBe(true);
+  expect(kept.faultOnThrow).toBe(true);
+  const plain = defineNode({ id: "rp.test.kept", settings, ports, create: noop });
+  expect(plain.reshapes).toBe(undefined);
+  expect(plain.faultOnThrow).toBe(undefined);
+  expect(canonicalJson(kept.descriptor())).toBe(canonicalJson(plain.descriptor()));
+  // Given, each is true: the host reads it as given, so a false would read as a promise it does not make.
+  expect(() => defineNode({ id: "rp.test.x", ports: {}, create: noop, reshapes: false } as never)).toThrow("reshapes is true or absent");
+  expect(() => defineNode({ id: "rp.test.x", ports: {}, create: noop, faultOnThrow: 1 } as never)).toThrow("faultOnThrow is true or absent");
+});
+
+test("idle: \"skip\" is the host's to read, refused on a layout it cannot hold for", () => {
+  const fed = { in: events.in(), out: events.out({ match: "in" }) };
+  const skipped = defineNode({ id: "rp.test.skip", idle: "skip", ports: fed, create: noop });
+  expect(skipped.idle).toBe("skip");
+  // Not part of the descriptor: the planner plans it as any other node.
+  const plain = defineNode({ id: "rp.test.skip", ports: fed, create: noop });
+  expect(canonicalJson(skipped.descriptor())).toBe(canonicalJson(plain.descriptor()));
+  // A control input or a param alone is something a block can bring it.
+  defineNode({ id: "rp.test.skip", idle: "skip", ports: { level: control.in(), out: events.out() }, create: noop }).descriptor();
+  defineNode({
+    id: "rp.test.skip",
+    idle: "skip",
+    ports: { out: control.out() },
+    params: { p: param.float({ name: "P", min: 0, max: 1, default: 0 }) },
+    create: noop,
+  }).descriptor();
+  // An audio port is written every block; with no input and no param, nothing would ever run it again.
+  expect(() => defineNode({ id: "rp.test.skip", idle: "skip", ports: { in: events.in(), out: audio.out(channels.stereo()) }, create: noop }).descriptor())
+    .toThrow("rp.test.skip: port \"out\" is audio, which a node the host skips when idle cannot have");
+  expect(() => defineNode({ id: "rp.test.skip", idle: "skip", ports: { out: events.out() }, create: noop }).layout({}))
+    .toThrow("rp.test.skip: it is skipped when idle but has no events, bytes or control input and no param");
+  expect(() => defineNode({ id: "rp.test.x", ports: {}, create: noop, idle: "always" } as never)).toThrow("idle is \"skip\" or absent");
+});
+
+test("a returned descriptor is the caller's own copy", () => {
+  const n = defineNode({
+    id: "rp.test.copy",
+    ports: { "pins.a": events.out(), "pins.b": events.out() },
+    params: { m: param.enum({ name: "M", values: ["a", "b"], default: "a" }) },
+    exclusive: [["pins.a", "pins.b"]],
+    create: noop,
+  });
+  const first = n.descriptor();
+  first.exclusive![0].push("pins.a");
+  (first.params[0] as { values: string[] }).values.push("a");
+  (first.settings as Record<string, unknown>).type = "array";
+  const second = n.descriptor();
+  expect(second.exclusive).toEqual([["pins.a", "pins.b"]]);
+  expect((second.params[0] as { values: string[] }).values).toEqual(["a", "b"]);
+  expect(second.settings).toEqual({ type: "object" });
+});
+
+test("a control stream's value from frame 0 is its start, or its last change at frame 0", () => {
+  expect(startValue({ start: 0, changes: [] })).toBe(0);
+  // A node cannot set an output's start, so a value from frame 0 arrives as a change at frame 0.
+  expect(startValue({ start: 0, changes: [{ frame: 0, value: 1 }] })).toBe(1);
+  expect(startValue({ start: 1, changes: [{ frame: 0, value: 0 }, { frame: 0, value: 2 }, { frame: 5, value: 3 }] })).toBe(2);
+  expect(startValue({ start: 1, changes: [{ frame: 3, value: 0 }] })).toBe(1);
+});

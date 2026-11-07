@@ -27,7 +27,7 @@ import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjReader, type LsdjState, CHANNELS, type ChannelName } from "../src/lsdj/runtime";
 import { directGraph } from "../src/graph/directGraph";
 import type { GraphController } from "../src/graph/controller";
-import type { RoleInstance } from "../src/systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { MidiRouting } from "../src/settingsEnums";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).

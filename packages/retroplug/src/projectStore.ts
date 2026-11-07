@@ -17,7 +17,7 @@ import type { ControlPlaneBackend, GraphError, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
 import { EngineGraph } from "./engineGraph";
 import type { SystemEntry } from "./systemsList";
-import type { RoleRegistry } from "./systemRoles";
+import type { RoleRegistry } from "@retroplug/core/systemRoles";
 import type { RecentStore } from "./recentStore";
 import { workingSongReady, songLoadByNameWouldDiscard, songLoadWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";

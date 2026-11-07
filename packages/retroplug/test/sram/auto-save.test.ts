@@ -2,7 +2,7 @@
 // SramAutoSaver over a MockBackend + real SystemsStore + UserConfigStore. Proves the
 // mode gating (Off/OnProjectSave/Continuous), dirty-hash dedup, seed-vs-write on first
 // observation, the override write target, and skipping embedded systems.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { UserConfigStore } from "../../src/userConfigStore";

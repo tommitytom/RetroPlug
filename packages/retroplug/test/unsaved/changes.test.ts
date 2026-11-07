@@ -2,7 +2,7 @@
 // hasUnsavedChanges (the yes/no gate) and unsavedChanges (the ITEMS the prompt lists). Both read the same
 // two channels - project-dirty (a systems/settings edit) and a live battery that differs from its on-disk
 // .sav - and each is proven independently (a clean project can still be SRAM-dirty, and vice versa).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";

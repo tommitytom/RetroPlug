@@ -1,7 +1,7 @@
 // What peak level actually comes out of SameBoy, mix and per stem, driven by mGB with every voice at
 // velocity 127. Measurement harness, not a regression guard — see audio-levels-lib.ts.
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-gb
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

@@ -7,7 +7,7 @@
 // moves the expansion chip (0% silences it), and it leaves the console's own 2A03 exactly where it was. The
 // same value is what a driven Everdrive N8's node carries as its `expansionVolume` param and sends to the
 // cart's `master_vol`, which is why it is expressed against unity rather than in dB.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 

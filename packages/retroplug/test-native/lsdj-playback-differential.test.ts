@@ -11,7 +11,7 @@
 // test (lsdj-midimap.test.ts) and its own DAW-level drift renders.
 //
 // Run: pnpm test:native lsdj-playback-differential
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { type SavInput } from "../src/lsdjSav";
 import { SongSchema } from "../src/lsdj/model";
 import { CHANNELS } from "../src/lsdj/runtime";

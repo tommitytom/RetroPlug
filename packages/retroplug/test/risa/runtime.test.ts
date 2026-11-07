@@ -1,7 +1,7 @@
 // risa runtime reader — pure unit tests (field mapping, accessor semantics, sentinels, version resolve,
 // ROM version scan). The end-to-end proof that the generated addresses match real risa is the native
 // test-native/risa-runtime; here we exercise the decode logic over synthetic RAM.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   decodeRisaState,
   resolveRisaLayout,

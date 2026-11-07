@@ -1,6 +1,6 @@
 // The parity comparator on its own: the smallest possible change to audio, MIDI out or SRAM must fail,
 // and the report must name where. If this passes, a matching hash means matching output.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   bytesDigest,
   compareDigests,

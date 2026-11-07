@@ -2,7 +2,7 @@
 // disambiguate a sav suffix against the LIVE list, append, auto-focus an empty
 // project, and hand native a concrete resolved savPath. An unknown/absent ROM is
 // rejected before any native construct.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { gbRom, garbage } from "./fixtures";

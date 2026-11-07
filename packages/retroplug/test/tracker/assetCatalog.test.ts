@@ -1,7 +1,7 @@
 // The pure asset-catalog layer: integration/asset resolution by the tracker marker role, the generic
 // effective-asset merge (overlay / erase / add / name precedence / sort), and each console's baseSlots parse
 // over a fixture ROM. The deep ROM parse (kits/palettes/fonts) is covered by test/{lsdj,risa}/rom.test.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { effectiveAssets,
   lsdjAssetCatalog,
   risaAssetCatalog,

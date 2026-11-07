@@ -1,7 +1,7 @@
 // The BlipToaster instance submenu: gated on the `bliptoaster` marker role the ROM provider attaches to a BlipToaster
 // cart. It is ASSET-ONLY (no song battery), so it exercises the songs-optional path — there must be NO Songs
 // submenu, only the Kits + Fonts asset submenus. Mirrors test/menu/risa.test.ts (asset half).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

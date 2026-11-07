@@ -4,7 +4,7 @@
 // mishandled a rate would still "work" from the host's point of view - it would just play at the wrong
 // speed - so this checks the rendered pitch against the emulator's own decoded frequency, which is
 // rate-independent ground truth.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { detectPitch, centsError } from "../cli/pitch";

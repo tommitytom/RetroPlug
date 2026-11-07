@@ -45,7 +45,7 @@ import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE, type AppAction } from "../src/keyCodes";
 import { resolveDropAction } from "../src/fileDrop";
 import { importSongFiles } from "../src/lsdjSongImport";
-import { hasRole } from "../src/systemRoles";
+import { hasRole } from "@retroplug/core/systemRoles";
 
 const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
 const MOUSE_BUTTON_RIGHT = 2; // DPF kMouseButtonRight (left=1, right=2, middle=3) — the "mouse" bus button field

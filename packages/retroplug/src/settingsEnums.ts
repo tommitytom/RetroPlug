@@ -5,8 +5,8 @@
 // systemKnobs), and a node reads a NES export mode's position in its tuple where the graph needs the mode as
 // a number (exportModeOf).
 //
-// A LEAF module: it imports nothing, so the schema, the domain modules (layout/midiRouting/dspRoles),
-// the stores, the menu, and the project migration can all share these values without an import cycle.
+// It imports nothing at run time but core's MIDI routing enum, re-exported below, so the schema, the domain modules
+// (layout/midiRouting/dspRoles), the stores, the menu and the project migration share these values without a cycle.
 
 // --- project-level settings ------------------------------------------------
 
@@ -21,27 +21,16 @@ export const SystemLayout = {
   Grid: "grid",
 } as const satisfies Record<string, SystemLayout>;
 
-// MIDI routing mode — the routing oracle (midiRouting.ts) switches on these members.
-export const MIDI_ROUTING_VALUES = [
-  "sendToAll",
-  "fourChannelsPerInstance",
-  "oneChannelPerInstance",
-  "midiChannelToInstance",
-] as const;
-export type MidiRouting = (typeof MIDI_ROUTING_VALUES)[number];
+// MIDI routing mode - the routing oracle switches on these members. The values live with the oracle, in core's
+// midiRouting (a package that owns a node owning the mode cannot import this shell module), and are re-exported here
+// so the schema, the stores and the menu keep reading one source.
+export { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
 
 /** Where a controller app's row launches go: into an emulated cart's MIDI inbox (which the tracker's own
  *  sync role then puts on the link port), or out of the host to real hardware (an Arduinoboy driving a
  *  real Game Boy). See docs/launchpad-plan.md 7.3. */
 export const CONTROLLER_TARGET_VALUES = ["system", "midiOut"] as const;
 export type ControllerTarget = (typeof CONTROLLER_TARGET_VALUES)[number];
-export const MidiRouting = {
-  SendToAll: "sendToAll",
-  FourChannelsPerInstance: "fourChannelsPerInstance",
-  OneChannelPerInstance: "oneChannelPerInstance",
-  MidiChannelToInstance: "midiChannelToInstance",
-} as const satisfies Record<string, MidiRouting>;
-
 // Audio output-pair placement. Never crosses to native as a value: graph/buildGraph.ts turns it into the
 // graph's output wiring. The three split modes are single-system-only (the menu gates them via
 // `validAudioRoutings`; buildGraph re-checks the system count and is the authority):

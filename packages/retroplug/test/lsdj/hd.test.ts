@@ -4,7 +4,7 @@
 //
 // Assertions read the tile grid back as text rather than comparing an opaque golden blob, so a layout
 // regression names the cell and the string it found.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { LsdjHdCanvas, HD_COLS, HD_ROWS, ColorSets, FontTiles, findTile, formatNote, getCommandTile, renderMode2 } from "../../src/lsdj/hd";
 import { FONT_GLYPH_COUNT } from "../../src/lsdj/hd/tiles";
 import { SongSchema, type Song } from "../../src/lsdj/model";

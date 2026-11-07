@@ -9,7 +9,7 @@
 // lands on a live core without stopping it, and `liveLoad` carries the NAME across too - the field SMDJ4
 // keeps in the directory entry rather than the block, which is why the load needs a symbol layout and
 // not just an offset-0 poke. (sms-layout.test.ts certifies those addresses against this same ROM.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildSav, readSongBlock, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/sav";

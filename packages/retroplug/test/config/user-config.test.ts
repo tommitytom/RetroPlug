@@ -3,7 +3,7 @@
 // the recent-store tests. The on-disk shape + field spellings mirror native's
 // UserConfigJson (with the mirror preference renamed to sramAutoSave), so a real
 // config.json round-trips its shared fields.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { parseUserConfig, parseUserConfigResult, serializeUserConfig, USER_CONFIG_SCHEMA } from "../../src/userConfigSerialization";

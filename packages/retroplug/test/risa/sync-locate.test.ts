@@ -1,7 +1,7 @@
 // The pure risa host-sync PPQ→locate math (risaSync.ts), against the mapping risa's protocol doc
 // specifies: absoluteClock = floor(ppq*24), phrase = 96 clocks (4 quarters), 16 chain rows per song row,
 // and tickOffset = the exact position on the fixed six-clocks-per-row grid within the phrase.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { risaLocate, risaArmPacket, RISA_LOCATE_STATUS, RISA_LOCATE_SUB } from "../../src/risaSync";
 
 const at = (songRow: number, chainRow: number, tickOffset: number, absoluteClock: number) =>

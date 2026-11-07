@@ -5,8 +5,8 @@
 //
 // Its output is named for the system node's input it is wired to, `midi`, as every protocol node's is; a port id
 // names one port, so its input, the routed MIDI the other protocol nodes call `midi`, is `midiIn` here.
-import { defineNode, events } from "../../graph/defineNode";
-import { CORE_MIDI } from "./ports";
+import { defineNode, events } from "@retroplug/core/defineNode";
+import { CORE_MIDI } from "@retroplug/core/ports";
 
 export const N8_MIDI_TO_FIFO_NODE_TYPE = "rp.n8.midi-to-fifo";
 

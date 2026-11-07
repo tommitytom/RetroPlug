@@ -3,7 +3,7 @@
 // fresh temp dir the host was given as RETROPLUG_USER_CONFIG_DIR, so the stores read/write
 // real files under it. Assertions are on observable outcomes (files on disk, reload
 // round-trips), not mock introspection.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { RecentStore } from "../src/recentStore";
 import { UserConfigStore } from "../src/userConfigStore";

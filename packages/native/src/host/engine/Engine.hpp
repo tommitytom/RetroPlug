@@ -323,7 +323,7 @@ public:
         std::vector<ScriptPackType> types;   // the pack's, in registration order
     };
     // Load a pack of script node types named `id`: `source` is global code (the IIFE a bundler makes, appending its
-    // defineNode results to __rp_scriptNodes as the built-in bundle does: packages/retroplug/src/script/register.ts),
+    // defineNode results to __rp_scriptNodes as the built-in bundle does: packages/core/ts/register.ts),
     // compiled here and run in runtimes of the pack's own (ScriptHost::loadPack), each held to `memoryLimit` bytes
     // (0: ScriptHost::kDefaultMemoryLimit); then its types join the registry, so a document can place them from the
     // next setGraph on. Callable while an audio thread runs blocks: the pack is built here, and the block thread

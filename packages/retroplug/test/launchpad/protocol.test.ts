@@ -1,7 +1,7 @@
 // The Launchpad protocol encoder, checked against the Programmer's Reference Manual's OWN worked
 // examples. The manual states these as exact hex, so they are the strongest oracle available: if our
 // encoder reproduces them byte-for-byte we are speaking the documented protocol, not our reading of it.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   PRO_MK3, GRID_SIZE, isPad, padIndex, padAt, buttonName, controlKind,
   Palette, palette, rgb, needsSysex, isRenderable,

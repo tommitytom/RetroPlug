@@ -6,7 +6,7 @@
 //
 // Live-cart stability (the clock ticking under a running core) is the twin of this file in
 // test-native/tracker-working-dirty.test.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
 import { savBytes as lsdjSav } from "../lsdj/fixtures";
 import { savBytes as risaSav } from "../risa/fixtures";

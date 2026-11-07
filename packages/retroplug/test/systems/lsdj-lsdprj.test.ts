@@ -1,10 +1,10 @@
 // .lsdprj import: the pure planner (planLsdprjImport — song injected byte-level + missing kits assigned to
 // free slots, linking the .lsdprj by path+ordinal) and the role path (a lsdprjKit override patches the
 // effective ROM at construct through the store's reload).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";

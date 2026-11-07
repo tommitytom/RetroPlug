@@ -2,7 +2,7 @@
 // advances the PPU, so after a warmup+render the snapshot reports a non-zero frame count and a dot
 // position within the valid NES scanline/cycle ranges. Also covers the 32-byte palette RAM
 // ($3F00-$3F1F). (The tilemap/sprite viewers are still out of scope.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { type PpuState } from "../src/backend";

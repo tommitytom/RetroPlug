@@ -1,11 +1,11 @@
 // The per-system `battery` flag: derived (not serialized) from the ROM header at construct, and surfaced
 // on the SystemView so the UI can gate the "Save SRAM" affordances (a battery-less cart would only ever
 // write a stray empty .sav). romHasBattery is the pure reader; the store wires it through detectBattery.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { romHasBattery } from "../../src/platform";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { gbRom, gbRomBattery, nesRom, nesRomBattery, gbaRom } from "./fixtures";
 

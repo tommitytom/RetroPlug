@@ -1,7 +1,7 @@
 // renderBlocks: the parity suite's capture call. It renders a scripted run of host blocks the way the
 // plugin renders each one, so these check that it is the SAME render the rest of the suite already
 // trusts (renderAudio), that it places lanes, and that it refuses what a DAW never sends.
-import { test, expect, skip } from "../../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../../src/bootSession";
 import { savFrom, type SavInput } from "../../src/lsdjSav";
 import type { RenderBlock } from "../../src/audioDriver";

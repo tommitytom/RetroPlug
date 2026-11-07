@@ -2,7 +2,7 @@
 // loadSongByName (what a recent song row runs once its project has loaded). Driven over the REAL
 // SystemsStore + role registry against the MockBackend, so the role-derived song catalog, the
 // resolved .sav target and the cold-boot rebuild are all exercised, not stubbed.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";

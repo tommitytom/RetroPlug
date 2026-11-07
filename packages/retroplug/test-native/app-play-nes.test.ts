@@ -6,7 +6,7 @@
 //
 // NOTE: channel 2 of bliptoaster.nes is broken (ROM fixed later) — drive channel 1 only (ch1 → Pulse1).
 // A fresh NoteOn is staged before each measurement so the proof doesn't depend on the ROM sustaining.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

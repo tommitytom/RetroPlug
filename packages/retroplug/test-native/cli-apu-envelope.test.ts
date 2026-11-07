@@ -4,7 +4,7 @@
 // envelope unit's live decay counter and `envelopeOutput` what the mixer actually uses. This pins the
 // identity between them on a sounding note and after its release, and that the noise channel carries the
 // same three fields.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { ApuState } from "../src/backend";

@@ -1,0 +1,10 @@
+{
+  "package": "scratch",
+  "declared": ["node-sdk"],
+  "devDeclared": [],
+  "test": false,
+  "links": [],
+  "includes": [],
+  "unjudged": ["scratch-nodes=$<TARGET_PROPERTY:reflectcpp,INTERFACE_INCLUDE_DIRECTORIES>"],
+  "owners": []
+}

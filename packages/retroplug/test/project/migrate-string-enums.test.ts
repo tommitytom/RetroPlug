@@ -2,7 +2,7 @@
 // enums) became string-valued. A pre-v3 config's integer values are rewritten to their string spellings
 // on load; a v3 config is untouched; an unknown/out-of-range integer falls to the schema default. `zoom`
 // and the genuine-numeric role fields (linkGroupId, tempoDivisor) stay numeric.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { parseConfig, serializeConfig, buildConfig, DEFAULT_SETTINGS, K_PROJECT } from "../../src/projectConfig";
 import type { ProjectSettings } from "../../src/projectConfig";
 import type { SystemEntry } from "../../src/systemsList";

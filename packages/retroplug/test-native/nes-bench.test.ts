@@ -15,7 +15,7 @@
 //
 // Workload knobs (env): RP_BENCH_PROFILE (A|B|C), RP_BENCH_BLOCKS, RP_BENCH_WARMUP, RP_BENCH_SEED,
 // RP_BENCH_ROM (path to a .nes; default the in-tree bliptoaster.nes). One test per file (shared native Engine).
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

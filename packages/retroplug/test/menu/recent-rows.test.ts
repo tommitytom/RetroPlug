@@ -3,7 +3,7 @@
 // the store's song request - so on a cart that is still booting it waits instead of writing into RAM the
 // boot is about to erase (or cold-booting the cart blank, which is what the live path's refusal used to
 // fall back to).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildStartMenu, buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

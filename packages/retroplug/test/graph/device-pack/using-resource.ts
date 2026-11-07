@@ -2,8 +2,8 @@
 // A device pack with a `using` declaration: esbuild lowers it to helpers of its own that read Symbol, which
 // MicroQuickJS lacks, and this file names no Symbol itself. The device-pack toolchain must refuse it, naming the
 // helper and the line of this file that pulled it in (test/graph/device-pack.test.ts).
-import { defineNode, events } from "../../../src/graph/defineNode";
-import { registerScriptNodes } from "../../../src/script/register";
+import { defineNode, events } from "@retroplug/core/defineNode";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 const lease = (held: object) => held;
 

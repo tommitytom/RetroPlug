@@ -7,7 +7,7 @@
 // (2) End-to-end: patch a theme + a font into the base ROM in memory via RisaRom, construct from those
 //     bytes, and confirm the patched image boots (and the on-disk .nes is never touched).
 // SKIPs cleanly when the built risa ROM is absent.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { rom as risaRom } from "../src/risa";

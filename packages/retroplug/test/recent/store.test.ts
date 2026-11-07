@@ -2,7 +2,7 @@
 // the Backend — canonicalizes inputs, computes missing flags from fileExists,
 // persists to <configDir>/recent.json atomically, and fires onChange. Tested
 // entirely against the in-memory MockBackend.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { serializeRecent, RECENT_SCHEMA } from "../../src/recentSerialization";

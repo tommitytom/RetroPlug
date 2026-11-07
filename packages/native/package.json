@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "RetroPlug native core (C++): the engine, the systems, the hosts, and the node types not yet carved into packages of their own. Built via the top-level CMake.",
+  "devDependencies": {
+    "@retroplug/core": "workspace:*"
+  },
   "retroplug": {
     "native": [
       { "target": "retroplug-backend", "entry": "rp_sameboy_package", "device": false },

@@ -397,7 +397,7 @@ Native ([packages/native/src/](../packages/native/src/)):
 TypeScript ([packages/retroplug/](../packages/retroplug/)):
 - [src/audioDriver.ts](../packages/retroplug/src/audioDriver.ts) — `renderAudio` /
   `stageMidiIn` / `setBpm` / `setTransport` (the bench's injection surface).
-- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts): the protocol nodes the benchmarks drive, and the MI.OUT and master-sync decoders `rp.lsdj.serial-out` runs (§3).
+- [src/script/nodes/](../packages/retroplug/src/script/nodes) / [src/lsdjArduinoboy.ts](../packages/retroplug/src/lsdjArduinoboy.ts) / [src/midiRouting.ts](../packages/core/ts/midiRouting.ts): the protocol nodes the benchmarks drive, and the MI.OUT and master-sync decoders `rp.lsdj.serial-out` runs (§3).
 - [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts) —
   the setup template to copy.
 - [scripts/run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) — how a

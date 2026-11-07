@@ -3,7 +3,7 @@
 // changes the next boot), so an audible GB boot chime at THIS boot can only come from the role config being
 // part of the build its node makes. The control is app-play-mgb's fastBoot=true start (idle ~0.00003
 // — the boot screen skipped, silent). Here fastBoot=false runs the boot ROM, which chimes.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

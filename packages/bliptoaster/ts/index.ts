@@ -3,8 +3,8 @@
 // built-in plan runs between its MIDI input and the cart (pico/n8-host/plan.json), and the desktop products list so it
 // can be auditioned there. The device-pack toolchain (packages/retroplug/scripts/build-device-pack.mjs) compiles it to
 // MicroQuickJS bytecode, at 64 bits for the desktop's host and at 32 for the box's.
-import { defineNode, events } from "../../retroplug/src/graph/defineNode";
-import { registerScriptNodes } from "../../retroplug/src/script/register";
+import { defineNode, events } from "@retroplug/core/defineNode";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 // What BlipToaster's FIFO is not fed: polyphonic and channel aftertouch (high-rate streams a controller floods and no
 // ROM here reads), the system common messages but a SysEx (F1 to F6) and the real-time ones (F8 to FF), which the

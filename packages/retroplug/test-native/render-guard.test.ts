@@ -1,7 +1,7 @@
 // The render calls drive processBlock on the CALLING thread, which only the Engine's owner may do. While
 // the background audio thread owns it, they must refuse (as renderBlocks does) rather than render
 // concurrently with it; once the thread has stopped they render again.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";
 import { directGraph } from "../src/graph/directGraph";

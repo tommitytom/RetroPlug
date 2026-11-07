@@ -11,17 +11,19 @@
 // - an import nothing resolves, which is reported by the file and the specifier rather than as a bundler failure, and
 //   does not hide the rest of the package's refusals;
 // - a type-only reach into the shell (`import type`, `export type ... from`, `import("x").T`);
+// - a triple-slash reference path into the shell, and an undeclared `reference types`;
+// - an `exports` target under ts/test/ or outside ts/;
 // - a devDependency a source file imports, which only a test file may;
 // - a declared package that does not exist;
 //
 // and two positive trees: one where a package declares a package it imports by name, a declared third-party subpath, a
-// devDependency from a test file and its own interface by a relative path, and the real tree, where the imports the
-// check knows about are the EXCEPTIONS list's: the ones stage 3 removes.
+// devDependency from a test file (a type package's globals included) and its own interface by a relative path, and the
+// exports it publishes are inside ts/; and the real tree, where no exception is left.
 //
 // The checker is Node's (it reads TypeScript's scanner), so the test spawns test/boundaries/run-checker.mjs, which runs
 // it over a fixture root and gives back its output as JSON, as test/packages/packages-generator.test.ts runs the
 // generator.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 
 // Just enough of txiki's spawn, a child's pipe and its file reads, declared locally as bundle-no-zod.test.ts does.
 interface ByteStream {
@@ -168,6 +170,31 @@ test("type-only imports are judged: an import type, an export type ... from and 
   ]);
 });
 
+test("a triple-slash reference path into the shell is refused, and an undeclared reference types with it", async () => {
+  const report = await drive("reference");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/alpha/ts/index.ts: a /// <reference path> "../../retroplug/src/a.ts", which resolves into the shell ' +
+      "(packages/retroplug), outside packages/alpha/ts: a package reaches another as @retroplug/<name>, and the shell " +
+      "not at all",
+    'packages/beta/ts/index.ts: a /// <reference types="node"> names @types/node, which beta does not declare in its ' +
+      "dependencies (its tests may also use devDependencies)",
+  ]);
+});
+
+test("a published test module and a published module outside ts/ are both refused", async () => {
+  const report = await drive("exports");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/delta/package.json: exports "./test/rig" at ./ts/test/rig.ts, which is a test module: a test file may ' +
+      "use devDependencies, so publishing one lets another package's source reach them through it",
+    'packages/epsilon/package.json: exports "./app" at ./app.ts, which is outside packages/epsilon/ts, so no check ' +
+      "reads the code it publishes",
+  ]);
+});
+
 test("a devDependency is a test file's: a source file that imports one is refused", async () => {
   const report = await drive("dev-dependency-source");
   console.log(`# ${(report.refused as string[]).join("\n# ")}`);
@@ -187,7 +214,7 @@ test("a declared package that does not exist is refused on its own", async () =>
   ]);
 });
 
-test("the real tree holds its boundaries through the EXCEPTIONS stage 3 removes", async () => {
+test("the real tree holds its boundaries with no exception left", async () => {
   const report = await drive("--tree");
   const allowed = report.allowed as string[];
   console.log(`# ${allowed.length} allowed by EXCEPTIONS:`);
@@ -195,10 +222,6 @@ test("the real tree holds its boundaries through the EXCEPTIONS stage 3 removes"
   expect(report.status).toBe(0);
   expect(report.refused).toEqual([]);
   expect(report.stale).toEqual([]);
-  // Every entry is the shell reached by a relative path from a package's TS: core's half (bliptoaster, devtest) and the
-  // test harness (n8's tests).
-  expect(allowed.length).toBe(12);
-  expect(allowed.every((line) => line.includes("resolves into the shell (packages/retroplug), outside"))).toBe(true);
-  expect(allowed.filter((line) => line.includes("stage 3 (core's TS half)")).length).toBe(5);
-  expect(allowed.filter((line) => line.includes("stage 3 (@retroplug/testing)")).length).toBe(7);
+  // The reaches the split moved into packages are gone, so no entry is left.
+  expect(allowed.length).toBe(0);
 });

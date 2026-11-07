@@ -6,7 +6,7 @@
 // risa's receive path is a pure slave: with no bytes it never advances, so the negative case (transport
 // running, role absent) is SILENT while the positive case sings. A 4-byte arm would land here as silence
 // too - 2.3.0 rejects it - which is what makes this a real protocol check rather than a smoke test.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { isRisaSyncRom, risaMarkerVersion } from "../src/risa";

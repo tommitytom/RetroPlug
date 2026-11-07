@@ -42,7 +42,7 @@ namespace {
 
 using graph::PortKind;
 
-constexpr const char* kNodesGlobal = "__rp_scriptNodes";  // packages/retroplug/src/script/register.ts
+constexpr const char* kNodesGlobal = "__rp_scriptNodes";  // packages/core/ts/register.ts
 constexpr const char* kBuiltInPack = "rp.script";          // the built-in pack's id, and its package's
 
 // The property names the block thread reads and writes, as atoms made once, so naming one allocates nothing.

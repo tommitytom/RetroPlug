@@ -16,7 +16,7 @@
 //
 // Both ride the one patcher (applyConfigToRom), which is also what the menu bakes with — so "what the cart
 // runs" and "what Patch ROM in Place writes" cannot drift apart.
-import type { RoleRegistry, RoleType, ConstructCaps } from "./systemRoles";
+import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
 import type { ConstructSpec } from "./backend";
 import { z } from "./configSchema";
 import {

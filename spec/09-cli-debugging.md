@@ -188,7 +188,7 @@ The plumbing tier is integrated end to end; only the new-wrapper tier + external
   `realBackend.ts` impl (a bare cast / `bytesOrNull`), and a deterministic `MockBackend` stub.
 - **Ergonomics** — `Timeline.at(ms, fn)` runs `fn(session)` after the render advances to `ms`, so a session
   reads state + asserts at a scheduled time; a ROM test reuses
-  [testing/harness.ts](../packages/retroplug/testing/harness.ts) `test()`/`expect()` to **emit TAP**.
+  [testing/harness.ts](../packages/testing/ts/harness.ts) `test()`/`expect()` to **emit TAP**.
 - **Proof** — one `test-native/cli-*.test.ts` per capability (breakpoint PCs, the `$40F1` watch), plus the
   agent-facing `cli/sessions/rom-test.ts`.
 

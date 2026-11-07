@@ -3,7 +3,7 @@
 // menu — it is the tracker integration's markerRole — exactly as "risa" gates risa's menu. Registered into
 // the control-plane registry only (buildAppRegistry), like registerRisaRole.
 import { z } from "zod";
-import type { RoleRegistry, RoleType } from "./systemRoles";
+import type { RoleRegistry, RoleType } from "@retroplug/core/systemRoles";
 
 /** The `bliptoaster` marker role: the app's contribution. */
 export const BLIPTOASTER_ROLE: RoleType = {

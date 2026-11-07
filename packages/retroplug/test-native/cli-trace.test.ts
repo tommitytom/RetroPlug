@@ -3,7 +3,7 @@
 // captures a non-empty stream of rows (each carrying a program-counter + formatted disassembly), and the
 // step trio (stepInto/stepOver/stepOut) advances the core and returns a BreakInfo. Mirrors the legacy
 // nes/observe.test.ts + nes/debug.test.ts assertions. (The mock counterpart is testing/mockBackend.ts.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { BreakInfo, TraceLine } from "../src/backend";

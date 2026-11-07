@@ -1,7 +1,7 @@
 // F6 (cli/reg-decode.ts): decodeExpansionWrites reconstructs the ROM's programmed expansion-audio
 // registers from the drainEvents write log, and its freqReg agrees with F1's live decoded state
 // (getExpansionAudioState().period) - the white-box write-path <-> live-state cross-check.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { decodeExpansionWrites } from "../cli/reg-decode";

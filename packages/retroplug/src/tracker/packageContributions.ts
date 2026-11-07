@@ -5,7 +5,7 @@
 // "@retroplug/core" instead of the path below.
 import type { TrackerIntegration } from "./trackerIntegration";
 
-declare module "../core/definePackage" {
+declare module "@retroplug/core/definePackage" {
   interface PackageContributions {
     readonly trackerIntegrations?: readonly TrackerIntegration[];
   }

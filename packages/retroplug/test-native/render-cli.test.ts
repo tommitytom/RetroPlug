@@ -8,7 +8,7 @@
 // setTimeout, which it hands the offline poll to yield to a launcher's loop, is given a stand-in that resumes at once.
 // The launcher's own half (an unbounded pump, a Ctrl-C between steps, exit codes, the output streams) is held against
 // the real binary by tools/run-cli-ts-tests.sh (pnpm test:cli-ts).
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../src/bootSession";
 import { renderTool } from "../cli/sessions/render";
 import { caseNamed, missingFixture, writeScratch } from "./render-cases";

@@ -10,7 +10,7 @@
 //   RP_PARITY_REQUIRE_TARGET=1  in check mode, fail every case when this host is not the baseline's target
 //                          (CI's target job sets it, so exact audio checking cannot silently fade out)
 //   RP_PARITY_EMIT=<file>  internal: the child a recording spawns to run one case alone writes its digest here
-import { test, expect, skip } from "../../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { Rig, type Segment } from "./rig";
 import {
   bytesDigest,

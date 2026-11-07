@@ -6,7 +6,7 @@
 // - The bundle: esbuild bundles the pack's entry, and a module outside its allowlist fails the build: the pack's own
 //   directory and the portable node SDK (SDK below), so no zod, no backend, no native seam, no UI. The bundle is built
 //   with RP_DEVICE_PACK defined true, which is how defineNode learns that its definitions are a device pack's
-//   (graph/defineNode.ts): only this toolchain defines it, and it builds device packs alone.
+//   (packages/core/ts/defineNode.ts): only this toolchain defines it, and it builds device packs alone.
 // - The lowering: TypeScript 5 lowers the bundle to ES5 (the workspace's TypeScript 7 no longer emits ES5), as
 //   MicroQuickJS parses ES5 plus a little: classes, arrows, let/const, spread and template literals must go.
 // - The scan: a library call MicroQuickJS does not have (Map, Set, Object.entries, async, ...), or a global of mqjs's
@@ -16,7 +16,7 @@
 //   whole SDK with every export kept. A read behind its own `typeof` guard is accepted, as the lowering's helpers make
 //   them.
 // - The reference run: the pack runs under Node with a short epilogue that prints every node type it registered (its
-//   descriptor JSON). A definition the device refuses (an audio port, graph/defineNode.ts) throws here, at build time,
+//   descriptor JSON). A definition the device refuses (an audio port, packages/core/ts/defineNode.ts) throws here, at build time,
 //   with its own message. Node's run is the REFERENCE, nothing more: a vm context has every standard global whatever
 //   it is handed, so it says nothing about what MicroQuickJS has.
 // - The bytecode: `mqjs -o` compiles the pack at the host's width (64-bit, for the desktop's mquickjs host). It is
@@ -24,7 +24,7 @@
 //   bytes in any checkout.
 // - The device's runtime: the bytecode every node of the pack runs, on every host, is the pack bundled a second time
 //   with RP_DEVICE_RUNTIME defined true as well (and esbuild's syntax folding, which turns the define into dead
-//   branches it then drops), over the device's runtime of the node SDK (graph/defineNode.ts): a definition keeps its
+//   branches it then drops), over the device's runtime of the node SDK (packages/core/ts/defineNode.ts): a definition keeps its
 //   id, its create, its layout and its idle flag, which is all running a node asks of one, and the checks, the
 //   settings parse and the descriptor go, which the whole pack keeps for the desktop's control context. It is lowered
 //   and scanned as the pack is, and compiled with `-m32` for the box and at 64 bits for the desktop. The pack's own
@@ -74,10 +74,10 @@ const REPO = resolve(PKG, "../..");
 
 /** The portable node SDK, repo-relative: what a device pack may import beside its own modules. */
 const SDK = [
-  "packages/retroplug/src/graph/defineNode.ts",
-  "packages/retroplug/src/graph/settingsSchema.ts",
-  "packages/retroplug/src/graph/descriptor.ts",
-  "packages/retroplug/src/script/register.ts",
+  "packages/core/ts/defineNode.ts",
+  "packages/core/ts/settingsSchema.ts",
+  "packages/core/ts/descriptor.ts",
+  "packages/core/ts/register.ts",
 ];
 
 // The engine the bytecode is compiled for. Pinned in deps/mquickjs; named in what this prints.
@@ -137,8 +137,8 @@ const MISSING = [
   // the engine's run rather than flagging every array .slice() here.
 ];
 
-// What runs after the pack, on both engines: every node type it registered (graph/defineNode.ts's descriptor, through
-// script/register.ts's global), one JSON line each, so the two transcripts compare what the definitions resolved to.
+// What runs after the pack, on both engines: every node type it registered (packages/core/ts/defineNode.ts's descriptor, through
+// @retroplug/core's register.ts global), one JSON line each, so the two transcripts compare what the definitions resolved to.
 const EPILOGUE = `
 ;(function () {
   var nodes = globalThis.__rp_scriptNodes || [];

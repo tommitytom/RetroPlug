@@ -5,7 +5,7 @@
 // offered on its own, so one that throws is said and the handles behind it still reach the engine. And a
 // construct-time edit is a reset that carries the battery: a new id, a ROM re-read from its source, a new value in the
 // document. Every rebuild reads the ROM again, so a file rebuilt on disk is what the next boot runs.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend, sramBytesFor, stateBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { ProjectStore } from "../../src/projectStore";
@@ -15,7 +15,7 @@ import { DirectGraph } from "../../src/graph/directGraph";
 import { ResourcePool, systemHandles } from "../../src/graph/systemResources";
 import type { ConstructSpec, SetGraphResult } from "../../src/backend";
 import { warned } from "../_warnings";
-import { canonicalJson } from "../../src/graph/canonicalJson";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
 import { gbRom, nesRom } from "./fixtures";
 
 // A store with the real role registry: a system's core-config role is what carries a construct-time field.

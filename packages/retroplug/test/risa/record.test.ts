@@ -2,7 +2,7 @@
 // record_codec.js parseSongRecord output (see scripts/gen-risa-record-fixtures.mjs); the byte-identity
 // round-trip mirrors what risa's makeRecord(parseSongRecord(rec)) === rec guarantees on the oracle side.
 // Vectors: a real record-v7 song (RAVER.risong) and the v5 record inside the v2_blumarbl battery.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { deepEqual } from "./_assert";
 import { recordBytes } from "./recordFixtures";
 import { savBytes } from "./fixtures";

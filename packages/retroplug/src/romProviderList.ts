@@ -7,7 +7,7 @@
 //
 // The list is the shell's app contribution (app.ts), so the generated registry holds it in product order and a
 // package that brings its own console registers it there rather than here.
-import type { RoleInstance, RomProvider } from "./systemRoles";
+import type { RoleInstance, RomProvider } from "@retroplug/core/systemRoles";
 import { LsdjSyncMode } from "./settingsEnums";
 import { isRisaRomHeader, isRisaSyncRom } from "./risa";
 import { isBlipToasterRomHeader, blipToasterChip } from "./bliptoaster/romDetect";

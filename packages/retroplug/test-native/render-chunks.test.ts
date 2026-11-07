@@ -18,7 +18,7 @@
 //
 // The cores power on in a fixed state (the runner sets RETROPLUG_DETERMINISTIC for this file). The smsggdj renders
 // need no fixture; the LSDj and risa ones read the fixture tree (RETROPLUG_RESOURCES_DIR) and SKIP without it.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { caseNamed, missingFixture, renderCase, writeScratch, type Rendered } from "./render-cases";

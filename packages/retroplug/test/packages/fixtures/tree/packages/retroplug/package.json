@@ -1,6 +1,10 @@
 {
   "name": "@retroplug/retroplug",
   "private": true,
+  "dependencies": {
+    "@retroplug/alpha": "workspace:*",
+    "@retroplug/beta": "workspace:*"
+  },
   "retroplug": {
     "app": "src/app.ts",
     "protocol": {

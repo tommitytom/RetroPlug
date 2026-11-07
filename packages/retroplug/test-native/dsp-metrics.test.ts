@@ -1,7 +1,7 @@
 // F5 (cli/spectral-metrics.ts): the timbre metrics move in the right direction - brightness rises with high
 // harmonics, harmonicEnergy/THD rise with harmonic content, and the noise floor rises when hiss is added.
 // Pure synthesized signals (deterministic LCG noise, no Math.random) so the assertions are stable.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { spectralCentroid, harmonicEnergy, thd, noiseFloorDb, bandEnergyDb } from "../cli/spectral-metrics";
 
 const SR = 44100;

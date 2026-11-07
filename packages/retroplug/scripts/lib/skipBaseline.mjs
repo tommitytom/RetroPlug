@@ -1,4 +1,4 @@
-// The skip ratchet. Once a skipped case reports itself honestly (see testing/harness.ts), the next
+// The skip ratchet. Once a skipped case reports itself honestly (see packages/testing/ts/harness.ts), the next
 // question is whether the set of skipping files is allowed to GROW — because the way this codebase lost
 // coverage was never a deleted test, it was a fixture path quietly going stale while the suite stayed
 // green. A tracked baseline is what turns that from invisible into a failed build.

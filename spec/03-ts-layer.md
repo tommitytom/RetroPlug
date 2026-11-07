@@ -687,7 +687,7 @@ Two concepts touched throughout this doc belong fully to **doc 04**:
   beside the MIDI routing and the controller session it places from the project's settings. They are in
   the bundle every Engine embeds, inside the script host's **bare QuickJS audio context**: the distinct
   runtime, never shared with the control-plane runtime. Their settings are zod-free
-  ([`graph/settingsSchema.ts`](../packages/retroplug/src/graph/settingsSchema.ts)), so the bundle holds no zod.
+  ([`graph/settingsSchema.ts`](../packages/core/ts/settingsSchema.ts)), so the bundle holds no zod.
 
 Doc 04 covers the nodes' ports and settings, what each does per block, the drift-exact PPQ clock in JS,
 and how `buildGraph` places and wires them.

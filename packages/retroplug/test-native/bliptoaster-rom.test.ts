@@ -6,7 +6,7 @@
 // (2) End-to-end: patch a kit + a font into the base ROM in memory via BlipToasterRom, construct from those
 //     bytes, and confirm the patched image boots (and the on-disk .nes is never touched).
 // Driven by the COMMITTED resources/roms/bliptoaster.nes (which carries the "bliptoaster" marker + baked kit).
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { bootSession } from "../cli/session";

@@ -3,7 +3,7 @@
 // sibling <rom>.rplg project, running the .sav→ROM pairing. resolveLoad NEVER mutates
 // the store (the caller applies the guarded reset+load). The async 2nd-browser + the
 // add/replace mutators live in browse.test.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { FileSelection, classifyKind } from "../../src/fileSelection";

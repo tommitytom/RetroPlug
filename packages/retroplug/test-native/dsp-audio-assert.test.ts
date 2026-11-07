@@ -1,7 +1,7 @@
 // F7 (cli/audio-assert.ts): the ergonomic assertions - assertInTune / assertPitchInTune throw only when out
 // of tune; spectralFingerprint is stable for identical audio and moves for different timbre; and the F1->F7
 // path (decoded Hz -> assertInTune) proves VRC6 A4 is in tune, the test that was missing when N163 shipped.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { assertInTune, assertPitchInTune, spectralFingerprint, assertFingerprint } from "../cli/audio-assert";

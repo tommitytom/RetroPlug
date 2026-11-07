@@ -2,9 +2,9 @@
 // declare the same shapes, and both must spell the same descriptor bytes - the shared golden files. The C++
 // test compares its output to the file text; this one compares canonical spellings, and the
 // canonical-json tests prove the two writers spell identically.
-import { test, expect } from "../../testing/harness";
-import { canonicalJson } from "../../src/graph/canonicalJson";
-import { audio, bytes, channels, control, defineNode, events, link, param, resource } from "../../src/graph/defineNode";
+import { test, expect } from "@retroplug/testing";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
+import { audio, bytes, channels, control, defineNode, events, link, param, resource } from "@retroplug/core/defineNode";
 import golden from "../../../native/test/graph/golden/rp.test.gain.descriptor.json";
 import kitchenGolden from "../../../native/test/graph/golden/rp.test.kitchen-sink.descriptor.json";
 

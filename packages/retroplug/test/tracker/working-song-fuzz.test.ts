@@ -21,7 +21,7 @@
 // it; FUZZ_KNOWN=1 steps around the bugs already found, FUZZ_RACE=1 lets host Saves land inside the cart's
 // own routines, FUZZ_STRICT_FLAG=1 fails on a saved song the cart still calls UNSAVED). FUZZ_REPLAY=<json>
 // traces one sequence; FUZZ_SCAN=<n> reports which of the first n permanent seeds pass.
-import { test } from "../../testing/harness";
+import { test } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";

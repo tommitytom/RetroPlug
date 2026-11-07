@@ -6,11 +6,11 @@
 // buildAppRegistry applies, the ROM providers it offers, the tracker integrations the Songs and Assets menus
 // search, and the kit formats the audio driver dispatches to. The protocol tables buildGraph reads are apart, in
 // ./protocol.ts, so a module that needs them imports no package's app.
-import type { RoleType, RomProvider } from "../systemRoles";
+import type { RoleType, RomProvider } from "@retroplug/core";
 import type { TrackerIntegration } from "../tracker/trackerIntegration";
-import type { KitFormat } from "../kit/compile";
-import app_alpha from "../../../alpha/ts/app";
-import app_beta from "../../../beta/ts/app";
+import type { KitFormat } from "@retroplug/dsp/kitContract";
+import app_alpha from "@retroplug/alpha/app";
+import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
 
 /** The app's roles, in product order: the role contract's objects, which the registry holds. */

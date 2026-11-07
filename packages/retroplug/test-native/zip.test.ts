@@ -1,6 +1,6 @@
 // The native zip/unzip codec (real miniz) round-trips through the Backend — the same
 // entry-shape the .rplg export/import uses ({ name, bytes }).
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 
 test("zip → unzip round-trips entries through real miniz (PK archive)", () => {

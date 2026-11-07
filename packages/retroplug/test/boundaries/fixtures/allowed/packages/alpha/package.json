@@ -1,11 +1,15 @@
 {
   "name": "@retroplug/alpha",
   "private": true,
+  "exports": {
+    ".": "./ts/index.ts"
+  },
   "dependencies": {
     "@retroplug/beta": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "@retroplug/testing": "workspace:*"
   }
 }

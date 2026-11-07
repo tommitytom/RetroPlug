@@ -1,7 +1,7 @@
 // The pure parts of `retroplug-cli n8-play`: the step grammar (incl. the raw / sysex / file steps that
 // let a hardware check push a SysEx or a panic byte from the same command that plays the notes), the
 // iNES mapper read, and the expansion-master-volume decision.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { stepBytes, parseHexBytes, inesMapper, expVolPlan, EXPANSION_MAPPERS } from "../../cli/sessions/n8-play";
 
 test("note / cc / wait steps are 1-based on channel and default velocity to 100", () => {

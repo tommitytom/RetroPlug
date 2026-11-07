@@ -2,7 +2,7 @@
 // (the registry), so adding a tool auto-appears in the index with no C++ / dispatcher edits. The routing
 // itself (reading hostArgs, exit codes) is exercised end-to-end against the built binary; here we cover the
 // pure formatting + that the real registry is wired.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { topLevelHelp, tools, type CliTool } from "../../cli/tools";
 
 const fakeTool = (name: string, summary: string): CliTool => ({ name, summary, help: "", run: () => {} });

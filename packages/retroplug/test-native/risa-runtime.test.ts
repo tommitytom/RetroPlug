@@ -3,7 +3,7 @@
 // the reader tracks the stopped→playing transition and reports sensible live tempo/position/screen. This
 // proves the generated symbol addresses match the real ROM (a synthetic-RAM unit test can't). SKIPs when
 // the built ROM is absent, like risa-m0-spike.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

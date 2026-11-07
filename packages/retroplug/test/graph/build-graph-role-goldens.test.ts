@@ -21,15 +21,15 @@
 // surface's press staged, so CI plans buildGraph's per-role wiring on the real engine: each protocol node type against
 // the system node it feeds, the routing in each mode, a controller each way, LSDj's decoder after its Game Boy and the
 // N8 cart's node. Every document must plan, and its blocks fault no node, throw in no script node and drop no message.
-import { test, expect } from "../../testing/harness";
-import { canonicalJson } from "../../src/graph/canonicalJson";
+import { test, expect } from "@retroplug/testing";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape, type TapArm } from "../../src/graph/buildGraph";
 import type { SystemNodeType } from "../../src/platform";
 import { outNodeOf, protocolPipeline } from "../../src/graph/protocolNodes";
 import type { GraphController } from "../../src/graph/controller";
-import type { RoleInstance } from "../../src/systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 import { CHANNEL_EXPORT_VALUES, MIDI_ROUTING_VALUES, type ControllerTarget } from "../../src/settingsEnums";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import golden from "./golden/build-graph-roles.json";
 

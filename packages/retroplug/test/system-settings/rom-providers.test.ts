@@ -2,8 +2,8 @@
 // RomSniffer default-role step. mGB is matched by the embedded marker (its bytes never reach
 // TS) OR a file-backed "MGB" title; LSDj by a case-insensitive "LSDJ" title prefix. Driven
 // through defaultRoles so the sameboy system role + provider features compose as they do live.
-import { test, expect } from "../../testing/harness";
-import { RoleRegistry } from "../../src/systemRoles";
+import { test, expect } from "@retroplug/testing";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";

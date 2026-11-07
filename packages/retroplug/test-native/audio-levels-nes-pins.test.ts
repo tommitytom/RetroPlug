@@ -1,7 +1,7 @@
 // The other NES per-channel shape: the two 2A03 "stereo-mod" pins (Pulse | TND) plus the lumped
 // Expansion term (channelExportMode stereoModPins). Measurement harness, not a regression guard.
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-nes-pins
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

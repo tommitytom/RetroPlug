@@ -10,7 +10,7 @@
 // It also checks the claim the LEDs rest on: after a launch, the cart is where the app's model says.
 //
 // Run: pnpm test:native lsdj-launchpad
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { type SavInput } from "../src/lsdjSav";
 import { launchMessage } from "../src/controller";
 import { PredictedLsdjModel } from "../src/lsdj/playback";

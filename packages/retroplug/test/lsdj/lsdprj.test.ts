@@ -1,7 +1,7 @@
 // The .lsdprj codec (song + trailing kit banks) + the byte-level SAV song injection used to import it
 // without the lossy Song model. Proven via a self-authored round-trip (with kit banks), a real
 // lsdpatch-exported .lsdprj (Cortex Charger), kit-index scan/remap, and injectSong into an authored SAV.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { deepEqual } from "./_assert";
 import { savFrom } from "../../src/lsdj";
 import { decodeSav } from "../../src/lsdj/codec/sav";

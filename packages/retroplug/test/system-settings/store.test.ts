@@ -4,14 +4,14 @@
 // knobs (a setting publishes the document, a param is set live); editing a FEATURE role
 // with no protocol node is pure TS. A fake extension proves the feature path with no LSDj
 // in the core.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { z, clampedInt } from "../../src/configSchema";
 import { gbRom, nesRom, sameboyRoleConfig } from "../systems/fixtures";
-import { canonicalJson } from "../../src/graph/canonicalJson";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
 
 // `v` as a document carries it: canonical JSON, its keys sorted.
 const canon = (v: unknown): unknown => JSON.parse(canonicalJson(v));

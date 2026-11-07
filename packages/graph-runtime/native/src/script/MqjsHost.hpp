@@ -10,7 +10,7 @@
 // (host/script/ScriptHost.hpp).
 //
 // A pack. Its bytecode (rp_mqjs_pack.h; the device-pack toolchain compiles it, once per width) defines its nodes with
-// defineNode and hands them to registerScriptNodes (packages/retroplug/src/script/register.ts), which appends them to
+// defineNode and hands them to registerScriptNodes (packages/core/ts/register.ts), which appends them to
 // the global __rp_scriptNodes. It comes as two bundles: the device's runtime of the pack, which every node context on
 // every host runs (the source's `bytecode`), and the whole pack (`control_bytecode`, the desktop's alone), which the
 // desktop's control context runs. package() makes one rp_package for a pack, one rp_node_type per definition, in the

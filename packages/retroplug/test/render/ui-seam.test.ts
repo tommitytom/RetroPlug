@@ -2,7 +2,7 @@
 // the job's own and starts the render in the store graph's RenderJobs with the right spec; pickActiveRenderJob chooses
 // the tile's badge job. The render itself (an engine job) is proven separately, in C++ and in test-native.
 
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { startSystemRender, renderBaseName, pickActiveRenderJob, renderBadgeLabel, validSplits, formatDuration, type RenderJobStatus } from "../../ui/host/render";
 import { outBase, type RenderOpts } from "../../src/render";

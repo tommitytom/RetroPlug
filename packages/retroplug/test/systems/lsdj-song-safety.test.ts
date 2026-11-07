@@ -4,7 +4,7 @@
 // identical, prove the edited image still DECODES cleanly (no orphaned blocks / alloc-table corruption), run a
 // long SEQUENTIAL chain of edits re-validating after every step, and cover the malformed-input / full / empty
 // / single-song edges + swapProjectSlots directly.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { savBytes } from "../lsdj/fixtures";
 import {
   listProjects,

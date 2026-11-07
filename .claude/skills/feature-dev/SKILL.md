@@ -60,7 +60,7 @@ codec, persistence, tests) and a good template to pattern-match against.
   `src/graph/buildGraph.ts` from `src/graph/protocolNodes.ts`). Per-channel stems: spec/10. Offline render:
   `src/host/render` + `packages/retroplug/src/render/`.
 - **MIDI + transport** — host MIDI → `Engine::stageMidi` → the system's ingress (SameBoy serial; NES N8
-  FIFO role in `system/mesen/roles/`); routing in `packages/retroplug/src/midiRouting.ts`.
+  FIFO role in `system/mesen/roles/`); routing in `packages/core/ts/midiRouting.ts`.
 - **Debug / introspection** (the consumer's observability) — `packages/native/src/system/DebugTarget.hpp`
   + `system/mesen/MesenNesDebugSession` + `host/rpc/DebugRpcService` (`getApuState`,
   `getExpansionAudioState`, `drainEvents`, `readCpu`, the debugger/profiler). See spec/09.

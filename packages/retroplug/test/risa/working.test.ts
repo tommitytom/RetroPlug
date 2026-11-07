@@ -3,7 +3,7 @@
 // raver, an invariant the firmware itself guarantees (its save_verify_record self-check). Plus structural
 // asserts that objects land at their exact WRAM strides, and coverage of the pre-v7 instrument migration
 // writeWorking applies (mirroring seq_data_save_load). All pure-TS, no emulator.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { recordBytes } from "./recordFixtures";
 import { savBytes } from "./fixtures";
 import {

@@ -21,8 +21,8 @@
 // (build-graph-role-goldens.test.ts). Not every golden document plans: the thirty-three systems under perSystem give
 // rp.host.audio-out 33 buses, past the 32 it takes.
 // packages/native/test/engine-graph/BuildGraphGoldens.test.cpp plans every other one on the engine.
-import { test, expect } from "../../testing/harness";
-import { canonicalJson } from "../../src/graph/canonicalJson";
+import { test, expect } from "@retroplug/testing";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
 import { buildGraph, type GraphModel, type TapArm } from "../../src/graph/buildGraph";
 import golden from "./golden/build-graph.json";
 

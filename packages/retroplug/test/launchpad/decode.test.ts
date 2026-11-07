@@ -1,7 +1,7 @@
 // Decoding what the device sends back. The interesting cases are the two quirks a caller should never
 // have to think about: the device sends Note On with velocity 0 for note off, and the same number means
 // a different control depending on whether it arrived as a note or a CC.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { PRO_MK3, decodeMessage, decodeMessages } from "../../src/launchpad";
 
 const dec = (bytes: number[]) => decodeMessage(PRO_MK3, bytes);

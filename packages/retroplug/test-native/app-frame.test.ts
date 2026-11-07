@@ -3,7 +3,7 @@
 // the new getFrame RPC. Proves the per-system FrameBufferTriple escapes to TS as raw XRGB8888 pixels —
 // the data an EmulatorTile blits into an LVGL Canvas. (Frames are produced by the core rendering vblanks
 // during processBlock, independent of the script nodes, so no protocol node is placed here.)
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

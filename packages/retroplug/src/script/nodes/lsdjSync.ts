@@ -14,7 +14,7 @@
 // START after a row byte, MI.MAP's clocks after its rows) as it raised the kernel's.
 //
 // Nothing is allocated in a warm block: the serial-in run and the button press are made once and reused.
-import { bytes, defineNode, events, type Block, type Message } from "../../graph/defineNode";
+import { bytes, defineNode, events, type Block, type Message } from "@retroplug/core/defineNode";
 import { LsdjSyncMode } from "../../settingsEnums";
 import {
   KEYBOARD_LOW_OCTAVE_MAP,
@@ -38,9 +38,9 @@ import {
   isNoteOn,
   midiMapRow,
 } from "../../lsdjSyncBytes";
-import { TickClock } from "./clock";
+import { TickClock } from "@retroplug/core/clock";
 import { lsdjSyncSettings, type LsdjSyncSettings } from "./lsdjSyncSettings";
-import { BUTTONS, SERIAL_IN } from "./ports";
+import { BUTTONS, SERIAL_IN } from "@retroplug/core/ports";
 
 export const LSDJ_SYNC_NODE_TYPE = "rp.lsdj.sync";
 

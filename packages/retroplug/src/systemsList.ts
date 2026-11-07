@@ -12,7 +12,7 @@ import { siblingSavPath, siblingRomCandidates } from "./savPaths";
 import type { TrackedSlot } from "./tracker/songCatalog";
 import type { Platform, Core } from "./platform";
 import type { CommonSettings } from "./systemSettings";
-import type { RoleInstance } from "./systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { SystemResources } from "./graph/systemResources";
 
 /** The per-system record TS owns. `savSuffix` + `savPath` (an override, `""` when the

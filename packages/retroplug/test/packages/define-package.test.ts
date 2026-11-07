@@ -6,8 +6,8 @@
 //
 // The four lists a package may contribute come from two owners: core declares `roles` and `romProviders`, and the
 // tracker and dsp modules augment the interface with `trackerIntegrations` and `kitFormats`.
-import { test, expect } from "../../testing/harness";
-import { definePackage } from "../../src/core/definePackage";
+import { test, expect } from "@retroplug/testing";
+import { definePackage } from "@retroplug/core/definePackage";
 import { CORE_ROLES } from "../../src/coreRoles";
 import { lsdjIntegration } from "../../src/tracker/integrations";
 import { LSDJ_KIT_FORMAT } from "../../src/kit/compile";

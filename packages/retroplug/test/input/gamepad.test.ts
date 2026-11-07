@@ -2,7 +2,7 @@
 // the SDL-name → GameboyButton lookup useGamepadInput indexes per controller event. Values mirror native
 // InputTypes.hpp (Right=0 … Start=7). Gamepad names are the raw "gamepad-button" bus names (SDL canonical),
 // so there is no code table — unlike the keyboard channel's resolveKeyName.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { buildGamepadToButton, buildGamepadToAction, axisToken, menuNavForButton, menuNavForAxisToken, BUTTON_VALUE } from "../../src/keyCodes";
 

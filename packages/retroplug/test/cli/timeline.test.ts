@@ -1,7 +1,7 @@
 // The CLI Timeline builder is pure — build() flattens the fluent calls to a stable ms-sorted event list
 // with no engine involved — so it's unit-testable here in the mock suite. (renderTimeline, which drives a
 // real AudioDriver, is covered natively in test-native/cli-timeline.test.ts.)
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { Timeline, Button } from "../../cli/timeline";
 
 test("build() stable-sorts events by ms; insertion order breaks ties", () => {

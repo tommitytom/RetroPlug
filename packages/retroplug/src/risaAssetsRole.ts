@@ -9,7 +9,7 @@
 // build-kit compiles one, and a kit override just splices that ready-made bank with rom.setKit (which
 // dual-writes the resident metadata mirror). src/kit can compile a .rkit in the plugin too, though no UI row does.
 // Applying reuses the pure-TS patcher (src/risa/rom).
-import type { RoleRegistry, RoleType, ConstructCaps } from "./systemRoles";
+import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
 import type { ConstructSpec } from "./backend";
 import { z } from "./configSchema";
 import { RisaRom } from "./risa/rom";

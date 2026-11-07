@@ -2,7 +2,7 @@
 // project archive) to the C++ golden and encodes it back byte-identically; the
 // 32 KiB early-SRAM path decodes working-song-only. The exhaustive 549-sav
 // corpus sweep runs in the native tier (test-native/lsdj-codec-corpus.test.ts).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { deepEqual } from "./_assert";
 import { savBytes } from "./fixtures";
 import { decodeSav, encodeSav } from "../../src/lsdj/codec/sav";

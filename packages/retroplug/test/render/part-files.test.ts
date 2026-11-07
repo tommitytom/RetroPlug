@@ -7,7 +7,7 @@
 // synced to the disk before it is moved into place. The renders nest (the second runs inside one of the first's
 // pulls), so the overlap is exact rather than timed; the engine jobs' overlap is engine-run's.
 // It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { runRenderJob, decodeWav, type RenderContext, type RenderOpts } from "../../src/render";
 

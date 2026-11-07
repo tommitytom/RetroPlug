@@ -15,7 +15,7 @@
 import { useMemo } from "react";
 
 import { useStores, useSystem } from "../../stores/useStores";
-import { hasRole, roleConfig } from "../../../src/systemRoles";
+import { hasRole, roleConfig } from "@retroplug/core/systemRoles";
 import { LsdjReader } from "../../../src/lsdj/runtime";
 import { decodeSong, type Song } from "../../../src/lsdj";
 import { LsdjRom } from "../../../src/lsdj/rom";

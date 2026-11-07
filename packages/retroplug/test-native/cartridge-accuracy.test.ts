@@ -10,7 +10,7 @@
 //   mmc5PhaseReset - the N8's MMC5 does not restart the duty sequencer on a $5003 write. Under BlipToaster's
 //                    MOD hack the real MMC5 holds duty 0.500 and does not change level at ANY reset rate
 //                    (only its pitch moves), where the 2A03 skews to 0.067 duty and drops 7.2 dB.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 

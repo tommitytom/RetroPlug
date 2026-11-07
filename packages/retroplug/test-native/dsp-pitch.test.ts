@@ -1,7 +1,7 @@
 // F3 (cli/pitch.ts): detectPitch is accurate on synthesized harmonic tones AND on real emulator-rendered
 // 2A03 pulse, cross-checked against the white-box getApuState().pulse1.frequency (the emulator's own decoded
 // Hz). This is the black-box tuning path; where a decoded-Hz readout exists it is the better oracle.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { detectPitch, centsError } from "../cli/pitch";

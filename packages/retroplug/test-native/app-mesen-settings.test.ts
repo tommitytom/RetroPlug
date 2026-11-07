@@ -5,7 +5,7 @@
 // region change (which forces emu_->Reset()) both leave the core alive and rendering. (Honest scope: this proves the
 // round-trip reaches the core and survives both apply modes; the knobs' visible/timing effect isn't
 // asserted headlessly — the TS mock tests carry the semantics.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

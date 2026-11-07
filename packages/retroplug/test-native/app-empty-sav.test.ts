@@ -5,7 +5,7 @@
 // answers nothing, a project load's adopt - failed on the ROM beside such a file.
 //
 // Run with: `pnpm test:native app-empty-sav`.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import type { Backend } from "../src/backend";
 import { createAudioDriver, type AudioDriver } from "../src/audioDriver";

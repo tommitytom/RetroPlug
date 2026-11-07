@@ -6,11 +6,11 @@
 //
 // The glue the role ran under the DSP kernel, ported line for line, with its counter and its system's tick counter on
 // the instance. A block allocates nothing.
-import { bytes, defineNode, type Block } from "../../graph/defineNode";
-import { s, type Infer } from "../../graph/settingsSchema";
+import { bytes, defineNode, type Block } from "@retroplug/core/defineNode";
+import { s, type Infer } from "@retroplug/core/settingsSchema";
 import { SMS_SYNC_COUNTER_MOD, SMS_SYNC_PPQN, syncLevelsFor } from "../../smsSync";
-import { TickClock } from "./clock";
-import { CORE_BYTES } from "./ports";
+import { TickClock } from "@retroplug/core/clock";
+import { CORE_BYTES } from "@retroplug/core/ports";
 
 export const SMS_SYNC_NODE_TYPE = "rp.sms.sync";
 

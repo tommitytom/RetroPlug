@@ -3,7 +3,7 @@
 // load a .sav into one, or pair an orphan .sav. Pure + store-free, so every branch is checked here
 // against the mock backend; the coordinate → tile mapping is in hit-test.test.ts, and the App wiring in
 // the UI harness.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { resolveDropAction, type DropContext } from "../../src/fileDrop";

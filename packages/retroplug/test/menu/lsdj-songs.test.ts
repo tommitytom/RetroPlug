@@ -2,7 +2,7 @@
 // swaps two saved slots — and the shared songMenu passes LIST POSITIONS (not the row's slot index) so it works
 // for LSDj's SPARSE slots. This guards that the generic menu drives the LSDj catalog's reorder end-to-end
 // (readSram → swap → loadSram), the LSDj half of the song-menu unification.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

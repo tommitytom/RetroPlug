@@ -4,7 +4,7 @@
 // on its pair). Per-pair SEPARATION is buildGraph's wiring tables and the parity routing cases; the
 // test-host render is stereo, so every mode collapses to one pair here. (One test per file: whole-mix RMS
 // needs an isolated native engine.)
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

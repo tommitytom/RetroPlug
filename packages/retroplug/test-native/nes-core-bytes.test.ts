@@ -10,7 +10,7 @@
 //
 // (The FIFO's own protocol semantics - framing, ack handshake, resp bytes - are covered without a CPU at
 // all in packages/native/test/audio/NesEverdriveFifo.test.cpp.)
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import type { Session } from "../cli/session";
 

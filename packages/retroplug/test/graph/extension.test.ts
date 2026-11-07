@@ -1,9 +1,9 @@
 // Extensions attach to node instances by matcher, contribute nodes and wires, and may not both claim the
 // same node input or node id.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { z } from "zod";
 import { defineExtension, ExtensionRegistry, type NodeInfo } from "../../src/graph/defineExtension";
-import { endpoint } from "../../src/graph/graphDocument";
+import { endpoint } from "@retroplug/core/graphDocument";
 
 const gb: NodeInfo = { id: "sys-1", type: "rp.sameboy.gb", rom: { markers: ["lsdj"] } };
 const gb2: NodeInfo = { id: "sys-2", type: "rp.sameboy.gb", rom: { markers: ["lsdj"] } };

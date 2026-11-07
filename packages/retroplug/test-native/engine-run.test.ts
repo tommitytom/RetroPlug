@@ -8,7 +8,7 @@
 // a graph job just submitted, which rejects with the reason "cancelled".
 // The pool, the threading, the budget, the bytes against a direct RenderHost run and teardown are held by
 // retroplug-engine-graph-test "[engine-jobs]".
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { decodeWav } from "../src/render";

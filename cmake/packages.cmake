@@ -358,19 +358,43 @@ function(_retroplug_read_declarations package json)
     set_property(GLOBAL PROPERTY RP_PACKAGE_${package}_DEV_DECLARATIONS "${_dev}")
 endfunction()
 
-# _retroplug_check_native_boundaries(<package> LINKS <target=linked>... INCLUDES <target=dir>...
-#                                    DECLARED <package>... DEV_DECLARED <package>... [TEST]
+# _retroplug_unwrap_item(<out> <item> <unwrapable>): the item a link's, include directory's or source's generator
+# expressions leave, and whether every one of them is a form this check evaluates. $<BUILD_INTERFACE:x>, $<LINK_ONLY:x>
+# and $<TARGET_NAME:x> each name x as it stands in this build, so x is judged; nesting unwraps too
+# ($<BUILD_INTERFACE:$<TARGET_NAME:foo>>). Anything else ($<TARGET_PROPERTY:...>, $<TARGET_OBJECTS:...>, a configuration
+# expression) is a value only the build generator knows, which the caller refuses rather than passes unseen.
+function(_retroplug_unwrap_item out item unwrapable)
+    set(_value "${item}")
+    set(_ok TRUE)
+    while(_value MATCHES "^\\$<")
+        if(_value MATCHES "^\\$<(BUILD_INTERFACE|LINK_ONLY|TARGET_NAME):(.+)>$")
+            set(_value "${CMAKE_MATCH_2}")
+        else()
+            set(_ok FALSE)
+            break()
+        endif()
+    endwhile()
+    set(${out} "${_value}" PARENT_SCOPE)
+    set(${unwrapable} "${_ok}" PARENT_SCOPE)
+endfunction()
+
+# _retroplug_check_native_boundaries(<package> LINKS <target=linked>... INCLUDES <target=dir>... SOURCES <target=file>...
+#                                    UNJUDGED <target=item>... DECLARED <package>... DEV_DECLARED <package>... [TEST]
 #                                    OWNERS <target=package>...): a package's native targets may link the targets of the
-# packages its manifest declares, and add include directories inside its own tree or a declared package's. A TEST target
-# (retroplug_add_test_binary's) may also link its package's devDependencies, as a test file may import them; a library
-# target may not. Nothing may link the shell (packages/native, packages/retroplug). Anything else is refused, naming the
-# package, the target and the dependency, because a package that reaches past its manifest makes the split a convention
-# again (docs/modular-graph-phase-f1-design.md section 4).
+# packages its manifest declares, add include directories inside its own tree or a declared package's, and compile
+# sources inside its own tree. A TEST target (retroplug_add_test_binary's) may also link its package's devDependencies,
+# as a test file may import them; a library target may not. Nothing may link or include the shell (packages/native,
+# packages/retroplug). Anything else is refused, naming the package, the target and the dependency, because a package
+# that reaches past its manifest makes the split a convention again (docs/modular-graph-phase-f1-design.md section 4).
+#
+# UNJUDGED is what the gatherer could not evaluate (a generator expression outside the forms _retroplug_unwrap_item
+# knows), for a target that is not vouched for by RP_BOUNDARY_SKIP: refused here, so the message is held with the rest
+# of the rules rather than live in the gatherer alone.
 #
 # It takes plain lists so a configure-time fixture can drive it (cmake/check-native-boundaries.cmake, held by
 # packages/native/cmake/tests.cmake): a target's real properties need a target, which script mode has none of.
 function(_retroplug_check_native_boundaries package)
-    cmake_parse_arguments(B "TEST" "" "LINKS;INCLUDES;DECLARED;DEV_DECLARED;OWNERS" ${ARGN})
+    cmake_parse_arguments(B "TEST" "" "LINKS;INCLUDES;SOURCES;UNJUDGED;DECLARED;DEV_DECLARED;OWNERS" ${ARGN})
     if(B_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "_retroplug_check_native_boundaries(${package}): unrecognised argument(s): "
                             "${B_UNPARSED_ARGUMENTS}")
@@ -427,6 +451,41 @@ function(_retroplug_check_native_boundaries package)
         message(FATAL_ERROR "retroplug_package(${package}): ${_target} adds the include directory ${_dir}, which is "
                             "in the ${_owner} package's tree, which ${package} does not declare (its package.json "
                             "dependencies)")
+    endforeach()
+    # A source outside the package's own tree is compiled by that package's target unseen: the same boundary as an
+    # include directory, and the same refusal. A source outside packages/ (a vendored dep's, a generated one) is nobody's.
+    foreach(_pair IN LISTS B_SOURCES)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _source)
+        file(RELATIVE_PATH _rel "${RP_PACKAGES_DIR}" "${_source}")
+        if(IS_ABSOLUTE "${_rel}" OR _rel MATCHES "^\\.\\.")
+            continue()
+        endif()
+        string(REGEX REPLACE "/.*$" "" _owner "${_rel}")
+        if(_owner STREQUAL package)
+            continue()
+        endif()
+        if(_owner IN_LIST _shells)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} compiles ${_source}, which is in the shell "
+                                "(packages/${_owner}): no package may use the shell")
+        endif()
+        message(FATAL_ERROR "retroplug_package(${package}): ${_target} compiles ${_source}, which is in the "
+                            "${_owner} package's tree, which ${package} does not declare (its package.json "
+                            "dependencies)")
+    endforeach()
+    # What the gatherer could not evaluate: a link, include directory or source the build generator resolves to
+    # something this check cannot know. Refused rather than passed unseen, unless the target is vouched for
+    # (RP_BOUNDARY_SKIP), which is the gatherer's to drop.
+    foreach(_pair IN LISTS B_UNJUDGED)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _item)
+        message(FATAL_ERROR "retroplug_package(${package}): ${_target} names ${_item}, a generator expression the "
+                            "boundary check cannot evaluate (a link, an include directory or a source): mark the "
+                            "target RP_BOUNDARY_SKIP if it is nobody's to declare")
     endforeach()
 endfunction()
 
@@ -485,29 +544,77 @@ function(retroplug_check_package_boundaries)
             get_target_property(_test ${_target} RP_TEST_BINARY)
             set(_links "")
             set(_includes "")
+            set(_sources "")
+            set(_unjudged "")
             foreach(_property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
                 get_target_property(_value ${_target} ${_property})
+                if(NOT _value OR _value MATCHES "-NOTFOUND$")
+                    continue()
+                endif()
                 foreach(_item IN LISTS _value)
-                    # A generator expression resolves per configuration (the device twin's copies), and only a target
-                    # can be attributed to a package.
-                    if(_item MATCHES "^\\$<" OR NOT TARGET ${_item})
+                    # A generator expression names its item in the forms _retroplug_unwrap_item evaluates; anything else
+                    # resolves per configuration, which this check cannot know, so it is refused (B_UNJUDGED).
+                    _retroplug_unwrap_item(_item "${_item}" _unwrapable)
+                    if(NOT _unwrapable)
+                        list(APPEND _unjudged "${_target}=${_item}")
+                        continue()
+                    endif()
+                    # Only a target can be attributed to a package.
+                    if(NOT TARGET ${_item})
                         continue()
                     endif()
                     list(APPEND _links "${_target}=${_item}")
                 endforeach()
             endforeach()
-            get_target_property(_value ${_target} INCLUDE_DIRECTORIES)
-            foreach(_item IN LISTS _value)
-                if(_item MATCHES "^\\$<" OR NOT IS_ABSOLUTE "${_item}")
+            # The interface directories are what a CONSUMER of the target adds, so they are judged like the target's own.
+            foreach(_property INCLUDE_DIRECTORIES INTERFACE_INCLUDE_DIRECTORIES)
+                get_target_property(_value ${_target} ${_property})
+                if(NOT _value OR _value MATCHES "-NOTFOUND$")
                     continue()
                 endif()
-                list(APPEND _includes "${_target}=${_item}")
+                foreach(_item IN LISTS _value)
+                    _retroplug_unwrap_item(_item "${_item}" _unwrapable)
+                    if(NOT _unwrapable)
+                        list(APPEND _unjudged "${_target}=${_item}")
+                        continue()
+                    endif()
+                    if(NOT IS_ABSOLUTE "${_item}")
+                        continue()
+                    endif()
+                    list(APPEND _includes "${_target}=${_item}")
+                endforeach()
+            endforeach()
+            # A source outside the package's tree is compiled into its target, which is the same boundary as an include
+            # directory; a source the build generator chooses is refused like any other expression this cannot read.
+            foreach(_property SOURCES INTERFACE_SOURCES)
+                get_target_property(_value ${_target} ${_property})
+                if(NOT _value OR _value MATCHES "-NOTFOUND$")
+                    continue()
+                endif()
+                foreach(_item IN LISTS _value)
+                    _retroplug_unwrap_item(_item "${_item}" _unwrapable)
+                    if(NOT _unwrapable)
+                        list(APPEND _unjudged "${_target}=${_item}")
+                        continue()
+                    endif()
+                    if(NOT IS_ABSOLUTE "${_item}")
+                        get_target_property(_dir ${_target} SOURCE_DIR)
+                        if(NOT _dir OR _dir MATCHES "-NOTFOUND$")
+                            continue()
+                        endif()
+                        set(_item "${_dir}/${_item}")
+                    endif()
+                    # Normalised, so a relative source's `..` does not reach the message or the owner's spelling.
+                    file(REAL_PATH "${_item}" _item)
+                    list(APPEND _sources "${_target}=${_item}")
+                endforeach()
             endforeach()
             set(_test_arg "")
             if(_test)
                 set(_test_arg TEST)
             endif()
             _retroplug_check_native_boundaries(${_package} LINKS ${_links} INCLUDES ${_includes}
+                                               SOURCES ${_sources} UNJUDGED ${_unjudged}
                                                DECLARED ${_declared} DEV_DECLARED ${_dev} ${_test_arg}
                                                OWNERS ${_owners})
         endforeach()
@@ -1081,7 +1188,10 @@ ${_body}    *count = ${_n};
 }
 ")
     add_library(${target} OBJECT EXCLUDE_FROM_ALL ${_sources} ${P_SOURCES} "${_registration}")
-    set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    # The device's build of the packages PACKAGES lists, each of whose own entries it compiles: that list is this
+    # target's declaration, as a product's PACKAGES is its, so the native boundary check does not judge it.
+    set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
+                                              RP_BOUNDARY_SKIP "the device's build of the packages PACKAGES lists")
     target_compile_definitions(${target} PRIVATE ${_definitions} RP_DEVICE rp=rp_devmode ${_renames})
     if(MSVC)
         target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/bigobj>)  # retroplug_package_library's

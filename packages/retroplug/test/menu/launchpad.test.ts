@@ -16,7 +16,7 @@
 // The other thing pinned here is the FAREWELL. Programmer mode locks the device's own Settings menu, so native
 // must be holding the release bytes before it can ever be handed a device. We stub the __rp_* globals (no MIDI
 // system in the pure-TS host) and assert on what the UI hands down.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

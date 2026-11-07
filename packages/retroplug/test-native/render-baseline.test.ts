@@ -20,7 +20,7 @@
 // RP_RENDER_GOLDEN_UPDATE=1 re-records the golden, refused anywhere but the target, for any case whose two renders
 // disagree, and for a run missing any case (fixtures absent): its last case writes the file, through a sibling temp
 // file. Without the variable the file is only ever read.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import {

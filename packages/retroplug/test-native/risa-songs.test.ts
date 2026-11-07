@@ -1,7 +1,7 @@
 // M1 native smoke: prove the risa catalog reader works on bytes that came through RetroPlug's REAL
 // readSram seam (not just a fixture file). Boot risa with a v2 battery that carries a known song, read
 // the live 64 KB WRAM back, and list it. SKIPs cleanly when the built ROM is absent (like risa-m0-spike).
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

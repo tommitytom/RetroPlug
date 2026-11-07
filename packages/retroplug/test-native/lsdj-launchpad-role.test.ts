@@ -7,7 +7,7 @@
 // between the pad and the sound is genuine except the Launchpad itself.
 //
 // Run: pnpm test:native lsdj-launchpad-role
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";

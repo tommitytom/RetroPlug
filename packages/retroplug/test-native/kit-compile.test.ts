@@ -13,7 +13,7 @@
 // or for a bank whose two compiles disagree. Every case still compiles its bank, so the golden holds the bank each one
 // describes, and the refusals' shape is held against the same kit compiled with those slots' files missing. The sources
 // are synthesised, so it needs no fixtures.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver, type KitEffect, type KitSampleSpec } from "../src/audioDriver";
 import type { RisaDmcSampleSpec } from "../src/audioDriver";

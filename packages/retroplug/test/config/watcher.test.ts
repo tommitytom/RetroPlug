@@ -1,7 +1,7 @@
 // The file-watch reaction: UserConfigStore.reload() (keep-previous re-read) and the
 // FileWatcher that drains the native watcher's changed paths and routes them —
 // config.json → reload, bindings/*.json → refresh signal, a system's ROM → reloadSystem.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { SystemsStore } from "../../src/systemsStore";

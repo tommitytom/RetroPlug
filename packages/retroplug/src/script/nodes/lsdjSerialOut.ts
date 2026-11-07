@@ -18,7 +18,7 @@
 // dropped whenever the mode is not master sync, so coming back opens a fresh run. Nothing is allocated in a warm
 // block: the byte and frame arrays are refilled in place, and the decoders hand each message's bytes to emitMidiOut,
 // which sends them from arrays made with the instance.
-import { bytes, defineNode, events, type Block } from "../../graph/defineNode";
+import { bytes, defineNode, events, type Block } from "@retroplug/core/defineNode";
 import { LsdjSyncMode } from "../../settingsEnums";
 import {
   arduinoboyDecodeSerialOut,
@@ -28,7 +28,7 @@ import {
   type MasterSyncState,
 } from "../../lsdjArduinoboy";
 import { lsdjSyncSettings, type LsdjSyncSettings } from "./lsdjSyncSettings";
-import { MIDI_OUT } from "./ports";
+import { MIDI_OUT } from "@retroplug/core/ports";
 
 export const LSDJ_SERIAL_OUT_NODE_TYPE = "rp.lsdj.serial-out";
 

@@ -5,7 +5,7 @@
 //      the DSP-owned system list. All three now read the registry, unguarded.
 //   2. the registry is SEEDED at construct, so a read right after construct works with no block
 //      rendered, and a removed core's slot is released (its reads go null).
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

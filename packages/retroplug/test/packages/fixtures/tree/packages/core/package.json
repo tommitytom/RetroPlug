@@ -1,0 +1,9 @@
+{
+  "name": "@retroplug/core",
+  "private": true,
+  "exports": {
+    ".": "./ts/index.ts",
+    "./defineNode": "./ts/defineNode.ts",
+    "./register": "./ts/register.ts"
+  }
+}

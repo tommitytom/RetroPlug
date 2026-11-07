@@ -3,7 +3,7 @@
 // the TAP harness → tjs.exit. If configDir round-trips the host's
 // RETROPLUG_USER_CONFIG_DIR, every layer is wired. `__CONFIG_DIR__` is injected by the
 // runner (esbuild define) to the same temp dir the host was given.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 
 declare const __CONFIG_DIR__: string;

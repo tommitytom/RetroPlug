@@ -28,7 +28,7 @@ import {
 } from "../settingsEnums";
 import { type Platform, type SystemNodeType } from "../platform";
 import { resourceRef, type SystemResources } from "./systemResources";
-import type { GraphDocument, NodeDoc, WireDoc } from "./graphDocument";
+import type { GraphDocument, NodeDoc, WireDoc } from "@retroplug/core/graphDocument";
 import {
   outNodeOf,
   PROTOCOL_NODES,
@@ -114,7 +114,7 @@ export interface BuiltGraph {
 /** rp.core.add's input limit (CoreNodes.cpp): a longer sum chains adds, continuing the same left-to-right sum. */
 const ADD_INPUTS = 16;
 
-// The project's script node types, as their modules spell them (script/nodes/midiRoute.ts and
+// The project's script node types, as their modules spell them (@retroplug/core's midiRoute.ts and
 // controllerSession.ts, which test/graph/build-graph.test.ts holds these to).
 const MIDI_ROUTE = "rp.midi.route";
 const CONTROLLER_SESSION = "rp.controller.session";

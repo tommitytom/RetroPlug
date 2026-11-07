@@ -12,7 +12,7 @@
 // Why this needs a mixed song rather than the FM-only one that first proved the path works: an
 // FM-instrument song is audible under BOTH models (the mux picks FM, the sum includes it), so it
 // cannot tell them apart. Only a song playing PSG and FM AT ONCE distinguishes "both" from "FM won".
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import {

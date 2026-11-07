@@ -12,7 +12,7 @@
 // `sync_wait`, and shows WAIT until the first host clock (engine.asm:383-388). So the negative case
 // (transport running, role absent) is an ARMED, WILLING ROM sitting silent - which is a much sharper
 // control than an idle one.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import {

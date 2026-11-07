@@ -1,0 +1,35 @@
+{
+  // The compiler options every workspace package's TS half is checked with: the shell's tsconfig extends this, and so
+  // does each package's own, so `pnpm typecheck` (pnpm -r typecheck) checks every package with the options the shell
+  // checks it with. Target ES2020 and the bundler resolution the shell bundles with, so a package's nodes compile the
+  // same inside a device pack, the script bundle and the UI.
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "bundler",
+    "strict": true,
+    // Off on purpose, and not to loosen any check below: `strict` implies `alwaysStrict`, and a package's own
+    // tsconfig.json is what esbuild reads when it bundles that package's TS into a device pack (it discovers the
+    // nearest one per entry point). An implied `alwaysStrict` therefore makes esbuild head the pack's iife bundle with
+    // a "use strict" directive, and that directive is bytes of the pack's bytecode. TypeScript's own checks are
+    // `strict`'s and unaffected; the shell opts back in, where the bundle esbuild builds from it already carries one.
+    "alwaysStrict": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    // ES2022.Array only, for Array.prototype.at() in the UI tests. NOT the whole of ES2022: the app runs on QuickJS,
+    // and a blanket lib bump would let src reach for APIs the runtime may not have.
+    "lib": ["ES2020", "ES2022.Array"],
+    "types": [],
+    "noEmit": true
+  },
+  // The runtime's ambient globals (console, TextEncoder, TextDecoder), declared by @retroplug/core as its runtime
+  // contract: `lib` stays minimal and `types` empty so a browser or Node global a package did not mean to use is an
+  // error. `${configDir}` is the extending tsconfig's directory, so the one entry reaches core from the shell and from
+  // every package. `files` is inherited by a config that does not set its own, which is why each package's tsconfig
+  // only sets `include`.
+  "files": ["${configDir}/../core/ts/runtime.d.ts"]
+}

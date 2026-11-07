@@ -1,7 +1,7 @@
 // risa load-to-working op — loadSongToWorkingInSav expands a saved song's payload into the working-song
 // region (WRAM banks 0-3) of a fresh battery, preserving the catalog (banks 4-7). Requires the current
 // (v2 @0x8000) layout; a legacy battery (catalog @0x6000 overlaps banks 0-3) or a bad slot returns null.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { savBytes } from "./fixtures";
 import { loadSongToWorkingInSav } from "../../src/risaSongOps";
 import { expandRecordToWorking, recordBytesAt, normalizeSaveContainer, CURRENT_LAYOUT } from "../../src/risaSav";

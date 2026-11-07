@@ -1,5 +1,8 @@
 {
   "name": "@retroplug/beta",
+  "exports": {
+    "./app": "./ts/app.ts"
+  },
   "private": true,
   "dependencies": { "@retroplug/alpha": "workspace:*" },
   "retroplug": { "app": "ts/app.ts" }

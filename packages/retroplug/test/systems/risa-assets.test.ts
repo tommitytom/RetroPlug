@@ -3,10 +3,10 @@
 // (setRoleConfig + reloadSystem): the base .nes on disk is never written; the reload hands native a patched
 // effective ROM. Byte-level correctness of the patch is test/risa/rom.test.ts; native honoring romBytes is
 // test-native/risa-rom. Mirrors test/systems/lsdj-assets.test.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerRisaRole } from "../../src/risaRole";

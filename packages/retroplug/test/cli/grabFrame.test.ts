@@ -1,6 +1,6 @@
 // The pure parts of `retroplug-cli grab-frame`: the argument defaults, the ffmpeg command line, and the
 // black-frame verdict that tells the capture card's warm-up apart from a real screen.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { parseGrabArgs, ffmpegArgs, frameStats, isBlack } from "../../cli/sessions/grab-frame";
 
 test("parseGrabArgs: the lab card's defaults, and every flag", () => {

@@ -7,13 +7,13 @@
 // after the systems, LSDj's serial-out decoder (docs/lsdj-serial-out-design.md section 3). And each system node's knobs
 // (docs/modular-graph-phase-c2-design.md section 5): its core config's setting fields and a Game Boy's serial-out
 // capture as settings, its gain and a NES's expansion volume as params.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { buildGraph, exportModeOf, type GraphModel, type GraphSystem, type HostShape } from "../../src/graph/buildGraph";
 import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
 import { controllerSyncOverride, serialOutCaptureFor, type GraphController } from "../../src/graph/controller";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
-import { MIDI_ROUTE_NODE_TYPE } from "../../src/script/nodes/midiRoute";
+import { MIDI_ROUTE_NODE_TYPE } from "@retroplug/core/midiRoute";
 import { CONTROLLER_SESSION_NODE_TYPE } from "../../src/script/nodes/controllerSession";
 import { MGB_MIDI_NODE_TYPE } from "../../src/script/nodes/mgbMidi";
 import { N8_MIDI_TO_FIFO_NODE_TYPE } from "../../src/script/nodes/n8MidiToFifo";

@@ -1,7 +1,7 @@
 // Phase 2 gate: bits.ts contains the int32/uint8 hazard. Every setBits/setU8
 // keeps the byte in 0..255, setBits is the exact inverse of bits() over a live
 // splice, and high-bit values (>= 0x80) do not sign-extend through ~ / <<.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { BitView, BitWriter, bitMask } from "../../src/lsdj/codec/bits";
 
 test("bitMask matches (1<<n)-1 with 0xFF at >=8", () => {

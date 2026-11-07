@@ -11,7 +11,7 @@
 // so does a withShape restore that did not plan, after which the engine still runs the temporary shape: until a
 // document plans, even a shape change to the current shape is sent.
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape } from "./graph/buildGraph";
-import { toGraphJson } from "./graph/graphDocument";
+import { toGraphJson } from "@retroplug/core/graphDocument";
 import type { Backend, GraphError, SetGraphRequest, SetGraphResult } from "./backend";
 
 export type GraphBackend = Pick<Backend, "setGraph">;

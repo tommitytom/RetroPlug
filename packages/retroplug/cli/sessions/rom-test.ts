@@ -7,7 +7,7 @@
 // NOTE: import test/expect from the harness and register at top level — the harness auto-runs on a
 // microtask and owns the TAP output + tjs.exit. Do NOT wrap the body in runSession() (it would call
 // tjs.exit(0) synchronously and preempt the harness, reporting a false pass).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { bootSession, hostArgs } from "../session";
 import { Timeline, renderTimeline } from "../timeline";
 import type { ApuState } from "../../src/backend";

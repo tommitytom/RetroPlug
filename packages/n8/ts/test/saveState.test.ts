@@ -2,7 +2,7 @@
 // WRAM + APU/PPU/OAM + CHR + EXRAM). Pure, no hardware. Hand-builds a save-state with known fields at the SST
 // offsets (magic, CPU a/x/y/sp, an APU enable, WRAM/CHR/EXRAM markers) and asserts the decode - incl. that the
 // 0x1800 block is reused via decodeSniffer.
-import { test, expect } from "../../../retroplug/testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { decodeSaveState, SAVESTATE_SIZE } from "../saveState";
 
 function buildSaveState(): Uint8Array {

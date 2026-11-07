@@ -28,7 +28,7 @@ static const JSPropDef js_rp_console[] = {
 };
 static const JSClassDef js_rp_console_obj = JS_OBJECT_DEF("Console", js_rp_console);
 
-/* The block a node's process is handed (packages/retroplug/src/graph/defineNode.ts's Block). */
+/* The block a node's process is handed (packages/core/ts/defineNode.ts's Block). */
 static const JSPropDef js_rp_block_proto[] = {
     JS_CFUNC_MAGIC_DEF("messages", 1, js_rp_call, RP_MQJS_MESSAGES),
     JS_CFUNC_MAGIC_DEF("send", 4, js_rp_call, RP_MQJS_SEND),

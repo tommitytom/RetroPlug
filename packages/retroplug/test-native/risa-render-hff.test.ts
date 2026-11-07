@@ -5,7 +5,7 @@
 // rest of risa-render.test.ts. Sharing a file with the equally long region render (risa-render-region)
 // made one process the native suite's longest pole; as separate files the runner pool overlaps them.
 // It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob, decodeWav } from "../src/render";
 import { RISA_ROM, ECOLI_SRM, ECOLI_PAL_MS, rms, newCtx, baseOpts } from "./risa-render-lib";

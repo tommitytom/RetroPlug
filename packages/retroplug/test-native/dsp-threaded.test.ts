@@ -7,7 +7,7 @@
 //
 // Ownership discipline: cores are quiescent while the audio thread runs — the system is constructed
 // BEFORE startAudio; nothing reads core state until after stopAudio.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";

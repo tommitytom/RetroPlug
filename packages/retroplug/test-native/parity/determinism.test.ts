@@ -4,7 +4,7 @@
 // because SameBoy's generator advances between them and Mesen draws fresh random bytes; and about when an
 // SMS song plays, because the VDP's random start shifts every frame against the audio. A boot is silent,
 // so that last one only shows once something sounds.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { bootSession } from "../../src/bootSession";
 import { Rig, even } from "./rig";
 import { compareAudio, laneSounds, type CaseDigest } from "./digest";

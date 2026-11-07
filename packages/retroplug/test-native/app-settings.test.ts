@@ -5,7 +5,7 @@
 // loaded project's saved gain is what its core plays at from its first block, which only the published
 // document carries to it (docs/modular-graph-phase-c2-design.md section 5).
 // One mGB system at a time: whole-mix RMS needs a single system in the shared native engine.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

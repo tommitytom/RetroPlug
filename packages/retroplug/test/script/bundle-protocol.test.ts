@@ -8,7 +8,7 @@
 // says which modules went in: a zod module, the app or the generated app registries among them fails the test, and
 // says which. The build is Node's (esbuild is not a txiki module), so the test runs it in a node child, as
 // test/script/bundle-no-zod.test.ts does.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 
 // Just enough of txiki's spawn and a child's pipe, declared locally as bundle-no-zod.test.ts declares them.
 interface ByteStream {

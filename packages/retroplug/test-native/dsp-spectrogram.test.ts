@@ -1,7 +1,7 @@
 // F4 (cli/spectrogram.ts): the STFT locates a tone in time+frequency, the rendered image maps frequency to
 // the right rows (a tone row is brighter than an empty row), and the PNG path round-trips through the host's
 // native pngEncode/pngDecode.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { stft, spectrogramImage, writeSpectrogramPng } from "../cli/spectrogram";

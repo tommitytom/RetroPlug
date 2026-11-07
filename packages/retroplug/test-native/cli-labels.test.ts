@@ -5,7 +5,7 @@
 // (`_s_mode1`, with a `val`) reached through a `csym ... sc=static` record; the C name itself never carries
 // an address, which is why a name-regex over the file could not find it (BlipToaster's HARNESS-NOTES 3.4).
 // Reached via the live core's debugTarget() — NES-only (SameBoy/GBA have none). Mirrors cli-observe.test.ts.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 

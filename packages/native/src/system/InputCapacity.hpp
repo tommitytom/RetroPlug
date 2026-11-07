@@ -9,7 +9,7 @@
 // reaches a system through a routing node) and rp.device.midi-in's (256 messages and 4 KiB) hold less than the midi
 // one. An output that matches its input (`capacity.match`, rp.core.midi-filter's) holds what its source holds, so it
 // bounds nothing new. A Game Boy's serialOut output, fixed at 8256 messages and 8256 bytes, can wire into any system's
-// serialIn or bytes input too. The script numbers are the ones packages/retroplug/src/script/nodes/ports.ts declares,
+// serialIn or bytes input too. The script numbers are the ones packages/core/ts/ports.ts declares,
 // and none of them depend on the block size.
 //
 // A core sizes its ingress queues from them when it is built, so a block's input grows nothing on the block thread

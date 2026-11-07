@@ -1,7 +1,7 @@
 // The .lsdsng single-song codec (codec/lsdsng.ts) + the header-only listProjects (codec/sav.ts). Proven
 // three ways: a self-authored round-trip, interop against a real lsdpatch-exported DONK.115.lsdsng (a
 // different compressor), and round-tripping real songs pulled out of the existing .sav fixtures.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { deepEqual } from "./_assert";
 import { savBytes } from "./fixtures";
 import { savFrom } from "../../src/lsdj";

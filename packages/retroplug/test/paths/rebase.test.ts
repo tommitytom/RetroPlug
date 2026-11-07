@@ -5,7 +5,7 @@
 // then keep the asset absolute unless it sits at/under the base. `lexicallyRelative`
 // is the pure component math both rely on. The ProjectConfig-walking that applies
 // these across romPath/savPath/kit samples belongs to the later project domain.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { rebaseToAbsolute, rebaseToRelative, lexicallyRelative } from "../../src/projectPaths";
 import { MockBackend } from "../../testing/mockBackend";
 

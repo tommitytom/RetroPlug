@@ -26,7 +26,7 @@ import { isRisaRomHeader, runtime as risaRuntime } from "../risa";
 import { lsdjSongCatalog, risaSongCatalog, smsggdjSongCatalog } from "../tracker";
 import { smsggdjIntegration } from "../trackerRegistry"; // the shell registry: an integration is its package's app contribution
 import type { ChannelExportMode } from "../settingsEnums";
-import type { RoleInstance } from "../systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 import {
   type Platform,
   type RenderContext,

@@ -28,13 +28,24 @@ importers:
         specifier: npm:typescript@5.7.3
         version: typescript@5.7.3
 
-  packages/bliptoaster: {}
+  packages/bliptoaster:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core:
     dependencies:
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/device-io:
     dependencies:
@@ -44,12 +55,18 @@ importers:
 
   packages/devtest:
     dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
 
   packages/dsp:
     dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
@@ -65,13 +82,27 @@ importers:
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
 
-  packages/native: {}
+  packages/native:
+    devDependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/node-sdk: {}
 
   packages/retroplug:
     dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/dsp':
+        specifier: workspace:*
+        version: link:../dsp
       '@retroplug/n8':
         specifier: workspace:*
         version: link:../n8
@@ -79,9 +110,18 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
+
+  packages/testing:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 

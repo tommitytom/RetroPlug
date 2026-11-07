@@ -1,8 +1,8 @@
 // A device pack whose process is asynchronous: the box's engine has no Promise, so the device-pack toolchain must
 // refuse it, naming the `async` and this file's line (test/graph/device-pack.test.ts).
-import { defineNode, events } from "../../../src/graph/defineNode";
-import type { Block } from "../../../src/graph/defineNode";
-import { registerScriptNodes } from "../../../src/script/register";
+import { defineNode, events } from "@retroplug/core/defineNode";
+import type { Block } from "@retroplug/core/defineNode";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 const later = (b: Block): Block => b;
 

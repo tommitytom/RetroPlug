@@ -1,7 +1,7 @@
 // The fixed-duration driver's own guards. A render pulled in chunks that carry no frames would never reach its
 // target, so a chunk with no frames (or no streams) is an error rather than a spin; RenderOpts.pullMs's own check
 // refuses the pull that causes it before a render starts, so this is the guard behind that one.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { driveFixed, type RenderSink } from "../../src/render/render";
 
 /** A sink answering `chunks` in turn, then the last for ever. A driver that never reaches its target would pull for

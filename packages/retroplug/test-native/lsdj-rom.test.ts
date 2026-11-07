@@ -1,7 +1,7 @@
 // The LSDj ROM asset module (src/lsdj/rom) against a REAL ROM: read kits/palettes/fonts out of
 // lsdj9_4_2.gb, patch a kit name, write the .gb back, re-open and confirm — and assert the patch is
 // surgical (only the intended bytes changed) and the patched ROM still boots on a real core.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { lsdjRomTool } from "../cli/sessions/lsdj-rom";
 import type { Session } from "../cli/session";
 import { createRealBackend } from "../src/realBackend";

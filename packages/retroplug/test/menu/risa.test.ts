@@ -1,7 +1,7 @@
 // The risa instance submenu (M2 UI): gated on the `risa` role the ROM provider attaches to a risa cart,
 // listing the RSAV catalog's songs with Delete + reorder rows. Mirrors the LSDj submenu test in
 // leaves.test.ts: build the MenuContext the way App.tsx does, drive a leaf, assert the store mutated.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

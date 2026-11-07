@@ -7,20 +7,25 @@
 // import anything and are not judged, and nothing may import them.
 //
 // Each file's imports come from TypeScript's own scanner (ts.preProcessFile), so every form a compiler follows is
-// judged: a value import, an `import type`, an `export type ... from`, a type-position `import("x").T` and a
-// `require`. A relative specifier is resolved against the importing file; a bare one is a package (nameOf) or a
-// third-party module, judged against the package's manifest. Type-only imports count on purpose: a package's boundary
-// is what it needs to compile on its own, not what survives a bundler.
+// judged: a value import, an `import type`, an `export type ... from`, a type-position `import("x").T`, a `require`,
+// and the two triple-slash directives a reference is (a `/// <reference path="...">` reaches a file as a relative
+// import does, and a `/// <reference types="x">` names a type package as a bare import does, `@types/x` or `x`). A
+// relative specifier is resolved against the importing file; a bare one is a package (nameOf) or a third-party module,
+// judged against the package's manifest. Type-only imports count on purpose: a package's boundary is what it needs to
+// compile on its own, not what survives a bundler.
 //
-//   1. a relative import that leaves the package's own tree (a ../../retroplug/... reach into the shell, a
-//      ../other/ts/... reach into another package's files);
-//   2. an @retroplug/<name> the package does not declare in its dependencies (a test file's devDependencies count);
+//   1. a relative import (or reference path) that leaves the package's own tree (a ../../retroplug/... reach into the
+//      shell, a ../other/ts/... reach into another package's files);
+//   2. an @retroplug/<name> (or `reference types`) the package does not declare in its dependencies (a test file's
+//      devDependencies count);
 //   3. a third-party module (zod, anything under node_modules) the package does not declare; a subpath ("zod/v4") is
 //      judged by its package ("zod");
 //   4. a dependency on the shell, @retroplug/retroplug or @retroplug/native, imported or declared: no package may;
 //   5. a cycle in the declared dependencies;
-//   6. an #include in the package's native sources that has a `..` segment and climbs out of the package, quoted or
-//      angled, or a declared @retroplug dependency that names no package.
+//   6. an #include in the package's native sources that climbs out of the package (a `..` segment, or an absolute path
+//      into another package), quoted or angled, or a declared @retroplug dependency that names no package;
+//   7. an `exports` target under ts/test/, which would publish a test module whose devDependencies another package's
+//      source could then reach, or one outside the package's ts/ tree, which no check reads.
 //
 // A declared dependency no file uses is a warning, not a refusal: the native check (cmake/packages.cmake) reads the same
 // declaration, so a package whose native targets link a dependency's library declares it without its TS importing
@@ -38,7 +43,7 @@
 // passes verbose only when RP_BOUNDARIES_VERBOSE asks, so `pnpm test` says what it found, not what it forgave.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -53,49 +58,11 @@ const SHELLS = ["retroplug", "native"];
 // but its API is the one the typechecker runs, so the check reads imports with the compiler that will see them.
 const ts = createRequire(import.meta.url)("typescript-5");
 
-/** Imports that break a rule today and are allowed until the stage that moves the code they reach. Each entry names the
- *  file, the specifier, the rule it breaks and the stage that deletes it; the stage deletes the entry in the same
- *  change as the import, and an entry no refusal matches fails this check, so a fixed line cannot outlive its fix. */
-const EXCEPTIONS = [
-  // Stage 3 carves core's TS half (defineNode, settingsSchema, script/register) into @retroplug/core.
-  {
-    file: "packages/bliptoaster/ts/index.ts",
-    import: "../../retroplug/src/graph/defineNode",
-    rule: "relative",
-    removedBy: "stage 3 (core's TS half)",
-  },
-  {
-    file: "packages/bliptoaster/ts/index.ts",
-    import: "../../retroplug/src/script/register",
-    rule: "relative",
-    removedBy: "stage 3 (core's TS half)",
-  },
-  {
-    file: "packages/devtest/ts/index.ts",
-    import: "../../retroplug/src/graph/defineNode",
-    rule: "relative",
-    removedBy: "stage 3 (core's TS half)",
-  },
-  {
-    file: "packages/devtest/ts/index.ts",
-    import: "../../retroplug/src/graph/settingsSchema",
-    rule: "relative",
-    removedBy: "stage 3 (core's TS half)",
-  },
-  {
-    file: "packages/devtest/ts/index.ts",
-    import: "../../retroplug/src/script/register",
-    rule: "relative",
-    removedBy: "stage 3 (core's TS half)",
-  },
-  // Stage 3 makes packages/retroplug/testing a package of its own, @retroplug/testing.
-  ...["link-client", "mapConfig", "menuImage", "saveState", "session-client", "sniffer", "sysInfo"].map((name) => ({
-    file: `packages/n8/ts/test/${name}.test.ts`,
-    import: "../../../retroplug/testing/harness",
-    rule: "relative",
-    removedBy: "stage 3 (@retroplug/testing)",
-  })),
-];
+/** Imports that break a rule and are allowed until the change that moves the code they reach. Each entry names the
+ *  file, the specifier, the rule it breaks and what removes it; that change removes the entry beside the import, and an
+ *  entry no refusal matches fails this check, so a fixed line cannot outlive its fix. Empty: nothing in the tree breaks
+ *  a rule today. */
+const EXCEPTIONS = [];
 
 function readJson(path) {
   try {
@@ -153,6 +120,7 @@ function workspace(root) {
       ts: join(base, entry.name, "ts"),
       native: join(base, entry.name, "native"),
       manifestPath,
+      manifest,
       // The manifest's names, as nameOf spells them: a declared "@retroplug/beta" is "beta"'s package, and a declared
       // "zod" is the package "zod/v4" names too.
       dependencies: Object.keys(manifest.dependencies ?? {}).map(nameOf),
@@ -221,9 +189,10 @@ function lineAndColumn(text, pos) {
   return { line, column };
 }
 
-/** Every import in a package's TS, from TypeScript's scanner: the specifier as written, and for a relative one the
- *  file it names (or null, reported as unresolvable). Type-only forms are included: the scanner lists an `import type`,
- *  an `export type ... from` and an `import("x").T` alike. A file that cannot be read is a problem of its own.
+/** Every import in a package's TS, from TypeScript's scanner: the specifier as written, the form it was written in
+ *  (`import`, a `/// <reference path>`, or a `/// <reference types>`), and for a path the file it names (or null,
+ *  reported as unresolvable). Type-only forms are included: the scanner lists an `import type`, an
+ *  `export type ... from` and an `import("x").T` alike. A file that cannot be read is a problem of its own.
  *  The rest of the package is still judged when one import does not resolve. */
 function importsOf(root, pkg, files, problems) {
   const imports = [];
@@ -236,25 +205,50 @@ function importsOf(root, pkg, files, problems) {
       continue;
     }
     const scanned = ts.preProcessFile(text, true, true);
-    for (const found of scanned.importedFiles) {
-      const specifier = found.fileName;
-      if (isBare(specifier)) {
-        imports.push({ file, specifier, target: null });
+    // A reference path is a relative reach like an import's, and the scanner returns it the same shape, so the two go
+    // through one resolution; a `reference types` names a package the way a bare import does, which the judge handles.
+    const found = [
+      ...scanned.importedFiles.map((entry) => ({ ...entry, form: "import" })),
+      ...scanned.referencedFiles.map((entry) => ({ ...entry, form: "reference" })),
+      ...scanned.typeReferenceDirectives.map((entry) => ({ ...entry, form: "types" })),
+    ];
+    for (const entry of found) {
+      const specifier = entry.fileName;
+      if (entry.form === "types" || isBare(specifier)) {
+        imports.push({ file, specifier, form: entry.form, target: null });
         continue;
       }
       const target = resolveRelative(dirname(file), specifier);
       if (target === null) {
-        const { line, column } = lineAndColumn(text, found.pos);
+        const { line, column } = lineAndColumn(text, entry.pos);
         problems.push({
           file,
           message: `${shown(root, file)}:${line}:${column}: cannot be resolved: ${specifier} names no file`,
         });
         continue;
       }
-      imports.push({ file, specifier, target });
+      imports.push({ file, specifier, form: entry.form, target });
     }
   }
   return imports;
+}
+
+/** A manifest's `exports` as its entries: the key ("." for the string form) and every target string it maps to, so a
+ *  conditional export's members are judged too. A pattern key ("ts/*") is read as the literal target it spells. */
+function exportTargets(manifest) {
+  const exports = manifest.exports;
+  if (typeof exports === "string") return [{ key: ".", target: exports }];
+  if (exports === null || typeof exports !== "object") return [];
+  const out = [];
+  for (const [key, value] of Object.entries(exports)) {
+    if (typeof value === "string") out.push({ key, target: value });
+    else if (value !== null && typeof value === "object") {
+      for (const [condition, target] of Object.entries(value)) {
+        if (typeof target === "string") out.push({ key: `${key} (${condition})`, target });
+      }
+    }
+  }
+  return out;
 }
 
 /** The cycles in the packages' declared `dependencies`, each as the package names in order. A devDependency edge does
@@ -325,22 +319,66 @@ export function checkBoundaries({ root = REPO } = {}) {
     }
     if (isShell(pkg.name)) continue;
 
+    // Rule 7: what a package publishes. The checks read ts/, so an export outside it publishes code no check judges;
+    // an export under ts/test/ publishes a test module, and a test file may import devDependencies, which a source of
+    // another package reaching through the export would then get transitively.
+    for (const { key, target } of exportTargets(pkg.manifest)) {
+      const rel = target.replace(/^\.\//, "");
+      if (rel.startsWith("ts/test/")) {
+        refuse(
+          "exports",
+          shown(root, pkg.manifestPath),
+          target,
+          `${shown(root, pkg.manifestPath)}: exports "${key}" at ${target}, which is a test module: a test file may ` +
+            "use devDependencies, so publishing one lets another package's source reach them through it",
+        );
+      } else if (!rel.startsWith("ts/")) {
+        refuse(
+          "exports",
+          shown(root, pkg.manifestPath),
+          target,
+          `${shown(root, pkg.manifestPath)}: exports "${key}" at ${target}, which is outside packages/${pkg.name}/ts, ` +
+            "so no check reads the code it publishes",
+        );
+      }
+    }
+
     // Rules 1 to 4, the import half.
     const problems = [];
     const imports = importsOf(root, pkg, walk(pkg.ts, isTypeScript), problems);
     for (const problem of problems) refuse("unresolvable", shown(root, problem.file), "", problem.message);
-    for (const { file, specifier, target } of imports) {
+    for (const { file, specifier, form, target } of imports) {
+      if (form === "types") {
+        // A `/// <reference types="x">` names the type package `@types/x` (or, less usually, `x` itself), so it is a
+        // bare import's declaration rule. Either spelling in the manifest satisfies it, and the one that does is the
+        // declaration the unused warning sees used.
+        const name = specifier;
+        const typesName = `@types/${name}`;
+        const declared = declares(pkg, file, typesName) ? typesName : declares(pkg, file, name) ? name : null;
+        if (declared !== null) {
+          markUsed(pkg, declared);
+          continue;
+        }
+        refuse(
+          "third-party",
+          shown(root, file),
+          specifier,
+          `${shown(root, file)}: a /// <reference types="${specifier}"> names ${typesName}, which ${pkg.name} does ` +
+            "not declare in its dependencies (its tests may also use devDependencies)",
+        );
+        continue;
+      }
       if (!isBare(specifier)) {
-        // A relative import, resolved against the importing file: it must stay in the package's own tree, so a package
-        // reaches another as a declared @retroplug/<name> and the shell not at all.
+        // A relative import (or reference path), resolved against the importing file: it must stay in the package's
+        // own tree, so a package reaches another as a declared @retroplug/<name> and the shell not at all.
         if (target !== null && under(pkg.ts, target)) continue;
         refuse(
           "relative",
           shown(root, file),
           specifier,
-          `${shown(root, file)}: imports "${specifier}", which resolves into ` +
-            `${describeOwner(ownerOf(packages, root, target ?? ""))}, outside ${shown(root, pkg.ts)}: a package ` +
-            "reaches another as @retroplug/<name>, and the shell not at all",
+          `${shown(root, file)}: ${form === "reference" ? `a /// <reference path> "${specifier}"` : `imports "${specifier}"`}, ` +
+            `which resolves into ${describeOwner(ownerOf(packages, root, target ?? ""))}, outside ` +
+            `${shown(root, pkg.ts)}: a package reaches another as @retroplug/<name>, and the shell not at all`,
         );
         continue;
       }
@@ -382,22 +420,30 @@ export function checkBoundaries({ root = REPO } = {}) {
       }
     }
 
-    // Rule 6, the native half: an #include with a `..` segment that climbs out of the package, quoted or angled. A bare
-    // include name is an include directory's (node-sdk's graph/node.hpp), which the configure check rules on.
-    for (const file of walk(pkg.native, isNativeSource)) {
+    // Rule 6, the native half: an #include that climbs out of the package, quoted or angled - one with a `..` segment,
+    // or an absolute path, which is how a tree could be named without climbing syntactically. A bare include name is an
+    // include directory's (node-sdk's graph/node.hpp), which the configure check rules on. Every native source under the
+    // package counts, not only native/'s: a tool's tree (graph-runtime's export-plan, its device check) is the package's
+    // too.
+    for (const file of walk(pkg.dir, isNativeSource)) {
       const text = readFileSync(file, "utf8");
       for (const match of text.matchAll(/^[ \t]*#[ \t]*include[ \t]*(?:"([^"]+)"|<([^>]+)>)/gm)) {
         const specifier = match[1] ?? match[2];
-        if (!specifier.split(/[\\/]/).includes("..")) continue;
+        const absolute = isAbsolute(specifier);
+        if (!absolute && !specifier.split(/[\\/]/).includes("..")) continue;
         const target = resolve(dirname(file), specifier);
         if (under(pkg.dir, target)) continue;
+        // A path outside every package is nobody's (a vendored dep's header, the C library's): only a reach into another
+        // package or a shell is this rule's to refuse.
+        const owner = ownerOf(packages, root, target);
+        if (absolute && owner === null) continue;
         refuse(
           "include",
           shown(root, file),
           specifier,
           `${shown(root, file)}: includes "${specifier}", which resolves into ` +
-            `${describeOwner(ownerOf(packages, root, target))}, outside packages/${pkg.name}: a package's native ` +
-            "sources include their own by path",
+            `${describeOwner(owner)}, outside packages/${pkg.name}: a package's native sources include their own by ` +
+            "path",
         );
       }
     }
@@ -438,8 +484,8 @@ export function checkBoundaries({ root = REPO } = {}) {
     }
   }
 
-  // The exceptions: a refusal an entry names is allowed, and an entry nothing matches is itself a failure (the stage it
-  // names has removed the import, so its line must go). An entry names the rule it allows, so it cannot allow the same
+  // The exceptions: a refusal an entry names is allowed, and an entry nothing matches is itself a failure (what removed
+  // it has taken the import away, so its line must go). An entry names the rule it allows, so it cannot allow the same
   // line for a different reason.
   const allowed = [];
   const spent = new Set();

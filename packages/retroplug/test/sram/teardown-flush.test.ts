@@ -5,7 +5,7 @@
 // The exception is the reason this file exists: a caller that has just WRITTEN a .sav and is cold-booting
 // from it (a Songs-menu edit, a song import) leaves the live battery holding the PRE-edit bytes, so
 // flushing there would undo the save. That case is pinned at the bottom.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { gbRomBattery } from "../systems/fixtures";

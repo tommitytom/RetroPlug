@@ -2,7 +2,7 @@
 // what a stray Enter - or the second half of the double-tap that raised the prompt - runs. It must never
 // be the one that throws work away: making the song-discard prompt's message line read-only once moved
 // the opening cursor onto "Discard & load", one keypress from losing the working song.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";

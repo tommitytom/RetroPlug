@@ -1,10 +1,10 @@
 // EngineGraph: what reaches setGraph, and when (docs/modular-graph-phase-b2-design.md section 2.2).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { EngineGraph } from "../../src/engineGraph";
 import { buildGraph, type GraphSystem } from "../../src/graph/buildGraph";
 import type { ProtocolRole } from "../../src/graph/protocolNodes";
 import type { GraphController } from "../../src/graph/controller";
-import { toGraphJson } from "../../src/graph/graphDocument";
+import { toGraphJson } from "@retroplug/core/graphDocument";
 import type { SetGraphRequest, SetGraphResult } from "../../src/backend";
 
 class FakeEngine {

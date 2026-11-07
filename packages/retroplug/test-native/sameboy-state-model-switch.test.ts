@@ -14,7 +14,7 @@
 //
 // The WRAM plane was already fixed this way (lsdj-wram-seam.test.ts); this is its state/SRAM twin.
 // MODEL_VALUES indices: 1 = dmgB, 3 = sgb, 9 = cgbC, 12 = agb.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";

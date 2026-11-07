@@ -8,7 +8,7 @@
 //   * TEMPO and the TABLE cursor equal independently-probed ground truth — they DON'T follow the shift
 //     (e.g. 8.5.1's real tempo is 0xC537, not the shift-predicted 0xC526), which is exactly why the full
 //     per-field layout supersedes the rigid model.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { decodeSav, savFrom } from "../src/lsdjSav";

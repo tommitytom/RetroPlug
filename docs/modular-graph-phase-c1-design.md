@@ -127,7 +127,7 @@ thrown error's stack names), where the built-in bundle is compiled stripped (`tj
      shadow a built-in type or another pack's. Where one pack's id runs on into another's (`a` and `a.b` can both
      name `a.b.c`), the registry refuses the type the second would take, and the load or reload that brings it.
   3. Its source is global code, the IIFE a bundler makes, appending `defineNode` results to `__rp_scriptNodes`
-     ([register.ts](../packages/retroplug/src/script/register.ts)), as the built-in bundle does. It is compiled to
+     ([register.ts](../packages/core/ts/register.ts)), as the built-in bundle does. It is compiled to
      bytecode on the control thread by `dsp::compileToBytecode`
      ([ScriptCompiler.hpp](../packages/native/src/host/dsp/ScriptCompiler.hpp)), which returns why the source does not
      compile, QuickJS's text after the line it was found on (`the source does not compile: line 3: SyntaxError: ...`;
@@ -453,7 +453,7 @@ bugs), belong with the authoring and package-split work.
 [spec/02-native-host.md](../spec/02-native-host.md) (the script host: packs, load and reload, jobs and memory charged to
 the node), [spec/04-roles-protocol-nodes.md](../spec/04-roles-protocol-nodes.md) where it says what the script runtime
 is, [spec/07-remaining-work.md](../spec/07-remaining-work.md) section 5 (the item closed, and what section 5 and section
-11 here leave), [defineNode.ts](../packages/retroplug/src/graph/defineNode.ts)'s comment on when promise jobs run, and
+11 here leave), [defineNode.ts](../packages/core/ts/defineNode.ts)'s comment on when promise jobs run, and
 AGENTS.md's description of `retroplug-engine-graph-test`. Writing them found three more: the `test:plugin` row of
 [spec/06-build-test.md](../spec/06-build-test.md), [spec/08-profiling.md](../spec/08-profiling.md) (the audio runtimes
 summed, a type's label across reloads, where the jobs run in the trace), and

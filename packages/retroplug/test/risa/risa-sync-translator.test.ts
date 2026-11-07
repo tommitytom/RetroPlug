@@ -2,7 +2,7 @@
 // arm/clock/stop bytes. Mirrors the former native gtest (packages/native/test/n8/Edio.test.cpp's
 // RisaSyncTranslator cases) byte-for-byte, and the arm packets are the golden values from the node test
 // test/script/nodes/risa-sync.test.ts (top -> F9 52 00 00 00; ppq 64 -> F9 52 01 00 00; 23-not-24 clocks after start).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { RisaSyncTranslator } from "../../src/risaSyncTranslator";
 
 // Feed one MIDI message into the translator, appending any risa output to `out` (NOT cleared).

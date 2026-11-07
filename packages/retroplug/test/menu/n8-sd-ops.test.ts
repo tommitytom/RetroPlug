@@ -6,7 +6,7 @@
 // through the MockBackend's model, every row is disabled while one runs, and the read-only row renders the job's
 // snapshot (progress, then its result or error). The streaming config (port, Connect, lookahead) is native host state,
 // so its hooks stay stubbed here; the jobs are not.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

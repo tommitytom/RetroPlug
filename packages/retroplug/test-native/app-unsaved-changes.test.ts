@@ -3,7 +3,7 @@
 // live SRAM to the snapshot registry, and unsavedChanges compares THOSE bytes against the `.sav` on disk.
 // A mock backend hands back whatever a test set, so it can't prove the comparison is reading a real
 // battery at all.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { buildAppRegistry } from "../src/appHost";
 import { RecentStore } from "../src/recentStore";

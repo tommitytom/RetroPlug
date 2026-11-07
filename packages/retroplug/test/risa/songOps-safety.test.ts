@@ -5,7 +5,7 @@
 // stays byte-identical + the catalog re-parses (used/count in sync), prove the working song (banks 0-3) stays
 // byte-identical across catalog edits (incl. addSongRecordToSav's blank-catalog init), run a SEQUENTIAL chain,
 // and cover normalizeSaveContainer preservation + malformed-input + empty/single edges.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { savBytes } from "./fixtures";
 import {
   normalizeSaveContainer,

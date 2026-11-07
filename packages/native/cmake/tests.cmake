@@ -144,7 +144,7 @@ retroplug_add_test_binary(
              RP_BUILD_GRAPH_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/graph/buildGraph.ts"  # the knob ranges
              RP_CORE_ROLES_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/coreRoles.ts"  # their ranges
              RP_SYSTEM_SETTINGS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/systemSettings.ts"  # gain's range
-             RP_PORTS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/src/script/nodes/ports.ts"  # the queue capacities
+             RP_PORTS_TS_PATH="${CMAKE_SOURCE_DIR}/packages/core/ts/ports.ts"  # the queue capacities
              RP_PRODUCT_REGISTRATIONS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/test/engine-graph/golden/product-registrations.json"
              RP_BUILD_TYPE="$<CONFIG>")                 # the bench prints the configuration it was built in
 add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
@@ -218,7 +218,10 @@ set(_rp_refused_native
     "UndeclaredInclude|which is in the graph-runtime package's tree, which scratch does not declare"
     "DevDependencyLink|links retroplug-testing, a target of the testing package, which scratch does not declare"
     "ShellLink|links retroplug-backend, a target of the shell (packages/native): no package may use the shell"
-    "ShellInclude|which is in the shell (packages/native): no package may use the shell")
+    "ShellInclude|which is in the shell (packages/native): no package may use the shell"
+    "UndeclaredSource|compiles ${CMAKE_SOURCE_DIR}/packages/graph-runtime/native/src/foo.cpp, which is in the graph-runtime package's tree"
+    "ShellSource|compiles ${CMAKE_SOURCE_DIR}/packages/native/src/foo.cpp, which is in the shell (packages/native)"
+    "Unjudged|a generator expression the boundary check cannot evaluate")
 foreach(_rp_refused IN LISTS _rp_refused_native)
     string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
     list(GET _rp_refused 0 _rp_fixture)
@@ -256,7 +259,12 @@ set(_rp_gather_cases
     "shell|refused|a target of the shell (packages/native)"
     "dev-library|refused|links retroplug-testing, a target of the testing package"
     "declared|holds|"
-    "test-dev|holds|")
+    "test-dev|holds|"
+    "genex|refused|links retroplug-beta-helper, a target of the beta package"
+    "genex-declared|holds|"
+    "interface-include|refused|which is in the beta package's tree, which alpha does not declare"
+    "source-outside|refused|compiles ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src/x.cpp, which is in the beta"
+    "unjudged|refused|a generator expression the boundary check cannot evaluate")
 foreach(_rp_case IN LISTS _rp_gather_cases)
     string(REPLACE "|" ";" _rp_case "${_rp_case}")
     list(GET _rp_case 0 _rp_name)

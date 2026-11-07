@@ -2,8 +2,8 @@
 // it bundles declares functions of those names (defineNode's startsWith, settingsSchema's `from`): a declaration
 // elsewhere must not make a method call the pack's own. The device-pack toolchain must refuse it, naming each call and
 // its line (test/graph/device-pack.test.ts).
-import { defineNode, events } from "../../../src/graph/defineNode";
-import { registerScriptNodes } from "../../../src/script/register";
+import { defineNode, events } from "@retroplug/core/defineNode";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 export const sysexOnly = defineNode({
   id: "rp.test.device.sysex-only",

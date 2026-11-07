@@ -2,7 +2,7 @@
 // channels (channelExportMode individualMono), driven by n8-midi with every 2A03 voice at velocity 127.
 // Measurement harness, not a regression guard — see audio-levels-lib.ts.
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-nes
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

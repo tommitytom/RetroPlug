@@ -2,11 +2,43 @@
   "name": "@retroplug/core",
   "version": "0.1.0",
   "private": true,
-  "description": "The rp.core node types: routing, delay, constants and the buffer player and recorder.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The node contract (defineNode, its descriptor and settings schema), the graph document, the role contract and the app-contribution contract, with the rp.core node types beside them.",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./canonicalJson": "./ts/canonicalJson.ts",
+    "./clock": "./ts/clock.ts",
+    "./constructSpec": "./ts/constructSpec.ts",
+    "./defineNode": "./ts/defineNode.ts",
+    "./definePackage": "./ts/definePackage.ts",
+    "./descriptor": "./ts/descriptor.ts",
+    "./graphDocument": "./ts/graphDocument.ts",
+    "./midiRoute": "./ts/midiRoute.ts",
+    "./midiRouting": "./ts/midiRouting.ts",
+    "./offlineJob": "./ts/offlineJob.ts",
+    "./platform": "./ts/platform.ts",
+    "./ports": "./ts/ports.ts",
+    "./protocol": "./ts/protocol.ts",
+    "./register": "./ts/register.ts",
+    "./settingsSchema": "./ts/settingsSchema.ts",
+    "./systemRoles": "./ts/systemRoles.ts",
+    "./ticks": "./ts/ticks.ts"
+  },
   "dependencies": {
     "@retroplug/node-sdk": "workspace:*"
   },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*",
+    "zod": "^4.4.3"
+  },
   "retroplug": {
-    "native": { "target": "retroplug-core-nodes", "entry": "rp_core_package", "device": true }
+    "native": { "target": "retroplug-core-nodes", "entry": "rp_core_package", "device": true },
+    "protocol": {
+      "module": "ts/protocol.ts",
+      "nodes": [{ "type": "rp.midi.route", "label": 16 }]
+    }
   }
 }

@@ -1,3 +1,5 @@
+import type { Core, Platform } from "@retroplug/core/platform";
+
 // The two orthogonal axes a loaded system carries, kept separate on purpose:
 //
 //   - `Platform` - what the ROM targets (Game Boy / NES / GBA / Master System / Game Gear). Detected
@@ -16,11 +18,10 @@
 // The Sega tier is the one that reads the file extension, and only ever as a TIEBREAK - see
 // `detectPlatform`. Content still wins outright whenever it says anything.
 
-/** What a ROM targets. */
-export type Platform = "gb" | "nes" | "gba" | "sms" | "gg";
-
-/** The emulator that runs a platform. */
-export type Core = "sameboy" | "mesen";
+/** What a ROM targets, and the emulator that runs a platform: one definition, core's, because ConstructSpec and the
+ *  role contract name them and a package may import neither the shell nor a console package. Re-exported here so the
+ *  shell's callers keep reading one spelling. */
+export type { Platform, Core } from "@retroplug/core/platform";
 
 /** The default core for each platform (v1 has no override; the axes stay distinct regardless). */
 export const DEFAULT_CORE: Record<Platform, Core> = {

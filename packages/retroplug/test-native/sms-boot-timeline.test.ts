@@ -17,7 +17,7 @@
 //   - a song written BEFORE the latch is gone once the cart is up, and one written AFTER it stays -
 //     the exact hazard the readiness gate closes, demonstrated rather than asserted;
 //   - the invariant holds through the cart's OWN FILES save + load and through a host-side live load.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { Platform } from "../src/platform";

@@ -4,13 +4,13 @@
 // the same on the box's engine as here. Every line is the helpers' own work: nothing printed is an engine's message.
 import {
   audio, bytes, channels, control, defineNode, events, layoutChannels, link, param, resource, startValue,
-} from "../../../src/graph/defineNode";
-import type { Block, Message, PortSpec } from "../../../src/graph/defineNode";
-import { plainId, wellFormed } from "../../../src/graph/descriptor";
-import { s } from "../../../src/graph/settingsSchema";
-import { registerScriptNodes } from "../../../src/script/register";
+} from "@retroplug/core/defineNode";
+import type { Block, Message, PortSpec } from "@retroplug/core/defineNode";
+import { plainId, wellFormed } from "@retroplug/core/descriptor";
+import { s } from "@retroplug/core/settingsSchema";
+import { registerScriptNodes } from "@retroplug/core/register";
 
-// The device's runtime of a pack (the box's bundle, built with RP_DEVICE_RUNTIME: graph/defineNode.ts) keeps a
+// The device's runtime of a pack (the box's bundle, built with RP_DEVICE_RUNTIME: packages/core/ts/defineNode.ts) keeps a
 // definition's id, create and layout alone, so what the desktop's checks, settings parse and descriptor make of each
 // definition is printed by the full bundle only (the transcript the two engines must agree on); the runtime defines the
 // same nodes, which the toolchain then runs through the same blocks as the full bundle's.

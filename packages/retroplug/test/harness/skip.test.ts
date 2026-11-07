@@ -6,7 +6,7 @@
 // shared helper, so a sentinel return value would end the helper while the case carried on to its
 // assertions. These tests pin the propagation paths that a return value would break, and the one
 // `catch` inside the harness itself that would otherwise swallow a skip and report a green tick.
-import { test, expect, skip } from "../../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 
 /** What the harness itself does: match the brand structurally, never by `instanceof`. */
 const isSkipShape = (e: unknown): boolean =>

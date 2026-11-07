@@ -2,7 +2,7 @@
 // reads any integer, truncated to its low 32 bits, so native refuses only a frame that lands at 1024 or past: the
 // driver refuses every frame that is not an integer from 0 to 1023 before it sends anything, as native refuses.
 // Driven over a stand-in __rpcSend that records each request, so no native host is needed.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createAudioDriver } from "../../src/audioDriver";
 
 type Request = { method: string; params: unknown[] };

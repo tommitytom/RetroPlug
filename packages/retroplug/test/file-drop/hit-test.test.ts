@@ -1,7 +1,7 @@
 // hitTestTile — map a window-pixel drop coordinate to the grid tile index under it. Must agree with
 // SystemGrid's layout: the fitZoom-capped displayed zoom + the grid CENTERED in the window. A tile is
 // 160·zoom × 144·zoom (GB native × zoom).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { hitTestTile, SystemLayout } from "../../ui/screens/grid/layout";
 
 const AUTO = SystemLayout.Auto;

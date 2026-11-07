@@ -5,7 +5,7 @@
 // did nothing. The unit tests (test/sram/auto-save) drive the saver over a mock; this proves the same
 // thing composes with real readSram snapshots and real file IO. What it does NOT cover is the frame-tick
 // registration in useSramAutoSave/App.tsx, which follows the same untested convention as useSongWatch.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

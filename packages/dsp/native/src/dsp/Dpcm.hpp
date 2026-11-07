@@ -7,7 +7,7 @@
 // 0..127 around 64 (peak-normalised to a 45 swing, or scaled by 63 / 32768), and the 1-bit delta that walks a counter
 // between 0 and 127 two steps at a time. The delta bits are the encoder's output: one per sample, in stream order. The
 // caller packs them least-significant bit first and pads the result to a legal DMC length, because those two are the
-// risa bank's format rather than the encoder's arithmetic (packages/retroplug/src/kit/pack.ts).
+// risa bank's format rather than the encoder's arithmetic (packages/dsp/ts/pack.ts).
 //
 // One call over a whole buffer, with no scratch of its own: the DC blocker's two doubles and a running peak are the
 // whole state, and the second pass recomputes the first pass's samples rather than keeping one int per sample, so a

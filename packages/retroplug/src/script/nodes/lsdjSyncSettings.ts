@@ -2,7 +2,7 @@
 // Boy direction, lsdjSync.ts), and rp.lsdj.serial-out, placed after it (the Game Boy-to-host one, lsdjSerialOut.ts).
 // buildGraph hands both the role's config as their settings, the MI.MAP controller's forced mode included, so one
 // schema checks both and the two cannot read a config differently.
-import { s, type Infer } from "../../graph/settingsSchema";
+import { s, type Infer } from "@retroplug/core/settingsSchema";
 import { LSDJ_MODE_VALUES } from "../../settingsEnums";
 
 // mode: LsdjSyncMode. tempoDivisor subdivides the 24-PPQN clock (24/divisor) for MidiSync, MidiSyncArduinoboy and

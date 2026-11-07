@@ -2,10 +2,10 @@
 // serialization — closing the project domain's "rich fields deferred at defaults"
 // gap for these. A customized model role + gain serialize into the thin config and
 // rebuild through the real store; a fresh all-default system emits neither.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { buildConfig, serializeConfig, parseConfig, DEFAULT_SETTINGS } from "../../src/projectConfig";
 import { gbRom, nesRom, sameboyRoleConfig } from "../systems/fixtures";

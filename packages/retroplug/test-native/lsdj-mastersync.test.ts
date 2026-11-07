@@ -15,7 +15,7 @@
 // protocol was the core clocking a stopped LSDj (`drive`, one bit an audio frame: about 5500 bytes a second at
 // 44.1 kHz; docs/lsdj-master-sync-fix-design.md section 2). (Master Sync targets stock LSDj, whose SYNC=LSDj is the
 // standard link-cable master clock; Arduinoboy builds use MI.OUT / mode 7.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";

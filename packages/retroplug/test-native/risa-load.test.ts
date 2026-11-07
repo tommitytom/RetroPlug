@@ -3,7 +3,7 @@
 // read the live 64 KB via readSram, Load song 0 into the working region, then cold-boot from it through
 // the SAME seam the menu uses (writeFileAtomic + loadSram) and confirm the firmware kept the working song
 // (its name at bank-1 0x1E8C) and the catalog. SKIPs when the built ROM is absent.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

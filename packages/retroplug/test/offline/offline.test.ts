@@ -12,7 +12,7 @@
 // settles them with the wait off, and the wire request carries the handles and the default returns.
 // The native half is held by retroplug-engine-graph-test "[offline]" and "[engine-jobs]", and test-native/offline-run
 // and engine-run.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { liveJobCount, pumpAllJobs } from "../../src/capability";
 import {

@@ -2,7 +2,7 @@
 // or paired save that no longer exists on disk (and isn't an embedded blob) is
 // flagged so the UI can locate it before applying the project. Thin subset (rom +
 // sram); kit samples land with the kits domain. Port of missingFiles.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { scanMissingFiles, relinkInConfig, autoFindSiblings } from "../../src/projectMissing";
 import { DEFAULT_SETTINGS, type ProjectConfig } from "../../src/projectConfig";
 

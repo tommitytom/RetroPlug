@@ -5,7 +5,7 @@
 // of the whole image. This replicates the (now-deletable) C++ liblsdj-differential
 // coverage with zero native dependency. The exhaustive per-format losslessness
 // sweep over all ~549 corpus savs is test-native/lsdj-codec-corpus.test.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { deepEqual } from "./_assert";
 import { savBytes, FIXTURE_KEYS } from "./fixtures";
 import { decodeSav, encodeSav } from "../../src/lsdj/codec/sav";

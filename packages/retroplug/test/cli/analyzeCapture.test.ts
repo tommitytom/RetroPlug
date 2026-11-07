@@ -1,7 +1,7 @@
 // `analyze-capture`'s pitch gate: a capture channel at its noise floor still yields a confident "pitch"
 // from the detector (an idle input read as 750 Hz at confidence 1.00), so the pitch line is gated on the
 // window's level against --floor, and the detector is not even consulted for a silent window.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { pitchLine } from "../../cli/sessions/analyze-capture";
 
 test("a window under the floor is reported silent and the detector is never run", () => {

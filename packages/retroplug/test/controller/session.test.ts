@@ -5,7 +5,7 @@
 // a host whose diffing baseline says "already painted" would leave the grid dark; and leaving Programmer
 // mode set locks the user out of their own hardware's Settings menu. The fake device models both, so
 // these are real failures here rather than things discovered on a desk with a Launchpad on it.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { FakeLaunchpad } from "./_fakeDevice";
 import { ControllerSession, isPredictive, lsdjMidiMapTarget, type ControllerApp, type ControllerCtx } from "../../src/controller";
 import { Palette, palette } from "../../src/launchpad";

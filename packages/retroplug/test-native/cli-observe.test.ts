@@ -3,7 +3,7 @@
 // scheduled ch1 MIDI note sounds on pulse1 at ~C4, the CPU exposes a pc register, a side-effect-free peek
 // reads the $40F1 MIDI FIFO, and a whole RAM region reads back. (The pure Timeline.build ordering is in
 // the mock test/cli/timeline.test.ts.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { MemoryRegion, type ApuState } from "../src/backend";

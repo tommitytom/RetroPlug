@@ -2,7 +2,7 @@
 // song, but SYNC is left OFF (no link-cable sync). Pressing START on the leader plays only the leader
 // — the follower never starts, so its per-system audio stays silent. If this ever shows the follower
 // producing audio, the positive test isn't measuring real sync.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SongSettings } from "../src/lsdjSav";

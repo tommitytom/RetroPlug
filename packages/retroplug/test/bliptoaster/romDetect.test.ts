@@ -1,6 +1,6 @@
 // BlipToaster SIG-block detection tests: find the "bliptoaster" head marker + read its semver, and reject
 // non-BlipToaster buffers. Pure byte-level — no emulator or real ROM.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   blipToasterInfo,
   isBlipToasterRomHeader,

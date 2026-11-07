@@ -31,6 +31,9 @@ if(RP_DEVICE_BUILD)
 else()
     target_include_directories(retroplug-reflect-headers SYSTEM INTERFACE
         $<TARGET_PROPERTY:reflectcpp,INTERFACE_INCLUDE_DIRECTORIES>)
+    # A vendored dep's include root, which only the build generator can resolve: nobody's to declare, so the boundary
+    # check (cmake/packages.cmake) does not judge the expression it cannot evaluate.
+    set_target_properties(retroplug-reflect-headers PROPERTIES RP_BOUNDARY_SKIP "reflect-cpp's include root")
 endif()
 
 # In the device build retroplug-node-sdk is the device's SDK, which is headers alone: the include root and

@@ -2,7 +2,7 @@
 // romProviders.ts, tracker/trackerIntegration.ts and kit/compile.ts until the generated registry
 // (src/generated/packages.ts) concatenated every package's. The shell carries what no package owns yet, in the order
 // the app registered it; a package that grows an app module contributes its own list from there.
-import { definePackage } from "./core/definePackage";
+import { definePackage } from "@retroplug/core/definePackage";
 import { CORE_ROLES } from "./coreRoles";
 import { DSP_ROLES } from "./dspRoles";
 import { LSDJ_ASSETS_ROLE } from "./lsdjAssetsRole";
@@ -23,7 +23,7 @@ import { LSDJ_KIT_FORMAT, RISA_KIT_FORMAT } from "./kit/compile";
 // The keys the owner packages add to the contract (their modules augment PackageContributions): type-only, so nothing
 // loads at run time.
 import type {} from "./tracker/packageContributions";
-import type {} from "./kit/packageContributions";
+import type {} from "@retroplug/dsp/packageContributions";
 
 export default definePackage({
   // The backend "system" roles (coreRoles), the feature roles that have a protocol node (dspRoles), and those that

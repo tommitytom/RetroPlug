@@ -9,10 +9,13 @@
     "typecheck": "node scripts/lib/packages.mjs && tsc --noEmit && tsc --noEmit -p tsconfig.ui.json"
   },
   "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/dsp": "workspace:*",
     "@retroplug/n8": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@retroplug/testing": "workspace:*",
     "typescript": "^7.0.2"
   },
   "retroplug": {
@@ -20,7 +23,6 @@
     "protocol": {
       "module": "src/script/shellNodes.ts",
       "nodes": [
-        { "type": "rp.midi.route", "label": 16 },
         { "type": "rp.mgb.midi", "label": 17, "midiIn": "midi", "writes": ["serialIn"] },
         { "type": "rp.n8.midi-to-fifo", "label": 18, "midiIn": "midiIn", "writes": ["midi"] },
         { "type": "rp.risa.sync", "label": 19, "midiIn": null, "writes": ["bytes"] },

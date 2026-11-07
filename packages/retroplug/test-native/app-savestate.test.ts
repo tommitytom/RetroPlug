@@ -4,7 +4,7 @@
 // whole point of dropping the audioRunning_ guard, see app-registry), loadState reads it back and
 // reconstructs the core in place via a stateBytes construct. SRAM slices out of a battery cart's
 // savestate the same way.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

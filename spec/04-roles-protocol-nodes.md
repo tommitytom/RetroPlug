@@ -40,7 +40,7 @@ node, the serial-out capture its decoder needs.
 
 ## The role model
 
-Five pieces make up the generic model, in [systemRoles.ts](../packages/retroplug/src/systemRoles.ts).
+Five pieces make up the generic model, in [systemRoles.ts](../packages/core/ts/systemRoles.ts).
 It is a runtime registry (the legacy build had a native `RoleConfig` tagged union and hardcoded if/else
 chains in its place; neither exists now).
 
@@ -56,7 +56,7 @@ config is an opaque per-kind blob whose schema the role owns.
 ### `RoleType`: a registry entry
 
 Contributed by the built-ins (or, eventually, an extension). Fields
-([systemRoles.ts:52](../packages/retroplug/src/systemRoles.ts#L52)):
+([systemRoles.ts:52](../packages/core/ts/systemRoles.ts#L52)):
 
 | Field | Meaning |
 |---|---|
@@ -73,7 +73,7 @@ the three publishers that need it hold no registry.
 
 ### `RoleRegistry`: the kind-keyed store
 
-[`RoleRegistry`](../packages/retroplug/src/systemRoles.ts#L94) holds a `Map<kind, RoleType>`
+[`RoleRegistry`](../packages/core/ts/systemRoles.ts#L94) holds a `Map<kind, RoleType>`
 plus a list of `RomProvider`s:
 
 | Method | Behaviour |
@@ -326,16 +326,16 @@ routing node's outputs follow the systems); a system removed and added again get
   is applied once per `anchorSeq`.
 
 **The drift-exact PPQ clock, in JS.** Native owns no `nextTick`/`eachTick` primitive.
-[`walkTicks`](../packages/retroplug/src/ticks.ts#L23) is a faithful TS twin of native `PpqUtil::eachTick`:
+[`walkTicks`](../packages/core/ts/ticks.ts#L23) is a faithful TS twin of native `PpqUtil::eachTick`:
 it walks the ticks at `resolution` ticks a quarter that fall in this block, calling `cb(tick,
 offsetSamples)` for each. A node that clocks keeps its `nextTick` on its instance
-([nodes/clock.ts](../packages/retroplug/src/script/nodes/clock.ts) `TickClock`), and no system has two
+([nodes/clock.ts](../packages/core/ts/clock.ts) `TickClock`), and no system has two
 clocking protocols, so it is the counter its system has; across blocks each tick fires exactly once, never
 doubled or missed, and a jump of more than a tick (a seek, a loop, a start) resyncs. The transport it reads
 is the block's, at the block-start ppq.
 
 **Capacities.** Each output declares its queue
-([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts)): `serialIn` and `midi` 4096 messages /
+([nodes/ports.ts](../packages/core/ts/ports.ts)): `serialIn` and `midi` 4096 messages /
 72 KiB: the bytes are what `rp.host.midi-in`'s output holds (64 KiB) with 8 KiB more for a role's own, the
 message count twice its 2048, so a SysEx the host
 stages whole reaches the system whole and host MIDI is dropped only at that edge; a routing output what
@@ -358,7 +358,7 @@ the same way, except that it skips the `finally` that sends the run, so that is 
 or the node removed and added again, clears it).
 
 **Settings without zod.** A node's settings are a zod-free schema
-([graph/settingsSchema.ts](../packages/retroplug/src/graph/settingsSchema.ts): `s.object`, `s.enum`,
+([graph/settingsSchema.ts](../packages/core/ts/settingsSchema.ts): `s.object`, `s.enum`,
 `s.int`, `s.bool`, `s.number`, `s.string`, `s.array`, `s.json`), each builder parsing and writing its JSON
 Schema as its zod twin did, so the bundle every Engine loads as its built-in script pack, `rp.script`, into
 both of that pack's runtimes, holds no zod (78 KB, where the kernel's was 660 KB, most of it zod). A pack
@@ -478,7 +478,7 @@ inventory of remaining work.
 
 TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
 
-- [systemRoles.ts](../packages/retroplug/src/systemRoles.ts): `RoleInstance` / `RoleType` /
+- [systemRoles.ts](../packages/core/ts/systemRoles.ts): `RoleInstance` / `RoleType` /
   `RoleRegistry` / `RomProvider` / `ConstructCaps`.
 - [coreRoles.ts](../packages/retroplug/src/coreRoles.ts): the `sameboy` and `mesen` system-roles.
 - [dspRoles.ts](../packages/retroplug/src/dspRoles.ts): the roles that have a protocol node (kind, schema)
@@ -486,16 +486,16 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
 - [romProviders.ts](../packages/retroplug/src/romProviders.ts): feature-role attachment by ROM identity.
 - [script/nodes/](../packages/retroplug/src/script/nodes): the eight node types, `lsdjSyncSettings.ts` (the
   `lsdj-sync` schema both its nodes take), `clock.ts` (the tick counter) and `ports.ts` (the capacities);
-  [ticks.ts](../packages/retroplug/src/ticks.ts): `walkTicks`.
+  [ticks.ts](../packages/core/ts/ticks.ts): `walkTicks`.
 - [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) /
   [graph/controller.ts](../packages/retroplug/src/graph/controller.ts) /
   [graph/buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts): store → graph, the protocol node per
   role, the controller's target and its cart's sync override.
-- [graph/settingsSchema.ts](../packages/retroplug/src/graph/settingsSchema.ts) /
-  [graph/defineNode.ts](../packages/retroplug/src/graph/defineNode.ts): the zod-free settings schema and the
+- [graph/settingsSchema.ts](../packages/core/ts/settingsSchema.ts) /
+  [graph/defineNode.ts](../packages/core/ts/defineNode.ts): the zod-free settings schema and the
   node contract.
 - [script/bundle.ts](../packages/retroplug/src/script/bundle.ts) /
-  [script/register.ts](../packages/retroplug/src/script/register.ts): the bundle every Engine embeds, and how
+  [script/register.ts](../packages/core/ts/register.ts): the bundle every Engine embeds, and how
   a bundle registers its node types.
 - [controller/apps/index.ts](../packages/retroplug/src/controller/apps/index.ts) /
   [controller/registry.ts](../packages/retroplug/src/controller/registry.ts): the controller apps' runtime,

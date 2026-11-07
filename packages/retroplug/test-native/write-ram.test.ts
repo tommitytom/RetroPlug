@@ -11,7 +11,7 @@
 // confuse it, because the emulated code has invariants over those bytes that nothing here knows about.
 // That is the feature, not a defect. Bounds are refused because a write past the region corrupts the
 // host, which is a crash rather than a confused ROM.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { directGraph } from "../src/graph/directGraph";

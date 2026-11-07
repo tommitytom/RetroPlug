@@ -109,20 +109,15 @@ if [ $do_build = 1 ]; then
 	build="cmake --build $desk --target retroplug-export-plan-current -j\$(nproc)"
 	[ -x "$tool" ] || die "no plan exporter at $tool: build it first ($build)"
 	[ -f "$stamp" ] || die "the plan exporter at $tool has not been brought up to date ($stamp is missing): $build"
-	# Every source the exporter compiles: the packages' native sources (node-sdk and graph-runtime among them) and its
-	# own directory, their tests apart; and what the script packs the image carries are compiled from beside it (the
-	# TypeScript of each package whose manifest declares a script pack, the node SDK they bundle, the toolchain, and
-	# the engine and its build: mqjs, the runner and the 32-bit tables), since the image takes each pack's 32-bit
-	# bytecode and the engine's tables from the same desktop build.
-	packs=$(grep -l '"script"' "$repo"/packages/*/package.json | sed 's|/package.json$|/ts|')
-	newer=$(find "$repo"/packages/*/native "$repo"/packages/graph-runtime/export-plan $packs \
-		"$repo"/packages/retroplug/src/graph "$repo"/packages/retroplug/src/script/register.ts \
-		"$repo"/packages/retroplug/scripts/build-device-pack.mjs "$repo"/deps/mquickjs "$repo"/cmake/mquickjs.cmake \
-		"$repo"/cmake/mquickjs-table.cmake "$repo"/cmake/mquickjs-names.cmake "$repo"/cmake/mquickjs-device \
-		-path '*/test' -prune -o -type f \
-		\( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.c' -o -name CMakeLists.txt -o -name '*.ts' \
-		-o -name '*.mjs' -o -name '*.cmake' \) -newer "$stamp" -print -quit)
-	[ -z "$newer" ] || die "$newer is newer than the plan exporter's last build: build it first, as the firmware's export would run a stale one ($build)"
+	# What the exporter was built from: its own comparison, beside this script (exporter-stale.sh, which its header
+	# lists the sources apiece). It prints the first newer source and exits 1, 2 when it cannot judge the tree.
+	stale=0
+	newer=$(bash "$here/exporter-stale.sh" "$stamp" "$repo") || stale=$?
+	case $stale in
+		0) ;;
+		1) die "$newer is newer than the plan exporter's last build: build it first, as the firmware's export would run a stale one ($build)" ;;
+		*) die "cannot tell whether the plan exporter is current (exporter-stale.sh, see above): $build" ;;
+	esac
 	if [ ! -f "$bdir/build.ninja" ]; then
 		# reflect-cpp's headers from the desktop build's checkout when there is one: no clone at configure.
 		reflect=$(sed -n 's/^reflectcpp_SOURCE_DIR:STATIC=//p' "$desk/CMakeCache.txt" 2>/dev/null)

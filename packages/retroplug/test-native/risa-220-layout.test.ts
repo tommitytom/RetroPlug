@@ -5,7 +5,7 @@
 // decode and advance. If a future risa build DID move these, this fails and the alias must be revisited.
 // (This is what makes song-length auto-detect work for 2.2.0 carts — see render.ts buildPlayingProbe.)
 // SKIPs when the 2.2.0 ROM / LETGO sav aren't present, like the other risa native tests.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

@@ -2,7 +2,7 @@
 // start, 24-PPQN clock, stop) on its `bytes` output, as the DSP kernel's risa-sync role sent it until B3b; the locate's
 // pure cases are test/risa/sync-locate.test.ts's.
 // Protocol reference: risa's docs/sync/host-sync-protocol.md (2.3.0 and later).
-import { test, expect } from "../../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { RISA_SYNC_NODE_TYPE, risaSyncNode } from "../../../src/script/nodes/risaSync";
 import { NodeRig, type BlockSpec, type Sent } from "./_rig";
 

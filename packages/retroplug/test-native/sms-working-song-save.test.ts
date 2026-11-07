@@ -6,7 +6,7 @@
 // readSram sees them; "Save" lands the song in the battery, in the `.sav`, and SURVIVES the teardown flush
 // that used to be the thing that would overwrite it; and a reset carries an unsaved song through the boot
 // that would otherwise blank it, still marked unsaved.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildAppRegistry } from "../src/appHost";

@@ -8,7 +8,7 @@
 // content genuinely can't decide: which machine an unfilled region nibble means, and
 // (as the last tier of all) a file carrying no magic anywhere. The precedence tests at
 // the bottom are the ones that matter - an extension must never beat real content.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { detectPlatform } from "../../src/platform";
 
 // iNES magic "NES\x1A" at offset 0.

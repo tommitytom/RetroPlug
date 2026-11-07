@@ -4,7 +4,7 @@
 // cursor offset (0xC377/0xC378) is LIVE-correct: pressing DOWN moves the cursor-row byte there. The
 // cursor needs no playback (unlike the playing flags), so this works on any real sav. active=0xE8 is
 // asserted through the resolved layout (the old tool measured active + cursor together).
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { MemoryRegion } from "../src/backend";

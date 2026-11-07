@@ -3,7 +3,7 @@
 // return real savestate/SRAM. Assertions are structural (real bytes are non-empty but not a
 // fixed value) and on returned id handles, never absolute ids: every case in a file shares one
 // native engine per process, but a fresh SystemsStore starts empty (it tracks its own list).
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { SystemsStore } from "../src/systemsStore";
 import { gbRomBattery, garbage } from "../test/systems/fixtures";

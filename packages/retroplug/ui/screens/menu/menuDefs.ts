@@ -118,7 +118,7 @@ import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/se
 import { controllerSyncOverride } from "../../../src/graph/controller";
 import { systemNodeId } from "../../../src/graph/buildGraph";
 import type { MenuAction, MenuItem, MenuTree } from "./menuTree";
-import { roleConfig } from "../../../src/systemRoles";
+import { roleConfig } from "@retroplug/core/systemRoles";
 import { action, actionCycler, button, cycleInt, cycler, infoRow, separator, submenu } from "./menuItems";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */

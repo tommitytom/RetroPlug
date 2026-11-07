@@ -4,7 +4,7 @@
 // system and its `mgb` role's node turns into serial input; asserts the rendered audio is non-silent
 // AND louder than idle - proving the MIDI drove the core's sound through the script nodes.
 // Complements dsp-serial (routing-presence toggle) with an idle-baseline magnitude check. In-TS RMS.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";
 import { directGraph } from "../src/graph/directGraph";

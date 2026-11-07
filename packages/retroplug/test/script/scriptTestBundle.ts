@@ -4,9 +4,9 @@
 // `rp`, for the toy nodes those tests write as JS source and load after it, and one node of its own, defined as a
 // production node is (defineNode, `s` settings), which holds TS -> esbuild -> bytecode -> the script host to a
 // real definition. It holds no zod, as the production bundle is to hold none.
-import { audio, bytes, channels, control, defineNode, events, param } from "../../src/graph/defineNode";
-import { s } from "../../src/graph/settingsSchema";
-import { registerScriptNodes } from "../../src/script/register";
+import { audio, bytes, channels, control, defineNode, events, param } from "@retroplug/core/defineNode";
+import { s } from "@retroplug/core/settingsSchema";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 // Each message on `in`, `copies` times on `out`, its second byte moved by the `transpose` param.
 const echo = defineNode({

@@ -2,7 +2,7 @@
 // the FILE a save would write, fenced off from the buttons by a separator. Pure data (no LVGL), so the
 // labels + the disabled flag - the thing that keeps Enter landing on Save / Discard / Cancel - are
 // assertable here rather than only on the headless display.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";

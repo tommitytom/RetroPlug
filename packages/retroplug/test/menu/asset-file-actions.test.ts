@@ -11,7 +11,7 @@
 // — as much as anything — what happens on the malformed inputs, since a silent `return` is this code's
 // entire error-handling strategy and a refactor that turned one into a throw or a write would look green
 // everywhere else.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

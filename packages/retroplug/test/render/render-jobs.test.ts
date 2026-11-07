@@ -3,7 +3,7 @@
 // listed as an error; cancel() is the job handle's; a dismissed job stays gone when it settles; the engine's console
 // lines reach this runtime's console; and a job's key and settle hook, which the UI's snapshot files hang on. The jobs
 // here are scripted promises: the engine side is test-native/engine-run and the C++ [engine-jobs] cases.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { RenderJobs } from "../../src/renderJobs";
 import { jobHandle, type EngineRunOptions, type EngineRunResult } from "../../src/offline";
 

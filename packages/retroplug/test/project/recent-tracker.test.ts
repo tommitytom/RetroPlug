@@ -10,7 +10,7 @@
 //
 // mGB and LSDj are the regression net: their rows are recorded at once, exactly as before, because there
 // is nothing to wait for.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";

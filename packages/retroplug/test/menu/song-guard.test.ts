@@ -1,7 +1,7 @@
 // The Songs menu's data-loss guards, at the menu level: what the rows actually become when the cart holds
 // uncommitted work, and that each way out does what it says. The predicate behind the decision is proven in
 // test/tracker/workingSongDirty; this is about the UI it drives.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";

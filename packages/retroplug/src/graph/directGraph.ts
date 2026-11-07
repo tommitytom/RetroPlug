@@ -12,7 +12,7 @@
 // two publishing in turn, as test-native/parity/render-blocks.test.ts and cli/sessions/analyze-lsdj-sync.ts do.
 import { createRealBackend } from "../realBackend";
 import type { AudioRouting, MidiRouting } from "../settingsEnums";
-import type { RoleInstance } from "../systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { ConstructSpec, EmulatorBackend, HostBackend } from "../backend";
 import { EngineGraph } from "../engineGraph";
 import { parseAppConfig } from "../controller/registry";

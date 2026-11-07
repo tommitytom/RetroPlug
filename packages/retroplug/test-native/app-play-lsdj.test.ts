@@ -5,7 +5,7 @@
 // on a feature role publishes the graph with the re-projected structure, so flipping the
 // store's role config is what makes an armed LSDj sing. Whole-mix RMS on a single system = that
 // system's audio. (One test per file: whole-mix RMS needs an isolated native engine.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

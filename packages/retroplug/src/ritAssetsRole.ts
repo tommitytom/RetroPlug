@@ -9,7 +9,7 @@
 // LSDj is not here. Its assets are kits, palettes and font IMAGES, its overrides carry colorSets rather
 // than a theme, and it validates by trial-applying to a parsed ROM rather than by length. Sharing a name
 // with it would cost more than it saved.
-import type { ConstructCaps } from "./systemRoles";
+import type { ConstructCaps } from "@retroplug/core/systemRoles";
 import type { RisaTheme } from "./risa/rom";
 import { z } from "./configSchema";
 import { encodeThemeRecord, encodeThemeName, normalizeTheme, KIT_BANK_SIZE, CHR_BANK_SIZE, isBankPopulated } from "./risa/rom";

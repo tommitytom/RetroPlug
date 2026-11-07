@@ -16,7 +16,7 @@
 //   envelope ON  -> 22-26 dB of swing (the level visibly ramping)
 // The emulator swings further than 22-26 dB simply because it has no analog noise floor to hide the
 // bottom of the ramp in.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 

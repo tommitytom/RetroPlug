@@ -6,9 +6,9 @@
 // order a package lists its exports in. esbuilt to a global-code IIFE, compiled to QuickJS bytecode and
 // embedded in the backend (packages/native/cmake/bundles.cmake), so every Engine loads it into both of its
 // script contexts.
-import type { DefinedNode } from "../graph/defineNode";
-import { registerScriptNodes } from "../script/register";
-import nodes_alpha from "../../../alpha/ts/nodes";
+import type { DefinedNode } from "@retroplug/core/defineNode";
+import { registerScriptNodes } from "@retroplug/core/register";
+import nodes_alpha from "@retroplug/alpha/nodes";
 import nodes_retroplug from "../script/nodes";
 
 // The host numbers the nodes it is handed from the first protocol span label up (spec/08-profiling.md).

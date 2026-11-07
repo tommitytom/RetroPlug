@@ -8,6 +8,7 @@
 import { pumpAllJobs, setJobWait } from "./capability";
 import { kitFormat } from "./kitFormats";
 import type { KitCompileResult } from "./kit/compile";
+import type { KitEffect } from "@retroplug/dsp/kitEffect";
 import { setOfflineWait, setOfflineYield } from "./offline";
 import { makeCall } from "./rpcClient";
 import { offlineRunner } from "./realBackend";
@@ -46,22 +47,9 @@ export interface DspTraceSpan {
   t1: number;
 }
 
-// LSDJ kit-compile effects (the kit chain's rp.dsp nodes' settings; discriminated on `type`). Applied
-// per sample: gain (normalize/scale) + filter (RBJ biquad) run before resampling, dither after - matching
-// the compile order. A field a spec leaves out takes the node's default (src/kit/chain.ts).
-export type KitGainEffect = { type: "gain"; normalize?: boolean; gain?: number };
-export type KitFilterEffect = {
-  type: "filter";
-  filterType?: "LowPass" | "HighPass" | "BandPass" | "BandStop" | "Peak" | "LowShelf" | "HighShelf" | "AllPass";
-  frequency?: number;
-  q?: number;
-  gain?: number;
-};
-export type KitDitherEffect = {
-  type: "dither";
-  ditherType?: "HighPassTPDF" | "ShapedTPDF" | "ErrorDiffusion" | "JJN" | "SierraLite";
-};
-export type KitEffect = KitGainEffect | KitFilterEffect | KitDitherEffect;
+// The kit compiler's effect spec lives with the kit chain that reads it, in dsp (packages/dsp/ts/kitEffect.ts); this
+// driver and the compile specs it declares re-export the names, so a caller keeps one spelling.
+export type { KitDitherEffect, KitEffect, KitFilterEffect, KitGainEffect } from "@retroplug/dsp/kitEffect";
 
 /** One source sample for compileKit: a source audio file (WAV/MP3/FLAC, decoded natively), a 3-char slot
  *  name, an optional source-frame window, and an effect chain. */

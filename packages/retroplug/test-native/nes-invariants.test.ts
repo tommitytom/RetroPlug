@@ -9,7 +9,7 @@
 //
 // The two recipes below (a value bound, and a PPU write outside vblank) are the ones nesvj's bugs
 // needed: `live_ofs > 15` and "$2007 written while the picture is being drawn".
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 

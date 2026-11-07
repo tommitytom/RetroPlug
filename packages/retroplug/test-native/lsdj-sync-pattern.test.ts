@@ -5,7 +5,7 @@
 // when it actually synced to the leader, and, being the same song under the same clock, its level
 // tracks the leader's. A healthy-looking two-system MIX can't show this; isolated per-system RMS can.
 // (lsdj-sync-negative.test.ts is the control: SYNC=None → the follower stays silent.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SongSettings } from "../src/lsdjSav";

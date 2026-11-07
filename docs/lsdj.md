@@ -32,7 +32,7 @@ places and wires it). The pattern, from
 [lsdj-sync-pattern.test.ts](../packages/retroplug/test-native/lsdj-sync-pattern.test.ts):
 
 ```ts
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SongSettings } from "../src/lsdjSav";

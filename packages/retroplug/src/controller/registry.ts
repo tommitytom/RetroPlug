@@ -1,4 +1,4 @@
-// The controller-app registry: name -> app module, mirroring RoleRegistry (systemRoles.ts).
+// The controller-app registry: name -> app module, mirroring RoleRegistry (@retroplug/core's systemRoles.ts).
 //
 // This is what "scriptable in TS" means for v1 (docs/launchpad-plan.md 0). An app is a module conforming
 // to an interface, registered by name, with a zod schema owning its config shape, defaults and clamping -
@@ -9,7 +9,7 @@
 // its label and its config's schema.
 
 import { z, boolField, clampedInt, enumField } from "../configSchema";
-import type { RoleConfigSchema } from "../systemRoles";
+import type { RoleConfigSchema } from "@retroplug/core/systemRoles";
 import type { ControllerApp } from "./session";
 import { CONTROLLER_APPS, type ControllerAppRuntime } from "./apps";
 import { MAX_PAGE, QUANTISE_VALUES } from "./apps/lsdjMidiMap";

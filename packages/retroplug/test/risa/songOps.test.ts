@@ -1,7 +1,7 @@
 // risa catalog write ops (M2 codec core) — byte-identity vs risa's own catalog.js (SaveImage) oracle,
 // plus structural + round-trip + error checks. Base fixture is the 5-record legacy catalog; the input
 // record for add/replace is the 4XTREME record. Mirrors test/systems/lsdj-songs.test.ts (byte-level ops).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { savBytes } from "./fixtures";
 import { opBytes } from "./opFixtures";
 import {

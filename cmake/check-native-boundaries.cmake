@@ -8,6 +8,8 @@
 #
 #   { "package": "scratch", "declared": ["node-sdk"], "devDeclared": ["testing"], "test": false,
 #     "links": ["scratch-nodes=retroplug-graph"], "includes": ["scratch-nodes=@PACKAGES@/graph-runtime/native/src"],
+#     "sources": ["scratch-nodes=@PACKAGES@/graph-runtime/native/foo.cpp"],
+#     "unjudged": ["scratch-nodes=$<TARGET_PROPERTY:reflectcpp,INTERFACE_INCLUDE_DIRECTORIES>"],
 #     "owners": ["retroplug-graph=graph-runtime", "retroplug-node-sdk=node-sdk"] }
 #
 # "test" marks the fixture's target a test binary (retroplug_add_test_binary's): only one may link a devDependency.
@@ -43,12 +45,15 @@ _rp_fixture_list(_declared "${_json}" declared)
 _rp_fixture_list(_dev "${_json}" devDeclared)
 _rp_fixture_list(_links "${_json}" links)
 _rp_fixture_list(_includes "${_json}" includes)
+_rp_fixture_list(_sources "${_json}" sources)
+_rp_fixture_list(_unjudged "${_json}" unjudged)
 _rp_fixture_list(_owners "${_json}" owners)
 string(JSON _test ERROR_VARIABLE _noTest GET "${_json}" test)
 set(_test_arg "")
 if(NOT _noTest AND _test)
     set(_test_arg TEST)
 endif()
-_retroplug_check_native_boundaries(${_package} LINKS ${_links} INCLUDES ${_includes} DECLARED ${_declared}
-                                   DEV_DECLARED ${_dev} ${_test_arg} OWNERS ${_owners})
+_retroplug_check_native_boundaries(${_package} LINKS ${_links} INCLUDES ${_includes} SOURCES ${_sources}
+                                   UNJUDGED ${_unjudged} DECLARED ${_declared} DEV_DECLARED ${_dev} ${_test_arg}
+                                   OWNERS ${_owners})
 message(STATUS "check-native-boundaries.cmake: ${RP_BOUNDARY_FIXTURE} holds")

@@ -4,7 +4,7 @@
 // The toggle is ROUTING PRESENCE - the native twin of routing.test.ts's two cases: with the routing
 // node the chord reaches mGB and it sounds; with none it reaches no system and mGB stays silent. So
 // serial input demonstrably reaches the live core, purely from the graph's structure. In-TS RMS.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";
 import { directGraph } from "../src/graph/directGraph";

@@ -6,7 +6,7 @@
 // advances it. The core constructs bare (no C++ roles) so nothing but the node clocks it. The graph
 // drives every system; we toggle THIS system's lsdj-sync mode: Off (0) leaves the armed LSDj
 // frozen/SILENT, MidiSync (1) makes it sing. Whole-mix RMS on a single system = that system's audio.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";

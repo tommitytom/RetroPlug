@@ -5,7 +5,7 @@
 import type { Backend } from "../backend";
 import type { ProjectStore } from "../projectStore";
 import type { AudioDriver } from "../audioDriver";
-import type { RoleInstance } from "../systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 
 export type SplitMode = "mix" | "channels" | "pins";
 

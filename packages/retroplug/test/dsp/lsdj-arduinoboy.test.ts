@@ -8,7 +8,7 @@
 // frame, and adds no dependence on the host's block split of its own: one byte stream cut into any blocks sends the
 // same messages at the same absolute frames. The rp.lsdj.serial-out node that runs them off its Game Boy's serial out
 // (modes 7 and 8) is test/script/nodes/lsdj-serial-out.test.ts's.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   arduinoboyDecodeByte,
   arduinoboyDecodeSerialOut,

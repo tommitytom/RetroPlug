@@ -1,6 +1,6 @@
 // The in-app file browser core: the glob filter, the request pub/sub, and the MenuTree builder (dirs
 // navigate, files pick + pattern-filter, save mode adds a filename prompt). Pure logic — no LVGL/React.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { globToRegExp, matchesPatterns, requestFileBrowser, getFileBrowserRequest, resolveFileBrowser } from "../src/fileBrowser";
 import { buildFileBrowserMenu } from "../ui/screens/menu/fileBrowserMenu";
 import type { MenuItem } from "../ui/screens/menu/menuTree";

@@ -4,7 +4,7 @@
 // function a real cart's row bytes are produced by. If every row survives encode -> decode we are
 // speaking the protocol the role consumes, rather than a second opinion about it that happens to look
 // similar.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { lsdjMidiMapTarget, launchMessage, nullTarget, LSDJ_MAX_ROW } from "../../src/controller";
 import { midiMapRow } from "../../src/lsdjSyncBytes";
 

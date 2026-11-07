@@ -5,7 +5,7 @@
 // test/dsp/sms-sync.test.ts's.
 //
 // Protocol reference: smsggdj's GGSYNC.md and src/engine.asm:576-590 / :646-661.
-import { test, expect } from "../../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { SMS_SYNC_NODE_TYPE, smsSyncNode } from "../../../src/script/nodes/smsSync";
 import { ggSyncLevels, smsSyncLevels, SMS_SYNC_MAX_CLOCKS_PER_POLL, SMS_SYNC_PPQN } from "../../../src/smsSync";
 import { NodeRig, type BlockSpec, type Sent } from "./_rig";

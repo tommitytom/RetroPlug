@@ -19,7 +19,7 @@
 // VERSION with no .sms/.gg distinction, so a GG load writes to addresses taken from an SMS link. (A
 // local `wlalink -S` of both v0.45 links gives an identical $C000-$DFFF label set, so the shared entry
 // is right; this is the behavioural half of that claim, against the ROM users actually run.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import type { Platform } from "../src/platform";
 import { createAudioDriver } from "../src/audioDriver";

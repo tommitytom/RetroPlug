@@ -429,7 +429,7 @@ An events or bytes output may declare its queue's capacity (`rp::bytes_out::size
 `events.out(capacity)` / `bytes.out(capacity)` in TS), by default 256 messages and 4096 bytes, at most 1 Mi messages
 and 16 MiB. A wire carries its source's queue, so an input declares none (both parsers refuse one, and an input has no
 `sized`): the outputs that do are the host inputs above, the Game Boy's `serialOut`, and every script node's output
-([nodes/ports.ts](../packages/retroplug/src/script/nodes/ports.ts): `serialIn` 4096 messages / 72 KiB, `midi` 4096 /
+([nodes/ports.ts](../packages/core/ts/ports.ts): `serialIn` 4096 messages / 72 KiB, `midi` 4096 /
 72 KiB, `bytes` 256 / 1 KiB, `buttons` 64 / 128 B, `midiOut` 1024 / 8 KiB, `controllerOut` 256 / 4 KiB, a routing
 output 2048 / 64 KiB, `launches` 64 / 256 B) and the box's `rp.device.midi-in` (64 / 4 KiB, which the `bliptoaster`
 pack's message pools follow). The two that pass host MIDI on, `serialIn` and `midi`, hold what `rp.host.midi-in`'s
@@ -916,7 +916,7 @@ out a node's ports, and an audio-side one that holds every instance of the pack'
   ([bundles.cmake](../packages/native/cmake/bundles.cmake)), whose derived C array is compiled into
   `retroplug-backend`: every Engine loads it at construction, so every host has the same node types
   with no boot call. A bundle appends its `defineNode` results to the global `__rp_scriptNodes`
-  ([register.ts](../packages/retroplug/src/script/register.ts)); the host reads that list in both of the
+  ([register.ts](../packages/core/ts/register.ts)); the host reads that list in both of the
   pack's runtimes, requires the same id and descriptor at each index, and registers one `rp_node_type` per
   definition in the pack's package, all served by the same functions, each type telling itself apart by
   its `ctx`. A bundle that does not load (the promise jobs its load queues among it: they must settle in the

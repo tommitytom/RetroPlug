@@ -6,7 +6,7 @@
 // sing. Same proof as audio-render.test.ts, but reached via the stores instead of a hand-set
 // pipeline, so it exercises the real store→graph→protocol-node path a host will drive. (One test per
 // file: whole-mix RMS needs an isolated native engine.)
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

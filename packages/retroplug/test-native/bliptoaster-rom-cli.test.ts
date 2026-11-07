@@ -3,7 +3,7 @@
 // compiler over the real backend and needs no ROM, so it always runs; the ROM-splice verbs are gated on the built
 // FME-7 banking ROM (16 kit banks) and SKIP when absent. The tool only touches s.backend + s.audio, so a minimal
 // Session over the real backend/driver suffices.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { Session } from "../cli/session";

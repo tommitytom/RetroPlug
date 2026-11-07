@@ -5,8 +5,8 @@
 // transport is test/script/nodes/sms-sync.test.ts's. Pure TS, no backend.
 //
 // Protocol reference: smsggdj's GGSYNC.md and src/engine.asm:576-590 / :646-661.
-import { test, expect } from "../../testing/harness";
-import { RoleRegistry } from "../../src/systemRoles";
+import { test, expect } from "@retroplug/testing";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerRomProviders } from "../../src/romProviders";
 import {

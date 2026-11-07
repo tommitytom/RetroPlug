@@ -24,7 +24,7 @@ import {
   type GraphSystem,
 } from "./graph/buildGraph";
 import { bootSystem, ResourcePool, systemHandles } from "./graph/systemResources";
-import { canonicalJson } from "./graph/canonicalJson";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
 import { EngineGraph } from "./engineGraph";
 import {
   detectPlatform,
@@ -52,7 +52,7 @@ import {
   nextFocusAfterRemove,
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
-import type { RoleRegistry, RoleInstance } from "./systemRoles";
+import type { RoleRegistry, RoleInstance } from "@retroplug/core/systemRoles";
 import { protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
 import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";

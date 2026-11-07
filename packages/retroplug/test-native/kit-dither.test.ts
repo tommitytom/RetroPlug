@@ -11,7 +11,7 @@
 // decodes to a constant +1.0 and would satisfy a peak alone. Each dithered bank must also differ from the same source
 // compiled with no effects, which is what proves the descriptor reached the compiler and the algorithm ran. The source
 // WAV is generated, so this needs no fixtures.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { KitEffect } from "../src/audioDriver";

@@ -3,7 +3,7 @@
 // outcome after every dialog settles, so an unpaired .sav simply awaits a 2nd
 // (ROM-only) browser inside the same Promise — no pending latch. The resolve-only
 // "Load…" branch lives in route.test.ts.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend, sramBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { FileSelection } from "../../src/fileSelection";

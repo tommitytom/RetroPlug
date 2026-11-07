@@ -9,7 +9,7 @@
 // The scenario at the front of this is the one a DAW does constantly and the harness couldn't express
 // before `setPpq`: play, stop, rewind to the start, play again. Resuming from where you paused (ppq keeps
 // advancing) was already covered; rewinding was not.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { runtime } from "../src/risa";

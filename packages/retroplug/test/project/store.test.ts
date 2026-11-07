@@ -2,7 +2,7 @@
 // new/save/load over the REAL systems + recent stores. The deep test is the
 // round-trip: save a thin raw-JSON .rplg, reload it, and confirm the systems rebuild
 // (through the actual systems store over seeded ROMs), including missing-file relink.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";

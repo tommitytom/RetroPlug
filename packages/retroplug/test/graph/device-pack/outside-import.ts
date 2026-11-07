@@ -1,9 +1,9 @@
-// A device pack that imports a module outside its allowlist (graph/canonicalJson, which is not part of the portable
+// A device pack that imports a module outside its allowlist (core/canonicalJson, which is not part of the portable
 // node SDK): the device-pack toolchain must refuse it, naming the module and what imported it
 // (test/graph/device-pack.test.ts).
-import { canonicalJson } from "../../../src/graph/canonicalJson";
-import { defineNode, events } from "../../../src/graph/defineNode";
-import { registerScriptNodes } from "../../../src/script/register";
+import { canonicalJson } from "@retroplug/core/canonicalJson";
+import { defineNode, events } from "@retroplug/core/defineNode";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 export const spell = defineNode({
   id: "rp.test.device.spell",

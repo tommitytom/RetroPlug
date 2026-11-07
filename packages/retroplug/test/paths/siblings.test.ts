@@ -4,7 +4,7 @@
 // candidate enumeration); all of it is TS-side now. The suffix scan and candidate
 // list are pure kernels: they take predicates / return an ordered list, and the
 // systems domain wires them to the live systems + Backend later.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   siblingPath,
   siblingSavPath,

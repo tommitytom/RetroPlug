@@ -5,7 +5,7 @@
 // thread free-running and asserts the call is accepted (the old path returned false there). Resource-free:
 // embedded mGB, no ROM file. Ownership discipline (per dsp-threaded): construct BEFORE startAudio; never
 // read core state while the thread runs - a button press is a WRITE over the queue, the intended path.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

@@ -3,7 +3,7 @@
 // mirror locate + dual-write (setKit), and the DMC decoder. Uses the synthetic risaRomFull() fixture,
 // which carries one populated kit ("TEST"/"KIK") + a KIT_META mirror at 0x30000 (past both hint offsets,
 // so the bounded scan is exercised).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { risaRomFull } from "../systems/fixtures";
 import { RisaRom, bankToModel, deriveMetaFromBank, dpcmDecode, assembleKitBank, isBankPopulated, type AssembleSlot } from "../../src/risa/rom";
 

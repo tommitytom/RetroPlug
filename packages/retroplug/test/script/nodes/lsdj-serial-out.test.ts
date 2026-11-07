@@ -3,7 +3,7 @@
 // and master sync (mode 8), each message at the frame the decoder gives it in that block: the MI.OUT and master-sync
 // cases rp.lsdj.sync's tests held, here at each message's frame, and what the node keeps across a mode change. The
 // decoders' pure cases are test/dsp/lsdj-arduinoboy.test.ts's.
-import { test, expect } from "../../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { LSDJ_SERIAL_OUT_NODE_TYPE, lsdjSerialOutNode } from "../../../src/script/nodes/lsdjSerialOut";
 import { lsdjSyncNode } from "../../../src/script/nodes/lsdjSync";
 import { LSDJ_MODE_VALUES } from "../../../src/settingsEnums";

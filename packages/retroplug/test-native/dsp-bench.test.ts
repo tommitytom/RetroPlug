@@ -12,7 +12,7 @@
 // test SKIPS (so the normal `pnpm test:native` sweep stays fast, and says the case did not run
 // rather than printing a green tick for it). One test per file (the
 // native Engine is shared per host process).
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";
 import { directGraph } from "../src/graph/directGraph";

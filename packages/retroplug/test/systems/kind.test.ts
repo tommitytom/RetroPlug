@@ -1,7 +1,7 @@
 // The store classifies a ROM (platform.ts), and the platform picks the node type its core is placed as
 // (systemNodeTypeFor): the node's C++ type is what builds that console's core, so the platform and core the
 // entry carries and the node it is placed as are one decision. Embedded ROMs are always SameBoy.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { gbRom, nesRom, gbaRom } from "./fixtures";

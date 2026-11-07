@@ -5,7 +5,7 @@
 // the real adapter, and a *newer* writer is refused by version detection, so
 // an older reader never needs to preserve unknowns. Breaking format changes bump the
 // version and migrate at the load seam (migrateProjectRaw; e.g. v1→v2 backfills `core`).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { parseConfig } from "../../src/projectConfig";
 
 test("additive tolerance: a config missing newer fields gets their defaults", () => {

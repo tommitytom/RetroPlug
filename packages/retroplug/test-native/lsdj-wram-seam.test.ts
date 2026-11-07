@@ -2,7 +2,7 @@
 // plugin uses, read from the race-free SnapshotRegistry triple — returns the live core's work RAM, is
 // republished EVERY block (so it tracks playback within one render, unlike the ~2Hz readState/readSram),
 // and feeds the LSDj runtime reader exactly as the plugin overlay will.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";

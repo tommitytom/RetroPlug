@@ -9,7 +9,7 @@
 // src/generated/packages.ts (docs/modular-graph-phase-f1-design.md section 3), in product order, and this applies
 // it in that order.
 
-import { RoleRegistry } from "./systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { ROLES } from "./generated/packages";
 import { registerRomProviders } from "./romProviders";
 

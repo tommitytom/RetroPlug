@@ -1,7 +1,7 @@
 // The prompt text-input case transform (ui/screens/menu/promptCasing). DPF's "key" bus carries the
 // UNSHIFTED code point, so the menu applies Shift / the prompt's casing policy itself: "mixed" (default,
 // e.g. project rename) lets Shift uppercase a letter; "upper" (LSDj / risa song names) forces uppercase.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { applyCasing } from "../../ui/screens/menu/promptCasing";
 
 test("mixed casing (default) respects Shift", () => {

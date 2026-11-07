@@ -2,7 +2,7 @@
 // shape ({schemaVersion, entries:[{path,name}]}) so a user's current recent.json
 // keeps working when the real backend is wired in. Tolerant reads: absent /
 // garbage / newer-schema all yield an empty list rather than throwing.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { parseRecent, serializeRecent, RECENT_SCHEMA } from "../../src/recentSerialization";
 
 test("serialize: stamps the schema version and writes path+name entries", () => {

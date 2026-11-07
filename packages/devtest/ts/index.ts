@@ -2,9 +2,9 @@
 // the device-pack toolchain (packages/retroplug/scripts/build-device-pack.mjs) compiles to MicroQuickJS bytecode
 // through cmake/packages.cmake's retroplug_script_pack. Like the package's C++ types, no product that ships carries it;
 // the tests build it, at both widths (packages/retroplug/test/graph/device-pack.test.ts).
-import { type Block, defineNode, events } from "../../retroplug/src/graph/defineNode";
-import { s } from "../../retroplug/src/graph/settingsSchema";
-import { registerScriptNodes } from "../../retroplug/src/script/register";
+import { type Block, defineNode, events } from "@retroplug/core/defineNode";
+import { s } from "@retroplug/core/settingsSchema";
+import { registerScriptNodes } from "@retroplug/core/register";
 
 const clamp7 = (v: number): number => (v < 0 ? 0 : v > 127 ? 127 : v);
 

@@ -3,8 +3,8 @@
 // backend "system" roles via registerCoreRoles; a FAKE feature extension proves the
 // mechanism with zero LSDj knowledge in the core. A role's behaviour is its
 // protocol node (script/nodes/), not a RoleType field, so none is exercised here.
-import { test, expect } from "../../testing/harness";
-import { RoleRegistry, type RoleType } from "../../src/systemRoles";
+import { test, expect } from "@retroplug/testing";
+import { RoleRegistry, type RoleType } from "@retroplug/core/systemRoles";
 import { buildAppRegistry } from "../../src/appHost";
 import { protocolNodeOf } from "../../src/graph/protocolNodes";
 import { registerCoreRoles } from "../../src/coreRoles";

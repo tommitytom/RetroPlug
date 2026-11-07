@@ -90,7 +90,7 @@ matches nothing.
 ### Skips are reported, and ratcheted
 
 A case that cannot run — a fixture that is not checked out, a counter only a profile host exposes —
-calls `skip(reason)` from [testing/harness.ts](../packages/retroplug/testing/harness.ts) and is
+calls `skip(reason)` from [testing/harness.ts](../packages/testing/ts/harness.ts) and is
 reported as TAP `ok N - name # SKIP reason`, counted separately from a pass. It **throws**, so it
 works from inside a helper or a loop (several files delegate a whole case to a shared helper), and
 `return skip(...)` type-checks anywhere. Call it only from code the test body runs or awaits: any

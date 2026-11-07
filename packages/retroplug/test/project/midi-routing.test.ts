@@ -1,7 +1,7 @@
 // The project MIDI-routing mode reaches the audio thread the moment it changes. The routing node is placed
 // from the setting at each publish (buildGraph), so a setter that only wrote the setting left the audio
 // thread routing by the old mode until some unrelated structural edit published it.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";

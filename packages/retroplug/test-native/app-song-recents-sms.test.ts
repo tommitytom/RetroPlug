@@ -6,7 +6,7 @@
 // OWED at save time (nothing recorded), paid by the watcher's tick once the cart is up, and a Recent row's
 // song request waits on the same latch and then lands - the flow that used to write into the boot and
 // lose the song. The stores are the real ones; only the frame tick is driven by hand.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildAppRegistry } from "../src/appHost";

@@ -3,7 +3,7 @@
 //
 // Everything about the LEDs is asserted by reading them back OFF THE FAKE DEVICE rather than by
 // inspecting the app's intentions, so a test fails when the hardware would end up wrong.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { FakeLaunchpad } from "./_fakeDevice";
 import {
   ControllerSession, lsdjMidiMap, lsdjMidiMapTarget, rowAt, channelAt, followRow,

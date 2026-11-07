@@ -96,7 +96,7 @@ the Engine and loaded with the same bundle, answers those two calls for every sc
 instance and never runs `process`; the two runtimes share no JS values, only the bundle.
 
 A bundle registers its definitions by appending them to the global `__rp_scriptNodes`
-([register.ts](../packages/retroplug/src/script/register.ts)). Once it has run in both runtimes the host reads both
+([register.ts](../packages/core/ts/register.ts)). Once it has run in both runtimes the host reads both
 lists, requires each definition's id and descriptor to match by index (so a bundle that branches on which runtime it
 runs in is refused), and registers one `rp_node_type` per definition in one package, `rp.script`, each declaring
 `RP_TYPE_STATELESS_PREPARE` (§2.4) and taking `reshapes` and `faultOnThrow` from its definition. One definition that
@@ -350,7 +350,7 @@ block; `rp.host.midi-out` drops a message too short to carry its system prefix (
 
 `controllerConnected` is a control value. `rp.host.controller-in` writes a change at frame 0 on the block the flag
 flips, since a node cannot set an output's start (the start is the last block's end), so a reader takes the start and
-any change at frame 0: `startValue` in [defineNode.ts](../packages/retroplug/src/graph/defineNode.ts). That value is
+any change at frame 0: `startValue` in [defineNode.ts](../packages/core/ts/defineNode.ts). That value is
 the old per-block flag.
 
 ### 3.4 Frame order

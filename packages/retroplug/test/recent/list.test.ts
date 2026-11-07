@@ -3,7 +3,7 @@
 // per song it has had loaded. No backend - these operate on plain arrays
 // of already-canonicalized entries, so they're exhaustively testable in
 // isolation.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import {
   addEntry,
   removeEntry,

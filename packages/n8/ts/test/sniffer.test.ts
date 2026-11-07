@@ -1,7 +1,7 @@
 // The N8 live save-state sniffer decoder (packages/n8/ts/sniffer.ts): a 512-byte Edio.memRD(ADDR_SSR) region ->
 // a running NES game's APU/PPU/OAM state. Pure, no hardware - hand-build a region with known register
 // values (a pulse tuned to ~A4, a triangle, noise, PPU regs, a few on-screen sprites) and assert the decode.
-import { test, expect } from "../../../retroplug/testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { decodeSniffer, decodeSprites, SNIFFER_REGION_SIZE, CPU_HZ_NTSC } from "../sniffer";
 
 const APU = 0x080; // $4000-$401F write-mirror base

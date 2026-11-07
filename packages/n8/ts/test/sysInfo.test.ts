@@ -1,7 +1,7 @@
 // The N8 device-info decoder (packages/n8/ts/sysInfo.ts): the 64-byte CMD_SYS_INF block + 8-byte CMD_GET_VDC block
 // -> structured identity + voltages. Pure, no hardware. Hand-builds a reply with known fields at edlink's
 // offsets and asserts the decode (serial, form factor, versions, FAT dates, flash, voltages).
-import { test, expect } from "../../../retroplug/testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { decodeSysInfo, decodeVdc, fatDateStr, vdcStr, DEV_ID_N8_PRO } from "../sysInfo";
 
 function sysReply(): Uint8Array {

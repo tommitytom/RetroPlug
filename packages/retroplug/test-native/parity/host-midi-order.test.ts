@@ -14,7 +14,7 @@
 //
 // Among the parity files because the renders compared must start from cores in the same state: the runner powers
 // cores on in a fixed one for parity files only (RETROPLUG_DETERMINISTIC).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { Rig, even } from "./rig";
 import { BOOT_MS, ROMS, frames, mgb } from "./scenes";
 

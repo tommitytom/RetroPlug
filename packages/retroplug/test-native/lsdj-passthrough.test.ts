@@ -2,7 +2,7 @@
 // MidiPassthrough mode (6), running as its script node, forwards raw host-MIDI bytes verbatim to
 // LSDj's serial (script/nodes/lsdjSync.ts, its passthrough mode). This exercises the raw-forward path against a real
 // LSDj core — the legacy floor: LSDj keeps running (valid frames) after the byte stream, no crash.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom } from "../src/lsdjSav";

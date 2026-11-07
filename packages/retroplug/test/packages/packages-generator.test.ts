@@ -8,16 +8,17 @@
 // - each of the generator's refusals is exercised with its own message: a list that puts a package before a dependency
 //   (a cycle is one), an unlisted dependency that would contribute, a dependency on the shell, a node key no protocol
 //   node reads, a node wired on one side only, a shared span label, a shared node type, a shared role kind, a label
-//   below 16, a gap, a role naming an undeclared or an unwired type, and a named module that does not exist. A
-//   dependency that contributes nothing, and one whose manifest has no retroplug member, are left out of the ordering
-//   rather than refused;
+//   below 16, a gap, a role naming an undeclared or an unwired type, a named module that does not exist, a
+//   contribution its exports do not publish, a manifest whose name is not its directory's, a contribution outside ts/
+//   and a contributing package the shell does not declare. A dependency that contributes nothing, and one whose
+//   manifest has no retroplug member, are left out of the ordering rather than refused;
 // - an unchanged input leaves the generated files untouched, mtime and all, so a build that changes nothing rewrites
 //   nothing.
 //
 // The generator is Node's (it reads and writes the filesystem), so the test runs it in a node child: the runner's own
 // node (RP_NODE, which scripts/run-tests.mjs sets), else the node on the PATH when run by hand. test/packages/
 // run-generator.mjs does the copying, mutating and reporting.
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 
 // Just enough of txiki's spawn, a child's pipe and its file reads, declared locally as bundle-no-zod.test.ts does.
 interface ByteStream {
@@ -224,6 +225,36 @@ test("a role naming a type with no wiring is refused", async () => {
   console.log(`# role unwired: ${error}`);
   expect(error).toBe(
     "retroplug: the role shell-role names rp.fixture.shell, which declares no midiIn and writes to wire it",
+  );
+});
+
+test("a contribution its exports do not publish is refused, naming the file and the exports", async () => {
+  const { error } = await drive("unexported-app");
+  console.log(`# unexported app: ${error}`);
+  expect(error).toBe(
+    "alpha: its manifest names ts/app.ts, which its exports do not publish: the generated import needs the entry " +
+      "whose target is ./ts/app.ts (its exports: ./nodes -> ./ts/nodes.ts)",
+  );
+});
+
+test("a manifest whose name is not its directory's is refused", async () => {
+  const { error } = await drive("name-mismatch");
+  console.log(`# name mismatch: ${error}`);
+  expect((error as string).includes('names the package "@retroplug/alfa", not @retroplug/alpha')).toBe(true);
+});
+
+test("a contribution outside the package's ts/ tree is refused", async () => {
+  const { error } = await drive("outside-ts");
+  console.log(`# outside ts/: ${error}`);
+  expect(error).toBe("alpha: app.ts is outside its ts/ tree, so its exports cannot publish it");
+});
+
+test("a contributing package the shell does not declare is refused", async () => {
+  const { error } = await drive("shell-undeclared");
+  console.log(`# shell undeclared: ${error}`);
+  expect(error).toBe(
+    "retroplug does not declare @retroplug/alpha in its dependencies, which its generated modules import by name: a " +
+      "package that contributes to the app is the shell's dependency",
   );
 });
 

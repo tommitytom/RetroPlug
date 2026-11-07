@@ -19,7 +19,6 @@
 
 import type { CapabilityArgs, CapabilityOp, CapabilityProgress, CapabilityResults } from "./capability";
 import type { EngineJobKind, EngineRunHandle, EngineRunOptions, OfflineRunHandle, OfflineRunRequest } from "./offline";
-import type { Platform, Core } from "./platform";
 import type { TapArm } from "./graph/buildGraph";
 
 export interface Backend {
@@ -139,7 +138,7 @@ export interface Backend {
 
   /** Load a pack of script node types into the engine, or reload one loaded already, while audio runs or not
    *  (docs/modular-graph-phase-c1-design.md section 7). `source` is global code, the IIFE a bundler makes, appending
-   *  its `defineNode` results to `__rp_scriptNodes` (script/register.ts) as the built-in bundle does; each type id is
+   *  its `defineNode` results to `__rp_scriptNodes` (@retroplug/core's register.ts) as the built-in bundle does; each type id is
    *  the pack's id, a dot and a name, and the id is none of the app's ("rp" and every id under "rp."). A load lists the
    *  pack's types with their descriptor JSON, and a document can place them from the next `setGraph`. A reload
    *  rebuilds every node of the pack the running document places on the new code, its JS state not carried over, and
@@ -880,42 +879,4 @@ export interface FileBrowserOpts {
   directory?: boolean;
 }
 
-/** What TS has to boot a system from: concrete paths, or the bytes it holds (docs/modular-graph-phase-c3-design.md
- *  section 6). This is TS's own description of a system to boot, not a wire type: graph/systemResources.ts turns it
- *  into the engine's resources and the settings a system node names them in, and nothing native reads it.
- *  `savPath`/`statePath` are the exact files to load-from + auto-save-to / boot-from, or `null` for fresh / cold. */
-export interface ConstructSpec {
-  /** The ROM file to read; `""` when an embedded ROM is used instead. */
-  romPath: string;
-  /** What the ROM targets (TS classifies it via platform.ts). It picks the node the system is placed as
-   *  (systemNodeTypeFor), and with it the console its core is built as. */
-  platform: Platform;
-  /** The kind of core whose role config `coreConfig` is (platform.ts's `Core`): the store keys a system's roles by it.
-   *  It selects no core: the platform picks the node type the system is placed as (systemNodeTypeFor), and with it the
-   *  console its core is built as. */
-  core: Core;
-  /** A binary-baked ROM marker (e.g. `"mgb"`); `""` for a file-backed ROM. */
-  embeddedRom: string;
-  /** Exact battery file: its bytes seed the battery when the file is there, and it is the auto-save target. `null` =
-   *  fresh, and a path whose file is absent is fresh too (a missing save is not a failure). */
-  savPath: string | null;
-  /** Exact savestate file to boot from when the file is there. `null` = cold boot (the systems domain always passes
-   *  null; present for the later Project domain). */
-  statePath: string | null;
-  /** Effective ROM bytes to boot INSTEAD of reading `romPath` - a load-time role's patched image (e.g. LSDj asset
-   *  overrides applied non-destructively). `romPath` still names the system (its stem, its sav resolution); only the
-   *  bytes differ. */
-  romBytes?: Uint8Array;
-  /** Seed SRAM bytes (a zip-import blob, a carried battery, or a load-time role's synthesized sav). When set they seed
-   *  the battery instead of `savPath`'s file, which stays the auto-save target. */
-  sramBytes?: Uint8Array;
-  /** Seed savestate bytes (a zip-import blob or a duplicate's captured state). When set the core boots from these
-   *  instead of `statePath`'s file; a savestate wins over a battery, as it does at the core. */
-  stateBytes?: Uint8Array;
-  /** The system's backend ("system"-role) config, in the labels its node reads (coreRoles.ts): its construct-time
-   *  fields (a NES's SD root and FIFO, an SMS's FM) and its live knobs, each left out of the node's settings where it
-   *  is absent or a value the node would refuse. Only a caller placing a literal spec (DirectGraph) writes it; the
-   *  store reads the core role's config from the entry's own roles and never this field. Omitted for a system with no
-   *  core-config role. */
-  coreConfig?: Readonly<Record<string, unknown>>;
-}
+export type { ConstructSpec } from "@retroplug/core/constructSpec";

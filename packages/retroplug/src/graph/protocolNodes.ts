@@ -14,7 +14,7 @@
 // one, as the tests build them). A field on RoleType would need this table as its fallback anyway, which makes two
 // sources that can disagree about a role. The registry stays what it is to the app: each role's schema,
 // onConstruct and menu, on the control plane.
-import type { RoleInstance } from "../systemRoles";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
 import { PROTOCOL_NODES, ROLE_NODES } from "../generated/protocol";
 
 /** The system-node inputs a protocol node feeds, each from its output of the same name. */

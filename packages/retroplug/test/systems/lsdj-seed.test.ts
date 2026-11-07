@@ -3,10 +3,10 @@
 // 12–15 s cartridge self-test and boots straight to the song screen. The DECISION is proven here
 // (the mock records the seeded sramBytes + the savFromJson call); byte-level codec correctness is
 // proven against the native backend (test-native/app-lsdj-seed).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";

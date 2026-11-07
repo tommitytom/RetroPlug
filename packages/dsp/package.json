@@ -2,8 +2,22 @@
   "name": "@retroplug/dsp",
   "version": "0.1.0",
   "private": true,
-  "description": "The DSP kernels and the rp.dsp node types around them, and rp.dsp.resample (r8brain) as a package of its own.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The DSP kernels and the rp.dsp node types around them, rp.dsp.resample (r8brain) as a package of its own, and the TypeScript kit chain and packing that compile a kit as offline graph jobs.",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./chain": "./ts/chain.ts",
+    "./kitContract": "./ts/kitContract.ts",
+    "./kitEffect": "./ts/kitEffect.ts",
+    "./offlineJob": "./ts/offlineJob.ts",
+    "./pack": "./ts/pack.ts",
+    "./packageContributions": "./ts/packageContributions.ts"
+  },
   "dependencies": {
+    "@retroplug/core": "workspace:*",
     "@retroplug/node-sdk": "workspace:*"
   },
   "retroplug": {

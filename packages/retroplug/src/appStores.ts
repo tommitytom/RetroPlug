@@ -17,7 +17,7 @@
 
 import { createRealBackend } from "./realBackend";
 import type { ControlPlaneBackend } from "./backend";
-import type { RoleRegistry } from "./systemRoles";
+import type { RoleRegistry } from "@retroplug/core/systemRoles";
 import { buildAppRegistry } from "./appHost";
 import { RecentStore } from "./recentStore";
 import { UserConfigStore } from "./userConfigStore";

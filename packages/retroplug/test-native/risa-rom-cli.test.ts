@@ -1,7 +1,7 @@
 // End-to-end for the `retroplug-cli risa-rom` verbs, driven through the real tool against a real backend +
 // audio driver (mirrors test-native/lsdj-rom.test.ts). Gated on the built risa ROM — SKIPs when absent.
 // The tool only touches s.backend + s.audio, so a minimal Session over the real backend/driver suffices.
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { Session } from "../cli/session";

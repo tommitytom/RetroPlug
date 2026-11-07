@@ -5,7 +5,7 @@
 // Under the sanitizers (tools/run-sanitizer.sh) this proves the handoff is race-free (TSan) and
 // leak/UAF-free (ASan). Here we assert the deterministic effects: systemCount 1→2→1 + the removed core
 // freed (its snapshot slot gone), plus a coarse energy check that the concurrently-added core renders.
-import { test, expect } from "../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { ConstructSpec } from "../src/backend";

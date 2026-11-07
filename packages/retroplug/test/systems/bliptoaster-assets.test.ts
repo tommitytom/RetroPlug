@@ -3,10 +3,10 @@
 // menu uses (setRoleConfig + reloadSystem): the base .nes on disk is never written; the reload hands native a
 // patched effective ROM. Byte-level correctness is test/bliptoaster/rom.test.ts; native honoring romBytes is
 // test-native/bliptoaster-rom. Mirrors test/systems/risa-assets.test.ts (minus themes — BlipToaster has none yet).
-import { test, expect } from "../../testing/harness";
+import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
-import { RoleRegistry } from "../../src/systemRoles";
+import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerBlipToasterRole } from "../../src/bliptoasterRole";

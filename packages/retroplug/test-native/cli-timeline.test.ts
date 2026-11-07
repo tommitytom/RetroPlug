@@ -2,7 +2,7 @@
 // render (the persistent engine consumes the staged MIDI on the chunk after the event), so the returned
 // PCM is audible. Proves the CLI event-scripting path end-to-end against a real Mesen core. (The pure
 // build() ordering/bytes are covered in the mock test/cli/timeline.test.ts.)
-import { test, expect, skip } from "../testing/harness";
+import { test, expect, skip } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 

@@ -6,7 +6,7 @@
 // enums where the field reaches a core (SameBoyConfig.hpp: model 0..13, highpass 0..2); linkGroupId is the graph's own,
 // turned into the Game Boy's link wires by buildGraph.ts (linkGroupOf), never a core setting.
 
-import type { RoleRegistry, RoleType } from "./systemRoles";
+import type { RoleRegistry, RoleType } from "@retroplug/core/systemRoles";
 import { z, clampedInt, clampedNumber, boolField, enumField, stringField } from "./configSchema";
 import {
   MODEL_VALUES,

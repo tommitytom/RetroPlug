@@ -27,7 +27,8 @@
 // empty slot, and has none.
 
 import type { KitCompileSpec, KitSampleSpec, RisaKitCompileSpec, RisaDmcSampleSpec } from "../audioDriver";
-import { OfflineRunError, type OfflineCap, type OfflineRunRequest, type OfflineRunResult } from "../offline";
+import { OfflineRunError, type OfflineCap, type OfflineRunRequest } from "../offline";
+import type { KitCompileResult, KitFormat, KitJobRunner } from "@retroplug/dsp/kitContract";
 import { buildKitBankPlaced } from "../lsdj/rom/buildKit";
 import { KIT_MAX_SAMPLES, KIT_MAX_SAMPLE_SPACE } from "../lsdj/rom/constants";
 import { assembleKitBankPlaced, type AssembleSlot } from "../risa/rom/kit";
@@ -42,7 +43,7 @@ import {
   resolveEffects,
   windowFrames,
   type SlotChain,
-} from "./chain";
+} from "@retroplug/dsp/chain";
 import {
   DMC_MAX_BYTES,
   LSDJ_KIT_BITS,
@@ -53,25 +54,12 @@ import {
   palDmcRate,
   resampledLength,
   trimToFrames,
-} from "./pack";
+} from "@retroplug/dsp/pack";
 
-/** What the compilers run their jobs on: a backend's offline jobs (every native host has them; the mock rejects), of
- *  which the compilers need only the promise, not the handle's cancel.
- *  The promises settle only in a host that pumps or waits for its offline jobs (src/offline.ts): one with a UI tick
- *  pumps from it, and one without needs the poll's native wait, which createAudioDriver turns on as it is made (or
- *  setOfflineWait). In a host with neither, a compile never settles. */
-export interface KitJobRunner {
-  offlineRun(request: OfflineRunRequest): Promise<OfflineRunResult>;
-}
-
-/** A compiled kit: the bank, and each spec sample's reason in spec order, null exactly when the bank holds that
- *  sample whole. A reason is a failure (the slot is empty), or why a slot that compiled is still empty or short (an
- *  LSDj window with nothing to pack, a bank that ran out of room); a sample past the bank's slot count is not
- *  compiled, and its reason says so. */
-export interface KitCompileResult {
-  bytes: Uint8Array;
-  errors: (string | null)[];
-}
+// The kit compiler contract (a format, what it runs on and what it produces) lives in dsp with the chain and pack:
+// packages/dsp/ts/kitContract.ts. The compilers stay here, the shell's, because they assemble the carts' banks
+// (lsdj/rom/buildKit.ts, risa/rom/kit.ts), which are the carts' own code.
+export type { KitCompileResult, KitJobRunner } from "@retroplug/dsp/kitContract";
 
 /** What a slot the compiler left empty with no reason is: the compile result's contract makes that a compiler bug, not
  *  a full bank, so a caller's message says so instead of guessing at a cause. */
@@ -247,13 +235,7 @@ export async function compileDmc(runner: KitJobRunner, spec: RisaKitCompileSpec)
   return { bytes: bank, errors: [...errors, ...dropped] };
 }
 
-/** One kit bank format a cart contributes (its package's app's `kitFormats`): the compiler an id names, so the
- *  driver dispatches by what the product registered rather than by importing a cart's assembler itself. `id` is the
- *  format's, not the cart's: risa and BlipToaster share "risa", one DMC bank. */
-export interface KitFormat<S = unknown> {
-  readonly id: string;
-  compile(runner: KitJobRunner, spec: S): Promise<KitCompileResult>;
-}
+export type { KitFormat } from "@retroplug/dsp/kitContract";
 
 /** The LSDj kit: a 16 KB bank of 15 rotated 4-bit samples. */
 export const LSDJ_KIT_FORMAT: KitFormat<KitCompileSpec> = { id: "lsdj", compile: compileKit };
