@@ -621,7 +621,7 @@ struct BufferRecorder {
 // the box's parser and every node of RetroPlug's send them so), so a message whose first byte is a data byte (or an
 // empty one) is of no kind. The filter holds no running status across messages: such a message passes, whatever came
 // before it. A note-on with velocity 0 is a noteOn: kinds are statuses, not meanings.
-constexpr std::uint32_t kNoKind = MidiKind::size();
+constexpr auto kNoKind = static_cast<std::uint32_t>(MidiKind::size());
 // midiKind maps a channel status's high nibble straight onto the label's index, so the first seven labels stay in
 // status order.
 static_assert(MidiKind::value_of<"noteOff">() == 0 && MidiKind::value_of<"noteOn">() == 1 &&
