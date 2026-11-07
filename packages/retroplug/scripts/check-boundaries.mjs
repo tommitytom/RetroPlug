@@ -235,13 +235,27 @@ function aliasedPackage(pkg, key, spec) {
 }
 
 // A relative import's target, tried the way TypeScript and esbuild resolve one: the specifier itself, then each
-// extension, then each directory's index. A `.js` specifier that names a `.ts` source resolves, as the bundlers do.
+// extension, then each directory's index. A specifier that spells the module the compiler EMITS (a consumer kit's
+// explicit `.js` specifiers, tsc's `moduleResolution: bundler`) names the source beside it: "./x.js" is x.ts or x.tsx,
+// "./x.mjs" is x.mts, "./x.cjs" is x.cts, and "./x.jsx" is x.tsx. The counterpart is tried after the literal
+// candidates, so a real `.js` file a specifier names is still what it resolves to.
 const EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".d.ts", ".js", ".jsx", ".mjs", ".cjs", ".json"];
+const EMITTED_SOURCES = new Map([
+  [".js", [".ts", ".tsx", ".d.ts"]],
+  [".jsx", [".tsx"]],
+  [".mjs", [".mts"]],
+  [".cjs", [".cts"]],
+]);
 
 function resolveRelative(dir, specifier) {
   const base = resolve(dir, specifier);
   const candidates = [base, ...EXTENSIONS.map((ext) => base + ext)];
   for (const ext of EXTENSIONS) candidates.push(join(base, `index${ext}`));
+  const emitted = EMITTED_SOURCES.get(posix.extname(specifier));
+  if (emitted !== undefined) {
+    const stem = base.slice(0, base.length - posix.extname(specifier).length);
+    for (const ext of emitted) candidates.push(stem + ext);
+  }
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 

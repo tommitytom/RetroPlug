@@ -21,7 +21,8 @@
 // - an `npm:` alias naming a package the workspace does not have;
 //
 // and two positive trees: one where a package declares a package it imports by name, a declared third-party subpath, a
-// devDependency from a test file (a type package's globals included), its own interface by a relative path, the
+// devDependency from a test file (a type package's globals included), its own interface by a relative path, a
+// specifier that spells a module's emitted name ("./types.js" for types.ts, "./types.mjs" for types.mts), the
 // compiler its typecheck script runs, and exports that stay inside ts/; and the real tree, where no exception is left.
 //
 // The checker is Node's (it reads TypeScript's scanner), so the test spawns test/boundaries/run-checker.mjs, which runs
