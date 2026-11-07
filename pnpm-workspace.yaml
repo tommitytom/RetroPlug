@@ -3,3 +3,9 @@
 # be swept in here.
 packages:
   - 'packages/*'
+
+# `core` has `testing` as a devDependency (its tests use the harness and the rig) and `testing` depends on `core` (the
+# rig's types), so pnpm warns about a cyclic workspace dependency on every install. The cycle is intended and orders
+# nothing: check-boundaries.mjs refuses a cycle over `dependencies` alone (rule 5). Revisit this if a `pnpm -r` script
+# ever consumes another package's output.
+ignoreWorkspaceCycles: true
