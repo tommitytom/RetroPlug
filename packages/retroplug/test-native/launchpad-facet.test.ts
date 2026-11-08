@@ -63,7 +63,10 @@ function scanToEnd(
   return { found, wrote: now - 1000 };
 }
 
-test("the facet lists the scripted device's ports, in both directions", () => {
+test("the facet lists the scripted device's ports only, so a scan never targets one that is not a device", () => {
+  // The host's rig also lists RetroPlug's own virtual ports, a second instance's `RetroPlug Launchpad` link ports and
+  // ALSA's Midi Through (packages/native/src/main.cpp); the facet drops all three, which is what a scan's sweep is handed.
+  // A scan writes a Device Inquiry out of every output it is given, so this list is the guard.
   const client = facet();
   const ports = client.ports();
   expect(ports.inputs).toEqual([PRO, IFACE]);

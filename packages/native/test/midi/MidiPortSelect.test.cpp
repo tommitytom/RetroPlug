@@ -261,6 +261,33 @@ TEST_CASE("the shell's rule and the pack's agree on every input, which is what k
     }
 }
 
+TEST_CASE("the shell's own-port rule and the pack's agree on every name, which is what keeps two copies one rule") {
+    // Which names are HARDWARE at all, and so may be listed, picked or scanned: not RetroPlug's own virtual ports and not
+    // ALSA's loopback. The stream drops the first two in hardwarePortIndices; the Launchpad pack's lister and facet drop
+    // them the same way, because its scan writes a Device Inquiry out of every output it is handed. A package may not
+    // include the shell's tree, so the rule is written twice and held to one table here, as the allow list is above.
+    struct Row {
+        const char* name;
+        const char* client;
+        bool        hardware;
+    };
+    const Row rows[] = {
+        {"RetroPlug:RetroPlug In 128:0", "RetroPlug", false},              // the stream's own virtual ports
+        {"RetroPlug:RetroPlug Out 128:1", "RetroPlug", false},
+        {"RetroPlug Launchpad:LPProMK3 MIDI 129:0", "RetroPlug", false},  // a second instance's claimed pair
+        {"Midi Through:Midi Through Port-0 14:0", "RetroPlug", false},    // ALSA's loopback: no device behind it
+        {"Launchpad Pro MK3:LPProMK3 MIDI 24:0", "RetroPlug", true},      // a real device
+        {"MIDISPORT 2x2 Port A", "RetroPlug", true},                      // an interface's port: TRS-attached device
+        {"RetroPlug In", "RetroPlug", false},
+        {"Nothing here matches the client", "RetroPlug", true},
+    };
+    for (const Row& r : rows) {
+        INFO(r.name << " with client '" << r.client << "'");
+        REQUIRE(retroplug::isHardwareMidiPort(r.name, r.client) == r.hardware);
+        REQUIRE(rp::launchpad::isHardwareMidiPort(r.name, r.client) == r.hardware);
+    }
+}
+
 TEST_CASE("a filtered process neither lists nor opens a port outside the list") {
     // The filter rides hardwarePortIndices, which every selection path goes through: the pickers' lists
     // (hardwarePortNames), the inputs' open set (inputPortsToOpen), and the output's (matchPortIndex). So ONE rule hides a

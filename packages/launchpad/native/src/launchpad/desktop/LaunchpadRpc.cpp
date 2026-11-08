@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <utility>
 
+#include "launchpad/desktop/MidiPortFilter.hpp"
+
 namespace rp::launchpad {
 namespace {
 
@@ -47,7 +49,16 @@ void LaunchpadRpc::reserve(const std::string& input, const std::string& output) 
 }
 
 LaunchpadPortsDto LaunchpadRpc::launchpadPorts() {
-    return lister_ ? lister_() : LaunchpadPortsDto{};
+    LaunchpadPortsDto ports = lister_ ? lister_() : LaunchpadPortsDto{};
+    // One machine's view whichever lister this is, which is what a scan's sweep and both port pickers read: RetroPlug's
+    // own virtual ports (the shared stream's client, and this pack's `RetroPlug Launchpad` link ports, so a second
+    // instance's claimed pair is not taken for a device) and ALSA's "Midi Through" are dropped exactly as
+    // MidiIo::listInputs() drops them. A scan writes a Device Inquiry out of every output it is handed, so a name that is
+    // not a device must not reach one. This is NOT a filter to Launchpad-like names: a Launchpad on a TRS cable arrives
+    // on an interface's port, named after the interface.
+    ports.inputs  = allowedMidiPorts(ports.inputs);
+    ports.outputs = allowedMidiPorts(ports.outputs);
+    return ports;
 }
 
 LaunchpadStatusDto LaunchpadRpc::launchpadStatus() {
@@ -75,9 +86,10 @@ LaunchpadStatusDto LaunchpadRpc::launchpadClaim(std::string input, std::string o
     };
     if (input.empty() || output.empty()) return fail("no port chosen");
     // Both ports must be HERE before anything is reserved: a stale or unplugged pick would otherwise reserve, fail to
-    // open and hand back - two reopens of the shared stream, and two audio restarts, for nothing.
+    // open and hand back - two reopens of the shared stream, and two audio restarts, for nothing. It is the SAME list the
+    // pickers and a scan read, filter included: a name that is not a device at all is not connected here either.
     if (lister_) {
-        const LaunchpadPortsDto ports = lister_();
+        const LaunchpadPortsDto ports = launchpadPorts();
         if (std::find(ports.inputs.begin(), ports.inputs.end(), input) == ports.inputs.end())
             return fail("not connected: " + input);
         if (std::find(ports.outputs.begin(), ports.outputs.end(), output) == ports.outputs.end())

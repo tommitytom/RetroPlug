@@ -130,8 +130,10 @@ PortNames listMidiPorts() {
         for (unsigned i = 0; i < in.getPortCount(); ++i) inputs.push_back(in.getPortName(i));
         RtMidiOut op(RtMidi::UNSPECIFIED, "RetroPlug");
         for (unsigned i = 0; i < op.getPortCount(); ++i) outputs.push_back(op.getPortName(i));
-        out.inputs  = allowedMidiPorts(inputs);
-        out.outputs = allowedMidiPorts(outputs);
+        // The client name is the stream's, so this enumeration's own ports are the ones dropped below as "not
+        // hardware" - with ALSA's Through, and with another instance's `RetroPlug Launchpad` link ports.
+        out.inputs  = allowedMidiPorts(inputs, "RetroPlug");
+        out.outputs = allowedMidiPorts(outputs, "RetroPlug");
     } catch (const std::exception& e) {
         // A MIDI system that comes up but refuses an endpoint (a bare container): no ports, said once.
         std::fprintf(stderr, "[retroplug] the MIDI system is unavailable: %s\n", e.what());

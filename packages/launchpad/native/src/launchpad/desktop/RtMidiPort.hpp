@@ -16,8 +16,10 @@ namespace rp::launchpad {
 // MidiPortPool catch it and surface the message.
 MidiPortOpener rtMidiPortOpener(std::string clientName);
 
-// The names of every input and output port the system offers, as the control plane's pickers and a scan need them.
-// Empty when there is no MIDI system (a bare container): a product then simply finds no Launchpad.
+// The names of every HARDWARE input and output port the system offers, as the control plane's pickers and a scan need
+// them: RetroPlug's own virtual ports and ALSA's "Midi Through" are not ports (MidiPortFilter.hpp's
+// isHardwareMidiPort), and a scan writes a Device Inquiry out of every output it is handed. Empty when there is no MIDI
+// system (a bare container): a product then simply finds no Launchpad.
 struct PortNames {
     std::vector<std::string> inputs;
     std::vector<std::string> outputs;

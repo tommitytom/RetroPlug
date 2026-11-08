@@ -82,16 +82,25 @@ inline bool midiPortAllowed(const std::string& name) {
     return midiPortAllowedBy(name, spec ? spec : "");
 }
 
+/** Whether `name` is a hardware port at all: false for our own virtual port (a name containing `clientName`) and for
+ *  ALSA's "Midi Through", a loopback with no device behind it. One predicate, so every list and every open set agrees on
+ *  which names exist; the Launchpad pack keeps its copy (MidiPortFilter.hpp) and `retroplug-midi-test` runs both bodies over
+ *  one table, which is what keeps the two one rule. */
+inline bool isHardwareMidiPort(const std::string& name, const std::string& clientName) {
+    if (name.find(clientName) != std::string::npos) return false;  // our own virtual port
+    if (name.find("Through") != std::string::npos) return false;    // ALSA MIDI-through (no hardware)
+    return true;
+}
+
 /** Indices of every hardware port in `names` (skipping our own virtual port, ALSA "Through", `reserved`, and any port
  *  the test-only allow list hides - so a filtered process neither lists nor opens it, whichever selection asks). */
 inline std::vector<std::size_t> hardwarePortIndices(const std::vector<std::string>& names, const std::string& clientName,
                                                    const std::string& reserved = {}) {
     std::vector<std::size_t> out;
     for (std::size_t i = 0; i < names.size(); ++i) {
-        if (names[i].find(clientName) != std::string::npos) continue;  // our own virtual port
-        if (names[i].find("Through") != std::string::npos) continue;    // ALSA MIDI-through (no hardware)
-        if (!reserved.empty() && names[i] == reserved) continue;         // claimed by a control surface
-        if (!midiPortAllowed(names[i])) continue;                        // hidden by RP_MIDI_PORT_ALLOW
+        if (!isHardwareMidiPort(names[i], clientName)) continue;  // our own virtual port, or ALSA's Through
+        if (!reserved.empty() && names[i] == reserved) continue;   // claimed by a control surface
+        if (!midiPortAllowed(names[i])) continue;                  // hidden by RP_MIDI_PORT_ALLOW
         out.push_back(i);
     }
     return out;

@@ -181,8 +181,13 @@ int main(int argc, char** argv) try {
     }()};
     std::filesystem::create_directories(launchpadConfigDir.path);
     rp::launchpad::test::Rig launchpadRig;
-    launchpadRig.inputs    = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A"};
-    launchpadRig.outputs   = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A"};
+    // What a real machine lists BESIDES the device: RetroPlug's own virtual ports, a second instance's `RetroPlug
+    // Launchpad` link ports, and ALSA's Midi Through. The facet drops them (MidiPortFilter.hpp's isHardwareMidiPort), so
+    // the pickers and a scan never see them, and test-native holds that through the production facet.
+    launchpadRig.inputs  = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A", "Midi Through:Midi Through Port-0 14:0",
+                            "RetroPlug:RetroPlug In 128:0", "RetroPlug Launchpad:LPProMK3 MIDI 129:0"};
+    launchpadRig.outputs = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A", "Midi Through:Midi Through Port-0 14:1",
+                            "RetroPlug:RetroPlug Out 128:1", "RetroPlug Launchpad:LPProMK3 MIDI 129:1"};
     launchpadRig.answering = {"LPProMK3 MIDI"};  // the interface's port is listed and answers nothing
     rp::host::ProviderHost launchpadHost{svc.engine, launchpadConfigDir.path.string(),
                                          rp::host::ProviderHost::Calls{}, /*installLinks=*/false};

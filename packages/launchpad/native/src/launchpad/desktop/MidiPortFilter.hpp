@@ -20,6 +20,9 @@
 // from the one variable. retroplug-midi-test runs both bodies over one table of inputs, so the two cannot drift apart
 // without a failed case.
 //
+// The names that are not hardware at all (isHardwareMidiPort below) are the stream's rule too: it drops RetroPlug's own
+// virtual ports and ALSA's "Through", and so does this package's list, by the same table case.
+//
 // It is NOT a safety feature for a user: a product does not set it, and a user who did would only lose ports from their
 // own pickers.
 
@@ -60,11 +63,26 @@ inline bool midiPortAllowed(const std::string& name) {
     return midiPortAllowedBy(name, spec ? spec : "");
 }
 
-/** The names in `names` that pass `midiPortAllowed`, in order: a port listing under the filter. */
-inline std::vector<std::string> allowedMidiPorts(const std::vector<std::string>& names) {
+/** Whether `name` is a hardware port at all: false for a RetroPlug virtual port and for ALSA's "Midi Through", a
+ *  loopback with no device behind it. It covers three names a scan must never write a Device Inquiry into: the shared
+ *  stream's own `<client>` ports, this pack's `RetroPlug Launchpad:<device>` link ports (so a second instance's claimed
+ *  pair is not taken for a device), and Through. The shared stream drops the same two in MidiIo.hpp's isHardwareMidiPort;
+ *  a package may not include that tree, so `retroplug-midi-test` runs both bodies over one table, as it does the allow
+ *  list's. The pack's opener names its client "RetroPlug Launchpad", and passing "RetroPlug" here drops its ports too. */
+inline bool isHardwareMidiPort(const std::string& name, const std::string& clientName) {
+    if (name.find(clientName) != std::string::npos) return false;  // a RetroPlug virtual port
+    if (name.find("Through") != std::string::npos) return false;    // ALSA MIDI-through (no hardware)
+    return true;
+}
+
+/** The names in `names` that are hardware ports and pass `midiPortAllowed`, in order: the listing a port picker or a
+ *  scan reads. `clientName` is the stream's own client name ("RetroPlug"), which this pack's own link ports contain as
+ *  well, so one name covers both. */
+inline std::vector<std::string> allowedMidiPorts(const std::vector<std::string>& names,
+                                                 const std::string& clientName = "RetroPlug") {
     std::vector<std::string> out;
     for (const std::string& name : names)
-        if (midiPortAllowed(name)) out.push_back(name);
+        if (isHardwareMidiPort(name, clientName) && midiPortAllowed(name)) out.push_back(name);
     return out;
 }
 

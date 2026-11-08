@@ -787,9 +787,11 @@ TEST_CASE("the provider refuses a host of another ABI version", "[launchpad][pro
     CHECK(host.installs == 0);
 }
 
-TEST_CASE("the facet lists EVERY port, unfiltered, and names no device", "[launchpad][provider][facet]") {
+TEST_CASE("the facet lists every HARDWARE port, unfiltered to Launchpad-like names, and names no device",
+          "[launchpad][provider][facet]") {
     // A Launchpad also speaks TRS/DIN, so on a machine short of USB ports it arrives through an ordinary MIDI
-    // interface on a port named after the INTERFACE: filtering here would make exactly that setup unconfigurable.
+    // interface on a port named after the INTERFACE: filtering here to Launchpad-like names would make exactly that
+    // setup unconfigurable. What IS dropped is what is not a device at all (the case below).
     Rig  rig;
     auto lister = [] {
         return LaunchpadPortsDto{{"Arturia KeyStep 32", "LPProMK3 MIDI", "MIDISPORT 2x2 Port A"},
@@ -804,6 +806,35 @@ TEST_CASE("the facet lists EVERY port, unfiltered, and names no device", "[launc
     CHECK(ports.outputs.size() == 2);
     CHECK(ports.inputs[1] == "LPProMK3 MIDI");
     CHECK(ports.outputs[0] == "LPProMK3 MIDI");  // an interface's input and output commonly carry one name
+    rp_launchpad_provider()->destroy(self);
+}
+
+TEST_CASE("the facet drops RetroPlug's own ports and Midi Through, so a scan never writes an inquiry into one",
+          "[launchpad][provider][facet]") {
+    // A scan sends a Universal Device Inquiry out of every output its list holds, and opens every input. RetroPlug's own
+    // virtual output is the shared musical stream (a scan into it is heard by the carts), its own virtual input is where
+    // a second instance's link listens, and ALSA's Through echoes the message back. The stream's own list has always
+    // dropped these (MidiIo::listInputs); the facet is what both pickers and the scan read, so it drops them too, and a
+    // claim of one is refused as a port that is not there.
+    Rig  rig;
+    auto lister = [] {
+        return LaunchpadPortsDto{{"LPProMK3 MIDI", "RetroPlug:RetroPlug In 128:0",
+                                  "RetroPlug Launchpad:LPProMK3 MIDI 129:0", "Midi Through:Midi Through Port-0 14:0"},
+                                 {"LPProMK3 MIDI", "RetroPlug:RetroPlug Out 128:1",
+                                  "RetroPlug Launchpad:LPProMK3 MIDI 129:1", "Midi Through:Midi Through Port-0 14:1"}};
+    };
+    FakeHost host;
+    void* self = rp::launchpad::createProvider(&host.table, openerFor(rig), lister);
+    REQUIRE(self != nullptr);
+    auto& rpc = *static_cast<LaunchpadRpc*>(rp_launchpad_provider()->rpc_service(self));
+    const LaunchpadPortsDto ports = rpc.launchpadPorts();
+    CHECK(ports.inputs == std::vector<std::string>{"LPProMK3 MIDI"});
+    CHECK(ports.outputs == std::vector<std::string>{"LPProMK3 MIDI"});
+    // The presence check reads that same list, so claiming one is a refusal before anything opens, in the claim's words.
+    const LaunchpadStatusDto refused = rpc.launchpadClaim("LPProMK3 MIDI", "Midi Through:Midi Through Port-0 14:1", {});
+    CHECK_FALSE(refused.connected);
+    CHECK(refused.error == "not connected: Midi Through:Midi Through Port-0 14:1");
+    CHECK(rig.events.empty());
     rp_launchpad_provider()->destroy(self);
 }
 
