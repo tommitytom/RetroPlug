@@ -7,7 +7,7 @@
 // them - and a console's package carries them without reaching the shell. The device links (rp.host.devices/2) and the
 // job reports (rp.host.jobs/1) a device's node takes, and the staged message (rp.stage/1) it presents, are the node
 // SDK's (graph/rp_device.h, graph/rp_jobs.h, graph/rp_stage.h), and the engine's host I/O (rp.engine.host-io/3) is the
-// shell's until the host-io package owns it.
+// host-io package's.
 
 #include <cstddef>
 #include <cstdint>

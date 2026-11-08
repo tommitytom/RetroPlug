@@ -37,7 +37,7 @@ struct CoreTransportStats {
 };
 
 // Polymorphic runtime representation of one emulator instance. Owned by its
-// system node (host/graph/SystemNodes.cpp, on the generic SystemNode template in system/SystemNode.hpp), and built by
+// system node (its own package's node file, on the generic SystemNode template in system/SystemNode.hpp), and built by
 // the build function its own package carries (system/SystemBuild.hpp). Concrete subclasses: SameBoySystem,
 // MesenNesSystem (NES), MesenGbaSystem, MesenSmsSystem.
 class SystemBase {
@@ -60,7 +60,7 @@ public:
     // stepIfBelowTarget (looped until it returns false) → finishBlock. A coupled
     // link group's members step round-robin (the executor's coupled group over
     // rp.step/1) so serial bits ferry mid-block; an unlinked system is the
-    // 1-member case. The engine's system nodes (host/graph/SystemNodes.cpp) drive
+    // 1-member case. The engine's system nodes (each console package's node file) drive
     // these three directly; nothing on the engine's path calls onProcess().
     //
     // Output contract: `outs` is `laneCount` planar buffers the system must SUM
@@ -132,7 +132,7 @@ public:
     // right for a stream a core simply has no use for - but a caller with ONE message to deliver (a host
     // settings SysEx) needs to know whether it was delivered or dropped, and a message too long for the
     // MIDI-framed door has nowhere else to go. The system node's rp.stage/1 asks it before delivering a
-    // staged message (SystemNodes.cpp).
+    // staged message (a console package's node file).
     virtual bool hasCoreBytesIn() const { return false; }
 
     // The inverse of pushCoreBytes: take the RAW bytes the core has sent host-ward since the last

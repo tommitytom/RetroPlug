@@ -1,8 +1,10 @@
-// detectPlatform - classify a ROM by magic bytes, a faithful port of
-// packages/native/src/system/RomFormat.hpp. Priority is NES → GBA → GB → Sega →
-// unknown (first match wins), and short/empty buffers are unknown via the length
-// guards. The logo byte-arrays here are transcribed independently from the C++ so
-// a wrong copy in the implementation is caught.
+// detectPlatform - classify a ROM by magic bytes, over the same magic the console packages'
+// ROM gates check (packages/mesen/native/src/system/mesen/RomFormat.hpp and
+// packages/sameboy/native/src/system/sameboy/RomFormat.hpp). The priority is this sniffer's own -
+// NES, then GBA, then GB, then Sega, then unknown (first match wins), a native gate reading its
+// own console's magic alone - and short/empty buffers are unknown via the length guards. The logo
+// byte-arrays here are transcribed independently from the C++ so a wrong copy in the implementation
+// is caught.
 //
 // The Sega tier is the only one that consults the file extension, and only where the
 // content genuinely can't decide: which machine an unfilled region nibble means, and

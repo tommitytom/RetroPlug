@@ -34,7 +34,7 @@ construct-time fields ... stay in the build spec until C3 builds cores in their 
   `fifoDepth` and `fifoBytesPerSecond`, the N8 link `n8Link` and its round trip `n8LinkRttUs`, `channelExportMode`; SMS
   `enableFm`, and Game Gear (the platform). An edit of one is stored and does nothing until the user resets the system
   (the System menu's Reset row is the only caller of `SystemsStore.reset`).
-- **A system node** ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)) has settings `{ "core":
+- **A system node** ([MesenNode.cpp](../packages/mesen/native/src/system/mesen/MesenNode.cpp)) has settings `{ "core":
   <id>, ...C2's knobs }`, `rebuild_key` the core id. Its `activate` takes the parked core once through
   `rp.host.cores/1`; its destructor hands it to the engine's `released`, which re-parks a core a refused document took
   (so a corrected document can place it) or releases its snapshot slot so the node deletes it. A document that plans

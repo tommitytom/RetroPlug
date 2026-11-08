@@ -89,18 +89,21 @@ system routed to one pair by its audio routing.
 
 | Package | Contents | Lifetime |
 |---|---|---|
-| [`packages/native/`](../packages/native) | The C++ host: the RPC services + their facets, `Engine`, `SystemFactory`/backends, the command/snapshot/release seams, the script host the TS nodes (the MIDI routing, the controller session and the protocol nodes) run in, the DPF plugin, and both test hosts. | The sole native tree. |
+| [`packages/native/`](../packages/native) | The C++ **shell**: the RPC services + their facets, `Engine`, the command/snapshot/release seams, the script host the TS nodes (the MIDI routing, the controller session and the protocol nodes) run in, the offline job pool, the DPF plugin, both test hosts, and the format-neutral helpers only they use (`SampleCache`, `FileSync`, lodepng). It names no console: a system node carries its own package's build function (`rp.host.systems/2`). | The one tree every product links. |
 | [`packages/retroplug/`](../packages/retroplug) | The TypeScript control plane and React/LVGL UI: the `Backend` interface, the stores (Systems/Project/Recent/UserConfig/Bindings), roles + the protocol nodes that run them, and the UI. | The sole control-plane + UI tree. |
-| [`packages/native/src/`](../packages/native/src) | The **shared core**, compiled into the `retroplug-core` static lib and linked by the host: `SystemBase`, `SameBoySystem`, `Mesen{Nes,Gba,Sms}System`, the offline seam's sample decode (`SampleCache`), and the transport *primitives* (`FrameBufferTriple`, `MemorySnapshotTriple`; `SpscRing` lives in `node-sdk`). The node-graph executor, planner and node SDK and the DSP kernels are workspace packages of their own (the rows below), reached through `retroplug-graph-exec` / `retroplug-graph` and the `retroplug-dsp-*` targets. ROM classification, the LSDj sav codec and the kit compiler are TS-owned. | Shared across the host + CLI + test binaries. |
+| [`packages/system/`](../packages/system) | The **contract** every console implements and the engine drives: `SystemBase` and the capability interfaces, the shared system types, the transport primitives (`FrameBufferTriple`, `MemorySnapshotTriple`; `SpscRing` lives in `node-sdk`), the build request and the build function a node's package carries, the host's system services (`rp.host.systems/2`, `rp.engine.sync-trace/1`), the generic `SystemNode` template with the knob helpers, and the core-only utilities. | Shared by every console package and by the shell. |
+| [`packages/sameboy/`](../packages/sameboy) / [`packages/mesen/`](../packages/mesen) | The consoles, each beside its TS: `SameBoySystem` and the Game Boy node (`rp.sameboy.gb`); the NES, GBA and SMS/GG systems, their roles, the emulated N8 FIFO, their build functions and nodes (`rp.mesen.nes` / `.gba` / `.sms`). `mesen` declares `n8` (the reliable link's header) and `system`; `sameboy` declares `system`. | The products that list them. |
+| [`packages/host-io/`](../packages/host-io) | The host's own I/O as node types (`rp.host.midi-in` / `rp.host.midi-out`) and the engine service they read, `rp.engine.host-io/3`, with the staging bounds the engine sizes from. | Every desktop product. |
 | [`packages/node-sdk/`](../packages/node-sdk) | The node SDK (E1): the C ABI (`rp_node.h`), `node.hpp` built for the desktop or, with `RP_DEVICE`, for the RP2350, the descriptor and canonical-JSON support library, the fixed-capacity settings types (`rp::text`, `rp::list`, `rp::choice`), the msgpack settings decode and converter, and `SpscRing`. A node pack depends on this alone. | Shared by every package. |
 | [`packages/graph-runtime/`](../packages/graph-runtime) | The executor (`retroplug-graph-exec`, no heap, no exceptions), the planner, the registry, resources and `GraphHost` (`retroplug-graph`), the plan blob's `exportPlan`, loader and `retroplug-export-plan` tool (E3), and `device-check/`, the RP2350 image that proves the portable nodes link under a heap-and-exception trap and, when flashed, that a plan loads and runs. | Shared by every host. |
 | [`packages/core/`](../packages/core) / [`packages/dsp/`](../packages/dsp) | The `rp.core` mixing nodes; the DSP kernels and the `rp.dsp` nodes (`rp.dsp.resample` beside them, desktop only). Both build for the device. | Shared by every host. |
 | [`packages/n8/`](../packages/n8) / [`packages/device-io/`](../packages/device-io) / [`packages/bliptoaster/`](../packages/bliptoaster) / [`packages/devtest/`](../packages/devtest) | The N8 pack (`rp.n8.nes`, the one Edio, its provider and facet); the box's `rp.device.midi-in`; BlipToaster's MIDI policy, a TypeScript node on MicroQuickJS (E4); the device check's test nodes (listed by no product). | The N8 pack by the desktop products and the box; the policy by the box and the desktop products; the others by the device images and the exporter. |
 
-The LSDj-persistence path is TS-owned. `retroplug-core` is a neutral static lib in the
-native tree; `retroplug-backend` wraps it with the `Engine` (which runs the systems on
-`retroplug-graph`, through its own nodes in `src/host/graph/`, in the graph documents the TS
-stores build) + RPC surface, and every host (plugin, `retroplug-host`, `retroplug-cli`) links that.
+The LSDj-persistence path is TS-owned. `retroplug-backend` is the shell's one library: the
+`Engine` (which runs the systems on `retroplug-graph`, through the node types the console and
+host-I/O packages register, in the graph documents the TS stores build) + the RPC surface, and every
+host (plugin, `retroplug-host`, `retroplug-cli`) links that. ROM classification, the LSDj sav codec
+and the kit compiler are TS-owned.
 
 ## Component map
 
@@ -146,7 +149,7 @@ this is specified in [01-architecture.md](01-architecture.md).
 | Doc | Scope |
 |---|---|
 | [01-architecture.md](01-architecture.md) | The canonical runtime architecture: three hosts over one Backend RPC surface (the capability facets); control plane vs audio thread; the command ring, the graph the engine runs on, snapshot registry, release ring; the QuickJS runtimes; threading/ownership invariants. |
-| [02-native-host.md](02-native-host.md) | `packages/native/`: the full RPC surface, `Engine`/`EngineInvoker` and its graph requests, `SnapshotRegistry` internals, `SystemFactory` + backends, the script host and script compiler. |
+| [02-native-host.md](02-native-host.md) | The shell and the console packages: the full RPC surface, `Engine`/`EngineInvoker` and its graph requests, `SnapshotRegistry` internals, the build seam each console's node carries, the script host and script compiler. |
 | [03-ts-layer.md](03-ts-layer.md) | `packages/retroplug/`: the `Backend` interface, the stores, the control-plane composition, the `__rp_*` UI↔native hooks, and the React/LVGL UI. |
 | [04-roles-protocol-nodes.md](04-roles-protocol-nodes.md) | The role model: system-role vs feature-role, the role registry, and the protocol nodes: a script node per role, the MIDI routing and the controller session, their settings and ports, and how `buildGraph` places them. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model + `.rplg`, DPF get/setState + autoload, config models, forward-tolerant reads + version stamps, the LSDj sav codec, SRAM auto-save. |

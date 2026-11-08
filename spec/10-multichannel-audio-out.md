@@ -26,7 +26,7 @@ Multi-channel output is achievable, and the codebase is partly pre-scaffolded fo
   [PluginDSP.cpp](../packages/native/plugin/PluginDSP.cpp) `initAudioPort` / `DISTRHO_PLUGIN_NUM_OUTPUTS = 8`).
 - Each system node exposes its streams as output ports beside its `mix`: a Game Boy's `ch1`-`ch4`
   (stereo), a NES's `pins.*` and `channels.*` taps (mono)
-  ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)).
+  ([MesenNode.cpp](../packages/mesen/native/src/system/mesen/MesenNode.cpp)).
 - Sample rates: **SameBoy renders at the host rate** (`GB_set_sample_rate`), so its per-channel streams
   need no resampling. **The NES (Mesen) does NOT** — `NesSoundMixer` renders at a fixed **96 kHz** and the
   *shared* `SoundMixer` resamples 96 kHz → host (a `HermiteResampler`; `audioCfg.SampleRate` is the
@@ -65,7 +65,7 @@ default path stays byte-identical.
   stereo-mod pins*.
 
 `finishBlock` gains a **lane count**: `finishBlock(info, float* const* outs, size_t laneCount)`
-([SystemBase.hpp](../packages/native/src/system)). The system node works the lane count out from
+([the console packages](../packages/)). The system node works the lane count out from
 which of its outputs are connected (`ports_changed`): a Game Boy hands `finishBlock` 8 lanes once
 any of `ch1`-`ch4` is wired, otherwise 2; a NES 2 while `mix` is wired (or no tap port is),
 otherwise twice the armed mode's stream count (6 for pins, 8 for pins plus the mix reference, 10
@@ -113,7 +113,7 @@ bug (documented in §5, decision-locked).
 
 **Highpass reflects the user's system-menu option (decision).** RetroPlug already exposes the SameBoy
 highpass / DC mode in the system menu (Off / Accurate / *Remove DC Offset*,
-[SameBoySystem.cpp](../packages/native/src/system/sameboy/SameBoySystem.cpp)). The per-channel stems
+[SameBoySystem.cpp](../packages/sameboy/native/src/system/sameboy/SameBoySystem.cpp)). The per-channel stems
 are highpassed **per-stem using the same mode the user selected**, so each channel output is filtered
 the way the main output is. The recommended implementation applies the active mode per-stem inside the
 SameBoy tap (4 extra `highpass_diff` states; for *Remove DC Offset*, a per-stem DC target computed

@@ -6,7 +6,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "The SameBoy core's half of the app: the sameboy core-config role (model, highpass, colour correction, DMG palette, fast boot, light temperature) and the settings enums its schema reads, each tuple's position the native enum's. Its native half (rp_sameboy_package) is still packages/native's until F2.",
+  "description": "The SameBoy core's half of the app: the sameboy core-config role (model, highpass, colour correction, DMG palette, fast boot, light temperature) and the settings enums its schema reads, each tuple's position the native enum's; and its native half, the Game Boy core, the boot ROMs, the Game Boy ROM gate, the build function and the rp.sameboy.gb node.",
   "exports": {
     ".": "./ts/index.ts",
     "./app": "./ts/app.ts",
@@ -15,12 +15,15 @@
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
+    "@retroplug/node-sdk": "workspace:*",
+    "@retroplug/system": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "^7.0.2"
   },
   "retroplug": {
-    "app": "ts/app.ts"
+    "app": "ts/app.ts",
+    "native": { "target": "retroplug-sameboy", "entry": "rp_sameboy_package", "device": false }
   }
 }

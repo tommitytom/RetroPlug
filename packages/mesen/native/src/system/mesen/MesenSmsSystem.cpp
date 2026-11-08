@@ -1,0 +1,706 @@
+#include "system/mesen/MesenSmsSystem.hpp"
+
+#include <algorithm>
+#include <atomic>
+#include <cassert>
+#include <cmath>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <thread>
+
+#include "system/mesen/InputTypes.hpp"
+#include "system/mesen/MesenAudioDevice.hpp"
+#include "system/mesen/MesenGlobalInit.hpp"
+#include "system/mesen/MesenVideoDevice.hpp"
+
+#include "Core/SMS/Input/SmsController.h"
+#include "Core/SMS/SmsConsole.h"
+#include "Core/SMS/SmsVdp.h"
+#include "Core/SMS/SmsControlManager.h"
+#include "Core/SMS/SmsCpu.h"
+#include "Core/SMS/SmsMemoryManager.h"
+#include "Core/SMS/SmsPsg.h"
+#include "Core/Shared/Audio/SoundMixer.h"
+#include "Core/Shared/BaseControlDevice.h"
+#include "Core/Shared/BaseControlManager.h"
+#include "Core/Shared/CpuType.h"
+#include "Core/Shared/Emulator.h"
+#include "Core/Shared/EmuSettings.h"
+#include "Core/Shared/EventType.h"
+#include "Core/Shared/MemoryType.h"
+#include "Core/Shared/SaveStateManager.h"
+
+#include "system/mesen/MesenStateCeiling.hpp"
+#include "Core/Shared/SettingTypes.h"
+#include "Core/Shared/Video/VideoRenderer.h"
+#include "Utilities/VirtualFile.h"
+#include "util/Gain.hpp"
+#include "system/mesen/MesenBlockOps.hpp"
+#include "system/mesen/MesenBoot.hpp"
+#include "util/Determinism.hpp"
+
+namespace {
+
+
+// Coarse flush budget in Z80 T-states. ~256 output samples at 48 kHz NTSC.
+// Bounded well under two independent limits: SmsPsg's own 20000-T auto-flush
+// (so the cadence stays host-owned), and the ~149,000 T at which a single
+// catch-up overruns blip_new(4000) - see the flush comment in
+// stepIfBelowTarget.
+constexpr std::uint64_t kCoarseCycles = 19088;
+
+// Within this many samples of the block target, drop to flushing after EVERY
+// instruction so the loop can stop close to the target instead of overshooting
+// by a whole coarse window.
+constexpr std::uint32_t kFineSamples = 64;
+
+// Backstop for the audio thread: the most instructions one block may execute,
+// so a ROM that stops producing audio cannot spin the loop forever. (GBA's loop
+// is bounded differently: MesenGbaSystem caps it by a count of VIDEO FRAMES,
+// since each of its iterations is a whole frame.) DERIVED from the block, as
+// MesenNesSystem's is: a flat 80000 covered a 512-frame block ten times over but
+// cut an 8192-frame block short (a DAW buffer, and Reaper's render at a JACK
+// period of 8192), so the core fell behind the host clock and the tail of every
+// block came out blank.
+// framesNeeded/sampleRate seconds is that many T-states at masterRate; a Z80
+// instruction is at least 4 of them; x8 is the slack.
+std::uint64_t smsInstructionBudget(std::uint32_t framesNeeded, std::uint64_t masterRate, double sampleRate) {
+    const double cycles = double(framesNeeded) * double(masterRate) / (sampleRate > 0.0 ? sampleRate : 44100.0);
+    return static_cast<std::uint64_t>(cycles * 2.0) + 1024;
+}
+
+// Mesen's SmsConfig defaults are the .NET UI's problem, not the core's, so a
+// headless host inherits several zero-values that are silently wrong. Every
+// line here is load-bearing; see docs/sms-support.md section 2.6.
+//
+// MUST run before Emulator::LoadRom. Region resolution reads this config, and
+// SmsConsole::UpdateRegion is private and only reachable from RunFrame - which
+// the step loop below deliberately bypasses - so region is immutable for the
+// life of the construct.
+void configureSms(Emulator& emu, bool gameGear, bool enableFm) {
+    EmuSettings* settings = emu.GetSettings();
+    // ::SmsConfig here is Mesen's struct in SettingTypes.h; RetroPlug's
+    // wrapping config is MesenSmsConfig (see MesenSmsConfig.hpp).
+    SmsConfig cfg{};
+
+    // Defaults to {0,0,0,0} and SmsPsg::Run multiplies every channel by
+    // volumes[i]/100, so the stock config renders the PSG SILENT while still
+    // producing a correct sample count. A boot smoke test passes; only an
+    // amplitude assertion catches it.
+    cfg.ChannelVolumes[0] = 100;
+    cfg.ChannelVolumes[1] = 100;
+    cfg.ChannelVolumes[2] = 100;
+    cfg.ChannelVolumes[3] = 100;
+
+    // The YM2413. One real cost when on: SmsFmAudio is a separate IAudioProvider
+    // that force-fits its OPLL stream into whatever the PSG flush produced, so
+    // the cadence becomes an accuracy knob (see stepIfBelowTarget).
+    cfg.EnableFmAudio  = enableFm;
+    cfg.FmAudioVolume  = 100;
+
+    // SUM the two rather than muxing, which is the vendored SmsFmAudio change.
+    // Stock Mesen models the Japanese SMS: writing $F2 = $01 selects FM and
+    // ZEROES the PSG buffer. smsggdj writes exactly that whenever its own FM
+    // option is on, so on stock Mesen turning FM on costs it three tone voices
+    // plus noise - measured as literal silence for a PSG-instrument song
+    // (rms 0.051 -> 0.000), while an FM-instrument song played fine. A Mark III
+    // with the FM add-on sums, and so does real hardware per the smsggdj source.
+    // A music tool wants both audible; an accuracy-first frontend might not,
+    // which is why the field exists rather than the mux being deleted.
+    cfg.FmMutesPsg     = false;
+
+    // Defaults to None, which is worse than "no input": with no device
+    // constructed, SmsControlManager::UpdateControlDevices' size() > 0 guard
+    // never fires, so every frame takes a lock and allocates two shared_ptrs
+    // ON THE AUDIO THREAD.
+    cfg.Port1 = ControllerConfig{ .Type = ControllerType::SmsController };
+    cfg.Port2 = ControllerConfig{ .Type = ControllerType::SmsController };
+
+    // Defaults to Random, which noise-fills the unconditionally-allocated 32 KB
+    // cart RAM. Two costs: the savestate stops compressing (measured 4.7x
+    // larger), which feeds stateSnapshotSize() and every Duplicate; and two
+    // runs of the same ROM diverge, so no byte-identity guard can be written.
+    cfg.RamPowerOnState = RamState::AllZeros;
+    // The VDP's random start scanline is the other power-on randomness; only the parity harness fixes it.
+    cfg.RandomizeVdpStartScanline = !rp::deterministic();
+
+    // The VDP always emits 256x240 and BaseVideoFilter subtracts the overscan
+    // below. Mesen defaults all three to {}, so without this SMS shows 24 black
+    // rows top and bottom and Game Gear shows a 160x144 image floating in a
+    // mostly-black 256x240 frame. Must agree with kSmsPixel* / kGgPixel*.
+    cfg.NtscOverscan     = OverscanDimensions{ 0, 0, 24, 24 };   // -> 256x192
+    cfg.PalOverscan      = OverscanDimensions{ 0, 0, 24, 24 };
+    cfg.GameGearOverscan = OverscanDimensions{ 48, 48, 48, 48 }; // -> 160x144
+
+    // Game Gear only, defaults true: blends each frame with the previous one to
+    // emulate LCD ghosting. Any headless screenshot or deterministic render
+    // would then depend on frame history.
+    cfg.GgBlendFrames = false;
+    (void)gameGear; // the overscan/blend fields are model-scoped by Mesen itself
+
+    settings->SetSmsConfig(cfg);
+}
+
+// Mesen's native SmsController::Buttons ordering (SmsController.h:58) differs
+// from the shared position-aligned wire bytes, so the remap is explicit.
+// Returns -1 for a wire button the hardware does not have.
+int toSmsButton(std::uint8_t wire) {
+    switch (static_cast<SmsButton>(wire)) {
+        case SmsButton::Right:  return SmsController::Buttons::Right;
+        case SmsButton::Left:   return SmsController::Buttons::Left;
+        case SmsButton::Up:     return SmsController::Buttons::Up;
+        case SmsButton::Down:   return SmsController::Buttons::Down;
+        case SmsButton::A:      return SmsController::Buttons::A;
+        case SmsButton::B:      return SmsController::Buttons::B;
+        // Pause is the console switch, not a pad button: it drives the Z80 NMI
+        // on Master System and reads as Start on Game Gear.
+        case SmsButton::Start:  return SmsController::Buttons::Pause;
+        // No Select on either machine. Dropping it is deliberate - falling
+        // through to a face button would make a Select tap fire button 2.
+        case SmsButton::Select:
+        default:                return -1;
+    }
+}
+
+// Hands out the per-instance staging directory number stageRom() uses. Process-wide and
+// monotonic, so it is unique among every system this process ever builds - including ones
+// constructed on the background render threads, hence the atomic.
+std::uint64_t nextStagingSlot() {
+    static std::atomic<std::uint64_t> counter{0};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+} // namespace
+
+MesenSmsSystem::MesenSmsSystem(SystemId id,
+                               MesenSmsConfig config,
+                               std::vector<std::uint8_t> romBytes)
+    : SystemBase(id),
+      stagingSlot_(nextStagingSlot()),
+      config_(std::move(config)),
+      rom_(std::move(romBytes)),
+      frames_(config_.gameGear ? kGgPixelWidth  : kSmsPixelWidth,
+              config_.gameGear ? kGgPixelHeight : kSmsPixelHeight) {
+    gainSmoother_.setTimeConstant(0.020f);
+    gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
+}
+
+MesenSmsSystem::~MesenSmsSystem() {
+    onDeactivate();
+}
+
+SmsConsole* MesenSmsSystem::smsConsole() const {
+    if (!emu_) return nullptr;
+    return dynamic_cast<SmsConsole*>(emu_->GetConsole().get());
+}
+
+// Materialise the ROM bytes to a real file with a real name, because Mesen
+// derives three unrelated things from that one string:
+//
+//   1. The MACHINE. SmsConsole::GetSupportedSignatures() is empty, so the model
+//      comes purely from the file EXTENSION (SmsConsole.cpp:46-59). Boot .gg
+//      bytes under a ".sms" name and the screen is black.
+//   2. The BATTERY FILE STEM (Emulator.cpp:591 -> SmsMemoryManager LoadBattery,
+//      which runs unconditionally). A constant name would collide every SMS
+//      title in the process onto one .sav.
+//   3. The SOURCE Reset() RE-READS (Emulator.cpp:347). A name that is not on
+//      disk makes Reset a SILENT NO-OP - the console pointer does not even
+//      change.
+//
+// So: real stem for 1 and 2, real file for 3. The filename therefore cannot
+// carry the uniqueness, and the subdirectory has to - it keeps two systems whose
+// ROMs share a stem from overwriting each other's staged bytes (which Reset
+// would then reload as the wrong game) while leaving the battery stem honest.
+//
+// A node that names no romName (an SMS/GG built from a rom resource whose TS
+// side sends none) stages under `system-<id>` rather than a constant: the stem
+// is the battery identity, so a constant would put every unnamed system's
+// battery in one file. A named one is the game's own stem, which is what lets
+// two instances of one game share its battery.
+//
+// That directory is named per system INSTANCE, and deliberately NOT by the
+// system id. Ids come from a counter TS keeps per control-plane context
+// (systemsStore.ts), i.e. one id space per Project - and a process holds several
+// Projects: every plugin instance a DAW loads has its own, as does every
+// background render host. So two live systems share id 1 as a matter of course,
+// and two instances of the same tracker share a ROM stem too, which collapsed
+// them onto ONE file. Since onDeactivate deletes that file, whichever instance
+// closed first took the other's ROM with it, and the survivor's next Reset
+// silently did nothing (meaning 3 above).
+//
+// The home folder this hangs off is per-PROCESS (mesenHomeFolder) - the same
+// argument one level out, for the concurrent host processes the test runners
+// start. Per-process root plus per-instance directory is unique everywhere.
+std::string MesenSmsSystem::stageRom() {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    std::string stem = "system-" + std::to_string(id());
+    const std::string& named = config_.romPath.empty() ? config_.romName : config_.romPath;
+    if (!named.empty()) {
+        const fs::path p(named);
+        if (!p.stem().empty()) stem = p.stem().string();
+    }
+    const char* ext = config_.gameGear ? ".gg" : ".sms";
+
+    const fs::path dir = fs::path(mesenHomeFolder()) / "staged" / std::to_string(stagingSlot_);
+    fs::create_directories(dir, ec);
+    if (ec) {
+        std::fprintf(stderr, "[MesenSmsSystem] cannot create staging dir '%s': %s\n",
+                     dir.string().c_str(), ec.message().c_str());
+        return {};
+    }
+
+    const fs::path dst = dir / (stem + ext);
+    std::ofstream out(dst, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        std::fprintf(stderr, "[MesenSmsSystem] cannot write staged ROM '%s'\n", dst.string().c_str());
+        return {};
+    }
+    out.write(reinterpret_cast<const char*>(rom_.data()),
+              static_cast<std::streamsize>(rom_.size()));
+    out.close();
+    if (!out) {
+        std::fprintf(stderr, "[MesenSmsSystem] short write staging ROM '%s'\n", dst.string().c_str());
+        return {};
+    }
+    return dst.string();
+}
+
+void MesenSmsSystem::onActivate(double sampleRate) {
+    if (activated_) return;
+    if (rom_.empty()) {
+        std::fprintf(stderr, "[MesenSmsSystem] no ROM bytes; not activating\n");
+        return;
+    }
+
+    sampleRate_ = sampleRate;
+
+    gainSmoother_.setSampleRate(static_cast<float>(sampleRate));
+    gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
+    gainSmoother_.clearToTargetValue();
+
+    // File-backed, unlike NES/GBA's memory-backed VirtualFile, and deliberately: Mesen derives the
+    // battery stem and the model from the ROM's NAME, and SmsConsole::Reset re-reads it from that path.
+    stagedRomPath_ = stageRom();
+    if (stagedRomPath_.empty()) return;
+
+    VirtualFile romFile(stagedRomPath_);
+    MesenCore core = bootMesenCore("MesenSmsSystem", romFile, stagedRomPath_, sampleRate, &frames_,
+                                   blockFrames(MesenAudioDevice::kDefaultBlockFrames), [this](Emulator& emu) {
+                                       configureSms(emu, config_.gameGear, config_.enableFm);
+                                   });
+    if (!core) return;
+    emu_         = std::move(core.emu);
+    audioDevice_ = std::move(core.audio);
+    videoDevice_ = std::move(core.video);
+
+    if (SmsConsole* console = smsConsole()) {
+        masterRate_ = console->GetMasterClockRate();
+        // Cache once: setExternalInput is on the sync path and must not
+        // dynamic_cast per event on the audio thread.
+        controlManager_ = dynamic_cast<SmsControlManager*>(console->GetControlManager());
+        if (controlManager_) syncRole_.onAttach(*controlManager_, console->GetMemoryManager(), config_.gameGear);
+
+        // The first emulated frame is this core's first block: warm the frame plumbing's storage here, on the thread
+        // that builds the core, so that block allocates nothing (docs/modular-graph-phase-c4-design.md section 4).
+        // The VDP always emits 256x240 (its overscan, not the frame, is what changes for a Game Gear).
+        warmMesenFrames(*emu_, console->GetVdp(), 256, 240);
+    }
+
+    // Restore persisted battery RAM / savestate. Write directly into the
+    // SmsCartRam region rather than going through Mesen's BatteryManager.
+    seedSramAndState(config_.sram, config_.savestate);
+
+    // The block scratch exists before the first block, sized to the largest block this core will run: a block's audio
+    // path may not allocate (docs/modular-graph-phase-c4-design.md section 4). A build for a plan is handed that plan's
+    // maximum in its request, which reserved it before this ran; a build outside a plan keeps the default, and a host
+    // that grows its block later grows it through reserveAudio before that block runs.
+    audioDevice_->reserveAudio(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
+    sizeBlockScratch(blockFrames(MesenAudioDevice::kDefaultBlockFrames));
+
+    activated_ = true;
+}
+
+void MesenSmsSystem::reserveAudio(std::uint32_t maxBlockFrames) {
+    // Size from the larger of this request and what the core already has, and record the request only once the size
+    // has landed: a sizing that throws leaves the recorded maximum as it was, so a re-activation's rollback at the
+    // old size does not retry it.
+    const std::uint32_t block = std::max(maxBlockFrames, blockFrames(0));
+    if (audioDevice_) audioDevice_->reserveAudio(block);
+    sizeBlockScratch(block);
+    SystemBase::reserveAudio(maxBlockFrames);
+}
+
+// sumStereoWithGain writes one block of stereo floats through it, and a block is the most it ever needs.
+void MesenSmsSystem::sizeBlockScratch(std::uint32_t frames) {
+    const std::size_t needed = std::size_t(frames) * 2;
+    if (stereoAccum_.size() < needed) stereoAccum_.assign(needed, 0.0f);
+}
+
+void MesenSmsSystem::onDeactivate() {
+    if (!activated_) return;
+
+    stopMesenEmulator(emu_.get()); // see MesenBlockOps.hpp — the mixer outlives nothing
+    syncRole_.onDetach();        // before the manager it points at goes away
+    emu_.reset();
+    audioDevice_.reset();
+    videoDevice_.reset();
+    controlManager_ = nullptr;   // owned by the console, which emu_ just took down
+    activated_ = false;
+
+    if (!stagedRomPath_.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(stagedRomPath_, ec);
+        // ...and the directory it sat in, which is ours alone and now empty. Without this a long
+        // session leaves one empty directory per system ever loaded, until the process exits.
+        std::filesystem::remove(std::filesystem::path(stagedRomPath_).parent_path(), ec);
+        stagedRomPath_.clear();
+    }
+}
+
+void MesenSmsSystem::onSampleRateChanged(double sampleRate) {
+    sampleRate_ = sampleRate;
+    gainSmoother_.setSampleRate(static_cast<float>(sampleRate));
+    if (emu_) {
+        AudioConfig audioCfg = emu_->GetSettings()->GetAudioConfig();
+        audioCfg.SampleRate = static_cast<std::uint32_t>(sampleRate);
+        emu_->GetSettings()->SetAudioConfig(audioCfg);
+    }
+}
+
+
+void MesenSmsSystem::setGainDb(float dB, bool immediate) {
+    config_.gainDb = dB;
+    gainSmoother_.setTargetValue(dbToLin(dB));
+    if (immediate) gainSmoother_.clearToTargetValue();
+}
+
+void MesenSmsSystem::pressButton(std::uint8_t button, bool down) {
+    // A transition for a button that has one queued replaces it: prepareForBlock applies the whole queue before the
+    // emulator polls its controller, so only a button's last transition is observable. The queue then holds one
+    // entry a button, so a press burst cannot fill it and a release cannot be refused behind one. The coalescing keys
+    // on the wire byte, so one console bit must not be nameable by two of them - which is what toSmsButton's -1 is for.
+    for (auto& pending : pendingButtons_) {
+        if (pending.button != button) continue;
+        pending.down = down;
+        ++pressesAccepted_;
+        return;
+    }
+    if (pendingButtons_.push({ button, down })) ++pressesAccepted_;
+}
+
+bool MesenSmsSystem::peekPendingPress(std::uint8_t button, bool& down) const {
+    // The pass below sets a button once per entry that names it, so the transition that stands for `button` is the
+    // last queued entry naming it - an entry that names no button of this console (a Select's -1) sets nothing.
+    const int native = toSmsButton(button);
+    if (native < 0) return false;
+    bool held = false;
+    for (const auto& pending : pendingButtons_) {
+        if (toSmsButton(pending.button) != native) continue;
+        down = pending.down;
+        held = true;
+    }
+    return held;
+}
+
+std::uint64_t MesenSmsSystem::inputAccepted() const {
+    return pressesAccepted_ + levelsAccepted();
+}
+
+std::uint64_t MesenSmsSystem::levelsAccepted() const { return syncRole_.acceptedLevels(); }
+
+std::uint64_t MesenSmsSystem::inputDropped() const {
+    return pendingButtons_.dropped() + syncRole_.pendingDropped();
+}
+
+void MesenSmsSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size,
+                                   bool flush) {
+    // Host-transport sync levels, sample-offset scheduled. Released in the step loop against the
+    // Z80 cycle position, so the ROM's next IN sees them at their true sample instant.
+    syncRole_.pushBytes(frame, data, size, flush);
+}
+
+bool MesenSmsSystem::buttonDown(std::uint8_t button) const {
+    const int native = toSmsButton(button);
+    SmsConsole* console = smsConsole();
+    if (native < 0 || !console) return false;
+    auto controller = console->GetControlManager()->GetControlDeviceByIndex(0);
+    return controller && controller->IsPressed(static_cast<std::uint8_t>(native));
+}
+
+void MesenSmsSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
+    if (!activated_ || !emu_) return;
+
+    // Bind Mesen's emulation thread to whoever drives this block, so its
+    // internal IsEmulationThread() checks pass during cpu->Exec(). Rebinds when
+    // the driving thread changes (boot on the main thread, then an offline
+    // parallel render on a worker, then back) - cheap compare.
+    if (!emu_->IsEmulationThread()) {
+        emu_->SetEmulationThreadId(std::this_thread::get_id());
+    }
+
+    SmsConsole* console = smsConsole();
+    if (!console) return;
+
+    if (!pendingButtons_.empty()) {
+        if (auto controller = console->GetControlManager()->GetControlDeviceByIndex(0)) {
+            for (const auto& pb : pendingButtons_) {
+                const int native = toSmsButton(pb.button);
+                if (native >= 0) controller->SetBitValue(static_cast<uint8_t>(native), pb.down);
+            }
+        }
+        pendingButtons_.clear();
+    }
+
+    emu_->ProcessEvent(EventType::InputPolled, CpuType::Sms);
+
+    blockStartCycle_ = console->GetCpu()->GetCycleCount();
+    blockCarry_      = static_cast<std::uint32_t>(audioDevice_->availableFrames());
+    pendingCycles_   = 0;
+}
+
+std::uint32_t MesenSmsSystem::availableFrames() const {
+    return audioDevice_ ? static_cast<std::uint32_t>(audioDevice_->availableFrames()) : 0;
+}
+
+std::uint64_t MesenSmsSystem::audioRingOverflow() const {
+    return audioDevice_ ? audioDevice_->overflowFrames() : 0;
+}
+
+void MesenSmsSystem::setExternalInput(std::uint8_t port, std::uint8_t levels) {
+    // Same sink split as SmsSyncRole::pumpUntil, deliberately: this is the direct (unscheduled) entry
+    // point, and the two disagreeing would mean a test could pass against a path the role never takes.
+    // `port` is ignored on Game Gear - the EXT parallel port is not one of the two controller ports.
+    if (config_.gameGear) {
+        if (SmsConsole* console = smsConsole()) {
+            if (SmsMemoryManager* mm = console->GetMemoryManager()) mm->SetGgExternalInput(levels);
+        }
+        return;
+    }
+    if (controlManager_) controlManager_->SetExternalInput(port, levels);
+}
+
+std::uint32_t MesenSmsSystem::coreFrameWidth() const {
+    return videoDevice_ ? videoDevice_->lastFrameWidth() : 0;
+}
+
+std::uint32_t MesenSmsSystem::coreFrameHeight() const {
+    return videoDevice_ ? videoDevice_->lastFrameHeight() : 0;
+}
+
+std::optional<std::uint8_t> MesenSmsSystem::readCpuByte(std::uint32_t addr) const {
+    SmsConsole* console = smsConsole();
+    if (!console) return std::nullopt;
+    SmsMemoryManager* mm = console->GetMemoryManager();
+    if (!mm) return std::nullopt;
+    // Banking-aware, side-effect-free read of the Z80 address space.
+    return mm->DebugRead(static_cast<std::uint16_t>(addr));
+}
+
+bool MesenSmsSystem::writeCpuByte(std::uint32_t addr, std::uint8_t value) {
+    SmsConsole* console = smsConsole();
+    if (!console) return false;
+    SmsMemoryManager* mm = console->GetMemoryManager();
+    if (!mm) return false;
+    // Debugger-style write into the Z80 address space, the twin of readCpuByte's
+    // DebugRead. Unlike the NES's DebugWrite there is no side-effect flag to
+    // pass - SmsMemoryManager::DebugWrite is already the no-side-effects path.
+    mm->DebugWrite(static_cast<std::uint16_t>(addr), value);
+    return true;
+}
+
+std::uint32_t MesenSmsSystem::intraBlockSamplePos() const {
+    SmsConsole* console = smsConsole();
+    if (!console || masterRate_ == 0) return blockCarry_;
+    const std::uint64_t elapsed = console->GetCpu()->GetCycleCount() - blockStartCycle_;
+    return blockCarry_ + static_cast<std::uint32_t>(
+        (elapsed * static_cast<std::uint64_t>(sampleRate_)) / masterRate_);
+}
+
+bool MesenSmsSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
+    if (!activated_ || !emu_) return false;
+    SmsConsole* console = smsConsole();
+    if (!console) return false;
+    SmsCpu* cpu = console->GetCpu();
+    SmsPsg* psg = console->GetPsg();
+    if (!cpu || !psg) return false;
+
+    // Degenerate 1-member unit: run the whole block and report done (false),
+    // matching the other Mesen systems.
+    //
+    // This does NOT call SmsConsole::RunFrame, and that is the entire point of
+    // this backend. RunFrame advances a whole video frame (~800 samples at
+    // 48 kHz), which is what MesenGbaSystem does and why GBA sync jitters by
+    // 0..803 samples per block. Stepping one Z80 instruction at a time bounds
+    // that to ~30 T-states, under half an output sample.
+    //
+    // Nothing in RunFrame is load-bearing here: it is an Exec() loop plus a
+    // region update plus one PSG flush. End-of-frame, video delivery and the
+    // input latch all hang off SmsVdp::ProcessEndOfScanline, reached from
+    // SmsCpu::ExecCycles, so they still fire at their true emulated instants.
+    // The one casualty is SmsConsole::UpdateRegion, which is private and
+    // RunFrame-only - hence region being construct-time immutable
+    // (see configureSms).
+    // Cap the coarse flush window at one block. Without this, a block SMALLER
+    // than the coarse window takes a single ~256-sample flush and sails past its
+    // target: measured residue 131 at a 128-frame block and 172 at 199, i.e. the
+    // ring ends up holding MORE than a whole block. The next block is then
+    // satisfied entirely from the ring without stepping the CPU at all, and a
+    // block that never enters this loop never pumps scheduled events - so a sync
+    // event would be silently dropped rather than delivered late. 128 and 192
+    // are ordinary DAW buffer sizes.
+    //
+    // Derived from framesNeeded (a per-block constant), NOT from the shrinking
+    // distance to the target. That distinction is the whole point: a
+    // remainder-derived budget is the "predictive tail", which forces a fine
+    // flush near the target on EVERY block and is what degrades FM. This clamp
+    // is inert for any block at or above the coarse window (>= 256 frames at
+    // 48 kHz), so the common path stays bit-identical.
+    const std::uint64_t coarseCycles = std::min<std::uint64_t>(
+        kCoarseCycles,
+        (static_cast<std::uint64_t>(framesNeeded) * masterRate_) /
+            static_cast<std::uint64_t>(sampleRate_ > 0.0 ? sampleRate_ : 1.0));
+
+    std::uint64_t budget = smsInstructionBudget(framesNeeded, masterRate_, sampleRate_);
+    while (audioDevice_->availableFrames() < framesNeeded && budget-- > 0) {
+        // Release any sync level whose offset the emulated clock has reached, BEFORE the instruction
+        // retires, so a level scheduled for sample N is on the port for the very next IN.
+        //
+        // Gated on intraBlockSamplePos() - the Z80 cycle counter - and deliberately NOT on
+        // availableFrames(), which only moves when the PSG flushes and so lags by up to a whole
+        // coarse window. Gating on the ring here would quantise delivery to the flush cadence and
+        // throw away the entire reason this backend steps per instruction.
+        syncRole_.pumpUntil(intraBlockSamplePos());
+
+        const std::uint64_t before = cpu->GetCycleCount();
+        cpu->Exec();                                  // one Z80 instruction (+ any IRQ/NMI tail)
+        pendingCycles_ += cpu->GetCycleCount() - before;
+
+        // Flush cadence: coarse normally, per-instruction once we are within
+        // kFineSamples of the target.
+        //
+        // The flush is unconditional on the CYCLE BUDGET, never conditional on
+        // what the ROM does. SmsPsg::Run only self-triggers on a PSG port
+        // write, so a ROM that goes quiet produces zero samples forever under a
+        // bare Exec() loop - and worse, once ~149,000 T accumulate unflushed,
+        // the next catch-up overruns blip_new(4000) with the assert compiled
+        // out under NDEBUG. SmsPsg::Serialize also calls Run(), and
+        // publishStateSnapshot takes a savestate every block, so that overrun
+        // is reachable from three unrelated call sites.
+        //
+        // Coarse-then-fine rather than a predictive tail, deliberately: with FM
+        // enabled (smsggdj needs it) SmsFmAudio force-fits its OPLL stream into
+        // whatever the PSG flush produced, so the cadence is an accuracy knob
+        // and the predictive variant measures ~6x worse for FM. The cost is a
+        // small ring overshoot instead of landing exactly on the target;
+        // measured at 3 samples for every block size at or above the coarse
+        // window, and 0 below it.
+        //
+        // That trade is safe ONLY because event delivery gates on
+        // intraBlockSamplePos() - the Z80 cycle counter - and never on
+        // availableFrames(). The overshoot moves buffer determinism, not sync
+        // precision. Do not "fix" this back to a predictive tail without
+        // re-measuring the FM error.
+        const std::uint32_t have   = static_cast<std::uint32_t>(audioDevice_->availableFrames());
+        const std::uint32_t remain = framesNeeded > have ? framesNeeded - have : 0;
+        if (pendingCycles_ >= (remain <= kFineSamples ? 0 : coarseCycles)) {
+            psg->Run();                 // catch up to GetMasterClock()
+            psg->PlayQueuedAudio();     // blip_end_frame -> SoundMixer -> MesenAudioDevice
+            pendingCycles_ = 0;
+        }
+    }
+
+    // Release anything due through the block end (offsets in [0, framesNeeded]). The loop above can
+    // exit with the ring already past the target having never reached the last offset, and a level
+    // that misses its block is worse than one delivered late: the ROM reads a LEVEL, so a skipped
+    // counter value is a skipped clock. Offsets past the block end carry over via finishBlock's
+    // rebase.
+    syncRole_.pumpUntil(framesNeeded);
+    return false;
+}
+
+void MesenSmsSystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {
+    if (!activated_ || !emu_) return;
+
+    assert(laneCount == 2); // mixed stereo only today (default single stereo stream)
+    (void)laneCount;
+
+    const std::uint32_t blockSize = info.frames;
+
+    // Carry any sync level that did not come due this block into the next one, shifting its offset
+    // back by the block length so it keeps its relative timing (mirrors SameBoy and the NES FIFO).
+    syncRole_.rebase(blockSize);
+    sumStereoWithGain(*audioDevice_, stereoAccum_, outs, blockSize, gainSmoother_);
+
+    // Publish the whole-savestate snapshot the registry reads, on its coarse interval (the very next
+    // block after enableStateSnapshot or rearmStateSnapshot, which push the accumulator past the
+    // threshold). End-of-block = internally consistent state because the CPU isn't mid-instruction.
+    publishStateSnapshot(info.frames, sampleRate_);
+}
+
+std::size_t MesenSmsSystem::stateSnapshotSize() const {
+    // A ceiling, measured from an UNCOMPRESSED serialize — see mesenStateCeiling. The triple is
+    // allocated once from this and never resized, so it must cover the largest capture this core will
+    // ever produce, not the small one a just-booted (mostly-zero, highly compressible) machine yields.
+    return emu_ ? mesenStateCeiling(*emu_) : 0;
+}
+
+bool MesenSmsSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
+    dst = saveStateBytes();
+    return !dst.empty();
+}
+
+rp::MemoryAccessor MesenSmsSystem::getMemory(rp::MemoryType type, rp::AccessType access) {
+    if (!emu_) return rp::MemoryAccessor{};
+
+    ::MemoryType native;
+    switch (type) {
+        case rp::MemoryType::Ram:   native = ::MemoryType::SmsWorkRam;  break;
+        case rp::MemoryType::Rom:   native = ::MemoryType::SmsPrgRom;   break;
+        case rp::MemoryType::Sram:  native = ::MemoryType::SmsCartRam;  break;
+        case rp::MemoryType::Vram:  native = ::MemoryType::SmsVideoRam; break;
+        // SMS sprites live in VRAM (no separate OAM); the rest are GB/NES/GBA
+        // only. Colour RAM and the boot ROM have no rp::MemoryType tag yet.
+        case rp::MemoryType::OAM:
+        case rp::MemoryType::IORegisters:
+        case rp::MemoryType::HRam:
+        case rp::MemoryType::NametableRam:
+        case rp::MemoryType::ExtWorkRam:
+        default: return rp::MemoryAccessor{};
+    }
+
+    ConsoleMemoryInfo info = emu_->GetMemory(native);
+    if (!info.Memory || info.Size == 0) return rp::MemoryAccessor{};
+    return rp::MemoryAccessor{type, access,
+                              static_cast<std::uint8_t*>(info.Memory),
+                              info.Size};
+}
+
+std::vector<std::uint8_t> MesenSmsSystem::saveSramBytes() const {
+    if (!emu_) return {};
+    auto* self = const_cast<MesenSmsSystem*>(this);
+    auto accessor = self->getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+    if (!accessor.valid() || accessor.size() == 0) return {};
+    return std::vector<std::uint8_t>(accessor.data(), accessor.data() + accessor.size());
+}
+
+std::vector<std::uint8_t> MesenSmsSystem::saveStateBytes() const {
+    if (!emu_) return {};
+    std::stringstream ss(std::ios::out | std::ios::binary);
+    emu_->GetSaveStateManager()->SaveState(ss);
+    const std::string str = ss.str();
+    return std::vector<std::uint8_t>(str.begin(), str.end());
+}
+
+bool MesenSmsSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
+    if (!emu_ || bytes.empty()) return false;
+    std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+    ss.write(reinterpret_cast<const char*>(bytes.data()),
+             static_cast<std::streamsize>(bytes.size()));
+    ss.seekg(0);
+    return emu_->GetSaveStateManager()->LoadState(ss);
+}
+

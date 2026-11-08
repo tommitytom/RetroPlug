@@ -30,7 +30,7 @@
 #include <thread>
 #include <vector>
 
-#include "CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "graph/rp_provider.h"
 #include "launchpad/SurfaceLink.hpp"
 #include "launchpad/desktop/ControllerLink.hpp"

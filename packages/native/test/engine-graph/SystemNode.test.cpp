@@ -40,7 +40,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../graph/CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "EmbeddedRoms.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
@@ -56,7 +56,8 @@
 #include "system/mesen/MesenSmsConfig.hpp"
 #include "system/mesen/MesenSmsSystem.hpp"
 #include "system/InputCapacity.hpp"
-#include "system/InputTypes.hpp"
+#include "system/mesen/InputTypes.hpp"  // NesButton, GbaButton, SmsButton
+#include "system/sameboy/InputTypes.hpp"  // GameboyButton
 #include "system/sameboy/SameBoyBackend.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"

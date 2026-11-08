@@ -491,7 +491,7 @@ struct ProtocolRig {
         const bool loaded = scripts.load(chunks, &error);
         INFO(error);
         REQUIRE(loaded);
-        for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::hostIoPackage(),
+        for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp_host_io_package(),
                                     rp::launchpad::launchpadPackage(), rp::host::test::testPackage(), scripts.package()})
             REQUIRE(registry.addPackage(p, &error));
         for (std::uint32_t i = 0; i < scripts.package()->node_type_count; ++i)

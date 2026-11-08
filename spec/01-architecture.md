@@ -312,7 +312,7 @@ of the running plan's `SystemTable`, which is exactly the window before each sys
 The audio thread **cannot free a core**, or anything else a plan holds: `delete` is not
 real-time-safe. Ownership therefore runs through the plan. The GraphHost holds the live node
 instances, each running plan holds the instances it runs, and each **system node owns its core**
-(`SystemNode<T>` in [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)). When the
+(`SystemNode<T>` in [SystemNode.hpp](../packages/system/native/src/system/SystemNode.hpp)). When the
 audio thread adopts a plan it hands the one it replaced back to the control thread through the
 GraphHost's second SPSC ring, `SpscRing<PlanStorage*, 512> released_` (twice the command ring; the last plan a drain replaces
 only once that whole drain is applied). `GraphHost::reclaim()` destroys it there, and a system node
@@ -582,8 +582,8 @@ lost mutation.
 - **The registry double-copy** (§4) stands until the shared `SystemBase` can publish directly into
   the registry — a pending refactor, see [07-remaining-work.md](07-remaining-work.md). (State
   snapshots are now armed for **both** cores — SameBoy in
-  [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp) and Mesen in
-  [`MesenBackend`](../packages/native/src/system/mesen/MesenBackend.cpp) — so `readSram`/state-based
+  [`SameBoyBackend.cpp`](../packages/sameboy/native/src/system/sameboy/SameBoyBackend.cpp) and Mesen in
+  [`MesenBackend`](../packages/mesen/native/src/system/mesen/MesenBackend.cpp) - so `readSram`/state-based
   duplicate work on NES/GBA too.)
 
 ---
@@ -597,7 +597,7 @@ lost mutation.
 | [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp) | the POD command the ring carries as an opaque host command |
 | [`GraphHost.hpp`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) / [`.cpp`](../packages/graph-runtime/native/src/graph/GraphHost.cpp) | the one command ring, the release ring of plans, `setGraph` / `drain` / `run` / `reclaim` |
 | [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and its publisher (the `ProjectStore`'s, or a `DirectGraph`'s or bare `SystemsStore`'s own) |
-| [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) / [`N8Node.cpp`](../packages/n8/native/src/n8/N8Node.cpp) / [`SurfaceNodes.cpp`](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the host MIDI I/O nodes, the cart's node and the control surface's two, and the host services they ask for |
+| [MesenNode.cpp](../packages/mesen/native/src/system/mesen/MesenNode.cpp) / [`HostIoNodes.cpp`](../packages/host-io/native/src/host/graph/HostIoNodes.cpp) / [`N8Node.cpp`](../packages/n8/native/src/n8/N8Node.cpp) / [`SurfaceNodes.cpp`](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp) / [`HostServices.hpp`](../packages/host-io/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the host MIDI I/O nodes, the cart's node and the control surface's two, and the host services they ask for |
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
 | [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), the system table and the live cores a node's request builds into, the staged host MIDI, the host outputs and the registry; `buildSystem` / `destroySystem` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
 | [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in packs, each two bare QuickJS runtimes of its own (the built-in pack first, more loaded and reloaded at runtime), and the audio runtimes' profiling |

@@ -607,12 +607,13 @@ export function checkBoundaries({ root = REPO } = {}) {
     }
 
     // A dependency the package's native tree links counts as used: one of its CMakeLists names one of the dependency's
-    // targets, and the configure check reads the same declaration for the same reason. Every CMakeLists under the
-    // package counts (a tool in a subdirectory is the package's too). The search is textual.
+    // targets, and the configure check reads the same declaration for the same reason. A devDependency too: a test
+    // binary links @retroplug/testing's helper library, which no TypeScript file of it imports. Every CMakeLists under
+    // the package counts (a tool in a subdirectory is the package's too). The search is textual.
     const text = walk(pkg.dir, (name) => name === "CMakeLists.txt")
       .map((file) => readFileSync(file, "utf8"))
       .join("\n");
-    for (const name of pkg.dependencies) {
+    for (const name of [...pkg.dependencies, ...pkg.devDependencies]) {
       const short = packageOf(name);
       const targets = short === null ? [] : (packages.get(short)?.targets ?? []);
       if (targets.some((target) => new RegExp(`(^|[^A-Za-z0-9_])${target}([^A-Za-z0-9_]|$)`, "m").test(text))) {

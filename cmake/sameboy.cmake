@@ -87,7 +87,7 @@ if(WIN32)
     # the resulting objects link with the rest of the MSVC build) into the static
     # `sameboy` library. This is the SameBoy half of the "MSVC main + clang-isolate
     # SameBoy" toolchain split; SameBoySystem.cpp (the only RetroPlug C++ needing
-    # the internal view) is isolated the same way in the top-level CMakeLists.
+    # the internal view) is isolated the same way in packages/sameboy/native.
     find_program(SAMEBOY_CLANG_CL clang-cl
         HINTS "$ENV{VCINSTALLDIR}Tools/Llvm/x64/bin"
               "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/Llvm/x64/bin"

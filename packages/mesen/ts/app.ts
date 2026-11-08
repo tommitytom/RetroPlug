@@ -6,8 +6,7 @@
 //
 // The system node reads the fields each platform reads (the shell's graph/buildGraph.ts CONSTRUCT_FIELDS and
 // SETTING_FIELDS), so a field that means nothing on a platform is simply never placed in its settings. The native side
-// is the shell's still: `rp_mesen_package` registers the NES, GBA and SMS nodes from packages/native until F2 gives
-// this package its native half.
+// is this package's: `rp_mesen_package` registers the NES, GBA and SMS nodes from packages/mesen/native.
 
 import type { RoleType } from "@retroplug/core/systemRoles";
 import { definePackage } from "@retroplug/core/definePackage";

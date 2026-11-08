@@ -29,8 +29,8 @@ struct PlanError {
 
 // An embedder's own check over a plan, run once every node has activated and before the plan is published: nothing
 // wrong, or the one reason it is refused, with every instance the plan made rolled back as a failed activation's are.
-// GraphHost's caller supplies one; the engine's holds a system node's slot to a core, since a type that declares
-// category "system" promises to build one and the audio thread would otherwise dereference the slot's null.
+// GraphHost's caller may supply one; the engine's, for example, holds a system node's slot to a core, since a type that
+// declares category "system" promises to build one and the audio thread would otherwise dereference the slot's null.
 using PlanCheck = std::function<std::optional<PlanError>()>;
 
 struct PlanInput {

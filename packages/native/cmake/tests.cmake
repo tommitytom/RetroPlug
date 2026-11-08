@@ -4,11 +4,12 @@
 # a child scope and re-roots that variable, which is the trap this split is avoiding.)
 #
 # --- native test binaries ---------------------------------------------------------------------------
-# Eleven Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING), which
-# `pnpm test:plugin` builds and runs. The N8 pack's three (`pnpm test:n8`'s two, and a harness that needs a
-# real console on a USB port) are packages/n8/native/CMakeLists.txt's. The shared shape lives in
-# retroplug_add_test_binary(): see cmake/test-binary.cmake at the root; what is written out here is only
-# what differs per test.
+# Thirteen Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING), which
+# `pnpm test:plugin` builds and runs: eleven here and the two the console packages declare (retroplug-sameboy-test in
+# packages/sameboy/native, retroplug-mesen-test in packages/mesen/native). The N8 pack's three (`pnpm test:n8`'s two, and
+# a harness that needs a real console on a USB port) are packages/n8/native/CMakeLists.txt's. The shared shape lives in
+# retroplug_add_test_binary(): see cmake/test-binary.cmake at the root; what is written out here is only what differs per
+# test.
 
 # Pure-C++ Catch2 checks for plugin/ mechanisms that need real JSContexts but no LVGL/txiki host —
 # currently the per-context window-hook routing (ContextTargets.hpp) and the last-good project-state
@@ -42,47 +43,32 @@ retroplug_add_test_binary(
     LIBS     retroplug-backend                          # TjsHostRuntime (+ txiki, quickjs) + ClassIdSpace.hpp
     INCLUDES ${RP_QUICKJS_INCLUDE})                     # quickjs.h
 
-# Guards the cores' audio paths: the real SameBoy and NES per-channel taps (lane-counted finishBlock),
-# the NES split routings through a real Engine, and each backend's block triad. Links retroplug-backend,
-# which PUBLIC-brings retroplug-core (the cores) and the Engine.
+# Guards the engine's audio paths across systems: the NES split routings through a real Engine, a host sample-rate change
+# re-rating live cores, the offline teardown a staged-message payload rides, and the kit dithers. Links
+# retroplug-backend and the product's packages, which bring the Engine and the consoles. The console packages' own audio
+# cases are theirs (retroplug-sameboy-test, retroplug-mesen-test): a case that builds its core directly needs no Engine
+# and lives with the console.
 #
-# The ROM defines: mGB's boot chime supplies real signal for the SameBoyStems fidelity tests, and a ch1
-# note in the BlipToaster ROM does the same for the NES pin test. smsggdj ships in both cartridge shapes
-# because the SMS and GG builds differ in visible geometry and video config, so both are needed to guard
-# the overscan setup. resources/ never ships (release.yml packages build/bin
-# plus the license bundle), so these are test-only.
+# The ROM defines: the embedded mGB boots the sample-rate case, and a ch1 note in the BlipToaster ROM supplies real signal
+# for the NES split routing. The Sega one is read by graph/GraphDocs.hpp's romFor, whose every branch compiles in each
+# translation unit that includes it. resources/ never ships (release.yml packages build/bin plus the license bundle), so
+# these are test-only.
 retroplug_add_test_binary(
     NAME     retroplug-audio-test
-    SOURCES  test/audio/SameBoyStems.test.cpp
-             test/audio/EngineSampleRate.test.cpp      # host sample-rate change re-rates live cores
-             test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
-             test/audio/NesApuLatency.test.cpp         # runtime NES APU flush window (live apuLatencyMs knob)
-             test/audio/NesN8FifoTiming.test.cpp       # host MIDI-in keeps its intra-block offset into the N8 FIFO
-             test/audio/NesEverdriveFifo.test.cpp      # Edio status protocol leaves no stale byte to desync MIDI parsing
-             test/audio/N8ReliableLink.test.cpp        # BlipToaster reliable link: framing, acks, re-sends (sender + emulated FIFO role)
-             test/audio/NesStems.test.cpp              # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
+    SOURCES  test/audio/EngineSampleRate.test.cpp      # host sample-rate change re-rates live cores
              test/audio/NesSplitRouting.test.cpp       # NES-in-plugin: PinSplit/ChannelSplit arm the tap live + mono-pack
-             test/audio/SmsAudio.test.cpp              # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
-             test/audio/GbaFirmware.test.cpp           # each GBA system loads ITS bios, not whichever landed last
-             test/audio/GbaAudio.test.cpp              # the GBA block triad terminates and fills a block
-             test/audio/MesenBlockOps.test.cpp         # the shared drain tail blanks a short ring
-             test/audio/NesTeardown.test.cpp           # the NES twin of SMS's construct/destruct guard
-             test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
              test/audio/EngineInvoker.test.cpp         # the teardown discards a staged-message payload
              test/audio/Dither.test.cpp                # the kit TPDF dithers are seeded from their input
-             test/graph/CountingAllocator.cpp          # replaces operator new / delete: the N8 FIFO's [alloc] case
              # The kit path's effect wrappers, so the dither cases are held to what rp::lsdj::processEffect does to a
              # buffer, not only to the kernels underneath it (retroplug-graph-test compiles it too, for the two
              # buffer-reading nodes). It needs the kernels, named in LIBS below.
              ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
-    LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
+    LIBS     retroplug-backend                         # Engine, the graph and the script host
              retroplug-dsp-kernels                     # Effects.cpp's wrappers call these
-    PACKAGES ${RP_DESKTOP_PACKAGES}
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
+    PACKAGES ${RP_DESKTOP_PACKAGES}                    # the consoles' packages, their include roots and their targets
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
-             RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
-             RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
+             RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms")
 
 # The TS sources the [settings] oracle reads (test/engine-graph/SystemNode.test.cpp's tsValues, tsRange, tsConstant),
 # gathered rather than spelled out: every package's own TS - its enums, and its role schema's clamped fields - plus the
@@ -121,14 +107,13 @@ file(CONFIGURE OUTPUT "${_rp_settings_ts_list}" CONTENT "${_rp_settings_ts_text}
 # own, apart from the live plan, as an engine job (docs/modular-graph-phase-d3-design.md section 3) runs a render with a
 # runtime and an Engine of its own. A hidden bench times a script node per block, another an offline job.
 # Every core in it powers on in a fixed state (test/engine-graph/Deterministic.cpp), so two identical cores agree.
-# CountingAllocator.cpp is shared with retroplug-graph-test, for the no-allocation checks. The script tests' bundle
+# The no-allocation checks count through @retroplug/testing's CountingAllocator. The script tests' bundle
 # (the authoring layer for their toy nodes) is embedded here alone: cmake/bundles.cmake, retroplug-script-test-bundle.
 
 retroplug_add_test_binary(
     NAME     retroplug-engine-graph-test
     SOURCES  test/engine-graph/Deterministic.cpp
              test/engine-graph/SystemNode.test.cpp
-             test/engine-graph/MesenShared.test.cpp    # ClearState's empty state, and the notification dispatch's copy
              test/engine-graph/EngineGraph.test.cpp
              test/engine-graph/SlurpFile.test.cpp     # the file reader putResource reads a `path` resource with
              test/engine-graph/HostIo.test.cpp
@@ -149,11 +134,11 @@ retroplug_add_test_binary(
              test/engine-graph/BuildGraphGoldens.test.cpp
              test/engine-graph/Packages.test.cpp       # each product registers the node types its golden row holds
              test/engine-graph/Providers.test.cpp      # the providers a product starts, and its generated ones
-             test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
              ${SCRIPT_TEST_BUNDLE_C}                    # rp_script_test_bundle
-    LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + the cores)
+    LIBS     retroplug-backend                         # Engine, the graph and the script host
              retroplug-dsp-kernels                     # OfflineJobs.test.cpp holds a job's buffers to the kernels
              retroplug-dsp-resample                    # and to resampledLength, which the resample's node wraps
+             retroplug-testing                         # the no-allocation checks' CountingAllocator
              rpcpp                                     # the server Providers.test.cpp mounts the facets on (QjsRpc.hpp)
              retroplug-launchpad-desktop                # the generated header naming the launchpad provider (below)
     PACKAGES ${RP_DESKTOP_PACKAGES}
@@ -256,7 +241,9 @@ set(_rp_refused_native
     "ShellInclude|which is in the shell (packages/native): no package may use the shell"
     "UndeclaredSource|compiles ${CMAKE_SOURCE_DIR}/packages/graph-runtime/native/src/foo.cpp, which is in the graph-runtime package's tree"
     "ShellSource|compiles ${CMAKE_SOURCE_DIR}/packages/native/src/foo.cpp, which is in the shell (packages/native)"
-    "Unjudged|which the boundary check cannot evaluate")
+    "Unjudged|which the boundary check cannot evaluate"
+    # The console packages' own edge: a Mesen-shaped package reaching the N8 pack, which it must declare.
+    "MesenN8Undeclared|links retroplug-n8, a target of the n8 package, which mesen does not declare")
 foreach(_rp_refused IN LISTS _rp_refused_native)
     string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
     list(GET _rp_refused 0 _rp_fixture)
@@ -275,7 +262,7 @@ foreach(_rp_refused IN LISTS _rp_refused_native)
                             "${_rp_output}")
     endif()
 endforeach()
-foreach(_rp_read IN ITEMS DeclaredBoundaries TestDevDependency)
+foreach(_rp_read IN ITEMS DeclaredBoundaries TestDevDependency MesenN8Declared)
     execute_process(
         COMMAND ${CMAKE_COMMAND} -DRP_BOUNDARY_FIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/${_rp_read}.json
                 -P ${CMAKE_SOURCE_DIR}/cmake/check-native-boundaries.cmake
@@ -301,6 +288,7 @@ set(_rp_gather_cases
     "source-outside|refused|compiles ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src/x.cpp, which is in the beta"
     "alias|refused|links retroplug-beta, a target of the beta package, which alpha does not declare"
     "alias-declared|holds|"
+    "testing-dependency|refused|reach retroplug-testing, the native test helpers (packages/testing/native), and are no test binary"
     "copt|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
     "copt-genex|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
     "copt-relative|refused|names -I../beta/native/src, which the boundary check cannot evaluate"
@@ -383,7 +371,6 @@ retroplug_add_test_binary(
              test/graph/Execution.test.cpp
              test/graph/CoreNodes.test.cpp
              test/graph/NoAlloc.test.cpp
-             test/graph/CountingAllocator.cpp         # replaces operator new / delete for this binary
              test/graph/SwapStress.test.cpp
              test/graph/HostCommands.test.cpp
              test/graph/Reshape.test.cpp
@@ -408,6 +395,7 @@ retroplug_add_test_binary(
              retroplug-dsp-resample-nodes             # and the rp.dsp.resample package
              retroplug-dsp-kernels                    # core-free: the standard library
              retroplug-dsp-resample                   # Dsp.test.cpp's resampler
+             retroplug-testing                        # the no-allocation checks' CountingAllocator
              Threads::Threads                          # SwapStress runs a real audio thread
     DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden"
     # Dsp.test.cpp includes dsp/R8bAllocator.hpp first, and that header includes r8brain's CDSPResampler.h. The dep's
@@ -668,7 +656,6 @@ retroplug_add_test_binary(
              ${_rp_box_dir}/BoxCartLink.cpp           # the N8 box's cart link, desktop-built
              ${_rp_box_dir}/CartVolume.cpp            # and its expansion-volume write
              $<TARGET_OBJECTS:retroplug-box-usb-cdc>
-             test/graph/CountingAllocator.cpp          # replaces operator new / delete for this binary
              ${_rp_device_check_dir}/DeviceCheck.cpp   # the device check, as a host: desktop-built, C ABI only
              ${_rp_device_check_dir}/N8Protocol.cpp    # its N8 protocol run, over the desktop's build of the pack
              ${CMAKE_BINARY_DIR}/device-check/DeviceCheckCases.hpp
@@ -679,7 +666,8 @@ retroplug_add_test_binary(
     LIBS     retroplug-graph
              ${_rp_device_owners}                      # the desktop's build of every device entry, the device's twin
              retroplug-dsp-kernels                     # the desktop rp.dsp's kernels (the objects build theirs)
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
+             retroplug-testing                         # the no-allocation checks' CountingAllocator
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test
              ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
              ${_rp_device_check_dir}                   # DeviceCheck.hpp
              ${CMAKE_BINARY_DIR}/device-check          # DeviceCheckCases.hpp, DeviceCheckPlan.hpp

@@ -11,7 +11,7 @@
 #include <span>
 #include <string>
 
-#include "CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "GraphRig.hpp"
 
 using rp::graph::test::GraphRig;

@@ -24,7 +24,7 @@ struct InputCapacity {
 inline constexpr InputCapacity kMidiInput{4096, 73728};
 inline constexpr InputCapacity kSerialInInput{4096, 73728};
 inline constexpr InputCapacity kBytesInput{256, 1024};
-inline constexpr InputCapacity kSerialOutInput{8256, 8256};  // the Game Boy's serialOut (SystemNodes.cpp)
+inline constexpr InputCapacity kSerialOutInput{8256, 8256};  // the Game Boy's serialOut (system/sameboy/SameBoyNode.cpp)
 inline constexpr std::uint32_t kButtonsInput = 64;
 
 // Presses reach a core from two doors before the same prepareForBlock clears its queue: a block's buttons input, and

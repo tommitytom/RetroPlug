@@ -27,7 +27,7 @@ taken after this design's first draft (section 11); the rest is section 12's.
   mechanism nothing enables (`enableMemorySnapshot`, `disableMemorySnapshot`, `memorySnapshot`,
   `publishMemorySnapshots`, `snapshots_`), whose publish every core's `finishBlock` still runs over nine empty slots.
   `kind()` has no production caller either.
-- **`MesenAudioDevice`** ([MesenAudioDevice.hpp](../packages/native/src/system/mesen/MesenAudioDevice.hpp)), the
+- **`MesenAudioDevice`** ([MesenAudioDevice.hpp](../packages/mesen/native/src/system/mesen/MesenAudioDevice.hpp)), the
   `IAudioDevice` every Mesen core (NES, GBA, SMS / Game Gear) gives Mesen's mixer, is a `std::vector<int16_t>` of
   interleaved stereo: `PlayBuffer` appends with `resize` (an allocation whenever the high-water mark rises: at the start
   of a core's life and after a change of flush cadence such as a sample-rate change), and `drain` takes a block's frames

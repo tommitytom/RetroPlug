@@ -11,10 +11,9 @@
 // the DMG palette only when it isn't. `auto` is not ambiguous here - RetroPlug maps it to CGB-C
 // (toSameBoyModel), so it counts as CGB. The menu gates the palette row on that (the app's menuDefs.ts).
 //
-// The native side is the shell's still: `rp_sameboy_package` registers the Game Boy node from packages/native until
-// F2 gives this package its native half, and graph/buildGraph.ts's systemKnobs turns these labels into the node's
-// settings. linkGroupId is the graph's own, turned into the Game Boy's link wires by buildGraph.ts (linkGroupOf),
-// never a core setting.
+// The native side is this package's: `rp_sameboy_package` registers the Game Boy node from packages/sameboy/native,
+// and graph/buildGraph.ts's systemKnobs turns these labels into the node's settings. linkGroupId is the graph's own,
+// turned into the Game Boy's link wires by buildGraph.ts (linkGroupOf), never a core setting.
 
 import type { RoleType } from "@retroplug/core/systemRoles";
 import { definePackage } from "@retroplug/core/definePackage";

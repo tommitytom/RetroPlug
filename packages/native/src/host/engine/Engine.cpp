@@ -33,7 +33,6 @@
 #include "host/engine/DspCommand.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
-#include "host/graph/SystemNodes.hpp"
 #include "host/graph/SystemTable.hpp"
 
 namespace {

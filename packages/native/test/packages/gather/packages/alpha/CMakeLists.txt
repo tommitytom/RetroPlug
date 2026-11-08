@@ -29,6 +29,10 @@ elseif(RP_GATHER_CASE STREQUAL "alias")
 elseif(RP_GATHER_CASE STREQUAL "alias-declared")
     # The same alias with beta declared: resolved to beta's target, and held.
     target_link_libraries(retroplug-alpha INTERFACE rp::beta)
+elseif(RP_GATHER_CASE STREQUAL "testing-dependency")
+    # The test helpers linked by a library, which is no test binary: the boundary check allows a DECLARED dependency, and
+    # the test-helper guard is what refuses this one.
+    target_link_libraries(retroplug-alpha INTERFACE retroplug-testing)
 elseif(RP_GATHER_CASE STREQUAL "copt")
     # An include directory smuggled into the compile options: judged like one its include property would name.
     target_compile_options(retroplug-alpha INTERFACE -I${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src)

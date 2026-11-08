@@ -35,7 +35,7 @@
 #include <xmmintrin.h>
 #endif
 
-#include "../graph/CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "../graph/GraphRig.hpp"
 #include "GraphDocs.hpp"
 #include "dsp/Dither.hpp"

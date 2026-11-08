@@ -1,5 +1,6 @@
-# packages/native — the C++ side of RetroPlug: two static libs, the hosts built on them, the DPF
-# plugin, and the test binaries.
+# packages/native: the C++ side of RetroPlug. It is the shell, which is the backend static library, the hosts built on it, the
+# DPF plugin, and the shell's test binaries. A console lives in its package (packages/sameboy, packages/mesen), the
+# host's I/O nodes in packages/host-io, the contract in packages/system.
 #
 # This file holds the libraries and the straightforward executables. The parts that are large or
 # self-contained are include()d from cmake/ so this stays readable top to bottom:
@@ -8,7 +9,7 @@
 #   cmake/bundles.cmake       the embedded control-plane, React-UI and script-node bytecode
 #   cmake/deps.cmake          rtmidi / serial / portaudio, and the retroplug-cli N8 facets
 #   cmake/plugin.cmake        dpf_add_plugin + per-platform packaging
-#   cmake/tests.cmake         the twelve native test binaries
+#   cmake/tests.cmake         the shell's eleven native test binaries (the console packages declare two more)
 #   cmake/warnings.cmake      /W4 /WX on our own targets (MSVC)
 #
 # They are include()d, not add_subdirectory()'d, which matters: include() keeps the CURRENT
@@ -35,79 +36,6 @@ endif()
 # thread does too. Found once, for this directory. (The DSP package finds its own, for r8brain, and the N8 pack its
 # own, for N8Link's serial thread.)
 find_package(Threads REQUIRED)
-
-# --- retroplug-core: the shared emulator core, as a neutrally-named static lib. Extracted out of
-# packages/native/cli (which also compiled the CLI-only HarnessRpcService) so the host links ONLY the
-# shared core, never a CLI RPC surface it doesn't use. The legacy `retroplug-cli-core` is now a thin
-# wrapper = HarnessRpcService.cpp + this lib. Deliberately txiki/QuickJS-free (harness-schema-dump links it
-# without the JS runtime); PIC so it links into the plugin .so.
-if(WIN32)
-    # SameBoySystem.cpp pokes SameBoy internals cl.exe can't parse; on Windows it's compiled by clang-cl
-    # into retroplug-samebsys (see the root CMakeLists) and linked below. Elsewhere it builds in place.
-    set(_rpcore_sbs "")
-else()
-    set(_rpcore_sbs ${CMAKE_CURRENT_SOURCE_DIR}/src/system/sameboy/SameBoySystem.cpp)
-endif()
-
-add_library(retroplug-core STATIC
-    # The decoded-audio cache: an offline job's file inputs decode through it (host/engine/OfflineJobs.cpp), which is
-    # how every kit compile reads a source. Console- and format-neutral.
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/SampleCache.cpp
-    # fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line rather than in every includer.
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/util/FileSync.cpp
-    ${_rpcore_sbs}
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesSystem.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGlobalInit.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesDebugSession.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenSmsSystem.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8FifoRole.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/SmsSyncRole.cpp
-    # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull
-    # the full lvgl-js-native static lib for it.
-    ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
-)
-
-target_include_directories(retroplug-core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    # `native/core/img/png/lodepng.h` lives under this root (in dpf.js).
-    ${DPFJS_PATH}/deps/lv_binding_js/src/render
-    # MinizZip.hpp -> miniz.h (txiki's v3.1.0; matches the linked `miniz` lib)
-    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz
-)
-
-target_link_libraries(retroplug-core PUBLIC
-    sameboy
-    mesen
-    # The system contract the cores implement (packages/system): SystemBase and the capability interfaces, the transport
-    # triples, the core-only utilities, the build request and the host's system services. PUBLIC, since the systems'
-    # headers are this library's own public headers.
-    retroplug-system
-    rpcpp     # transitively pulls reflectcpp
-    miniaudio # header-only audio decoder used by SampleCache
-    miniz     # used by projectConfigToZip for --save-rplg
-    mgb-rom   # the embedded mGB ROM, which the engine's putResource resolves for a document's `embedded` resource
-    # Windows: SameBoySystem.cpp lives in this clang-cl-compiled lib (see root CMakeLists).
-    $<$<BOOL:${WIN32}>:retroplug-samebsys>
-)
-# SampleCache's content hash is util/Hash.hpp's FNV-1a, which lives in the DSP package beside the dither kernel that
-# draws its seeds with it. The core takes that header alone from there, its include root and not the kernels'
-# library, which nothing in the core calls.
-target_include_directories(retroplug-core PRIVATE
-    $<TARGET_PROPERTY:retroplug-dsp-kernels,INTERFACE_INCLUDE_DIRECTORIES>)
-# The emulated NES's N8 FIFO role (NesN8FifoRole) speaks BlipToaster's reliable link from the cart's side, so the core
-# includes transport/N8ReliableLink.hpp, the N8 pack's, and with it util/FixedQueue.hpp, the node SDK's, which the
-# systems' own ingress queues use as well. As with the DSP header above, it takes the pack's portable library's include
-# roots alone (which carry the node SDK's, the library's own PUBLIC link), and not the library, which nothing in the
-# core calls. PUBLIC, as the systems' headers that include them are the core's own public headers.
-target_include_directories(retroplug-core PUBLIC $<TARGET_PROPERTY:retroplug-n8,INTERFACE_INCLUDE_DIRECTORIES>)
-
-set_target_properties(retroplug-core PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    POSITION_INDEPENDENT_CODE ON   # linked into the plugin .so
-)
 
 # The render-worker bundle — src/render/worker.ts esbuilt to a global-code IIFE (NOT an ES module: the
 # RenderHost loads it on a BARE QuickJS runtime with no module loader) + tjsc'd to bytecode C array,
@@ -136,9 +64,18 @@ endif()
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/ScriptHost. Includes + links are PUBLIC so consumers inherit them.
 add_library(retroplug-backend STATIC
+    # The decoded-audio cache: an offline job's file inputs decode through it (host/engine/OfflineJobs.cpp), which is how
+    # every kit compile reads a source. Console- and format-neutral; its content hash is the DSP package's util/Hash.hpp,
+    # whose include root LIBS below takes.
+    src/kit/SampleCache.cpp
+    # fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line rather than in every includer.
+    src/util/FileSync.cpp
+    # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull the full
+    # lvgl-js-native static lib for it.
+    ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
     src/host/rpc/HostRpcService.cpp         # fs / config / zip (+ opt-in efsw file watcher)
     src/host/rpc/NativeFileWatcher.cpp      # efsw watcher behind drainChangedPaths / setWatchedRoms
-    src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
+    src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker
     src/host/rpc/DebugRpcService.cpp        # live-core inspection over Engine (CLI-only facet)
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
     src/host/engine/Engine.cpp              # the engine: the graph + the script host + the staged MIDI, runs blocks
@@ -146,10 +83,6 @@ add_library(retroplug-backend STATIC
     src/host/engine/EngineInvoker.cpp       # QueuedInvoker - the one mutation path to the Engine
     src/host/engine/OfflineJobs.cpp         # offline jobs: a document run to completion on a worker host of its own
     src/host/IdleReclaimProbe.cpp           # hosts' idle-tick self-test (HostServices::reclaimOnIdle), smoke-driven
-    src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
-    src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out
-    src/system/sameboy/SameBoyBackend.cpp   # the Game Boy's build function (rp.host.systems/2)
-    src/system/mesen/MesenBackend.cpp       # the Mesen cores' three build functions: NES, GBA (HLE BIOS), SMS/GG
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (script packs' source, the tests' toys)
     src/host/script/ScriptHost.cpp          # the script-node runtimes: TS nodes behind the C ABI, a pair per pack
     src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
@@ -160,17 +93,25 @@ add_dependencies(retroplug-backend retroplug-render-worker-bundle)  # the embedd
 
 target_include_directories(retroplug-backend PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    # `native/core/img/png/lodepng.h` lives under this root (in dpf.js).
+    ${DPFJS_PATH}/deps/lv_binding_js/src/render
+    # MinizZip.hpp -> miniz.h (txiki's v3.1.0; matches the linked `miniz` lib)
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz
     # dpf.js src root for the shared host header ("dpfjs/host/TjsHostRuntime.hpp").
     ${DPFJS_PATH}/src
     # txiki.js / QuickJS runtime headers (tjs.h + internal private.h; quickjs.h transitive).
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/src
     ${RP_QUICKJS_INCLUDE}
-    # (packages/native/src for the SystemBase headers + util/MinizZip.hpp, and the
-    #  miniz header dir, arrive PUBLIC from retroplug-core above.)
 )
 
 target_link_libraries(retroplug-backend PUBLIC
-    retroplug-core      # SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
+    # The system contract every console implements and the engine drives (packages/system), and the build request a
+    # system node's own package carries: the engine's own headers are its public headers.
+    retroplug-system
+    # The host I/O package's service struct and staging bounds, which the engine implements and sizes from
+    # (packages/host-io). The console packages are NOT linked here: a product links the ones it lists
+    # (retroplug_product), and the engine reaches their node types through its generated rp_register_packages().
+    retroplug-host-io
     retroplug-graph     # the graph executor, planner and GraphHost the engine runs on (packages/graph-runtime)
     # The core and DSP packages: the offline job pool registers its fixed subset of them itself (OfflineJobs.cpp),
     # where the engine registers the product's list (rp_register_packages, graph/Packages.hpp).
@@ -180,8 +121,17 @@ target_link_libraries(retroplug-backend PUBLIC
     retroplug-launchpad # rp.launchpad.surface-in / -out's package (HarnessSurfaceLink implements its SurfaceLink)
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
     efsw-static         # NativeFileWatcher's filesystem watcher (PUBLIC-brings efsw/efsw.hpp include dir)
+    rpcpp               # transitively pulls reflectcpp
+    miniaudio           # header-only audio decoder used by SampleCache
+    miniz               # used by projectConfigToZip for --save-rplg
+    mgb-rom             # the embedded mGB ROM, which the engine's putResource resolves for a document's `embedded` resource
     Threads::Threads
 )
+# SampleCache's content hash is util/Hash.hpp's FNV-1a, which lives in the DSP package beside the dither kernel that draws
+# its seeds with it. The shell takes that header alone from there, its include root and not the kernels' library, which
+# nothing here calls.
+target_include_directories(retroplug-backend PRIVATE
+    $<TARGET_PROPERTY:retroplug-dsp-kernels,INTERFACE_INCLUDE_DIRECTORIES>)
 
 set_target_properties(retroplug-backend PROPERTIES
     CXX_STANDARD 20
@@ -445,7 +395,8 @@ set_target_properties(retroplug-ui-test PROPERTIES
 # The embedded bundle must exist before the test binary compiles it.
 add_dependencies(retroplug-ui-test retroplug-ui-bundle)
 
-# The twelve native test binaries (EXCLUDE_FROM_ALL; built by name).
+# The shell's eleven native test binaries (EXCLUDE_FROM_ALL; built by name), and the configure checks the packages'
+# manifests, boundary fixtures and device entries are held to.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests.cmake)
 
 # Every product declared above, with its packages' entries, for the registration golden (test/engine-graph/

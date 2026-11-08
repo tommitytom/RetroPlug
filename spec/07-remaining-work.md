@@ -106,7 +106,7 @@ Stale scaffolding to sweep opportunistically — not work to schedule.
 None known: [src/app.ts](../packages/retroplug/src/app.ts)'s header was the last, saying the controller's roles and node
 `rp.controller.session` "arrive with the controller's own package in F3", which they have, so it now says what landed (the
 launchpad pack's roles and node, the `lsdj-launchpad` bridge's app half). The entry before it,
-[host/graph/SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)
+[SameBoyNode.cpp](../packages/sameboy/native/src/system/sameboy/SameBoyNode.cpp)
 (`GameBoy::apply`), pointed at a comment that is load-bearing (why the fast boot is applied before the model)
 rather than at a deferral; its marker died with `applyConfigField`.
 
@@ -210,7 +210,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     reader would refuse it at plan time instead.
   - **Enum labels have two spellings on the C++ side.** A system node's enum settings read the role configs' labels,
     the enumerator's name with its first letter lowercased (`"cgbC"`, `knobs::Label` in
-    [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)), where node.hpp's `enum_param` labels are
+    [SystemNode.hpp](../packages/system/native/src/system/SystemNode.hpp)), where node.hpp's `enum_param` labels are
     kebab-case (`"cgb-c"`), so a knob moved from a setting to an enum param would change the word a document carries.
 - **System nodes build their own cores, built in Phase C3**
   ([modular-graph-phase-c3-design.md](../docs/modular-graph-phase-c3-design.md)): a system node's settings name its
@@ -515,7 +515,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `graph-runtime`, `core` and `dsp` are workspace packages with a manifest each, and every product's
   `rp_register_packages()` is generated (the `[packages]` golden); portable nodes' settings are `rp::text`, `rp::list`,
   `rp::choice` and numeric resource ids; `node.hpp` builds for the device (`RP_DEVICE`) and reads msgpack
-  (`RP_SETTINGS_MSGPACK`) with a reader of our own; `retroplug-device-mode-test` is the eleventh `test:plugin` binary;
+  (`RP_SETTINGS_MSGPACK`) with a reader of our own; `retroplug-device-mode-test` is one of the thirteen `test:plugin`
+  binaries;
   and `pnpm device:check` links the RP2350 image of every portable `rp.core` and `rp.dsp` type under a trap on the heap,
   on exceptions and on RTTI, a CI step. Nothing was re-recorded. What is left, in order:
   - **E2: the N8 pack** is built (below).
@@ -705,7 +706,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     than declared.
   - A Game Boy that clocks its serial port itself, a CGB on its fast clock, can send more in a block past
     about 12000 frames (6000 in double speed) than its fixed `serialOut` holds; the rest is dropped and
-    counted ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) `kSerialOutCapacity`).
+    counted ([SameBoyNode.cpp](../packages/sameboy/native/src/system/sameboy/SameBoyNode.cpp) `kSerialOutCapacity`).
   - `rp.lsdj.serial-out`'s `midiOut` (the kernel node's before B3b, then `rp.lsdj.sync`'s) is sized for a
     decoded MI.OUT stream at its densest up to 8192-frame blocks (1024 messages, a captured byte every 8 frames),
     while `serialOut` is sized for 65536: in a larger block the decoded stream can pass 1024 messages, and the
@@ -724,7 +725,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     its capacity live today, and no document `buildGraph` builds holds a feedback wire: the Game Boy's `serialOut`,
     fixed, was the one source until LSDj's decoder moved after it.
   - `retroplug-engine-graph-test` replaces the global `operator new` with a counting allocator
-    ([CountingAllocator.cpp](../packages/native/test/graph/CountingAllocator.cpp)) that allocates through
+    ([CountingAllocator.cpp](../packages/testing/native/src/graph/CountingAllocator.cpp)) that allocates through
     `_aligned_malloc` on Windows, so a core or QuickJS freeing what `new` made with `free()` would crash
     there; no Windows CI run has exercised it yet.
   - `retroplug-ts-stripper-bundle` fails in a build directory outside the repository:

@@ -78,7 +78,7 @@ relative timing (the right trade - a little constant latency over sloppy note/sy
 - The producer stamps each message with a target release time:
   `target = blockStartClock + sampleOffsetInBlock / sampleRate + lookahead`.
   The sample offset already exists - `NesN8FifoRole::pumpUntil` computes it for the emulated FIFO
-  (see [MIDI-in sample timing](../packages/native/src/system/mesen/roles/NesN8FifoRole.hpp)).
+  (see [MIDI-in sample timing](../packages/mesen/native/src/system/mesen/roles/NesN8FifoRole.hpp)).
 - The serial thread holds a time-ordered queue, `sleep_until(target)` (with a short sub-ms spin for the
   tail), then `fifoWR`s. One clock domain (`steady_clock`) end to end.
 - `lookahead` ~5-15 ms absorbs the block period + USB/OS jitter; because it is constant, note spacing and

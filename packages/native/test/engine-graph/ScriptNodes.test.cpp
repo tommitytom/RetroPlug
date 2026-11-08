@@ -30,7 +30,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../graph/CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "ScriptRig.hpp"

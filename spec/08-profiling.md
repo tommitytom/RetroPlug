@@ -241,7 +241,7 @@ past `renderAudio`'s 1024-frame block).
   (timed `JS_RunGC`). The window, the live and peak heap and the block bracket are behind
   `#ifdef RETROPLUG_PROFILE`; the `#else` path returns `enabled:false`.
 - **Native allocations counted in the C++ suite too** (C4): `retroplug-engine-graph-test` links
-  [test/graph/CountingAllocator](../packages/native/test/graph/CountingAllocator.cpp), which replaces the global
+  [graph/CountingAllocator](../packages/testing/native/src/graph/CountingAllocator.cpp), which replaces the global
   `operator new`/`delete` (every form) and counts what a stretch of code allocates and frees on the calling thread
   (`beginCountingAllocations` / `endCountingAllocations`), and can refuse every allocation from a size up. Since C4 it
   also interposes the C library's `malloc` / `calloc` / `realloc` / `free`, forwarding to glibc's own, so a core's C

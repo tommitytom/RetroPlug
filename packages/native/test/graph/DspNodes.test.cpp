@@ -35,7 +35,7 @@
 #include <string>
 #include <vector>
 
-#include "CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "GraphRig.hpp"
 #include "dsp/Biquad.hpp"
 #include "dsp/Dither.hpp"

@@ -11,7 +11,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "system/InputCapacity.hpp"
 #include "util/FixedQueue.hpp"
 

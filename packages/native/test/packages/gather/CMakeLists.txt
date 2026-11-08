@@ -16,6 +16,9 @@
 #   source-outside  alpha's target compiles beta's source: refused
 #   alias        alpha links rp::beta, an alias of beta's target, which alpha does not declare: refused
 #   alias-declared  the same alias with beta declared: holds (an alias is judged as the target behind it)
+#   testing-dependency  alpha declares the testing package (a dependency, not a devDependency) and its library links
+#                retroplug-testing: the boundary check holds it and the test-helper guard refuses it, since alpha is no
+#                test binary (test-dev is the same link from one, which both hold)
 #   copt         alpha's compile options add -Ibeta's tree: refused like an include directory would be
 #   copt-genex   the same behind $<$<COMPILE_LANGUAGE:CXX>:...>: still the literal, so refused
 #   copt-relative  the same spelled relative to alpha's own directory: the compiler resolves a relative flag from the
@@ -50,6 +53,9 @@ if(RP_GATHER_CASE STREQUAL "declared" OR RP_GATHER_CASE STREQUAL "genex-declared
 else()
     set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS "")
 endif()
+if(RP_GATHER_CASE STREQUAL "testing-dependency")
+    set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS testing)
+endif()
 set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DEV_DECLARATIONS testing)
 set_property(GLOBAL PROPERTY RP_PACKAGE_beta_DECLARATIONS "")
 set_property(GLOBAL PROPERTY RP_PACKAGE_beta_DEV_DECLARATIONS "")
@@ -60,4 +66,5 @@ add_subdirectory(packages/testing)
 add_subdirectory(packages/native)
 
 retroplug_check_package_boundaries()
+retroplug_check_test_helpers()
 message(STATUS "gather/${RP_GATHER_CASE} holds")

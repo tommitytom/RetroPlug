@@ -288,7 +288,7 @@ runtimes' JS stacks are held to 256 KiB, under a 512 KiB macOS secondary thread 
 ### 3.1 System node inputs
 
 Every system node gains four inputs, mapped onto core calls `SystemBase` already has (so no `dynamic_cast`;
-[SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)):
+[SystemNode.hpp](../packages/system/native/src/system/SystemNode.hpp)):
 
 | Port | Kind | Core call |
 |---|---|---|
@@ -321,7 +321,7 @@ transfer (SC = 0x80), so the port carries about one byte every 8 frames, idle by
 under `listen` (master sync's) it never clocks the port. Its capacity, 8256 messages and 8256 bytes, is a byte every
 8 frames over the largest block a host can run (65536 frames, the GraphHost's `kMaxBlockFrames`, to which the plugin
 grows its plan with its buffer size), with 64 to spare for the bits a block carries in and the frames a core runs
-past its target ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) `kSerialOutCapacity`). A Game
+past its target ([SameBoyNode.cpp](../packages/sameboy/native/src/system/sameboy/SameBoyNode.cpp) `kSerialOutCapacity`). A Game
 Boy that clocks the port itself shifts at its serial rate instead, and a CGB on its fast clock can outrun the
 capacity in a block past about 12000 frames (about 6000 in double speed); what does not fit is dropped and counted.
 The capacity is fixed, so the feedback wire from it keeps its front across every plan swap (§2.6).
@@ -335,7 +335,7 @@ The capacity is fixed, so the feedback wire from it keeps its front across every
 | `rp.host.controller-in` | out `midi` (events; 1024 messages, 16 KiB), out `connected` (control) | `pendingControllerMidi_` and the per-block `controllerConnected` flag handed to the kernel |
 | `rp.host.controller-out` | in `midi` (events) | `DspRuntime::controllerOut_`; feeds `Engine::controllerOut()` |
 
-They are the package `rp.host.io` ([HostIoNodes.hpp](../packages/native/src/host/graph/HostIoNodes.hpp)), each over
+They are the package `rp.host.io` ([HostIoNodes.hpp](../packages/host-io/native/src/host/graph/HostIoNodes.hpp)), each over
 the engine's `rp.engine.host-io/1` service, without which none activates. The engine keeps staging what the hosts
 hand it (`stageMidi`, `stageControllerMidi`, the controller-connected state): the plugin and the SDL host stage on
 the audio thread, the harness and the CLI through the command ring, as before. Each staging is a flat arena, every

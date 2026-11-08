@@ -156,12 +156,12 @@ export function drivenCartSystem<T extends { platform: Platform; coreConfig?: Re
 //
 // A system node's knobs (docs/modular-graph-phase-c2-design.md section 3): the setting fields each type takes from its
 // core config, under the names and in the labels the role config spells them (@retroplug/sameboy, @retroplug/mesen),
-// which are what the C++
-// node reads (SystemNodes.cpp), and the params it takes from the system. A value the node would refuse (another label,
-// a number out of its range, another type) is left out rather than sent: the planner refuses the whole document for
-// one node's settings, and a loaded project keeps its core config as written (SystemsStore.adopt), so a hand edit or a
-// newer build's label would silence every system. Left out, the core keeps what it has. Params are not checked so: the
-// planner clamps a param's value to its range, and rounds an int's, so any finite number is sent.
+// which are what the C++ node reads (the console packages' SameBoyNode.cpp and MesenNode.cpp), and the params it takes
+// from the system. A value the node would refuse (another label, a number out of its range, another type) is left out
+// rather than sent: the planner refuses the whole document for one node's settings, and a loaded project keeps its core
+// config as written (SystemsStore.adopt), so a hand edit or a newer build's label would silence every system. Left
+// out, the core keeps what it has. Params are not checked so: the planner clamps a param's value to its range, and
+// rounds an int's, so any finite number is sent.
 
 type Knob = (v: unknown) => boolean;
 const label = (values: readonly string[]): Knob => (v) => typeof v === "string" && values.includes(v);
@@ -202,9 +202,9 @@ const CONFIG_PARAMS: Readonly<Record<SystemNodeType, readonly string[]>> = {
 };
 
 /** A construct-time field: whether the node takes the stored value as written, and the value written when it does not.
- *  The fallback is the node's own default (SystemNodes.cpp's config structs), which the role schema fills for a fresh
- *  config (@retroplug/sameboy, @retroplug/mesen), so a document names the same value whether or not the stored config
- *  held one. */
+ *  The fallback is the node's own default (the console packages' config structs), which the role schema fills for a
+ *  fresh config (@retroplug/sameboy, @retroplug/mesen), so a document names the same value whether or not the stored
+ *  config held one. */
 interface ConstructField {
   takes: Knob;
   fallback: unknown;
@@ -303,12 +303,13 @@ export function droppedKnobs(type: SystemNodeType, config: Readonly<Record<strin
   );
 }
 
-/** The settings a system node's core is built from once, as the node's rebuild key compares them (SystemNodes.cpp)
- *  plus the resource refs node.hpp rebuilds a moved ref by itself: its type, its system id, its resources, its ROM's
- *  name, its machine (a Game Gear's `gameGear`) and every construct-time field. A document that changes one of them
- *  under a system id an older plan still runs asks for a new core while the old one is live, which the engine refuses
- *  ("system N is live"); TS moves a rebuild to a new id, and the mock backend reads this to refuse the same. NodeDoc
- *  settings absent from the key are the live knobs and params, which a document may change under the same id. */
+/** The settings a system node's core is built from once, as the node's rebuild key compares them (the console packages'
+ *  node types) plus the resource refs node.hpp rebuilds a moved ref by itself: its type, its system id, its resources,
+ *  its ROM's name, its machine (a Game Gear's `gameGear`) and every construct-time field. A document that changes one
+ *  of them under a system id an older plan still runs asks for a new core while the old one is live, which the engine
+ *  refuses ("system N is live"); TS moves a rebuild to a new id, and the mock backend reads this to refuse the same.
+ *  NodeDoc settings absent from the key are the live knobs and params, which a document may change under the same
+ *  id. */
 export function rebuildKeyOf(node: Pick<NodeDoc, "type" | "settings">): Record<string, unknown> {
   const construct = CONSTRUCT_FIELDS[node.type];
   const fields = ["system", "rom", "sram", "state", "romName", "gameGear", ...Object.keys(construct ?? {})];

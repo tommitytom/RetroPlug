@@ -226,62 +226,6 @@ include(cmake/serial.cmake)
 # --- RtMidi: live MIDI in/out for the hosts and for a pack that owns a MIDI port (submodule at deps/rtmidi) ---
 include(cmake/rtmidi.cmake)
 
-# --- SameBoySystem.cpp: clang-cl isolation (Windows) ------------------------
-# SameBoySystem.cpp #defines GB_INTERNAL to reach SameBoy's internal struct view
-# and GNU-extension headers, which MSVC cl.exe cannot parse. Like the sameboy
-# core, compile it with clang-cl (MSVC-ABI) into a static lib and link THAT into
-# the plugin / tools rather than compiling the .cpp in the MSVC targets. It is
-# the only RetroPlug C++ that needs the internal view (verified via rpc-schema-dump
-# -k 0). Everything else compiles fine under MSVC because GB_INTERNAL is PRIVATE
-# to the sameboy target (gb.h then exposes GB_gameboy_t as an opaque same-size blob).
-if(WIN32)
-    find_program(RP_CLANG_CL clang-cl
-        HINTS "$ENV{VCINSTALLDIR}Tools/Llvm/x64/bin"
-              "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/Llvm/x64/bin"
-        REQUIRED)
-    set(_sbs_src "${CMAKE_SOURCE_DIR}/packages/native/src/system/sameboy/SameBoySystem.cpp")
-    set(_sbs_obj "${CMAKE_BINARY_DIR}/sameboy-clang/SameBoySystem.cpp.obj")
-    # A custom command gets no header scan, so it rebuilds on the headers listed here and nothing else. A
-    # stale object is not a slow build but a crash: change a class layout or a vtable (SystemBase's virtuals)
-    # and the MSVC objects agree on the new one while this one keeps the old, every slot after the change
-    # off by one. These are the directories its includes reach (the boot-ROM headers come with
-    # sameboy_bootroms); one it starts including from belongs here too.
-    # packages/system's headers are the contract it implements (system/*.hpp, transport/*.hpp, util/*.hpp); the
-    # console's own and the engine's tree keep the rest.
-    file(GLOB _sbs_headers CONFIGURE_DEPENDS
-        "${CMAKE_SOURCE_DIR}/packages/system/native/src/system/*.hpp"
-        "${CMAKE_SOURCE_DIR}/packages/system/native/src/transport/*.hpp"
-        "${CMAKE_SOURCE_DIR}/packages/system/native/src/util/*.hpp"
-        "${CMAKE_SOURCE_DIR}/packages/native/src/system/*.hpp"
-        "${CMAKE_SOURCE_DIR}/packages/native/src/system/sameboy/*.hpp"
-        "${CMAKE_SOURCE_DIR}/packages/native/src/util/*.hpp"
-        "${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src/util/*.hpp"
-        "${CMAKE_SOURCE_DIR}/deps/sameboy/Core/*.h")
-    add_custom_command(
-        OUTPUT "${_sbs_obj}"
-        COMMAND "${RP_CLANG_CL}" /nologo /c /MT /O2 /Ob2 /DNDEBUG /EHsc /std:c++20 /Zc:__cplusplus
-            "/FI${CMAKE_BINARY_DIR}/sameboy-clang/sameboy_version.h"
-            # GB_DISABLE_* MUST match the sameboy core or GB_gameboy_t's layout diverges.
-            -DGB_DISABLE_TIMEKEEPING -DGB_DISABLE_DEBUGGER
-            -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DNOGDI -D_CRT_SECURE_NO_WARNINGS
-            "-I${CMAKE_SOURCE_DIR}/packages/system/native/src"   # the contract: system/, transport/, util/
-            "-I${CMAKE_SOURCE_DIR}/packages/native/src"
-            "-I${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src"  # util/FixedQueue.hpp
-            "-I${CMAKE_SOURCE_DIR}/deps/sameboy/Core"
-            "-I${CMAKE_BINARY_DIR}/generated"
-            "-I${CMAKE_BINARY_DIR}/_deps/reflectcpp-src/include"
-            "/Fo${_sbs_obj}" "${_sbs_src}"
-        DEPENDS "${_sbs_src}" ${_sbs_headers} sameboy_bootroms
-        COMMENT "clang-cl (sameboy) SameBoySystem.cpp"
-        VERBATIM)
-    add_library(retroplug-samebsys STATIC "${_sbs_obj}")
-    set_target_properties(retroplug-samebsys PROPERTIES LINKER_LANGUAGE CXX)
-    # On Windows the source is built above; elsewhere it compiles in-target.
-    set(RP_SAMEBOYSYSTEM_SRC "")
-else()
-    set(RP_SAMEBOYSYSTEM_SRC packages/native/src/system/sameboy/SameBoySystem.cpp)
-endif()
-
 # --- Mesen: NES emulator core (multi-system upstream; we use the NES path) ---
 add_subdirectory(deps/mesen)
 
@@ -453,17 +397,19 @@ foreach(_rp_dir IN LISTS _rp_workspace_dirs)
 endforeach()
 
 # Every package a desktop product lists is registered by iterating that list, so a new package's registration is its
-# manifest plus the list entry and no CMake edit a third-party pack can forget. The two lists around it are the packages
-# no product lists and a device build needs, placed where the loop's own ordering requires them: the node SDK first,
-# because every other package's library is built on it; a device host's own I/O (rp.device.midi-in, the plan exporter's
-# and the devices') and the device check's test types (rp.devtest.plan) last, because registering a script pack needs
-# the MicroQuickJS host the graph-runtime package adds. packages/native is in the product list and registers the node
-# types not yet carved into packages of their own (sameboy, mesen, host.io); its targets are defined below,
-# where the root adds the engine's own tree. @retroplug/tracker is in neither list: it contributes no registration of any
-# kind, only modules the shell and the cart packages import, so CMake is never told about it.
+# manifest plus the list entry and no CMake edit a third-party pack can forget. The lists around it are the packages no
+# product lists and a device build needs, placed where the loop's own ordering requires them: the node SDK first,
+# because every other package's library is built on it; the native test helpers next, which no product lists (a test
+# binary links them through its package's devDependency); a device host's own I/O (rp.device.midi-in, the plan
+# exporter's and the devices') and the device check's test types (rp.devtest.plan) last, because registering a script
+# pack needs the MicroQuickJS host the graph-runtime package adds. packages/native is in the product list and registers
+# the node types not yet carved into packages of their own (sameboy, mesen, host.io); its targets are defined below,
+# where the root adds the engine's own tree. @retroplug/tracker is in neither list: it contributes no registration of
+# any kind, only modules the shell and the cart packages import, so CMake is never told about it.
 set(_rp_first_packages node-sdk)          # first: every other package's library is built on it
+set(_rp_test_packages testing)            # no product lists it: the test binaries' shared helpers
 set(_rp_last_packages device-io devtest)  # after the list: a script pack needs graph-runtime's host
-foreach(_rp_package IN LISTS _rp_first_packages RP_DESKTOP_PACKAGES _rp_last_packages)
+foreach(_rp_package IN LISTS _rp_first_packages _rp_test_packages RP_DESKTOP_PACKAGES _rp_last_packages)
     retroplug_package(${_rp_package})
 endforeach()
 
@@ -478,9 +424,13 @@ add_subdirectory(packages/graph-runtime/export-plan "${CMAKE_BINARY_DIR}/export-
 # later package or to the shell below would pass unseen. Every target is attributed to the package whose directory holds
 # its SOURCE_DIR, so a helper no manifest names is still that package's.
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_package_boundaries)
+# And the native test helpers (packages/testing/native) out of everything but a test binary: a replaced operator new in
+# a product would count allocations in production, and a library that linked it would hand it to its consumers.
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_test_helpers)
 
-# --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
-# + the DPF plugin + the test host / cli / ui-test.
+# --- the native package: the shell (the Backend lib: the Engine, the graph and script hosts, the RPC services, the
+# txiki host) + the DPF plugin + the test host / cli / ui-test. The consoles, the host I/O nodes and the system contract
+# are packages (packages/sameboy, packages/mesen, packages/host-io, packages/system) added above.
 add_subdirectory(packages/native native)
 
 # SDL2 gamepad input: link onto the UI aggregator so every UI-bearing variant

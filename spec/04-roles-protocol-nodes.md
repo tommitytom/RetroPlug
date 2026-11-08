@@ -540,8 +540,8 @@ Native ([packages/native/src/](../packages/native/src/)):
 - [ScriptHost.hpp](../packages/native/src/host/script/ScriptHost.hpp) /
   [ScriptHost.cpp](../packages/native/src/host/script/ScriptHost.cpp): the script-node runtime the
   protocol nodes run in.
-- [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp): each system node's settings, params
+- [MesenNode.cpp](../packages/mesen/native/src/system/mesen/MesenNode.cpp): each system node's settings, params
   and inputs, applied before its core runs.
-- [HostIoNodes.cpp](../packages/native/src/host/graph/HostIoNodes.cpp): the host MIDI I/O nodes the protocol
+- [HostIoNodes.cpp](../packages/host-io/native/src/host/graph/HostIoNodes.cpp): the host MIDI I/O nodes the protocol
   nodes read from and send to; [N8Node.cpp](../packages/n8/native/src/n8/N8Node.cpp): the cart's node;
   [SurfaceNodes.cpp](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp): the control surface's two.

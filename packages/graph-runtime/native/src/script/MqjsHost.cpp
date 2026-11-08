@@ -2124,7 +2124,8 @@ bool openControl(Pack& pack, Text& why) {
                 // Category "system" is a native type's promise, which the engine holds it to: such a node builds a core
                 // through rp.host.systems/2 in its first activation, and a script node builds none, so the type would
                 // be lined up against a plan slot that stayed null (docs/modular-graph-phase-f2-design.md section 3).
-                // Refused here, where a pack's types are registered, before the registry sees one.
+                // Refused here, where a pack's types are registered, before the registry sees one; the desktop's script
+                // host refuses it where it registers a pack's types too (host/script/ScriptHost.cpp).
                 if (const auto descriptor = graph::parseDescriptor(json);
                     descriptor && descriptor->category == "system") {
                     why << source.type_ids[i]

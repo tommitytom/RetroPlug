@@ -6,7 +6,7 @@
 void SystemBase::onProcess(const AudioBlockInfo& info, float* const* outs) {
     // Drive the triad to the block target, then finish, with the two lanes this entry drains: the mix. It says so to
     // the core the way a node's prepare does, so a core that gates on a ring of its own fills the one finishBlock
-    // reads (host/graph/SystemNodes.cpp).
+    // reads (a console package's node file).
     setBlockLanes(2);
     prepareForBlock(info);
     while (stepIfBelowTarget(info.frames)) {}

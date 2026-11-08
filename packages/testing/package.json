@@ -7,6 +7,9 @@
   },
   "type": "module",
   "description": "The TAP test harness, the script-node rig under txiki.js, the byte-array and structural deep-equal helpers the cart tests share: what every package's tests import as @retroplug/testing, its node tests as @retroplug/testing/rig, and its byte or golden comparisons as @retroplug/testing/bytes and @retroplug/testing/deepEqual.",
+  "retroplug": {
+    "native": { "target": "retroplug-testing" }
+  },
   "exports": {
     ".": "./ts/harness.ts",
     "./bytes": "./ts/bytes.ts",

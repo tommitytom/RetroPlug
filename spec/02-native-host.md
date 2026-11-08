@@ -282,7 +282,7 @@ staging and a staged node message handed to the node the running plan places und
       system's protocol nodes read what they need (mGB, N8 and LSDj their routed MIDI; risa and smsggdj only the
       transport) at the **block-start** `ppq_`, and send that system node's `serialIn`, `midi`, `bytes` and
       `buttons` inputs and the session its host MIDI out to `rp.host.midi-out`.
-   2. **The system nodes** ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp):
+   2. **The system nodes** ([SameBoyNode.cpp](../packages/sameboy/native/src/system/sameboy/SameBoyNode.cpp):
       `rp.sameboy.gb`, `rp.mesen.nes`, `rp.mesen.gba`, `rp.mesen.sms`), each a `SystemNode<T>` over a
       core's `prepareForBlock` / `stepIfBelowTarget` / `finishBlock`. Each applies its inputs first
       (below), then runs its core. An unlinked system is one `process()` call. Linked Game Boys run as
@@ -330,9 +330,9 @@ standalone call it before handing the engine over.
 What the script nodes read and send are wires the planner sees
 ([modular-graph-phase-b3a-design.md](../docs/modular-graph-phase-b3a-design.md) section 3,
 [modular-graph-phase-b3b-design.md](../docs/modular-graph-phase-b3b-design.md) section 5). The host
-I/O nodes ([HostIoNodes.hpp](../packages/native/src/host/graph/HostIoNodes.hpp)) reach the engine
+I/O nodes ([HostIoNodes.hpp](../packages/host-io/native/src/host/graph/HostIoNodes.hpp)) reach the engine
 through its host service `rp.engine.host-io/3`
-([HostServices.hpp](../packages/native/src/host/graph/HostServices.hpp)) and do not activate without
+([HostServices.hpp](../packages/host-io/native/src/host/graph/HostServices.hpp)) and do not activate without
 it:
 
 | Node | Ports | Does |
@@ -501,7 +501,7 @@ capability from the one reserved id space (`rp.system.memory/1`, `rp.system.sram
 
 ### The system nodes' settings and params
 
-A system's live knobs are its node's ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp),
+A system's live knobs are its node's ([MesenNode.cpp](../packages/mesen/native/src/system/mesen/MesenNode.cpp),
 [modular-graph-phase-c2-design.md](../docs/modular-graph-phase-c2-design.md)): each is either a **setting**, in
 the document, which an edit publishes, or a **param**, its value in the document and its live edits through
 `setParam` (above). A param is what is worth playing, automating or modulating, so it is also a control input a
@@ -857,7 +857,7 @@ because a script node cannot build a core.
 
 ### The Game Boy's build: `rp::sameboy::buildCore`
 
-[`rp::sameboy::buildCore`](../packages/native/src/system/sameboy/SameBoyBackend.cpp) takes the
+[`rp::sameboy::buildCore`](../packages/sameboy/native/src/system/sameboy/SameBoyBackend.cpp) takes the
 `SameBoyConfig` the node made from its settings (out of the request's `config`), gates the ROM on
 `detectRomFormat == RomFormat::Gb` (an empty ROM is refused with it; the embedded mGB's bytes pass the same
 gate), and builds the core:
@@ -881,7 +881,7 @@ model is 04's topic; a live knob reaches the core as its system node's settings 
 
 ### The Mesen consoles' builds: `rp::mesen::build{Nes,Gba,Sms}Core`
 
-[`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) holds the Mesen core's build functions, one
+[`MesenBackend.cpp`](../packages/mesen/native/src/system/mesen/MesenBackend.cpp) holds the Mesen core's build functions, one
 per console it runs, each reading its own config out of the request: `rp::mesen::buildNesCore` gates `RomFormat::Nes`
 and builds a `MesenNesSystem`, `rp::mesen::buildGbaCore` gates `RomFormat::Gba` and builds a `MesenGbaSystem` (empty
 `biosPath` → HLE boot ROM), and `rp::mesen::buildSmsCore` refuses a ROM that is positively another console's but accepts
@@ -890,7 +890,7 @@ SMS takes the `romName` it stages its file under. All three run the same tail, `
 `enableStateSnapshot`, and refuse a boot Mesen's `LoadRom` rejected after the magic gate ("Mesen refused the
 ROM"), so NES/GBA/SMS cores publish a tear-free savestate for the registry / Duplicate just like SameBoy.
 
-Their audio arrives through [`MesenAudioDevice`](../packages/native/src/system/mesen/MesenAudioDevice.hpp), a
+Their audio arrives through [`MesenAudioDevice`](../packages/mesen/native/src/system/mesen/MesenAudioDevice.hpp), a
 fixed-capacity ring of interleaved stereo `int16` sized `maxBlockFrames + kMaxPlayBufferFrames` (32768: the most one
 Mesen `PlayBuffer` can carry, the whole of the mixer's own output buffer, `_sampleBuffer`'s 0x10000 `int16` stereo,
 which `PlayAudioBuffer` is given exactly as its output cap). `availableFrames()` is its fill, which is
@@ -1122,27 +1122,29 @@ Engine's control thread. The bytecode keeps its debug information (the built-in 
 build time) and is version-locked to this exact qjs-ng build, which is fine because the compiler and the
 script host are the same `qjs`.
 
-## Wrapped shared-core classes
+## The console packages' classes, as the host wraps them
 
-The host links the shared core through
-[`retroplug-core`](../packages/native/CMakeLists.txt) (the static lib that
-compiles the shared sources under [`packages/native/src`](../packages/native/src) once) and wraps
-its **runtime** classes:
+The host links no console: a product links the console packages it lists
+([`packages/sameboy`](../packages/sameboy), [`packages/mesen`](../packages/mesen)), and every one of them builds on the
+contract in [`packages/system`](../packages/system) (F2,
+[modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md) section 2). What the engine and its nodes
+wrap:
 
 | Shared class | Host use |
 |---|---|
-| [`SystemBase`](../packages/system/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn`/`reserveAudio`. Its surface is what the engine and the nodes call: no battery-path accessors, no `fastBoot()` getter, no `clearSram`, no sub-block MIDI out, and no memory-snapshot arming (C4). The capabilities beside `debugTarget()` are `channelTap()` and, since C5, the nullable `memory()` / `sram()` / `rom()` accessors a system node presents to the capability job model (`system/SystemCapabilities.hpp`), and the per-block contract is `reserveAudio` plus `kDefaultBlockFrames`; its ingress queues report `inputAccepted()` / `inputDropped()` |
-| [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; its node gives it its knobs through value-guarded setters (`setModel`, `setHighpass`, the display group, `setSerialOutCapture`); its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
-| [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/system/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap names no console: it forward-declares `ChannelTap` and includes no core header, and with C5's cart node it has no console check at all |
+| [`SystemBase`](../packages/system/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNode.hpp](../packages/system/native/src/system/SystemNode.hpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn`/`reserveAudio`. Its surface is what the engine and the nodes call: no battery-path accessors, no `fastBoot()` getter, no `clearSram`, no sub-block MIDI out, and no memory-snapshot arming (C4). The capabilities beside `debugTarget()` are `channelTap()` and, since C5, the nullable `memory()` / `sram()` / `rom()` accessors a system node presents to the capability job model (`system/SystemCapabilities.hpp`), and the per-block contract is `reserveAudio` plus `kDefaultBlockFrames`; its ingress queues report `inputAccepted()` / `inputDropped()` |
+| [`SameBoySystem`](../packages/sameboy/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; its node gives it its knobs through value-guarded setters (`setModel`, `setHighpass`, the display group, `setSerialOutCapture`); its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
+| [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/mesen/native/src/system/mesen/) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/system/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap names no console: it forward-declares `ChannelTap` and includes no core header, and with C5's cart node it has no console check at all |
 | `SampleCache`, `util/MinizZip`, `EmbeddedRoms` | the offline seam's file decode (miniaudio, mono float at the file's own rate, the decode a kit compile reads its sources through), `zip`/`unzip`, and embedded-ROM resolution. `lsdj/Effects` is the kit path's reference arithmetic now, compiled into the two test binaries that hold the DSP nodes to it, not into the core |
 | `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the snapshot registry is built on (the command and release rings use `SpscRing`, which lives in `packages/node-sdk`) |
 
-The graph the engine runs on is not in `retroplug-core`: the executor, planner and
+The graph the engine runs on is its own packages too: the executor, planner and
 [`GraphHost`](../packages/graph-runtime/native/src/graph/GraphHost.hpp), with the `rp.host` package's
 `rp.host.audio-out`, are the `retroplug-graph` / `retroplug-graph-exec` libs (`packages/graph-runtime/`, over the node
-SDK in `packages/node-sdk/`); the `rp.core` mixing nodes are `retroplug-core-nodes` (`packages/core/`),
-and the engine's own nodes (`src/host/graph/`: the system nodes, the host MIDI I/O, the cart's node and the control
-surface's two) and the script host (`src/host/script/`) compile into `retroplug-backend`.
+SDK in `packages/node-sdk/`); the `rp.core` mixing nodes are `retroplug-core-nodes` (`packages/core/`); the console
+nodes are their own packages' (`system/sameboy/SameBoyNode.cpp`, `system/mesen/MesenNode.cpp`), the host MIDI I/O the
+host-io package's, the cart's node the N8 pack's and the control surface's two the Launchpad pack's; and the script host
+(`src/host/script/`), the engine and the RPC services are `retroplug-backend`, the shell.
 
 ROM classification (the legacy build's C++ `RomSniffer`) and the LSDj sav codec are TS-owned - neither is in
 the C++ tree.
@@ -1156,8 +1158,8 @@ RTTI), `retroplug-r8brain-base` (r8brain's static members, one vendored translat
 throws, with no target declared for the vendored library; kept off RetroPlug's own warning level), and the two node
 packages `retroplug-dsp-nodes` (`rp.dsp.gain`, `.biquad`, `.dither`, `.normalize`, `.dpcm`) and
 `retroplug-dsp-resample-nodes` (`rp.dsp.resample`), in the `dsp` package's
-[CMakeLists.txt](../packages/dsp/native/CMakeLists.txt). `retroplug-core` links neither (nothing of the core calls a
-kernel), and `retroplug-graph` links neither; `retroplug-backend`'s products link both packages and `Engine.cpp`
+[CMakeLists.txt](../packages/dsp/native/CMakeLists.txt). `retroplug-backend` links neither (nothing of the shell calls a
+kernel: the one header it reads, `util/Hash.hpp`, is a header), and `retroplug-graph` links neither; `retroplug-backend`'s products link both packages and `Engine.cpp`
 registers them, beside the other static packages, through the product's generated `rp_register_packages()`, the
 offline job pool registering them in its own registry too. The split is load-bearing: `rp.dsp` never reaches r8brain,
 so a Pico build links `retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone, leaves `dspResamplePackage()` out of
@@ -1345,14 +1347,16 @@ holding, and the poll always clears its flag. The jobs native still holds after 
 the queue, so a fan-out past the bound submitted before they are drained is refused busy rather than held.
 
 The txiki host `TjsHostRuntime` comes from
-[`deps/dpf.js`](../deps/dpf.js), not the shared core.
+[`deps/dpf.js`](../deps/dpf.js), not the shell's own sources.
 
 ## Build & identity
 
-The [`retroplug-backend`](../packages/native/CMakeLists.txt) static lib wraps
-[`retroplug-core`](../packages/native/CMakeLists.txt) with the `Engine` (and links
-`retroplug-graph`, the graph it runs on), the RPC services, the script host with its embedded
-script-node bundle, and the txiki host, and is PIC (it links into the shared plugin module). The
+The [`retroplug-backend`](../packages/native/CMakeLists.txt) static lib is the shell: the `Engine` (and
+`retroplug-graph`, the graph it runs on), the RPC services, the script host with its embedded script-node
+bundle, the txiki host, the offline job pool and the format-neutral helpers (`SampleCache`, `FileSync`,
+lodepng), and is PIC (it links into the shared plugin module). It links the packages' libraries it names
+(`system`, `host-io`, `graph-runtime`, `core`, `dsp`, `launchpad`); the consoles it does not link, because
+the product does: `retroplug_product` links every package the product lists. The
 test host `retroplug-host` is that lib + `main.cpp`; the DPF plugin is
 [`dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)`](../packages/native/CMakeLists.txt)
 (AU is macOS-only). The control-plane and UI bytecode bundles are built by
@@ -1386,18 +1390,19 @@ is one automatable parameter applied post-render across all 8 channels
 - [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) — mounts the capability facets onto a server; the single source of truth for the wire surface.
 - [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp), [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs, the registry and the offline job pool; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, `submitOfflineJob`, `drainOfflineJobs`, `cancelOfflineJob`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
-- [`host/graph/`](../packages/native/src/host/graph):
-  [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and
-  params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes),
-  [`SurfaceNodes.cpp`](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp) (the control surface's two),
-  [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp),
-  [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
+- [`host/graph/SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp): the plan's slots, by system id.
+  The node types are their packages': [`MesenNode.cpp`](../packages/mesen/native/src/system/mesen/MesenNode.cpp) (the
+  three Mesen consoles as nodes, with their settings and params), the Game Boy's beside it
+  ([`SameBoyNode.cpp`](../packages/sameboy/native/src/system/sameboy/SameBoyNode.cpp)), the host MIDI I/O nodes'
+  ([`HostIoNodes.cpp`](../packages/host-io/native/src/host/graph/HostIoNodes.cpp) and the service they read,
+  [`HostServices.hpp`](../packages/host-io/native/src/host/graph/HostServices.hpp)), and the control surface's two
+  ([`SurfaceNodes.cpp`](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp)).
 - [`GraphHost.hpp`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) /
   [`.cpp`](../packages/graph-runtime/native/src/graph/GraphHost.cpp),
   [`rp_node.h`](../packages/node-sdk/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI
   (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
-- [`SystemBuild.hpp`](../packages/system/native/src/system/SystemBuild.hpp) - the build request and the build function its node's package carries; [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) - the consoles' build functions.
+- [`SystemBuild.hpp`](../packages/system/native/src/system/SystemBuild.hpp) - the build request and the build function its node's package carries; [`SameBoyBackend.cpp`](../packages/sameboy/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/mesen/native/src/system/mesen/MesenBackend.cpp) - the consoles' build functions.
 - [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime and its packs, + the compiler a pack's source and the tests' toys go through; the generated `src/generated/scriptNodes.ts` with [`script/bundle.ts`](../packages/retroplug/src/script/bundle.ts) and [`@retroplug/core/register`](../packages/core/ts/register.ts): the bundle every Engine embeds and how it registers its nodes; and each package's `ts/protocol.ts` (with the controller's [`packages/launchpad/ts/nodes.ts`](../packages/launchpad/ts/nodes.ts)) for the script nodes themselves.
 - [`HostRpcService.cpp`](../packages/native/src/host/rpc/HostRpcService.cpp), [`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp), [`DebugRpcService.cpp`](../packages/native/src/host/rpc/DebugRpcService.cpp), [`AudioDriverRpcService.cpp`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp) — the RPC services behind the facets.
 - [`plugin/PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp), [`plugin/PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp), [`src/main.cpp`](../packages/native/src/main.cpp), [`test/ui/UiHarness.hpp`](../packages/native/test/ui/UiHarness.hpp) — the three hosts.

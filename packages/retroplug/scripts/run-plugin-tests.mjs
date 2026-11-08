@@ -3,7 +3,8 @@
 // pool (default half the logical threads; --jobs N / -j N / TEST_JOBS, =1 for serial):
 // the per-context window-hook routing (retroplug-plugin-test), the class-id
 // counter sync that keeps the DAW-hosted editor from rendering blank
-// (retroplug-classid-test), the per-channel audio taps (retroplug-audio-test),
+// (retroplug-classid-test), the per-channel audio taps (retroplug-audio-test), the two console
+// packages' own audio paths (retroplug-sameboy-test, retroplug-mesen-test),
 // the native file watcher (retroplug-watcher-test), the ThorVG-backed
 // Lottie rasterization behind the <Lottie> component (retroplug-lottie-test),
 // the MIDI device-selection policy (retroplug-midi-test), the control-surface
@@ -30,7 +31,7 @@ const REPO = resolve(PKG, "../..");
 const BIN_DIR = process.env.RETROPLUG_BIN_DIR || join(REPO, "build", "bin");
 const EXE = process.platform === "win32" ? ".exe" : "";
 
-const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test", "retroplug-graph-test", "retroplug-engine-graph-test", "retroplug-device-mode-test"];
+const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-sameboy-test", "retroplug-mesen-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test", "retroplug-graph-test", "retroplug-engine-graph-test", "retroplug-device-mode-test"];
 
 const jobs = resolveJobs();
 const filter = stripRunnerFlags()[0];

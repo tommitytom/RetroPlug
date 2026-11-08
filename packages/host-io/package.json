@@ -1,0 +1,12 @@
+{
+  "name": "@retroplug/host-io",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The host's own I/O as node types: rp.host.midi-in and rp.host.midi-out, and the engine's rp.engine.host-io/3 service they read, with the staging bounds the engine sizes from them.",
+  "dependencies": {
+    "@retroplug/node-sdk": "workspace:*"
+  },
+  "retroplug": {
+    "native": { "target": "retroplug-host-io", "entry": "rp_host_io_package", "device": false }
+  }
+}

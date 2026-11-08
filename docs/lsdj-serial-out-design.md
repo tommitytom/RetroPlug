@@ -23,7 +23,7 @@ frame 0 of block N + 1. LSDj at tempo 128 sends about 51 clocks a second, one pe
 block of bytes is never decoded at all: it waits for a block that does not come.
 
 The host's list is built by `rp.host.midi-out`
-([HostIoNodes.cpp](../packages/native/src/host/graph/HostIoNodes.cpp)), which hands its inputs out one after
+([HostIoNodes.cpp](../packages/host-io/native/src/host/graph/HostIoNodes.cpp)), which hands its inputs out one after
 another and sends each message at the later of its frame and the last frame handed out in the block (B3b's
 follow-up C). With every frame 0 that is a plain concatenation; with real frames it raises a later input's earlier
 frame to an earlier input's, so a second LSDj's clocks would bunch behind the first's.

@@ -2,19 +2,21 @@
   "name": "@retroplug/native",
   "version": "0.1.0",
   "private": true,
-  "description": "RetroPlug native core (C++): the engine, the systems, the hosts, and the node types not yet carved into packages of their own. Built via the top-level CMake.",
+  "description": "RetroPlug's native shell (C++): the engine, the graph and script hosts, the RPC services, the offline job pool and the hosts. Each console, the host's I/O nodes and the system contract are packages of their own (sameboy, mesen, host-io, system); this tree registers no node type, and its library is what the products link. Built via the top-level CMake.",
   "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/dsp": "workspace:*",
+    "@retroplug/graph-runtime": "workspace:*",
+    "@retroplug/host-io": "workspace:*",
     "@retroplug/launchpad": "workspace:*",
     "@retroplug/system": "workspace:*"
   },
   "devDependencies": {
-    "@retroplug/core": "workspace:*"
+    "@retroplug/core": "workspace:*",
+    "@retroplug/mgb": "workspace:*",
+    "@retroplug/testing": "workspace:*"
   },
   "retroplug": {
-    "native": [
-      { "target": "retroplug-backend", "entry": "rp_sameboy_package", "device": false },
-      { "target": "retroplug-backend", "entry": "rp_mesen_package", "device": false },
-      { "target": "retroplug-backend", "entry": "rp_host_io_package", "device": false }
-    ]
+    "native": { "target": "retroplug-backend" }
   }
 }

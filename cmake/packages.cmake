@@ -1707,6 +1707,57 @@ function(retroplug_check_products)
     endif()
 endfunction()
 
+# retroplug_check_test_helpers(): refuses, at configure time, every target whose link closure reaches a package's native
+# test helpers (retroplug-testing, packages/testing/native) unless the target is a test binary (retroplug_add_test_binary
+# marks one RP_TEST_BINARY). The helpers are a replaced global operator new and the shared test fixtures: a product that
+# linked them would count allocations in production, and a library that did would hand them to every consumer. A package
+# declares @retroplug/testing a devDependency, which the boundary check also allows only a test target to use, so this
+# holds the target properties that check cannot see (a library that links a test binary's helper transitively, say).
+# Deferred as retroplug_check_products is, so a target defined anywhere is checked.
+function(retroplug_check_test_helpers)
+    set(_helper retroplug-testing)
+    if(NOT TARGET ${_helper})
+        return()  # a build without the testing package (a device image) links none
+    endif()
+    _retroplug_build_targets(_targets "${CMAKE_SOURCE_DIR}")
+    # Every target's own link names, so a closure is followed without asking the generator to evaluate a target's.
+    foreach(_t IN LISTS _targets)
+        _retroplug_linked_names(_names_${_t} ${_t} LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+    endforeach()
+    set(_offenders "")
+    foreach(_t IN LISTS _targets)
+        get_target_property(_test ${_t} RP_TEST_BINARY)
+        if(_test)
+            continue()
+        endif()
+        # A breadth-first walk of what the target links, through the libraries of this build alone: a name that is no
+        # target (a system library) has no closure to follow.
+        set(_pending ${_names_${_t}})
+        set(_seen "")
+        while(_pending)
+            list(POP_FRONT _pending _next)
+            if(_next STREQUAL _helper)
+                list(APPEND _offenders ${_t})
+                break()
+            endif()
+            if(_next IN_LIST _seen OR NOT TARGET ${_next})
+                continue()
+            endif()
+            list(APPEND _seen ${_next})
+            if(_names_${_next})
+                list(APPEND _pending ${_names_${_next}})
+            endif()
+        endwhile()
+    endforeach()
+    if(_offenders)
+        list(JOIN _offenders ", " _offenders)
+        message(FATAL_ERROR "retroplug_check_test_helpers: these targets reach ${_helper}, the native test helpers "
+                            "(packages/testing/native), and are no test binary: ${_offenders}. A product or a library "
+                            "that links them counts allocations in production; link them from a "
+                            "retroplug_add_test_binary alone.")
+    endif()
+endfunction()
+
 # Every target `dir` and the directories under it define, imported and alias targets excepted. A directory still being
 # configured counts, with what it defined so far.
 function(_retroplug_build_targets out dir)

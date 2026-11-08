@@ -50,7 +50,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../graph/CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "ScriptRig.hpp"
 #include "graph/GraphHost.hpp"
 #include "graph/HostNodes.hpp"
@@ -349,8 +349,8 @@ struct ProtocolBench {
         const bool loaded = scripts.load(chunks, &error);
         INFO(error);
         REQUIRE(loaded);
-        for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::hostIoPackage(), benchPackage(),
-                                    scripts.package()})
+        for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp_host_io_package(),
+                                    benchPackage(), scripts.package()})
             REQUIRE(registry.addPackage(p, &error));
         rp::graph::HostConfig config;
         config.sampleRate = kRate;

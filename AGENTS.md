@@ -3,11 +3,13 @@
 Start with these — all short:
 
 - [README.md](README.md) — what RetroPlug is, how to build, project layout.
-- [spec/](spec/README.md) - the architecture (one doc per concern). The build lives in `packages/native/` (C++ host:
-  `src/` core + `src/host/` layer + `plugin/`) + `packages/retroplug/` (TS/UI), with the graph libraries in the
-  workspace packages `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (formerly
-  `native/src/graph` and `native/src/dsp`), the console halves in `packages/sameboy/` and `packages/mesen/`, the carts
-  in `packages/lsdj/`, `packages/mgb/`, `packages/risa/` and `packages/smsggdj/`, the tracker layer they share in
+- [spec/](spec/README.md) - the architecture (one doc per concern). The build lives in `packages/native/` (the shell:
+  `src/host/` layer + `plugin/`, plus the format-neutral helpers `src/kit/` and `src/util/`) + `packages/retroplug/`
+  (TS/UI), with the graph libraries in the workspace packages `packages/node-sdk/`, `packages/graph-runtime/`,
+  `packages/core/` and `packages/dsp/` (formerly `native/src/graph` and `native/src/dsp`), the contract every console
+  implements in `packages/system/`, the consoles' native halves beside their TS in `packages/sameboy/` and
+  `packages/mesen/`, the host's own I/O nodes in `packages/host-io/`, the carts in `packages/lsdj/`, `packages/mgb/`,
+  `packages/risa/` and `packages/smsggdj/`, the tracker layer they share in
   `packages/tracker/`, BlipToaster's app half and its MicroQuickJS MIDI policy in `packages/bliptoaster/`, the control
   surface in `packages/launchpad/` with the LSDj MI.MAP app that drives it in `packages/lsdj-launchpad/`, the test
   harness in `packages/testing/`, the box's device nodes in `packages/device-io/`, the device check's test nodes in
@@ -42,9 +44,9 @@ The rules below are the parts that don't fit those.
   linked into `retroplug-backend`; the watcher is opt-in via `enableWatching`, which
   only the plugin calls). `deps/catch2` is the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
-  eleven `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
-  `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` /
-  `-graph-test` / `-engine-graph-test` / `-device-mode-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
+  thirteen `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
+  `-sameboy-test` / `-mesen-test` / `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` /
+  `-lottie-test` / `-graph-test` / `-engine-graph-test` / `-device-mode-test`) as `Catch2::Catch2WithMain`. `retroplug-engine-graph-test`
   holds the engine's graph to the cores it wraps: each system node renders what its core renders
   driven directly, bit for bit, its inputs, settings and params included (C2,
   [docs/modular-graph-phase-c2-design.md](docs/modular-graph-phase-c2-design.md): every setting reaches its core at
@@ -274,7 +276,7 @@ The rules below are the parts that don't fit those.
   byte-identical transcripts in `--heap-bytes`; both scenarios run in `pnpm test` (the core's budget 76800, the
   bridge's 184320, measured, not claimed to fit the box's 64 KiB arena). The pack declares NO `script` member in F3,
   so the scenarios are the proof and no box image carries it. The pack's tests are `retroplug-launchpad-test` (one of
-  the eleven `test:plugin` binaries: the link, the claim, the pool, the provider, the facet, the port filter) and the
+  the thirteen `test:plugin` binaries: the link, the claim, the pool, the provider, the facet, the port filter) and the
   facet's cases in `test:native` (`launchpad-facet`, `launchpad-devices`, over the headless host's scripted device);
   `pnpm sdl:controller` is the real standalone against an ALSA fake (Linux only, not in CI), and it runs under
   `RP_MIDI_PORT_ALLOW`, the test-only allow list of port-name substrings that hides and refuses every other port in

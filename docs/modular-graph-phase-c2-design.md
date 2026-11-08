@@ -30,7 +30,7 @@ section 5: "The capture mode as a Game Boy node setting"), after C1's script nod
   resends the whole config, so an unguarded apply would restart a core when a sibling knob moved). `reloadOnRomChange`
   lands on a core flag nothing native reads: the file watcher that acts on it is TS's
   ([fileWatcher.ts](../packages/retroplug/src/fileWatcher.ts)).
-- **A system node's settings** ([SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)) are `{"core":
+- **A system node's settings** ([MesenNode.cpp](../packages/mesen/native/src/system/mesen/MesenNode.cpp)) are `{"core":
   <id>}` alone, and `needs_rebuild` compares them, so the type cannot declare stateless prepare (node.hpp: a
   `needs_rebuild` reads the instance's current settings), and a settings edit to one would make `setGraph` wait for the
   audio thread to adopt it.
@@ -228,7 +228,7 @@ prototype answers (each answer follows its question):
   without a second spelling. **From the enumerators' own names, first letter lowercased.** Every label the role
   configs spell is its C++ enumerator's name with the first letter lowercased (`CgbC` is `"cgbC"`, `RemoveDcOffset`
   `"removeDcOffset"`, `Auto` `"auto"`), so `knobs::Label<E>` in
-  [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp) is an `rfl::Literal` generated at compile time
+  [SystemNode.hpp](../packages/system/native/src/system/SystemNode.hpp) is an `rfl::Literal` generated at compile time
   from `rfl::get_enumerator_array<E>()`: it reads exactly those strings (an ordinal, `"CgbC"` or `"cgb-c"` refuses the
   settings), lists them as the schema's enum and maps one back to its enumerator by position. It builds each name with
   `rfl::internal::StringLiteral`, an internal reflect-cpp type, so a reflect-cpp bump is to check it. A test reads

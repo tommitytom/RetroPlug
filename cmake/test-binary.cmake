@@ -66,4 +66,11 @@ function(retroplug_add_test_binary)
         # boundary check reads this).
         RP_TEST_BINARY ON
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+    # A package's test binary sits in the package's directory, so it does not inherit the directory-wide /bigobj that
+    # packages/native's own tests get, and reflect-cpp's instantiation passes COFF's 2^16 section limit (C1128) in any
+    # TU leaning on it. /bigobj only lifts that limit, so every test binary carries it where it means anything.
+    if(MSVC)
+        target_compile_options(${T_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/bigobj>)
+    endif()
 endfunction()

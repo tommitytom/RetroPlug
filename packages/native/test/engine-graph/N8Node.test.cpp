@@ -24,15 +24,16 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../graph/CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "TestDevices.hpp"
+#include "graph/Descriptor.hpp"  // the NES type's param, from its descriptor
 #include "graph/desktop/DeviceJobSlot.hpp"
 #include "host/engine/CapabilityJobs.hpp"
 #include "host/HostServices.hpp"
 #include "host/engine/Engine.hpp"
-#include "host/graph/SystemNodes.hpp"  // kExpansionVolume*, rp.mesen.nes's range
+#include "system/mesen/MesenNode.hpp"
 #include "n8/CartLink.hpp"
 #include "n8/N8Node.hpp"
 
@@ -329,11 +330,21 @@ TEST_CASE("rp.n8.nes gives the link its expansion volume at its first block, on 
 
 TEST_CASE("rp.n8.nes's expansion-volume range is rp.mesen.nes's, since one knob drives both",
           "[engine-graph][n8-node]") {
-    // The pack keeps its own constants (its node includes nothing of the engine's), and buildGraph hands both nodes the
-    // system's one knob, so a range that drifted on one side would clamp the same value two ways.
-    STATIC_REQUIRE(rp::n8::kExpansionVolumeMin == rp::host::kExpansionVolumeMin);
-    STATIC_REQUIRE(rp::n8::kExpansionVolumeMax == rp::host::kExpansionVolumeMax);
-    STATIC_REQUIRE(rp::n8::kExpansionVolumeDefault == rp::host::kExpansionVolumeDefault);
+    // buildGraph hands both nodes the system's one knob, so a range that drifted on one side would clamp the same value
+    // two ways. The NES type declares its param from the pack's constants (n8/N8Node.hpp), which rp.n8.nes clamps with,
+    // and this holds the descriptor a document is planned against to them.
+    const rp_node_type* nes = nullptr;
+    const rp_package*   package = rp_mesen_package();
+    for (std::uint32_t t = 0; t < package->node_type_count; ++t)
+        if (std::string(package->node_types[t]->id) == "rp.mesen.nes") nes = package->node_types[t];
+    REQUIRE(nes != nullptr);
+    const auto descriptor = rp::graph::parseDescriptor(nes->descriptor(nes));
+    REQUIRE(descriptor);
+    const rp::graph::ParamDesc* volume = rp::graph::findParam(descriptor->layout, "expansionVolume");
+    REQUIRE(volume != nullptr);
+    CHECK(volume->min == rp::n8::kExpansionVolumeMin);
+    CHECK(volume->max == rp::n8::kExpansionVolumeMax);
+    CHECK(volume->def == rp::n8::kExpansionVolumeDefault);
 }
 
 TEST_CASE("a note-off the link dropped during a pause goes out at frame 0 of the first block it reads connected",

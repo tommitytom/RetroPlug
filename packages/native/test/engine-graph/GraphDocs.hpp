@@ -47,7 +47,7 @@ inline const char* const kGbType = "rp.sameboy.gb";
 inline const char* const kNesType = "rp.mesen.nes";
 
 // The ROM bytes a system node of `type` boots in a native test: the same fixture every case used, small enough to put
-// per Engine. A GBA node gates the bytes it is given (detectRomFormat), so its 1 KiB ROM - the smallest
+// per Engine. A GBA node gates the bytes it is given (its package's RomFormat.hpp), so its 1 KiB ROM - the smallest
 // GbaConsole::LoadRom takes - carries the Nintendo logo the way every licensed cart does. Empty for a type with no
 // fixture.
 inline std::vector<std::uint8_t> romFor(const std::string& type) {

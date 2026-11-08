@@ -30,8 +30,9 @@
 #include "launchpad/SurfaceLink.hpp"
 #include "n8/CartLink.hpp"
 #include "n8/N8Node.hpp"
-#include "host/graph/SystemNodes.hpp"
 #include "system/HostSystems.hpp"
+#include "system/mesen/MesenNode.hpp"
+#include "system/sameboy/SameBoyNode.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemBuild.hpp"
 
@@ -79,8 +80,10 @@ struct NodeRig {
     explicit NodeRig(double sampleRate, std::uint32_t maxFrames = 8192,
                      rp::graph::Target target = rp::graph::Target::Desktop) {
         rate = sampleRate;
-        for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), sameboyPackage(), mesenPackage(),
-                                    hostIoPackage(), rp::n8::n8Package(), rp::launchpad::launchpadPackage(), testPackage()})
+        // The packages' own entries, as a product's generated registration calls them: the rig names no console.
+        for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp_sameboy_package(),
+                                    rp_mesen_package(), rp_host_io_package(), rp::n8::n8Package(),
+                                    rp::launchpad::launchpadPackage(), testPackage()})
             registry.addPackage(p);
         rp::graph::HostConfig config;
         config.sampleRate = sampleRate;

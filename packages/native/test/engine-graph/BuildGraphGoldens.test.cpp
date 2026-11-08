@@ -52,7 +52,8 @@
 #include "TestDevices.hpp"
 #include "graph/CanonicalJson.hpp"
 #include "host/engine/Engine.hpp"
-#include "host/graph/SystemNodes.hpp"
+#include "system/mesen/MesenNode.hpp"
+#include "system/sameboy/SameBoyNode.hpp"
 #include "system/SystemBase.hpp"  // the tap the export mode is read through
 #include "system/mesen/MesenNesSystem.hpp"  // the N8 FIFO's accepted-byte count, what the cart is held against
 
@@ -151,7 +152,7 @@ Goldens readGoldens(const char* path) {
 const std::map<std::string, std::set<std::string>>& systemSettingsFields() {
     static const std::map<std::string, std::set<std::string>> fields = [] {
         std::map<std::string, std::set<std::string>> out;
-        for (const rp_package* package : {rp::host::sameboyPackage(), rp::host::mesenPackage()})
+        for (const rp_package* package : {rp_sameboy_package(), rp_mesen_package()})
             for (std::uint32_t t = 0; t < package->node_type_count; ++t) {
                 const rp_node_type* type = package->node_types[t];
                 const auto descriptor = rp::graph::parseJson(type->descriptor(type));

@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "GraphRig.hpp"
 
 using namespace rp::graph;

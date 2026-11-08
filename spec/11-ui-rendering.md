@@ -94,7 +94,7 @@ written. Engine jobs hold at most all but one of the pool's workers (one for a p
 and share the 64-job bound with graph jobs, so a kit compile always finds a worker. Process-wide state that parallel
 cores touch is made safe: Mesen's setup is a function-local static,
 initialised once whichever thread builds the first core
-([MesenGlobalInit](../packages/native/src/system/mesen/MesenGlobalInit.cpp)), its `SimpleLock` is atomic, and
+([MesenGlobalInit](../packages/mesen/native/src/system/mesen/MesenGlobalInit.cpp)), its `SimpleLock` is atomic, and
 SameBoy's `Core/random.c`, `camera.c` and `sgb.c` statics are patched
 ([06-build-test.md](06-build-test.md)).
 

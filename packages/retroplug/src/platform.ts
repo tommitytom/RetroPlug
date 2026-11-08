@@ -11,9 +11,11 @@ import type { Core, Platform } from "@retroplug/core/platform";
 // via `defaultCoreFor` - there's no user override yet, but the axes stay distinct so one can be added
 // without reshaping. The sniffer classifies to a `Platform` (never a core), by logo/magic rather than
 // file extension: a mislabelled .gb that's really a .nes still picks the right platform, and an
-// unrelated file is `"unknown"`. Detection logic mirrors packages/native/src/system/RomFormat.hpp
-// (priority NES → GBA → GB → Sega → unknown); the vocabulary is this package's own (platforms, not
-// core names).
+// unrelated file is `"unknown"`. The magic bytes are the ones the console packages' own ROM gates check
+// (packages/mesen/native/src/system/mesen/RomFormat.hpp and
+// packages/sameboy/native/src/system/sameboy/RomFormat.hpp). The ORDER is this sniffer's, not theirs: a native gate
+// reads its own console's magic alone, so it has no priority to share, while a platform has to be one answer. NES,
+// then GBA, then GB, then Sega, then unknown. The vocabulary is this package's own (platforms, not core names).
 //
 // The Sega tier is the one that reads the file extension, and only ever as a TIEBREAK - see
 // `detectPlatform`. Content still wins outright whenever it says anything.

@@ -362,7 +362,7 @@ that happen to make noise.
 
 If link sync is genuinely broken, the follower's per-system RMS stays at 0 in
 the positive test - look at `linkGroups` in [buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts)
-(which Game Boys share a cable), `set_peers` in [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)
+(which Game Boys share a cable), `set_peers` in [SameBoyNode.cpp](../packages/sameboy/native/src/system/sameboy/SameBoyNode.cpp)
 (the cable itself), and the `serialStart` / `serialEnd` callbacks in `SameBoySystem.cpp`. `renderAudioPerSystem`
 isolates each instance's audio (the canonical way to tell synced playback from a
 healthy-looking mix of two desynced instances).
@@ -625,7 +625,7 @@ LSDJ in MI.OUT (and KEYBD) uses the GB serial port in **external-clock** mode
 (`SC=0x80`): LSDJ is the *slave* and waits for the sender to clock each byte
 across. Real hardware (an Arduinoboy for MI.OUT, a PS/2-to-link adapter for
 KEYBD) drives the clock; SameBoy by default does nothing. Two paths in
-[packages/native/src/system/sameboy/SameBoySystem.cpp](../packages/native/src/system/sameboy/SameBoySystem.cpp)
+[packages/native/src/system/sameboy/SameBoySystem.cpp](../packages/sameboy/native/src/system/sameboy/SameBoySystem.cpp)
 play that role:
 
 - **Serial-OUT capture (MI.OUT)** lives in `writeAudioSample` — the per-sample

@@ -101,6 +101,12 @@ importers:
         specifier: workspace:*
         version: link:../node-sdk
 
+  packages/host-io:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
+
   packages/launchpad:
     dependencies:
       '@retroplug/core':
@@ -175,10 +181,22 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+      '@retroplug/n8':
+        specifier: workspace:*
+        version: link:../n8
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
+      '@retroplug/system':
+        specifier: workspace:*
+        version: link:../system
       zod:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -223,6 +241,18 @@ importers:
 
   packages/native:
     dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/dsp':
+        specifier: workspace:*
+        version: link:../dsp
+      '@retroplug/graph-runtime':
+        specifier: workspace:*
+        version: link:../graph-runtime
+      '@retroplug/host-io':
+        specifier: workspace:*
+        version: link:../host-io
       '@retroplug/launchpad':
         specifier: workspace:*
         version: link:../launchpad
@@ -230,9 +260,12 @@ importers:
         specifier: workspace:*
         version: link:../system
     devDependencies:
-      '@retroplug/core':
+      '@retroplug/mgb':
         specifier: workspace:*
-        version: link:../core
+        version: link:../mgb
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
 
   packages/node-sdk: {}
 
@@ -318,6 +351,12 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
+      '@retroplug/system':
+        specifier: workspace:*
+        version: link:../system
       zod:
         specifier: ^4.4.3
         version: 4.4.3

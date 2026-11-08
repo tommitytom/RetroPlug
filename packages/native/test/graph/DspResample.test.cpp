@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-#include "CountingAllocator.hpp"
+#include "graph/CountingAllocator.hpp"
 #include "GraphRig.hpp"
 #include "dsp/Resample.hpp"
 #include "graph/nodes/DspResampleNodes.hpp"

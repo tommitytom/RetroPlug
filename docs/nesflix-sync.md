@@ -53,9 +53,9 @@ Controllers set rate (`ani_speed`), direction (`dir`), position (`ScreenNumber`)
 **RetroPlug NES sync seam.** RetroPlug already attaches an emulated EverDrive N8 FIFO to
 *every* NES ROM at `$40F0` (data) / `$40F1` (status), benign if unused:
 
-- [NesEverdriveFifo.hpp](../packages/native/src/system/mesen/NesEverdriveFifo.hpp) - the FIFO.
+- [NesEverdriveFifo.hpp](../packages/mesen/native/src/system/mesen/NesEverdriveFifo.hpp) - the FIFO.
   `$40F1` bit 7 set (`0x80`) = empty, clear = byte ready; reading `$40F0` pops one byte.
-- [NesN8FifoRole.hpp](../packages/native/src/system/mesen/roles/NesN8FifoRole.hpp) -
+- [NesN8FifoRole.hpp](../packages/mesen/native/src/system/mesen/roles/NesN8FifoRole.hpp) -
   `pushBytes(offset, data, count, flush)` schedules bytes into the FIFO at sample offsets,
   released in true order by `pumpUntil`. The same queue feeds host MIDI and a raw protocol.
 - [risaSync.ts](../packages/risa/ts/risaSync.ts) + the `risa-sync` role in

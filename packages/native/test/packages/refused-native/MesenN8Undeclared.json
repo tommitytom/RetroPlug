@@ -1,0 +1,18 @@
+{
+  "package": "mesen",
+  "declared": [
+    "node-sdk",
+    "system"
+  ],
+  "devDeclared": [],
+  "test": false,
+  "links": [
+    "retroplug-mesen=retroplug-node-sdk",
+    "retroplug-mesen=retroplug-n8"
+  ],
+  "includes": [],
+  "owners": [
+    "retroplug-node-sdk=node-sdk",
+    "retroplug-n8=n8"
+  ]
+}
