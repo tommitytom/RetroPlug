@@ -47,4 +47,8 @@ struct SystemBuildRequest {
     // request that names no console, which the host refuses before it claims anything.
     SystemBuildFn build  = nullptr;
     const void*   config = nullptr;
+    // The node type that made the request (its `id`), which the host names in one refusal: a type that builds a core but
+    // whose descriptor does not declare category "system" has no slot in the plan's table, and that refusal names the
+    // type whose descriptor to fix. A node that names none reads as no type in that message.
+    const char* nodeType = nullptr;
 };

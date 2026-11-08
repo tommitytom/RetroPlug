@@ -255,6 +255,13 @@ struct SystemNode {
     // block's whole life), and a plan that grows a host's block reactivates the whole graph quiescent, where
     // reserveAudio moves the sizes with no block in flight.
     bool activate(double, std::uint32_t maxFrames) {
+        // The category is what the engine recognizes a system node by, and the slot it reads this node's core back from
+        // is the plan's table entry for a type that declared it. A type that omitted it would build a core no slot names,
+        // so the omission is refused at compile time: this template is what a console's node type is built from, and a
+        // third party's copy is the one that must not be able to omit it.
+        static_assert(std::string_view(Self::category) == "system",
+                      "a console's node type declares category \"system\": the engine recognizes a system node by it "
+                      "and reads the core this node builds back from the plan's slot");
         if (core) {
             core->reserveAudio(maxFrames);
             return true;
@@ -283,6 +290,7 @@ struct SystemNode {
         request.maxBlockFrames = maxBlockFrames;
         request.build = Self::kBuild;
         request.config = config;
+        request.nodeType = Self::id;
         rp_error err{};
         SystemBase* made = systems->build(systems->ctx, settings->system, std::move(request), &err);
         if (!made)

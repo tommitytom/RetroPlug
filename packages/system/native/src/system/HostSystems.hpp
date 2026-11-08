@@ -28,9 +28,10 @@ struct HostSystems {
     // Build the core of the system `system`, from the ROM and seeds the node's resources hold, the config its settings
     // made, and the build function its package carries. Null, with the reason in *err, for a request that names no
     // build function, a ROM that console's gate refuses, a boot the core refuses, an id that is live (held by a node of
-    // any plan not yet reclaimed) and a full snapshot pool. A core built here is the node's until `destroy`: the host
-    // claimed its snapshot slot under `system` and keeps it among its live cores, so the plan's table and the control
-    // plane see it at once.
+    // any plan not yet reclaimed), a full snapshot pool, and a build whose node type's descriptor does not declare
+    // category "system" (the plan's table has no slot the core would go in, and the reason names the type). A core built
+    // here is the node's until `destroy`: the host claimed its snapshot slot under `system` and keeps it among its live
+    // cores, so the plan's table and the control plane see it at once.
     //
     // /2: the request carries a build function and an opaque config pointer where /1 carried a SystemConfig variant, so
     // the host no longer picks a backend by the alternative it held. A node built against /1 would read the config as a

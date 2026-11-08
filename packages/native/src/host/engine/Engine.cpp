@@ -322,6 +322,7 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
     // could build nothing claims no snapshot slot and no live id.
     const SystemBuildFn build = request.build;
     if (!build) return refuse("the request names no build function (rp.host.systems/2)");
+    const char* const nodeType = request.nodeType;  // a literal the node's type names, alive for the build
     std::unique_ptr<SystemBase> core = build(id, std::move(request), sampleRate_, why);
     if (!core) {
         if (why && why->empty()) *why = "the core did not build";
@@ -336,9 +337,11 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
     // The plan being planned learns its slot's core here: its table was built with a null entry for a system no node of
     // an older plan is reused for, and the table is published with the plan once every node has activated. buildSystem
     // only runs inside a setGraph, so the table is there, and publishGraph has already refused a document whose system
-    // nodes and slots name different systems, so an id the slots do not name is a host bug. Asserted, and refused with
-    // what the claim took given back, so that a broken invariant costs a refused activation rather than a core and a
-    // snapshot slot the process then holds for ever under an id no plan can free.
+    // nodes and slots name different systems. What is left is a type that builds a core but whose descriptor does not
+    // declare category "system": the engine recognizes a system node by that category, so the table has no entry for the
+    // core the node built. Refused, naming the type, and refused with what the claim took given back: a broken promise
+    // costs a refused activation rather than a core and a snapshot slot the process then holds for ever under an id no
+    // plan can free.
     bool found = false;
     for (auto& e : building_->slots)
         if (e.id == id) {
@@ -346,10 +349,10 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
             e.tap = built->channelTap();
             found = true;
         }
-    assert(found);
     if (!found) {
         destroySystem(built);  // the slot, the live-core entry and the core itself
-        return refuse("system " + std::to_string(id) + " is not in the plan's slots");
+        return refuse("node type \"" + std::string(nodeType ? nodeType : "?") +
+                      "\" builds a core but its descriptor does not declare category \"system\"");
     }
     return built;
 }

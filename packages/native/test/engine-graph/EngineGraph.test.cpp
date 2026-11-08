@@ -939,10 +939,41 @@ struct FixtureConsoleWithoutCore : NoCorePorts {
     void process(const rp::Block&) noexcept {}
 };
 
+// A node type that builds a core but declares no category: a third party's own node, written without SystemNode<> (whose
+// compile-time check refuses the omission). The engine recognizes a system node by the category its descriptor declares,
+// so a core built by a type that omits it has no slot in the plan's table: the engine refuses such a document, naming
+// the type, rather than publish a plan whose table cannot reach the core the node built.
+struct FixtureConsoleWithoutCategory : NoCorePorts {
+    struct Settings { std::uint64_t system = 0; };
+
+    static constexpr const char* id = "rp.test.fixture-console-no-category";
+    static constexpr const char* name = "Fixture console with no category";
+    static constexpr const char* version = "1.0.0";
+    static constexpr SystemBuildFn kBuild = buildFixtureCore;
+
+    const rp::host::HostSystems* systems = nullptr;
+    std::uint64_t                system = 0;
+
+    void bind_host(const rp_host* h) noexcept {
+        systems = static_cast<const rp::host::HostSystems*>(h->get_interface(h, RP_HOST_SYSTEMS_INTERFACE));
+    }
+    void on_settings(const Settings& s) noexcept { system = s.system; }
+    void activate(double, std::uint32_t) {
+        SystemBuildRequest request;
+        request.build = kBuild;
+        request.nodeType = id;
+        rp_error err{};
+        if (!systems->build(systems->ctx, system, std::move(request), &err))
+            throw std::runtime_error(err.message[0] ? std::string(err.message) : std::string("the core did not build"));
+    }
+    void process(const rp::Block&) noexcept {}
+};
+
 const rp_package* fixtureConsolePackage() {
     static const rp_node_type* const kTypes[] = {rp::node_type<FixtureConsole<buildFixtureCore>>(),
                                                  rp::node_type<FixtureConsole<nullptr>>(),
-                                                 rp::node_type<FixtureConsoleWithoutCore>()};
+                                                 rp::node_type<FixtureConsoleWithoutCore>(),
+                                                 rp::node_type<FixtureConsoleWithoutCategory>()};
     static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.fixture","version":"1.0.0"})",
                                      static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
     return &kPackage;
@@ -1097,6 +1128,42 @@ TEST_CASE("a type that declares category \"system\" and builds no core refuses t
     CHECK(e.resourcePinCount(rom) == 1);       // the running plan's node still holds its ROM
 
     // The running plan runs a block, as it did.
+    std::vector<float> lanes(2 * 256, 0.0f);
+    float* outs[2] = {&lanes[0], &lanes[256]};
+    e.processBlock(256, outs, 2);
+}
+
+TEST_CASE("a type that builds a core but declares no category is refused, naming the type",
+          "[engine-graph][b2][systems]") {
+    // The category is the promise the engine reads a system node by (docs/modular-graph-phase-f2-design.md section 3):
+    // a type that builds through rp.host.systems/2 without declaring it builds a core that no slot of the plan's table
+    // names. The SystemNode template refuses the omission at compile time; a third party's own node can still make it,
+    // which is what this case drives. Refused at the activation that built the core, naming the type, with what the
+    // build claimed given back: the plan already running is untouched.
+    Engine e(kRate);
+    REQUIRE(e.addNodePackage(fixtureConsolePackage()));
+    REQUIRE(StubCore::live == 0);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    REQUIRE(rom != 0);
+    REQUIRE(e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, rom), {1})).ok);
+    SystemBase* running = e.findSystem(1);
+    REQUIRE(running != nullptr);
+    const std::size_t cores = e.liveSystemCount(), slots = e.registry().liveCount();
+
+    const std::string document =
+        R"({"nodes":[{"id":"console","type":"rp.test.fixture-console-no-category",)"
+        R"("settings":{"system":2}}],"wires":[]})";
+    const auto r = e.setGraph(builtRequest(document, {}));
+    CHECK(refusal(r) == "console: activate-failed: node type \"rp.test.fixture-console-no-category\" builds a core "
+                        "but its descriptor does not declare category \"system\"");
+    // The core the build made, the slot it claimed and the live id it took are given back.
+    CHECK_FALSE(e.coreLive(2));
+    CHECK(StubCore::live == 0);
+    CHECK(e.findSystem(1) == running);
+    CHECK(e.liveSystemCount() == cores);
+    CHECK(e.registry().liveCount() == slots);
+    CHECK(e.resourcePinCount(rom) == 1);  // the running plan's own node still holds it
+
     std::vector<float> lanes(2 * 256, 0.0f);
     float* outs[2] = {&lanes[0], &lanes[256]};
     e.processBlock(256, outs, 2);
