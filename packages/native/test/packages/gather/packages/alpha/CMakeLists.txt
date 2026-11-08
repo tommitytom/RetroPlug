@@ -33,6 +33,13 @@ elseif(RP_GATHER_CASE STREQUAL "testing-dependency")
     # The test helpers linked by a library, which is no test binary: the boundary check allows a DECLARED dependency, and
     # the test-helper guard is what refuses this one.
     target_link_libraries(retroplug-alpha INTERFACE retroplug-testing)
+elseif(RP_GATHER_CASE STREQUAL "testing-allocator")
+    # The allocator target alone, which the guard refuses to a non-test target for the same reason.
+    target_link_libraries(retroplug-alpha INTERFACE retroplug-testing-allocator)
+elseif(RP_GATHER_CASE STREQUAL "test-dev-allocator")
+    # The allocator from a test binary, which the guard allows: the no-allocation checks are exactly such a binary.
+    target_link_libraries(retroplug-alpha INTERFACE retroplug-testing-allocator)
+    set_target_properties(retroplug-alpha PROPERTIES RP_TEST_BINARY ON)
 elseif(RP_GATHER_CASE STREQUAL "defs" OR RP_GATHER_CASE STREQUAL "defs-dev"
        OR RP_GATHER_CASE STREQUAL "defs-quoted" OR RP_GATHER_CASE STREQUAL "defs-dev-quoted")
     # A file opened by the path a package's manifest gives: a compile definition is a link by another name, judged like

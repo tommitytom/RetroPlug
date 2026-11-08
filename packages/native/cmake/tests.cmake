@@ -139,7 +139,7 @@ retroplug_add_test_binary(
     LIBS     retroplug-backend                         # Engine, the graph and the script host
              retroplug-dsp-kernels                     # OfflineJobs.test.cpp holds a job's buffers to the kernels
              retroplug-dsp-resample                    # and to resampledLength, which the resample's node wraps
-             retroplug-testing                         # the no-allocation checks' CountingAllocator
+             retroplug-testing-allocator               # the no-allocation checks' CountingAllocator
              rpcpp                                     # the server Providers.test.cpp mounts the facets on (QjsRpc.hpp)
              retroplug-launchpad-desktop                # the generated header naming the launchpad provider (below)
     PACKAGES ${RP_DESKTOP_PACKAGES}
@@ -385,7 +385,9 @@ set(_rp_gather_cases
     "defs-quoted|refused|defines RP_ROM_PATH as ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src/rom.gb, which is in the beta"
     "defs-dev-quoted|holds|"
     "comment-only|holds|"
-    "testing-dependency|refused|reach retroplug-testing, the native test helpers (packages/testing/native), and are no test binary"
+    "testing-dependency|refused|reach the native test helpers (packages/testing/native), and are no test binary: retroplug-alpha (retroplug-testing)"
+    "testing-allocator|refused|reach the native test helpers (packages/testing/native), and are no test binary: retroplug-alpha (retroplug-testing-allocator)"
+    "test-dev-allocator|holds|"
     "runtime-library|refused|retroplug-audio-test -> tjs"
     "runtime-bare|holds|"
     "runtime-chain|refused|retroplug-audio-test -> scratch-backend -> tjs"
@@ -499,7 +501,7 @@ retroplug_add_test_binary(
              retroplug-dsp-resample-nodes             # and the rp.dsp.resample package
              retroplug-dsp-kernels                    # core-free: the standard library
              retroplug-dsp-resample                   # Dsp.test.cpp's resampler
-             retroplug-testing                        # the no-allocation checks' CountingAllocator
+             retroplug-testing-allocator              # the no-allocation checks' CountingAllocator
              Threads::Threads                          # SwapStress runs a real audio thread
     DEFS     RP_GRAPH_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/graph/golden"
     # Dsp.test.cpp includes dsp/R8bAllocator.hpp first, and that header includes r8brain's CDSPResampler.h. The dep's
@@ -770,7 +772,7 @@ retroplug_add_test_binary(
     LIBS     retroplug-graph
              ${_rp_device_owners}                      # the desktop's build of every device entry, the device's twin
              retroplug-dsp-kernels                     # the desktop rp.dsp's kernels (the objects build theirs)
-             retroplug-testing                         # the no-allocation checks' CountingAllocator
+             retroplug-testing-allocator               # the no-allocation checks' CountingAllocator
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test
              ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode
              ${_rp_device_check_dir}                   # DeviceCheck.hpp

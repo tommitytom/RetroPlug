@@ -59,6 +59,6 @@ retroplug_add_test_binary(
     SOURCES  test/Controller.test.cpp
              test/SurfaceLink.test.cpp
     LIBS     retroplug-launchpad-desktop   # the transport, the pool, the claim, the provider, the facet
-             retroplug-testing             # CountingAllocator: the drain and the push allocate and free nothing
+             retroplug-testing-allocator   # CountingAllocator: the drain and the push allocate and free nothing
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test              # FakePorts.hpp
     DEFS     RP_LAUNCHPAD_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/golden")  # the two types' descriptors

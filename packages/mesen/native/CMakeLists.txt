@@ -54,7 +54,7 @@ retroplug_add_test_binary(
              test/MesenShared.test.cpp           # ClearState's empty state, and the notification dispatch's copy
              test/N8ReliableLink.test.cpp        # the emulated cart FIFO's side of the reliable link
     LIBS     retroplug-mesen                    # the consoles, their roles, and mesen's own headers
-             retroplug-testing                  # CountingAllocator, and LinkRomModel.hpp: the ROM's link rules
+             retroplug-testing-allocator        # CountingAllocator, and LinkRomModel.hpp through it: the ROM's link rules
     DEFS     RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")

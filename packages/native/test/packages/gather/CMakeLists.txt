@@ -23,8 +23,10 @@
 #   comment-only alpha's CMakeLists names beta's path in a comment and no target property carries it: holds, since the
 #                gatherer reads the target's properties and never the file's text
 #   testing-dependency  alpha declares the testing package (a dependency, not a devDependency) and its library links
-#                retroplug-testing: the boundary check holds it and the test-helper guard refuses it, since alpha is no
-#                test binary (test-dev is the same link from one, which both hold)
+#                retroplug-testing, the headers: the boundary check holds it and the test-helper guard refuses it, since
+#                alpha is no test binary (test-dev is the same link from one, which both hold)
+#   testing-allocator  the same for retroplug-testing-allocator, the replaced allocator, which the guard refuses to a
+#                non-test target too (test-dev-allocator is the same link from a test binary, which holds)
 #   runtime-library  a scratch binary named as one of the bare-QuickJS targets carries tjs: the runtime-library check
 #                refuses it, naming the library and the path that brought it in
 #   runtime-bare  the same binary with nothing of the runtime's linked: the check holds
@@ -67,7 +69,7 @@ if(RP_GATHER_CASE STREQUAL "declared" OR RP_GATHER_CASE STREQUAL "genex-declared
 else()
     set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS "")
 endif()
-if(RP_GATHER_CASE STREQUAL "testing-dependency")
+if(RP_GATHER_CASE STREQUAL "testing-dependency" OR RP_GATHER_CASE STREQUAL "testing-allocator")
     set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS testing)
 endif()
 if(RP_GATHER_CASE STREQUAL "defs-dev" OR RP_GATHER_CASE STREQUAL "defs-dev-quoted")

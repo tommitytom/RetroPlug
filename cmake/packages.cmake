@@ -2095,15 +2095,16 @@ function(retroplug_check_runtime_libraries)
 endfunction()
 
 # retroplug_check_test_helpers(): refuses, at configure time, every target whose link closure reaches a package's native
-# test helpers (retroplug-testing, packages/testing/native) unless the target is a test binary (retroplug_add_test_binary
-# marks one RP_TEST_BINARY). The helpers are a replaced global operator new and the shared test fixtures: a product that
-# linked them would count allocations in production, and a library that did would hand them to every consumer. A package
-# declares @retroplug/testing a devDependency, which the boundary check also allows only a test target to use, so this
-# holds the target properties that check cannot see (a library that links a test binary's helper transitively, say).
-# Deferred as retroplug_check_products is, so a target defined anywhere is checked.
+# test helpers (retroplug-testing's headers, or retroplug-testing-allocator's replaced global allocator,
+# packages/testing/native) unless the target is a test binary (retroplug_add_test_binary marks one RP_TEST_BINARY). The
+# helpers are a replaced global operator new and the shared test fixtures: a product that linked them would count
+# allocations in production, and a library that did would hand them to every consumer. A package declares
+# @retroplug/testing a devDependency, which the boundary check also allows only a test target to use, so this holds the
+# target properties that check cannot see (a library that links a test binary's helper transitively, say). Deferred as
+# retroplug_check_products is, so a target defined anywhere is checked.
 function(retroplug_check_test_helpers)
-    set(_helper retroplug-testing)
-    if(NOT TARGET ${_helper})
+    set(_helpers retroplug-testing retroplug-testing-allocator)
+    if(NOT TARGET retroplug-testing)
         return()  # a build without the testing package (a device image) links none
     endif()
     _retroplug_build_targets(_targets "${CMAKE_SOURCE_DIR}")
@@ -2114,17 +2115,18 @@ function(retroplug_check_test_helpers)
     set(_offenders "")
     foreach(_t IN LISTS _targets)
         get_target_property(_test ${_t} RP_TEST_BINARY)
-        if(_test)
-            continue()
+        if(_test OR _t IN_LIST _helpers)
+            continue()  # a test binary may link them, and the helpers link each other (the allocator's header root)
         endif()
         # A breadth-first walk of what the target links, through the libraries of this build alone: a name that is no
         # target (a system library) has no closure to follow.
         set(_pending ${_names_${_t}})
         set(_seen "")
+        set(_reached "")
         while(_pending)
             list(POP_FRONT _pending _next)
-            if(_next STREQUAL _helper)
-                list(APPEND _offenders ${_t})
+            if(_next IN_LIST _helpers)
+                set(_reached ${_next})
                 break()
             endif()
             if(_next IN_LIST _seen OR NOT TARGET ${_next})
@@ -2135,10 +2137,13 @@ function(retroplug_check_test_helpers)
                 list(APPEND _pending ${_names_${_next}})
             endif()
         endwhile()
+        if(_reached)
+            list(APPEND _offenders "${_t} (${_reached})")
+        endif()
     endforeach()
     if(_offenders)
         list(JOIN _offenders ", " _offenders)
-        message(FATAL_ERROR "retroplug_check_test_helpers: these targets reach ${_helper}, the native test helpers "
+        message(FATAL_ERROR "retroplug_check_test_helpers: these targets reach the native test helpers "
                             "(packages/testing/native), and are no test binary: ${_offenders}. A product or a library "
                             "that links them counts allocations in production; link them from a "
                             "retroplug_add_test_binary alone.")

@@ -74,7 +74,7 @@ retroplug_add_test_binary(
              test/N8CartJobs.test.cpp      # the cart's capability jobs, run with streaming paused
              test/N8Provider.test.cpp      # the provider and the facet's two halves, over QuickJS
     LIBS     retroplug-n8-desktop                      # the protocol, N8Link, N8Host, the provider; the job ABI
-             retroplug-testing                         # LinkRomModel.hpp: the ROM's link rules, both halves' oracle
+             retroplug-testing                         # LinkRomModel.hpp alone: the ROM's link rules, both halves' oracle
              reflectcpp::reflectcpp                    # rfl::json - parse the Edio golden
              rpcpp                                     # the server the facet is mounted on (QjsRpc.hpp)
              qjs                                       # QuickJS, the products' codec that server runs over

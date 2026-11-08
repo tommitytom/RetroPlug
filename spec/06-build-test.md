@@ -175,13 +175,17 @@ move between it and the shell needs no entry.
 
 **The shared test helpers ([packages/testing/native](../packages/testing/native)).** A package's tests are its own, but
 some things two packages' tests must agree on are neither's: the TAP harness, the script-node rig and the byte helpers
-are `@retroplug/testing`'s TypeScript, and its native half is `retroplug-testing`, an OBJECT library holding
-`graph/CountingAllocator.{hpp,cpp}` (a replaced global `operator new`, for the no-allocation cases) and
-`LinkRomModel.hpp` (BlipToaster's link ROM's rules, driven from both sides of the N8/Mesen edge). A test binary links it
-through its package's `devDependency` on `@retroplug/testing`; nothing else may. The configure refuses a target that
-reaches it without `RP_TEST_BINARY` (`retroplug_check_test_helpers`, beside `retroplug_check_products`), since the
-allocator would count production allocations and a library that linked it would hand it to its consumers, and the
-library is `EXCLUDE_FROM_ALL` because only test binaries (built by name) need it.
+are `@retroplug/testing`'s TypeScript, and its native half is two targets. `retroplug-testing` is an INTERFACE library
+holding the headers: `graph/CountingAllocator.hpp` and `LinkRomModel.hpp` (BlipToaster's link ROM's rules, driven from
+both sides of the N8/Mesen edge), with the package's `src/` as their include root. `retroplug-testing-allocator` is the
+OBJECT library holding `graph/CountingAllocator.cpp`, a replaced global `operator new` (and on glibc
+`malloc`/`calloc`/`realloc`/`free`) that the no-allocation cases count through; it links the header library PUBLIC, so a
+test binary that needs both links the allocator alone. A test binary links one through its package's `devDependency` on
+`@retroplug/testing`; nothing else may. A test that only needs a header links `retroplug-testing` and does not run under
+a replaced allocator (`retroplug-n8-test` is one: it includes `LinkRomModel.hpp` and nothing else). The configure refuses
+a target that reaches either without `RP_TEST_BINARY` (`retroplug_check_test_helpers`, beside `retroplug_check_products`),
+since the allocator would count production allocations and a library that linked it would hand it to its consumers, and
+the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by name) need it.
 
 **Adding a package.** In the order a configure demands it:
 
