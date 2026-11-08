@@ -8,16 +8,66 @@
 import { test, expect } from "@retroplug/testing";
 import { FakeLaunchpad } from "../testSupport/fakeDevice";
 import { ControllerSession, isPredictive, type ControllerApp, type ControllerCtx } from "../session";
-import { lsdjMidiMapTarget } from "../trackerTarget";
 import { Palette, palette } from "../index";
-import { SongSchema } from "@retroplug/lsdj/model";
-import { PredictedLsdjModel } from "@retroplug/lsdj/playback";
-import { idlePosition, type PlaybackModel } from "@retroplug/tracker/playbackModel";
+import { idlePosition, type PlaybackModel, type PredictivePlaybackModel } from "@retroplug/tracker/playbackModel";
 
 const RED = { mode: "static", colour: palette(Palette.red) } as const;
 
+/** A one-row song at 96 ticks a row: the session's predictive side, without a tracker's model - this package names no
+ *  tracker, and the model a real app reads is its own package's (lsdj-launchpad's predictor for MI.MAP). */
+class FakePredictive implements PredictivePlaybackModel {
+  readonly channelCount = 4;
+  private readonly pos = idlePosition(4);
+  private row: number | null = null;
+  private left = 0;
+  private advanced = 0;
+
+  position(): import("@retroplug/tracker/playbackModel").PlaybackPosition {
+    return this.pos;
+  }
+
+  grid() {
+    return { rowCount: 1, channelCount: 4, hasContent: () => true };
+  }
+
+  launch(row: number): void {
+    this.row = row;
+    this.left = 96;
+    for (let i = 0; i < 4; i++) {
+      this.pos.channels[i].playing = true;
+      this.pos.channels[i].songRow = row;
+    }
+    this.pos.playing = true;
+  }
+
+  advance(ticks: number): void {
+    if (this.row === null) return;
+    this.advanced += ticks;
+    this.left -= ticks;
+    while (this.left <= 0) {
+      this.row = (this.row + 1) % 1; // one row: it wraps to itself
+      this.left += 96;
+      for (let i = 0; i < 4; i++) this.pos.channels[i].songRow = this.row;
+    }
+  }
+
+  stop(): void {
+    this.row = null;
+    for (let i = 0; i < 4; i++) this.pos.channels[i].playing = false;
+    this.pos.playing = false;
+  }
+
+  reset(): void {
+    this.stop();
+  }
+
+  ticksAdvanced(): number {
+    return this.advanced;
+  }
+}
+
 /** A one-row, one-phrase song: 96 ticks per row, wrapping to itself. */
-const song = () => SongSchema.parse({ formatVersion: 22, rows: [{ chains: [0, 0, 0, 0] }], chains: [{ phrases: [0] }] });
+const song = () => new FakePredictive();
 
 /** A read-only model that is never playing - the "observed" side of the seam, for tests about what the
  *  session does when it must NOT drive anything. */
@@ -33,7 +83,7 @@ interface Harness {
   seen: ControllerCtx[];
   sent: number[][];
   connect(): void;
-  run(opts?: { tick?: number; transport?: boolean; relocate?: boolean; input?: number[][] }): void;
+  run(opts?: { tick?: number; transport?: boolean; ticks?: number; input?: number[][] }): void;
 }
 
 function harness(app: ControllerApp, playback: PlaybackModel = staticModel): Harness {
@@ -42,7 +92,7 @@ function harness(app: ControllerApp, playback: PlaybackModel = staticModel): Har
   const sent: number[][] = [];
   const session = new ControllerSession((c) => { seen.push({ ...c, events: [...c.events] }); app(c); }, {
     playback,
-    target: lsdjMidiMapTarget((d) => sent.push(d)),
+    target: { maxRow: 253, launch: (row) => sent.push([0x90, row, 100]), release: () => {} },
   });
   return {
     device, session, seen, sent,
@@ -51,7 +101,7 @@ function harness(app: ControllerApp, playback: PlaybackModel = staticModel): Har
       input: opts.input ?? [],
       tick: opts.tick ?? 0,
       transport: opts.transport ?? false,
-      relocate: opts.relocate ?? false,
+      ticks: opts.ticks ?? 0,
     })),
   };
 }
@@ -123,40 +173,46 @@ test("events do not carry over into the next update", () => {
 
 // --- driving the predictor -----------------------------------------------------------------------
 
-test("the predictor is advanced by the elapsed ticks, and by nothing while stopped", () => {
-  const model = new PredictedLsdjModel(song());
+test("the predictor is advanced by exactly the ticks the host clocked, and by nothing while stopped", () => {
+  const model = song();
   const h = harness(noop, model);
   expect(isPredictive(model)).toBe(true);
 
   h.connect();
-  h.run({ tick: 1000, transport: true }); // first update establishes the baseline; no phantom 1000 ticks
+  h.run({ tick: 1000, transport: true }); // the first block clocked nothing before it
   expect(h.seen[0].ticks).toBe(0);
 
   model.launch(0);
-  h.run({ tick: 1050, transport: true });
+  h.run({ tick: 1050, transport: true, ticks: 50 });
   expect(h.seen[1].ticks).toBe(50);
 
   h.run({ tick: 1200, transport: false }); // a stopped host: ppq may move on a seek, the cart hears nothing
   expect(h.seen[2].ticks).toBe(0);
 });
 
-test("a relocate is a seek, not elapsed time: the predictor does not walk through it", () => {
-  // A host that jumps the timeline sends the cart no clocks for the jump either, so advancing the model
-  // through it would describe a song the cart is not playing - and walking a thousand bars costs milliseconds.
-  const model = new PredictedLsdjModel(song());
+test("the count is the host's, so a seek is not walked through and a backwards jump is not lost", () => {
+  // A host that seeks sends the cart no clocks across the jump, so its walk counts 0 for that block: the predictor
+  // must not walk a thousand bars of rows, and must not read the jump as elapsed time. And a host whose timeline goes
+  // BACKWARDS (a loop wrap) still clocked the block before it, so that block's ticks are still walked: reading the
+  // difference between two positions would call a wrap no time at all and leave the playhead behind the cart.
+  const model = song();
   const h = harness(noop, model);
   h.connect();
   h.run({ tick: 0, transport: true });
   model.launch(0);
-  h.run({ tick: 50, transport: true });
+  h.run({ tick: 50, transport: true, ticks: 50 });
   expect(model.position().channels[0].songRow).toBe(0);
-  h.run({ tick: 5000, transport: true, relocate: true });
+  h.run({ tick: 5000, transport: true, ticks: 0 }); // a seek: nothing clocked
   expect(h.seen[2].ticks).toBe(0);
-  expect(model.position().channels[0].songRow).toBe(0); // still where the cart is, not rows ahead
+  expect(model.position().channels[0].songRow).toBe(0);
+  // A loop wrap: the position went back to 12, but the block before the wrap was clocked 6 ticks.
+  h.run({ tick: 12, transport: true, ticks: 6 });
+  expect(h.seen[3].ticks).toBe(6);
+  expect(model.ticksAdvanced()).toBe(56); // 50 + 6, in total: no tick was dropped
 });
 
 test("a transport fall stops the predictor rather than leaving a stale playhead lit", () => {
-  const model = new PredictedLsdjModel(song());
+  const model = song();
   const h = harness(noop, model);
   h.connect();
   h.run({ tick: 0, transport: true });
@@ -170,7 +226,7 @@ test("a transport fall stops the predictor rather than leaving a stale playhead 
 test("a launch through ctx.target reaches the cart and the predictor together", () => {
   // The by-construction property: there is no path that sends a row to the cart without telling the
   // model, so the LEDs cannot describe a position the cart was never sent to.
-  const model = new PredictedLsdjModel(song());
+  const model = song();
   const h = harness((c) => { if (c.events.length) c.target.launch(0); }, model);
   h.connect();
   h.run({ input: [h.device.press(0, 0)], transport: true });
@@ -201,10 +257,10 @@ test("config reaches the app unchanged", () => {
   let seen: Record<string, unknown> | null = null;
   const session = new ControllerSession((c) => { seen = c.config; }, {
     playback: staticModel,
-    target: lsdjMidiMapTarget(() => {}),
+    target: { maxRow: 253, launch: () => {}, release: () => {} },
     config: { quantise: "beat", follow: false },
   });
   device.write(session.connect());
-  device.write(session.update({ input: [], tick: 0, transport: false }));
+  device.write(session.update({ input: [], tick: 0, transport: false, ticks: 0 }));
   expect(seen).toEqual({ quantise: "beat", follow: false });
 });

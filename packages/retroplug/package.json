@@ -13,6 +13,7 @@
     "@retroplug/core": "workspace:*",
     "@retroplug/dsp": "workspace:*",
     "@retroplug/lsdj": "workspace:*",
+    "@retroplug/lsdj-launchpad": "workspace:*",
     "@retroplug/mesen": "workspace:*",
     "@retroplug/mgb": "workspace:*",
     "@retroplug/sameboy": "workspace:*",

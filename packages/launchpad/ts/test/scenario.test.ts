@@ -48,10 +48,10 @@ async function text(stream: ByteStream | null): Promise<string> {
 const SCENARIO = "../../packages/launchpad/ts/scenario/launchpadCore.ts";
 const PACK_DIR = "../../packages/launchpad";
 const OUT = ".test-build/launchpad-scenario";
-// The least heap the run needs, measured on this tree by bisecting --heap-bytes: it passes at 61552 bytes and fails
-// below 61300. The budget is 1.25x that, so a path the scenario adds shows up as a refusal rather than quietly needing
-// more. It is the scenario's own figure, not a claim about the box's 64 KiB arena (there is no Pico controller path).
-const LEAST_HEAP = 61300;
+// The least heap the run needs, measured on this tree by bisecting --heap-bytes: it passes at 61440 bytes and fails at
+// 61400. The budget is 1.25x that, so a path the scenario adds shows up as a refusal rather than quietly needing more.
+// It is the scenario's own figure, not a claim about the box's 64 KiB arena (there is no Pico controller path).
+const LEAST_HEAP = 61440;
 const HEAP = Math.ceil(LEAST_HEAP * 1.25 / 256) * 256; // 76800
 
 async function runScenario(): Promise<{ ok: boolean; out: string; err: string }> {
@@ -70,7 +70,7 @@ test("the Launchpad core runs on MicroQuickJS as on Node, byte for byte", async 
   expect(run.out.includes("device pack scenario launchpad-core OK")).toBe(true);
   expect(run.out.includes("no library calls outside MicroQuickJS's stdlib, in the pack or anywhere in the SDK")).toBe(true);
   // The package's WHOLE core is scanned, not only what the scenario reaches: the scan is the guard a path neither the
-  // scenario nor a node runs. (It is what caught launchMessage's Number.isInteger, which tree shaking had dropped.)
+  // scenario nor a node runs, so a library call the engine lacks is refused even where nothing exercises it.
   expect(run.out.includes("no library calls outside MicroQuickJS's stdlib, in the core's ")).toBe(true);
 
   // The transcript the two engines agreed on, kept beside the outputs: it has the sections the scenario claims to
@@ -83,7 +83,7 @@ test("the Launchpad core runs on MicroQuickJS as on Node, byte for byte", async 
   for (const part of [
     'connect [[240,0,32,41,2,14,14,1,247]]', // Programmer mode
     "reconnect 43 [[240,0,32,41,2,14,14,1,247]]", // a generation change mid-run re-takes the device
-    "ticks 480", // and the seek after it advanced the model nothing
+    "ticks 504", // the blocks the host clocked it, and the seek after them added nothing
     '"phase":"","error":"","skipped":2',
     'found {"input":"IF A in","output":"IF B out","name":"Launchpad Pro [MK3]"}',
     "model reply [[240,126,0,6,2,0,32,41,19,1,0,0,0,1,2,3,247],false]", // an echo confirms nothing

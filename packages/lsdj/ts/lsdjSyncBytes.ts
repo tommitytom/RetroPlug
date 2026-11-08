@@ -22,6 +22,6 @@ export const isNoteOff = (status: number): boolean => (status & 0xf0) === 0x80;
 export const channelOf = (status: number): number => status & 0x0f;
 
 // MidiMap row byte: ch0 NoteOn → note; ch1 → note + 128; other channels skipped (-1). Exported so the
-// controller layer's launch ENCODER (src/controller/trackerTarget.ts) can be round-tripped against the
+// controller layer's launch ENCODER (packages/lsdj-launchpad/ts/launchTarget.ts) can be round-tripped against the
 // decoder that actually ships, rather than restating the same convention twice and hoping they agree.
 export const midiMapRow = (channel: number, note: number): number => (channel === 0 ? note : channel === 1 ? note + 128 : -1);

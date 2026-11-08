@@ -5,6 +5,7 @@
 // spell them. Nothing but a type is imported here: the data is apart from the node modules it describes, so a
 // bundle that reads it carries no node's code, no role's schema and nothing of the app.
 import type { ProtocolNodeSpec } from "../graph/protocolNodes";
+import type { ControllerSyncRule } from "../graph/controller";
 
 /** How buildGraph and the stores wire each protocol node type (graph/protocolNodes.ts's ProtocolNodeSpec): the
  *  input its system's routed MIDI arrives on, the system inputs it writes, and the wires it takes or makes. In
@@ -17,4 +18,13 @@ export const PROTOCOL_NODES = {
  *  in the order of the labels they are placed at. */
 export const ROLE_NODES: Readonly<Record<string, keyof typeof PROTOCOL_NODES>> = {
   "alpha-midi": "rp.alpha.midi",
+};
+
+/** The controller apps' sync overrides, by app id: the cart sync node type an app's launches need, the mode it
+ *  puts that node in, and the polled SYNC value that counts as the cart listening (a cart polled at anything else
+ *  is put in `off`; one that cannot be read yet is assumed willing). DATA, so the planner applies it without an
+ *  app or a schema - the app modules have both - and it reaches the DOCUMENT only, never a project: turning the
+ *  controller off restores whatever the user had. */
+export const CONTROLLER_SYNC: Readonly<Record<string, ControllerSyncRule>> = {
+  "alpha-app": {"node":"rp.alpha.midi","mode":"midiMap","listening":"MidiMap","off":"off"},
 };

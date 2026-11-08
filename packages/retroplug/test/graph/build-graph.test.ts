@@ -11,6 +11,7 @@ import { test, expect } from "@retroplug/testing";
 import { buildGraph, exportModeOf, type GraphModel, type GraphSystem, type HostShape } from "../../src/graph/buildGraph";
 import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
 import { controllerSyncOverride, serialOutCaptureFor, type GraphController } from "../../src/graph/controller";
+import { CONTROLLER_SYNC } from "../../src/generated/protocol";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
 import { MIDI_ROUTE_NODE_TYPE } from "@retroplug/core/midiRoute";
@@ -511,6 +512,19 @@ test("nothing is overridden without a controller, or when it drives real hardwar
   expect(syncModeOf(built([gb(1, 0, [LSDJ()])], "stereo", multi(2), withController({ target: "midiOut" })), 1)).toBe("midiSync");
   expect(syncModeOf(built([gb(1, 0, [LSDJ()])], "stereo", multi(2), withController({ app: "another" })), 1)).toBe("midiSync");
   expect(controllerSyncOverride([], CONTROLLER)).toBe(null); // no cart to drive
+});
+
+test("the sync override is the app's DATA: a node type, a mode, and what counts as listening", () => {
+  // Nothing in the shell names an app, a mode or a node type: the bridge's manifest carries them
+  // (protocol.apps[].syncOverride), the generator renders them into generated/protocol.ts, and this is the whole rule.
+  // A second app with a different cart sync node type is a manifest entry, not a branch here.
+  expect(Object.keys(CONTROLLER_SYNC)).toEqual(["lsdj-midimap"]);
+  expect(CONTROLLER_SYNC["lsdj-midimap"])
+    .toEqual({ node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", off: "off" });
+  expect(controllerSyncOverride([{ id: 7 }], { ...CONTROLLER, cartSync: "MidiMap" }))
+    .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "midiMap" });
+  expect(controllerSyncOverride([{ id: 7 }], { ...CONTROLLER, cartSync: "Lsdj" }))
+    .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "off" });
 });
 
 test("the override leaves the model's own pipeline as it was", () => {

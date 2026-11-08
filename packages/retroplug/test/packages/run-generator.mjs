@@ -10,20 +10,22 @@
 // edit what it needs), edits it where the mode is a refusal, runs the generator and prints one JSON line:
 //
 //   generate        { files: { "packages.ts": <text>, "protocol.ts": <text>, "scriptNodes.ts": <text> },
-//                     packages: [...] }
+//                              packages: [...] }
 //   twice           { mtimes: [<after one run>, <after a second>], changed: [<first run>, <second run>] }
 //   run             { registered: [<the ids the generated entry registers, in order>] }
 //   missing-node    { error: <the generated entry's own refusal> }
 //   order | cycle | unlisted-contributes | unlisted-plain | depends-on-shell | duplicate | duplicate-type |
 //   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unexported-app | name-mismatch |
 //   outside-ts | shell-undeclared | unknown-key | half-wired | extra-node | duplicate-role-kind |
-//   duplicate-kit-format | duplicate-marker-role
+//   duplicate-kit-format | duplicate-marker-role | duplicate-app | duplicate-app-control | app-unknown-key |
+//   app-unpaired-runtime | app-unpaired-control | app-runtime-mismatch | app-module-empty | sync-unknown-key |
+//   sync-unused-off | sync-node-undeclared | identifier-collision | apps-only
 //                   { error: <the generator's message, or null when it did not refuse> }
 //                   (unlisted-plain generates, and reports files like generate)
 //
 // The run, missing-node and extra-node modes bundle the generated entry with the same esbuild options the build uses
 // and load it, so the entry's own checks are what is exercised, not a copy of them.
-import { cpSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -132,6 +134,8 @@ async function loadEntry() {
       "@retroplug/core/defineNode": join(root, "packages/core/ts/defineNode.ts"),
       "@retroplug/core/register": join(root, "packages/core/ts/register.ts"),
       "@retroplug/alpha/nodes": join(root, "packages/alpha/ts/nodes.ts"),
+      "@retroplug/alpha/appRuntime": join(root, "packages/alpha/ts/appRuntime.ts"),
+      "@retroplug/launchpad/apps": join(root, "packages/launchpad/ts/apps.ts"),
     },
   });
   await import(pathToFileURL(out).href);
@@ -253,14 +257,10 @@ try {
     case "extra-node":
       // No manifest declares a node, and a module exports one: the entry must name it rather than complain about a
       // node defined twice.
-      editManifest("alpha", (json) => {
-        json.retroplug.protocol.nodes = [];
-        json.retroplug.protocol.roles = {};
-      });
-      editManifest("retroplug", (json) => {
-        json.retroplug.protocol.nodes = [];
-      });
-      writeTree("packages/retroplug/src/script/nodes.ts", "export default [];\n");
+      writeTree(
+        "packages/retroplug/src/script/nodes.ts",
+        "export default [{ id: \"rp.fixture.shell\" }, { id: \"rp.fixture.extra\" }];\n",
+      );
       generate({ root });
       try {
         result = await loadEntry();
@@ -407,6 +407,151 @@ try {
       generate({ root });
       try {
         result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "duplicate-app":
+      // Two packages declare one controller app id: a project stores an id and the script bundle looks one up, so one
+      // would silently replace the other.
+      editManifest("beta", (json) => {
+        json.exports["./appRuntime"] = "./ts/appRuntime.ts";
+        json.retroplug.protocol = { apps: [{ id: "alpha-app", module: "ts/appRuntime.ts" }] };
+      });
+      writeTree("packages/beta/ts/appRuntime.ts", "export default { id: \"alpha-app\" };\n");
+      result = refusal();
+      break;
+    case "apps-only":
+      // A package contributing an app and NO node names no nodes module: the generated entry still registers the app.
+      editManifest("alpha", (json) => {
+        const apps = json.retroplug.protocol.apps;
+        delete apps[0].syncOverride;
+        json.retroplug.protocol = { apps };
+      });
+      editManifest("retroplug", (json) => {
+        delete json.retroplug.protocol;
+      });
+      result = { files: null, packages: null };
+      {
+        const ran = generate({ root });
+        result = { files: outputs(), packages: ran.packages };
+      }
+      break;
+    case "app-module-empty":
+      // A module that default-exports no nodes has nothing to export: the manifest should not name it.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.nodes = [];
+      });
+      result = refusal();
+      break;
+    case "sync-unknown-key":
+      // A misspelt field of a sync override is data nothing reads: the mode it meant would silently not apply.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.apps[0].syncOverride.listing = "MidiMap";
+      });
+      result = refusal();
+      break;
+    case "sync-unused-off":
+      // An `off` with no `listening` value: the mode it is for is never reached.
+      editManifest("alpha", (json) => {
+        delete json.retroplug.protocol.apps[0].syncOverride.listening;
+      });
+      result = refusal();
+      break;
+    case "sync-node-undeclared":
+      // The node type the mode is set on must be one a package declares: a misspelt one would plan, and do nothing.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.apps[0].syncOverride.node = "rp.alpha.syncx";
+      });
+      result = refusal();
+      break;
+    case "duplicate-app-control":
+      // Two app modules contribute one control-plane id: the generated registry refuses it, naming both packages.
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        "export default { controllerApps: [{ id: \"same-app\", label: \"Alpha\", config: { parse: (v) => v } }] };\n",
+      );
+      writeTree(
+        "packages/beta/ts/app.ts",
+        "export default { controllerApps: [{ id: \"same-app\", label: \"Beta\", config: { parse: (v) => v } }] };\n",
+      );
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "identifier-collision":
+      // Package "a-b" with app "c" and package "a" with app "b-c" mangle to the same generated identifier: tsc would
+      // refuse the duplicate import and say nothing about which manifests collided.
+      renameSync(join(root, "packages/alpha"), join(root, "packages/a-b"));
+      renameSync(join(root, "packages/beta"), join(root, "packages/a"));
+      editList("a-b", "a");
+      editManifest("retroplug", (json) => {
+        json.dependencies = { ...json.dependencies, "@retroplug/a-b": "workspace:*", "@retroplug/a": "workspace:*" };
+      });
+      editManifest("a-b", (json) => {
+        json.name = "@retroplug/a-b";
+        json.retroplug.protocol.apps = [{ id: "c", module: "ts/appRuntime.ts" }];
+      });
+      writeTree("packages/a-b/ts/app.ts", "export default { controllerApps: [{ id: \"c\", label: \"C\", config: { parse: (v) => v } }] };\n");
+      writeTree("packages/a-b/ts/appRuntime.ts", "export default { id: \"c\" };\n");
+      editManifest("a", (json) => {
+        json.name = "@retroplug/a";
+        json.dependencies = { "@retroplug/core": "workspace:*" };
+        json.exports["./appRuntime"] = "./ts/appRuntime.ts";
+        json.retroplug.protocol = { apps: [{ id: "b-c", module: "ts/appRuntime.ts" }] };
+      });
+      writeTree("packages/a/ts/app.ts", "export default { controllerApps: [{ id: \"b-c\", label: \"BC\", config: { parse: (v) => v } }] };\n");
+      writeTree("packages/a/ts/appRuntime.ts", "export default { id: \"b-c\" };\n");
+      result = refusal();
+      break;
+    case "app-unknown-key":
+      // A misspelt knob in an app entry: nothing reads it, and a runtime would be built without what it meant.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.apps[0].factorY = "ts/appRuntime.ts";
+      });
+      result = refusal();
+      break;
+    case "app-unpaired-runtime":
+      // A manifest declares a runtime no app module's control-plane half contributes: the generated registry refuses it
+      // rather than leaving a document to name an app no menu offers.
+      writeTree("packages/alpha/ts/app.ts", "export default {};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "app-unpaired-control":
+      // An app module contributes a control-plane half no manifest declares a runtime for: the id would reach a menu
+      // and run nothing.
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        "export default { controllerApps: [\n" +
+          "  { id: \"alpha-app\", label: \"Alpha App\", config: { parse: (v) => v } },\n" +
+          "  { id: \"orphan-app\", label: \"Orphan\", config: { parse: (v) => v } },\n" +
+          "] };\n",
+      );
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "app-runtime-mismatch":
+      // The runtime module registers an id the manifest does not declare: the script bundle refuses the set, as it does
+      // the nodes' types.
+      writeTree(
+        "packages/alpha/ts/appRuntime.ts",
+        "export default { id: \"not-alpha-app\", factory: () => () => {}, playbackModel: () => null, target: () => null };\n",
+      );
+      generate({ root });
+      try {
+        result = await loadEntry();
       } catch (e) {
         result = { error: e.message };
       }

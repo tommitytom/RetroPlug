@@ -1,0 +1,44 @@
+{
+  "name": "@retroplug/lsdj-launchpad",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The bridge between a Launchpad and LSDj: the MI.MAP controller app (launch LSDj song rows from the grid and show where the song is), its launch target (into an emulated cart's lsdj-sync node, or out of the host to a real Game Boy's Arduinoboy), the predictor it reads, and the sync mode it needs the cart it drives to be in.",
+  "exports": {
+    "./app": "./ts/app.ts",
+    "./appRuntime": "./ts/appRuntime.ts",
+    "./launchTarget": "./ts/launchTarget.ts",
+    "./lsdjMidiMap": "./ts/lsdjMidiMap.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/launchpad": "workspace:*",
+    "@retroplug/lsdj": "workspace:*",
+    "@retroplug/tracker": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "app": "ts/app.ts",
+    "protocol": {
+      "apps": [
+        {
+          "id": "lsdj-midimap",
+          "module": "ts/appRuntime.ts",
+          "syncOverride": {
+            "node": "rp.lsdj.sync",
+            "mode": "midiMap",
+            "listening": "MidiMap",
+            "off": "off"
+          }
+        }
+      ]
+    }
+  }
+}

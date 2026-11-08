@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/test-app-module-sibling",
+  "private": true,
+  "retroplug": { "app": "ts/app.ts" }
+}

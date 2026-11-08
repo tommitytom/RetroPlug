@@ -702,7 +702,7 @@ struct ProtocolRig {
 std::uint8_t framed(std::uint8_t command) { return static_cast<std::uint8_t>(0x80 | (command & 0x7f)); }
 
 // A press of the pad at (x, y), (0, 0) top left, as a Launchpad in Programmer mode sends it (padIndex in
-// src/launchpad/profile.ts).
+// packages/launchpad/ts/profile.ts).
 Bytes pad(int x, int y, int velocity = 100) {
     return {0x90, static_cast<std::uint8_t>((7 - y) * 10 + x + 11), static_cast<std::uint8_t>(velocity)};
 }
@@ -864,6 +864,12 @@ TEST_CASE("the per-role graph runs a controller session: its surface, its launch
     // The session is wired to rp.launchpad.surface-in / -out over a fake link fed the pad traffic and drained for what
     // it writes (docs/modular-graph-phase-c5-design.md sections 5 and 9): the run is held to the digests the host's two
     // controller nodes produced, so the surface changed nothing the session reads or sends, block for block.
+    //
+    // The controller-out digest is what the session's predictor paints walking the ticks the host's own walk CLOCKED the
+    // cart, not the distance between two ppq positions (packages/launchpad/ts/session.ts, packages/core/ts/ticks.ts): the
+    // first playing block's tick 0 and the backward seek this case makes when it re-attaches - it repeats the detached
+    // block's ppq - are ticks the cart HEARD, where an inferred distance reads no time at all, and the LED frames differ
+    // by a block. The second digest, the cores', holds whatever the ticks say: no system input changes.
     const auto run = [](ProtocolRig& rig) {
         const auto target = [&](const std::string& t) { return structure("controller/" + t); };
         rig.block({.controller = {pad(0, 3)}});  // pressed with no surface attached
@@ -894,7 +900,7 @@ TEST_CASE("the per-role graph runs a controller session: its surface, its launch
             play.ppq += 1024.0 / kBeat;
         }
     };
-    const Sent recorded{161, 0, 0, 0, 80, 35, 0xcf9b8961b949c269ULL, 0x5f3484f60d57d690ULL};
+    const Sent recorded{161, 0, 0, 0, 80, 35, 0x0ab157938fac32c1ULL, 0x5f3484f60d57d690ULL};
     ProtocolRig rig(structure("controller/system"));
     run(rig);
     rig.matches(recorded);

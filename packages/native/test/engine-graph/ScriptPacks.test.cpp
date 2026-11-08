@@ -1051,7 +1051,10 @@ TEST_CASE("a pack reloads while its nodes run: they rebuild on its new code, fre
     const auto request = [](const std::string& session) {
         return document({docNode("midi-in", "rp.host.midi-in"), docNode("shift", "test.code.shift"),
                          docNode("keep", "test.keep.count"), docNode("count", "test.code.count"), midiOut("1,2,3"),
-                         docNode("surface-in", "rp.launchpad.surface-in"), docNode(session, "rp.controller.session"),
+                         docNode("surface-in", "rp.launchpad.surface-in"),
+                         // The app the document runs, named: the node itself names none (the products' app modules
+                         // contribute them, and the script bundle registers what the manifests declare).
+                         docNode(session, "rp.controller.session", R"({"app":"lsdj-midimap"})"),
                          docNode("surface-out", "rp.launchpad.surface-out")},
                         {docWire("midi-in.midi", "shift.in"), docWire("shift.out", "midi-out.in1"),
                          docWire("keep.out", "midi-out.in2"), docWire("count.out", "midi-out.in3"),

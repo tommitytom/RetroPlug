@@ -9,6 +9,7 @@
 import type { RoleType, RomProvider } from "@retroplug/core";
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import type { KitFormat } from "@retroplug/dsp/kitContract";
+import type { ControllerAppContribution } from "@retroplug/launchpad/registry";
 import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
@@ -62,4 +63,47 @@ for (const format of KIT_FORMATS) {
     throw new Error(`the app's kit formats declare the id ${format.id} twice`);
   }
   kitIds.add(format.id);
+}
+
+/** The controller apps' CONTROL-PLANE halves, in product order: each app's id, its menu label and the schema its
+ *  config is parsed with. The runtime half (the app itself, its playback model and its target) is the same
+ *  package's protocol.apps entry, registered by the script bundle, and the sync mode its launches need is that
+ *  entry's syncOverride data, in ./protocol.ts. The halves are joined by id, so each id has both and only one of
+ *  each. */
+const CONTROLLER_APP_SOURCES: readonly { pkg: string; apps: readonly ControllerAppContribution[] }[] = [
+  { pkg: "alpha", apps: app_alpha.controllerApps ?? [] },
+  { pkg: "beta", apps: app_beta.controllerApps ?? [] },
+  { pkg: "retroplug", apps: app_retroplug.controllerApps ?? [] },
+];
+// A duplicate id is refused naming BOTH packages: a project stores only the id, so one of the two apps would be
+// unreachable without a word.
+const controllerAppOwners = new Map<string, string>();
+for (const source of CONTROLLER_APP_SOURCES) {
+  for (const app of source.apps) {
+    const owner = controllerAppOwners.get(app.id);
+    if (owner !== undefined) {
+      throw new Error(`two packages declare the controller app ${app.id}: ${owner} and ${source.pkg}`);
+    }
+    controllerAppOwners.set(app.id, source.pkg);
+  }
+}
+export const CONTROLLER_APPS: readonly ControllerAppContribution[] = [
+  ...(app_alpha.controllerApps ?? []),
+  ...(app_beta.controllerApps ?? []),
+  ...(app_retroplug.controllerApps ?? []),
+];
+// The runtime halves the manifests declare (their protocol.apps), which the script bundle registers. An app with one
+// half and not the other is a document that names an app nothing runs, or a runtime no menu offers.
+const RUNTIME_APP_IDS: readonly string[] = ["alpha-app"];
+for (const id of RUNTIME_APP_IDS) {
+  if (!controllerAppOwners.has(id)) {
+    throw new Error(`the controller app ${id} has no control-plane half: a manifest declares its runtime and no ` +
+      "package's app contributes it (its label or its config's schema)");
+  }
+}
+for (const controllerApp of CONTROLLER_APPS) {
+  if (!RUNTIME_APP_IDS.includes(controllerApp.id)) {
+    throw new Error(`the controller app ${controllerApp.id} has no runtime half: no package's protocol.apps ` +
+      "declares it (the app, its playback model and its target)");
+  }
 }

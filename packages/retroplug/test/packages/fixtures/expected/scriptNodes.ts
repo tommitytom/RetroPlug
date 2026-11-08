@@ -8,8 +8,10 @@
 // script contexts.
 import type { DefinedNode } from "@retroplug/core/defineNode";
 import { registerScriptNodes } from "@retroplug/core/register";
+import { registerControllerApps, type ControllerAppRuntime } from "@retroplug/launchpad/apps";
 import nodes_alpha from "@retroplug/alpha/nodes";
 import nodes_retroplug from "../script/nodes";
+import app_alpha_alpha_app from "@retroplug/alpha/appRuntime";
 
 // The host numbers the nodes it is handed from the first protocol span label up (spec/08-profiling.md).
 const FIRST_LABEL = 16;
@@ -61,4 +63,25 @@ for (let i = 0; i < nodes.length; i++) {
     );
   }
 }
+
+// The controller apps' runtimes, in product order: the manifests' protocol.apps. Each import is one manifest
+// entry's module, so the check is per entry: a module that registers another id would leave a document
+// naming an app nothing runs, and the message names the module and both ids rather than a set difference.
+const apps: readonly ControllerAppRuntime[] = [
+  app_alpha_alpha_app,
+];
+const appModules: readonly string[] = [
+  "app_alpha_alpha_app",
+];
+const appIds: readonly string[] = [
+  "alpha-app",
+];
+for (let i = 0; i < apps.length; i++) {
+  if (apps[i].id !== appIds[i]) {
+    throw new Error(`the script bundle's controller app ${appModules[i]} registers ${apps[i].id}, but its ` +
+      `manifest entry declares ${appIds[i]}`);
+  }
+}
+registerControllerApps(apps);
+
 registerScriptNodes(nodes);

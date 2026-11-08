@@ -6,10 +6,8 @@
 import { test, expect } from "@retroplug/testing";
 import { FakeLaunchpad } from "@retroplug/launchpad/testSupport/fakeDevice";
 import { ControllerSession } from "@retroplug/launchpad/session";
-import {
-  lsdjMidiMap, rowAt, channelAt, followRow, WINDOW_ROWS, MAX_PAGE,
-} from "@retroplug/launchpad/apps/lsdjMidiMap";
-import { lsdjMidiMapTarget } from "@retroplug/launchpad/trackerTarget";
+import { lsdjMidiMap, rowAt, channelAt, followRow, WINDOW_ROWS, MAX_PAGE } from "../lsdjMidiMap";
+import { lsdjMidiMapTarget } from "../launchTarget";
 import { Palette, palette, type Led } from "@retroplug/launchpad";
 import { SongSchema, type Song } from "@retroplug/lsdj/model";
 import { PredictedLsdjModel } from "@retroplug/lsdj/playback";
@@ -52,7 +50,7 @@ class ScriptedModel implements PlaybackModel {
 interface Harness {
   device: FakeLaunchpad;
   sent: number[][];
-  run(opts?: { tick?: number; transport?: boolean; input?: number[][] }): void;
+  run(opts?: { tick?: number; transport?: boolean; ticks?: number; input?: number[][] }): void;
 }
 
 function harness(playback: PlaybackModel, config: Record<string, unknown> = {}): Harness {
@@ -70,6 +68,7 @@ function harness(playback: PlaybackModel, config: Record<string, unknown> = {}):
       input: opts.input ?? [],
       tick: opts.tick ?? 0,
       transport: opts.transport ?? true,
+      ticks: opts.ticks ?? 0,
     })),
   };
 }

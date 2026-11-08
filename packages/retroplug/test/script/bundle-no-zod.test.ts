@@ -89,6 +89,13 @@ test("the script-node bundle imports no zod module", async () => {
   // (they moved out of src/ - configFields and systemRoles are core's; the app's role modules are covered above).
   const builtOnZod = /(^|[\\/])(configFields|configSchema|systemRoles|projectConfig)\.ts$/;
   expect(inputs.filter((path) => builtOnZod.test(path))).toEqual([]);
+  // The controller apps' RUNTIME modules are in it (their ids are what a document names, so the bundle must be able to
+  // run them), and with them the predictor's leaf, not the barrel that would pull in the sav codec: the reason
+  // lsdj-launchpad/ts/appRuntime.ts imports @retroplug/lsdj/playback/predict directly. Pinned by path so a generator
+  // that stopped registering apps - leaving the session node unable to run one - cannot pass on "no zod" alone.
+  for (const module of ["../lsdj-launchpad/ts/appRuntime.ts", "../lsdj/ts/playback/predict.ts"])
+    expect(inputs.includes(module), module).toBe(true);
+  expect(inputs.filter((path) => /(^|[\\/])lsdj[\\/]ts[\\/]sav/.test(path)), "the sav codec").toEqual([]);
   // And no package's role registration: the modules the desktop product's manifests contribute as their `app` member,
   // each one a zod schema. From the manifests, so a cart package that contributes a role is denied the moment the
   // product lists it. A package's `protocol` member is not on the list: those are script nodes, which the bundle is

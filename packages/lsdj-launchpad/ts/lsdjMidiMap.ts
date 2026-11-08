@@ -20,8 +20,8 @@
 // playback (B5), and launching an empty row does not stop a cart either - it starts a stopped one (B8).
 // The only stop is the host transport, which is not a pad. Offering a stop pad would be a lie.
 
-import { Palette, palette, type Led } from "../index";
-import type { ControllerApp, ControllerCtx } from "../session";
+import { Palette, palette, type Led } from "@retroplug/launchpad";
+import type { ControllerApp, ControllerCtx } from "@retroplug/launchpad/session";
 import type { PlaybackPosition } from "@retroplug/tracker/playbackModel";
 
 /** Columns of channels per pane, and the two panes that make up the 16-row window. */

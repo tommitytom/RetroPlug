@@ -9,10 +9,26 @@ import { LsdjSyncMode } from "@retroplug/lsdj/enums";
 import type { RowTicksTable } from "@retroplug/lsdj/playback/predict";
 import type { ControllerAnchor } from "@retroplug/lsdj/playback/anchor";
 import type { ProtocolRole } from "./protocolNodes";
+import { CONTROLLER_SYNC } from "../generated/protocol";
+
+/** An app's sync override, as its manifest's `protocol.apps` entry declares it: which cart sync node type the app's
+ *  launches need, the mode that node is put in, and the polled SYNC value that counts as the cart listening. Data, so
+ *  the planner carries no app and no zod (the app modules have both). */
+export interface ControllerSyncRule {
+  /** The node type the mode is set on: a system's cart sync node. */
+  readonly node: string;
+  /** The mode that node is put in. */
+  readonly mode: string;
+  /** The cart's own SYNC value that counts as listening. When it is polled as anything else the cart is put in `off`
+   *  instead; a cart that cannot be read yet is assumed willing. Absent: the mode always. */
+  readonly listening?: string;
+  /** The mode that means "send this cart nothing", for one polled as not listening. */
+  readonly off?: string;
+}
 
 /** An enabled controller: the user's choices, and what the control plane derived for it. */
 export interface GraphController {
-  /** Which controller app runs (controller/apps); an id no app has runs nothing. */
+  /** Which controller app runs (launchpad's ts/apps/index.ts, by id); an id no app has runs nothing. */
   app: string;
   /** Where its launches go: into the target cart's lsdj-sync node ("system"), or out of the host to a real Game
    *  Boy's Arduinoboy ("midiOut"). */
@@ -52,9 +68,9 @@ export function controllerTarget(
  *  row bytes - so enabling a Launchpad on a fresh cart produced a cart being clocked for a mode it was not
  *  in, launches that went nowhere, and LSDj sitting on "WAIT". Reported from a hardware session.
  *
- *  The override is applied to the document, to the settings of that cart's two lsdj-sync nodes alone (its
- *  rp.lsdj.sync and its serial-out decoder), rather than written into the project, which is what makes it safe:
- *  nothing reaches the `.rplg`, and turning the controller off restores whatever the user had.
+ *  The rule is applied to the document, to the settings of that cart's two sync nodes alone (the node type the rule
+ *  names and the decoder reading it), rather than written into the project, which is what makes it safe: nothing
+ *  reaches the `.rplg`, and turning the controller off restores whatever the user had.
  *
  *  `off` when the CART's own SYNC says it is not in MI.MAP. That is not politeness - a cart in LSDJ (master)
  *  mode drives the link itself, so our clock bytes collide with its own and LSDj reports TOO BUSY and stops
@@ -63,14 +79,27 @@ export function controllerTarget(
 export function controllerSyncOverride(
   systems: readonly { id: number }[],
   controller: Pick<GraphController, "app" | "target" | "systemId" | "cartSync"> | null | undefined,
-): { systemId: number; mode: "midiMap" | "off" } | null {
-  if (!controller || controller.target !== "system" || controller.app !== "lsdj-midimap") return null;
+): { systemId: number; node: string; mode: string } | null {
+  if (!controller || controller.target !== "system") return null;
+  // The app decides whether it drives a cart and what mode that cart needs, and it does so as DATA in its manifest
+  // (generated/protocol.ts): which node type, which mode, and what the cart must be polled as. This module names no app,
+  // no tracker and no mode.
+  const rule = Object.prototype.hasOwnProperty.call(CONTROLLER_SYNC, controller.app)
+    ? CONTROLLER_SYNC[controller.app] : null;
+  if (!rule) return null;
+  // "0 is the first system", resolved by the helper the launches are tagged with, so the mode and the launch cannot be
+  // aimed at different systems.
   const systemId = controllerTarget(controller, systems);
   if (systemId === NO_SYSTEM) return null;
-  // A cart we cannot read is assumed willing: that is the case on a freshly built system whose battery has
-  // not been published yet, and refusing to drive it would be a worse guess than trying.
-  const mode = controller.cartSync && controller.cartSync !== "MidiMap" ? "off" : "midiMap";
-  return { systemId, mode };
+  return { systemId, node: rule.node, mode: syncModeFor(rule, controller.cartSync) };
+}
+
+/** The mode a rule asks for, given the cart's own SYNC setting as last polled: the rule's mode unless the cart is
+ *  polled as something other than what the app listens for, in which case its `off` (better to send a cart that is not
+ *  listening nothing at all than bytes it takes for another master's). */
+export function syncModeFor(rule: ControllerSyncRule, cartSync: string | null): string {
+  if (cartSync && rule.listening !== undefined && cartSync !== rule.listening) return rule.off ?? rule.mode;
+  return rule.mode;
 }
 
 /** What a Game Boy captures of its serial out for LSDj's decoder (its node's `serialOutCapture` setting, as the C++
@@ -92,11 +121,11 @@ export type SerialOutCaptureMode = "off" | "listen" | "drive";
  *  clock the serial port under the bytes the placed role writes. */
 export function serialOutCaptureFor(
   pipeline: readonly ProtocolRole[],
-  forced?: LsdjSyncMode | null,
+  forced?: string | null,
 ): SerialOutCaptureMode {
   const role = pipeline.find((r) => r.node === "rp.lsdj.sync");
   if (!role) return "off";
-  const mode = forced ?? (role.config as { mode?: unknown }).mode;
+  const mode: unknown = forced ?? (role.config as { mode?: unknown }).mode;
   if (mode === LsdjSyncMode.MidiOut) return "drive";
   if (mode === LsdjSyncMode.MasterSync) return "listen";
   return "off";

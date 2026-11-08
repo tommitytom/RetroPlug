@@ -6,11 +6,14 @@
 //                                                    shell): the roles buildAppRegistry applies, the ROM providers, the
 //                                                    tracker integrations and the kit formats, and a duplicate in any
 //                                                    list a key or an exclusive marker identifies refused at load
-//   packages/retroplug/src/generated/protocol.ts     PROTOCOL_NODES and ROLE_NODES, the wiring buildGraph reads. It
-//                                                    imports nothing but types, so a bundle of buildGraph carries the
-//                                                    tables without a single node's code or role's schema
-//   packages/retroplug/src/generated/scriptNodes.ts  the script-node bundle's entry, importing each package's node
-//                                                    definitions and registering them in span-label order
+//   packages/retroplug/src/generated/protocol.ts     PROTOCOL_NODES and ROLE_NODES, the wiring buildGraph reads, and
+//                                                    CONTROLLER_SYNC, the sync mode the cart an app's launches drive
+//                                                    must be in. It imports nothing but types, so a bundle of
+//                                                    buildGraph carries the tables without a single node's code, no
+//                                                    role's schema and no app's
+//   packages/retroplug/src/generated/scriptNodes.ts  the script-node bundle's entry, registering each package's
+//                                                    controller app runtime and then its node definitions, in
+//                                                    span-label order
 //
 // The product list is the root package.json's retroplug.products.desktop, the same array the root CMakeLists.txt reads
 // into RP_DESKTOP_PACKAGES (string(JSON)), so the two languages cannot register different products. THE LIST IS ALSO
@@ -77,6 +80,10 @@ function isObject(v) {
 // The protocol node fields the generated tables carry (renderProtocol's key list): anything else in a manifest's node
 // entry is a knob nothing reads, which JSON cannot type-check and esbuild only warns about.
 const NODE_KEYS = ["type", "label", "midiIn", "writes", "launches", "serialOut", "midiOut", "out"];
+
+// The controller app sync override's fields: the node type it applies to, the mode it sets, the polled SYNC value that
+// counts as the cart listening and the mode a cart that is not listening is put in. All data: nothing is imported.
+const SYNC_KEYS = ["node", "mode", "listening", "off"];
 
 /** `@retroplug/<name>` for a dependency spec, or null for a third-party one. */
 function packageOf(spec) {
@@ -182,10 +189,45 @@ function order(root, names) {
   return packages;
 }
 
+/** A controller app's sync override, from its manifest entry: plain DATA, because the planner applies it and a bundle
+ *  of the planner must carry no app and no zod. It names the cart sync node type the app's launches need, the mode it
+ *  puts that node in, and the polled SYNC value that counts as the cart listening: a cart polled at anything else is
+ *  put in `off` instead, and one that cannot be read at all is assumed willing (the mode). */
+function syncRule(pkg, appId, sync) {
+  const where = `${pkg.name}: the controller app ${appId}'s syncOverride`;
+  if (!isObject(sync)) throw new Error(`${where} must be an object, not ${JSON.stringify(sync)}`);
+  for (const key of Object.keys(sync)) {
+    if (!SYNC_KEYS.includes(key)) {
+      throw new Error(`${where} has ${JSON.stringify(key)}, which nothing reads (its keys are ${SYNC_KEYS.join(", ")})`);
+    }
+  }
+  if (typeof sync.node !== "string" || sync.node === "") {
+    throw new Error(`${where} needs a "node": the cart sync node type its mode is set on`);
+  }
+  if (typeof sync.mode !== "string" || sync.mode === "") {
+    throw new Error(`${where} needs a "mode": the mode that node is put in`);
+  }
+  if (sync.listening === undefined) {
+    if (sync.off !== undefined) {
+      throw new Error(`${where} names an "off" mode and no "listening" value, so the mode it is for is never used`);
+    }
+    return { node: sync.node, mode: sync.mode };
+  }
+  if (typeof sync.listening !== "string" || sync.listening === "") {
+    throw new Error(`${where}'s "listening" must be the polled SYNC value that counts as listening, not ` +
+      JSON.stringify(sync.listening));
+  }
+  if (typeof sync.off !== "string" || sync.off === "") {
+    throw new Error(`${where} needs an "off": the mode a cart polled at anything but ${JSON.stringify(sync.listening)} ` +
+      "is put in");
+  }
+  return { node: sync.node, mode: sync.mode, listening: sync.listening, off: sync.off };
+}
+
 /** What one package contributes, from its manifest: its app module and its protocol nodes, each checked for what the
  *  generated modules need. */
 function contributions(pkg) {
-  const out = { app: null, protocol: null, nodes: [], roles: {} };
+  const out = { app: null, protocol: null, nodes: [], roles: {}, apps: [] };
   const retroplug = pkg.retroplug;
   if (retroplug.app !== undefined) {
     if (typeof retroplug.app !== "string" || retroplug.app === "") {
@@ -196,13 +238,51 @@ function contributions(pkg) {
   if (retroplug.protocol === undefined) return out;
   const protocol = retroplug.protocol;
   if (!isObject(protocol)) throw new Error(`${pkg.name}: retroplug.protocol is not an object`);
-  if (typeof protocol.module !== "string" || protocol.module === "") {
-    throw new Error(`${pkg.name}: retroplug.protocol needs a "module", the file that default-exports its nodes`);
+  // `module` is the file that default-exports the nodes, so a package that contributes none (an app bridge does) has
+  // nothing to name: requiring one made it ship an empty list nobody reads, which is what a new pack would copy. A
+  // module with no nodes to export is the other half of the same mistake, and is refused.
+  const nodeList = protocol.nodes ?? [];
+  if (!Array.isArray(nodeList)) throw new Error(`${pkg.name}: retroplug.protocol.nodes is not a list`);
+  if (protocol.module === undefined) {
+    if (nodeList.length) {
+      throw new Error(`${pkg.name}: retroplug.protocol needs a "module", the file that default-exports its nodes`);
+    }
+  } else {
+    if (typeof protocol.module !== "string" || protocol.module === "") {
+      throw new Error(`${pkg.name}: retroplug.protocol's module must be a module path, not ` +
+        JSON.stringify(protocol.module));
+    }
+    if (!nodeList.length) {
+      throw new Error(`${pkg.name}: retroplug.protocol names the module ${JSON.stringify(protocol.module)} and ` +
+        "declares no nodes, so the module would export nothing: drop the module");
+    }
+    out.protocol = entryFile(pkg, "protocol's module", protocol.module);
   }
-  out.protocol = entryFile(pkg, "protocol's module", protocol.module);
-  const nodes = protocol.nodes ?? [];
-  if (!Array.isArray(nodes)) throw new Error(`${pkg.name}: retroplug.protocol.nodes is not a list`);
-  for (const node of nodes) {
+  // Built as new objects: the parsed manifest is read again by later checks, and writing derived fields onto it
+  // would make its own keys look unknown to them.
+  const apps = protocol.apps ?? [];
+  if (!Array.isArray(apps)) throw new Error(`${pkg.name}: retroplug.protocol.apps is not a list`);
+  for (const app of apps) {
+    if (!isObject(app) || typeof app.id !== "string" || app.id === "") {
+      throw new Error(`${pkg.name}: every retroplug.protocol.apps entry needs an "id", the app's stable id`);
+    }
+    if (typeof app.module !== "string" || app.module === "") {
+      throw new Error(`${pkg.name}: the controller app ${app.id} needs a "module", the file that default-exports its ` +
+        "runtime (its factory, its playback model and its target)");
+    }
+    for (const key of Object.keys(app)) {
+      if (key !== "id" && key !== "module" && key !== "syncOverride") {
+        throw new Error(`${pkg.name}: the controller app ${app.id} has ${JSON.stringify(key)}, which no runtime reads ` +
+          "(an app's keys are id, module, syncOverride)");
+      }
+    }
+    out.apps.push({
+      id: app.id,
+      file: entryFile(pkg, "protocol's apps", app.module),
+      sync: app.syncOverride === undefined ? null : syncRule(pkg, app.id, app.syncOverride),
+    });
+  }
+  for (const node of nodeList) {
     if (!isObject(node) || typeof node.type !== "string" || node.type === "") {
       throw new Error(`${pkg.name}: every retroplug.protocol.nodes entry needs a "type", the node's id`);
     }
@@ -278,6 +358,22 @@ function nodeTable(packages) {
   return { byType };
 }
 
+/** Every package's controller app runtimes as one table: an id is looked up by the script bundle and stored in a
+ *  project, so an id two packages declare is refused here, naming both, rather than one silently replacing the other. */
+function appTable(packages) {
+  const byId = new Map();
+  for (const { pkg, apps } of packages) {
+    for (const app of apps) {
+      const at = byId.get(app.id);
+      if (at) {
+        throw new Error(`two packages declare the controller app ${app.id}: ${at.pkg} and ${pkg.name}`);
+      }
+      byId.set(app.id, { app, pkg: pkg.name });
+    }
+  }
+  return byId;
+}
+
 /** The role kinds the protocol members declare, each with its node type and the package that declares it: a kind has
  *  one owner, as a node type and a span label do, since the generated ROLE_NODES object would otherwise keep whichever
  *  package came last (or fail tsc, and esbuild only warns). */
@@ -349,6 +445,9 @@ function contributionLines(packages, member) {
 
 function renderPackages({ packages, outDir }) {
   const app = packages.filter((p) => p.app);
+  // The manifests' control apps' runtimes (their protocol.apps), as the ids the app modules' control-plane halves are
+  // paired with below.
+  const runtimeApps = packages.flatMap((p) => p.apps);
   const lines = [];
   lines.push(
     "// Generated by packages/retroplug/scripts/lib/packages.mjs from the desktop product's package list (the root",
@@ -362,6 +461,7 @@ function renderPackages({ packages, outDir }) {
     'import type { RoleType, RomProvider } from "@retroplug/core";',
     'import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";',
     'import type { KitFormat } from "@retroplug/dsp/kitContract";',
+    'import type { ControllerAppContribution } from "@retroplug/launchpad/registry";',
   );
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   lines.push(
@@ -409,11 +509,50 @@ function renderPackages({ packages, outDir }) {
     "  kitIds.add(format.id);",
     "}",
     "",
+    "/** The controller apps' CONTROL-PLANE halves, in product order: each app's id, its menu label and the schema its",
+    " *  config is parsed with. The runtime half (the app itself, its playback model and its target) is the same",
+    " *  package's protocol.apps entry, registered by the script bundle, and the sync mode its launches need is that",
+    " *  entry's syncOverride data, in ./protocol.ts. The halves are joined by id, so each id has both and only one of",
+    " *  each. */",
+    "const CONTROLLER_APP_SOURCES: readonly { pkg: string; apps: readonly ControllerAppContribution[] }[] = [",
+    ...app.map((p) => `  { pkg: ${JSON.stringify(p.pkg.name)}, apps: ${identifier(p.pkg.name)}.controllerApps ?? [] },`),
+    "];",
+    "// A duplicate id is refused naming BOTH packages: a project stores only the id, so one of the two apps would be",
+    "// unreachable without a word.",
+    "const controllerAppOwners = new Map<string, string>();",
+    "for (const source of CONTROLLER_APP_SOURCES) {",
+    "  for (const app of source.apps) {",
+    "    const owner = controllerAppOwners.get(app.id);",
+    "    if (owner !== undefined) {",
+    "      throw new Error(`two packages declare the controller app ${app.id}: ${owner} and ${source.pkg}`);",
+    "    }",
+    "    controllerAppOwners.set(app.id, source.pkg);",
+    "  }",
+    "}",
+    "export const CONTROLLER_APPS: readonly ControllerAppContribution[] = [",
+    ...contributionLines(app, "controllerApps"),
+    "];",
+    "// The runtime halves the manifests declare (their protocol.apps), which the script bundle registers. An app with one",
+    "// half and not the other is a document that names an app nothing runs, or a runtime no menu offers.",
+    `const RUNTIME_APP_IDS: readonly string[] = [${runtimeApps.map((app) => JSON.stringify(app.id)).join(", ")}];`,
+    "for (const id of RUNTIME_APP_IDS) {",
+    "  if (!controllerAppOwners.has(id)) {",
+    "    throw new Error(`the controller app ${id} has no control-plane half: a manifest declares its runtime and no ` +",
+    '      "package\'s app contributes it (its label or its config\'s schema)");',
+    "  }",
+    "}",
+    "for (const controllerApp of CONTROLLER_APPS) {",
+    "  if (!RUNTIME_APP_IDS.includes(controllerApp.id)) {",
+    "    throw new Error(`the controller app ${controllerApp.id} has no runtime half: no package's protocol.apps ` +",
+    '      "declares it (the app, its playback model and its target)");',
+    "  }",
+    "}",
+    "",
   );
   return lines.join("\n");
 }
 
-function renderProtocol({ byType, roles }) {
+function renderProtocol({ byType, roles, apps }) {
   const lines = [];
   lines.push(
     "// Generated by packages/retroplug/scripts/lib/packages.mjs from the desktop product's package list and the",
@@ -423,6 +562,7 @@ function renderProtocol({ byType, roles }) {
     "// spell them. Nothing but a type is imported here: the data is apart from the node modules it describes, so a",
     "// bundle that reads it carries no node's code, no role's schema and nothing of the app.",
     'import type { ProtocolNodeSpec } from "../graph/protocolNodes";',
+    'import type { ControllerSyncRule } from "../graph/controller";',
     "",
     "/** How buildGraph and the stores wire each protocol node type (graph/protocolNodes.ts's ProtocolNodeSpec): the",
     " *  input its system's routed MIDI arrives on, the system inputs it writes, and the wires it takes or makes. In",
@@ -454,12 +594,26 @@ function renderProtocol({ byType, roles }) {
     "export const ROLE_NODES: Readonly<Record<string, keyof typeof PROTOCOL_NODES>> = {",
   );
   for (const { kind, type } of roles) lines.push(`  ${JSON.stringify(kind)}: ${JSON.stringify(type)},`);
+  lines.push(
+    "};",
+    "",
+    "/** The controller apps' sync overrides, by app id: the cart sync node type an app's launches need, the mode it",
+    " *  puts that node in, and the polled SYNC value that counts as the cart listening (a cart polled at anything else",
+    " *  is put in `off`; one that cannot be read yet is assumed willing). DATA, so the planner applies it without an",
+    " *  app or a schema - the app modules have both - and it reaches the DOCUMENT only, never a project: turning the",
+    " *  controller off restores whatever the user had. */",
+    "export const CONTROLLER_SYNC: Readonly<Record<string, ControllerSyncRule>> = {",
+  );
+  for (const { apps: list } of apps) {
+    for (const app of list) if (app.sync) lines.push(`  ${JSON.stringify(app.id)}: ${JSON.stringify(app.sync)},`);
+  }
   lines.push("};", "");
   return lines.join("\n");
 }
 
 function renderScriptNodes({ packages, outDir }) {
   const spec = packages.filter((p) => p.protocol);
+  const withApps = packages.filter((p) => p.apps.length > 0);
   const head = [
     "// Generated by packages/retroplug/scripts/lib/packages.mjs from the desktop product's package list and the",
     "// packages' manifests. Do not edit; edit a manifest and rebuild.",
@@ -470,12 +624,12 @@ function renderScriptNodes({ packages, outDir }) {
     "// embedded in the backend (packages/native/cmake/bundles.cmake), so every Engine loads it into both of its",
     "// script contexts.",
   ];
-  if (!spec.length) {
+  if (!spec.length && !withApps.length) {
     return [
       ...head,
       'import { registerScriptNodes } from "@retroplug/core/register";',
       "",
-      "// No package in the desktop product contributes a protocol node.",
+      "// No package in the desktop product contributes a protocol node or a controller app.",
       "registerScriptNodes([]);",
       "",
     ].join("\n");
@@ -485,9 +639,33 @@ function renderScriptNodes({ packages, outDir }) {
     'import type { DefinedNode } from "@retroplug/core/defineNode";',
     'import { registerScriptNodes } from "@retroplug/core/register";',
   ];
+  // Generated local names, checked as they are made: a package and an app id both lose their punctuation to the same
+  // underscore, so "a-b" + "c" and "a" + "b-c" would both become app_a_b_c, and tsc would fail on a duplicate import
+  // with nothing said about which manifests collided.
+  const locals = new Map();
+  const local = (name, what) => {
+    const at = locals.get(name);
+    if (at) throw new Error(`two contributions take the generated identifier ${name}: ${at} and ${what}`);
+    locals.set(name, what);
+    return name;
+  };
+  if (withApps.length) {
+    lines.push('import { registerControllerApps, type ControllerAppRuntime } from "@retroplug/launchpad/apps";');
+  }
+  const nodeLocals = new Map();
   for (const p of spec) {
-    const id = identifier(p.pkg.name).slice(4);
-    lines.push(`import nodes_${id} from "${moduleSpecifier(outDir, p.pkg, p.protocol)}";`);
+    const name = local(`nodes_${identifier(p.pkg.name).slice(4)}`, `the package ${p.pkg.name}'s nodes module`);
+    nodeLocals.set(p.pkg.name, name);
+    lines.push(`import ${name} from "${moduleSpecifier(outDir, p.pkg, p.protocol)}";`);
+  }
+  const appLocals = [];
+  for (const p of withApps) {
+    for (const app of p.apps) {
+      const name = local(`app_${p.pkg.name.replace(/[^A-Za-z0-9_]/g, "_")}_${app.id.replace(/[^A-Za-z0-9_]/g, "_")}`,
+        `the package ${p.pkg.name}'s controller app ${app.id}`);
+      appLocals.push({ pkg: p.pkg.name, app, name });
+      lines.push(`import ${name} from "${moduleSpecifier(outDir, p.pkg, app.file)}";`);
+    }
   }
   lines.push(
     "",
@@ -512,7 +690,7 @@ function renderScriptNodes({ packages, outDir }) {
     "// Each package's definitions, in product order; the order the bundle registers them in is the labels', below.",
     "const lists: readonly (readonly DefinedNode<any>[])[] = [",
   );
-  for (const p of spec) lines.push(`  nodes_${identifier(p.pkg.name).slice(4)},`);
+  for (const p of spec) lines.push(`  ${nodeLocals.get(p.pkg.name)},`);
   lines.push(
     "];",
     "",
@@ -543,9 +721,39 @@ function renderScriptNodes({ packages, outDir }) {
     "    );",
     "  }",
     "}",
-    "registerScriptNodes(nodes);",
     "",
   );
+  if (withApps.length) {
+    lines.push(
+      "// The controller apps' runtimes, in product order: the manifests' protocol.apps. Each import is one manifest",
+      "// entry's module, so the check is per entry: a module that registers another id would leave a document",
+      "// naming an app nothing runs, and the message names the module and both ids rather than a set difference.",
+      "const apps: readonly ControllerAppRuntime[] = [",
+    );
+    for (const entry of appLocals) lines.push(`  ${entry.name},`);
+    lines.push(
+      "];",
+      "const appModules: readonly string[] = [",
+    );
+    for (const entry of appLocals) lines.push(`  ${JSON.stringify(entry.name)},`);
+    lines.push(
+      "];",
+      "const appIds: readonly string[] = [",
+    );
+    for (const entry of appLocals) lines.push(`  ${JSON.stringify(entry.app.id)},`);
+    lines.push(
+      "];",
+      "for (let i = 0; i < apps.length; i++) {",
+      "  if (apps[i].id !== appIds[i]) {",
+      "    throw new Error(`the script bundle's controller app ${appModules[i]} registers ${apps[i].id}, but its ` +",
+      "      `manifest entry declares ${appIds[i]}`);",
+      "  }",
+      "}",
+      "registerControllerApps(apps);",
+      "",
+    );
+  }
+  lines.push("registerScriptNodes(nodes);", "");
   return lines.join("\n");
 }
 
@@ -605,6 +813,18 @@ export function generate({ root = REPO } = {}) {
   const contributionsOf = ordered.map((pkg) => ({ pkg, ...contributions(pkg) }));
   const { byType } = nodeTable(contributionsOf);
   const kinds = roleTable(contributionsOf);
+  appTable(contributionsOf); // refused here for a duplicate id, naming both packages
+  // A sync override names the cart sync node type its mode is set on: a misspelt one would plan and do nothing, since a
+  // C++ node ignores a setting its type does not read.
+  for (const { pkg, apps } of contributionsOf) {
+    for (const app of apps) {
+      if (!app.sync) continue;
+      if (!byType.has(app.sync.node)) {
+        throw new Error(`${pkg.name}: the controller app ${app.id}'s syncOverride names the node ${app.sync.node}, ` +
+          "which no package declares");
+      }
+    }
+  }
 
   // A role's node must be one PROTOCOL_NODES wires, or buildGraph would place a node it cannot lay out.
   for (const { kind, type, pkg } of kinds.values()) {
@@ -622,7 +842,7 @@ export function generate({ root = REPO } = {}) {
       path: join(outDir, "packages.ts"),
       content: renderPackages({ packages: contributionsOf, outDir }),
     },
-    { path: join(outDir, "protocol.ts"), content: renderProtocol({ byType, roles }) },
+    { path: join(outDir, "protocol.ts"), content: renderProtocol({ byType, roles, apps: contributionsOf }) },
     { path: join(outDir, "scriptNodes.ts"), content: renderScriptNodes({ packages: contributionsOf, outDir }) },
   ];
   mkdirSync(outDir, { recursive: true });

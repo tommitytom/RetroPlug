@@ -4,9 +4,10 @@
 // out of the host to a real Game Boy's Arduinoboy on `midiOut`, each at frame 0.
 //
 // Its settings are what the control plane resolved: the app's id, where its launches go and the system id they go to
-// (the first system's when the user chose none), the app's config ALREADY PARSED by the app's own schema (the shell
-// registry's, which this node never imports, so it carries no zod), the song's per-row timing table, and the start
-// anchor. It parses nothing: the node imports only the apps' runtime (ts/apps/index.ts).
+// (the first system's when the user chose none), the app's config ALREADY PARSED by the app's own schema (the shell's
+// registry, which this node never imports, so it carries no zod), the song's per-row timing table, and the start
+// anchor. It parses nothing: the app it runs is a runtime the generated bundle registered by id (ts/apps/index.ts), so
+// a tracker's app lives with that tracker and this node names none.
 //
 // The role's re-push rules, kept: a settings change whose shape (the app, the target, the system, the app's config) is
 // the same adopts the new timing table in place, so the playhead does not move; any other rebuilds the session around
@@ -14,35 +15,34 @@
 // number. As the role did, the work happens in the first process after the change.
 //
 // A block allocates nothing here beyond what the session does (its surface diff, and a launch's message).
+import { TickClock } from "@retroplug/core/clock";
 import { control, defineNode, events, startValue, type Block } from "@retroplug/core/defineNode";
 import { s, type Infer } from "@retroplug/core/settingsSchema";
 import { LAUNCHES, MIDI_OUT } from "@retroplug/core/ports";
 import { CONTROLLER_TARGET_VALUES } from "./enums";
 import { CONTROLLER_OUT } from "./ports";
 import { ControllerSession } from "./session";
-import { lsdjMidiMapTarget } from "./trackerTarget";
-import { controllerApp } from "./apps";
-// The leaf, not the lsdj/playback barrel: that also exports the observed model and the sav-derived table builder,
-// which would pull the WRAM reader and the whole sav codec into the bundle.
-import { PredictedLsdjModel, normaliseRowTicks } from "@retroplug/lsdj/playback/predict";
+import { controllerApp, type ControllerAppRuntime, type ControllerPlaybackModel } from "./apps";
 
 export const CONTROLLER_SESSION_NODE_TYPE = "rp.controller.session";
 
-/** 24 PPQN, the resolution every Arduinoboy-family sync mode counts in. The session's tick is derived from ppq rather
- *  than counted: Math.floor(ppq * 24) is the quantity walkTicks derives its ticks from, so the session's clock and the
- *  cart's cannot drift apart, and a stopped transport freezes both. */
+/** 24 PPQN, the resolution every Arduinoboy-family sync mode counts in. The position the app paints from is derived
+ *  from ppq (Math.floor(ppq * 24), the quantity walkTicks derives its ticks from), while the ticks the predictor walks
+ *  are COUNTED by the walk itself (the clock below): a position can only be differenced, and a loop wrap or a seek would
+ *  lose the block it was differenced across. */
 const TICKS_PER_QUARTER = 24;
 
 const settings = s.object({
-  /** Which controller app runs (an id in apps/index.ts); an unknown one runs nothing. */
-  app: s.string("lsdj-midimap"),
+  /** Which controller app runs: an id a package's runtime registered (ts/apps/index.ts), which the control plane's
+   *  project settings name (a project starts with the product's app). Empty or unknown runs nothing. */
+  app: s.string(""),
   target: s.enum(CONTROLLER_TARGET_VALUES, "system"),
   /** The system the launches are for, resolved: 0 is none. Where they go is the wiring's; the session is rebuilt
    *  when it changes, as it was for a new target. */
   systemId: s.int({ min: 0, max: 0xffffffff, default: 0 }),
   /** The app's own config, parsed by its schema on the control plane. */
   appConfig: s.json<Record<string, unknown>>({}),
-  /** The per-row timing table (normaliseRowTicks reads it): the predictor's only input. */
+  /** The per-row timing table the app's playback model reads: the predictor's only input. */
   songRowTicks: s.json<unknown>([]),
   /** The start-edge re-anchor: where the cart said it was when the player started it themselves, and a sequence
    *  number so one anchor is applied once. Empty and 0 on the real-hardware path. */
@@ -67,16 +67,15 @@ interface SessionState {
   /** The link's drop count as of the previous block: see the repaint below. */
   drops?: number;
   /** The predictor, held here as well as inside the session so a rebuild carries it over. */
-  model?: PredictedLsdjModel;
+  model?: ControllerPlaybackModel;
+  /** The app the model was built for: a different app reads its own kind of model, so the model is rebuilt with it. */
+  modelApp?: string;
   /** The timing table the model holds, by identity: settings arrive as a fresh object on every change. */
   table?: unknown;
   /** The shape the current session was built from. */
   shape?: string;
   /** The anchor sequence applied last. */
   anchorSeq?: number;
-  /** The end of the previous block on the transport's tick, as a float: its start plus the ticks its own frames
-   *  and tempo covered (see the relocate below). */
-  nextTick?: number;
 }
 
 export const controllerSessionNode = defineNode<ControllerSessionSettings>({
@@ -105,7 +104,16 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
     // retained, not dangling; it is read only inside update, and emptied before the next update reads it.
     const input: ArrayLike<number>[] = [];
     // The session's whole input for a block, one object refilled each block so none is built per block.
-    const frame = { input, tick: 0, transport: false, relocate: false };
+    const frame = { input, tick: 0, transport: false, ticks: 0 };
+    // The clock the cart is sent, walked here so the predictor can be given the COUNT of ticks a block fired. The same
+    // walk the cart's own protocol node runs (packages/core/ts/ticks.ts), so the two cannot disagree about a block edge;
+    // the callback only counts, and is made once so a block allocates nothing for it.
+    const clock = new TickClock();
+    let walked = 0;
+    let counted = 0;
+    const countTick = () => {
+      counted++;
+    };
     const toLaunches = (data: number[]) => {
       block!.send("launches", 0, data);
     };
@@ -113,13 +121,16 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
       block!.send("midiOut", 0, data);
     };
 
-    // The session for these settings, or null when they name no app. The ONE difference between driving an emulated
-    // cart and driving a real Game Boy is where `send` puts the bytes, so both carry the same launch stream.
-    const build = (model: PredictedLsdjModel): ControllerSession | null => {
-      const app = controllerApp(config.app);
-      if (!app) return null;
+    // The session for these settings, or null when they name an app no package registered. The ONE difference between
+    // driving an emulated cart and driving a real Game Boy is where `send` puts the bytes, so both carry the same
+    // launch stream (the app's own target puts them there).
+    const build = (app: ControllerAppRuntime, model: ControllerPlaybackModel): ControllerSession => {
       const send = config.target === "midiOut" ? toMidiOut : toLaunches;
-      return new ControllerSession(app, { playback: model, target: lsdjMidiMapTarget(send), config: config.appConfig });
+      return new ControllerSession(app.factory(), {
+        playback: model,
+        target: app.target(send),
+        config: config.appConfig,
+      });
     };
 
     return {
@@ -129,9 +140,19 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
         // moving; anything structural rebuilds the session, carrying the predictor across so the song does not
         // restart.
         if (st.session === undefined || st.shape !== shape) {
-          if (st.model) st.model.setRowTicks(config.songRowTicks); // carried over: the table may have moved too
-          else st.model = PredictedLsdjModel.fromRowTicks(normaliseRowTicks(config.songRowTicks));
-          st.session = build(st.model);
+          const app = controllerApp(config.app);
+          // The model is carried over across a rebuild, so the song does not restart: it is the app's own, so a
+          // different app builds its own (and the table may have moved too).
+          if (!app) {
+            st.session = null;
+          } else if (st.model && st.modelApp === config.app) {
+            st.model.setRowTicks(config.songRowTicks);
+            st.session = build(app, st.model);
+          } else {
+            st.model = app.playbackModel(config.songRowTicks);
+            st.modelApp = config.app;
+            st.session = build(app, st.model);
+          }
           st.shape = shape;
           st.table = config.songRowTicks;
           st.attached = 0; // a fresh surface has no idea what the device is showing: re-take it below
@@ -172,27 +193,22 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
         // Run even with nothing attached: update drives the predictor, so the LEDs are right the moment a device
         // appears. A surface's timing is not musical (the app quantises a press), so the frames are dropped.
         //
-        // A tick that jumps further than one block can cover is a RELOCATE (the DAW timeline clicked forward, an
-        // SPP), not elapsed time: walkTicks sends the cart no clocks for a jump either, so advancing the predictor
-        // through it would be wrong - and walking a thousand bars of rows in one block costs milliseconds.
-        //
-        // The yardstick is the PREVIOUS block's projected end, from its own frames and tempo, exactly as walkTicks
-        // resyncs when its carried tick falls more than one tick behind the block's start. Comparing against THIS
-        // block's length instead reads a ragged split (a long block then a short one) or a tempo drop between two
-        // long blocks as a seek, and drops an ordinary block's ticks: the playhead then sits behind the cart for
-        // the rest of the song. A backwards move is no relocate here; the session reads it as no elapsed time.
-        const tick = Math.floor(b.transport.ppq * TICKS_PER_QUARTER);
-        const perBlock = b.transport.sampleRate > 0
-          ? (b.frames / b.transport.sampleRate) * (b.transport.tempo / 60) * TICKS_PER_QUARTER : 0;
-        const relocate = st.nextTick !== undefined && b.transport.ppq * TICKS_PER_QUARTER > st.nextTick + 1;
-        st.nextTick = b.transport.ppq * TICKS_PER_QUARTER + perBlock;
+        // What the cart was CLOCKED in the previous block, not the distance between two positions: walkTicks fires no
+        // clocks across a seek and resyncs from the block's own start, and a loop wrap moves ppq backwards - so a
+        // difference would read each of those as no time (or lose a block at a device swap) and leave the predicted
+        // playhead behind the cart for good. Counting the walk gives the predictor exactly the ticks the cart heard.
+        clock.begin(b);
+        counted = 0;
+        clock.walk(TICKS_PER_QUARTER, countTick);
+        const elapsed = walked;
+        walked = counted;
 
         const messages = b.messages("controllerIn");
         input.length = 0;
         for (let i = 0; i < messages.length; i++) input.push(messages[i].data);
-        frame.tick = tick;
+        frame.tick = Math.floor(b.transport.ppq * TICKS_PER_QUARTER);
         frame.transport = b.transport.playing;
-        frame.relocate = relocate;
+        frame.ticks = elapsed;
         const out = session.update(frame);
         for (let i = 0; i < out.length; i++) b.send("controllerOut", 0, out[i]);
       },

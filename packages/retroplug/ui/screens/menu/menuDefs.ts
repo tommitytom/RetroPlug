@@ -117,8 +117,8 @@ import {
   hasLaunchpadScan, startLaunchpadScan, getLaunchpadScan, launchpadFromScan, forgetLaunchpad,
   type LaunchpadConfig, type LaunchpadScanStatus,
 } from "./launchpadDevices";
-import { ControllerRegistry, registerControllerApps } from "../../../src/controller/registry";
-import { QUANTISE_VALUES, type Quantise } from "@retroplug/launchpad/apps/lsdjMidiMap";
+import { controllerApps } from "../../../src/controller/registry";
+import { QUANTISE_VALUES, type Quantise } from "@retroplug/lsdj-launchpad/lsdjMidiMap";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "@retroplug/launchpad/enums";
 import { controllerSyncOverride } from "../../../src/graph/controller";
 import { systemNodeId } from "../../../src/graph/buildGraph";
@@ -401,9 +401,6 @@ function cartFor(ctx: MenuContext, sys: SystemView | null): { system: SystemView
 // are HOST state (persisted natively in launchpad.cfg, shared by every project), while the app, its launch
 // quantise, and Enable are PROJECT state (persisted in the .rplg, since which cart a surface drives is a
 // property of the project).
-const controllerApps = new ControllerRegistry();
-registerControllerApps(controllerApps);
-
 const QUANTISE_LABELS: Record<Quantise, string> = {
   immediate: "Immediately",
   beat: "Next beat",
@@ -418,7 +415,7 @@ const CONTROLLER_TARGET_LABELS: Record<ControllerTarget, string> = {
 
 /** The read-only line describing what the controller has done to the cart's sync role. `cartSync` is the
  *  cart's OWN SYNC setting as last polled, which is what decides it. */
-function cartSyncLabel(mode: "midiMap" | "off", cartSync: string | null): string {
+function cartSyncLabel(mode: string, cartSync: string | null): string {
   if (mode === "midiMap") return cartSync ? "Cart: MI.MAP - driven by the controller" : "Cart: MI.MAP - driven by the controller (SYNC unread)";
   return `Cart SYNC is ${(cartSync ?? "").toUpperCase()}, not MI.MAP - not driving it`;
 }

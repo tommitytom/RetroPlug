@@ -174,6 +174,12 @@ move between it and the shell needs no entry.
 8. A device pack's imports are limited to `build-device-pack.mjs`'s four-file core SDK (`defineNode`,
    `settingsSchema`, `descriptor`, `register`), and `pico/n8-host/exporter-stale.sh` watches `packages/core/ts` plus
    each pack's own `ts/`.
+9. A scenario's whole-core scan skips ONE module of the package: the manifest's `retroplug.app`, the control plane's
+   half, because that half is the desktop's (zod's) and never runs on the engine. So every zod-using control-plane
+   module has to BE that `app` module: a helper it imports is scanned like any other module of the core, and a library
+   call the engine lacks there is refused, naming the helper's source line.
+   [test/graph/device-pack.test.ts](../packages/retroplug/test/graph/device-pack.test.ts) holds both halves (a pack
+   whose `app` calls what the engine lacks, accepted; a pack whose app imports one that does, refused).
 
 ## Hosts → test tiers
 

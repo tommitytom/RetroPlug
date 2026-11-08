@@ -6,14 +6,15 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "Novation Launchpad support: the protocol (encode, decode, diff), the controller session and its app registry, the port scan and the profiles, and the rp.controller.session script node (span label 22).",
+  "description": "Novation Launchpad support: the protocol (encode, decode, diff), the controller session and its app runtime registry, the controllerApps contract, the port scan and the profiles, and the rp.controller.session script node (span label 22).",
   "exports": {
     ".": "./ts/index.ts",
     "./apps": "./ts/apps/index.ts",
-    "./apps/lsdjMidiMap": "./ts/apps/lsdjMidiMap.ts",
     "./controllerSession": "./ts/controllerSession.ts",
     "./decode": "./ts/decode.ts",
     "./enums": "./ts/enums.ts",
+    "./nodes": "./ts/nodes.ts",
+    "./packageContributions": "./ts/packageContributions.ts",
     "./portScan": "./ts/portScan.ts",
     "./portable": "./ts/portable.ts",
     "./ports": "./ts/ports.ts",
@@ -22,13 +23,11 @@
     "./registry": "./ts/registry.ts",
     "./session": "./ts/session.ts",
     "./surface": "./ts/surface.ts",
-    "./trackerTarget": "./ts/trackerTarget.ts",
-    "./nodes": "./ts/nodes.ts",
-    "./testSupport/fakeDevice": "./ts/testSupport/fakeDevice.ts"
+    "./testSupport/fakeDevice": "./ts/testSupport/fakeDevice.ts",
+    "./launchTarget": "./ts/launchTarget.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
-    "@retroplug/lsdj": "workspace:*",
     "@retroplug/tracker": "workspace:*"
   },
   "devDependencies": {

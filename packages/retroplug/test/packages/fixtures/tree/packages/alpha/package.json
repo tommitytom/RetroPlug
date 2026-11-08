@@ -2,15 +2,39 @@
   "name": "@retroplug/alpha",
   "exports": {
     "./app": "./ts/app.ts",
-    "./nodes": "./ts/nodes.ts"
+    "./nodes": "./ts/nodes.ts",
+    "./appRuntime": "./ts/appRuntime.ts"
   },
   "private": true,
   "retroplug": {
     "app": "ts/app.ts",
     "protocol": {
       "module": "ts/nodes.ts",
-      "nodes": [{ "type": "rp.alpha.midi", "label": 16, "midiIn": "midi", "writes": ["serialIn"] }],
-      "roles": { "alpha-midi": "rp.alpha.midi" }
+      "nodes": [
+        {
+          "type": "rp.alpha.midi",
+          "label": 16,
+          "midiIn": "midi",
+          "writes": [
+            "serialIn"
+          ]
+        }
+      ],
+      "roles": {
+        "alpha-midi": "rp.alpha.midi"
+      },
+      "apps": [
+        {
+          "id": "alpha-app",
+          "module": "ts/appRuntime.ts",
+          "syncOverride": {
+            "node": "rp.alpha.midi",
+            "mode": "midiMap",
+            "listening": "MidiMap",
+            "off": "off"
+          }
+        }
+      ]
     }
   }
 }

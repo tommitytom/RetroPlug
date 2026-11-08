@@ -98,12 +98,11 @@ async function buildPack(entry: string, name: string, heapBytes: number, packDir
 }
 
 /** The toolchain in scenario mode on one scenario, into OUT/<name>. */
-async function scenarioOf(file: string, name: string, heapBytes: number) {
-  const child = tjs.spawn(
-    [tjs.env.RP_NODE || "node", "scripts/build-device-pack.mjs", "--scenario", file, "--name", name,
-     "--heap-bytes", String(heapBytes), "--out-dir", `${OUT}/${name}`],
-    { stdout: "pipe", stderr: "pipe" },
-  );
+async function scenarioOf(file: string, name: string, heapBytes: number, packDir?: string) {
+  const args = [tjs.env.RP_NODE || "node", "scripts/build-device-pack.mjs", "--scenario", file, "--name", name,
+                "--heap-bytes", String(heapBytes), "--out-dir", `${OUT}/${name}`];
+  if (packDir) args.push("--pack-dir", packDir);
+  const child = tjs.spawn(args, { stdout: "pipe", stderr: "pipe" });
   const [out, err, status] = await Promise.all([text(child.stdout), text(child.stderr), child.wait()]);
   return { ok: !status.term_signal && status.exit_status === 0, out, err };
 }
@@ -232,6 +231,23 @@ test("a scenario's whole core is scanned, and a pack's declared dependency opens
   contains(declared.err, "the pack imports modules outside its allowlist");
   contains(declared.err, "packages/launchpad/ts/decode.ts (imported by packages/retroplug/test/graph/device-pack/" +
            "node-pack-declared/node.ts)");
+});
+
+test("the whole-core scan skips the package's app module, and only it", async () => {
+  // The control plane's half is the desktop's (zod's), so the one module the manifest names as `app` is not scanned: a
+  // pack whose app calls what the engine lacks still proves its core. Every OTHER module is scanned, so a zod module
+  // that is merely imported by the app is still refused - which is why a control-plane helper must live in the app
+  // module, not beside it.
+  const skipped = await scenarioOf(`${FIXTURES}/scenario/app-module-skip/scenario.ts`, "scenario-app-module-skip", 65536,
+    `${FIXTURES}/scenario/app-module-skip`);
+  expect(skipped.ok, `the whole-core scan refused the app module's own call:\n${skipped.out}${skipped.err}`).toBe(true);
+  contains(skipped.out, "no library calls outside MicroQuickJS's stdlib, in the core's 1 module(s)");
+  // And a module the app IMPORTS is not skipped: the scan sees it, so the zod-using half must be the app module itself.
+  const sibling = await scenarioOf(`${FIXTURES}/scenario/app-module-sibling/scenario.ts`, "scenario-app-module-sibling",
+    65536, `${FIXTURES}/scenario/app-module-sibling`);
+  expect(sibling.ok).toBe(false);
+  contains(sibling.err, "Number.isInteger (Number.isInteger and friends) in " +
+    "packages/retroplug/test/graph/device-pack/scenario/app-module-sibling/ts: return Number.isInteger(row);");
 });
 
 test("a scenario's allowlist, silence, throw and disagreement are each refused, and it takes no node entry", async () => {

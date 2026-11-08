@@ -207,7 +207,7 @@ std::string requestKey(const GoldenCase& c) {
            rfl::json::write(c.model.systems);
 }
 
-// A press of the top-left pad, as a Launchpad in Programmer mode sends it (padIndex in src/launchpad/profile.ts).
+// A press of the top-left pad, as a Launchpad in Programmer mode sends it (padIndex in packages/launchpad/ts/profile.ts).
 const std::vector<std::uint8_t> kPadPress{0x90, 81, 100};
 
 // The cart link a golden that drives the real cart is handed: every byte the cart node pushed at the device, so a case
@@ -242,7 +242,7 @@ std::set<std::string> cartNodeIds(const std::string& document) {
     return out;
 }
 
-// The SysEx that puts a Launchpad Pro MK3 into Programmer mode (enterProgrammerMode(PRO_MK3), src/launchpad/protocol.ts:
+// The SysEx that puts a Launchpad Pro MK3 into Programmer mode (enterProgrammerMode(PRO_MK3), packages/launchpad/ts/protocol.ts:
 // the Novation header, the model's id 0x0E, the toggle command 0x0E, on). Only the session's connect() sends it, and
 // connect() runs only when a link reports a device, so seeing it out proves the connected wire reached the session
 // and that the session ran; the LED repaints the session sends every block, attached or not, prove neither.

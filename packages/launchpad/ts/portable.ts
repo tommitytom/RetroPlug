@@ -16,15 +16,14 @@
 //   - Arrays may not be written past their end (no holes): build them by push, or full-length up front.
 //
 // What is deliberately NOT here: the app registry's config schemas (zod, which belong to the control plane), the
-// script node that runs a session on the audio thread (ts/controllerSession.ts), the LSDj app and its launch target
-// (they live with the tracker, in its bridge package) and every UI seam. A host wires these pieces itself - feed the
-// session bytes and a 24 PPQN tick, write what it returns to the device, and hand the target a `send` that reaches
-// the cart.
+// script node that runs a session on the audio thread (ts/controllerSession.ts), every app and its launch target (they
+// live with their tracker, in a bridge package) and every UI seam. A host wires these pieces itself - feed the session
+// bytes and a 24 PPQN tick, write what it returns to the device, and hand the target a `send` that reaches the cart.
 
 export { ControllerSession, isPredictive } from "./session";
 export type { ControllerApp, ControllerCtx, SessionInput, SessionOptions } from "./session";
 export type { PlaybackGrid, PlaybackModel, PlaybackPosition, PredictivePlaybackModel } from "@retroplug/tracker/playbackModel";
-export { nullTarget, type TrackerTarget } from "./trackerTarget";
+export type { TrackerTarget } from "./launchTarget";
 export { PortScan, IDLE_SCAN, MAX_REPLIES, GAP_MS } from "./portScan";
 export type { MidiPortApi, ScanReply, ScanStatus } from "./portScan";
 

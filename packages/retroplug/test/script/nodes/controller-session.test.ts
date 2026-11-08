@@ -6,16 +6,21 @@
 import { test, expect } from "@retroplug/testing";
 import { CONTROLLER_SESSION_NODE_TYPE, controllerSessionNode } from "@retroplug/launchpad/controllerSession";
 import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
-import { ControllerRegistry, registerControllerApps } from "../../../src/controller/registry";
+import { controllerApp } from "../../../src/controller/registry";
+// The generated script bundle registers every app's runtime before the node can run (src/generated/scriptNodes.ts);
+// a test process does the same, with the app the documents below name.
+import { registerControllerApps } from "@retroplug/launchpad/apps";
+import lsdjMidiMapRuntime from "@retroplug/lsdj-launchpad/appRuntime";
 import { songRowTicks } from "@retroplug/lsdj/playback";
 import { SongSchema } from "@retroplug/lsdj/model";
 import { PRO_MK3, Palette, enterProgrammerMode, padIndex } from "@retroplug/launchpad";
 import { NodeRig, bytesOn, type BlockSpec, type In, type Sent } from "./_rig";
 
-// The control plane parses an app's config by the app's schema (the registry's); the node takes it parsed.
-const apps = new ControllerRegistry();
-registerControllerApps(apps);
-const parsed = (appConfig: Record<string, unknown> = {}) => apps.get("lsdj-midimap")!.schema.parse(appConfig);
+// The control plane parses an app's config by the app's schema (the registry's, which the product's app modules fill);
+// the node takes it parsed.
+const parsed = (appConfig: Record<string, unknown> = {}) => controllerApp("lsdj-midimap")!.config.parse(appConfig);
+
+registerControllerApps([lsdjMidiMapRuntime]);
 
 /** Sixteen rows, each one one-phrase chain: every row has content and lasts 96 ticks. */
 const table = () =>
@@ -108,8 +113,9 @@ test("its ports: the surface in, its link generation and drop count; the surface
 });
 
 test("settings default as the role's did, and keep the parsed app config and the tables as given", () => {
+  // No app by default: the node names no app, and the control plane's project settings name the one it starts with.
   expect(controllerSessionNode.parseSettings({})).toEqual({
-    app: "lsdj-midimap",
+    app: "",
     target: "system",
     systemId: 0,
     appConfig: {},
@@ -273,6 +279,34 @@ test("a forward seek is a relocate: the predictor does not race through the song
   expect(dev.leds.get(pad(0, 2)) === Palette.greenBright).toBe(false); // and the walk did not land it on row 2
 });
 
+test("a loop wrap keeps the block's ticks: the playhead does not fall a block further behind", () => {
+  // A DAW loop (or an SPP back) moves the host's timeline backwards, and walkTicks goes on clocking the cart through it:
+  // it merely resyncs its own counter to the block's start. A session that INFERRED the ticks from the position read the
+  // wrap as no elapsed time and dropped the whole block, so the predicted playhead fell a block behind on every pass and
+  // never caught up. Here three of the six playing blocks are wraps: counting the walk keeps all 576 ticks (row 6), while
+  // inferring them would keep 288 (row 3).
+  const rig = session({ songRowTicks: table() }); // sixteen rows of 96 ticks
+  const dev = new Device();
+  const twoSeconds = 88200; // 2 s at 44.1 kHz / 120 BPM = 96 ticks a block
+  dev.feed(rig.run(blockOf({ playing: true, ppq: 0, connected: true, surface: [PRESS_ROW_0] }, twoSeconds)));
+  for (const ppq of [4, 0, 4, 0, 4, 0]) dev.feed(rig.run(blockOf({ playing: true, ppq, connected: true }, twoSeconds)));
+  expect(dev.leds.get(pad(0, 6))).toBe(Palette.greenBright);
+});
+
+test("a device taken again keeps the block it lands in: a swap drops no ticks", () => {
+  // A reconnect is not a reason to lose a block: the cart was clocked through it either way. The session used to drop
+  // the ticks of the block a device was taken on, which lost a whole block per swap; two swaps over five blocks would
+  // leave the playhead two rows behind (row 3 here) instead of where the cart is (row 5).
+  const rig = session({ songRowTicks: table() });
+  const dev = new Device();
+  const twoSeconds = 88200;
+  dev.feed(rig.run(blockOf({ playing: true, ppq: 0, connected: true, link: 1, surface: [PRESS_ROW_0] }, twoSeconds)));
+  const links = [1, 2, 2, 3, 3]; // the pair is swapped before the second and the fourth playing block
+  for (let i = 0; i < links.length; i++)
+    dev.feed(rig.run(blockOf({ playing: true, ppq: 4 * (i + 1), connected: true, link: links[i] }, twoSeconds)));
+  expect(dev.leds.get(pad(0, 5))).toBe(Palette.greenBright);
+});
+
 test("ragged blocks and a tempo change are elapsed time, not a seek: the playhead keeps every tick", () => {
   // A host under FL-style splits hands the audio thread uneven blocks, and a tempo change makes a long block hold
   // fewer ticks than the one before it. What a block covers comes from its OWN length and tempo, so neither is a
@@ -296,7 +330,10 @@ test("ragged blocks and a tempo change are elapsed time, not a seek: the playhea
         ppq += quarters(frames, tempo);
       }
     }
-    // The predictor walks one tick per host tick plus the launch's own tick, and a full row is 96 of them.
+    // The predictor walks the ticks the host clocked (the blocks up to the last one's start: the session is handed the
+    // PREVIOUS block's count) plus the launch's own tick, and a full row is 96 of them. The row is not on an edge - the
+    // run leaves a few ticks of margin either way - so a lost block, about one tick here, is not what decides it: what
+    // does is that a ragged split or a tempo drop was read as a SEEK and the whole run dropped.
     const expected = Math.floor((1 + Math.floor(ppq * 24)) / 96);
     expect(expected).toBe(1); // the run is long enough to leave row 0, so a block of lost ticks shows as row 0
     expect(dev.leds.get(pad(0, expected)), name).toBe(Palette.greenBright);

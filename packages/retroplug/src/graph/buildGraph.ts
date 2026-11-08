@@ -451,8 +451,8 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     // Driving a cart, it sends no host MIDI; it is wired all the same, as the kernel tagged its MIDI out either way.
     hostMidi.push({ from: "controller.midiOut", system: target });
   }
-  // The MI.MAP controller's cart, in the lsdj-sync mode it needs: the settings of that role's two nodes alone (its
-  // rp.lsdj.sync and its serial-out decoder), and the capture its Game Boy runs for them, never the project's.
+  // The controller's cart, in the sync mode the app's manifest data asks for: the settings of that cart sync node and of
+  // its serial-out decoder alone, and the capture its Game Boy runs for them, never the project's.
   const sync = controllerSyncOverride(systems, controller);
   // The nodes placed after the systems, in slot order, then pipeline order: each role's second node, and the system
   // output it reads, if any.
@@ -464,7 +464,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     for (const role of s.pipeline) {
       const spec: ProtocolNodeSpec = PROTOCOL_NODES[role.node];
       const id = protocolId(s.id, role.kind);
-      const forced = sync !== null && sync.systemId === s.id && role.node === "rp.lsdj.sync";
+      const forced = sync !== null && sync.systemId === s.id && role.node === sync.node;
       const settings = forced ? { ...role.config, mode: sync.mode } : role.config;
       nodes.push({ id, type: role.node, settings });
       if (spec.midiIn !== null && midiRouting !== null) wire(`routing.${n}`, `${id}.${spec.midiIn}`);

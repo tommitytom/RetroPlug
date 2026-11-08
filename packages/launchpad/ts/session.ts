@@ -23,7 +23,7 @@ import {
   type LaunchpadProfile, type SurfaceEvent,
 } from "./index";
 import type { PlaybackModel, PredictivePlaybackModel } from "@retroplug/tracker/playbackModel";
-import type { TrackerTarget } from "./trackerTarget";
+import type { TrackerTarget } from "./launchTarget";
 
 /** What an app sees. Everything here is read-only except `surface` (paint it) and `state` (remember
  *  things in it) - an app cannot reach past this to the device, the model or the host. */
@@ -54,18 +54,22 @@ type MutableCtx = { -readonly [K in keyof ControllerCtx]: ControllerCtx[K] };
 
 /** One update's worth of host input.
  *
- *  `tick` is ABSOLUTE and the session diffs it, so elapsed ticks can be neither double-counted nor lost
- *  at a block edge - the same reason a protocol node's tick clock carries `next` across blocks. A host
- *  supplies `Math.floor(block.ppqStart * 24)`, which is the quantity `walkTicks` derives its ticks from;
- *  a stopped transport freezes ppqStart, so `ticks` falls to 0 on its own. */
+ *  `tick` is ABSOLUTE - `Math.floor(block.ppqStart * 24)`, the quantity `walkTicks` derives its ticks from - and is what
+ *  the app paints the playhead at, so a seek moves it and a stopped transport freezes it.
+ *
+ *  `ticks` is the number of ticks the HOST clocked the cart in the PREVIOUS block, counted by the host's own walk of the
+ *  transport (`packages/core/ts/ticks.ts`) rather than inferred from two positions. Inferred, a host loop wrap, a
+ *  backward seek made while stopped, or a device taken again would drop a whole block's ticks - the session read a jump
+ *  backwards as no elapsed time and a first block as no time at all - and the predicted playhead would sit behind the
+ *  cart for the rest of the song. Counted, every tick the cart heard is one the predictor walks, exactly once. */
 export interface SessionInput {
   /** Raw MIDI messages received from the device since the previous update: any arrays of bytes, none of them
    *  kept past the update. */
   input: readonly ArrayLike<number>[];
   tick: number;
   transport: boolean;
-  /** The host jumped (a seek, an SPP) rather than played from `lastTick` to `tick`: no time passes. */
-  relocate?: boolean;
+  /** Ticks the host clocked in the previous block; 0 while it was stopped, and 0 on the first update. */
+  ticks: number;
 }
 
 export interface SessionOptions {
@@ -93,9 +97,7 @@ export class ControllerSession {
   private readonly config: Record<string, unknown>;
   private readonly state: Record<string, unknown> = {};
 
-  private lastTick = 0;
   private prevTransport = false;
-  private started = false;
 
   // The ctx and the decoded-event list are built ONCE and mutated per update: this runs on the audio
   // thread (rp.controller.session), and a fresh nine-field object plus an array every block is exactly
@@ -146,7 +148,6 @@ export class ControllerSession {
    *  baseline a lie - without the invalidate the next flush would send nothing and leave the grid dark. */
   connect(): number[][] {
     this.surface.invalidate();
-    this.started = false;
     return [enterProgrammerMode(this.profile)];
   }
 
@@ -160,9 +161,10 @@ export class ControllerSession {
       if (ev) events.push(ev);
     }
 
-    // Gate on transport rather than trusting the numbers: a host that seeks while stopped moves ppq
-    // without any time passing, and the cart hears no clock for it either.
-    const ticks = input.transport && this.started && !input.relocate ? Math.max(0, input.tick - this.lastTick) : 0;
+    // The host counted what it clocked, so there is nothing to infer here and nothing to gate: a stopped host passes
+    // 0 because its walk fired nothing. The predictor must still be STOPPED when the transport falls, or the playhead
+    // would stand still lit where the cart stopped.
+    const ticks = input.ticks > 0 ? Math.floor(input.ticks) : 0;
 
     if (this.predictive) {
       if (this.prevTransport && !input.transport) this.predictive.stop();
@@ -175,9 +177,7 @@ export class ControllerSession {
     ctx.transport = input.transport;
     this.app(ctx);
 
-    this.lastTick = input.tick;
     this.prevTransport = input.transport;
-    this.started = true;
     return this.surface.flush().messages;
   }
 

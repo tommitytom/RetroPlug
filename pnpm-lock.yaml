@@ -106,9 +106,6 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
-      '@retroplug/lsdj':
-        specifier: workspace:*
-        version: link:../lsdj
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
@@ -131,6 +128,31 @@ importers:
       '@retroplug/sameboy':
         specifier: workspace:*
         version: link:../sameboy
+      '@retroplug/tracker':
+        specifier: workspace:*
+        version: link:../tracker
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/lsdj-launchpad:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/launchpad':
+        specifier: workspace:*
+        version: link:../launchpad
+      '@retroplug/lsdj':
+        specifier: workspace:*
+        version: link:../lsdj
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
@@ -221,6 +243,9 @@ importers:
       '@retroplug/lsdj':
         specifier: workspace:*
         version: link:../lsdj
+      '@retroplug/lsdj-launchpad':
+        specifier: workspace:*
+        version: link:../lsdj-launchpad
       '@retroplug/mesen':
         specifier: workspace:*
         version: link:../mesen

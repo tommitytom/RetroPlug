@@ -13,8 +13,9 @@
 //   REPL that the box's engine will not have (setTimeout, print, console.warn, ...), fails the build naming the call
 //   and the source line it came from (read back through esbuild's source map, and TypeScript's), rather than as a
 //   TypeError deep in a run. It covers the pack as bundled, then as lowered (the helpers the lowering adds), the whole
-//   SDK with every export kept, and, for a scenario, the whole of the package's portable core the same way. A read
-//   behind its own `typeof` guard is accepted, as the lowering's helpers make them.
+//   SDK with every export kept, and, for a scenario, the whole of the package's portable core the same way (every module
+//   under its ts/ but its tests and its control-plane half, the manifest's `app` module, which runs under the desktop
+//   with zod). A read behind its own `typeof` guard is accepted, as the lowering's helpers make them.
 // - The reference run: the pack runs under Node with a short epilogue that prints every node type it registered (its
 //   descriptor JSON). A definition the device refuses (an audio port, packages/core/ts/defineNode.ts) throws here, at build time,
 //   with its own message. Node's run is the REFERENCE, nothing more: a vm context has every standard global whatever
@@ -230,30 +231,35 @@ function keep(file, bytes) {
 
 // ---- the bundle and its allowlist --------------------------------------------------------------------------------
 
-/** Every @retroplug package the scenario's own package.json declares as a dependency, by its real directory: a
- *  scenario may import what its package already depends on, and nothing else. The manifest is the nearest one above the
- *  pack's directory, and each dependency is found through that package's node_modules link (the workspace's), so a
- *  package moved or renamed is followed rather than guessed at from its specifier. A missing or unreadable manifest, and
- *  a dependency the workspace has not installed, are no dependency. */
-function declaredDependencyDirs() {
-  let dir = PACK_DIR;
-  let manifest = null;
+/** The nearest package.json at or above a directory, with what it says: the package a scenario's --pack-dir belongs to
+ *  (its declared dependencies, and the app module that is the control plane's half). Null when there is none, or it is
+ *  unreadable. */
+function nearestManifest(start) {
+  let dir = start;
   for (;;) {
     const at = join(dir, "package.json");
     if (existsSync(at)) {
-      manifest = at;
-      break;
+      try {
+        return { path: at, dir, json: JSON.parse(readFileSync(at, "utf8")) };
+      } catch {
+        return null;
+      }
     }
     const up = dirname(dir);
-    if (up === dir) return [];
+    if (up === dir) return null;
     dir = up;
   }
-  let json;
-  try {
-    json = JSON.parse(readFileSync(manifest, "utf8"));
-  } catch {
-    return [];
-  }
+}
+
+/** Every @retroplug package a scenario's package.json declares as a dependency, by its real directory: a scenario may
+ *  import what its package already depends on, and nothing else. Each dependency is found through that package's
+ *  node_modules link (the workspace's), so a package moved or renamed is followed rather than guessed at from its
+ *  specifier. A missing or unreadable manifest, and a dependency the workspace has not installed, are no dependency. */
+function declaredDependencyDirs() {
+  const found = nearestManifest(PACK_DIR);
+  if (!found) return [];
+  const manifest = found.path;
+  const json = found.json;
   const out = [];
   for (const spec of Object.keys(json.dependencies ?? {})) {
     if (!spec.startsWith("@retroplug/")) continue;
@@ -624,9 +630,13 @@ console.log("  ok: no library calls outside MicroQuickJS's stdlib, in the pack o
 
 // ---- a scenario ---------------------------------------------------------------------------------------------------
 
-/** The package's portable core: every module under its ts/ but its tests. A scenario is how a package proves that core
- *  on the engine, and the scenario's own bundle keeps only what it reaches, so the scan has to see the rest. */
+/** The package's portable core: every module under its ts/ but its tests and its control-plane half (the manifest's
+ *  `app` module, the one that carries zod and runs under the desktop alone). A scenario is how a package proves that
+ *  core on the engine, and the scenario's own bundle keeps only what it reaches, so the scan has to see the rest. */
 function coreModules() {
+  const found = nearestManifest(PACK_DIR);
+  const appModule = found && typeof found.json.retroplug?.app === "string"
+    ? resolve(found.dir, found.json.retroplug.app) : null;
   const out = [];
   const walk = (dir) => {
     let entries;
@@ -639,7 +649,7 @@ function coreModules() {
       const at = join(dir, e.name);
       if (e.isDirectory()) {
         if (e.name !== "test" && e.name !== "testSupport") walk(at);
-      } else if (/[.]tsx?$/.test(e.name) && !/[.]test[.]tsx?$/.test(e.name)) {
+      } else if (/[.]tsx?$/.test(e.name) && !/[.]test[.]tsx?$/.test(e.name) && at !== appModule) {
         out.push(at);
       }
     }

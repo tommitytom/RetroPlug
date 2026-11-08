@@ -5,7 +5,8 @@
 // speaking the protocol the role consumes, rather than a second opinion about it that happens to look
 // similar.
 import { test, expect } from "@retroplug/testing";
-import { lsdjMidiMapTarget, launchMessage, nullTarget, LSDJ_MAX_ROW } from "@retroplug/launchpad/trackerTarget";
+import { lsdjMidiMapTarget, launchMessage, LSDJ_MAX_ROW } from "../launchTarget";
+import { nullTarget } from "@retroplug/launchpad/launchTarget";
 import { midiMapRow } from "@retroplug/lsdj/lsdjSyncBytes";
 
 const collect = () => {
@@ -57,7 +58,8 @@ test("the target forwards launches and releases to its sink", () => {
 });
 
 test("the null target swallows everything without throwing", () => {
-  nullTarget.launch(5);
-  nullTarget.release(5);
-  expect(nullTarget.maxRow).toBe(LSDJ_MAX_ROW);
+  const target = nullTarget(LSDJ_MAX_ROW);
+  target.launch(5);
+  target.release(5);
+  expect(target.maxRow).toBe(LSDJ_MAX_ROW);
 });
