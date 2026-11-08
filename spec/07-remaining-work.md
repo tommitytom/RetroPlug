@@ -796,5 +796,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Third-party controller apps are not loadable**: `controllerApps` registers from the product's package list, so an app
     from outside the tree is the downloadable-pack road (design section 11).
   - **One controller link per process**, and per `rp.host.devices/2` name; more than one is a registry change.
+  - **The controller's tick count assumes the default tempo divisor.** The session walks 24 PPQ ticks for the predictor,
+    and an app's sync override sets the cart's sync MODE only: MI.MAP clocks the cart at `24 / tempoDivisor`, and the menu
+    offers 1 to 8, so at divisor 2 and above the predicted playhead (and the quantise) runs that many times ahead of the
+    cart. At the default divisor 1 the two agree. A fix either lets `syncOverride` carry the setting it needs as data,
+    rendered into the cart's sync node, or walks at the divisor the cart is set to.
   - **The store's song poll stays in the shell** (the controller's song refresh, the anchor and the SYNC poll in
     `projectStore.ts`) until F4, which also takes the menu rows.

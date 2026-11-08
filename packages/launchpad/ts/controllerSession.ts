@@ -106,9 +106,11 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
     // The session's whole input for a block, one object refilled each block so none is built per block.
     const frame = { input, tick: 0, transport: false, ticks: 0 };
     // The clock the cart is sent, walked here so the predictor can be given the COUNT of ticks a block fired. It is the
-    // walk the cart's own protocol node runs (packages/core/ts/ticks.ts), and the ticks agree when that node runs MI.MAP
-    // at divisor 1, the mode and divisor an app's override puts it in; a cart at another divisor, or in a mode that clocks
-    // only on a launch, counts its own. The callback only counts, and is made once so a block allocates nothing for it.
+    // walk the cart's own protocol node runs (packages/core/ts/ticks.ts), at 24 ticks a quarter. What it counts is what
+    // MI.MAP would clock at divisor 1: an app's override sets the cart's sync MODE, never its tempoDivisor, and MI.MAP
+    // clocks the cart at 24 / tempoDivisor, so at divisor 2 and above this walk runs that many times ahead of the cart -
+    // the predicted playhead and the quantise with it. A cart in a mode that clocks only on a launch counts its own
+    // either way. The callback only counts, and is made once so a block allocates nothing for it.
     const clock = new TickClock();
     let walked = 0;
     let counted = 0;
