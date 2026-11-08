@@ -28,6 +28,16 @@
 # last two are its TypeScript contributions to the app (docs/modular-graph-phase-f1-design.md section 3), a module the
 # generator reads, and a package with no native part registers nothing and adds no target here.
 #
+# A package's `embed` member is a file inside it that a product carries in its binary, in order:
+#
+#   "retroplug": { "embed": [{ "id": "mgb", "file": "rom/mGB.gb" }] }
+#
+# `id` names the resource on the wire (putResource's `embedded` field, and TS's marker of the same name), so it is a C
+# identifier: it names the array cmake/bin2c.cmake generates. `file` is relative to the package directory and must
+# resolve inside it. A product that lists the package gets the bytes in rp_embedded_resources() (graph/Packages.hpp),
+# in the order it lists its packages, and a product listed without it has no such id: the lookup refuses it. A package
+# may contribute nothing but an `embed`: `mgb` has no native code, its ROM is all it gives a product.
+#
 # A product is an executable or a module that constructs an Engine. retroplug_product() generates its registration
 # source, which defines rp_register_packages() (graph/Packages.hpp) as the entries of the packages it lists, in the
 # order it lists them, and links those packages' targets. The engine registers what that function returns, so which
@@ -119,6 +129,36 @@ function(retroplug_package name)
     elseif(_script AND RP_DESKTOP_BUILD_DIR)
         _retroplug_device_script_targets(${name})
     endif()
+    # Its embedded resources (`embed` above): one C array per entry, in an object library the products that list the
+    # package link (retroplug_product). The array's name is the package's and the id's, as _retroplug_embed_symbol()
+    # derives it, and a product whose packages run together to one name is refused by _retroplug_embed_entries.
+    get_property(_embedIds GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_IDS)
+    get_property(_embedFiles GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_FILES)
+    get_property(_embedSymbols GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_SYMBOLS)
+    if(_embedIds)
+        set(_sources "")
+        set(_i 0)
+        foreach(_id IN LISTS _embedIds)
+            list(GET _embedFiles ${_i} _file)
+            list(GET _embedSymbols ${_i} _symbol)
+            math(EXPR _i "${_i} + 1")
+            set(_out "${CMAKE_BINARY_DIR}/packages/${name}/embeds/${_symbol}.c")
+            add_custom_command(
+                OUTPUT  "${_out}"
+                COMMAND ${CMAKE_COMMAND}
+                        -DINPUT=${_file}
+                        -DSYMBOL=${_symbol}
+                        -DOUTPUT=${_out}
+                        -P ${CMAKE_SOURCE_DIR}/cmake/bin2c.cmake
+                DEPENDS "${_file}" "${CMAKE_SOURCE_DIR}/cmake/bin2c.cmake"
+                COMMENT "bin2c ${_id} (${name})"
+                VERBATIM)
+            list(APPEND _sources "${_out}")
+        endforeach()
+        add_library(retroplug-${name}-embeds OBJECT ${_sources})
+        set_target_properties(retroplug-${name}-embeds PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_TARGET retroplug-${name}-embeds)
+    endif()
     # Its links and include directories, held to the packages its manifest declares, are checked once at the end of the
     # root configure (retroplug_check_package_boundaries): a check here would see only the targets defined before this
     # package, so a link to a later package's target, or to the shell added last, went unnoticed.
@@ -131,6 +171,8 @@ endfunction()
 function(_retroplug_read_manifest name _manifest)
     file(READ "${_manifest}" _json)
     _retroplug_read_script(${name} "${_manifest}" "${_json}")
+    _retroplug_read_embeds(${name} "${_manifest}" "${_json}")
+    get_property(_embedIds GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_IDS)
     string(JSON _kind ERROR_VARIABLE _err TYPE "${_json}" retroplug native)
     if(_err)
         get_property(_script GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_ENTRY)
@@ -140,9 +182,12 @@ function(_retroplug_read_manifest name _manifest)
         # adds no target; what it names is the TS generator's to read, not this file's.
         string(JSON _appKind ERROR_VARIABLE _noApp TYPE "${_json}" retroplug app)
         string(JSON _protocolKind ERROR_VARIABLE _noProtocol TYPE "${_json}" retroplug protocol)
-        if(NOT _script AND _noApp AND _noProtocol)
+        # An `embed` alone is a contribution too: `mgb` is a ROM a product carries, and needs no target of its own
+        # beyond the one its bytes make.
+        if(NOT _script AND NOT _embedIds AND _noApp AND _noProtocol)
             message(FATAL_ERROR "retroplug_package(${name}): ${_manifest} has none of a retroplug.native, "
-                                "retroplug.script, retroplug.app or retroplug.protocol field (${_err})")
+                                "retroplug.script, retroplug.app, retroplug.protocol or retroplug.embed field "
+                                "(${_err})")
         endif()
         # No native entry: no targets, no entries, whatever else the manifest contributes.
         set_property(GLOBAL APPEND PROPERTY RP_PACKAGES ${name})
@@ -312,6 +357,89 @@ function(_retroplug_read_script name _manifest json)
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_SCRIPT_HEAP_BYTES "${_heap}")
 endfunction()
 
+# _retroplug_embed_symbol(<package> <id> <outVar>): the C symbol an embedded resource is generated under. The one
+# place the name is derived, so the array retroplug_package() writes and the product table that points at it cannot
+# disagree. Package and id run together with every character that is no identifier's made `_`, which is not injective:
+# two packages whose names and ids run together the same way make one symbol, and _retroplug_embed_entries() refuses
+# the product that would carry both rather than leave a duplicate definition to the linker.
+function(_retroplug_embed_symbol package id outVar)
+    string(REGEX REPLACE "[^A-Za-z0-9_]" "_" _symbol "rp_embed_${package}_${id}")
+    set(${outVar} "${_symbol}" PARENT_SCOPE)
+endfunction()
+
+# _retroplug_read_embeds(<package> <manifest> <json>): the manifest's embedded resources (the `embed` member above),
+# into RP_PACKAGE_<package>_EMBED_IDS, _EMBED_FILES (absolute paths) and _EMBED_SYMBOLS, in the order the manifest names
+# them. An `id` is a C identifier, since it names the generated array; a `file` is relative to the package's own
+# directory, resolves inside it, exists and is not empty, so a typo, an escape or an empty array is refused here rather
+# than by the compiler or the linker.
+function(_retroplug_read_embeds name _manifest json)
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_IDS "")
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_FILES "")
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_SYMBOLS "")
+    string(JSON _kind ERROR_VARIABLE _none TYPE "${json}" retroplug embed)
+    if(_none)
+        return()
+    endif()
+    if(NOT _kind STREQUAL "ARRAY")
+        message(FATAL_ERROR "retroplug_package(${name}): retroplug.embed is a ${_kind}, not a list")
+    endif()
+    string(JSON _count LENGTH "${json}" retroplug embed)
+    if(_count EQUAL 0)
+        message(FATAL_ERROR "retroplug_package(${name}): retroplug.embed is an empty list")
+    endif()
+    get_filename_component(_dir "${_manifest}" DIRECTORY)
+    get_filename_component(_dir "${_dir}" ABSOLUTE)
+    set(_ids "")
+    set(_files "")
+    set(_symbols "")
+    math(EXPR _last "${_count} - 1")
+    foreach(_i RANGE ${_last})
+        string(JSON _id ERROR_VARIABLE _noId GET "${json}" retroplug embed ${_i} id)
+        if(_noId)
+            message(FATAL_ERROR "retroplug_package(${name}): retroplug.embed[${_i}] names no id")
+        endif()
+        if(NOT _id MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
+            message(FATAL_ERROR "retroplug_package(${name}): retroplug.embed[${_i}] id ${_id} is not a C identifier; "
+                                "it names the array the build generates")
+        endif()
+        if(_id IN_LIST _ids)
+            message(FATAL_ERROR "retroplug_package(${name}): retroplug.embed names ${_id} twice")
+        endif()
+        string(JSON _file ERROR_VARIABLE _noFile GET "${json}" retroplug embed ${_i} file)
+        if(_noFile OR _file STREQUAL "")
+            message(FATAL_ERROR "retroplug_package(${name}): embedded ${_id} names no file")
+        endif()
+        if(IS_ABSOLUTE "${_file}")
+            message(FATAL_ERROR "retroplug_package(${name}): embedded ${_id} names ${_file}, an absolute path; a "
+                                "manifest's path is relative to the package's own directory (${_dir})")
+        endif()
+        # Normalised LEXICALLY: the generator resolves a relative path the same way, and a `..` that walks out of the
+        # package is exactly what this refuses.
+        get_filename_component(_path "${_dir}/${_file}" ABSOLUTE)
+        string(FIND "${_path}" "${_dir}/" _at)
+        if(NOT _at EQUAL 0)
+            message(FATAL_ERROR "retroplug_package(${name}): embedded ${_id} names ${_file}, which resolves outside "
+                                "the package (${_path})")
+        endif()
+        if(NOT EXISTS "${_path}")
+            message(FATAL_ERROR "retroplug_package(${name}): embedded ${_id} names ${_file}, which does not exist "
+                                "(${_path})")
+        endif()
+        file(SIZE "${_path}" _size)
+        if(_size EQUAL 0)
+            message(FATAL_ERROR "retroplug_package(${name}): embedded ${_id} names ${_file}, which is empty; "
+                                "bin2c would generate an array of no bytes, which is no C")
+        endif()
+        _retroplug_embed_symbol(${name} ${_id} _symbol)
+        list(APPEND _ids "${_id}")
+        list(APPEND _files "${_path}")
+        list(APPEND _symbols "${_symbol}")
+    endforeach()
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_IDS "${_ids}")
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_FILES "${_files}")
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_EMBED_SYMBOLS "${_symbols}")
+endfunction()
+
 # _retroplug_read_provider(<package> <entry> <device> <noProvider> <provider> <noRpc> <rpc>): one manifest entry's
 # provider (graph/rp_provider.h) and the facet it mounts, `"provider": "<C function>"` and `"rpc": {"header": "<path
 # from the package's include root>", "register": "<C++ function>"}`. A device entry may have neither: a device image
@@ -431,6 +559,24 @@ function(_retroplug_unwrap_option out item unwrapable)
     set(${unwrapable} "${_ok}" PARENT_SCOPE)
 endfunction()
 
+# _retroplug_unquote_path(<out> <value>): a compile definition's value as a DEFS in the tree spells it. Every path
+# definition is written NAME="${...}", and a target property keeps those quotes, so a value that is a path arrives
+# quoted and is unwrapped before it is judged (an escaped \" as well as a plain "). A value with no quotes is unchanged.
+function(_retroplug_unquote_path out value)
+    set(_value "${value}")
+    if(_value MATCHES "^\\\\?\"")
+        string(REPLACE "\\\"" "\"" _value "${_value}")
+        foreach(_i RANGE 2)
+            if(_value MATCHES "^\"(.*)\"$")
+                set(_value "${CMAKE_MATCH_1}")
+            else()
+                break()
+            endif()
+        endforeach()
+    endif()
+    set(${out} "${_value}" PARENT_SCOPE)
+endfunction()
+
 # _retroplug_include_flag(<dir> <wants> <isFlag> <item>): whether an option is an include flag, the directory it spells,
 # and whether that directory is the next item (a bare -I). The spellings the compilers take are all judged: -I, -iquote,
 # -idirafter and -isystem, attached (-Ifoo) or apart (-I foo), MSVC's /I and /external:I, and CMake's SHELL: form of the
@@ -457,14 +603,16 @@ endfunction()
 
 # _retroplug_check_native_boundaries(<package> LINKS <target=linked>... LINK_PATHS <target=file>...
 #                                    LINK_DIRS <target=dir>... LIBS <target=name>... INCLUDES <target=dir>...
-#                                    SOURCES <target=file>... UNJUDGED <target=item>... DECLARED <package>...
-#                                    DEV_DECLARED <package>... [TEST] OWNERS <target=package>...): a package's native
-# targets may link the targets of the packages its manifest declares, link a library of a declared package's by path,
-# add include or link-search directories inside its own tree or a declared package's, and compile sources inside its own
-# tree. A TEST target (retroplug_add_test_binary's) may also link its package's devDependencies, as a test file may
-# import them; a library target may not. Nothing may link, include or search the shell (packages/native,
-# packages/retroplug). Anything else is refused, naming the package, the target and the dependency, because a package
-# that reaches past its manifest makes the split a convention again (docs/modular-graph-phase-f1-design.md section 4).
+#                                    DEFINITIONS <target=NAME=path>... SOURCES <target=file>...
+#                                    UNJUDGED <target=item>... DECLARED <package>... DEV_DECLARED <package>...
+#                                    [TEST] OWNERS <target=package>...): a package's native targets may link the targets of
+# the packages its manifest declares, link a library of a declared package's by path, add include or link-search
+# directories inside its own tree or a declared package's, define a macro as a path inside one of those, and compile
+# sources inside its own tree. A TEST target (retroplug_add_test_binary's) may also link, include or define a path into
+# its package's devDependencies, as a test file may import them or open their fixtures by path; a library target may not.
+# Nothing may link, include, search or define a path into the shell (packages/native, packages/retroplug). Anything else
+# is refused, naming the package, the target and the dependency, because a package that reaches past its manifest makes
+# the split a convention again (docs/modular-graph-phase-f1-design.md section 4).
 #
 # UNJUDGED is what the gatherer could not evaluate (a generator expression outside the forms _retroplug_unwrap_item
 # knows, or a bare flag whose value it cannot attribute), for a target that is not vouched for by RP_BOUNDARY_SKIP:
@@ -490,7 +638,7 @@ endfunction()
 # packages/native/cmake/tests.cmake): a target's real properties need a target, which script mode has none of.
 function(_retroplug_check_native_boundaries package)
     cmake_parse_arguments(B "TEST" ""
-                          "LINKS;LINK_PATHS;LINK_DIRS;LIBS;INCLUDES;SOURCES;UNJUDGED;DECLARED;DEV_DECLARED;OWNERS"
+                          "LINKS;LINK_PATHS;LINK_DIRS;LIBS;INCLUDES;DEFINITIONS;SOURCES;UNJUDGED;DECLARED;DEV_DECLARED;OWNERS"
                           ${ARGN})
     if(B_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "_retroplug_check_native_boundaries(${package}): unrecognised argument(s): "
@@ -619,6 +767,35 @@ function(_retroplug_check_native_boundaries package)
                             "in the ${_owner} package's tree, which ${package} does not declare (its package.json "
                             "dependencies)")
     endforeach()
+    # A compile definition whose VALUE is a path is the same door as an include directory: a test binary that opens a
+    # package's file (a manifest's ROM) names the path in a -D, and reaches that package's tree though it links nothing
+    # of it. The name is kept for the message, since the value alone would not say how it got in.
+    foreach(_pair IN LISTS B_DEFINITIONS)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _rest)
+        string(FIND "${_rest}" "=" _at)
+        string(SUBSTRING "${_rest}" 0 ${_at} _name)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_rest}" ${_at} -1 _path)
+        _retroplug_unquote_path(_path "${_path}")
+        file(RELATIVE_PATH _rel "${RP_PACKAGES_DIR}" "${_path}")
+        if(IS_ABSOLUTE "${_rel}" OR _rel MATCHES "^\\.\\.")
+            continue()  # outside the packages' trees: a vendored dep's data, or resources/
+        endif()
+        string(REGEX REPLACE "/.*$" "" _owner "${_rel}")
+        if(_owner STREQUAL package OR _owner IN_LIST _allowed)
+            continue()
+        endif()
+        if(_owner IN_LIST _shells)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} defines ${_name} as ${_path}, which is in the "
+                                "shell (packages/${_owner}): no package may use the shell")
+        endif()
+        message(FATAL_ERROR "retroplug_package(${package}): ${_target} defines ${_name} as ${_path}, which is in the "
+                            "${_owner} package's tree, which ${package} does not declare (its package.json dependencies; "
+                            "a test may reach a devDependency's)")
+    endforeach()
     # A source outside the package's own tree is compiled by that package's target unseen: the same boundary as an
     # include directory, and the same refusal. A source outside packages/ (a vendored dep's, a generated one) is nobody's.
     foreach(_pair IN LISTS B_SOURCES)
@@ -714,6 +891,7 @@ function(retroplug_check_package_boundaries)
             set(_link_dirs "")
             set(_libs "")
             set(_includes "")
+            set(_definitions "")
             set(_sources "")
             set(_unjudged "")
             foreach(_property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
@@ -850,6 +1028,35 @@ function(retroplug_check_package_boundaries)
             if(_lib_dir)
                 list(APPEND _unjudged "${_target}=${_lib_dir}")
             endif()
+            # A compile definition's value is a path by another name: a test binary opens a package's file by the path
+            # its manifest gives, which no link and no include directory says. Only a literal absolute value can be
+            # judged; an expression the build generator resolves is passed unseen, as a compile option's is (the
+            # header's list).
+            foreach(_property COMPILE_DEFINITIONS INTERFACE_COMPILE_DEFINITIONS)
+                get_target_property(_value ${_target} ${_property})
+                if(NOT _value OR _value MATCHES "-NOTFOUND$")
+                    continue()
+                endif()
+                foreach(_item IN LISTS _value)
+                    _retroplug_unwrap_item(_item "${_item}" _unwrapable)
+                    if(NOT _unwrapable)
+                        continue()
+                    endif()
+                    string(FIND "${_item}" "=" _eq)
+                    if(_eq EQUAL -1)
+                        continue()
+                    endif()
+                    math(EXPR _eq "${_eq} + 1")
+                    string(SUBSTRING "${_item}" 0 ${_eq} _name)
+                    string(SUBSTRING "${_item}" ${_eq} -1 _arg)
+                    _retroplug_unquote_path(_arg "${_arg}")
+                    if(NOT IS_ABSOLUTE "${_arg}")
+                        continue()
+                    endif()
+                    get_filename_component(_arg "${_arg}" ABSOLUTE)
+                    list(APPEND _definitions "${_target}=${_name}${_arg}")
+                endforeach()
+            endforeach()
             # The interface directories are what a CONSUMER of the target adds, so they are judged like the target's own.
             foreach(_property INCLUDE_DIRECTORIES INTERFACE_INCLUDE_DIRECTORIES)
                 get_target_property(_value ${_target} ${_property})
@@ -905,7 +1112,7 @@ function(retroplug_check_package_boundaries)
             endif()
             _retroplug_check_native_boundaries(${_package} LINKS ${_links} LINK_PATHS ${_link_paths}
                                                LINK_DIRS ${_link_dirs} LIBS ${_libs} INCLUDES ${_includes}
-                                               SOURCES ${_sources} UNJUDGED ${_unjudged}
+                                               DEFINITIONS ${_definitions} SOURCES ${_sources} UNJUDGED ${_unjudged}
                                                DECLARED ${_declared} DEV_DECLARED ${_dev} ${_test_arg}
                                                OWNERS ${_owners})
         endforeach()
@@ -1151,11 +1358,61 @@ extern \"C\" const rp_package* ${_fn}(void) { return rp::mqjs::package(rp_script
     target_link_libraries(retroplug-${name}-script PUBLIC retroplug-mqjs-host retroplug-${name}-pack64)
 endfunction()
 
+# _retroplug_embed_entries(<product> <out> <package>...): the embedded resources a product carries (`embed` above), in
+# the order it lists its packages, as "package|id|symbol" entries. An id two of a product's packages both embed is
+# refused, naming both: the id names one entry of the product's table, so a second could only shadow the first. So is
+# one symbol two of them would generate, which two different id-and-package pairs can run together to
+# (_retroplug_embed_symbol): the product would define the array twice, and a duplicate-symbol link error is no
+# configure refusal. The symbol is the package's and the id's, the array retroplug_package() generated.
+function(_retroplug_embed_entries product outVar)
+    set(_entries "")
+    set(_ids "")
+    # Every C name the entries define (bin2c writes an array <symbol> and its length <symbol>_len), each with the
+    # package that defines it.
+    set(_names "")
+    set(_nameOwners "")
+    foreach(_p IN LISTS ARGN)
+        get_property(_idList GLOBAL PROPERTY RP_PACKAGE_${_p}_EMBED_IDS)
+        get_property(_symbolList GLOBAL PROPERTY RP_PACKAGE_${_p}_EMBED_SYMBOLS)
+        set(_i 0)
+        foreach(_id IN LISTS _idList)
+            list(GET _symbolList ${_i} _symbol)
+            math(EXPR _i "${_i} + 1")
+            list(FIND _ids "${_id}" _at)
+            if(NOT _at EQUAL -1)
+                list(GET _entries ${_at} _owner)
+                string(REGEX REPLACE "^([^|]*)\\|.*$" "\\1" _owner "${_owner}")
+                message(FATAL_ERROR "retroplug_product(${product}): package ${_p} embeds ${_id}, which package "
+                                    "${_owner} already embeds; an embedded resource's id names one entry of the "
+                                    "product's table")
+            endif()
+            # Both names an entry defines are checked, so an id that runs into another entry's length object is
+            # refused too: package `a` with id `x` and package `a_x` with id `len` both want rp_embed_a_x_len.
+            foreach(_name IN ITEMS "${_symbol}" "${_symbol}_len")
+                list(FIND _names "${_name}" _at)
+                if(NOT _at EQUAL -1)
+                    list(GET _nameOwners ${_at} _owner)
+                    message(FATAL_ERROR "retroplug_product(${product}): package ${_p} embeds ${_id}, and package "
+                                        "${_owner} embeds one whose id runs together with ${_p}'s to the symbol "
+                                        "${_symbol}; bin2c defines an array and its length, so the build would "
+                                        "define ${_name} twice")
+                endif()
+            endforeach()
+            list(APPEND _ids "${_id}")
+            list(APPEND _names "${_symbol}" "${_symbol}_len")
+            list(APPEND _nameOwners "${_p}" "${_p}")
+            list(APPEND _entries "${_p}|${_id}|${_symbol}")
+        endforeach()
+    endforeach()
+    set(${outVar} "${_entries}" PARENT_SCOPE)
+endfunction()
+
 # retroplug_product(<product> PACKAGES <package>... [PROVIDERS <package>...] [TARGETS <target>...] [DEVICE]): declares a
 # product and the packages it carries, in registration order. Generates build/packages/products/<product>.cpp, which
-# defines the product's rp_register_packages(), and adds it to each of TARGETS (default: the target named <product>)
-# with the packages' targets linked. TARGETS is for one product built as several binaries: the plugin's formats, each
-# its own module.
+# defines the product's rp_register_packages() and rp_embedded_resources() (the embedded resources of the packages it
+# lists, `embed` above), and adds it to each of TARGETS (default: the target named <product>) with the packages' targets
+# and their embed libraries linked. TARGETS is for one product built as several binaries: the plugin's formats, each its
+# own module.
 #
 # PROVIDERS names the packages whose provider the product starts (graph/rp_provider.h), in the order given, and that
 # ORDER is the one its generated rp_product_providers.hpp holds: started in it, stopped in the reverse, and the facets
@@ -1291,6 +1548,57 @@ function(retroplug_product product)
     endforeach()
     list(REMOVE_DUPLICATES _targets)
 
+    # Its embedded resources: every listed package's `embed` entries, in the order it lists them. The generated source
+    # declares each package's array and points the product's table at it; the array itself is the package's object
+    # library's, linked here. A DEVICE product carries none: its nodes reach no embedded resource (putResource is the
+    # desktop's RPC), and its image is left byte for byte as it was.
+    _retroplug_embed_entries(${product} _embedEntries ${P_PACKAGES})
+    set(_embedDecls "")
+    set(_embedRows "")
+    set(_embedTargets "")
+    set(_embedCount 0)
+    foreach(_entry IN LISTS _embedEntries)
+        string(REPLACE "|" ";" _entry "${_entry}")
+        list(GET _entry 0 _entryPackage)
+        list(GET _entry 1 _entryId)
+        list(GET _entry 2 _entrySymbol)
+        get_property(_embedTarget GLOBAL PROPERTY RP_PACKAGE_${_entryPackage}_EMBED_TARGET)
+        list(APPEND _embedTargets ${_embedTarget})
+        string(APPEND _embedDecls "extern \"C\" const unsigned char ${_entrySymbol}[];\n"
+                                  "extern \"C\" const unsigned int ${_entrySymbol}_len;\n")
+        string(APPEND _embedRows "    {\"${_entryId}\", ${_entrySymbol}, ${_entrySymbol}_len},\n")
+        math(EXPR _embedCount "${_embedCount} + 1")
+    endforeach()
+    list(REMOVE_DUPLICATES _embedTargets)
+    if(P_DEVICE)
+        set(_embedDecls "")
+        set(_embedTargets "")
+        set(_embedCount 0)
+        set(_embedSection "")
+    elseif(_embedCount EQUAL 0)
+        string(CONCAT _embedBody
+            "const rp_embedded_resource* rp_embedded_resources(size_t* count) {\n"
+            "    *count = 0;\n"
+            "    return nullptr;\n"
+            "}\n")
+        string(CONCAT _embedSection "\n" "${_embedDecls}" "\n" "${_embedBody}")
+    else()
+        # A function-local table, set up at the first call as rp_register_packages' is: its rows read each array's
+        # length from the object the package's embed library defines, which is no constant expression here, so a
+        # namespace-scope table would be one static initialiser running before a caller could ask (and a host's own
+        # static constructor asking would see nothing). A desktop product is the only one that gets this table, so the
+        # guard a function-local static needs is linked.
+        string(CONCAT _embedBody
+            "const rp_embedded_resource* rp_embedded_resources(size_t* count) {\n"
+            "    static const rp_embedded_resource kResources[] = {\n"
+            "${_embedRows}"
+            "    };\n"
+            "    *count = sizeof kResources / sizeof kResources[0];\n"
+            "    return kResources;\n"
+            "}\n")
+        string(CONCAT _embedSection "\n" "${_embedDecls}" "\n" "${_embedBody}")
+    endif()
+
     _retroplug_entry_declarations(_decls ${_entries})
     list(LENGTH _entries _n)
     if(_n EQUAL 0)
@@ -1332,8 +1640,7 @@ function(retroplug_product product)
 
 ${_decls}
 const rp_package* const* rp_register_packages(size_t* count) {
-${_body}}
-")
+${_body}}${_embedSection}")
     # A desktop product's providers, which a device product never has (a device image runs none).
     if(NOT P_DEVICE)
         retroplug_providers_header("${RP_PRODUCTS_DIR}/${product}/rp_product_providers.hpp"
@@ -1347,7 +1654,7 @@ ${_body}}
         # Every target of every listed package but the desktop halves its providers need: those are linked only where
         # the product names the package in PROVIDERS, so a binary that starts no provider links no port library, no
         # thread and no system framework for one.
-        target_link_libraries(${_t} PRIVATE ${_targets})
+        target_link_libraries(${_t} PRIVATE ${_targets} ${_embedTargets})
         # The directory of this product's own rp_product_providers.hpp, the header its sources include to start, stop
         # and mount its providers: the product's alone, so each binary includes the header made for its packages.
         if(NOT P_DEVICE)

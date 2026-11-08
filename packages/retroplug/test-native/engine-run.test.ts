@@ -14,10 +14,10 @@ import { createAudioDriver } from "../src/audioDriver";
 import { decodeWav } from "../src/render";
 import { OfflineRunError, type EngineLogLine, type EngineRunHandle } from "../src/offline";
 
-declare const __REPO_RESOURCES_DIR__: string;
+declare const __MGB_ROM__: string;
 declare const __RESOURCES_DIR__: string;
 
-const MGB = __REPO_RESOURCES_DIR__ + "/roms/mGB.gb";
+const MGB = __MGB_ROM__;
 
 const be = createRealBackend();
 createAudioDriver(); // the poll's wait: this host has no UI tick

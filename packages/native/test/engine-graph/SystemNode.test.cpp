@@ -41,7 +41,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "graph/CountingAllocator.hpp"
-#include "EmbeddedRoms.hpp"
+#include "graph/Packages.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "graph/CanonicalJson.hpp"
@@ -2482,7 +2482,7 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
     constexpr int kRuns = 5;
 
     NodeRig rig(kRate);
-    const auto embedded = rp::embeddedMgbRom();
+    const auto embedded = rp::graph::embeddedResource("mgb");
     // A console's boot as its node makes one: the package's build function, and a config of its own type alive for the
     // call (docs/modular-graph-phase-f2-design.md section 3). The request is the caller's, its ROM copied before the
     // clock starts: what is timed is the console's build, not the copy of its ROM into the request.

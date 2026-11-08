@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-embed-no-file",
+  "private": true,
+  "retroplug": { "embed": [{ "id": "mgb" }] }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@retroplug/refused-embed-duplicate-id",
+  "private": true,
+  "retroplug": { "embed": [{ "id": "mgb", "file": "scratch-pack.ts" },
+                           { "id": "mgb", "file": "scratch-pack.ts" }] }
+}

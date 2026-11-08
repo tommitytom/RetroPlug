@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-embed-id",
+  "private": true,
+  "retroplug": { "embed": [{ "id": "m-gb", "file": "../read/embeds.bin" }] }
+}

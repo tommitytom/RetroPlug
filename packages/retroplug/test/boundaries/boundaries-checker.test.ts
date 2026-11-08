@@ -19,6 +19,8 @@
 // - a declared package that does not exist;
 // - a `workspace:` or `link:` alias of the shell, which the key alone would present as a third-party name;
 // - an `npm:` alias naming a package the workspace does not have;
+// - a declared dependency a native target names by path (a use) beside one only a CMake comment names (no use, and the
+//   warning says so);
 //
 // and two positive trees: one where a package declares a package it imports by name, a declared third-party subpath, a
 // devDependency from a test file (a type package's globals included), its own interface by a relative path, a
@@ -268,6 +270,16 @@ test("a declared package that does not exist is refused on its own", async () =>
   expect(report.refused).toEqual([
     "packages/alpha/package.json: declares @retroplug/ghost, which is not a package in packages",
   ]);
+});
+
+test("a native target's path is a use and a CMake comment is not, which the warning distinguishes", async () => {
+  const report = await drive("native-use");
+  console.log(`# ${(report.warnings as string[]).join("\n# ")}`);
+  // The one devDependency the DEFS names by path is used (it is imported by no TypeScript file), and the one only a
+  // comment names is not: the checker strips the comments before its textual search, so a path in prose is no reach.
+  expect(report.status).toBe(0);
+  expect(report.refused).toEqual([]);
+  expect(report.warnings).toEqual(["alpha: declares @retroplug/gamma, which no file of its imports and no native target of it names"]);
 });
 
 test("the real tree holds its boundaries with no exception left", async () => {

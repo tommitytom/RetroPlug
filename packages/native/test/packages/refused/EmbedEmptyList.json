@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-embed-empty-list",
+  "private": true,
+  "retroplug": { "embed": [] }
+}

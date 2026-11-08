@@ -26,12 +26,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <quickjs.h>
 
-#include "EmbeddedRoms.hpp"
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "TestDevices.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
+#include "graph/Packages.hpp"
 #include "host/HostServices.hpp"
 #include "host/IdleReclaimProbe.hpp"
 #include "host/engine/DspCommand.hpp"
@@ -701,11 +701,16 @@ TEST_CASE("putResource and releaseResource over the RPC layer", "[engine-graph][
     CHECK(std::string(sram->type) == "sram");
     CHECK(static_cast<const rp_bytes*>(sram->payload)->size == std::filesystem::file_size(RP_SMS_SAV_PATH));
 
-    // An embedded ROM, by its marker.
+    // An embedded ROM, by its marker: the product's table holds the bytes the mgb package's manifest embeds, so the
+    // resource a document's `embedded: "mgb"` makes is the ROM's file, byte for byte.
     const Answer byMarker = put("{type: 'rom', embedded: 'mgb'}");
     REQUIRE(byMarker.error.empty());
     REQUIRE(e.resource(byMarker.id));
-    CHECK(static_cast<const rp_bytes*>(e.resource(byMarker.id)->payload)->size == rp::embeddedMgbRom().size());
+    const auto* markerPayload = static_cast<const rp_bytes*>(e.resource(byMarker.id)->payload);
+    REQUIRE(markerPayload);
+    const std::vector<std::uint8_t> mgbFile = readFile(RP_MGB_ROM_PATH);
+    REQUIRE(markerPayload->size == mgbFile.size());
+    CHECK(std::equal(mgbFile.begin(), mgbFile.end(), markerPayload->data));
 
     // Every refusal answers `error` and creates nothing: a type no node reads, a file that is not there, a marker the
     // binary does not carry, and a spec with no source or two.
@@ -748,6 +753,7 @@ TEST_CASE("putResource and releaseResource over the RPC layer", "[engine-graph][
     // a quote cannot forge or break the diagnostic a caller logs or parses.
     CHECK(put(R"({type: 'sram', path: '/nonexistent/a"b.sav'})").error ==
           R"(could not read "/nonexistent/a\"b.sav": the file is absent or unreadable)");
+    CHECK(put("{type: 'rom', embedded: 'nope'}").error == R"("nope" is not an embedded ROM)");
     CHECK(put(R"({type: 'rom', embedded: 'mg"b'})").error == R"("mg\"b" is not an embedded ROM)");
     CHECK(e.resource(byBytes.id) != nullptr);  // the refusals left what was there alone
 

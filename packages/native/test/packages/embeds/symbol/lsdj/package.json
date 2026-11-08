@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/embed-symbol-lsdj",
+  "private": true,
+  "retroplug": { "embed": [{ "id": "launchpad_kit", "file": "rom.gb" }] }
+}

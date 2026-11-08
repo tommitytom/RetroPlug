@@ -24,6 +24,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "embed": [{ "id": "mgb", "file": "rom/mGB.gb" }],
     "protocol": {
       "module": "ts/protocol.ts",
       "nodes": [{ "type": "rp.mgb.midi", "label": 17, "midiIn": "midi", "writes": ["serialIn"] }],

@@ -23,6 +23,7 @@ import { buildMetronomeBlock } from "./smsSyncSong";
 import { directGraph } from "../src/graph/directGraph";
 
 declare const __REPO_RESOURCES_DIR__: string;
+declare const __MGB_ROM__: string;
 declare const __CONFIG_DIR__: string;
 
 // This host never fires a timer while a test awaits, so saveWorkingSong must not wait on one: here every
@@ -103,7 +104,7 @@ test("writeSram on a Game Boy (SameBoy) battery is readable at once, not half a 
   // could write the pre-write battery back to disk. Nothing writes a GB battery this way yet; this keeps it
   // honest for whoever does.
   const be = createRealBackend();
-  const rom = __REPO_RESOURCES_DIR__ + "/roms/mGB.gb"; // MBC1 + 32 KB cart RAM, shipped in the repo
+  const rom = __MGB_ROM__; // MBC1 + 32 KB cart RAM, shipped in the repo
   if (!be.fileExists(rom)) skip(`sms-working-song-save: missing ${rom}`);
   const audio = createAudioDriver();
   const id = 9001;

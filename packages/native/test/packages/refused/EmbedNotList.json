@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-embed-not-list",
+  "private": true,
+  "retroplug": { "embed": "rom.gb" }
+}

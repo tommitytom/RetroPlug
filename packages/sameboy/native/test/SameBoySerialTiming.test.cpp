@@ -21,7 +21,7 @@
 #include "system/sameboy/SameBoySystem.hpp"
 
 #ifndef RP_MGB_ROM_PATH
-#error "RP_MGB_ROM_PATH must be defined (path to resources/roms/mGB.gb)"
+#error "RP_MGB_ROM_PATH must be defined (path to packages/mgb/rom/mGB.gb)"
 #endif
 
 namespace {

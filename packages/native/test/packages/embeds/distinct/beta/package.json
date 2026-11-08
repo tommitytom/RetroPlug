@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/embed-distinct-beta",
+  "private": true,
+  "retroplug": { "embed": [{ "id": "lsdj", "file": "rom.gb" }] }
+}

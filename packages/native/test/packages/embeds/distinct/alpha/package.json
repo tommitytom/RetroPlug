@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/embed-distinct-alpha",
+  "private": true,
+  "retroplug": { "embed": [{ "id": "mgb", "file": "rom.gb" }] }
+}

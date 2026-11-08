@@ -33,6 +33,23 @@ elseif(RP_GATHER_CASE STREQUAL "testing-dependency")
     # The test helpers linked by a library, which is no test binary: the boundary check allows a DECLARED dependency, and
     # the test-helper guard is what refuses this one.
     target_link_libraries(retroplug-alpha INTERFACE retroplug-testing)
+elseif(RP_GATHER_CASE STREQUAL "defs" OR RP_GATHER_CASE STREQUAL "defs-dev"
+       OR RP_GATHER_CASE STREQUAL "defs-quoted" OR RP_GATHER_CASE STREQUAL "defs-dev-quoted")
+    # A file opened by the path a package's manifest gives: a compile definition is a link by another name, judged like
+    # one. A test target (RP_TEST_BINARY) may reach a devDependency's, which is what defs-dev declares. The -quoted pair
+    # writes the value as every DEFS in the tree does, NAME="${...}", which keeps the quotes in the property.
+    if(RP_GATHER_CASE MATCHES "-quoted$")
+        target_compile_definitions(retroplug-alpha INTERFACE
+            RP_ROM_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src/rom.gb")
+    else()
+        target_compile_definitions(retroplug-alpha INTERFACE
+            RP_ROM_PATH=${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src/rom.gb)
+    endif()
+    set_target_properties(retroplug-alpha PROPERTIES RP_TEST_BINARY ON)
+elseif(RP_GATHER_CASE STREQUAL "comment-only")
+    # This file's text names beta's file - ${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src/rom.gb - and no target
+    # property does: the gatherer reads the target's properties, so a comment is not a reach (the TS checker strips
+    # them for the same reason).
 elseif(RP_GATHER_CASE STREQUAL "copt")
     # An include directory smuggled into the compile options: judged like one its include property would name.
     target_compile_options(retroplug-alpha INTERFACE -I${CMAKE_CURRENT_SOURCE_DIR}/../beta/native/src)

@@ -31,6 +31,7 @@ import {
 import { fnv1a64Hex } from "./kit/sources";
 
 declare const __REPO_RESOURCES_DIR__: string;
+declare const __MGB_ROM__: string;
 declare const __RESOURCES_DIR__: string;
 
 export type Backend = ReturnType<typeof createRealBackend>;
@@ -49,7 +50,7 @@ export interface RenderCase {
   silent?: string[];
 }
 
-const MGB = __REPO_RESOURCES_DIR__ + "/roms/mGB.gb";
+const MGB = __MGB_ROM__;
 const SMS = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
 const GG = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.gg";
 const TRIPLEDIPPER = __RESOURCES_DIR__ + "/roms/tripledipper942.gbc"; // its working song, in the sibling .sav

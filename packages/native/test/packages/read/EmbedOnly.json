@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/read-embed-only",
+  "private": true,
+  "retroplug": { "embed": [{ "id": "mgb", "file": "embeds.bin" }] }
+}

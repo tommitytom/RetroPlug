@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/embed-len-alpha-rom",
+  "private": true,
+  "retroplug": { "embed": [{ "id": "len", "file": "rom.gb" }] }
+}

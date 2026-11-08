@@ -19,7 +19,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../../../..");
 const ADDON = join(REPO, "build/node/retroplug.node");
 const SDK = join(REPO, "build/cli-sdk/retroplug-cli.js");
-const MGB = join(REPO, "resources/roms/mGB.gb");
+const MGB = join(REPO, "packages/mgb/rom/mGB.gb");
 
 const require = createRequire(import.meta.url);
 

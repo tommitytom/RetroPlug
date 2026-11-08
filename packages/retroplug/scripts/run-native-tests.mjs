@@ -33,6 +33,9 @@ const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../r
 // The in-repo resources dir — a few small ROMs are committed here (e.g. resources/roms/bliptoaster.nes)
 // rather than in the sibling tree, so a test can reach them without the sibling being populated.
 const REPO_RESOURCES_DIR = join(REPO, "resources");
+// The embedded mGB synth's ROM, which the mgb package owns (its manifest's `retroplug.embed`): a case that needs the
+// file reads it from the package, and a case that wants the bytes the build bakes in asks the backend for the marker.
+const MGB_ROM = join(REPO, "packages/mgb/rom/mGB.gb");
 // The risa tracker's source checkout. Nothing here vendors a built risa ROM, so tests reaching for one
 // SKIP without it — but the path was hard-coded in ten places, which is how the bliptoaster paths rotted
 // unnoticed. Same env override scripts/gen-risa-symbols.mjs already uses.
@@ -107,6 +110,7 @@ async function runOne({ file, slug }) {
         __CONFIG_DIR__: JSON.stringify(cfgDir),
         __RESOURCES_DIR__: JSON.stringify(RESOURCES_DIR),
         __REPO_RESOURCES_DIR__: JSON.stringify(REPO_RESOURCES_DIR),
+        __MGB_ROM__: JSON.stringify(MGB_ROM),
         __RISA_SRC__: JSON.stringify(RISA_SRC),
         // The parity suite's baselines live beside its cases; a recording re-runs its own bundle per case.
         __PARITY_DIR__: JSON.stringify(join(TEST_DIR, "parity").replaceAll("\\", "/")),

@@ -86,4 +86,4 @@ retroplug_add_test_binary(
              test/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
              test/SameBoyModels.test.cpp         # every SameBoyModel boots + renders
     LIBS     retroplug-sameboy
-    DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb")
+    DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb")

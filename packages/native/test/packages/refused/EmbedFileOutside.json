@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/refused-embed-outside",
+  "private": true,
+  "retroplug": { "embed": [{ "id": "mgb", "file": "../../../roms/mGB.gb" }] }
+}

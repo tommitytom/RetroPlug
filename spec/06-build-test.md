@@ -149,7 +149,11 @@ dependency whose spec names a shell or a package the workspace does not have (an
 refused too: every other rule reads the key). A declared dependency no file uses is a warning, not a refusal. The
 native twin is `cmake/packages.cmake`'s: a package's targets may link, include and search only declared packages'
 trees, by target, by a library path, or through an include flag (`-I`, `-iquote`, `-idirafter`, `-isystem`,
-`/external:I`, a `SHELL:` list) or a link option (`-L`, `-l`), and the configure refuses anything else. Both run with an
+`/external:I`, a `SHELL:` list), a link option (`-L`, `-l`) or a compile definition whose value is a path (a test
+binary that opens a package's file, say its embedded ROM, reaches that package's tree though it links nothing of it),
+and the configure refuses anything else. It reads the TARGET's own properties, never a CMakeLists' text, so a path a
+comment names is no reach; the TS check, which has no target to read, counts a declaration as used from the file's text
+with its comments stripped, and only to raise or silence a warning. Both run with an
 empty allowlist, and each has its own fixtures ([test/boundaries](../packages/retroplug/test/boundaries);
 `packages/native/test/packages`) that fail one rule each. They guard against accident and drift, not a determined
 author: each checker's header lists what it deliberately does not cover. `pnpm test` runs the TS check before it
@@ -180,9 +184,20 @@ library is `EXCLUDE_FROM_ALL` because only test binaries (built by name) need it
 
 1. The directory's name is the package's name: `packages/<name>` is `@retroplug/<name>`.
 2. `package.json`: `private`, `type: "module"`, the `retroplug` member(s) it contributes (`native`, `script`, `app`,
-   `protocol`), an `exports` map of explicit entries with no wildcard, and a `typecheck` script (`tsc -p
-   tsconfig.json`) when it has TypeScript. `typescript` is a devDependency for that script, `zod` a dependency where it
-   is imported, and `@retroplug/testing` a devDependency when it has tests (a test may use no other devDependency).
+   `protocol`, `embed`), an `exports` map of explicit entries with no wildcard, and a `typecheck` script (`tsc -p
+   tsconfig.json`) when it has TypeScript. `embed` carries a file inside the package into every product that lists
+   it, for `putResource`'s `embedded` field: `[{ "id": "mgb", "file": "rom/mGB.gb" }]`, the id a C identifier (it
+   names the generated array) and the file inside the package. Use it for an asset the binary must run without a file
+   on disk and that belongs to one package - the mGB synth's ROM is F2's one
+   ([mgb](../packages/mgb/package.json) has no native code, the ROM is all it gives a product, and a product gets its
+   bytes in the generated `rp_embedded_resources()`). A ROM a menu opens is TS's path, not an embed. `typescript` is a
+   devDependency for that script, and `zod` a dependency where it is imported. A package's `dependencies` are what its
+   library links; a TEST may use its `devDependencies` as well, which is how a test binary links `@retroplug/testing`'s
+   `retroplug-testing` and reaches a fixture another package owns (sameboy's test binary opens the ROM the `mgb`
+   package embeds, by the path its manifest gives, so sameboy declares `@retroplug/mgb` a devDependency). The native
+   boundary check holds that: a test target may link, include or define a path into a devDependency's tree, and a
+   library target may not. A dev-only cycle (mgb -> sameboy -> mgb through that devDependency) is allowed, as pnpm's
+   `ignoreWorkspaceCycles` is; a `dependencies` cycle is refused.
 3. The shell declares it: add it to [packages/retroplug/package.json](../packages/retroplug/package.json)'s
    `dependencies` as `workspace:*` and run a plain `pnpm install` (not `--frozen-lockfile`); the configure refuses a
    contributing package the shell does not declare.

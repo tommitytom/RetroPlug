@@ -124,7 +124,6 @@ target_link_libraries(retroplug-backend PUBLIC
     rpcpp               # transitively pulls reflectcpp
     miniaudio           # header-only audio decoder used by SampleCache
     miniz               # used by projectConfigToZip for --save-rplg
-    mgb-rom             # the embedded mGB ROM, which the engine's putResource resolves for a document's `embedded` resource
     Threads::Threads
 )
 # SampleCache's content hash is util/Hash.hpp's FNV-1a, which lives in the DSP package beside the dither kernel that draws

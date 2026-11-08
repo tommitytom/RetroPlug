@@ -609,16 +609,23 @@ export function checkBoundaries({ root = REPO } = {}) {
     // A dependency the package's native tree links counts as used: one of its CMakeLists names one of the dependency's
     // targets, and the configure check reads the same declaration for the same reason. A devDependency too: a test
     // binary links @retroplug/testing's helper library, which no TypeScript file of it imports. Every CMakeLists under
-    // the package counts (a tool in a subdirectory is the package's too). The search is textual.
+    // the package counts (a tool in a subdirectory is the package's too). The search is textual, so the comments are
+    // stripped first: a path a comment mentions is no reach, which is why what DECIDES a reach is the configure check
+    // (it reads the target's own properties). This one only attributes a declaration to a use, and a use to a warning.
     const text = walk(pkg.dir, (name) => name === "CMakeLists.txt")
       .map((file) => readFileSync(file, "utf8"))
-      .join("\n");
+      .join("\n")
+      .replace(/#[^\n]*/g, "");
     for (const name of [...pkg.dependencies, ...pkg.devDependencies]) {
       const short = packageOf(name);
       const targets = short === null ? [] : (packages.get(short)?.targets ?? []);
       if (targets.some((target) => new RegExp(`(^|[^A-Za-z0-9_])${target}([^A-Za-z0-9_]|$)`, "m").test(text))) {
         markUsed(pkg, name);
+        continue;
       }
+      // Or names a file in its tree, which a test target's DEFS can: the Game Boy's test binary opens the ROM the
+      // mgb package embeds, by the path its manifest gives, and links no target of it.
+      if (short !== null && text.includes(`packages/${short}/`)) markUsed(pkg, name);
     }
   }
 

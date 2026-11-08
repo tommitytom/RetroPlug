@@ -49,10 +49,10 @@ retroplug_add_test_binary(
 # cases are theirs (retroplug-sameboy-test, retroplug-mesen-test): a case that builds its core directly needs no Engine
 # and lives with the console.
 #
-# The ROM defines: the embedded mGB boots the sample-rate case, and a ch1 note in the BlipToaster ROM supplies real signal
-# for the NES split routing. The Sega one is read by graph/GraphDocs.hpp's romFor, whose every branch compiles in each
-# translation unit that includes it. resources/ never ships (release.yml packages build/bin plus the license bundle), so
-# these are test-only.
+# The ROM defines: the sample-rate case boots mGB from the file (the engine-graph tests take the same ROM's bytes from
+# the product's table), and a ch1 note in the BlipToaster ROM supplies real signal for the NES split routing. The Sega
+# one is read by engine-graph/GraphDocs.hpp's romFor, whose every branch compiles in each translation unit that
+# includes it. resources/ never ships (release.yml packages build/bin plus the license bundle), so these are test-only.
 retroplug_add_test_binary(
     NAME     retroplug-audio-test
     SOURCES  test/audio/EngineSampleRate.test.cpp      # host sample-rate change re-rates live cores
@@ -66,7 +66,7 @@ retroplug_add_test_binary(
     LIBS     retroplug-backend                         # Engine, the graph and the script host
              retroplug-dsp-kernels                     # Effects.cpp's wrappers call these
     PACKAGES ${RP_DESKTOP_PACKAGES}                    # the consoles' packages, their include roots and their targets
-    DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
+    DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms")
 
@@ -146,7 +146,7 @@ retroplug_add_test_binary(
     INCLUDES ${RP_QUICKJS_INCLUDE}
              ${CMAKE_SOURCE_DIR}/packages/n8/native/test   # FakeN8.hpp (N8Adapters.test.cpp), QjsRpc.hpp
              ${CMAKE_BINARY_DIR}/packages/test             # named/ and without/, rp_product_providers.hpp (below)
-    DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
+    DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
              RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg"
@@ -184,7 +184,7 @@ set(_rp_refused_manifests
     "RpcWithoutProvider|entry scratch-desktop names an rpc and no provider"
     "ProviderWithoutDevice|entry scratch-desktop needs \"device\": true or false"
     "EntryWithProvider|would drop the node type with the service"
-    "NoContributionMember|has none of a retroplug.native, retroplug.script, retroplug.app or retroplug.protocol field"
+    "NoContributionMember|has none of a retroplug.native, retroplug.script, retroplug.app, retroplug.protocol or retroplug.embed field"
     "ScriptNotObject|retroplug.script is a STRING, not an object"
     "ScriptWithoutEntry|retroplug.script needs an \"entry\""
     "ScriptEntryMissing|retroplug.script's entry nope.ts does not exist"
@@ -195,7 +195,19 @@ set(_rp_refused_manifests
     "ScriptHeapTooBig|\"heapBytes\": a whole number of bytes from 4096 to 524288"
     "ScriptHeapFraction|\"heapBytes\": a whole number of bytes from 4096 to 524288"
     "ScriptHeapString|\"heapBytes\": a whole number of bytes from 4096 to 524288"
-    "ProviderTargetWithEntry|keep the entry and drop the target")
+    "ProviderTargetWithEntry|keep the entry and drop the target"
+    # A package's embedded resources (its manifest's `embed`): the id names the generated array, and the file is the
+    # package's own.
+    "EmbedIdNotIdentifier|retroplug.embed[0] id m-gb is not a C identifier"
+    "EmbedFileOutside|which resolves outside the package"
+    "EmbedFileMissing|which does not exist"
+    "EmbedFileAbsolute|an absolute path"
+    "EmbedNotList|retroplug.embed is a STRING, not a list"
+    "EmbedEmptyList|retroplug.embed is an empty list"
+    "EmbedNoId|retroplug.embed[0] names no id"
+    "EmbedDuplicateId|retroplug.embed names mgb twice"
+    "EmbedNoFile|embedded mgb names no file"
+    "EmbedEmptyFile|which is empty")
 foreach(_rp_refused IN LISTS _rp_refused_manifests)
     string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
     list(GET _rp_refused 0 _rp_manifest)
@@ -218,7 +230,9 @@ endforeach()
 foreach(_rp_read IN ITEMS "${CMAKE_SOURCE_DIR}/packages/n8/package.json"
                           "${CMAKE_SOURCE_DIR}/packages/devtest/package.json"
                           "${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/ScriptOnly.json"
-                          "${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/AppAndProtocolOnly.json")
+                          "${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/AppAndProtocolOnly.json"
+                          # An `embed` alone is a package: mgb's ROM needs nothing else of it.
+                          "${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/EmbedOnly.json")
     execute_process(
         COMMAND ${CMAKE_COMMAND} -DRP_MANIFEST=${_rp_read} -P ${CMAKE_SOURCE_DIR}/cmake/check-manifest.cmake
         RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
@@ -226,6 +240,76 @@ foreach(_rp_read IN ITEMS "${CMAKE_SOURCE_DIR}/packages/n8/package.json"
         message(FATAL_ERROR "${_rp_read} did not read in script mode:\n${_rp_output}")
     endif()
 endforeach()
+
+# What a product may not carry twice: two of its packages embedding one resource id, or two entries whose generated
+# symbols run together (cmake/packages.cmake's _retroplug_embed_entries and _retroplug_embed_symbol). Both are held by a
+# script-mode fixture, the way the manifest rules above are, since a product's table would need targets to reach. The
+# third pair's ids differ and are different packages' whole names run together to one symbol - the tree's own pair of
+# names, `lsdj` + `launchpad_kit` and `lsdj-launchpad` + `kit` - and the pair with distinct symbols must hold, so a rule
+# that started refusing everything fails here too.
+set(_rp_embed_fixtures
+    "duplicate|alpha|beta|package beta embeds mgb, which package alpha already embeds"
+    "symbol|lsdj|lsdj-launchpad|package lsdj embeds one whose id runs together with lsdj-launchpad's to the symbol"
+    # An entry defines two C names (bin2c's array and its length), so a run-together into the length object is refused
+    # too: `alpha` + `rom` makes rp_embed_alpha_rom_len, which `alpha_rom` + `len` also makes as its array.
+    "len|alpha|alpha_rom|bin2c defines an array and its length, so the build would define rp_embed_alpha_rom_len twice")
+foreach(_rp_embed IN LISTS _rp_embed_fixtures)
+    string(REPLACE "|" ";" _rp_embed "${_rp_embed}")
+    list(GET _rp_embed 0 _rp_case)
+    list(GET _rp_embed 1 _rp_alpha)
+    list(GET _rp_embed 2 _rp_beta)
+    list(GET _rp_embed 3 _rp_reason)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND}
+                -DRP_EMBED_ALPHA=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/embeds/${_rp_case}/${_rp_alpha}/package.json
+                -DRP_EMBED_BETA=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/embeds/${_rp_case}/${_rp_beta}/package.json
+                -DRP_EMBED_ALPHA_NAME=${_rp_alpha} -DRP_EMBED_BETA_NAME=${_rp_beta}
+                -P ${CMAKE_SOURCE_DIR}/cmake/check-embeds.cmake
+        RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+    if(_rp_result EQUAL 0)
+        message(FATAL_ERROR "test/packages/embeds/${_rp_case} was read; the configure must refuse it")
+    endif()
+    string(REGEX REPLACE "[ \t\r\n]+" " " _rp_folded "${_rp_output}")
+    string(FIND "${_rp_folded}" "${_rp_reason}" _rp_at)
+    if(_rp_at EQUAL -1)
+        message(FATAL_ERROR "test/packages/embeds/${_rp_case} was refused, but not with its reason:\n${_rp_output}")
+    endif()
+endforeach()
+execute_process(
+    COMMAND ${CMAKE_COMMAND}
+            -DRP_EMBED_ALPHA=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/embeds/distinct/alpha/package.json
+            -DRP_EMBED_BETA=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/embeds/distinct/beta/package.json
+            -P ${CMAKE_SOURCE_DIR}/cmake/check-embeds.cmake
+    RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+if(NOT _rp_result EQUAL 0)
+    message(FATAL_ERROR "test/packages/embeds/distinct did not hold:\n${_rp_output}")
+endif()
+
+# The product table's branch for a product whose packages embed nothing (cmake/packages.cmake): the generated source
+# answers a count of 0 and a null table. No product in the tree has that shape (every desktop product lists mgb), so it is
+# held by a project of its own, configured, built and run here. Generation alone would not hold that the branch compiles;
+# running the check holds what it answers, and that the registration beside it is still the packages' entries.
+set(_rp_product_fixture "${CMAKE_BINARY_DIR}/packages/product-no-embeds")
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/product -B "${_rp_product_fixture}"
+            -DRP_ROOT=${CMAKE_SOURCE_DIR}
+    RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+if(NOT _rp_result EQUAL 0)
+    message(FATAL_ERROR "test/packages/product did not configure:\n${_rp_output}")
+endif()
+execute_process(
+    COMMAND ${CMAKE_COMMAND} --build "${_rp_product_fixture}"
+    RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+if(NOT _rp_result EQUAL 0)
+    message(FATAL_ERROR "test/packages/product did not build:\n${_rp_output}")
+endif()
+execute_process(
+    COMMAND "${_rp_product_fixture}/bin/rp_fixture_product_check${CMAKE_EXECUTABLE_SUFFIX}"
+    RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+if(NOT _rp_result EQUAL 0)
+    message(FATAL_ERROR "test/packages/product's check answered ${_rp_result}: a product with no embed must answer a "
+                        "count of 0 and a null table, and its registration must list the package's entry\n${_rp_output}")
+endif()
 
 # What a package's native targets may not reach (docs/modular-graph-phase-f1-design.md section 4,
 # cmake/packages.cmake's _retroplug_check_native_boundaries): a target of a package its manifest does not declare, and an
@@ -243,7 +327,13 @@ set(_rp_refused_native
     "ShellSource|compiles ${CMAKE_SOURCE_DIR}/packages/native/src/foo.cpp, which is in the shell (packages/native)"
     "Unjudged|which the boundary check cannot evaluate"
     # The console packages' own edge: a Mesen-shaped package reaching the N8 pack, which it must declare.
-    "MesenN8Undeclared|links retroplug-n8, a target of the n8 package, which mesen does not declare")
+    "MesenN8Undeclared|links retroplug-n8, a target of the n8 package, which mesen does not declare"
+    # A test target that opens a package's file by the path its manifest gives: a compile definition is a link by another
+    # name, so it is judged like one (the same test, declared as a devDependency, holds below).
+    "TestDefinesUndeclared|defines RP_ROM_PATH as ${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb, which is in the mgb package's tree, which scratch does not declare"
+    # The same definition in the quoted form every DEFS in the tree writes (NAME="${...}"): the property keeps the
+    # quotes, so the path is judged after they come off, and the declared twin below holds.
+    "TestDefinesUndeclaredQuoted|defines RP_ROM_PATH as ${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb, which is in the mgb package's tree, which scratch does not declare")
 foreach(_rp_refused IN LISTS _rp_refused_native)
     string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
     list(GET _rp_refused 0 _rp_fixture)
@@ -262,7 +352,8 @@ foreach(_rp_refused IN LISTS _rp_refused_native)
                             "${_rp_output}")
     endif()
 endforeach()
-foreach(_rp_read IN ITEMS DeclaredBoundaries TestDevDependency MesenN8Declared)
+foreach(_rp_read IN ITEMS DeclaredBoundaries TestDevDependency TestDefinesDevDeclared TestDefinesDevDeclaredQuoted
+                        MesenN8Declared)
     execute_process(
         COMMAND ${CMAKE_COMMAND} -DRP_BOUNDARY_FIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/${_rp_read}.json
                 -P ${CMAKE_SOURCE_DIR}/cmake/check-native-boundaries.cmake
@@ -288,6 +379,11 @@ set(_rp_gather_cases
     "source-outside|refused|compiles ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src/x.cpp, which is in the beta"
     "alias|refused|links retroplug-beta, a target of the beta package, which alpha does not declare"
     "alias-declared|holds|"
+    "defs|refused|defines RP_ROM_PATH as ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src/rom.gb, which is in the beta"
+    "defs-dev|holds|"
+    "defs-quoted|refused|defines RP_ROM_PATH as ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src/rom.gb, which is in the beta"
+    "defs-dev-quoted|holds|"
+    "comment-only|holds|"
     "testing-dependency|refused|reach retroplug-testing, the native test helpers (packages/testing/native), and are no test binary"
     "copt|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
     "copt-genex|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"

@@ -265,28 +265,6 @@ retroplug_silence_dep_warnings(efsw-static efsw)
 
 # lvgl-js-native + the framework PIC settings now come from dpf.js (above).
 
-# --- mgb-rom: the mGB Game Boy MIDI-synth ROM, embedded in the binary ---------
-# bin2c turns resources/roms/mGB.gb into an external-linkage byte array; a small
-# static lib so every consumer just links it (no per-source-list / cross-dir
-# generated-source wiring). A construct spec carries `embeddedRom: "mgb"` instead of a
-# path, and SameBoyBackend resolves the marker to these bytes (see EmbeddedRoms.hpp),
-# so a saved project reloads mGB with no file on disk.
-# Fixed, git-tracked asset → a timestamp-tracked rule (regen only when it changes).
-set(MGB_ROM_C "${CMAKE_BINARY_DIR}/generated/roms/mgb_rom_data.c")
-add_custom_command(
-    OUTPUT  "${MGB_ROM_C}"
-    COMMAND ${CMAKE_COMMAND}
-            -DINPUT=${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb
-            -DSYMBOL=mgb_rom
-            -DOUTPUT=${MGB_ROM_C}
-            -P ${CMAKE_SOURCE_DIR}/cmake/bin2c.cmake
-    DEPENDS "${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
-            "${CMAKE_SOURCE_DIR}/cmake/bin2c.cmake"
-    COMMENT "bin2c mgb_rom_data.c"
-    VERBATIM)
-add_library(mgb-rom STATIC "${MGB_ROM_C}")
-set_target_properties(mgb-rom PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
 # Cross-compile knob for tjsc (bytecode compiler). Consumed by the
 # cp-bundle / ui-bundle targets (packages/native) via _TJSC_COMMAND / _TJSC_DEP.
 set(TJSC_EXECUTABLE "" CACHE FILEPATH

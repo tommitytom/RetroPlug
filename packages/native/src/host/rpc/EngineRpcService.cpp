@@ -11,10 +11,10 @@
 #include <utility>
 
 #include "graph/CanonicalJson.hpp"
+#include "graph/Packages.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 
-#include "EmbeddedRoms.hpp"
 #include "system/SystemBase.hpp"
 #include "util/BuildTarget.hpp"      // rp::buildTarget (shared with the kit baseline's golden)
 #include "util/SlurpFile.hpp"
@@ -76,7 +76,9 @@ RpcPutResourceResult EngineRpcService::putResource(BackendResourceSpec spec) {
         }
         bytes = std::move(*file);
     } else {
-        const std::span<const std::uint8_t> rom = rp::embeddedRom(*spec.embedded);
+        // A built-in ROM, which the product's table holds because it lists the package that embeds it: an id it does
+        // not list is not in that table (docs/modular-graph-phase-f2-design.md section 5).
+        const std::span<const std::uint8_t> rom = rp::graph::embeddedResource(*spec.embedded);
         if (rom.empty()) {
             out.error = rp::graph::jsonString(*spec.embedded) + " is not an embedded ROM";
             return out;

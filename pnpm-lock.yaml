@@ -361,6 +361,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@retroplug/mgb':
+        specifier: workspace:*
+        version: link:../mgb
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

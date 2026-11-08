@@ -16,6 +16,12 @@
 #   source-outside  alpha's target compiles beta's source: refused
 #   alias        alpha links rp::beta, an alias of beta's target, which alpha does not declare: refused
 #   alias-declared  the same alias with beta declared: holds (an alias is judged as the target behind it)
+#   defs         alpha's TEST target defines a macro as a path in beta's tree, which alpha does not declare: refused
+#   defs-dev     the same, with beta declared as a devDependency: holds
+#   defs-quoted  defs and defs-dev in the form every DEFS in the tree writes, NAME="${path}", which keeps the quotes in
+#                the property: defs-quoted refused, defs-dev-quoted holds
+#   comment-only alpha's CMakeLists names beta's path in a comment and no target property carries it: holds, since the
+#                gatherer reads the target's properties and never the file's text
 #   testing-dependency  alpha declares the testing package (a dependency, not a devDependency) and its library links
 #                retroplug-testing: the boundary check holds it and the test-helper guard refuses it, since alpha is no
 #                test binary (test-dev is the same link from one, which both hold)
@@ -56,7 +62,12 @@ endif()
 if(RP_GATHER_CASE STREQUAL "testing-dependency")
     set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS testing)
 endif()
-set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DEV_DECLARATIONS testing)
+if(RP_GATHER_CASE STREQUAL "defs-dev" OR RP_GATHER_CASE STREQUAL "defs-dev-quoted")
+    set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS "")
+    set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DEV_DECLARATIONS testing;beta)
+else()
+    set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DEV_DECLARATIONS testing)
+endif()
 set_property(GLOBAL PROPERTY RP_PACKAGE_beta_DECLARATIONS "")
 set_property(GLOBAL PROPERTY RP_PACKAGE_beta_DEV_DECLARATIONS "")
 

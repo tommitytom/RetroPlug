@@ -82,7 +82,7 @@ async function runOne({ file, slug }) {
   // <rom>.rplg / .sav the load writes lands here (cleaned up with cfgDir), never polluting resources/.
   const romsDir = join(cfgDir, "roms");
   mkdirSync(romsDir, { recursive: true });
-  copyFileSync(join(REPO, "resources/roms/mGB.gb"), join(romsDir, "mGB.gb"));
+  copyFileSync(join(REPO, "packages/mgb/rom/mGB.gb"), join(romsDir, "mGB.gb"));
   // A NES cart too, for the tests that need a non-GB console (console-dependent menu rows). Committed
   // like mGB, so unconditional — unlike the two best-effort stages below.
   copyFileSync(join(REPO, "resources/roms/bliptoaster.nes"), join(romsDir, "bliptoaster.nes"));

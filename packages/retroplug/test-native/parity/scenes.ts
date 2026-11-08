@@ -6,10 +6,11 @@ import type { Rig, Segment } from "./rig";
 import { buildSmsMetronomeSav, pokeMetronomeIntoWram, SMS_SYNC_IN24, SMS_SYNC_OFF, WRAM_BASE } from "../smsSyncSong";
 
 declare const __REPO_RESOURCES_DIR__: string;
+declare const __MGB_ROM__: string;
 declare const __RESOURCES_DIR__: string;
 
 export const ROMS = {
-  mgb: __REPO_RESOURCES_DIR__ + "/roms/mGB.gb",
+  mgb: __MGB_ROM__,
   bliptoaster: __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes",
   mmc5: __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-mmc5.nes",
   n163: __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-n163.nes",

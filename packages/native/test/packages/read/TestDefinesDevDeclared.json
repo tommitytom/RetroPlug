@@ -1,0 +1,17 @@
+{
+  "package": "scratch",
+  "declared": [
+    "node-sdk"
+  ],
+  "devDeclared": [
+    "mgb"
+  ],
+  "test": true,
+  "links": [],
+  "includes": [],
+  "definitions": [
+    "scratch-nodes=RP_ROM_PATH=@PACKAGES@/mgb/rom/mGB.gb"
+  ],
+  "sources": [],
+  "owners": []
+}
