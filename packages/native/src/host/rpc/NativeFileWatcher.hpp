@@ -7,6 +7,9 @@
 // makes NO policy decisions — TS decides what a change means (reload config, refresh bindings, cold-boot
 // a system with reloadOnRomChange on).
 //
+// It is the implementation of HostRpcService's FileWatcher interface, and the only one: the service is handed one by
+// the host that wants watching (the plugin), so no other host, and no includer of the service's header, links efsw.
+//
 // efsw watches *directories*, so a single recursive watch on the config dir covers config.json +
 // bindings/*.json, and each ROM is covered by watching its parent directory and filtering events to the
 // registered basename. Any efsw action (Add/Delete/Modified/Moved) on a watched target counts as a
@@ -24,7 +27,9 @@
 
 #include <efsw/efsw.hpp>
 
-class NativeFileWatcher final : public efsw::FileWatchListener {
+#include "host/rpc/FileWatcher.hpp"
+
+class NativeFileWatcher final : public FileWatcher, public efsw::FileWatchListener {
 public:
     // Starts watching `configDir` (recursively — config.json + bindings/) immediately. A missing /
     // unresolvable dir is tolerated: ROM watches still work and config events simply never fire.
@@ -33,10 +38,10 @@ public:
 
     // UI thread. Replace the set of ROM files to watch. Reconciles the per-parent-dir efsw watches
     // (adds newly-needed dirs, drops ones no longer referenced) and swaps the basename filter set.
-    void setWatchedRoms(const std::vector<std::string>& paths);
+    void setWatchedRoms(const std::vector<std::string>& paths) override;
 
     // UI thread. Pull + clear every changed path seen since the last drain (deduped downstream in TS).
-    std::vector<std::string> drainChangedPaths();
+    std::vector<std::string> drainChangedPaths() override;
 
     // efsw watcher thread. Never call directly.
     void handleFileAction(efsw::WatchID watchid, const std::string& dir, const std::string& filename,

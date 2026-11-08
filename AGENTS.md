@@ -39,10 +39,13 @@ The rules below are the parts that don't fit those.
   `deps/mesen` / `deps/r8brain` (the shared core; `deps/enkiTS` is vendored under `deps/`, but no
   target adds or links it since the native kit compile retired), `deps/mquickjs` (MicroQuickJS, vendored: upstream's
   files unpatched with their LICENSE, built by `cmake/mquickjs.cmake`, the engine behind the device packs), and
-  `deps/efsw` (the file-watcher - `NativeFileWatcher` behind `HostRpcService::drainChangedPaths`
-  — now uses it: `add_subdirectory`'d `EXCLUDE_FROM_ALL` at the root, `efsw-static`
-  linked into `retroplug-backend`; the watcher is opt-in via `enableWatching`, which
-  only the plugin calls). `deps/catch2` is the C++ unit-test framework:
+  `deps/efsw` (the file-watcher: `add_subdirectory`'d `EXCLUDE_FROM_ALL` at the root, `efsw-static`
+  linked into the shell's own `retroplug-file-watcher` library, which holds `NativeFileWatcher`
+  behind `HostRpcService`'s `FileWatcher` interface; the watcher is opt-in -
+  `enableWatching(std::unique_ptr<FileWatcher>)` - and only the plugin builds one and hands it over.
+  `NativeFileWatcher`'s `efsw::FileWatcher` member is its LAST, so the efsw thread is joined before the state
+  its callback touches goes). `deps/catch2` is
+  the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
   thirteen `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
   `-sameboy-test` / `-mesen-test` / `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` /

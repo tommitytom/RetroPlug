@@ -1,19 +1,23 @@
-// NativeFileWatcher — the efsw mechanism behind HostRpcService::drainChangedPaths (spec/07). Verifies
-// it reports config.json + bindings/*.json (recursive config-dir watch) and registered ROMs (parent-dir
-// watch, filtered by path), and that unregistered files under the config dir are ignored.
+// NativeFileWatcher: the efsw mechanism behind HostRpcService::drainChangedPaths (spec/07). Verifies it reports
+// config.json + bindings/*.json (recursive config-dir watch) and registered ROMs (parent-dir watch, filtered by
+// path), and that unregistered files under the config dir are ignored.
 //
-// efsw delivers on a background thread with real filesystem latency, so every assertion polls
-// drainChangedPaths() with a deadline rather than reading once.
+// efsw delivers on a background thread with real filesystem latency, so every assertion polls drainChangedPaths()
+// with a deadline rather than reading once.
+//
+// The service's own gate (inert without a watcher, and what a second one does) is HostRpcWatching.test.cpp's, over a
+// fake watcher: it needs no efsw, so the binary that holds it links the backend for the service alone and this one
+// links only the watcher library.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <thread>
 #include <unordered_set>
 
-#include "host/rpc/HostRpcService.hpp"
 #include "host/rpc/NativeFileWatcher.hpp"
 
 namespace fs = std::filesystem;
@@ -109,41 +113,6 @@ TEST_CASE("NativeFileWatcher reports a registered ROM change, ignores an unregis
     (void)w.drainChangedPaths();
     writeFile(roms / "game.gb", "rom-v3");
     CHECK_FALSE(sawWithin(w, roms / "game.gb"));
-
-    fs::remove_all(cfg);
-    fs::remove_all(roms);
-}
-
-// The HostRpcService facade the plugin actually uses: enableWatching() spins up the watcher, and
-// drainChangedPaths / setWatchedRoms delegate to it. Before enableWatching they're inert (matching the
-// test host / CLI, which never enable watching), so this also pins the opt-in contract.
-TEST_CASE("HostRpcService gates the watcher behind enableWatching", "[watcher]") {
-    const fs::path cfg  = makeTempDir();
-    const fs::path roms = makeTempDir();
-    writeFile(roms / "game.gb", "rom-v1");
-
-    HostRpcService svc;
-    // Inert until enabled.
-    CHECK(svc.drainChangedPaths().empty());
-    CHECK_FALSE(svc.setWatchedRoms({(roms / "game.gb").string()}));
-
-    svc.enableWatching(cfg.string());
-    CHECK(svc.setWatchedRoms({(roms / "game.gb").string()}));
-    std::this_thread::sleep_for(100ms);
-
-    writeFile(roms / "game.gb", "rom-v2");
-    writeFile(cfg / "config.json", "{}");
-
-    const std::string wantRom = canon(roms / "game.gb").string();
-    const std::string wantCfg = canon(cfg / "config.json").string();
-    std::unordered_set<std::string> seen;
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    while (std::chrono::steady_clock::now() < deadline && !(seen.count(wantRom) && seen.count(wantCfg))) {
-        for (auto& p : svc.drainChangedPaths()) seen.insert(canon(p).string());
-        std::this_thread::sleep_for(25ms);
-    }
-    CHECK(seen.count(wantRom));
-    CHECK(seen.count(wantCfg));
 
     fs::remove_all(cfg);
     fs::remove_all(roms);

@@ -1347,15 +1347,20 @@ holding, and the poll always clears its flag. The jobs native still holds after 
 the queue, so a fan-out past the bound submitted before they are drained is refused busy rather than held.
 
 The txiki host `TjsHostRuntime` comes from
-[`deps/dpf.js`](../deps/dpf.js), not the shell's own sources.
+[`deps/dpf.js`](../deps/dpf.js), not the shell's own sources, and the shell compiles it into a library of its own
+(`retroplug-tjs-runtime`, [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)) that only the hosts
+which instantiate one link ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md) section 6): the
+plugin, the SDL standalone, the test host, the CLI and the class-id test. The backend itself is bare QuickJS
+(`qjs`), so a binary that only needs the engine links no txiki and no libuv.
 
 ## Build & identity
 
 The [`retroplug-backend`](../packages/native/CMakeLists.txt) static lib is the shell: the `Engine` (and
 `retroplug-graph`, the graph it runs on), the RPC services, the script host with its embedded script-node
-bundle, the txiki host, the offline job pool and the format-neutral helpers (`SampleCache`, `FileSync`,
-lodepng), and is PIC (it links into the shared plugin module). It links the packages' libraries it names
-(`system`, `host-io`, `graph-runtime`, `core`, `dsp`, `launchpad`); the consoles it does not link, because
+bundle, the render host on bare QuickJS, the offline job pool and the format-neutral helpers
+(`SampleCache`, `FileSync`, lodepng), and is PIC (it links into the shared plugin module). The txiki host and
+the file watcher are two libraries beside it, linked by the hosts that use them. It links the packages' libraries it
+names (`system`, `host-io`, `graph-runtime`, `core`, `dsp`, `launchpad`); the consoles it does not link, because
 the product does: `retroplug_product` links every package the product lists. The
 test host `retroplug-host` is that lib + `main.cpp`; the DPF plugin is
 [`dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)`](../packages/native/CMakeLists.txt)

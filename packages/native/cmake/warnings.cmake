@@ -37,6 +37,9 @@ if(MSVC)
     endif()
     set(_rp_werror_targets
         retroplug-backend retroplug-host retroplug-cli retroplug-sdl
+        # The two host runtime libraries (cmake/packages.cmake's shell): a vendored txiki host file's compile is judged
+        # at the level the backend's was, and the watcher's own code is ours.
+        retroplug-tjs-runtime retroplug-file-watcher
         retroplug retroplug-dsp retroplug-ui
         # The workspace packages' targets (cmake/packages.cmake), defined in their own directories: a target's options
         # can be set from any directory, so the list stays here, where every one of our targets is named.

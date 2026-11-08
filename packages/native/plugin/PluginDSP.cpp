@@ -30,6 +30,7 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "Version.hpp"                    // single source of truth for the plugin version
 #include "host/rpc/BackendRpcRegistration.hpp"
+#include "host/rpc/NativeFileWatcher.hpp"  // the FileWatcher the host hands HostRpcService (retroplug-file-watcher)
 #include "host/devices/ProviderHost.hpp"  // the rp_device_host this product starts its providers with
 #include "rp_product_providers.hpp"       // generated, in this product's own include dir: its providers (the N8's)
 #include "TypedRpcServer.h"
@@ -436,9 +437,10 @@ private:
         idleProbe_.armFromEnv(svc_.engine);
 
         // Turn on the native file watcher (config.json + bindings/ recursively; ROMs registered by TS via
-        // setWatchedRoms). The TS FileWatcher.pump() drains it from the UI idle loop (__rp_pumpWatcher).
-        // Only the plugin enables this — the test host / CLI leave drainChangedPaths inert.
-        svc_.host.enableWatching(svc_.host.configDir());
+        // setWatchedRoms). The TS FileWatcher.pump() drains it from the UI idle loop (__rp_pumpWatcher). The service
+        // takes the interface, so this is the one place in the tree that builds an efsw watcher, and only the plugin
+        // watches: the test host / CLI hand over none, and drainChangedPaths stays inert.
+        svc_.host.enableWatching(std::make_unique<NativeFileWatcher>(svc_.host.configDir()));
 
         // The providers' persisted state (the physical Everdrive N8 Pro, Settings > N8: n8.cfg, reconnecting a link
         // left enabled). A system whose "drive the real cart" setting is on places an rp.n8.nes node, and what its

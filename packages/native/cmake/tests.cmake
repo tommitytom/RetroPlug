@@ -35,13 +35,13 @@ retroplug_add_test_binary(
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/plugin/dynparams   # the test's DistrhoPluginInfo.h — must come first
              ${DPFJS_PATH}/deps/dpf/distrho)                     # DistrhoPlugin.hpp + src/DistrhoPluginInternal.hpp
 
-# Guards TjsHostRuntime::init's class-id counter sync (the plugin-editor blank-UI fix); it needs the
-# real txiki host, so it links retroplug-backend.
+# Guards TjsHostRuntime::init's class-id counter sync (the plugin-editor blank-UI fix); it needs the real txiki host,
+# which is the shell's own library, not the backend: the binary links no engine at all, so it is an ordinary binary (a
+# test of the host runtime, not of the engine).
 retroplug_add_test_binary(
     NAME     retroplug-classid-test
     SOURCES  test/plugin/ClassIdReserve.test.cpp
-    LIBS     retroplug-backend                          # TjsHostRuntime (+ txiki, quickjs) + ClassIdSpace.hpp
-    INCLUDES ${RP_QUICKJS_INCLUDE})                     # quickjs.h
+    LIBS     retroplug-tjs-runtime)                     # TjsHostRuntime + ClassIdSpace.hpp (+ txiki, quickjs)
 
 # Guards the engine's audio paths across systems: the NES split routings through a real Engine, a host sample-rate change
 # re-rating live cores, the offline teardown a staged-message payload rides, and the kit dithers. Links
@@ -58,6 +58,7 @@ retroplug_add_test_binary(
     SOURCES  test/audio/EngineSampleRate.test.cpp      # host sample-rate change re-rates live cores
              test/audio/NesSplitRouting.test.cpp       # NES-in-plugin: PinSplit/ChannelSplit arm the tap live + mono-pack
              test/audio/EngineInvoker.test.cpp         # the teardown discards a staged-message payload
+             test/host/HostRpcWatching.test.cpp        # the service's watcher gate, over a fake watcher (why here: its header)
              test/audio/Dither.test.cpp                # the kit TPDF dithers are seeded from their input
              # The kit path's effect wrappers, so the dither cases are held to what rp::lsdj::processEffect does to a
              # buffer, not only to the kernels underneath it (retroplug-graph-test compiles it too, for the two
@@ -385,6 +386,11 @@ set(_rp_gather_cases
     "defs-dev-quoted|holds|"
     "comment-only|holds|"
     "testing-dependency|refused|reach retroplug-testing, the native test helpers (packages/testing/native), and are no test binary"
+    "runtime-library|refused|retroplug-audio-test -> tjs"
+    "runtime-bare|holds|"
+    "runtime-chain|refused|retroplug-audio-test -> scratch-backend -> tjs"
+    "runtime-missing|refused|`retroplug-no-such-binary` is one of the targets this rule guards"
+    "runtime-addon-off|holds|"
     "copt|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
     "copt-genex|refused|adds the include directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/native/src, which is in the beta"
     "copt-relative|refused|names -I../beta/native/src, which the boundary check cannot evaluate"
@@ -424,12 +430,14 @@ foreach(_rp_case IN LISTS _rp_gather_cases)
     endif()
 endforeach()
 
-# Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive
-# detection, registered-ROM parent-dir watches, and the unregistered-file filter.
+# Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive detection,
+# registered-ROM parent-dir watches, and the unregistered-file filter. It links the watcher library alone (the host
+# runtime library takes its own threads), so it is no engine carrier and needs no exemption from the product check;
+# the service it is handed to is HostRpcWatching.test.cpp's, which links no watcher.
 retroplug_add_test_binary(
     NAME     retroplug-watcher-test
     SOURCES  test/watcher/NativeFileWatcher.test.cpp
-    LIBS     retroplug-backend)                        # NativeFileWatcher + efsw-static
+    LIBS     retroplug-file-watcher)                    # NativeFileWatcher + efsw-static + Threads::Threads
 
 # Guards the MIDI device-selection policy (Settings > MIDI): the pure, RtMidi-free helpers in
 # MidiIo.hpp (hardwarePortIndices / matchPortIndex) that decide which hardware ports to open for a

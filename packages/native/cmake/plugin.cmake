@@ -31,7 +31,12 @@ target_include_directories(retroplug PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/gener
 target_include_directories(retroplug PUBLIC ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
 
 target_link_libraries(retroplug PUBLIC
-    retroplug-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
+    retroplug-backend  # Engine/Backend + (transitively) the cores + rpcpp
+    # The plugin's control plane runs on the txiki host (PluginDSP.cpp) and its config/bindings/ROM watcher is efsw
+    # behind HostRpcService's FileWatcher (PluginDSP.cpp hands one over): two libraries of the shell's, linked here
+    # because this is the product that uses them. The UI library inherits both (it PUBLIC-links this one).
+    retroplug-tjs-runtime
+    retroplug-file-watcher
     lvgl-js-native                # LVGL + LvglJsEngine + lv_binding_js + lodepng (the editor)
     dpfjs::core                   # DPF Plugin + UI base
     # The N8 pack's desktop half: the provider PluginDSP.cpp starts through its generated rp_start_providers (the

@@ -32,9 +32,9 @@ if(MSVC)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/bigobj>)
 endif()
 
-# Threads: efsw-static needs pthreads on Linux (its CMake links it to the shared lib only), and the Launchpad scan
-# thread does too. Found once, for this directory. (The DSP package finds its own, for r8brain, and the N8 pack its
-# own, for N8Link's serial thread.)
+# Threads: the Launchpad scan thread needs pthreads, and so does efsw-static, which retroplug-file-watcher links along
+# with Threads::Threads (efsw's CMake gives its shared library that alone). Found once, for this directory. (The DSP
+# package finds its own, for r8brain, and the N8 pack its own, for N8Link's serial thread.)
 find_package(Threads REQUIRED)
 
 # The render-worker bundle — src/render/worker.ts esbuilt to a global-code IIFE (NOT an ES module: the
@@ -60,6 +60,35 @@ if(TARGET ${_TJSC_DEP})
   add_dependencies(retroplug-render-worker-bundle ${_TJSC_DEP})
 endif()
 
+# --- retroplug-tjs-runtime and retroplug-file-watcher: the two host runtime libraries
+# (docs/modular-graph-phase-f2-design.md section 6). Each is a library of its own, linked by the hosts that use it, so
+# a binary that needs neither the txiki control-plane host nor a filesystem watcher links neither: the backend (and
+# every test or embedder that links it) is bare QuickJS and nothing else.
+
+# txiki.js's host (dpf.js), which the control planes of the plugin, the SDL standalone, the headless host, the CLI and
+# the class-id test instantiate. PUBLIC because its includers write "dpfjs/host/TjsHostRuntime.hpp", and because the
+# library's own header is what brings tjs.h/quickjs.h to them; `tjs` is PUBLIC for the same reason (its runtime types
+# are in TjsHostRuntime's interface).
+add_library(retroplug-tjs-runtime STATIC ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp)
+target_include_directories(retroplug-tjs-runtime PUBLIC ${DPFJS_PATH}/src)
+target_link_libraries(retroplug-tjs-runtime PUBLIC tjs)
+set_target_properties(retroplug-tjs-runtime PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)  # linked into the shared plugin module
+
+# efsw behind HostRpcService's FileWatcher interface: the plugin's watcher (config.json, bindings/, registered ROMs).
+# Only a host that wants one links it, and it is handed to HostRpcService as the interface, so the service and every
+# includer of it stay clear of efsw's headers. It is efsw-static's only consumer here, so it adds the threads efsw's
+# own CMake gives its shared library alone, and its link interface is whole for a host that takes it and nothing else.
+add_library(retroplug-file-watcher STATIC src/host/rpc/NativeFileWatcher.cpp)
+target_include_directories(retroplug-file-watcher PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(retroplug-file-watcher PUBLIC efsw-static Threads::Threads)
+set_target_properties(retroplug-file-watcher PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)
+
 # retroplug-backend: the Backend as a static library — everything except a host
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/ScriptHost. Includes + links are PUBLIC so consumers inherit them.
@@ -73,8 +102,7 @@ add_library(retroplug-backend STATIC
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull the full
     # lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
-    src/host/rpc/HostRpcService.cpp         # fs / config / zip (+ opt-in efsw file watcher)
-    src/host/rpc/NativeFileWatcher.cpp      # efsw watcher behind drainChangedPaths / setWatchedRoms
+    src/host/rpc/HostRpcService.cpp         # fs / config / zip (a host's file watcher is handed to it: FileWatcher)
     src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker
     src/host/rpc/DebugRpcService.cpp        # live-core inspection over Engine (CLI-only facet)
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
@@ -87,7 +115,6 @@ add_library(retroplug-backend STATIC
     src/host/script/ScriptHost.cpp          # the script-node runtimes: TS nodes behind the C ABI, a pair per pack
     src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
     ${RENDER_WORKER_BUNDLE_C}               # embedded render-worker bytecode (rp_render_worker_bundle)
-    ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
 )
 add_dependencies(retroplug-backend retroplug-render-worker-bundle)  # the embedded worker bytecode must exist first
 
@@ -97,10 +124,7 @@ target_include_directories(retroplug-backend PUBLIC
     ${DPFJS_PATH}/deps/lv_binding_js/src/render
     # MinizZip.hpp -> miniz.h (txiki's v3.1.0; matches the linked `miniz` lib)
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz
-    # dpf.js src root for the shared host header ("dpfjs/host/TjsHostRuntime.hpp").
-    ${DPFJS_PATH}/src
-    # txiki.js / QuickJS runtime headers (tjs.h + internal private.h; quickjs.h transitive).
-    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/src
+    # quickjs.h: the script host, the compiler and the render host are bare QuickJS (the `qjs` library below).
     ${RP_QUICKJS_INCLUDE}
 )
 
@@ -119,8 +143,7 @@ target_link_libraries(retroplug-backend PUBLIC
     retroplug-dsp-nodes
     retroplug-dsp-resample-nodes
     retroplug-launchpad # rp.launchpad.surface-in / -out's package (HarnessSurfaceLink implements its SurfaceLink)
-    tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
-    efsw-static         # NativeFileWatcher's filesystem watcher (PUBLIC-brings efsw/efsw.hpp include dir)
+    qjs                 # bare QuickJS: the script host, the compiler and the render host (no txiki, no libuv)
     rpcpp               # transitively pulls reflectcpp
     miniaudio           # header-only audio decoder used by SampleCache
     miniz               # used by projectConfigToZip for --save-rplg
@@ -142,7 +165,8 @@ set_target_properties(retroplug-backend PROPERTIES
 # __rpcSend bridge. Output binary lands in build/bin/.
 add_executable(retroplug-host src/main.cpp)
 
-target_link_libraries(retroplug-host PRIVATE retroplug-backend)
+# The txiki host it runs its control plane on (src/main.cpp): its own library, not the backend's.
+target_link_libraries(retroplug-host PRIVATE retroplug-backend retroplug-tjs-runtime)
 # Its own N8 provider over a fake cart and its own Launchpad facet over fake ports (src/main.cpp): a test host starts the
 # providers it needs itself, over fakes, rather than rp_start_providers over real hardware.
 retroplug_product(retroplug-host PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad)
@@ -250,7 +274,7 @@ endif()
 # runtime. Output binary lands in build/bin/.
 add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
 
-target_link_libraries(retroplug-cli PRIVATE retroplug-backend)
+target_link_libraries(retroplug-cli PRIVATE retroplug-backend retroplug-tjs-runtime)
 retroplug_product(retroplug-cli PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad)
 add_dependencies(retroplug-cli retroplug-cli-bundle)             # the embedded dispatcher bytecode must exist first
 add_dependencies(retroplug-cli retroplug-ts-stripper-bundle)     # ...and the stripper bytecode
@@ -323,7 +347,8 @@ add_executable(retroplug-sdl
 
 target_link_libraries(retroplug-sdl PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
-    retroplug-backend             # Engine + cores + txiki host + rpcpp
+    retroplug-backend             # Engine + cores + rpcpp
+    retroplug-tjs-runtime         # the txiki host its control plane runs on (sdl/main.cpp)
     rtmidi                        # cross-platform MIDI in/out (ALSA/CoreMIDI/WinMM)
     portaudio                     # audio backend (PipeWire/ALSA on Linux); replaces SDL audio
     PkgConfig::SDL2)              # window + present + gamepad (audio now via PortAudio; found at root scope)
@@ -404,12 +429,15 @@ retroplug_product_table(retroplug-engine-graph-test)
 
 # Every binary that reaches the engine is a product, refused if it is not (cmake/packages.cmake). Deferred to the end of
 # the root's CMakeLists, so a binary defined after this line, in any directory, is checked too. The carriers are
-# computed from the backend. The two exempt link the backend for its file watcher and its txiki host, and never pull
-# the engine's object in.
+# computed from the backend, and no binary here is exempt: a test that needs a host runtime library links that library
+# (retroplug-tjs-runtime, retroplug-file-watcher) instead of the backend, and is nobody's carrier.
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_products
-    LIBRARIES retroplug-backend
-    EXEMPT    retroplug-classid-test      # TjsHostRuntime + ClassIdSpace.hpp
-              retroplug-watcher-test)     # NativeFileWatcher + efsw-static
+    LIBRARIES retroplug-backend)
+
+# And the bare-QuickJS ones stay bare: no txiki host, libuv or efsw in the backend, the Node addon, the render host or
+# the two engine test binaries (cmake/packages.cmake's retroplug_check_runtime_libraries), refused at configure naming
+# the target, the library and every step of the path that brought it in.
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_runtime_libraries)
 
 # /W4 /WX on our own targets (MSVC), with per-number suppressions for what we do not own.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/warnings.cmake)

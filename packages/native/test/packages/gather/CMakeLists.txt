@@ -25,6 +25,14 @@
 #   testing-dependency  alpha declares the testing package (a dependency, not a devDependency) and its library links
 #                retroplug-testing: the boundary check holds it and the test-helper guard refuses it, since alpha is no
 #                test binary (test-dev is the same link from one, which both hold)
+#   runtime-library  a scratch binary named as one of the bare-QuickJS targets carries tjs: the runtime-library check
+#                refuses it, naming the library and the path that brought it in
+#   runtime-bare  the same binary with nothing of the runtime's linked: the check holds
+#   runtime-chain  the same binary reaches tjs through a scratch library of its own: the refusal names every step of the
+#                path, since the intermediate is the thing to look at
+#   runtime-missing  the rule is handed a name no target has: refused, since a renamed binary would otherwise drop out
+#                of its coverage; runtime-addon-off hands it retroplug-node with the opt-in addon not configured, which
+#                is the one absence it allows
 #   copt         alpha's compile options add -Ibeta's tree: refused like an include directory would be
 #   copt-genex   the same behind $<$<COMPILE_LANGUAGE:CXX>:...>: still the literal, so refused
 #   copt-relative  the same spelled relative to alpha's own directory: the compiler resolves a relative flag from the
@@ -76,6 +84,28 @@ add_subdirectory(packages/beta)
 add_subdirectory(packages/testing)
 add_subdirectory(packages/native)
 
+# The scratch libraries the runtime-library cases link: the names it refuses, as INTERFACE targets, so nothing builds.
+add_library(tjs INTERFACE)
+add_library(uv_a INTERFACE)
+add_library(efsw-static INTERFACE)
+target_link_libraries(tjs INTERFACE uv_a)
+add_library(retroplug-audio-test INTERFACE)
+if(RP_GATHER_CASE STREQUAL "runtime-library")
+    target_link_libraries(retroplug-audio-test INTERFACE tjs)
+endif()
+if(RP_GATHER_CASE STREQUAL "runtime-chain")
+    add_library(scratch-backend INTERFACE)
+    target_link_libraries(scratch-backend INTERFACE tjs)
+    target_link_libraries(retroplug-audio-test INTERFACE scratch-backend)
+endif()
+
 retroplug_check_package_boundaries()
 retroplug_check_test_helpers()
+if(RP_GATHER_CASE STREQUAL "runtime-missing")
+    retroplug_check_runtime_libraries(TARGETS retroplug-no-such-binary)
+elseif(RP_GATHER_CASE STREQUAL "runtime-addon-off")
+    retroplug_check_runtime_libraries(TARGETS retroplug-node)
+else()
+    retroplug_check_runtime_libraries(TARGETS retroplug-audio-test)
+endif()
 message(STATUS "gather/${RP_GATHER_CASE} holds")

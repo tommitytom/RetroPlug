@@ -10,7 +10,7 @@
 #include <system_error>
 
 #include "Version.hpp"
-#include "host/rpc/NativeFileWatcher.hpp"
+#include "host/rpc/FileWatcher.hpp"
 #include "native/core/img/png/lodepng.h"
 #include "util/FileSync.hpp"
 #include "util/MinizZip.hpp"
@@ -69,8 +69,8 @@ std::size_t fileSizeOr(const std::string& path, std::size_t fallback) {
 
 } // namespace
 
-// Out-of-line so the unique_ptr<NativeFileWatcher> member sees the complete type (it's forward-declared
-// in the header to keep efsw out of every HostRpcService includer).
+// Out-of-line so the unique_ptr<FileWatcher> member sees the complete type (it's forward-declared in the header, which
+// keeps the watcher and its library out of every HostRpcService includer).
 HostRpcService::HostRpcService() = default;
 HostRpcService::~HostRpcService() = default;
 
@@ -217,9 +217,9 @@ bool HostRpcService::setWatchedRoms(std::vector<std::string> paths) {
     return true;
 }
 
-void HostRpcService::enableWatching(std::string configDir) {
-    if (watcher_) return;  // idempotent
-    watcher_ = std::make_unique<NativeFileWatcher>(std::move(configDir));
+void HostRpcService::enableWatching(std::unique_ptr<FileWatcher> watcher) {
+    if (watcher_) return;  // idempotent: the first watcher is the service's
+    watcher_ = std::move(watcher);
 }
 
 std::string HostRpcService::canonicalize(std::string path) {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dpfjs/host/TjsHostRuntime.hpp" // brings quickjs
+#include "quickjs.h" // the QuickJS types alone: this file names no txiki host type
 #include "host/input/GamepadManager.hpp"
 
 /** Drain the gamepad manager onto the UI's event bus.

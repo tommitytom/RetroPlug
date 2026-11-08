@@ -10,12 +10,12 @@
 
 #include "host/rpc/BackendTypes.hpp"
 
-class NativeFileWatcher;
+class FileWatcher;
 
 // The fs / config / codec half of the Backend: std::filesystem + miniz + config-dir
-// resolution + LSDJ sav authoring. Stateless and thread-free by default — reusable verbatim across
-// hosts — UNLESS a host calls enableWatching(), which spins up an efsw NativeFileWatcher so
-// drainChangedPaths / setWatchedRoms become live (the plugin does this; the test host + CLI don't).
+// resolution + LSDJ sav authoring. Stateless and thread-free by default - reusable verbatim across
+// hosts - UNLESS a host hands it a FileWatcher (enableWatching), which makes drainChangedPaths /
+// setWatchedRoms live (the plugin does this, with the shell's NativeFileWatcher; the test host + CLI don't).
 class HostRpcService {
 public:
     HostRpcService();
@@ -61,10 +61,14 @@ public:
     rfl::Bytestring pngEncode(PngImage image);
     std::optional<PngImage> pngDecode(rfl::Bytestring bytes);
 
-    // Host opt-in: start the efsw watcher over `configDir` (config.json + bindings/). Idempotent —
-    // a second call is ignored. Until called, drainChangedPaths returns {} and setWatchedRoms no-ops.
-    void enableWatching(std::string configDir);
+    // Host opt-in: take `watcher` (the host builds the one it wants, over the directory it wants). Idempotent: a
+    // second call is ignored, and a null watcher changes nothing. Until one is handed over, drainChangedPaths returns
+    // {} and setWatchedRoms answers false, exactly as watching off always did.
+    void enableWatching(std::unique_ptr<FileWatcher> watcher);
 
 private:
-    std::unique_ptr<NativeFileWatcher> watcher_;  // null unless enableWatching() ran
+    // The service owns the watcher a host handed over, and the watcher never calls back into the service (its calls
+    // are pull: drainChangedPaths and setWatchedRoms), so no member order here joins a thread. The order that matters
+    // is NativeFileWatcher's own, whose efsw member is last.
+    std::unique_ptr<FileWatcher> watcher_;  // null unless a host handed one over
 };

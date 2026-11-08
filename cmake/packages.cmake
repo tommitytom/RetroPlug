@@ -1929,32 +1929,31 @@ ${_registers}}
 ")
 endfunction()
 
-# retroplug_check_products(LIBRARIES <library>... [EXEMPT <target>...]): refuses, at configure time, every executable,
-# module or shared library in the build that reaches the engine and is neither a product's target nor EXEMPT. LIBRARIES
-# are the seeds, the libraries that hold the engine (retroplug-backend: Engine.o); the set of libraries that carry it is
-# computed outward from them, every static, object or interface library of the build whose LINK_LIBRARIES or
-# INTERFACE_LINK_LIBRARIES name a carrier (a generator expression's operands included, so `$<LINK_ONLY:x>` and
-# `$<$<BOOL:..>:x>` count), repeated until nothing joins, so a library of ours that links the backend makes whatever
-# links it a suspect without anyone listing it. A binary that links a carrier is then refused. EXEMPT is for a binary
-# that does and is known never to pull the engine's object in; each name must be a target, so a renamed test cannot
-# leave a stale exemption. It stands in for the link error a Linux module never gives (this file's header says why);
-# -Wl,--no-undefined would not, as it breaks the sanitizer builds and guards only the modules that are already
-# products.
+# retroplug_check_products(LIBRARIES <library>...): refuses, at configure time, every executable, module or shared
+# library in the build that reaches the engine and is not a product's. LIBRARIES are the seeds, the libraries that hold
+# the engine (retroplug-backend: Engine.o); the set of libraries that carry it is computed outward from them, every
+# static, object or interface library of the build whose LINK_LIBRARIES or INTERFACE_LINK_LIBRARIES name a carrier (a
+# generator expression's operands included, so `$<LINK_ONLY:x>` and `$<$<BOOL:..>:x>` count), repeated until nothing
+# joins, so a library of ours that links the backend makes whatever links it a suspect without anyone listing it. A
+# binary that links a carrier is then refused: a test that needs something the backend used to carry links that
+# library instead, so there is no exemption to keep. It stands in for the link error a Linux module never gives (this
+# file's header says why); -Wl,--no-undefined would not, as it breaks the sanitizer builds and guards only the modules
+# that are already products.
 #
 # It must see every binary of the build, so it runs when the root's CMakeLists is done:
 #
-#   cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_products LIBRARIES ... EXEMPT ...)
+#   cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retroplug_check_products LIBRARIES ...)
 #
 # (3.19; its arguments are expanded when it runs, in the root's scope, so pass names, not variables of the calling
 # directory). A binary defined after the call, anywhere in the tree, is checked as one before it.
 function(retroplug_check_products)
-    cmake_parse_arguments(C "" "" "LIBRARIES;EXEMPT" ${ARGN})
+    cmake_parse_arguments(C "" "" "LIBRARIES" ${ARGN})
     if(NOT C_LIBRARIES)
         message(FATAL_ERROR "retroplug_check_products: LIBRARIES is required")
     endif()
-    foreach(_t IN LISTS C_LIBRARIES C_EXEMPT)
+    foreach(_t IN LISTS C_LIBRARIES)
         if(NOT TARGET ${_t})
-            message(FATAL_ERROR "retroplug_check_products: `${_t}`, named in LIBRARIES or EXEMPT, is not a target")
+            message(FATAL_ERROR "retroplug_check_products: `${_t}`, named in LIBRARIES, is not a target")
         endif()
     endforeach()
     get_property(_products GLOBAL PROPERTY RP_PRODUCT_TARGETS)
@@ -1995,7 +1994,7 @@ function(retroplug_check_products)
 
     set(_missing "")
     foreach(_t IN LISTS _binaries)
-        if(_t IN_LIST _products OR _t IN_LIST C_EXEMPT)
+        if(_t IN_LIST _products)
             continue()
         endif()
         _retroplug_linked_names(_linked ${_t} LINK_LIBRARIES)
@@ -2010,7 +2009,88 @@ function(retroplug_check_products)
         list(JOIN _missing ", " _missing)
         message(FATAL_ERROR "retroplug_check_products: these binaries link the engine and are not products, so none "
                             "defines rp_register_packages: ${_missing}. Declare each with retroplug_product() (or "
-                            "PACKAGES in retroplug_add_test_binary), or exempt one that never pulls the engine in.")
+                            "PACKAGES in retroplug_add_test_binary); a test that needs one of the shell's runtime "
+                            "libraries links that library instead of the backend.")
+    endif()
+endfunction()
+
+# retroplug_check_runtime_libraries(): refuses, at configure time, a target that must stay a bare-QuickJS host or an
+# engine binary carrying a runtime library it does not want (docs/modular-graph-phase-f2-design.md section 6): txiki's
+# host (`tjs`), libuv (`uv_a`) or efsw, in the link closure of the Node addon, the render host, the backend or the two
+# engine test binaries. The two host runtime libraries are the shell's (packages/native's retroplug-tjs-runtime and
+# retroplug-file-watcher), and only the products that instantiate a txiki host or want a watcher link them; a test that
+# links the engine and so carries one anyway is a build that would hide that. The walk keeps the path that reached each
+# library, so the message says what brought it in, step by step, not only that it is there. A guarded name with no
+# target is refused, since the rule would otherwise stop covering a renamed binary; the opt-in Node addon, when it is
+# not configured, is the one name allowed to be absent.
+#
+# TARGETS is for a configure fixture to drive the rule over a scratch target (packages/native/test/packages/gather): the
+# default is the five binaries the rule is about.
+function(retroplug_check_runtime_libraries)
+    cmake_parse_arguments(C "" "" "TARGETS" ${ARGN})
+    if(C_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR "retroplug_check_runtime_libraries: unrecognised argument(s): ${C_UNPARSED_ARGUMENTS}")
+    endif()
+    set(_guarded ${C_TARGETS})
+    if(NOT _guarded)
+        set(_guarded retroplug-backend retroplug-node retroplug-render-host-test retroplug-engine-graph-test
+                       retroplug-audio-test)
+    endif()
+    set(_forbidden tjs uv_a uv efsw-static efsw)
+    _retroplug_build_targets(_targets "${CMAKE_SOURCE_DIR}")
+    # Every target's own link names, so a closure is followed without asking the generator to evaluate a target's.
+    foreach(_t IN LISTS _targets)
+        _retroplug_linked_names(_names_${_t} ${_t} LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+    endforeach()
+    set(_found "")
+    foreach(_root IN LISTS _guarded)
+        if(NOT TARGET ${_root})
+            # A name that is absent is a target this rule would stop covering, so it is refused. The one exception is
+            # the Node addon, which is opt-in and may simply not be configured.
+            if(_root STREQUAL "retroplug-node" AND NOT RETROPLUG_NODE_ADDON)
+                continue()
+            endif()
+            message(FATAL_ERROR "retroplug_check_runtime_libraries: `${_root}` is one of the targets this rule guards "
+                                "and this build defines no target of that name, so the rule would cover nothing; name "
+                                "the target here after renaming it (only the opt-in Node addon may be absent, when "
+                                "RETROPLUG_NODE_ADDON is off)")
+        endif()
+        # Breadth-first from the target, each queue entry "path@name": path is every step that reached this one, joined
+        # with @ so the message can name the intermediate that brought the library in (a target or library name holds
+        # no @, and a pipe would split the path itself).
+        set(_pending "${_root}")
+        set(_seen "")
+        while(_pending)
+            list(POP_FRONT _pending _entry)
+            string(FIND "${_entry}" "@" _at REVERSE)
+            if(_at EQUAL -1)
+                set(_name "${_entry}")
+            else()
+                math(EXPR _at "${_at} + 1")
+                string(SUBSTRING "${_entry}" ${_at} -1 _name)
+            endif()
+            if(_name IN_LIST _forbidden)
+                string(REPLACE "@" " -> " _path "${_entry}")
+                list(APPEND _found "${_path}")
+                break()
+            endif()
+            if(_name IN_LIST _seen)
+                continue()
+            endif()
+            list(APPEND _seen ${_name})
+            foreach(_next IN LISTS _names_${_name})
+                if(NOT _next MATCHES "-NOTFOUND$")
+                    list(APPEND _pending "${_entry}@${_next}")
+                endif()
+            endforeach()
+        endwhile()
+    endforeach()
+    if(_found)
+        list(JOIN _found "; " _found)
+        message(FATAL_ERROR "retroplug_check_runtime_libraries: these targets carry a host runtime library they must "
+                            "not (txiki's tjs, libuv's uv_a or efsw): ${_found}. The two host runtime libraries are "
+                            "the shell's own (retroplug-tjs-runtime, retroplug-file-watcher), and only the products "
+                            "that instantiate a txiki host or want a file watcher link them.")
     endif()
 endfunction()
 

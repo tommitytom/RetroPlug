@@ -3,7 +3,7 @@
 #include <functional>
 #include <string>
 
-#include "dpfjs/host/TjsHostRuntime.hpp" // brings tjs.h/quickjs.h, as both hosts do
+#include "quickjs.h" // the QuickJS types alone: nothing here names the txiki host class (TjsHostRuntime)
 
 /** Calling into the control plane's JS globals, which the plugin and the SDL standalone each had their
  *  own copy of.
