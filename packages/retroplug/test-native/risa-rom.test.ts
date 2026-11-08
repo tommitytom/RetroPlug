@@ -1,6 +1,6 @@
 // M3 native proofs for the risa ROM-asset override path.
 //
-// (1) The load-bearing native change: MesenBackend::build must load TS-supplied effective ROM bytes
+// (1) The load-bearing native change: the NES core's build must load TS-supplied effective ROM bytes
 //     (spec.romBytes) INSTEAD of slurping romPath. Proven unambiguously by constructing with a nonexistent
 //     romPath but valid romBytes — on the old code Mesen slurps the bad path and returns nullptr; only the
 //     fix boots it.

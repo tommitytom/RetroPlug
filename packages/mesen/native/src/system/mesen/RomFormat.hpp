@@ -8,7 +8,8 @@ namespace rp::mesen {
 
 // What Mesen's three consoles gate a ROM on (docs/modular-graph-phase-f2-design.md section 3): magic bytes, not the
 // file extension, so a mislabelled ROM is refused by the console that would run it wrongly rather than fed to a core as
-// garbage.
+// garbage. Each check below looks for its own console's signature alone, so a ROM that carries two consoles' magic is
+// accepted by whichever node the document names; the TS side picks the node.
 
 // The Game Boy cartridge logo, copied rather than shared: a console package keeps the magic bytes it checks, and mesen
 // may not depend on sameboy.
@@ -46,31 +47,6 @@ inline bool isGbaRom(std::span<const std::uint8_t> bytes) {
     for (std::size_t i = 0; i < sizeof kGbaLogo; ++i)
         if (bytes[kOffset + i] != kGbaLogo[i]) return false;
     return true;
-}
-
-// Sega 8-bit: "TMR SEGA" at the END of a bank rather than at the file start. $7FF0 is the usual spot; $1FF0/$3FF0 are
-// where an 8 KB/16 KB cart puts it. Each is doubled by the +$200 copier-header variant Mesen strips at load
-// (SmsConsole.cpp: `(size % 0x400) == 0x200`), which boots fine, so it classifies too. This covers BOTH Sega machines:
-// nothing here re-decides Master System vs Game Gear, which is TS's policy (platform.ts weighs the header's region
-// nibble against the file extension). Unlike the Nintendo logos this magic is required by no boot ROM, so plenty of
-// homebrew omits it, which is why buildSmsCore accepts a ROM that carries none of them.
-inline bool isSegaRom(std::span<const std::uint8_t> bytes) {
-    static constexpr std::uint8_t kSegaMagic[] = {'T', 'M', 'R', ' ', 'S', 'E', 'G', 'A'};
-    constexpr std::size_t kCopierSkip = 0x200;
-    constexpr std::size_t kBases[] = {0x7FF0, 0x3FF0, 0x1FF0};
-    for (const std::size_t base : kBases) {
-        for (const std::size_t off : {base, base + kCopierSkip}) {
-            if (bytes.size() < off + sizeof kSegaMagic) continue;
-            bool match = true;
-            for (std::size_t i = 0; i < sizeof kSegaMagic; ++i)
-                if (bytes[off + i] != kSegaMagic[i]) {
-                    match = false;
-                    break;
-                }
-            if (match) return true;
-        }
-    }
-    return false;
 }
 
 }  // namespace rp::mesen

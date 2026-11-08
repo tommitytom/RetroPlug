@@ -360,7 +360,10 @@ The rules below are the parts that don't fit those.
   `false`, its own `return` or its throw). Nothing NES, GBA or SMS changed. A missed guard links in Release (the
   compiler folds the arm a template parameter picks) and fails at `-O0`: `tools/build-mesen-all-consoles.sh --off`
   builds the library as Debug and refuses an archive that references a C++ symbol no member defines. 288 translation
-  units of 426, 19.7 MB of 32.7 MB of archive.
+  units of 426, 19.7 MB of 32.7 MB of archive. The vendored tree is SourMesen/Mesen2 at `b9fa69d` with no `.git` of its
+  own: a merge re-applies the 45 files carrying a `// RetroPlug:` marker (the compile-out guards among them) over the
+  upstream snapshot, then runs BOTH modes of `tools/build-mesen-all-consoles.sh`, `--off` being the one that catches a
+  guard the merge dropped (a Release link folds it away).
 - **Mesen LTO is opt-in (`-DRETROPLUG_MESEN_LTO=ON`), and that is deliberate.** It
   buys ~10% on the NES core (Cortex-A53: xRT 0.83 -> 0.92), but it turns every mesen
   object into LTO bitcode, so each of the *fourteen* binaries linking that static lib
@@ -501,8 +504,9 @@ the harness swallows it (which is why `toThrow` re-throws a skip). Which files m
 so it records CI's worst case and a dev box that owns the fixtures simply skips less. A file that
 starts skipping, skips more than its entry, or loses cases fails the run. Regenerate with
 `--update-skip-baseline` (refused on a filtered run); `RP_FAIL_ON_SKIP=1` demands zero skips.
-Fixtures are reached through `__REPO_RESOURCES_DIR__` / `__RESOURCES_DIR__` / `__RISA_SRC__`, never
-a path literal — pointing the last two at a nonexistent dir reproduces the CI picture locally.
+Fixtures are reached through `__REPO_RESOURCES_DIR__` / `__RESOURCES_DIR__` / `__RISA_SRC__` / `__MGB_ROM__`, never
+a path literal; pointing `__RESOURCES_DIR__` and `__RISA_SRC__` at a nonexistent dir reproduces the CI picture
+locally.
 
 **The four `pnpm test*` suites run in PARALLEL, and a slow suite is nearly always one slow
 FILE, not the pool.** Each runner's unit of work is an isolated child process, dispatched by

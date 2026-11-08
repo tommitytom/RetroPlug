@@ -387,9 +387,10 @@ endforeach()
 # because every other package's library is built on it; the native test helpers next, which no product lists (a test
 # binary links them through its package's devDependency); a device host's own I/O (rp.device.midi-in, the plan
 # exporter's and the devices') and the device check's test types (rp.devtest.plan) last, because registering a script
-# pack needs the MicroQuickJS host the graph-runtime package adds. packages/native is in the product list and registers
-# the node types not yet carved into packages of their own (sameboy, mesen, host.io); its targets are defined below,
-# where the root adds the engine's own tree. @retroplug/tracker is in neither list: it contributes no registration of
+# pack needs the MicroQuickJS host the graph-runtime package adds. packages/native is in the product list as the shell:
+# the engine, the graph and script hosts, the RPC services, the job pools and the devices' I/O, whose targets are defined
+# below, where the root adds the engine's own tree. It registers no node type of its own (each console's, the host I/O's
+# and the system contract's are their packages'). @retroplug/tracker is in neither list: it contributes no registration of
 # any kind, only modules the shell and the cart packages import, so CMake is never told about it.
 set(_rp_first_packages node-sdk)          # first: every other package's library is built on it
 set(_rp_test_packages testing)            # no product lists it: the test binaries' shared helpers

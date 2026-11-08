@@ -859,8 +859,8 @@ because a script node cannot build a core.
 
 [`rp::sameboy::buildCore`](../packages/sameboy/native/src/system/sameboy/SameBoyBackend.cpp) takes the
 `SameBoyConfig` the node made from its settings (out of the request's `config`), gates the ROM on
-`detectRomFormat == RomFormat::Gb` (an empty ROM is refused with it; the embedded mGB's bytes pass the same
-gate), and builds the core:
+`rp::sameboy::isGameBoyRom` (an empty ROM is refused with it; the embedded mGB's bytes pass the same gate, since it
+carries a cart's logo), and builds the core:
 
 ```cpp
 auto sys = std::make_unique<SameBoySystem>(id, std::move(typed), request.rom);
@@ -882,11 +882,13 @@ model is 04's topic; a live knob reaches the core as its system node's settings 
 ### The Mesen consoles' builds: `rp::mesen::build{Nes,Gba,Sms}Core`
 
 [`MesenBackend.cpp`](../packages/mesen/native/src/system/mesen/MesenBackend.cpp) holds the Mesen core's build functions, one
-per console it runs, each reading its own config out of the request: `rp::mesen::buildNesCore` gates `RomFormat::Nes`
-and builds a `MesenNesSystem`, `rp::mesen::buildGbaCore` gates `RomFormat::Gba` and builds a `MesenGbaSystem` (empty
-`biosPath` → HLE boot ROM), and `rp::mesen::buildSmsCore` refuses a ROM that is positively another console's but accepts
-a headerless one (TS admits homebrew by its extension). The NES and GBA cores take their seeds through the config; the
-SMS takes the `romName` it stages its file under. All three run the same tail, `reserveAudio` then `onActivate` then
+per console it runs, each reading its own config out of the request: `rp::mesen::buildNesCore` gates
+`rp::mesen::isNesRom` and builds a `MesenNesSystem`, `rp::mesen::buildGbaCore` gates `rp::mesen::isGbaRom` and builds a
+`MesenGbaSystem` (empty `biosPath` → HLE boot ROM), and `rp::mesen::buildSmsCore` refuses a ROM that is positively
+another console's (the NES magic, the GBA logo or the Game Boy logo) but accepts a headerless one (TS admits homebrew by
+its extension). Each gate checks its own console's signature alone, so a ROM carrying two consoles' magic is accepted by
+whichever node the document names; the TS side picks the node. The NES and GBA cores take their seeds through the config;
+the SMS takes the `romName` it stages its file under. All three run the same tail, `reserveAudio` then `onActivate` then
 `enableStateSnapshot`, and refuse a boot Mesen's `LoadRom` rejected after the magic gate ("Mesen refused the
 ROM"), so NES/GBA/SMS cores publish a tear-free savestate for the registry / Duplicate just like SameBoy.
 
@@ -1355,7 +1357,9 @@ The txiki host `TjsHostRuntime` comes from
 (`retroplug-tjs-runtime`, [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)) that only the hosts
 which instantiate one link ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md) section 6): the
 plugin, the SDL standalone, the test host, the CLI and the class-id test. The backend itself is bare QuickJS
-(`qjs`), so a binary that only needs the engine links no txiki and no libuv.
+(`qjs`), so a binary that only needs the engine links no txiki and no libuv. The configure holds that
+(`retroplug_check_runtime_libraries`, [cmake/packages.cmake](../cmake/packages.cmake)): a target that is no host of
+either library may not reach `tjs`, `uv_a` or `efsw-static` by any link path, and the refusal names the whole chain.
 
 ## Build & identity
 

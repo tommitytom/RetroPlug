@@ -28,8 +28,9 @@ namespace rp::host {
 // rp.launchpad.surface-out writes back to it (packages/launchpad's SurfaceNodes.hpp), through the device link a host
 // installs.
 //
-// The package itself (rp_host_io_package, the entry its manifest names) is no declaration of this header's: it has no
-// caller but the generated registration, as each console package's is its own translation unit's.
+// The package's entry, rp_host_io_package, is declared at the bottom: the generated registration calls it, and a test
+// that places the package by hand calls it too, as it calls the console packages' (SameBoyNode.hpp, MesenNode.hpp).
+// The node types themselves are this header's.
 
 // The most inputs rp.host.midi-out's systems form takes: it copies their ids into a fixed array at each commit, which
 // must not allocate. A host MIDI out producer for every system an engine holds (SnapshotRegistry::kMaxSlots, 64) and
@@ -47,6 +48,6 @@ inline constexpr std::uint32_t kHostMidiInBytes = 65536;
 
 }  // namespace rp::host
 
-// The package's entry, named in packages/native/package.json: what a product's generated registration calls
+// The package's entry, named in packages/host-io/package.json: what a product's generated registration calls
 // (rp_register_packages, graph/Packages.hpp).
 extern "C" const rp_package* rp_host_io_package(void);

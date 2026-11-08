@@ -18,7 +18,9 @@ inline constexpr std::uint8_t kGameBoyLogo[48] = {
 // Whether `bytes` are a Game Boy cartridge: the Nintendo logo where a cartridge puts it ($0104), which every licensed
 // (and most unlicensed) cart carries because the boot ROM refuses to start without it. Magic bytes rather than the file
 // extension, so a mislabelled .gb that is really a .nes is refused here rather than fed to the core as garbage. The
-// embedded mGB passes: it carries a cart's logo (docs/modular-graph-phase-f2-design.md section 3).
+// embedded mGB passes: it carries a cart's logo (docs/modular-graph-phase-f2-design.md section 3). This check looks for
+// the Game Boy's signature alone, so a ROM carrying two consoles' magic is accepted by whichever node the document names
+// (the TS side picks the node).
 inline bool isGameBoyRom(std::span<const std::uint8_t> bytes) {
     if (bytes.size() < kGameBoyLogoOffset + sizeof kGameBoyLogo) return false;
     for (std::size_t i = 0; i < sizeof kGameBoyLogo; ++i)

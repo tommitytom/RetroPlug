@@ -280,6 +280,9 @@ importers:
       '@retroplug/dsp':
         specifier: workspace:*
         version: link:../dsp
+      '@retroplug/host-io':
+        specifier: workspace:*
+        version: link:../host-io
       '@retroplug/launchpad':
         specifier: workspace:*
         version: link:../launchpad

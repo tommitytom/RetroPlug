@@ -1,6 +1,6 @@
 // Native proofs for the BlipToaster ROM-asset override path (kits + fonts). Mirrors test-native/risa-rom.test.ts.
 //
-// (1) MesenBackend::build must load TS-supplied effective ROM bytes (spec.romBytes) instead of slurping
+// (1) The NES core's build must load TS-supplied effective ROM bytes (spec.romBytes) instead of slurping
 //     romPath — proven by constructing with a nonexistent romPath but valid romBytes (only the romBytes path
 //     can boot it). This support already shipped for risa; here it's exercised for a BlipToaster ROM.
 // (2) End-to-end: patch a kit + a font into the base ROM in memory via BlipToasterRom, construct from those

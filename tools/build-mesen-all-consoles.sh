@@ -17,6 +17,11 @@
 # member references may be one another member does not define (the C library's and libstdc++'s symbols resolve at the
 # link, which this run does not do). A missed guard fails here even though it links in Release.
 #
+# That scan has two limits, both deliberate. It reports only an undefined name containing `::` (a C++ symbol in a class
+# or namespace), so a dropped console reached through a global or C-linkage function is not caught by it; and its
+# `nm` / `c++filt` parsing assumes GNU binutils and ELF, which is why the job count has a `sysctl` fallback but the scan
+# does not. The four console symbol counts above and the configure itself are format-neutral.
+#
 # Both modes exit non-zero on any failure, and print what they checked.
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"

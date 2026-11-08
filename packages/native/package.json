@@ -12,7 +12,6 @@
     "@retroplug/system": "workspace:*"
   },
   "devDependencies": {
-    "@retroplug/core": "workspace:*",
     "@retroplug/mgb": "workspace:*",
     "@retroplug/testing": "workspace:*"
   },

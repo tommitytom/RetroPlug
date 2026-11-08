@@ -152,7 +152,7 @@ target_compile_definitions(mesen PUBLIC
 # on the Cortex-A53 handheld (nes-bench: xRT 0.83 -> 0.92 over plain -O3). The single biggest safe lever
 # for NES perf there — JS is ~0.5% of the block, the emulator core dominates. Free at runtime.
 #
-# Not free at BUILD time, though: it makes every mesen object LTO bitcode, so each of the thirteen binaries
+# Not free at BUILD time, though: it makes every mesen object LTO bitcode, so each of the fourteen binaries
 # that link this lib re-runs codegen over its objects (288 with the consoles RetroPlug does not run compiled
 # out, 426 with MESEN_ENABLE_SNES/-PCE/-WS all on). That's why it's opt-in (RETROPLUG_MESEN_LTO, declared in
 # the root CMakeLists) rather than always-on - release.yml turns it on so shipped binaries get the speedup,
@@ -164,7 +164,7 @@ if(RETROPLUG_MESEN_LTO)
     )
     # Under LTO the codegen happens at LINK time, in a process that takes its warning flags from the LINK
     # command line - so the -w further down, which is a per-TU compile option, does not reach it. Two of
-    # Mesen's warnings come back at every one of the thirteen links, and one of them (-Wodr on
+    # Mesen's warnings come back at every one of the fourteen links, and one of them (-Wodr on
     # Utilities/NTSC/nes_ntsc_impl.h) is a whole-program check that exists ONLY at link time and has no
     # compile-time form at all. That pair is what "mesen scrolls past on every build" has always been.
     #
