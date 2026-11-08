@@ -475,6 +475,11 @@ normal DAW behaviour).
 
 Each reaper fixture is regenerated with its `pnpm reaper:*-author` script when the
 matching `test-native/author-lsdj-rplg.ts` or `tools/reaper-*-author.lua` changes.
+The LSDj author script's default ROM is `$RETROPLUG_RESOURCES_DIR/roms/lsdj/...` when
+that variable is set and `<repo>/../resources/roms/lsdj/...` otherwise (the same
+override every other fixture consumer reads), so `RETROPLUG_RESOURCES_DIR=/path/to/resources
+pnpm reaper:all` authors its three fixtures from that tree; the risa author script reads
+the variable the same way for its ROM.
 
 - **DAW-timing** — the same three checks against the RetroPlug **VST3**:
   `pnpm reaper:lsdj-{midi-metro,arduinoboy-metro,midi-drift}`. They reuse

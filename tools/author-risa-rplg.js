@@ -4,7 +4,8 @@
 // and tools/author-lsdj-rplg.js.
 //
 //   node tools/author-risa-rplg.js [ROM] [OUT.rplg.zip]
-//     ROM   default ../resources/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes
+//     ROM   default under $RETROPLUG_RESOURCES_DIR/roms/risa/ when that is set,
+//           <repo>/../resources/roms/risa/ otherwise
 //     OUT   default build/risa.rplg.zip
 //
 // The ROM lives in the sibling resources tree (like the LSDj ones), so this exits 0 with a notice when
@@ -18,7 +19,14 @@ const REPO = resolve(__dirname, "..");
 const PKG = resolve(REPO, "packages/retroplug");
 const HOST = process.env.RETROPLUG_HOST || resolve(REPO, "build/bin/retroplug-host");
 
-const ROM = resolve(REPO, process.argv[2] || "../resources/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes");
+// The sibling resources tree, or the one RETROPLUG_RESOURCES_DIR names (as the native test runner reads it); an
+// explicit ROM argument is still resolved against the repo.
+const RESOURCES = process.env.RETROPLUG_RESOURCES_DIR
+  ? resolve(process.env.RETROPLUG_RESOURCES_DIR)
+  : resolve(REPO, "..", "resources");
+const ROM = process.argv[2]
+  ? resolve(REPO, process.argv[2])
+  : resolve(RESOURCES, "roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes");
 const OUT = resolve(process.argv[3] || resolve(REPO, "build/risa.rplg.zip"));
 
 if (!existsSync(ROM)) {

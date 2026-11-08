@@ -4,7 +4,9 @@
 //
 //   node tools/author-lsdj-rplg.js <scenario> [ROM] [OUT.rplg.zip]
 //     scenario  midi-metro | arduinoboy-metro | midi-drift
-//     ROM       default per scenario (../resources/roms/lsdj/…)
+//     ROM       default per scenario, under $RETROPLUG_RESOURCES_DIR/roms/lsdj/ when that is set and
+//               <repo>/../resources/roms/lsdj/ otherwise (the same variable the native test runner
+//               reads, so a worktree nested inside the main checkout finds the tree it was given)
 //     OUT       default build/lsdj_<scenario>.rplg.zip
 const { buildSync } = require("esbuild");
 const { execFileSync } = require("child_process");
@@ -17,16 +19,24 @@ const HOST = process.env.RETROPLUG_HOST || resolve(REPO, "build/bin/retroplug-ho
 
 const scenario = process.argv[2];
 const DEFAULT_ROM = {
-  "midi-metro": "../resources/roms/lsdj/lsdj9_4_2.gb",
-  "midi-drift": "../resources/roms/lsdj/lsdj9_4_2.gb",
-  "arduinoboy-metro": "../resources/roms/lsdj/lsdj9_3_3-arduinoboy.gb",
+  "midi-metro": "lsdj9_4_2.gb",
+  "midi-drift": "lsdj9_4_2.gb",
+  "arduinoboy-metro": "lsdj9_3_3-arduinoboy.gb",
 };
 if (!DEFAULT_ROM[scenario]) {
   console.error(`usage: node tools/author-lsdj-rplg.js <midi-metro|arduinoboy-metro|midi-drift> [ROM] [OUT.rplg]`);
   process.exit(2);
 }
 
-const ROM = resolve(REPO, process.argv[3] || DEFAULT_ROM[scenario]);
+// The sibling resources tree, or the one RETROPLUG_RESOURCES_DIR names: every other fixture consumer reads that
+// variable, and a worktree nested inside the main checkout has no ../resources of its own. An explicit ROM argument is
+// still resolved against the repo, as it always was.
+const RESOURCES = process.env.RETROPLUG_RESOURCES_DIR
+  ? resolve(process.env.RETROPLUG_RESOURCES_DIR)
+  : resolve(REPO, "..", "resources");
+const ROM = process.argv[3]
+  ? resolve(REPO, process.argv[3])
+  : resolve(RESOURCES, "roms/lsdj", DEFAULT_ROM[scenario]);
 const OUT = resolve(process.argv[4] || resolve(REPO, `build/lsdj_${scenario}.rplg.zip`));
 
 mkdirSync(dirname(OUT), { recursive: true });
