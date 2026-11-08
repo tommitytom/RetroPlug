@@ -630,13 +630,19 @@ console.log("  ok: no library calls outside MicroQuickJS's stdlib, in the pack o
 
 // ---- a scenario ---------------------------------------------------------------------------------------------------
 
-/** The package's portable core: every module under its ts/ but its tests and its control-plane half (the manifest's
- *  `app` module, the one that carries zod and runs under the desktop alone). A scenario is how a package proves that
- *  core on the engine, and the scenario's own bundle keeps only what it reaches, so the scan has to see the rest. */
-function coreModules() {
+/** The package's control-plane module: the one its manifest names as `app` (zod and the stores, the desktop's alone),
+ *  or null. It is the one module of the package the whole-core scan must skip, and the one a core module may not import. */
+function appModulePath() {
   const found = nearestManifest(PACK_DIR);
-  const appModule = found && typeof found.json.retroplug?.app === "string"
+  return found && typeof found.json.retroplug?.app === "string"
     ? resolve(found.dir, found.json.retroplug.app) : null;
+}
+
+/** The package's portable core: every module under its ts/ but its tests and its control-plane half (appModulePath). A
+ *  scenario is how a package proves that core on the engine, and the scenario's own bundle keeps only what it reaches, so
+ *  the scan has to see the rest. */
+function coreModules() {
+  const appModule = appModulePath();
   const out = [];
   const walk = (dir) => {
     let entries;
@@ -683,14 +689,52 @@ if (SCENARIO) {
   // core, so this refuses rather than passing on nothing.
   const core = coreModules();
   if (core.length === 0) fail(`no core to scan: no module under ${repoPath(PACK_DIR)}/ts`);
-  const coreBuilt = await esbuild.build({
-    ...bundleOptions,
-    stdin: { contents: core.map((at) => `export * from ${JSON.stringify("./" + repoPath(at))};`).join("\n"),
-             resolveDir: REPO, loader: "ts" },
-    format: "esm",
-    metafile: false,
-    treeShaking: false,
-  });
+  const appModule = appModulePath();
+  // Every module of the core, every export kept, resolved by the same toolchain as a pack: the metafile is what names
+  // the module that imported what (the allowlist's and the app module's checks below both need it).
+  let coreBuilt;
+  try {
+    coreBuilt = await esbuild.build({
+      ...bundleOptions,
+      stdin: { contents: core.map((at) => `export * from ${JSON.stringify("./" + repoPath(at))};`).join("\n"),
+               resolveDir: REPO, loader: "ts" },
+      format: "esm",
+      metafile: true,
+      treeShaking: false,
+    });
+  } catch (e) {
+    fail(`bundling the package's core failed:\n${e.message}`);
+  }
+  const coreInputs = Object.entries(coreBuilt.metafile.inputs);
+  // The control plane's half is the app module's, and it is the module the scan below skips deliberately. A core module
+  // reaching it is refused HERE, by name: it would drag zod into a node's bundle too, and left to the scan the report
+  // would be whichever library call zod's internals happen to make, naming neither module.
+  const appImporters = appModule === null ? [] : coreInputs
+    .filter(([, mod]) => mod.imports.some((imp) => resolve(REPO, imp.path) === appModule))
+    .map(([from]) => `${repoPath(resolve(REPO, from))} imports the package's app module ${repoPath(appModule)}`);
+  if (appImporters.length > 0) {
+    fail(`a core module imports the control plane's half:\n  ${appImporters.join("\n  ")}`);
+  }
+  // The core bundle is EVERY module of the package's `ts/`, so it gets the scenario bundle's allowlist too: a module the
+  // scenario never reaches must not import another package either. check:boundaries covers the real packages; a fixture
+  // pack is nobody's, and an unreached module is exactly what the scenario's own bundle cannot see.
+  const coreOffenders = [];
+  for (const [input] of coreInputs) {
+    if (input === "<stdin>") continue; // this toolchain's own entry, which names the modules and nothing else
+    const abs = resolve(REPO, input);
+    if (allowed(abs)) continue;
+    const by = coreInputs
+      .filter(([, other]) => other.imports.some((imp) => resolve(REPO, imp.path) === abs))
+      .map(([from]) => repoPath(resolve(REPO, from)));
+    coreOffenders.push(`${repoPath(abs)}${by.length ? ` (imported by ${by.join(", ")})` : ""}`);
+  }
+  if (coreOffenders.length > 0) {
+    fail(`the package's core imports modules outside its allowlist (its own directory, ${repoPath(PACK_DIR)}, its ` +
+         `package.json's declared @retroplug dependencies, and the portable node SDK in scripts/build-device-pack.mjs):` +
+         `\n  ${coreOffenders.join("\n  ")}`);
+  }
+  console.log(`  ok: the core's ${coreInputs.length} module(s) import only its own directory, its declared dependencies ` +
+              `and the SDK`);
   const coreEs5 = lowerToEs5(coreBuilt.outputFiles[0].text.replace(/^export \{[\s\S]*?\};?\s*$/m, ""), false).code;
   const coreHits = scan(coreEs5, null, `${repoPath(PACK_DIR)}/ts`);
   if (coreHits.length > 0) {

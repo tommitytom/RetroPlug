@@ -1,5 +1,7 @@
-// The control-plane half, which the whole-core scan skips: this one is careful, so what the scan refuses is the module
-// beside it (ts/helper.ts), not the app.
+// The control-plane half, which the whole-core scan skips: this one is careful, and the module it IMPORTS is not skipped,
+// so what the scan refuses is the helper (ts/helper.ts), not the app.
+import { launches } from "./helper";
+
 export function half(value: number): number {
-  return value / 2;
+  return launches(value) ? value / 8 : value / 2;
 }

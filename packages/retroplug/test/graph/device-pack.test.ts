@@ -250,6 +250,28 @@ test("the whole-core scan skips the package's app module, and only it", async ()
     "packages/retroplug/test/graph/device-pack/scenario/app-module-sibling/ts: return Number.isInteger(row);");
 });
 
+test("a core module that imports the package's app module is refused by name", async () => {
+  // The app module is the control plane's (zod's), which the whole-core scan skips by design. A core that reaches it
+  // would put it in a node's bundle too, so the toolchain refuses the import itself: the run would otherwise be refused
+  // by whatever zod's internals call, naming neither module.
+  const run = await scenarioOf(`${FIXTURES}/scenario/app-module-imported/scenario.ts`, "scenario-app-module-imported",
+    65536, `${FIXTURES}/scenario/app-module-imported`);
+  expect(run.ok).toBe(false);
+  contains(run.err, "packages/retroplug/test/graph/device-pack/scenario/app-module-imported/ts/core.ts imports the " +
+    "package's app module packages/retroplug/test/graph/device-pack/scenario/app-module-imported/ts/app.ts");
+});
+
+test("a core module that imports outside the allowlist is refused, even one no scenario reaches", async () => {
+  // The scenario's own allowlist sees only what the scenario imports; the core bundle is every module of the package's
+  // `ts/`, so it needs the same rule or a module nothing runs could import another package and pass.
+  const run = await scenarioOf(`${FIXTURES}/scenario/core-outside-import/scenario.ts`, "scenario-core-outside-import",
+    65536, `${FIXTURES}/scenario/core-outside-import`);
+  expect(run.ok).toBe(false);
+  contains(run.err, "the package's core imports modules outside its allowlist");
+  contains(run.err, "packages/core/ts/canonicalJson.ts (imported by " +
+    "packages/retroplug/test/graph/device-pack/scenario/core-outside-import/ts/other.ts)");
+});
+
 test("a scenario's allowlist, silence, throw and disagreement are each refused, and it takes no node entry", async () => {
   // A package the scenario's own manifest does not declare: named with the module that imported it.
   const undeclared = await scenarioOf(`${FIXTURES}/scenario/undeclared/scenario.ts`, "scenario-undeclared", 65536);
