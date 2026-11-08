@@ -19,6 +19,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -35,6 +36,7 @@
 #include "launchpad/desktop/ControllerLink.hpp"
 #include "launchpad/desktop/LaunchpadProvider.hpp"
 #include "launchpad/desktop/LaunchpadRpc.hpp"
+#include "launchpad/desktop/MidiPortFilter.hpp"
 #include "launchpad/desktop/MidiPortPool.hpp"
 #include "launchpad/desktop/PortClaim.hpp"
 
@@ -83,6 +85,33 @@ rfl::Bytestring bytes(const Bytes& v) {
 
 /** Push `bytes` from the audio thread's side. */
 void push(ControllerLink& link, const Bytes& bytes) { link.pushOutput(bytes.data(), bytes.size()); }
+
+/** RP_MIDI_PORT_ALLOW (MidiPortFilter.hpp) for one case, put back exactly as it was when it goes. */
+struct PortAllowList {
+    explicit PortAllowList(const char* spec) {
+        const char* was = std::getenv("RP_MIDI_PORT_ALLOW");
+        had_            = was != nullptr;
+        if (had_) was_ = was;
+#if defined(_WIN32)
+        _putenv_s("RP_MIDI_PORT_ALLOW", spec);
+#else
+        setenv("RP_MIDI_PORT_ALLOW", spec, 1);
+#endif
+    }
+    ~PortAllowList() {
+#if defined(_WIN32)
+        _putenv_s("RP_MIDI_PORT_ALLOW", had_ ? was_.c_str() : "");
+#else
+        if (had_) setenv("RP_MIDI_PORT_ALLOW", was_.c_str(), 1);
+        else unsetenv("RP_MIDI_PORT_ALLOW");
+#endif
+    }
+    PortAllowList(const PortAllowList&)            = delete;
+    PortAllowList& operator=(const PortAllowList&) = delete;
+
+    bool        had_ = false;
+    std::string was_;
+};
 
 /** A scratch config dir, removed when it goes: the provider puts its cross-process claims under
  *  <configDir>/locks, and a claim is a file lock, so a facet that claims must be given a REAL directory. The member is
@@ -444,13 +473,17 @@ TEST_CASE("a swap mid-drain leaves the audio thread a whole stream and no stale 
         int           lastTag = -1;
         int           iter    = 0;
         while (!stop.load(std::memory_order_acquire)) {
-            const std::size_t n = link.drainInput(slots, std::size(slots));
+            // The claim live when this drain STARTED: every slot it is handed must belong to that one or a later claim
+            // (a claim made while the drain runs), never to an EARLIER one. That is the stale-slot rule, and it is what
+            // a drain filtered by nothing at all breaks.
+            const std::uint32_t live = link.generation();
+            const std::size_t   n    = link.drainInput(slots, std::size(slots));
             for (std::size_t i = 0; i < n; ++i) {
                 // Every scripted message is {claim, 0x55}: a torn slot would show any other second byte, or a size
                 // that is not two.
                 if (slots[i].size != 2 || slots[i].data[1] != 0x55) torn.store(true, std::memory_order_release);
-                // An earlier claim's message never follows a later one's: stale slots are skipped where they sit.
                 const int tag = slots[i].data[0];
+                if (tag + 1 < static_cast<int>(live)) outOfOrder.fetch_add(1, std::memory_order_relaxed);
                 if (tag < lastTag) outOfOrder.fetch_add(1, std::memory_order_relaxed);
                 lastTag = tag;
                 received.fetch_add(1, std::memory_order_relaxed);
@@ -476,9 +509,12 @@ TEST_CASE("a swap mid-drain leaves the audio thread a whole stream and no stale 
     audio.join();
     CHECK_FALSE(torn.load());
     CHECK(outOfOrder.load() == 0);
-    // Nothing delivered under a claim that was already released was lost to the ring's bound here (4 messages into 256
-    // slots), so every one of them was drained: the bound itself is held by the drop cases.
-    CHECK(received.load() == static_cast<std::uint64_t>(kClaims) * 4);
+    // Not exactly 4 per claim: a slot still in the ring when its claim ends is dropped by design (the claim it arrived
+    // under is gone), so a descheduled audio thread legitimately skips some. That nothing at all arrived would still be
+    // a failure, and the deterministic case below holds the stale-slot rule exactly. The ring's bound itself is held by
+    // the drop cases.
+    CHECK(received.load() > 0);
+    CHECK(received.load() <= static_cast<std::uint64_t>(kClaims) * 4);
     CHECK(link.generation() == 0);
 
     // Output: a message queued for claim N is on claim N's port or nowhere. Every port the link wrote to is one claim's.
@@ -496,6 +532,70 @@ TEST_CASE("a swap mid-drain leaves the audio thread a whole stream and no stale 
                    m[1] == static_cast<std::uint8_t>(claim + 1)));
         }
     }
+}
+
+
+TEST_CASE("send() on the UI thread never waits for the write in flight, nor for the queue behind it",
+          "[launchpad][link][wake]") {
+    // The Windows symptom this shape exists for: a 538-byte bulk SysEx blocks WinMM for ~170 ms, and the UI's own
+    // message (the bytes that let a device go) must not queue behind a whole frame of LED traffic. So send() hands the
+    // message to the writer and returns; only the writer touches the port.
+    Rig             rig;
+    rig.sendDelayMs = 120;  // a bulk write as WinMM takes it, shorter so the case is quick
+    ControllerLink  link(openerFor(rig), true);  // the provider's shape: its own thread
+    REQUIRE(link.connect("LP in", "LP out", {}));
+    const Bytes bulk(538, 0x7F);
+    push(link, bulk);
+    // Wait until the writer is INSIDE the port: from here a send() that wrote the port itself, or flushed the queue
+    // first, would block for the rest of the 120 ms.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (rig.sendsStarted.load() < 1 && std::chrono::steady_clock::now() < deadline) link.pump();
+    REQUIRE(rig.sendsStarted.load() >= 1);
+    const Bytes farewell{0xF0, 0x00, 0xF7};
+    const auto  began = std::chrono::steady_clock::now();
+    REQUIRE(link.send(farewell.data(), farewell.size()));
+    const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began);
+    CHECK(waited.count() < 40);  // queued in a mutex's time, not a write's
+    // ...and the writer still writes it, AFTER what the session queued: the ordering send() promises.
+    while (link.messagesSent() < 2 && std::chrono::steady_clock::now() < deadline) link.pump();
+    REQUIRE(link.messagesSent() == 2);
+    link.disconnect();
+    CHECK(rig.written["LP out"] == std::vector<Bytes>{bulk, farewell});
+}
+
+TEST_CASE("a stale claim's slots never reach the next claim's drain, deterministically", "[launchpad][link][swap]") {
+    // The racing case above cannot fail without the stale-slot filter: its tags only ever ascend, because the audio
+    // thread drains as fast as the device talks. This one makes the stale slots UNAVOIDABLE - the consumer is held off
+    // while four claims come and go, so when it finally drains, three claims are already over - and then requires every
+    // slot it is handed to belong to the claim that was live when it read the generation. Without the filter the drain
+    // hands back all sixteen (the earlier twelve included) under the fourth claim's number, and both checks are red.
+    Rig            rig;
+    ControllerLink link(openerFor(rig), false);  // no writer thread: nothing but this case touches the link
+    std::atomic<bool> drain{false};
+    std::atomic<int>  drained{0};
+    std::atomic<int>  stale{0};
+    std::thread       audio([&] {
+        DeviceMessage slots[32];
+        while (!drain.load(std::memory_order_acquire)) std::this_thread::yield();
+        const std::uint32_t live = link.generation();  // the claim live NOW: only its slots may come back
+        const std::size_t   n    = link.drainInput(slots, std::size(slots));
+        for (std::size_t i = 0; i < n; ++i) {
+            drained.fetch_add(1, std::memory_order_relaxed);
+            // Every scripted message is {claim, 0x55}, and the claim's number is its generation - 1.
+            if (slots[i].size != 2 || static_cast<std::uint32_t>(slots[i].data[0]) + 1 != live)
+                stale.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+    for (int claim = 0; claim < 4; ++claim) {
+        REQUIRE(link.connect("LP in", "out " + std::to_string(claim), {}));
+        for (int i = 0; i < 4; ++i) rig.deliver("LP in", {static_cast<std::uint8_t>(claim), 0x55});
+        if (claim < 3) link.disconnect();  // the last claim stays: the drain must have a live one to answer under
+    }
+    drain.store(true, std::memory_order_release);
+    audio.join();
+    CHECK(stale.load() == 0);
+    CHECK(drained.load() == 4);  // exactly the last claim's: the earlier twelve are dropped where they sit
+    CHECK(link.generation() == 4);
 }
 
 // ---- MidiPortPool: the loose ports a scan opens ----------------------------------------------------------------
@@ -622,7 +722,45 @@ TEST_CASE("MidiPortPool gives the inputs back on closeAll - a scan that died hal
     CHECK(rig.listening.empty());
 }
 
+// ---- the test-only port filter --------------------------------------------------------------------------------
+
+TEST_CASE("the port filter: a filtered lister hides what a filtered opener refuses", "[launchpad][filter]") {
+    // RP_MIDI_PORT_ALLOW (MidiPortFilter.hpp) is what keeps a check off this machine's real MIDI hardware:
+    // tools/run-sdl-controller.sh sets it to its two fakes' WHOLE port names ("RPFakeLPProMK3:LPProMK3 MIDI 128:0",
+    // "RPTestKeys:RPTestKeys 129:0"), so the standalone's scan can neither list nor open anything else - no real device's
+    // name contains those client names. It is a comma-separated list of SUBSTRINGS, because a backend's port name carries
+    // client and port numbers that move as other clients come and go; a whole name is simply the strictest substring.
+    CHECK(rp::launchpad::midiPortAllowedBy("LPProMK3 MIDI:1 24:0", "LPProMK3 MIDI,RPTestKeys"));
+    CHECK(rp::launchpad::midiPortAllowedBy("RPTestKeys:1 32:0", "LPProMK3 MIDI, RPTestKeys"));  // the space is trimmed
+    CHECK_FALSE(rp::launchpad::midiPortAllowedBy("Zoom L6:1 20:0", "LPProMK3 MIDI,RPTestKeys"));
+    CHECK(rp::launchpad::midiPortAllowedBy("anything", ""));       // unset: every port, as an ordinary run is
+    CHECK(rp::launchpad::midiPortAllowedBy("anything", " , \t"));  // a list of separators is not "no ports at all"
+
+    PortAllowList allow("LPProMK3 MIDI,RPTestKeys");
+    // The lister: what a scan's sweep and the port pickers are handed.
+    CHECK(rp::launchpad::allowedMidiPorts({"LPProMK3 MIDI:1 24:0", "Zoom L6:1 20:0", "RPTestKeys:1 32:0"}) ==
+          std::vector<std::string>{"LPProMK3 MIDI:1 24:0", "RPTestKeys:1 32:0"});
+    // The pool: a handle per name, 0 for the refused one, and the opener never sees it.
+    Rig          rig;
+    MidiPortPool pool(openerFor(rig));
+    const std::vector<int> handles = pool.openInputs({"Zoom L6:1 20:0"});
+    REQUIRE(handles.size() == 1);
+    CHECK(handles.front() == 0);
+    CHECK(pool.lastError() == "MIDI port not allowed: Zoom L6:1 20:0");
+    CHECK(rig.events.empty());
+    // The link's claim: refused before either port opens, and it says which.
+    ControllerLink link(openerFor(rig), false);
+    CHECK_FALSE(link.connect("RPTestKeys in", "Zoom L6 out", {}));
+    CHECK(link.lastError() == "MIDI port not allowed: Zoom L6 out");
+    CHECK(rig.events.empty());
+    // ...while the fakes themselves still open, so the filter is a list and not an off switch.
+    REQUIRE(link.connect("RPTestKeys in", "RPTestKeys out", {}));
+    CHECK(link.isConnected());
+    CHECK(rig.listening.count("RPTestKeys in") == 1);
+}
+
 // ---- the provider and its facet -------------------------------------------------------------------------------
+
 
 TEST_CASE("the provider installs the link as the pack's device, and takes it back on destroy", "[launchpad][provider]") {
     Rig   rig;
@@ -681,15 +819,15 @@ TEST_CASE("the facet keeps the pair out of the shared stream BEFORE it opens it,
     const LaunchpadStatusDto claimed = rpc.launchpadClaim("LP in", "LP out", bytes(kCloseBytes));
     CHECK(claimed.connected);
     CHECK(claimed.generation == 1);
-    // The claim first hands the shared stream back whatever it had (nothing here), then reserves the new pair, and only
-    // then opens it.
-    CHECK(facet.host.reserved == std::vector<std::string>{"|", "LP in|LP out"});
+    // The claim reserves the new pair (there is nothing to hand back first, and nothing empty in between), and only then
+    // opens it.
+    CHECK(facet.host.reserved == std::vector<std::string>{"LP in|LP out"});
     CHECK(rig.events.back() == "open in:LP in");  // opened after both, the last thing that happened
     CHECK(rig.listening.count("LP in") == 1);
 
     const LaunchpadStatusDto released = rpc.launchpadRelease();
     CHECK_FALSE(released.connected);
-    CHECK(facet.host.reserved == std::vector<std::string>{"|", "LP in|LP out", "|"});
+    CHECK(facet.host.reserved == std::vector<std::string>{"LP in|LP out", "|"});
     CHECK(rig.written["LP out"] == std::vector<Bytes>{kCloseBytes});
 }
 
@@ -727,9 +865,10 @@ TEST_CASE("the facet keeps ONE claim per port across processes, through the prod
     CHECK_FALSE(refused.connected);
     CHECK(refused.error == "in use by another RetroPlug");
     CHECK(rig.events.empty());  // nothing opened
-    CHECK(facet.host.reserved == std::vector<std::string>{"|", "LPProMK3 MIDI|LPProMK3 MIDI"});
-    // Given back, it claims, and the lock the refused claim would have held is this claim's alone.
+    CHECK(facet.host.reserved == std::vector<std::string>{"LPProMK3 MIDI|LPProMK3 MIDI"});
+    // A release hands the pair back, whatever the refused claim did.
     CHECK_FALSE(rpc.launchpadRelease().connected);
+    CHECK(facet.host.reserved.back() == "|");
 }
 
 TEST_CASE("the facet gives the reservation back when the claim fails", "[launchpad][provider][facet]") {
@@ -741,8 +880,8 @@ TEST_CASE("the facet gives the reservation back when the claim fails", "[launchp
     CHECK_FALSE(refused.connected);
     CHECK(refused.error == "MIDI port not found: Gone in");
     // Reserved for the attempt, then handed straight back: a failed claim must not keep the pair out of the shared
-    // stream with nothing holding it.
-    CHECK(facet.host.reserved == std::vector<std::string>{"|", "Gone in|LP out", "|"});
+    // stream with nothing holding it. One pair, one empty - the absence of a leading empty reservation.
+    CHECK(facet.host.reserved == std::vector<std::string>{"Gone in|LP out", "|"});
     CHECK(rig.listening.empty());
 }
 
@@ -758,9 +897,10 @@ TEST_CASE("the facet lets the OLD pair go before it reserves the new one", "[lau
     CHECK(swapped.generation == 2);
     CHECK(rig.listening.count("A in") == 0);
     CHECK(rig.written["A out"] == std::vector<Bytes>{kCloseBytes});
-    // The reservation the product saw, in order: A's given back, then B's.
-    CHECK(facet.host.reserved ==
-          std::vector<std::string>{"|", "A in|A out", "|", "B in|B out"});
+    // The reservation the product saw, in order: A's, then B's - and NO empty pair between them, which is what makes a
+    // swap ONE audio restart (a stream whose input is "All Devices" would otherwise reopen it twice, A's ports back in it
+    // for the span between).
+    CHECK(facet.host.reserved == std::vector<std::string>{"A in|A out", "B in|B out"});
     CHECK(rig.events.back() == "open in:B in");
 }
 
@@ -780,8 +920,9 @@ TEST_CASE("the facet refuses a pick whose ports are not here, and reserves nothi
     CHECK(noInput.error == "not connected: Unplugged in");
     const LaunchpadStatusDto noOutput = rpc.launchpadClaim("LP in", "Unplugged out", {});
     CHECK(noOutput.error == "not connected: Unplugged out");
-    // Each claim hands the old pair back (nothing was held) and its own refusal hands nothing back again: empty names.
-    CHECK(host.reserved == std::vector<std::string>{"|", "|", "|", "|"});
+    // Each refusal hands the reservation back and reserves nothing else: one empty pair per claim, never a pair the pick
+    // did not name.
+    CHECK(host.reserved == std::vector<std::string>{"|", "|"});
     CHECK(rig.events.empty());                                   // nothing reserved, nothing opened
 
     REQUIRE(rpc.launchpadClaim("LP in", "LP out", {}).connected);
@@ -797,7 +938,7 @@ TEST_CASE("the facet refuses to guess a port, and says why", "[launchpad][provid
     CHECK_FALSE(none.connected);
     CHECK(none.error == "no port chosen");
     CHECK(rig.events.empty());  // nothing was opened on a guess
-    CHECK(facet.host.reserved == std::vector<std::string>{"|", "|"});  // never a pair
+    CHECK(facet.host.reserved == std::vector<std::string>{"|"});  // never a pair
 }
 
 TEST_CASE("the facet refuses a port another process has claimed, and opens nothing", "[launchpad][provider][facet]") {
@@ -817,7 +958,7 @@ TEST_CASE("the facet refuses a port another process has claimed, and opens nothi
     CHECK(rig.events.empty());  // no port opened
     // ...but the pair IS kept out of this process's shared stream: otherwise it would hear every pad the other
     // RetroPlug takes, as raw notes - a row launch in this cart too - and mirror its own MIDI onto that grid.
-    CHECK(facet.host.reserved == std::vector<std::string>{"|", "Taken in|Taken out"});
+    CHECK(facet.host.reserved == std::vector<std::string>{"Taken in|Taken out"});
 
     // Both ports are claimed: two instances with different inputs must not share one output either.
     const LaunchpadStatusDto claimed = rpc.launchpadClaim("LP in", "LP out", {});
@@ -857,6 +998,11 @@ TEST_CASE("the facet's pool half writes, reads and closes by handle", "[launchpa
     CHECK(read.dropped == 0);
     CHECK(rpc.launchpadPortClose(in));
     CHECK(rig.listening.empty());
+    // The twelfth method: the pool's own words for the last opening it refused, which the scan's row shows rather than
+    // inventing one. A port that will not open is what a scan meets on a machine with a cable pulled out.
+    rig.refuse.insert("Unplugged out");
+    CHECK(rpc.launchpadOpenOutput("Unplugged out") == 0);
+    CHECK(rpc.launchpadPortError() == "MIDI port not found: Unplugged out");
 }
 
 TEST_CASE("the facet mounts every one of its methods on the product's server", "[launchpad][provider][facet]") {
@@ -886,10 +1032,17 @@ TEST_CASE("the facet says what the pair is doing, and sends a message that is no
     CHECK(status.output == "LP out");
     CHECK(status.error.empty());
     CHECK(status.sent == 0);
-    // Letting the device go while the pair stays claimed: the bytes go out, the claim stays.
+    // Letting the device go while the pair stays claimed: the bytes go out (through the writer thread), the claim stays.
+    // The call QUEUES: the UI never waits for the port, so the write is awaited on the link's own count and a frame's
+    // wake.
     CHECK(rpc.launchpadSend(bytes({0xF0, 0x00, 0xF7})));
-    CHECK(rig.written["LP out"] == std::vector<Bytes>{{0xF0, 0x00, 0xF7}});
-    CHECK(rpc.launchpadStatus().connected);
+    const rp_provider* provider = rp_launchpad_provider();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (rpc.launchpadStatus().sent == 0 && std::chrono::steady_clock::now() < deadline) provider->wake(facet.self);
+    REQUIRE(rpc.launchpadStatus().sent == 1);
+    rpc.launchpadRelease();  // joins the writer, so the fake's record is read with no thread writing it
+    CHECK(rig.written["LP out"] == std::vector<Bytes>{{0xF0, 0x00, 0xF7}, kCloseBytes});
+    CHECK_FALSE(rpc.launchpadStatus().connected);
 }
 
 TEST_CASE("claimPort: one holder per port across the whole machine, released with the token", "[launchpad][claim]") {

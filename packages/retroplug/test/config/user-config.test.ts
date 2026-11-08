@@ -193,3 +193,66 @@ test("no-op guard: setting the current value doesn't write or notify", () => {
   expect(changed()).toBe(0);
   expect(be.log.filter((m) => m === "writeFileAtomic").length).toBe(writesBefore); // no extra writes
 });
+
+// --- the control surface (config.json's controlSurface) ---
+
+test("controlSurface: additive, tolerant, and the pair a fresh install carries", () => {
+  // Additive, so no migration step: a config.json from before the field parses with the defaults filled.
+  expect(parseUserConfig("{}")!.controlSurface).toEqual({ input: "", output: "", enabled: false, device: "" });
+  // Tolerant one level up like `render`: a malformed block becomes {} and takes the fields' own defaults, rather than
+  // failing the whole file (which would reset the user's zoom, bindings and render picks too).
+  expect(parseUserConfig(JSON.stringify({ controlSurface: null }))!.controlSurface.enabled).toBe(false);
+  expect(parseUserConfig(JSON.stringify({ controlSurface: [1, 2] }))!.controlSurface.input).toBe("");
+  const held = parseUserConfig(JSON.stringify({
+    controlSurface: { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: "yes", device: 5 },
+  }))!.controlSurface;
+  expect(held).toEqual({ input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: false, device: "" });
+  // Persisted: commit() diffs two serializations, so a field the writer forgets can never be toggled.
+  const text = serializeUserConfig({ ...DEFAULT_USER_CONFIG, controlSurface: { input: "a", output: "b", enabled: true, device: "d" } });
+  expect(parseUserConfig(text)!.controlSurface).toEqual({ input: "a", output: "b", enabled: true, device: "d" });
+});
+
+test("setControlSurface: patches, persists, round-trips, and a repeat is a no-op", () => {
+  const { be, store, changed } = newStore();
+  store.load();
+  expect(store.setControlSurface({ input: "LP in", output: "LP out", device: "Launchpad Pro [MK3]" })).toBeTruthy();
+  expect(store.setControlSurface({ enabled: true })).toBeTruthy(); // a patch of one field keeps the rest
+  expect(store.controlSurface()).toEqual({ input: "LP in", output: "LP out", enabled: true, device: "Launchpad Pro [MK3]" });
+  expect(parseUserConfig(be.readText(CONFIG)!)!.controlSurface.input).toBe("LP in");
+  expect(changed()).toBe(2);
+  expect(store.setControlSurface({ input: "LP in" })).toBeFalsy();
+  expect(changed()).toBe(2);
+});
+
+test("two writers sharing config.json: a change here keeps what the other wrote since this one loaded", () => {
+  // The standalone reads config.json once at launch and does not watch it; the DAW plugin writes it too. A setter
+  // computed from the stale in-memory copy wrote that whole copy back, reverting the other process's changes.
+  const be = new MockBackend("/config");
+  const standalone = new UserConfigStore(be);
+  standalone.load();
+  const plugin = new UserConfigStore(be);
+  plugin.load();
+  expect(plugin.setDefaultZoom(5)).toBeTruthy();
+  expect(plugin.setActiveKeyboardBindings("wasd")).toBeTruthy();
+  // The standalone, still holding its launch-time copy, records a control-surface pick.
+  expect(standalone.setControlSurface({ input: "LP in", output: "LP out", enabled: true })).toBeTruthy();
+  const onDisk = parseUserConfig(be.readText(CONFIG)!)!;
+  expect(onDisk.defaultZoom).toBe(5);
+  expect(onDisk.activeKeyboardBindings).toBe("wasd");
+  expect(onDisk.controlSurface.input).toBe("LP in");
+  // ...and the other way round: the plugin's next write keeps the standalone's pick.
+  expect(plugin.setDefaultZoom(4)).toBeTruthy();
+  expect(parseUserConfig(be.readText(CONFIG)!)!.controlSurface.input).toBe("LP in");
+});
+
+test("a write that fails is not reported as saved, and is not adopted", () => {
+  const be = new MockBackend("/config");
+  const store = new UserConfigStore(be);
+  store.load();
+  const realWrite = be.writeFileAtomic.bind(be);
+  be.writeFileAtomic = () => false; // e.g. Windows: another process holds config.json open
+  expect(store.setControlSurface({ input: "LP in" })).toBeFalsy();
+  expect(store.controlSurface().input).toBe(""); // not shown as saved for the session, then lost at launch
+  be.writeFileAtomic = realWrite;
+  expect(store.setControlSurface({ input: "LP in" })).toBeTruthy();
+});

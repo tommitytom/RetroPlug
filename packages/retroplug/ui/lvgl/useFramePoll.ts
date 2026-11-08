@@ -37,8 +37,8 @@ export function useFrameDivider(frames: number, fn: () => void): void {
  * is simply skipped.
  *
  * `onSettled` fires on the finishing EDGE, once per job, and exists for the Launchpad scan: polling sees
- * "done" over and over, and re-applying each time would keep rewriting launchpad.cfg and stomp a port the
- * user picked by hand afterwards. `busy` is what re-arms it, so a second run is applied again.
+ * "done" over and over, and re-applying each time would keep rewriting config.json's controlSurface and stomp a
+ * port the user picked by hand afterwards. `busy` is what re-arms it, so a second run is applied again.
  */
 export function useVersionedPoll<T extends { version: number; busy?: boolean; done?: boolean }>(
   frames: number,

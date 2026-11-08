@@ -1,31 +1,35 @@
-// The Launchpad submenu and the native seam under it (launchpadDevices.ts).
+// The Launchpad submenu, Settings > MIDI's scan, and the facet under both (launchpadDevices.ts).
 //
-// The gating is the interesting part. Like the N8 Pro submenu beside it, this one appears only when the
-// hardware is actually there - but a Launchpad cannot be detected the way an N8 is. An N8 is a USB cart with
-// a VID:PID and no other way to attach it; a Launchpad also speaks TRS/DIN, arriving through an ordinary MIDI
-// interface on a port named after the INTERFACE, and nothing in that name says "Launchpad". Nor is there
-// anything to listen for: DIN has no enumeration and no idle heartbeat. So presence means one of three
-// things, all pinned below - a port named like the device's own USB interface, a live link, or a recorded
-// pick whose BOTH ports are still enumerated. That last one is what a Settings > MIDI scan writes, and the
-// reason the scan lives in Settings: it is reachable when this submenu is not.
+// The gating is the interesting part. Like the N8 Pro submenu beside it, this one appears only when the hardware is
+// actually there - but a Launchpad cannot be detected the way an N8 is. An N8 is a USB cart with a VID:PID and no other
+// way to attach it; a Launchpad also speaks TRS/DIN, arriving through an ordinary MIDI interface on a port named after
+// the INTERFACE, and nothing in that name says "Launchpad". Nor is there anything to listen for: DIN has no enumeration
+// and no idle heartbeat. So presence means one of three things, all pinned below - a port named like the device's own USB
+// interface, a live link, or a recorded pick whose BOTH ports are still enumerated. That last one is what a Settings >
+// MIDI scan writes, and the reason the scan lives in Settings: it is reachable when this submenu is not.
 //
-// The scan itself is a Universal Device Inquiry. Native writes opaque bytes and reports opaque answers; the
-// bytes and their meaning are TS's, so the cases here assert exactly that - the probe we hand down IS
-// deviceInquiry(), and only a Novation answer is acted on.
-//
-// The other thing pinned here is the FAREWELL. Programmer mode locks the device's own Settings menu, so native
-// must be holding the release bytes before it can ever be handed a device. We stub the __rp_* globals (no MIDI
-// system in the pure-TS host) and assert on what the UI hands down.
+// Native is the pack's FACET (packages/launchpad: rp_launchpad_provider and LaunchpadRpc): it lists ports, claims a pair,
+// opens loose ports, and replays the bytes it was handed when it lets a device go. The selection lives in config.json and
+// the scan is a TS state machine, so the fake here is the pack's CLIENT (createLaunchpadClient's interface) - the cases
+// assert on what TS decided to do through it: which pair it claimed, with which close bytes, what it wrote while
+// scanning, and what it persisted.
 import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { PRO_MK3, deviceInquiry, exitToLiveMode } from "@retroplug/launchpad";
+import { PRO_MK3, deviceInquiry, exitToLiveMode, modelQuery } from "@retroplug/launchpad";
 import {
-  applyLaunchpadScan, connectLaunchpad, getLaunchpadConfig, getLaunchpadScan,
+  type LaunchpadClient, type LaunchpadPorts, type LaunchpadRead, type LaunchpadStatus,
+} from "@retroplug/launchpad/client";
+import {
+  RELEASE_DELAY_POLLS, SCAN_WINDOW_MS, applyLaunchpadScan, connectLaunchpad, forgetLaunchpad, getLaunchpadConfig,
+  looksLikeLaunchpad, pollControllerRole, pollLaunchpadScan, resetLaunchpadScanForTest, restoreLaunchpad,
+  setLaunchpadClient, setLaunchpadPorts, setLaunchpadScanClock,
 } from "../../ui/screens/menu/launchpadDevices";
-import { nesRom } from "../systems/fixtures";
+import type { ControlSurfaceSettings } from "../../src/userConfig";
+import * as R from "@retroplug/lsdj/codec/regions";
+import { gbRom, nesRom } from "../systems/fixtures";
 
 function ctxOf(stores: AppStores): MenuContext {
   return {
@@ -51,94 +55,215 @@ function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
 }
 const findItem = (items: MenuItem[], id: string): MenuItem | undefined => items.find((i) => i.id === id);
 
-interface CfgStub {
-  inputs: string[];
-  outputs: string[];
-  selectedInput: string;
-  selectedOutput: string;
-  deviceLabel: string;
-  connected: boolean;
-  enabled: boolean;
-  sent: number;
-  dropped: number;
-  detached: number;
-  error: string;
-}
-
-interface ScanStub {
-  busy: boolean;
-  done: boolean;
-  phase: string;
-  error: string;
-  skipped: number;
-  version: number;
-  replies: { output: string; input: string; bytes: number[] }[];
-}
-
-const IDLE_SCAN: ScanStub = { busy: false, done: false, phase: "", error: "", skipped: 0, version: 0, replies: [] };
-
 /** A Pro MK3's Device Inquiry answer: F0 7E <dev> 06 02 <Novation> <family 13 01> 00 00 <version> F7. */
 const PRO_MK3_REPLY = [0xf0, 0x7e, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, 0x13, 0x01, 0, 0, 0, 1, 2, 3, 0xf7];
 
-// A machine with a Pro MK3 on USB, an unrelated keyboard, and a MIDI interface - the three cases the port
-// cyclers have to handle at once.
-const DEFAULT_CFG: CfgStub = {
-  inputs: ["Arturia KeyStep 32", "LPProMK3 MIDI", "MIDISPORT 2x2 Port A"],
-  outputs: ["LPProMK3 MIDI", "MIDISPORT 2x2 Port A"],
-  selectedInput: "",
-  selectedOutput: "",
-  deviceLabel: "",
-  connected: false,
-  enabled: false,
-  sent: 0,
-  dropped: 0,
-  detached: 0,
-  error: "",
-};
+// A machine with a Pro MK3 on USB, an unrelated keyboard, and a MIDI interface - the three cases the port cyclers have to
+// handle at once.
+const INPUTS = ["Arturia KeyStep 32", "LPProMK3 MIDI", "MIDISPORT 2x2 Port A"];
+const OUTPUTS = ["LPProMK3 MIDI", "MIDISPORT 2x2 Port A"];
 
-interface Calls {
-  ports: [string, string][];
-  connect: boolean[];
-  farewell: number[][];
-  scans: { probe: number[]; windowMs: number }[];
-  device: string[];
-}
+const same = (a: readonly number[], b: readonly number[]): boolean =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
 
-function installLaunchpad(cfg?: Partial<CfgStub> | null, scan?: Partial<ScanStub>): { calls: Calls; restore: () => void } {
-  const g = globalThis as Record<string, unknown>;
-  const calls: Calls = { ports: [], connect: [], farewell: [], scans: [], device: [] };
-  const keys = [
-    "__rp_getLaunchpadConfig", "__rp_setLaunchpadPorts", "__rp_connectLaunchpad", "__rp_setLaunchpadFarewell",
-    "__rp_scanLaunchpad", "__rp_getLaunchpadScan", "__rp_setLaunchpadDevice",
-  ];
-  const saved = Object.fromEntries(keys.map((k) => [k, g[k]]));
-  if (cfg === null) {
-    // No seam at all (a DAW / the headless harness): every hook absent.
-    for (const k of keys) g[k] = undefined;
-  } else {
-    const merged: CfgStub = { ...DEFAULT_CFG, ...cfg };
-    const scanState: ScanStub = { ...IDLE_SCAN, ...scan };
-    g.__rp_getLaunchpadConfig = () => merged;
-    g.__rp_setLaunchpadPorts = (i: string, o: string) => calls.ports.push([i, o]);
-    g.__rp_connectLaunchpad = (on: boolean) => calls.connect.push(on);
-    g.__rp_setLaunchpadFarewell = (b: number[]) => calls.farewell.push([...b]);
-    g.__rp_scanLaunchpad = (probe: number[], windowMs: number) => {
-      calls.scans.push({ probe: [...probe], windowMs });
-      return true;
-    };
-    g.__rp_getLaunchpadScan = () => scanState;
-    g.__rp_setLaunchpadDevice = (label: string) => calls.device.push(label);
+/** The pack's facet, faked at its client: real enough to hold state, so a sequence of menu actions reads true. Its claim
+ *  path is the facet's own order - the old pair let go first (its close bytes replayed), the ports checked against the
+ *  list, then the open - so a refusal behaves as LaunchpadRpc's does. */
+class FakeFacet implements LaunchpadClient {
+  inputs = INPUTS.slice();
+  outputs = OUTPUTS.slice();
+  held: { input: string; output: string; closeBytes: number[] } | null = null;
+  claims: { input: string; output: string; closeBytes: number[] }[] = [];
+  released: number[][] = []; // the close bytes replayed at each release, in order
+  away = new Set<string>(); // ports listed but that will not open (a device unplugged, a cable pulled)
+  dropped = 0;
+  error = "";
+  restoredCalls = 0;
+  sentToDevice: number[][] = []; // send() while a pair is held
+  inputBatches = 0; // openInputs calls
+
+  // loose ports (the scan)
+  // output -> who answers the inquiry, on which input. `isPro` says whether it ALSO answers the Pro MK3's own model
+  // query - true by default for a reply carrying the Pro's family bytes, since that is a real Pro; set it false to play a
+  // Mini MK3, which answers the inquiry with the very same bytes but ignores the Pro header.
+  answers = new Map<string, { input: string; bytes: number[]; isPro?: boolean }>();
+  busyPorts = new Set<string>(); // ports another application holds
+  written: { port: string; bytes: number[] }[] = [];
+  private nextHandle = 1;
+  private open = new Map<number, { input: boolean; name: string; queue: number[][] }>();
+
+  /** What is held right now (a method, so a case that cleared `held` by hand is not narrowed to null). */
+  current(): FakeFacet["held"] {
+    return this.held;
   }
-  return {
-    calls,
-    restore: () => {
-      for (const k of keys) g[k] = saved[k];
-    },
-  };
+
+  openHandles(): number {
+    return this.open.size;
+  }
+
+  ports(): LaunchpadPorts {
+    return { inputs: this.inputs.slice(), outputs: this.outputs.slice() };
+  }
+
+  status(): LaunchpadStatus {
+    const held = this.held;
+    return {
+      connected: !!held,
+      generation: held ? 1 : 0,
+      sent: 0,
+      dropped: this.dropped,
+      input: held?.input ?? "",
+      output: held?.output ?? "",
+      error: this.error,
+    };
+  }
+
+  claim(input: string, output: string, closeBytes: Uint8Array): LaunchpadStatus {
+    this.release(); // the facet lets the OLD pair go first, its close bytes out
+    const fail = (why: string): LaunchpadStatus => {
+      this.error = why;
+      return this.status();
+    };
+    if (input === "" || output === "") return fail("no port chosen");
+    if (!this.inputs.includes(input)) return fail(`not connected: ${input}`);
+    if (!this.outputs.includes(output)) return fail(`not connected: ${output}`);
+    // The real opener's words (RtMidiPort's RtMidiSinglePort), in ITS order: the claim opens the output first, so a pair
+    // whose device is away is refused by the output.
+    if (this.away.has(output)) return fail(`MIDI output port not found: ${output}`);
+    if (this.away.has(input)) return fail(`MIDI input port not found: ${input}`);
+    this.error = "";
+    this.held = { input, output, closeBytes: Array.from(closeBytes) };
+    this.claims.push(this.held);
+    return this.status();
+  }
+
+  release(): LaunchpadStatus {
+    this.releaseHeld();
+    this.error = "";
+    return this.status();
+  }
+
+  send(bytes: Uint8Array): boolean {
+    if (!this.held) return false;
+    this.sentToDevice.push(Array.from(bytes));
+    return true;
+  }
+
+  restored(): boolean {
+    this.restoredCalls++;
+    return true;
+  }
+
+  openInputs(names: string[]): number[] {
+    this.inputBatches++;
+    return names.map((n) => this.openPort(true, n));
+  }
+  openOutput(name: string): number {
+    return this.openPort(false, name);
+  }
+  sendOn(handle: number, bytes: Uint8Array): boolean {
+    const p = this.open.get(handle);
+    if (!p || p.input) return false;
+    const data = Array.from(bytes);
+    this.written.push({ port: p.name, bytes: data });
+    const a = this.answers.get(p.name);
+    if (!a) return true;
+    let reply: number[] | null = null;
+    if (same(data, deviceInquiry())) reply = a.bytes;
+    else if (same(data, modelQuery(PRO_MK3)) && (a.isPro ?? (a.bytes[8] === 0x13 && a.bytes[9] === 0x01)))
+      reply = [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0e, 0x00, 0x00, 0x00, 0xf7]; // "showing layout 0"
+    if (reply) for (const q of this.open.values()) if (q.input && q.name === a.input) q.queue.push([...reply]);
+    return true;
+  }
+  read(handle: number): LaunchpadRead {
+    const p = this.open.get(handle);
+    if (!p) return { messages: [], dropped: 0 };
+    const messages = p.queue.map((m) => Uint8Array.from(m));
+    p.queue = [];
+    return { messages, dropped: 0 };
+  }
+  close(handle: number): boolean {
+    return this.open.delete(handle);
+  }
+  portError(): string {
+    return "";
+  }
+
+  /** Deliver a message on an input, as if the device sent it unprompted. */
+  hear(input: string, bytes: number[]): void {
+    for (const q of this.open.values()) if (q.input && q.name === input) q.queue.push([...bytes]);
+  }
+
+  /** A send on a pool handle, watched: the hook the echo case needs (a soft-thru answers a query with itself). */
+  sending(hook: (handle: number, bytes: number[]) => void): LaunchpadClient {
+    const self = this;
+    return {
+      ports: () => self.ports(), status: () => self.status(),
+      claim: (a, b, c) => self.claim(a, b, c), release: () => self.release(), send: (b) => self.send(b),
+      restored: () => self.restored(),
+      openInputs: (n) => self.openInputs(n), openOutput: (n) => self.openOutput(n),
+      sendOn: (h, b) => { hook(h, Array.from(b)); return self.sendOn(h, b); },
+      read: (h) => self.read(h), close: (h) => self.close(h), portError: () => self.portError(),
+    };
+  }
+
+  private openPort(input: boolean, name: string): number {
+    if (this.busyPorts.has(name) || this.away.has(name)) return 0;
+    const h = this.nextHandle++;
+    this.open.set(h, { input, name, queue: [] });
+    return h;
+  }
+
+  private releaseHeld(): void {
+    if (!this.held) return;
+    this.released.push(this.held.closeBytes);
+    this.held = null;
+  }
 }
 
-/** Settings > MIDI's rows, which is where a control surface is FOUND. Needs the standalone flags the real
- *  host sets, since the whole MIDI submenu is standalone-only. */
+/** Run `body` against a fresh fake facet, fresh stores, and a stopped clock the case advances by hand. */
+function withHost(
+  setup: (facet: FakeFacet) => void,
+  body: (facet: FakeFacet, stores: AppStores, be: MockBackend, clock: { ms: number }) => void,
+  selection: Partial<ControlSurfaceSettings> = {},
+): void {
+  const facet = new FakeFacet();
+  setup(facet);
+  setLaunchpadClient(facet);
+  const clock = { ms: 1000 };
+  setLaunchpadScanClock(() => clock.ms);
+  try {
+    const be = new MockBackend();
+    const stores = composeAppStores({ backend: be });
+    stores.userConfig.setControlSurface(selection);
+    body(facet, stores, be, clock);
+  } finally {
+    setLaunchpadClient(undefined);
+    resetLaunchpadScanForTest();
+  }
+}
+
+function withoutSeam(body: () => void): void {
+  setLaunchpadClient(null);
+  try {
+    body();
+  } finally {
+    setLaunchpadClient(undefined);
+  }
+}
+
+/** Seed a plain NES cart (no tracker role, so the block holds Launchpad alone), then the submenu's rows. */
+function submenu(stores: AppStores, be: MockBackend): MenuItem[] {
+  if (stores.project.systems.view().length === 0) {
+    be.seed("/roms/a.nes", nesRom());
+    stores.project.systems.addSystem("/roms/a.nes");
+  }
+  const sys = stores.project.systems.view()[0];
+  return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-launchpad");
+}
+
+/** Settings > MIDI's rows, which is where a control surface is FOUND. Needs the standalone flags the real host sets,
+ *  since the whole MIDI submenu is standalone-only. */
 function midiSettingsRows(stores: AppStores, be: MockBackend): MenuItem[] {
   const g = globalThis as Record<string, unknown>;
   const saved = { standalone: g.__rp_isStandalone, midi: g.__rp_getMidiConfig };
@@ -158,198 +283,262 @@ function midiSettingsRows(stores: AppStores, be: MockBackend): MenuItem[] {
   }
 }
 
-/** Seed a plain NES cart (no tracker role, so the block holds Launchpad alone), then the submenu's rows. */
-function submenu(stores: AppStores, be: MockBackend): MenuItem[] {
-  if (stores.project.systems.view().length === 0) {
-    be.seed("/roms/a.nes", nesRom());
-    stores.project.systems.addSystem("/roms/a.nes");
-  }
-  const sys = stores.project.systems.view()[0];
-  return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-launchpad");
+/** Whether the instance menu shows the Launchpad submenu, for this rig + recorded selection. */
+function submenuShown(setup: (h: FakeFacet) => void, selection: Partial<ControlSurfaceSettings> = {}): boolean {
+  let shown = false;
+  withHost(setup, (_f, stores, be) => {
+    shown = submenu(stores, be).length > 0;
+  }, selection);
+  return shown;
 }
 
-/** Whether the instance menu is showing the Launchpad submenu at all, under this config. */
-function submenuShown(cfg: Partial<CfgStub> | null): boolean {
-  const lp = installLaunchpad(cfg);
-  try {
-    const be = new MockBackend();
-    return submenu(composeAppStores({ backend: be }), be).length > 0;
-  } finally {
-    lp.restore();
+/** Step a running scan until it settles, advancing the clock a frame at a time. */
+function runScan(clock: { ms: number }): ReturnType<typeof pollLaunchpadScan> {
+  for (let i = 0; i < 1000; i++) {
+    const s = pollLaunchpadScan();
+    if (!s || !s.busy) return s;
+    clock.ms += 16;
   }
+  throw new Error("scan never finished");
 }
+
+const TRS = {
+  inputs: ["Arturia KeyStep 32", "MIDISPORT 2x2 Port A"],
+  outputs: ["MIDISPORT 2x2 Port B"],
+};
+const TRS_PICK = { input: "MIDISPORT 2x2 Port A", output: "MIDISPORT 2x2 Port B", device: "Launchpad Pro [MK3]" };
+
+// --- presence ---------------------------------------------------------------------------------------------
 
 test("no seam, no submenu", () => {
-  expect(submenuShown(null)).toBe(false);
+  withoutSeam(() => {
+    const be = new MockBackend();
+    expect(submenu(composeAppStores({ backend: be }), be).length).toBe(0);
+  });
 });
 
 test("nothing plugged in, no submenu", () => {
-  // The whole point of the change: a machine with no control surface does not carry a row for one.
-  expect(submenuShown({ inputs: [], outputs: [] })).toBe(false);
+  // A machine with no control surface does not carry a row for one.
+  expect(submenuShown((h) => { h.inputs = []; h.outputs = []; })).toBe(false);
   // Neither does a machine with plenty of MIDI gear that is simply not a Launchpad.
-  expect(submenuShown({ inputs: ["Arturia KeyStep 32"], outputs: ["Arturia KeyStep 32"] })).toBe(false);
+  expect(submenuShown((h) => { h.inputs = ["Arturia KeyStep 32"]; h.outputs = ["Arturia KeyStep 32"]; })).toBe(false);
 });
 
 test("a Launchpad on USB needs no scan - its own port name is enough", () => {
-  expect(submenuShown({ inputs: ["LPProMK3 MIDI"], outputs: ["LPProMK3 MIDI"] })).toBe(true);
+  expect(submenuShown((h) => { h.inputs = ["LPProMK3 MIDI"]; h.outputs = ["LPProMK3 MIDI"]; })).toBe(true);
 });
 
 test("a recorded pick speaks for a device no name could identify", () => {
-  // The TRS topology, after a scan: the ports belong to somebody's interface and say nothing about what is
-  // plugged into them, so the recorded pair is the only evidence there is.
-  const trs = {
-    inputs: ["Arturia KeyStep 32", "MIDISPORT 2x2 Port A"],
-    outputs: ["MIDISPORT 2x2 Port B"],
-    selectedInput: "MIDISPORT 2x2 Port A",
-    selectedOutput: "MIDISPORT 2x2 Port B",
-    deviceLabel: "Launchpad Pro [MK3]",
-  };
-  expect(submenuShown(trs)).toBe(true);
-
-  // Presence is checked, not trusted: unplug that interface and the row goes with it, exactly as the N8 Pro
-  // submenu next door behaves. Settings > MIDI still has the scan, so there is a way back.
-  expect(submenuShown({ ...trs, inputs: ["Arturia KeyStep 32"], outputs: [] })).toBe(false);
+  // The TRS topology, after a scan: the ports belong to somebody's interface and say nothing about what is plugged into
+  // them, so the recorded pair is the only evidence there is.
+  expect(submenuShown((h) => Object.assign(h, TRS), TRS_PICK)).toBe(true);
+  // Presence is checked, not trusted: unplug that interface and the row goes with it, exactly as the N8 Pro submenu next
+  // door behaves. Settings > MIDI still has the scan, so there is a way back.
+  expect(submenuShown((h) => { h.inputs = ["Arturia KeyStep 32"]; h.outputs = []; }, TRS_PICK)).toBe(false);
   // Half a pair is not a device either - an output alone cannot be listened to.
-  expect(submenuShown({ ...trs, outputs: [] })).toBe(false);
+  expect(submenuShown((h) => { h.inputs = TRS.inputs; h.outputs = []; }, TRS_PICK)).toBe(false);
 });
 
 test("a connected link always shows, whatever the port names look like", () => {
-  expect(submenuShown({
-    inputs: ["MIDISPORT 2x2 Port A"], outputs: ["MIDISPORT 2x2 Port B"],
-    selectedInput: "MIDISPORT 2x2 Port A", selectedOutput: "MIDISPORT 2x2 Port B",
-    connected: true, enabled: true,
+  expect(submenuShown((h) => {
+    Object.assign(h, TRS);
+    h.held = { input: "MIDISPORT 2x2 Port A", output: "MIDISPORT 2x2 Port B", closeBytes: [] };
   })).toBe(true);
 });
 
+// --- picking + claiming -----------------------------------------------------------------------------------
+
 test("the port cycler offers EVERY hardware port, not just ones named like a Launchpad", () => {
-  const lp = installLaunchpad();
-  try {
-    const be = new MockBackend();
-    const rows = submenu(composeAppStores({ backend: be }), be);
-    const input = findItem(rows, "lp-input");
+  withHost(() => {}, (_h, stores, be) => {
+    const input = findItem(submenu(stores, be), "lp-input");
     expect(input?.kind).toBe("cycler");
     expect(input?.label).toBe("Input Device: (none)");
-    // Stepping forward from "(none)" reaches the FIRST port in the list, which is nothing like a Launchpad.
-    // A filtered list would have skipped it - and would have skipped the interface port a TRS-attached
-    // Launchpad actually arrives on.
+    // Stepping forward from "(none)" reaches the FIRST port in the list, which is nothing like a Launchpad. A filtered
+    // list would have skipped it - and would have skipped the interface port a TRS-attached Launchpad actually arrives on.
     input?.onCycle?.(1);
-    expect(lp.calls.ports[0]?.[0]).toBe("Arturia KeyStep 32");
-  } finally {
-    lp.restore();
-  }
+    expect(stores.userConfig.controlSurface().input).toBe("Arturia KeyStep 32");
+  });
 });
 
 test("a hinted port is tagged; an unhinted one is perfectly selectable", () => {
-  const hinted = installLaunchpad({ selectedInput: "LPProMK3 MIDI" });
-  try {
-    const be = new MockBackend();
-    expect(findItem(submenu(composeAppStores({ backend: be }), be), "lp-input")?.label)
-      .toBe("Input Device: LPProMK3 MIDI (detected)");
-  } finally {
-    hinted.restore();
-  }
+  withHost(() => {}, (_h, stores, be) => {
+    expect(findItem(submenu(stores, be), "lp-input")?.label).toBe("Input Device: LPProMK3 MIDI (detected)");
+  }, { input: "LPProMK3 MIDI" });
   // The TRS topology: the surface is on an interface port, so no tag - and that is not an error state.
-  const trs = installLaunchpad({ selectedInput: "MIDISPORT 2x2 Port A" });
-  try {
-    const be = new MockBackend();
-    expect(findItem(submenu(composeAppStores({ backend: be }), be), "lp-input")?.label)
-      .toBe("Input Device: MIDISPORT 2x2 Port A");
-  } finally {
-    trs.restore();
-  }
+  withHost(() => {}, (_h, stores, be) => {
+    expect(findItem(submenu(stores, be), "lp-input")?.label).toBe("Input Device: MIDISPORT 2x2 Port A");
+  }, { input: "MIDISPORT 2x2 Port A" });
 });
 
-test("picking a port sends BOTH names down, with the display tag stripped back off", () => {
-  // Cycling forward from the KeyStep lands on the Launchpad, whose ROW READS "LPProMK3 MIDI (detected)". The
-  // name handed to native has to be the port's, not the label's, or it would name a port that does not exist.
-  const lp = installLaunchpad({ selectedInput: "Arturia KeyStep 32", selectedOutput: "LPProMK3 MIDI" });
-  try {
-    const be = new MockBackend();
-    const rows = submenu(composeAppStores({ backend: be }), be);
-    findItem(rows, "lp-input")?.onCycle?.(1);
-    expect(lp.calls.ports).toEqual([["LPProMK3 MIDI", "LPProMK3 MIDI"]]);
-  } finally {
-    lp.restore();
-  }
+test("picking a port stores the port's name, with the display tag stripped back off", () => {
+  // Cycling forward from the KeyStep lands on the Launchpad, whose ROW READS "LPProMK3 MIDI (detected)". The name stored
+  // has to be the port's, not the label's, or it would name a port that does not exist.
+  withHost(() => {}, (h, stores, be) => {
+    findItem(submenu(stores, be), "lp-input")?.onCycle?.(1);
+    expect(stores.userConfig.controlSurface().input).toBe("LPProMK3 MIDI");
+    expect(h.claims).toEqual([]); // not connected, so a pick is only a pick
+  }, { input: "Arturia KeyStep 32", output: "LPProMK3 MIDI" });
 });
 
-test("Connect with nothing chosen resolves the hinted default first", () => {
-  const lp = installLaunchpad();
-  try {
-    const be = new MockBackend();
-    const rows = submenu(composeAppStores({ backend: be }), be);
-    findItem(rows, "lp-connect")?.onSelect?.();
-    expect(lp.calls.ports).toEqual([["LPProMK3 MIDI", "LPProMK3 MIDI"]]);
-    expect(lp.calls.connect).toEqual([true]);
-  } finally {
-    lp.restore();
-  }
+test("Connect with nothing chosen resolves the hinted default first, and claims it", () => {
+  withHost(() => {}, (h, stores, be) => {
+    findItem(submenu(stores, be), "lp-connect")?.onSelect?.();
+    expect(stores.userConfig.controlSurface()).toEqual({
+      input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true, device: "",
+    });
+    expect(h.held?.input).toBe("LPProMK3 MIDI");
+  });
 });
 
 test("Connect with no hinted port at all does not invent one", () => {
-  // Driven directly rather than through the row, because the row cannot reach this state any more: with no
-  // hint and nothing recorded there is no submenu to press Connect in. The rule still has to hold for the
-  // path that does exist - cycling a recorded Input Device back to "(none)" and reconnecting - and the cost
-  // of getting it wrong is claiming somebody's keyboard and calling it a Launchpad.
-  const lp = installLaunchpad({ inputs: ["Arturia KeyStep 32"], outputs: ["Arturia KeyStep 32"] });
-  try {
-    connectLaunchpad(true, getLaunchpadConfig());
-    expect(lp.calls.ports).toEqual([]);
-    expect(lp.calls.connect).toEqual([true]);
-  } finally {
-    lp.restore();
-  }
+  // Driven directly rather than through the row, because the row cannot reach this state any more: with no hint and
+  // nothing recorded there is no submenu to press Connect in. The rule still has to hold for the path that does exist -
+  // cycling a recorded Input Device back to "(none)" and reconnecting - and the cost of getting it wrong is claiming
+  // somebody's keyboard and calling it a Launchpad.
+  withHost((h) => { h.inputs = ["Arturia KeyStep 32"]; h.outputs = ["Arturia KeyStep 32"]; }, (h, stores) => {
+    connectLaunchpad(stores.userConfig, true, getLaunchpadConfig(stores.userConfig));
+    expect(stores.userConfig.controlSurface().input).toBe("");
+    expect(stores.userConfig.controlSurface().enabled).toBe(true);
+    expect(h.claims).toEqual([]);
+  });
 });
 
-test("native is holding the farewell before anything can connect", () => {
-  const lp = installLaunchpad();
-  try {
-    const be = new MockBackend();
-    submenu(composeAppStores({ backend: be }), be); // merely RENDERING the menu is enough
-    expect(lp.calls.farewell.length > 0).toBe(true);
-    expect(lp.calls.farewell[0]).toEqual(exitToLiveMode(PRO_MK3));
-  } finally {
-    lp.restore();
-  }
+test("every claim carries the bytes that release the device", () => {
+  // Programmer mode locks the Launchpad's own Settings menu. Native replays these on release AND on destruct, so a claim
+  // without them would strand the user's hardware when RetroPlug quits.
+  withHost(() => {}, (h, stores, be) => {
+    findItem(submenu(stores, be), "lp-connect")?.onSelect?.();
+    expect(h.claims.length).toBe(1);
+    expect(h.claims[0].closeBytes).toEqual(exitToLiveMode(PRO_MK3));
+  });
+});
+
+test("Disconnect releases the device and persists the choice", () => {
+  withHost(() => {}, (h, stores, be) => {
+    restoreLaunchpad(stores.userConfig);
+    expect(h.held !== null).toBe(true);
+    findItem(submenu(stores, be), "lp-connect")?.onSelect?.(); // reads "Disconnect"
+    expect(h.held).toBe(null);
+    expect(h.released).toEqual([exitToLiveMode(PRO_MK3)]);
+    expect(stores.userConfig.controlSurface().enabled).toBe(false);
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
+});
+
+test("a port change while connected switches live, saying goodbye to the old device first", () => {
+  withHost(() => {}, (h, stores, be) => {
+    restoreLaunchpad(stores.userConfig);
+    findItem(submenu(stores, be), "lp-output")?.onCycle?.(1); // LPProMK3 MIDI -> MIDISPORT 2x2 Port A
+    expect(h.claims.length).toBe(2);
+    expect(h.claims[1]).toEqual({
+      input: "LPProMK3 MIDI", output: "MIDISPORT 2x2 Port A", closeBytes: exitToLiveMode(PRO_MK3),
+    });
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
+});
+
+// --- persistence + startup --------------------------------------------------------------------------------
+
+test("the selection lives in config.json, so a fresh launch reclaims what was left connected", () => {
+  withHost(() => {}, (h, stores, be) => {
+    findItem(submenu(stores, be), "lp-connect")?.onSelect?.();
+    // Same backend, fresh stores: the next launch. The link is down until the UI restores it.
+    h.held = null;
+    const next = composeAppStores({ backend: be });
+    expect(next.userConfig.controlSurface().input).toBe("LPProMK3 MIDI");
+    restoreLaunchpad(next.userConfig);
+    expect(h.current()?.input).toBe("LPProMK3 MIDI");
+    expect(h.current()?.closeBytes).toEqual(exitToLiveMode(PRO_MK3));
+  });
+});
+
+test("a pair left disconnected is not taken at startup", () => {
+  withHost(() => {}, (h, stores) => {
+    restoreLaunchpad(stores.userConfig);
+    expect(h.claims).toEqual([]);
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: false });
+});
+
+test("restoring a device that is not here shows why, rather than pretending", () => {
+  withHost((h) => h.away.add("LPProMK3 MIDI"), (_h, stores, be) => {
+    restoreLaunchpad(stores.userConfig);
+    expect(findItem(submenu(stores, be), "lp-status")?.label)
+      .toBe("Status: Error: MIDI output port not found: LPProMK3 MIDI");
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
 });
 
 test("the status row reads what the link is actually doing", () => {
-  const cases: [Partial<CfgStub>, string][] = [
-    [{}, "Status: not connected"],
-    [{ connected: true, enabled: true }, "Status: connected"],
-    [{ connected: true, enabled: true, dropped: 3 }, "Status: connected (3 dropped)"],
-    // Frames the device missed while attached read as a fault; the paint a session pushed while it was unplugged does
-    // not, since a repaint replaces it.
-    [{ connected: true, enabled: true, detached: 4 }, "Status: connected (4 sent while unplugged)"],
-    [{ connected: true, enabled: true, dropped: 2, detached: 4 }, "Status: connected (2 dropped)"],
-    [{ enabled: true }, "Status: pick both ports"],
-    [{ enabled: true, selectedInput: "a", selectedOutput: "b" }, "Status: not connected"],
-    [{ error: "MIDI input port not found: Nope" }, "Status: Error: MIDI input port not found: Nope"],
+  const cases: [(h: FakeFacet) => void, Partial<ControlSurfaceSettings>, string][] = [
+    // Nothing chosen, the feature off, and a Launchpad in the machine's ports: the row points at where a device is
+    // configured, which is the whole of what an upgrade from the legacy host needs (design section 5).
+    [() => {}, {}, "Status: a Launchpad is here - Connect, or Settings > MIDI to scan for one"],
+    // ...and a pair already chosen needs no hint, even with a Launchpad in the machine.
+    [() => {}, { input: "Arturia KeyStep 32", output: "Arturia KeyStep 32" }, "Status: not connected"],
+    [(h) => { h.held = { input: "a", output: "b", closeBytes: [] }; }, { enabled: true }, "Status: connected"],
+    [(h) => { h.held = { input: "a", output: "b", closeBytes: [] }; h.dropped = 3; }, { enabled: true },
+     "Status: connected (3 dropped)"],
+    [() => {}, { enabled: true }, "Status: pick both ports"],
+    [() => {}, { enabled: true, input: "a", output: "b" }, "Status: not connected"],
+    // "connected" alone reads the same whether the cable reaches a Launchpad or nothing at all.
+    [(h) => { h.held = { input: "a", output: "b", closeBytes: [] }; }, { enabled: true, device: "Launchpad Pro [MK3]" },
+     "Status: connected - Launchpad Pro [MK3]"],
   ];
-  for (const [cfg, label] of cases) {
-    const lp = installLaunchpad(cfg);
-    try {
-      const be = new MockBackend();
-      expect(findItem(submenu(composeAppStores({ backend: be }), be), "lp-status")?.label).toBe(label);
-    } finally {
-      lp.restore();
-    }
+  for (const [setup, selection, label] of cases) {
+    withHost(setup, (_h, stores, be) => {
+      expect(findItem(submenu(stores, be), "lp-status")?.label).toBe(label);
+    }, selection);
   }
 });
 
-test("the app rows edit PROJECT settings, and each edit publishes the graph", () => {
-  const lp = installLaunchpad();
-  try {
-    const be = new MockBackend();
-    const stores = composeAppStores({ backend: be });
-    // A cycler's onCycle takes a DIRECTION, so each of these steps once from its default: off -> on,
-    // bar -> beat, follow on -> off, and the emulated cart -> MIDI out.
+// --- the app rows: project state --------------------------------------------------------------------------
+
+/** A project whose GB cart is in SYNC `sync` (8 = MidiMap, 9 = Lsdj), the controller enabled and its cart polled: what
+ *  the menu's cart-sync row reads (controllerCartSync, from the battery). */
+function withCart(stores: AppStores, be: MockBackend, sync: number): void {
+  be.seed("/roms/cart.gb", gbRom());
+  stores.project.systems.addSystem("/roms/cart.gb");
+  const b = new Uint8Array(0x20000);
+  b[0x813e] = 0x6a; // 'j'
+  b[0x813f] = 0x6b; // 'k': a readable LSDj battery
+  b[R.kModernRegions.syncMode] = sync;
+  be.setSram(stores.project.systems.view()[0].id, b);
+  stores.project.setController({ enabled: true, target: "system" });
+  stores.project.refreshControllerSong();
+}
+
+test("the cart-sync row reads the app's own rule, not a mode string", () => {
+  // Whether the cart is being driven is the APP's answer (controllerSyncOverride's `driving`: the mode its launches need
+  // is the one the cart is put in), never "the mode is not the string off" - a second app may spell its off-mode anything
+  // or have none at all, and the row would then claim the cart was driven while nothing was sent.
+  withHost(() => {}, (_h, stores, be) => {
+    withCart(stores, be, 8); // MidiMap: what MI.MAP's launches need
+    expect(findItem(submenu(stores, be), "lp-cart-sync")?.label).toBe("Cart: LSDj MI.MAP - driving it");
+  });
+  withHost(() => {}, (_h, stores, be) => {
+    withCart(stores, be, 1); // the player knocked it to LSDJ (master sync): launches are ignored, and the row says so
+    expect(findItem(submenu(stores, be), "lp-cart-sync")?.label)
+      .toBe("Cart: LSDj MI.MAP - not driving it: its SYNC is Lsdj");
+  });
+  withHost(() => {}, (_h, stores, be) => {
+    // No battery the reader understands: nothing has been polled, so the row says what it does not know rather than
+    // guessing that the cart is willing.
+    be.seed("/roms/plain.gb", gbRom());
+    stores.project.systems.addSystem("/roms/plain.gb");
+    stores.project.setController({ enabled: true, target: "system" });
+    stores.project.refreshControllerSong();
+    expect(findItem(submenu(stores, be), "lp-cart-sync")?.label).toBe("Cart: LSDj MI.MAP - driving it (SYNC unread)");
+  });
+});
+
+test("the app rows edit PROJECT settings, and each edit re-pushes the kernel", () => {
+  withHost(() => {}, (_h, stores, be) => {
+    // A cycler's onCycle takes a DIRECTION, so each of these steps once from its default: off -> on, bar -> beat, follow
+    // on -> off, and the emulated cart -> MIDI out.
     const rows = submenu(stores, be);
-    const sent = be.graphRequests.length; // counted from HERE: seeding the cart above publishes on its own
+    let pushes = 0; // counted from HERE: seeding the cart above pushes once on its own
+    stores.project.addOnSystemsChange(() => void pushes++);
 
     findItem(rows, "lp-enabled")?.onCycle?.(1);
-    findItem(rows, "lp-quantise")?.onCycle?.(-1);
-    findItem(rows, "lp-follow")?.onCycle?.(-1);
+    findItem(rows, "lp-app-quantise")?.onCycle?.(-1);
+    findItem(rows, "lp-app-follow")?.onCycle?.(-1);
     findItem(rows, "lp-target")?.onCycle?.(1);
 
     const c = stores.project.settings().controller;
@@ -357,181 +546,446 @@ test("the app rows edit PROJECT settings, and each edit publishes the graph", ()
     expect(c.target).toBe("midiOut");
     expect(c.appConfig.quantise).toBe("beat");
     expect(c.appConfig.follow).toBe(false);
-    // The controller node is SYNTHESIZED at each publish, so an edit that was never published would leave the
-    // audio thread running the previous settings: each one sends a document, the last carrying the session.
-    expect(be.graphRequests.length - sent).toBe(4);
-    const controller = be.graphNode("controller");
-    expect(controller?.settings?.target).toBe("midiOut");
-    expect((controller?.settings?.appConfig as { quantise?: string } | undefined)?.quantise).toBe("beat");
-  } finally {
-    lp.restore();
-  }
+    // The controller role is SYNTHESIZED at publication time, so an edit that never reached setSystems would leave the
+    // audio thread running the previous settings.
+    expect(pushes).toBe(4);
+    // ...and none of it is machine state: config.json's selection is untouched.
+    expect(stores.userConfig.controlSurface().enabled).toBe(false);
+  });
 });
 
 test("one app knob at a time: setting quantise does not wipe follow", () => {
-  const lp = installLaunchpad();
-  try {
-    const be = new MockBackend();
-    const stores = composeAppStores({ backend: be });
+  withHost(() => {}, (_h, stores, be) => {
     submenu(stores, be);
     stores.project.setController({ appConfig: { follow: false } });
     stores.project.setController({ appConfig: { quantise: "beat" } });
     const c = stores.project.settings().controller;
     expect(c.appConfig.follow).toBe(false);
     expect(c.appConfig.quantise).toBe("beat");
-  } finally {
-    lp.restore();
-  }
+  });
 });
 
-// --- Settings > MIDI: finding one ---------------------------------------------------------------------
+test("switching to a different app starts it from a clean config, not the old app's knobs", () => {
+  // Merging kept every key of every app ever chosen in the .rplg, handed to whichever app came next.
+  withHost(() => {}, (_h, stores) => {
+    stores.project.setController({ appConfig: { follow: false, quantise: "beat" } });
+    stores.project.setController({ app: "some-other-app", appConfig: {} });
+    expect(stores.project.settings().controller.appConfig).toEqual({});
+    stores.project.setController({ app: "some-other-app", appConfig: { x: 1 } }); // same app: merges as before
+    stores.project.setController({ appConfig: { y: 2 } });
+    expect(stores.project.settings().controller.appConfig).toEqual({ x: 1, y: 2 });
+  });
+});
 
-test("the scan row hands native exactly the Device Inquiry, and nothing else does", () => {
-  const lp = installLaunchpad();
-  try {
-    const be = new MockBackend();
-    const rows = midiSettingsRows(composeAppStores({ backend: be }), be);
-    expect(lp.calls.scans).toEqual([]); // merely opening Settings writes no MIDI at anybody's gear
+// --- Settings > MIDI: finding one -------------------------------------------------------------------------
+
+test("with nothing answering, the scan writes exactly the Device Inquiry, once per output, and nothing else", () => {
+  withHost(() => {}, (h, stores, be, clock) => {
+    const rows = midiSettingsRows(stores, be);
+    expect(h.written).toEqual([]); // merely opening Settings writes no MIDI at anybody's gear
     findItem(rows, "midi-scan")?.onSelect?.();
-    expect(lp.calls.scans.length).toBe(1);
-    // The bytes are TS's, not native's: native carries this blob the way it carries the farewell.
-    expect(lp.calls.scans[0].probe).toEqual(deviceInquiry());
-    expect(lp.calls.scans[0].windowMs > 0).toBe(true);
-  } finally {
-    lp.restore();
-  }
+    runScan(clock);
+    expect(h.written).toEqual(OUTPUTS.map((port) => ({ port, bytes: deviceInquiry() })));
+    expect(h.openHandles()).toBe(0); // and every port it opened is closed again
+  });
 });
 
-test("the scan row steps aside while the link holds the ports", () => {
-  const busy = installLaunchpad({}, { busy: true });
-  try {
-    const be = new MockBackend();
-    expect(findItem(midiSettingsRows(composeAppStores({ backend: be }), be), "midi-scan")?.disabled).toBe(true);
-  } finally {
-    busy.restore();
-  }
+test("the scan row becomes Cancel while a scan runs, and steps aside while the link holds the ports", () => {
+  withHost(() => {}, (_h, stores, be) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    const row = findItem(midiSettingsRows(stores, be), "midi-scan");
+    expect(row?.label).toBe("Cancel Control Surface Scan");
+    expect(row?.disabled).toBe(undefined);
+  });
   // Connected: those ports cannot be reopened, and there is nothing left to find.
-  const live = installLaunchpad({ connected: true, enabled: true, selectedInput: "LPProMK3 MIDI" });
-  try {
-    const be = new MockBackend();
-    const rows = midiSettingsRows(composeAppStores({ backend: be }), be);
+  withHost((h) => { h.held = { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", closeBytes: [] }; }, (h, stores, be) => {
+    const rows = midiSettingsRows(stores, be);
     expect(findItem(rows, "midi-scan")?.disabled).toBe(true);
     expect(findItem(rows, "midi-scan-forget")?.disabled).toBe(true); // nor is this the moment to forget it
-  } finally {
-    live.restore();
-  }
+    findItem(rows, "midi-scan")?.onSelect?.(); // even pressed anyway, it writes nothing
+    expect(h.written).toEqual([]);
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
 });
 
 test("a Novation answer records the PAIR it came back on, and names the model", () => {
-  // The output probed and the input that answered are different ports, which is the whole reason to ask:
-  // no amount of listening tells you which input belongs to which output.
-  const lp = installLaunchpad({}, {
-    done: true,
-    replies: [{ output: "MIDISPORT 2x2 Port B", input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY }],
+  // The output probed and the input that answered are different ports, which is the whole reason to ask: no amount of
+  // listening tells you which input belongs to which output.
+  withHost((h) => {
+    Object.assign(h, TRS);
+    h.answers.set("MIDISPORT 2x2 Port B", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY });
+  }, (_h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    const found = applyLaunchpadScan(stores.userConfig, runScan(clock)!);
+    expect(found).toEqual({ input: "MIDISPORT 2x2 Port A", output: "MIDISPORT 2x2 Port B", name: PRO_MK3.name });
+    expect(stores.userConfig.controlSurface()).toEqual({
+      input: TRS_PICK.input, output: TRS_PICK.output, enabled: false, device: TRS_PICK.device,
+    });
+    expect(submenu(stores, be).length > 0).toBe(true); // which is what makes the submenu appear
   });
-  try {
-    const found = applyLaunchpadScan(getLaunchpadScan()!);
-    expect(found?.input).toBe("MIDISPORT 2x2 Port A");
-    expect(found?.output).toBe("MIDISPORT 2x2 Port B");
-    expect(found?.name).toBe(PRO_MK3.name);
-    expect(lp.calls.ports).toEqual([["MIDISPORT 2x2 Port A", "MIDISPORT 2x2 Port B"]]);
-    expect(lp.calls.device).toEqual([PRO_MK3.name]);
-  } finally {
-    lp.restore();
-  }
 });
 
 test("anything that is not a Novation answer is left exactly where it was", () => {
-  const cases: [string, number[]][] = [
+  const cases: number[][] = [
     // Another manufacturer answering the same universal question. It is a valid inquiry reply, and not ours.
-    ["another manufacturer", [0xf0, 0x7e, 0x00, 0x06, 0x02, 0x41, 0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0, 0, 0, 0xf7]],
+    [0xf0, 0x7e, 0x00, 0x06, 0x02, 0x41, 0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0, 0, 0, 0xf7],
     // A keyboard on the same port playing a note into the window.
-    ["a stray NoteOn", [0x90, 60, 100]],
-    ["a truncated reply", [0xf0, 0x7e]],
+    [0x90, 60, 100],
+    [0xf0, 0x7e], // a truncated reply
   ];
-  for (const [what, bytes] of cases) {
-    const lp = installLaunchpad({}, { done: true, replies: [{ output: "out", input: "in", bytes }] });
-    try {
-      expect(applyLaunchpadScan(getLaunchpadScan()!)).toBe(null);
-      expect(lp.calls.ports).toEqual([]); // `what` must not have claimed somebody's keyboard
-      expect(lp.calls.device).toEqual([]);
-    } finally {
-      lp.restore();
-    }
-    expect(what.length > 0).toBe(true);
+  for (const bytes of cases) {
+    withHost((h) => h.answers.set("MIDISPORT 2x2 Port A", { input: "Arturia KeyStep 32", bytes }), (_h, stores, be, clock) => {
+      findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+      expect(applyLaunchpadScan(stores.userConfig, runScan(clock)!)).toBe(null);
+      expect(stores.userConfig.controlSurface().input).toBe(""); // somebody's keyboard was not claimed
+    });
   }
 });
 
 test("a Novation answer is found among the noise, not blocked by it", () => {
-  const lp = installLaunchpad({}, {
-    done: true,
-    replies: [
-      { output: "out", input: "Keystep", bytes: [0x90, 60, 100] }, // somebody is playing while we scan
-      { output: "IF Port B", input: "IF Port A", bytes: PRO_MK3_REPLY },
-    ],
+  withHost((h) => {
+    h.answers.set("LPProMK3 MIDI", { input: "Arturia KeyStep 32", bytes: [0x90, 60, 100] }); // somebody playing
+    h.answers.set("MIDISPORT 2x2 Port A", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY });
+  }, (_h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    expect(applyLaunchpadScan(stores.userConfig, runScan(clock)!)?.input).toBe("MIDISPORT 2x2 Port A");
   });
-  try {
-    expect(applyLaunchpadScan(getLaunchpadScan()!)?.input).toBe("IF Port A");
-    expect(lp.calls.ports).toEqual([["IF Port A", "IF Port B"]]);
-  } finally {
-    lp.restore();
-  }
 });
 
 test("the scan status row says which of 'nothing there' and 'could not look' happened", () => {
-  const cases: [Partial<CfgStub>, Partial<ScanStub>, string][] = [
-    [{}, {}, "Control Surface: Not scanned"],
-    [{}, { busy: true, phase: "Probing MIDISPORT 2x2 Port B" }, "Control Surface: Probing MIDISPORT 2x2 Port B"],
-    [{}, { done: true }, "Control Surface: Nothing answered"],
-    // A MIDI input is exclusive on Windows, so a port another app holds cannot be listened on at all. Saying
-    // so is the difference between "you have no Launchpad" and "close the other program and try again".
-    [{}, { done: true, skipped: 2 }, "Control Surface: Nothing answered (2 port(s) in use elsewhere)"],
-    // A device recorded by an earlier session, with no scan run since.
-    [{ selectedInput: "MIDISPORT 2x2 Port A", deviceLabel: "Launchpad Pro [MK3]" }, {},
-     "Control Surface: Launchpad Pro [MK3] on MIDISPORT 2x2 Port A"],
-    // A scan that just answered reports itself, without waiting for the result to be applied.
-    [{}, { done: true, replies: [{ output: "IF Port B", input: "IF Port A", bytes: PRO_MK3_REPLY }] },
-     "Control Surface: Launchpad Pro [MK3] on IF Port A"],
-    // ...and outranks a stale recording, so re-scanning after unplugging something says so.
-    [{ selectedInput: "MIDISPORT 2x2 Port A", deviceLabel: "Launchpad Pro [MK3]" }, { done: true },
-     "Control Surface: Nothing answered"],
-    [{}, { error: "MIDI system unavailable" }, "Control Surface: Error: MIDI system unavailable"],
-  ];
-  for (const [cfg, scan, label] of cases) {
-    const lp = installLaunchpad(cfg, scan);
-    try {
-      const be = new MockBackend();
-      expect(findItem(midiSettingsRows(composeAppStores({ backend: be }), be), "midi-scan-status")?.label).toBe(label);
-    } finally {
-      lp.restore();
-    }
-  }
+  const label = (stores: AppStores, be: MockBackend) => findItem(midiSettingsRows(stores, be), "midi-scan-status")?.label;
+  withHost(() => {}, (_h, stores, be) => {
+    expect(label(stores, be)).toBe("Control Surface: Not scanned");
+  });
+  withHost(() => {}, (_h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    expect(label(stores, be)).toBe("Control Surface: Probing LPProMK3 MIDI");
+    runScan(clock);
+    expect(label(stores, be)).toBe("Control Surface: Nothing answered");
+  });
+  // A MIDI input is exclusive on Windows, so a port another app holds cannot be listened on at all. Saying so is the
+  // difference between "you have no Launchpad" and "close the other program and try again".
+  withHost((h) => { h.busyPorts.add("Arturia KeyStep 32"); h.busyPorts.add("MIDISPORT 2x2 Port A"); },
+    (_h, stores, be, clock) => {
+      findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+      runScan(clock);
+      // Two inputs plus the interface's output: three ports nobody could look through.
+      expect(label(stores, be)).toBe("Control Surface: Nothing answered (3 port(s) in use elsewhere)");
+    });
+  // A device recorded by an earlier session, with no scan run since.
+  withHost(() => {}, (_h, stores, be) => {
+    expect(label(stores, be)).toBe("Control Surface: Launchpad Pro [MK3] on MIDISPORT 2x2 Port A");
+  }, TRS_PICK);
+  // A scan that just answered reports itself, and outranks a stale recording.
+  withHost((h) => h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: PRO_MK3_REPLY }), (_h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    runScan(clock);
+    expect(label(stores, be)).toBe("Control Surface: Launchpad Pro [MK3] on LPProMK3 MIDI");
+  }, TRS_PICK);
+});
+
+test("a reply is credited to the output that was being probed, never the next one", () => {
+  // The answer window for each output closes before the next probe goes out, and whatever arrived in it is read first -
+  // so a slow device cannot be blamed on the port after it.
+  withHost((h) => h.answers.set("MIDISPORT 2x2 Port A", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY }),
+    (_h, stores, be, clock) => {
+      findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+      const s = runScan(clock)!;
+      // Every reply - the inquiry answer and the model's answer to the follow-up - is the probed output's.
+      expect(s.replies.length > 0 && s.replies.every((r) => r.output === "MIDISPORT 2x2 Port A")).toBe(true);
+      expect(clock.ms - 1000 >= SCAN_WINDOW_MS * OUTPUTS.length).toBe(true); // each window ran its course
+    });
+});
+
+test("a device talking BEFORE it is asked is not taken as an answer", () => {
+  withHost(() => {}, (h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    runScan(clock);
+    // Arrives after every window has closed: a straggler, not a reply to anything we sent.
+    h.hear("LPProMK3 MIDI", PRO_MK3_REPLY);
+    expect(pollLaunchpadScan()!.replies).toEqual([]);
+  });
 });
 
 test("Forget clears the pair AND the name, so the submenu goes away again", () => {
-  const lp = installLaunchpad({
-    inputs: ["MIDISPORT 2x2 Port A"], outputs: ["MIDISPORT 2x2 Port B"],
-    selectedInput: "MIDISPORT 2x2 Port A", selectedOutput: "MIDISPORT 2x2 Port B",
-    deviceLabel: "Launchpad Pro [MK3]",
-  });
-  try {
-    const be = new MockBackend();
-    findItem(midiSettingsRows(composeAppStores({ backend: be }), be), "midi-scan-forget")?.onSelect?.();
-    expect(lp.calls.ports).toEqual([["", ""]]);
-    expect(lp.calls.device).toEqual([""]); // a name left behind would keep claiming a device that is gone
-  } finally {
-    lp.restore();
-  }
+  withHost((h) => Object.assign(h, TRS), (_h, stores, be) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan-forget")?.onSelect?.();
+    expect(stores.userConfig.controlSurface()).toEqual({ input: "", output: "", enabled: false, device: "" });
+    expect(submenu(stores, be).length).toBe(0); // a name left behind would keep claiming a device that is gone
+  }, TRS_PICK);
 });
 
-test("the status row names the device a scan read off the hardware", () => {
-  const lp = installLaunchpad({ connected: true, enabled: true, deviceLabel: "Launchpad Pro [MK3]" });
-  try {
-    const be = new MockBackend();
-    // "connected" alone reads the same whether the cable reaches a Launchpad or nothing at all.
-    expect(findItem(submenu(composeAppStores({ backend: be }), be), "lp-status")?.label)
-      .toBe("Status: connected - Launchpad Pro [MK3]");
-  } finally {
-    lp.restore();
-  }
+// --- startup restore, scan ownership, profiles -------------------------------------------------------------
+
+test("the startup restore tells the host it is done, claim or no claim", () => {
+  // The standalone holds its MIDI stream and audio back until it hears this, so a restored device is reserved before that
+  // stream opens and costs no audio restart. Silence would leave the host waiting out its bound.
+  withHost(() => {}, (h, stores) => {
+    restoreLaunchpad(stores.userConfig);
+    expect(h.restoredCalls).toBe(1);
+    expect(h.claims).toEqual([]);
+  });
+  withHost(() => {}, (h, stores) => {
+    restoreLaunchpad(stores.userConfig);
+    expect(h.restoredCalls).toBe(1);
+    expect(h.claims.length).toBe(1);
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
+});
+
+test("while a scan runs, the selection is the scan's: manual edits are greyed and refused", () => {
+  // Otherwise a pick made mid-scan is stomped when the scan settles - and on Windows a mid-scan Connect fails outright,
+  // since the scan holds every input and a Windows MIDI input is exclusive. The case starts from a SAVED selection, so the
+  // Forget row would be ENABLED without the scan guard: it is the scan, not an empty pair, that greys it.
+  withHost((h) => h.answers.set("MIDISPORT 2x2 Port A", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY }),
+    (h, stores, be, clock) => {
+      stores.userConfig.setControlSurface({
+        input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", device: "Launchpad Pro [MK3]", enabled: true,
+      });
+      findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+      const rows = submenu(stores, be);
+      for (const id of ["lp-input", "lp-output", "lp-connect"]) expect(findItem(rows, id)?.disabled).toBe(true);
+      expect(findItem(midiSettingsRows(stores, be), "midi-scan-forget")?.disabled).toBe(true);
+      // ...and refused even if called directly: the saved pair is still there afterwards (a Forget that did nothing must
+      // not read as one that cleared it), and nothing was claimed.
+      setLaunchpadPorts(stores.userConfig, "Arturia KeyStep 32", "LPProMK3 MIDI");
+      connectLaunchpad(stores.userConfig, true, getLaunchpadConfig(stores.userConfig));
+      forgetLaunchpad(stores.userConfig);
+      expect(stores.userConfig.controlSurface()).toEqual({
+        input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true, device: "Launchpad Pro [MK3]",
+      });
+      expect(h.claims).toEqual([]);
+      applyLaunchpadScan(stores.userConfig, runScan(clock)!);
+      expect(stores.userConfig.controlSurface().input).toBe("MIDISPORT 2x2 Port A");
+      // Once it is over, the rows are live again.
+      expect(findItem(submenu(stores, be), "lp-connect")?.disabled).toBe(undefined);
+    });
+});
+
+test("other Novation gear answering the inquiry is not taken for a Launchpad", () => {
+  // Same manufacturer bytes, a family we have no profile for (a Launchkey, a Circuit). Taking it would claim somebody's
+  // keyboard out of the shared MIDI stream and send it a Pro MK3's mode messages.
+  const OTHER_NOVATION = [0xf0, 0x7e, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, 0x37, 0x01, 0, 0, 0, 1, 2, 3, 0xf7];
+  withHost((h) => {
+    h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: OTHER_NOVATION });
+    h.answers.set("MIDISPORT 2x2 Port A", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY });
+  }, (_h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    // Asked FIRST, answered first - and still passed over for the Launchpad behind it.
+    expect(applyLaunchpadScan(stores.userConfig, runScan(clock)!)?.input).toBe("MIDISPORT 2x2 Port A");
+  });
+  withHost((h) => h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: OTHER_NOVATION }),
+    (_h, stores, be, clock) => {
+      findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+      expect(applyLaunchpadScan(stores.userConfig, runScan(clock)!)).toBe(null);
+      expect(stores.userConfig.controlSurface().input).toBe("");
+      // Said, rather than "Nothing answered" - something did answer.
+      expect(findItem(midiSettingsRows(stores, be), "midi-scan-status")?.label)
+        .toBe("Control Surface: Novation device (family 37 01) - not supported");
+    });
+});
+
+test("a finished scan is applied once, even if the UI remounts and the poll sees it again", () => {
+  withHost((h) => h.answers.set("MIDISPORT 2x2 Port A", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY }),
+    (_h, stores, be, clock) => {
+      findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+      const done = runScan(clock)!;
+      expect(applyLaunchpadScan(stores.userConfig, done)?.input).toBe("MIDISPORT 2x2 Port A");
+      findItem(submenu(stores, be), "lp-input")?.onCycle?.(-1); // the user picks something else afterwards
+      const picked = stores.userConfig.controlSurface().input;
+      expect(applyLaunchpadScan(stores.userConfig, pollLaunchpadScan()!)).toBe(null); // the remounted poll
+      expect(stores.userConfig.controlSurface().input).toBe(picked);
+    });
+});
+
+test("a scan opens every input in one batch", () => {
+  withHost(() => {}, (h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    runScan(clock);
+    expect(h.inputBatches).toBe(1);
+  });
+});
+
+// --- model confirmation, cancel, labels, retry -------------------------------------------------------------
+
+test("a Mini MK3 answers with the Pro's own family bytes - and is still not taken for one", () => {
+  // Both manuals give 13 01. Only the confirm stage tells them apart: the Pro answers a question in its own SysEx header
+  // (0E); a Mini ignores it. Taken, a Mini would be claimed and sent messages it ignores.
+  withHost((h) => h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: PRO_MK3_REPLY, isPro: false }),
+    (h, stores, be, clock) => {
+      findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+      const s = runScan(clock)!;
+      expect(applyLaunchpadScan(stores.userConfig, s)).toBe(null);
+      expect(stores.userConfig.controlSurface().input).toBe("");
+      // It WAS asked: the candidate got the Pro's model query on the pair it answered on.
+      expect(h.written.some((w) => w.port === "LPProMK3 MIDI" && w.bytes.length === 8 && w.bytes[5] === 0x0e)).toBe(true);
+      expect(findItem(midiSettingsRows(stores, be), "midi-scan-status")?.label)
+        .toBe("Control Surface: Novation device (family 13 01, not a Launchpad Pro [MK3]) - not supported");
+    });
+});
+
+test("a Mini answering first does not hide the Pro behind it", () => {
+  withHost((h) => {
+    h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: PRO_MK3_REPLY, isPro: false });
+    h.answers.set("MIDISPORT 2x2 Port A", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY });
+  }, (_h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    expect(applyLaunchpadScan(stores.userConfig, runScan(clock)!)?.input).toBe("MIDISPORT 2x2 Port A");
+  });
+});
+
+test("the model is confirmed on the pair that answered, without reopening a single port", () => {
+  // The question goes out as a follow-up while the sweep still holds the pair. A second stage would reopen it - another
+  // Windows round of stepping the shared stream aside, and a window for another program to grab the port and make a real
+  // Pro look silent.
+  withHost((h) => h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: PRO_MK3_REPLY }), (h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    const s = runScan(clock)!;
+    expect(s.found?.name).toBe(PRO_MK3.name);
+    expect(h.inputBatches).toBe(1);
+    expect(h.written.filter((w) => w.port === "LPProMK3 MIDI").map((w) => w.bytes))
+      .toEqual([deviceInquiry(), modelQuery(PRO_MK3)]);
+  });
+});
+
+test("Cancel ends a scan, closes its ports, and records nothing it found", () => {
+  withHost((h) => h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: PRO_MK3_REPLY }), (h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    clock.ms += SCAN_WINDOW_MS - 10;
+    pollLaunchpadScan(); // the Pro has answered the inquiry by now
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.(); // "Cancel Scan"
+    expect(h.openHandles()).toBe(0);
+    const s = pollLaunchpadScan()!;
+    expect(s.busy).toBe(false);
+    expect(applyLaunchpadScan(stores.userConfig, s)).toBe(null);
+    expect(stores.userConfig.controlSurface().input).toBe("");
+    expect(findItem(midiSettingsRows(stores, be), "midi-scan-status")?.label).toBe("Control Surface: Cancelled");
+  });
+});
+
+test("'not supported' still says when ports could not be looked through", () => {
+  // On Windows the Launchpad may be behind exactly the port another program holds.
+  const OTHER = [0xf0, 0x7e, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, 0x37, 0x01, 0, 0, 0, 1, 2, 3, 0xf7];
+  withHost((h) => {
+    h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: OTHER });
+    h.busyPorts.add("MIDISPORT 2x2 Port A");
+  }, (_h, stores, be, clock) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    runScan(clock);
+    expect(findItem(midiSettingsRows(stores, be), "midi-scan-status")?.label)
+      .toBe("Control Surface: Novation device (family 37 01) - not supported (2 port(s) in use elsewhere)");
+  });
+});
+
+test("a saved pair whose device was away offers Connect again, and a way to stop retrying", () => {
+  withHost((h) => h.away.add("LPProMK3 MIDI"), (h, stores, be) => {
+    restoreLaunchpad(stores.userConfig); // the device is away: the claim fails
+    let rows = submenu(stores, be);
+    expect(findItem(rows, "lp-connect")?.label).toBe("Connect"); // not "Disconnect" - nothing is connected
+    h.away.clear(); // plugged back in
+    findItem(rows, "lp-connect")?.onSelect?.();
+    expect(h.current()?.input).toBe("LPProMK3 MIDI");
+    expect(findItem(submenu(stores, be), "lp-stop")).toBe(undefined); // connected: no retry row
+    h.held = null; // and away again
+    h.away.add("LPProMK3 MIDI");
+    rows = submenu(stores, be);
+    findItem(rows, "lp-stop")?.onSelect?.();
+    expect(stores.userConfig.controlSurface().enabled).toBe(false); // no longer reclaimed at launch
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
+});
+
+test("re-applying the pair already held does not re-claim it", () => {
+  // A re-claim releases first, and the release replays the close bytes: the device would drop out of Programmer mode on
+  // every remount restore or same-port pick.
+  withHost(() => {}, (h, stores) => {
+    restoreLaunchpad(stores.userConfig);
+    restoreLaunchpad(stores.userConfig);
+    setLaunchpadPorts(stores.userConfig, "LPProMK3 MIDI", "LPProMK3 MIDI");
+    expect(h.claims.length).toBe(1);
+    expect(h.released).toEqual([]);
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
+});
+
+// --- releasing the device, names that move, echoes ---------------------------------------------------------
+
+test("switching the controller off in the project lets the device go, with the pair still claimed", () => {
+  // The session just drops the role: nothing there can say goodbye, and a Launchpad would stay in Programmer mode with
+  // its front panel locked. So the UI sends the claim's close bytes once the role has gone.
+  withHost(() => {}, (h, stores) => {
+    restoreLaunchpad(stores.userConfig);
+    pollControllerRole(false); // at startup: nothing was running, nothing to let go of
+    expect(h.sentToDevice).toEqual([]);
+    stores.project.setController({ enabled: true });
+    pollControllerRole(true);
+    stores.project.setController({ enabled: false });
+    pollControllerRole(false);
+    expect(h.sentToDevice).toEqual([]); // not yet: the role's last blocks may still be on their way out
+    for (let i = 1; i < RELEASE_DELAY_POLLS; i++) pollControllerRole(false);
+    expect(h.sentToDevice).toEqual([exitToLiveMode(PRO_MK3)]);
+    expect(h.held !== null).toBe(true); // still claimed: switching it back on brings a role that retakes it
+    pollControllerRole(false);
+    expect(h.sentToDevice.length).toBe(1); // once
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
+});
+
+test("switching it back on before the release cancels the release", () => {
+  withHost(() => {}, (h, stores) => {
+    restoreLaunchpad(stores.userConfig);
+    pollControllerRole(true);
+    pollControllerRole(false);
+    pollControllerRole(true); // a quick off-on: the role is back, so there is nothing to let go
+    for (let i = 0; i < RELEASE_DELAY_POLLS + 2; i++) pollControllerRole(true);
+    expect(h.sentToDevice).toEqual([]);
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
+});
+
+test("an interface that echoes SysEx back does not confirm itself as a Pro", () => {
+  // A soft-thru answers the model query with the query. The reply must have the manual's select-layout shape.
+  withHost((h) => {
+    h.answers.set("MIDISPORT 2x2 Port A", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY, isPro: false });
+  }, (h, stores, be, clock) => {
+    setLaunchpadClient(h.sending((_handle, bytes) => {
+      if (bytes[0] === 0xf0 && bytes[1] === 0x00) h.hear("MIDISPORT 2x2 Port A", bytes); // the echo
+    }));
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    expect(applyLaunchpadScan(stores.userConfig, runScan(clock)!)).toBe(null);
+  });
+});
+
+test("a saved port renamed by the backend is found again by its stem", () => {
+  // ALSA names carry the client number and Windows an index; both move when other devices come and go.
+  withHost((h) => {
+    h.inputs = ["LPProMK3 MIDI:LPProMK3 MIDI 131:0"];
+    h.outputs = ["LPProMK3 MIDI:LPProMK3 MIDI 131:0"];
+  }, (h, stores) => {
+    restoreLaunchpad(stores.userConfig);
+    expect(h.current()?.input).toBe("LPProMK3 MIDI:LPProMK3 MIDI 131:0");
+    expect(stores.userConfig.controlSurface().input).toBe("LPProMK3 MIDI:LPProMK3 MIDI 131:0"); // and re-saved
+  }, { input: "LPProMK3 MIDI:LPProMK3 MIDI 128:0", output: "LPProMK3 MIDI:LPProMK3 MIDI 128:0", enabled: true });
+  // Two candidates with one stem (two identical interfaces): not guessed between.
+  withHost((h) => {
+    h.inputs = ["IF 1", "IF 2"];
+    h.outputs = ["IF 1", "IF 2"];
+  }, (h, stores) => {
+    restoreLaunchpad(stores.userConfig);
+    expect(stores.userConfig.controlSurface().input).toBe("IF 0"); // left as saved (the facet refuses it: not here)
+    expect(h.claims.some((c) => c.input === "IF 1" || c.input === "IF 2")).toBe(false);
+  }, { input: "IF 0", output: "IF 0", enabled: true });
+});
+
+test("the port pickers are greyed while connected", () => {
+  // Stepping one live would claim every pair it passed, sending Programmer-mode bytes to each device.
+  withHost(() => {}, (_h, stores, be) => {
+    restoreLaunchpad(stores.userConfig);
+    const rows = submenu(stores, be);
+    expect(findItem(rows, "lp-input")?.disabled).toBe(true);
+    expect(findItem(rows, "lp-output")?.disabled).toBe(true);
+    expect(findItem(rows, "lp-connect")?.disabled).toBe(undefined); // Disconnect is how to change them
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", enabled: true });
+});
+
+test("the USB hint is the device's own MIDI port, not its other interfaces as Windows names them", () => {
+  expect(looksLikeLaunchpad("LPProMK3 MIDI")).toBe(true);
+  expect(looksLikeLaunchpad("LPProMK3 MIDI 0")).toBe(true); // RtMidi's Windows index
+  expect(looksLikeLaunchpad("LPProMK3 MIDI:LPProMK3 MIDI 128:0")).toBe(true); // ALSA
+  expect(looksLikeLaunchpad("MIDIIN2 (LPProMK3 MIDI) 1")).toBe(false); // the DIN interface, on Windows
+  expect(looksLikeLaunchpad("MIDIOUT3 (LPProMK3 MIDI) 2")).toBe(false); // the DAW interface
 });

@@ -198,6 +198,7 @@ set(_rp_refused_manifests
     "RpcOnDevice|entry scratch-desktop is `device` and names a provider or an rpc"
     "RpcWithoutProvider|entry scratch-desktop names an rpc and no provider"
     "ProviderWithoutDevice|entry scratch-desktop needs \"device\": true or false"
+    "EntryWithProvider|would drop the node type with the service"
     "NoContributionMember|has none of a retroplug.native, retroplug.script, retroplug.app or retroplug.protocol field"
     "ScriptNotObject|retroplug.script is a STRING, not an object"
     "ScriptWithoutEntry|retroplug.script needs an \"entry\""
@@ -352,28 +353,8 @@ retroplug_add_test_binary(
 retroplug_add_test_binary(
     NAME     retroplug-midi-test
     SOURCES  test/midi/MidiPortSelect.test.cpp
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
-
-# Guards the LEGACY control-surface host (src/host/launchpad: LaunchpadLink, LaunchpadHost, LaunchpadScanner) until the
-# products are rewritten on the pack's provider and it is deleted: LaunchpadLink's connect/disconnect lifecycle, the two
-# rings (a message received reaching the audio-thread drain, allocation-free; an oversized LED message dropped rather
-# than overrunning its slot), the FAREWELL replayed on both disconnect and destruct (Programmer mode locks the device's
-# front panel, so skipping that strands the user's hardware), LaunchpadHost's launchpad.cfg round-trip and reserved-port
-# reporting, and LaunchpadScanner's device-inquiry scan. No rtmidi, no MIDI system, no hardware: a capturing fake
-# IMidiPort. The pack's own transport tests are retroplug-launchpad-test, packages/launchpad/native.
-retroplug_add_test_binary(
-    NAME     retroplug-launchpad-legacy-test
-    SOURCES  test/launchpad/LaunchpadLink.test.cpp
-             test/launchpad/LaunchpadSurfaceLink.test.cpp  # the surface device link over LaunchpadLink
-             src/host/launchpad/LaunchpadLink.cpp
-             src/host/launchpad/LaunchpadHost.cpp
-             src/host/launchpad/LaunchpadScanner.cpp
-             test/graph/CountingAllocator.cpp          # the block thread's drain allocates and frees nothing
-    LIBS     Threads::Threads                          # LaunchpadScanner's scan thread
-             retroplug-launchpad                       # launchpad/SurfaceLink.hpp, the contract the adapter implements
-             retroplug-node-sdk-headers                # transport/SpscRing.hpp, the rings' type
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
-             ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/launchpad/*.hpp
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src                     # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
+             ${CMAKE_SOURCE_DIR}/packages/launchpad/native/src)  # the pack's copy of the allow-list rule, held case by case
 
 # Proves the ThorVG-backed <Lottie> capability: that lv_lottie rasterizes animated vector frames on a
 # headless software display (LV_USE_LOTTIE -> ThorVG). Links bare lvgl (which PRIVATE-brings

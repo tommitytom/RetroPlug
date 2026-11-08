@@ -46,9 +46,10 @@ static bool coreMidiAvailable() {
 }
 #endif
 
-// Declared in the header: everything that builds an RtMidiIn/RtMidiOut, here or in the Launchpad link,
-// must pass through this first -- see coreMidiAvailable(), RtMidi turns a CoreMIDI failure into a
-// process abort, so "ask first" is the only protection available.
+// Declared in the header: everything that builds an RtMidiIn/RtMidiOut HERE must pass through this first -- see
+// coreMidiAvailable(), RtMidi turns a CoreMIDI failure into a process abort, so "ask first" is the only protection
+// available. A package's own ports ask their own copy of the probe (packages/launchpad/native/src/launchpad/desktop/
+// RtMidiPort.cpp): a package may not include this tree.
 bool midiSystemUsable() {
 #if defined(__APPLE__)
     return coreMidiAvailable();
@@ -125,7 +126,7 @@ std::vector<std::string> MidiIo::listOutputs() const { return hardwarePortNames(
 
 void MidiIo::openHardwareInputs() {
     hwIn_.clear();
-    if (inputsSuspended_) return;  // a control-surface scan holds the ports (see setHardwareInputsSuspended)
+    if (inputsSuspended_) return;  // a control-surface scan holds the inputs (see setHardwareInputsSuspended)
     const std::vector<std::string> names = probePortNames(true, clientName_);
     // The policy lives in the pure helper so it can be unit-tested: none (the default) / every device / the
     // named one, with a control surface's claimed port skipped throughout.
@@ -137,6 +138,14 @@ void MidiIo::openHardwareInputs() {
             auto in = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, clientName_);
             in->ignoreTypes(false, false, true);  // sysex delivered — see open()
             in->setCallback(&MidiIo::onMidiIn, this);
+            // The index came from a SEPARATE object's enumeration: a client hot-plugged in between shifts every index after
+            // it, and opening by number would then take a port the filter never judged. The name is checked on the object
+            // that is opening it, and a port that moved is left for the next apply (each selection change re-probes).
+            if (in->getPortCount() <= i || in->getPortName(static_cast<unsigned>(i)) != names[i]) {
+                std::fprintf(stderr, "[retroplug-sdl] MIDI in: port %zu is no longer '%s'; not opening it\n", i,
+                             names[i].c_str());
+                continue;
+            }
             in->openPort(static_cast<unsigned>(i), names[i]);
             std::fprintf(stderr, "[retroplug-sdl] MIDI in: connected hardware port '%s'\n", names[i].c_str());
             hwIn_.push_back(std::move(in));
@@ -149,6 +158,10 @@ void MidiIo::openHardwareInputs() {
 void MidiIo::openHardwareOutput() {
     hwOut_.reset();
     if (selectedOut_.empty()) return;  // None = virtual output only
+    if (selectedOut_ == reservedOut_) {  // a control surface holds it - see setReserved
+        std::fprintf(stderr, "[retroplug-sdl] MIDI out: '%s' is held by the control surface\n", selectedOut_.c_str());
+        return;
+    }
     const std::vector<std::string> names = probePortNames(false, clientName_);
     auto idx = matchPortIndex(names, clientName_, selectedOut_);
     if (!idx) {  // saved device not currently present — remembered, re-applied on reconnect
@@ -157,7 +170,16 @@ void MidiIo::openHardwareOutput() {
     }
     try {
         hwOut_ = std::make_unique<RtMidiOut>(RtMidi::UNSPECIFIED, clientName_);
-        hwOut_->openPort(static_cast<unsigned>(*idx), names[*idx]);
+        // By name on the opening object, as the input is: the index belongs to an earlier probe, and a port plugged in
+        // between the two shifts it (see openHardwareInputs).
+        const unsigned at = static_cast<unsigned>(*idx);
+        if (hwOut_->getPortCount() <= at || hwOut_->getPortName(at) != names[*idx]) {
+            std::fprintf(stderr, "[retroplug-sdl] MIDI out: selected port '%s' is no longer at its index; not opening it\n",
+                         selectedOut_.c_str());
+            hwOut_.reset();
+            return;
+        }
+        hwOut_->openPort(at, names[*idx]);
         std::fprintf(stderr, "[retroplug-sdl] MIDI out: connected hardware port '%s'\n", names[*idx].c_str());
     } catch (RtMidiError& e) {
         std::fprintf(stderr, "[retroplug-sdl] MIDI: output open failed for '%s': %s\n", selectedOut_.c_str(), e.what());
@@ -175,16 +197,41 @@ void MidiIo::setOutputSelection(const std::string& name) {
     if (out_) openHardwareOutput();
 }
 
-void MidiIo::setReservedInput(const std::string& name) {
-    if (reservedIn_ == name) return;  // reapplied every frame by the host; only a real change reopens ports
-    reservedIn_ = name;
-    if (in_) openHardwareInputs();  // apply live (host pauses audio around this)
+std::vector<std::string> MidiIo::inputsFor(const std::string& reservedIn, bool suspended) const {
+    std::vector<std::string> out;
+    if (!in_ || selectedIn_.empty()) return out;  // None: nothing to open, and nothing to probe
+    const std::vector<std::string> names = probePortNames(true, clientName_);
+    for (std::size_t i : inputPortsToOpen(names, clientName_, selectedIn_, reservedIn, suspended)) out.push_back(names[i]);
+    return out;
+}
+
+std::string MidiIo::outputFor(const std::string& reservedOut) const {
+    if (!out_ || selectedOut_.empty() || selectedOut_ == reservedOut) return {};
+    return selectedOut_;
+}
+
+bool MidiIo::reservationChanges(const std::string& input, const std::string& output) const {
+    return inputsFor(reservedIn_, inputsSuspended_) != inputsFor(input, inputsSuspended_)
+        || outputFor(reservedOut_) != outputFor(output);
+}
+
+void MidiIo::setReserved(const std::string& input, const std::string& output) {
+    const bool inputs  = inputsFor(reservedIn_, inputsSuspended_) != inputsFor(input, inputsSuspended_);
+    const bool outputs = outputFor(reservedOut_) != outputFor(output);
+    reservedIn_  = input;
+    reservedOut_ = output;
+    if (inputs && in_) openHardwareInputs();  // only what actually moves is reopened
+    if (outputs && out_) openHardwareOutput();
+}
+
+bool MidiIo::suspensionChanges(bool suspended) const {
+    return inputsFor(reservedIn_, inputsSuspended_) != inputsFor(reservedIn_, suspended);
 }
 
 void MidiIo::setHardwareInputsSuspended(bool suspended) {
     if (inputsSuspended_ == suspended) return;
     inputsSuspended_ = suspended;
-    if (in_) openHardwareInputs();  // closes them, or re-applies selectedIn_ on the way back
+    if (in_) openHardwareInputs();  // closes them, or re-applies the selection on the way back
     std::fprintf(stderr, "[retroplug-sdl] MIDI in: hardware inputs %s\n",
                  suspended ? "suspended for a control-surface scan" : "resumed");
 }

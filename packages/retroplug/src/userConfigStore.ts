@@ -13,6 +13,7 @@ import {
   RENDER_SAMPLE_RATES,
   RENDER_SPLITS,
   SRAM_AUTO_SAVES,
+  type ControlSurfaceSettings,
   type RenderOnExists,
   type RenderSettings,
   type SramAutoSave,
@@ -98,34 +99,43 @@ export class UserConfigStore {
   render(): RenderSettings {
     return { ...this.current.render };
   }
+  controlSurface(): ControlSurfaceSettings {
+    return { ...this.current.controlSurface };
+  }
+
+  /** Change the control-surface selection (any subset of its fields). Only records the choice: claiming the ports is
+   *  launchpadDevices.ts's job, so a store with no host under it (the plugin, a test) is fine. */
+  setControlSurface(patch: Partial<ControlSurfaceSettings>): boolean {
+    return this.update((c) => ({ ...c, controlSurface: { ...c.controlSurface, ...patch } }));
+  }
 
   /** Set the active keyboard binding profile (a plain name; profile-name format
    *  validation lands with the profiles increment). Returns whether it changed. */
   setActiveKeyboardBindings(name: string): boolean {
-    return this.commit({ ...this.current, activeKeyboardBindings: name });
+    return this.update((c) => ({ ...c, activeKeyboardBindings: name }));
   }
 
   /** Set the active gamepad binding profile. Returns whether it changed. */
   setActiveGamepadBindings(name: string): boolean {
-    return this.commit({ ...this.current, activeGamepadBindings: name });
+    return this.update((c) => ({ ...c, activeGamepadBindings: name }));
   }
 
   /** Set the default zoom. Rejects a non-integer or out-of-range (1..6) value (returns
    *  false, no change), matching native. */
   setDefaultZoom(zoom: number): boolean {
     if (!Number.isInteger(zoom) || zoom < 1 || zoom > 6) return false;
-    return this.commit({ ...this.current, defaultZoom: zoom });
+    return this.update((c) => ({ ...c, defaultZoom: zoom }));
   }
 
   /** Set the loose-.sav auto-save preference. Rejects an unknown mode. */
   setSramAutoSave(mode: SramAutoSave): boolean {
     if (!SRAM_AUTO_SAVES.includes(mode)) return false;
-    return this.commit({ ...this.current, sramAutoSave: mode });
+    return this.update((c) => ({ ...c, sramAutoSave: mode }));
   }
 
   /** Use the host's OS file dialog instead of the in-app browser (where the host provides one). */
   setUseNativeFileDialogs(on: boolean): boolean {
-    return this.commit({ ...this.current, useNativeFileDialogs: on });
+    return this.update((c) => ({ ...c, useNativeFileDialogs: on }));
   }
 
   // --- render-menu selections (System > Render) ---
@@ -191,7 +201,35 @@ export class UserConfigStore {
   }
 
   private commitRender(patch: Partial<RenderSettings>): boolean {
-    return this.commit({ ...this.current, render: { ...this.current.render, ...patch } });
+    return this.update((c) => ({ ...c, render: { ...c.render, ...patch } }));
+  }
+
+  /** Apply `fn` to the config AS IT IS ON DISK, then commit. The file is shared - the DAW plugin, another standalone -
+   *  and this process only reads it at launch (only the plugin watches it), so a change computed from the in-memory
+   *  copy wrote that whole stale copy back: one Connect here reverted every setting the plugin had changed since, and
+   *  the plugin's own watcher then adopted the reverts live. */
+  private update(fn: (cfg: UserConfig) => UserConfig): boolean {
+    this.syncFromDisk();
+    return this.commit(fn(this.current));
+  }
+
+  /** Adopt what is on disk now, as reload() does: a valid, different file replaces the in-memory copy (and notifies); a
+   *  newer-stamped one latches read-only; missing or malformed keeps what we have. */
+  private syncFromDisk(): void {
+    const bytes = this.backend.readFile(this.filePath());
+    if (!bytes) return;
+    const parsed = parseUserConfigResult(dec.decode(bytes));
+    if (!parsed.ok) {
+      if (parsed.reason === "newer" && !this.readOnly) {
+        this.readOnly = true;
+        warnStampedNewer(CONFIG_FILE, parsed.stamped, USER_CONFIG_SCHEMA);
+      }
+      return;
+    }
+    this.readOnly = false;
+    if (serializeUserConfig(parsed.value) === serializeUserConfig(this.current)) return;
+    this.current = parsed.value;
+    this.onChange();
   }
 
   private filePath(): string {
@@ -203,8 +241,10 @@ export class UserConfigStore {
     if (this.readOnly) return false; // a newer build wrote this file; ours is not the version that gets to edit it
     const after = serializeUserConfig(next);
     if (after === serializeUserConfig(this.current)) return false; // genuine no-op
+    // Adopted only once it is on disk. A failed write (on Windows, another process holding the file open without
+    // FILE_SHARE_DELETE fails the rename) must not show the change all session and lose it at the next launch.
+    if (!this.backend.writeFileAtomic(this.filePath(), enc.encode(after))) return false;
     this.current = next;
-    this.backend.writeFileAtomic(this.filePath(), enc.encode(after));
     this.onChange();
     return true;
   }

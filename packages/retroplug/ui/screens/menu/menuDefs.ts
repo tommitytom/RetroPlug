@@ -114,11 +114,11 @@ import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from
 import { getN8CartJob, n8DumpSram, n8LoadRom, n8RestoreSram, projectCart, type N8CartJob } from "./n8SdOps";
 import {
   getLaunchpadConfig, setLaunchpadPorts, connectLaunchpad, looksLikeLaunchpad, launchpadDetected,
-  hasLaunchpadScan, startLaunchpadScan, getLaunchpadScan, launchpadFromScan, forgetLaunchpad,
+  hasLaunchpad, startLaunchpadScan, cancelLaunchpadScan, getLaunchpadScan, launchpadScanBusy, forgetLaunchpad,
   type LaunchpadConfig, type LaunchpadScanStatus,
 } from "./launchpadDevices";
-import { controllerApps } from "../../../src/controller/registry";
-import { QUANTISE_VALUES, type Quantise } from "@retroplug/lsdj-launchpad/lsdjMidiMap";
+import { controllerApps, controllerApp } from "../../../src/controller/registry";
+import type { ControllerAppContribution } from "@retroplug/launchpad/registry";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "@retroplug/launchpad/enums";
 import { controllerSyncOverride } from "../../../src/graph/controller";
 import { systemNodeId } from "../../../src/graph/buildGraph";
@@ -307,13 +307,18 @@ function inputCyclerNames(devices: string[], selected: string): { names: string[
  *  something quite different from "nothing is there". */
 function launchpadScanLabel(scan: LaunchpadScanStatus | null, cfg: LaunchpadConfig | null): string {
   if (scan?.busy) return scan.phase || "Scanning...";
-  if (scan?.error) return `Error: ${scan.error}`;
+  if (scan?.cancelled) return "Cancelled";
   if (scan?.done) {
-    const hit = launchpadFromScan(scan);
+    // A confirmed find leads even if something went wrong afterwards (a port that would not close): it was applied, so
+    // the row has to say so.
+    const hit = scan.found;
     if (hit) return `${hit.name} on ${hit.input}`;
-    return scan.skipped > 0
-      ? `Nothing answered (${scan.skipped} port(s) in use elsewhere)`
-      : "Nothing answered";
+    // "Could not look" stays attached to whatever else is said: on Windows a port another program holds cannot be
+    // probed at all, and the device being looked for may be behind exactly that port.
+    const inUse = scan.skipped > 0 ? ` (${scan.skipped} port(s) in use elsewhere)` : "";
+    if (scan.error) return `Error: ${scan.error}${inUse}`;
+    if (scan.unsupported) return `${scan.unsupported} - not supported${inUse}`;
+    return `Nothing answered${inUse}`;
   }
   if (cfg?.deviceLabel && cfg.selectedInput) return `${cfg.deviceLabel} on ${cfg.selectedInput}`;
   return "Not scanned";
@@ -323,7 +328,7 @@ function launchpadScanLabel(scan: LaunchpadScanStatus | null, cfg: LaunchpadConf
 // FOUND, which is why it lives here and not in the instance menu's Launchpad submenu: that submenu only
 // appears once a device is known, so a TRS-attached surface would have nowhere to be set up from. Settings
 // is where you describe your rig; the instance menu is where you play the hardware you have.
-function midiSettingsChildren(): MenuItem[] {
+function midiSettingsChildren(ctx: MenuContext): MenuItem[] {
   const cfg = getMidiConfig() ?? { inputs: [], outputs: [], selectedInput: "", selectedOutput: "" };
   const inp = inputCyclerNames(cfg.inputs, cfg.selectedInput);
   const out = deviceCyclerNames(cfg.outputs, cfg.selectedOutput, "None");
@@ -331,7 +336,8 @@ function midiSettingsChildren(): MenuItem[] {
   // single sentinel at 0.
   const inName = (n: number) => (n === 0 ? "" : n === 1 ? ALL_INPUTS : cfg.inputs[n - 2] ?? cfg.selectedInput);
   const outName = (n: number) => (n === 0 ? "" : cfg.outputs[n - 1] ?? cfg.selectedOutput);
-  const lpcfg = getLaunchpadConfig();
+  const store = ctx.stores.userConfig;
+  const lpcfg = getLaunchpadConfig(store);
   const scan = getLaunchpadScan();
   return [
     cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),
@@ -339,14 +345,17 @@ function midiSettingsChildren(): MenuItem[] {
     // Writing MIDI at a stranger's gear is never something to do on a timer or a render, so this is the
     // only trigger: one Universal Device Inquiry per output, on request. Disabled while the link holds a
     // pair - those ports cannot be reopened, and a connected device is already found.
-    ...(hasLaunchpadScan()
+    ...(hasLaunchpad()
       ? [
           separator("midi-sep-surface"),
-          action("midi-scan", "Scan for Control Surface", () => void startLaunchpadScan(),
-            !!scan?.busy || !!lpcfg?.connected),
+          action("midi-scan", scan?.busy ? "Cancel Control Surface Scan" : "Scan for Control Surface",
+            () => void (scan?.busy ? cancelLaunchpadScan() : startLaunchpadScan()),
+            !!lpcfg?.connected),
           infoRow("midi-scan-status", `Control Surface: ${launchpadScanLabel(scan, lpcfg)}`),
-          action("midi-scan-forget", "Forget Control Surface", () => forgetLaunchpad(),
-            !lpcfg?.selectedInput || !!lpcfg?.connected),
+          // Greyed while a scan runs as well: its answer is about to become the selection, and forgetLaunchpad refuses
+          // mid-scan (a Forget that did nothing would read as a broken row).
+          action("midi-scan-forget", "Forget Control Surface", () => forgetLaunchpad(store),
+            !lpcfg?.selectedInput || !!lpcfg?.connected || !!scan?.busy),
         ]
       : []),
   ];
@@ -398,42 +407,43 @@ function cartFor(ctx: MenuContext, sys: SystemView | null): { system: SystemView
 // answer. The port cyclers still offer every port unfiltered, so a wrong guess is fixable here.
 //
 // The rows straddle two scopes on purpose, because setting the feature up needs both: the ports + Connect
-// are HOST state (persisted natively in launchpad.cfg, shared by every project), while the app, its launch
-// quantise, and Enable are PROJECT state (persisted in the .rplg, since which cart a surface drives is a
-// property of the project).
-const QUANTISE_LABELS: Record<Quantise, string> = {
-  immediate: "Immediately",
-  beat: "Next beat",
-  bar: "Next bar",
-  rowEnd: "End of row",
-};
-
+// are HOST state (persisted in config.json's controlSurface, shared by every project), while the app, its own knobs and
+// Enable are PROJECT state (persisted in the .rplg, since which cart a surface drives is a property of the project).
+//
+// The app's rows are built from the registry: the project's app id picks the contribution, and the knobs are the ones ITS
+// module declares (menu), defaulted and bounded by ITS schema. So a second app is a package's change, not a shell one.
 const CONTROLLER_TARGET_LABELS: Record<ControllerTarget, string> = {
   system: "Emulated Cart",
   midiOut: "MIDI Out (real hardware)",
 };
 
-/** The read-only line describing what the controller has done to the cart's sync role. `cartSync` is the
- *  cart's OWN SYNC setting as last polled, which is what decides it. */
-function cartSyncLabel(mode: string, cartSync: string | null): string {
-  if (mode === "midiMap") return cartSync ? "Cart: MI.MAP - driven by the controller" : "Cart: MI.MAP - driven by the controller (SYNC unread)";
-  return `Cart SYNC is ${(cartSync ?? "").toUpperCase()}, not MI.MAP - not driving it`;
+/** The read-only line describing what the controller has done to the cart's sync role. `driving` is the app's own answer
+ *  (controllerSyncOverride): the mode its launches need is the one the cart is being put in, which is NOT "the mode is
+ *  not the string off" - an app whose off-mode is spelt differently, or that has none, would then read as driving while
+ *  nothing was sent. `cartSync` is the cart's OWN SYNC setting as last polled, which is what decided it. The wording
+ *  names the APP and no mode, so a second app needs no change here. */
+function cartSyncLabel(app: string, driving: boolean, cartSync: string | null): string {
+  if (driving) return cartSync ? `Cart: ${app} - driving it` : `Cart: ${app} - driving it (SYNC unread)`;
+  return `Cart: ${app} - not driving it: its SYNC is ${cartSync ?? "unread"}`;
 }
 
 /** The read-only status line: what the link is doing, in the words a player would use. */
 function launchpadStatus(cfg: LaunchpadConfig): string {
   if (cfg.connected) {
-    // `dropped` is what the device never got while it WAS attached (a full send ring, an oversized message): frames
-    // the surface is missing. `detached` is the paint a session kept pushing while the device was unplugged, which a
-    // later repaint replaces, so it never reads as a fault.
+    // `dropped` is what the device never got while it WAS attached (a full send ring, an oversized message): frames the
+    // surface is missing, which a repaint replaces but the row still reports.
     if (cfg.dropped > 0) return `connected (${cfg.dropped} dropped)`;
-    if (cfg.detached > 0) return `connected (${cfg.detached} sent while unplugged)`;
     // The name a scan read off the device, when there is one. Worth the room: it is the difference between
     // "the cable reaches a Launchpad" and "the ports opened", which otherwise read identically here.
     return cfg.deviceLabel ? `connected - ${cfg.deviceLabel}` : "connected";
   }
   if (cfg.error) return `Error: ${cfg.error}`;
   if (cfg.enabled) return !cfg.selectedInput || !cfg.selectedOutput ? "pick both ports" : "not connected";
+  // Nothing chosen, the feature off, and a device on a port named like its own USB interface: the whole of what an upgrade
+  // from the legacy host needs is that there is nothing to migrate and where a device is found (design section 5). The
+  // scan lives in Settings > MIDI because this submenu only exists for a device already known.
+  if (!cfg.selectedInput && !cfg.selectedOutput && cfg.inputs.some(looksLikeLaunchpad))
+    return "a Launchpad is here - Connect, or Settings > MIDI to scan for one";
   return "not connected";
 }
 
@@ -449,9 +459,27 @@ function launchpadPortNames(ports: string[], selected: string): { names: string[
   return { names, index: names.length - 1 };
 }
 
+/** The app's own rows, built from the registry and the app's schema: one per knob the app declares (`menu`), showing
+ *  what the project holds and defaulting to what the schema fills, so the shell names no app, no knob and no value. */
+function controllerAppRows(ctx: MenuContext, app: ControllerAppContribution | undefined, config: Record<string, unknown>): MenuItem[] {
+  if (!app || !app.menu) return [];
+  const project = ctx.stores.project;
+  const defaults = app.config.parse({}); // the schema is the source of a knob's default, as it is of its bounds
+  const current = (key: string): unknown => (config[key] !== undefined ? config[key] : defaults[key]);
+  const set = (key: string, value: unknown) => project.setController({ appConfig: { [key]: value } });
+  return app.menu.map((field) => {
+    const id = `lp-app-${field.key}`;
+    if (field.toggle) return cycler(id, field.label, OFF_ON, current(field.key) === false ? 0 : 1, (n) => set(field.key, n === 1));
+    const choices = field.choices ?? [];
+    const at = choices.findIndex((c) => c.value === current(field.key));
+    return cycler(id, field.label, choices.map((c) => c.label), Math.max(0, at), (n) => set(field.key, choices[n].value));
+  });
+}
+
 function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem[] {
   const project = ctx.stores.project;
   const controller = ctx.settings.controller;
+  const store = ctx.stores.userConfig;
   const inp = launchpadPortNames(cfg.inputs, cfg.selectedInput);
   const out = launchpadPortNames(cfg.outputs, cfg.selectedOutput);
   const portAt = (ports: string[], n: number, current: string) => (n === 0 ? "" : ports[n - 1] ?? current);
@@ -459,32 +487,43 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
   // Polled on the song-watch timer (refreshControllerSong), so reading it here costs a field access
   // rather than a 128 KB battery copy per menu render.
   const cartSync = controller.enabled ? project.controllerCartSync() : null;
-  // What the cart's lsdj-sync node will actually run, computed by the SAME helper buildGraph uses - so the row
-  // cannot describe something other than what is happening.
+  // What the published document will have the cart's sync node run, computed by the SAME helper buildGraph uses - so
+  // the row cannot describe something other than what is happening.
   const syncOverride = controllerSyncOverride(ctx.systems, controller.enabled ? { ...controller, cartSync } : null);
   const apps = controllerApps.list();
   const appIdx = Math.max(0, apps.findIndex((a) => a.id === controller.app));
-  const quantise = (controller.appConfig.quantise as Quantise) ?? "bar";
-  const follow = controller.appConfig.follow !== false;
+  const app = controllerApp(controller.app);
+
+  // Greyed while a scan runs: its answer is about to become the selection (launchpadScanBusy). The port pickers are
+  // greyed while connected too: stepping one live would claim every pair it passed - Programmer-mode bytes at whatever
+  // device each step landed on. Disconnect, pick, Connect.
+  const scanning = launchpadScanBusy();
+  const pickable = (item: MenuItem): MenuItem => (scanning || cfg.connected ? { ...item, disabled: true } : item);
 
   return [
-    cycler("lp-input", "Input Device", inp.names, inp.index, (n) =>
-      setLaunchpadPorts(portAt(cfg.inputs, n, cfg.selectedInput), cfg.selectedOutput)),
-    cycler("lp-output", "Output Device", out.names, out.index, (n) =>
-      setLaunchpadPorts(cfg.selectedInput, portAt(cfg.outputs, n, cfg.selectedOutput))),
-    action("lp-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectLaunchpad(!cfg.enabled, cfg)),
+    pickable(cycler("lp-input", "Input Device", inp.names, inp.index, (n) =>
+      setLaunchpadPorts(store, portAt(cfg.inputs, n, cfg.selectedInput), cfg.selectedOutput))),
+    pickable(cycler("lp-output", "Output Device", out.names, out.index, (n) =>
+      setLaunchpadPorts(store, cfg.selectedInput, portAt(cfg.outputs, n, cfg.selectedOutput)))),
+    // Keyed on what the link IS doing, not on the saved intent: a pair saved as connected whose device was away at
+    // launch is not connected, and reading "Disconnect" there left no way to retry but pressing twice. So it offers
+    // Connect (which retries) beside a way to stop it reconnecting at every launch.
+    action("lp-connect", cfg.connected ? "Disconnect" : "Connect", () => connectLaunchpad(store, !cfg.connected, cfg), scanning),
+    ...(cfg.enabled && !cfg.connected
+      ? [action("lp-stop", "Stop Connecting at Launch", () => connectLaunchpad(store, false, cfg), scanning)]
+      : []),
     infoRow("lp-status", `Status: ${launchpadStatus(cfg)}`), // read-only
-    // What the controller is doing to the cart's sync role, and why. Shown rather than applied silently:
-    // the override does not touch the saved project (it happens in the published graph), so without a row here
-    // the LSDj submenu would go on reporting the user's own setting while the cart ran a different one.
+    // What the controller is doing to the cart's sync role, and why. Shown rather than applied silently: the override
+    // does not touch the saved project (it happens in the published document), so without a row here the LSDj submenu
+    // would go on reporting the user's own setting while the cart ran a different one.
     //
-    // A cart that is not in MI.MAP ignores row launches ENTIRELY WITHOUT COMPLAINT - it goes on playing and
-    // stepping to the host clock, so the only symptom is that the pads stop doing anything. And the way
-    // players land there is nasty: LSDj refuses to change SYNC while the cart is playing, so reaching for
-    // the setting mid-session leaves it wherever the first press landed, with no way back until playback
-    // stops (measured in test-native/lsdj-sync-toggle).
+    // A cart that is not in the mode the app needs ignores row launches ENTIRELY WITHOUT COMPLAINT - it goes on playing
+    // and stepping to the host clock, so the only symptom is that the pads stop doing anything. And the way players land
+    // there is nasty: LSDj refuses to change SYNC while the cart is playing, so reaching for the setting mid-session
+    // leaves it wherever the first press landed, with no way back until playback stops (measured in
+    // test-native/lsdj-sync-toggle).
     ...(syncOverride
-      ? [infoRow("lp-cart-sync", cartSyncLabel(syncOverride.mode, cartSync))]
+      ? [infoRow("lp-cart-sync", cartSyncLabel(app?.label ?? controller.app, syncOverride.driving, cartSync))]
       : []),
     separator("lp-sep-app"),
     // Project scope from here down: these ride the .rplg, and each edit publishes the graph.
@@ -492,13 +531,9 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
       project.setController({ enabled: n === 1 })),
     cycler("lp-app", "App", apps.map((a) => a.label), appIdx, (n) =>
       project.setController({ app: apps[n].id, appConfig: {} })),
-    cycler("lp-quantise", "Launches", QUANTISE_VALUES.map((q) => QUANTISE_LABELS[q]),
-      Math.max(0, QUANTISE_VALUES.indexOf(quantise)), (n) =>
-        project.setController({ appConfig: { quantise: QUANTISE_VALUES[n] } })),
-    cycler("lp-follow", "Follow Playhead", OFF_ON, follow ? 1 : 0, (n) =>
-      project.setController({ appConfig: { follow: n === 1 } })),
-    // Where launches go. "Emulated Cart" hands them to the tracker's own sync role in the same block;
-    // "MIDI Out" sends them out of the host, which is how a real Game Boy behind an Arduinoboy is driven.
+    ...controllerAppRows(ctx, app, controller.appConfig),
+    // Where launches go. "Emulated Cart" hands them to the tracker's own sync role in the same block; "MIDI Out" sends
+    // them out of the host, which is how a real Game Boy behind an Arduinoboy is driven.
     cycler("lp-target", "Launches To", CONTROLLER_TARGET_VALUES.map((t) => CONTROLLER_TARGET_LABELS[t]),
       Math.max(0, CONTROLLER_TARGET_VALUES.indexOf(controller.target)), (n) =>
         project.setController({ target: CONTROLLER_TARGET_VALUES[n] })),
@@ -2338,7 +2373,7 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
   // emitted only when at least one is present, so a DAW build doesn't open on a stray leading rule.
   const deviceRows: MenuItem[] = [
     ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
-    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
+    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren(ctx))] : []),
   ];
   return [
     ...deviceRows,
@@ -2447,7 +2482,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const n8Here = n8Detected(n8cfg); // true only when a physical N8 is attached -> the submenu renders
   // Launchpad: null without the seam (a DAW / the harness), and shown only when a surface is actually here -
   // over USB by port name, or on any port pair a Settings > MIDI scan found. See launchpadMenuChildren.
-  const lpcfg = getLaunchpadConfig();
+  const lpcfg = getLaunchpadConfig(ctx.stores.userConfig);
   const lpHere = launchpadDetected(lpcfg);
   return {
     title: instanceTitle(ctx, sys),

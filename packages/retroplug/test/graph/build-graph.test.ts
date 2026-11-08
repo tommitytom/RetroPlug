@@ -521,10 +521,12 @@ test("the sync override is the app's DATA: a node type, a mode, and what counts 
   expect(Object.keys(CONTROLLER_SYNC)).toEqual(["lsdj-midimap"]);
   expect(CONTROLLER_SYNC["lsdj-midimap"])
     .toEqual({ node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", off: "off" });
+  // `driving` is the app's own answer - the mode its launches need is the one the cart runs - and not "the mode is not
+  // the string off": a second app's off-mode is its manifest's to spell.
   expect(controllerSyncOverride([{ id: 7 }], { ...CONTROLLER, cartSync: "MidiMap" }))
-    .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "midiMap" });
+    .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "midiMap", driving: true });
   expect(controllerSyncOverride([{ id: 7 }], { ...CONTROLLER, cartSync: "Lsdj" }))
-    .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "off" });
+    .toEqual({ systemId: 7, node: "rp.lsdj.sync", mode: "off", driving: false });
 });
 
 test("the override leaves the model's own pipeline as it was", () => {

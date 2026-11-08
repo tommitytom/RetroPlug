@@ -3,6 +3,8 @@
 #include <exception>
 #include <utility>
 
+#include "launchpad/desktop/MidiPortFilter.hpp"
+
 namespace rp::launchpad {
 
 std::vector<int> MidiPortPool::openInputs(const std::vector<std::string>& names) {
@@ -37,6 +39,12 @@ int MidiPortPool::openOutput(const std::string& name) {
 int MidiPortPool::openOne(bool input, const std::string& name) {
     if (!opener_) {
         error_ = "no MIDI backend";
+        return 0;
+    }
+    // The test-only allow list (MidiPortFilter.hpp) is refused here as well as by the opener, so a scan of a filtered
+    // process cannot reach a port the process was not given, whatever backend the product injected.
+    if (!midiPortAllowed(name)) {
+        error_ = "MIDI port not allowed: " + name;
         return 0;
     }
     Entry e;

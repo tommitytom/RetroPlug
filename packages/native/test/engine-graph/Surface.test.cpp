@@ -189,7 +189,7 @@ TEST_CASE("a surface's connected carries the link's generation, from frame 0", "
     block(rig);
     CHECK(probe.controlChanges == std::vector<double>{2.0});
 
-    // A generation is a control value too, so it is wrapped at 2^24 and mapped into 1..2^24-1: the value that would wrap
+    // A generation is a control value too, so it is wrapped at 2^24 - 1 and mapped into 1..2^24-1: the value that would wrap
     // onto 0 reads as a claim, because 0 is "nothing attached" and a device must not look unplugged on a wrap. A host
     // that reports a generation of its own outside the range (this is a hand-set number) is mapped the same way.
     surface.claim = 1u << 24;  // 2^24 maps onto 1, not onto 0

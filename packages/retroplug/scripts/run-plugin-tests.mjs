@@ -7,9 +7,8 @@
 // the native file watcher (retroplug-watcher-test), the ThorVG-backed
 // Lottie rasterization behind the <Lottie> component (retroplug-lottie-test),
 // the MIDI device-selection policy (retroplug-midi-test), the control-surface
-// pack's transport, provider and facet (retroplug-launchpad-test), the LEGACY
-// control-surface host the products still run on
-// (retroplug-launchpad-legacy-test), the node-graph engine's foundations
+// pack's transport, provider and facet (retroplug-launchpad-test), the
+// node-graph engine's foundations
 // (retroplug-graph-test), the engine on the graph: its system nodes, the
 // documents TS sends it, and buildGraph's goldens planned on it
 // (retroplug-engine-graph-test), and the node SDK's device build, run against
@@ -31,7 +30,7 @@ const REPO = resolve(PKG, "../..");
 const BIN_DIR = process.env.RETROPLUG_BIN_DIR || join(REPO, "build", "bin");
 const EXE = process.platform === "win32" ? ".exe" : "";
 
-const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test", "retroplug-launchpad-legacy-test", "retroplug-graph-test", "retroplug-engine-graph-test", "retroplug-device-mode-test"];
+const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test", "retroplug-graph-test", "retroplug-engine-graph-test", "retroplug-device-mode-test"];
 
 const jobs = resolveJobs();
 const filter = stripRunnerFlags()[0];

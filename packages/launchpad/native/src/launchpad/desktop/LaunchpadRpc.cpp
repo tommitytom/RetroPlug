@@ -58,12 +58,16 @@ LaunchpadStatusDto LaunchpadRpc::launchpadClaim(std::string input, std::string o
     error_.clear();
     // The OLD pair goes first, while its ports and its claim are still held: it is closed (with the bytes that unlock
     // its front panel), its cross-process claims are given back and it rejoins the shared stream. Only then is the new
-    // one picked up, so the product never has two pairs to reopen around and a refused claim cannot leave the previous
-    // device connected and unlocked.
+    // one picked up.
+    //
+    // The reservation moves STRAIGHT to the new pair, with no empty reservation in between: the product sees one change of
+    // pair, so a swap costs ONE audio restart, and A's ports never come back into the shared stream for the span between
+    // two reservations. Emptying it here would also be wrong on the way in: the old pair is already closed above, so an
+    // empty reservation would reopen its ports only to close them again. A failure below hands the reservation back from
+    // its own `fail`, which is the only place an empty pair belongs.
     link_.disconnect();
     claimIn_.reset();
     claimOut_.reset();
-    reserve("", "");
     const auto fail = [&](std::string why) {
         reserve("", "");
         error_ = std::move(why);

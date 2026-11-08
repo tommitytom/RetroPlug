@@ -161,6 +161,11 @@ export interface AudioDriver {
   /** Messages the engine's graph has dropped so far, a full queue on one of its wires each (cumulative, never
    *  reset): what a test holds to zero to know nothing it staged was lost on the way to a core. */
   droppedMessages(): number;
+  /** What the product's rp_device_host was told by the providers it started since the last call, in order, as
+   *  "reserve_midi:<input>|<output>", "suspend_hardware_inputs:1" / ":0" or "restored" - the headless host's record of
+   *  the control-surface calls a claim, a scan's held edge and the startup rendezvous make (rp::host::ProviderHost). Empty
+   *  on a product that implements them itself (the standalone), and on a host that started no such provider. */
+  drainProductCalls(): string[];
 
   // --- audio-runtime allocation/GC profiling (spec/08-profiling.md; real only in a RETROPLUG_PROFILE host) ---
   /** Snapshot the audio JS runtime's allocation counters (deltas since the last reset). */
@@ -314,6 +319,7 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
     },
     buildTarget: () => call("buildTarget") as string,
     droppedMessages: () => call("droppedMessages") as number,
+    drainProductCalls: () => (call("drainProductCalls") as string[] | null) ?? [],
     dspAllocStats: () => call("dspAllocStats") as DspAllocStats,
     dspResetAllocStats: (disableAutoGc) => call("dspResetAllocStats", disableAutoGc) as boolean,
     dspRunGc: () => call("dspRunGc") as DspGcResult,

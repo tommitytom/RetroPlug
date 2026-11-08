@@ -28,6 +28,15 @@ export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# This is the standalone a developer runs, so it reads their own config: a saved, enabled controlSurface is CLAIMED at
+# startup and its close bytes go out at quit, and a saved midi.json opens real inputs. A smoke that touched the desk's
+# hardware would be a hardware test in disguise, so it gets a scratch config dir of its own (nothing saved means nothing
+# claimed) and the test-only port filter set to a name no port has (see MidiIo.hpp's midiPortAllowedBy: an EMPTY list
+# means every port, so it has to name something).
+export RETROPLUG_USER_CONFIG_DIR="$TMP/cfg"
+export RP_MIDI_PORT_ALLOW="RP_NO_PORT"
+mkdir -p "$RETROPLUG_USER_CONFIG_DIR"
+
 fail() { echo "SDL smoke FAIL: $*" >&2; exit 1; }
 
 # Run the binary with the given env (KEY=VAL ...) and a frame budget; capture stdout+stderr to $LOG.

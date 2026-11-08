@@ -11,7 +11,7 @@ set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
 set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
 retroplug_silence_dep_warnings(rtmidi)
-# A product that starts a provider links a package's desktop library, and the plugin formats are shared modules: the
-# archive has to be PIC wherever it is added from. packages/native's cmake/deps.cmake added it inside a directory whose
-# targets already were; at root scope the property is off unless it is asked for.
+# A package's desktop library may be linked into a shared MODULE (a plugin format is one), so the archive it links has to
+# be PIC wherever it is added from: at root scope the property is off unless it is asked for, where a directory that
+# already built shared targets had it on.
 set_target_properties(rtmidi PROPERTIES POSITION_INDEPENDENT_CODE ON)

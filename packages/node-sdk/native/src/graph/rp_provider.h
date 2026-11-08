@@ -32,8 +32,9 @@ extern "C" {
 #endif
 
 /* 2: reserve_midi and suspend_hardware_inputs, the two capability calls a device provider needs from the product that
- * owns the shared MIDI stream (docs/modular-graph-phase-f3-design.md section 3), and restored, the rendezvous end. A
- * host and a provider refuse each other across a version, as they did at 1. */
+ * owns the shared MIDI stream (docs/modular-graph-phase-f3-design.md section 3), restored, the rendezvous end, and the
+ * provider's wake, the per-frame pump it writes what the audio thread queued onto. A host and a provider refuse each
+ * other across a version, as they did at 1. */
 #define RP_PROVIDER_ABI_VERSION 2u
 
 /* What the product hands a provider to create it with: the engine's device registry and where persisted state lives.

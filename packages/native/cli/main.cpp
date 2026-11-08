@@ -168,6 +168,11 @@ std::string slurp(const std::string& path) {
     return ss.str();
 }
 
+// The product's calls, for a host with no shared MIDI stream and nothing to hold (see the ProviderHost below).
+bool reserveNothing(void*, const std::string&, const std::string&) { return true; }
+void noInputsToGiveUp(void*, bool) {}
+void alreadyRestored(void*) {}
+
 } // namespace
 
 int main(int argc, char** argv) try {
@@ -192,9 +197,10 @@ int main(int argc, char** argv) try {
     // The backend service graph (see host/HostServices.hpp). The CLI exposes the whole surface (incl. the
     // debug facet), so it mounts every facet.
     HostServices svc;
-    // The providers of the packages this product lists (the N8 pack's), started after the engine and before a session
-    // can publish a graph, and their facets mounted below beside the CLI's own: every product registers its packs one
-    // way, and the N8 sessions a CLI script opens arrive in the same facet. Never restored: a provider's persisted
+    // The providers of the packages this product lists (the N8 pack's and the Launchpad pack's: its manifest names both,
+    // docs/modular-graph-phase-f3-design.md section 7), started after the engine and before a session can publish a
+    // graph, and their facets mounted below beside the CLI's own: every product registers its packs one way, and the N8
+    // sessions and Launchpad probe a CLI script opens arrive in the same facets. Never restored: a provider's persisted
     // state is the UI's (n8.cfg's streaming link, left enabled in the standalone or the plugin), and restoring it here
     // would claim the serial port the CLI's own N8 sessions open. For the same reason the facet's link half
     // (n8LinkConfig, n8SetPort, n8Connect, n8SetLookahead) is the UI's, which persists the n8.cfg the standalone and
@@ -202,7 +208,14 @@ int main(int argc, char** argv) try {
     // the plans are reclaimed first, while the links the providers installed are alive (a node may use its handle in
     // destroy), then the providers stop; `teardown` is declared before `driver` so that ~AudioDriverRpcService has
     // stopped any audio thread by then.
-    rp::host::ProviderHost deviceHost{svc.engine, svc.host.configDir()};
+    //
+    // The product's own calls are no-ops: the CLI owns no shared MIDI stream, so a claimed pair is kept out of nothing, a
+    // scan has no inputs to give up and the rendezvous ends at once. Said rather than left to ProviderHost's record,
+    // which the CLI has no reader for (the harness facet's drainProductCalls is the test hosts'): a record nothing
+    // drains would grow a line per claim and per scan edge for the life of the process.
+    rp::host::ProviderHost deviceHost{svc.engine, svc.host.configDir(),
+                                      rp::host::ProviderHost::Calls{nullptr, &reserveNothing, &noInputsToGiveUp,
+                                                                    &alreadyRestored}};
     rp::Providers          providers = rp_start_providers(deviceHost.get());
     struct Teardown {
         Engine&        engine;

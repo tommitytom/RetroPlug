@@ -9,13 +9,17 @@
 //      rather than something the manual states in text (its layout diagram is an image), and M2's paging
 //      depends on them. Press each button and the probe prints whether the profile agrees.
 //
-// Pure TS over @retroplug/launchpad + the MIDI client - no new protocol code, which is the point: whatever this
-// proves is proved about the module the plugin and standalone use.
+// Pure TS over @retroplug/launchpad + the pack's facet client - no new protocol code, which is the point: whatever this
+// proves is proved about the module the standalone uses. Its ports are the FACET's (the same loose-port calls a scan
+// makes), not the shared MIDI stream's: the device is the controller's, and a claim would be exclusive. The loopback leg
+// is the exception and says why.
 
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import { keepAlive, exitProcess } from "../session";
-import { createMidiClient, type MidiClient } from "../../src/realBackend";
+import { createMidiClient } from "../../src/realBackend";
+import { makeCall } from "../../src/rpcClient";
+import { createLaunchpadClient, type LaunchpadClient } from "@retroplug/launchpad/client";
 import {
   PRO_MK3, Surface, decodeMessage, enterProgrammerMode, exitToLiveMode,
   Palette, palette,
@@ -55,8 +59,9 @@ function pick(names: string[], explicit: string | undefined, what: string): stri
 const listing = (names: string[]): string =>
   names.length ? `available: ${names.map((n) => `"${n}"`).join(", ")}` : "no MIDI ports detected";
 
-function printPorts(midi: MidiClient): void {
-  for (const [what, names] of [["inputs", midi.listInputs()], ["outputs", midi.listOutputs()]] as const) {
+function printPorts(client: LaunchpadClient): void {
+  const ports = client.ports();
+  for (const [what, names] of [["inputs", ports.inputs], ["outputs", ports.outputs]] as const) {
     console.log(`MIDI ${what}:`);
     if (names.length === 0) console.log("  (none)");
     for (const n of names) console.log(`  ${n}${n.includes(PRO_MK3.portHint) ? "   <- matches the Pro MK3 hint" : ""}`);
@@ -130,16 +135,27 @@ function runProbe(args: string[]): void {
   const seconds = Math.max(1, Number(flag(args, "--seconds") ?? 60) | 0);
   const verbose = args.includes("--verbose");
   const sweep = args.includes("--sweep");
-  const midi = createMidiClient();
+  const client = createLaunchpadClient(makeCall());
+  const ports = client.ports();
 
-  const inName = pick(midi.listInputs(), flag(args, "--in"), "input");
-  const outName = pick(midi.listOutputs(), flag(args, "--out"), "output");
+  const inName = pick(ports.inputs, flag(args, "--in"), "input");
+  const outName = pick(ports.outputs, flag(args, "--out"), "output");
 
-  // "" would open EVERY hardware input and merge them, so name the port explicitly.
-  if (!midi.open("RetroPlug Launchpad Probe", inName)) throw new Error("no MIDI system available");
-  midi.selectOutput(outName);
-
-  const send = (bytes: number[]): void => midi.send(bytes);
+  // The facet's loose ports: the same calls a Settings > MIDI scan opens, so nothing here claims the pair away from the
+  // standalone (which would refuse it, one claim per machine). A port that will not open is said, not swallowed.
+  const out = client.openOutput(outName);
+  const input = client.openInputs([inName])[0] ?? 0;
+  if (out === 0 || input === 0) {
+    client.close(out);
+    client.close(input);
+    throw new Error(`the device's ports would not open${client.portError() ? `: ${client.portError()}` : ""}`);
+  }
+  const send = (bytes: number[]): void => void client.sendOn(out, Uint8Array.from(bytes));
+  const heard = (): number[][] => client.read(input).messages.map((m) => Array.from(m));
+  const closePorts = (): void => {
+    client.close(out);
+    client.close(input);
+  };
 
   // The device always boots into Live mode, so Programmer mode has to be asked for every time. It also
   // BLANKS the surface, which is why the shadow buffer is invalidated before the first paint.
@@ -170,7 +186,7 @@ function runProbe(args: string[]): void {
   if (sweep) runSweep(surface, send);
 
   setInterval(() => {
-    for (const bytes of midi.poll()) {
+    for (const bytes of heard()) {
       const data = Array.from(bytes);
       if (isRealtime(data) && !verbose) { realtime++; continue; }
       const ev = decodeMessage(PRO_MK3, data);
@@ -206,7 +222,7 @@ function runProbe(args: string[]): void {
       console.log(`UNNAMED CCs: ${[...unknownCcs.keys()].sort((a, b) => a - b).join(", ")}`);
       console.log("Those numbers are real controls the profile does not know - correct PRO_MK3_BUTTONS.");
     }
-    finish(midi, surface, send);
+    finish(surface, send, closePorts);
     exitProcess(0);
   }, 1000);
 }
@@ -214,15 +230,19 @@ function runProbe(args: string[]): void {
 /** Hand the device back. Blank the surface, then LEAVE PROGRAMMER MODE - while it is set over sysex the
  *  device's own Settings menu is locked out, so skipping this strands the user's hardware until they
  *  power-cycle it. */
-function finish(midi: MidiClient, surface: Surface, send: (b: number[]) => void): void {
+function finish(surface: Surface, send: (b: number[]) => void, closePorts: () => void): void {
   surface.clear();
   for (const m of surface.flush().messages) send(m);
   send(exitToLiveMode(PRO_MK3));
-  midi.close();
+  closePorts();
   console.log("device returned to Live mode.");
 }
 
-/** The loopback self-test, which needs no Launchpad at all.
+/** The loopback self-test, which needs no Launchpad at all, and is the one leg NOT on the Launchpad facet.
+ *
+ *  It measures the SHARED MIDI stream's receive path (MidiIo, our own virtual ports), which is what musical MIDI rides:
+ *  a session or a cart. The facet has no virtual port - it opens real endpoints - so a message cannot be sent to
+ *  ourselves there, and the loopback stays on the stream it was written for.
  *
  *  It exists because the probe cannot test the RECEIVE half: a Launchpad sends notes and CCs, and only emits
  *  sysex in reply to an inquiry. Until now RtMidi was told to ignore sysex outright, so nothing long could
@@ -312,7 +332,7 @@ export const launchpadProbeTool: CliTool = {
   longRunning: true,
   run(_s: Session, args: string[]): void {
     if (args.includes("--list")) {
-      printPorts(createMidiClient());
+      printPorts(createLaunchpadClient(makeCall()));
       exitProcess(0);
       return;
     }

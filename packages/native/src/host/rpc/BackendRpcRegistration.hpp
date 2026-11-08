@@ -62,7 +62,8 @@ void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::stageNodeMidi>(e);
 }
 
-// --- harness: audio render / transport / MIDI + DSP profiling + graph drops (20; CLI + tests only) ---
+// --- harness: audio render / transport / MIDI + DSP profiling + graph drops + the product's recorded calls (21; CLI +
+// tests only) ---
 template <class Server>
 void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::renderAudio>(e);
@@ -79,6 +80,7 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::renderBlocks>(e);
     s.template addMethod<&EngineRpcService::buildTarget>(e);
     s.template addMethod<&EngineRpcService::droppedMessages>(e);
+    s.template addMethod<&EngineRpcService::drainProductCalls>(e);
     s.template addMethod<&EngineRpcService::dspAllocStats>(e);
     s.template addMethod<&EngineRpcService::dspResetAllocStats>(e);
     s.template addMethod<&EngineRpcService::dspRunGc>(e);

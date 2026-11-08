@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <system_error>
@@ -39,9 +40,12 @@
 #include "host/rpc/HarnessSurfaceLink.hpp"
 #include "host/QuickJsGlobals.hpp"
 #include "host/devices/ProviderHost.hpp"
+#include "launchpad/desktop/LaunchpadProvider.hpp"
+#include "launchpad/desktop/LaunchpadRpc.hpp"
 #include "n8/desktop/N8Provider.hpp"
 #include "n8/desktop/N8Rpc.hpp"
-#include "FakeN8.hpp"  // packages/n8/native/test: the cart this host's N8 provider opens its ports on
+#include "FakeN8.hpp"     // packages/n8/native/test: the cart this host's N8 provider opens its ports on
+#include "FakePorts.hpp"  // packages/launchpad/native/test: the scripted device its Launchpad facet serves
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
@@ -132,7 +136,12 @@ int main(int argc, char** argv) try {
     // ~AudioDriverRpcService has stopped any audio thread by then.
     struct ScratchDir {
         std::filesystem::path path;
+        // Only a directory this host MADE is removed: RETROPLUG_LAUNCHPAD_CLAIM_DIR names a directory a caller owns, and a
+        // host that deleted it would take that caller's lock files with it (a second host's claim would then succeed on an
+        // unlinked inode). The runner removes its per-file directories itself.
+        bool                  owns = true;
         ~ScratchDir() {
+            if (!owns) return;
             std::error_code ec;
             std::filesystem::remove_all(path, ec);
         }
@@ -151,6 +160,42 @@ int main(int argc, char** argv) try {
     } cartProvider{svc.engine,
                    rp::n8::createProvider(deviceHost.get(), retroplug::test::factoryFor(fakeCart),
                                           [] { return std::vector<retroplug::N8PortDto>{{"fake-n8", true}}; })};
+    // The Launchpad pack's provider over a SCRIPTED device (packages/launchpad/native/test/FakePorts.hpp): a Pro MK3 on
+    // "LPProMK3 MIDI" both ways, which answers the Universal Device Inquiry and its own layout query, and an interface's
+    // port that answers nothing. The facet is the pack's real one - the provider, the claim path, the pool and the
+    // cross-process claim - so test-native drives the SAME code the standalone does, over this device instead of
+    // rtmidi's ports, and no hardware is touched. The provider is started here rather than by rp_start_providers so no
+    // production provider carries a fake; the generated header still links its desktop half, which is what this call is.
+    //
+    // The graph's own control surface stays the harness link above, and the device host is told so (installLinks false):
+    // a test stages pad presses into THAT through stageControllerIn, which no port can do, and the facet needs no
+    // registry at all. Its config dir is a scratch of this process's, so its cross-process claim is this process's alone
+    // and never another host's (test:native runs its files in parallel); RETROPLUG_LAUNCHPAD_CLAIM_DIR fixes it instead,
+    // which is how a case runs a SECOND host on the same directory and sees the refusal (test-native/
+    // launchpad-devices.test.ts). A fixed directory is the caller's and is left as it is found.
+    static ScratchDir launchpadConfigDir{[] {
+        const char* fixed = std::getenv("RETROPLUG_LAUNCHPAD_CLAIM_DIR");
+        if (fixed && *fixed) return ScratchDir{std::filesystem::path(fixed), /*owns=*/false};
+        return ScratchDir{std::filesystem::temp_directory_path() /
+                          ("retroplug-host-launchpad-" + std::to_string(processId()))};
+    }()};
+    std::filesystem::create_directories(launchpadConfigDir.path);
+    rp::launchpad::test::Rig launchpadRig;
+    launchpadRig.inputs    = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A"};
+    launchpadRig.outputs   = {"LPProMK3 MIDI", "MIDISPORT 2x2 Port A"};
+    launchpadRig.answering = {"LPProMK3 MIDI"};  // the interface's port is listed and answers nothing
+    rp::host::ProviderHost launchpadHost{svc.engine, launchpadConfigDir.path.string(),
+                                         rp::host::ProviderHost::Calls{}, /*installLinks=*/false};
+    struct SurfaceProvider {
+        Engine& engine;
+        void*   self;
+        ~SurfaceProvider() {
+            engine.clearGraph();
+            if (self) rp_launchpad_provider()->destroy(self);
+        }
+    } surfaceProvider{svc.engine,
+                      rp::launchpad::createProvider(launchpadHost.get(), rp::launchpad::test::scriptedOpenerFor(launchpadRig),
+                                                    rp::launchpad::test::listerFor(launchpadRig))};
     // The two facets the plugin and the SDL standalone deliberately do NOT mount, so they are not
     // in HostServices: ~AudioDriverRpcService has teardown side effects a host that never uses the
     // facet should not inherit.
@@ -170,6 +215,12 @@ int main(int argc, char** argv) try {
     registerAllBackendRpc(server, svc.host, svc.engineSvc, debugSvc, driver);
     if (cartProvider.self) rp::n8::registerRpc(server, rp_n8_provider()->rpc_service(cartProvider.self));
     else std::fprintf(stderr, "[retroplug-host] the N8 provider did not start\n");
+    // The Launchpad facet beside the N8's: a test's door to the scripted device, and to what the facet asked this product
+    // for (svc.engineSvc.drainProductCalls reads launchpadHost's record: the claim's reserve_midi, a scan's held edge
+    // and the startup rendezvous).
+    svc.engineSvc.setProductCalls(&launchpadHost.productCalls());
+    if (surfaceProvider.self) rp::launchpad::registerRpc(server, rp_launchpad_provider()->rpc_service(surfaceProvider.self));
+    else std::fprintf(stderr, "[retroplug-host] the Launchpad provider did not start\n");
 
     JSValue global = JS_GetGlobalObject(ctx);
 

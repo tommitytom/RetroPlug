@@ -68,11 +68,7 @@ extern "C" {
 #include "host/input/GamepadPump.hpp"        // the event->bus switch, shared with the plugin editor
 #include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
 #include "host/devices/ProviderHost.hpp"     // the rp_device_host this product starts its providers with
-#include "rp_product_providers.hpp"          // generated, in this product's own include dir: its providers (the N8's)
-#include "host/launchpad/LaunchpadHost.hpp"  // control-surface link + config + launchpad.cfg
-#include "host/launchpad/LaunchpadSurfaceLink.hpp"  // the surface device link rp.host.devices/2 hands a node
-#include "host/launchpad/LaunchpadHooks.hpp" // binds the __rp_*Launchpad* config hooks
-#include "host/launchpad/RtMidiPort.hpp"     // the RtMidi in/out pair the link claims exclusively
+#include "rp_product_providers.hpp"          // generated: this product's providers (the N8's, the Launchpad pack's)
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/ui/LvglWheelScroll.hpp"       // shared wheel -> hit-tested scroll (also used by the plugin/test UI)
 #include "host/ui/SoftwareLvglDisplay.hpp"   // shared LvInputState + display/indev scaffold (also used by test/ui)
@@ -240,35 +236,37 @@ struct AppState {
     std::atomic<bool>  transportExternal{false};  // audio -> UI: a MIDI clock master is driving it
     std::atomic<float> transportBpm{120.0f};      // audio -> UI: the tempo in force (theirs when external)
 
-    // Control surface (Settings-adjacent "Launchpad" submenu): its own RtMidi in/out pair, deliberately kept
-    // out of app.midi's shared stream so pad presses never arrive as musical MIDI too (a NoteOn there is a
-    // row launch to LSDj's MI.MAP translator, so a shared stream fires every launch twice). The graph's
-    // rp.launchpad.surface-in / -out nodes read and write the link inside the plan; the 60 fps loop's pump writes the
-    // LED traffic out. The port + enabled toggle persist to launchpad.cfg.
-    retroplug::LaunchpadHost launchpadHost{
-        retroplug::rtMidiPortFactory("RetroPlug Launchpad"),
-        retroplug::rtMidiPortOpener("RetroPlug Scan"),  // one-port-at-a-time, for Settings > MIDI's scan
-        [this](bool input) { return input ? midi.listInputs() : midi.listOutputs(); },
-        svc.host.configDir()};
-
-    // The device links the graph's hardware nodes bind (rp.host.devices/2): the surface this host owns, and the ones
-    // the providers of its packages install (the N8 pack's: its streaming link, n8.cfg and the cart link; Settings > N8
-    // reaches it through the pack's facet, mounted beside this host's own in bootControlPlane). svc (the engine) is
-    // declared above them (launchpadHost and the providers read its config dir), so it is destroyed after all of them.
-    // The destructor below reclaims the plans first, while every member is still alive: a node may use its handle in
-    // destroy, and it must reach a live link. The engine has no plan left to destroy by then.
-    retroplug::LaunchpadSurfaceLink launchpadSurfaceLink{launchpadHost.link()};
-    rp::host::ProviderHost          deviceHost{svc.engine, svc.host.configDir()};
-    rp::Providers                   providers;  // started in main, before the control plane can publish a graph
+    // The device links the graph's hardware nodes bind (rp.host.devices/2), and the facets beside them: the ones the
+    // providers of this product's packages install and mount (the N8 pack's streaming link, n8.cfg and the cart link;
+    // the Launchpad pack's control-surface link and its port facet). svc (the engine) is declared above them (the
+    // providers read its config dir), so it is destroyed after all of them. The destructor below reclaims the plans
+    // first, while every member is still alive: a node may use its handle in destroy, and it must reach a live link.
+    // The engine has no plan left to destroy by then.
+    //
+    // The three control-surface calls a provider makes are this product's (rp_provider.h): the claimed pair leaves the
+    // shared MIDI stream before it is opened, a scan steps the stream's hardware inputs aside, and MIDI and audio wait
+    // for the control plane's restore (see the definitions beside startAudio/stopAudio).
+    rp::host::ProviderHost deviceHost{svc.engine, svc.host.configDir(),
+                                      rp::host::ProviderHost::Calls{this, &AppState::onReserveMidi,
+                                                                    &AppState::onSuspendInputs, &AppState::onRestored}};
+    rp::Providers          providers;  // started in main, before the control plane can publish a graph
     // RETROPLUG_IDLE_RECLAIM_TEST: inert unless the smoke arms it. Holds this loop to the idle tick it owes the
     // engine (HostServices::reclaimOnIdle), which no in-process test can reach.
     retroplug::IdleReclaimProbe idleProbe;
+    // Whether audio has been started, and whether the control plane has reported its restored selection yet. main()
+    // holds MIDI and audio until the second is true (restoreControlSurface), so a restored surface's claim lands before
+    // the shared stream ever opens its ports and costs no restart; anything later goes through the reserve dance.
+    bool audioLive = false;
+    bool controlSurfaceRestored = false;
 
     ~AppState() {
         svc.engine.clearGraph();
         rp_stop_providers(providers);
-        svc.engine.clearLink<rp::launchpad::SurfaceLink>(launchpadSurfaceLink);
     }
+
+    static bool onReserveMidi(void* ctx, const std::string& input, const std::string& output);
+    static void onSuspendInputs(void* ctx, bool suspended);
+    static void onRestored(void* ctx);
 
     std::uint32_t width = 640;
     std::uint32_t height = 480;
@@ -948,6 +946,65 @@ void stopAudio(AppState& a) {
     if (a.audioPump.joinable()) { a.audioPumpRun.store(false, std::memory_order_release); a.audioPump.join(); }
 }
 
+// ---- the control surface, as this product answers for it ------------------------------------------
+//
+// The three calls a provider makes of the product that owns the shared MIDI stream (rp_provider.h, design section 3).
+// The Launchpad pack's facet asks for them and knows nothing about MidiIo; what they mean here is the two hazards a
+// claimed port has in a stream that is already open: the stream must let go of it BEFORE it is opened (a Windows input
+// is exclusive, and everywhere a pad press reaching both would fire every launch twice while notes out of the stream
+// would light the surface's pads), and reopening RtMidi's hardware ports under a running callback is exactly what
+// reconfigureMidi stops audio for. So: stop audio, re-apply, start - and only when a port this stream holds actually
+// moves, so a pick it never had open (the default, input None) costs no restart at all.
+
+bool AppState::onReserveMidi(void* ctx, const std::string& input, const std::string& output) {
+    auto& a = *static_cast<AppState*>(ctx);
+    if (a.midi.reservedInput() == input && a.midi.reservedOutput() == output) return true;  // already so
+    const bool bounce = a.audioLive && a.midi.reservationChanges(input, output);
+    if (bounce) stopAudio(a);
+    a.midi.setReserved(input, output);
+    if (bounce) startAudio(a);
+    std::fprintf(stderr, "[retroplug-sdl] control surface: reserved MIDI input '%s', output '%s'\n",
+                 input.empty() ? "(none)" : input.c_str(), output.empty() ? "(none)" : output.c_str());
+    return true;
+}
+
+void AppState::onSuspendInputs(void* ctx, bool suspended) {
+    // The scan's held edge, and the one platform where it is real (MidiIo.hpp's scanSuspendsInputs). Answering before
+    // touching the stream is what makes this a no-op off Windows rather than a MIDI outage for the scan's length.
+    if (!retroplug::scanSuspendsInputs()) return;
+    auto& a = *static_cast<AppState*>(ctx);
+    if (a.midi.hardwareInputsSuspended() == suspended) return;
+    // A Windows MIDI input is exclusive, so the stream must let go of the inputs a scan is about to listen on. Off Windows
+    // (ALSA's sequencer, CoreMIDI) an input is SHARED: the scan hears everything the stream does without it closing
+    // anything, so the guard above returns first and neither the user's MIDI nor the audio is disturbed.
+    const bool bounce = a.audioLive && a.midi.suspensionChanges(suspended);
+    if (bounce) stopAudio(a);
+    a.midi.setHardwareInputsSuspended(suspended);
+    if (bounce) startAudio(a);
+}
+
+void AppState::onRestored(void* ctx) { static_cast<AppState*>(ctx)->controlSurfaceRestored = true; }
+
+// Let the control plane apply the control surface it persisted (config.json, launchpadDevices.ts restoreLaunchpad)
+// before MIDI opens and audio starts. A claim made from here lands with audio not yet started, so it is reserved
+// before the shared stream ever opens the port and costs no restart; a claim that arrives after the bound below is a
+// MIDI-SESSION reserve, which onReserveMidi handles the same way a later Connect does.
+//
+// What it waits on is the facet's restored() reaching this product (rp_device_host::restored), because the selection
+// is TS's and the claim is asynchronous with respect to the mount: React runs the restore in an effect, on a later
+// pump of the JS loop. So pump the loop until it lands. Bounded in TIME, not pumps: a pump does not block, so a count
+// would be over in a millisecond. A UI that never reports (a broken bundle, no facet at all) costs half a second at
+// startup and then starts anyway, so a missing or unreadable config.json can never keep the app silent.
+void restoreControlSurface(AppState& a) {
+    const Uint32 start = SDL_GetTicks();
+    while (!a.controlSurfaceRestored && SDL_GetTicks() - start < 500) {
+        a.ui.tick();
+        if (!a.controlSurfaceRestored) SDL_Delay(1);
+    }
+    if (!a.controlSurfaceRestored)
+        std::fprintf(stderr, "[retroplug-sdl] control surface: the UI did not report its restore; continuing\n");
+}
+
 // RETROPLUG_DEBUG_AUDIO: dump the audio backends' own chatter + the host API / device enumeration. Read once
 // (it can't change under us) and shared by openAudio and the log handlers below.
 bool audioDebugEnabled() {
@@ -1307,9 +1364,6 @@ bool setupUi(AppState& a) {
     // Black screen, stripped chrome, root pinned to 100% — same as PluginUI (shared with the test harness).
     retroplug::ui::applyChromelessScreen();
     if (ctx) installWindowHooks(ctx);
-    // The Launchpad config hooks (the instance menu's Launchpad submenu). Standalone-only: the DAW plugin's
-    // MIDI seam still caps a message at 4 bytes, and every message here is SysEx.
-    if (ctx) retroplug::bindLaunchpadHooks(ctx, a.launchpadHost);
 
     // Headless proof of the OS-dialog seam. Reports whether __rp_openFileBrowser is bound + whether a desktop
     // helper is available; if one is (a real or a fake zenity/kdialog in PATH), it drives a real pfd request
@@ -1571,13 +1625,9 @@ int main(int argc, char** argv) {
     g_app = &app;
     // The graph's hardware nodes bind these by name (rp.host.devices/2), so they go in before any document can place
     // one: the control plane below is the first thing that can publish a graph. The providers install theirs (the N8's
-    // cart link) as they start, and mount their facets in bootControlPlane.
+    // cart link, the Launchpad pack's surface link) as they start, and mount their facets in bootControlPlane.
     // A refusal (a full table, a name taken) would leave the nodes on their stubs, so it is said, not swallowed.
     app.providers = rp_start_providers(app.deviceHost.get());
-    if (!app.svc.engine.installLink<rp::launchpad::SurfaceLink>(rp::launchpad::kDeviceName,
-                                                                rp::launchpad::kSurfaceLinkInterface,
-                                                                app.launchpadSurfaceLink))
-        std::fprintf(stderr, "[retroplug-sdl] the Launchpad surface link was not installed\n");
 
     // --- args / env ---
     std::string autoloadPath;
@@ -1609,6 +1659,12 @@ int main(int argc, char** argv) {
 
     if (!setupUi(app)) return 1;
 
+    // The startup rendezvous (docs/modular-graph-phase-f3-design.md section 3): the control plane restores the control
+    // surface it persisted (config.json) BEFORE MIDI opens and audio starts, so a claimed pair is reserved from the
+    // first frame - never heard as a second, unquantised launch - and never costs an audio restart. Bounded, so a
+    // missing or broken config.json (or a hung port) cannot keep the app silent.
+    restoreControlSurface(app);
+
     // Open MIDI (virtual in/out ports). Non-fatal: the host runs without MIDI if none is available. The
     // audio callback drains app.midi into the Engine per block (see audioCb); RETROPLUG_MIDI_LOG logs input.
     // Apply any persisted device selection (Settings > MIDI) first, so open() connects the chosen device(s)
@@ -1618,15 +1674,6 @@ int main(int argc, char** argv) {
 
     // Restore the providers' persisted state (the N8's n8.cfg: reconnect the physical cart if it was left enabled).
     rp_restore_providers(app.providers);
-
-    // Restore the persisted Launchpad link (the instance menu's Launchpad submenu) and hand app.midi the
-    // port it claimed. No stop/start dance here: the audio thread has not been given the Engine yet, so
-    // reopening the hardware inputs races nothing. The live path installs that dance below, once it can.
-    app.launchpadHost.restore();  // load launchpad.cfg + reclaim the persisted in/out pair
-    app.midi.setReservedInput(app.launchpadHost.reservedInputPort());
-    if (const auto c = app.launchpadHost.getConfig(); c.enabled)
-        std::fprintf(stderr, "[retroplug-sdl] Launchpad restore: in '%s' out '%s'%s\n", c.selectedInput.c_str(),
-                     c.selectedOutput.c_str(), c.connected ? "" : " - not connected");
 
     // Test/diagnostic hook: dump the enumerated hardware MIDI devices then continue.
     if (std::getenv("RETROPLUG_SDL_MIDI_LIST")) {
@@ -1643,32 +1690,7 @@ int main(int argc, char** argv) {
     pinUiThreadAwayFromAudioCore(); // keep the 60 fps UI/emulator work off the audio thread's core
 #endif
     startAudio(app);
-
-    // Only now that audio is running does taking or releasing a Launchpad port need care: that port has to
-    // leave / rejoin app.midi's shared input stream, and reopening RtMidi's hardware inputs while the
-    // callback is mid-poll is exactly the hazard reconfigureMidi handles. Same treatment - stop audio (which
-    // joins the callback), re-apply, start.
-    app.launchpadHost.setOnLinkChanged([a = &app] {
-        const std::string reserved = a->launchpadHost.reservedInputPort();
-        if (reserved == a->midi.reservedInput()) return;  // no port change, nothing to reopen
-        stopAudio(*a);
-        a->midi.setReservedInput(reserved);
-        startAudio(*a);
-        std::fprintf(stderr, "[retroplug-sdl] Launchpad: reserved MIDI input '%s'\n",
-                     reserved.empty() ? "(none)" : reserved.c_str());
-    });
-
-    // A control-surface scan opens every hardware MIDI input for a second or so, which app.midi may already
-    // be holding - and on Windows a MIDI input is exclusive, so the scan would simply not hear the interface
-    // the user selected as their input device. That is the very rig a TRS-attached Launchpad is on, so the
-    // stream steps aside for the duration. Same reopening hazard, same treatment as above: stop audio (which
-    // joins the callback), re-apply, start. Audio runs THROUGH the scan; only these two edges stop it.
-    app.launchpadHost.setOnScanBusy([a = &app](bool busy) {
-        if (a->midi.hardwareInputsSuspended() == busy) return;
-        stopAudio(*a);
-        a->midi.setHardwareInputsSuspended(busy);
-        startAudio(*a);
-    });
+    app.audioLive = true;
 
     app.idleProbe.armFromEnv(app.svc.engine);
     std::fprintf(stderr, "[retroplug-sdl] running %ux%u @ %.0f Hz\n", app.width, app.height, app.sampleRate);
@@ -1772,12 +1794,16 @@ int main(int argc, char** argv) {
     // --- the 60 fps loop: input → JS frame → LVGL render → present ---
     const bool requireNonBlank = std::getenv("RETROPLUG_SDL_REQUIRE_NONBLANK") != nullptr;
     bool nonBlankFail = false;
+    // Test hook: start a control-surface scan the way Settings > MIDI's row does - through the UI's own global, so the
+    // whole TS scan (the inquiry sweep, the model confirmation, persisting the find and claiming it) runs over the real
+    // facet and RtMidi. tools/run-sdl-controller.sh drives it against a fake device on the ALSA sequencer.
+    const bool scanTest = std::getenv("RETROPLUG_SDL_TEST_SCAN") != nullptr;
     long frame = 0;
     while (app.running) {
         const Uint32 t0 = SDL_GetTicks();
         handleEvents(app);
         pollFileDialog(app);    // deliver a finished OS file-dialog pick (async; no-op when none is open)
-        app.launchpadHost.link().pump();  // write the LED traffic the audio thread queued (no-op when idle)
+        rp_wake_providers(app.providers);  // write the LED traffic the audio thread queued (no-op when idle)
         // Free the plans the audio thread has handed back, on this thread (the one setGraph runs on), rather than at
         // the next graph publish: a node an edit removed while audio runs (a cart node and the notes it holds on the
         // cart, a surface node, a core, the resources they pin) goes within a frame. Nothing to free costs nothing.
@@ -1793,6 +1819,10 @@ int main(int argc, char** argv) {
         app.ui.tick();          // pump the shared host's JS/libuv loop
         lv_timer_handler();     // LVGL indev read + layout + render into drawBuf
         present(app);
+
+        if (scanTest && frame == 10) // the UI has mounted and run its startup restore by now
+            std::fprintf(stderr, "[retroplug-sdl] scan test: started=%s\n",
+                         callGlobal(app.host, "__rp_scanControlSurface", "").c_str());
 
         if (wheelTest && frame == 45) { // the menu has mounted + laid out by now
             SDL_Event m{};
@@ -1824,6 +1854,9 @@ int main(int argc, char** argv) {
 
     // --- teardown: reclaim the Engine, unmount, drop SDL ---
     stopAudio(app); // Pa_StopStream (joins the callback) or stop+join the fallback pump
+    // Before anything else the control plane might still tick: a callback that restarted audio here would resurrect the
+    // stream the next lines are closing.
+    app.audioLive = false;
     if (app.audioStream) { Pa_CloseStream(app.audioStream); app.audioStream = nullptr; }
     Pa_Terminate();
     if (std::getenv("RETROPLUG_SDL_MIDI_SELFTEST"))
@@ -1840,12 +1873,6 @@ int main(int argc, char** argv) {
     // handle in destroy, and a surface node reaching a port the next line has already closed reads disconnected and
     // sends its last frame nowhere. The destructor clears again, for the paths that return before this point.
     app.svc.engine.clearGraph();
-    // Give the control surface back before the rest is torn down. Programmer mode locks the device's
-    // front panel, so skipping this leaves the user's hardware in a state they cannot escape from its own
-    // Settings menu. The link flushes whatever the last block queued, replays the farewell TS handed it, then
-    // closes the ports. (The destructor does this too; doing it here keeps it ahead of the UI teardown, and
-    // goes straight to the link so the reserved-port callback does not try to restart audio.)
-    app.launchpadHost.link().disconnect();
     app.svc.invoker.setAudioThreadOwns(false);
     app.svc.invoker.drainInto(app.svc.engine);
     app.svc.invoker.reclaimReleased();
@@ -1859,6 +1886,21 @@ int main(int argc, char** argv) {
     if (app.display) lv_display_enable_invalidation(app.display, false);
     app.ui.detachDisplay();
     lv_timer_handler();
+
+    // Once more, because the unmount above is code that can publish: a React cleanup that edited the project leaves a plan
+    // the first clear never saw, and a plan still holding the surface link when the providers stop is exactly what the
+    // provider's own rule forbids ("a product reclaims its plans before it stops its providers"). Nothing published by the
+    // unmount costs nothing here.
+    app.svc.engine.clearGraph();
+    app.svc.invoker.drainInto(app.svc.engine);
+    app.svc.invoker.reclaimReleased();
+
+    // Stop the providers LAST, after React has unmounted: their facets stay mounted on rpc pointers into them, so a
+    // cleanup that called one during the unmount (a release on the way out, a scan cancelled) would read freed memory if
+    // the providers had gone first. The Launchpad pack's link flushes what its last block queued and replays the farewell
+    // bytes TS handed it, which releases a device left in Programmer mode (its own front panel is locked until they
+    // arrive); neither needs a window. Idempotent, so ~AppState's stop is a no-op.
+    rp_stop_providers(app.providers);
 
     if (app.texture) SDL_DestroyTexture(app.texture);
     if (app.renderer) SDL_DestroyRenderer(app.renderer);

@@ -62,7 +62,7 @@ public:
 private:
     // 256 slots of one 562-byte message is about 140 KiB, and the test host's link is a local of main (a thread
     // Windows gives 1 MiB of stack, where every suite here has 8), so the ring is one allocation made when the link is
-    // built, as LaunchpadLink's receive ring is, and never rides a stack. Staging and draining copy in and out of its
+    // built, as ControllerLink's receive ring is, and never rides a stack. Staging and draining copy in and out of its
     // fixed slots.
     std::unique_ptr<SpscRing<rp::launchpad::DeviceMessage, kStagedMessages>> staged_ =
         std::make_unique<SpscRing<rp::launchpad::DeviceMessage, kStagedMessages>>();

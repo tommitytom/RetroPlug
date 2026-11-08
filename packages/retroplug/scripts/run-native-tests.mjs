@@ -134,7 +134,14 @@ async function runOne({ file, slug }) {
   // The parity suite and the render baseline hash exact output, so their cores power on in a fixed state
   // (util/Determinism.hpp): the process's, so an engine job's own Engine too. Every other file keeps the random
   // power-on the app has.
-  const env = { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfgDir };
+  // The Launchpad facet's cross-process claim goes here rather than to a scratch of the host's own pid, so a file can
+  // start a SECOND host on the SAME directory and see the refusal (test-native/launchpad-devices.test.ts). One directory
+  // per file, as the config dir is: files run in parallel.
+  const env = {
+    ...process.env,
+    RETROPLUG_USER_CONFIG_DIR: cfgDir,
+    RETROPLUG_LAUNCHPAD_CLAIM_DIR: `${cfgDir}/launchpad-claim`,
+  };
   if (slug.startsWith("parity/") || DETERMINISTIC_FILES.has(slug)) env.RETROPLUG_DETERMINISTIC = "1";
   else delete env.RETROPLUG_DETERMINISTIC;
   const run = await spawnBuffered(HOST, [outFile], { cwd: PKG, env });

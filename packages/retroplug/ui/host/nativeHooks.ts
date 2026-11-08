@@ -1,11 +1,11 @@
 // nativeHooks: the whole `__rp_*` seam between the UI bundle and the native host, typed in one place.
 //
-// The native side binds these as plain globals on the UI's QuickJS context (PluginUI.cpp for the plugin
-// editor, sdl/main.cpp for the SDL standalone, the Launchpad hook file for its hardware seam, and
-// RenderCore.cpp for the UI test harness); the UI installs a few of its own the other way (mount, close
-// request, the in-app file browser). Every hook is OPTIONAL: which ones exist depends on the host, and a
-// missing one means "this host has no such thing", so callers optional-chain and fall back. Each module used
-// to re-declare its slice of this as a structural cast at every call site; this is the one declaration.
+// The native side binds these as plain globals on the UI's QuickJS context (PluginUI.cpp for the plugin editor,
+// sdl/main.cpp for the SDL standalone, and RenderCore.cpp for the UI test harness); the UI installs a few of its own the
+// other way (mount, close request, the in-app file browser, automation's own actions). Every hook is OPTIONAL: which ones
+// exist depends on the host, and a missing one means "this host has no such thing", so callers optional-chain and fall
+// back. Each module used to re-declare its slice of this as a structural cast at every call site; this is the one
+// declaration.
 //
 // `native` is globalThis itself, not a snapshot - a hook bound (or a test fake installed) after import is seen.
 
@@ -13,7 +13,6 @@ import type { AppStores, StoreChannel } from "../../src/appStores";
 import type { NativeAudioConfig } from "../screens/menu/audioDraft";
 import type { MidiConfig } from "../screens/menu/midiDevices";
 import type { TransportState } from "../screens/menu/transport";
-import type { LaunchpadConfig, LaunchpadScanStatus } from "../screens/menu/launchpadDevices";
 
 export interface RpHooks {
   // --- installed BY the UI (main.tsx), called by the native editor ---------------------------------------
@@ -21,6 +20,10 @@ export interface RpHooks {
   __rp_unmountUI?: () => void;
   /** The window size to open at for the already-loaded project (before first map), or null for the default. */
   __rp_initialWindowSize?: () => { width: number; height: number } | null;
+  /** Start a control-surface scan as Settings > MIDI's row does (launchpadDevices). The SDL's test hook reads it, so a
+   *  check can drive the whole TS scan over the real facet without a menu (tools/run-sdl-controller.sh). False when a
+   *  scan is already running, the link holds a pair, or the host mounted no Launchpad facet. */
+  __rp_scanControlSurface?: () => boolean;
 
   // --- window (plugin editor + SDL) -------------------------------------------------------------------------
   __rp_setWindowSize?: (width: number, height: number) => void;
@@ -54,15 +57,6 @@ export interface RpHooks {
   __rp_getTransport?: () => Partial<TransportState>;
   __rp_setTransport?: (playing: boolean) => void;
   __rp_setClockBpm?: (bpm: number) => void;
-
-  // --- Launchpad control surface (LaunchpadHooks.cpp) -------------------------------------------------------
-  __rp_getLaunchpadConfig?: () => Partial<LaunchpadConfig>;
-  __rp_setLaunchpadPorts?: (input: string, output: string) => void;
-  __rp_connectLaunchpad?: (enabled: boolean) => void;
-  __rp_setLaunchpadFarewell?: (bytes: number[]) => void;
-  __rp_scanLaunchpad?: (probe: number[], windowMs: number) => boolean;
-  __rp_getLaunchpadScan?: () => Partial<LaunchpadScanStatus>;
-  __rp_setLaunchpadDevice?: (label: string) => void;
 
   // --- UI test harness only (RenderCore.cpp) ----------------------------------------------------------------
   __rp_tagTestId?: (uid: string, name: string) => void;

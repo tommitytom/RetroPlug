@@ -531,8 +531,8 @@ recorded rather than papered over.
 ### 8.3 BUILT: M3 + M4, the device
 
 `controllerIn` was always empty and `emitControllerOut` went nowhere, because nothing owned a Launchpad.
-[`LaunchpadLink`](../packages/native/src/host/launchpad/LaunchpadLink.hpp) now does, on its own in/out pair,
-behind an injected `IMidiPort` so the whole lifecycle is tested with nothing plugged in.
+[`LaunchpadLink`](../packages/launchpad/native/src/launchpad/desktop/ControllerLink.hpp) now does, on its own in/out
+pair, behind an injected `IMidiPort` so the whole lifecycle is tested with nothing plugged in.
 
 **The two rings are deliberately different, because their producers are.** Device -> audio copies `MidiIo`'s
 ring (a `std::vector` per slot): the producer is the MIDI backend's callback thread, where allocating is that

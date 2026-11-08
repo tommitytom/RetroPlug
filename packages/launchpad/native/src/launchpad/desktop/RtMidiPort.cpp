@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "RtMidi.h"
+#include "launchpad/desktop/MidiPortFilter.hpp"
 
 #if defined(__APPLE__)
 #include <CoreMIDI/CoreMIDI.h>
@@ -109,6 +110,8 @@ private:
 MidiPortOpener rtMidiPortOpener(std::string clientName) {
     return [clientName = std::move(clientName)](bool input, const std::string& name,
                                                 IMidiPort::Receiver receiver) -> std::unique_ptr<IMidiPort> {
+        // The test-only allow list (MidiPortFilter.hpp): a filtered process may not open a port it may not list either.
+        if (!midiPortAllowed(name)) throw std::runtime_error("MIDI port not allowed: " + name);
         if (!midiSystemUsable()) throw std::runtime_error("no MIDI system");
         try {
             return std::make_unique<RtMidiSinglePort>(clientName, input, name, std::move(receiver));
@@ -122,10 +125,13 @@ PortNames listMidiPorts() {
     PortNames out;
     if (!midiSystemUsable()) return out;
     try {
+        std::vector<std::string> inputs, outputs;
         RtMidiIn in(RtMidi::UNSPECIFIED, "RetroPlug");
-        for (unsigned i = 0; i < in.getPortCount(); ++i) out.inputs.push_back(in.getPortName(i));
+        for (unsigned i = 0; i < in.getPortCount(); ++i) inputs.push_back(in.getPortName(i));
         RtMidiOut op(RtMidi::UNSPECIFIED, "RetroPlug");
-        for (unsigned i = 0; i < op.getPortCount(); ++i) out.outputs.push_back(op.getPortName(i));
+        for (unsigned i = 0; i < op.getPortCount(); ++i) outputs.push_back(op.getPortName(i));
+        out.inputs  = allowedMidiPorts(inputs);
+        out.outputs = allowedMidiPorts(outputs);
     } catch (const std::exception& e) {
         // A MIDI system that comes up but refuses an endpoint (a bare container): no ports, said once.
         std::fprintf(stderr, "[retroplug] the MIDI system is unavailable: %s\n", e.what());

@@ -6,13 +6,48 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdlib>
+#include <string>
+#include <vector>
+
 #include "host/input/MidiIo.hpp"
+#include "launchpad/desktop/MidiPortFilter.hpp"  // the pack's copy of the one allow-list rule (the shell's, below)
 
 using retroplug::hardwarePortIndices;
 using retroplug::matchPortIndex;
 using retroplug::inputPortsToOpen;
+using retroplug::midiPortAllowed;
+using retroplug::midiPortAllowedBy;
 
 namespace {
+/** RP_MIDI_PORT_ALLOW is a developer's environment variable (tools/run-sdl-controller.sh exports it for the standalone's
+ *  harness), and a hand run of that harness leaves it in the shell. Every case here but the filter's own assumes the
+ *  UNFILTERED answer, so the file clears it on load and puts back whatever it found at exit; a case that wants a list
+ *  sets it for its own scope (PortAllowList). */
+struct UnfilteredFileScope {
+    UnfilteredFileScope() {
+        const char* was = std::getenv("RP_MIDI_PORT_ALLOW");
+        had_            = was != nullptr;
+        if (had_) was_ = was;
+#if defined(_WIN32)
+        _putenv_s("RP_MIDI_PORT_ALLOW", "");
+#else
+        unsetenv("RP_MIDI_PORT_ALLOW");
+#endif
+    }
+    ~UnfilteredFileScope() {
+#if defined(_WIN32)
+        _putenv_s("RP_MIDI_PORT_ALLOW", had_ ? was_.c_str() : "");
+#else
+        if (had_) setenv("RP_MIDI_PORT_ALLOW", was_.c_str(), 1);
+        else unsetenv("RP_MIDI_PORT_ALLOW");
+#endif
+    }
+    bool        had_ = false;
+    std::string was_;
+};
+const UnfilteredFileScope kUnfiltered;
+
 // A realistic ALSA-style port listing: our own virtual port, a MIDI-through (no hardware), and two controllers.
 const std::vector<std::string> kPorts = {
     "RetroPlug In",       // 0: our own virtual port (contains the client name) — always skipped
@@ -152,4 +187,111 @@ TEST_CASE("0xF7 (sysex end) is NOT real-time - the boundary is 0xF8") {
     std::vector<std::uint8_t> msg{0xF0, 0x7E, 0xF7};
     REQUIRE(realtimeOf(msg).empty());
     REQUIRE(msg.size() == 3);
+}
+
+// ---- the test-only allow list, and the scan's held edge -------------------------------------------------------
+
+namespace {
+
+/** RP_MIDI_PORT_ALLOW for one case, put back as it was when it goes (the filter reads it on every call). */
+struct PortAllowList {
+    explicit PortAllowList(const char* spec) {
+        const char* was = std::getenv("RP_MIDI_PORT_ALLOW");
+        had_            = was != nullptr;
+        if (had_) was_ = was;
+#if defined(_WIN32)
+        _putenv_s("RP_MIDI_PORT_ALLOW", spec);
+#else
+        setenv("RP_MIDI_PORT_ALLOW", spec, 1);
+#endif
+    }
+    ~PortAllowList() {
+#if defined(_WIN32)
+        _putenv_s("RP_MIDI_PORT_ALLOW", had_ ? was_.c_str() : "");
+#else
+        if (had_) setenv("RP_MIDI_PORT_ALLOW", was_.c_str(), 1);
+        else unsetenv("RP_MIDI_PORT_ALLOW");
+#endif
+    }
+    PortAllowList(const PortAllowList&)            = delete;
+    PortAllowList& operator=(const PortAllowList&) = delete;
+
+    bool        had_ = false;
+    std::string was_;
+};
+
+}  // namespace
+
+TEST_CASE("the allow list matches substrings of a port's name, and an empty one allows everything") {
+    // A real backend's name carries the client and port numbers ("...:1 24:0"), which move as clients come and go, so the
+    // list is of substrings; tools/run-sdl-controller.sh writes its two fakes' WHOLE names, which no other device's name can
+    // contain, so nothing else can then be listed or opened. Unset means every port, so an ordinary run is unchanged.
+    REQUIRE(midiPortAllowedBy("LPProMK3 MIDI:1 24:0", "LPProMK3 MIDI,RPTestKeys"));
+    REQUIRE(midiPortAllowedBy("RPTestKeys:1 32:0", "LPProMK3 MIDI, RPTestKeys"));  // the space around an entry is trimmed
+    REQUIRE_FALSE(midiPortAllowedBy("Zoom L6:1 20:0", "LPProMK3 MIDI,RPTestKeys"));
+    REQUIRE(midiPortAllowedBy("anything at all", ""));        // unset
+    REQUIRE(midiPortAllowedBy("anything at all", " , \t"));   // a list of separators is not "no ports at all"
+    REQUIRE_FALSE(midiPortAllowedBy("Zoom L6", "zoom l6"));   // case-sensitive, deliberately: names are exact
+}
+
+TEST_CASE("the shell's rule and the pack's agree on every input, which is what keeps two copies one rule") {
+    // MidiIo.hpp and the Launchpad pack's MidiPortFilter.hpp hold the same rule twice, because a package may include its
+    // own tree and its declared packages' and not the shell's. It is ONE rule, though: both bodies are run over the same
+    // table here, so an edit to either alone fails this case rather than drifting quietly. The names are the ones the real
+    // callers see - a whole ALSA name, a Windows one, an entry with a trailing space, a list of separators.
+    struct Row {
+        const char* name;
+        const char* spec;
+    };
+    const Row rows[] = {
+        {"RPFakeLPProMK3:LPProMK3 MIDI 128:0", "RPFakeLPProMK3:LPProMK3 MIDI 128:0,RPTestKeys:RPTestKeys 129:0"},
+        {"RPTestKeys:RPTestKeys 129:0", "RPFakeLPProMK3:LPProMK3 MIDI 128:0, RPTestKeys:RPTestKeys 129:0"},
+        {"LPProMK3 MIDI:LPProMK3 MIDI 128:0", "RPFakeLPProMK3:LPProMK3 MIDI 128:0"},  // the client name is the entry
+        {"Launchpad Pro MK3:LPProMK3 MIDI 24:0", "RPFakeLPProMK3"},                   // a real device, refused
+        {"Zoom L6:1 20:0", "LPProMK3 MIDI,RPTestKeys"},
+        {"anything at all", ""},
+        {"anything at all", " , \t"},
+        {"Launchpad MK2", "Launchpad MK2"},
+        {"launchpad mk2", "Launchpad MK2"},
+        {"MIDIIN2 (LPProMK3 MIDI) 2", ""},
+    };
+    for (const Row& r : rows) {
+        INFO(r.name << " under '" << r.spec << "'");
+        REQUIRE(retroplug::midiPortAllowedBy(r.name, r.spec) == rp::launchpad::midiPortAllowedBy(r.name, r.spec));
+    }
+}
+
+TEST_CASE("a filtered process neither lists nor opens a port outside the list") {
+    // The filter rides hardwarePortIndices, which every selection path goes through: the pickers' lists
+    // (hardwarePortNames), the inputs' open set (inputPortsToOpen), and the output's (matchPortIndex). So ONE rule hides a
+    // port everywhere, and a filtered stream cannot open what its own Settings list would not show.
+    PortAllowList allow("Launchpad MK2");
+    REQUIRE(midiPortAllowed("Launchpad MK2"));
+    REQUIRE_FALSE(midiPortAllowed("Arturia KeyStep 32"));
+    REQUIRE(hardwarePortIndices(kPorts, kClient) == std::vector<std::size_t>{2});  // the Launchpad alone kept
+    REQUIRE(hardwarePortIndices(kPorts, kClient).size() == 1);
+    // "All Devices" is every hardware port the filter allows, not every port the machine has.
+    REQUIRE(inputPortsToOpen(kPorts, kClient, retroplug::kAllInputs) == std::vector<std::size_t>{2});
+    // A named pick outside the list resolves to nothing, so nothing opens for it.
+    REQUIRE_FALSE(matchPortIndex(kPorts, kClient, "Arturia KeyStep 32").has_value());
+    REQUIRE(inputPortsToOpen(kPorts, kClient, "Arturia KeyStep 32").empty());
+}
+
+TEST_CASE("a scan's held edge is a Windows-only lever, and a stream that takes it opens nothing") {
+    // rp_device_host::suspend_hardware_inputs is asked on every platform, and the SDL answers it by scanSuspendsInputs()
+    // (sdl/main.cpp's onSuspendInputs): a Windows input is exclusive, so a scan needs the stream to let go; ALSA's
+    // sequencer and CoreMIDI share an input, so the scan hears it anyway and closing the stream's inputs would cost the
+    // user their MIDI and an audio restart for nothing. The answer is held here, on whichever platform builds this; that
+    // the SDL ACTS on it (it suspends under _WIN32 and logs nothing off it) is held in place by `pnpm sdl:controller`,
+    // whose scan leg fails on a "hardware inputs suspended" line.
+#if defined(_WIN32)
+    REQUIRE(retroplug::scanSuspendsInputs());
+#else
+    REQUIRE_FALSE(retroplug::scanSuspendsInputs());
+#endif
+    // What the lever does where it acts: a suspended stream opens NOTHING, whichever selection asked - the same pure
+    // helper MidiIo::inputsFor goes through, so this is the behaviour and not a restatement of the guard.
+    REQUIRE(inputPortsToOpen(kPorts, kClient, retroplug::kAllInputs, "", /*suspended=*/true).empty());
+    REQUIRE(inputPortsToOpen(kPorts, kClient, "Launchpad MK2", "", true).empty());
+    REQUIRE_FALSE(inputPortsToOpen(kPorts, kClient, "Launchpad MK2", "", false).empty());  // and unsuspended it opens
 }

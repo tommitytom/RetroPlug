@@ -559,6 +559,12 @@ bool EngineRpcService::stageControllerIn(std::vector<std::uint8_t> bytes) {
     return harnessSurface_->queueInput(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
+std::vector<std::string> EngineRpcService::drainProductCalls() {
+    std::vector<std::string> out;
+    if (productCalls_) out.swap(*productCalls_);  // a host with no record answers nothing, rather than keeping one
+    return out;
+}
+
 void EngineRpcService::accumulateMidiOut() {
     // Engine::midiOut() holds only the block just rendered (cleared at the top of the next processBlock),
     // so copy it out now. Usually empty (only an armed LSDj MI.OUT system emits) — cheap when so.

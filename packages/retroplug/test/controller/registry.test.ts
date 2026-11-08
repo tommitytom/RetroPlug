@@ -28,3 +28,23 @@ test("a saved config is parsed by its app's schema, and an unknown id gets an em
   expect(parseAppConfig("lsdj-midimap", { quantise: "rowEnd", follow: false, page: 3 }))
     .toEqual({ quantise: "rowEnd", follow: false, page: 3 });
 });
+
+test("every row an app offers edits a key of its own schema, with values that schema accepts", () => {
+  // The Launchpad submenu builds a row per field the app declares (menuDefs' controllerAppRows), so a typo in a key would
+  // be a row that silently edits nothing - the menu would write an unknown key the schema strips, and the knob would
+  // never move. EVERY choice value is held, not just the first: a value the schema snaps away from would make the cycler
+  // step back to where it was, and only the values a project can reach are the row's.
+  let rows = 0;
+  for (const app of controllerApps.list()) {
+    const schema = app.config.parse({}); // the defaults, which is what a row with no stored value shows
+    for (const field of app.menu ?? []) {
+      rows++;
+      expect(Object.prototype.hasOwnProperty.call(schema, field.key)).toBe(true);
+      expect(field.toggle === true || field.choices !== undefined).toBe(true);
+      const values = field.choices?.map((c) => c.value) ?? [schema[field.key]];
+      if (field.choices) expect(field.choices.length > 0).toBe(true);
+      for (const value of values) expect(app.config.parse({ [field.key]: value })[field.key]).toEqual(value);
+    }
+  }
+  expect(rows > 0).toBe(true); // an app with no rows at all would pass the loop above
+});

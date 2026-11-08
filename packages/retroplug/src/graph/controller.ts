@@ -79,7 +79,7 @@ export function controllerTarget(
 export function controllerSyncOverride(
   systems: readonly { id: number }[],
   controller: Pick<GraphController, "app" | "target" | "systemId" | "cartSync"> | null | undefined,
-): { systemId: number; node: string; mode: string } | null {
+): { systemId: number; node: string; mode: string; driving: boolean } | null {
   if (!controller || controller.target !== "system") return null;
   // The app decides whether it drives a cart and what mode that cart needs, and it does so as DATA in its manifest
   // (generated/protocol.ts): which node type, which mode, and what the cart must be polled as. This module names no app,
@@ -91,7 +91,10 @@ export function controllerSyncOverride(
   // aimed at different systems.
   const systemId = controllerTarget(controller, systems);
   if (systemId === NO_SYSTEM) return null;
-  return { systemId, node: rule.node, mode: syncModeFor(rule, controller.cartSync) };
+  const mode = syncModeFor(rule, controller.cartSync);
+  // Whether that mode is what makes the app's launches WORK, which is the app's rule and not a mode string a caller may
+  // compare against: an app whose "send nothing" mode is spelt differently, or that has none, still reads as not driving.
+  return { systemId, node: rule.node, mode, driving: mode === rule.mode };
 }
 
 /** The mode a rule asks for, given the cart's own SYNC setting as last polled: the rule's mode unless the cart is

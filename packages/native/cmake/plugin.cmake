@@ -78,7 +78,8 @@ target_include_directories(retroplug PUBLIC "${RP_PRODUCTS_DIR}/retroplug")
 # The selection is also a linking one, and this is the product that would hide a mistake: every format links the pack's
 # node types and none of them links its desktop half's ports, threads and system frameworks. DPF's DSP library links
 # the N8 pack's desktop half by hand above (its sources start that provider), which is why the check is per target and
-# by name rather than a rule over every provider target.
+# by name rather than a rule over every provider target. It reads each format target's DIRECT links only: a provider
+# library reached through an interface library of ours would pass it unseen.
 foreach(_t IN LISTS _rp_plugin_binaries)
     get_target_property(_links ${_t} LINK_LIBRARIES)
     if("retroplug-launchpad-desktop" IN_LIST _links)

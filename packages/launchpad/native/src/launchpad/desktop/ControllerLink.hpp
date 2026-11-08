@@ -37,7 +37,9 @@ namespace rp::launchpad {
 //      whoever consumes a slot drops it when it belongs to an earlier claim.
 //   3. **Output leaves on a writer thread, not the audio thread or the UI's frame.** A frame of latency is invisible on
 //      a light, and the write can block: WinMM waits for a SysEx to leave the wire, which is ~170 ms for a 538-byte
-//      repaint over DIN - a frozen UI if the frame loop did it.
+//      repaint over DIN - a frozen UI if the frame loop did it. So the UI's own messages (send: the bytes that let a
+//      device go while the pair stays claimed) go into a queue of their OWN, which the writer drains; the UI thread never
+//      writes the port, and never waits behind the session's queue.
 //   4. **The close bytes are an opaque blob.** A device can need telling that it is being let go (a Launchpad in
 //      Programmer mode has its own front panel locked until it is), and that has to happen on paths where the JS
 //      runtimes may already be gone. TS hands the bytes over with connect(); this class replays them in disconnect()
@@ -76,8 +78,12 @@ public:
      *  here instead. */
     void pump();
 
-    /** Write `bytes` to the device now, after whatever is already queued (UI thread). For a message that is not the
-     *  session's - letting the device go when the app driving it is switched off, while the pair stays claimed. */
+    /** Hand `bytes` to the device (UI thread), after whatever the session had already queued. For a message that is not
+     *  the session's - letting the device go when the app driving it is switched off, while the pair stays claimed.
+     *  Returns as soon as the message is QUEUED: the writer thread writes it, so the UI never waits for a write in flight
+     *  or for the queue in front of it (a WinMM bulk SysEx blocks ~170 ms). False when nothing is connected, the bytes are
+     *  oversized, or the writer's control queue is full. Without a writer thread (the unit tests) this thread IS the
+     *  writer and writes them now, so a case can assert on the device's record. */
     bool send(const std::uint8_t* data, std::size_t n);
 
     // --- audio thread ---
@@ -97,7 +103,9 @@ public:
 
 private:
     void pushInputRing(const std::uint8_t* data, std::size_t n, std::uint32_t gen);  // backend callback thread
-    void writeQueued();  // the ring's consumer: the writer thread, or pump() without one
+    void writeQueued();  // the send ring's consumer: the writer thread, or pump() without one
+    void writeControl();  // the UI's own messages, drained by the writer after the send ring
+    void wakeWriter();
     void startWriter();
     void stopWriter();
 
@@ -109,6 +117,10 @@ private:
         std::uint32_t gen                  = 0;  // the claim the session produced it for
         std::uint16_t len                  = 0;
         std::uint8_t  data[kMaxDeviceMessage] = {0};
+    };
+    struct ControlMessage {
+        std::uint32_t             gen = 0;  // the claim the UI produced it for
+        std::vector<std::uint8_t> bytes;
     };
 
     MidiPortOpener             opener_;
@@ -134,9 +146,18 @@ private:
     // audio -> writer. POD slots: the producer is the audio thread, so nothing here may allocate.
     SpscRing<OutMessage, kOutCapacity> outRing_;
 
-    // The writer thread and what it waits on. popMutex_ is the send ring's single-consumer seat (the writer's drain,
-    // send()'s flush and disconnect()'s), and sendMutex_ serialises every write to out_ (the same three), so the port is
-    // never written from two threads at once and the UI thread waits for one write, not for a whole queue of them.
+    // UI -> writer: what send() hands over. Its own queue, not the send ring, because the ring's consumer seat is held by
+    // whoever is draining it for as long as the drain takes, and a send() that waited for that seat would wait behind
+    // every message queued before it (the UI freeze the writer exists to avoid). Bounded, because a UI that queued without
+    // limit would grow on a device that never drains; the writer swaps the whole batch out under ctlMutex_, so the UI's
+    // hold on it is a push.
+    static constexpr std::size_t       kControlCapacity = 16;
+    std::mutex                         ctlMutex_;
+    std::vector<ControlMessage>        control_;      // guarded by ctlMutex_
+
+    // The writer thread and what it waits on. popMutex_ is the send ring's single-consumer seat (the writer's drain, or
+    // disconnect()'s flush), and sendMutex_ serialises every write to out_ (the writer, the UI's send without a writer,
+    // and disconnect's flush), so the port is never written from two threads at once.
     std::mutex              popMutex_;
     std::mutex              sendMutex_;
     std::mutex              wakeMutex_;

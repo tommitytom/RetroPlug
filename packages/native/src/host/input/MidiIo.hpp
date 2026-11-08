@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <string>
@@ -20,16 +21,69 @@ namespace retroplug {
  *  builds an RtMidi object must ask this first, including outside this header's own class. */
 bool midiSystemUsable();
 
+/** Whether a control-surface SCAN's held edge means anything for this stream: true only where a MIDI input is EXCLUSIVE
+ *  (Windows), because there the stream has to let one go for the scan to hear it. An ALSA sequencer input and a CoreMIDI
+ *  endpoint are shared - the scan opens its own connection and hears everything the stream does - so closing the stream's
+ *  inputs would cost the user their MIDI, and an audio restart around the reopen, for the scan's seconds, and buy nothing.
+ *  The pack asks every product the same question (rp_device_host::suspend_hardware_inputs), and the SDL answers it by this
+ *  (sdl/main.cpp's onSuspendInputs): a no-op off Windows. It is a function rather than a constant in the SDL so the rule
+ *  is held by this header's test on whichever platform builds it. */
+inline bool scanSuspendsInputs() {
+#if defined(_WIN32)
+    return true;
+#else
+    return false;
+#endif
+}
+
 // Pure, RtMidi-free port-selection helpers (shared by MidiIo + its unit test). A port is "hardware" when its
 // name is neither our own virtual port (contains `clientName`) nor an ALSA MIDI-through (contains "Through").
 //
-// `reserved` is a port some OTHER owner has claimed exclusively - today the Launchpad link, which holds its
+// `reserved` is a port some OTHER owner has claimed exclusively - today the ControllerLink, which holds its
 // own in/out pair. Skipping it is not tidiness: a pad press is a NoteOn, and a tracker's MIDI-map translator
 // reads a NoteOn as a row launch, so a surface sharing the musical stream fires every launch twice (once
 // quantised by the controller app, once raw). Matched exactly, since the claimant picked the name out of
 // this very list.
 
-/** Indices of every hardware port in `names` (skipping our own virtual port, ALSA "Through", and `reserved`). */
+/** Whether `name` passes the allow list `spec` (RP_MIDI_PORT_ALLOW's text): a comma-separated list of SUBSTRINGS a port's
+ *  name must contain. An empty spec (or one of separators alone) allows every port, so an ordinary run is unchanged.
+ *
+ *  The list is TEST-ONLY, and it is what keeps a check off real hardware: tools/run-sdl-controller.sh drives a real
+ *  standalone against a fake Launchpad on the ALSA sequencer, and a shared stream on "All Devices" would otherwise open
+ *  every MIDI input the machine has, a mixer's and a USB cable's included. The harness names its fakes by their WHOLE port
+ *  names, client number included, so an entry it wrote cannot match a real device. The Launchpad pack holds the same rule
+ *  for its own ports (packages/launchpad/native/src/launchpad/desktop/MidiPortFilter.hpp): a package may not include this
+ *  tree, so the two read the one variable and are kept in step by hand - and in `retroplug-midi-test`, which runs both
+ *  bodies over one table of inputs. A product never sets it. */
+inline bool midiPortAllowedBy(const std::string& name, const std::string& spec) {
+    std::string entry;
+    std::string::size_type at = 0;
+    bool any = false;
+    while (at <= spec.size()) {
+        const std::string::size_type comma = spec.find(',', at);
+        entry = spec.substr(at, comma == std::string::npos ? std::string::npos : comma - at);
+        const std::string::size_type first = entry.find_first_not_of(" \t");
+        const std::string::size_type last  = entry.find_last_not_of(" \t");
+        entry = first == std::string::npos ? std::string() : entry.substr(first, last - first + 1);
+        if (!entry.empty()) {
+            any = true;
+            if (name.find(entry) != std::string::npos) return true;
+        }
+        if (comma == std::string::npos) break;
+        at = comma + 1;
+    }
+    return !any;
+}
+
+/** `midiPortAllowedBy(name, RP_MIDI_PORT_ALLOW)`. Read on every call: the callers list or open a port, never the audio
+ *  thread, so a test can set the filter up and take it down around a case. */
+inline bool midiPortAllowed(const std::string& name) {
+    const char* spec = std::getenv("RP_MIDI_PORT_ALLOW");
+    return midiPortAllowedBy(name, spec ? spec : "");
+}
+
+/** Indices of every hardware port in `names` (skipping our own virtual port, ALSA "Through", `reserved`, and any port
+ *  the test-only allow list hides - so a filtered process neither lists nor opens it, whichever selection asks). */
 inline std::vector<std::size_t> hardwarePortIndices(const std::vector<std::string>& names, const std::string& clientName,
                                                    const std::string& reserved = {}) {
     std::vector<std::size_t> out;
@@ -37,6 +91,7 @@ inline std::vector<std::size_t> hardwarePortIndices(const std::vector<std::strin
         if (names[i].find(clientName) != std::string::npos) continue;  // our own virtual port
         if (names[i].find("Through") != std::string::npos) continue;    // ALSA MIDI-through (no hardware)
         if (!reserved.empty() && names[i] == reserved) continue;         // claimed by a control surface
+        if (!midiPortAllowed(names[i])) continue;                        // hidden by RP_MIDI_PORT_ALLOW
         out.push_back(i);
     }
     return out;
@@ -60,12 +115,15 @@ inline constexpr const char* kAllInputs = "*";
 
 /** Indices of the input ports to open for `selection`: none when empty (the default), every hardware port
  *  for kAllInputs, else just the one whose name matches. A port `reserved` by a control surface is skipped
- *  in every case.
+ *  in every case, and a stream whose inputs are `suspended` (a control-surface scan holds them, on the one platform
+ *  where a scan needs it) opens nothing at all.
  *
  *  Pure so the policy itself is testable (retroplug-midi-test) rather than only observable by watching which
  *  RtMidi ports a running standalone happens to open. */
 inline std::vector<std::size_t> inputPortsToOpen(const std::vector<std::string>& names, const std::string& clientName,
-                                                 const std::string& selection, const std::string& reserved = {}) {
+                                                 const std::string& selection, const std::string& reserved = {},
+                                                 bool suspended = false) {
+    if (suspended) return {};
     if (selection.empty()) return {};
     if (selection == kAllInputs) return hardwarePortIndices(names, clientName, reserved);
     if (auto idx = matchPortIndex(names, clientName, selection, reserved)) return { *idx };
@@ -145,19 +203,29 @@ public:
     const std::string& inputSelection() const { return selectedIn_; }
     const std::string& outputSelection() const { return selectedOut_; }
 
-    // Keep an input port OUT of this stream because another owner holds it exclusively (the Launchpad link).
-    // Empty releases the reservation. Applied immediately if open() has run, so the host must stop audio
-    // around this exactly as it does for setInputSelection.
-    void setReservedInput(const std::string& name);
+    // Keep a port pair OUT of this stream because another owner holds it (the control surface's link). Empty
+    // releases. The input matters everywhere - a pad NoteOn here is a second, unquantised row launch - and so
+    // does the output: notes meant for a synth would land on the surface and light its pads at random. On
+    // Windows both are also exclusive, so a port this stream holds could not be claimed at all.
+    //
+    // Applied immediately if open() has run, and only ports whose open state actually changes are reopened.
+    // The host stops audio around it when reservationChanges() says something will move (send() mirrors to
+    // the hardware output from the audio thread), and skips that dance when nothing would.
+    void setReserved(const std::string& input, const std::string& output);
+    bool reservationChanges(const std::string& input, const std::string& output) const;
     const std::string& reservedInput() const { return reservedIn_; }
+    const std::string& reservedOutput() const { return reservedOut_; }
 
-    // Close every hardware input for the duration of a control-surface SCAN, without disturbing the user's
-    // selection (resuming re-applies it). Not the same lever as setReservedInput, which names ONE port a
-    // surface holds for as long as it is connected: a scan needs them ALL down, briefly. It matters because
-    // a Windows MIDI input is exclusive, so a scan cannot open the very interface the user picked as their
-    // input device - which is exactly the rig a TRS-attached Launchpad is on. Applied immediately if open()
-    // has run, so the host must stop audio around this exactly as it does for setInputSelection.
+    // Close every hardware INPUT for the duration of a control-surface SCAN, without disturbing the user's
+    // selection (resuming re-applies it). Not the same lever as setReserved, which names ONE pair a surface
+    // holds for as long as it is connected: a scan needs every input, briefly. Only Windows needs it - a
+    // Windows MIDI input is exclusive, so a scan could not hear the interface the user picked as their input,
+    // which is exactly the rig a TRS-attached Launchpad is on. The OUTPUT is left alone on purpose: it is the
+    // user's synth, and cutting it mid-note would hang whatever was held. Applied immediately if open() has
+    // run; suspensionChanges() says whether that closes anything (so whether the host must stop audio). A
+    // product reaches this only where scanSuspendsInputs() says the edge is real, which is Windows alone.
     void setHardwareInputsSuspended(bool suspended);
+    bool suspensionChanges(bool suspended) const;
     bool hardwareInputsSuspended() const { return inputsSuspended_; }
 
     // Drain queued input into `out` (called from the audio thread each block; clears `out` first). Lock-free
@@ -187,7 +255,14 @@ private:
     std::string                             selectedIn_;   // "" = None (virtual input only); "*" = every device
     std::string                             selectedOut_;  // "" = None (virtual output only)
     std::string                             reservedIn_;   // "" = nothing claimed by a control surface
-    bool                                    inputsSuspended_ = false;  // a scan is holding the ports
+    std::string                             reservedOut_;  // ditto, the pair's output
+    bool                                    inputsSuspended_ = false;  // a scan is holding the inputs
+
+    // The input ports / output port this stream WOULD open under the given reservation (and, for inputs,
+    // suspension). What the *Changes() predicates compare, so a change touching nothing we hold costs no
+    // reopen - and so no audio restart.
+    std::vector<std::string> inputsFor(const std::string& reservedIn, bool suspended) const;
+    std::string              outputFor(const std::string& reservedOut) const;
 
     std::unique_ptr<RtMidiIn>               in_;    // our virtual input port
     std::vector<std::unique_ptr<RtMidiIn>>  hwIn_;  // hardware input ports (USB-MIDI, etc.)

@@ -1,5 +1,5 @@
 // config.json parse/serialize. The on-disk shape mirrors native's UserConfigJson —
-// { schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom, sramAutoSave }
+// { schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom, sramAutoSave, controlSurface }
 // — except the TS side renames native's `sramMirror` key to `sramAutoSave` (the string
 // values still match native's enum). Reads stay tolerant: a missing field takes its
 // default (additive), an unknown one is stripped; malformed / non-object / newer-than-us
@@ -69,5 +69,6 @@ export function serializeUserConfig(cfg: UserConfig): string {
     sramAutoSave: cfg.sramAutoSave,
     useNativeFileDialogs: cfg.useNativeFileDialogs,
     render: cfg.render,
+    controlSurface: cfg.controlSurface,
   });
 }

@@ -147,6 +147,12 @@ public:
     // real surface installs its link on the Engine (installLink) and leaves this null; the two are alternatives, not
     // layers: this one exists only where no device does.
     void            setHarnessSurface(rp::host::HarnessSurfaceLink* surface) { harnessSurface_ = surface; }
+    // TEST / HARNESS: what the product's rp_device_host was told (rp::host::ProviderHost::productCalls), drained so a
+    // headless test can hold the facet's claim, its scan's held edge and the startup rendezvous to what reached the
+    // product: "reserve_midi:<input>|<output>", "suspend_hardware_inputs:1" or "restored", in order. Empty on a product
+    // that implements the calls itself (the standalone does, over its shared MIDI stream).
+    void                          setProductCalls(std::vector<std::string>* calls) { productCalls_ = calls; }
+    std::vector<std::string>      drainProductCalls();
     // Drain the host MIDI out (LSDj's serial-out decoders, a controller's launches), accumulated across renderAudio
     // blocks since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
     std::vector<RpcMidiOut> drainMidiOut();
@@ -209,4 +215,5 @@ private:
     Carry                    carry_;
     std::vector<RpcMidiOut> accumMidiOut_;  // host MIDI out gathered across a render window (drainMidiOut)
     rp::host::HarnessSurfaceLink* harnessSurface_ = nullptr;  // the headless host's own surface, if it has one
+    std::vector<std::string>*     productCalls_ = nullptr;    // the product host's record, on a host that keeps one
 };

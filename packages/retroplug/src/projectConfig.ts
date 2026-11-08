@@ -23,7 +23,12 @@ import { REGION_VALUES, CHANNEL_EXPORT_VALUES } from "@retroplug/mesen/enums";
 import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
 import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALUES } from "./settingsEnums";
 import { type ControllerTarget, CONTROLLER_TARGET_VALUES } from "@retroplug/launchpad/enums";
+import { controllerApps } from "./controller/registry";
 import { LSDJ_MODE_VALUES } from "@retroplug/lsdj/enums";
+
+/** The controller app a fresh project starts with: the first the product registers (an app's position in the product's
+ *  package order is its position in the menu). "" when the product carries none, which runs nothing. */
+export const DEFAULT_CONTROLLER_APP: string = controllerApps.list()[0]?.id ?? "";
 
 /** Project-level settings. The three routing/layout enums are string-valued (see settingsEnums);
  *  `zoom` is a magnitude (0 = inherit the user default, else 1..6). */
@@ -40,7 +45,7 @@ export interface ProjectSettings {
  *  song-timing table the predictor needs is built at projection time and never persisted. */
 export interface ControllerSettings {
   enabled: boolean;
-  app: string; // a ControllerRegistry id, e.g. "lsdj-midimap"
+  app: string; // a ControllerRegistry id, e.g. "lsdj-midimap" (DEFAULT_CONTROLLER_APP below is the first registered)
   target: ControllerTarget;
   systemId: number; // 0 = the first system
   /** The chosen app's OWN knobs (quantise, follow, …), validated by that app's schema rather than here -
@@ -91,7 +96,10 @@ export const projectSettingsSchema = z.object({
   // failing the WHOLE settings object - which reset layout, zoom and the rest.
   controller: z.preprocess((v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}), z.object({
     enabled: boolField(false),
-    app: stringField("lsdj-midimap"),
+    // The product's first registered app, not a literal: a build that carried no app would store "" (which runs
+    // nothing, visibly), and one that reordered them would store what the menu offers first. Which app runs is a
+    // registry fact, and a project that stored another id keeps it - this is only the default a fresh project gets.
+    app: stringField(DEFAULT_CONTROLLER_APP),
     target: enumField(CONTROLLER_TARGET_VALUES, "system"),
     systemId: clampedInt(0, 0x7fffffff, 0),
     // Opaque here by design: the chosen app's own schema validates it.

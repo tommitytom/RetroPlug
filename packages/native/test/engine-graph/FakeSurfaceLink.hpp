@@ -3,7 +3,7 @@
 // The fake control-surface link, shared by the cases that drive a node over rp.host.devices/2: it scripts what the
 // device sent, records what a node handed it, and counts the nodes holding it (through the hooks it is installed with,
 // TestDevices.hpp). A message it records lives in its own slot, so a case that counts allocations reserves the room it
-// needs before counting. A push it takes nowhere is counted as LaunchpadLink counts one: the device was not there for
+// needs before counting. A push it takes nowhere is counted as ControllerLink counts one: the device was not there for
 // it.
 
 #include <algorithm>
@@ -45,7 +45,7 @@ public:
         return n;
     }
     void pushOutput(const std::uint8_t* data, std::size_t size) override {
-        if (!attached) {  // the device is not there to take it: counted apart, as LaunchpadLink counts it
+        if (!attached) {  // the device is not there to take it: counted apart, as ControllerLink counts it
             ++detached;
             return;
         }

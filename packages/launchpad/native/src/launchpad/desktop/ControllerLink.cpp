@@ -6,6 +6,8 @@
 #include <exception>
 #include <utility>
 
+#include "launchpad/desktop/MidiPortFilter.hpp"
+
 namespace rp::launchpad {
 
 ControllerLink::ControllerLink(MidiPortOpener opener, bool writerThread)
@@ -24,6 +26,16 @@ bool ControllerLink::connect(const std::string& inName, const std::string& outNa
     disconnect();  // idempotent; also releases a previously claimed pair (with its close bytes) first
     if (!opener_) {
         error_ = "no MIDI backend";
+        return false;
+    }
+    // The test-only allow list (MidiPortFilter.hpp). Checked before anything opens, and named as the claim's own error, so
+    // a filtered process cannot take a port it was not given - whatever opener the product injected - and says which.
+    if (!midiPortAllowed(outName)) {
+        error_ = "MIDI port not allowed: " + outName;
+        return false;
+    }
+    if (!midiPortAllowed(inName)) {
+        error_ = "MIDI port not allowed: " + inName;
         return false;
     }
     // The claim's number is fixed BEFORE the input opens, and the receiver is bound to it, so the first message the new
@@ -63,20 +75,36 @@ bool ControllerLink::connect(const std::string& inName, const std::string& outNa
 }
 
 void ControllerLink::disconnect() {
+    // The control thread's path: a swap in launchpadClaim, a release, and the provider's stop all come through here. It
+    // waits for the writer to finish what it is writing (a WinMM bulk SysEx blocks ~170 ms) and then writes the ring's
+    // flush and the goodbye itself, so under WinMM a claim or a release can hold the caller for the queued writes, bounded
+    // by the send ring's 32 slots and the control queue's 16. The goodbye cannot be left to a detached writer: a swap must
+    // have the old pair's ports CLOSED before the new pair opens.
     // Stop the audio thread queueing first, so nothing is still arriving while we say goodbye.
     connected_.store(false, std::memory_order_release);
-    stopWriter();  // from here this thread is the output ring's only consumer
+    stopWriter();  // from here this thread is the send ring's and the control queue's only consumer
     if (out_) {
-        std::lock_guard<std::mutex> seat(popMutex_);  // the ring's consumer, now that the writer has stopped
-        std::lock_guard<std::mutex> lk(sendMutex_);
-        // Flush what the last block queued, so the device is not left half-painted - then the goodbye.
-        OutMessage m;
-        while (outRing_.tryPop(m)) {
-            if (m.gen != generation_.load(std::memory_order_acquire) || m.len == 0) continue;
-            out_->send(m.data, m.len);
-            sent_.fetch_add(1, std::memory_order_relaxed);
+        {
+            std::lock_guard<std::mutex> seat(popMutex_);  // the ring's consumer, now that the writer has stopped
+            std::lock_guard<std::mutex> lk(sendMutex_);
+            // Flush what the last block queued, so the device is not left half-painted.
+            OutMessage m;
+            while (outRing_.tryPop(m)) {
+                if (m.gen != generation_.load(std::memory_order_acquire) || m.len == 0) continue;
+                out_->send(m.data, m.len);
+                sent_.fetch_add(1, std::memory_order_relaxed);
+            }
         }
-        if (!closeBytes_.empty()) out_->send(closeBytes_.data(), closeBytes_.size());
+        // Then the UI's own messages, in the order they were queued behind the session's, and then the goodbye.
+        writeControl();
+        {
+            std::lock_guard<std::mutex> lk(sendMutex_);
+            if (!closeBytes_.empty()) out_->send(closeBytes_.data(), closeBytes_.size());
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lk(ctlMutex_);
+        control_.clear();  // nothing from this claim survives it
     }
     in_.reset();  // cancels the callback: no receiver runs after this returns
     out_.reset();
@@ -146,10 +174,8 @@ void ControllerLink::pushOutput(const std::uint8_t* data, std::size_t size) {
 }
 
 void ControllerLink::writeQueued() {
-    // The send ring has ONE consumer (whoever is writing here: the writer thread, pump() without one, or the UI thread's
-    // send() and disconnect() flushing), and this is the seat: a ring that two threads popped would tear. It is held for
-    // the drain's length and not by the send lock, so send() on the UI thread waits for the write in flight, never for
-    // the queue behind it (a WinMM SysEx blocks ~170 ms).
+    // The send ring has ONE consumer (the writer thread, or disconnect()'s flush), and this is the seat: a ring that two
+    // threads popped would tear. Each write takes sendMutex_ on its own, so a write in flight does not hold the seat.
     std::lock_guard<std::mutex> seat(popMutex_);
     OutMessage                  m;
     while (outRing_.tryPop(m)) {
@@ -164,11 +190,33 @@ void ControllerLink::writeQueued() {
     }
 }
 
+void ControllerLink::writeControl() {
+    // The UI's messages, which send() queued. The batch is taken under ctlMutex_ and written outside it, so a UI send
+    // never waits for a write: it waits for a swap at most, which is a pointer's work.
+    std::vector<ControlMessage> batch;
+    {
+        std::lock_guard<std::mutex> lk(ctlMutex_);
+        batch.swap(control_);
+    }
+    for (const ControlMessage& m : batch) {
+        if (m.bytes.empty()) continue;
+        std::lock_guard<std::mutex> lk(sendMutex_);
+        if (!out_ || m.gen != generation_.load(std::memory_order_acquire)) continue;  // an earlier claim's message
+        out_->send(m.bytes.data(), m.bytes.size());
+        sent_.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
 void ControllerLink::pump() {
     if (!useWriter_) {
         writeQueued();
+        writeControl();
         return;
     }
+    wakeWriter();
+}
+
+void ControllerLink::wakeWriter() {
     {
         std::lock_guard<std::mutex> lk(wakeMutex_);
         wakeFlag_ = true;
@@ -178,11 +226,28 @@ void ControllerLink::pump() {
 
 bool ControllerLink::send(const std::uint8_t* data, std::size_t n) {
     if (!isConnected() || !data || n == 0 || n > kMaxDeviceMessage) return false;
-    writeQueued();  // what the session already queued goes first
-    std::lock_guard<std::mutex> lk(sendMutex_);
-    if (!out_) return false;
-    out_->send(data, n);
-    sent_.fetch_add(1, std::memory_order_relaxed);
+    if (!useWriter_) {
+        // No writer thread: this thread is the writer (the unit tests' shape), so write in order here and say what
+        // happened - a case can then assert on the device's own record without racing a thread.
+        writeQueued();
+        writeControl();
+        std::lock_guard<std::mutex> lk(sendMutex_);
+        if (!out_) return false;
+        out_->send(data, n);
+        sent_.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    // The provider's shape: hand it to the writer and return, so the UI thread never writes the port and never waits for
+    // the session's queue to drain (a WinMM bulk SysEx blocks ~170 ms) or for a write in flight.
+    {
+        std::lock_guard<std::mutex> lk(ctlMutex_);
+        if (control_.size() >= kControlCapacity) {
+            dropped_.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        control_.push_back(ControlMessage{generation(), std::vector<std::uint8_t>(data, data + n)});
+    }
+    wakeWriter();
     return true;
 }
 
@@ -199,6 +264,7 @@ void ControllerLink::startWriter() {
                 wakeFlag_ = false;
             }
             writeQueued();
+            writeControl();
         }
     });
 }

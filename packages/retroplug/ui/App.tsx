@@ -25,6 +25,7 @@ import { useSramAutoSave } from "./app/useSramAutoSave";
 import { useJobPump } from "./app/useJobPump";
 import { useN8SdWatch } from "./app/useN8SdWatch";
 import { useLaunchpadScanWatch } from "./app/useLaunchpadScanWatch";
+import { restoreLaunchpad, subscribeLaunchpad } from "./screens/menu/launchpadDevices";
 import { topOverlay } from "./app/overlay";
 import { native } from "./host/nativeHooks";
 import { useGameInput } from "./input/useGameInput";
@@ -39,7 +40,6 @@ import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import { subscribeMidi } from "./screens/menu/midiDevices";
 import { subscribeTransport, pollTransport } from "./screens/menu/transport";
 import { subscribeN8 } from "./screens/menu/n8Devices";
-import { subscribeLaunchpad } from "./screens/menu/launchpadDevices";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE, type AppAction } from "../src/keyCodes";
@@ -67,7 +67,13 @@ export function App() {
   useSramAutoSave(stores); // mirrors each battery to its .sav under the Continuous preference (no-op otherwise)
   useJobPump(stores); // settles capability jobs as their completions arrive (no native call while none is pending)
   useN8SdWatch(); // re-renders the Settings > N8 Pro progress row while a native SD job (ROM/SRAM) runs
-  useLaunchpadScanWatch(); // watches a control-surface scan and records what answered (Settings > MIDI)
+  useLaunchpadScanWatch(stores); // drives a control-surface scan, records what answered (Settings > MIDI)
+  // Reclaim the control surface config.json left enabled, once the UI is up, and tell the host it is done: a standalone
+  // holds its MIDI stream and audio back until that word arrives (rp_device_host::restored), so a restored device's pair
+  // is reserved before the shared stream ever opens it and costs no audio restart. Inert where no facet is mounted.
+  useEffect(() => {
+    restoreLaunchpad(stores.userConfig);
+  }, [stores.userConfig]);
   const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title
 
   const [menuOpen, setMenuOpen] = useState(true);
