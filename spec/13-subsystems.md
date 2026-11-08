@@ -103,16 +103,26 @@ Everdrive N8 Pro's cart FIFO, so the console itself plays. One-way, host to cart
 
 ### Launchpad
 
-A Novation Launchpad on a real MIDI port drives a real cart — the first consumer being LSDj MI.MAP
-song-row launching from the 8x8 grid. The host half scans for the device and owns the MIDI ports;
-the behaviour is an app (the controller settings select it) that runs on the audio thread, in the controller session node (below).
+A Novation Launchpad on a real MIDI port drives a real cart, the first consumer being LSDj MI.MAP song-row launching
+from the 8x8 grid. Since F3 the whole thing is a pack: the transport and the scan's ports are
+[packages/launchpad](../packages/launchpad)'s native halves, the protocol, the port scan and the session are its
+TypeScript, and the behaviour is an app (the controller settings select it) that runs on the audio thread, in the
+controller session node (below). The selection is the user's: `config.json`'s `controlSurface`, which TS owns and
+writes with a re-read, so two processes can share the file.
 
-- Code: `src/host/launchpad/` (`LaunchpadHost`, `LaunchpadLink`, `LaunchpadScanner`, `RtMidiPort`),
-  with the TS side in `src/launchpad/`.
-- **Prove a change:** `retroplug-launchpad-test` (one of the ten `pnpm test:plugin` binaries),
-  `pnpm test:native lsdj-launchpad`, `pnpm test launchpad`, and `tools/run-launchpad-loopback.sh`
-  for the port seam.
-- Deeper: [docs/launchpad-plan.md](../docs/launchpad-plan.md).
+- Code: [packages/launchpad](../packages/launchpad) - the portable target (`retroplug-launchpad`, `device: true`) with
+  the two surface nodes, and `retroplug-launchpad-desktop` with the transport (`ControllerLink`, `PortClaim`,
+  `MidiPortPool`, `RtMidiPort`), the provider and the facet (`LaunchpadRpc`) - beside
+  [ui/screens/menu/launchpadDevices.ts](../packages/retroplug/ui/screens/menu/launchpadDevices.ts), which drives the
+  facet, and the MI.MAP app in [packages/lsdj-launchpad](../packages/lsdj-launchpad).
+- **Prove a change:** `retroplug-launchpad-test` (one of the eleven `pnpm test:plugin` binaries),
+  `pnpm test:native launchpad` (the facet's cases over the headless host's scripted device, and
+  `launchpadDevices.ts`'s over it), `pnpm test launchpad`, `pnpm test:native lsdj-launchpad`,
+  `tools/run-launchpad-loopback.sh` for the shared MIDI stream's receive path, and `pnpm sdl:controller` for the whole
+  seam in the standalone against an ALSA fake (Linux, not in CI, under the test-only port filter
+  `RP_MIDI_PORT_ALLOW`).
+- Deeper: [docs/launchpad-plan.md](../docs/launchpad-plan.md),
+  [docs/modular-graph-phase-f3-design.md](../docs/modular-graph-phase-f3-design.md).
 
 ### The controller role
 
@@ -122,9 +132,12 @@ A project-level setting (`settings.controller`) that points one attached control
 cart's sync mode forced: `graph/controller.ts`), so the chosen app runs on the audio thread as part of the
 per-block graph rather than as UI-thread glue. `appConfig` is deliberately opaque at this level: the
 chosen app's own schema validates it on the control plane (`parseAppConfig`), and the node takes it parsed.
+The apps themselves are contributions (`controllerApps`, in two halves joined by id, F3): MI.MAP is
+[packages/lsdj-launchpad](../packages/lsdj-launchpad)'s, and a tracker with another app adds its own bridge.
 
 - **Prove a change:** `pnpm test controller`, `pnpm test script/nodes/controller-session`,
-  `pnpm test graph/build-graph`.
+  `pnpm test graph/build-graph`, and `pnpm test:plugin` (`retroplug-launchpad-test` for the transport the
+  session's surface reads).
 
 ### Pico firmware (`pico/`)
 

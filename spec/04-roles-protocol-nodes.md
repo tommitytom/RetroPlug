@@ -142,8 +142,10 @@ then the ROM providers (`registerRomProviders`). The list is every package's `ap
 product's order (docs/modular-graph-phase-f1-design.md section 3), so a role is an object its owning package
 exports (a `RoleType`, not a `register*` call): the system roles, the sync roles, the asset and marker roles
 (`lsdj-assets`, `risa`, `risa-assets`, `bliptoaster`, `bliptoaster-assets`) and their packages' providers all
-arrive that way. The shell's own `app` module ([app.ts](../packages/retroplug/src/app.ts)) contributes nothing
-until the controller's package exists (F3).
+arrive that way. The shell's own `app` module ([app.ts](../packages/retroplug/src/app.ts)) contributes nothing: every
+console, cart and app that contributes a role has its own package, and the controller's app is
+[@retroplug/lsdj-launchpad](../packages/lsdj-launchpad/ts/app.ts)'s, a bridge package that depends on the controller
+and on LSDj and is depended on by neither.
 
 **System roles** ([@retroplug/sameboy](../packages/sameboy/ts/app.ts),
 [@retroplug/mesen](../packages/mesen/ts/app.ts)), each owned by the package whose core it configures, keyed by core
@@ -249,9 +251,10 @@ node for each role that has one, the control-surface session, and LSDj's serial-
 role's second node. Seven are their packages' protocol modules (`core`'s `rp.midi.route`, then `mgb`'s, `lsdj`'s
 two, `n8`'s, `smsggdj`'s and `risa`'s), which the generated bundle entry
 (`src/generated/scriptNodes.ts`) imports and sorts by span label;
-the eighth, `rp.controller.session`, is the shell's ([packages/launchpad/ts/nodes.ts](../packages/launchpad/ts/nodes.ts),
-its node module [ts/controllerSession.ts](../packages/launchpad/ts/controllerSession.ts))
-until the controller's package exists (F3). [script/bundle.ts](../packages/retroplug/src/script/bundle.ts) is the
+the eighth, `rp.controller.session`, is the launchpad pack's
+([packages/launchpad/ts/nodes.ts](../packages/launchpad/ts/nodes.ts), its node module
+[ts/controllerSession.ts](../packages/launchpad/ts/controllerSession.ts)).
+[script/bundle.ts](../packages/retroplug/src/script/bundle.ts) is the
 entry point only: importing it registers. Each is its protocol's glue around pure functions that stay
 where they were (the Arduinoboy and master-sync decoders in `lsdjArduinoboy.ts`, `routeTarget` in
 `midiRouting.ts`, `risaLocate` / `risaArmPacket` in `risaSync.ts`, `syncLevelsFor` in `smsSync.ts`,
@@ -332,12 +335,13 @@ routing node's outputs follow the systems); a system removed and added again get
   back opens a fresh run. Its settings are the role's config through the schema `rp.lsdj.sync` takes too
   ([nodes/lsdjSyncSettings.ts](../packages/lsdj/ts/lsdjSyncSettings.ts)); it reads only `mode`.
 - **`rp.controller.session`** runs a `ControllerSession` ([session.ts](../packages/launchpad/ts/session.ts))
-  for the app its settings name (`controller/apps/index.ts`, the apps' runtime, zod-free): the surface's
-  traffic and the block's clock in (its tick derived from ppq at 24 PPQN), its LED bytes out on
-  `controllerOut`, and its row launches at frame 0 on `launches` (into the target cart's `rp.lsdj.sync`) or
-  `midiOut` (out of the host, to a real Game Boy's Arduinoboy). It takes a device on the block a link first
-  reports one. Its settings are what the control plane resolved: it parses nothing. A settings change that
-  keeps the app, target, system and app config adopts a new timing table in place, so the playhead does not
+  for the app its settings name, which the generated script bundle registers from the manifests' `protocol.apps`
+  entries ([apps/index.ts](../packages/launchpad/ts/apps/index.ts), the apps' runtime, zod-free: each app's factory and
+  playback model, and its launch target): the surface's traffic and the block's clock in (its tick derived from ppq at
+  24 PPQN), its LED bytes out on `controllerOut`, and its row launches at frame 0 on `launches` (into the target cart's
+  `rp.lsdj.sync`) or `midiOut` (out of the host, to a real Game Boy's Arduinoboy). It takes a device on the block a
+  link first reports a new generation. Its settings are what the control plane resolved: it parses nothing. A settings
+  change that keeps the app, target, system and app config adopts a new timing table in place, so the playhead does not
   move; any other rebuilds the session around the same predictor, so the song does not restart; an anchor
   is applied once per `anchorSeq`.
 
@@ -462,7 +466,9 @@ The rest of the document follows from those nodes:
   [controller/registry.ts](../packages/retroplug/src/controller/registry.ts)) and the timing table it read
   from the cart's battery, on the control plane. The `lsdj-sync` nodes of the cart the MI.MAP app drives
   are forced to `midiMap`, or to `off` when the cart's own SYNC setting is not MI.MAP
-  (`controllerSyncOverride`), its `rp.lsdj.serial-out` with its `rp.lsdj.sync`, so a forced cart sends no
+  (`controllerSyncOverride`, whose rule is the app's `protocol.apps` entry `syncOverride` as DATA: the cart sync node
+  type, the mode it forces, the polled SYNC value that counts as the cart listening, and the mode not listening
+  means), its `rp.lsdj.serial-out` with its `rp.lsdj.sync`, so a forced cart sends no
   host MIDI, and its Game Boy's node captures nothing for them. The override is those nodes' settings and that
   capture alone, so nothing reaches the `.rplg`.
 
@@ -506,7 +512,7 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   [lsdj](../packages/lsdj/ts/protocol.ts)), which the manifests' span labels order.
 - [romProviders.ts](../packages/retroplug/src/romProviders.ts): feature-role attachment by ROM identity, over the
   generated `ROM_PROVIDERS`.
-- [packages/launchpad/ts/nodes.ts](../packages/launchpad/ts/nodes.ts): the shell's one node type,
+- [packages/launchpad/ts/nodes.ts](../packages/launchpad/ts/nodes.ts): the launchpad pack's one node type,
   `rp.controller.session` ([ts/controllerSession.ts](../packages/launchpad/ts/controllerSession.ts)).
   The MIDI routing node is [core](../packages/core/ts/protocol.ts); `lsdjSyncSettings.ts` (the `lsdj-sync` schema both
   its nodes take) is [lsdj](../packages/lsdj/ts/lsdjSyncSettings.ts)'s, and the tick counter `clock.ts` and the
@@ -522,8 +528,11 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   [script/register.ts](../packages/core/ts/register.ts): the bundle every Engine embeds, and how
   a bundle registers its node types.
 - [launchpad/ts/apps/index.ts](../packages/launchpad/ts/apps/index.ts) /
-  [controller/registry.ts](../packages/retroplug/src/controller/registry.ts): the controller apps' runtime,
-  and their labels and schemas for the control plane.
+  [lsdj-launchpad/ts/app.ts](../packages/lsdj-launchpad/ts/app.ts) /
+  [controller/registry.ts](../packages/retroplug/src/controller/registry.ts): the controller apps' runtime (the
+  manifests' `protocol.apps`), the MI.MAP app's control-plane half (its id, label, config schema and the cart sync mode
+  its `protocol.apps` entry names as data), and the shell's registry over the generated list, beside `parseAppConfig`,
+  which hands the publishers an app's config parsed by its own schema.
 - [appHost.ts](../packages/retroplug/src/appHost.ts): `buildAppRegistry`.
 
 Native ([packages/native/src/](../packages/native/src/)):

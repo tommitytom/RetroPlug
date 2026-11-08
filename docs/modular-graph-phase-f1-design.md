@@ -524,7 +524,10 @@ Each question stays as asked; the answer is what the prototype found.
 - **F3** ([package-split.md](package-split.md)): the Launchpad pack, a port of `feature/launchpad` into
   `packages/launchpad`; the controller session node (label 22), `src/controller` and `src/launchpad` move there, with
   `CONTROLLER_TARGET_VALUES` and the controller's LSDj parts (`lsdjMidiMap`, `trackerTarget`); the LSDj app the controller
-  carries is contributed by `lsdj`. The shell's empty `src/app.ts` is where its roles go.
+  carries is contributed by `lsdj`. (F3 built it otherwise: the app, its launch target and the predictor it reads are a
+  BRIDGE package, `packages/lsdj-launchpad`, which depends on `launchpad` and `lsdj` and which neither imports, so `lsdj`
+  stays free of the controller. [modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md) section 2.) The
+  shell's empty `src/app.ts` is where its roles go.
 - **F2**: native halves of `sameboy` and `mesen` (and the compile-out of Mesen's consoles, `MESEN_ENABLE_<X>`, a filtered
   glob and a patch to about twenty files), `registerCoreBackends` generated per product, `host-io` as a package, the mGB
   ROM embed (`mgb-rom`, `EmbeddedRoms.hpp`, `putResource` `embedded:"mgb"`) behind a seam, `txiki` and `efsw` out of

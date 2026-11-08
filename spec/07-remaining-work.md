@@ -103,7 +103,10 @@ Intentionally not planned; listed so the intent isn't lost.
 
 Stale scaffolding to sweep opportunistically — not work to schedule.
 
-None known. The last entry, [host/graph/SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)
+None known: [src/app.ts](../packages/retroplug/src/app.ts)'s header was the last, saying the controller's roles and node
+`rp.controller.session` "arrive with the controller's own package in F3", which they have, so it now says what landed (the
+launchpad pack's roles and node, the `lsdj-launchpad` bridge's app half). The entry before it,
+[host/graph/SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)
 (`GameBoy::apply`), pointed at a comment that is load-bearing (why the fast boot is applied before the model)
 rather than at a deferral; its marker died with `applyConfigField`.
 
@@ -523,8 +526,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **E4 is built** (below): MicroQuickJS on the box and the desktop, `defineNode` made portable, package memory in
     the SDK and the loader, and BlipToaster's MIDI policy as a TypeScript node.
   - **The rest of the package split** (the main design's section 11): its TypeScript half is F1's (below); what it
-    leaves is `sameboy` and `mesen`'s native trees (F2), `launchpad`, the controller and the controller session node
-    (F3), and per-product esbuild bundles, downloadable packs and the menus on extensions (F4).
+    leaves is `sameboy` and `mesen`'s native trees (F2), and per-product esbuild bundles, downloadable packs and the
+    menus on extensions (F4). F3 took the Launchpad, the controller and the controller session node on the way.
   - **Windows and MSVC have never built E1's targets.** The `<target>-device` object libraries are in the default build
     under `/W4 /WX`, so a Windows problem breaks `build.bat` itself: a `build.bat` and `test.bat` run is owed. Device
     mode no longer relies on an inline namespace (MSVC does not extend one through a later `namespace rp::graph`, CWG
@@ -552,8 +555,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Done in E3:** the box's link (`BoxCartLink`, over a fixed ring) keeps `CartLink`'s promise that `push()` never
     blocks, allocates or takes a lock; the device check runs on `PICO_STACK_SIZE=0x1000` with every frame held to 1 KiB
     by `-Wstack-usage` (the chains are still summed by hand); `UsbCdcTransport` has its host fake (`[usb-cdc]`).
-  - **The Launchpad's nodes still declare `threads`** for their link, the one exception to "the flag is what the node
-    itself needs", until they have a pack (provider, facet in place of `bindLaunchpadHooks`).
+  - **The Launchpad's nodes now declare no `threads`** (F3's pack, below), which closes this exception to "the flag is
+    what the node itself needs": their link's callback and writer threads are the provider's.
   - **The N8 menus, the CLI sessions and `buildGraph`'s `cart-<id>` placement stay in `packages/retroplug`** until menus
     move onto extensions; `chrImage.ts` and `risaSyncTranslator.ts` stay there too, as each imports `retroplug` modules.
   - **The gate's latency comparison is partial.** The `[stats] lat=` figure is per window, not cumulative, and the SysEx
@@ -602,7 +605,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The Pico gate passed** on the rig with BlipToaster (design section 12.7); the image runs from SRAM
     (`copy_to_ram`, about 305 KiB of 512; E4 took it to 350.3), and the `[stats]` print can still stall a
     message for ~13.7 ms, as E2's did. `RP_NATIVE_USB` has never run on hardware.
-  - **The Launchpad's `threads` flag** and the E2 template gaps remain.
+  - **The E2 template gaps remain** (the Launchpad's `threads` flag did not: F3's pack settled it).
 - **E4 built: TypeScript nodes on the box, on MicroQuickJS**
   ([modular-graph-phase-e4-design.md](../docs/modular-graph-phase-e4-design.md), five commits and the reviews'
   follow-ups): `deps/mquickjs` (vendored, unpatched) with our wrapper (the symbol rename; the fixes for two upstream GC
@@ -629,7 +632,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     read allocates, so a SysEx stream makes the box collect in the MIDI path.
   - **Packs in plans that are not built in** (a live upload or an SD plan) need the per-node port signature and a
     trust model for bytecode mquickjs does not verify; the desktop's N8 graphs do not use the policy node, and
-    `feature/launchpad` has not adopted the toolchain.
+    `feature/launchpad` itself never adopted the toolchain (F3's port of it did: the pack's scenarios are the proof,
+    and its `script` member is the Pico controller's, below).
   - **The Pico gate passed** with the new latency line (design section 11.7): averages near E3's (two of
     nine final-gate runs' averages crossed the ~780 us line by under 10 us), the worst about 50 us higher and under the
     1200 us line in all of them, on the final images (box 4b4f9abc; `RP_NATIVE_USB`'s af36f223 still unflashed). The first stuck-menu episode on the rig stayed unexplained (the E3 control image failed the same way
@@ -741,13 +745,56 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The native halves are F2's**: `sameboy`'s and `mesen`'s C++ still live on `retroplug-backend` under
     `packages/native` (both packages have no `native` member), so `rp_sameboy_package` and `rp_mesen_package` are still
     the shell's, and `[packages]` still lists them where it did.
-  - **F3 owns the controller**: `src/controller` and `src/launchpad`, the controller's LSDj app (`lsdjMidiMap`,
-    `trackerTarget`) and its `rp.controller.session` node (span label 22) are the shell's, along with
-    `CONTROLLER_TARGET_VALUES`. `packages/retroplug/src/app.ts` is empty until then, and its `protocol` member
-    carries that one node.
+  - **F3 has since taken the controller** (its bullet, below): `src/controller` and `src/launchpad` are gone (the
+    code is `launchpad`'s and `lsdj-launchpad`'s), the controller session node (span label 22) is the launchpad pack's,
+    and `CONTROLLER_TARGET_VALUES` moved with it. `packages/retroplug/src/app.ts` still contributes nothing, and what
+    is left of the shell's `protocol` member is nothing at all: the pack declares the node.
   - **F4 owns what the stores and the UI reach through**: the menu item model, `TRACKER_UI`, the HD player and the
     overlays still deep-import their carts by package name (not through a registration), and there is one bundle per
     product, not per extension.
   - **A package's tests run from its own `ts/test`** on its own `tsconfig`, so the runner's slug for one is
     `<package>/<path>` (`lsdj/sav`, `risa/kit`, `bliptoaster/rom`, `n8/n8MidiToFifo`). The ts tier's skip baseline
     records nothing, so a move between it and the shell changes no baseline entry.
+- **F3 built: the Launchpad pack** ([modular-graph-phase-f3-design.md](../docs/modular-graph-phase-f3-design.md),
+  five commits, built on `feature/modularize`; the plan resets the branch to this design commit and re-executes them
+  there): `packages/launchpad` (the two surface nodes, `device: true` and with no `threads`; the transport
+  `ControllerLink`, `PortClaim`, `MidiPortPool` and `RtMidiPort`; the provider and the twelve-method facet
+  `LaunchpadRpc`; TS's protocol, session, `PortScan`, profiles, the `controllerApps` mechanism and the
+  `rp.controller.session` node at label 22) and `packages/lsdj-launchpad` (the MI.MAP app's two halves, its launch
+  target and the predictor it reads), with the provider ABI at 2 (`reserve_midi`, `suspend_hardware_inputs`,
+  `restored`, and `rp_provider`'s `wake`), `retroplug_product(... PROVIDERS ...)` with no default (the SDL, the
+  headless host and the CLI name `n8 launchpad`, the plugin `n8` alone), `config.json`'s `controlSurface` and the
+  startup rendezvous, the SDL's `MidiIo` reserve and suspend, the menu and `launchpadDevices.ts` on the facet,
+  `build-device-pack.mjs --scenario` with the two scenarios as the portability proof, and the legacy host deleted
+  (`src/host/launchpad/`, `launchpad.cfg`, `check:portable`, `retroplug-launchpad-legacy-test`). Re-recorded, each
+  in the commit that caused it and with its reason: the `[packages]` golden (the two node types register from their
+  own package, after `core`), the role goldens and one ProtocolNodes digest (F3's tick count: the session walks the
+  ticks the cart's own walk clocked, so its painted frames moved), two new surface descriptor goldens, and the
+  device-check image hash (the image's node set gains the surface types). Strict parity, the kit and render
+  baselines, the box images, `edio-golden.json` and the bliptoaster bytes held. What it leaves:
+  - **The real-device checklist is owed** (design section 8: about ten minutes on the desk with the Pro MK3 and LSDj in
+    a ROM), together with its **Windows items**: an input's exclusivity (a scan's held edge suspends the shared
+    stream's inputs), the unshared `CreateFile` claim (a second process refused), the writer thread under WinMM (a bulk
+    repaint does not freeze the UI frame), and `/W4 /WX` on the pack's targets. None of it has run on Windows.
+  - **`disconnect()` under WinMM** belongs to the same owed run, and it is the half `send()` is not: `send()` waits for no
+    write at all (the writer drains the UI's own queue, and a push takes a lock the writer holds only for a swap), but a
+    claim, a release or the provider's stop lands in `ControllerLink::disconnect()` on the UI thread, which joins a writer
+    that may be mid-drain of up to 32 queued messages (~170 ms each under WinMM) and then flushes the ring and writes the
+    close bytes itself. A swap cannot dodge it (the old pair's ports must be closed before the new pair opens), so the owed
+    work is to measure it with a full repaint queued and, if that is too long, hand the farewell to the writer.
+  - **The Windows-only held edge is untested in place.** `suspend_hardware_inputs` is a real lever under `_WIN32`
+    alone (`MidiIo.hpp`'s `scanSuspendsInputs`: an ALSA sequencer input and a CoreMIDI endpoint are shared), and the
+    ALSA legs assert only that it does nothing there.
+  - **The plugin has no control surface**: the host MIDI seam caps a message at 4 bytes, so no SysEx fits through it,
+    and the plugin names no launchpad provider.
+  - **The Pico has no controller path**: the box's one root port is the N8's, `UartMidi` is input only, and there is no
+    Game Boy on the box for MI.MAP to drive. The scenarios measure what it would take: the launchpad core alone at least
+    61440 bytes (budget 76800) and the bridge, MI.MAP included, at least 144960 (budget 184320) - the core against the
+    box's 64 KiB arena, the bridge well past it. The surface nodes are `device: true`, so a later image can plan them.
+  - **No `script` member in F3**: the scenarios prove the core runs on MicroQuickJS, and making the pack a device pack
+    (bytecode at both widths, a `heapBytes`) is the Pico controller's work.
+  - **Third-party controller apps are not loadable**: `controllerApps` registers from the product's package list, so an app
+    from outside the tree is the downloadable-pack road (design section 11).
+  - **One controller link per process**, and per `rp.host.devices/2` name; more than one is a registry change.
+  - **The store's song poll stays in the shell** (the controller's song refresh, the anchor and the SYNC poll in
+    `projectStore.ts`) until F4, which also takes the menu rows.

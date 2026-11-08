@@ -339,8 +339,8 @@ it:
 |---|---|---|
 | `rp.host.midi-in` | out `midi` (events: 2048 messages, 64 KiB) | takes the staged host MIDI, stable-sorted by frame without allocating: the plugin stages two runs in frame order (a block's DAW events, then each moved automation slot's CC at frame 0), which it merges onto its queue, a tie to the earlier run; more runs are sorted in place first, by insertion |
 | `rp.host.midi-out` | in `in1` to `inN` (events), an input per entry of its settings `{"systems": [<id>, ...]}`, at most 128 | each input's messages land in `Engine::midiOut` tagged with that entry's system, the inputs merged by frame: each step hands out the head with the earliest frame, the lower input on a tie, so with every frame 0 it is the inputs' concatenation, input by input, each in queue order; each message goes at the later of its frame and the last handed out in the block, and at the block's last frame at most, a guard that keeps the list frame-sorted and inside the block whatever an input's queue holds (a node on the C ABI writes its own, and a script node's `send` carries a frame past the block as given), since the plugin hands each frame to the DAW unchecked. The merge allocates nothing, a head index per input, and costs messages times inputs; the sink it hands each message to, `Engine::midiOut`, still takes a `std::vector` per message ([07-remaining-work.md](07-remaining-work.md)). Two entries may name one system, and an empty list is a node with no inputs, which sends nothing. A settings change that keeps the inputs is a swap, one that moves them a rebuild |
-| `rp.launchpad.surface-in` | out `in` (events: 1024 messages, 16 KiB), out `connected` (control) | drains the surface link's receive ring at the top of its block (16-message batches until the link answers short), every message at frame 0; `connected` is 1 while the device is attached, from frame 0 of the block. Its first block discards what the link held when it bound it, so a press from before the plan is not replayed; a message the link's ring cannot hold is counted apart from the device's lost frames, and one the node's queue cannot hold is dropped and counted. `unique`, `threads`, category `device` |
-| `rp.launchpad.surface-out` | in `out` (events) | hands each message to the surface link's send ring in queue order; a detached link drops and counts them. `unique`, `threads`, category `device` |
+| `rp.launchpad.surface-in` | out `in` (events: 1024 messages, 16 KiB), out `connected` (control), out `drops` (control) | drains the surface link's receive ring at the top of its block (16-message batches until the link answers short), every message at frame 0; `connected` carries the claim's `generation` (0 while nothing is attached, a new number on every claim, so a pair swapped inside one block still reads as a new device) and `drops` its lost-message count, each from frame 0 of the block, both wrapped at 2^24 (`connected` into 1..2^24 - 1, so a wrap never reads as nothing attached, and a reader compares each with the previous block, so a wrap only reads as a change). Its first block discards what the link held when it bound it, so a press from before the plan is not replayed; a message the link's ring cannot hold is counted apart from the device's lost frames, and one the node's queue cannot hold is dropped and counted. `unique`, category `device` |
+| `rp.launchpad.surface-out` | in `out` (events) | hands each message to the surface link's send ring in queue order; a detached link drops and counts them. `unique`, category `device` |
 | `rp.n8.nes` | in `midi` (events), in `bytes`, param `expansionVolume`, out `connected` (control) | pushes each message at the cart link at its frame and the block's rate, the `bytes` port's flush flag carried; hands the link the expansion volume at its first block, on a change and on every reconnect; `connected` is the link's state from frame 0; leaving the plan, hands the link the notes the cart still holds for their note-offs. No audio output. `unique`, category `device` (no `threads`, below) |
 
 An input node takes everything staged whether or not its output is wired, so `Engine::setGraph` refuses
@@ -357,9 +357,10 @@ message the UI stages at a node rides `rp.stage/1`, the third seam beside these 
 its core's ingress, the cart node pushes it at its link.
 
 A node's `threads` flag declares what the node itself needs (a thread of its own), not what its device link runs:
-whether a link has a thread is the link's business, so `rp.n8.nes` declares none (the planner's Pico target plans it;
-it relies only on `CartLink::push()` never blocking, never allocating and taking no lock, whoever drains the ring),
-and the Launchpad's two nodes, which still declare `threads` for their link, are the exception until they have a pack.
+whether a link has a thread is the link's business, so `rp.n8.nes` and the Launchpad's two declare none (the planner's
+Pico target plans them; `rp.n8.nes` relies only on `CartLink::push()` never blocking, never allocating and taking no
+lock, whoever drains the ring, and the surface nodes on a `SurfaceLink` that a provider's RtMidi callback thread and
+writer thread move).
 
 Every system node has four inputs, mapped onto core calls `SystemBase` already has. It applies them
 at the top of its `prepare` (where `process` starts too, and which a linked group runs for every member
@@ -457,15 +458,18 @@ installed by name and interface id: an `rp::n8::CartLink` ([CartLink.hpp](../pac
 the block's rate) that answers whether all of it reached the device, the link's connected state and drop count, the
 expansion-volume register and `submitJob` / `abandonJobs`; an `rp::launchpad::SurfaceLink`
 ([SurfaceLink.hpp](../packages/launchpad/native/src/launchpad/SurfaceLink.hpp), `launchpad` / `rp.launchpad.surface-link/2`) for
-the pad, with a drain into the node's own array, a push, the connected state and its drop count. `LaunchpadLink` keeps
-the pushes it lost while the device was attached (`messagesDropped`) apart from the paint a session pushed while
-nothing was connected (`messagesDetached`) and a message the device sent that its receive ring held no slot for
-(`messagesInboundDropped`); the handle a node holds answers the first two, and the status line's `dropped` is the
-first. A host installs its links before its first plan with `Engine::installDevice` / `installLink`, into a fixed
-table of 8 entries (a name up to 31 characters, an interface id up to 63): the N8 pack's provider installs the
-`N8CartLink` in every product that starts providers (the plugin, the SDL standalone, the CLI, where it is never
-connected, and the test host, over a fake cart), the SDL standalone installs the Launchpad's surface and the test host
-a `HarnessSurfaceLink`, and the Node addon and the render host install neither. A name it has no device for answers
+the pad, with a drain into the node's own array, a push, the claim's generation and its drop count. `ControllerLink`
+([ControllerLink.hpp](../packages/launchpad/native/src/launchpad/desktop/ControllerLink.hpp)) numbers every claim and tags
+every receive slot with it, so the audio thread, the ring's one consumer, drops a slot that belongs to an earlier claim
+where it sits rather than any thread rewinding it; `dropped()` counts what the link lost in both directions (a push to a
+device that is not there, an oversized message, a full ring) and `messagesSent()` what it wrote, and both are what the
+facet's status line reads. A host installs its links before its first plan with `Engine::installDevice` / `installLink`,
+into a fixed table of 8 entries (a name up to 31 characters, an interface id up to 63): the N8 pack's provider installs
+the `N8CartLink` in every product that starts providers (the plugin, the SDL standalone, the CLI, where it is never
+connected, and the test host, over a fake cart), the Launchpad pack's provider installs its `ControllerLink` in the
+products that name it and install links (the SDL standalone and the CLI, over real ports; the test host starts it for
+its facet but hands the graph a `HarnessSurfaceLink`, so a test stages a press where no port could); and the Node addon
+and the render host install neither. A name it has no device for answers
 null, and the node runs on a stub of its own that is never connected and that drops and counts everything, so a
 document plans and runs in every host. A node keeps its handle across a reactivate and gives it back once in destroy,
 which runs at reclaim on the control thread while the links are still installed: a host tears its plans down first
@@ -1234,17 +1238,23 @@ dead heap faults the node (`rp.script.fault/1`) and a dead heap every node of it
 declared in [rp_script.h](../packages/node-sdk/native/src/graph/rp_script.h) and `rp_node.h`.
 
 **Providers.** A pack's desktop entry may name a `provider` (a function returning an
-[`rp_provider`](../packages/node-sdk/native/src/graph/rp_provider.h): `create`, `restore`, `rpc_service`, `destroy`, led
-by an ABI version) and an `rpc` registration, which is how the N8 pack ([packages/n8](../packages/n8),
-[modular-graph-phase-e2-design.md](../docs/modular-graph-phase-e2-design.md)) starts its device service in a product
-that names no N8 class. `retroplug_product` generates, per desktop product, a header-only `rp_product_providers.hpp`
-(`rp_start_providers`, `rp_restore_providers`, `rp_stop_providers` and `rp_register_package_rpc<Server>`, over an
-`rp::Providers` the product holds per instance); a product starts its providers after its engine and before its first
-graph, restores them where it restores its own state, mounts their facets where it mounts its own, and in its
-destructor reclaims its plans (`Engine::clearGraph`) and then stops them. Listing a pack is not starting it: only a
-product whose sources include the header names the provider, so the render host, the Node addon and most test binaries
-carry none of its code. A provider installs its links into the engine's device registry through `rp_device_host`
-(`host/devices/ProviderHost.hpp`). The configure check refuses a provider or an `rpc` on a `device: true` entry.
+[`rp_provider`](../packages/node-sdk/native/src/graph/rp_provider.h): `create`, `restore`, `rpc_service`, `destroy` and,
+last, `wake`, led by an ABI version) and an `rpc` registration, which is how the N8 pack ([packages/n8](../packages/n8),
+[modular-graph-phase-e2-design.md](../docs/modular-graph-phase-e2-design.md)) and the Launchpad pack
+([packages/launchpad](../packages/launchpad), [modular-graph-phase-f3-design.md](../docs/modular-graph-phase-f3-design.md))
+start their device services in a product that names no class of theirs. `retroplug_product` generates, per desktop
+product, a header-only `rp_product_providers.hpp` (`rp_start_providers`, `rp_restore_providers`, `rp_stop_providers`,
+`rp_wake_providers` and `rp_register_package_rpc<Server>`, over an `rp::Providers` the product holds per instance); a
+product starts its providers after its engine and before its first graph, restores them where it restores its own
+state, mounts their facets where it mounts its own, wakes them once per frame, and in its destructor reclaims its plans
+(`Engine::clearGraph`) and then stops them. A product starts only the providers it NAMES in CMake
+(`PROVIDERS <package>...`: no default, started in the order given, duplicates refused, and a manifest item may not be
+both an `entry` and a `provider`), so listing a pack is not starting it, and a pack's provider target is linked only
+where it is named: the render host, the Node addon and most test binaries carry none of it. A provider installs its
+links into the engine's device registry through `rp_device_host` (`host/devices/ProviderHost.hpp`), and the ABI at /2
+carries the calls a provider needs from the product that owns the shared MIDI stream (`reserve_midi`,
+`suspend_hardware_inputs`) and the product's callback for the startup rendezvous (`restored`). The configure check
+refuses a provider or an `rpc` on a `device: true` entry.
 
 **A pack's facet is mounted whole, in every product that lists it (decided).** `rp_register_package_rpc` makes one
 `registerRpc` call per provider and the manifest's `rpc` is one header and one function, so the N8 facet's 34 methods

@@ -8,7 +8,8 @@ Start with these — all short:
   workspace packages `packages/node-sdk/`, `packages/graph-runtime/`, `packages/core/` and `packages/dsp/` (formerly
   `native/src/graph` and `native/src/dsp`), the console halves in `packages/sameboy/` and `packages/mesen/`, the carts
   in `packages/lsdj/`, `packages/mgb/`, `packages/risa/` and `packages/smsggdj/`, the tracker layer they share in
-  `packages/tracker/`, BlipToaster's app half and its MicroQuickJS MIDI policy in `packages/bliptoaster/`, the test
+  `packages/tracker/`, BlipToaster's app half and its MicroQuickJS MIDI policy in `packages/bliptoaster/`, the control
+  surface in `packages/launchpad/` with the LSDj MI.MAP app that drives it in `packages/lsdj-launchpad/`, the test
   harness in `packages/testing/`, the box's device nodes in `packages/device-io/`, the device check's test nodes in
   `packages/devtest/` (listed by no product), and everything about the Everdrive N8 Pro in `packages/n8/`. The older
   **legacy** build has been removed; [spec/07-remaining-work.md](spec/07-remaining-work.md) tracks the residual
@@ -73,7 +74,8 @@ The rules below are the parts that don't fit those.
   plans it, and the same node behind a
   real Engine driving the production cart adapters to a fake serial port (`[n8-adapters]`), a host's teardown
   included; the
-  surface's two nodes (a frame-0 drain, the queue's bound, the first-block discard, uniqueness, one link each); and
+  surface's two nodes (a frame-0 drain, the queue's bound, the first-block discard, uniqueness, one link each, the
+  generation and the drops the link reports, and the two types planning on a Pico target); and
   the UI's staged message reaching the node the running plan places under its id; the offline job pool (D2,
   [docs/modular-graph-phase-d2-design.md](docs/modular-graph-phase-d2-design.md) sections 3 and 11,
   `test/engine-graph/OfflineJobs.test.cpp`): a document run to completion on a host of its own held to the same nodes
@@ -136,20 +138,20 @@ The rules below are the parts that don't fit those.
   plus its OWN `DistrhoPluginInfo.h`, building no plugin format at all, to drive
   `PluginExporter::reinitParameters` over a toy plugin.
   `retroplug-device-mode-test` holds the node SDK built for the RP2350 to the desktop's: `rp.core` and `rp.dsp` (and
-  `rp.n8.nes`, `rp.device.midi-in` and `rp.devtest`, in the `[device-check]` cases; `rp.core.midi-filter` is a core
-  type, held by the twin table) compiled with `RP_DEVICE`, `-fno-exceptions` and `-fno-rtti` into an object library
-  reached through the C ABI, which also builds the box's link in device mode (Catch2 itself keeps exceptions), 95
-  cases in eight files. A device-mode node created from msgpack settings renders bit for bit what a desktop-mode node
-  renders from the same settings as JSON, with create, process and destroy allocating nothing; the desktop reads
-  msgpack the same; the decode defaults a missing field, skips an unknown one and refuses what JSON refuses in the
-  same words, naming the field (two inputs part by choice, pinned: design section 6); the converter writes each number
-  as the JSON spells it; and nineteen `[device-check]` cases hold the image's cases to the manifests' device entries,
-  run the whole check in its arena with no allocation, stop it at each of its failure steps, run the check's 10-node
-  plan and drive the N8 pack's Edio, menu commands and operations over a scripted cart, and run the script pack's side
-  (the devtest pack's types, a script bench, a 4-node script plan held to the desktop's digest, the clock a node's
-  deadline is read from, the deadline case: a loop over a builtin in the box's pack's heap faulted by its deadline,
-  and the policy case: the box's policy over the blocks that fill its heap most). The script host is in it as well
-  ([docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md), `[script-pack]`, 50 cases, with
+  `rp.n8.nes`, `rp.launchpad.surface-in` / `-out`, `rp.device.midi-in` and `rp.devtest`, in the `[device-check]` cases;
+  `rp.core.midi-filter` is a core type, held by the twin table) compiled with `RP_DEVICE`, `-fno-exceptions` and
+  `-fno-rtti` into an object library reached through the C ABI, which also builds the box's link in device mode (Catch2
+  itself keeps exceptions), 96 cases in eight files. A device-mode node created from msgpack settings renders bit for
+  bit what a desktop-mode node renders from the same settings as JSON, with create, process and destroy allocating
+  nothing; the desktop reads msgpack the same; the decode defaults a missing field, skips an unknown one and refuses
+  what JSON refuses in the same words, naming the field (two inputs part by choice, pinned: design section 6); the
+  converter writes each number as the JSON spells it; and nineteen `[device-check]` cases hold the image's cases to the
+  manifests' device entries, run the whole check in its arena with no allocation, stop it at each of its failure steps,
+  run the check's 10-node plan and drive the N8 pack's Edio, menu commands and operations over a scripted cart, and run
+  the script pack's side (the devtest pack's types, a script bench, a 4-node script plan held to the desktop's digest,
+  the clock a node's deadline is read from, the deadline case: a loop over a builtin in the box's pack's heap faulted by
+  its deadline, and the policy case: the box's policy over the blocks that fill its heap most). The script host is in it
+  as well ([docs/modular-graph-phase-e4-design.md](docs/modular-graph-phase-e4-design.md), `[script-pack]`, 50 cases, with
   `ScriptPack.test.cpp` and the fixture packs in `test/device-mode/script-packs`): a TS node run on MicroQuickJS in
   both builds of the host (the device build and the desktop's), a lifecycle, the block API, every fault (a throw, a
   deadline, a loop over a builtin held to it, a comparison's bytes and a callback's returns counted toward the next
@@ -227,9 +229,9 @@ The rules below are the parts that don't fit those.
   `CartLink` it drives; the desktop target (`retroplug-n8-desktop`) holds the serial transport, `N8Link`, `N8Host`, the
   `N8CartLink` and the RPC facet (`N8Rpc`), and the Pico box (`pico/n8-host`) runs the same Edio. A node's `threads`
   flag
-  declares what the NODE needs, not its device link: `rp.n8.nes` declares none (its link's `push()` never blocks), the
-  Launchpad nodes still do, the one exception until their pack. A manifest entry's `provider` is how `retroplug_product`
-  generates `rp_product_providers.hpp` (`rp_start_providers`, `rp_restore_providers`, `rp_stop_providers`,
+  declares what the NODE needs, not its device link: `rp.n8.nes` and the Launchpad's two declare none (their links'
+  threads are the providers'). A manifest entry's `provider` is how `retroplug_product` generates
+  `rp_product_providers.hpp` (`rp_start_providers`, `rp_restore_providers`, `rp_stop_providers`,
   `rp_register_package_rpc`, over an `rp::Providers` each product instance holds); only a product whose sources include
   it starts the provider, so listing a pack is not starting it. TS reaches the Edio through `createN8Client(call)` in
   `@retroplug/n8` (`packages/n8/ts`: the decoders, the load helpers, sessions and the streaming link); the CLI's
@@ -239,6 +241,46 @@ The rules below are the parts that don't fit those.
   golden (`edio-golden.json`, 28 cases) is the protocol's byte-level oracle; the box's gate is repeated on the rig by
   hand and tests BOOT BLIPTOASTER, never `n8-midi.nes`. Details:
   [docs/modular-graph-phase-e2-design.md](docs/modular-graph-phase-e2-design.md).
+- **The Launchpad is a pack (`packages/launchpad`), and the LSDj app that drives it is a bridge beside it.** The
+  pack's portable target (`retroplug-launchpad`, `device: true`) holds the `SurfaceLink` contract and the two surface
+  nodes (`rp.launchpad.surface-in` / `-out`: `unique`, category `device`, and no `threads`, because the threads are
+  the link's). Its desktop target (`retroplug-launchpad-desktop`) holds the protocol-free transport (`ControllerLink`,
+  with the RtMidi callback thread that fills its generation-tagged receive ring, the writer thread that drains the
+  send ring, and a UI queue of its own so `send()` never waits for a write in flight; `PortClaim`; `MidiPortPool`;
+  `RtMidiPort`), the provider (`rp_launchpad_provider`) and the facet (`LaunchpadRpc`, 12 synchronous `launchpad*`
+  methods, TS's only door to a port through `createLaunchpadClient(call)` in `@retroplug/launchpad/client`).
+  **`PROVIDERS` is the product's half: a product starts only the providers it names.** The list has no default (a
+  provider opens ports and runs threads), the order it names them in is the start order, a duplicate is refused, and a
+  manifest item may not be both an `entry` and a `provider`. The SDL standalone, the headless host and the CLI name
+  `n8 launchpad`; the plugin names `n8` alone, and its configure refuses a plugin linked to the desktop target, so a
+  DAW host is handed no control surface. **The provider ABI is 2:** `reserve_midi` keeps a claimed pair out of
+  `MidiIo`'s shared stream (`MidiIo` reopens only what actually moves, with audio stopped and restarted),
+  `suspend_hardware_inputs` is the scan's held edge (a real lever on Windows alone, where a MIDI input is exclusive),
+  `restored` ends the startup rendezvous, and `rp_provider`'s `wake` is the per-frame pump (`rp_wake_providers`) that
+  writes what the audio thread queued. Surface-in reports the claim's `generation` (0 = nothing attached, so a pair
+  swapped inside one block still reads as a new device) and a `drops` count, both wrapped at 2^24 (the generation into
+  1..2^24 - 1, so a wrap never reads as nothing attached). **TS owns the selection:** `config.json`'s `controlSurface`
+  (`input`, `output`, `device`, `enabled`, additive so no migration), written through a re-read so two processes can
+  share the file, and the standalone holds MIDI and audio until TS's `restored()` lands or 500 ms pass, so a restored
+  pair is never opened by the shared stream first. **A controller app is a contribution in two halves:** the control
+  plane's `definePackage({ controllerApps })` (`id`, `label`, the app's config schema; the shell's
+  `src/controller/registry.ts` fills the registry from the generated list and adds `parseAppConfig`) and the runtime's
+  `protocol.apps` entry (`module`, naming the app's factory, playback model and launch target; `syncOverride` as data
+  for the cart sync mode an app needs), joined by `id`, with the generator refusing an unpaired half or a duplicate
+  id. MI.MAP is `packages/lsdj-launchpad`'s, which depends on `launchpad` and `lsdj` and which `launchpad` never
+  imports. **The scenario mode is the portability proof:** `build-device-pack.mjs --scenario <file.ts>` bundles a
+  package's portable core instead of a node entry, runs it under Node and on `retroplug-mqjs-run` and demands
+  byte-identical transcripts in `--heap-bytes`; both scenarios run in `pnpm test` (the core's budget 76800, the
+  bridge's 184320, measured, not claimed to fit the box's 64 KiB arena). The pack declares NO `script` member in F3,
+  so the scenarios are the proof and no box image carries it. The pack's tests are `retroplug-launchpad-test` (one of
+  the eleven `test:plugin` binaries: the link, the claim, the pool, the provider, the facet, the port filter) and the
+  facet's cases in `test:native` (`launchpad-facet`, `launchpad-devices`, over the headless host's scripted device);
+  `pnpm sdl:controller` is the real standalone against an ALSA fake (Linux only, not in CI), and it runs under
+  `RP_MIDI_PORT_ALLOW`, the test-only allow list of port-name substrings that hides and refuses every other port in
+  the pack and in `MidiIo`. The harness writes its two fakes' WHOLE port names, whose client name (`RPFakeLPProMK3`) no
+  real device has, and its listing guard fails the run before anything is probed if any other port appears or if one
+  named like a Launchpad does. Details:
+  [docs/modular-graph-phase-f3-design.md](docs/modular-graph-phase-f3-design.md).
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
   EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
   in `Core/apu.{c,h}` and ships as a tracked patch
@@ -457,7 +499,8 @@ The headless loop (the only path — legacy is gone) is documented in
 C++ unit checks — the per-context window-hook routing, the class-id counter sync
 that keeps the DAW-hosted editor from rendering blank, and the DPF dynamic-parameter
 diff classifier), `device:check` (`tools/build-device-check.sh` - builds `rp-device-check`, the RP2350 image of every
-portable `rp.core` / `rp.dsp` / `rp.n8.nes` / `rp.device.midi-in` / `rp.devtest` type, the N8 pack's Edio, a
+portable `rp.core` / `rp.dsp` / `rp.n8.nes` / `rp.launchpad.surface-in` / `-out` / `rp.device.midi-in` /
+`rp.devtest` type, the N8 pack's Edio, a
 10-node plan exported at build time and run through the loader on a 4 KB stack, and the devtest script pack on
 MicroQuickJS (its types, a bench of a block and a message, and a 4-node script plan with a deep nest, whose stack is
 judged in two phases), with `arm-none-eabi-g++` and the Pico

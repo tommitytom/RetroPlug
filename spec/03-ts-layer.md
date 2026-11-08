@@ -682,7 +682,7 @@ Two concepts touched throughout this doc belong fully to **doc 04**:
   by ROM identity ([`romProviders.ts`](../packages/retroplug/src/romProviders.ts), the TS replacement for
   the legacy build's native `RomSniffer`, which is gone).
 - **The protocol nodes.** A role whose work is the audio thread's runs as a script node of its own
-  (its package's `ts/protocol.ts`; the controller session is the shell's,
+  (its package's `ts/protocol.ts`; the controller session is the launchpad pack's,
   [`packages/launchpad/ts/nodes.ts`](../packages/launchpad/ts/nodes.ts)), which `buildGraph` places for each
   system that has the role ([`graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts)),
   beside the MIDI routing and the controller session it places from the project's settings. They are in

@@ -449,12 +449,13 @@ workspace packages, `packages/<name>/` with a `native/` part, a `ts/` part or bo
 whether the entry builds for the device. The native packages are `node-sdk` (the C ABI and the authoring header, which
 a node pack depends on alone), `graph-runtime` (the executor, planner, registry, `GraphHost`, and since E3 the plan
 blob with `exportPlan` and the loader), `core` (the `rp.core` nodes), `dsp` (the kernels and the `rp.dsp` nodes),
-`n8` (the N8 pack), `device-io` (`rp.device.midi-in`, the box's host MIDI) and `devtest` (test nodes the device check
-and the exporter register and no product lists); `packages/native`'s manifest lists the types not yet carved
-(`sameboy`, `mesen`, `host_io` and `launchpad`). Each product (the plugin, `retroplug-host`, the CLI, the
-SDL standalone, the Node addon and four test binaries) declares its packages with `retroplug_product()` and gets a
-generated `rp_register_packages()` that the Engine reads in place of a hard-coded loop; a golden holds each product's
-registered type ids, and a configure-time check refuses a binary that links the engine without being a product.
+`n8` (the N8 pack), `launchpad` (the control surface's nodes and its desktop transport), `device-io`
+(`rp.device.midi-in`, the box's host MIDI) and `devtest` (test nodes the device check and the exporter register and no
+product lists); `packages/native`'s manifest lists the types not yet carved (`sameboy`, `mesen` and `host_io`). Each
+product (the plugin, `retroplug-host`, the CLI, the SDL standalone, the Node addon and four test binaries) declares its
+packages with `retroplug_product()` and gets a generated `rp_register_packages()` that the Engine reads in place of a
+hard-coded loop; a golden holds each product's registered type ids, and a configure-time check refuses a binary that
+links the engine without being a product.
 
 A portable node's settings hold only fixed-capacity types, and `node.hpp` builds two ways: the desktop's description,
 JSON and heap-settings half, and, with `RP_DEVICE`, a portable core whose instance owns its `Settings` in the host's

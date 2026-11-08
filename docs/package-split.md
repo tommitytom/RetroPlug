@@ -2,8 +2,8 @@
 
 **Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1 built
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records it and its follow-up
-pass), F3 designed
-([modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md)), F2 and F4 not yet designed
+pass), F3 prototyped ([modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records the
+build; what it leaves is [07-remaining-work.md](../spec/07-remaining-work.md) section 5's F3 bullet), F2 and F4 not yet designed
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
 workspace packages would take. E1 started it (`node-sdk`, `graph-runtime`, `core`, `dsp`), E2 carved `n8`, and E4 made
@@ -25,9 +25,13 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
   The registries that are pure data (roles, ROM providers, protocol-node tables, tracker integrations, kit formats) are
   generated from a product's package list, which is both the dependency order and the registration order. No behaviour
   changes: every baseline held unmodified.
-- **F3: the Launchpad pack** ([design](modular-graph-phase-f3-design.md), designed). A port, not a merge, of `feature/launchpad` (merge-base `cfeb80e00`, 2026-09-29, before the
-  graph existed) into `packages/launchpad`: the controller's host half, its portable core on MicroQuickJS, its
-  provider and facet, with a headless proof on the fake Launchpad and a real-device check when the user is at the desk.
+- **F3: the Launchpad pack** ([design](modular-graph-phase-f3-design.md), **prototyped** on `proto/f3-launchpad` in
+  five stages). A port, not a merge, of `feature/launchpad` (merge-base `cfeb80e00`, 2026-09-29, before the
+  graph existed) into `packages/launchpad` (the two surface nodes, the protocol, the session, the port scan, the
+  provider and the facet) and `packages/lsdj-launchpad` (the MI.MAP app, contributed through the new `controllerApps`
+  kind), with the provider ABI at 2, `PROVIDERS` per product, `config.json`'s `controlSurface`, and the pack's portable
+  core proved by the toolchain's scenario mode. What it leaves is owed rather than undone: the real-device checklist
+  (the Pro MK3 and LSDj on a desk) and its Windows items, the plugin's control surface, and the Pico controller.
 - **F2: the native carve.** `sameboy` and `mesen` get their native halves (today `rp_sameboy_package` and
   `rp_mesen_package` in `packages/native/src/host/graph/SystemNodes.cpp`), Mesen compiles out per console,
   `registerCoreBackends` is generated per product, host I/O becomes a package, the mGB ROM embed gets a seam, and txiki
