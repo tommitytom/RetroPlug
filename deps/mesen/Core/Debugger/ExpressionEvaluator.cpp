@@ -59,6 +59,7 @@ EvalOperators ExpressionEvaluator::GetOperator(string token, bool unaryOperator)
 unordered_map<string, int64_t>* ExpressionEvaluator::GetAvailableTokens()
 {
 	switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: return &GetSnesTokens();
 		case CpuType::Spc: return &GetSpcTokens();
 		case CpuType::NecDsp: return &GetNecDspTokens();
@@ -67,11 +68,16 @@ unordered_map<string, int64_t>* ExpressionEvaluator::GetAvailableTokens()
 		case CpuType::Cx4: return &GetCx4Tokens();
 		case CpuType::St018: return &GetSt018Tokens();
 		case CpuType::Gameboy: return &GetGameboyTokens();
+#endif
 		case CpuType::Nes: return &GetNesTokens();
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return &GetPceTokens();
+#endif
 		case CpuType::Sms: return &GetSmsTokens();
 		case CpuType::Gba: return &GetGbaTokens();
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return &GetWsTokens();
+#endif
 	}
 
 	return nullptr;
@@ -415,6 +421,7 @@ int64_t ExpressionEvaluator::Evaluate(ExpressionData &data, EvalResultType &resu
 							token = 0;
 						} else {
 							switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 								case CpuType::Snes: token = GetSnesTokenValue(token, resultType); break;
 								case CpuType::Spc: token = GetSpcTokenValue(token, resultType); break;
 								case CpuType::NecDsp: token = GetNecDspTokenValue(token, resultType); break;
@@ -423,11 +430,16 @@ int64_t ExpressionEvaluator::Evaluate(ExpressionData &data, EvalResultType &resu
 								case CpuType::Cx4: token = GetCx4TokenValue(token, resultType); break;
 								case CpuType::St018: token = GetSt018TokenValue(token, resultType); break;
 								case CpuType::Gameboy: token = GetGameboyTokenValue(token, resultType); break;
+#endif
 								case CpuType::Nes: token = GetNesTokenValue(token, resultType); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 								case CpuType::Pce: token = GetPceTokenValue(token, resultType); break;
+#endif
 								case CpuType::Sms: token = GetSmsTokenValue(token, resultType); break;
 								case CpuType::Gba: token = GetGbaTokenValue(token, resultType); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 								case CpuType::Ws: token = GetWsTokenValue(token, resultType); break;
+#endif
 							}
 						}
 						break;

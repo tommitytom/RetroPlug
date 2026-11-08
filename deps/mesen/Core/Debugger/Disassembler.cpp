@@ -382,6 +382,7 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 			data.LineCpuType = lineCpuType;
 			CdlManager* cdlManager = _debugger->GetCdlManager();
 			switch(lineCpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 				case CpuType::Snes:
 				case CpuType::Sa1:
 				{
@@ -511,6 +512,7 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 					break;
 				}
 
+#endif
 				case CpuType::Nes:
 				{
 					NesCpuState state = (NesCpuState&)_debugger->GetCpuStateRef(lineCpuType);
@@ -531,6 +533,7 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 					break;
 				}
 
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 				case CpuType::Pce:
 				{
 					PceCpuState state = (PceCpuState&)_debugger->GetCpuStateRef(lineCpuType);
@@ -551,6 +554,7 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 					break;
 				}
 
+#endif
 				case CpuType::Sms:
 				{
 					SmsCpuState state = (SmsCpuState&)_debugger->GetCpuStateRef(lineCpuType);
@@ -595,6 +599,7 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 					break;
 				}
 
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 				case CpuType::Ws:
 				{
 					WsCpuState state = (WsCpuState&)_debugger->GetCpuStateRef(lineCpuType);
@@ -614,6 +619,7 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 					}
 					break;
 				}
+#endif
 			}
 
 			if(!showMemoryValues) {

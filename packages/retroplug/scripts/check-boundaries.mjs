@@ -53,6 +53,10 @@
 //     resolved, and a package's `files`/`publishConfig` is nobody's boundary here.
 //   - the ORDER a dependency's spec or an import reaches a package in, and anything a build's tooling decides: this
 //     check judges the declaration, not the build.
+//   - a `#` inside a quoted string in a CMakeLists: the comment stripper removes from a `#` to the end of its line
+//     whatever quotes surround it, so a target named after one is not seen as a use.
+//   - a multi-line bracket comment (`#[[ ... ]]`): the stripper removes the `#` line alone, so a target named inside
+//     one counts as a use.
 //
 // A declared dependency no file uses is a warning, not a refusal: the native check (cmake/packages.cmake) reads the same
 // declaration, so a package whose native targets link a dependency's library declares it without its TS importing

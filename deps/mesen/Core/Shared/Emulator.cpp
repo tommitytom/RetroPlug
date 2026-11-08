@@ -564,12 +564,18 @@ void Emulator::InitConsole(unique_ptr<IConsole>& newConsole, ConsoleMemoryInfo o
 void Emulator::TryLoadRom(VirtualFile& romFile, LoadRomResult& result, unique_ptr<IConsole>& console, bool useFileSignature)
 {
 	TryLoadRom<NesConsole>(romFile, result, console, useFileSignature);
+#if MESEN_ENABLE_SNES  // RetroPlug: a compiled-out console's signature check goes with it, so no ROM is detected as one
 	TryLoadRom<SnesConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<Gameboy>(romFile, result, console, useFileSignature);
+#endif
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine's signature check goes with it, so no ROM is detected as one
 	TryLoadRom<PceConsole>(romFile, result, console, useFileSignature);
+#endif
 	TryLoadRom<SmsConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<GbaConsole>(romFile, result, console, useFileSignature);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan's signature check goes with it, so no ROM is detected as one
 	TryLoadRom<WsConsole>(romFile, result, console, useFileSignature);
+#endif
 }
 
 template<typename T>

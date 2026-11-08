@@ -240,11 +240,13 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   ([modular-graph-phase-c4-design.md](../docs/modular-graph-phase-c4-design.md), six commits): `SystemBase`'s dead
   surface is gone, a Mesen core collects its audio in a fixed ring sized from the build request's `maxBlockFrames`, the
   tap is a `ChannelTap` capability any core may offer, and the node's build compares `kind()` with its core's `kKind`
-  instead of casting. A warmed core's whole block allocates and frees nothing, Mesen's per-frame video and input
-  plumbing included, and a block carrying host input does too: every ingress queue is a bounded ring sized when the
-  core is built, and a push past its bound is dropped and counted. Strict parity held bit for bit at every commit,
-  nothing re-recorded; the narrow-host defect the B0 design records was fixed afterwards, in a follow-up of its own
-  that re-recorded the two groups it pinned (section 10 of the C4 design). The one console name `Engine` still made was
+  instead of casting (F2 deleted the kind set: the node hands its own package's build function, so the two cannot
+  disagree - see the F2 bullet below). A warmed core's whole block allocates and frees nothing, Mesen's per-frame
+  video and input plumbing included, and a block carrying host input does too: every ingress queue is a bounded ring
+  sized when the core is built, and a push past its bound is dropped and counted. Strict parity held bit for bit at
+  every commit, nothing re-recorded; the narrow-host defect the B0 design records was fixed afterwards, in a
+  follow-up of its own that re-recorded the two groups it pinned (section 10 of the C4 design). The one console name
+  `Engine` still made was
   the N8 cart mirror's (`SystemKind::MesenNes`, NES by construction), which C5 removed; what is left is the tap's
   1-to-3 mode bound, a number TS owns. What it leaves (its section 12):
   - **P3, cores borrowing their node's pinned ROM bytes**, and **P4, the snapshot registry's double copy** (section 3
@@ -311,7 +313,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   the `__rp_n8*` operation hooks and `N8Host`'s SD worker are gone. Strict parity held bit for bit at every commit,
   nothing re-recorded. What it leaves (its section 11):
   - **P7's remainder**, above: video, buttons and debug are still `SystemBase` virtuals, `state/1` is still the
-    system-id RPC, and `SystemNodes.cpp` still holds all four consoles' nodes.
+    system-id RPC, and `SystemNodes.cpp` still holds all four consoles' nodes (F2 moved them into their packages and
+    deleted the file; the split's remainder is section 10's).
   - **A cart's battery is reachable only at the N8 menu**, through the SD card's save file (`EDN8/gamedata/<rom>/
     bram.srm`): a dump takes about a minute for 64 KB, a running game refuses the job (a direct cart-memory read
     wedges it and leaves the menu deaf), and a restore goes before a `rom.upload` so the game loads it at its next
@@ -447,8 +450,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     DAW, N instances can hold 8N threads, and a compile briefly puts 8 busy threads beside the audio thread; a plugin
     kit row should lower the ceiling or retire idle workers.
   - **Confirm the removed transitive includes build under MSVC.** The tree has not been built with MSVC since D2
-    deleted headers that used to arrive through `BackendTypes.hpp` and `retroplug-core`; run `build.bat` (or the
-    Windows CI job) before trusting the platform that has not run here.
+    deleted headers that used to arrive through `BackendTypes.hpp` and the shell's core library; run `build.bat` (or
+    the Windows CI job) before trusting the platform that has not run here. F2's own Windows items are its bullet's.
 - **D3 built: renders as engine jobs**
   ([modular-graph-phase-d3-design.md](../docs/modular-graph-phase-d3-design.md), five commits): the pool runs a second
   kind of job, a render, on a `RenderHost` and an `Engine` of its own, with progress and console lines in the drain,
@@ -576,9 +579,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Template gaps a second pack meets** (design 13.8): method names are global and a repeat replaces silently; a pack
     cannot add a capability beyond `rp.system.memory/sram/rom`; the test host has no seam for a pack's test provider;
     the TS half needs its `ts/` in `packages/retroplug/tsconfig.json`'s `include`; a provider cannot be downloaded.
-  - **The pack boundary has three standing exceptions** (design 13.6): `retroplug-core` includes `retroplug-n8`'s roots
-    for `N8ReliableLink.hpp`, `plugin.cmake` links `retroplug-n8-desktop` by name, and the test host's `main.cpp` names
-    the provider.
+  - **The pack boundary has three standing exceptions** (design 13.6): the shell's core library included
+    `retroplug-n8`'s roots for `N8ReliableLink.hpp`, `plugin.cmake` links `retroplug-n8-desktop` by name, and the test
+    host's `main.cpp` names the provider. F2 removed the first: the `mesen` package declares `n8` and links its target.
   - **The box image's 2 KB `.heap` reservation** went in E3 (`PICO_HEAP_SIZE=0`); `rp-device-check` keeps its own.
 - **E3 built: exported plans and the box as a graph host**
   ([modular-graph-phase-e3-design.md](../docs/modular-graph-phase-e3-design.md), five commits): a versioned plan blob
@@ -805,3 +808,47 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     rendered into the cart's sync node, or walks at the divisor the cart is set to.
   - **The store's song poll stays in the shell** (the controller's song refresh, the anchor and the SYNC poll in
     `projectStore.ts`) until F4, which also takes the menu rows.
+- **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
+  `feature/modularize`): `packages/system` (the contract every console implements and the engine drives, the
+  build request and the build function, `rp.host.systems/2`, the `SystemNode` template), `packages/sameboy` and
+  `packages/mesen` (the Game Boy, and the NES, GBA and SMS/GG cores with their nodes, `mesen` declaring `n8`) and
+  `packages/host-io` (`rp.host.midi-in` / `-out`); `retroplug-core` dissolved; `SystemFactory`, `registerCoreBackends`,
+  the `SystemConfig` variant, `SystemKind` and `kind()` deleted, so the engine names no console and recognises a system
+  node by its descriptor's `category`; the mGB ROM a package's declared `embed`, with a generated per-product table
+  (`EmbeddedRoms.hpp` and the root `mgb-rom` target gone); txiki and efsw as the shell's opt-in libraries
+  (`retroplug-tjs-runtime`, `retroplug-file-watcher`), the backend on bare QuickJS; and Mesen's per-console compile-out
+  (`MESEN_ENABLE_SNES` / `-PCE` / `-WS`, OFF here, ON upstream). Re-recorded: the `[packages]` golden alone (the
+  console and host-I/O node types now register from their packages, at their order). Strict parity, the kit and render
+  baselines, the `buildGraph` and role goldens, the script and protocol digests, `edio-golden.json`, the bliptoaster
+  pack's bytes and the device and box image hashes held. What it leaves (design section 10):
+  - **`MemoryType` stays a closed wire enum** of nine regions: a tenth would change the wire, the debug RPCs and the TS
+    mirror together, and it is not a build seam.
+  - **The TS unions** (`Platform` and `Core` in `packages/core/ts/platform.ts`, `NODE_TYPE`, `projectConfig`'s zod
+    enums, the literal switches in `render.ts`, `menuDefs`, the CLI's render session and `buildGraph`) are F4's, and so
+    is `loadMgb` with its "an embedded ROM is a Game Boy" rule: the native side has a table, the TS still knows `"mgb"`.
+  - **`mesen` declares `n8` for one header** (`NesN8FifoRole` includes `transport/N8ReliableLink.hpp`). Making the
+    emulated N8 FIFO a cart the pack offers through a link interface is the smaller edge's alternative, and it is not
+    F2's.
+  - **One Mesen library for every product**, with the root's options: a product that wants fewer consoles, or an
+    embedder who wants SNES back, flips a cache variable (`tools/build-mesen-all-consoles.sh` proves the ON build);
+    a library per console set is a later question the filter's table is written to make cheap.
+  - **The Windows run is owed**: everything below has been reasoned about and never run, on a box or in CI.
+    - The moved clang-cl custom command that compiles `SameBoySystem.cpp` (`retroplug-samebsys`, under `if(WIN32)` in
+      `packages/sameboy/native/CMakeLists.txt`): its rewritten include roots, its header glob and its `DEPENDS` on the
+      boot-ROM target.
+    - `/W4 /WX` on `retroplug-system`, `-sameboy`, `-mesen` and `-host-io`: the sources `retroplug-core` compiled at
+      that level, now in four targets with new include sets. Also the deliberate exclusion of
+      `retroplug-sameboy-test` / `-mesen-test` from that list (`packages/native/cmake/warnings.cmake`), which the
+      first Windows run decides.
+    - The Mesen options under MSVC: the cache variables, the `$<BOOL:>` PUBLIC definitions, the six guarded files
+      under mesen's MSVC warning treatment, and `RETROPLUG_MESEN_LTO` with the three options OFF in `release.yml`'s
+      Windows job.
+    - `retroplug-tjs-runtime`: `TjsHostRuntime.cpp`'s first compile in a target of its own, at `/W4 /WX`.
+    - `retroplug-file-watcher`: `efsw-static` and `Threads::Threads` on Windows, at `/W4 /WX`.
+    - `PluginDSP.cpp`, which now includes `NativeFileWatcher.hpp` and so `efsw/efsw.hpp` under `/W4 /WX`; before the
+      carve only the backend's two sources saw it.
+    - The embed object library `retroplug-mgb-embeds` (bin2c's `.c` built by cl) and the generated
+      `rp_embedded_resources()` table (`extern "C"` arrays and a function-local static) in each product.
+    - `packages.cmake`'s new path logic on Windows paths: `_retroplug_unquote_path` on MSVC-escaped `\"` definitions,
+      `file(RELATIVE_PATH)` with drive letters, and the runtime-library walk's target names.
+    - `HostRpcWatching.test.cpp` and `LinkRomModel.hpp` / the `retroplug-testing` library, compiled by cl.

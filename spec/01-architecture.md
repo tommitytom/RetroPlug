@@ -431,7 +431,7 @@ targets: `retroplug-dsp-kernels` (core-free, the C++ standard library only) and 
 with it the heap, pthreads and RTTI, so a build with no resampler omits it). r8brain's static members are a third
 target, `retroplug-r8brain-base`, beside the resampler: its one translation unit is vendored code (`R8bBase.cpp`
 includes r8brain's own `r8bbase.cpp`, on a throwing allocator), so it is kept off RetroPlug's own warning level.
-`retroplug-core` links neither (nothing of the core calls a kernel), and the graph has them as `rp.dsp`
+Neither console package links one (nothing of a core calls a kernel), and the graph has them as `rp.dsp`
 (`rp.dsp.gain`, `.biquad`, `.dither`, `.normalize`, `.dpcm`) and `rp.dsp.resample`, in targets of their own
 (`retroplug-dsp-nodes`, `retroplug-dsp-resample-nodes`) so `retroplug-graph` carries neither and a Pico build links
 `retroplug-dsp-nodes` and `retroplug-dsp-kernels` alone (the `dsp` package's manifest marks `rp.dsp` a device entry

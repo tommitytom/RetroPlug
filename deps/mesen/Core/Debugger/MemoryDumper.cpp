@@ -39,24 +39,40 @@ MemoryDumper::MemoryDumper(Debugger* debugger)
 
 	IConsole* console = _debugger->GetConsole();
 	//TODOv2 - generic code? (or at least rename SNES-specific members)
+	// RetroPlug: each console's branch is guarded on its own, so the chain re-joins around a compiled-out one.
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 	if(SnesConsole* snes = dynamic_cast<SnesConsole*>(console)) {
 		_spc = snes->GetSpc();
 		_memoryManager = snes->GetMemoryManager();
 		_cartridge = snes->GetCartridge();
 		_gameboy = snes->GetCartridge()->GetGameboy();
-	} else if(NesConsole* nes = dynamic_cast<NesConsole*>(console)) {
+	} else
+#endif
+	if(NesConsole* nes = dynamic_cast<NesConsole*>(console)) {
 		_nesConsole = nes;
-	} else if(Gameboy* gb = dynamic_cast<Gameboy*>(console)) {
+	} else
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
+	if(Gameboy* gb = dynamic_cast<Gameboy*>(console)) {
 		_gameboy = gb;
-	} else if(PceConsole* pce = dynamic_cast<PceConsole*>(console)) {
+	} else
+#endif
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
+	if(PceConsole* pce = dynamic_cast<PceConsole*>(console)) {
 		_pceConsole = pce;
-	} else if(SmsConsole* sms = dynamic_cast<SmsConsole*>(console)) {
+	} else
+#endif
+	if(SmsConsole* sms = dynamic_cast<SmsConsole*>(console)) {
 		_smsConsole = sms;
-	} else if(GbaConsole* gba = dynamic_cast<GbaConsole*>(console)) {
+	} else
+	if(GbaConsole* gba = dynamic_cast<GbaConsole*>(console)) {
 		_gbaConsole = gba;
-	} else if(WsConsole* ws = dynamic_cast<WsConsole*>(console)) {
+	}
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
+	else
+	if(WsConsole* ws = dynamic_cast<WsConsole*>(console)) {
 		_wsConsole = ws;
 	}
+#endif
 
 	for(int i = 0; i < DebugUtilities::GetMemoryTypeCount(); i++) {
 		MemoryType memType = (MemoryType)i;
@@ -118,6 +134,7 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t *buffer)
 	}
 
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case MemoryType::SnesMemory:
 			for(int i = 0; i <= 0xFFFFFF; i+=0x1000) {
 				_memoryManager->PeekBlock(i, buffer+i);
@@ -176,6 +193,7 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t *buffer)
 			break;
 		}
 
+#endif
 		case MemoryType::NesMemory: {
 			if(_nesConsole) {
 				for(int i = 0; i <= 0xFFFF; i++) {
@@ -194,6 +212,7 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t *buffer)
 			break;
 		}
 
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case MemoryType::PceMemory: {
 			if(_pceConsole) {
 				PceMemoryManager* memManager = _pceConsole->GetMemoryManager();
@@ -204,6 +223,7 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t *buffer)
 			break;
 		}
 
+#endif
 		case MemoryType::SmsMemory: {
 			if(_smsConsole) {
 				SmsMemoryManager* memManager = _smsConsole->GetMemoryManager();
@@ -224,6 +244,7 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t *buffer)
 			break;
 		}
 
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case MemoryType::WsMemory: {
 			if(_wsConsole) {
 				WsMemoryManager* memManager = _wsConsole->GetMemoryManager();
@@ -234,6 +255,7 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t *buffer)
 			break;
 		}
 
+#endif
 		default: 
 			uint8_t* src = GetMemoryBuffer(type);
 			if(src) {
@@ -272,6 +294,7 @@ void MemoryDumper::InternalSetMemoryValues(MemoryType originalMemoryType, uint32
 		}
 
 		switch(memoryType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 			case MemoryType::SnesMemory: _memoryManager->GetMemoryMappings()->DebugWrite(address, value); break;
 			case MemoryType::SpcMemory: _spc->DebugWrite(address, value); break;
 			case MemoryType::Sa1Memory: _cartridge->GetSa1()->GetMemoryMappings()->DebugWrite(address, value); break;
@@ -280,14 +303,21 @@ void MemoryDumper::InternalSetMemoryValues(MemoryType originalMemoryType, uint32
 			case MemoryType::Cx4Memory: _cartridge->GetCx4()->GetMemoryMappings()->DebugWrite(address, value); break;
 			case MemoryType::St018Memory: _cartridge->GetSt018()->DebugWrite(address, value); break;
 			case MemoryType::GameboyMemory: _gameboy->GetMemoryManager()->DebugWrite(address, value); break;
+#endif
 			case MemoryType::NesMemory: _nesConsole->DebugWrite(address, value, disableSideEffects); break;
 			case MemoryType::NesPpuMemory: _nesConsole->DebugWriteVram(address, value); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 			case MemoryType::PceMemory: _pceConsole->GetMemoryManager()->DebugWrite(address, value); break;
+#endif
 			case MemoryType::SmsMemory: _smsConsole->GetMemoryManager()->DebugWrite(address, value); break;
 			case MemoryType::GbaMemory: _gbaConsole->GetMemoryManager()->DebugWrite(address, value); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 			case MemoryType::WsMemory: _wsConsole->GetMemoryManager()->DebugWrite(address, value); break;
+#endif
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 			case MemoryType::SpcDspRegisters: _spc->DebugWriteDspReg(address, value); break;
 
+#endif
 			default:
 				uint8_t* src = GetMemoryBuffer(memoryType);
 				if(src) {
@@ -371,6 +401,7 @@ uint8_t MemoryDumper::GetMemoryValue(MemoryType memoryType, uint32_t address, bo
 uint8_t MemoryDumper::InternalGetMemoryValue(MemoryType memoryType, uint32_t address, bool disableSideEffects)
 {
 	switch(memoryType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case MemoryType::SnesMemory: return _memoryManager->Peek(address);
 		case MemoryType::SpcMemory: return _spc->DebugRead(address);
 		case MemoryType::Sa1Memory: return _cartridge->GetSa1()->GetMemoryMappings()->Peek(address);
@@ -379,15 +410,20 @@ uint8_t MemoryDumper::InternalGetMemoryValue(MemoryType memoryType, uint32_t add
 		case MemoryType::Cx4Memory: return _cartridge->GetCx4()->GetMemoryMappings()->Peek(address);
 		case MemoryType::St018Memory: return _cartridge->GetSt018()->DebugRead(address);
 		case MemoryType::GameboyMemory: return _gameboy->GetMemoryManager()->DebugRead(address);
+#endif
 		case MemoryType::NesMemory: return _nesConsole->DebugRead(address);
 		case MemoryType::NesPpuMemory: return _nesConsole->DebugReadVram(address);
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case MemoryType::PceMemory: return _pceConsole->GetMemoryManager()->DebugRead(address);
+#endif
 		case MemoryType::SmsMemory: return _smsConsole->GetMemoryManager()->DebugRead(address);
 		case MemoryType::SmsPort: return _smsConsole->GetMemoryManager()->DebugReadPort(address);
 		case MemoryType::GbaMemory: return _gbaConsole->GetMemoryManager()->DebugRead(address);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case MemoryType::WsMemory: return _wsConsole->GetMemoryManager()->DebugRead(address);
 		case MemoryType::WsPort: return _wsConsole->GetMemoryManager()->DebugReadPort<uint8_t>(address);
 
+#endif
 		default:
 			uint8_t* src = GetMemoryBuffer(memoryType);
 			return src ? src[address] : 0;

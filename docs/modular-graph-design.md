@@ -1,8 +1,8 @@
 # Design: the modular node-graph engine
 
 **Date:** 2026-10-23 · **Branch:** `feature/modularize` · **Status:** Phases A to D built (the graph libraries are in
-`packages/graph-runtime/` and `packages/node-sdk/`, the TS half in `packages/retroplug/src/graph/`), and Phases E1 to
-E4.
+`packages/graph-runtime/` and `packages/node-sdk/`, the TS half in `packages/retroplug/src/graph/`), Phases E1 to E4,
+and the package split's F1, F3 and F2 ([package-split.md](package-split.md)).
 
 RetroPlug's long-term direction is a modular system in the spirit of Reaktor: emulated consoles (and
 the real hardware they can drive) appear as nodes in a graph alongside DSP effects and routing nodes.
@@ -969,12 +969,13 @@ Extensions only ever see host RPC that routes through those two doors.
 | `Engine`'s gather of SameBoy `serialOutLog_` | the GB `serialOut` port |
 | `LinkGroup`, `Project::rebuildLinkGroups` | `link` wires, the planner's coupled groups |
 | `BlockRunner` / `OfflineRender` including SameBoy headers | the console-neutral executor |
-| `SystemKind`, `ConfigField`, native `AudioRouting` | deleted (`ConfigField` in C2; `SystemKind` survives as the node's build check) |
+| `SystemKind`, `ConfigField`, native `AudioRouting` | deleted (`ConfigField` in C2; `SystemKind` and the kind check in F2, where a node builds its core through its own package's function) |
 
 Two more went in C4, and they were the last outside the cores: the plan build's and `publishGraph`'s two casts are
-`SystemBase::channelTap()`, and `SystemNodes.cpp`'s build compares `kind()` with its core's `kKind` and then
-`static_cast`s. So `packages/native/src` has no `dynamic_cast` outside `src/system/`. The suites keep their
-console-only casts (a config field, `linkPeers_`, a ring counter), which is the core's own business.
+`SystemBase::channelTap()`, and the system node's build compares `kind()` with its core's `kKind` and then
+`static_cast`s (F2 deleted the kind set: the node hands its own package's build function, so the two cannot disagree,
+and `SystemNodes.cpp`'s template is `packages/system`'s). So the shell has no `dynamic_cast` outside a core. The
+suites keep their console-only casts (a config field, `linkPeers_`, a ring counter), which is the core's own business.
 
 What remains of `Engine` is the executor, the rings and the registry.
 
@@ -1237,7 +1238,8 @@ re-recorded.
 C4 is built ([modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md)): `SystemBase`'s dead surface is
 gone, a Mesen core collects its audio in a fixed ring sized from the build request's block, its per-frame video and
 input plumbing reuses its buffers, the tap a split routing arms is a `ChannelTap` capability, and a system node's build
-compares its core's `kind()` rather than casting. A warmed core's whole block allocates and frees nothing, and so does
+compares its core's `kind()` rather than casting (F2 then deleted the kind set, as the node hands its own package's
+build function). A warmed core's whole block allocates and frees nothing, and so does
 one carrying host input in it: every ingress queue a press, a MIDI run, a serial byte or a raw message lands in is a
 bounded ring sized when the core is built. Strict parity held bit for bit at every commit, nothing re-recorded; the
 narrow-host defect the B0 design records was fixed afterwards, in a follow-up that re-recorded the two groups it
@@ -1369,21 +1371,21 @@ here so it is not lost.
 ### Package split
 
 The split is now its own roadmap, [package-split.md](package-split.md): F1 (the TS package mechanism and the leaf TS
-moves) is built, F2 (the native carve) and F4 (the UI onto extensions) are designed there, and F3 (the Launchpad pack)
-runs between them.
+moves), F3 (the Launchpad pack) and F2 (the native carve) are built, and F4 (the UI onto extensions) is still to come.
 
 - E1 began it: `node-sdk`, `graph-runtime`, `core` and `dsp` are workspace packages (`packages/<name>/{native,ts}`
   with a `retroplug` manifest in `package.json`), and `packages/native`'s own manifest lists the types not yet carved.
   E2 carved `n8` (with its provider mechanism). Carve `sameboy`, `mesen` (per console), `lsdj`, `mgb`, `risa`,
   `smsggdj`, `bliptoaster` and `launchpad` the same way, each with a native part, a TS part, or both, and the TS
   halves of `core` and `dsp`.
-- **Mesen** compiles all seven consoles into one 426-object archive (NES 6.6 MB, SNES 6.3 MB of objects,
-  ...), and `Core/Shared/Emulator.cpp` plus `Core/Debugger/Debugger.cpp` reference every console, so the
-  linker cannot drop any. Per-console compile-out is a `MESEN_ENABLE_<X>` patch to ~20 files plus a
-  filtered glob (Mesen is vendored, not a submodule). NES-only removes roughly half the object bytes.
-- `rp_register_packages()` is generated per product (E1); `registerCoreBackends` the same way; `txiki` and `efsw` out of
-  `retroplug-backend` into opt-in libraries; LSDj kit DTOs out of `BackendTypes.hpp`; the risa DMC codec's
-  dependency on LSDj files removed; per-product esbuild entries (today every bundle carries every cart).
+- **Mesen** compiled all seven consoles into one 426-object archive, and `Core/Shared/Emulator.cpp` plus
+  `Core/Debugger/Debugger.cpp` reference every console, so the linker could not drop any. F2 built the per-console
+  compile-out (`MESEN_ENABLE_SNES` / `-PCE` / `-WS`, a filtered glob and guarded call sites), which leaves 288 objects
+  for the consoles RetroPlug runs.
+- `rp_register_packages()` is generated per product (E1); F2 deleted `registerCoreBackends` (a node carries its
+  package's build function); `txiki` and `efsw` came out of `retroplug-backend` into opt-in libraries (F2); LSDj kit
+  DTOs out of `BackendTypes.hpp`; the risa DMC codec's dependency on LSDj files removed; per-product esbuild entries
+  (today every bundle carries every cart).
 - Menus (`menuDefs.ts`'s 240 cart-specific lines, `TRACKER_UI`), catalogs, the HD player and the overlays
   move onto extensions and views.
 - The Edio protocol existed three times (TS source of truth, C++, Pico C), kept in sync by hand; E2 fixed

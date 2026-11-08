@@ -24,6 +24,12 @@ construct-time fields ... stay in the build spec until C3 builds cores in their 
   the battery, then the savestate restored) and `enableStateSnapshot`ed. `Engine::parkCore` claims the core's snapshot
   slot and parks it; the answer is `{ type, exportMode, linkGroup }`, the node type and two values cast out of the
   concrete core (the link group a pure echo of the build spec: the cable is TS's wiring).
+
+> **2026-11-08 (F2): the factory is gone.** A system node hands the host the build function its own package
+> exports, in the build request (`SystemBuild.hpp`), and `Engine::buildSystem` calls it where it called
+> `SystemFactory::build`; `SystemFactory`, `SystemBackend`, `SystemConfig` and the backend registry no longer exist.
+> Everything else this document records - the request's fields, the seeds as resources, the refusal cases - holds, and
+> `rp.host.systems/1` became `/2` for the changed request.
 - **The settings blob** carries the backend's "system" role config. SameBoy decodes all of it
   (`decodeSameBoyRoleConfig`: the model, fast boot and the display group applied before `onActivate`, so a loaded
   non-default model never restarts the core it just restored); Mesen's NES decodes the construct-time fields, its region,

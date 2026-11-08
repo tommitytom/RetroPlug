@@ -87,6 +87,7 @@ Debugger::Debugger(Emulator* emu, IConsole* console)
 	for(CpuType type : cpuTypes) {
 		unique_ptr<IDebugger> &debugger = _debuggers[(int)type].Debugger;
 		switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 			case CpuType::Snes: debugger.reset(new SnesDebugger(this, CpuType::Snes)); break;
 			case CpuType::Spc: debugger.reset(new SpcDebugger(this)); break;
 			case CpuType::NecDsp: debugger.reset(new NecDspDebugger(this)); break;
@@ -95,11 +96,16 @@ Debugger::Debugger(Emulator* emu, IConsole* console)
 			case CpuType::Cx4: debugger.reset(new Cx4Debugger(this)); break;
 			case CpuType::St018: debugger.reset(new St018Debugger(this)); break;
 			case CpuType::Gameboy: debugger.reset(new GbDebugger(this)); break;
+#endif
 			case CpuType::Nes: debugger.reset(new NesDebugger(this)); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 			case CpuType::Pce: debugger.reset(new PceDebugger(this)); break;
+#endif
 			case CpuType::Sms: debugger.reset(new SmsDebugger(this)); break;
 			case CpuType::Gba: debugger.reset(new GbaDebugger(this)); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 			case CpuType::Ws: debugger.reset(new WsDebugger(this)); break;
+#endif
 			default: throw std::runtime_error("Unsupported CPU type");
 		}
 
@@ -124,10 +130,12 @@ Debugger::Debugger(Emulator* emu, IConsole* console)
 	_executionStopped = false;
 
 #ifdef _DEBUG
+#if MESEN_ENABLE_SNES  // RetroPlug: the SNES evaluator's self-tests, with the console they exercise
 	if(_mainCpuType == CpuType::Snes) {
 		ExpressionEvaluator eval(this, _debuggers[(int)CpuType::Snes].Debugger.get(), CpuType::Snes);
 		eval.RunTests();
 	}
+#endif
 #endif
 }
 
@@ -176,6 +184,7 @@ template<CpuType type>
 uint64_t Debugger::GetCpuCycleCount()
 {
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: return GetDebugger<type, SnesDebugger>()->GetCpuCycleCount();
 		case CpuType::Spc: return GetDebugger<type, SpcDebugger>()->GetCpuCycleCount();
 		case CpuType::NecDsp: return GetDebugger<type, NecDspDebugger>()->GetCpuCycleCount();
@@ -184,11 +193,16 @@ uint64_t Debugger::GetCpuCycleCount()
 		case CpuType::Cx4: return GetDebugger<type, Cx4Debugger>()->GetCpuCycleCount();
 		case CpuType::St018: return GetDebugger<type, St018Debugger>()->GetCpuCycleCount();
 		case CpuType::Gameboy: return GetDebugger<type, GbDebugger>()->GetCpuCycleCount();
+#endif
 		case CpuType::Nes: return GetDebugger<type, NesDebugger>()->GetCpuCycleCount();
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return GetDebugger<type, PceDebugger>()->GetCpuCycleCount();
+#endif
 		case CpuType::Sms: return GetDebugger<type, SmsDebugger>()->GetCpuCycleCount();
 		case CpuType::Gba: return GetDebugger<type, GbaDebugger>()->GetCpuCycleCount();
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return GetDebugger<type, WsDebugger>()->GetCpuCycleCount();
+#endif
 		default: return 0; break;
 	}
 }
@@ -224,6 +238,7 @@ void Debugger::ProcessInstruction()
 	debugger->AllowChangeProgramCounter = true;
 
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: GetDebugger<type, SnesDebugger>()->ProcessInstruction(); break;
 		case CpuType::Spc: GetDebugger<type, SpcDebugger>()->ProcessInstruction(); break;
 		case CpuType::NecDsp: GetDebugger<type, NecDspDebugger>()->ProcessInstruction(); break;
@@ -232,11 +247,16 @@ void Debugger::ProcessInstruction()
 		case CpuType::Cx4: GetDebugger<type, Cx4Debugger>()->ProcessInstruction(); break;
 		case CpuType::St018: GetDebugger<type, St018Debugger>()->ProcessInstruction(); break;
 		case CpuType::Gameboy: GetDebugger<type, GbDebugger>()->ProcessInstruction(); break;
+#endif
 		case CpuType::Nes: GetDebugger<type, NesDebugger>()->ProcessInstruction(); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: GetDebugger<type, PceDebugger>()->ProcessInstruction(); break;
+#endif
 		case CpuType::Sms: GetDebugger<type, SmsDebugger>()->ProcessInstruction(); break;
 		case CpuType::Gba: GetDebugger<type, GbaDebugger>()->ProcessInstruction(); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: GetDebugger<type, WsDebugger>()->ProcessInstruction(); break;
+#endif
 	}
 
 	debugger->AllowChangeProgramCounter = false;
@@ -258,6 +278,7 @@ void Debugger::ProcessMemoryRead(uint32_t addr, T& value, MemoryOperationType op
 	}
 
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: GetDebugger<CpuType::Snes, SnesDebugger>()->ProcessRead(addr, value, opType); break;
 		case CpuType::Spc: GetDebugger<CpuType::Spc, SpcDebugger>()->ProcessRead<flags>(addr, value, opType); break;
 		case CpuType::NecDsp: GetDebugger<CpuType::NecDsp, NecDspDebugger>()->ProcessRead(addr, value, opType); break;
@@ -266,15 +287,20 @@ void Debugger::ProcessMemoryRead(uint32_t addr, T& value, MemoryOperationType op
 		case CpuType::Cx4: GetDebugger<CpuType::Cx4, Cx4Debugger>()->ProcessRead(addr, value, opType); break;
 		case CpuType::St018: GetDebugger<CpuType::St018, St018Debugger>()->ProcessRead<accessWidth>(addr, value, opType); break;
 		case CpuType::Gameboy: GetDebugger<CpuType::Gameboy, GbDebugger>()->ProcessRead(addr, value, opType); break;
+#endif
 		case CpuType::Nes: GetDebugger<CpuType::Nes, NesDebugger>()->ProcessRead(addr, value, opType); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: GetDebugger<CpuType::Pce, PceDebugger>()->ProcessRead(addr, value, opType); break;
+#endif
 		case CpuType::Sms: GetDebugger<CpuType::Sms, SmsDebugger>()->ProcessRead(addr, value, opType); break;
 		case CpuType::Gba: GetDebugger<CpuType::Gba, GbaDebugger>()->ProcessRead<accessWidth>(addr, value, opType); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws:
 			if constexpr(accessWidth <= 2) {
 				GetDebugger<CpuType::Ws, WsDebugger>()->ProcessRead<accessWidth>(addr, value, opType);
 			}
 			break;
+#endif
 	}
 
 	if(_scriptManager->HasCpuMemoryCallbacks()) {
@@ -291,6 +317,7 @@ bool Debugger::ProcessMemoryWrite(uint32_t addr, T& value, MemoryOperationType o
 	}
 
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: GetDebugger<CpuType::Snes, SnesDebugger>()->ProcessWrite(addr, value, opType); break;
 		case CpuType::Spc: GetDebugger<CpuType::Spc, SpcDebugger>()->ProcessWrite<flags>(addr, value, opType); break;
 		case CpuType::NecDsp: GetDebugger<CpuType::NecDsp, NecDspDebugger>()->ProcessWrite(addr, value, opType); break;
@@ -299,15 +326,20 @@ bool Debugger::ProcessMemoryWrite(uint32_t addr, T& value, MemoryOperationType o
 		case CpuType::Cx4: GetDebugger<CpuType::Cx4, Cx4Debugger>()->ProcessWrite(addr, value, opType); break;
 		case CpuType::St018: GetDebugger<CpuType::St018, St018Debugger>()->ProcessWrite<accessWidth>(addr, value, opType); break;
 		case CpuType::Gameboy: GetDebugger<CpuType::Gameboy, GbDebugger>()->ProcessWrite(addr, value, opType); break;
+#endif
 		case CpuType::Nes: GetDebugger<CpuType::Nes, NesDebugger>()->ProcessWrite(addr, value, opType); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: GetDebugger<CpuType::Pce, PceDebugger>()->ProcessWrite(addr, value, opType); break;
+#endif
 		case CpuType::Sms: GetDebugger<CpuType::Sms, SmsDebugger>()->ProcessWrite(addr, value, opType); break;
 		case CpuType::Gba: GetDebugger<CpuType::Gba, GbaDebugger>()->ProcessWrite<accessWidth>(addr, value, opType); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws:
 			if constexpr(accessWidth <= 2) {
 				GetDebugger<CpuType::Ws, WsDebugger>()->ProcessWrite<accessWidth>(addr, value, opType);
 			}
 			break;
+#endif
 	}
 	
 	if(_scriptManager->HasCpuMemoryCallbacks()) {
@@ -340,7 +372,9 @@ void Debugger::ProcessMemoryAccess(uint32_t addr, T& value)
 	switch(cpuType) {
 		default: break;
 		case CpuType::Sms: GetDebugger<CpuType::Sms, SmsDebugger>()->ProcessMemoryAccess<opType>(addr, value, memType); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: GetDebugger<CpuType::Ws, WsDebugger>()->ProcessMemoryAccess<opType, T>(addr, value, memType); break;
+#endif
 	}
 
 	if(_scriptManager->HasCpuMemoryCallbacks()) {
@@ -361,9 +395,13 @@ void Debugger::ProcessIdleCycle()
 	_debuggers[(int)type].Debugger->InstructionProgress.LastMemOperation.Type = MemoryOperationType::Idle;
 
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: GetDebugger<type, SnesDebugger>()->ProcessIdleCycle(); break;
 		case CpuType::Sa1: GetDebugger<type, SnesDebugger>()->ProcessIdleCycle(); break;
+#endif
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: GetDebugger<type, PceDebugger>()->ProcessIdleCycle(); break;
+#endif
 	}
 }
 
@@ -411,10 +449,14 @@ void Debugger::ProcessPpuRead(uint16_t addr, T& value, MemoryType memoryType, Me
 	}
 
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: GetDebugger<type, SnesDebugger>()->ProcessPpuRead(addr, value, memoryType); break;
 		case CpuType::Gameboy: GetDebugger<type, GbDebugger>()->ProcessPpuRead(addr, value, memoryType); break;
+#endif
 		case CpuType::Nes: GetDebugger<type, NesDebugger>()->ProcessPpuRead(addr, value, memoryType, opType); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: GetDebugger<type, PceDebugger>()->ProcessPpuRead(addr, value, memoryType); break;
+#endif
 		case CpuType::Sms: GetDebugger<type, SmsDebugger>()->ProcessPpuRead(addr, value, memoryType); break;
 		default: throw std::runtime_error("Invalid cpu type");
 	}
@@ -432,10 +474,14 @@ void Debugger::ProcessPpuWrite(uint16_t addr, T& value, MemoryType memoryType)
 	}
 
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: GetDebugger<type, SnesDebugger>()->ProcessPpuWrite(addr, value, memoryType); break;
 		case CpuType::Gameboy: GetDebugger<type, GbDebugger>()->ProcessPpuWrite(addr, value, memoryType); break;
+#endif
 		case CpuType::Nes: GetDebugger<type, NesDebugger>()->ProcessPpuWrite(addr, value, memoryType); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: GetDebugger<type, PceDebugger>()->ProcessPpuWrite(addr, value, memoryType); break;
+#endif
 		case CpuType::Sms: GetDebugger<type, SmsDebugger>()->ProcessPpuWrite(addr, value, memoryType); break;
 		default: throw std::runtime_error("Invalid cpu type");
 	}
@@ -453,13 +499,19 @@ void Debugger::ProcessPpuCycle()
 	}
 
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: GetDebugger<type, SnesDebugger>()->ProcessPpuCycle(); break;
 		case CpuType::Gameboy: GetDebugger<type, GbDebugger>()->ProcessPpuCycle(); break;
+#endif
 		case CpuType::Nes: GetDebugger<type, NesDebugger>()->ProcessPpuCycle(); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: GetDebugger<type, PceDebugger>()->ProcessPpuCycle(); break;
+#endif
 		case CpuType::Sms: GetDebugger<type, SmsDebugger>()->ProcessPpuCycle(); break;
 		case CpuType::Gba: GetDebugger<type, GbaDebugger>()->ProcessPpuCycle(); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: GetDebugger<type, WsDebugger>()->ProcessPpuCycle(); break;
+#endif
 		default: throw std::runtime_error("Invalid cpu type");
 	}
 }
@@ -656,13 +708,19 @@ void Debugger::PauseOnNextFrame()
 {
 	//Use BreakSource::PpuStep to prevent "Run single frame" from triggering the "bring to front on pause" feature
 	switch(_mainCpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: Step(CpuType::Snes, 240, StepType::SpecificScanline, BreakSource::PpuStep); break;
 		case CpuType::Gameboy: Step(CpuType::Gameboy, 144, StepType::SpecificScanline, BreakSource::PpuStep); break;
+#endif
 		case CpuType::Nes: Step(CpuType::Nes, 241, StepType::SpecificScanline, BreakSource::PpuStep); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: Step(CpuType::Pce, 243, StepType::SpecificScanline, BreakSource::PpuStep); break;
+#endif
 		case CpuType::Sms: Step(CpuType::Sms, 240, StepType::SpecificScanline, BreakSource::PpuStep); break;
 		case CpuType::Gba: Step(CpuType::Gba, 160, StepType::SpecificScanline, BreakSource::PpuStep); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: Step(CpuType::Ws, 145, StepType::SpecificScanline, BreakSource::PpuStep); break;
+#endif
 	}
 }
 
@@ -738,6 +796,7 @@ void Debugger::SuspendDebugger(bool release)
 bool Debugger::IsDebugWindowOpened(CpuType cpuType)
 {
 	switch(cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: return _settings->CheckDebuggerFlag(DebuggerFlags::SnesDebuggerEnabled);
 		case CpuType::Spc: return _settings->CheckDebuggerFlag(DebuggerFlags::SpcDebuggerEnabled);
 		case CpuType::NecDsp: return _settings->CheckDebuggerFlag(DebuggerFlags::NecDspDebuggerEnabled);
@@ -746,11 +805,16 @@ bool Debugger::IsDebugWindowOpened(CpuType cpuType)
 		case CpuType::Cx4: return _settings->CheckDebuggerFlag(DebuggerFlags::Cx4DebuggerEnabled);
 		case CpuType::St018: return _settings->CheckDebuggerFlag(DebuggerFlags::St018DebuggerEnabled);
 		case CpuType::Gameboy: return _settings->CheckDebuggerFlag(DebuggerFlags::GbDebuggerEnabled);
+#endif
 		case CpuType::Nes: return _settings->CheckDebuggerFlag(DebuggerFlags::NesDebuggerEnabled);
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return _settings->CheckDebuggerFlag(DebuggerFlags::PceDebuggerEnabled);
+#endif
 		case CpuType::Sms: return _settings->CheckDebuggerFlag(DebuggerFlags::SmsDebuggerEnabled);
 		case CpuType::Gba: return _settings->CheckDebuggerFlag(DebuggerFlags::GbaDebuggerEnabled);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return _settings->CheckDebuggerFlag(DebuggerFlags::WsDebuggerEnabled);
+#endif
 	}
 
 	return false;
@@ -795,6 +859,7 @@ void Debugger::GetCpuState(BaseState &dstState, CpuType cpuType)
 {
 	BaseState& srcState = GetCpuStateRef(cpuType);
 	switch(cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: memcpy(&dstState, &srcState, sizeof(SnesCpuState)); break;
 		case CpuType::Spc: memcpy(&dstState, &srcState, sizeof(SpcState)); break;
 		case CpuType::NecDsp: memcpy(&dstState, &srcState, sizeof(NecDspState)); break;
@@ -803,11 +868,16 @@ void Debugger::GetCpuState(BaseState &dstState, CpuType cpuType)
 		case CpuType::Cx4: memcpy(&dstState, &srcState, sizeof(Cx4State)); break;
 		case CpuType::St018: memcpy(&dstState, &srcState, sizeof(ArmV3CpuState)); break;
 		case CpuType::Gameboy: memcpy(&dstState, &srcState, sizeof(GbCpuState)); break;
+#endif
 		case CpuType::Nes: memcpy(&dstState, &srcState, sizeof(NesCpuState)); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: memcpy(&dstState, &srcState, sizeof(PceCpuState)); break;
+#endif
 		case CpuType::Sms: memcpy(&dstState, &srcState, sizeof(SmsCpuState)); break;
 		case CpuType::Gba: memcpy(&dstState, &srcState, sizeof(GbaCpuState)); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: memcpy(&dstState, &srcState, sizeof(WsCpuState)); break;
+#endif
 	}
 }
 
@@ -816,6 +886,7 @@ void Debugger::SetCpuState(BaseState& srcState, CpuType cpuType)
 	DebugBreakHelper helper(this);
 	BaseState& dstState = GetCpuStateRef(cpuType);
 	switch(cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: memcpy(&dstState, &srcState, sizeof(SnesCpuState)); break;
 		case CpuType::Spc: memcpy(&dstState, &srcState, sizeof(SpcState)); break;
 		case CpuType::NecDsp: memcpy(&dstState, &srcState, sizeof(NecDspState)); break;
@@ -824,11 +895,16 @@ void Debugger::SetCpuState(BaseState& srcState, CpuType cpuType)
 		case CpuType::Cx4: memcpy(&dstState, &srcState, sizeof(Cx4State)); break;
 		case CpuType::St018: memcpy(&dstState, &srcState, sizeof(ArmV3CpuState)); break;
 		case CpuType::Gameboy: memcpy(&dstState, &srcState, sizeof(GbCpuState)); break;
+#endif
 		case CpuType::Nes: memcpy(&dstState, &srcState, sizeof(NesCpuState)); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: memcpy(&dstState, &srcState, sizeof(PceCpuState)); break;
+#endif
 		case CpuType::Sms: memcpy(&dstState, &srcState, sizeof(SmsCpuState)); break;
 		case CpuType::Gba: memcpy(&dstState, &srcState, sizeof(GbaCpuState)); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: memcpy(&dstState, &srcState, sizeof(WsCpuState)); break;
+#endif
 	}
 }
 
@@ -840,6 +916,7 @@ BaseState& Debugger::GetCpuStateRef(CpuType cpuType)
 void Debugger::GetPpuState(BaseState& state, CpuType cpuType)
 {
 	switch(cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes:
 		case CpuType::Spc:
 		case CpuType::NecDsp:
@@ -856,16 +933,19 @@ void Debugger::GetPpuState(BaseState& state, CpuType cpuType)
 			break;
 		}
 
+#endif
 		case CpuType::Nes: {
 			GetDebugger<CpuType::Nes, NesDebugger>()->GetPpuState(state);
 			break;
 		}
 
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: {
 			GetDebugger<CpuType::Pce, PceDebugger>()->GetPpuState(state);
 			break;
 		}
 
+#endif
 		case CpuType::Sms: {
 			GetDebugger<CpuType::Sms, SmsDebugger>()->GetPpuState(state);
 			break;
@@ -876,10 +956,12 @@ void Debugger::GetPpuState(BaseState& state, CpuType cpuType)
 			break;
 		}
 		
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: {
 			GetDebugger<CpuType::Ws, WsDebugger>()->GetPpuState(state);
 			break;
 		}
+#endif
 	}
 }
 
@@ -887,6 +969,7 @@ void Debugger::SetPpuState(BaseState& state, CpuType cpuType)
 {
 	DebugBreakHelper helper(this);
 	switch(cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes:
 		case CpuType::Spc:
 		case CpuType::NecDsp:
@@ -903,16 +986,19 @@ void Debugger::SetPpuState(BaseState& state, CpuType cpuType)
 			break;
 		}
 
+#endif
 		case CpuType::Nes: {
 			GetDebugger<CpuType::Nes, NesDebugger>()->SetPpuState(state);
 			break;
 		}
 
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: {
 			GetDebugger<CpuType::Pce, PceDebugger>()->SetPpuState(state);
 			break;
 		}
 
+#endif
 		case CpuType::Sms: {
 			GetDebugger<CpuType::Sms, SmsDebugger>()->SetPpuState(state);
 			break;
@@ -923,10 +1009,12 @@ void Debugger::SetPpuState(BaseState& state, CpuType cpuType)
 			break;
 		}
 
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: {
 			GetDebugger<CpuType::Ws, WsDebugger>()->SetPpuState(state);
 			break;
 		}
+#endif
 	}
 }
 
@@ -1029,6 +1117,7 @@ string Debugger::GetLog()
 bool Debugger::SaveRomToDisk(string filename, bool saveAsIps, CdlStripOption stripOption)
 {
 	switch(_mainCpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes:
 			if(_debuggers[(int)CpuType::Gameboy].Debugger) {
 				//SGB
@@ -1038,11 +1127,16 @@ bool Debugger::SaveRomToDisk(string filename, bool saveAsIps, CdlStripOption str
 			}
 
 		case CpuType::Gameboy: return GetDebugger<CpuType::Gameboy, GbDebugger>()->SaveRomToDisk(filename, saveAsIps, stripOption);
+#endif
 		case CpuType::Nes: return GetDebugger<CpuType::Nes, NesDebugger>()->SaveRomToDisk(filename, saveAsIps, stripOption);
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return GetDebugger<CpuType::Pce, PceDebugger>()->SaveRomToDisk(filename, saveAsIps, stripOption);
+#endif
 		case CpuType::Sms: return GetDebugger<CpuType::Sms, SmsDebugger>()->SaveRomToDisk(filename, saveAsIps, stripOption);
 		case CpuType::Gba: return GetDebugger<CpuType::Gba, GbaDebugger>()->SaveRomToDisk(filename, saveAsIps, stripOption);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return GetDebugger<CpuType::Ws, WsDebugger>()->SaveRomToDisk(filename, saveAsIps, stripOption);
+#endif
 	}
 
 	return false;
@@ -1150,6 +1244,7 @@ IAssembler* Debugger::GetAssembler(CpuType cpuType)
 	return nullptr;
 }
 
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 template void Debugger::ProcessInstruction<CpuType::Snes>();
 template void Debugger::ProcessInstruction<CpuType::Sa1>();
 template void Debugger::ProcessInstruction<CpuType::Spc>();
@@ -1158,12 +1253,18 @@ template void Debugger::ProcessInstruction<CpuType::NecDsp>();
 template void Debugger::ProcessInstruction<CpuType::Cx4>();
 template void Debugger::ProcessInstruction<CpuType::St018>();
 template void Debugger::ProcessInstruction<CpuType::Gameboy>();
+#endif
 template void Debugger::ProcessInstruction<CpuType::Nes>();
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 template void Debugger::ProcessInstruction<CpuType::Pce>();
+#endif
 template void Debugger::ProcessInstruction<CpuType::Sms>();
 template void Debugger::ProcessInstruction<CpuType::Gba>();
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 template void Debugger::ProcessInstruction<CpuType::Ws>();
+#endif
 
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 template void Debugger::ProcessMemoryRead<CpuType::Snes>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Sa1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Spc>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
@@ -1175,15 +1276,21 @@ template void Debugger::ProcessMemoryRead<CpuType::Cx4>(uint32_t addr, uint8_t& 
 template void Debugger::ProcessMemoryRead<CpuType::St018, 1>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::St018, 4>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Gameboy>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+#endif
 template void Debugger::ProcessMemoryRead<CpuType::Nes>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 template void Debugger::ProcessMemoryRead<CpuType::Pce>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+#endif
 template void Debugger::ProcessMemoryRead<CpuType::Sms>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Gba, 1>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Gba, 2>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Gba, 4>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 template void Debugger::ProcessMemoryRead<CpuType::Ws, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Ws, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
+#endif
 
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 template bool Debugger::ProcessMemoryWrite<CpuType::Snes>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Sa1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Spc>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
@@ -1194,22 +1301,30 @@ template bool Debugger::ProcessMemoryWrite<CpuType::Cx4>(uint32_t addr, uint8_t&
 template bool Debugger::ProcessMemoryWrite<CpuType::St018, 1>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::St018, 4>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Gameboy>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+#endif
 template bool Debugger::ProcessMemoryWrite<CpuType::Nes>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 template bool Debugger::ProcessMemoryWrite<CpuType::Pce>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+#endif
 template bool Debugger::ProcessMemoryWrite<CpuType::Sms>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Gba, 1>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Gba, 2>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Gba, 4>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 template bool Debugger::ProcessMemoryWrite<CpuType::Ws, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Ws, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
+#endif
 
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 template void Debugger::ProcessMemoryAccess<CpuType::Pce, MemoryType::PceAdpcmRam, MemoryOperationType::Write>(uint32_t addr, uint8_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Pce, MemoryType::PceAdpcmRam, MemoryOperationType::Read>(uint32_t addr, uint8_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Pce, MemoryType::PceArcadeCardRam, MemoryOperationType::Write>(uint32_t addr, uint8_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Pce, MemoryType::PceArcadeCardRam, MemoryOperationType::Read>(uint32_t addr, uint8_t& value);
+#endif
 template void Debugger::ProcessMemoryAccess<CpuType::Sms, MemoryType::SmsPort, MemoryOperationType::Write>(uint32_t addr, uint8_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Sms, MemoryType::SmsPort, MemoryOperationType::Read>(uint32_t addr, uint8_t& value);
 
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 template void Debugger::ProcessMemoryAccess<CpuType::Ws, MemoryType::WsPort, MemoryOperationType::Write>(uint32_t addr, uint8_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Ws, MemoryType::WsPort, MemoryOperationType::Read>(uint32_t addr, uint8_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Ws, MemoryType::WsPort, MemoryOperationType::Write>(uint32_t addr, uint16_t& value);
@@ -1218,48 +1333,77 @@ template void Debugger::ProcessMemoryAccess<CpuType::Ws, MemoryType::WsInternalE
 template void Debugger::ProcessMemoryAccess<CpuType::Ws, MemoryType::WsInternalEeprom, MemoryOperationType::Write>(uint32_t addr, uint16_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Ws, MemoryType::WsCartEeprom, MemoryOperationType::Read>(uint32_t addr, uint16_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Ws, MemoryType::WsCartEeprom, MemoryOperationType::Write>(uint32_t addr, uint16_t& value);
+#endif
 
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 template void Debugger::ProcessIdleCycle<CpuType::Snes>();
 template void Debugger::ProcessIdleCycle<CpuType::Sa1>();
+#endif
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 template void Debugger::ProcessIdleCycle<CpuType::Pce>();
+#endif
 
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 template void Debugger::ProcessHaltedCpu<CpuType::Snes>();
 template void Debugger::ProcessHaltedCpu<CpuType::Spc>();
 template void Debugger::ProcessHaltedCpu<CpuType::Gameboy>();
+#endif
 template void Debugger::ProcessHaltedCpu<CpuType::Sms>();
 template void Debugger::ProcessHaltedCpu<CpuType::Gba>();
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 template void Debugger::ProcessHaltedCpu<CpuType::Ws>();
+#endif
 
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 template void Debugger::ProcessInterrupt<CpuType::Snes>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 template void Debugger::ProcessInterrupt<CpuType::Sa1>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 template void Debugger::ProcessInterrupt<CpuType::Gameboy>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
+#endif
 template void Debugger::ProcessInterrupt<CpuType::Nes>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 template void Debugger::ProcessInterrupt<CpuType::Pce>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
+#endif
 template void Debugger::ProcessInterrupt<CpuType::Sms>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 template void Debugger::ProcessInterrupt<CpuType::Gba>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 template void Debugger::ProcessInterrupt<CpuType::Ws>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
+#endif
 
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 template void Debugger::ProcessPpuRead<CpuType::Snes>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
 template void Debugger::ProcessPpuRead<CpuType::Gameboy>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
+#endif
 template void Debugger::ProcessPpuRead<CpuType::Nes>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 template void Debugger::ProcessPpuRead<CpuType::Pce>(uint16_t addr, uint16_t& value, MemoryType memoryType, MemoryOperationType opType);
 template void Debugger::ProcessPpuRead<CpuType::Pce>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
+#endif
 template void Debugger::ProcessPpuRead<CpuType::Sms>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
 
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 template void Debugger::ProcessPpuWrite<CpuType::Snes>(uint16_t addr, uint8_t& value, MemoryType memoryType);
 template void Debugger::ProcessPpuWrite<CpuType::Gameboy>(uint16_t addr, uint8_t& value, MemoryType memoryType);
+#endif
 template void Debugger::ProcessPpuWrite<CpuType::Nes>(uint16_t addr, uint8_t& value, MemoryType memoryType);
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 template void Debugger::ProcessPpuWrite<CpuType::Pce>(uint16_t addr, uint16_t& value, MemoryType memoryType);
 template void Debugger::ProcessPpuWrite<CpuType::Pce>(uint16_t addr, uint8_t& value, MemoryType memoryType);
+#endif
 template void Debugger::ProcessPpuWrite<CpuType::Sms>(uint16_t addr, uint8_t& value, MemoryType memoryType);
 
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 template void Debugger::ProcessPpuCycle<CpuType::Snes>();
 template void Debugger::ProcessPpuCycle<CpuType::Gameboy>();
+#endif
 template void Debugger::ProcessPpuCycle<CpuType::Nes>();
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 template void Debugger::ProcessPpuCycle<CpuType::Pce>();
+#endif
 template void Debugger::ProcessPpuCycle<CpuType::Sms>();
 template void Debugger::ProcessPpuCycle<CpuType::Gba>();
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 template void Debugger::ProcessPpuCycle<CpuType::Ws>();
+#endif
 
 template void Debugger::ProcessBreakConditions<1>(CpuType sourceCpu, StepRequest& step, BreakpointManager* bpManager, MemoryOperationInfo& operation, AddressInfo& addressInfo);
 template void Debugger::ProcessBreakConditions<2>(CpuType sourceCpu, StepRequest& step, BreakpointManager* bpManager, MemoryOperationInfo& operation, AddressInfo& addressInfo);

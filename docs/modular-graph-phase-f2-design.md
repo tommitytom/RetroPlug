@@ -1,6 +1,6 @@
 # Phase F2: the native carve
 
-**Date:** 2026-11-08 · **Branch:** `feature/modularize` · **Status:** designed; not yet prototyped
+**Date:** 2026-11-08 · **Branch:** `feature/modularize` · **Status:** designed and prototyped (on `proto/f2-native`); not yet built on `feature/modularize`
 
 F2 is the third phase of the package split ([package-split.md](package-split.md)), after F1
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md)) and F3
@@ -12,9 +12,11 @@ static library carries every console Mesen ever emulated. F2 carves all of that 
 package holds the contract, `sameboy` and `mesen` hold their consoles, `host-io` holds the host MIDI nodes, the mGB ROM
 becomes a package's embedded resource, and txiki and efsw become libraries a product opts into.
 
-Everything the user approved in the brainstorm is binding here. What the brainstorm left to the prototype is named as such
-where it comes up, and listed in section 9. The phase is a carve, not a feature: no audio changes, and the one baseline that
-moves is a registration golden, in its own commit (section 8).
+Everything the user approved in the brainstorm is binding here. What the brainstorm left to the prototype is answered where
+it comes up and listed in section 9. The phase is a carve, not a feature: no audio changes, and the one baseline that
+moves is a registration golden, in its own commit (section 8). The prototype (five commits on the design commit
+`a1373899d`) has been built and reviewed; sections 1 to 10 are corrected in place to what it found, and section 11
+("As built") records it.
 
 ## 1. Goal and scope
 
@@ -78,11 +80,12 @@ Boy" rule; per-product bundles.
 
 | Package | Gets | Native |
 | --- | --- | --- |
-| `system` (new, native only, desktop) | The contract every console implements and the engine drives: `SystemBase` and the capability interfaces (`SystemCapabilities`, `MemoryAccessor`, `ChannelTap`, `CpuState`, `DebugTarget`), `SystemId` and the shared types, `InputCapacity`, `FrameBufferTriple`, `MemorySnapshotTriple` with `SeqlockCopy`, `MidiTypes`, the build request and build function (section 3), `HostSystems` and `EngineSyncTrace` (split out of `host/graph/HostServices.hpp`), the generic `SystemNode` template with the knob helpers (out of `SystemNodes.cpp`, as a header), and the core-only utilities `Determinism`, `Gain`, `ExpSmoother` and `ProcessId`. Include paths keep their text (`system/SystemBase.hpp`, `transport/MidiTypes.hpp`, `util/Gain.hpp`). | `retroplug-system` (no entry, no provider: a manifest item with a `target` and nothing else, which the manifest reader already allows). Depends on `node-sdk` |
+| `system` (new, native only, desktop) | The contract every console implements and the engine drives: `SystemBase` and the capability interfaces (`SystemCapabilities`, `MemoryAccessor`, `ChannelTap`, `CpuState`, `DebugTarget`), `SystemId` and the shared types, `InputCapacity`, `FrameBufferTriple`, `MemorySnapshotTriple` with `SeqlockCopy`, `MidiTypes`, the build request and build function (section 3), `HostSystems` and `EngineSyncTrace` (split out of `host/graph/HostServices.hpp`), the generic `SystemNode` template with the knob helpers (out of `SystemNodes.cpp`, as a header), and the core-only utilities `Determinism`, `Gain`, `ExpSmoother` and `ProcessId`. Include paths keep their text (`system/SystemBase.hpp`, `transport/MidiTypes.hpp`, `util/Gain.hpp`). | `retroplug-system` (no entry, no provider: a manifest item with a `target` and nothing else, which the manifest reader already allows). Depends on `node-sdk`; needs neither `rpcpp` nor reflect-cpp (the config structs it names are the packages', and the shell serialises none of them) |
 | `sameboy` | `SameBoySystem` and `SameBoyConfig`, the boot ROMs, `GameboyButton`, the Game Boy ROM check, its build function and the `rp.sameboy.gb` node. The Windows `samebsys` clang-cl step moves into its CMake behind `if(WIN32)`. | `retroplug-sameboy` (entry `rp_sameboy_package`, `device: false`). Depends on `system`, `node-sdk` |
-| `mesen` | The NES, GBA and SMS systems and their configs, the global init, boot, audio and video devices, the shared block operations and the state ceiling, the NES debug session with `Cc65DbgParser`, `NesEverdriveFifo`, `NesN8FifoRole`, `SmsSyncRole`, the NES, GBA and SMS ROM checks, the button enums, three build functions and the `rp.mesen.nes` / `.gba` / `.sms` nodes. | `retroplug-mesen` (entry `rp_mesen_package`, `device: false`); links the `mesen` dependency. Depends on `system`, `node-sdk`, **`n8`** |
+| `mesen` | The NES, GBA and SMS systems and their configs, the global init, boot, audio and video devices, the shared block operations and the state ceiling, the NES debug session with `Cc65DbgParser`, `NesEverdriveFifo`, `NesN8FifoRole`, `SmsSyncRole`, the NES, GBA and SMS ROM checks, the button enums, three build functions and the `rp.mesen.nes` / `.gba` / `.sms` nodes. | `retroplug-mesen` (entry `rp_mesen_package`, `device: false`); links the `mesen` dependency. Depends on `system`, `node-sdk`, **`n8`**. The Game Boy logo the SMS gate refuses is a private copy in `mesen`'s own `RomFormat.hpp`, so `system` holds no ROM format at all |
 | `host-io` (new, native only, desktop) | `HostIoNodes` (`rp.host.midi-in` / `-out`), `EngineHostIo` (`rp.engine.host-io/3`) and the constants the engine reads (`kHostMidiInMessages`, `kHostMidiInBytes`, `kMidiOutMaxInputs`). | `retroplug-host-io` (entry `rp_host_io_package`, `device: false`). Depends on `node-sdk` |
 | `mgb` | Gains the embedded ROM (section 5): `mGB.gb` moves from `resources/roms/` to `packages/mgb/rom/`. | none: no C++ and no change to the node SDK's ABI |
+| `testing` | Gains a native test-helper library, `retroplug-testing` (the C++ helpers the console test binaries share, `LinkRomModel` among them), which only test targets link; the products guard does not count it as a product. | `retroplug-testing` (no entry) |
 
 **Mesen declares n8.** `NesN8FifoRole` speaks BlipToaster's reliable link from the cart's side, so it includes the N8
 pack's `transport/N8ReliableLink.hpp`; today `retroplug-core` reaches that header through a `$<TARGET_PROPERTY:...>`
@@ -99,8 +102,8 @@ services, the script, render and compiler hosts, the products and their mains, `
 
 **What dissolves:** `retroplug-core` (its sources are the packages' above or the backend's); `SystemNodes.cpp`;
 `SystemFactory`, `SystemBackend`, `CoreBackends` and `registerCoreBackends`; the `SystemConfig` variant; `SystemKind` and
-`kind()`; `EmbeddedRoms.hpp`; the root `mgb-rom` target; `packages/native/package.json`'s `native` member (it becomes
-empty: the shell registers no node type of its own).
+`kind()`; `EmbeddedRoms.hpp`; the root `mgb-rom` target; `packages/native/package.json`'s `native` entry (the member keeps only its `retroplug-backend` target: the shell registers no
+node type of its own).
 
 **The product list** becomes `core launchpad system sameboy dsp mgb lsdj lsdj-launchpad graph-runtime n8 mesen smsggdj risa
 host-io native bliptoaster`: `system` after `launchpad` and before `sameboy`, which uses it; `mesen` leaves its place after
@@ -153,7 +156,8 @@ variant). Every consumer is in tree (the system nodes, `NodeRig`), as with C5's 
 2. 0 is not a system id;
 3. the id is beyond a system id (above `UINT32_MAX`);
 4. the id is live (`coreLive`), held by a node of any plan not yet reclaimed;
-5. **new:** the request names no build function, refused with its own reason before anything is claimed;
+5. **new:** the request names no build function, refused with its own reason before anything is claimed (a null `build` is
+   refused as a core that did not build, claims no slot and leaves the live-core table alone);
 6. `request.build` runs, and a null core is refused with its reason (or "the core did not build");
 7. the snapshot slot is claimed (a full pool refuses, after the build has paid for it, as today);
 8. the plan's slot for the id is filled, or the core is destroyed and the build refused.
@@ -165,7 +169,14 @@ still hold it, and `destroySystem` is untouched.
 last edge to a console. It becomes the registered type's descriptor: a node type is a system node when its descriptor's
 `category` is `"system"`. Every system node already declares it (`static constexpr const char* category = "system"` in the
 four node classes, and no other C++ node type uses the word; the descriptor carries it as `put(o, "category", ...)` in
-`Descriptor.cpp`), and the engine reads it from the `NodeRegistry` entry it already holds for the planner. No ABI change.
+`Descriptor.cpp`), and the engine reads it from the `NodeRegistry` entry it already holds for the planner. No ABI change. **The prototype
+found the category unenforced and added two refusals the design did not have.** A node that declares `"system"` and built no
+core would have left a null slot for the audio thread to dereference in a release build, so the planner takes an optional
+embedder check (`PlanCheck`, in `Planner.hpp`; `GraphHost::setGraph` threads it through) that runs after every node has
+activated and before the plan is published; `Engine::publishGraph` passes one that refuses with `sys-<id>: no-core: ...`,
+through the planner's own rollback, so the cores and pins the plan built are freed and the running plan is untouched. And
+a script pack cannot build a core, so `ScriptHost::loadInto` and `MqjsHost::openControl` refuse a pack whose type declares
+category `"system"`.
 The use at `Engine.cpp:383`, which lines `sys-<id>` nodes up against the plan's slots, is unchanged.
 
 **The closed sets, one by one.**
@@ -176,7 +187,7 @@ The use at `Engine.cpp:383`, which lines `sys-<id>` nodes up against the plan's 
 | `SystemConfig` (the variant) | deleted. Each package defines its config structs and the node passes a pointer |
 | `SystemKind`, `SystemBase::kind()`, the cores' `kKind` | deleted. The node's cast after the build is by construction: it hands its own package's function and config, so the two cannot disagree. The C4 case "a node refuses a core built with another console's kind" (a 12-way matrix, `NodeRig::reportKind`, `KindWrapper`, six uniqueness assertions on the `kKind`s) is retired and replaced by the null-build-function case of section 8; [modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md) section 6 and the docs that cite the matrix are updated |
 | `isSystemNodeType` | the descriptor's category, above |
-| `RomFormat`, `detectRomFormat` | split by owner. Each package keeps the magic bytes of the console it runs (Game Boy logo in `sameboy`; iNES, GBA logo and the Sega header in `mesen`), and the SMS gate's "accept `Unknown`" rule, which exists because homebrew often omits the Sega magic, moves with the Sega check to `mesen`. The SMS gate also refuses a ROM that carries another console's signature (NES, GBA and Game Boy today); where the Game Boy signature check lives for that, in `system` or beside the Sega one, is the prototype's, held by the existing gate cases |
+| `RomFormat`, `detectRomFormat` | split by owner. Each package keeps the magic bytes of the console it runs (Game Boy logo in `sameboy`; iNES, GBA logo and the Sega header in `mesen`), and the SMS gate's "accept `Unknown`" rule, which exists because homebrew often omits the Sega magic, moves with the Sega check to `mesen`. The SMS gate also refuses a ROM that carries another console's signature (NES, GBA and Game Boy today); the Game Boy signature check lives beside the Sega one, as a private copy of the logo in `mesen`'s `RomFormat.hpp` (a shared one in `system` was built first and the review refused it: `system` would then know a console), held by the existing gate cases |
 | The button enums (`InputTypes.hpp`) | to the package that runs the console (`GameboyButton` to `sameboy`, the NES and SMS tables to `mesen`); `SystemBase` drops its include of them (`pressButton` already takes a byte) |
 | `MemoryType` | **stays closed, on purpose.** It is a wire enum of nine regions mirrored in `backend.ts` and the SDK types, which the debug RPCs and the capability jobs speak; a package adding a region is a wire change, so this is the one residual (section 10) |
 
@@ -205,29 +216,35 @@ console, not a new library and not a patch series.
   (the input hub, the four-score and the NES control manager construct it) and `SNES/SnesDefaultVideoFilter.cpp`
   (`Emulator::GetVideoFilter`'s fallback). Only `.cpp` files are filtered; headers stay on disk, so every `#include` keeps
   compiling and only a call or construction into a dropped unit needs a guard.
-- **The guards.** `#if MESEN_ENABLE_*` around the references into dropped code, each marked `// RetroPlug:` as the 42 files
+- **The guards.** `#if MESEN_ENABLE_*` around the references into dropped code, each marked `// RetroPlug:` as the 38 files
   already patched in the vendored tree are (the tree has no `.git` of its own, upstream is SourMesen/Mesen2 at `b9fa69d`, and
-  there is no `RETROPLUG_` macro in it today). About 300 mechanical lines in `Core/Shared/Emulator.cpp` (`TryLoadRom<X>`,
-  about 4 lines), `Core/Debugger/Debugger.cpp` (19 switches, the new-debugger runtime switch and the explicit instantiations,
-  about 120 to 150), `MemoryDumper.cpp` (about 60), `DisassemblyInfo.cpp` (about 70), `Disassembler.cpp` (about 20) and
-  `ExpressionEvaluator.cpp` (the token switches, about 16). Counts are the survey's estimates; the prototype's diff is the
-  record.
+  there is no `RETROPLUG_` macro in it today). 123 blocks, about 260 added lines, in six files: `Core/Shared/Emulator.cpp` (3 blocks; `TryLoadRom<X>`),
+  `Core/Debugger/Debugger.cpp` (72; the switches, the debugger-construction switch and the explicit instantiations),
+  `MemoryDumper.cpp` (14; the `dynamic_cast` chain, which is re-split around its guards with the same tests in the same
+  order, and the memory switches), `DisassemblyInfo.cpp` (25), `Disassembler.cpp` (3) and `ExpressionEvaluator.cpp` (6; the
+  token switches), plus 67 lines in the CMakeLists. The vendored tree carries 45 files with `// RetroPlug:` markers after it.
+  A guarded switch keeps its `default`; one without becomes a no-op (a void switch) or falls to the code after it (a value
+  switch), and none is reachable with the console compiled out, since it cannot be constructed.
 - **What stays whole:** the debugger (the NES debug session needs it), and with it Lua (`ScriptManager`) and netplay (the
-  `Emulator` constructs `GameServer` and `GameClient`). The cut is about 138 of 426 translation units and 12 MB of 31 MB of
-  objects (39%), with a proportional share of the LTO link.
+  `Emulator` constructs `GameServer` and `GameClient`). The cut is 138 of 426 translation units and 12.3 MB of 31.1 MB of
+  objects (39.5%), with a proportional share of the LTO link.
 - **The risk the guards carry.** A plain `switch` over a template parameter references every arm at `-O0`, so a missed guard
   links under Release and fails under Debug. That is why the proof below builds Debug.
 - **Two-way proof.** (1) The dev loop's build, with the root's options OFF, in Release, in Debug at `-O0`, and in Release with
   `RETROPLUG_MESEN_LTO=ON` through the link; with `nm` on the product finding no `SnesPpu`, `GbPpu`, `PceVdc` or `WsPpu`.
   (2) A separate build directory with all three options ON, which must compile (and link a product), so the guards cannot
-  rot into a build that only works with the options off. A configure or build check that an enabled build still compiles holds
-  the second; where it runs (a script, a CI job) is the plan's.
+  rot into a build that only works with the options off. Both are `tools/build-mesen-all-consoles.sh`, which exits non-zero
+  on any failure: with no argument (`pnpm build:mesen-all`, `build-mesen-all/`) it builds `mesen` and `retroplug-cli` in
+  Release with the three ON and asserts each console's symbols is present in the CLI; with `--off` (`build-mesen-all-off/`)
+  it builds the `mesen` library alone at `-O0` with the three OFF, asserts the four counts are 0 in the archive, and reads
+  every member's undefined symbols against the defined ones, failing on any remaining name that is a call into a
+  compiled-out unit. Both directories are ignored. Where either runs in CI is the plan's.
 - **Measurements, recorded and not gated:** the mesen library's object bytes before and after, its compile time, the product
-  binaries' sizes, and one Release plus LTO link time.
+  binaries' sizes, and one Release plus LTO link time (section 11).
 - **Stale comments fixed in the same stage:** `deps/mesen/CMakeLists.txt`'s header (the linker does not drop what is
   unreferenced, and the "deferred to a later pass" is this pass); `AGENTS.md`'s "one parallel-cores fix" (the vendored tree
-  carries 42 files with `// RetroPlug:` markers, `SimpleLock` is one of them); and the "nine binaries linking" count wherever
-  it is repeated.
+  carries 45 files with `// RetroPlug:` markers, `SimpleLock` is one of them); and the "nine binaries linking" count wherever
+  it is repeated (it is fourteen).
 
 ## 5. Embedded resources
 
@@ -238,14 +255,19 @@ The mGB ROM stops being a closed `id == "mgb"` in a header the shell owns and be
   `cmake/packages.cmake`'s manifest reader accepts and validates the member; a package that has only an `embed` member is
   still a package with a contribution to read.
 - **The generated table.** For each package with an `embed` member `retroplug_package` adds an object library
-  `retroplug-<package>-embeds`, built through `cmake/bin2c.cmake` (the script the root target used) into one array per entry.
-  `retroplug_product` generates `rp_embedded_resources()` for the product, a table from id to bytes over the product's
-  packages, and the shell declares it beside `rp_register_packages`. `EngineRpcService::putResource` looks up the table in
+  `retroplug-<package>-embeds`, built through `cmake/bin2c.cmake` (the script the root target used) into one array per entry, named
+  `rp_embed_<package>_<id>` with every non-identifier character of the package name made `_`; the symbol is computed once
+  and a collision between two entries' symbols (`lsdj` + `launchpad_kit` against `lsdj-launchpad` + `kit`) is refused at
+  configure. `retroplug_product` generates `rp_embedded_resources()` for the product, a table from id to bytes over the
+  product's packages, as a function-local static (no static initialiser), and the shell declares it beside
+  `rp_register_packages`. A product with no embed gets a table of count 0 and `nullptr`, which a configure fixture
+  (`packages/native/test/packages/product`) compiles and runs at every configure; a device product emits no table, so the
+  device images' bytes do not move. `EngineRpcService::putResource` looks up the table in
   place of `rp::embeddedRom`. A product that does not list `mgb` has no `"mgb"` in its table, so the lookup refuses it.
 - **Refusals.** An id that is not in the table is refused with today's words (`"<id>" is not an embedded ROM`); a
   duplicate id across the product's packages is refused at configure (the generator names both packages); an entry whose
   `file` resolves outside the package, or does not exist, is refused at configure. Configure fixtures hold the last two
-  the way `test/packages/refused` holds the manifest rules.
+  the way `test/packages/refused` holds the manifest rules, and `bin2c` refuses an empty input.
 - **The wire does not change.** `BackendResourceSpec{type, bytes?, path?, embedded?}` and the TS that sends
   `embedded: "mgb"` are as they are. `EmbeddedRoms.hpp`, `mgb_rom` / `mgb_rom_len` and the root `mgb-rom` target go. The TS
   chain (the menu's `start-mgb`, the stores' `loadMgb` going through `loadInPlace("", "mgb")`, `embedded` meaning platform
@@ -261,8 +283,7 @@ shell's, since they serve the hosts and not a console.
 - **`retroplug-tjs-runtime`** compiles dpf.js's `TjsHostRuntime.cpp` and links `tjs` (which brings `qjs` and libuv). Its
   users are the products that run the control plane on txiki: the headless host, the CLI, the SDL standalone, the plugin
   and `retroplug-classid-test`. `QuickJsGlobals.hpp` and `GamepadPump.hpp` include `TjsHostRuntime.hpp` only for the
-  QuickJS types they use and are reduced to what they need (`quickjs.h`), splitting `QuickJsGlobals.hpp` if one of its
-  pieces needs the runtime class and another does not.
+  QuickJS types they use and are reduced to what they need (`quickjs.h`); `QuickJsGlobals.hpp` did not need to split.
 - **`retroplug-file-watcher`** compiles `NativeFileWatcher.cpp` and links `efsw-static`. `HostRpcService` holds a
   `FileWatcher` interface (the two calls it forwards, `drainChangedPaths` and `setWatchedRoms`) instead of a
   `NativeFileWatcher`, and `enableWatching` takes the watcher: `enableWatching(std::unique_ptr<FileWatcher>)`. The plugin
@@ -271,14 +292,18 @@ shell's, since they serve the hosts and not a console.
 - **The backend links `qjs`, not `tjs`.** The script host, the render host and the compiler are bare QuickJS, and
   `RenderHost.cpp`'s include of `host/QuickJsGlobals.hpp` (which pulls `TjsHostRuntime.hpp`) is unused by it and goes, so
   the Node addon, `retroplug-render-host-test` and the engine tests no longer carry txiki's host or efsw.
+- **Size.** The libraries were expected to shrink the QuickJS-only binaries by txiki's host; they did, by about 296 KB each,
+  but the cause is efsw (`HostRpcService`'s `NativeFileWatcher` constructor pulled its objects into every backend product);
+  `TjsHostRuntime.cpp.o` is 10 KB and a binary that never created a txiki runtime never pulled it.
 - **A configure check** (`retroplug_check_runtime_libraries`, beside `retroplug_check_products`) refuses a configure in
   which the Node addon, `retroplug-render-host-test`, `retroplug-backend`, `retroplug-engine-graph-test` or
-  `retroplug-audio-test` carries `tjs`, `uv_a` or `efsw` in its link closure, with the target and the library named. A fixture
+  `retroplug-audio-test` carries `tjs`, `uv_a` or `efsw` in its link closure, with the target and the whole link path to the library named (the first build cut the path at its first edge). A fixture
   holds it the way F1's fixtures hold the boundary checks: a scratch binary that links one must be refused.
 - **The two `EXEMPT` tests are re-examined.** `retroplug_check_products(LIBRARIES retroplug-backend EXEMPT
   retroplug-classid-test retroplug-watcher-test)` exempts the two binaries that link the backend for what is no longer in
-  it. Once they link `retroplug-tjs-runtime` and `retroplug-file-watcher` instead, whether either stays exempt (it still
-  never pulls the engine's object in) or becomes an ordinary product is settled by the check's own result.
+  it. Once they link `retroplug-tjs-runtime` and `retroplug-file-watcher` instead, the answer is that neither stays: the class-id
+  test links no backend, and the watcher test hands `HostRpcService` a fake `FileWatcher` (the interface is what makes that
+  possible), so the `EXEMPT` list is empty.
 
 ## 7. The boundary check's new cases
 
@@ -302,6 +327,10 @@ whose source directory is a package's. F2 adds four packages' worth of targets (
   a custom command's command line (its header already lists what it does not look at); the command's dependency list and
   its three include roots are held by being written against the package's own directories, and the rewritten command is
   owed a Windows run (section 8).
+- **A test may declare a fixture dependency.** A package's `devDependencies` are its test targets' and test files' alone
+  (`sameboy` has `mgb` for the mGB ROM's path): a library target may not reach one. The rule is judged by the target's own
+  properties, the compile definitions included in their quoted form (`-DX="path"` is how the tree writes a fixture path, and
+  the first check was blind to it), with fixtures for each side, and `retroplug-testing` is outside the products guard.
 - **Fixtures.** The existing `check-native-boundaries.cmake` fixtures gain two: a mesen-shaped scratch package that reaches
   `n8` without declaring it must be refused, and a `system`-shaped one that reaches the shell must be refused; a scratch
   package that declares what it reaches must hold. The warnings list (`packages/native/cmake/warnings.cmake`) puts `/W4 /WX` on the new
@@ -317,8 +346,9 @@ device images do not build any of it. The Windows build of the new targets is **
 and `engine-graph`'s `MesenShared.test.cpp`, which includes raw Mesen headers) become `retroplug-mesen-test`. The tests that
 need an `Engine` stay in the shell (`EngineSampleRate`, `EngineInvoker`, `Dither`, whose placement the prototype
 confirms). `N8ReliableLink.test.cpp` mixes the sender's cases with the emulated FIFO role's, which is
-`mesen`'s, and `n8` may not include `mesen`: the sender-only cases (the first eight, to line 227) move to the N8 pack's
-tests, and the cases from the role on (line 287 and after) go with `mesen`'s. `pnpm test:plugin` runs thirteen binaries
+`mesen`'s, and `n8` may not include `mesen`: the sender-only cases (eleven, not eight) move to the N8 pack's
+tests, and the cases from the role on (three) go with `mesen`'s. The console test binaries are `/bigobj` and off `/WX` on
+Windows, and the shared C++ helpers they use are the `testing` package's native library. `pnpm test:plugin` runs thirteen binaries
 instead of eleven (the two new ones join the list in `package.json` and `run-plugin-tests.mjs`), and the case total across
 the suites is equal before and after.
 
@@ -337,7 +367,8 @@ the suites is equal before and after.
 
 **Intended re-record,** in its own commit with the reason in the message, and nothing else moves: the `[packages]` golden
 (`packages/native/test/engine-graph/golden/product-registrations.json`, nine products by twenty-eight types), because the
-console and host-I/O node types move from `native`'s position to their packages'.
+console and host-I/O node types move from `native`'s position to their packages' (the order alone moves; no type id or
+descriptor does).
 
 **What must hold, unmodified:** strict parity (`pnpm test:native parity` on the fixtures with `RP_FAIL_ON_SKIP=1`), the kit
 and render baselines, the `buildGraph` and role goldens, `Script`/`ProtocolNodes`, every suite (`pnpm test`, `test:native`,
@@ -350,8 +381,9 @@ BlipToaster's and NESVJ's suites against the rebuilt CLI.
 **Measurements** (recorded in the as-built section, not gates): product binary sizes before and after; the mesen library's
 object bytes and compile time; one Release plus LTO link time.
 
-**Windows items (owed; reasoned about, never run):** the moved clang-cl step for `SameBoySystem.cpp`, `/W4 /WX` on the four
-new targets, and the Mesen options under MSVC.
+**Windows items (owed; reasoned about, never run):** nine, listed in `spec/07-remaining-work.md` and section 11: the moved
+clang-cl step for `SameBoySystem.cpp`, `/W4 /WX` on the four new targets, the Mesen options under MSVC, and six more the
+build added.
 
 ## 9. How it is built
 
@@ -377,15 +409,14 @@ each touching the docs it changes:
 
 Routing is as F1 and F3: the plan's implementers, the acceptance run and the follow-ups on the models the user set for it,
 Opus for the stage reviews and the final review, and the controller coordinating and reviewing the risky code (the Mesen
-guards, the build function and the clang-cl move). This document was drafted by Sonnet. Work directories (gitignored, under
+guards, the build function and the clang-cl move); the per-stage assignment held as designed. This document was drafted by Sonnet. Work directories (gitignored, under
 `.superpowers/`): `f2pro`, `f2plan`, `f2exec`. The prototype is thrown away; the plan is written against what it found;
 execution starts from `feature/modularize`.
 
-**Left to the prototype** (a question the brainstorm did not settle, each answered where it comes up): the exact form of the
-request's `build` and `config` fields if a pointer proves wrong for some caller; where the Game Boy signature check that the
-SMS gate refuses lives (section 3); whether the `system` package's sources need `rpcpp` or reflect-cpp for the config structs
-the shell serialises; whether `QuickJsGlobals.hpp` splits (section 6); whether `retroplug-classid-test` and
-`retroplug-watcher-test` stay `EXEMPT` (section 6); and the exact guard counts of section 4.
+**Left to the prototype, as answered:** the request's `build` and `config` fields stayed a function pointer and a `const void*`,
+for every caller; the Game Boy signature check is a private copy in `mesen`'s `RomFormat.hpp`; `system` needs neither
+`rpcpp` nor reflect-cpp; `QuickJsGlobals.hpp` did not split; neither test stays `EXEMPT`; and the guard counts are 123
+blocks, about 260 lines, in six files (section 4).
 
 ## 10. What it leaves
 
@@ -402,6 +433,112 @@ the shell serialises; whether `QuickJsGlobals.hpp` splits (section 6); whether `
 - **Per-product Mesen consoles.** The compile-out is one library for every product, with the root's options. A product that
   wants fewer consoles, or an embedder who wants SNES back, flips an option; making that a per-product choice (a Mesen
   library per console set) is a later question the filter's table is written to make cheap.
-- **A Windows run.** The new targets, the moved clang-cl step and the Mesen options have been reasoned about and never run
-  on MSVC; the first run is the user's Windows agent's, and findings become follow-ups.
+- **A Windows run.** The nine items of section 11 have been reasoned about and never run on MSVC; the first run is the user's Windows agent's, and findings become follow-ups.
 - **Per-product bundles** (the render worker, script nodes and control-plane bundles embedded in every product) are F4's.
+
+## 11. As built (the prototype)
+
+The prototype, on `proto/f2-native` over the design commit `a1373899d`, is five commits, one per stage, each built, reviewed
+(by Opus) and amended until its review passed. The review's fix passes were folded into the commit they belong to by
+fixup and autosquash, so the five trees stand as final; the sections above were corrected in place to what the build
+found. The plan is written against this record and executes on `feature/modularize`.
+
+**The stages**, by commit subject:
+
+1. `F2 stage 1: the system package, and a core built by the function its node carries`: `packages/system`, the request's
+   `build` and `config`, `rp.host.systems/2`, `Engine::buildSystem` on `request.build`, category-based recognition, the
+   deleted factory, backends and kind check, the null-build and fixture-console cases.
+2. `F2 stage 2: the consoles, host I/O, the product order and the tests`: `sameboy`, `mesen` (with the `n8` edge),
+   `host-io`, `retroplug-core` dissolved, the product list, the `[packages]` re-record, `retroplug-sameboy-test` and
+   `retroplug-mesen-test`, the moved clang-cl step and the boundary fixtures.
+3. `F2 stage 3: embedded resources a package declares, and the product's table`: the `embed` member, the per-package
+   object library, `rp_embedded_resources()`, `putResource` on it, `mGB.gb` in `packages/mgb`, the configure fixtures.
+4. `F2 stage 4: txiki and efsw as the shell's opt-in libraries`: `retroplug-tjs-runtime`, `retroplug-file-watcher`, the
+   `FileWatcher` interface, the backend on `qjs`, `retroplug_check_runtime_libraries`, the empty `EXEMPT` list.
+5. `F2 stage 5: Mesen's per-console compile-out, and the docs pass`: the three options, the filter table, the 123
+   guards, `tools/build-mesen-all-consoles.sh`, the measurements, the stale comments and the living docs.
+
+**Departures from the design as committed, and why.**
+
+- **A system node that built no core is refused before the plan publishes.** The design trusted the descriptor's category;
+  the stage 1 review found a node declaring it and building nothing would leave a null slot for the audio thread to
+  dereference in a release build. The planner gained a `PlanCheck` seam (`GraphHost::setGraph` threads it), and a script
+  pack declaring the category is refused by `ScriptHost::loadInto` and `MqjsHost::openControl`. A red-first rollback case
+  holds it; the planner path cannot show red by removing the check alone, since `setGraph` drops a refused outcome, so the
+  case is red by removing `~SystemNode`'s destroy.
+- **The Game Boy logo is private to `mesen`.** Stage 2 first put a shared `RomLogo.hpp` in `system` for the SMS gate; the
+  review found it made `system` know a console, and each package's `RomFormat.hpp` now holds its own.
+- **The test dependency rule.** Stage 3 needed `sameboy`'s tests to open `mgb`'s ROM, which the boundary check refused. A
+  test may declare another package as a `devDependency` for a fixture file, judged by target properties; the review found
+  the compile-definition door blind to the quoted form the tree uses, and fixtures now hold both sides.
+- **The `testing` package has a native library.** The shared C++ test helpers the two console test binaries need could not
+  live in either; `retroplug-testing` holds them and the products guard leaves it out. `LinkRomModel` stays there, with the
+  reason recorded.
+- **Embed symbols and the table.** The symbol is computed once as `rp_embed_<package>_<id>` and two entries that collide
+  are refused (the review found `lsdj` + `launchpad_kit` and `lsdj-launchpad` + `kit` would clash); the table is a
+  function-local static; a device product emits none (an empty one changed both box images through the symbol).
+- **The runtime-libraries check names the whole path.** It first reported only target and library, cutting at the first
+  edge; it now names the chain. The file watcher library also gained the `Threads` link it lacked.
+- **`EXEMPT` is empty.** The class-id test links no backend; the watcher test drives `HostRpcService` with a fake
+  `FileWatcher`, which the interface made possible. `QuickJsGlobals.hpp` did not split.
+- **The size result's cause.** Every backend product lost about 296 KB in stage 4 because `HostRpcService`'s
+  `NativeFileWatcher` constructor had pulled efsw into it, not txiki's host (10 KB, never pulled by a binary that makes no
+  runtime). The design's expectation held in bytes and not in cause.
+- **The compile-out is bigger on paper and smaller in lines.** 123 blocks and about 260 lines in six files, against the
+  design's 300. A `-O0` Debug build found two guards the Release link had folded away, and became a repeatable mode:
+  `tools/build-mesen-all-consoles.sh --off` fails on any call into a compiled-out unit by name (red shown with a guard
+  removed). The `ON` mode asserts the four counts in the CLI, so a run whose options did not take effect fails. The filter
+  regex is anchored to the source root, escaped so a checkout path is literal.
+- **`N8ReliableLink`'s test split is eleven and three,** not the design's eight and the rest.
+- **The console test binaries are `/bigobj` and off `/WX`** on Windows, a deliberate exclusion held in `spec/07`.
+- **The build function is a plain pointer and the config a `const void*`,** as designed; no caller needed more.
+
+**The re-records as they landed:** `product-registrations.json` alone, in the stage 2 commit's tree (the order of the
+console and host-I/O types; no id or descriptor moved). The parity, kit and render baselines, the `buildGraph` and role
+goldens, the script and protocol digests and `edio-golden.json` were never re-recorded.
+
+**Measurements** (`measure.sh`, recorded and not gated; the design commit against the final tree):
+
+| | base | final |
+| --- | --- | --- |
+| `libmesen.a` | 32,655,244 | 19,674,662 (-39.75%) |
+| mesen objects | 426 files, 31,050,928 B | 288 files, 18,783,112 B (-138, -39.5%) |
+| `retroplug-cli` | 34,293,952 | 30,641,680 |
+| `retroplug-cli` `.text` | 29,047,040 | 25,916,562 (-10.78%) |
+| `retroplug` / `-host` / `-sdl` | 33,389,568 / 28,512,952 / 34,904,176 | 30,029,608 / 24,865,848 / 31,256,368 |
+| `retroplug-ui-test` / `-render-host-test` | 31,117,840 / 21,663,464 | 27,465,544 / 17,316,784 |
+| `.so` / `.clap` / `.vst3` | 33,198,792 / 33,212,728 / 33,272,272 | 29,830,640 / 29,848,608 / 29,908,216 |
+| `-engine-graph-test` / `-audio-test` | 29,242,440 / 23,367,832 | 24,995,648 / 18,500,136 |
+| `SnesPpu` / `GbPpu` / `PceVdc` / `WsPpu` in the CLI | 200 / 55 / 40 / 52 | 0 / 0 / 0 / 0 |
+
+The products are about 3.4 MB smaller. With `RETROPLUG_MESEN_LTO=ON` the `mesen` target compiles in 13 s with the three
+consoles ON and 8 s OFF, and relinking `retroplug-cli` alone takes 11 s against 9 s (a full CLI build is about 77 s either
+way). The all-ON script takes 113 s cold and 57 s warm; `--off` takes 31 s cold and 5 to 6 s warm.
+
+**Verification.** A baseline run at the design commit and a run at the final tree were each 43 legs (F3's 42 plus the
+measure), every one exit 0, and the summaries are byte-identical at every stage:
+
+- the device images, hashed: box native `af36f223` and PIO `4b4f9abc`, the device check `38665e2c`, and the `bliptoaster`
+  pack's three hashes (`066c7980`, `fd1daf9b`, `b5017c7c`), identical to the baseline;
+- strict parity unchanged (30 files, 250 cases, `RP_FAIL_ON_SKIP=1`), the kit, render and `buildGraph` goldens, the
+  protocol digests and the CLI suites;
+- `pnpm test`: 190 files, 1998 cases at the baseline and 1999 now (one new case); `pnpm test:plugin`: 11 binaries at the
+  baseline and 13 now, 926 cases at the tip, the console cases equal before and after (543) and `test:plugin` plus
+  `test:n8` totalling 1029 then 1031 (the two stage 1 cases); `test:native` 629 with resources and 629 with 144 skips in
+  the CI picture; `test:ui` 46; `device:check`, `device:box`, `device-mode-test` (96 cases), `sdl:smoke`,
+  `sdl:controller`, and the thread and address sanitizer legs; `check:docs` (91 files) and `check:boundaries` (no
+  exception, no warning).
+
+Windows, macOS and arm64 builds were never run, and CI was not triggered.
+
+**What the plan's acceptance must add,** because no stage ran it: `sdl:pipewire`, `reaper:all`, a fresh-clone build (the
+embeds, the generated tables and the configure fixtures from nothing), `pnpm build:mesen-all` and
+`tools/build-mesen-all-consoles.sh --off`, and BlipToaster's and NESVJ's suites against the rebuilt CLI.
+
+**Owed.** The nine Windows items, in `spec/07-remaining-work.md`: the moved clang-cl `SameBoySystem.cpp` step; `/W4 /WX`
+on the four new package targets, with the console test binaries' exclusion; the Mesen options under MSVC (the cache
+variables, the `$<BOOL:>` definitions, the six guarded files, LTO in `release.yml`); `retroplug-tjs-runtime`'s first
+compile; `retroplug-file-watcher` with efsw and `Threads::Threads`; `PluginDSP.cpp`'s new `efsw.hpp` include; the
+`retroplug-mgb-embeds` object library and its generated table; `packages.cmake`'s path logic on Windows paths; and
+`HostRpcWatching.test.cpp`, `LinkRomModel.hpp` and `retroplug-testing` under `cl`. Also the first macOS and arm64 builds
+and the first CI run.

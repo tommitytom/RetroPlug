@@ -227,6 +227,13 @@ include(cmake/serial.cmake)
 include(cmake/rtmidi.cmake)
 
 # --- Mesen: NES emulator core (multi-system upstream; we use the NES path) ---
+# The consoles RetroPlug never runs are compiled out (deps/mesen/CMakeLists.txt): the Super Nintendo with the Game Boy
+# (Super Game Boy couples them), the PC Engine and the WonderSwan. These are cache defaults, so a -D overrides any of
+# them: a release build uses these OFF defaults, and only a configure that passes -D...=ON builds the rest
+# (tools/build-mesen-all-consoles.sh, which proves that side). NES, GBA and SMS are always built.
+set(MESEN_ENABLE_SNES OFF CACHE BOOL "Build Mesen's Super Nintendo and Game Boy cores")
+set(MESEN_ENABLE_PCE OFF CACHE BOOL "Build Mesen's PC Engine core")
+set(MESEN_ENABLE_WS OFF CACHE BOOL "Build Mesen's WonderSwan core")
 add_subdirectory(deps/mesen)
 
 # --- r8brain-free: high-quality SRC for LSDJ kit compilation.

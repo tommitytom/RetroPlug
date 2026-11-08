@@ -200,8 +200,12 @@ The rules below are the parts that don't fit those.
   is what a new pack is copied from. `retroplug.app`
   names the module that default-exports `definePackage({ roles, romProviders, trackerIntegrations, kitFormats })` -
   the lists the app used to hardcode - and `retroplug.protocol` names the module that default-exports a package's
-  `DefinedNode`s beside the `nodes` (type, span label: 16 up with no gaps, unique) and the role kinds it places. Both
-  are generated registries' inputs: [packages/retroplug/scripts/lib/packages.mjs](packages/retroplug/scripts/lib/packages.mjs)
+  `DefinedNode`s beside the `nodes` (type, span label: 16 up with no gaps, unique) and the role kinds it places.
+  `retroplug.native` names the package's C++ target and the `extern "C"` entry a product registers it by (`system`
+  has a `target` and no entry: a contract, not a node set), and `retroplug.embed` declares a file the package bakes in
+  (`{ "id", "file" }`, as `mgb`'s ROM is), which `retroplug_package` turns into an array and `retroplug_product` into
+  the product's `rp_embedded_resources()` table. Both are generated registries' inputs:
+  [packages/retroplug/scripts/lib/packages.mjs](packages/retroplug/scripts/lib/packages.mjs)
   writes `packages/retroplug/src/generated/{packages,protocol,scriptNodes}.ts` from `retroplug.products.desktop`, which
   is a **dependency order** (a package before the ones using it, the shell last) AND the registration order. Only a ROM
   provider's place in it is behaviour: the providers run in that order, and the first to match a ROM fixes a system's
@@ -301,8 +305,10 @@ The rules below are the parts that don't fit those.
   `Core/camera.c` / `Core/sgb.c` (all five expected): **don't
   reset / stash / commit that, and don't bump the pointer to "absorb" it.** A
   submodule bump that invalidates a patch fails LOUDLY at configure (rather than
-  silently dropping what it adds); regenerate the patch if that happens. (Mesen is vendored in-tree, so its one
-  parallel-cores fix, `Utilities/SimpleLock.{h,cpp}`'s atomic holder id and count, is a plain source change.)
+  silently dropping what it adds); regenerate the patch if that happens. (Mesen is vendored in-tree, so its fixes are
+  plain source changes, each marked `// RetroPlug:` - 45 files carry one, `Utilities/SimpleLock.{h,cpp}`'s atomic
+  holder id and count for cores on several threads among them, and the per-console `#if MESEN_ENABLE_*` guards of
+  `deps/mesen/CMakeLists.txt`'s compile-out are the newest batch.)
 - **Don't `rm -rf build` to "fix" CMake** — investigate first. The configured
   `build/` is load-bearing for the dev loop.
 - **Build via `build.sh` (Linux/macOS) / `build.bat` (Windows)** — the canonical
@@ -341,15 +347,35 @@ The rules below are the parts that don't fit those.
     MSVC 14.44 as `windows-2022`, and 14.44 vs 14.51 disagree about which warnings
     exist — before they were matched, a locally clean `/W4` build could still go red on
     CI (it did, on `C4127` in rpcpp). Don't "fix" that class of failure locally-only.
+- **Mesen's consoles RetroPlug never runs are compiled out, by options the root turns OFF.** RetroPlug emulates the
+  NES, the GBA and the SMS/GG, so `deps/mesen/CMakeLists.txt` declares `MESEN_ENABLE_SNES` (the Super Nintendo AND the
+  Game Boy: Super Game Boy couples them), `-PCE` and `-WS`, ON by default as upstream Mesen builds, and the root
+  CMakeLists sets all three OFF as cache defaults before `add_subdirectory(deps/mesen)` (a `-D` overrides them, which
+  is what `tools/build-mesen-all-consoles.sh` / `pnpm build:mesen-all` does; its `--off` mode proves the reverse). Each
+  option drops that console's `Core/<Dir>/` translation units and its CPUs' `ExpressionEvaluator.<Cpu>.cpp` through one
+  table, and is a PUBLIC compile definition, so a consumer's headers see the same set. The call sites into a dropped
+  console are guarded `#if MESEN_ENABLE_*` with `// RetroPlug:`; a `case` whose console is off is gone from the switch,
+  and no dropped console can reach it (it cannot be constructed). A switch that had a default keeps it; a void one
+  without one becomes a no-op for that CPU, and a value one falls to the code after it, which answers (`nullptr`,
+  `false`, its own `return` or its throw). Nothing NES, GBA or SMS changed. A missed guard links in Release (the
+  compiler folds the arm a template parameter picks) and fails at `-O0`: `tools/build-mesen-all-consoles.sh --off`
+  builds the library as Debug and refuses an archive that references a C++ symbol no member defines. 288 translation
+  units of 426, 19.7 MB of 32.7 MB of archive.
 - **Mesen LTO is opt-in (`-DRETROPLUG_MESEN_LTO=ON`), and that is deliberate.** It
   buys ~10% on the NES core (Cortex-A53: xRT 0.83 -> 0.92), but it turns every mesen
-  object into LTO bitcode, so each of the *nine* binaries linking that static lib
-  re-runs codegen over ~430 objects. Measured cost of a one-line `.cpp` edit: **1m05s
-  wall / 26m51s CPU with it on, ~2s / ~9s with it off** — same single compile, the
-  rest is eight full LTO links. So it's OFF by default and every `release.yml` job
-  passes it ON; shipped builds keep the speedup, the dev loop doesn't pay for it.
+  object into LTO bitcode, so each of the *fourteen* binaries linking that static lib
+  (the plugin's three formats, the standalone, the host, the CLI, the Node addon, the
+  SDL binary, `rp-golden-dump` and the five test binaries - the render host one of
+  them) re-runs codegen over its objects: 288 with the consoles RetroPlug does not run
+  compiled out, 426 with `MESEN_ENABLE_SNES` / `-PCE` / `-WS` all on. The cost of a
+  one-line `.cpp` edit was measured before the compile-out, at nine links over 426
+  objects: **1m05s wall / 26m51s CPU with it on, ~2s / ~9s with it off** - the same
+  single compile, the rest full LTO links. Re-measured since, per target: compiling
+  mesen takes 13 s with every console on and 8 s with them off, and relinking the CLI
+  alone 11 s against 9 s. So it's OFF by default and every `release.yml`
+  job passes it ON; shipped builds keep the speedup, the dev loop doesn't pay for it.
   Toggling the option recompiles mesen (~45 s). If a build with it ON seems to stall on
-  every link, that's LTO link-time codegen over mesen's ~430 objects, not a
+  every link, that's LTO link-time codegen over mesen's objects, not a
   stale-dependency bug: `[NN%] Built target mesen` prints whether or not it did work.
   (It used to announce itself with repeated `emu2413.cpp` / `-Wodr` warnings at each
   link. Those are silenced now - the per-TU `-w` can't reach link-time codegen, so

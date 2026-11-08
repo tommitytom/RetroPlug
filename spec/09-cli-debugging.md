@@ -128,14 +128,16 @@ The whole thing rides Mesen's own debugger, which is compiled into the native bi
 
 - **The whole debugger is compiled in.** [deps/mesen/CMakeLists.txt](../deps/mesen/CMakeLists.txt) builds
   the `mesen` static lib by a recursive glob of `Core/*.cpp` (+ `Utilities/`) with **no
-  debugger exclusions**. That pulls in the entire `Core/Debugger/` subtree — `Debugger`, `Breakpoint` /
+  debugger exclusions**. That pulls in the entire `Core/Debugger/` subtree - `Debugger`, `Breakpoint` /
   `BreakpointManager`, `ExpressionEvaluator`, `MemoryDumper`, `TraceLogger`, `CallstackManager`,
-  `Profiler`, `LabelManager`, `EventManager`.
-- **It is linked into the native binaries.** `retroplug-backend` links `retroplug-core`
-  ([packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt#L23)), which
-  compiles [MesenNesSystem.cpp](../packages/mesen/native/src/system/mesen/MesenNesSystem.cpp) +
+  `Profiler`, `LabelManager`, `EventManager` - whose cases for a console the build compiles out
+  (`MESEN_ENABLE_SNES` / `-PCE` / `-WS`) are guarded with the rest of that console.
+- **It is linked into the native binaries.** The `mesen` package
+  ([packages/mesen/native/CMakeLists.txt](../packages/mesen/native/CMakeLists.txt)) compiles
+  [MesenNesSystem.cpp](../packages/mesen/native/src/system/mesen/MesenNesSystem.cpp) +
   [MesenNesDebugSession.cpp](../packages/mesen/native/src/system/mesen/MesenNesDebugSession.cpp) and links
-  `libmesen`. So the capability is present in `retroplug-cli` today.
+  `libmesen`, and a product that lists the package (the CLI does) carries it. So the capability is present in
+  `retroplug-cli` today.
 - **A complete debug target already exists.** `MesenNesSystem` runs headless and single-threaded — it
   never calls `Emulator::Run()/RunFrame`, driving `NesCpu::Exec()` directly and claiming the emulation
   thread id — and lazily owns a `MesenNesDebugSession` (a full `rp::IDebugTarget`,

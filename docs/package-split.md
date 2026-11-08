@@ -1,9 +1,10 @@
 # The package split
 
-**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1 and F3 built
+**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3 and F2 built
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records it and its follow-up
-pass; [modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records it; what it leaves is
-[07-remaining-work.md](../spec/07-remaining-work.md) section 5's F3 bullet), F2 and F4 not yet designed
+pass; [modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records it;
+[modular-graph-phase-f2-design.md](modular-graph-phase-f2-design.md); what each leaves is
+[07-remaining-work.md](../spec/07-remaining-work.md)'s F1, F3 and F2 bullets), F4 not yet designed
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
 workspace packages would take. E1 started it (`node-sdk`, `graph-runtime`, `core`, `dsp`), E2 carved `n8`, and E4 made
@@ -32,10 +33,13 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
   kind), with the provider ABI at 2, `PROVIDERS` per product, `config.json`'s `controlSurface`, and the pack's portable
   core proved by the toolchain's scenario mode. What it leaves is owed rather than undone: the real-device checklist
   (the Pro MK3 and LSDj on a desk) and its Windows items, the plugin's control surface, and the Pico controller.
-- **F2: the native carve.** `sameboy` and `mesen` get their native halves (today `rp_sameboy_package` and
-  `rp_mesen_package` in `packages/native/src/host/graph/SystemNodes.cpp`), Mesen compiles out per console,
-  `registerCoreBackends` is generated per product, host I/O becomes a package, the mGB ROM embed gets a seam, and txiki
-  and efsw become opt-in libraries.
+- **F2: the native carve** ([design](modular-graph-phase-f2-design.md), **built** on `feature/modularize`). `system`
+  (the contract), `sameboy`, `mesen` and `host-io` (the host MIDI nodes) become packages with their
+  native halves, `retroplug-core` dissolves, the engine names no console (a node carries its package's build function),
+  the mGB ROM becomes a package's declared `embed`, txiki and efsw become the shell's opt-in libraries, and Mesen's
+  consoles RetroPlug never runs are compiled out (`MESEN_ENABLE_SNES` / `-PCE` / `-WS`). The `[packages]` golden is the
+  one re-record. What it leaves: `MemoryType`'s closed wire enum, the TS unions (F4), the Mesen library chosen per
+  product, and the Windows run.
 - **F4: the UI onto extensions.** A menu item model for the cart-specific menu code, `TRACKER_UI`, the LSDj HD player and
   the overlays move into their packs; the stores' deep imports of carts (`projectStore`, `render.ts`, `systemsStore`)
   go through the registrations; per-product bundles.

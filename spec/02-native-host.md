@@ -906,7 +906,11 @@ marked
 thread id and re-entrancy count as relaxed atomics, because `MessageManager`'s process-wide lock is taken by every
 core build and a render builds cores on pool workers beside the live engine's; ThreadSanitizer found the plain-integer
 read racing (a count changes by a relaxed load and store, never a locked read-modify-write, and the ids are asserted
-lock-free).
+lock-free). The other batch is the per-console compile-out (`deps/mesen/CMakeLists.txt`,
+[docs/modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md) section 4): `MESEN_ENABLE_SNES` (the
+Super Nintendo and the Game Boy, which Super Game Boy couples), `-PCE` and `-WS` are ON as upstream builds them and OFF
+in the root's cache defaults, each dropping its `Core/<Dir>/` units and its CPUs' evaluators and guarding the call sites
+into them; NES, GBA and SMS are always built, and 288 of the 426 translation units remain.
 
 ## `ScriptHost` + `ScriptCompiler`: the script-node runtime
 

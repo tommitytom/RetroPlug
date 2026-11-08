@@ -65,6 +65,7 @@ void DisassemblyInfo::Reset()
 void DisassemblyInfo::GetDisassembly(string &out, uint32_t memoryAddr, LabelManager* labelManager, EmuSettings* settings)
 {
 	switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Sa1:
 		case CpuType::Snes:
 			SnesDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings);
@@ -76,12 +77,17 @@ void DisassemblyInfo::GetDisassembly(string &out, uint32_t memoryAddr, LabelMana
 		case CpuType::Cx4: Cx4DisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 		case CpuType::St018: GbaDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 		case CpuType::Gameboy: GameboyDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
+#endif
 		case CpuType::Nes: NesDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: PceDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
+#endif
 		case CpuType::Sms: SmsDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 		case CpuType::Gba: GbaDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: WsDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 
+#endif
 		default:
 			throw std::runtime_error("GetDisassembly - Unsupported CPU type");
 	}
@@ -91,6 +97,7 @@ void DisassemblyInfo::GetDisassembly(string &out, uint32_t memoryAddr, LabelMana
 EffectiveAddressInfo DisassemblyInfo::GetEffectiveAddress(Debugger *debugger, void *cpuState, CpuType cpuType)
 {
 	switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Sa1:
 		case CpuType::Snes:
 			return SnesDisUtils::GetEffectiveAddress(*this, (SnesConsole*)debugger->GetConsole(), *(SnesCpuState*)cpuState, cpuType);
@@ -112,11 +119,16 @@ EffectiveAddressInfo DisassemblyInfo::GetEffectiveAddress(Debugger *debugger, vo
 			}
 		}
 
+#endif
 		case CpuType::Nes: return NesDisUtils::GetEffectiveAddress(*this, *(NesCpuState*)cpuState, debugger->GetMemoryDumper());
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return PceDisUtils::GetEffectiveAddress(*this, (PceConsole*)debugger->GetConsole(), *(PceCpuState*)cpuState);
+#endif
 		case CpuType::Sms: return SmsDisUtils::GetEffectiveAddress(*this, (SmsConsole*)debugger->GetConsole(), *(SmsCpuState*)cpuState);
 		case CpuType::Gba: return GbaDisUtils::GetEffectiveAddress(*this, (GbaConsole*)debugger->GetConsole(), *(GbaCpuState*)cpuState);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return WsDisUtils::GetEffectiveAddress(*this, (WsConsole*)debugger->GetConsole(), *(WsCpuState*)cpuState);
+#endif
 	}
 
 	throw std::runtime_error("GetEffectiveAddress - Unsupported CPU type");
@@ -137,11 +149,15 @@ uint32_t DisassemblyInfo::GetFullOpCode()
 {
 	switch(type) {
 		default: return _byteCode[0];
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::NecDsp: return _byteCode[0] | (_byteCode[1] << 8) | (_byteCode[2] << 16);
 		case CpuType::Cx4: return _byteCode[1];
 		case CpuType::St018: return _byteCode[0] | (_byteCode[1] << 8) | (_opSize == 4 ? ((_byteCode[2] << 16) | (_byteCode[3] << 24)) : 0);
+#endif
 		case CpuType::Gba: return _byteCode[0] | (_byteCode[1] << 8) | (_opSize == 4 ? ((_byteCode[2] << 16) | (_byteCode[3] << 24)) : 0);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return WsDisUtils::GetFullOpCode(*this);
+#endif
 	}
 }
 
@@ -180,6 +196,7 @@ void DisassemblyInfo::GetByteCode(string &out)
 uint8_t DisassemblyInfo::GetOpSize(uint32_t opCode, uint8_t flags, CpuType type, uint32_t cpuAddress, MemoryType memType, MemoryDumper* memoryDumper)
 {
 	switch(type) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: return SnesDisUtils::GetOpSize(opCode, flags);
 		case CpuType::Spc: return SpcDisUtils::GetOpSize(opCode);
 		case CpuType::NecDsp: return NecDspDisUtils::GetOpSize();
@@ -188,11 +205,16 @@ uint8_t DisassemblyInfo::GetOpSize(uint32_t opCode, uint8_t flags, CpuType type,
 		case CpuType::Cx4: return Cx4DisUtils::GetOpSize();
 		case CpuType::St018: return GbaDisUtils::GetOpSize(opCode, flags);
 		case CpuType::Gameboy: return GameboyDisUtils::GetOpSize(opCode);
+#endif
 		case CpuType::Nes: return NesDisUtils::GetOpSize(opCode);
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return PceDisUtils::GetOpSize(opCode);
+#endif
 		case CpuType::Sms: return SmsDisUtils::GetOpSize(opCode, cpuAddress, memType, memoryDumper);
 		case CpuType::Gba: return GbaDisUtils::GetOpSize(opCode, flags);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return WsDisUtils::GetOpSize(cpuAddress, memType, memoryDumper);
+#endif
 	}
 
 	throw std::runtime_error("GetOpSize - Unsupported CPU type");
@@ -201,6 +223,7 @@ uint8_t DisassemblyInfo::GetOpSize(uint32_t opCode, uint8_t flags, CpuType type,
 bool DisassemblyInfo::IsJumpToSub()
 {
 	switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: return SnesDisUtils::IsJumpToSub(GetOpCode());
 		case CpuType::Spc: return SpcDisUtils::IsJumpToSub(GetOpCode());
 		case CpuType::NecDsp: return NecDspDisUtils::IsJumpToSub(GetFullOpCode<CpuType::NecDsp>());
@@ -209,11 +232,16 @@ bool DisassemblyInfo::IsJumpToSub()
 		case CpuType::Cx4: return Cx4DisUtils::IsJumpToSub(GetFullOpCode<CpuType::Cx4>());
 		case CpuType::St018: return GbaDisUtils::IsJumpToSub(GetFullOpCode<CpuType::St018>(), _flags);
 		case CpuType::Gameboy: return GameboyDisUtils::IsJumpToSub(GetOpCode());
+#endif
 		case CpuType::Nes: return NesDisUtils::IsJumpToSub(GetOpCode());
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return PceDisUtils::IsJumpToSub(GetOpCode());
+#endif
 		case CpuType::Sms: return SmsDisUtils::IsJumpToSub(GetOpCode());
 		case CpuType::Gba: return GbaDisUtils::IsJumpToSub(GetFullOpCode<CpuType::Gba>(), _flags);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return WsDisUtils::IsJumpToSub(GetFullOpCode<CpuType::Ws>());
+#endif
 	}
 
 	throw std::runtime_error("IsJumpToSub - Unsupported CPU type");
@@ -222,6 +250,7 @@ bool DisassemblyInfo::IsJumpToSub()
 bool DisassemblyInfo::IsReturnInstruction()
 {
 	switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: return SnesDisUtils::IsReturnInstruction(GetOpCode());
 		case CpuType::Spc: return SpcDisUtils::IsReturnInstruction(GetOpCode());
 		case CpuType::NecDsp: return NecDspDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::NecDsp>());
@@ -230,11 +259,16 @@ bool DisassemblyInfo::IsReturnInstruction()
 		case CpuType::Cx4: return Cx4DisUtils::IsReturnInstruction(GetFullOpCode<CpuType::Cx4>());
 		case CpuType::St018: return GbaDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::St018>(), _flags);
 		case CpuType::Gameboy: return GameboyDisUtils::IsReturnInstruction(GetOpCode());
+#endif
 		case CpuType::Nes: return NesDisUtils::IsReturnInstruction(GetOpCode());
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return PceDisUtils::IsReturnInstruction(GetOpCode());
+#endif
 		case CpuType::Sms: return SmsDisUtils::IsReturnInstruction(_byteCode[0] | (_byteCode[1] << 8));
 		case CpuType::Gba: return GbaDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::Gba>(), _flags);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return WsDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::Ws>());
+#endif
 	}
 	
 	throw std::runtime_error("IsReturnInstruction - Unsupported CPU type");
@@ -247,10 +281,12 @@ bool DisassemblyInfo::CanDisassembleNextOp()
 	}
 
 	switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: return SnesDisUtils::CanDisassembleNextOp(GetOpCode());
 		case CpuType::Sa1: return SnesDisUtils::CanDisassembleNextOp(GetOpCode());
 		case CpuType::Gsu: return GsuDisUtils::CanDisassembleNextOp(GetOpCode());
 		case CpuType::Cx4: return Cx4DisUtils::CanDisassembleNextOp(GetByteCode()[1]);
+#endif
 		default: return true;
 	}
 }
@@ -258,6 +294,7 @@ bool DisassemblyInfo::CanDisassembleNextOp()
 bool DisassemblyInfo::IsUnconditionalJump()
 {
 	switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: return SnesDisUtils::IsUnconditionalJump(GetOpCode());
 		case CpuType::Spc: return SpcDisUtils::IsUnconditionalJump(GetOpCode());
 		case CpuType::NecDsp: return NecDspDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::NecDsp>());
@@ -266,11 +303,16 @@ bool DisassemblyInfo::IsUnconditionalJump()
 		case CpuType::Cx4: return Cx4DisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::Cx4>());
 		case CpuType::St018: return GbaDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::St018>(), _flags);
 		case CpuType::Gameboy: return GameboyDisUtils::IsUnconditionalJump(GetOpCode());
+#endif
 		case CpuType::Nes: return NesDisUtils::IsUnconditionalJump(GetOpCode());
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return PceDisUtils::IsUnconditionalJump(GetOpCode());
+#endif
 		case CpuType::Sms: return SmsDisUtils::IsUnconditionalJump(GetOpCode());
 		case CpuType::Gba: return GbaDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::Gba>(), _flags);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return WsDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::Ws>());
+#endif
 	}
 
 	throw std::runtime_error("IsUnconditionalJump - Unsupported CPU type");
@@ -284,6 +326,7 @@ bool DisassemblyInfo::IsJump()
 
 	//Check for conditional jumps
 	switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: return SnesDisUtils::IsConditionalJump(GetOpCode());
 		case CpuType::Spc: return SpcDisUtils::IsConditionalJump(GetOpCode());
 		case CpuType::NecDsp: return NecDspDisUtils::IsConditionalJump(GetFullOpCode<CpuType::NecDsp>());
@@ -292,11 +335,16 @@ bool DisassemblyInfo::IsJump()
 		case CpuType::Cx4: return Cx4DisUtils::IsConditionalJump(GetFullOpCode<CpuType::Cx4>(), GetByteCode()[0]);
 		case CpuType::St018: return GbaDisUtils::IsConditionalJump(GetFullOpCode<CpuType::St018>(), GetByteCode()[0]);
 		case CpuType::Gameboy: return GameboyDisUtils::IsConditionalJump(GetOpCode());
+#endif
 		case CpuType::Nes: return NesDisUtils::IsConditionalJump(GetOpCode());
+#if MESEN_ENABLE_PCE  // RetroPlug: the PC Engine units are compiled out (MESEN_ENABLE_PCE)
 		case CpuType::Pce: return PceDisUtils::IsConditionalJump(GetOpCode());
+#endif
 		case CpuType::Sms: return SmsDisUtils::IsConditionalJump(GetOpCode());
 		case CpuType::Gba: return GbaDisUtils::IsConditionalJump(GetFullOpCode<CpuType::Gba>(), _flags);
+#if MESEN_ENABLE_WS  // RetroPlug: the WonderSwan units are compiled out (MESEN_ENABLE_WS)
 		case CpuType::Ws: return WsDisUtils::IsConditionalJump(GetFullOpCode<CpuType::Ws>());
+#endif
 	}
 
 	throw std::runtime_error("IsJump - Unsupported CPU type");
@@ -305,9 +353,11 @@ bool DisassemblyInfo::IsJump()
 void DisassemblyInfo::UpdateCpuFlags(uint8_t& cpuFlags)
 {
 	switch(_cpuType) {
+#if MESEN_ENABLE_SNES  // RetroPlug: the Super Nintendo and Game Boy units are compiled out (MESEN_ENABLE_SNES)
 		case CpuType::Snes: SnesDisUtils::UpdateCpuFlags(GetOpCode(), GetByteCode(), cpuFlags); break;
 		case CpuType::Sa1: SnesDisUtils::UpdateCpuFlags(GetOpCode(), GetByteCode(), cpuFlags); break;
 		case CpuType::Gsu: GsuDisUtils::UpdateCpuFlags(GetOpCode(), cpuFlags); break;
+#endif
 		default: break;
 	}
 }
