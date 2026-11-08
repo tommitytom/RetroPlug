@@ -6,7 +6,8 @@
 // What only this file can hold: that the facet's answers reach TS over the real RPC seam, and that what TS decides reaches
 // the PRODUCT (rp_device_host's reserve_midi, suspend_hardware_inputs and restored, recorded by the headless host's
 // ProviderHost and drained through the engine facet). The claim's cross-process half is the pack's own case in C++
-// (Controller.test.cpp, over a real config dir), and the standalone's `pnpm sdl:controller` leg 5 is the two-PROCESS one.
+// (Controller.test.cpp, over a real config dir) and the two-PROCESS one in launchpad-devices.test.ts, which spawns a
+// second host on the same claim directory; the standalone's `pnpm sdl:controller` leg 5 runs the same shape on real ports.
 //
 // Run: pnpm test:native launchpad-facet
 import { test, expect } from "@retroplug/testing";

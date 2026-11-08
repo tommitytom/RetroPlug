@@ -994,8 +994,11 @@ void AppState::onRestored(void* ctx) { static_cast<AppState*>(ctx)->controlSurfa
 // is TS's and the claim is asynchronous with respect to the mount: React runs the restore in an effect, on a later
 // pump of the JS loop. So pump the loop until it lands. Bounded in TIME, not pumps: a pump does not block, so a count
 // would be over in a millisecond. A UI that never reports (a broken bundle, no facet at all) costs half a second at
-// startup and then starts anyway, so a missing or unreadable config.json can never keep the app silent.
+// startup and then starts anyway, so a missing or unreadable config.json can never keep the app silent. A product that
+// started no control-surface provider has nothing to wait FOR - no facet is mounted, so TS never calls restored() - and
+// waits not at all.
 void restoreControlSurface(AppState& a) {
+    if (!a.providers.startedNamed("launchpad")) return;
     const Uint32 start = SDL_GetTicks();
     while (!a.controlSurfaceRestored && SDL_GetTicks() - start < 500) {
         a.ui.tick();
@@ -1636,6 +1639,17 @@ int main(int argc, char** argv) {
     if (const char* env = std::getenv("RETROPLUG_SDL_EXIT_AFTER_FRAMES")) exitAfterFrames = std::atol(env);
     std::string screenshotPath;
     if (const char* env = std::getenv("RETROPLUG_SDL_SCREENSHOT")) screenshotPath = env;
+    // RETROPLUG_SDL_TEST_SCAN makes a SHIPPED binary sweep every output the system lists with a Device Inquiry, so it is
+    // refused without the test-only port filter (RP_MIDI_PORT_ALLOW): the filter is what keeps that sweep off a real
+    // mixer, cable or Launchpad, and a run without it would probe somebody's gear before anything could stop it.
+    if (std::getenv("RETROPLUG_SDL_TEST_SCAN")) {
+        const char* allow = std::getenv("RP_MIDI_PORT_ALLOW");
+        if (!allow || !*allow) {
+            std::fprintf(stderr, "[retroplug-sdl] RETROPLUG_SDL_TEST_SCAN writes a Device Inquiry to every MIDI output: "
+                                 "refusing to run without RP_MIDI_PORT_ALLOW set\n");
+            return 1;
+        }
+    }
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--autoload" && i + 1 < argc) autoloadPath = argv[++i];
@@ -1796,7 +1810,8 @@ int main(int argc, char** argv) {
     bool nonBlankFail = false;
     // Test hook: start a control-surface scan the way Settings > MIDI's row does - through the UI's own global, so the
     // whole TS scan (the inquiry sweep, the model confirmation, persisting the find and claiming it) runs over the real
-    // facet and RtMidi. tools/run-sdl-controller.sh drives it against a fake device on the ALSA sequencer.
+    // facet and RtMidi. tools/run-sdl-controller.sh drives it against a fake device on the ALSA sequencer; main() refused
+    // to run at all unless the port filter was set, because this sweep writes to every output the system lists.
     const bool scanTest = std::getenv("RETROPLUG_SDL_TEST_SCAN") != nullptr;
     long frame = 0;
     while (app.running) {

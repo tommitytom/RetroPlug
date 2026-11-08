@@ -4,8 +4,9 @@
 //
 //   packages/retroplug/src/generated/packages.ts     the app's registrations, in product order (the list's, then the
 //                                                    shell): the roles buildAppRegistry applies, the ROM providers, the
-//                                                    tracker integrations and the kit formats, and a duplicate in any
-//                                                    list a key or an exclusive marker identifies refused at load
+//                                                    tracker integrations, the kit formats and the controller apps, and a
+//                                                    duplicate in any list a key or an exclusive marker identifies refused
+//                                                    at load
 //   packages/retroplug/src/generated/protocol.ts     PROTOCOL_NODES and ROLE_NODES, the wiring buildGraph reads, and
 //                                                    CONTROLLER_SYNC, the sync mode the cart an app's launches drive
 //                                                    must be in. It imports nothing but types, so a bundle of
@@ -221,6 +222,10 @@ function syncRule(pkg, appId, sync) {
     throw new Error(`${where} needs an "off": the mode a cart polled at anything but ${JSON.stringify(sync.listening)} ` +
       "is put in");
   }
+  if (sync.off === sync.mode) {
+    throw new Error(`${where} names ${JSON.stringify(sync.mode)} as both its mode and the mode a cart that is not ` +
+      "listening is put in, so the override changes nothing");
+  }
   return { node: sync.node, mode: sync.mode, listening: sync.listening, off: sync.off };
 }
 
@@ -366,7 +371,9 @@ function appTable(packages) {
     for (const app of apps) {
       const at = byId.get(app.id);
       if (at) {
-        throw new Error(`two packages declare the controller app ${app.id}: ${at.pkg} and ${pkg.name}`);
+        throw new Error(at.pkg === pkg.name
+          ? `the package ${pkg.name} declares the controller app ${app.id} twice`
+          : `two packages declare the controller app ${app.id}: ${at.pkg} and ${pkg.name}`);
       }
       byId.set(app.id, { app, pkg: pkg.name });
     }
@@ -517,14 +524,16 @@ function renderPackages({ packages, outDir }) {
     "const CONTROLLER_APP_SOURCES: readonly { pkg: string; apps: readonly ControllerAppContribution[] }[] = [",
     ...app.map((p) => `  { pkg: ${JSON.stringify(p.pkg.name)}, apps: ${identifier(p.pkg.name)}.controllerApps ?? [] },`),
     "];",
-    "// A duplicate id is refused naming BOTH packages: a project stores only the id, so one of the two apps would be",
-    "// unreachable without a word.",
+    "// A duplicate id is refused naming both packages, or the one package that listed it twice: a project stores only",
+    "// the id, so one of the two apps would be unreachable without a word.",
     "const controllerAppOwners = new Map<string, string>();",
     "for (const source of CONTROLLER_APP_SOURCES) {",
     "  for (const app of source.apps) {",
     "    const owner = controllerAppOwners.get(app.id);",
     "    if (owner !== undefined) {",
-    "      throw new Error(`two packages declare the controller app ${app.id}: ${owner} and ${source.pkg}`);",
+    "      throw new Error(owner === source.pkg",
+    "        ? `the package ${source.pkg} declares the controller app ${app.id} twice`",
+    "        : `two packages declare the controller app ${app.id}: ${owner} and ${source.pkg}`);",
     "    }",
     "    controllerAppOwners.set(app.id, source.pkg);",
     "  }",

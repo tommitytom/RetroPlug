@@ -348,9 +348,11 @@ function midiSettingsChildren(ctx: MenuContext): MenuItem[] {
     ...(hasLaunchpad()
       ? [
           separator("midi-sep-surface"),
+          // Cancel stays reachable whatever the link holds: it is the only way to stop a scan, and a pair claimed
+          // behind one (a restore landing mid-scan) would otherwise leave it running with nothing to press.
           action("midi-scan", scan?.busy ? "Cancel Control Surface Scan" : "Scan for Control Surface",
             () => void (scan?.busy ? cancelLaunchpadScan() : startLaunchpadScan()),
-            !!lpcfg?.connected),
+            !!lpcfg?.connected && !scan?.busy),
           infoRow("midi-scan-status", `Control Surface: ${launchpadScanLabel(scan, lpcfg)}`),
           // Greyed while a scan runs as well: its answer is about to become the selection, and forgetLaunchpad refuses
           // mid-scan (a Forget that did nothing would read as a broken row).

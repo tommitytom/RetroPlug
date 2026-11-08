@@ -75,6 +75,22 @@ test("probes every output in turn, one answer window each, and closes everything
   expect(scan.status()).toEqual({ ...scan.status(), busy: false, done: true, phase: "", skipped: 0, replies: [] });
 });
 
+test("a clock that is not finite cannot wedge the scan, or hold its inputs open", () => {
+  // The scan is stepped from the UI's frame poll with whatever its clock says. A NaN would stop the elapsed time
+  // advancing for ever (every window waits), and an infinity would close each window the instant it opened: either way
+  // the scan never ends and the loose inputs stay open, which on Windows holds the shared stream's inputs down too.
+  const r = rig();
+  const scan = new PortScan(r.api, ["A in"], ["A out", "B out"], PROBE, WINDOW);
+  expect(scan.step(NaN)).toBe(true);
+  expect(scan.step(Infinity)).toBe(true);
+  expect(scan.step(-Infinity)).toBe(true);
+  expect(r.log).toEqual(["open in A in"]); // nothing was probed on a clock it cannot read
+  // A real clock then carries the scan to its end.
+  expect(run(scan, 1000) > 1000).toBe(true);
+  expect(scan.status().busy).toBe(false);
+  expect(r.open.size).toBe(0);
+});
+
 test("an answer is tagged with the output probed AND the input it came back on", () => {
   // The two differ - that pairing is the thing a scan exists to discover.
   const r = rig({ answer: { "IF Port B": { input: "IF Port A", bytes: [0xf0, 1, 0xf7] } } });

@@ -11,8 +11,6 @@
 import { ControllerRegistry, type ControllerAppContribution } from "@retroplug/launchpad/registry";
 import { CONTROLLER_APPS } from "../generated/packages";
 
-export { ControllerRegistry, type ControllerAppContribution };
-
 /** Every controller app the product carries, in product order. */
 export const controllerApps = new ControllerRegistry();
 for (const app of CONTROLLER_APPS) controllerApps.register(app);

@@ -140,6 +140,12 @@ TEST_CASE("providers start in table order, restore in it and stop in the reverse
         CHECK(providers.service(1) == nullptr);  // it did not start
         CHECK(providers.service(2) == &gB.service);
         CHECK(providers.service(3) == nullptr);
+        // By id, which is how a product asks whether the pack whose state it waits for is running at all: one that
+        // failed to start names no id.
+        CHECK(providers.startedNamed("a"));
+        CHECK(providers.startedNamed("b"));
+        CHECK_FALSE(providers.startedNamed("failing"));
+        CHECK_FALSE(providers.startedNamed("nope"));
 
         gLog.clear();
         providers.restore();
@@ -153,6 +159,7 @@ TEST_CASE("providers start in table order, restore in it and stop in the reverse
         moved.stop();
         CHECK(gLog == std::vector<std::string>{"b:destroy", "a:destroy"});
         CHECK(moved.service(0) == nullptr);
+        CHECK_FALSE(moved.startedNamed("a"));  // stopped: nothing of it runs
         gLog.clear();
     }
     CHECK(gLog.empty());  // stopped already: the destructor stops nothing twice

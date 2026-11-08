@@ -1,9 +1,9 @@
 #pragma once
 
-// The providers one product instance started (graph/rp_provider.h), in the order its packages list them. The generated
-// rp_start_providers (build/packages/products/<product>/rp_product_providers.hpp, cmake/packages.cmake) makes one from
-// the product's table; the product keeps it beside its engine, restores it where it restores its own state, wakes it
-// once a frame, and stops it after its plans are reclaimed. One per instance, not one per process: a DAW holds several
+// The providers one product instance started (graph/rp_provider.h), in the order the product's PROVIDERS list names
+// them. The generated rp_start_providers (build/packages/products/<product>/rp_product_providers.hpp,
+// cmake/packages.cmake) makes one from the product's table; the product keeps it beside its engine, restores it where it
+// restores its own state, wakes it once a frame (rp_wake_providers) and stops it after its plans are reclaimed. One per instance, not one per process: a DAW holds several
 // plugin instances, each with its own engine, and each starts its own providers into its own engine's registry.
 
 #ifdef RP_DEVICE
@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -76,6 +77,14 @@ public:
         return s.self && s.provider->rpc_service ? s.provider->rpc_service(s.self) : nullptr;
     }
     std::size_t size() const { return started_.size(); }
+    // Whether the provider whose table entry is named `id` is running. A product asks before it waits for state only
+    // that pack can bring back: a control surface whose provider did not start has no facet to report through, so
+    // waiting for it would cost the product's own bound for nothing.
+    bool startedNamed(const char* id) const {
+        for (const Started& s : started_)
+            if (s.self && s.provider && s.provider->id && std::strcmp(s.provider->id, id) == 0) return true;
+        return false;
+    }
 
 private:
     // The `index`th provider of the table. Of a refused one only the version is read: what follows it is laid out as

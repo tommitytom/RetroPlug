@@ -19,7 +19,8 @@
 //   outside-ts | shell-undeclared | unknown-key | half-wired | extra-node | duplicate-role-kind |
 //   duplicate-kit-format | duplicate-marker-role | duplicate-app | duplicate-app-control | app-unknown-key |
 //   app-unpaired-runtime | app-unpaired-control | app-runtime-mismatch | app-module-empty | sync-unknown-key |
-//   sync-unused-off | sync-node-undeclared | identifier-collision | apps-only
+//   sync-unused-off | sync-node-undeclared | sync-not-object | sync-no-node | sync-no-mode | sync-off-is-mode |
+//   duplicate-app-one-package | identifier-collision | apps-only
 //                   { error: <the generator's message, or null when it did not refuse> }
 //                   (unlisted-plain generates, and reports files like generate)
 //
@@ -458,12 +459,58 @@ try {
       });
       result = refusal();
       break;
+    case "sync-not-object":
+      // An override that is not an object is data no rule can read at all.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.apps[0].syncOverride = "MidiMap";
+      });
+      result = refusal();
+      break;
+    case "sync-no-node":
+      // No node type to set the mode on.
+      editManifest("alpha", (json) => {
+        delete json.retroplug.protocol.apps[0].syncOverride.node;
+      });
+      result = refusal();
+      break;
+    case "sync-no-mode":
+      // No mode to put it in.
+      editManifest("alpha", (json) => {
+        delete json.retroplug.protocol.apps[0].syncOverride.mode;
+      });
+      result = refusal();
+      break;
+    case "sync-off-is-mode":
+      // The "not listening" mode is the listening one: the pair changes nothing, so one of the two is a mistake.
+      editManifest("alpha", (json) => {
+        const sync = json.retroplug.protocol.apps[0].syncOverride;
+        sync.off = sync.mode;
+      });
+      result = refusal();
+      break;
     case "sync-node-undeclared":
       // The node type the mode is set on must be one a package declares: a misspelt one would plan, and do nothing.
       editManifest("alpha", (json) => {
         json.retroplug.protocol.apps[0].syncOverride.node = "rp.alpha.syncx";
       });
       result = refusal();
+      break;
+    case "duplicate-app-one-package":
+      // ONE app module contributes the same id twice: the generated registry names the package once rather than
+      // "alpha and alpha".
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        "export default { controllerApps: [\n" +
+          "  { id: \"same-app\", label: \"First\", config: { parse: (v) => v } },\n" +
+          "  { id: \"same-app\", label: \"Second\", config: { parse: (v) => v } },\n" +
+          "] };\n",
+      );
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
       break;
     case "duplicate-app-control":
       // Two app modules contribute one control-plane id: the generated registry refuses it, naming both packages.

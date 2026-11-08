@@ -172,7 +172,13 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
         }
 
         const session = st.session;
-        if (!session) return; // an unknown app id: nothing to run
+        if (!session) {
+          // An unknown app id: nothing to run. The tick count must not sit here for a session that starts later - its
+          // first block would be handed a block's worth the cart was clocked before it existed, so the fresh predictor
+          // would begin a block ahead of the cart.
+          walked = 0;
+          return;
+        }
 
         // Take the DEVICE on the block its link first reports one, and again whenever the link's generation changes:
         // a pair swapped while connected releases the old device and claims the new one inside a single UI-thread

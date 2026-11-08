@@ -75,14 +75,16 @@ const CONTROLLER_APP_SOURCES: readonly { pkg: string; apps: readonly ControllerA
   { pkg: "beta", apps: app_beta.controllerApps ?? [] },
   { pkg: "retroplug", apps: app_retroplug.controllerApps ?? [] },
 ];
-// A duplicate id is refused naming BOTH packages: a project stores only the id, so one of the two apps would be
-// unreachable without a word.
+// A duplicate id is refused naming both packages, or the one package that listed it twice: a project stores only
+// the id, so one of the two apps would be unreachable without a word.
 const controllerAppOwners = new Map<string, string>();
 for (const source of CONTROLLER_APP_SOURCES) {
   for (const app of source.apps) {
     const owner = controllerAppOwners.get(app.id);
     if (owner !== undefined) {
-      throw new Error(`two packages declare the controller app ${app.id}: ${owner} and ${source.pkg}`);
+      throw new Error(owner === source.pkg
+        ? `the package ${source.pkg} declares the controller app ${app.id} twice`
+        : `two packages declare the controller app ${app.id}: ${owner} and ${source.pkg}`);
     }
     controllerAppOwners.set(app.id, source.pkg);
   }

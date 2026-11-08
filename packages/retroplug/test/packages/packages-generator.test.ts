@@ -394,6 +394,38 @@ test("a sync override is data the generator checks: its keys, its unused off-mod
   );
 });
 
+test("a controller app id ONE package declares twice is refused, naming that package once", async () => {
+  // The message says which package, not "alpha and alpha": one manifest listed the id twice, and a reader of the
+  // refusal should not go looking for a second package.
+  const { error } = await drive("duplicate-app-one-package");
+  console.log(`# duplicate controller app (one package): ${error}`);
+  expect(error).toBe("the package alpha declares the controller app same-app twice");
+});
+
+test("a sync override's shape is checked: an object, its node, its mode, and an off that differs from the mode", async () => {
+  // Each of these is data the planner would apply and the cart would never see the effect of, so the generator says
+  // which field is wrong rather than emitting an override that does nothing.
+  const notObject = await drive("sync-not-object");
+  console.log(`# sync override shape: ${notObject.error}`);
+  expect(notObject.error).toBe('alpha: the controller app alpha-app\'s syncOverride must be an object, not "MidiMap"');
+  const noNode = await drive("sync-no-node");
+  console.log(`# sync override node missing: ${noNode.error}`);
+  expect(noNode.error).toBe(
+    'alpha: the controller app alpha-app\'s syncOverride needs a "node": the cart sync node type its mode is set on',
+  );
+  const noMode = await drive("sync-no-mode");
+  console.log(`# sync override mode missing: ${noMode.error}`);
+  expect(noMode.error).toBe(
+    'alpha: the controller app alpha-app\'s syncOverride needs a "mode": the mode that node is put in',
+  );
+  const same = await drive("sync-off-is-mode");
+  console.log(`# sync override off is the mode: ${same.error}`);
+  expect(same.error).toBe(
+    'alpha: the controller app alpha-app\'s syncOverride names "midiMap" as both its mode and the mode a cart that ' +
+      "is not listening is put in, so the override changes nothing",
+  );
+});
+
 test("two contributions whose generated identifiers mangle to one name are refused, naming both", async () => {
   // "a-b" with app "c" and "a" with "b-c" both become app_a_b_c: a duplicate import tsc refuses with nothing said
   // about which manifests collided.

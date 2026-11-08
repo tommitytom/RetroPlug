@@ -75,6 +75,7 @@ class FakeFacet implements LaunchpadClient {
   held: { input: string; output: string; closeBytes: number[] } | null = null;
   claims: { input: string; output: string; closeBytes: number[] }[] = [];
   released: number[][] = []; // the close bytes replayed at each release, in order
+  releaseCalls = 0; // every release(), including one that holds nothing to replay
   away = new Set<string>(); // ports listed but that will not open (a device unplugged, a cable pulled)
   dropped = 0;
   error = "";
@@ -138,6 +139,7 @@ class FakeFacet implements LaunchpadClient {
   }
 
   release(): LaunchpadStatus {
+    this.releaseCalls++;
     this.releaseHeld();
     this.error = "";
     return this.status();
@@ -429,6 +431,10 @@ test("a port change while connected switches live, saying goodbye to the old dev
     restoreLaunchpad(stores.userConfig);
     findItem(submenu(stores, be), "lp-output")?.onCycle?.(1); // LPProMK3 MIDI -> MIDISPORT 2x2 Port A
     expect(h.claims.length).toBe(2);
+    // The old pair is let go FIRST, with its close bytes: a Launchpad stays in Programmer mode with its front panel
+    // locked until they arrive, and the new claim is what the facet sends them from.
+    expect(h.released.length).toBe(1);
+    expect(h.released[0]).toEqual(exitToLiveMode(PRO_MK3));
     expect(h.claims[1]).toEqual({
       input: "LPProMK3 MIDI", output: "MIDISPORT 2x2 Port A", closeBytes: exitToLiveMode(PRO_MK3),
     });
@@ -597,6 +603,15 @@ test("the scan row becomes Cancel while a scan runs, and steps aside while the l
     expect(row?.label).toBe("Cancel Control Surface Scan");
     expect(row?.disabled).toBe(undefined);
   });
+  // A pair claimed BEHIND a running scan (a restore landing mid-scan): Cancel is still the only way to stop it, so it
+  // must not be greyed by the link's state.
+  withHost(() => {}, (h, stores, be) => {
+    findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
+    h.held = { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", closeBytes: [] };
+    const row = findItem(midiSettingsRows(stores, be), "midi-scan");
+    expect(row?.label).toBe("Cancel Control Surface Scan");
+    expect(row?.disabled).toBe(undefined);
+  });
   // Connected: those ports cannot be reopened, and there is nothing left to find.
   withHost((h) => { h.held = { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", closeBytes: [] }; }, (h, stores, be) => {
     const rows = midiSettingsRows(stores, be);
@@ -712,6 +727,21 @@ test("Forget clears the pair AND the name, so the submenu goes away again", () =
     expect(stores.userConfig.controlSurface()).toEqual({ input: "", output: "", enabled: false, device: "" });
     expect(submenu(stores, be).length).toBe(0); // a name left behind would keep claiming a device that is gone
   }, TRS_PICK);
+});
+
+test("Forget hands back a REFUSED claim's reservation, which is this process's to release", () => {
+  // "in use by another RetroPlug" keeps the pair out of THIS process's shared stream on purpose (its pads must not reach
+  // a cart), and the link is not connected behind it. Forget must still release: a pair left reserved stays out of the
+  // stream for the rest of the session, and the error stays on the status row.
+  withHost((h) => h.away.add("LPProMK3 MIDI"), (h, stores) => {
+    restoreLaunchpad(stores.userConfig);
+    expect(h.claims).toEqual([]);
+    expect(h.status().error.startsWith("MIDI")).toBe(true); // the device is away, the claim refused
+    const before = h.releaseCalls;
+    forgetLaunchpad(stores.userConfig);
+    expect(h.releaseCalls).toBe(before + 1);
+    expect(h.status().error).toBe(""); // and the row's error is gone with the reservation
+  }, { input: "LPProMK3 MIDI", output: "LPProMK3 MIDI", device: "Launchpad Pro [MK3]", enabled: true });
 });
 
 // --- startup restore, scan ownership, profiles -------------------------------------------------------------

@@ -112,6 +112,10 @@ export class PortScan {
    *  ends up holding inputs for a scan that can no longer move. */
   step(nowMs: number): boolean {
     if (!this.st.busy) return false;
+    // A clock that is not a finite number (a host's frame counter that went to NaN, or a bound that reads as infinity)
+    // would wedge the scan open with every input held: no window would ever close, or one would close for ever. A step
+    // the scan cannot place on a clock is ignored, and the next real one carries on from where the last did.
+    if (!isFinite(nowMs)) return this.st.busy;
     if (this.lastNow !== null && nowMs > this.lastNow) this.elapsed += nowMs - this.lastNow;
     this.lastNow = nowMs;
     try {

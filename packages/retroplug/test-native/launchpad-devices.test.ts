@@ -176,6 +176,10 @@ test("a scan stepped to its end finds the device, persists the pair and claims i
     // BEFORE anything is opened, and the pair is reserved before the link opens it.
     const calls = audio.drainProductCalls();
     expect(calls.includes("suspend_hardware_inputs:1")).toBe(true);
+    // ...and given BACK when the scan lets its ports go, not left up: the product acts on the edge where a MIDI input is
+    // exclusive (Windows), so a scan that never lowered it would keep that stream's inputs suspended for the session.
+    expect(calls.includes("suspend_hardware_inputs:0")).toBe(true);
+    expect(calls.indexOf("suspend_hardware_inputs:0")).toBeGreaterThan(calls.indexOf("suspend_hardware_inputs:1"));
     expect(calls.indexOf("suspend_hardware_inputs:1")).toBeLessThan(calls.lastIndexOf(`reserve_midi:${PRO}|${PRO}`));
     expect(calls[calls.length - 1]).toBe(`reserve_midi:${PRO}|${PRO}`);
   } finally {

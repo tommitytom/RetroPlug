@@ -37,9 +37,9 @@ export interface LaunchpadConfig {
   connected: boolean; // the in/out pair is claimed
   enabled: boolean; // the user's "use a control surface" toggle
   sent: number; // LED messages written since the claim (status)
-  // Messages the device never got while it WAS attached (a full send ring, an oversized message): frames the surface
-  // is missing. The paint a session keeps pushing while nothing is claimed is not counted here - the link counts that
-  // apart - so this keeps meaning "a frame the device should have had".
+  // The link's drops since the claim, one count: a full send ring, an oversized message, and the paints a session keeps
+  // pushing while nothing is claimed. The last is what a returning device repaints from, so the number means "what the
+  // surface is missing" and not only "a frame the device should have had".
   dropped: number;
   error: string; // why the last claim failed, or "" (status)
 }
@@ -69,7 +69,8 @@ export const subscribeLaunchpad = notify.subscribe;
 
 // The facet's client, probed once: a product mounts its facets at boot and never changes them, so the first answer
 // holds for the life of this bundle (one per control-plane context, so each instance probes its own). undefined = not
-// probed yet, null = no facet (no RPC channel, or a host that did not mount it: the headless harness, an older build).
+// probed yet, null = no facet (no RPC channel, or a host that did not mount it: the DAW plugin, the UI test harness,
+// an older build).
 let facet: LaunchpadClient | null | undefined;
 
 function resolveClient(): LaunchpadClient | null {
@@ -186,7 +187,10 @@ function applyLink(store: UserConfigStore): void {
     const after = client.claim(sel.input, sel.output, Uint8Array.from(closeBytes()));
     if (!after.connected && after.error)
       console.warn(`[launchpad] could not claim '${sel.input}' / '${sel.output}': ${after.error}`);
-  } else if (status.connected) {
+  } else if (status.connected || status.error !== "") {
+    // A REFUSED claim keeps the pair out of the shared stream on purpose (another RetroPlug holds it), so the link is
+    // not connected but the reservation is this process's: Forget, or stopping the connection, must hand it back, or
+    // the pair stays out of the stream for the rest of the session with a stale error on the status row.
     client.release();
   }
 }
@@ -220,6 +224,11 @@ export function restoreLaunchpad(store: UserConfigStore): void {
   if (!client) return;
   try {
     applyLink(store);
+  } catch (e) {
+    // A claim that throws (an RPC failure, which the native facet catches and answers rather than throwing) must not
+    // escape into the caller's mount effect: the host is still waiting for the rendezvous word below, and the menu
+    // still has to read as "not connected" rather than failing to build.
+    console.warn(`[launchpad] restore failed: ${e}`);
   } finally {
     // Whether or not the claim went through, and even if a step threw (an RPC error in the claim): the product holds its
     // MIDI and audio for this word, and a host that never hears it waits out its bound and starts late for nothing.

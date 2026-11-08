@@ -15,14 +15,15 @@ import type { MidiConfig } from "../screens/menu/midiDevices";
 import type { TransportState } from "../screens/menu/transport";
 
 export interface RpHooks {
-  // --- installed BY the UI (main.tsx), called by the native editor ---------------------------------------
+  // --- installed BY the UI (main.tsx, and launchpadDevices.ts for the scan hook), called by the native host --
   __rp_mountUI?: () => void;
   __rp_unmountUI?: () => void;
   /** The window size to open at for the already-loaded project (before first map), or null for the default. */
   __rp_initialWindowSize?: () => { width: number; height: number } | null;
-  /** Start a control-surface scan as Settings > MIDI's row does (launchpadDevices). The SDL's test hook reads it, so a
-   *  check can drive the whole TS scan over the real facet without a menu (tools/run-sdl-controller.sh). False when a
-   *  scan is already running, the link holds a pair, or the host mounted no Launchpad facet. */
+  /** Start a control-surface scan as Settings > MIDI's row does (launchpadDevices). The SDL's harness hook reads it, so a
+   *  check can drive the whole TS scan over the real facet without a menu (tools/run-sdl-controller.sh); that hook exists
+   *  only where the test-only port filter is set, so a shipped build writes no MIDI on its own. False when a scan is
+   *  already running, the link holds a pair, or the host mounted no Launchpad facet. */
   __rp_scanControlSurface?: () => boolean;
 
   // --- window (plugin editor + SDL) -------------------------------------------------------------------------

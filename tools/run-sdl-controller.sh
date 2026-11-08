@@ -23,9 +23,13 @@
 # shared stream on "All Devices" opens every input: on a developer's machine that is their own hardware. So the standalone
 # runs under RP_MIDI_PORT_ALLOW (MidiIo.hpp and the Launchpad pack's MidiPortFilter.hpp), set below to the two fakes' FULL
 # port names - "<client>:<port> <client#>:<port#>" as RtMidi reports them, the client names being ones no real device
-# has - and a filtered process can neither list nor open anything else. The listing run below refuses to continue if
-# anything else appears, and refuses outright if a listed port is named like a Launchpad, so a build that ignored the
-# filter fails here rather than probing what is plugged in.
+# has - and a filtered process can neither list nor open anything else.
+#
+# The listing pass below is a REPORT, not the guard: it proves the filter is honoured on this machine before anything is
+# claimed or probed, and fails the run if a listed port is not a fake or is named like a Launchpad. What actually keeps
+# every leg off other gear is the filter itself, refused at every door - the pack's lister (what a scan's sweep reads), its
+# opener, its pool and its link, and MidiIo's shared stream - so the pool and the opener refuse a port the list did not
+# name whether or not this pass ran.
 #
 # Linux only (ALSA sequencer). Not in CI. Usage: tools/run-sdl-controller.sh  (build retroplug-sdl first)
 
@@ -110,10 +114,13 @@ PY
 # The port name exactly as RtMidi lists it ("<client>:<port> <client#>:<port#>"), matched on OUR fake's client
 # number so any other device (or a stale fake) with the same name is ignored.
 RETROPLUG_SDL_MIDI_LIST=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=5 "$BIN" >"$TMP/list.log" 2>&1 || { cat "$TMP/list.log" >&2; fail "listing run exited non-zero"; }
-# THE SAFETY CHECK, before anything is claimed or probed: under the filter the listing may hold exactly the two fakes
-# and nothing else. A build that does not honour RP_MIDI_PORT_ALLOW would list this machine's own devices here, and the
-# scan further down writes a Device Inquiry to every output it is given - so refuse, naming them, rather than touch them.
+# THE LISTING PASS, before anything is claimed or probed: under the filter the listing may hold exactly the two fakes and
+# nothing else, which is what says the filter is honoured here. It is not what keeps the legs safe - the pool, the opener,
+# the link and MidiIo each refuse a port the list did not name, so none of them can be reached from here whether or not
+# this pass ran - but a build whose filter was broken would list this machine's own devices, and the run stops rather
+# than find out the hard way. The list is printed either way, so a run that skips less than expected says why.
 LISTED="$(sed -n "s/.*MIDI \(in\|out\) device: *'\([^']*\)'.*/\2/p" "$TMP/list.log")"
+printf '%s\n' "$LISTED" | sed 's/^/  listed: /' >&2
 [ -n "$LISTED" ] || { cat "$TMP/list.log" >&2; fail "the listing run listed no MIDI port at all"; }
 STRAY="$(printf '%s\n' "$LISTED" | grep -v -F -x -e "$FAKE_PORT" -e "$KEYS_PORT" || true)"
 [ -z "$STRAY" ] || { printf '%s\n' "$STRAY" >&2

@@ -279,6 +279,31 @@ test("a forward seek is a relocate: the predictor does not race through the song
   expect(dev.leds.get(pad(0, 2)) === Palette.greenBright).toBe(false); // and the walk did not land it on row 2
 });
 
+test("a session that starts after a run with no app begins at the clock, not at the last count", () => {
+  // The node hands the predictor the PREVIOUS block's count. While the app id names no app the node returns before the
+  // walk, so that count used to sit there and the first block of the session that starts later was handed it: the fresh
+  // predictor began a block ahead of the cart (row 2 where the cart is at row 1, here).
+  const twoSeconds = 88200; // 96 ticks a block
+  const clean = session({ songRowTicks: table() });
+  const dev = new Device();
+  dev.feed(clean.run(blockOf({ playing: true, ppq: 0, connected: true, surface: [PRESS_ROW_0] }, twoSeconds)));
+  dev.feed(clean.run(blockOf({ playing: true, ppq: 4, connected: true }, twoSeconds)));
+  expect(dev.leds.get(pad(0, 1))).toBe(Palette.greenBright); // two blocks of 96 ticks: the prediction is on row 1
+  // A block the node runs with no session, between two it runs with one.
+  const rig = session({ songRowTicks: table() });
+  const dev2 = new Device();
+  dev2.feed(rig.run(blockOf({ playing: true, ppq: 0, connected: true, surface: [PRESS_ROW_0] }, twoSeconds)));
+  dev2.feed(rig.run(blockOf({ playing: true, ppq: 4, connected: true }, twoSeconds)));
+  expect(rig.set({ ...settingsOf(), app: "does-not-exist" })).toBe(true);
+  rig.run(blockOf({ playing: true, ppq: 8 }, twoSeconds)); // no session: the count it would have made is not kept
+  expect(rig.set(settingsOf())).toBe(true);
+  dev2.feed(rig.run(blockOf({ playing: true, ppq: 12, connected: true }, twoSeconds)));
+  // Where the cart is, one block of ticks behind as always: the dangling count would have added the gap's block and
+  // put this run a row ahead.
+  expect(dev2.leds.get(pad(0, 1))).toBe(Palette.greenBright);
+  expect(dev2.leds.get(pad(0, 2)) === Palette.greenBright).toBe(false);
+});
+
 test("a loop wrap keeps the block's ticks: the playhead does not fall a block further behind", () => {
   // A DAW loop (or an SPP back) moves the host's timeline backwards, and walkTicks goes on clocking the cart through it:
   // it merely resyncs its own counter to the block's start. A session that INFERRED the ticks from the position read the
