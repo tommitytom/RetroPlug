@@ -24,7 +24,7 @@ const QUANTISE_LABELS: Record<Quantise, string> = {
   rowEnd: "End of row",
 };
 
-/** MIDI note rows 254 and 255 are the MI.MAP handshake and clock sentinels, so the page's last row is one short. */
+/** The control plane's half of MI.MAP: the id a project stores, the menu's label and the knobs' schema. */
 const MI_MAP: ControllerAppContribution = {
   id: "lsdj-midimap",
   label: "LSDj MI.MAP",
@@ -34,6 +34,7 @@ const MI_MAP: ControllerAppContribution = {
   config: z.object({
     quantise: enumField(QUANTISE_VALUES, "bar"),
     follow: boolField(true),
+    // MIDI note rows 254 and 255 are the MI.MAP handshake and clock sentinels, so the page's last row is one short.
     page: clampedInt(0, MAX_PAGE, 0),
   }),
   // The rows the Launchpad submenu offers for those knobs, in order: the menu builds them from this list and the

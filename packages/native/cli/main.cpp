@@ -197,8 +197,8 @@ int main(int argc, char** argv) try {
     // The backend service graph (see host/HostServices.hpp). The CLI exposes the whole surface (incl. the
     // debug facet), so it mounts every facet.
     HostServices svc;
-    // The providers of the packages this product lists (the N8 pack's and the Launchpad pack's: its manifest names both,
-    // docs/modular-graph-phase-f3-design.md section 7), started after the engine and before a session can publish a
+    // The providers of the packages this product names in its PROVIDERS list (the N8 pack's and the Launchpad pack's:
+    // docs/modular-graph-phase-f3-design.md sections 2 and 3), started after the engine and before a session can publish a
     // graph, and their facets mounted below beside the CLI's own: every product registers its packs one way, and the N8
     // sessions and Launchpad probe a CLI script opens arrive in the same facets. Never restored: a provider's persisted
     // state is the UI's (n8.cfg's streaming link, left enabled in the standalone or the plugin), and restoring it here

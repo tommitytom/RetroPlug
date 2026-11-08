@@ -631,7 +631,7 @@ loaded beside it holds its own nodes: the nodes of one pack share a realm, and n
 |---|---|
 | Desktop (plugin, standalone, CLI, SDL, Node) | bare QuickJS, the script host that replaced `DspRuntime` |
 | Web | the browser's own JS engine, in the AudioWorklet |
-| Pico | MicroQuickJS, under the existing `check:portable` rules |
+| Pico | MicroQuickJS, under the device-pack toolchain's rules (bundle, ES5, the library scan, a transcript) |
 
 **Cost.** QuickJS is an interpreter: a stereo gain over a 512-frame block is about 1% of a core, a biquad
 about 5%. Fine for event-rate work (sync, MIDI, sequencing) and light audio; heavy DSP belongs in C++.
@@ -875,7 +875,8 @@ is not; [modular-graph-phase-d3-design.md](modular-graph-phase-d3-design.md)).
 - **Proved by a link trap.** `rp-device-check` links every portable `rp.core` and `rp.dsp` type for the
   RP2350 under `--wrap` on the heap, `sbrk`, the C++ allocation operators and the throw entry points, so any
   use is a link error naming the object (E1; `pnpm device:check`, a CI step).
-- TS nodes on the Pico run on MicroQuickJS within `check:portable`'s rules (E4).
+- TS nodes on the Pico run on MicroQuickJS within the device-pack toolchain's rules (E4; `check:portable` was retired
+  for it).
 
 ---
 

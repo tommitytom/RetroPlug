@@ -1,9 +1,9 @@
 # The package split
 
-**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1 built
+**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1 and F3 built
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records it and its follow-up
-pass), F3 prototyped ([modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records the
-build; what it leaves is [07-remaining-work.md](../spec/07-remaining-work.md) section 5's F3 bullet), F2 and F4 not yet designed
+pass; [modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records it; what it leaves is
+[07-remaining-work.md](../spec/07-remaining-work.md) section 5's F3 bullet), F2 and F4 not yet designed
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
 workspace packages would take. E1 started it (`node-sdk`, `graph-runtime`, `core`, `dsp`), E2 carved `n8`, and E4 made
@@ -25,8 +25,8 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
   The registries that are pure data (roles, ROM providers, protocol-node tables, tracker integrations, kit formats) are
   generated from a product's package list, which is both the dependency order and the registration order. No behaviour
   changes: every baseline held unmodified.
-- **F3: the Launchpad pack** ([design](modular-graph-phase-f3-design.md), **prototyped** on `proto/f3-launchpad` in
-  five stages). A port, not a merge, of `feature/launchpad` (merge-base `cfeb80e00`, 2026-09-29, before the
+- **F3: the Launchpad pack** ([design](modular-graph-phase-f3-design.md), **built** on `feature/modularize`; it was
+  designed and prototyped on `proto/f3-launchpad` in five stages). A port, not a merge, of `feature/launchpad` (merge-base `cfeb80e00`, 2026-09-29, before the
   graph existed) into `packages/launchpad` (the two surface nodes, the protocol, the session, the port scan, the
   provider and the facet) and `packages/lsdj-launchpad` (the MI.MAP app, contributed through the new `controllerApps`
   kind), with the provider ABI at 2, `PROVIDERS` per product, `config.json`'s `controlSurface`, and the pack's portable

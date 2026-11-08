@@ -266,8 +266,8 @@ The rules below are the parts that don't fit those.
   plane's `definePackage({ controllerApps })` (`id`, `label`, the app's config schema; the shell's
   `src/controller/registry.ts` fills the registry from the generated list and adds `parseAppConfig`) and the runtime's
   `protocol.apps` entry (`module`, naming the app's factory, playback model and launch target; `syncOverride` as data
-  for the cart sync mode an app needs), joined by `id`, with the generator refusing an unpaired half or a duplicate
-  id. MI.MAP is `packages/lsdj-launchpad`'s, which depends on `launchpad` and `lsdj` and which `launchpad` never
+  for the cart sync mode an app needs), joined by `id`, with the generator refusing a duplicate id and the generated
+  module refusing an unpaired half at load. MI.MAP is `packages/lsdj-launchpad`'s, which depends on `launchpad` and `lsdj` and which `launchpad` never
   imports. **The scenario mode is the portability proof:** `build-device-pack.mjs --scenario <file.ts>` bundles a
   package's portable core instead of a node entry, runs it under Node and on `retroplug-mqjs-run` and demands
   byte-identical transcripts in `--heap-bytes`; both scenarios run in `pnpm test` (the core's budget 76800, the

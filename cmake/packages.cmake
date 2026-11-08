@@ -1589,10 +1589,9 @@ function(retroplug_providers_header file label)
 // ${_listed}. Do not edit; edit the product's PROVIDERS or a manifest.
 //
 // The providers of those packages (graph/rp_provider.h), in the order the list above gives them, and the facets they
-// mount. A
-// product starts them after its engine and before its control plane can publish a graph, restores them where it
-// restores its own state, wakes them once a frame, mounts their facets where it mounts its own, and stops them after it
-// has reclaimed its plans.
+// mount. A product starts them after its engine and before its control plane can publish a graph, mounts their facets
+// where it mounts its own, restores them where it restores its own state if it restores any, wakes them once a frame if
+// it has a frame loop, and stops them after it has reclaimed its plans.
 //
 // A product's sources include it by its bare name, #include \"rp_product_providers.hpp\" (the SDL standalone's
 // main.cpp, the plugin's PluginDSP.cpp and the CLI's main.cpp, the three that start providers): its directory is an

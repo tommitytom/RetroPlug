@@ -5,8 +5,8 @@
 // the LSDj bridge (@retroplug/lsdj-launchpad/launchTarget), because the note numbers are MI.MAP's protocol and this
 // package knows no tracker. A host builds the target and hands the session a `send` that reaches the cart.
 //
-// A target that discards everything is here rather than with a tracker, because it names no wire: it is what a session
-// with no cart attached yet runs, so an app can light its grid and respond to presses before one exists.
+// A target that discards everything is here rather than with a tracker, because it names no wire: it is what a host
+// with no launch path of its own can hand a session, so an app lights its grid and answers presses without one.
 
 /** A sink for row launches. Implementations own the wire format; the app only names rows. */
 export interface TrackerTarget {
@@ -17,8 +17,8 @@ export interface TrackerTarget {
   release(row: number): void;
 }
 
-/** A target that discards everything - for a session with no cart attached yet, so an app can light its grid and
- *  respond to presses without a launch path existing. `maxRow` is the app's own range: this knows no tracker's. */
+/** A target that discards everything, for a session whose launches have no wire yet, so an app can light its grid and
+ *  respond to presses without one. `maxRow` is the app's own range: this knows no tracker's. */
 export function nullTarget(maxRow: number): TrackerTarget {
   return { maxRow, launch(): void {}, release(): void {} };
 }

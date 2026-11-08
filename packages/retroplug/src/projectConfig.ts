@@ -45,7 +45,7 @@ export interface ProjectSettings {
  *  song-timing table the predictor needs is built at projection time and never persisted. */
 export interface ControllerSettings {
   enabled: boolean;
-  app: string; // a ControllerRegistry id, e.g. "lsdj-midimap" (DEFAULT_CONTROLLER_APP below is the first registered)
+  app: string; // a ControllerRegistry id, e.g. "lsdj-midimap" (DEFAULT_CONTROLLER_APP above is the first registered)
   target: ControllerTarget;
   systemId: number; // 0 = the first system
   /** The chosen app's OWN knobs (quantise, follow, …), validated by that app's schema rather than here -

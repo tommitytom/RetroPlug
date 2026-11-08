@@ -180,7 +180,7 @@ Two behaviours the driver **must** honour:
 
 [`src/launchpad/`](../packages/launchpad/ts/) implements all of the above as a pure layer -
 no I/O, no RetroPlug types, no tracker knowledge. Every builder is pinned to one of the manual's own
-worked hex examples in [test/launchpad/](../packages/retroplug/test/launchpad/), so the reference is the
+worked hex examples in [test/launchpad/](../packages/launchpad/ts/test/), so the reference is the
 oracle rather than our reading of it.
 
 Two limits found while building it, both from the PDF rather than the protocol:

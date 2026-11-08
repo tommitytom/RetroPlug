@@ -49,7 +49,9 @@ What the code said about splitting it:
 
 ## 2. The node set
 
-Script nodes, one per role ([packages/launchpad/ts/](../packages/launchpad/ts/)). Node ids follow the main
+Script nodes, one per role, each in the package that owns it: `rp.midi.route` in
+[core](../packages/core/ts/midiRoute.ts), each cart's protocol node in the cart's own package, and the controller
+session in [launchpad](../packages/launchpad/ts/controllerSession.ts). Node ids follow the main
 design's convention: `sys-<id>/<role-kind>` for a system's protocol node, `routing` and `controller` for the
 project's.
 

@@ -11,7 +11,7 @@
 // Nothing here knows any device protocol, and that is the point of the layer: TS builds and parses every byte, so these
 // tests assert on ROUTING (which port was written to, which answered, in what order) and on the claim's generation,
 // never on what any byte means. The case that drives three threads at once ("a swap mid-drain") is the pack's
-// ThreadSanitizer leg (tools/run-sanitizer.sh's launchpad run, and `tsanlp` in the prototype's own verification).
+// ThreadSanitizer case: build retroplug-launchpad-test in a build-tsan tree and run it there.
 
 #include <catch2/catch_test_macros.hpp>
 

@@ -4,9 +4,10 @@
  * A pack that owns hardware on the desktop (the N8's serial link, its persisted state, the cart link its node binds)
  * names a provider in its manifest: an entry of its desktop target with a `provider` (the C function returning this
  * table) and, when it has a facet, an `rpc` (the header and the function that mount it). cmake/packages.cmake generates
- * each product's rp_start_providers, rp_restore_providers, rp_stop_providers and rp_register_package_rpc from its
- * packages' manifests, so a product starts, restores, stops and mounts every provider it carries in one place and names
- * no class of any of them.
+ * each product's rp_start_providers, rp_restore_providers, rp_stop_providers, rp_wake_providers and
+ * rp_register_package_rpc from the product's PROVIDERS list (its packages' manifests, in the order it names them), so a
+ * product starts, restores, stops, wakes and mounts every provider it carries in one place and names no class of any of
+ * them.
  *
  * Desktop only: a provider owns threads, ports and files, and a device image has none of those to give it (the Pico's
  * box drives its hardware itself until E3 makes it a graph host). Plain C, as the rest of the device ABI is, so a

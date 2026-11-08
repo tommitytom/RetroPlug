@@ -1,7 +1,7 @@
 # Phase F3: the Launchpad pack
 
-**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** designed, prototyped on `proto/f3-launchpad`; sections 1 to 10 are corrected in place to what the prototype
-built, and section 12 ("As built") records the build
+**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** built on `feature/modularize` (five commits; it was designed and prototyped on `proto/f3-launchpad`); sections 1 to 10 are corrected in place to what the build found,
+and section 12 ("As built") records it
 
 F3 is the second phase of the package split ([package-split.md](package-split.md)), after F1 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md)).
 It is a **port, not a merge**, of `feature/launchpad`. That branch forked at `cfeb80e00` (2026-09-29), before the graph
@@ -125,7 +125,9 @@ anchor and SYNC poll (`projectStore.ts`), which is cart orchestration through th
 
 **What goes:** `packages/native/src/host/launchpad/*` (the whole legacy host, including `LaunchpadHost`, `LaunchpadScanner`,
 `LaunchpadHooks` and `bindLaunchpadHooks`), `launchpad.cfg` (not imported: a user re-scans once; section 5), the shell's
-`src/controller` and `src/launchpad`, the shell's protocol member for `rp.controller.session`, and `check:portable`
+`src/launchpad` and every part of `src/controller` but its registry (`registry.ts` stays: it fills the launchpad
+package's registry from the generated list and parses a saved app config with the app's own schema), the shell's
+protocol member for `rp.controller.session`, and `check:portable`
 (`scripts/check-portable-core.mjs`, `tools-src/portable-scenario.ts`, the `build-portable/` mqjs, the CI step), replaced by
 section 6. `LaunchpadNodes.*` and `SurfaceLink.hpp` move into `retroplug-launchpad`.
 
@@ -154,7 +156,7 @@ its `PROVIDERS <package>...` list**, which has no default: a package in `PACKAGE
 node types and neither its provider entry nor its desktop target (a manifest item that carries both an `entry` and a
 `provider` is refused at configure, because the two would be dropped together). The SDL, the headless host and the CLI
 name `launchpad`; the plugin never does and its `plugin.cmake` refuses a plugin target that links the desktop half. The provider creates the `ControllerLink`, the `MidiPortPool` and the `PortClaim`, and
-installs the link under `"launchpad"` / `rp.launchpad.surface-link/1` through `rp_device_host::install`, as the N8 provider
+installs the link under `"launchpad"` / `rp.launchpad.surface-link/2` through `rp_device_host::install`, as the N8 provider
 installs its cart link. It owns no console, no file and no profile: TS owns every decision (section 5), native is a
 protocol-free transport.
 
@@ -172,8 +174,9 @@ directions (there is no optional read of the new members). `rp_device_host` gain
   frame the session painted is the frame the device hears.
 
 The SDL implements them over `MidiIo` (`setReserved`, `setHardwareInputsSuspended`) with the audio stop and restart, one
-restart for a swap; the headless host and the CLI record the calls (a test reads the record through the engine facet's
-harness half) and do nothing else; the N8 provider ignores the table's new members.
+restart for a swap; the headless host records the calls (a test reads the record through the engine facet's harness half)
+and does nothing else; the CLI passes no-ops, because it owns no shared stream to reserve from, has no inputs to give up
+and ends the rendezvous at once, and it has no reader for a record; the N8 provider ignores the table's new members.
 
 **The startup rendezvous.** Today the SDL restores the link after `rp_restore_providers` and hands `MidiIo` the reserved
 input, with audio running. F3 inverts it so a claimed pair is never opened by the shared stream first:
@@ -191,8 +194,8 @@ reserve**: the product stops audio, reopens the stream without the pair, restart
 
 **Fixed slots and generations.** `ControllerLink`'s device-to-audio ring is fixed `DeviceMessage[kMaxIn]` slots (the
 node-facing `DeviceMessage` is 560 bytes; the branch took 1024-byte messages from the device, so an inbound message wider
-than the slot is dropped and counted as `messagesInboundDropped`, as the legacy link does), single consumer: the audio
-thread. Each slot carries the claim it was written under; whoever consumes a slot drops it if it belongs to an earlier
+than the slot is dropped and counted in the link's one `dropped_` (as an oversized message, a full receive ring and a
+paint sent with nothing attached all are), single consumer: the audio thread. Each slot carries the claim it was written under; whoever consumes a slot drops it if it belongs to an earlier
 claim. `disconnect` and `connect` bump the generation and rewind nothing, which removes the UI-drain race of section 1. A claim
 whose input and output carry one name (an interface's two ports) is **one** cross-process claim, not two locks that
 refuse each other. The facet's claim runs in the branch's order: the old pair is disconnected (its close bytes out) and
@@ -216,9 +219,11 @@ stream with the same wrap: the link's loss count, so the session can repaint. `b
 `NoSurface` answers generation 0.
 
 **The facet.** `LaunchpadRpc`, mounted whole in every product that starts the provider (the user's decision for N8's facet,
-carried over). It is TS's only door to ports: `ports()` (the loose enumeration, the input and output names), `claim`,
-`release` (with the close bytes), `connected` and `generation`, and the `MidiPortPool` calls a scan needs (`open`, `send`,
-`drain`, `close`, and the batch's held edge): twelve synchronous methods in all. Scans run in TS (`PortScan`) as a state machine stepped from the UI frame poll
+carried over). It is TS's only door to ports: `ports()` (the loose enumeration, the input and output names), `status` (the
+claim's state: connected, generation, sent, dropped, the pair's names and the last error), `claim`, `release` (with the
+close bytes), `send` (a message to the claimed output), `restored` (the rendezvous's end), and the `MidiPortPool` calls a
+scan needs (`openInputs`, `openOutput`, `portSend`, `portRead`, `portClose` and `portError`): twelve synchronous methods in
+all. Scans run in TS (`PortScan`) as a state machine stepped from the UI frame poll
 with a clock it is told, over these calls, so no native thread scans and no wall-clock stall can wedge it. The facet is
 synchronous, like the N8's facet in the CLI; each call is a few vector copies, and the pool's batch open is the one
 expensive call (section 10 question 4).
@@ -491,11 +496,11 @@ Each was answered by the prototype; the section keeps the question and the answe
 
 ## 12. As built
 
-The prototype, on `proto/f3-launchpad` over the design commit `fcdb47361`, is five commits, one per stage, each reviewed
-(by Opus) and amended until its review passed; the last fix pass folded every outstanding fix into the commit it belongs
-to, and each of the five trees was checked green on the `graph` suite and the `[protocol-nodes]` cases on its own. The
-sections above were corrected in place to what these found; this section records what was built, where it departs from
-the design as first committed, and what it verified.
+The build, on `feature/modularize` (it was designed and prototyped on `proto/f3-launchpad` over the design commit
+`fcdb47361`), is five commits, one per stage, each reviewed (by Opus) and amended until its review passed; the last fix
+pass folded every outstanding fix into the commit it belongs to, and each of the five trees was checked green on the
+`graph` suite and the `[protocol-nodes]` cases on its own. The sections above were corrected in place to what these
+found; this section records what was built, where it departs from the design as first committed, and what it verified.
 
 **The stages**, by commit subject:
 
@@ -510,7 +515,8 @@ the design as first committed, and what it verified.
    provider and the 12-method facet, ABI 2, `PROVIDERS`, the transport's tests.
 4. `feat(launchpad): the products on the pack's provider, and the shell on its facet`: the provider in the SDL, the headless
    fake and the CLI, the facet client in `launchpadDevices.ts`, the menu on it, `controlSurface` in `config.json`, the
-   shell's deletions (the legacy host, `src/controller`, `src/launchpad`, `check:portable`), `sdl:controller` and the
+   shell's deletions (the legacy host, `src/launchpad`, `src/controller`'s app modules and session, `check:portable`),
+   `sdl:controller` and the
    port filter.
 5. `docs: the Launchpad pack in the living docs`: AGENTS.md, spec/02, spec/06, spec/07, package-split.
 
@@ -549,7 +555,8 @@ the design as first committed, and what it verified.
 - **The re-records as they landed:** the `[packages]` golden, the role goldens' drops wire, the surface descriptor goldens
   as new files, the device-check image hash (`8cc7ae7d` to `38665e2c`, the surface nodes joining its node set), and that
   one digest. The box images and the `bliptoaster` pack's bytes were not touched.
-- **The test seams are larger than the design said:** `RP_MIDI_PORT_ALLOW` (exact full port names),
+- **The test seams are larger than the design said:** `RP_MIDI_PORT_ALLOW` (a comma-separated list of SUBSTRINGS of a
+  port's name; the harness writes its fakes' whole names, which no other device's name can contain),
   `RETROPLUG_LAUNCHPAD_CLAIM_DIR`, `RETROPLUG_SDL_TEST_SCAN`, a fake named `RPFakeLPProMK3`, and `sdl:smoke` and
   `sdl:pipewire` under a scratch config dir with an allow list that matches nothing.
 
@@ -564,8 +571,8 @@ if a listed port that is not a fake contains `LPProMK3` or `Launchpad`. A table-
 the pack's copy of the filter rule to each other. The harness leg was disabled until the filter existed and was turned back on
 with it.
 
-**Verification.** A baseline run at the design commit (41 legs, every one exit 0, the same tip-verify as E4's) was compared
-with a run at the final commit (43 legs, the baseline's plus `tsanlp` for the pack's transport under ThreadSanitizer and
+**Verification.** A baseline run at the design commit (40 legs, every one exit 0, the same tip-verify as E4's) was compared
+with a run at the final commit (42 legs, the baseline's plus `tsanlp` for the pack's transport under ThreadSanitizer and
 `sdlctl` for `sdl:controller`): every leg exit 0. The legs:
 
 - the device images, hashed: box PIO `4b4f9abc` and native `af36f223`, identical to the baseline; the device check moved
@@ -573,8 +580,9 @@ with a run at the final commit (43 legs, the baseline's plus `tsanlp` for the pa
 - strict parity unchanged, the controller group included (30 files, 250 cases, no re-record), and the kit and render
   baselines, `buildGraph`'s goldens and the CLI suites unchanged;
 - `pnpm test`: 190 files and 1991 cases, zero skips (baseline 183 and 1906); `pnpm test:ui` 42 files and 46 cases;
-  `pnpm test:plugin` 11 binaries and 593 cases (the engine-graph binary 338, the pack's `retroplug-launchpad-test` 52,
-  `retroplug-midi-test` 23); `test:native` 172 files and 629 cases with resources, and the CI picture 144 skips in the same
+  `pnpm test:plugin` 11 binaries and 932 cases, the per-binary sum (the engine-graph binary's 338 among them, the pack's
+  `retroplug-launchpad-test` 52 and `retroplug-midi-test` 23 at that run; 902 at the baseline); `test:native` 172 files and
+  629 cases with resources, and the CI picture 144 skips in the same
   65 files; the sanitizer legs (thread and address) over the engine graph, the graph library, the N8 pack, the device mode,
   the pack's transport and the kit; `device:check`, `device:box`, `sdl:smoke`, `sdl:controller` (five legs), `check:docs`
   and `check:boundaries` (no exception, no warning).

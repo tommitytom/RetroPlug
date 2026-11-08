@@ -664,10 +664,6 @@ function coreModules() {
   return out.sort();
 }
 
-// A scenario is not a node: it is a script that reaches into the package's portable core and prints what it does, so
-// a path a node never runs is checked too. It is bundled, lowered and scanned as a pack is (above), then run under
-// Node and on the engine: the transcripts must be byte for byte the same, in the heap `--heap-bytes` names. It writes
-// no pack, only the transcript the two agreed on; the run is the proof.
 const printed = (run) => run.stdout.replace(/\r\n/g, "\n");
 // How a run ended when it did not exit: a signal (POSIX), or an exception code as its status (Windows, 0xC0000005 and
 // the like, past any exit status a program returns). Null for an ordinary exit.
@@ -680,6 +676,10 @@ const LEAST_CONTEXT = 4096;
 // What a failed run said, for a message: its error printing colours the text for a terminal.
 const said = (run) => `${run.stderr}${printed(run)}`.replace(/\x1b\[[0-9;]*m/g, "").trim();
 
+// A scenario is not a node: it is a script that reaches into the package's portable core and prints what it does, so
+// a path a node never runs is checked too. It is bundled, lowered and scanned as a pack is (above), then run under
+// Node and on the engine: the transcripts must be byte for byte the same, in the heap `--heap-bytes` names. It writes
+// no pack, only the transcript the two agreed on; the run is the proof.
 if (SCENARIO) {
   if (HEAP_BYTES < LEAST_CONTEXT) {
     fail(`its heap is ${HEAP_BYTES} bytes, under the engine's least context of ${LEAST_CONTEXT}`);

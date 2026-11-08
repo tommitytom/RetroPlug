@@ -745,9 +745,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The native halves are F2's**: `sameboy`'s and `mesen`'s C++ still live on `retroplug-backend` under
     `packages/native` (both packages have no `native` member), so `rp_sameboy_package` and `rp_mesen_package` are still
     the shell's, and `[packages]` still lists them where it did.
-  - **F3 has since taken the controller** (its bullet, below): `src/controller` and `src/launchpad` are gone (the
-    code is `launchpad`'s and `lsdj-launchpad`'s), the controller session node (span label 22) is the launchpad pack's,
-    and `CONTROLLER_TARGET_VALUES` moved with it. `packages/retroplug/src/app.ts` still contributes nothing, and what
+  - **F3 has since taken the controller** (its bullet, below): `src/launchpad` and `src/controller`'s app modules are
+    gone (the code is `launchpad`'s and `lsdj-launchpad`'s); what remains of `src/controller` is `registry.ts`, which
+    fills the launchpad package's registry from the generated list and parses a saved app config with the app's own
+    schema. The controller session node (span label 22) is the launchpad pack's, and `CONTROLLER_TARGET_VALUES` moved
+    with it. `packages/retroplug/src/app.ts` still contributes nothing, and what
     is left of the shell's `protocol` member is nothing at all: the pack declares the node.
   - **F4 owns what the stores and the UI reach through**: the menu item model, `TRACKER_UI`, the HD player and the
     overlays still deep-import their carts by package name (not through a registration), and there is one bundle per
@@ -756,12 +758,11 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     `<package>/<path>` (`lsdj/sav`, `risa/kit`, `bliptoaster/rom`, `n8/n8MidiToFifo`). The ts tier's skip baseline
     records nothing, so a move between it and the shell changes no baseline entry.
 - **F3 built: the Launchpad pack** ([modular-graph-phase-f3-design.md](../docs/modular-graph-phase-f3-design.md),
-  five commits, built on `feature/modularize`; the plan resets the branch to this design commit and re-executes them
-  there): `packages/launchpad` (the two surface nodes, `device: true` and with no `threads`; the transport
+  five commits on `feature/modularize`): `packages/launchpad` (the two surface nodes, `device: true` and with no `threads`; the transport
   `ControllerLink`, `PortClaim`, `MidiPortPool` and `RtMidiPort`; the provider and the twelve-method facet
   `LaunchpadRpc`; TS's protocol, session, `PortScan`, profiles, the `controllerApps` mechanism and the
   `rp.controller.session` node at label 22) and `packages/lsdj-launchpad` (the MI.MAP app's two halves, its launch
-  target and the predictor it reads), with the provider ABI at 2 (`reserve_midi`, `suspend_hardware_inputs`,
+  target and the predictor lsdj's own playback code provides), with the provider ABI at 2 (`reserve_midi`, `suspend_hardware_inputs`,
   `restored`, and `rp_provider`'s `wake`), `retroplug_product(... PROVIDERS ...)` with no default (the SDL, the
   headless host and the CLI name `n8 launchpad`, the plugin `n8` alone), `config.json`'s `controlSurface` and the
   startup rendezvous, the SDL's `MidiIo` reserve and suspend, the menu and `launchpadDevices.ts` on the facet,
@@ -779,8 +780,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **`disconnect()` under WinMM** belongs to the same owed run, and it is the half `send()` is not: `send()` waits for no
     write at all (the writer drains the UI's own queue, and a push takes a lock the writer holds only for a swap), but a
     claim, a release or the provider's stop lands in `ControllerLink::disconnect()` on the UI thread, which joins a writer
-    that may be mid-drain of up to 32 queued messages (~170 ms each under WinMM) and then flushes the ring and writes the
-    close bytes itself. A swap cannot dodge it (the old pair's ports must be closed before the new pair opens), so the owed
+    that may be mid-drain of up to 32 messages from the send ring plus the 16 the UI queue holds (~170 ms each under
+    WinMM) and then flushes the ring and writes the close bytes itself. A swap cannot dodge it (the old pair's ports must be closed before the new pair opens), so the owed
     work is to measure it with a full repaint queued and, if that is too long, hand the farewell to the writer.
   - **The Windows-only held edge is untested in place.** `suspend_hardware_inputs` is a real lever under `_WIN32`
     alone (`MidiIo.hpp`'s `scanSuspendsInputs`: an ALSA sequencer input and a CoreMIDI endpoint are shared), and the

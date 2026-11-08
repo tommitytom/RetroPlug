@@ -36,8 +36,9 @@ export function launchMessage(row: number, on = true): number[] | null {
 }
 
 /** An LSDj MI.MAP target over `send`. Out-of-range rows are dropped rather than wrapping onto some other
- *  row - a silent launch is a much smaller surprise than launching the wrong part of the song. A session with no cart
- *  attached yet runs launchpad's `nullTarget(LSDJ_MAX_ROW)` rather than one of these. */
+ *  row - a silent launch is a much smaller surprise than launching the wrong part of the song. The session runs this
+ *  target even with no cart attached: its launches go on the launch stream and reach nothing, so a target that discards
+ *  them is not needed. */
 export function lsdjMidiMapTarget(send: (data: number[]) => void): TrackerTarget {
   return {
     maxRow: LSDJ_MAX_ROW,
