@@ -5,13 +5,6 @@
 
 using SystemId = std::uint32_t;
 
-enum class SystemKind : std::uint32_t {
-    SameBoy  = 0,
-    MesenNes = 1,  // NES, via the Mesen backend
-    MesenGba = 2,  // GBA, via the Mesen backend
-    MesenSms = 3,  // Master System AND Game Gear, via the Mesen backend
-};
-
 // One output stream a system can emit (SystemBase::channelLayout()). The default layout is a single
 // stereo "Mix" stream (the default path); a backend that can split its audio (e.g. a Game Boy's four
 // APU channels) reports one entry per stream. `name` must be a stable string (a static literal or a

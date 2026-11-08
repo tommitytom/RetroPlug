@@ -2139,6 +2139,15 @@ bool ScriptHost::loadInto(Pack& pack, std::span<const Chunk> chunks, std::string
         const bool settled = drainControlJobs(pack);
         if (!described) return fail(type.id + ": its descriptor: " + exceptionText(control, true));
         if (!settled && !controlInterrupted_) return fail(type.id + ": " + unsettled("its descriptor's"));
+        // Category "system" is a native type's promise, which the engine holds it to: such a node builds a core through
+        // rp.host.systems/2 in its first activation, and a script node builds none, so the type would be lined up
+        // against a slot that stayed null. Refused here, where a pack's types are registered, before the registry sees
+        // one (docs/modular-graph-phase-f2-design.md section 3); the MicroQuickJS host refuses it where it registers a
+        // pack's types too.
+        if (const auto descriptor = graph::parseDescriptor(type.descriptor);
+            descriptor && descriptor->category == "system")
+            return fail(type.id +
+                        " declares category \"system\", and a script node cannot build a core (rp.host.systems/2)");
         // The audio side's must be the same: the control side lays out and checks what the audio side then runs.
         std::string audioDescriptor;
         JSValue ad = callMethod(audio, type.audio, "descriptor", 0, nullptr);

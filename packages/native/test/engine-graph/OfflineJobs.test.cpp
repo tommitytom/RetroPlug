@@ -48,6 +48,7 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "host/engine/OfflineJobs.hpp"
 #include "host/graph/HostServices.hpp"
+#include "system/HostSystems.hpp"  // rp.host.systems/2: the builder a worker host hands a system node
 #include "host/rpc/EngineRpcService.hpp"
 #include "kit/SampleCache.hpp"
 #include "lsdj/KitBank.hpp"

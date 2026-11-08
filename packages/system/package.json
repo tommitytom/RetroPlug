@@ -1,0 +1,12 @@
+{
+  "name": "@retroplug/system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The system contract: SystemBase and the capability interfaces, the shared system types, the transport triples and their seqlock, the MIDI event, the core-only utilities, the host's system services and the build request and function, and the generic SystemNode template a console's node is built on.",
+  "dependencies": {
+    "@retroplug/node-sdk": "workspace:*"
+  },
+  "retroplug": {
+    "native": { "target": "retroplug-system" }
+  }
+}

@@ -53,13 +53,8 @@ add_library(retroplug-core STATIC
     # The decoded-audio cache: an offline job's file inputs decode through it (host/engine/OfflineJobs.cpp), which is
     # how every kit compile reads a source. Console- and format-neutral.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/SampleCache.cpp
-    # processAlive only, so <windows.h> stays in one TU rather than in every includer of the header
-    # (NesEverdriveFifo.hpp pulls it in, which is the whole NES core).
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/util/ProcessId.cpp
-    # Same rule: fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line too.
+    # fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line rather than in every includer.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/util/FileSync.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemCapabilities.cpp
     ${_rpcore_sbs}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesSystem.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGlobalInit.cpp
@@ -85,10 +80,14 @@ target_include_directories(retroplug-core PUBLIC
 target_link_libraries(retroplug-core PUBLIC
     sameboy
     mesen
+    # The system contract the cores implement (packages/system): SystemBase and the capability interfaces, the transport
+    # triples, the core-only utilities, the build request and the host's system services. PUBLIC, since the systems'
+    # headers are this library's own public headers.
+    retroplug-system
     rpcpp     # transitively pulls reflectcpp
     miniaudio # header-only audio decoder used by SampleCache
     miniz     # used by projectConfigToZip for --save-rplg
-    mgb-rom   # embedded mGB ROM (SameBoyBackend supplies it on load)
+    mgb-rom   # the embedded mGB ROM, which the engine's putResource resolves for a document's `embedded` resource
     # Windows: SameBoySystem.cpp lives in this clang-cl-compiled lib (see root CMakeLists).
     $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )
@@ -149,10 +148,8 @@ add_library(retroplug-backend STATIC
     src/host/IdleReclaimProbe.cpp           # hosts' idle-tick self-test (HostServices::reclaimOnIdle), smoke-driven
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
     src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out
-    src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
-    src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
-    src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
-    src/system/mesen/MesenBackend.cpp       # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
+    src/system/sameboy/SameBoyBackend.cpp   # the Game Boy's build function (rp.host.systems/2)
+    src/system/mesen/MesenBackend.cpp       # the Mesen cores' three build functions: NES, GBA (HLE BIOS), SMS/GG
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (script packs' source, the tests' toys)
     src/host/script/ScriptHost.cpp          # the script-node runtimes: TS nodes behind the C ABI, a pair per pack
     src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)

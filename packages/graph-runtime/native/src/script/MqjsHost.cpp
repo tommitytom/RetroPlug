@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 
+#include "graph/Descriptor.hpp"
 #include "graph/JsonToMsgpack.hpp"
 #include "graph/ThreadClock.hpp"
 #include "graph/node_desc.hpp"  // rp.sdk.settings-json/1
@@ -2118,6 +2119,16 @@ bool openControl(Pack& pack, Text& why) {
                 if (JS_IsException(d.get()) || !stringify(c->state, d, json)) {
                     why << source.type_ids[i] << "'s descriptor threw: ";
                     describe(ctx, JS_GetException(ctx), why);
+                    break;
+                }
+                // Category "system" is a native type's promise, which the engine holds it to: such a node builds a core
+                // through rp.host.systems/2 in its first activation, and a script node builds none, so the type would
+                // be lined up against a plan slot that stayed null (docs/modular-graph-phase-f2-design.md section 3).
+                // Refused here, where a pack's types are registered, before the registry sees one.
+                if (const auto descriptor = graph::parseDescriptor(json);
+                    descriptor && descriptor->category == "system") {
+                    why << source.type_ids[i]
+                        << " declares category \"system\", and a script node cannot build a core (rp.host.systems/2)";
                     break;
                 }
                 c->descriptors.push_back(std::move(json));

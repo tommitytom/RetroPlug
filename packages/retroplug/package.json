@@ -22,6 +22,7 @@
     "@retroplug/risa": "workspace:*",
     "@retroplug/smsggdj": "workspace:*",
     "@retroplug/launchpad": "workspace:*",
+    "@retroplug/system": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

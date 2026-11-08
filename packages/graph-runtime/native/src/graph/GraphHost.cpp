@@ -153,7 +153,7 @@ SetGraphResult GraphHost::setGraph(std::string_view documentJson) {
 }
 
 SetGraphResult GraphHost::setGraph(const GraphDocument& document, std::shared_ptr<const void> hostData,
-                                   const HostCommand* trailer) {
+                                   const HostCommand* trailer, const PlanCheck* check) {
     SetGraphResult result;
     // The host's outputs are one set of buffers: a second writer would overwrite the first.
     const NodeDoc* firstOut = nullptr;
@@ -172,7 +172,7 @@ SetGraphResult GraphHost::setGraph(const GraphDocument& document, std::shared_pt
         return result;
     }
     reclaim();
-    PlanOutcome outcome = planDocument(document, config_.sampleRate, config_.maxFrames);
+    PlanOutcome outcome = planDocument(document, config_.sampleRate, config_.maxFrames, check);
     result.layouts = std::move(outcome.layouts);
     if (!outcome.errors.empty()) {
         result.errors = std::move(outcome.errors);
@@ -200,7 +200,8 @@ void GraphHost::setHostCommandHandler(HostCommandHandler handler, void* ctx) {
     hostHandlerCtx_ = ctx;
 }
 
-PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames) {
+PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames,
+                                    const PlanCheck* check) {
     PlanInput in;
     in.doc = &document;
     in.registry = &registry_;
@@ -214,6 +215,7 @@ PlanOutcome GraphHost::planDocument(const GraphDocument& document, double sample
     in.faults = &faults_;
     in.drops = &drops_;
     in.quiescent = !audioThreadOwns();
+    in.check = check;
     return plan(in);
 }
 

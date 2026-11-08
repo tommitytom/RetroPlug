@@ -19,7 +19,7 @@ taken after this design's first draft (section 11); the rest is section 12's.
 
 ## 1. Before C4
 
-- **`SystemBase`** ([SystemBase.hpp](../packages/native/src/system/SystemBase.hpp)) carries members with no production
+- **`SystemBase`** ([SystemBase.hpp](../packages/system/native/src/system/SystemBase.hpp)) carries members with no production
   caller: the battery-path accessors `savSuffix` / `setSavSuffix` / `savPath` / `setSavPath` (the paths are TS's,
   `savPaths.ts`), the `fastBoot()` getter (fast boot reaches the core as a node setting), `clearSram` (a blank battery
   is a seed), `loadStateBytes` from outside (a savestate is a seed; the core's own seed path calls it internally),
@@ -169,7 +169,7 @@ counts two of a Game Boy's publishes and a NES's registry publish through an Eng
 
 **P5.** `SystemBase` gained `virtual ChannelTap* channelTap()`, null by default, in a "Per-channel audio tap" section
 beside `debugTarget()`'s capability pattern. `ChannelTap`
-([ChannelTap.hpp](../packages/native/src/system/ChannelTap.hpp)) is the interface in the global namespace, with
+([ChannelTap.hpp](../packages/system/native/src/system/ChannelTap.hpp)) is the interface in the global namespace, with
 `SystemBase` and `ChannelStream`, because the engine reads it as a core capability: `exportMode() const`,
 `setExportMode(std::uint32_t)` and a virtual destructor, and nothing else. A mode is
 the backend's own numbering (a NES's 0 is the mixed output and 1 to 3 are its split exports), and an arm must neither
@@ -338,6 +338,15 @@ mode bound 1 to 3 is the other console name `Engine` keeps (section 12).
 - **ThreadSanitizer and AddressSanitizer** ran over every case touched (the `[alloc]` and `[input-drops]` tags, the
   `[control-state]` / `[notification]` / `[video]` cases, the tap and kind cases, the audio suite's `[channelsplit]`
   cases) with no report, and the profile benches stayed at zero allocations a block.
+
+> **2026-11-08 (F2): the kind check is retired.** F2's build seam
+> ([modular-graph-phase-f2-design.md](modular-graph-phase-f2-design.md) section 3) carries the node's own package's
+> build function in its request, beside an opaque pointer to the config its settings made, so the core a build returns
+> is the node's own type by construction: there is no dispatch that could build another console's class and nothing for
+> a kind to compare. `SystemKind`, `SystemBase::kind()`, the four cores' `kKind`, `NodeRig`'s `KindWrapper` and
+> `reportKind` and this section's 12-way matrix are gone with it; F2's null-build-function case replaces what the
+> matrix held (a request that names no console claims nothing). The history above stands as it was built, and
+> `SystemBase`'s `kind()` member (dead in P1, given its only reader in P6) is deleted with the rest.
 
 ## 7. Landing, as built
 

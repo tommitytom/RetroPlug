@@ -226,6 +226,9 @@ importers:
       '@retroplug/launchpad':
         specifier: workspace:*
         version: link:../launchpad
+      '@retroplug/system':
+        specifier: workspace:*
+        version: link:../system
     devDependencies:
       '@retroplug/core':
         specifier: workspace:*
@@ -271,6 +274,9 @@ importers:
       '@retroplug/smsggdj':
         specifier: workspace:*
         version: link:../smsggdj
+      '@retroplug/system':
+        specifier: workspace:*
+        version: link:../system
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
@@ -338,6 +344,12 @@ importers:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
+
+  packages/system:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
 
   packages/testing:
     dependencies:

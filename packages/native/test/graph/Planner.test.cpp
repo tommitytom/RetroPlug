@@ -4,6 +4,7 @@
 #include <array>
 #include <cstring>
 #include <iterator>
+#include <map>
 #include <span>
 
 #include "GraphRig.hpp"
@@ -35,11 +36,14 @@ struct Tapped {
     }
 };
 
-// Counts its constructions: a document the planner refuses must not have created one.
+// Counts its constructions and its live instances: a document the planner refuses must not have created one, and one it
+// refuses after activating them must have destroyed them before plan() returns.
 struct Counted {
     static constexpr const char* id = "rp.test.counted";
     static inline int made = 0;
-    Counted() { ++made; }
+    static inline int live = 0;
+    Counted() { ++made; ++live; }
+    ~Counted() { --live; }
     void process(const rp::Block&) noexcept {}
 };
 
@@ -312,6 +316,52 @@ TEST_CASE("a document refused by a layout check creates no instance", "[graph][p
     // A document that plans does create it.
     REQUIRE(rig.set(R"({"nodes":[{"id":"c","type":"rp.test.counted"}],"wires":[]})").ok);
     CHECK(Counted::made == before + 1);
+}
+
+TEST_CASE("a PlanCheck's refusal destroys the instances the plan activated, inside plan()", "[graph][planner]") {
+    // Nothing a refused plan activated outlives plan(), which this holds: the instances die with ~Instance, and the
+    // Builder's own node list destroys any the fill never reached. The rollback's clear()/reset() run after that and are
+    // unobservable today (a refusal precedes the fill on every path that can error), so this is the contract, not the
+    // rollback line: the count would only move if ~Instance stopped destroying.
+    PlannerRig rig;
+    const auto parsed = parseGraphDocument(R"({"nodes":[{"id":"a","type":"rp.test.counted"},
+                                                        {"id":"b","type":"rp.test.counted"}],"wires":[]})");
+    REQUIRE(parsed.has_value());
+    const GraphDocument& document = parsed.value();
+    const int before = Counted::live;
+    // The check runs once every node has activated (Planner.hpp): the instances it refuses are the ones to unwind.
+    const PlanCheck refuse = []() -> std::optional<PlanError> {
+        return PlanError{"", "", "plan-check", "the engine's own check refused the plan"};
+    };
+    const PlanCheck accept = []() -> std::optional<PlanError> { return std::nullopt; };
+    // What GraphHost::planDocument fills: nothing live or in flight, since this plan follows none, and no rp_host, which
+    // rp.test.counted's create takes no use of (a node that did would read the null).
+    const std::map<std::string, std::shared_ptr<Instance>>      nothingLive;
+    const std::map<std::string, std::shared_ptr<FeedbackFront>> nothingFeedback;
+    PlanInput in;
+    in.doc = &document;
+    in.registry = &rig.registry;
+    in.resources = &rig.resources;
+    in.live = &nothingLive;
+    in.feedback = &nothingFeedback;
+    in.sampleRate = 48000.0;
+    in.maxFrames = 64;
+    in.check = &refuse;
+    const PlanOutcome refused = plan(in);
+    REQUIRE(refused.errors.size() == 1);
+    CHECK(refused.errors[0].code == "plan-check");
+    CHECK(refused.storage == nullptr);
+    CHECK(refused.instances.empty());
+    CHECK(Counted::live == before);
+    // The same document, its check accepting: both instances are the plan's and live until the outcome goes.
+    in.check = &accept;
+    {
+        const PlanOutcome accepted = plan(in);
+        REQUIRE(accepted.errors.empty());
+        CHECK(accepted.instances.size() == 2);
+        CHECK(Counted::live == before + 2);
+    }
+    CHECK(Counted::live == before);
 }
 
 TEST_CASE("a refused document changes nothing and leaks nothing", "[graph][planner]") {

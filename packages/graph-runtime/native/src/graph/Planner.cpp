@@ -134,7 +134,7 @@ public:
             // Every check that needs a layout runs on the types' layouts before any instance exists, so a
             // document refused here creates nothing.
             if (structure() && params() && wires() && groups() && order() && channels() && capacities() &&
-                exclusive() && resources() && queueBudget() && reconcile() && linkedSteps()) {
+                exclusive() && resources() && queueBudget() && reconcile() && linkedSteps() && checked()) {
                 build();
             }
         } catch (const std::bad_alloc&) {
@@ -549,6 +549,16 @@ private:
                           "node " + q(nodes_[n].doc->id) + " is linked but does not implement " RP_STEP_INTERFACE);
         }
         return out_.errors.empty();
+    }
+
+    // The embedder's check over the activated plan (PlanCheck): a refusal rolls the instances the plan made back, as a
+    // failed activation's are, so nothing of a refused plan outlives the call.
+    bool checked() {
+        if (!in_.check) return true;
+        std::optional<PlanError> why = (*in_.check)();
+        if (!why) return true;
+        out_.errors.push_back(std::move(*why));
+        return false;
     }
 
     // ---- order and cycles ------------------------------------------------------------------------

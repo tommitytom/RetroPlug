@@ -7,8 +7,8 @@
 #include "host/rpc/EngineRpcService.hpp"
 #include "host/rpc/HostRpcService.hpp"
 
-/** The backend service graph every host stands up: one Engine (with the one SystemFactory every core is
- *  built through, every backend registered on it), the ONE invoker, and the concern services over them.
+/** The backend service graph every host stands up: one Engine (which knows no console: a system node carries the
+ *  build function its core is built through), the ONE invoker, and the concern services over them.
  *
  *  Seven hosts composed this by hand - the plugin, the SDL standalone, the CLI, the Node addon, the test
  *  host, the render host and the UI test harness - and node/binding.cpp's comment already said its member

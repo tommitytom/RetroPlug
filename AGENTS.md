@@ -58,9 +58,10 @@ The rules below are the parts that don't fit those.
   rings and the ingress queues sized from the build request's block and the capacities the inputs' sources declare,
   the audio path and then the whole block counted at ragged sizes with input staged, a freshly built core's first
   block costing only the boot savestate capture, the `[video]` hashes, a live arm
-  sizing nothing, a `[input-drops]` case per queue kind, the tap a capability only a NES offers (so the tap and the
-  node's kind check name no console; with C5's cart node the engine makes no console check at all), and a node
-  refusing a core of another console's kind; the engine places, re-arms and frees what the graph documents
+  sizing nothing, a `[input-drops]` case per queue kind, the tap a capability only a NES offers (so the tap names no
+  console; with C5's cart node the engine makes no console check at all), a request that names no build function
+  refused before it claims anything, and a fixture console package the engine recognised by its descriptor's category
+  alone; the engine places, re-arms and frees what the graph documents
   TS builds say; the host MIDI I/O nodes move what the hosts stage and drain; the hardware nodes (C5,
   [docs/modular-graph-phase-c5-design.md](docs/modular-graph-phase-c5-design.md)): `rp.host.devices/2` over fake
   devices, a host that owns no device, a link kept across a reactivate and given back once at a teardown, and a

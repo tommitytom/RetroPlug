@@ -11,7 +11,6 @@
 
 #include "system/ChannelTap.hpp"
 #include "system/CpuState.hpp"
-#include "system/InputTypes.hpp"
 #include "system/MemoryAccessor.hpp"
 #include "system/MemoryType.hpp"
 #include "system/SystemTypes.hpp"
@@ -38,8 +37,9 @@ struct CoreTransportStats {
 };
 
 // Polymorphic runtime representation of one emulator instance. Owned by its
-// system node in the engine's graph (host/graph/SystemNodes.cpp). Concrete
-// subclasses: SameBoySystem, MesenNesSystem (NES), MesenGbaSystem, MesenSmsSystem.
+// system node (host/graph/SystemNodes.cpp, on the generic SystemNode template in system/SystemNode.hpp), and built by
+// the build function its own package carries (system/SystemBuild.hpp). Concrete subclasses: SameBoySystem,
+// MesenNesSystem (NES), MesenGbaSystem, MesenSmsSystem.
 class SystemBase {
 public:
     explicit SystemBase(SystemId id) : id_(id) {}
@@ -49,8 +49,6 @@ public:
     SystemBase& operator=(const SystemBase&) = delete;
 
     SystemId id() const { return id_; }
-
-    virtual SystemKind kind() const = 0;
 
     virtual void onActivate(double sampleRate) = 0;
     virtual void onDeactivate() {}

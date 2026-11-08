@@ -139,7 +139,7 @@ The whole thing rides Mesen's own debugger, which is compiled into the native bi
 - **A complete debug target already exists.** `MesenNesSystem` runs headless and single-threaded — it
   never calls `Emulator::Run()/RunFrame`, driving `NesCpu::Exec()` directly and claiming the emulation
   thread id — and lazily owns a `MesenNesDebugSession` (a full `rp::IDebugTarget`,
-  [DebugTarget.hpp](../packages/native/src/system/DebugTarget.hpp)) reachable via
+  [DebugTarget.hpp](../packages/system/native/src/system/DebugTarget.hpp)) reachable via
   `SystemBase::debugTarget()`. `getApuState()` reads `NesApu::GetState()` off the console (**no debugger
   init needed**); breakpoints/step/trace/profiler lazily call `InitDebugger()`.
 - **The surfacing is done as the `debug` facet.** The C++ was compiled, linked, and reachable via

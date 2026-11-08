@@ -1,9 +1,10 @@
 #pragma once
 
 // A GraphHost carrying the system node packages, the host I/O nodes and the test nodes (TestNodes.hpp), with
-// stand-ins for the engine's services: a node naming a `system` and a `rom` resource builds its core through the rig's
-// factory and the rig's resource table, as the Engine's rp.host.systems/1 and putResource would; what the host MIDI out
-// and the sync trace would hand the engine is recorded instead; the device links are the ones a case installs.
+// stand-ins for the engine's services: a node naming a `system` and a `rom` resource builds its core through the build
+// function its own package carries, and the rig's resource table, as the Engine's rp.host.systems/2 and putResource
+// would; what the host MIDI out and the sync trace would hand the engine is recorded instead; the device links are the
+// ones a case installs.
 
 #include <algorithm>
 #include <cstdio>
@@ -30,9 +31,9 @@
 #include "n8/CartLink.hpp"
 #include "n8/N8Node.hpp"
 #include "host/graph/SystemNodes.hpp"
-#include "system/CoreBackends.hpp"
+#include "system/HostSystems.hpp"
 #include "system/SystemBase.hpp"
-#include "system/SystemFactory.hpp"
+#include "system/SystemBuild.hpp"
 
 namespace rp::host::test {
 
@@ -49,29 +50,7 @@ struct HostMidiOut {
     bool operator==(const HostMidiOut&) const = default;
 };
 
-// A core the rig hands a node with another console's kind, so a case can drive the node's build check (no real host
-// gets a build's kind wrong). Only the two remaining pure virtuals (onActivate, onSampleRateChanged) reach the core it
-// wraps; everything else resolves to SystemBase's defaults, which is safe because a node only observes the wrapper
-// through the refused build. It owns that core, so the node's destroy frees both.
-class KindWrapper final : public SystemBase {
-public:
-    KindWrapper(std::unique_ptr<SystemBase> core, SystemKind kind)
-        : SystemBase(core->id()), core_(std::move(core)), kind_(kind) {}
-
-    SystemKind kind() const override { return kind_; }
-    void       onActivate(double sampleRate) override { core_->onActivate(sampleRate); }
-    void       onSampleRateChanged(double sampleRate) override { core_->onSampleRateChanged(sampleRate); }
-
-private:
-    std::unique_ptr<SystemBase> core_;
-    SystemKind                  kind_;
-};
-
 struct NodeRig {
-    // The kind a core the factory built is REPORTED as, when set: a node's build compares the kind of the core
-    // rp.host.systems/1 hands back with the kind its type builds, and no real host gets that wrong, so a case that
-    // holds the check sets this and the rig hands the right core back behind a wrapper reporting another kind.
-    std::optional<SystemKind>                            reportKind;
     rp::graph::NodeRegistry                              registry;
     rp::graph::ResourceTable                             resources;
     double                                               rate = 48000.0;
@@ -79,8 +58,6 @@ struct NodeRig {
     // The cores nodes built, alive with the plans that hold them: a test that has to feed one input (a note-on, a RAM
     // poke) reads the core the node built.
     std::vector<SystemBase*>                             built;
-    // The factory a `system` node builds through, every core backend registered: the engine's own on a smaller scale.
-    SystemFactory                                        factory;
     HostSystems                                          systems{this, &buildSystem, &destroySystem};
     // The host I/O stand-in: nothing is ever staged, and what the host MIDI out hands the engine is recorded.
     std::vector<HostCall>                                traced;
@@ -102,7 +79,6 @@ struct NodeRig {
     explicit NodeRig(double sampleRate, std::uint32_t maxFrames = 8192,
                      rp::graph::Target target = rp::graph::Target::Desktop) {
         rate = sampleRate;
-        registerCoreBackends(factory);
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), sameboyPackage(), mesenPackage(),
                                     hostIoPackage(), rp::n8::n8Package(), rp::launchpad::launchpadPackage(), testPackage()})
             registry.addPackage(p);
@@ -173,9 +149,11 @@ struct NodeRig {
         return *t;
     }
 
-    // rp.host.systems/1: the rig's factory builds the core, and the node owns it until its destructor, which the rig
-    // records (the core's id in `released`) and deletes. No snapshot slot to claim here, and no live-id check: those are
-    // the engine's, and the refusals they add are EngineGraph.test.cpp's.
+    // rp.host.systems/2: the build function the node's own package carries builds the core, as the engine's runs it, and
+    // the node owns the core until its destructor, which the rig records (the core's id in `released`) and deletes. No
+    // snapshot slot to claim here and no live-id check: those are the engine's, and the refusals they add are
+    // EngineGraph.test.cpp's. A request that names no build function is refused here as the engine refuses it, so a case
+    // that places a type without one reports rather than calling through null.
     static SystemBase* buildSystem(void* ctx, std::uint64_t id, SystemBuildRequest request, rp_error* err) {
         auto& rig = *static_cast<NodeRig*>(ctx);
         if (id == 0) {
@@ -187,13 +165,17 @@ struct NodeRig {
                           static_cast<unsigned long long>(id));
             return nullptr;
         }
+        if (!request.build) {
+            std::snprintf(err->message, sizeof err->message, "the request names no build function (rp.host.systems/2)");
+            return nullptr;
+        }
         std::string why;
-        std::unique_ptr<SystemBase> core = rig.factory.build(static_cast<SystemId>(id), std::move(request), rig.rate, &why);
+        std::unique_ptr<SystemBase> core =
+            request.build(static_cast<SystemId>(id), std::move(request), rig.rate, &why);
         if (!core) {
             std::snprintf(err->message, sizeof err->message, "%s", why.c_str());
             return nullptr;
         }
-        if (rig.reportKind) core = std::make_unique<KindWrapper>(std::move(core), *rig.reportKind);
         rig.built.push_back(core.get());
         return core.release();
     }

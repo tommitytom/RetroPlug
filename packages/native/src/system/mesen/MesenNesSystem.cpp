@@ -7,6 +7,7 @@
 #include <sstream>
 #include <thread>
 
+#include "system/InputTypes.hpp"  // NesButton: the wire byte to Mesen's controller
 #include "system/mesen/MesenAudioDevice.hpp"
 #include "system/mesen/MesenVideoDevice.hpp"
 #include "system/mesen/MesenNesDebugSession.hpp"

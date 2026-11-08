@@ -47,9 +47,9 @@
 #include "graph/CanonicalJson.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/graph/HostIoNodes.hpp"
-#include "system/CoreBackends.hpp"
-#include "system/SystemFactory.hpp"
+#include "system/SystemBuild.hpp"
 #include "system/mesen/MesenAudioDevice.hpp"
+#include "system/mesen/MesenBackend.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
@@ -57,6 +57,7 @@
 #include "system/mesen/MesenSmsSystem.hpp"
 #include "system/InputCapacity.hpp"
 #include "system/InputTypes.hpp"
+#include "system/sameboy/SameBoyBackend.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 #include "transport/MidiTypes.hpp"
@@ -2481,21 +2482,49 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
 
     NodeRig rig(kRate);
     const auto embedded = rp::embeddedMgbRom();
+    // A console's boot as its node makes one: the package's build function, and a config of its own type alive for the
+    // call (docs/modular-graph-phase-f2-design.md section 3). The request is the caller's, its ROM copied before the
+    // clock starts: what is timed is the console's build, not the copy of its ROM into the request.
     struct Boot {
-        const char*               name;
-        SystemConfig              config;
-        std::vector<std::uint8_t> rom;
+        const char*                                          name;
+        const char*                                          type;
+        std::vector<std::uint8_t>                            rom;
+        std::function<std::unique_ptr<SystemBase>(SystemBuildRequest)> build;
     };
     std::vector<Boot> boots;
-    boots.push_back({"mGB (embedded)", SameBoyConfig{}, {embedded.begin(), embedded.end()}});
+    const auto gameBoy = [](SystemBuildRequest request) {
+        SameBoyConfig cfg;
+        request.build = rp::sameboy::buildCore;
+        request.config = &cfg;
+        return request.build(1, std::move(request), kRate, nullptr);
+    };
+    const auto nes = [](SystemBuildRequest request) {
+        MesenNesConfig cfg;
+        request.build = rp::mesen::buildNesCore;
+        request.config = &cfg;
+        return request.build(1, std::move(request), kRate, nullptr);
+    };
+    const auto sms = [](SystemBuildRequest request) {
+        MesenSmsConfig cfg;
+        request.build = rp::mesen::buildSmsCore;
+        request.config = &cfg;
+        return request.build(1, std::move(request), kRate, nullptr);
+    };
+    const auto gba = [](SystemBuildRequest request) {
+        MesenGbaConfig cfg;
+        request.build = rp::mesen::buildGbaCore;
+        request.config = &cfg;
+        return request.build(1, std::move(request), kRate, nullptr);
+    };
+    boots.push_back({"mGB (embedded)", "rp.sameboy.gb", {embedded.begin(), embedded.end()}, gameBoy});
     if (auto lsdj = resourceFixture("/roms/lsdj/lsdj9_4_1-develop.gb"); !lsdj.empty())
-        boots.push_back({"LSDj", SameBoyConfig{}, std::move(lsdj)});
-    boots.push_back({"NES", MesenNesConfig{}, readFile(RP_BLIPTOASTER_ROM_PATH)});
-    boots.push_back({"Master System", MesenSmsConfig{}, readFile(RP_SMS_ROM_PATH)});
-    if (auto gba = resourceFixture("/roms/nanoloop287d.gba"); !gba.empty())
-        boots.push_back({"GBA", MesenGbaConfig{}, std::move(gba)});
+        boots.push_back({"LSDj", "rp.sameboy.gb", std::move(lsdj), gameBoy});
+    boots.push_back({"NES", "rp.mesen.nes", readFile(RP_BLIPTOASTER_ROM_PATH), nes});
+    boots.push_back({"Master System", "rp.mesen.sms", readFile(RP_SMS_ROM_PATH), sms});
+    if (auto gbaRom = resourceFixture("/roms/nanoloop287d.gba"); !gbaRom.empty())
+        boots.push_back({"GBA", "rp.mesen.gba", std::move(gbaRom), gba});
 
-    std::printf("\nboot through rp.host.systems/1's build at %.1f kHz: construct, onActivate (ROM, battery, savestate), the "
+    std::printf("\nboot through rp.host.systems/2's build at %.1f kHz: construct, onActivate (ROM, battery, savestate), the "
                 "state snapshot, and the same build through setGraph (slot claim and one plan with it); median of %d runs\n",
                 kRate / 1000.0, kRuns);
     for (auto& boot : boots) {
@@ -2503,19 +2532,14 @@ TEST_CASE("a boot's cost per console, through the build a system node makes", "[
         for (int run = 0; run < kRuns; ++run) {
             SystemBuildRequest request;
             request.rom = boot.rom;
-            request.config = boot.config;
-            std::string why;
             const auto t0 = Clock::now();
-            std::unique_ptr<SystemBase> core = rig.factory.build(1, request, kRate, &why);
+            std::unique_ptr<SystemBase> core = boot.build(std::move(request));
             built.push_back(micros(t0));
             REQUIRE(core);
         }
         // The same boot where it happens in the engine: a plan with one system node, published on a quiescent engine.
         Engine engine(kRate);
-        const std::string type = std::holds_alternative<SameBoyConfig>(boot.config)   ? "rp.sameboy.gb"
-                                 : std::holds_alternative<MesenNesConfig>(boot.config) ? "rp.mesen.nes"
-                                 : std::holds_alternative<MesenSmsConfig>(boot.config) ? "rp.mesen.sms"
-                                                                                       : "rp.mesen.gba";
+        const std::string type = boot.type;
         for (int run = 0; run < kRuns; ++run) {
             const std::uint32_t romId = engine.putResource("rom", boot.rom);
             REQUIRE(romId != 0);
@@ -3404,46 +3428,47 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
         REQUIRE(!bytes.empty());
         return counted;
     };
-    SystemFactory factory;
-    registerCoreBackends(factory);
     std::string why;
-    const auto build = [&factory, &why](SystemBuildRequest request) {
-        return factory.build(1, std::move(request), kRate, &why);
+    // The request's own build function, as the node that made it hands it over: what rp.host.systems/2 runs.
+    const auto build = [&why](SystemBuildRequest request) {
+        const SystemBuildFn fn = request.build;
+        return fn(1, std::move(request), kRate, &why);
     };
-    const auto nesCfg = [] {
-        MesenNesConfig c;
-        c.romPath = RP_BLIPTOASTER_ROM_PATH;
-        return c;
-    };
-    const auto smsCfg = [](bool gameGear, bool enableFm) {
-        MesenSmsConfig c;
-        c.romPath = gameGear ? RP_GG_ROM_PATH : RP_SMS_ROM_PATH;
-        c.gameGear = gameGear;
-        c.enableFm = enableFm;
-        return c;
-    };
+    // The configs the requests point at, held here for their calls: a build reads the config's address and copies it,
+    // so one whole test can share them.
+    MesenNesConfig nesConfig;
+    nesConfig.romPath = RP_BLIPTOASTER_ROM_PATH;
+    MesenSmsConfig smsConfig, ggConfig, smsFmConfig;
+    smsConfig.romPath = smsFmConfig.romPath = RP_SMS_ROM_PATH;
+    ggConfig.romPath = RP_GG_ROM_PATH;
+    ggConfig.gameGear = true;
+    smsFmConfig.enableFm = true;
+    MesenGbaConfig gbaConfig;
+    SameBoyConfig  gbConfig;
+    gbConfig.model = SameBoyModel::DmgB;  // the DMG boot ROM plays its chime: real signal on the first block
+    gbConfig.fastBoot = false;
     const auto nesRequest = [&] {
         SystemBuildRequest request;
         request.rom = readFile(RP_BLIPTOASTER_ROM_PATH);
         request.maxBlockFrames = 8192;
-        request.config = nesCfg();
+        request.build = rp::mesen::buildNesCore;
+        request.config = &nesConfig;
         return request;
     };
     const auto smsRequest = [&](bool gameGear, bool enableFm) {
         SystemBuildRequest request;
         request.rom = readFile(gameGear ? RP_GG_ROM_PATH : RP_SMS_ROM_PATH);
         request.maxBlockFrames = 8192;
-        request.config = smsCfg(gameGear, enableFm);
+        request.build = rp::mesen::buildSmsCore;
+        request.config = gameGear ? &ggConfig : enableFm ? &smsFmConfig : &smsConfig;
         return request;
     };
-    const auto gbRequest = [] {
-        SameBoyConfig cfg;
-        cfg.model = SameBoyModel::DmgB;  // the DMG boot ROM plays its chime: real signal on the first block
-        cfg.fastBoot = false;
+    const auto gbRequest = [&] {
         SystemBuildRequest request;
         request.rom = readFile(RP_MGB_ROM_PATH);
         request.maxBlockFrames = 8192;
-        request.config = cfg;
+        request.build = rp::sameboy::buildCore;
+        request.config = &gbConfig;
         return request;
     };
 
@@ -3499,7 +3524,7 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
     // A settings change that rebuilds a Master System (gameGear, enableFm) builds the core the same way, so the
     // rebuilt core's first block is the same shape: the frame plumbing warm, one boot capture.
     SECTION("SMS rebuilt as a Game Gear, built directly") {
-        auto core = std::make_unique<MesenSmsSystem>(1, smsCfg(true, false), readFile(RP_GG_ROM_PATH));
+        auto core = std::make_unique<MesenSmsSystem>(1, ggConfig, readFile(RP_GG_ROM_PATH));
         core->onActivate(kRate);
         core->reserveAudio(8192);
         Lanes lanes(2);
@@ -3524,7 +3549,7 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
         CHECK(counted.frees == capture.frees);
     }
     SECTION("SMS rebuilt with FM on, built directly") {
-        auto core = std::make_unique<MesenSmsSystem>(1, smsCfg(false, true), readFile(RP_SMS_ROM_PATH));
+        auto core = std::make_unique<MesenSmsSystem>(1, smsFmConfig, readFile(RP_SMS_ROM_PATH));
         core->onActivate(kRate);
         core->reserveAudio(8192);
         Lanes lanes(2);
@@ -3567,7 +3592,8 @@ TEST_CASE("a freshly built core's first block costs the boot savestate and nothi
         SystemBuildRequest request;
         request.rom = rom;
         request.maxBlockFrames = 8192;
-        request.config = MesenGbaConfig{};
+        request.build = rp::mesen::buildGbaCore;
+        request.config = &gbaConfig;
         auto twin = build(request);
         REQUIRE(twin != nullptr);
         Lanes twinLanes(2);
@@ -3905,59 +3931,6 @@ TEST_CASE("the tap is a capability only a NES offers", "[engine-graph][system-no
         auto core = std::make_unique<MesenGbaSystem>(1, MesenGbaConfig{}, rp::host::test::romFor("rp.mesen.gba"));
         core->onActivate(kRate);
         CHECK(core->channelTap() == nullptr);
-    }
-}
-
-TEST_CASE("a node refuses a core built with another console's kind", "[engine-graph][system-node]") {
-    // The node's build checks that the core rp.host.systems/1 hands back is the kind its own type builds, then casts
-    // it to that type: the config alternative it sent already named the console, so a mismatch is a host or settings
-    // bug, and the check is what keeps the cast sound. No real host can produce one, so the rig reports the kind a
-    // case asks for, and the core it built is given back before the refusal. The cast rests on no two core classes
-    // reporting one kind, which the six requirements below say directly; the matrix then holds the refusal itself,
-    // every console's node against each kind but the one its own type builds.
-    STATIC_REQUIRE(SameBoySystem::kKind != MesenNesSystem::kKind);
-    STATIC_REQUIRE(SameBoySystem::kKind != MesenGbaSystem::kKind);
-    STATIC_REQUIRE(SameBoySystem::kKind != MesenSmsSystem::kKind);
-    STATIC_REQUIRE(MesenNesSystem::kKind != MesenGbaSystem::kKind);
-    STATIC_REQUIRE(MesenNesSystem::kKind != MesenSmsSystem::kKind);
-    STATIC_REQUIRE(MesenGbaSystem::kKind != MesenSmsSystem::kKind);
-    struct Type {
-        const char* type;
-        const char* name;
-        SystemKind  kind;
-        const char* extra;
-    };
-    constexpr Type types[] = {
-        {"rp.sameboy.gb", "Game Boy", SystemKind::SameBoy, kGbDmg},
-        {"rp.mesen.nes", "NES", SystemKind::MesenNes, ""},
-        {"rp.mesen.gba", "Game Boy Advance", SystemKind::MesenGba, ""},
-        {"rp.mesen.sms", "Master System / Game Gear", SystemKind::MesenSms, ""},
-    };
-    // The columns are the four kinds those rows build, listed on their own rather than derived from the rows, and the
-    // requirement below keeps the two lists in one order so a row's index is its own kind. A row skips the column at
-    // its own index, not the one holding its own value: were two enumerators ever made equal, skipping by value would
-    // let both rows the collision belongs to skip the column, so no row would hand a GBA node an SMS core - the one
-    // mismatch the node's own comparison lets through, since it compares values.
-    constexpr SystemKind kinds[] = {SystemKind::SameBoy, SystemKind::MesenNes, SystemKind::MesenGba,
-                                    SystemKind::MesenSms};
-    STATIC_REQUIRE(types[0].kind == kinds[0] && types[1].kind == kinds[1] && types[2].kind == kinds[2] &&
-                   types[3].kind == kinds[3]);
-    for (std::size_t row = 0; row < std::size(types); ++row) {
-        const Type& type = types[row];
-        for (std::size_t col = 0; col < std::size(kinds); ++col) {
-            if (col == row) continue;
-            const SystemKind kind = kinds[col];
-            INFO(type.type << " node handed a kind " << static_cast<std::uint32_t>(kind) << " core");
-            NodeRig rig(kRate);
-            rig.reportKind = kind;
-            const auto r = rig.set(knobbed(type.type, rig.boot(type.type, 1, type.extra)));
-            CHECK_FALSE(r.ok);
-            REQUIRE(r.errors.size() == 1);
-            CHECK(r.errors[0].code == "activate-failed");
-            CHECK(r.errors[0].message == std::string("the built core is not a ") + type.name);
-            CHECK(rig.built.empty());
-            CHECK(rig.released == std::vector<SystemId>{1});
-        }
     }
 }
 

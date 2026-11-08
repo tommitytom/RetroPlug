@@ -40,7 +40,7 @@ if(MSVC)
         retroplug retroplug-dsp retroplug-ui
         # The workspace packages' targets (cmake/packages.cmake), defined in their own directories: a target's options
         # can be set from any directory, so the list stays here, where every one of our targets is named.
-        retroplug-node-sdk retroplug-graph-exec retroplug-graph retroplug-core-nodes
+        retroplug-node-sdk retroplug-graph-exec retroplug-graph retroplug-core-nodes retroplug-system
         retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes retroplug-dsp-resample-nodes
         retroplug-n8 retroplug-n8-desktop retroplug-device-io-nodes retroplug-devtest-nodes
         # The Launchpad pack: its transport and its facet (PortClaim.cpp is the one file whose Windows half only this

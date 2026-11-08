@@ -327,7 +327,7 @@ The suite is 30 files: a file per group, and four with no baseline of their own 
   through `stageMidiIn`.
 - **Cores power on in a fixed state.** The runner sets `RETROPLUG_DETERMINISTIC=1` for `parity/` files and
   for `render-baseline`, `render-chunks` and `render-cli` (`DETERMINISTIC_FILES`)
-  ([util/Determinism.hpp](../packages/native/src/util/Determinism.hpp)): SameBoy's power-on randomness
+  ([util/Determinism.hpp](../packages/system/native/src/util/Determinism.hpp)): SameBoy's power-on randomness
   off, Mesen NES RAM all zeros, the SMS VDP starting at scanline 0. The app keeps the random power-on.
 - **Baselines** are `parity/baseline/<group>.json`, one value per line, each lane `<fnv> <rms>`, so a
   re-record diffs readably. Audio is compared exactly only on the target a baseline was recorded on
@@ -690,7 +690,7 @@ drives it via `run-native-tests.mjs` with `RETROPLUG_HOST` pointed at the instru
 binary. Default slugs are `dsp-threaded` + `dsp-lifecycle`. Thread mode reuses the Catch2
 suppression file ([tsan.supp](../packages/native/test/sanitizer/tsan.supp)), which names only efsw's teardown: the
 triple-buffer seqlock needs no entry, since its reader's copy ignores its own racing read under TSan and records the
-write of its destination ([SeqlockCopy.hpp](../packages/native/src/transport/SeqlockCopy.hpp)); a clean run **is** the
+write of its destination ([SeqlockCopy.hpp](../packages/system/native/src/transport/SeqlockCopy.hpp)); a clean run **is** the
 proof that the cores and the built-in script pack's audio runtime are touched only by the thread that runs
 blocks. It loads no other pack: a loaded pack's runtimes are made, loaded and freed on the control thread
 while an audio thread runs blocks in the others, which those slugs never do. The Catch2 cases that do,

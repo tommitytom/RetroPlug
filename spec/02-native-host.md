@@ -24,8 +24,8 @@ two test hosts link — so all three drive the *same* `Engine` over the *same* R
 > the Node addon, the test host, the render host and the UI test harness - and the parts they share are
 > in [`src/host/`](../packages/native/src/host/):
 >
-> - `HostServices.hpp` - the service graph itself (Engine, with its one SystemFactory and the core backends
->   registered on it, the one QueuedInvoker, `HostRpcService`, `EngineRpcService`). Codec-agnostic, which
+> - `HostServices.hpp` - the service graph itself (Engine, which builds a core through the build function its system
+>   node's request carries, the one QueuedInvoker, `HostRpcService`, `EngineRpcService`). Codec-agnostic, which
 >   is what lets the Node addon share it.
 >   It deliberately STOPS there: `DebugRpcService` and `AudioDriverRpcService` are declared by the hosts
 >   that mount them, because `~AudioDriverRpcService` clears the invoker's `audioThreadOwns` bit and
@@ -40,9 +40,9 @@ two test hosts link — so all three drive the *same* `Engine` over the *same* R
 
 
 There is **no single facade object**. A host composes a shared
-[`Engine`](../packages/native/src/host/engine/Engine.hpp) (which owns the one
-[`SystemFactory`](../packages/native/src/system/SystemFactory.hpp), every backend registered on it at construction
-by [`registerCoreBackends`](../packages/native/src/system/CoreBackends.cpp#L9)) and the ONE
+[`Engine`](../packages/native/src/host/engine/Engine.hpp) (which owns no console and no backend registry: a core is
+built by the build function the node's request carries, in the [`system`](../packages/system/native/CMakeLists.txt)
+package's [`SystemBuild.hpp`](../packages/system/native/src/system/SystemBuild.hpp)) and the ONE
 [`QueuedInvoker`](../packages/native/src/host/engine/EngineInvoker.hpp), plus a handful of
 stateless service instances that hold references to them:
 
@@ -250,7 +250,7 @@ transport fields, and the graph the systems run on: the `ScriptHost` its script
 nodes (the MIDI routing, the controller session and each role's protocol node) run in, a `NodeRegistry`
 holding the node packages (`rp.core`,
 `rp.host`, `rp.sameboy`, `rp.mesen`, `rp.host.io`, `rp.n8`, `rp.script`, and each script node pack
-`loadScriptPack` loaded), a `ResourceTable`, the one `SystemFactory` every core is built through, the
+`loadScriptPack` loaded), a `ResourceTable`, the category a system node is recognised by (its descriptor's), the
 [`GraphHost`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) running the plan, and every live core by id. Every op
 runs "now, on the calling thread"; it holds **no locks**: transport and the ppq clock are plain members mutated
 only by whichever thread owns it (the pull path or the audio loop, never concurrently). The Engine's own
@@ -394,7 +394,7 @@ across every swap; a CGB clocking the port itself on its fast clock can outrun i
 what does not fit is dropped and counted.
 
 The core side is bounded too, and fixed: each core sizes its ingress queues when it is built, from what one
-block's input can deliver ([InputCapacity.hpp](../packages/native/src/system/InputCapacity.hpp), the
+block's input can deliver ([InputCapacity.hpp](../packages/system/native/src/system/InputCapacity.hpp), the
 capacities the sources' outputs above declare: `serialIn` and `midi` 4096 messages / 72 KiB, `bytes` 256 /
 1 KiB, `buttons` 64, a Game Boy's `serialOut` 8256 / 8256), so a block that carries host MIDI, raw bytes,
 serial-in bytes or presses allocates nothing in the core. The queues are a Mesen console's presses (320: a
@@ -624,7 +624,7 @@ name:
   turns `tap` into the swap's `SyncTap` trailer; and hands both to `GraphHost::setGraph`, which computes
   every node's layout from the document (`layout_for` on each node type), runs every layout check, and
   only then creates and activates the new instances. A system node builds its core as it activates
-  (`rp.host.systems/1`) and the engine fills that slot's table entry, so the table is complete before the plan is
+  (`rp.host.systems/2`) and the engine fills that slot's table entry, so the table is complete before the plan is
   published. It rides with the plan, so the audio thread's
   lookups always match the plan that is running. A refused document changes nothing: the cores its new nodes built
   are destroyed as those instances unwind, releasing their slots and their pins.
@@ -690,9 +690,9 @@ The document `buildGraph` writes:
   plan's host width (the sum of its `audio-out` buses, recorded by `setGraph`), so a caller that forgot
   the shape gets an error rather than audio wired for another output count.
 - **Cores.** A system node builds its core at first activation through the host service
-  `rp.host.systems/1` ([HostServices.hpp](../packages/native/src/host/graph/HostServices.hpp)),
-  from the ROM and seed bytes its resources hold and the config its settings made (`Engine::buildSystem`), and owns
-  it until the node is destroyed (`Engine::destroySystem`).
+  `rp.host.systems/2` ([HostSystems.hpp](../packages/system/native/src/system/HostSystems.hpp)), from the ROM and seed
+  bytes its resources hold, the config its settings made and the build function its own package carries
+  (`Engine::buildSystem`), and owns it until the node is destroyed (`Engine::destroySystem`).
 - **Resources.** A node that reads a resource its settings name (a system node's ROM, its battery, a savestate seed,
   each written `"res:N"`) pins it at create through `rp.host.resources/1` (GraphHost's own, over the engine's
   `ResourceTable`), and the pin drops when the instance is destroyed, both on the control thread: the audio thread
@@ -824,35 +824,41 @@ shared `SystemBase` can't yet publish straight into the registry (the header com
 [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp));
 collapsing that second copy is a pending refactor ([07-remaining-work.md](07-remaining-work.md)).
 
-## The core backends: `SystemFactory` + `SameBoyBackend` / `MesenBackend`
+## The build seam: `SystemBuildRequest` and each console's build function
 
-[`SystemFactory`](../packages/native/src/system/SystemFactory.hpp) is the one build
-path: an `unordered_map<string core, unique_ptr<SystemBackend>>`, populated by
-[`registerCoreBackends`](../packages/native/src/system/CoreBackends.cpp#L9) (`"sameboy"` →
-`SameBoyBackend`, `"mesen"` → `MesenBackend`) on the Engine's own factory at construction. `build` picks
-the key from the request's config alternative (`SameBoyConfig` is `"sameboy"`, any Mesen config `"mesen"`),
-so a request cannot carry a NES config under a Game Boy node, and returns nullptr for a core no host
-registered.
+The engine keeps the bookkeeping of a build and none of its knowledge: a system node's request carries
+[`SystemBuildFn`](../packages/system/native/src/system/SystemBuild.hpp), a plain function pointer its own package
+exports, and an opaque `const void* config` pointing at the console config its settings made, which only that function
+reads. So the host builds what the request names
+([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md) section 3), and a NES config cannot reach a Game
+Boy node: the node fills both fields of the one request, so the two cannot disagree.
 
-Every backend takes a
-[`SystemBuildRequest`](../packages/native/src/system/SystemFactory.hpp) by value and consumes it: the ROM bytes, the
-`sram`/`savestate` seed bytes, the ROM's `romName`, the largest block the plan will run (`maxBlockFrames`, 0 for a
-build outside a plan) and a `SystemConfig` (`std::variant<SameBoyConfig, MesenNesConfig, MesenSmsConfig,
-MesenGbaConfig>`, whose alternative names the console). The block size is what a core sizes its audio ring and its
-per-block scratches to *before* it activates, so a 64-frame plan's core never holds an 8192-frame plan's buffers; no
+Every request carries the ROM bytes, the `sram`/`savestate` seed bytes, the ROM's `romName` and the largest block the
+plan will run (`maxBlockFrames`, 0 for a build outside a plan). The block size is what a core sizes its audio ring and
+its per-block scratches to *before* it activates, so a 64-frame plan's core never holds an 8192-frame plan's buffers; no
 Engine host plans below 8192 today (`setMaxBlockFrames` only grows), so only a `GraphHost` built directly reaches that.
 A core built outside a plan keeps `SystemBase::kDefaultBlockFrames` (8192, held to
 `Engine::kDefaultMaxBlockFrames` by a test; Mesen cores size from `MesenAudioDevice::kDefaultBlockFrames`, held to the
 same constant, so two names stand for one contract until they collapse).
-A [`SystemBackend::build`](../packages/native/src/system/SystemFactory.hpp) runs on the
-control thread (heavy, non-RT) and returns an **already-`onActivate`'d** system, or nullptr with the reason
-in `*why`. The bytes come from the node's resources (its `build` copies them out of the pins its instance
-holds into the request, and the core takes them from there), so nothing here reads a file or decodes a role config.
 
-### `SameBoyBackend`
+`Engine::buildSystem` runs on the control thread (heavy, non-RT) and refuses, in this order, a build outside the
+`setGraph` that activates the node, 0, an id above a system id, an id that is live, a request that names no build
+function, and a build that returns null (with its reason); only then does the snapshot slot get claimed, after the
+build has paid for its boot. The function it calls returns an **already-`onActivate`'d** system. The bytes come from the
+node's resources (its `build` copies them out of the pins its instance holds into the request, and the core takes them
+from there), so nothing on this path reads a file or decodes a role config.
 
-[`SameBoyBackend::build`](../packages/native/src/system/sameboy/SameBoyBackend.cpp) takes the
-`SameBoyConfig` the node made from its settings, gates the ROM on
+A system node is recognised by its descriptor: the type's `category` is `"system"`, read from the `NodeRegistry` the
+engine already holds for the planner, so `publishGraph` lines a document's `sys-<id>` nodes up against the plan's slots
+without naming a package. The category is a promise the engine holds the type to, since a slot's core is what the audio
+thread reads: a document whose plan leaves a slot without a core is refused before it is published (unwinding what its
+nodes' activations built, as a refused activation does), and a script pack's type may not declare the category at all,
+because a script node cannot build a core.
+
+### The Game Boy's build: `rp::sameboy::buildCore`
+
+[`rp::sameboy::buildCore`](../packages/native/src/system/sameboy/SameBoyBackend.cpp) takes the
+`SameBoyConfig` the node made from its settings (out of the request's `config`), gates the ROM on
 `detectRomFormat == RomFormat::Gb` (an empty ROM is refused with it; the embedded mGB's bytes pass the same
 gate), and builds the core:
 
@@ -873,14 +879,14 @@ The cores are built **bare**: no feature behaviour is baked into C++. The DSP-th
 folding the overrides into the ROM in memory at construct, with no audio-thread part. See 04. The role
 model is 04's topic; a live knob reaches the core as its system node's settings (above).
 
-### `MesenBackend`
+### The Mesen consoles' builds: `rp::mesen::build{Nes,Gba,Sms}Core`
 
-[`MesenBackend::build`](../packages/native/src/system/mesen/MesenBackend.cpp) is one backend
-serving three consoles, picked by the config alternative: `buildNes` gates `RomFormat::Nes` and builds a
-`MesenNesSystem`, `buildGba` gates `RomFormat::Gba` and builds a `MesenGbaSystem` (empty `biosPath` → HLE
-boot ROM), and `buildSms` refuses a ROM that is positively another console's but accepts a headerless one
-(TS admits homebrew by its extension). The NES and GBA cores take their seeds through the config; the SMS
-takes the `romName` it stages its file under. All three run the same tail, `reserveAudio` then `onActivate` then
+[`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) holds the Mesen core's build functions, one
+per console it runs, each reading its own config out of the request: `rp::mesen::buildNesCore` gates `RomFormat::Nes`
+and builds a `MesenNesSystem`, `rp::mesen::buildGbaCore` gates `RomFormat::Gba` and builds a `MesenGbaSystem` (empty
+`biosPath` → HLE boot ROM), and `rp::mesen::buildSmsCore` refuses a ROM that is positively another console's but accepts
+a headerless one (TS admits homebrew by its extension). The NES and GBA cores take their seeds through the config; the
+SMS takes the `romName` it stages its file under. All three run the same tail, `reserveAudio` then `onActivate` then
 `enableStateSnapshot`, and refuse a boot Mesen's `LoadRom` rejected after the magic gate ("Mesen refused the
 ROM"), so NES/GBA/SMS cores publish a tear-free savestate for the registry / Duplicate just like SameBoy.
 
@@ -1125,9 +1131,9 @@ its **runtime** classes:
 
 | Shared class | Host use |
 |---|---|
-| [`SystemBase`](../packages/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn`/`reserveAudio`. Its surface is what the engine and the nodes call: no battery-path accessors, no `fastBoot()` getter, no `clearSram`, no sub-block MIDI out, and no memory-snapshot arming (C4). The capabilities beside `debugTarget()` are `channelTap()` and, since C5, the nullable `memory()` / `sram()` / `rom()` accessors a system node presents to the capability job model (`system/SystemCapabilities.hpp`), and the per-block contract is `reserveAudio` plus `kDefaultBlockFrames`; its ingress queues report `inputAccepted()` / `inputDropped()` |
+| [`SystemBase`](../packages/system/native/src/system/SystemBase.hpp) | the abstract core; owned by its system node in the running plan (`SystemNode<T>`, [SystemNodes.cpp](../packages/native/src/host/graph/SystemNodes.cpp)); drives `onActivate`/`onProcess`/`framebuffer`/`saveStateBytes`/`readStateSnapshot`/`stateRegions`/`enableStateSnapshot`/`pressButton`/`pushSerialIn`/`reserveAudio`. Its surface is what the engine and the nodes call: no battery-path accessors, no `fastBoot()` getter, no `clearSram`, no sub-block MIDI out, and no memory-snapshot arming (C4). The capabilities beside `debugTarget()` are `channelTap()` and, since C5, the nullable `memory()` / `sram()` / `rom()` accessors a system node presents to the capability job model (`system/SystemCapabilities.hpp`), and the per-block contract is `reserveAudio` plus `kDefaultBlockFrames`; its ingress queues report `inputAccepted()` / `inputDropped()` |
 | [`SameBoySystem`](../packages/native/src/system/sameboy/SameBoySystem.hpp) | the GB core; its node gives it its knobs through value-guarded setters (`setModel`, `setHighpass`, the display group, `setSerialOutCapture`); its `linkPeers_` are the serial cable, set by its node's `rp.link/1` `set_peers` (the other members of its coupled group, in member order) |
-| [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap and build check name no console: it forward-declares `ChannelTap` and includes no core header, and with C5's cart node it has no console check at all |
+| [`MesenNesSystem` / `MesenGbaSystem` / `MesenSmsSystem`](../packages/native/src/system/mesen) | the NES, GBA and SMS/GG cores; the NES is the one core with a [`ChannelTap`](../packages/system/native/src/system/ChannelTap.hpp) today (it implements the interface itself, `channelTap()` returning `this`), so it is the `SyncTap` target. The engine's tap names no console: it forward-declares `ChannelTap` and includes no core header, and with C5's cart node it has no console check at all |
 | `SampleCache`, `util/MinizZip`, `EmbeddedRoms` | the offline seam's file decode (miniaudio, mono float at the file's own rate, the decode a kit compile reads its sources through), `zip`/`unzip`, and embedded-ROM resolution. `lsdj/Effects` is the kit path's reference arithmetic now, compiled into the two test binaries that hold the DSP nodes to it, not into the core |
 | `FrameBufferTriple` / `MemorySnapshotTriple` | the transport **primitives** the snapshot registry is built on (the command and release rings use `SpscRing`, which lives in `packages/node-sdk`) |
 
@@ -1378,7 +1384,6 @@ is one automatable parameter applied post-render across all 8 channels
 ## Key files
 
 - [`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp) — mounts the capability facets onto a server; the single source of truth for the wire surface.
-- [`CoreBackends.cpp`](../packages/native/src/system/CoreBackends.cpp) — registers the `sameboy` / `mesen` backends into the `SystemFactory`.
 - [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp), [`OfflineJobs.hpp`](../packages/native/src/host/engine/OfflineJobs.hpp) / [`.cpp`](../packages/native/src/host/engine/OfflineJobs.cpp): the single-threaded owner of the graph (with its script host), the staged host MIDI, the host outputs, the registry and the offline job pool; `processBlock`, `setGraph`, `setParam`, `loadScriptPack`, `submitOfflineJob`, `drainOfflineJobs`, `cancelOfflineJob`, the command handler, `SyncTap`.
 - [`EngineInvoker.hpp`](../packages/native/src/host/engine/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/host/engine/EngineInvoker.cpp): `QueuedInvoker`, the one command path; [`DspCommand.hpp`](../packages/native/src/host/engine/DspCommand.hpp).
 - [`host/graph/`](../packages/native/src/host/graph):
@@ -1392,7 +1397,7 @@ is one automatable parameter applied post-render across all 8 channels
   [`rp_node.h`](../packages/node-sdk/native/src/graph/rp_node.h): the one ring, plan swap and reclaim; the node ABI
   (`layout_for` per type).
 - [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) — the owned read door.
-- [`SystemFactory.hpp`](../packages/native/src/system/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) — the build path.
+- [`SystemBuild.hpp`](../packages/system/native/src/system/SystemBuild.hpp) - the build request and the build function its node's package carries; [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native/src/system/mesen/MesenBackend.cpp) - the consoles' build functions.
 - [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp), [`ScriptCompiler.hpp`](../packages/native/src/host/dsp/ScriptCompiler.hpp): the script-node runtime and its packs, + the compiler a pack's source and the tests' toys go through; the generated `src/generated/scriptNodes.ts` with [`script/bundle.ts`](../packages/retroplug/src/script/bundle.ts) and [`@retroplug/core/register`](../packages/core/ts/register.ts): the bundle every Engine embeds and how it registers its nodes; and each package's `ts/protocol.ts` (with the controller's [`packages/launchpad/ts/nodes.ts`](../packages/launchpad/ts/nodes.ts)) for the script nodes themselves.
 - [`HostRpcService.cpp`](../packages/native/src/host/rpc/HostRpcService.cpp), [`EngineRpcService.cpp`](../packages/native/src/host/rpc/EngineRpcService.cpp), [`DebugRpcService.cpp`](../packages/native/src/host/rpc/DebugRpcService.cpp), [`AudioDriverRpcService.cpp`](../packages/native/src/host/rpc/AudioDriverRpcService.cpp) — the RPC services behind the facets.
 - [`plugin/PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp), [`plugin/PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp), [`src/main.cpp`](../packages/native/src/main.cpp), [`test/ui/UiHarness.hpp`](../packages/native/test/ui/UiHarness.hpp) — the three hosts.

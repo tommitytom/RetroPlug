@@ -246,10 +246,14 @@ if(WIN32)
     # and the MSVC objects agree on the new one while this one keeps the old, every slot after the change
     # off by one. These are the directories its includes reach (the boot-ROM headers come with
     # sameboy_bootroms); one it starts including from belongs here too.
+    # packages/system's headers are the contract it implements (system/*.hpp, transport/*.hpp, util/*.hpp); the
+    # console's own and the engine's tree keep the rest.
     file(GLOB _sbs_headers CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/packages/system/native/src/system/*.hpp"
+        "${CMAKE_SOURCE_DIR}/packages/system/native/src/transport/*.hpp"
+        "${CMAKE_SOURCE_DIR}/packages/system/native/src/util/*.hpp"
         "${CMAKE_SOURCE_DIR}/packages/native/src/system/*.hpp"
         "${CMAKE_SOURCE_DIR}/packages/native/src/system/sameboy/*.hpp"
-        "${CMAKE_SOURCE_DIR}/packages/native/src/transport/*.hpp"
         "${CMAKE_SOURCE_DIR}/packages/native/src/util/*.hpp"
         "${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src/util/*.hpp"
         "${CMAKE_SOURCE_DIR}/deps/sameboy/Core/*.h")
@@ -260,6 +264,7 @@ if(WIN32)
             # GB_DISABLE_* MUST match the sameboy core or GB_gameboy_t's layout diverges.
             -DGB_DISABLE_TIMEKEEPING -DGB_DISABLE_DEBUGGER
             -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DNOGDI -D_CRT_SECURE_NO_WARNINGS
+            "-I${CMAKE_SOURCE_DIR}/packages/system/native/src"   # the contract: system/, transport/, util/
             "-I${CMAKE_SOURCE_DIR}/packages/native/src"
             "-I${CMAKE_SOURCE_DIR}/packages/node-sdk/native/src"  # util/FixedQueue.hpp
             "-I${CMAKE_SOURCE_DIR}/deps/sameboy/Core"

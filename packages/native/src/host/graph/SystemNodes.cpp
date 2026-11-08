@@ -5,30 +5,23 @@
 #include <cmath>
 #include <cstring>
 #include <iterator>
-#include <limits>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 
-#include <rfl/Literal.hpp>
-#include <rfl/Result.hpp>
-#include <rfl/Validator.hpp>
-#include <rfl/enums.hpp>
-#include <rfl/parsing/schema/ValidationType.hpp>
-
-#include "graph/CanonicalJson.hpp"
 #include "graph/node.hpp"
 #include "system/InputCapacity.hpp"
-#include "host/graph/HostServices.hpp"
 #include "system/SystemBase.hpp"
-#include "system/SystemFactory.hpp"
+#include "system/SystemNode.hpp"
+#include "system/mesen/MesenGbaConfig.hpp"
+#include "system/mesen/MesenBackend.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/mesen/MesenSmsSystem.hpp"
+#include "system/sameboy/SameBoyBackend.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 #include "transport/MidiTypes.hpp"
@@ -37,48 +30,9 @@ namespace rp::host {
 
 // ---- settings ---------------------------------------------------------------------------------------------------
 
-// The knobs' value types. An enum knob is a label as the role configs spell it
-// (packages/sameboy/ts/enums.ts, packages/mesen/ts/enums.ts), which is the name of its C++ enumerator with the first
-// letter lowercased:
-// SameBoyModel::CgbC is "cgbC", SameBoyHighpass::RemoveDcOffset "removeDcOffset", SameBoyModel::Auto "auto". So the
-// enumerators are native's one spelling of every label: Label<E> is the rfl::Literal made of them, which reads exactly
-// those strings (anything else refuses the settings), lists them in the descriptor's schema, and maps back to its
-// enumerator by position (valueOf). Never an ordinal: the document and a saved project carry the same word
-// (docs/modular-graph-phase-c2-design.md section 3). labelAt and same's Literal overloads name
-// rfl::internal::StringLiteral, an internal reflect-cpp type, so a reflect-cpp bump is to check them.
+// The knobs one console owns: its range types, its labels' enums and the validators made of them, kept beside the node
+// whose settings read them. The generic ones are the system package's (system/SystemNode.hpp).
 namespace knobs {
-
-template <class E, std::size_t I>
-constexpr auto labelAt() {
-    constexpr std::string_view name = rfl::get_enumerator_array<E>()[I].first;
-    std::array<char, name.size() + 1> chars{};
-    for (std::size_t k = 0; k < name.size(); ++k) chars[k] = name[k];
-    if (chars[0] >= 'A' && chars[0] <= 'Z') chars[0] = static_cast<char>(chars[0] - 'A' + 'a');
-    return rfl::internal::StringLiteral<name.size() + 1>(chars);
-}
-
-template <class E, std::size_t... I>
-rfl::Literal<labelAt<E, I>()...> literalOf(std::index_sequence<I...>);
-
-// A number refused outside [R::min, R::max], as a settings value out of its range is refused anywhere (a document is
-// checked, never quietly changed; the store clamps every knob to the same range before it publishes), with the range
-// in the descriptor's schema. The bounds ride a type rather than template values: a floating-point template argument
-// is beyond some of the compilers the build supports.
-template <class R>
-struct Within {
-    template <class T>
-    static rfl::Result<T> validate(T value) noexcept {
-        if (value >= R::min && value <= R::max) return value;  // NaN is refused too
-        return rfl::error("Value expected to be between " + rp::graph::jsNumber(R::min) + " and " +
-                          rp::graph::jsNumber(R::max) + ", but got " + rp::graph::jsNumber(value) + ".");
-    }
-    template <class T>
-    static rfl::parsing::schema::ValidationType to_schema() {
-        using V = rfl::parsing::schema::ValidationType;
-        return V{V::AllOf{.types_ = {V{V::Minimum{.value_ = rfl::Variant<double, int>(R::min)}},
-                                     V{V::Maximum{.value_ = rfl::Variant<double, int>(R::max)}}}}};
-    }
-};
 
 struct LightTemperatureRange {
     static constexpr double min = -1.0, max = 1.0;  // SameBoy's own: applyDisplayConfig clamps to it
@@ -87,14 +41,6 @@ struct ApuLatencyRange {
     // The store's own bounds (packages/mesen/ts/app.ts clampedNumber(0.25, 6.0, 1.4)).
     static constexpr double min = 0.25, max = 6.0;  // milliseconds
 };
-
-template <class E>
-using Label = decltype(literalOf<E>(std::make_index_sequence<rfl::get_enumerator_array<E>().size()>{}));
-
-template <class E>
-E valueOf(const Label<E>& label) {
-    return rfl::get_enumerator_array<E>()[label.value()].second;
-}
 
 using LightTemperature = rfl::Validator<double, Within<LightTemperatureRange>>;
 // Optional wherever it appears: rfl::Validator's own default constructor validates T() (0.0), which this range
@@ -107,9 +53,6 @@ using ApuLatencyMs = rfl::Validator<double, Within<ApuLatencyRange>>;
 enum class FifoProfile : std::uint32_t { Instant = 0, Hardware = 1 };
 enum class N8LinkMode : std::uint32_t { Auto = 0, Off = 1 };
 enum class ChannelExportMode : std::uint32_t { Mix = 0, StereoModPins = 1, PinsPlusRef = 2, IndividualMono = 3 };
-
-template <class E>
-using Label = decltype(literalOf<E>(std::make_index_sequence<rfl::get_enumerator_array<E>().size()>{}));
 
 // The ranges the store clamps its ints to (packages/mesen/ts/app.ts clampedInt), refused outside rather than
 // clamped, as C2's numbers are: 0 means "take the profile's value" for the two FIFO overrides, so 0 is in range.
@@ -127,6 +70,12 @@ using FifoBytesPerSecond = rfl::Validator<int, Within<FifoRateRange>>;
 using N8LinkRttUs        = rfl::Validator<int, Within<N8LinkRttRange>>;
 
 }  // namespace knobs
+
+// The NES's second param (docs/modular-graph-phase-c2-design.md section 3): its cartridge sound chip's level in whole
+// percent of unity, as its core takes it and as rp.n8.nes rescales it onto the real cart's master-volume register, so
+// the same document value sounds the same on both. SystemNodes.hpp holds the one range both types read.
+using ExpansionVolumeParam =
+    rp::int_param<"Expansion volume", rp::range{kExpansionVolumeMin, kExpansionVolumeMax, kExpansionVolumeDefault}, "%">;
 
 // Each type's settings, named so their JSON Schema $defs keys are the same under every compiler.
 //
@@ -287,333 +236,6 @@ struct SmsSettings {
 
 namespace {
 
-constexpr std::size_t kMaxOutputs = 16;
-
-// The params (docs/modular-graph-phase-c2-design.md section 3): what is worth playing, automating or modulating, so
-// each is also a control input, its value in the document and its live edits through Engine::setParam. Every system
-// node has `gain`, in dB over the range the store clamps a gain to (systemSettings.ts GAIN_MIN / GAIN_MAX); a NES has
-// `expansionVolume` too, its cartridge sound chip's level in whole percent of unity, as its core takes it. Each range
-// is one constant, used by the param's declaration and by the node's own clamp of a wire-driven value.
-constexpr double kGainMinDb = -90.0;
-constexpr double kGainMaxDb = 12.0;
-using GainParam = rp::float_param<"Gain", rp::range{kGainMinDb, kGainMaxDb, 0}, "dB">;
-using ExpansionVolumeParam =
-    rp::int_param<"Expansion volume", rp::range{kExpansionVolumeMin, kExpansionVolumeMax, kExpansionVolumeDefault}, "%">;
-
-// What a param's last-applied value holds before the core has been given any: no value equals it, NaN included.
-constexpr double kUnapplied = std::numeric_limits<double>::quiet_NaN();
-
-// The inputs every system node has (docs/modular-graph-phase-b3a-design.md section 3.1), each mapped onto the core
-// call SystemBase already has. A type declares them in its `inputs`, under these names.
-//
-//   serialIn  bytes   pushSerialIn(frame, byte), one call per byte
-//   midi      events  onMidi; a message longer than a MidiEvent holds goes down pushCoreBytes, unframed
-//   bytes     bytes   pushCoreBytes(frame, data, size, flush), the flush flag riding RP_MESSAGE_FLUSH
-//   buttons   events  pressButton(button, down), from a 2-byte payload [button, down]
-
-// Whether a knob is to be applied: present in `to`, and absent from `from`, what was applied last, or another value
-// there. A knob absent from `to` is never applied, so a field a document drops leaves the core as it is.
-inline bool same(bool a, bool b) { return a == b; }
-template <rfl::internal::StringLiteral... L>
-bool same(const rfl::Literal<L...>& a, const rfl::Literal<L...>& b) { return a.value() == b.value(); }
-template <class T, class... V>
-bool same(const rfl::Validator<T, V...>& a, const rfl::Validator<T, V...>& b) { return a.value() == b.value(); }
-template <class F>
-bool moved(const std::optional<F>& to, const std::optional<F>& from) { return to && !(from && same(*from, *to)); }
-
-// What every system node shares: the core it builds, its settings and params reaching that core, the connected-output
-// mask, its inputs, and prepare / step / finish mapped one to one onto the core's block triad. `Self` declares its
-// params (`gain` at least), supplies finish's lanes, may write output queues after the core has run (writeQueues), and
-// applies its own knobs (apply) and any param beyond the gain (applyParams).
-//
-// A node builds its core at activation from the bytes its resources hold (rp.host.systems/1,
-// docs/modular-graph-phase-c3-design.md section 5). The core is the host's: the snapshot slot under the system id, the
-// live cores, and the delete when the node is destroyed. Which fields a build reads is rebuild_key's, the
-// construct-time fields among them.
-//
-// Only a new core rebuilds (rebuild_key): every other setting is a knob the node applies to the core it has, so its
-// prepare reads nothing a commit writes and setGraph never waits on a system node's commit (stateless_prepare). A
-// commit only points `settings` at the new settings (on_settings never allocates); the node applies what moved at the
-// start of its next block, before the core's prepareForBlock, and everything present once at activation, as it takes
-// or builds its core, before that core first runs. What the core was given is `applied`, a Settings::Applied, which is
-// the live knobs alone: the fields carrying a string (romName, sdRoot, the resource refs) all rebuild the node or move
-// a resource, which no application sees, so the copy the node makes when it applies a commit, on the block thread,
-// copies no string. So a setting lands at the node's next prepare, after every host command queued behind its plan
-// (the host drains its ring before it runs a block): a caller that must act on the restarted core renders a block
-// first, since a RAM write or staged core bytes sent after a model change reach the core it is about to replace. Each
-// knob is guarded twice, first by `moved` against what this node last applied, so a document's unchanged field is not
-// re-applied even where the core was changed by another path, then by the core's own setter where it has one
-// (setFastBoot and a NES's setRemoveSpriteLimit write unconditionally). A palette change re-applies the display group
-// and restarts nothing, while a model change restarts the core and a region change resets it
-// (docs/modular-graph-phase-c2-design.md section 4). A settings field the type does not know is ignored (node.hpp
-// reads with rfl::DefaultIfMissing and no rfl::NoExtraFields), so a misspelt knob plans and does nothing.
-//
-// A param's value reaches the core at the start of each block whose control stream moves it, before the core's
-// prepareForBlock and after the settings (a model's restart first, then the levels), each value-guarded against the
-// value the core was given last: a publish carrying the value the core already has calls nothing. Every one is given
-// at the node's first block, before the core's first prepareForBlock: a node reads its params only in a block (the
-// host binds its control streams there, and lands the document's values in them as it adopts the plan), and a core a
-// node has built runs nothing before that. The first value is snapped into the core, whose gain smoother
-// starts at 0 dB, so the node plays its first sample at the document's level; every later gain change is smoothed by
-// the core, as every gain edit is.
-template <class Self, class Core, class S = SystemNodeSettings>
-struct SystemNode {
-    using Settings = S;
-    // What the core was given (the live knobs alone, per Settings::Applied): trivially copyable, since the block thread
-    // writes it, so a string-valued live knob would have to be added here deliberately rather than ride a copy of the
-    // whole settings.
-    using Applied = typename Settings::Applied;
-    static_assert(std::is_trivially_copyable_v<Applied>,
-                  "a settings application must not allocate on the block thread");
-    static auto rebuild_key(const Settings& s) { return s.key(); }
-    static constexpr bool stateless_prepare = true;
-
-    const HostSystems*                     systems = nullptr;  // null when the host offers no builder
-    const EngineSyncTrace*                 trace = nullptr;  // null when the host keeps none
-    Core*                                  core = nullptr;  // owned
-    std::array<std::uint8_t, kMaxOutputs>  connected{};
-    const Settings*                        settings = nullptr;  // the committed ones, alive until the next commit
-    Applied                                applied{};           // the live knobs the core was given last (none before)
-    bool                                   pending = false;     // settings committed and not yet applied
-    double                                 gainApplied = kUnapplied;  // the gain param's value the core has, in dB
-
-    SystemNode() = default;
-    SystemNode(const SystemNode&) = delete;
-    SystemNode& operator=(const SystemNode&) = delete;
-    // Destroyed on the control thread, at reclaim once no plan runs it or as a refused plan is unwound. The core it
-    // built is the host's to release (its snapshot slot, and the live-core map, go with it); a node that never built
-    // one has no core, and build throws before setting it when the host offers no systems service.
-    ~SystemNode() {
-        if (core) systems->destroy(systems->ctx, core);
-    }
-
-    void bind_host(const rp_host* h) noexcept {
-        systems = static_cast<const HostSystems*>(h->get_interface(h, RP_HOST_SYSTEMS_INTERFACE));
-        trace = static_cast<const EngineSyncTrace*>(h->get_interface(h, RP_ENGINE_SYNC_TRACE_INTERFACE));
-    }
-
-    // rp.stage/1: a message a host aimed at this node, straight into its core's ingress (Engine::stageNodeMidi's
-    // path). The UI's knob traffic reaches the core whatever the project's musical routing does, and to the node
-    // whose menu it came from. Frame 0: a knob has no musical position.
-    rp_host_stage staged{this, &stageFn};
-    static bool stageFn(void* ctx, const std::uint8_t* data, std::size_t size, double) {
-        return static_cast<SystemNode*>(ctx)->stageMessage(data, size);
-    }
-    // pushCoreBytes, not onMidi, where the core has a raw ingress: onMidi is the MIDI-FRAMED door, and the NES role's
-    // implementation clamps every event to MidiEvent::kDataSize and ignores dataExt (NesN8FifoRole.cpp), so a SysEx
-    // through it arrives as its first four bytes and the cart waits forever for an F7 that was thrown away.
-    // pushCoreBytes is the raw door a protocol node's bytes reach the core through, with no framing and no cap. A core
-    // with no raw ingress falls back to the framed one, where a channel message still fits; nothing longer goes.
-    bool stageMessage(const std::uint8_t* data, std::size_t size) {
-        if (core == nullptr || data == nullptr || size == 0) return false;
-        if (core->hasCoreBytesIn()) {
-            // flush=false: a flush DISCARDS whatever the device still holds, which for the N8 FIFO is the performance
-            // queued behind this. A settings message is not a barrier; it joins the stream.
-            core->pushCoreBytes(0, data, size, false);
-            return true;
-        }
-        if (size > ::MidiEvent::kDataSize) return false;
-        ::MidiEvent ev{};
-        ev.frame = 0;
-        ev.size = static_cast<std::uint32_t>(size);
-        for (std::size_t i = 0; i < size; ++i) ev.data[i] = data[i];
-        core->onMidi(&ev, 1);
-        return true;
-    }
-    const void* get_interface(std::string_view id) noexcept { return id == RP_STAGE_INTERFACE ? &staged : nullptr; }
-    void on_settings(const Settings& s) noexcept {
-        settings = &s;
-        pending = true;
-    }
-
-    // A create that names no system refuses here rather than planning a document whose node would run nothing
-    // (docs/modular-graph-phase-c3-design.md section 3). A node also names its ROM; the seeds are optional (a blank
-    // battery is legitimate).
-    static std::optional<std::string> validate(const Settings& s) {
-        if (s.system == 0)
-            return std::string("a system node names the system it builds ({\"system\": <id>, \"rom\": \"res:N\"})");
-        if (s.rom.empty()) return std::string("a system node names its ROM as {\"rom\": \"res:N\"}");
-        return std::nullopt;
-    }
-
-    // The first activation builds the core the settings name, and gives it every knob the settings carry; later ones
-    // (a re-activation) keep it. A core is built at the rate the plan runs at, which Engine::setSampleRate re-rates. A
-    // plan that is then refused destroys it as it unwinds. Either way the core learns the largest block it will run
-    // before it runs one: a build is handed the plan's maximum, so the core sizes its audio ring, its tap's rings and
-    // its per-block scratches to it as it activates (a default-sized core would keep that memory for a small host
-    // block's whole life), and a plan that grows a host's block reactivates the whole graph quiescent, where
-    // reserveAudio moves the sizes with no block in flight.
-    bool activate(double, std::uint32_t maxFrames) {
-        if (core) {
-            core->reserveAudio(maxFrames);
-            return true;
-        }
-        build(static_cast<Self*>(this)->config(*settings), maxFrames);
-        core->reserveAudio(maxFrames);
-        return true;
-    }
-
-    // Build the core the settings name, through rp.host.systems/1, with the bytes this instance's resources pinned, the
-    // config its settings made and the plan's largest block: the backend applies the config and reserves that block
-    // before onActivate, and boots and restores the seeds there, so a non-default model never restarts the core it just
-    // restored. A failure throws its reason, which rp::detail::activateFn reports and the planner shows as
-    // activate-failed on this node.
-    void build(SystemConfig config, std::uint32_t maxBlockFrames) {
-        if (!systems) throw std::runtime_error("the host offers no system builder (rp.host.systems/1)");
-        SystemBuildRequest request;
-        request.rom = bytesOf(settings->rom);
-        request.sram = bytesOf(settings->sram);
-        request.savestate = bytesOf(settings->state);
-        request.romName = settings->romName.value_or(std::string());
-        request.maxBlockFrames = maxBlockFrames;
-        request.config = std::move(config);
-        rp_error err{};
-        SystemBase* made = systems->build(systems->ctx, settings->system, std::move(request), &err);
-        if (!made)
-            throw std::runtime_error(err.message[0] ? std::string(err.message) : std::string("the core did not build"));
-        // The config alternative the request carries names the console, so the core handed back must be that console's:
-        // a host that built another reports another kind(), and every core class reports a kind no other one does, so
-        // the comparison checks the type the cast below then assumes. A mismatch is a host or settings bug rather than
-        // a document's, and the core it built is given back before the refusal.
-        if (made->kind() != Core::kKind) {
-            systems->destroy(systems->ctx, made);
-            throw std::runtime_error(std::string("the built core is not a ") + Self::name);
-        }
-        core = static_cast<Core*>(made);
-        // The build applied the config, so its fields are on the core already: `applied` is seeded with the settings'
-        // live knobs, less what the config does not carry, so the node's own first application finds them equal and
-        // calls nothing (a model change would restart the core and lose the savestate the build restored). What is left
-        // over is a live knob, which reaches the core now.
-        applied = settings->liveKnobs();
-        static_cast<Self*>(this)->configApplied(applied);
-        applySettings();
-    }
-
-    static std::vector<std::uint8_t> bytesOf(const auto& field) {
-        std::vector<std::uint8_t> out;
-        if (const rp_bytes* bytes = field.bytes()) out.assign(bytes->data, bytes->data + bytes->size);
-        return out;
-    }
-
-    // A type whose config carries none of its knobs clears them here, so the node's first block applies them.
-    void configApplied(Applied&) const noexcept {}
-
-    void applySettings() noexcept {
-        static_cast<Self*>(this)->apply(*settings, applied);
-        applied = settings->liveKnobs();
-        pending = false;
-    }
-    // A core with no knobs of its own (the GBA, the SMS).
-    void apply(const Settings&, const Applied&) noexcept {}
-
-    void ports_changed(std::span<const std::uint8_t> mask) noexcept {
-        connected.fill(0);
-        std::copy_n(mask.begin(), std::min(mask.size(), connected.size()), connected.begin());
-    }
-
-    static AudioBlockInfo info(const rp::Block& b) {
-        const rp_transport& t = b.transport();
-        return AudioBlockInfo{b.frames(), t.sample_rate, t.tempo, t.ppq, (t.flags & RP_TRANSPORT_PLAYING) != 0};
-    }
-
-    // An unlinked system: prepare, step until it has the block, finish - a coupled group of one.
-    void process(const rp::Block& b) noexcept {
-        prepare(b);
-        while (core->stepIfBelowTarget(b.frames())) {
-        }
-        finish(b);
-    }
-    // The knobs that moved, the params that moved, then the inputs, are applied here, where process starts too: a
-    // linked Game Boy's coupled group prepares every member (rp.step/1) before any of them steps, and never calls
-    // process. Knobs first, because a model change restarts the core before its inputs reach it, and because this
-    // prepare is where a setting lands.
-    void prepare(const rp::Block& b) noexcept {
-        if (pending) applySettings();
-        static_cast<Self*>(this)->applyParams();
-        applyInputs();
-        // The core learns how many lanes this block drains before it steps: a core whose step gates on a ring of its
-        // own fills the one finish() will read, and finishBlock gets the same count. Only the lane COUNT is wanted
-        // here, so this is the same lookup finish() makes, into a throwaway array.
-        std::array<float*, 2 * kMaxOutputs> lanes{};
-        core->setBlockLanes(static_cast<Self*>(this)->lanes(b, lanes));
-        core->prepareForBlock(info(b));
-    }
-
-    // Each param's latest value this block, where it differs from what the core has: a change anywhere in the block
-    // lands at its start. This one for a type whose one param is its gain. A value a wire carries is clamped to the
-    // param's range here, as the planner and setParam clamp a document's or a live edit's.
-    void applyParams() noexcept { applyGain(); }
-    void applyGain() noexcept {
-        const double latest = static_cast<Self*>(this)->params.gain.latest();
-        if (latest != latest) return;  // NaN reaches a param only over a wire, and moves nothing
-        const double db = std::clamp(latest, kGainMinDb, kGainMaxDb);
-        if (db == gainApplied) return;
-        // The core's smoother starts at 0 dB, so its first value is snapped: a node placed at -90 dB is silent from
-        // its first sample rather than ramping down from unity. Later edits ramp as every gain edit does.
-        core->setGainDb(static_cast<float>(db), gainApplied != gainApplied);
-        gainApplied = db;
-    }
-    bool step(std::uint32_t target) noexcept { return !core->stepIfBelowTarget(target); }
-
-    // finishBlock adds into its lanes, so they start at zero. Every other connected audio output is written too
-    // (the ABI's rule), as silence.
-    void finish(const rp::Block& b) noexcept {
-        std::array<float*, 2 * kMaxOutputs> lanes{};
-        const std::size_t n = static_cast<Self*>(this)->lanes(b, lanes);
-        for (std::uint32_t o = 0; o < b.raw.output_count && o < connected.size(); ++o)
-            if (connected[o] && b.output(o).kind == RP_PORT_AUDIO)
-                for (std::uint32_t c = 0; c < b.output(o).u.audio.channel_count; ++c)
-                    std::memset(b.output(o).u.audio.channels[c], 0, b.frames() * sizeof(float));
-        for (std::size_t l = 0; l < n; ++l) std::memset(lanes[l], 0, b.frames() * sizeof(float));
-        core->finishBlock(info(b), lanes.data(), n);
-        static_cast<Self*>(this)->writeQueues(b.frames());
-    }
-    void writeQueues(std::uint32_t) noexcept {}
-
-    // Each input in queue order, the inputs in the order the kernel stage the kernel node replaced fanned its sinks
-    // out: serialIn, midi, bytes, buttons. The order matters on the NES, where MIDI and bytes land in the same FIFO
-    // (a flushed byte message drops the MIDI queued ahead of it). Before prepareForBlock, as that stage ran before
-    // the core.
-    void applyInputs() noexcept {
-        auto& in = static_cast<Self*>(this)->inputs;
-        for (const rp_message& m : in.serialIn.messages())
-            for (const std::uint8_t byte : in.serialIn.data(m)) core->pushSerialIn(m.frame, byte);
-        for (const rp_message& m : in.midi.messages()) {
-            const auto data = in.midi.data(m);
-            if (data.empty()) continue;
-            // Longer than a MidiEvent holds (a SysEx, or several messages staged as one run): the core's raw byte
-            // path, unframed and uncapped. A core with no byte device (SameBoy's mGB speaks 3-byte messages only)
-            // ignores it, which also keeps a dangling MidiEvent::dataExt out of SameBoy's queued copy.
-            if (data.size() > ::MidiEvent::kDataSize) {
-                core->pushCoreBytes(m.frame, data.data(), data.size(), false);
-                continue;
-            }
-            ::MidiEvent ev{};
-            ev.frame = m.frame;
-            ev.size = static_cast<std::uint32_t>(data.size());
-            for (std::size_t j = 0; j < data.size(); ++j) ev.data[j] = data[j];
-            core->onMidi(&ev, 1);
-        }
-        for (const rp_message& m : in.bytes.messages()) {
-            const auto data = in.bytes.data(m);
-            if (data.empty()) continue;
-            if (trace) trace->bytes(trace->ctx, m.frame, data.data(), data.size());
-            core->pushCoreBytes(m.frame, data.data(), data.size(), (m.flags & RP_MESSAGE_FLUSH) != 0);
-        }
-        for (const rp_message& m : in.buttons.messages()) {
-            const auto data = in.buttons.data(m);
-            if (data.size() >= 2) core->pressButton(data[0], data[1] != 0);
-        }
-    }
-
-    // The stereo mix as lanes 0 and 1.
-    static std::size_t mixLanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& lanes) {
-        lanes[0] = b.output(0).u.audio.channels[0];
-        lanes[1] = b.output(0).u.audio.channels[1];
-        return 2;
-    }
-};
-
 // The Game Boy's serialOut: a byte a message. While MI.OUT capture clocks the port (external clock, SC=0x80:
 // SameBoySystem::writeAudioSample shifts one bit an audio frame) a byte takes eight frames, so the largest block a
 // host can run (rp::graph::kMaxBlockFrames, 65536 frames; the plugin grows its plan to its buffer size) carries
@@ -631,6 +253,8 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
     static constexpr const char* id = "rp.sameboy.gb";
     static constexpr const char* name = "Game Boy";
     static constexpr const char* category = "system";
+    // The Game Boy's build: the shell's SameBoy builder, until the console's package owns it.
+    static constexpr SystemBuildFn kBuild = rp::sameboy::buildCore;
     struct {
         rp::link      link;
         rp::bytes_in  serialIn;
@@ -685,7 +309,7 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
     // among them, which the backend applies before onActivate, so a loaded non-default model boots as that model and
     // never restarts afterwards. A knob absent from the settings keeps SameBoyConfig's default, which is the role
     // schema's.
-    static SystemConfig config(const Settings& s) {
+    static SameBoyConfig config(const Settings& s) {
         SameBoyConfig c;
         if (s.model) c.model = knobs::valueOf<SameBoyModel>(*s.model);
         if (s.fastBoot) c.fastBoot = *s.fastBoot;
@@ -707,15 +331,15 @@ struct GameBoy : SystemNode<GameBoy, SameBoySystem, GameBoySettings> {
     // first block of the plan that carries it, the block rp.lsdj.serial-out first runs in its new mode, so no byte
     // captured in one mode is decoded in the other.
     void apply(const Settings& to, const Applied& from) noexcept {
-        if (moved(to.fastBoot, from.fastBoot)) core->setFastBoot(*to.fastBoot);
-        if (moved(to.model, from.model)) core->setModel(knobs::valueOf<SameBoyModel>(*to.model));
-        if (moved(to.highpass, from.highpass)) core->setHighpass(knobs::valueOf<SameBoyHighpass>(*to.highpass));
-        if (moved(to.colorCorrection, from.colorCorrection))
+        if (knobs::moved(to.fastBoot, from.fastBoot)) core->setFastBoot(*to.fastBoot);
+        if (knobs::moved(to.model, from.model)) core->setModel(knobs::valueOf<SameBoyModel>(*to.model));
+        if (knobs::moved(to.highpass, from.highpass)) core->setHighpass(knobs::valueOf<SameBoyHighpass>(*to.highpass));
+        if (knobs::moved(to.colorCorrection, from.colorCorrection))
             core->setColorCorrection(knobs::valueOf<SameBoyColorCorrection>(*to.colorCorrection));
-        if (moved(to.dmgPalette, from.dmgPalette))
+        if (knobs::moved(to.dmgPalette, from.dmgPalette))
             core->setDmgPalette(knobs::valueOf<SameBoyDmgPalette>(*to.dmgPalette));
-        if (moved(to.lightTemperature, from.lightTemperature)) core->setLightTemperature(to.lightTemperature->value());
-        if (moved(to.serialOutCapture, from.serialOutCapture))
+        if (knobs::moved(to.lightTemperature, from.lightTemperature)) core->setLightTemperature(to.lightTemperature->value());
+        if (knobs::moved(to.serialOutCapture, from.serialOutCapture))
             core->setSerialOutCapture(knobs::valueOf<SerialOutCapture>(*to.serialOutCapture));
     }
 };
@@ -730,6 +354,8 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
     static constexpr const char* id = "rp.mesen.nes";
     static constexpr const char* name = "NES";
     static constexpr const char* category = "system";
+    // The NES's build: the shell's Mesen builder, until the console's package owns it.
+    static constexpr SystemBuildFn kBuild = rp::mesen::buildNesCore;
     struct {
         rp::bytes_in  serialIn;
         rp::events_in midi;
@@ -768,7 +394,7 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
     // APU latency and the cartridge-accuracy pair, each as the settings carry it. The expansion volume is not here: it
     // is a param, given at the node's first block before the core steps, so the core boots at its own default and never
     // plays a frame at it.
-    static SystemConfig config(const Settings& s) {
+    static MesenNesConfig config(const Settings& s) {
         MesenNesConfig c;
         if (s.region) c.region = static_cast<std::uint32_t>(knobs::valueOf<NesRegion>(*s.region));
         if (s.removeSpriteLimit) c.removeSpriteLimit = *s.removeSpriteLimit;
@@ -791,13 +417,13 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
     // The region first, because a region change resets the core (setRegion); the rest apply in place, in the order
     // the store's role config lists them.
     void apply(const Settings& to, const Applied& from) noexcept {
-        if (moved(to.region, from.region))
+        if (knobs::moved(to.region, from.region))
             core->setRegion(static_cast<std::uint32_t>(knobs::valueOf<NesRegion>(*to.region)));
-        if (moved(to.removeSpriteLimit, from.removeSpriteLimit)) core->setRemoveSpriteLimit(*to.removeSpriteLimit);
-        if (moved(to.apuLatencyMs, from.apuLatencyMs)) core->setApuLatencyMs(to.apuLatencyMs->value());
-        if (moved(to.s5bNoise, from.s5bNoise))
+        if (knobs::moved(to.removeSpriteLimit, from.removeSpriteLimit)) core->setRemoveSpriteLimit(*to.removeSpriteLimit);
+        if (knobs::moved(to.apuLatencyMs, from.apuLatencyMs)) core->setApuLatencyMs(to.apuLatencyMs->value());
+        if (knobs::moved(to.s5bNoise, from.s5bNoise))
             core->setS5bNoise(static_cast<std::uint32_t>(knobs::valueOf<CartridgeAccuracy>(*to.s5bNoise)));
-        if (moved(to.mmc5PhaseReset, from.mmc5PhaseReset))
+        if (knobs::moved(to.mmc5PhaseReset, from.mmc5PhaseReset))
             core->setMmc5PhaseReset(static_cast<std::uint32_t>(knobs::valueOf<CartridgeAccuracy>(*to.mmc5PhaseReset)));
     }
 
@@ -815,10 +441,12 @@ struct Nes : SystemNode<Nes, MesenNesSystem, NesSettings> {
     }
 };
 
-struct Gba : SystemNode<Gba, MesenGbaSystem> {
+struct Gba : SystemNode<Gba, MesenGbaSystem, SystemNodeSettings> {
     static constexpr const char* id = "rp.mesen.gba";
     static constexpr const char* name = "Game Boy Advance";
     static constexpr const char* category = "system";
+    // The GBA's build: the shell's Mesen builder, until the console's package owns it.
+    static constexpr SystemBuildFn kBuild = rp::mesen::buildGbaCore;
     struct {
         rp::bytes_in  serialIn;
         rp::events_in midi;
@@ -829,13 +457,15 @@ struct Gba : SystemNode<Gba, MesenGbaSystem> {
     struct { GainParam gain; } params;
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const { return mixLanes(b, out); }
     // A Game Boy Advance has no construct-time field of its own yet: its config is the struct's defaults.
-    static SystemConfig config(const Settings&) { return MesenGbaConfig{}; }
+    static MesenGbaConfig config(const Settings&) { return MesenGbaConfig{}; }
 };
 
 struct Sms : SystemNode<Sms, MesenSmsSystem, SmsSettings> {
     static constexpr const char* id = "rp.mesen.sms";
     static constexpr const char* name = "Master System / Game Gear";
     static constexpr const char* category = "system";
+    // The Master System's build: the shell's Mesen builder, until the console's package owns it.
+    static constexpr SystemBuildFn kBuild = rp::mesen::buildSmsCore;
     struct {
         rp::bytes_in  serialIn;
         rp::events_in midi;
@@ -847,7 +477,7 @@ struct Sms : SystemNode<Sms, MesenSmsSystem, SmsSettings> {
     std::size_t lanes(const rp::Block& b, std::array<float*, 2 * kMaxOutputs>& out) const { return mixLanes(b, out); }
     // The machine and the FM unit, both of which configureSms sets before LoadRom and neither of which has a setter: a
     // change is a rebuild, which the settings' key decides.
-    static SystemConfig config(const Settings& s) {
+    static MesenSmsConfig config(const Settings& s) {
         MesenSmsConfig c;
         if (s.enableFm) c.enableFm = *s.enableFm;
         if (s.gameGear) c.gameGear = *s.gameGear;

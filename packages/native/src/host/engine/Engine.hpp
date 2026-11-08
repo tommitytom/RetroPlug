@@ -24,7 +24,6 @@
 #include "host/script/ScriptHost.hpp"
 
 class SystemBase;
-class SystemFactory;
 class ChannelTap;
 struct DspCommand;
 struct SystemBuildRequest;
@@ -416,7 +415,7 @@ public:
     void clearGraph();
 
 private:
-    // The node giving its core up, or a refused plan unwinding one it built. Only rp.host.systems/1's destroy lambda
+    // The node giving its core up, or a refused plan unwinding one it built. Only rp.host.systems/2's destroy lambda
     // calls it, so the core a live node holds cannot be deleted by anyone else.
     void destroySystem(SystemBase* core);
 
@@ -532,9 +531,6 @@ private:
     // system node's core does not exist before its activation, so buildSystem adds it to the slots here. Null outside
     // setGraph; only system nodes, on the control thread, call buildSystem.
     rp::host::SystemTable*                          building_ = nullptr;
-    // The one factory every core is built through, a system node's activation included. Every core backend is
-    // registered here at construction, so a host that composes an Engine gets the build path.
-    std::unique_ptr<SystemFactory>                  factory_;
     std::uint32_t                                   hostWidth_ = 2;
     // The request setGraph last published (the empty document's, from construction), which a reload replans.
     std::optional<GraphRequest>                     lastRequest_;

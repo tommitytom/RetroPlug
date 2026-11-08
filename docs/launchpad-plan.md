@@ -240,7 +240,7 @@ DAW mode, Session layout, faders, the DIN port, the internal sequencer. Programm
 
 The DSP kernel runs **on the same thread as the live cores, before they render**: [`Engine.cpp:77-127`](../packages/native/src/host/engine/Engine.cpp#L77-L127) runs `dsp_.processBlock`, fans its sinks to the cores, and only then calls `runBlock`. A role reading memory therefore sees end-of-previous-block state - the same one-block latency `ctx.serialOut` already documents, and consistent with it.
 
-`SystemBase::getMemory(MemoryType::Ram, Read)` returns a [`MemoryAccessor`](../packages/native/src/system/MemoryAccessor.hpp#L30) holding a raw pointer + size, so the kernel can be handed a zero-copy typed-array view. No copy, no snapshot, no RPC (the existing `readRam` RPC goes through `SnapshotRegistry` only because it is called from the *control* thread).
+`SystemBase::getMemory(MemoryType::Ram, Read)` returns a [`MemoryAccessor`](../packages/system/native/src/system/MemoryAccessor.hpp#L30) holding a raw pointer + size, so the kernel can be handed a zero-copy typed-array view. No copy, no snapshot, no RPC (the existing `readRam` RPC goes through `SnapshotRegistry` only because it is called from the *control* thread).
 
 Two sources, both direct:
 

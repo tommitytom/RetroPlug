@@ -33,11 +33,6 @@ public:
                    std::vector<std::uint8_t> romBytes);
     ~MesenNesSystem() override;
 
-    // The console a system node of this type builds: the node compares a built core's kind() with this before it casts
-    // it to this class, and kind() answers it, so the two cannot drift.
-    static constexpr SystemKind kKind = SystemKind::MesenNes;
-    SystemKind kind() const override { return kKind; }
-
     void onActivate(double sampleRate) override;
     void onDeactivate() override;
     void onSampleRateChanged(double sampleRate) override;

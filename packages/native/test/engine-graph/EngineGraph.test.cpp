@@ -10,8 +10,10 @@
 //
 // Run via `pnpm test:plugin engine-graph`.
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -38,10 +40,12 @@
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/rpc/EngineRpcService.hpp"
 #include "host/rpc/HarnessSurfaceLink.hpp"
-#include "system/CoreBackends.hpp"
-#include "system/SystemFactory.hpp"
+#include "system/SystemBuild.hpp"
+#include "system/SystemNode.hpp"
+#include "system/mesen/MesenBackend.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
+#include "system/sameboy/SameBoyBackend.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 #include "transports/QuickJSTransport.h"
@@ -808,10 +812,135 @@ std::string refusal(const Engine::GraphResult& r) {
 class EmptyCore final : public SystemBase {
 public:
     explicit EmptyCore(SystemId id) : SystemBase(id) {}
-    SystemKind kind() const override { return SystemKind::SameBoy; }
     void onActivate(double) override {}
     void onSampleRateChanged(double) override {}
 };
+
+// A console package the test owns (docs/modular-graph-phase-f2-design.md section 8): a type that declares category
+// "system", on the system package's SystemNode template, over a stub core and a build function of its own. Nothing in
+// the engine names it; what places it is the descriptor, and what builds its core is the function its own request
+// carries.
+
+// What that console's build function reads from the request: the node's `tag` knob, so a case can hold that the config
+// its settings made reached its own build.
+struct FixtureConfig {
+    int tag = 0;
+};
+
+// The stub core: silence, and one stereo stream. The node zeroes the lanes before finishBlock, so this writes nothing,
+// and counts what it was asked so a case can hold that its triad ran.
+class StubCore final : public SystemBase {
+public:
+    StubCore(SystemId id, int tag) : SystemBase(id), tag_(tag) { ++live; }
+    ~StubCore() override { --live; }
+
+    void onActivate(double) override { activated_ = true; }
+    void onSampleRateChanged(double) override {}
+    std::vector<ChannelStream> channelLayout() const override { return {{"Mix", true}}; }
+    void finishBlock(const AudioBlockInfo&, float* const*, std::size_t) override { ++blocks_; }
+
+    int  tag() const { return tag_; }
+    bool activated() const { return activated_; }
+    int  blocks() const { return blocks_; }
+
+    // How many stub cores exist: a case holds that the host destroyed the one it built when its plan went.
+    static inline int live = 0;
+
+private:
+    int  tag_;
+    bool activated_ = false;
+    int  blocks_ = 0;
+};
+
+// The console's build: what every console's does, in a few lines. It reads its config, builds the core from it and
+// activates the core at the plan's rate, so the host gets the core exactly as an activated one is (SystemBuild.hpp).
+std::unique_ptr<SystemBase> buildFixtureCore(SystemId id, SystemBuildRequest&& request, double sampleRate,
+                                             std::string*) {
+    const auto* cfg = static_cast<const FixtureConfig*>(request.config);
+    auto core = std::make_unique<StubCore>(id, cfg ? cfg->tag : -1);
+    core->onActivate(sampleRate);
+    return core;
+}
+
+// The fixture console's settings: the shared fields a system node has, and the console's one construct-time knob.
+struct FixtureSettings {
+    std::uint64_t              system = 0;
+    rp::resource_ref<"rom">    rom;
+    rp::resource_ref<"sram">   sram;
+    rp::resource_ref<"state">  state;
+    std::optional<std::string> romName;
+    std::optional<int>         tag;
+
+    struct Key {
+        std::uint64_t              system = 0;
+        std::optional<std::string> romName;
+        std::optional<int>         tag;
+        bool operator==(const Key&) const = default;
+    };
+    Key key() const { return {system, romName, tag}; }
+
+    struct Applied {};
+    Applied liveKnobs() const { return {}; }
+};
+
+struct FixturePorts {
+    struct {
+        rp::bytes_in  serialIn;
+        rp::events_in midi;
+        rp::bytes_in  bytes;
+        rp::events_in buttons;
+    } inputs;
+    struct { rp::audio_out<rp::stereo> mix; } outputs;
+    struct { rp::host::GainParam gain; } params;
+};
+
+// One node type per build function the package offers: the console's, and one that names none, which is the request the
+// host refuses before a build.
+template <SystemBuildFn Build>
+struct FixtureConsole : rp::host::SystemNode<FixtureConsole<Build>, StubCore, FixtureSettings>, FixturePorts {
+    static constexpr const char* id = Build ? "rp.test.fixture-console" : "rp.test.fixture-console-no-build";
+    static constexpr const char* name = Build ? "Fixture console" : "Fixture console with no build";
+    static constexpr const char* category = "system";
+    static constexpr SystemBuildFn kBuild = Build;
+
+    // The console has one stream: the mix, as lanes 0 and 1.
+    std::size_t lanes(const rp::Block& b, std::array<float*, 2 * rp::host::kMaxOutputs>& out) const {
+        out[0] = b.output(0).u.audio.channels[0];
+        out[1] = b.output(0).u.audio.channels[1];
+        return 2;
+    }
+    static FixtureConfig config(const FixtureSettings& s) { return FixtureConfig{s.tag.value_or(0)}; }
+};
+
+// A node type that declares category "system" and builds nothing. The category is the promise the engine trusts (it
+// recognizes a system node by it and reads its core back from the plan's slot), so a type that never calls
+// rp.host.systems/2 is the promise broken, and the engine refuses the document rather than publish a plan whose slot for
+// it is null.
+struct NoCorePorts {
+    struct {} inputs;
+    struct { rp::audio_out<rp::stereo> mix; } outputs;
+    struct {} params;
+};
+
+struct FixtureConsoleWithoutCore : NoCorePorts {
+    struct Settings { std::uint64_t system = 0; };
+
+    static constexpr const char* id = "rp.test.fixture-console-no-core";
+    static constexpr const char* name = "Fixture console that builds nothing";
+    static constexpr const char* category = "system";
+    static constexpr const char* version = "1.0.0";
+
+    void process(const rp::Block&) noexcept {}
+};
+
+const rp_package* fixtureConsolePackage() {
+    static const rp_node_type* const kTypes[] = {rp::node_type<FixtureConsole<buildFixtureCore>>(),
+                                                 rp::node_type<FixtureConsole<nullptr>>(),
+                                                 rp::node_type<FixtureConsoleWithoutCore>()};
+    static const rp_package kPackage{RP_ABI_VERSION, R"({"id":"rp.test.fixture","version":"1.0.0"})",
+                                     static_cast<std::uint32_t>(std::size(kTypes)), kTypes};
+    return &kPackage;
+}
 
 // A core whose savestate is `size` bytes, changed at every capture: all a snapshot claim sizes from and a publish
 // copies, with no emulation and nothing else in it, so two threads driving the registry meet only where it has them
@@ -819,7 +948,6 @@ public:
 class StateCore final : public SystemBase {
 public:
     StateCore(SystemId id, std::size_t size) : SystemBase(id), state_(size, 0) {}
-    SystemKind kind() const override { return SystemKind::SameBoy; }
     void onActivate(double) override {}
     void onSampleRateChanged(double) override {}
     std::vector<std::uint8_t> saveStateBytes() const override { return state_; }
@@ -845,7 +973,7 @@ TEST_CASE("a system node builds its core from its system and ROM resource, and g
     REQUIRE(rom != 0);
     CHECK(e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, rom), {1})).ok);
     CHECK(e.findSystem(1) != nullptr);
-    CHECK(e.findSystem(1)->kind() == SystemKind::SameBoy);
+    CHECK(dynamic_cast<SameBoySystem*>(e.findSystem(1)) != nullptr);
     CHECK(e.coreLive(1));
     CHECK(e.liveSystemCount() == 1);
     CHECK(e.registry().liveCount() == 1);
@@ -863,6 +991,109 @@ TEST_CASE("a system node builds its core from its system and ROM resource, and g
     CHECK(e.liveSystemCount() == 0);
     CHECK(e.registry().liveCount() == 0);
     CHECK(e.resourcePinCount(rom) == 0);
+}
+
+TEST_CASE("a request that names no build function is refused with its own reason, claiming nothing",
+          "[engine-graph][b2][systems]") {
+    // The host builds what the request names, and a request that names no build function names no console: refused
+    // before the build, so the refusal costs no snapshot slot, no live id and no core
+    // (docs/modular-graph-phase-f2-design.md section 3). The fixture package's second type carries no build function,
+    // which is the one way a request reaches the host without one: only a node's activation calls buildSystem.
+    Engine e(kRate);
+    REQUIRE(e.addNodePackage(fixtureConsolePackage()));
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    REQUIRE(rom != 0);
+    REQUIRE(e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, rom), {1})).ok);
+    SystemBase* running = e.findSystem(1);
+    REQUIRE(running != nullptr);
+    const std::size_t cores = e.liveSystemCount(), slots = e.registry().liveCount();
+
+    const auto r = e.setGraph(builtRequest(builtDoc(2, "rp.test.fixture-console-no-build", rom), {2}));
+    CHECK(refusal(r) == "sys-2: activate-failed: the request names no build function (rp.host.systems/2)");
+    CHECK_FALSE(e.coreLive(2));
+    CHECK(e.findSystem(1) == running);
+    CHECK(e.liveSystemCount() == cores);
+    CHECK(e.registry().liveCount() == slots);
+    CHECK(e.resourcePinCount(rom) == 1);  // the running plan's own node still holds it
+}
+
+TEST_CASE("a console package the engine has never heard of plans, builds, runs and frees its core",
+          "[engine-graph][b2][systems]") {
+    // The category is the whole of what the engine knows about a system node (docs/modular-graph-phase-f2-design.md
+    // section 3): the fixture package is placed through the harness seam, its document names sys-<id> like any other
+    // system node, and the engine builds, slots, runs and frees the core with no engine edit naming the console.
+    Engine e(kRate);
+    REQUIRE(e.addNodePackage(fixtureConsolePackage()));
+    REQUIRE(StubCore::live == 0);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    REQUIRE(rom != 0);
+    REQUIRE(e.setGraph(builtRequest(builtDoc(1, "rp.test.fixture-console", rom, R"("tag":7)"), {1})).ok);
+
+    auto* core = dynamic_cast<StubCore*>(e.findSystem(1));
+    REQUIRE(core != nullptr);
+    CHECK(core->tag() == 7);     // the config its settings made reached its own build function
+    CHECK(core->activated());    // and the build activated it, as the contract says
+    CHECK(StubCore::live == 1);
+    CHECK(e.coreLive(1));
+    CHECK(e.registry().liveCount() == 1);
+
+    // A block runs it: the node's triad and finish reach the stub, and the lanes come back zeroed.
+    std::vector<float> lanes(2 * 256, 1.0f);
+    float* outs[2] = {&lanes[0], &lanes[256]};
+    e.processBlock(256, outs, 2);
+    CHECK(core->blocks() == 1);
+    CHECK(std::all_of(lanes.begin(), lanes.end(), [](float f) { return f == 0.0f; }));
+
+    // The reclaim frees it through the contract: the plan it ran in went with the empty document.
+    REQUIRE(e.setGraph(builtRequest(rp::host::test::stereoDocument({}), {})).ok);
+    e.reclaim();
+    CHECK_FALSE(e.coreLive(1));
+    CHECK(e.liveSystemCount() == 0);
+    CHECK(e.registry().liveCount() == 0);
+    CHECK(StubCore::live == 0);
+    CHECK(e.resourcePinCount(rom) == 0);
+}
+
+TEST_CASE("a type that declares category \"system\" and builds no core refuses the document, publishing nothing",
+          "[engine-graph][b2][systems]") {
+    // The promise the category signs (docs/modular-graph-phase-f2-design.md section 3): a system node builds its core
+    // through rp.host.systems/2 in its first activation, and the plan's slot for it is what the audio thread reads. A
+    // document that places a type which builds nothing is refused before the plan is published, unwinding what its
+    // nodes' activations built, and the plan already running is untouched. The document places a fixture console beside
+    // the broken type, so the sibling's core, slot and pin are what the refusal has to give back: a single no-core node
+    // would prove only that nothing was built.
+    Engine e(kRate);
+    REQUIRE(e.addNodePackage(fixtureConsolePackage()));
+    REQUIRE(StubCore::live == 0);
+    const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
+    REQUIRE(rom != 0);
+    REQUIRE(e.setGraph(builtRequest(builtDoc(1, rp::host::test::kGbType, rom), {1})).ok);
+    SystemBase* running = e.findSystem(1);
+    REQUIRE(running != nullptr);
+    const std::size_t cores = e.liveSystemCount(), slots = e.registry().liveCount();
+
+    const std::string res = "res:" + std::to_string(rom);
+    const std::string document =
+        R"({"nodes":[{"id":"sys-2","type":"rp.test.fixture-console","settings":{"system":2,"rom":")" + res +
+        R"("}},{"id":"sys-3","type":"rp.test.fixture-console-no-core","settings":{"system":3,"rom":")" + res +
+        R"("}},{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],
+           "wires":[{"from":"sys-2.mix","to":"out.out.1-2"}]})";
+    const auto r = e.setGraph(builtRequest(document, {2, 3}));
+    CHECK(refusal(r) == "sys-3: no-core: declares category \"system\" and built no core: a system node builds its "
+                        "core through rp.host.systems/2 in its first activation");
+    // The sibling built, and the refusal unwound it: no core, no slot, no pin of its own.
+    CHECK_FALSE(e.coreLive(2));
+    CHECK(StubCore::live == 0);
+    CHECK_FALSE(e.coreLive(3));
+    CHECK(e.findSystem(1) == running);       // nothing of the refused plan was published
+    CHECK(e.liveSystemCount() == cores);
+    CHECK(e.registry().liveCount() == slots);  // nor did either node keep a snapshot slot
+    CHECK(e.resourcePinCount(rom) == 1);       // the running plan's node still holds its ROM
+
+    // The running plan runs a block, as it did.
+    std::vector<float> lanes(2 * 256, 0.0f);
+    float* outs[2] = {&lanes[0], &lanes[256]};
+    e.processBlock(256, outs, 2);
 }
 
 TEST_CASE("a build that fails refuses the document and leaves the running plan, the pins and the slots as they were",
@@ -1113,9 +1344,11 @@ TEST_CASE("a build outside the setGraph that activates it is refused rather than
     Engine e(kRate);
     const std::uint32_t rom = e.putResource("rom", readFile(RP_MGB_ROM_PATH));
     REQUIRE(rom != 0);
+    SameBoyConfig config;
     SystemBuildRequest request;
     request.rom = readFile(RP_MGB_ROM_PATH);
-    request.config = SameBoyConfig{};
+    request.build = rp::sameboy::buildCore;
+    request.config = &config;
     std::string why;
     CHECK(e.buildSystem(1, request, &why) == nullptr);
     CHECK(why.find("setGraph") != std::string::npos);

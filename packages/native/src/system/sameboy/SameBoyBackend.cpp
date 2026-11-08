@@ -4,13 +4,18 @@
 
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
+#include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
-std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, SystemBuildRequest request,
-                                                  double sampleRate, std::string* why) {
-    const auto* cfg = std::get_if<SameBoyConfig>(&request.config);
-    if (!cfg) {  // the factory dispatched by the config, so this is a host bug rather than a caller's
-        if (why) *why = "SameBoy does not build this console";
+namespace rp::sameboy {
+
+std::unique_ptr<SystemBase> buildCore(SystemId id, SystemBuildRequest&& request, double sampleRate,
+                                      std::string* why) {
+    // The node that carries this function is the one that made the config, so a request without one is a broken build
+    // rather than a document's mistake.
+    const auto* cfg = static_cast<const SameBoyConfig*>(request.config);
+    if (!cfg) {
+        if (why) *why = "the Game Boy build was given no Game Boy config";
         return nullptr;
     }
     // The ROM gate every SameBoy build passes (the embedded mGB carries the same Nintendo logo a cart does): bytes
@@ -32,3 +37,5 @@ std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, SystemBuildReques
                                        // off the snapshot while the audio thread runs (getFrame's analogue)
     return sys;
 }
+
+}  // namespace rp::sameboy

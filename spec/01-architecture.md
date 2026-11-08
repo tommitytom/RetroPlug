@@ -58,8 +58,9 @@ that shared context rather than routed through RPC (defined in [03-ts-layer.md](
 
 ### The RPC services and their facets
 
-There is **no single facade object**. A host composes a shared `Engine` (which owns the one `SystemFactory`, every
-core backend registered on it at construction) and the ONE `QueuedInvoker`, plus a handful of stateless service
+There is **no single facade object**. A host composes a shared `Engine` (which owns no console: a core is built by the
+build function its system node's request carries, `system/SystemBuild.hpp` in the `system` package) and the ONE
+`QueuedInvoker`, plus a handful of stateless service
 instances, and mounts each service's methods as one or more **facets** onto the rpcpp server
 ([`BackendRpcRegistration.hpp`](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)).
 Registration is **cross-object** — `addMethod<&Service::m>(instance)` — and **the method name IS
@@ -132,8 +133,8 @@ Three primitives, three directions:
 
 All three are built on [`SpscRing`](../packages/node-sdk/native/src/transport/SpscRing.hpp) (in `node-sdk`) and the
 shared-core transport primitives
-[`FrameBufferTriple`](../packages/native/src/transport/FrameBufferTriple.hpp), and
-[`MemorySnapshotTriple`](../packages/native/src/transport/MemorySnapshotTriple.hpp).
+[`FrameBufferTriple`](../packages/system/native/src/transport/FrameBufferTriple.hpp), and
+[`MemorySnapshotTriple`](../packages/system/native/src/transport/MemorySnapshotTriple.hpp).
 
 ---
 
@@ -321,9 +322,9 @@ A core's life, end to end:
 
 | Direction | Trigger | Mechanism |
 |---|---|---|
-| **build** | `setGraph` plans the document on the control thread, and a new node's first `activate` builds its core through `rp.host.systems/1` (`Engine::buildSystem`) | the backend boots it from the ROM and seed bytes its resources hold and the config its settings made; the engine claims its registry slot under the system id, records it among the live cores, and fills the plan's `SystemTable` entry |
+| **build** | `setGraph` plans the document on the control thread, and a new node's first `activate` builds its core through `rp.host.systems/2` (`Engine::buildSystem`) | the node's package boots it from the ROM and seed bytes its resources hold, the config its settings made and the build function its type carries; the engine claims its registry slot under the system id, records it among the live cores, and fills the plan's `SystemTable` entry |
 | **adopt → hand back** | the audio thread drains the plan swap | the replaced plan is pushed onto the release ring, the last one of a drain only after every command of that drain is applied; the system table rides with the plan |
-| **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core through `rp.host.systems/1` (`Engine::destroySystem`: `registry.release(id)` first, then `delete`) and releases its resource pins |
+| **reclaim → free** | the control thread reclaims | `reclaim()` deletes each released plan; a node only that plan held destroys its core through `rp.host.systems/2` (`Engine::destroySystem`: `registry.release(id)` first, then `delete`) and releases its resource pins |
 
 The stores never reuse a system id (a `DirectGraph` caller may, once the old core is gone), and
 `buildSystem` refuses an id that is still live (held by a node of any plan not yet
@@ -581,7 +582,7 @@ lost mutation.
 - **The registry double-copy** (§4) stands until the shared `SystemBase` can publish directly into
   the registry — a pending refactor, see [07-remaining-work.md](07-remaining-work.md). (State
   snapshots are now armed for **both** cores — SameBoy in
-  [`SameBoyBackend`](../packages/native/src/system/sameboy/SameBoyBackend.cpp) and Mesen in
+  [`SameBoyBackend.cpp`](../packages/native/src/system/sameboy/SameBoyBackend.cpp) and Mesen in
   [`MesenBackend`](../packages/native/src/system/mesen/MesenBackend.cpp) — so `readSram`/state-based
   duplicate work on NES/GBA too.)
 
@@ -598,7 +599,7 @@ lost mutation.
 | [`buildGraph.ts`](../packages/retroplug/src/graph/buildGraph.ts) / [`engineGraph.ts`](../packages/retroplug/src/engineGraph.ts) | the engine's graph as TS builds it from the stores, and its publisher (the `ProjectStore`'s, or a `DirectGraph`'s or bare `SystemsStore`'s own) |
 | [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) / [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) / [`N8Node.cpp`](../packages/n8/native/src/n8/N8Node.cpp) / [`SurfaceNodes.cpp`](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp) / [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp) | the cores as nodes (each owning its core), the host MIDI I/O nodes, the cart's node and the control surface's two, and the host services they ask for |
 | [`SnapshotRegistry.hpp`](../packages/native/src/host/engine/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/host/engine/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishSystem/read/release |
-| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), its one `SystemFactory`, the staged host MIDI, the host outputs and the registry; `buildSystem` / `destroySystem` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
+| [`Engine.hpp`](../packages/native/src/host/engine/Engine.hpp) / [`.cpp`](../packages/native/src/host/engine/Engine.cpp) | the single-threaded owner of the graph (with the script host its TS nodes run in), the system table and the live cores a node's request builds into, the staged host MIDI, the host outputs and the registry; `buildSystem` / `destroySystem` / `setGraph` / `loadScriptPack`, `processBlock`, the command handler, `SyncTap` |
 | [`ScriptHost.hpp`](../packages/native/src/host/script/ScriptHost.hpp) / [`.cpp`](../packages/native/src/host/script/ScriptHost.cpp) | the script-node runtime: TS nodes behind the C ABI in packs, each two bare QuickJS runtimes of its own (the built-in pack first, more loaded and reloaded at runtime), and the audio runtimes' profiling |
 | [`packages/*/ts/protocol.ts`](../packages/core/ts/protocol.ts) / `src/generated/scriptNodes.ts` | the script nodes buildGraph places, a package each (core's MIDI routing, the carts' protocol nodes; the controller session is the shell's), and the generated bundle entry every Engine embeds |
 | [`packages/dsp/native/src/dsp/`](../packages/dsp/native/src/dsp) | the `rp.dsp` nodes' kernels, core-free: gain and peak, the normalising gain, the RBJ biquads, dither and quantise, the DMC encode, and the r8brain resampler |

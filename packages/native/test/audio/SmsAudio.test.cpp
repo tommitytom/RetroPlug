@@ -38,6 +38,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "system/InputTypes.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/mesen/MesenGlobalInit.hpp"
 #include "system/mesen/MesenSmsConfig.hpp"
@@ -702,7 +703,7 @@ TEST_CASE("SMS and GG ROMs boot into a live core", "[sms]") {
         INFO("gameGear = " << gg);
         auto sys = build(gg);
         REQUIRE(sys->activated());
-        REQUIRE(sys->kind() == SystemKind::MesenSms);
+        REQUIRE(dynamic_cast<MesenSmsSystem*>(sys.get()) != nullptr);
 
         // Advancing must actually produce audio frames, which means the step loop drove the CPU and
         // flushed the PSG. A loop that never flushes returns the same zero count forever.

@@ -941,7 +941,7 @@ Today's fat `SystemBase` splits into optional interfaces:
 | `rp.system.tap/1` | the per-channel audio tap a split routing arms |
 
 C4 built the first piece of this list that the engine itself needed, and not as an `rp.system.*` interface: the tap is
-`ChannelTap` ([ChannelTap.hpp](../packages/native/src/system/ChannelTap.hpp), `exportMode` / `setExportMode` and nothing
+`ChannelTap` ([ChannelTap.hpp](../packages/system/native/src/system/ChannelTap.hpp), `exportMode` / `setExportMode` and nothing
 else), which `SystemBase::channelTap()` returns or answers null for, and `SystemTable`'s slot carries that pointer, so
 `Engine`'s tap arming and build check name no console
 ([modular-graph-phase-c4-design.md](modular-graph-phase-c4-design.md); C4 left one console check, the N8 cart mirror's,

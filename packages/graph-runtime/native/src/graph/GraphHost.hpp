@@ -102,8 +102,10 @@ public:
     // time, and it is freed with that plan on reclaim (control thread). `trailer`, a host command, rides in
     // the plan's own swap: the handler gets it in the same pop that adopts the plan, with that plan's host
     // data, so no drain ever runs a block between the two, and a refused setGraph applies neither.
+    // `check`, if given, is the embedder's own check over the activated plan (Planner.hpp): a refusal
+    // publishes nothing, and rolls back every instance the plan made.
     SetGraphResult setGraph(const GraphDocument& document, std::shared_ptr<const void> hostData = nullptr,
-                            const HostCommand* trailer = nullptr);
+                            const HostCommand* trailer = nullptr, const PlanCheck* check = nullptr);
     // Queue an embedder command behind everything pushed so far. False when the ring is full or `size`
     // exceeds kHostCommandBytes. Flushes inline while quiescent, as every push does.
     bool pushHostCommand(const void* data, std::size_t size);
@@ -201,7 +203,8 @@ private:
     // (docs/modular-graph-phase-c3-design.md section 4), pinned at create and dropped when the instance is destroyed.
     static const rp_resource* resourceAcquire(void* ctx, std::uint32_t id, const char* type, rp_error* err);
     static bool               resourceRelease(void* ctx, std::uint32_t id);
-    PlanOutcome planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames);
+    PlanOutcome planDocument(const GraphDocument& document, double sampleRate, std::uint32_t maxFrames,
+                             const PlanCheck* check = nullptr);
     bool        publish(PlanOutcome& outcome, const GraphDocument& document, const HostCommand* trailer = nullptr);
     void        markFaulted(Instance& inst);
 

@@ -15,9 +15,9 @@
 #include "system/ChannelTap.hpp"  // the capability SyncTap arms
 #include "system/SystemBase.hpp"
 #include "system/SystemCapabilities.hpp"
+#include "system/HostSystems.hpp"  // rp.host.systems/2: the builder a system node's request names
+#include "system/SystemBuild.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
-#include "system/CoreBackends.hpp"  // registerCoreBackends: the engine owns the one factory every build goes through
-#include "system/SystemFactory.hpp"
 #include "system/InputCapacity.hpp"
 
 #include "transport/FrameBufferTriple.hpp"
@@ -27,6 +27,7 @@
 #include "graph/GraphHost.hpp"
 #include "graph/Packages.hpp"  // rp_register_packages: the product's node packages
 #include "graph/Queue.hpp"
+#include "graph/rp_stage.h"  // rp.stage/1, a system node's staged message (Engine::stageNodeMidi)
 #include "host/dsp/ScriptCompiler.hpp"
 #include "host/devices/DeviceRegistry.hpp"
 #include "host/engine/DspCommand.hpp"
@@ -77,12 +78,13 @@ DspCommand syncTapCommand(bool arm, SystemId id, std::uint32_t mode) {
 constexpr const char* kEmptyDocument =
     R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[1,1]}}],"wires":[]})";
 
-// A system node is a node of one of the two system packages: every type in them adapts a core.
-bool isSystemNodeType(const std::string& type) {
-    for (const rp_package* p : {rp::host::sameboyPackage(), rp::host::mesenPackage()})
-        for (std::uint32_t k = 0; k < p->node_type_count; ++k)
-            if (type == p->node_types[k]->id) return true;
-    return false;
+// A system node is a node type whose descriptor declares category "system": the engine reads the registry it holds for
+// the planner, so it names no package and a console's package is whichever one registered the type
+// (docs/modular-graph-phase-f2-design.md section 3). Every system node type declares it, and no other C++ node type
+// uses the word.
+bool isSystemNodeType(const rp::graph::NodeRegistry& registry, const std::string& type) {
+    const rp::graph::NodeRegistry::Entry* entry = registry.find(type);
+    return entry != nullptr && entry->descriptor.category == "system";
 }
 
 // The id a system node's settings name its system by: their `system`, the id its core is built under and its snapshot
@@ -197,10 +199,6 @@ Engine::Engine(double sampleRate) : Engine(sampleRate, embeddedScripts()) {}
 Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> scriptBundle)
     : sampleRate_(sampleRate), pendingMidi_(rp::host::kHostMidiInMessages, rp::host::kHostMidiInBytes) {
     graph_ = std::make_unique<Graph>();
-    // The one factory a system node's build goes through, with every core backend on it: a host that composes an Engine
-    // builds cores, whatever else it keeps.
-    factory_ = std::make_unique<SystemFactory>();
-    registerCoreBackends(*factory_);
     // The script node types first: the bundle runs in both of the built-in pack's contexts, and its definitions become
     // one more package. One that will not load registers no type, so a document naming one is refused (unknown-type).
     std::string why;
@@ -218,7 +216,7 @@ Engine::Engine(double sampleRate, std::span<const rp::host::ScriptHost::Chunk> s
             std::fprintf(stderr, "[engine] a node package was refused (%s); its types are not registered\n", why.c_str());
     if (!graph_->registry.addPackage(graph_->script.package(), &why))
         std::fprintf(stderr, "[engine] the script node types were refused (%s); none is registered\n", why.c_str());
-    // rp.host.systems/1: a system node that builds its own core, on the control thread, inside the setGraph that
+    // rp.host.systems/2: a system node that builds its own core, on the control thread, inside the setGraph that
     // activates it. The id it names must not be live; the core it builds claims its snapshot slot and joins the live
     // cores, and the table of the plan being built learns it (buildSystem).
     graph_->systems = {
@@ -312,7 +310,7 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
     // The plan being built is where the id's slot is filled (below); a build with no setGraph in progress would join the
     // live cores and claim a snapshot slot with no plan to publish it, and a later plan's slot for that id would stay
     // null while processBlock dereferences it. Refused, rather than left to the comment on this method.
-    if (!building_) return refuse("a system is built only inside the setGraph that activates it (rp.host.systems/1)");
+    if (!building_) return refuse("a system is built only inside the setGraph that activates it (rp.host.systems/2)");
     if (system == 0) return refuse("0 is not a system id");
     if (system > UINT32_MAX) return refuse("system " + std::to_string(system) + " is beyond a system id");
     const SystemId id = static_cast<SystemId>(system);
@@ -320,7 +318,12 @@ SystemBase* Engine::buildSystem(std::uint64_t system, SystemBuildRequest request
     // core's. A node of a plan not yet reclaimed still holds its core, so a construct-time edit under the id it was
     // built with is refused here rather than quietly sharing it.
     if (coreLive(id)) return refuse("system " + std::to_string(id) + " is live");
-    std::unique_ptr<SystemBase> core = factory_->build(id, std::move(request), sampleRate_, why);
+    // The request names the build function its node's package carries, which is what makes the core a console's without
+    // the host naming one. A request with none names no console: refused here, before the build, so a request that
+    // could build nothing claims no snapshot slot and no live id.
+    const SystemBuildFn build = request.build;
+    if (!build) return refuse("the request names no build function (rp.host.systems/2)");
+    std::unique_ptr<SystemBase> core = build(id, std::move(request), sampleRate_, why);
     if (!core) {
         if (why && why->empty()) *why = "the core did not build";
         return nullptr;
@@ -380,7 +383,7 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
     std::vector<SystemId> named;
     bool malformed = false;
     for (const auto& n : doc->nodes) {
-        if (!isSystemNodeType(n.type)) continue;
+        if (!isSystemNodeType(graph_->registry, n.type)) continue;
         const SystemTarget target = systemTargetOf(n);
         if (!target.id) {
             // The field is there and is not a system id: that is the document's mistake, said here. A node without one
@@ -455,20 +458,32 @@ Engine::GraphResult Engine::publishGraph(const GraphRequest& request, bool repla
         InSetGraph(Engine& engine, rp::host::SystemTable* table) : e(engine) { e.building_ = table; }
         ~InSetGraph() { e.building_ = nullptr; }
     };
+    // The category is a promise: a type that declares "system" builds its core through rp.host.systems/2 in its first
+    // activation, and a slot left null is one the audio thread would dereference (processBlock, setSampleRate). Checked
+    // once every node has activated and before the plan is published, so a type that breaks the promise (a script node's
+    // own, a native pack's) costs a refused setGraph and nothing else: the plan it was made for is rolled back with every
+    // core its nodes built, as a refused activation unwinds, and the running plan is untouched.
+    const rp::graph::PlanCheck everySlotHasACore = [this]() -> std::optional<rp::graph::PlanError> {
+        for (const auto& e : building_->slots)
+            if (!e.core)
+                return rp::graph::PlanError{"sys-" + std::to_string(e.id), "", "no-core",
+                                            "declares category \"system\" and built no core: a system node builds its "
+                                            "core through rp.host.systems/2 in its first activation"};
+        return std::nullopt;
+    };
     rp::graph::SetGraphResult result;
     {
         const InSetGraph window(*this, table.get());
         // The table is handed on by copy: this thread filled its slots (buildSystem, as the plan activated) and reads
         // them below, where the plan's own view belongs to whichever thread adopts it.
-        result = graph_->host->setGraph(*doc, table, request.rearmTap ? &trailer : nullptr);
+        result = graph_->host->setGraph(*doc, table, request.rearmTap ? &trailer : nullptr, &everySlotHasACore);
     }
     graph_->script.reclaim();  // a quiescent swap released its script nodes in there: what they left in cycles goes now
     for (const auto& e : result.errors) out.errors.push_back({e.nodeId, e.port, e.code, e.message});
     if (!result.ok) return out;
     out.ok = true;
     // Every slot has a core by now: one already live, or one a node built while the plan activated (the planner
-    // activates every node it plans). A null one would be a table the plan's per-block work dereferences, so it is an
-    // invariant rather than a diagnostic.
+    // activates every node it plans), and the check above refused the document if one has not. Kept as a backstop.
     for ([[maybe_unused]] const auto& e : table->slots) assert(e.core);
     hostWidth_ = hostWidthOf(*doc);
     publishedTable_ = table;

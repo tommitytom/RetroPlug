@@ -327,6 +327,21 @@ globalThis.__rp_scriptNodes[globalThis.__rp_scriptNodes.length] = {
     refused(e, "test.throws", toys(transposer("test.throws.up", 1) + "throw new Error('not today');"),
             "chunk 0: Error: not today", "test.throws.up");
 
+    // A type that declares category "system": that is a native type's promise to build its core through
+    // rp.host.systems/2 in its first activation, which a script node cannot do, so the pack is refused where its types
+    // are registered rather than lined up against a plan slot that would stay null.
+    refused(e, "test.sys", toys(R"JS(
+globalThis.__rp_scriptNodes[globalThis.__rp_scriptNodes.length] = {
+  id: "test.sys.up",
+  descriptor: function () {
+    return { id: "test.sys.up", category: "system", ports: [], params: [], settings: { type: "object" } };
+  },
+  parseSettings: function (raw) { return raw === undefined ? {} : raw; },
+  layout: function () { return { ports: [], params: [] }; },
+  create: function () { return { process: function () {} }; },
+};
+)JS"),
+            "test.sys.up declares category \"system\", and a script node cannot build a core", "test.sys.up");
     // What the registry refuses, once the pack is built: a descriptor the planner could not use, and a type another
     // pack holds, which two packs' namespaces can both hold where one's id runs on into the other's ("test.nest" and
     // "test.nest.x" can both name "test.nest.x.up"). The pack goes; the type stays the first pack's.

@@ -402,6 +402,7 @@ retroplug_add_test_binary(
              # named in LIBS below, and nothing of the core.
              ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     LIBS     retroplug-graph
+             retroplug-system                         # system/InputCapacity.hpp, the ingress capacities
              retroplug-core-nodes                     # the rp.core package under test
              retroplug-dsp-nodes                      # the rp.dsp package under test
              retroplug-dsp-resample-nodes             # and the rp.dsp.resample package
@@ -412,7 +413,8 @@ retroplug_add_test_binary(
     # Dsp.test.cpp includes dsp/R8bAllocator.hpp first, and that header includes r8brain's CDSPResampler.h. The dep's
     # include directory is private to the resampler target, so the one test that reads it asks for it here.
     INCLUDES ${CMAKE_SOURCE_DIR}/deps/r8brain
-             # The engine tree's headers it reads beside the packages: lsdj/Effects.hpp, system/InputCapacity.hpp.
+             # The engine tree's header it reads beside the packages: lsdj/Effects.hpp. (system/InputCapacity.hpp is
+             # the system package's, whose target LIBS links in.)
              ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Guards the device build of the node SDK (docs/modular-graph-phase-e1-design.md sections 6 and 8): rp.core and rp.dsp
@@ -471,6 +473,25 @@ retroplug_device_script_pack(hog ENTRY ${_rp_script_packs}/hog/index.ts HEAP_BYT
 retroplug_device_script_pack(slowload ENTRY ${_rp_script_packs}/slowload/index.ts HEAP_BYTES 65536
                              PACK_DIR ${_rp_script_packs}/slowload
                              OUT_DIR ${CMAKE_BINARY_DIR}/device-mode/script-packs/slowload)
+
+# A pack the MicroQuickJS host refuses, held where the packs above are. A script type may not declare category "system"
+# (it would promise a core it cannot build, docs/modular-graph-phase-f2-design.md section 3), which the host refuses where
+# a pack's types are registered: the toolchain's run of every pack meets that, so it must refuse to compile this one, with
+# the host's words. Held as a build step of the binary that would carry such a pack, since the toolchain needs the built
+# compiler and runner; never a case, so no suite's counts move.
+add_custom_target(retroplug-system-category-pack-refused
+    COMMAND ${CMAKE_COMMAND}
+            -DNODE=${NODE_EXECUTABLE}
+            -DSCRIPT=${RP_PACKAGES_DIR}/retroplug/scripts/build-device-pack.mjs
+            -DENTRY=${_rp_script_packs}/system-category/index.ts
+            -DNAME=system-category -DHEAP_BYTES=65536
+            -DOUT=${CMAKE_BINARY_DIR}/device-mode/script-packs/system-category
+            -DPACK_DIR=${_rp_script_packs}/system-category
+            -DMQJS=$<TARGET_FILE:mqjs> -DRUNNER=$<TARGET_FILE:retroplug-mqjs-run>
+            -P ${CMAKE_SOURCE_DIR}/cmake/refused-script-pack.cmake
+    DEPENDS mqjs retroplug-mqjs-run
+    COMMENT "the MicroQuickJS host refuses a pack whose type declares category \"system\""
+    VERBATIM)
 
 retroplug_device_mode_objects(retroplug-device-mode-objects
     PACKAGES ${_rp_device_packages}
@@ -681,4 +702,5 @@ retroplug_add_test_binary(
              RP_MQJS_RUN_GC="$<TARGET_FILE:retroplug-mqjs-run-gc>")
 # The plan cases run the exporter's tool in a process of its own (DevicePlan.test.cpp), and the [debug-gc] case the
 # toolchain's runner and its DEBUG_GC build (ScriptPack.test.cpp).
-add_dependencies(retroplug-device-mode-test retroplug-export-plan retroplug-mqjs-run retroplug-mqjs-run-gc)
+add_dependencies(retroplug-device-mode-test retroplug-export-plan retroplug-mqjs-run retroplug-mqjs-run-gc
+                 retroplug-system-category-pack-refused)
