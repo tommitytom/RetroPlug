@@ -985,7 +985,12 @@ test("the port pickers are greyed while connected", () => {
 test("the USB hint is the device's own MIDI port, not its other interfaces as Windows names them", () => {
   expect(looksLikeLaunchpad("LPProMK3 MIDI")).toBe(true);
   expect(looksLikeLaunchpad("LPProMK3 MIDI 0")).toBe(true); // RtMidi's Windows index
-  expect(looksLikeLaunchpad("LPProMK3 MIDI:LPProMK3 MIDI 128:0")).toBe(true); // ALSA
+  expect(looksLikeLaunchpad("LPProMK3 MIDI:LPProMK3 MIDI 128:0")).toBe(true); // ALSA, the client named after the port
+  // A Pro MK3 on a kernel ALSA client is named after the CARD, and the port after the device: the hint is the port's.
+  expect(looksLikeLaunchpad("Launchpad Pro MK3:Launchpad Pro MK3 LPProMK3 MIDI 24:0")).toBe(true);
+  expect(looksLikeLaunchpad("Focusrite:Launchpad Pro MK3 LPProMK3 MIDI 32:0")).toBe(true); // and as a suffix
   expect(looksLikeLaunchpad("MIDIIN2 (LPProMK3 MIDI) 1")).toBe(false); // the DIN interface, on Windows
   expect(looksLikeLaunchpad("MIDIOUT3 (LPProMK3 MIDI) 2")).toBe(false); // the DAW interface
+  // A prefix or a whole word of the port, not a substring anywhere in it.
+  expect(looksLikeLaunchpad("Focusrite:My LPProMK3 MIDI Thing 1")).toBe(false);
 });

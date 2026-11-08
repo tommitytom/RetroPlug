@@ -104,12 +104,16 @@ export function portStem(port: string): string {
   return port.replace(/\s+\d+:\d+$/, "").replace(/\s+\d+$/, "");
 }
 
-/** True for a port name that looks like the Pro MK3's own USB MIDI interface. A PREFIX match on the stem, not a
- *  substring: Windows names the device's other two interfaces "MIDIIN2 (LPProMK3 MIDI)" and "MIDIIN3 (...)", and those
- *  must not read as the one to take. False says nothing - a TRS-attached device is a perfectly good Launchpad on a port
- *  named after somebody's interface box. */
+/** True for a port name that looks like the Pro MK3's own USB MIDI interface. The test is on the PORT half of the stem,
+ *  not on the whole name and not on a substring: ALSA writes "<card>:<port>" with the card named after the device
+ *  ("Launchpad Pro MK3:Launchpad Pro MK3 LPProMK3 MIDI 24:0", or somebody else's box only as the suffix, "Focusrite:
+ *  ... LPProMK3 MIDI"), Windows names the device's other two interfaces "MIDIIN2 (LPProMK3 MIDI)" and "MIDIIN3 (...)",
+ *  and those must not read as the one to take. False says nothing - a TRS-attached device is a perfectly good Launchpad on
+ *  a port named after somebody's interface box. */
 export function looksLikeLaunchpad(port: string): boolean {
-  return portStem(port).startsWith(PRO_MK3_PORT_HINT);
+  const stem = portStem(port);
+  const afterClient = stem.slice(stem.indexOf(":") + 1);
+  return afterClient.startsWith(PRO_MK3_PORT_HINT) || afterClient.endsWith(` ${PRO_MK3_PORT_HINT}`);
 }
 
 /** The port to offer first: the hinted one if it is here, else nothing (the user picks). */
