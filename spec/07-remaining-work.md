@@ -809,7 +809,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The store's song poll stays in the shell** (the controller's song refresh, the anchor and the SYNC poll in
     `projectStore.ts`) until F4, which also takes the menu rows.
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
-  `feature/modularize`): `packages/system` (the contract every console implements and the engine drives, the
+  `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the
+  follow-up that closed it): `packages/system` (the contract every console implements and the engine drives, the
   build request and the build function, `rp.host.systems/2`, the `SystemNode` template), `packages/sameboy` and
   `packages/mesen` (the Game Boy, and the NES, GBA and SMS/GG cores with their nodes, `mesen` declaring `n8`) and
   `packages/host-io` (`rp.host.midi-in` / `-out`); `retroplug-core` dissolved; `SystemFactory`, `registerCoreBackends`,
@@ -832,7 +833,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **One Mesen library for every product**, with the root's options: a product that wants fewer consoles, or an
     embedder who wants SNES back, flips a cache variable (`tools/build-mesen-all-consoles.sh` proves the ON build);
     a library per console set is a later question the filter's table is written to make cheap.
-  - **The Windows run is owed**: everything below has been reasoned about and never run, on a box or in CI.
+  - **The Windows, macOS and CI runs are owed**: the Windows items below have been reasoned about and never run, on a
+    box or in CI, and no macOS or arm64 build has run since F2's first commit, nor has any CI job.
     - The moved clang-cl custom command that compiles `SameBoySystem.cpp` (`retroplug-samebsys`, under `if(WIN32)` in
       `packages/sameboy/native/CMakeLists.txt`): its rewritten include roots, its header glob and its `DEPENDS` on the
       boot-ROM target.
@@ -851,4 +853,19 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
       `rp_embedded_resources()` table (`extern "C"` arrays and a function-local static) in each product.
     - `packages.cmake`'s new path logic on Windows paths: `_retroplug_unquote_path` on MSVC-escaped `\"` definitions,
       `file(RELATIVE_PATH)` with drive letters, and the runtime-library walk's target names.
-    - `HostRpcWatching.test.cpp` and `LinkRomModel.hpp` / the `retroplug-testing` library, compiled by cl.
+    - `HostRpcWatching.test.cpp`, `LinkRomModel.hpp` and both test-helper targets (`retroplug-testing`,
+      `retroplug-testing-allocator`) under `cl`.
+    - The configure-time product fixture (`packages/native/cmake/tests.cmake`): it configures, builds and runs
+      `test/packages/product` as a child project at every configure, with CMake's default generator and compiler (no
+      `-G` and no toolchain is passed), so on Windows it is a nested VS or cl build. A failure there blocks the whole
+      configure.
+    - The first macOS and arm64 builds and the first CI run: the two new libraries' `POSITION_INDEPENDENT_CODE` and
+      efsw's framework-free assumptions on macOS, and `packages.cmake`'s path and target-name logic on a runner.
+    - The Mesen two-way proof: no CI job runs `tools/build-mesen-all-consoles.sh` in either mode. A missed compile-out
+      guard links in Release (the compiler folds the arm a template parameter picks) and fails only at `-O0`, which is
+      what `--off` builds, so both modes are owed on every Mesen change until a CI job runs `--off`. CI is the user's;
+      no workflow file was edited for it.
+  - **`retroplug-n8-test`'s allocator hazard is resolved**, by the follow-up: the test helpers are two targets
+    (`retroplug-testing`, the headers, and `retroplug-testing-allocator`, the OBJECT library replacing the allocator),
+    and n8-test links the headers alone, so its Edio and facet cases no longer run under a replaced allocator (nor under
+    `_aligned_malloc` on Windows). The binaries that count allocations still link it, and Windows must survive that.

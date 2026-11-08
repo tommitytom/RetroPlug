@@ -1,6 +1,6 @@
 # Phase F2: the native carve
 
-**Date:** 2026-11-08 · **Branch:** `feature/modularize` · **Status:** designed and prototyped (on `proto/f2-native`); not yet built on `feature/modularize`
+**Date:** 2026-11-08 · **Branch:** `feature/modularize` · **Status:** built on `feature/modularize` (designed and prototyped on `proto/f2-native`; section 12 records the execution)
 
 F2 is the third phase of the package split ([package-split.md](package-split.md)), after F1
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md)) and F3
@@ -368,7 +368,8 @@ the suites is equal before and after.
 **Intended re-record,** in its own commit with the reason in the message, and nothing else moves: the `[packages]` golden
 (`packages/native/test/engine-graph/golden/product-registrations.json`, nine products by twenty-eight types), because the
 console and host-I/O node types move from `native`'s position to their packages' (the order alone moves; no type id or
-descriptor does).
+descriptor does). As landed it moved inside stage 2's carve commit rather than a commit of its own: section 11 records
+why.
 
 **What must hold, unmodified:** strict parity (`pnpm test:native parity` on the fixtures with `RP_FAIL_ON_SKIP=1`), the kit
 and render baselines, the `buildGraph` and role goldens, `Script`/`ProtocolNodes`, every suite (`pnpm test`, `test:native`,
@@ -381,9 +382,10 @@ BlipToaster's and NESVJ's suites against the rebuilt CLI.
 **Measurements** (recorded in the as-built section, not gates): product binary sizes before and after; the mesen library's
 object bytes and compile time; one Release plus LTO link time.
 
-**Windows items (owed; reasoned about, never run):** nine, listed in `spec/07-remaining-work.md` and section 11: the moved
-clang-cl step for `SameBoySystem.cpp`, `/W4 /WX` on the four new targets, the Mesen options under MSVC, and six more the
-build added.
+**Owed runs (reasoned about, never run):** twelve items, listed in `spec/07-remaining-work.md` and section 11: the nine
+Windows ones (the moved clang-cl step for `SameBoySystem.cpp`, `/W4 /WX` on the four new targets, the Mesen options under
+MSVC, and six more the build added), the configure-time product fixture, the first macOS, arm64 and CI runs, and the Mesen
+two-way proof.
 
 ## 9. How it is built
 
@@ -433,7 +435,7 @@ blocks, about 260 lines, in six files (section 4).
 - **Per-product Mesen consoles.** The compile-out is one library for every product, with the root's options. A product that
   wants fewer consoles, or an embedder who wants SNES back, flips an option; making that a per-product choice (a Mesen
   library per console set) is a later question the filter's table is written to make cheap.
-- **A Windows run.** The nine items of section 11 have been reasoned about and never run on MSVC; the first run is the user's Windows agent's, and findings become follow-ups.
+- **A Windows run, and the other unrun builds.** The twelve items of section 11 have been reasoned about and never run on MSVC, macOS, arm64 or a CI runner; the first Windows run is the user's Windows agent's, and findings become follow-ups.
 - **Per-product bundles** (the render worker, script nodes and control-plane bundles embedded in every product) are F4's.
 
 ## 11. As built (the prototype)
@@ -492,6 +494,15 @@ found. The plan is written against this record and executes on `feature/modulari
 - **`N8ReliableLink`'s test split is eleven and three,** not the design's eight and the rest.
 - **The console test binaries are `/bigobj` and off `/WX`** on Windows, a deliberate exclusion held in `spec/07`.
 - **The build function is a plain pointer and the config a `const void*`,** as designed; no caller needed more.
+- **The `[packages]` re-record landed inside stage 2's carve commit, not a commit of its own.** The user's decision and
+  section 8 asked for its own commit with the reason in the message. The prototype folded it into stage 2, and the
+  plan's replay holds every commit to the prototype's tree, so a commit of its own would have left the carve commit
+  failing `[packages]` until the next one. The tree is the same either way: the golden moves by the console and
+  host-I/O types' registration order alone, and stage 2's message gives the reason.
+- **The final review's findings were closed by a follow-up, not by re-cutting the five commits.** Section 12 records
+  its five commits and what they verified: the category refusal at runtime and at compile time, the test-helper split
+  (the header library and the allocator), the owed list, the review's minors, and the Reaper fixtures' resources
+  lookup.
 
 **The re-records as they landed:** `product-registrations.json` alone, in the stage 2 commit's tree (the order of the
 console and host-I/O types; no id or descriptor moved). The parity, kit and render baselines, the `buildGraph` and role
@@ -535,10 +546,87 @@ Windows, macOS and arm64 builds were never run, and CI was not triggered.
 embeds, the generated tables and the configure fixtures from nothing), `pnpm build:mesen-all` and
 `tools/build-mesen-all-consoles.sh --off`, and BlipToaster's and NESVJ's suites against the rebuilt CLI.
 
-**Owed.** The nine Windows items, in `spec/07-remaining-work.md`: the moved clang-cl `SameBoySystem.cpp` step; `/W4 /WX`
-on the four new package targets, with the console test binaries' exclusion; the Mesen options under MSVC (the cache
-variables, the `$<BOOL:>` definitions, the six guarded files, LTO in `release.yml`); `retroplug-tjs-runtime`'s first
-compile; `retroplug-file-watcher` with efsw and `Threads::Threads`; `PluginDSP.cpp`'s new `efsw.hpp` include; the
-`retroplug-mgb-embeds` object library and its generated table; `packages.cmake`'s path logic on Windows paths; and
-`HostRpcWatching.test.cpp`, `LinkRomModel.hpp` and `retroplug-testing` under `cl`. Also the first macOS and arm64 builds
-and the first CI run.
+**Owed.** Twelve items, in `spec/07-remaining-work.md`'s F2 bullet. The nine Windows ones: the moved clang-cl
+`SameBoySystem.cpp` step; `/W4 /WX` on the four new package targets, with the console test binaries' exclusion; the Mesen
+options under MSVC (the cache variables, the `$<BOOL:>` definitions, the six guarded files, LTO in `release.yml`); the
+`retroplug-tjs-runtime`'s first compile; `retroplug-file-watcher` with efsw and `Threads::Threads`; `PluginDSP.cpp`'s new
+`efsw.hpp` include; the `retroplug-mgb-embeds` object library and its generated table; `packages.cmake`'s path logic on
+Windows paths; and `HostRpcWatching.test.cpp`, `LinkRomModel.hpp` and both test-helper targets under `cl`. Then the
+configure-time product fixture (a child project configured, built and run on every configure with the default generator
+and compiler, so a Windows failure blocks the configure), the first macOS, arm64 and CI runs, and the Mesen two-way proof
+(`tools/build-mesen-all-consoles.sh` and its `--off` mode, which no CI job runs: a missed guard links in Release and
+fails only at `-O0`, so both are owed on every Mesen change until CI runs `--off`). The `retroplug-n8-test` allocator
+hazard the review found is resolved, not owed: section 12.
+
+## 12. As built
+
+The build, on `feature/modularize` over the design commit `a1373899d` (it was designed and prototyped on
+`proto/f2-native`), is the plan commit `03e0a1abc` and five task commits after it, one per stage, each its own tree and
+each reviewed before the next:
+
+1. `F2 stage 1: the system package, and a core built by the function its node carries` (`2aa10a6e0`).
+2. `F2 stage 2: the consoles, host I/O, the product order and the tests` (`827d5b295`).
+3. `F2 stage 3: embedded resources a package declares, and the product's table` (`bb4c5a2cb`).
+4. `F2 stage 4: txiki and efsw as the shell's opt-in libraries` (`b4ea6f4b3`).
+5. `F2 stage 5: Mesen's per-console compile-out, and the docs pass` (`5d6fafb66`).
+
+Every task tree is its prototype commit's tree (e8adc1d90, 4afbfc6ec, 46f115966, eed3668db, 0049161f9) with the plan
+document and nothing else differing, as the final review held it one by one: the prototype's fixes were replayed, not
+rewritten, and section 11 is the prototype's own record.
+
+**The acceptance run** (`/tmp/f2exec/acc-report.md`, at `5d6fafb66`) was PASS WITH FINDINGS. All 43 legs of
+`tip-verify.sh` exited 0 with the plan's counts: the two device images and the `bliptoaster` pack's three hashes
+identical to the baseline, strict parity 30 files and 250 cases with `RP_FAIL_ON_SKIP=1` and nothing re-recorded,
+`pnpm test` 190 files and 1999 cases, `test:plugin` 13 binaries, `test:n8` 1468 assertions in 104 cases, the
+engine-graph binary 335 cases with the fixtures, the configure fixtures, `device:check` and `device:box`, both Mesen
+modes, the SDL's smoke, controller and PipeWire checks, the thread and address sanitizer legs, a fresh-clone build and
+both consumer suites. Its findings: **F-1** `pnpm reaper:all` never ran, because `tools/author-lsdj-rplg.js` resolved
+its default ROM only under `<repo>/../resources/roms/lsdj/` with no override and the run died in the pre-flight before a
+single check; **F-2**, **F-3** and **F-4** are plan-text slips (a tag name that does not exist, a `deps/*` count and a
+pnpm warning), not tree changes.
+
+**The final review** (`/tmp/f2exec/final-review.md`, a1373899d..5d6fafb66) found no critical issue and five important
+ones: a node type that builds a core without declaring category `"system"` hit an assert in a Debug build (the template
+F4 and a third-party pack will copy); `retroplug-n8-test` ran under the replaced allocator for a header alone; nothing
+runs the two-way Mesen proof; the owed list was incomplete; and the `[packages]` re-record was not its own commit. Its
+minors were stale docs, comments and counts. It confirmed the seam (the checks in order, a null build function refused
+before any claim, the `PlanCheck` after activation, the script packs refused on both hosts) and the Mesen guards.
+
+**The follow-up** is five commits on top of the five, closing every finding, each with what it held green:
+
+- `fix(system): refuse a node type that builds a core but declares no category`: `SystemBuildRequest` carries the node
+  type's id, `Engine::buildSystem` refuses an unclaimed slot with a reason naming the type and gives back the slot, the
+  live id and the core, and `SystemNode::activate` refuses the omission with a `static_assert` (a constexpr
+  `string_view` comparison; a class-scope one cannot name an incomplete CRTP parameter). Red first: beside the stage
+  1 fixture console, a raw node type that builds a core and declares no category, whose plan the old code refused with
+  `"system 2 is not in the plan's slots"` in Release (and aborted at the assert in Debug); now its case holds the
+  named reason, every claim given back, and the running plan and its pins untouched. The `static_assert` was shown red
+  by changing `SameBoyNode.cpp`'s category to `"console"` and rebuilding.
+- `test(packages): split the test helpers into headers and the allocator`: `retroplug-testing` is the INTERFACE header
+  library and `retroplug-testing-allocator` the OBJECT library that replaces the global allocator, the guard refuses a
+  non-test target reaching either (the gather fixture gains `testing-allocator` and `test-dev-allocator`), and
+  `retroplug-n8-test` links the headers alone. Held by `nm`: the old binary carried `rp::test::beginCountingAllocations`
+  and its neighbours, the rebuilt one carries none and its `operator new` is libstdc++'s undefined symbol; the binaries
+  that count allocations still carry them.
+- `fix(f2): the final review's minors, a dead ROM gate and the stale counts`: the minors, `isSegaRom` deleted, both
+  `RomFormat.hpp`s saying each gate checks its own signature alone, the mesen link count at fourteen, the shell
+  declaring `@retroplug/host-io`, spec/06's console section and the runtime-libraries check and `__MGB_ROM__` in their
+  neighbours, the Mesen pin and merge procedure in AGENTS.md, the `--off` scan's limits in its own header, and the
+  mGB wording.
+- `fix(tools): the Reaper fixtures read RETROPLUG_RESOURCES_DIR`: the LSDj and risa author scripts resolve their
+  default ROM through `RETROPLUG_RESOURCES_DIR` when it is set and keep the relative default when not, said in their
+  headers and `docs/lsdj.md`. With `RETROPLUG_RESOURCES_DIR=/workspaces/resources`, `pnpm reaper:all` ran all 15
+  checks: 14 passed and `params-clap` SKIPPED as inconclusive (its click-load of mGB never registered, so the
+  parameter count was not re-read; the run exits 0 and reports it as a skip, not a failure).
+- `docs(f2): record the acceptance run, the review and the follow-up`: this section, section 11's two departures, the
+  owed list and the status lines.
+
+**Verification of the final tree** (logs under `/tmp/f2exec/fuA-*.log`): the build exit 0 with no warning;
+`test:plugin` 13 binaries and 1701852 assertions; `test:n8` 1468 / 104 and 17 / 2; the engine-graph binary 336 cases
+with the fixtures (335 + the new one; its assertion total moves between runs, 1713477 here); strict parity 30 files and
+250 cases, nothing skipped or re-recorded, with `RP_PARITY_REQUIRE_TARGET=1`; `pnpm test` 190 files and 1999 cases;
+`test:native` 172 files and 629 cases with 2 counted skips (`dsp-bench`, `nes-bench`); `check:boundaries` 0 and 0;
+`check:docs` 92 files; the configure, its product and gather fixtures included; `device:check` (total 305620 / 2004 /
+422279) with the date-normalised image hash still `38665e2c`; the `bliptoaster` pack's three hashes unchanged
+(`066c7980`, `fd1daf9b`, `b5017c7c`); and `tools/build-mesen-all-consoles.sh --off` exit 0 with four counts 0. Nothing
+was re-recorded and no `RP_*_UPDATE` was set. Windows, macOS, arm64 and CI are still owed: section 11's twelve items.

@@ -3,7 +3,8 @@
 **Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3 and F2 built
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records it and its follow-up
 pass; [modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records it;
-[modular-graph-phase-f2-design.md](modular-graph-phase-f2-design.md); what each leaves is
+[modular-graph-phase-f2-design.md](modular-graph-phase-f2-design.md), whose section 12 records its execution and its
+follow-up pass; what each leaves is
 [07-remaining-work.md](../spec/07-remaining-work.md)'s F1, F3 and F2 bullets), F4 not yet designed
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
