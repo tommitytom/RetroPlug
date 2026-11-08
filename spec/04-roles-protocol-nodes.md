@@ -249,8 +249,8 @@ node for each role that has one, the control-surface session, and LSDj's serial-
 role's second node. Seven are their packages' protocol modules (`core`'s `rp.midi.route`, then `mgb`'s, `lsdj`'s
 two, `n8`'s, `smsggdj`'s and `risa`'s), which the generated bundle entry
 (`src/generated/scriptNodes.ts`) imports and sorts by span label;
-the eighth, `rp.controller.session`, is the shell's ([script/shellNodes.ts](../packages/retroplug/src/script/shellNodes.ts),
-its node module [script/nodes/controllerSession.ts](../packages/retroplug/src/script/nodes/controllerSession.ts))
+the eighth, `rp.controller.session`, is the shell's ([packages/launchpad/ts/nodes.ts](../packages/launchpad/ts/nodes.ts),
+its node module [ts/controllerSession.ts](../packages/launchpad/ts/controllerSession.ts))
 until the controller's package exists (F3). [script/bundle.ts](../packages/retroplug/src/script/bundle.ts) is the
 entry point only: importing it registers. Each is its protocol's glue around pure functions that stay
 where they were (the Arduinoboy and master-sync decoders in `lsdjArduinoboy.ts`, `routeTarget` in
@@ -331,7 +331,7 @@ routing node's outputs follow the systems); a system removed and added again get
   command are kept on the instance across mode changes; master sync's state is dropped outside that mode, so coming
   back opens a fresh run. Its settings are the role's config through the schema `rp.lsdj.sync` takes too
   ([nodes/lsdjSyncSettings.ts](../packages/lsdj/ts/lsdjSyncSettings.ts)); it reads only `mode`.
-- **`rp.controller.session`** runs a `ControllerSession` ([controller/session.ts](../packages/retroplug/src/controller/session.ts))
+- **`rp.controller.session`** runs a `ControllerSession` ([session.ts](../packages/launchpad/ts/session.ts))
   for the app its settings name (`controller/apps/index.ts`, the apps' runtime, zod-free): the surface's
   traffic and the block's clock in (its tick derived from ppq at 24 PPQN), its LED bytes out on
   `controllerOut`, and its row launches at frame 0 on `launches` (into the target cart's `rp.lsdj.sync`) or
@@ -506,8 +506,8 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   [lsdj](../packages/lsdj/ts/protocol.ts)), which the manifests' span labels order.
 - [romProviders.ts](../packages/retroplug/src/romProviders.ts): feature-role attachment by ROM identity, over the
   generated `ROM_PROVIDERS`.
-- [script/shellNodes.ts](../packages/retroplug/src/script/shellNodes.ts): the shell's one node type,
-  `rp.controller.session` ([script/nodes/controllerSession.ts](../packages/retroplug/src/script/nodes/controllerSession.ts)).
+- [packages/launchpad/ts/nodes.ts](../packages/launchpad/ts/nodes.ts): the shell's one node type,
+  `rp.controller.session` ([ts/controllerSession.ts](../packages/launchpad/ts/controllerSession.ts)).
   The MIDI routing node is [core](../packages/core/ts/protocol.ts); `lsdjSyncSettings.ts` (the `lsdj-sync` schema both
   its nodes take) is [lsdj](../packages/lsdj/ts/lsdjSyncSettings.ts)'s, and the tick counter `clock.ts` and the
   capacities `ports.ts` ([ticks.ts](../packages/core/ts/ticks.ts): `walkTicks`) are core's.
@@ -521,7 +521,7 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
 - [script/bundle.ts](../packages/retroplug/src/script/bundle.ts) /
   [script/register.ts](../packages/core/ts/register.ts): the bundle every Engine embeds, and how
   a bundle registers its node types.
-- [controller/apps/index.ts](../packages/retroplug/src/controller/apps/index.ts) /
+- [launchpad/ts/apps/index.ts](../packages/launchpad/ts/apps/index.ts) /
   [controller/registry.ts](../packages/retroplug/src/controller/registry.ts): the controller apps' runtime,
   and their labels and schemas for the control plane.
 - [appHost.ts](../packages/retroplug/src/appHost.ts): `buildAppRegistry`.

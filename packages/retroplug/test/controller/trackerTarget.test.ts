@@ -5,7 +5,7 @@
 // speaking the protocol the role consumes, rather than a second opinion about it that happens to look
 // similar.
 import { test, expect } from "@retroplug/testing";
-import { lsdjMidiMapTarget, launchMessage, nullTarget, LSDJ_MAX_ROW } from "../../src/controller";
+import { lsdjMidiMapTarget, launchMessage, nullTarget, LSDJ_MAX_ROW } from "@retroplug/launchpad/trackerTarget";
 import { midiMapRow } from "@retroplug/lsdj/lsdjSyncBytes";
 
 const collect = () => {

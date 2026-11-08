@@ -14,7 +14,7 @@ import { savFrom, type SavInput } from "@retroplug/lsdj";
 import { LsdjReader } from "@retroplug/lsdj/runtime";
 import { SongSchema } from "@retroplug/lsdj/model";
 import { songRowTicks } from "@retroplug/lsdj/playback";
-import { padIndex } from "../src/launchpad";
+import { padIndex } from "@retroplug/launchpad";
 import { directGraph } from "../src/graph/directGraph";
 
 // Structure for this file's directly built systems (docs/modular-graph-phase-b2-design.md section 2.4).

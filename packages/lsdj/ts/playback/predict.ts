@@ -76,6 +76,13 @@ interface Cursor {
  *  that cannot decode a sav for itself - the DSP thread (docs/launchpad-plan.md M5). */
 export type RowTicksTable = (number | null)[][];
 
+/** A usable row duration: a whole number of ticks, at least one. A fraction or a denormal would let `advance`
+ *  subtract almost nothing per row forever - a hang on the audio thread - and none can come from a real song
+ *  (the smallest is one phrase at a groove of 1: 16 ticks). */
+function isTickCount(v: unknown): v is number {
+  return typeof v === "number" && isFinite(v) && v >= 1 && Math.floor(v) === v;
+}
+
 /** Coerce a table that came from somewhere untrusted (a config blob, so across a JSON boundary) into
  *  exactly `CHANNELS.length` x `SONG_ROWS`. A short or ragged table would otherwise read `undefined` for
  *  a missing row, which is neither "playable" nor "empty" and quietly misbehaves. */
@@ -87,7 +94,7 @@ export function normaliseRowTicks(table: unknown): RowTicksTable {
     const perRow: (number | null)[] = [];
     for (let r = 0; r < SONG_ROWS; r++) {
       const v = row[r];
-      perRow.push(typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+      perRow.push(isTickCount(v) ? v : null);
     }
     out.push(perRow);
   }
@@ -104,7 +111,7 @@ export function copyRowTicks(table: unknown, dst: RowTicksTable): void {
     const out = dst[ch];
     for (let r = 0; r < out.length; r++) {
       const v = row[r];
-      out[r] = typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+      out[r] = isTickCount(v) ? v : null;
     }
   }
 }
@@ -141,7 +148,7 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
   // never changes for a given song; the position object is overwritten in place.
   private readonly livePosition: PlaybackPosition;
   private readonly idle: PlaybackPosition;
-  private readonly gridView: PlaybackGrid;
+  private readonly gridView: PlaybackGrid & { revision: number };
 
   /** Takes a decoded song, or a prebuilt `RowTicksTable` for a caller that has the arithmetic but not
    *  the song - the controller session node (rp.controller.session), handed its table through config. */
@@ -156,6 +163,7 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
     this.gridView = {
       rowCount: SONG_ROWS,
       channelCount,
+      revision: 0,
       hasContent(channel: number, row: number): boolean {
         if (channel < 0 || channel >= channelCount || row < 0 || row >= SONG_ROWS) return false;
         return cache[channel][row] !== null;
@@ -178,6 +186,7 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
    *  holds. Both are reachable by ordinary editing. */
   setRowTicks(table: unknown): void {
     copyRowTicks(table, this.rowTicksCache);
+    this.gridView.revision++;
     for (let ch = 0; ch < this.channelCount; ch++) {
       const cur = this.cursors[ch];
       if (cur.row === null) continue;
@@ -238,7 +247,8 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
     for (let ch = 0; ch < this.channelCount; ch++) {
       const cur = this.cursors[ch];
       const row = rows[ch];
-      if (row === null || row === undefined || row < 0 || row >= SONG_ROWS) {
+      // A row index or nothing: NaN or a fraction would otherwise read as "playing", at no row the grid has.
+      if (typeof row !== "number" || Math.floor(row) !== row || row < 0 || row >= SONG_ROWS) {
         cur.row = null;
         cur.remaining = 0;
         cur.playing = false;
@@ -255,7 +265,7 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
   }
 
   launch(row: number): void {
-    if (row < 0 || row >= SONG_ROWS) return;
+    if (Math.floor(row) !== row || row < 0 || row >= SONG_ROWS) return;
     this.playing = true;
     for (let ch = 0; ch < this.channelCount; ch++) {
       const landed = this.landingRow(ch, row);

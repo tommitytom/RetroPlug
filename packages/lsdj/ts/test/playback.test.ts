@@ -245,7 +245,9 @@ test("a table arriving from config is coerced rather than trusted", () => {
   expect(t[0][1]).toBe(null); // beyond the supplied row
   expect(t[1][0]).toBe(null); // a non-array channel
   expect(normaliseRowTicks(undefined)[0][0]).toBe(null);
-  expect(normaliseRowTicks([[0, -5, 1.5, "x"]])[0].slice(0, 4)).toEqual([null, null, 1.5, null]);
+  // A fraction is refused like the rest: a row of 1e-20 ticks let advance() subtract almost nothing per row
+  // forever (a hang on the audio thread), and no real song has one - the smallest is 16 ticks.
+  expect(normaliseRowTicks([[0, -5, 1.5, "x", 1e-20, 16]])[0].slice(0, 6)).toEqual([null, null, null, null, null, 16]);
 });
 
 test("position() reuses its object, so reading it per block allocates nothing", () => {

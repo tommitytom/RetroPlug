@@ -6,8 +6,8 @@
 //
 // A console's or a cart's enum lives with its owner, and this file re-exports none of them: the SameBoy ones are
 // @retroplug/sameboy's, the Mesen ones @retroplug/mesen's, the LSDj ones @retroplug/lsdj's, MIDI routing's are
-// @retroplug/core's, and a reader names the package for each. What is left here is the app's own: layout, audio
-// routing and the controller's launch target (CONTROLLER_TARGET_VALUES stays with the controller until F3).
+// @retroplug/core's, and a reader names the package for each. What is left here is the app's own: layout and audio
+// routing. The controller's launch target (CONTROLLER_TARGET_VALUES) is @retroplug/launchpad's.
 //
 // So the file imports nothing and is imported by the schema, the domain modules (layout), the stores, the menu and the
 // project migration.
@@ -25,11 +25,6 @@ export const SystemLayout = {
   Grid: "grid",
 } as const satisfies Record<string, SystemLayout>;
 
-/** Where a controller app's row launches go: into an emulated cart's MIDI inbox (which the tracker's own
- *  sync role then puts on the link port), or out of the host to real hardware (an Arduinoboy driving a
- *  real Game Boy). See docs/launchpad-plan.md 7.3. */
-export const CONTROLLER_TARGET_VALUES = ["system", "midiOut"] as const;
-export type ControllerTarget = (typeof CONTROLLER_TARGET_VALUES)[number];
 // Audio output-pair placement. Never crosses to native as a value: graph/buildGraph.ts turns it into the
 // graph's output wiring. The three split modes are single-system-only (the menu gates them via
 // `validAudioRoutings`; buildGraph re-checks the system count and is the authority):

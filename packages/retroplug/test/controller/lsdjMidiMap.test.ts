@@ -4,12 +4,13 @@
 // Everything about the LEDs is asserted by reading them back OFF THE FAKE DEVICE rather than by
 // inspecting the app's intentions, so a test fails when the hardware would end up wrong.
 import { test, expect } from "@retroplug/testing";
-import { FakeLaunchpad } from "./_fakeDevice";
+import { FakeLaunchpad } from "@retroplug/launchpad/testSupport/fakeDevice";
+import { ControllerSession } from "@retroplug/launchpad/session";
 import {
-  ControllerSession, lsdjMidiMap, lsdjMidiMapTarget, rowAt, channelAt, followRow,
-  WINDOW_ROWS, MAX_PAGE,
-} from "../../src/controller";
-import { Palette, palette, type Led } from "../../src/launchpad";
+  lsdjMidiMap, rowAt, channelAt, followRow, WINDOW_ROWS, MAX_PAGE,
+} from "@retroplug/launchpad/apps/lsdjMidiMap";
+import { lsdjMidiMapTarget } from "@retroplug/launchpad/trackerTarget";
+import { Palette, palette, type Led } from "@retroplug/launchpad";
 import { SongSchema, type Song } from "@retroplug/lsdj/model";
 import { PredictedLsdjModel } from "@retroplug/lsdj/playback";
 import { idlePosition, type PlaybackModel, type PlaybackPosition } from "@retroplug/tracker/playbackModel";

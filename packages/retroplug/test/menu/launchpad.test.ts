@@ -21,7 +21,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { PRO_MK3, deviceInquiry, exitToLiveMode } from "../../src/launchpad";
+import { PRO_MK3, deviceInquiry, exitToLiveMode } from "@retroplug/launchpad";
 import {
   applyLaunchpadScan, connectLaunchpad, getLaunchpadConfig, getLaunchpadScan,
 } from "../../ui/screens/menu/launchpadDevices";

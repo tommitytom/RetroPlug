@@ -4,7 +4,7 @@
 // (docs/modular-graph-phase-c2-design.md section 5). Pure and registry-free: the publisher (ProjectStore, or a
 // DirectGraph) parses the app's config with the app's own schema before it gets here, so neither buildGraph nor the
 // node it places imports a zod schema.
-import { type ControllerTarget } from "../settingsEnums";
+import { type ControllerTarget } from "@retroplug/launchpad/enums";
 import { LsdjSyncMode } from "@retroplug/lsdj/enums";
 import type { RowTicksTable } from "@retroplug/lsdj/playback/predict";
 import type { ControllerAnchor } from "@retroplug/lsdj/playback/anchor";
@@ -102,8 +102,8 @@ export function serialOutCaptureFor(
   return "off";
 }
 
-/** The controller node's settings (script/nodes/controllerSession.ts): its system resolved (0 is the node's none),
- *  and the anchor spelt as the node takes it. */
+/** The controller node's settings (@retroplug/launchpad/controllerSession): its system resolved (0 is the node's
+ *  none), and the anchor spelt as the node takes it. */
 export function controllerSettings(controller: GraphController, target: number): Record<string, unknown> {
   return {
     app: controller.app,

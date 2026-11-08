@@ -1,50 +1,18 @@
-// The controller-app registry: name -> app module, mirroring RoleRegistry (@retroplug/core's systemRoles.ts).
+// The control plane's half of the controller-app registry: each app's menu label and config schema, by id.
 //
-// This is what "scriptable in TS" means for v1 (docs/launchpad-plan.md 0). An app is a module conforming
-// to an interface, registered by name, with a zod schema owning its config shape, defaults and clamping -
-// the same rails a DSP role runs on, down to reusing RoleConfigSchema rather than inventing a second
-// config abstraction. Loading user scripts at runtime stays the deferred extension model (spec/07).
-//
-// The control plane's view: each app's runtime (apps/index.ts, zod-free, which the audio side imports alone) with
-// its label and its config's schema.
+// The registry mechanism (ControllerRegistry) is @retroplug/launchpad/registry.ts, zod-free, because the session
+// node looks an app up without carrying a schema. This module pairs every runtime with the label and schema the
+// menu and the project's config validation need, reusing RoleConfigSchema rather than inventing a second config
+// abstraction (the same rails a DSP role's config runs on).
 
 import { z } from "zod";
 import { boolField, clampedInt, enumField } from "@retroplug/core/configFields";
 import type { RoleConfigSchema } from "@retroplug/core/systemRoles";
-import type { ControllerApp } from "./session";
-import { CONTROLLER_APPS, type ControllerAppRuntime } from "./apps";
-import { MAX_PAGE, QUANTISE_VALUES } from "./apps/lsdjMidiMap";
+import { ControllerRegistry, type ControllerAppType } from "@retroplug/launchpad/registry";
+import { CONTROLLER_APPS, type ControllerAppRuntime } from "@retroplug/launchpad/apps";
+import { MAX_PAGE, QUANTISE_VALUES } from "@retroplug/launchpad/apps/lsdjMidiMap";
 
-export interface ControllerAppType {
-  /** Stable id, as stored in config. */
-  readonly id: string;
-  /** Menu label. */
-  readonly label: string;
-  readonly schema: RoleConfigSchema;
-  readonly app: ControllerApp;
-}
-
-export class ControllerRegistry {
-  private readonly types = new Map<string, ControllerAppType>();
-
-  register(type: ControllerAppType): void {
-    this.types.set(type.id, type);
-  }
-
-  get(id: string): ControllerAppType | undefined {
-    return this.types.get(id);
-  }
-
-  /** Every registered app, in registration order - the menu's source. */
-  list(): ControllerAppType[] {
-    return [...this.types.values()];
-  }
-
-  /** A full config for `id` with defaults filled and values clamped, or undefined for an unknown app. */
-  defaultConfig(id: string): Record<string, unknown> | undefined {
-    return this.types.get(id)?.schema.parse({});
-  }
-}
+export { ControllerRegistry, type ControllerAppType };
 
 /** Each built-in app's menu label and config schema, by id: what the control plane adds to its runtime. The one
  *  place a new app's schema is added; its runtime is added to CONTROLLER_APPS. */

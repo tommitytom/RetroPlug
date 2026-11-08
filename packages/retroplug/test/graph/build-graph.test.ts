@@ -14,7 +14,7 @@ import { controllerSyncOverride, serialOutCaptureFor, type GraphController } fro
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
 import { MIDI_ROUTE_NODE_TYPE } from "@retroplug/core/midiRoute";
-import { CONTROLLER_SESSION_NODE_TYPE } from "../../src/script/nodes/controllerSession";
+import { CONTROLLER_SESSION_NODE_TYPE } from "@retroplug/launchpad/controllerSession";
 import { MGB_MIDI_NODE_TYPE } from "@retroplug/mgb/mgbMidiNode";
 import { N8_MIDI_TO_FIFO_NODE_TYPE } from "@retroplug/n8/n8MidiToFifoNode";
 import { RISA_SYNC_NODE_TYPE } from "@retroplug/risa/risaSyncNode";

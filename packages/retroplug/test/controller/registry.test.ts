@@ -5,8 +5,9 @@
 // parse, because these values come off disk and a user should never be locked out of their own controller
 // by a bad enum.
 import { test, expect } from "@retroplug/testing";
-import { APP_CONFIGS } from "../../src/controller/registry";
-import { ControllerRegistry, registerControllerApps, lsdjMidiMap, MAX_PAGE, CONTROLLER_APPS, controllerApp } from "../../src/controller";
+import { APP_CONFIGS, ControllerRegistry, registerControllerApps } from "../../src/controller/registry";
+import { lsdjMidiMap, MAX_PAGE } from "@retroplug/launchpad/apps/lsdjMidiMap";
+import { CONTROLLER_APPS, controllerApp } from "@retroplug/launchpad/apps";
 
 const registry = (): ControllerRegistry => {
   const r = new ControllerRegistry();

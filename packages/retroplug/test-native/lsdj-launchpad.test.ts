@@ -12,7 +12,7 @@
 // Run: pnpm test:native lsdj-launchpad
 import { test, expect, skip } from "@retroplug/testing";
 import { type SavInput } from "@retroplug/lsdj";
-import { launchMessage } from "../src/controller";
+import { launchMessage } from "@retroplug/launchpad/trackerTarget";
 import { PredictedLsdjModel } from "@retroplug/lsdj/playback";
 import { SongSchema } from "@retroplug/lsdj/model";
 import { LsdjProbe, fmtSample, type ProbeProject } from "./lsdjPlaybackProbe";

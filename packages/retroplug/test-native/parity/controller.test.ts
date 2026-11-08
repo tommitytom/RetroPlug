@@ -5,7 +5,7 @@ import { runGroup, type ParityCase } from "./group";
 import { blocks, boot, lsdj, SR } from "./lsdj";
 import { frames, ROMS } from "./scenes";
 import { savFrom, type SavInput } from "@retroplug/lsdj";
-import { padIndex } from "../../src/launchpad";
+import { padIndex } from "@retroplug/launchpad";
 
 // 16 contiguous rows, each one single-phrase chain, row r playing note 1 + r (as ADVANCE_SONG in
 // test-native/lsdj-midimap.test.ts does), so pressing a different row is audible.

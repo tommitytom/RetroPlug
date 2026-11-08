@@ -2,14 +2,14 @@
 //
 // Two things it exists to settle, neither of which a unit test can:
 //
-//   1. Does src/launchpad's encoder actually drive the hardware? 37 golden-vector tests prove we reproduce
+//   1. Does @retroplug/launchpad's encoder actually drive the hardware? 37 golden-vector tests prove we reproduce
 //      the manual's hex; only a device can prove the manual was right about what that hex does. The probe
 //      paints a pattern you look at.
 //   2. Are the edge-button CC numbers correct? profile.ts marks them as the widely-used community mapping
 //      rather than something the manual states in text (its layout diagram is an image), and M2's paging
 //      depends on them. Press each button and the probe prints whether the profile agrees.
 //
-// Pure TS over src/launchpad + the MIDI client - no new protocol code, which is the point: whatever this
+// Pure TS over @retroplug/launchpad + the MIDI client - no new protocol code, which is the point: whatever this
 // proves is proved about the module the plugin and standalone use.
 
 import type { CliTool } from "../tools";
@@ -20,7 +20,7 @@ import {
   PRO_MK3, Surface, decodeMessage, enterProgrammerMode, exitToLiveMode,
   Palette, palette,
   type Led,
-} from "../../src/launchpad";
+} from "@retroplug/launchpad";
 
 declare function setInterval(handler: () => void, ms: number): number;
 

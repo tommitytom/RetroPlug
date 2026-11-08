@@ -12,9 +12,9 @@
 // - The scan: a library call MicroQuickJS does not have (Map, Set, Object.entries, async, ...), or a global of mqjs's
 //   REPL that the box's engine will not have (setTimeout, print, console.warn, ...), fails the build naming the call
 //   and the source line it came from (read back through esbuild's source map, and TypeScript's), rather than as a
-//   TypeError deep in a run. It covers the pack as bundled, then as lowered (the helpers the lowering adds), and the
-//   whole SDK with every export kept. A read behind its own `typeof` guard is accepted, as the lowering's helpers make
-//   them.
+//   TypeError deep in a run. It covers the pack as bundled, then as lowered (the helpers the lowering adds), the whole
+//   SDK with every export kept, and, for a scenario, the whole of the package's portable core the same way. A read
+//   behind its own `typeof` guard is accepted, as the lowering's helpers make them.
 // - The reference run: the pack runs under Node with a short epilogue that prints every node type it registered (its
 //   descriptor JSON). A definition the device refuses (an audio port, packages/core/ts/defineNode.ts) throws here, at build time,
 //   with its own message. Node's run is the REFERENCE, nothing more: a vm context has every standard global whatever
@@ -57,12 +57,20 @@
 //
 // Usage: node build-device-pack.mjs --entry <file.ts> --name <pack> --heap-bytes <n> --out-dir <dir>
 //                                   [--pack-dir <dir>] [--mqjs <path>] [--runner <path>]
+//        node build-device-pack.mjs --scenario <file.ts> --name <scenario> --heap-bytes <n> --out-dir <dir>
+//                                   [--pack-dir <dir>] [--mqjs <path>] [--runner <path>]
 //   --pack-dir  the pack's own directory, every module under which the bundle may hold (default: the entry's)
 //   --mqjs      the engine's host tool (default: MQJS, else build/bin/mqjs, the desktop build's `mqjs` target)
 //   --runner    the runner (default: RUNNER, else build/bin/retroplug-mqjs-run, the desktop build's target)
+//
+// A scenario (--scenario, see the scenario section below) is a package's portable core proved end to end: it is
+// bundled, lowered and scanned as a pack is, plus the whole core - every module under the package's ts/ but its tests,
+// every export kept - and it may import the package's declared dependencies. It runs under Node and on the engine, whose
+// transcripts must match byte for byte in --heap-bytes, and it writes no pack: no bytecode and no C, only
+// the transcript the two agreed on.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -150,28 +158,35 @@ const EPILOGUE = `
 // ---- the arguments -----------------------------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const known = { "--entry": "entry", "--name": "name", "--heap-bytes": "heapBytes", "--out-dir": "outDir",
-                  "--pack-dir": "packDir", "--mqjs": "mqjs", "--runner": "runner" };
+  const known = { "--entry": "entry", "--scenario": "scenario", "--name": "name", "--heap-bytes": "heapBytes",
+                  "--out-dir": "outDir", "--pack-dir": "packDir", "--mqjs": "mqjs", "--runner": "runner" };
   const out = {};
   for (let i = 0; i < argv.length; i += 2) {
     const key = known[argv[i]];
     if (!key || i + 1 >= argv.length) usage(`unknown or incomplete argument ${argv[i]}`);
     out[key] = argv[i + 1];
   }
-  for (const need of ["entry", "name", "heapBytes", "outDir"]) if (!out[need]) usage(`--${need} is required`);
+  for (const need of ["name", "heapBytes", "outDir"]) if (!out[need]) usage(`--${need} is required`);
+  if (!out.entry && !out.scenario) usage("--entry or --scenario is required");
+  if (out.entry && out.scenario) usage("--entry and --scenario name different things; pass one");
   return out;
 }
 
 function usage(why) {
   console.error(`build-device-pack: ${why}\nusage: node build-device-pack.mjs --entry <file.ts> --name <pack> ` +
-                "--heap-bytes <n> --out-dir <dir> [--pack-dir <dir>] [--mqjs <path>] [--runner <path>]");
+                "--heap-bytes <n> --out-dir <dir> [--pack-dir <dir>] [--mqjs <path>] [--runner <path>]\n" +
+                "       node build-device-pack.mjs --scenario <file.ts> --name <scenario> --heap-bytes <n> " +
+                "--out-dir <dir> [--pack-dir <dir>] [--mqjs <path>] [--runner <path>]");
   process.exit(2);
 }
 
 const args = parseArgs(process.argv.slice(2));
 const NAME = args.name;
 if (!/^[a-z0-9][a-z0-9._-]*$/.test(NAME)) usage(`--name ${NAME} is not a file-name-safe pack name`);
-const ENTRY = resolve(args.entry);
+// A scenario is bundled instead of a node entry (see the scenario section below): a script that walks a package's
+// portable core on both engines, where a node entry would be registered and laid out.
+const SCENARIO = args.scenario !== undefined;
+const ENTRY = resolve(args.scenario ?? args.entry);
 const PACK_DIR = resolve(args.packDir ?? dirname(ENTRY));
 const OUT_DIR = resolve(args.outDir);
 // The work files' own directory, beside the outputs: mqjs runs in it, and it goes whatever the outcome. One a process:
@@ -215,6 +230,39 @@ function keep(file, bytes) {
 
 // ---- the bundle and its allowlist --------------------------------------------------------------------------------
 
+/** Every @retroplug package the scenario's own package.json declares as a dependency, by its real directory: a
+ *  scenario may import what its package already depends on, and nothing else. The manifest is the nearest one above the
+ *  pack's directory, and each dependency is found through that package's node_modules link (the workspace's), so a
+ *  package moved or renamed is followed rather than guessed at from its specifier. A missing or unreadable manifest, and
+ *  a dependency the workspace has not installed, are no dependency. */
+function declaredDependencyDirs() {
+  let dir = PACK_DIR;
+  let manifest = null;
+  for (;;) {
+    const at = join(dir, "package.json");
+    if (existsSync(at)) {
+      manifest = at;
+      break;
+    }
+    const up = dirname(dir);
+    if (up === dir) return [];
+    dir = up;
+  }
+  let json;
+  try {
+    json = JSON.parse(readFileSync(manifest, "utf8"));
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const spec of Object.keys(json.dependencies ?? {})) {
+    if (!spec.startsWith("@retroplug/")) continue;
+    const link = join(dirname(manifest), "node_modules", spec);
+    if (existsSync(link)) out.push(realpathSync(link));
+  }
+  return out;
+}
+
 const esbuild = require("esbuild");
 const { tsOptions } = require("../../../tools/ts-options.js");
 const bundleOptions = {
@@ -247,10 +295,16 @@ try {
   fail(`bundling ${repoPath(ENTRY)} failed:\n${e.message}`);
 }
 const inPack = (p) => p === PACK_DIR || p.startsWith(PACK_DIR + sep);
+// A scenario may import its package's DECLARED dependencies as well: a bridge package's scenario proves both halves,
+// so it reaches @retroplug/launchpad and @retroplug/lsdj through the package.json that declares them. A node pack
+// still may not: its bundle is what the box runs beside its own, and its imports are the SDK and itself.
+const DEP_DIRS = SCENARIO ? declaredDependencyDirs() : [];
+const allowed = (abs) => inPack(abs) || SDK.includes(repoPath(abs))
+  || DEP_DIRS.some((dir) => abs === dir || abs.startsWith(dir + sep));
 const offenders = [];
 for (const input of Object.keys(built.metafile.inputs)) {
   const abs = resolve(REPO, input);
-  if (inPack(abs) || SDK.includes(repoPath(abs))) continue;
+  if (allowed(abs)) continue;
   // Who brought it in, so the fix is plain.
   const by = Object.entries(built.metafile.inputs)
     .filter(([, other]) => other.imports.some((imp) => resolve(REPO, imp.path) === abs))
@@ -258,8 +312,11 @@ for (const input of Object.keys(built.metafile.inputs)) {
   offenders.push(`${repoPath(abs)}${by.length ? ` (imported by ${by.join(", ")})` : ""}`);
 }
 if (offenders.length > 0) {
-  fail(`the pack imports modules outside its allowlist (its own directory, ${repoPath(PACK_DIR)}, and the portable ` +
-       `node SDK in scripts/build-device-pack.mjs):\n  ${offenders.join("\n  ")}`);
+  const what = SCENARIO ? "the scenario imports modules outside its allowlist (its own directory, " +
+    `${repoPath(PACK_DIR)}, its package.json's declared @retroplug dependencies, and the portable node SDK in ` +
+    `scripts/build-device-pack.mjs)` : `the pack imports modules outside its allowlist (its own directory, ` +
+    `${repoPath(PACK_DIR)}, and the portable node SDK in scripts/build-device-pack.mjs)`;
+  fail(`${what}:\n  ${offenders.join("\n  ")}`);
 }
 const bundleJs = built.outputFiles.find((f) => f.path.endsWith(".js")).text;
 const bundleMap = JSON.parse(built.outputFiles.find((f) => f.path.endsWith(".map")).text);
@@ -565,6 +622,110 @@ if (sdkHits.length > 0) {
 }
 console.log("  ok: no library calls outside MicroQuickJS's stdlib, in the pack or anywhere in the SDK");
 
+// ---- a scenario ---------------------------------------------------------------------------------------------------
+
+/** The package's portable core: every module under its ts/ but its tests. A scenario is how a package proves that core
+ *  on the engine, and the scenario's own bundle keeps only what it reaches, so the scan has to see the rest. */
+function coreModules() {
+  const out = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const at = join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name !== "test" && e.name !== "testSupport") walk(at);
+      } else if (/[.]tsx?$/.test(e.name) && !/[.]test[.]tsx?$/.test(e.name)) {
+        out.push(at);
+      }
+    }
+  };
+  walk(join(PACK_DIR, "ts"));
+  return out.sort();
+}
+
+// A scenario is not a node: it is a script that reaches into the package's portable core and prints what it does, so
+// a path a node never runs is checked too. It is bundled, lowered and scanned as a pack is (above), then run under
+// Node and on the engine: the transcripts must be byte for byte the same, in the heap `--heap-bytes` names. It writes
+// no pack, only the transcript the two agreed on; the run is the proof.
+const printed = (run) => run.stdout.replace(/\r\n/g, "\n");
+// How a run ended when it did not exit: a signal (POSIX), or an exception code as its status (Windows, 0xC0000005 and
+// the like, past any exit status a program returns). Null for an ordinary exit.
+const crash = (run) => run.signal ?? (run.status > 255 ? `0x${run.status.toString(16).toUpperCase()}` : null);
+// The least 64-bit context the engine sets itself up in, with mqjs's REPL stdlib, as measured: below it JS_NewContext
+// writes past its buffer and dereferences the allocation that failed, rather than throwing. The manifest refuses a pack's
+// heapBytes below it (cmake/packages.cmake), and a scenario's --heap-bytes with it; the box's own floor, per width and
+// stdlib, is its loader's to enforce.
+const LEAST_CONTEXT = 4096;
+// What a failed run said, for a message: its error printing colours the text for a terminal.
+const said = (run) => `${run.stderr}${printed(run)}`.replace(/\x1b\[[0-9;]*m/g, "").trim();
+
+if (SCENARIO) {
+  if (HEAP_BYTES < LEAST_CONTEXT) {
+    fail(`its heap is ${HEAP_BYTES} bytes, under the engine's least context of ${LEAST_CONTEXT}`);
+  }
+  // The package's whole core with every export kept, as the SDK above: a library call the engine lacks fails only on
+  // the path that runs it, and the scenario walks the paths it knows about. A package with no core to scan names no
+  // core, so this refuses rather than passing on nothing.
+  const core = coreModules();
+  if (core.length === 0) fail(`no core to scan: no module under ${repoPath(PACK_DIR)}/ts`);
+  const coreBuilt = await esbuild.build({
+    ...bundleOptions,
+    stdin: { contents: core.map((at) => `export * from ${JSON.stringify("./" + repoPath(at))};`).join("\n"),
+             resolveDir: REPO, loader: "ts" },
+    format: "esm",
+    metafile: false,
+    treeShaking: false,
+  });
+  const coreEs5 = lowerToEs5(coreBuilt.outputFiles[0].text.replace(/^export \{[\s\S]*?\};?\s*$/m, ""), false).code;
+  const coreHits = scan(coreEs5, null, `${repoPath(PACK_DIR)}/ts`);
+  if (coreHits.length > 0) {
+    fail(`the package's core calls library functions MicroQuickJS does not have:\n  ${coreHits.join("\n  ")}`);
+  }
+  console.log(`  ok: no library calls outside MicroQuickJS's stdlib, in the core's ${core.length} module(s)`);
+  const lines = [];
+  try {
+    runInNewContext(es5, { console: { log: (s) => lines.push(String(s)) } }, { filename: es5Name });
+  } catch (e) {
+    fail(`the scenario threw under Node: ${e?.message ?? e}`);
+  }
+  if (lines.length === 0) fail("the scenario prints nothing, so it proves nothing ran");
+  const reference = (lines.join("\n") + "\n").replace(/\r\n/g, "\n");
+
+  rmSync(WORK, { recursive: true, force: true });
+  mkdirSync(WORK, { recursive: true });
+  const scenarioName = `${NAME}.scenario.js`;
+  writeFileSync(join(WORK, scenarioName), es5);
+  compile(scenarioName, `${NAME}.scenario.bin`, true);
+  const run = spawnSync(RUNNER, ["script", `${NAME}.scenario.bin`, "--context-bytes", String(HEAP_BYTES)],
+                        { cwd: WORK, encoding: "utf8", env: TOOL_ENV });
+  if (run.status !== 0) {
+    const how = crash(run) ? `the engine crashed (${crash(run)})` : `exit ${run.status}`;
+    fail(`its bytecode failed on ${ENGINE} (${how})${said(run) ? `: ${said(run)}` : ""}`);
+  }
+  const engineTranscript = printed(run);
+  if (engineTranscript !== reference) {
+    const a = reference.split("\n");
+    const b = engineTranscript.split("\n");
+    let i = 0;
+    while (i < a.length && a[i] === b[i]) ++i;
+    fail(`${ENGINE} disagrees with Node at line ${i + 1} of the scenario's transcript:\n  node: ${a[i]}\n` +
+         `  mqjs: ${b[i]}`);
+  }
+  rmSync(WORK, { recursive: true, force: true });
+  // Kept beside the outputs, as the pack path's transcript is, so what the two engines agreed on can be read rather than
+  // taken on trust. No bytecode and no C: a scenario is no pack.
+  keep(join(OUT_DIR, `${NAME}.transcript.txt`), reference);
+  console.log(`  ok: the scenario runs on ${ENGINE} and matches Node byte for byte (${lines.length} lines, ` +
+              `${HEAP_BYTES} bytes of heap)`);
+  console.log(`device pack scenario ${NAME} OK (${repoPath(ENTRY)})`);
+  process.exit(0);
+}
+
 // ---- the reference run, under Node -------------------------------------------------------------------------------
 
 const lines = [];
@@ -636,17 +797,6 @@ console.log(`  ok: the device's runtime, ${(runtimeEs5.length / 1024).toFixed(1)
 
 // mqjs writes its output through the C runtime's stdout, which on Windows is in text mode: each line ends "\r\n" there.
 // Read as lines, as Node's transcript is, so the comparison is of what was printed.
-const printed = (run) => run.stdout.replace(/\r\n/g, "\n");
-// How a run ended when it did not exit: a signal (POSIX), or an exception code as its status (Windows, 0xC0000005 and
-// the like, past any exit status a program returns). Null for an ordinary exit.
-const crash = (run) => run.signal ?? (run.status > 255 ? `0x${run.status.toString(16).toUpperCase()}` : null);
-// The least 64-bit context the engine sets itself up in, with mqjs's REPL stdlib, as measured: below it JS_NewContext
-// writes past its buffer and dereferences the allocation that failed, rather than throwing. The manifest refuses a
-// figure below it (cmake/packages.cmake); the box's own floor, per width and stdlib, is its loader's to enforce.
-const LEAST_CONTEXT = 4096;
-// What a failed run said, for a message: its error printing colours the text for a terminal.
-const said = (run) => `${run.stderr}${printed(run)}`.replace(/\x1b\[[0-9;]*m/g, "").trim();
-
 writeFileSync(join(WORK, `${NAME}.transcript.js`), es5 + EPILOGUE);
 compile(`${NAME}.transcript.js`, `${NAME}.transcript.bin`, true);
 const run = spawnSync(RUNNER, ["script", `${NAME}.transcript.bin`, "--context-bytes", String(TRANSCRIPT_HEAP)],

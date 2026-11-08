@@ -97,6 +97,17 @@ async function buildPack(entry: string, name: string, heapBytes: number, packDir
   return { ok: !status.term_signal && status.exit_status === 0, out, err };
 }
 
+/** The toolchain in scenario mode on one scenario, into OUT/<name>. */
+async function scenarioOf(file: string, name: string, heapBytes: number) {
+  const child = tjs.spawn(
+    [tjs.env.RP_NODE || "node", "scripts/build-device-pack.mjs", "--scenario", file, "--name", name,
+     "--heap-bytes", String(heapBytes), "--out-dir", `${OUT}/${name}`],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [out, err, status] = await Promise.all([text(child.stdout), text(child.stderr), child.wait()]);
+  return { ok: !status.term_signal && status.exit_status === 0, out, err };
+}
+
 test("defineNode and its helpers run on MicroQuickJS as on Node, byte for byte", async () => {
   const run = await buildPack(`${FIXTURES}/scenario.ts`, "scenario", 1048576);
   expect(run.ok, `the toolchain refused the scenario:\n${run.out}${run.err}`).toBe(true);
@@ -205,6 +216,56 @@ test("a device pack that imports outside its allowlist is refused, naming the mo
     "packages/core/ts/canonicalJson.ts " +
       "(imported by packages/retroplug/test/graph/device-pack/outside-import.ts)",
   );
+});
+
+test("a scenario's whole core is scanned, and a pack's declared dependency opens nothing", async () => {
+  // A core module the scenario never imports, whose unexercised Number.isInteger MicroQuickJS would fail on: the
+  // scenario's own bundle drops it, so only the whole-core scan can see it.
+  const core = await scenarioOf(`${FIXTURES}/scenario/core-missing-call/scenario.ts`, "core-missing-call", 65536);
+  expect(core.ok).toBe(false);
+  contains(core.err, "the package's core calls library functions MicroQuickJS does not have");
+  contains(core.err, "Number.isInteger (Number.isInteger and friends) in " +
+           "packages/retroplug/test/graph/device-pack/scenario/core-missing-call/ts");
+  // A node pack's allowlist does not grow with its manifest, which is the guarantee scenario mode must not loosen.
+  const declared = await buildPack(`${FIXTURES}/node-pack-declared/node.ts`, "node-pack-declared", 65536);
+  expect(declared.ok).toBe(false);
+  contains(declared.err, "the pack imports modules outside its allowlist");
+  contains(declared.err, "packages/launchpad/ts/decode.ts (imported by packages/retroplug/test/graph/device-pack/" +
+           "node-pack-declared/node.ts)");
+});
+
+test("a scenario's allowlist, silence, throw and disagreement are each refused, and it takes no node entry", async () => {
+  // A package the scenario's own manifest does not declare: named with the module that imported it.
+  const undeclared = await scenarioOf(`${FIXTURES}/scenario/undeclared/scenario.ts`, "scenario-undeclared", 65536);
+  expect(undeclared.ok).toBe(false);
+  contains(undeclared.err, "the scenario imports modules outside its allowlist");
+  contains(undeclared.err, "packages/launchpad/ts/index.ts (imported by packages/retroplug/test/graph/device-pack/" +
+           "scenario/undeclared/scenario.ts)");
+  // Nothing printed proves nothing ran.
+  const silent = await scenarioOf(`${FIXTURES}/scenario/silent/scenario.ts`, "scenario-silent", 65536);
+  expect(silent.ok).toBe(false);
+  contains(silent.err, "the scenario prints nothing, so it proves nothing ran");
+  // A throw is named with what it said.
+  const thrown = await scenarioOf(`${FIXTURES}/scenario/throwing/scenario.ts`, "scenario-throwing", 65536);
+  expect(thrown.ok).toBe(false);
+  contains(thrown.err, "the scenario threw under Node: the cart is not connected");
+  // Agreeing is not enough: a line the two engines print differently is refused at that line.
+  const differs = await scenarioOf(`${FIXTURES}/scenario/mismatched/scenario.ts`, "scenario-mismatched", 65536);
+  expect(differs.ok).toBe(false);
+  contains(differs.err, "disagrees with Node at line 1 of the scenario's transcript");
+  // One or the other, never both.
+  const both = await (async () => {
+    const child = tjs.spawn(
+      [tjs.env.RP_NODE || "node", "scripts/build-device-pack.mjs", "--entry", `${FIXTURES}/scenario.ts`,
+       "--scenario", `${FIXTURES}/scenario/silent/scenario.ts`, "--name", "both", "--heap-bytes", "65536",
+       "--out-dir", `${OUT}/both`],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const [out, err, status] = await Promise.all([text(child.stdout), text(child.stderr), child.wait()]);
+    return { ok: !status.term_signal && status.exit_status === 0, out, err };
+  })();
+  expect(both.ok).toBe(false);
+  contains(both.err, "--entry and --scenario name different things; pass one");
 });
 
 test("a device pack whose device runtime does other than the pack does is refused", async () => {

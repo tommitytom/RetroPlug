@@ -101,6 +101,25 @@ importers:
         specifier: workspace:*
         version: link:../node-sdk
 
+  packages/launchpad:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/lsdj':
+        specifier: workspace:*
+        version: link:../lsdj
+      '@retroplug/tracker':
+        specifier: workspace:*
+        version: link:../tracker
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/lsdj:
     dependencies:
       '@retroplug/core':
@@ -196,6 +215,9 @@ importers:
       '@retroplug/dsp':
         specifier: workspace:*
         version: link:../dsp
+      '@retroplug/launchpad':
+        specifier: workspace:*
+        version: link:../launchpad
       '@retroplug/lsdj':
         specifier: workspace:*
         version: link:../lsdj

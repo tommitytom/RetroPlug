@@ -1,15 +1,15 @@
-// rp.controller.session (src/script/nodes/controllerSession.ts): a control surface's session, as the DSP kernel's
+// rp.controller.session (@retroplug/launchpad/controllerSession): a control surface's session, as the DSP kernel's
 // `launchpad` role ran it until B3b, whose cases these were: a pad press out as a launch (into an rp.lsdj.sync node's
 // launches, through its real MI.MAP mode, or out of the host), LEDs on controllerOut, the device taken on its connect
 // edge, and the re-push rules. Its default target ("0 is the first system") is buildGraph's
 // (test/graph/build-graph.test.ts).
 import { test, expect } from "@retroplug/testing";
-import { CONTROLLER_SESSION_NODE_TYPE, controllerSessionNode } from "../../../src/script/nodes/controllerSession";
+import { CONTROLLER_SESSION_NODE_TYPE, controllerSessionNode } from "@retroplug/launchpad/controllerSession";
 import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
-import { ControllerRegistry, registerControllerApps } from "../../../src/controller";
+import { ControllerRegistry, registerControllerApps } from "../../../src/controller/registry";
 import { songRowTicks } from "@retroplug/lsdj/playback";
 import { SongSchema } from "@retroplug/lsdj/model";
-import { PRO_MK3, Palette, enterProgrammerMode, padIndex } from "../../../src/launchpad";
+import { PRO_MK3, Palette, enterProgrammerMode, padIndex } from "@retroplug/launchpad";
 import { NodeRig, bytesOn, type BlockSpec, type In, type Sent } from "./_rig";
 
 // The control plane parses an app's config by the app's schema (the registry's); the node takes it parsed.
@@ -50,15 +50,24 @@ const PRESS_ROW_0: In = { frame: 0, data: [0x90, 0x51, 0x7f] };
 interface Step {
   ppq?: number;
   playing?: boolean;
+  tempo?: number;
   connected?: boolean;
+  /** The link's generation (0 = none when `connected` is false): a swap inside one block changes it. */
+  link?: number;
+  /** The link's cumulative drop count. */
+  drops?: number;
   surface?: In[];
 }
 const blockOf = (step: Step, frames = 1024): BlockSpec => ({
   frames,
   ppq: step.ppq ?? 0,
+  tempo: step.tempo ?? 120,
   playing: step.playing ?? true,
   inputs: { controllerIn: step.surface ?? [] },
-  controls: { controllerConnected: { start: step.connected ? 1 : 0, changes: [] } },
+  controls: {
+    controllerConnected: { start: step.connected ? (step.link ?? 1) : 0, changes: [] },
+    controllerDrops: { start: step.drops ?? 0, changes: [] },
+  },
 });
 
 const at = (sent: Sent[], port: string): number[][] => sent.filter((s) => s.port === port).map((s) => s.data);
@@ -82,16 +91,18 @@ class Wired {
 /** Row bytes only: the clock stream MI.MAP sends every tick would drown the signal. */
 const rowBytes = (sent: Sent[]): number[] => bytesOn(sent, "serialIn").map(([, b]) => b).filter((b) => b !== 0xff && b !== 0xfe);
 
-test("its ports: the surface in, its connected flag; the surface out, the launches and host MIDI out", () => {
+test("its ports: the surface in, its link generation and drop count; the surface out, the launches and host MIDI out", () => {
   expect(session().ports()).toEqual([
     "in events controllerIn",
     "in control controllerConnected",
+    "in control controllerDrops",
     "out events controllerOut",
     "out events launches",
     "out events midiOut",
   ]);
   expect(controllerSessionNode.descriptor().id).toBe(CONTROLLER_SESSION_NODE_TYPE);
-  const caps = controllerSessionNode.layout(controllerSessionNode.parseSettings({})).ports.slice(2).map((p) => p.capacity);
+  // The three inputs (controllerIn, controllerConnected, controllerDrops) have no declared capacity; the three outputs do.
+  const caps = controllerSessionNode.layout(controllerSessionNode.parseSettings({})).ports.slice(3).map((p) => p.capacity);
   expect(caps).toEqual([{ messages: 256, bytes: 4096 }, { messages: 64, bytes: 256 }, { messages: 1024, bytes: 8192 }]);
   expect(controllerSessionNode.reshapes).toBe(true);
 });
@@ -232,6 +243,78 @@ test("the predictor keeps running while nothing is attached", () => {
   expect(out.length > 1).toBe(true);
 });
 
+test("a pair swapped inside one block is taken as a NEW device, hello first, and repainted", () => {
+  // A swap releases the old device and claims the new one inside a single UI-thread call, so no block ever sees
+  // "detached": the generation alone has to re-take it, or the new device sits in Live mode while the shadow
+  // buffer believes it is lit.
+  const rig = quiet();
+  const first = surface(rig.run(still({ connected: true, link: 1 })));
+  const painted = first.filter((m) => !sameBytes(m, HELLO)).length;
+  rig.run(still({ connected: true, link: 1 }));
+  expect(rig.run(still({ connected: true, link: 1 })).length).toBe(0);
+  const swapped = surface(rig.run(still({ connected: true, link: 2 })));
+  expect(sameBytes(swapped[0], HELLO)).toBe(true);
+  expect(swapped.filter((m) => !sameBytes(m, HELLO)).length).toBe(painted);
+});
+
+test("a forward seek is a relocate: the predictor does not race through the song", () => {
+  // walkTicks sends the cart no clocks for a jump, so the session must not advance through one either - and
+  // walking a thousand bars of rows in one block would cost milliseconds on the audio thread. Sixteen rows of 96
+  // ticks, so walking the jump lands on row 2 rather than wrapping back to row 0.
+  const rig = session({ songRowTicks: table() });
+  const dev = new Device();
+  dev.feed(rig.run(still({ playing: true, ppq: 0, connected: true, surface: [PRESS_ROW_0] })));
+  dev.feed(rig.run(still({ playing: true, ppq: 0.1, connected: true })));
+  expect(dev.leds.get(pad(0, 0))).toBe(Palette.greenBright);
+  // +200 ticks: walking it would carry the playhead through row 1 and most of row 2, so the row it is on says
+  // whether the jump was walked. The row 0 pad must stay the BRIGHT one (it is dim content when not played).
+  dev.feed(rig.run(still({ playing: true, ppq: 0.1 + 200 / 24, connected: true })));
+  expect(dev.leds.get(pad(0, 0))).toBe(Palette.greenBright); // still on the row the cart is on
+  expect(dev.leds.get(pad(0, 2)) === Palette.greenBright).toBe(false); // and the walk did not land it on row 2
+});
+
+test("ragged blocks and a tempo change are elapsed time, not a seek: the playhead keeps every tick", () => {
+  // A host under FL-style splits hands the audio thread uneven blocks, and a tempo change makes a long block hold
+  // fewer ticks than the one before it. What a block covers comes from its OWN length and tempo, so neither is a
+  // seek; a threshold measured against the PREVIOUS block's elapsed ticks would read both as one and drop the
+  // block's ticks, leaving the lit playhead (and what the app quantises against) behind the cart.
+  const quarters = (frames: number, tempo: number) => (frames / 44100) * (tempo / 60); // 44.1 kHz, 24 PPQN
+  const patterns: Array<[string, ReadonlyArray<readonly [number, number]>]> = [
+    ["a long block then a short one", [[4096, 240], [2048, 240]]],
+    ["a tempo drop between two long blocks", [[4096, 240], [4096, 120]]],
+  ];
+  for (const [name, pattern] of patterns) {
+    const rig = quiet(); // rows 0 and 1 of 96 ticks each
+    const dev = new Device();
+    let ppq = 0;
+    const [firstFrames, firstTempo] = pattern[0];
+    dev.feed(rig.run(blockOf({ playing: true, ppq, connected: true, tempo: firstTempo, surface: [PRESS_ROW_0] }, firstFrames)));
+    ppq += quarters(firstFrames, firstTempo);
+    for (let cycle = 1; cycle < 8; cycle++) {
+      for (const [frames, tempo] of pattern) {
+        dev.feed(rig.run(blockOf({ playing: true, ppq, connected: true, tempo }, frames)));
+        ppq += quarters(frames, tempo);
+      }
+    }
+    // The predictor walks one tick per host tick plus the launch's own tick, and a full row is 96 of them.
+    const expected = Math.floor((1 + Math.floor(ppq * 24)) / 96);
+    expect(expected).toBe(1); // the run is long enough to leave row 0, so a block of lost ticks shows as row 0
+    expect(dev.leds.get(pad(0, expected)), name).toBe(Palette.greenBright);
+  }
+});
+
+test("a link that dropped LED messages gets a full repaint, once", () => {
+  const rig = quiet();
+  const first = surface(rig.run(still({ connected: true, link: 1, drops: 0 })));
+  const painted = first.filter((m) => !sameBytes(m, HELLO)).length;
+  rig.run(still({ connected: true, link: 1, drops: 0 }));
+  expect(rig.run(still({ connected: true, link: 1, drops: 0 })).length).toBe(0);
+  const after = surface(rig.run(still({ connected: true, link: 1, drops: 3 })));
+  expect(after.some((m) => sameBytes(m, HELLO))).toBe(false); // the same device: no mode change
+  expect(after.length).toBe(painted); // but every LED again
+  expect(rig.run(still({ connected: true, link: 1, drops: 3 })).length).toBe(0);
+});
+
 // --- reacting to a settings change -------------------------------------------------------------------------------------
 
 // Grid pad (x, y) -> device index. The device counts rows from the BOTTOM.
@@ -321,8 +404,9 @@ test("an anchor moves the playhead to where the cart actually started, once per 
   expect(dev.leds.get(pad(0, 1))).toBe(Palette.greenBright);
   expect(dev.leds.get(pad(0, 0))).toBe(Palette.greenDim);
   // The playhead advances a row on its own; an unrelated change arrives carrying the same anchor, which must not drag
-  // it back.
-  dev.feed(rig.run(still({ playing: true, ppq: 4.1, connected: true }))); // +96 ticks: row 1 -> 0
+  // it back. +96 ticks, PLAYED at the block rate a host would (512 frames at 44.1 kHz, 120 BPM is about half a tick a
+  // block): one jump of four quarters would be a relocate - a seek - which advances nothing.
+  for (let i = 1; i <= 200; i++) dev.feed(rig.run(still({ playing: true, ppq: 0.1 + i * 0.02, connected: true })));
   expect(dev.leds.get(pad(0, 0))).toBe(Palette.greenBright);
   rig.set(settingsOf({ songRowTicks: editedTwoRows(), anchorRows: [1, 1, 1, 1], anchorSeq: 1 }));
   dev.feed(rig.run(still({ playing: true, ppq: 4.2, connected: true })));

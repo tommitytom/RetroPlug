@@ -49,7 +49,7 @@ What the code said about splitting it:
 
 ## 2. The node set
 
-Script nodes, one per role ([src/script/nodes/](../packages/retroplug/src/script/nodes)). Node ids follow the main
+Script nodes, one per role ([packages/launchpad/ts/](../packages/launchpad/ts/)). Node ids follow the main
 design's convention: `sys-<id>/<role-kind>` for a system's protocol node, `routing` and `controller` for the
 project's.
 
@@ -299,7 +299,7 @@ the limitation it found".
   for a project, `DirectGraph.setController` for the rest, each through `parseAppConfig(id, raw)` in
   [controller/registry.ts](../packages/retroplug/src/controller/registry.ts), which gives an id no app has an empty
   config (its node then runs nothing). The apps' runtime moved to a zod-free
-  [controller/apps/index.ts](../packages/retroplug/src/controller/apps/index.ts), which the node imports; the registry
+  [controller/apps/index.ts](../packages/launchpad/ts/apps/index.ts), which the node imports; the registry
   pairs each runtime with its menu label and its zod schema, and refuses, when it registers, an app with no schema.
   The rest of what `kernelProjection` did lives in [graph/controller.ts](../packages/retroplug/src/graph/controller.ts):
   the target resolution, the MI.MAP override and the node's settings. The controller node also imports the playback

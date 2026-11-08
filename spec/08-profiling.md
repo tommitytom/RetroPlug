@@ -56,7 +56,7 @@ length. What still allocates is work that makes something:
 | Site | Allocates |
 |---|---|
 | `rp.risa.sync`'s arm ([risaSync.ts](../packages/risa/ts/risaSync.ts)) | two objects on a start or a seek: `risaLocate`'s object and `risaArmPacket`'s array |
-| `rp.controller.session`'s surface diff and launches ([controller/session.ts](../packages/retroplug/src/controller/session.ts)) | per LED change and per launch, while a surface is in use |
+| `rp.controller.session`'s surface diff and launches ([session.ts](../packages/launchpad/ts/session.ts)) | per LED change and per launch, while a surface is in use |
 
 **The cores.** Since C4 a system core allocates nothing in a warmed block either, Mesen's per-frame video and input
 plumbing included: a Mesen core's audio ring, its per-block scratches and its tap rings are sized at activation from

@@ -36,6 +36,9 @@ export interface PlaybackGrid {
   readonly channelCount: number;
   /** True when `channel` has a playable chain at `row`. Out-of-range reads are false, not an error. */
   hasContent(channel: number, row: number): boolean;
+  /** Changes whenever what hasContent answers may have changed (the song was edited). Lets a consumer that draws
+   *  the grid skip redrawing it while nothing moved. Absent = assume it may change at any time. */
+  readonly revision?: number;
 }
 
 /** The read side, which is all a surface needs. */

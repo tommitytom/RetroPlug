@@ -28,8 +28,6 @@ export const CORE_MIDI: QueueCapacity = { messages: 4096, bytes: 73728 };
 export const CORE_BYTES: QueueCapacity = { messages: 256, bytes: 1024 };
 export const BUTTONS: QueueCapacity = { messages: 64, bytes: 128 };
 export const MIDI_OUT: QueueCapacity = { messages: 1024, bytes: 8192 };
-export const CONTROLLER_OUT: QueueCapacity = { messages: 256, bytes: 4096 };
-
 /** A routing output: under send-to-all it carries everything rp.host.midi-in's output passed, so it holds as much
  *  (kHostMidiInMessages and kHostMidiInBytes). */
 export const ROUTED_MIDI: QueueCapacity = { messages: 2048, bytes: 65536 };

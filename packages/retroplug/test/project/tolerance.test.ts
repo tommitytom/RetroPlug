@@ -64,3 +64,15 @@ test("coerces a malformed settings value + drops a garbage system entry", () => 
   expect(cfg.systems.length).toBe(1); // garbage entries dropped
   expect(cfg.systems[0].romPath).toBe("/a.gb");
 });
+
+test("a malformed controller block takes its defaults without dragging the other settings with it", () => {
+  // It must not fail the WHOLE settings parse: `controller: null` would reset layout and zoom to defaults too.
+  for (const bad of [null, [], 5, "on"]) {
+    const cfg = parseConfig(JSON.stringify({
+      schemaVersion: "4", settings: { layout: "column", zoom: 4, controller: bad }, systems: [],
+    }))!;
+    expect(cfg.settings.layout).toBe("column");
+    expect(cfg.settings.zoom).toBe(4);
+    expect(cfg.settings.controller).toEqual({ enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} });
+  }
+});

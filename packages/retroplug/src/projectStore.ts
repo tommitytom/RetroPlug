@@ -569,13 +569,14 @@ export class ProjectStore {
    *  Like setMidiRouting, and unlike the other setting writers, this publishes the GRAPH, not just the title bar:
    *  the controller node is placed from these settings at each publish, so a change that was never published would
    *  leave the audio thread running the previous app.
-   *  `appConfig` merges rather than replaces, so a menu row can set one knob without knowing the others. */
+   *  `appConfig` merges one knob at a time into the app's own config, so a menu row can set one knob without knowing
+   *  the others; a DIFFERENT app starts from what the patch gives it, because the old app's keys mean nothing to it
+   *  and merging kept them in the .rplg forever. */
   setController(patch: Partial<ControllerSettings>): void {
     const current = this.projectSettings.controller;
-    this.projectSettings = {
-      ...this.projectSettings,
-      controller: { ...current, ...patch, appConfig: { ...current.appConfig, ...(patch.appConfig ?? {}) } },
-    };
+    const switching = patch.app !== undefined && patch.app !== current.app;
+    const appConfig = switching ? { ...(patch.appConfig ?? {}) } : { ...current.appConfig, ...(patch.appConfig ?? {}) };
+    this.projectSettings = { ...this.projectSettings, controller: { ...current, ...patch, appConfig } };
     this.markDirty();
     this.publishGraph(false);
     this.notifySystemsChange();

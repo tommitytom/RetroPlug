@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/test-node-pack-declared",
+  "private": true,
+  "dependencies": {
+    "@retroplug/launchpad": "workspace:*"
+  }
+}

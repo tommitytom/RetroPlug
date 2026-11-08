@@ -21,7 +21,8 @@ import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
 import { MODEL_VALUES, HIGHPASS_VALUES } from "@retroplug/sameboy/enums";
 import { REGION_VALUES, CHANNEL_EXPORT_VALUES } from "@retroplug/mesen/enums";
 import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
-import { type SystemLayout, type AudioRouting, type ControllerTarget, LAYOUT_VALUES, AUDIO_ROUTING_VALUES, CONTROLLER_TARGET_VALUES } from "./settingsEnums";
+import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALUES } from "./settingsEnums";
+import { type ControllerTarget, CONTROLLER_TARGET_VALUES } from "@retroplug/launchpad/enums";
 import { LSDJ_MODE_VALUES } from "@retroplug/lsdj/enums";
 
 /** Project-level settings. The three routing/layout enums are string-valued (see settingsEnums);
@@ -86,14 +87,16 @@ export const projectSettingsSchema = z.object({
   zoom: clampedInt(0, 6, 0),
   // ADDITIVE, so no migration step: an older project simply has no `controller` key and the field
   // defaults fill it (AGENTS.md, config migrations). Off by default - a controller is opt-in hardware.
-  controller: z.object({
+  // Preprocessed so a malformed `controller` (null, an array, a number) becomes {} and takes its defaults, instead of
+  // failing the WHOLE settings object - which reset layout, zoom and the rest.
+  controller: z.preprocess((v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}), z.object({
     enabled: boolField(false),
     app: stringField("lsdj-midimap"),
     target: enumField(CONTROLLER_TARGET_VALUES, "system"),
     systemId: clampedInt(0, 0x7fffffff, 0),
     // Opaque here by design: the chosen app's own schema validates it.
     appConfig: z.preprocess((v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}), z.record(z.string(), z.unknown())),
-  }).default({ enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} }),
+  })),
 });
 
 export const DEFAULT_SETTINGS: ProjectSettings = projectSettingsSchema.parse({}) as ProjectSettings;

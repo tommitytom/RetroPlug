@@ -178,7 +178,7 @@ Two behaviours the driver **must** honour:
 
 ### 3.4 BUILT: what the protocol module covers
 
-[`src/launchpad/`](../packages/retroplug/src/launchpad/) implements all of the above as a pure layer -
+[`src/launchpad/`](../packages/launchpad/ts/) implements all of the above as a pure layer -
 no I/O, no RetroPlug types, no tracker knowledge. Every builder is pinned to one of the manual's own
 worked hex examples in [test/launchpad/](../packages/retroplug/test/launchpad/), so the reference is the
 oracle rather than our reading of it.
@@ -217,7 +217,7 @@ missing from the map entirely.
 The positions were all right; only the NAMES were wrong. That mattered anyway: the LSDj app pages with
 `up`/`down`, so under the old map it was driving the top row's ◀/▶ instead of the ▲/▼ beside the grid.
 Renaming fixed the app's behaviour without touching the app. Pinned by tests in
-[test/launchpad/protocol.test.ts](../packages/retroplug/test/launchpad/protocol.test.ts). `Shift` and
+[launchpad/ts/test/protocol.test.ts](../packages/launchpad/ts/test/protocol.test.ts). `Shift` and
 `Setup` (the two corners) are deliberately absent - whether they emit anything in Programmer mode is
 untested, so they are not guessed at.
 
@@ -482,7 +482,7 @@ of a launcher.
 
 ### 8.2 BUILT: M5, the thing that actually runs
 
-Everything above was a library nothing called. `src/controllerRole.ts` (since B3b, [controllerSession.ts](../packages/retroplug/src/script/nodes/controllerSession.ts))
+Everything above was a library nothing called. `src/controllerRole.ts` (since B3b, [controllerSession.ts](../packages/launchpad/ts/controllerSession.ts))
 is the `launchpad` project-scope DSP role that owns a `ControllerSession` and runs it once per audio block.
 
 **Project scope needed three things it did not have.** A project stage got `(block, inboxes, config)` -

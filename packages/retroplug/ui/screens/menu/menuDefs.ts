@@ -117,8 +117,9 @@ import {
   hasLaunchpadScan, startLaunchpadScan, getLaunchpadScan, launchpadFromScan, forgetLaunchpad,
   type LaunchpadConfig, type LaunchpadScanStatus,
 } from "./launchpadDevices";
-import { ControllerRegistry, registerControllerApps, QUANTISE_VALUES, type Quantise } from "../../../src/controller";
-import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/settingsEnums";
+import { ControllerRegistry, registerControllerApps } from "../../../src/controller/registry";
+import { QUANTISE_VALUES, type Quantise } from "@retroplug/launchpad/apps/lsdjMidiMap";
+import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "@retroplug/launchpad/enums";
 import { controllerSyncOverride } from "../../../src/graph/controller";
 import { systemNodeId } from "../../../src/graph/buildGraph";
 import type { MenuAction, MenuItem, MenuTree } from "./menuTree";

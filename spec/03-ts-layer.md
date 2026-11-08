@@ -683,7 +683,7 @@ Two concepts touched throughout this doc belong fully to **doc 04**:
   the legacy build's native `RomSniffer`, which is gone).
 - **The protocol nodes.** A role whose work is the audio thread's runs as a script node of its own
   (its package's `ts/protocol.ts`; the controller session is the shell's,
-  [`script/shellNodes.ts`](../packages/retroplug/src/script/shellNodes.ts)), which `buildGraph` places for each
+  [`packages/launchpad/ts/nodes.ts`](../packages/launchpad/ts/nodes.ts)), which `buildGraph` places for each
   system that has the role ([`graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts)),
   beside the MIDI routing and the controller session it places from the project's settings. They are in
   the bundle every Engine embeds, inside the script host's **bare QuickJS audio context**: the distinct
@@ -722,4 +722,4 @@ broader remaining feature gaps live in **doc 07**; this list is only the TS-laye
 | Services | [`src/fileSelection.ts`](../packages/retroplug/src/fileSelection.ts) · [`src/fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts) · [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts) |
 | Composition | [`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) · [`src/appStores.ts`](../packages/retroplug/src/appStores.ts) · [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) |
 | UI | [`ui/main.tsx`](../packages/retroplug/ui/main.tsx) · [`ui/App.tsx`](../packages/retroplug/ui/App.tsx) · [`ui/screens/grid/`](../packages/retroplug/ui/screens/grid) · [`ui/screens/menu/`](../packages/retroplug/ui/screens/menu) · [`ui/lvgl/`](../packages/retroplug/ui/lvgl) · [`ui/app/`](../packages/retroplug/ui/app) · [`ui/host/`](../packages/retroplug/ui/host) · [`ui/hooks/`](../packages/retroplug/ui/hooks) |
-| Protocol nodes (doc 04) | [`packages/*/ts/protocol.ts`](../packages/core/ts/protocol.ts) · [`src/script/shellNodes.ts`](../packages/retroplug/src/script/shellNodes.ts) · [`src/graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts) · [`src/graph/controller.ts`](../packages/retroplug/src/graph/controller.ts) |
+| Protocol nodes (doc 04) | [`packages/*/ts/protocol.ts`](../packages/core/ts/protocol.ts) · [`packages/launchpad/ts/nodes.ts`](../packages/launchpad/ts/nodes.ts) · [`src/graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts) · [`src/graph/controller.ts`](../packages/retroplug/src/graph/controller.ts) |

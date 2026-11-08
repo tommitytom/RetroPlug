@@ -30,7 +30,7 @@ import type { GraphController } from "../../src/graph/controller";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import { CHANNEL_EXPORT_VALUES } from "@retroplug/mesen/enums";
 import { MIDI_ROUTING_VALUES } from "@retroplug/core/midiRouting";
-import { type ControllerTarget } from "../../src/settingsEnums";
+import { type ControllerTarget } from "@retroplug/launchpad/enums";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
 import golden from "./golden/build-graph-roles.json";
