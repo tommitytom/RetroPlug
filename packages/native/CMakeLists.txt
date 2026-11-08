@@ -149,7 +149,6 @@ add_library(retroplug-backend STATIC
     src/host/IdleReclaimProbe.cpp           # hosts' idle-tick self-test (HostServices::reclaimOnIdle), smoke-driven
     src/host/graph/SystemNodes.cpp          # the cores as rp.sameboy.gb / rp.mesen.* nodes
     src/host/graph/HostIoNodes.cpp          # rp.host.midi-in / -out
-    src/host/graph/LaunchpadNodes.cpp       # rp.launchpad.surface-in / -out
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
     src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
@@ -181,6 +180,7 @@ target_link_libraries(retroplug-backend PUBLIC
     retroplug-core-nodes
     retroplug-dsp-nodes
     retroplug-dsp-resample-nodes
+    retroplug-launchpad # rp.launchpad.surface-in / -out's package: the legacy host's adapter is a SurfaceLink over it
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
     efsw-static         # NativeFileWatcher's filesystem watcher (PUBLIC-brings efsw/efsw.hpp include dir)
     Threads::Threads
@@ -197,7 +197,7 @@ set_target_properties(retroplug-backend PROPERTIES
 add_executable(retroplug-host src/main.cpp)
 
 target_link_libraries(retroplug-host PRIVATE retroplug-backend)
-retroplug_product(retroplug-host PACKAGES ${RP_DESKTOP_PACKAGES})
+retroplug_product(retroplug-host PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8)  # its own N8 provider over a fake cart
 # FakeN8.hpp, the model of the cart this test host starts the N8 provider over (src/main.cpp): a test header, in this
 # binary alone, so no product carries a fake cart.
 target_include_directories(retroplug-host PRIVATE ${CMAKE_SOURCE_DIR}/packages/n8/native/test)
@@ -302,7 +302,7 @@ endif()
 add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend)
-retroplug_product(retroplug-cli PACKAGES ${RP_DESKTOP_PACKAGES})
+retroplug_product(retroplug-cli PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8)
 add_dependencies(retroplug-cli retroplug-cli-bundle)             # the embedded dispatcher bytecode must exist first
 add_dependencies(retroplug-cli retroplug-ts-stripper-bundle)     # ...and the stripper bytecode
 add_dependencies(retroplug-cli retroplug-cli-sdk-assets)         # ...and the embedded SDK
@@ -383,7 +383,7 @@ target_link_libraries(retroplug-sdl PRIVATE
     rtmidi                        # cross-platform MIDI in/out (ALSA/CoreMIDI/WinMM)
     portaudio                     # audio backend (PipeWire/ALSA on Linux); replaces SDL audio
     PkgConfig::SDL2)              # window + present + gamepad (audio now via PortAudio; found at root scope)
-retroplug_product(retroplug-sdl PACKAGES ${RP_DESKTOP_PACKAGES})
+retroplug_product(retroplug-sdl PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8)
 
 target_include_directories(retroplug-sdl PRIVATE
     # quickjs.h for the JS trampolines (lvgl-js-native PUBLIC-propagates the lv_binding_js render include

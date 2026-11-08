@@ -448,6 +448,9 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     // neither is in a cycle with the session (docs/modular-graph-phase-c5-design.md section 5).
     wire("surface-in.in", "controller.controllerIn");
     wire("surface-in.connected", "controller.controllerConnected");
+    // And how many messages the link lost, so the session repaints what its diff believes was sent (a full send ring, a
+    // paint sent while the device was unplugged): the node reports the link's own count, which changes when it changes.
+    wire("surface-in.drops", "controller.controllerDrops");
     // Driving a cart, it sends no host MIDI; it is wired all the same, as the kernel tagged its MIDI out either way.
     hostMidi.push({ from: "controller.midiOut", system: target });
   }
@@ -491,7 +494,10 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   // other.
   for (const i of order) {
     const s = systems[i];
-    const forced = sync !== null && sync.systemId === s.id ? sync.mode : null;
+    // The override applies to the node type its data names, and to that one only: one naming another decoder says
+    // nothing about what this Game Boy captures.
+    const forced =
+      sync !== null && sync.systemId === s.id && s.pipeline.some((role) => role.node === sync.node) ? sync.mode : null;
     nodes.push(systemNode(s, s.type === "rp.sameboy.gb" ? serialOutCaptureFor(s.pipeline, forced) : null));
   }
   for (const g of groups)

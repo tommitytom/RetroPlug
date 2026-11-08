@@ -2,9 +2,9 @@
 
 // The providers one product instance started (graph/rp_provider.h), in the order its packages list them. The generated
 // rp_start_providers (build/packages/products/<product>/rp_product_providers.hpp, cmake/packages.cmake) makes one from
-// the product's table; the product keeps it beside its engine, restores it where it restores its own state, and stops
-// it after its plans are reclaimed. One per instance, not one per process: a DAW holds several plugin instances, each
-// with its own engine, and each starts its own providers into its own engine's registry.
+// the product's table; the product keeps it beside its engine, restores it where it restores its own state, wakes it
+// once a frame, and stops it after its plans are reclaimed. One per instance, not one per process: a DAW holds several
+// plugin instances, each with its own engine, and each starts its own providers into its own engine's registry.
 
 #ifdef RP_DEVICE
 #error "graph/desktop/Providers.hpp is desktop-only: a device image runs no provider"
@@ -52,6 +52,12 @@ public:
     void restore() {
         for (const Started& s : started_)
             if (s.self && s.provider->restore) s.provider->restore(s.self);
+    }
+    // One host frame: what each provider holds for its device goes out now (an LED frame queued on the audio thread
+    // reaches the wire in the frame it was made in, not at the writer's next timeout). [control], never blocks.
+    void wake() {
+        for (const Started& s : started_)
+            if (s.self && s.provider->wake) s.provider->wake(s.self);
     }
     // Destroys each started provider in the reverse of the order they were created, so one created later (which may
     // build on an earlier one's links) goes first. Idempotent: the destructor stops what was not stopped.

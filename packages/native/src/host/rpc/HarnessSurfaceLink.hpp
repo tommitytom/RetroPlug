@@ -51,7 +51,7 @@ public:
     void pushOutput(const std::uint8_t* /*data*/, std::size_t /*size*/) override {
         pushed_.fetch_add(1, std::memory_order_relaxed);
     }
-    bool connected() const override { return false; }
+    std::uint32_t generation() const override { return 0; }
     // As a real link's: the messages this one had no room for (queueInput's return value is the caller's too).
     std::uint64_t dropped() const override { return dropped_.load(std::memory_order_relaxed); }
 

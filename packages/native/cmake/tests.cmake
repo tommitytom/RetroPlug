@@ -155,10 +155,12 @@ retroplug_add_test_binary(
              retroplug-dsp-kernels                     # OfflineJobs.test.cpp holds a job's buffers to the kernels
              retroplug-dsp-resample                    # and to resampledLength, which the resample's node wraps
              rpcpp                                     # the server Providers.test.cpp mounts the facets on (QjsRpc.hpp)
+             retroplug-launchpad-desktop                # the generated header naming the launchpad provider (below)
     PACKAGES ${RP_DESKTOP_PACKAGES}
+    PROVIDERS n8                                   # and the launchpad pack carried for its nodes alone (below)
     INCLUDES ${RP_QUICKJS_INCLUDE}
              ${CMAKE_SOURCE_DIR}/packages/n8/native/test   # FakeN8.hpp (N8Adapters.test.cpp), QjsRpc.hpp
-             ${CMAKE_BINARY_DIR}/packages/test             # without/rp_product_providers.hpp (below)
+             ${CMAKE_BINARY_DIR}/packages/test             # named/ and without/, rp_product_providers.hpp (below)
     DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
              RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
              RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
@@ -173,11 +175,17 @@ retroplug_add_test_binary(
 
 
 add_dependencies(retroplug-engine-graph-test retroplug-script-test-bundle)  # the embedded bytecode first
-# The providers header retroplug_product() would generate for a product listing no package with a provider, which
-# Providers.test.cpp holds to starting and mounting nothing beside this binary's own (it lists the N8 pack).
+# The providers headers retroplug_product() would generate for two products over this binary's own package list, which
+# Providers.test.cpp holds beside this binary's own: one naming no package's provider (nothing starts, nothing is
+# mounted), and one naming a package this binary leaves out (the pack's provider starts when it is named, and only then).
 retroplug_providers_header("${CMAKE_BINARY_DIR}/packages/test/without/rp_product_providers.hpp"
-                           "packages/native/cmake/tests.cmake (a product listing no provider)"
+                           "packages/native/cmake/tests.cmake (a product naming no provider)"
                            core dsp graph-runtime native)
+# The desktop half is linked for this one header only (LIBS above), never by the product: this binary lists the pack
+# and starts the N8's provider.
+retroplug_providers_header("${CMAKE_BINARY_DIR}/packages/test/named/rp_product_providers.hpp"
+                           "packages/native/cmake/tests.cmake (a header naming the launchpad provider)"
+                           launchpad)
 
 # What a manifest may not say, held at every configure: each scratch manifest under test/packages/refused must be
 # refused by the reader retroplug_package() runs (cmake/packages.cmake's _retroplug_read_manifest, run here in script
@@ -200,7 +208,8 @@ set(_rp_refused_manifests
     "ScriptHeapTooSmall|\"heapBytes\": a whole number of bytes from 4096 to 524288"
     "ScriptHeapTooBig|\"heapBytes\": a whole number of bytes from 4096 to 524288"
     "ScriptHeapFraction|\"heapBytes\": a whole number of bytes from 4096 to 524288"
-    "ScriptHeapString|\"heapBytes\": a whole number of bytes from 4096 to 524288")
+    "ScriptHeapString|\"heapBytes\": a whole number of bytes from 4096 to 524288"
+    "ProviderTargetWithEntry|keep the entry and drop the target")
 foreach(_rp_refused IN LISTS _rp_refused_manifests)
     string(REPLACE "|" ";" _rp_refused "${_rp_refused}")
     list(GET _rp_refused 0 _rp_manifest)
@@ -345,17 +354,15 @@ retroplug_add_test_binary(
     SOURCES  test/midi/MidiPortSelect.test.cpp
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
 
-# Guards the control-surface device link (the instance menu's Launchpad submenu): LaunchpadLink's
-# connect/disconnect lifecycle, the two rings (a message received reaching the audio-thread drain; an
-# oversized LED message dropped rather than overrunning its slot), the FAREWELL replayed on both
-# disconnect and destruct — Programmer mode locks the device's front panel, so skipping that strands
-# the user's hardware — and LaunchpadHost's launchpad.cfg round-trip + reserved-port reporting. It
-# also guards LaunchpadScanner, the device-inquiry port scan that decides whether the submenu appears
-# at all: the probe reaching every output, a reply tagged with the PAIR that produced it, and a port
-# that will not open being stepped over rather than failing the scan. Compiles all three against a
-# capturing fake IMidiPort: no rtmidi, no MIDI system, no hardware.
+# Guards the LEGACY control-surface host (src/host/launchpad: LaunchpadLink, LaunchpadHost, LaunchpadScanner) until the
+# products are rewritten on the pack's provider and it is deleted: LaunchpadLink's connect/disconnect lifecycle, the two
+# rings (a message received reaching the audio-thread drain, allocation-free; an oversized LED message dropped rather
+# than overrunning its slot), the FAREWELL replayed on both disconnect and destruct (Programmer mode locks the device's
+# front panel, so skipping that strands the user's hardware), LaunchpadHost's launchpad.cfg round-trip and reserved-port
+# reporting, and LaunchpadScanner's device-inquiry scan. No rtmidi, no MIDI system, no hardware: a capturing fake
+# IMidiPort. The pack's own transport tests are retroplug-launchpad-test, packages/launchpad/native.
 retroplug_add_test_binary(
-    NAME     retroplug-launchpad-test
+    NAME     retroplug-launchpad-legacy-test
     SOURCES  test/launchpad/LaunchpadLink.test.cpp
              test/launchpad/LaunchpadSurfaceLink.test.cpp  # the surface device link over LaunchpadLink
              src/host/launchpad/LaunchpadLink.cpp
@@ -363,13 +370,14 @@ retroplug_add_test_binary(
              src/host/launchpad/LaunchpadScanner.cpp
              test/graph/CountingAllocator.cpp          # the block thread's drain allocates and frees nothing
     LIBS     Threads::Threads                          # LaunchpadScanner's scan thread
+             retroplug-launchpad                       # launchpad/SurfaceLink.hpp, the contract the adapter implements
              retroplug-node-sdk-headers                # transport/SpscRing.hpp, the rings' type
     INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test          # graph/CountingAllocator.hpp
              ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/launchpad/*.hpp
 
 # Proves the ThorVG-backed <Lottie> capability: that lv_lottie rasterizes animated vector frames on a
-# headless software display (LV_USE_LOTTIE → ThorVG). Links bare lvgl (which PRIVATE-brings
-# lvgl_thorvg) + Catch2 — no JS engine needed.
+# headless software display (LV_USE_LOTTIE -> ThorVG). Links bare lvgl (which PRIVATE-brings
+# lvgl_thorvg) + Catch2: no JS engine needed.
 retroplug_add_test_binary(
     NAME     retroplug-lottie-test
     SOURCES  test/ui/LottieRender.test.cpp

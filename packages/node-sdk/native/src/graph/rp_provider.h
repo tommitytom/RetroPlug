@@ -31,7 +31,10 @@
 extern "C" {
 #endif
 
-#define RP_PROVIDER_ABI_VERSION 1u
+/* 2: reserve_midi and suspend_hardware_inputs, the two capability calls a device provider needs from the product that
+ * owns the shared MIDI stream (docs/modular-graph-phase-f3-design.md section 3), and restored, the rendezvous end. A
+ * host and a provider refuse each other across a version, as they did at 1. */
+#define RP_PROVIDER_ABI_VERSION 2u
 
 /* What the product hands a provider to create it with: the engine's device registry and where persisted state lives.
  * The host and its strings outlive the provider (a product stops its providers before it destroys the engine). The rule
@@ -51,6 +54,21 @@ typedef struct rp_device_host {
      * (rp_device.h). A pointer that was never installed is cleared to nothing: the C table answers no status, and a
      * provider clears the exact pointer it installed. */
     void (*clear)(void* ctx, void* link);
+    /* Keep a MIDI input/output pair OUT of the product's shared stream: a device a provider holds is that provider's, and
+     * a second reader would answer its traffic and take its presses as music. Empty names undo it. True when the pair is
+     * out (or was never in); a product with no shared stream answers true. The product reopens only what actually moves,
+     * and does the audio stop and restart a reopen needs (a claimed pair has to be reserved before the stream opens it,
+     * docs/modular-graph-phase-f3-design.md section 3). [control] */
+    bool (*reserve_midi)(void* ctx, const char* input, const char* output);
+    /* A scan's held edge: while it holds loose inputs, the product suspends its shared stream's hardware inputs (an
+     * exclusive input on Windows could not otherwise be opened by the scan) and resumes them when the scan is done.
+     * Every platform makes the call; a product with nothing to suspend ignores it. [control] */
+    void (*suspend_hardware_inputs)(void* ctx, bool suspended);
+    /* The control plane's half of the startup rendezvous is done (docs/modular-graph-phase-f3-design.md section 3): TS
+     * read its selection, claimed the pair through the provider's facet and called the facet's restored(), so a product
+     * that held MIDI and audio for the claim starts them now. A product that holds nothing ignores it, and a facet that
+     * is never asked answers it itself. [control] */
+    void (*restored)(void* ctx);
 } rp_device_host;
 
 typedef struct rp_provider {
@@ -71,6 +89,12 @@ typedef struct rp_provider {
      * first because a node holds the link it acquired and may use it in its destroy (rp_device.h): clearing the link
      * makes a later lookup answer null, but frees nothing a node already holds. */
     void (*destroy)(void* self);
+    /* [control] One host frame, from the product's own frame loop, on the thread that paints: write what the audio
+     * thread has queued for the device since the last one. A provider whose device write can block (WinMM waits for a
+     * bulk SysEx to leave the wire) keeps a writer thread of its own, and this is what wakes it, so the frame the
+     * session painted is the frame the device hears rather than the next timeout. Never blocks. Null is the same as a
+     * provider that has nothing to write. */
+    void (*wake)(void* self);
 } rp_provider;
 
 /* A manifest's `provider` names a function of this type, as an `entry` names one returning an rp_package. */

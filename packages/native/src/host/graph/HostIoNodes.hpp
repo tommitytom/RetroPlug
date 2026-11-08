@@ -25,7 +25,8 @@ namespace rp::host {
 // would append its own merge behind the first's.
 //
 // A control surface's traffic is not the host's: rp.launchpad.surface-in takes what its device sent and
-// rp.launchpad.surface-out writes back to it (LaunchpadNodes.hpp), through the device link a host installs.
+// rp.launchpad.surface-out writes back to it (packages/launchpad's SurfaceNodes.hpp), through the device link a host
+// installs.
 const rp_package* hostIoPackage();
 
 // The most inputs rp.host.midi-out's systems form takes: it copies their ids into a fixed array at each commit, which

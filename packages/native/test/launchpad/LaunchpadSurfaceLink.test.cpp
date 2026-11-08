@@ -60,7 +60,7 @@ TEST_CASE("LaunchpadSurfaceLink: the device's messages drain into the caller's s
     LaunchpadLink link(factoryFor(log));
     REQUIRE(link.connect("in", "out"));
     LaunchpadSurfaceLink surface(link);
-    REQUIRE(surface.connected());
+    REQUIRE(surface.generation() != 0);  // 1: the legacy link reports the connected edge as its generation
     REQUIRE(log.receiver);
 
     const std::uint8_t pad[3]     = {0x90, 0x51, 0x7F};

@@ -450,13 +450,13 @@ after each block the executor adds the counts to the producing instance's atomic
 
 `rp.n8.nes` and `rp.launchpad.surface-in` / `-out` are the hardware nodes
 ([N8Node.cpp](../packages/n8/native/src/n8/N8Node.cpp),
-[LaunchpadNodes.cpp](../packages/native/src/host/graph/LaunchpadNodes.cpp)). Each binds the host-owned device it
+[SurfaceNodes.cpp](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp)). Each binds the host-owned device it
 drives through `rp.host.devices/2` ([rp_device.h](../packages/node-sdk/native/src/graph/rp_device.h)), a link its host
 installed by name and interface id: an `rp::n8::CartLink` ([CartLink.hpp](../packages/n8/native/src/n8/CartLink.hpp),
 `n8` / `rp.n8.cart-link/1`, the N8 pack's own) for the cart, with a push per message (frame, bytes, the flush flag,
 the block's rate) that answers whether all of it reached the device, the link's connected state and drop count, the
 expansion-volume register and `submitJob` / `abandonJobs`; an `rp::launchpad::SurfaceLink`
-([SurfaceLink.hpp](../packages/native/src/launchpad/SurfaceLink.hpp), `launchpad` / `rp.launchpad.surface-link/1`) for
+([SurfaceLink.hpp](../packages/launchpad/native/src/launchpad/SurfaceLink.hpp), `launchpad` / `rp.launchpad.surface-link/2`) for
 the pad, with a drain into the node's own array, a push, the connected state and its drop count. `LaunchpadLink` keeps
 the pushes it lost while the device was attached (`messagesDropped`) apart from the paint a session pushed while
 nothing was connected (`messagesDetached`) and a message the device sent that its receive ring held no slot for
@@ -1373,7 +1373,7 @@ is one automatable parameter applied post-render across all 8 channels
 - [`host/graph/`](../packages/native/src/host/graph):
   [`SystemNodes.cpp`](../packages/native/src/host/graph/SystemNodes.cpp) (the cores as nodes, with their settings and
   params), [`HostIoNodes.cpp`](../packages/native/src/host/graph/HostIoNodes.cpp) (the host MIDI I/O nodes),
-  [`LaunchpadNodes.cpp`](../packages/native/src/host/graph/LaunchpadNodes.cpp) (the control surface's two),
+  [`SurfaceNodes.cpp`](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp) (the control surface's two),
   [`SystemTable.hpp`](../packages/native/src/host/graph/SystemTable.hpp),
   [`HostServices.hpp`](../packages/native/src/host/graph/HostServices.hpp).
 - [`GraphHost.hpp`](../packages/graph-runtime/native/src/graph/GraphHost.hpp) /

@@ -146,7 +146,7 @@ function(_retroplug_read_manifest name _manifest)
         endif()
         # No native entry: no targets, no entries, whatever else the manifest contributes.
         set_property(GLOBAL APPEND PROPERTY RP_PACKAGES ${name})
-        foreach(_p TARGETS ENTRIES DEVICE_ENTRIES DEVICE_TARGETS PROVIDERS)
+        foreach(_p TARGETS ENTRIES DEVICE_ENTRIES DEVICE_TARGETS PROVIDERS PROVIDER_ENTRIES PROVIDER_TARGETS)
             set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_${_p} "")
         endforeach()
         _retroplug_read_declarations(${name} "${_json}")
@@ -169,6 +169,12 @@ function(_retroplug_read_manifest name _manifest)
     set(_device "")
     set(_deviceTargets "")
     set(_providers "")
+    # The entries and targets that carry one, which a product that does not name the package leaves out: a provider is
+    # a desktop service (ports, threads, files), and a product that starts none has no reason to link its code. A target
+    # that carries an entry as well is refused below, because leaving it out would leave that entry unlinked.
+    set(_providerEntries "")
+    set(_providerTargets "")
+    set(_entryTargets "")
     math(EXPR _last "${_count} - 1")
     foreach(_i RANGE ${_last})
         string(JSON _target ERROR_VARIABLE _err GET "${_native}" ${_i} target)
@@ -197,9 +203,11 @@ function(_retroplug_read_manifest name _manifest)
             _retroplug_read_provider(${name} ${_what} ${_isDevice} "${_noProvider}" "${_provider}" "${_noRpc}"
                                      "${_rpc}")
             list(APPEND _providers ${_provider})
+            list(APPEND _providerTargets ${_target})
             if(_noEntry)
-                continue()
+                continue()   # a provider that registers no node type: its target is all there is
             endif()
+            list(APPEND _providerEntries ${_entry})
         endif()
         if(NOT _entry MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
             message(FATAL_ERROR "retroplug_package(${name}): entry \"${_entry}\" is not a C identifier")
@@ -211,6 +219,7 @@ function(_retroplug_read_manifest name _manifest)
         endif()
         list(APPEND _taken ${_entry})
         list(APPEND _entries ${_entry})
+        list(APPEND _entryTargets ${_target})
         if(_isDevice)
             list(APPEND _device ${_entry})
             list(APPEND _deviceTargets ${_target})
@@ -218,6 +227,17 @@ function(_retroplug_read_manifest name _manifest)
     endforeach()
     list(REMOVE_DUPLICATES _targets)
     list(REMOVE_DUPLICATES _deviceTargets)
+    # A product that lists this package without naming it in PROVIDERS drops the provider's target and keeps every entry's
+    # registration. One target carrying both would then leave it with an entry whose code nothing links - a link error at
+    # the product, far from the manifest that caused it - so the manifest must give the provider a target of its own.
+    foreach(_pt IN LISTS _providerTargets)
+        if(_pt IN_LIST _entryTargets)
+            message(FATAL_ERROR "retroplug_package(${name}): target ${_pt} carries a provider and an entry; a product "
+                                "that lists the package without naming it in PROVIDERS would keep the entry and drop "
+                                "the target. A target carries a provider or an entry, never both: give the provider "
+                                "one of its own.")
+        endif()
+    endforeach()
 
     set_property(GLOBAL APPEND PROPERTY RP_PACKAGES ${name})
     set_property(GLOBAL APPEND PROPERTY RP_PACKAGE_ENTRIES ${_entries})
@@ -226,6 +246,8 @@ function(_retroplug_read_manifest name _manifest)
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_ENTRIES ${_device})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_DEVICE_TARGETS ${_deviceTargets})
     set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_PROVIDERS ${_providers})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_PROVIDER_ENTRIES ${_providerEntries})
+    set_property(GLOBAL PROPERTY RP_PACKAGE_${name}_PROVIDER_TARGETS ${_providerTargets})
     _retroplug_read_declarations(${name} "${_json}")
 
 endfunction()
@@ -1121,11 +1143,17 @@ extern \"C\" const rp_package* ${_fn}(void) { return rp::mqjs::package(rp_script
     target_link_libraries(retroplug-${name}-script PUBLIC retroplug-mqjs-host retroplug-${name}-pack64)
 endfunction()
 
-# retroplug_product(<product> PACKAGES <package>... [TARGETS <target>...] [DEVICE]): declares a product and
-# the packages it carries, in registration order. Generates build/packages/products/<product>.cpp, which defines the
-# product's rp_register_packages(), and adds it to each of TARGETS (default: the target named <product>) with the
-# packages' targets linked. TARGETS is for one product built as several binaries: the plugin's formats, each its own
-# module.
+# retroplug_product(<product> PACKAGES <package>... [PROVIDERS <package>...] [TARGETS <target>...] [DEVICE]): declares a
+# product and the packages it carries, in registration order. Generates build/packages/products/<product>.cpp, which
+# defines the product's rp_register_packages(), and adds it to each of TARGETS (default: the target named <product>)
+# with the packages' targets linked. TARGETS is for one product built as several binaries: the plugin's formats, each
+# its own module.
+#
+# PROVIDERS names the packages whose provider the product starts (graph/rp_provider.h), in the order given, and is what
+# its generated rp_product_providers.hpp holds. A package listed in PACKAGES and not here contributes its node types and
+# no provider: its provider's entry is not registered and its target is not linked, which is how a product carries a
+# pack's nodes without its hardware. The default is none, so a product says what it starts: a provider is a service that
+# opens ports and runs threads, and a binary that never asked for it must not link one.
 #
 # DEVICE makes it a device product: it takes each package's `device` entries alone, and their targets, and a package
 # with none is refused, since a device product that names one would carry a node type the device cannot run (as the
@@ -1140,7 +1168,7 @@ endfunction()
 # the targets. A package with no native part (its contributions are its `app` and `protocol` members, TypeScript's) has
 # no entries and no targets, so listing it here contributes nothing to the registration and nothing to link.
 function(retroplug_product product)
-    cmake_parse_arguments(P "DEVICE" "" "PACKAGES;TARGETS" ${ARGN})
+    cmake_parse_arguments(P "DEVICE" "" "PACKAGES;TARGETS;PROVIDERS" ${ARGN})
     if(P_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "retroplug_product(${product}): unrecognised argument(s): ${P_UNPARSED_ARGUMENTS}")
     endif()
@@ -1178,6 +1206,21 @@ function(retroplug_product product)
         list(APPEND _seen ${_p})
     endforeach()
     get_property(_known GLOBAL PROPERTY RP_PACKAGES)
+    # Named providers are checked first, so a typo fails as one rather than as a package that happens to start nothing.
+    if(P_DEVICE AND P_PROVIDERS)
+        message(FATAL_ERROR "retroplug_product(${product}): a device product runs no provider, so PROVIDERS is "
+                            "refused")
+    endif()
+    foreach(_pv IN LISTS P_PROVIDERS)
+        if(NOT _pv IN_LIST P_PACKAGES)
+            message(FATAL_ERROR "retroplug_product(${product}): PROVIDERS names `${_pv}`, which is not in PACKAGES")
+        endif()
+        get_property(_declared GLOBAL PROPERTY RP_PACKAGE_${_pv}_PROVIDERS)
+        if(NOT _declared)
+            message(FATAL_ERROR "retroplug_product(${product}): PROVIDERS names `${_pv}`, whose manifest names no "
+                                "provider")
+        endif()
+    endforeach()
     set(_entries "")
     set(_targets "")
     set(_leftOut "")
@@ -1187,6 +1230,18 @@ function(retroplug_product product)
         endif()
         get_property(_e GLOBAL PROPERTY RP_PACKAGE_${_p}_ENTRIES)
         get_property(_t GLOBAL PROPERTY RP_PACKAGE_${_p}_TARGETS)
+        # A provider's entry and target are the product's word, not the package's: a product that does not name the
+        # package in PROVIDERS carries its node types and links nothing of its desktop half.
+        if(NOT P_DEVICE AND NOT _p IN_LIST P_PROVIDERS)
+            get_property(_providerEntries GLOBAL PROPERTY RP_PACKAGE_${_p}_PROVIDER_ENTRIES)
+            get_property(_providerTargets GLOBAL PROPERTY RP_PACKAGE_${_p}_PROVIDER_TARGETS)
+            foreach(_left IN LISTS _providerEntries)
+                list(REMOVE_ITEM _e ${_left})
+            endforeach()
+            foreach(_left IN LISTS _providerTargets)
+                list(REMOVE_ITEM _t ${_left})
+            endforeach()
+        endif()
         # Its script pack's registration (_retroplug_script_targets), which every script pack's is a device's.
         get_property(_scriptFn GLOBAL PROPERTY RP_PACKAGE_${_p}_SCRIPT_FN)
         get_property(_scriptTarget GLOBAL PROPERTY RP_PACKAGE_${_p}_SCRIPT_TARGET)
@@ -1265,16 +1320,16 @@ ${_body}}
     # A desktop product's providers, which a device product never has (a device image runs none).
     if(NOT P_DEVICE)
         retroplug_providers_header("${RP_PRODUCTS_DIR}/${product}/rp_product_providers.hpp"
-                                   "retroplug_product(${product})" ${P_PACKAGES})
+                                   "retroplug_product(${product})" ${P_PROVIDERS})
     endif()
     foreach(_t IN LISTS P_TARGETS)
         if(NOT TARGET ${_t})
             message(FATAL_ERROR "retroplug_product(${product}): no target `${_t}`")
         endif()
         target_sources(${_t} PRIVATE "${_src}")
-        # Every target of every listed package, whether the product starts its providers or not: a binary that never
-        # includes its providers header links the N8 pack's desktop library, and with it deps/serial and that library's
-        # system frameworks (setupapi on Windows, IOKit and CoreFoundation on macOS), and pulls no object of either.
+        # Every target of every listed package but the desktop halves its providers need: those are linked only where
+        # the product names the package in PROVIDERS, so a binary that starts no provider links no port library, no
+        # thread and no system framework for one.
         target_link_libraries(${_t} PRIVATE ${_targets})
         # The directory of this product's own rp_product_providers.hpp, the header its sources include to start, stop
         # and mount its providers: the product's alone, so each binary includes the header made for its packages.
@@ -1468,15 +1523,15 @@ ${_body}    *count = ${_n};
     endif()
 endfunction()
 
-# retroplug_providers_header(<file> <label> <package>...): generates <file>, the providers of the packages listed
-# (graph/rp_provider.h) as rp_start_providers(host), rp_restore_providers(providers), rp_stop_providers(providers) and
-# rp_register_package_rpc<Server>(server, providers), in the order the packages and their manifests list them
-# (stopped in the reverse). retroplug_product() writes one per desktop product, rp_product_providers.hpp in an include
-# directory of its own; a test writes one for a list of its choosing. Header-only and inline on purpose: a binary that
-# never includes it (the render host, a test that starts no provider) names no provider, and a static library's members
-# are linked only where something names them, so it carries none of the providers' code, threads or ports. Whether a
-# product starts its providers is therefore its sources' word (whether they include the header), not CMake's. The
-# providers' state is an rp::Providers the product holds per instance (a DAW holds several), not a static here.
+# retroplug_providers_header(<file> <label> <package>...): generates <file>, the providers of the packages named
+# (graph/rp_provider.h) as rp_start_providers(host), rp_restore_providers(providers), rp_stop_providers(providers),
+# rp_wake_providers(providers) and rp_register_package_rpc<Server>(server, providers), in the order the packages and
+# their manifests list them (stopped in the reverse). retroplug_product() writes one per desktop product over the
+# packages it names in PROVIDERS, rp_product_providers.hpp in an include directory of its own; a test writes one for a
+# list of its choosing. Header-only and inline on purpose: a binary that never includes it (the render host, a test
+# that starts no provider) names no provider, and a static library's members are linked only where something names
+# them, so it carries none of the providers' code, threads or ports. The providers' state is an rp::Providers the
+# product holds per instance (a DAW holds several), not a static here.
 function(retroplug_providers_header file label)
     set(_providers "")
     foreach(_p IN LISTS ARGN)
@@ -1512,12 +1567,13 @@ function(retroplug_providers_header file label)
         set(_registers "    (void)server;\n    (void)providers;\n")
     endif()
     file(GENERATE OUTPUT "${file}" CONTENT
-"// Generated by ${label} in cmake/packages.cmake from the manifests of the packages it lists:
-// ${_listed}. Do not edit; edit the PACKAGES or a manifest.
+"// Generated by ${label} in cmake/packages.cmake from the manifests of the packages it starts:
+// ${_listed}. Do not edit; edit the product's PROVIDERS or a manifest.
 //
 // The providers of those packages (graph/rp_provider.h), in the order they list them, and the facets they mount. A
 // product starts them after its engine and before its control plane can publish a graph, restores them where it
-// restores its own state, mounts their facets where it mounts its own, and stops them after it has reclaimed its plans.
+// restores its own state, wakes them once a frame, mounts their facets where it mounts its own, and stops them after it
+// has reclaimed its plans.
 //
 // A product's sources include it by its bare name, #include \"rp_product_providers.hpp\" (the SDL standalone's
 // main.cpp, the plugin's PluginDSP.cpp and the CLI's main.cpp, the three that start providers): its directory is an
@@ -1536,6 +1592,10 @@ inline void rp_restore_providers(rp::Providers& providers) { providers.restore()
 
 // [control] Destroys each provider in the reverse order, after the product's plans are reclaimed.
 inline void rp_stop_providers(rp::Providers& providers) { providers.stop(); }
+
+// [control] A host frame: the provider writes what the audio thread has queued since the last one (a writer thread waits
+// on it rather than on a timeout, so an LED frame is not up to a poll late). Never blocks.
+inline void rp_wake_providers(rp::Providers& providers) { providers.wake(); }
 
 // Mounts each started provider's facet on `server`, an rpcpp TypedRpcServer.
 template <class Server>

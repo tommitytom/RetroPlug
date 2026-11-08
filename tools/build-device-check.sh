@@ -122,6 +122,7 @@ function hex(s,    i, n) {
     else if (file ~ /libretroplug-dsp-nodes/) owner = "dsp: the rp.dsp nodes"
     else if (file ~ /libretroplug-dsp-kernels/) owner = "dsp: the kernels"
     else if (file ~ /libretroplug-n8\.a/) owner = "n8: the rp.n8 nodes, the protocol"
+    else if (file ~ /libretroplug-launchpad\.a/) owner = "launchpad: the surface nodes"
     else if (file ~ /libretroplug-device-io-nodes/) owner = "device-io: the rp.device nodes"
     else if (file ~ /libretroplug-devtest-nodes/) owner = "devtest: the rp.devtest nodes"
     else if (file ~ /libretroplug-devtest-script/) owner = "devtest: the script pack"
@@ -138,6 +139,7 @@ function hex(s,    i, n) {
 }
 END {
     n = split("core: the rp.core nodes|dsp: the rp.dsp nodes|dsp: the kernels|n8: the rp.n8 nodes, the protocol|" \
+              "launchpad: the surface nodes|" \
               "device-io: the rp.device nodes|devtest: the rp.devtest nodes|devtest: the script pack|" \
               "bliptoaster: the script pack|" \
               "graph-runtime: executor, loader|graph-runtime: MicroQuickJS|graph-runtime: the script host|" \

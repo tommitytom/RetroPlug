@@ -11,6 +11,8 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
+    "rp.launchpad.surface-in",
+    "rp.launchpad.surface-out",
     "rp.dsp.gain",
     "rp.dsp.biquad",
     "rp.dsp.dither",
@@ -25,8 +27,6 @@
     "rp.mesen.sms",
     "rp.host.midi-in",
     "rp.host.midi-out",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.bliptoaster.midi-policy"
   ],
   "retroplug-audio-test": [
@@ -41,6 +41,8 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
+    "rp.launchpad.surface-in",
+    "rp.launchpad.surface-out",
     "rp.dsp.gain",
     "rp.dsp.biquad",
     "rp.dsp.dither",
@@ -55,8 +57,6 @@
     "rp.mesen.sms",
     "rp.host.midi-in",
     "rp.host.midi-out",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.bliptoaster.midi-policy"
   ],
   "retroplug-cli": [
@@ -71,6 +71,8 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
+    "rp.launchpad.surface-in",
+    "rp.launchpad.surface-out",
     "rp.dsp.gain",
     "rp.dsp.biquad",
     "rp.dsp.dither",
@@ -85,8 +87,6 @@
     "rp.mesen.sms",
     "rp.host.midi-in",
     "rp.host.midi-out",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.bliptoaster.midi-policy"
   ],
   "retroplug-engine-graph-test": [
@@ -101,6 +101,8 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
+    "rp.launchpad.surface-in",
+    "rp.launchpad.surface-out",
     "rp.dsp.gain",
     "rp.dsp.biquad",
     "rp.dsp.dither",
@@ -115,8 +117,6 @@
     "rp.mesen.sms",
     "rp.host.midi-in",
     "rp.host.midi-out",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.bliptoaster.midi-policy"
   ],
   "retroplug-host": [
@@ -131,6 +131,8 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
+    "rp.launchpad.surface-in",
+    "rp.launchpad.surface-out",
     "rp.dsp.gain",
     "rp.dsp.biquad",
     "rp.dsp.dither",
@@ -145,8 +147,6 @@
     "rp.mesen.sms",
     "rp.host.midi-in",
     "rp.host.midi-out",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.bliptoaster.midi-policy"
   ],
   "retroplug-node": [
@@ -161,6 +161,8 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
+    "rp.launchpad.surface-in",
+    "rp.launchpad.surface-out",
     "rp.dsp.gain",
     "rp.dsp.biquad",
     "rp.dsp.dither",
@@ -175,8 +177,6 @@
     "rp.mesen.sms",
     "rp.host.midi-in",
     "rp.host.midi-out",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.bliptoaster.midi-policy"
   ],
   "retroplug-render-host-test": [
@@ -191,6 +191,8 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
+    "rp.launchpad.surface-in",
+    "rp.launchpad.surface-out",
     "rp.dsp.gain",
     "rp.dsp.biquad",
     "rp.dsp.dither",
@@ -205,8 +207,6 @@
     "rp.mesen.sms",
     "rp.host.midi-in",
     "rp.host.midi-out",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.bliptoaster.midi-policy"
   ],
   "retroplug-sdl": [
@@ -221,6 +221,8 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
+    "rp.launchpad.surface-in",
+    "rp.launchpad.surface-out",
     "rp.dsp.gain",
     "rp.dsp.biquad",
     "rp.dsp.dither",
@@ -235,8 +237,6 @@
     "rp.mesen.sms",
     "rp.host.midi-in",
     "rp.host.midi-out",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.bliptoaster.midi-policy"
   ],
   "retroplug-ui-test": [
@@ -251,6 +251,8 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
+    "rp.launchpad.surface-in",
+    "rp.launchpad.surface-out",
     "rp.dsp.gain",
     "rp.dsp.biquad",
     "rp.dsp.dither",
@@ -265,8 +267,6 @@
     "rp.mesen.sms",
     "rp.host.midi-in",
     "rp.host.midi-out",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.bliptoaster.midi-policy"
   ]
 }

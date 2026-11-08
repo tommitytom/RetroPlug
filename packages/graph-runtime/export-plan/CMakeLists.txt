@@ -9,11 +9,11 @@
 # the scripts that build a device image build it first, and retroplug-device-mode-test runs it.
 #
 # The list is every package a device image's plan may name: the box's (core, device-io, n8 and the bliptoaster script
-# pack) and the device check's, which adds dsp and devtest (rp.devtest.plan, test types no shipped product carries, for
-# its plan's coupled pair). An image's build passes its own product's list (--packages), and the tool registers only
-# those, both builds: a plan naming a type its image does not register is refused here, and the firmware's build with
-# it, rather than at boot.
-set(RP_EXPORT_PLAN_PACKAGES core dsp n8 device-io devtest bliptoaster)
+# pack) and the device check's, which adds dsp, launchpad (the surface nodes, `device: true`) and devtest
+# (rp.devtest.plan, test types no shipped product carries, for its plan's coupled pair). An image's build passes its
+# own product's list (--packages), and the tool registers only those, both builds: a plan naming a type its image does
+# not register is refused here, and the firmware's build with it, rather than at boot.
+set(RP_EXPORT_PLAN_PACKAGES core dsp n8 launchpad device-io devtest bliptoaster)
 
 # --packages' table: each listed package's device entries and its script pack's registration, by package name, with both
 # builds of each (the desktop's from the product's link, the device's from the objects below, which rename every entry

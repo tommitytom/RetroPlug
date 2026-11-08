@@ -28,13 +28,13 @@
 #include "GraphDocs.hpp"
 #include "NodeRig.hpp"
 #include "graph/node.hpp"
-#include "host/graph/LaunchpadNodes.hpp"
+#include "launchpad/SurfaceNodes.hpp"
 #include "launchpad/SurfaceLink.hpp"
 
 namespace {
 
 using rp::launchpad::kMaxDeviceMessage;
-using rp::host::kSurfaceInBytes;
+using rp::launchpad::kSurfaceInBytes;
 using rp::host::test::deviceMessage;
 using rp::host::test::DocExtras;
 using rp::host::test::docNode;
@@ -162,7 +162,7 @@ TEST_CASE("a surface's out reaches the link in queue order, and a detached link 
     CHECK(rig.host->faultCount() == 0);
 }
 
-TEST_CASE("a surface's connected follows the link, from frame 0", "[launchpad]") {
+TEST_CASE("a surface's connected carries the link's generation, from frame 0", "[launchpad]") {
     FakeSurfaceLink surface;
     NodeRig         rig(kRate);
     rig.installSurface(surface);
@@ -173,8 +173,9 @@ TEST_CASE("a surface's connected follows the link, from frame 0", "[launchpad]")
     CHECK(probe.controlStart == 0.0);
     CHECK(probe.controlChanges.empty());
 
-    // Attached: the flag flips at frame 0 of that block, so a session reading it takes the device on the block it
-    // appears.
+    // Attached: the NUMBER is the value, and it changes at frame 0 of the block the claim was made, so a session reading
+    // it takes the device on the block it appears - and a pair swapped inside one block (a new claim, no detached block
+    // between) reads as a new device to a session that compares generations.
     surface.attached = true;
     block(rig);
     CHECK(probe.controlStart == 0.0);
@@ -183,6 +184,20 @@ TEST_CASE("a surface's connected follows the link, from frame 0", "[launchpad]")
     block(rig);  // held: no second change
     CHECK(probe.controlStart == 1.0);
     CHECK(probe.controlChanges.empty());
+
+    surface.claim = 2;
+    block(rig);
+    CHECK(probe.controlChanges == std::vector<double>{2.0});
+
+    // A generation is a control value too, so it is wrapped at 2^24 and mapped into 1..2^24-1: the value that would wrap
+    // onto 0 reads as a claim, because 0 is "nothing attached" and a device must not look unplugged on a wrap. A host
+    // that reports a generation of its own outside the range (this is a hand-set number) is mapped the same way.
+    surface.claim = 1u << 24;  // 2^24 maps onto 1, not onto 0
+    block(rig);
+    CHECK(probe.controlChanges == std::vector<double>{1.0});
+    surface.claim = (1u << 24) + 1;  // and the next claim after it is a change again
+    block(rig);
+    CHECK(probe.controlChanges == std::vector<double>{2.0});
 
     surface.attached = false;
     block(rig);
@@ -263,7 +278,7 @@ TEST_CASE("a plan holds one surface input node and one surface output node", "[l
     // One device, one link: a second input node would drain the one ring its twin drains (and the device would answer
     // two sessions), and a second output node would split the LED frames, so both types declare themselves unique and
     // the planner refuses the document.
-    const rp_package* package = rp::host::launchpadPackage();
+    const rp_package* package = rp::launchpad::launchpadPackage();
     const rp_node_type* surfaceIn = type(package, "rp.launchpad.surface-in");
     const rp_node_type* surfaceOut = type(package, "rp.launchpad.surface-out");
     REQUIRE(surfaceIn != nullptr);
@@ -272,7 +287,9 @@ TEST_CASE("a plan holds one surface input node and one surface output node", "[l
         const std::string descriptor(t->descriptor(t));
         INFO(t->id);
         CHECK(descriptor.find(R"("unique":true)") != std::string::npos);
-        CHECK(descriptor.find(R"("threads":true)") != std::string::npos);
+        // No threads: the link's callback and writer threads are the desktop provider's, so the types plan on a target
+        // that has none (the Pico), and the device-mode build compiles them.
+        CHECK(descriptor.find(R"("threads":true)") == std::string::npos);
     }
     // A type that declares neither spells neither.
     const rp_node_type* probeType = type(rp::host::test::testPackage(), "rp.test.probe");
@@ -296,15 +313,43 @@ TEST_CASE("a plan holds one surface input node and one surface output node", "[l
               .ok);
 }
 
-TEST_CASE("the surface types declare threads, so a target with none refuses them", "[launchpad]") {
+TEST_CASE("the surface types plan on a target with no threads, as the pack's device entry must", "[launchpad]") {
+    // The nodes touch nothing but the link: the desktop provider owns the callback thread and the writer thread, so a
+    // plan on the Pico places both types (docs/modular-graph-phase-f3-design.md section 3). No host of this pack runs
+    // there; the nodes are ready for one that drives the box's surface.
     NodeRig pico(kRate, 8192, rp::graph::Target::Pico);
     for (const char* id : {"rp.launchpad.surface-in", "rp.launchpad.surface-out"}) {
         INFO(id);
-        const auto refused = pico.set(plainDocument({docNode("surface", id)}));
-        REQUIRE_FALSE(refused.ok);
-        CHECK(refused.errors.at(0).code == "capability");
-        CHECK(refused.errors.at(0).message.find("threads") != std::string::npos);
+        const auto planned = pico.set(plainDocument({docNode("surface", id)}));
+        for (const auto& e : planned.errors) UNSCOPED_INFO(e.code << " at " << e.nodeId << ": " << e.message);
+        CHECK(planned.ok);
     }
+}
+
+TEST_CASE("a surface's drops follows the link's lost count, from frame 0", "[launchpad]") {
+    // The session repaints when this changes (the surface's diff already believes the lost frames were sent): the node
+    // reports the link's own count, so a full send ring, a push while nothing was attached and an oversized message all
+    // reach it as one number.
+    FakeSurfaceLink surface;
+    NodeRig         rig(kRate);
+    rig.installSurface(surface);
+    plan(rig, surfaceDocument({docNode("probe", "rp.test.probe")}, {docWire("surface-in.drops", "probe.control")}));
+    block(rig);
+    const Probe& probe = rig.node<Probe>("probe");
+    CHECK(probe.controlAtZero == 0.0);
+    CHECK(probe.controlChanges.empty());
+
+    surface.detached = 3;  // three pushes went nowhere
+    block(rig);
+    CHECK(probe.controlChanges == std::vector<double>{3.0});
+    block(rig);  // held: no second change
+    CHECK(probe.controlChanges.empty());
+
+    // The stream is a double end to end, so a counter that would stop being exact past 2^53 is wrapped at 2^24: the
+    // value a reader sees is a change, which is all a repaint needs.
+    surface.detached = (1ull << 24) + 1;
+    block(rig);
+    CHECK(probe.controlChanges == std::vector<double>{1.0});
 }
 
 TEST_CASE("the surface nodes take the link once each, keep it across a reactivate, and give it back once",

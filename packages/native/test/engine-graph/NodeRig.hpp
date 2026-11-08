@@ -24,7 +24,7 @@
 #include "host/devices/DeviceRegistry.hpp"
 #include "host/engine/CapabilityJobs.hpp"  // jobReports
 #include "host/graph/HostIoNodes.hpp"
-#include "host/graph/LaunchpadNodes.hpp"
+#include "launchpad/SurfaceNodes.hpp"
 #include "host/graph/HostServices.hpp"
 #include "launchpad/SurfaceLink.hpp"
 #include "n8/CartLink.hpp"
@@ -104,7 +104,7 @@ struct NodeRig {
         rate = sampleRate;
         registerCoreBackends(factory);
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), sameboyPackage(), mesenPackage(),
-                                    hostIoPackage(), rp::n8::n8Package(), launchpadPackage(), testPackage()})
+                                    hostIoPackage(), rp::n8::n8Package(), rp::launchpad::launchpadPackage(), testPackage()})
             registry.addPackage(p);
         rp::graph::HostConfig config;
         config.sampleRate = sampleRate;

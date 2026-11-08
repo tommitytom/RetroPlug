@@ -106,6 +106,9 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
@@ -219,6 +222,10 @@ importers:
         version: 7.0.2
 
   packages/native:
+    dependencies:
+      '@retroplug/launchpad':
+        specifier: workspace:*
+        version: link:../launchpad
     devDependencies:
       '@retroplug/core':
         specifier: workspace:*

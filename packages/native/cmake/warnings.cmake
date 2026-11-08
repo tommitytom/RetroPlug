@@ -43,6 +43,11 @@ if(MSVC)
         retroplug-node-sdk retroplug-graph-exec retroplug-graph retroplug-core-nodes
         retroplug-dsp-kernels retroplug-dsp-resample retroplug-dsp-nodes retroplug-dsp-resample-nodes
         retroplug-n8 retroplug-n8-desktop retroplug-device-io-nodes retroplug-devtest-nodes
+        # The Launchpad pack: its transport and its facet (PortClaim.cpp is the one file whose Windows half only this
+        # compiler ever sees), and its own test binary.
+        retroplug-launchpad retroplug-launchpad-desktop retroplug-launchpad-test
+        # The legacy control-surface host the products still run on, and its tests.
+        retroplug-launchpad-legacy-test
         # The device build of the node SDK, tested on the desktop (cmake/tests.cmake).
         retroplug-device-mode-objects retroplug-device-mode-test retroplug-box-usb-cdc
         # The device check's case generator (packages/graph-runtime/device-check/cases).

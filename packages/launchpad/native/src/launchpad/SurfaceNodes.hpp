@@ -4,17 +4,19 @@
 
 #include "graph/rp_node.h"
 
-namespace rp::host {
+namespace rp::launchpad {
 
-// The rp.launchpad package: a Novation Launchpad as a control surface on nodes of its own
-// (docs/modular-graph-phase-c5-design.md section 5), through the host's surface link (rp.host.devices/2: "launchpad",
-// rp::launchpad::SurfaceLink, launchpad/SurfaceLink.hpp).
+// The rp.launchpad package (docs/modular-graph-phase-f3-design.md section 3): a Novation Launchpad as a control surface
+// on nodes of its own, through the host's surface link (rp.host.devices/2: "launchpad", rp::launchpad::SurfaceLink,
+// launchpad/SurfaceLink.hpp). A `device` entry of the package's manifest, so the nodes plan on the Pico and the
+// device-mode build compiles them (-fno-exceptions, -fno-rtti); no host of this package runs there.
 //
 //   rp.launchpad.surface-in   in: the device's MIDI, drained from the link at the start of the block, each message at
-//                             frame 0 (a control surface's timing is not musical); connected: 1 while the device is
-//                             attached, from frame 0 of the block. Its first block after it binds the link discards
-//                             what the link already holds (presses sent while no node read the device) rather than
-//                             replaying them; a reactivate that keeps the handle is not a first block.
+//                             frame 0 (a control surface's timing is not musical); connected: the link's generation, 0
+//                             while nothing is attached, from frame 0 of the block; drops: what the link lost, from
+//                             frame 0. Its first block after it binds the link discards what the link already holds
+//                             (presses sent while no node read the device) rather than replaying them; a reactivate that
+//                             keeps the handle is not a first block.
 //   rp.launchpad.surface-out  out: every message handed to the link, in queue order, in the block it was queued.
 //
 // The two event ports are what a controller session reads and writes. Two nodes rather than one because a surface
@@ -32,8 +34,8 @@ const rp_package* launchpadPackage();
 inline constexpr std::uint32_t kSurfaceInMessages = 1024;
 inline constexpr std::uint32_t kSurfaceInBytes = 16384;
 
-}  // namespace rp::host
+}  // namespace rp::launchpad
 
-// The package's entry, named in packages/native/package.json: what a product's generated registration calls
+// The package's entry, named in packages/launchpad/package.json: what a product's generated registration calls
 // (rp_register_packages, graph/Packages.hpp).
 extern "C" const rp_package* rp_launchpad_package(void);

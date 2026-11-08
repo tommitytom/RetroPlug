@@ -223,6 +223,9 @@ include(cmake/sameboy.cmake)
 # --- wjwwood/serial: USB-serial for the Everdrive N8 Pro bridge (submodule at deps/serial) ---
 include(cmake/serial.cmake)
 
+# --- RtMidi: live MIDI in/out for the hosts and for a pack that owns a MIDI port (submodule at deps/rtmidi) ---
+include(cmake/rtmidi.cmake)
+
 # --- SameBoySystem.cpp: clang-cl isolation (Windows) ------------------------
 # SameBoySystem.cpp #defines GB_INTERNAL to reach SameBoy's internal struct view
 # and GNU-extension headers, which MSVC cl.exe cannot parse. Like the sameboy
@@ -450,7 +453,7 @@ endforeach()
 # because every other package's library is built on it; a device host's own I/O (rp.device.midi-in, the plan exporter's
 # and the devices') and the device check's test types (rp.devtest.plan) last, because registering a script pack needs
 # the MicroQuickJS host the graph-runtime package adds. packages/native is in the product list and registers the node
-# types not yet carved into packages of their own (sameboy, mesen, host.io, launchpad); its targets are defined below,
+# types not yet carved into packages of their own (sameboy, mesen, host.io); its targets are defined below,
 # where the root adds the engine's own tree. @retroplug/tracker is in neither list: it contributes no registration of any
 # kind, only modules the shell and the cart packages import, so CMake is never told about it.
 set(_rp_first_packages node-sdk)          # first: every other package's library is built on it

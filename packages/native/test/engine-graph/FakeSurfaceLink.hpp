@@ -54,13 +54,14 @@ public:
         std::memcpy(m.data, data, m.size);
         outputs.push_back(m);
     }
-    bool connected() const override { return attached; }
+    std::uint32_t generation() const override { return attached ? claim : 0; }
     // The pushes that went nowhere: this fake has no send ring, so a link that is down is the only way to lose one.
     std::uint64_t dropped() const override { return detached; }
     void acquire() { ++acquires; }
     void release() { ++releases; }
 
     bool                       attached = true;
+    std::uint32_t              claim = 1;  // the claim's number: what the node reports as `connected`
     std::uint64_t              detached = 0;  // pushed while there was no device
     int                        acquires = 0;
     int                        releases = 0;

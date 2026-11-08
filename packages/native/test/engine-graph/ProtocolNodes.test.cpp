@@ -95,7 +95,6 @@
 #include "host/devices/DeviceRegistry.hpp"
 #include "host/graph/HostIoNodes.hpp"
 #include "host/graph/HostServices.hpp"
-#include "host/graph/LaunchpadNodes.hpp"
 #include "host/script/ScriptHost.hpp"
 
 using rp::host::ScriptHost;
@@ -426,7 +425,7 @@ public:
         out_.emplace_back(data, data + size);
         fake_.pushOutput(data, size);
     }
-    bool          connected() const override { return fake_.connected(); }
+    std::uint32_t generation() const override { return fake_.generation(); }
     std::uint64_t dropped() const override { return fake_.dropped(); }
 
 private:
@@ -493,7 +492,7 @@ struct ProtocolRig {
         INFO(error);
         REQUIRE(loaded);
         for (const rp_package* p : {rp::graph::corePackage(), rp::graph::hostPackage(), rp::host::hostIoPackage(),
-                                    rp::host::launchpadPackage(), rp::host::test::testPackage(), scripts.package()})
+                                    rp::launchpad::launchpadPackage(), rp::host::test::testPackage(), scripts.package()})
             REQUIRE(registry.addPackage(p, &error));
         for (std::uint32_t i = 0; i < scripts.package()->node_type_count; ++i)
             scriptTypes.insert(scripts.package()->node_types[i]->id);
@@ -869,7 +868,8 @@ TEST_CASE("the per-role graph runs a controller session: its surface, its launch
     // cart, not the distance between two ppq positions (packages/launchpad/ts/session.ts, packages/core/ts/ticks.ts): the
     // first playing block's tick 0 and the backward seek this case makes when it re-attaches - it repeats the detached
     // block's ppq - are ticks the cart HEARD, where an inferred distance reads no time at all, and the LED frames differ
-    // by a block. The second digest, the cores', holds whatever the ticks say: no system input changes.
+    // by a block. The second digest, the cores', holds whatever the ticks say: no system input changes. (The drops wire
+    // this case also carries moves no byte of either digest.)
     const auto run = [](ProtocolRig& rig) {
         const auto target = [&](const std::string& t) { return structure("controller/" + t); };
         rig.block({.controller = {pad(0, 3)}});  // pressed with no surface attached
@@ -904,6 +904,46 @@ TEST_CASE("the per-role graph runs a controller session: its surface, its launch
     ProtocolRig rig(structure("controller/system"));
     run(rig);
     rig.matches(recorded);
+    rig.finish();
+}
+
+TEST_CASE("a controller session re-takes a pair swapped inside one block, and repaints after a drop",
+          "[engine-graph][protocol-nodes]") {
+    // The two things a generation and a drop count are FOR, over the real document buildGraph builds and the real
+    // session node (docs/modular-graph-phase-f3-design.md sections 3 and 7): a pair swapped faster than a block (a new
+    // claim, no detached block in between) is a new device, so it gets the hello and a full paint again; and a push the
+    // link lost while the device was attached repaints what the surface's diff already believes was sent, without
+    // re-taking the device.
+    ProtocolRig rig(structure("controller/system"));
+    const auto  helloOf = [](const std::vector<Bytes>& out) {
+        return out.empty() ? Bytes{} : out.front();
+    };
+    rig.block({.connected = true});  // generation 1: the session takes the device (Programmer mode, a full paint)
+    const Bytes hello = helloOf(rig.outByBlock.back());
+    REQUIRE_FALSE(hello.empty());
+    CHECK(hello[0] == 0xF0);  // a SysEx, as the profile's front-panel setup is
+    const std::size_t took = rig.outByBlock.back().size();
+    CHECK(took > 1);  // and a repaint behind it
+
+    rig.block({.connected = true});  // settled: nothing changes, nothing is sent
+    CHECK(rig.outByBlock.back().empty());
+
+    // A swap inside one block: the claim's number changes and nothing else does.
+    rig.surface.claim = 2;
+    rig.block({.connected = true});
+    REQUIRE_FALSE(rig.outByBlock.back().empty());
+    CHECK(helloOf(rig.outByBlock.back()) == hello);
+    CHECK(rig.outByBlock.back().size() == took);  // the same hello and the same full paint as the first take
+
+    rig.block({.connected = true});
+    CHECK(rig.outByBlock.back().empty());
+
+    // A drop while attached: five pushes went nowhere, so the session repaints - and sends no hello, since the device
+    // it is painting is still the one it took.
+    rig.surface.detached = 5;
+    rig.block({.connected = true});
+    REQUIRE_FALSE(rig.outByBlock.back().empty());
+    for (const Bytes& m : rig.outByBlock.back()) CHECK(m != hello);
     rig.finish();
 }
 

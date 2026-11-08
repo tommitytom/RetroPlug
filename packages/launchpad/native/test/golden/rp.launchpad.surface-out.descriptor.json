@@ -1,0 +1,1 @@
+{"category":"device","id":"rp.launchpad.surface-out","name":"Launchpad Out","params":[],"ports":[{"dir":"in","id":"out","kind":"events"}],"requires":{"heap":false,"threads":false},"settings":{"type":"object"},"unique":true,"version":"1.0.0"}

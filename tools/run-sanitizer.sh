@@ -8,7 +8,9 @@
 #
 # Default slugs are the two audio-thread tests (dsp-threaded + dsp-lifecycle); pass a slug to run
 # just one. The Catch2 binaries are a separate job - build them by name into build-<san>/ if you want
-# them instrumented too. The host lands in build-<san>/bin/ and needs a JS bundle argument, so this drives it via
+# them instrumented too. Thread mode also builds and runs the Launchpad pack's transport binary by
+# name: its swap case drives the UI, audio and device threads at once, so its rings are only CHECKED
+# under this script (host slugs cannot reach it). The host lands in build-<san>/bin/ and needs a JS bundle argument, so this drives it via
 # run-native-tests.mjs with the instrumented host. Sanitizer flags are global (CMakeLists.txt
 # RETROPLUG_SANITIZE), so the host is instrumented automatically. Reuses the build-<san>/ dir
 # (configure is idempotent); the load-bearing build/ is untouched.
@@ -60,6 +62,18 @@ for slug in "${slugs[@]}"; do
         rc=1
     fi
 done
+
+# The pack's own transport binary (EXCLUDE_FROM_ALL, so built here by name): the claimed pair's rings, the writer
+# thread, the facet and one case that runs a producer thread, the audio thread and the UI thread at once.
+if [ "$san" = thread ]; then
+    echo "==> building retroplug-launchpad-test (instrumented)"
+    cmake --build "$builddir" -j"$(nproc)" --target retroplug-launchpad-test
+    echo "==> running the Launchpad pack's transport under thread sanitizer"
+    if ! "$repo/$builddir/bin/retroplug-launchpad-test"; then
+        echo "!! retroplug-launchpad-test failed under thread sanitizer" >&2
+        rc=1
+    fi
+fi
 
 [ "$rc" -eq 0 ] && echo "==> host passed under $san sanitizer"
 exit "$rc"

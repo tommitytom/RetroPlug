@@ -7,16 +7,8 @@
 # them. These were interleaved with target definitions, which is how the retroplug-sdl banner ended
 # up split in half by seventy lines of rtmidi/serial/portaudio setup.
 
-# RtMidi (deps/rtmidi submodule) — cross-platform MIDI I/O for live-MIDI hosts: the SDL standalone and the
-# CLI n8-bridge (the plugin gets MIDI from its DAW host instead). Static; ALSA on Linux (JACK off — the
-# handheld path is ALSA/PipeWire); RtMidi's own CMake selects the platform API + link libs. EXCLUDE_FROM_ALL
-# so the `rtmidi` target is built only because a target links it (retroplug-sdl, or retroplug-cli when
-# RETROPLUG_N8_BRIDGE is ON — see below).
-set(RTMIDI_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
-set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
-retroplug_silence_dep_warnings(rtmidi)
+# RtMidi (deps/rtmidi submodule) is added at ROOT scope now (cmake/rtmidi.cmake), because a package's desktop target
+# links it and a package is configured before this file: see that file's header. The targets below link it as before.
 
 # --- retroplug-cli's live-MIDI facet: the TS N8 bridges' MIDI input -----------------------------------------------
 # The N8 tools (n8-load / n8-play / n8-bridge / n8-sync) are TS (packages/retroplug/cli/sessions/), and they reach the

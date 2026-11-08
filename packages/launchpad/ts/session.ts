@@ -167,8 +167,10 @@ export class ControllerSession {
     const ticks = input.ticks > 0 ? Math.floor(input.ticks) : 0;
 
     if (this.predictive) {
-      if (this.prevTransport && !input.transport) this.predictive.stop();
+      // The ticks FIRST, then the stop: this block is the last one that was playing, so its ticks are the cart's last
+      // ones, and a predictor stopped before them would stand where the cart was a block earlier.
       if (ticks > 0) this.predictive.advance(ticks);
+      if (this.prevTransport && !input.transport) this.predictive.stop();
     }
 
     const ctx = this.ctx;

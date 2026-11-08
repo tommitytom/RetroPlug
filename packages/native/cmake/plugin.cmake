@@ -65,11 +65,30 @@ foreach(_t IN LISTS _rp_dir_targets)
         message(FATAL_ERROR "plugin.cmake: DPF's ${_t} is a ${_type} built from the plugin; it cannot be a product")
     endif()
 endforeach()
-retroplug_product(retroplug PACKAGES ${RP_DESKTOP_PACKAGES} TARGETS ${_rp_plugin_binaries})
+# PROVIDERS n8: the plugin starts the N8 pack's provider (Settings > N8, all formats) and no other. The Launchpad pack
+# is carried for its node types alone, so the formats link no MIDI port library and mount no control-surface facet: a
+# DAW host gives the plugin its MIDI, and the pack's ports are a standalone's (docs/modular-graph-phase-f3-design.md
+# section 11).
+retroplug_product(retroplug PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 TARGETS ${_rp_plugin_binaries})
 # The product's generated providers header (rp_product_providers.hpp), which PluginDSP.cpp includes: retroplug_product()
 # puts its directory on the product's TARGETS, the format binaries, and the DSP library that compiles PluginDSP.cpp is
 # not one of them.
 target_include_directories(retroplug PUBLIC "${RP_PRODUCTS_DIR}/retroplug")
+
+# The selection is also a linking one, and this is the product that would hide a mistake: every format links the pack's
+# node types and none of them links its desktop half's ports, threads and system frameworks. DPF's DSP library links
+# the N8 pack's desktop half by hand above (its sources start that provider), which is why the check is per target and
+# by name rather than a rule over every provider target.
+foreach(_t IN LISTS _rp_plugin_binaries)
+    get_target_property(_links ${_t} LINK_LIBRARIES)
+    if("retroplug-launchpad-desktop" IN_LIST _links)
+        message(FATAL_ERROR "plugin.cmake: ${_t} links the Launchpad pack's desktop half, which this product's "
+                            "PROVIDERS does not name")
+    endif()
+    if(NOT "retroplug-launchpad" IN_LIST _links)
+        message(FATAL_ERROR "plugin.cmake: ${_t} does not link the Launchpad pack's node types")
+    endif()
+endforeach()
 
 # The embedded bundles must exist before the plugin compiles them.
 add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)

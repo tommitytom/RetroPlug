@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -63,6 +64,31 @@ const std::vector<rp_package_entry_fn>& rowOf(
 }
 
 }  // namespace
+
+// The golden's re-record, by hand and by name: RP_PRODUCT_REGISTRATIONS_UPDATE=1 build/bin/retroplug-engine-graph-test
+// "[packages-dump]" writes what the products' generated tables register, in the order they register it. A manifest that
+// moves an entry between packages (the Launchpad's surface nodes leaving this tree's monolith for their pack) re-orders
+// the ids without changing the set, which is exactly what a re-record has to say.
+TEST_CASE("the products' registration, as the golden records it", "[packages-dump][.]") {
+    Golden rows;
+    for (const auto& [product, entries] : rp_product_registrations()) {
+        std::vector<std::string> ids;
+        for (const rp_package_entry_fn entry : entries) {
+            const rp_package* package = entry();
+            REQUIRE(package != nullptr);
+            for (std::uint32_t i = 0; i < package->node_type_count; ++i) ids.emplace_back(package->node_types[i]->id);
+        }
+        rows[product] = ids;
+    }
+    const std::string text = rfl::json::write(rows, rfl::json::pretty) + "\n";
+    if (std::getenv("RP_PRODUCT_REGISTRATIONS_UPDATE") != nullptr) {
+        std::ofstream out(RP_PRODUCT_REGISTRATIONS_PATH, std::ios::binary | std::ios::trunc);
+        REQUIRE(out.good());
+        out << text;
+        return;
+    }
+    WARN(text);
+}
 
 TEST_CASE("each product registers exactly the node types its golden row holds", "[packages]") {
     const auto rows = rp_product_registrations();

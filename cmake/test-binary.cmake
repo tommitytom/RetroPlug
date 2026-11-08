@@ -16,7 +16,9 @@
 #                             DEFS     RP_MGB_ROM_PATH="...")
 #
 # PACKAGES makes the binary a product (retroplug_product, cmake/packages.cmake): one that constructs an Engine lists
-# the node packages that engine registers, and gets its generated rp_register_packages().
+# the node packages that engine registers, and gets its generated rp_register_packages(). PROVIDERS names the packages
+# of those whose provider the product starts (a test that starts one, or links the desktop half of one), as a product's
+# own would.
 #
 # NO_CATCH2 opts out of the Catch2 link for a binary that brings its own main() —
 # retroplug-n8-hwtest is the one, a manual harness driven against real hardware.
@@ -26,7 +28,7 @@
 # CALLING directory (CMAKE_CURRENT_SOURCE_DIR where the call is made, as add_executable reads it), so
 # each caller writes its paths from its own tree.
 function(retroplug_add_test_binary)
-    cmake_parse_arguments(T "NO_CATCH2" "NAME" "SOURCES;LIBS;INCLUDES;DEFS;PACKAGES" ${ARGN})
+    cmake_parse_arguments(T "NO_CATCH2" "NAME" "SOURCES;LIBS;INCLUDES;DEFS;PACKAGES;PROVIDERS" ${ARGN})
 
     if(NOT T_NAME)
         message(FATAL_ERROR "retroplug_add_test_binary: NAME is required")
@@ -54,7 +56,7 @@ function(retroplug_add_test_binary)
     endif()
 
     if(T_PACKAGES)
-        retroplug_product(${T_NAME} PACKAGES ${T_PACKAGES})
+        retroplug_product(${T_NAME} PACKAGES ${T_PACKAGES} PROVIDERS ${T_PROVIDERS})
     endif()
 
     set_target_properties(${T_NAME} PROPERTIES

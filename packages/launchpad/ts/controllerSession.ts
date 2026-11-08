@@ -105,9 +105,10 @@ export const controllerSessionNode = defineNode<ControllerSessionSettings>({
     const input: ArrayLike<number>[] = [];
     // The session's whole input for a block, one object refilled each block so none is built per block.
     const frame = { input, tick: 0, transport: false, ticks: 0 };
-    // The clock the cart is sent, walked here so the predictor can be given the COUNT of ticks a block fired. The same
-    // walk the cart's own protocol node runs (packages/core/ts/ticks.ts), so the two cannot disagree about a block edge;
-    // the callback only counts, and is made once so a block allocates nothing for it.
+    // The clock the cart is sent, walked here so the predictor can be given the COUNT of ticks a block fired. It is the
+    // walk the cart's own protocol node runs (packages/core/ts/ticks.ts), and the ticks agree when that node runs MI.MAP
+    // at divisor 1, the mode and divisor an app's override puts it in; a cart at another divisor, or in a mode that clocks
+    // only on a launch, counts its own. The callback only counts, and is made once so a block allocates nothing for it.
     const clock = new TickClock();
     let walked = 0;
     let counted = 0;

@@ -25,7 +25,11 @@ public:
         return link_.drainInput(out, capacity);
     }
     void          pushOutput(const std::uint8_t* data, std::size_t size) override { link_.pushOutput(data, size); }
-    bool          connected() const override { return link_.isConnected(); }
+    // The legacy link numbers no claims, so its generation is the connected edge: 1 while it holds a pair, 0 otherwise.
+    // A swap faster than a block reads as the same device here, which is the race the pack's own link fixes
+    // (launchpad/desktop/ControllerLink.hpp). This adapter serves the legacy host, which the products run until they
+    // move to the pack's provider.
+    std::uint32_t generation() const override { return link_.isConnected() ? 1u : 0u; }
     // The link's two outbound counts (messagesDropped and messagesDetached): a push the device was not there for went
     // nowhere just as a full ring's did, and a node reads one number for "the device never got this". The inbound loss
     // (messagesInboundDropped) is what the device sent that the audio side missed, not a frame it never got, so the

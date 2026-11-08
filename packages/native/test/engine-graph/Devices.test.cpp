@@ -121,7 +121,7 @@ struct DeviceProbe {
         script.cartDropped      = cart->dropped();
         script.surfaceDropped   = surface->dropped();
         script.cartConnected    = cart->connected();
-        script.surfaceConnected = surface->connected();
+        script.surfaceConnected = surface->generation();
     }
     ~DeviceProbe() {
         if (!devices) return;
@@ -322,7 +322,7 @@ TEST_CASE("a link whose device goes away reads disconnected and counts what the 
     cart.attached    = false;
     surface.attached = false;
     REQUIRE_FALSE(cart.connected());
-    REQUIRE_FALSE(surface.connected());
+    REQUIRE(surface.generation() == 0);
     block(e);
     CHECK(cart.pushes.size() == 2);
     CHECK(cart.drops == 2);

@@ -535,4 +535,4 @@ Native ([packages/native/src/](../packages/native/src/)):
   and inputs, applied before its core runs.
 - [HostIoNodes.cpp](../packages/native/src/host/graph/HostIoNodes.cpp): the host MIDI I/O nodes the protocol
   nodes read from and send to; [N8Node.cpp](../packages/n8/native/src/n8/N8Node.cpp): the cart's node;
-  [LaunchpadNodes.cpp](../packages/native/src/host/graph/LaunchpadNodes.cpp): the control surface's two.
+  [SurfaceNodes.cpp](../packages/launchpad/native/src/launchpad/SurfaceNodes.cpp): the control surface's two.

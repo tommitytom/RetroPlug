@@ -211,6 +211,22 @@ test("the count is the host's, so a seek is not walked through and a backwards j
   expect(model.ticksAdvanced()).toBe(56); // 50 + 6, in total: no tick was dropped
 });
 
+test("the LAST playing block's ticks are walked before the predictor is stopped", () => {
+  // The block that reports the transport has fallen is the one the cart was still clocked in: the host counted its
+  // ticks before the fall. A predictor stopped first would never walk them, so the playhead would end a block behind the
+  // cart, on the row it stopped in.
+  const model = song();
+  const h = harness(noop, model);
+  h.connect();
+  h.run({ tick: 0, transport: true });
+  model.launch(0);
+  h.run({ tick: 50, transport: true, ticks: 50 });
+  expect(model.ticksAdvanced()).toBe(50);
+  h.run({ tick: 96, transport: false, ticks: 46 });  // the last clocked block, then the transport fell
+  expect(model.ticksAdvanced()).toBe(96);
+  expect(model.position().playing).toBe(false);     // and it is stopped, not left lit
+});
+
 test("a transport fall stops the predictor rather than leaving a stale playhead lit", () => {
   const model = song();
   const h = harness(noop, model);

@@ -5,7 +5,7 @@
 #
 # retroplug-device-mode-test holds the list to the manifests: every package with a `device` entry must be on it, so a
 # package that becomes device-capable is device-checked from then on.
-set(RP_DEVICE_CHECK_PACKAGES core dsp n8 device-io devtest)
+set(RP_DEVICE_CHECK_PACKAGES core dsp n8 launchpad device-io devtest)
 #
 # The context the image gives each script pack it registers (devtest's: rp.devtest.script-transpose,
 # rp.devtest.script-nest and rp.devtest.script-loop), in place of its manifest's heapBytes, which is the desktop

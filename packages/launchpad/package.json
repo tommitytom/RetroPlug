@@ -24,10 +24,12 @@
     "./session": "./ts/session.ts",
     "./surface": "./ts/surface.ts",
     "./testSupport/fakeDevice": "./ts/testSupport/fakeDevice.ts",
-    "./launchTarget": "./ts/launchTarget.ts"
+    "./launchTarget": "./ts/launchTarget.ts",
+    "./client": "./ts/client.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
+    "@retroplug/node-sdk": "workspace:*",
     "@retroplug/tracker": "workspace:*"
   },
   "devDependencies": {
@@ -44,6 +46,15 @@
         }
       ],
       "roles": {}
-    }
+    },
+    "native": [
+      { "target": "retroplug-launchpad", "entry": "rp_launchpad_package", "device": true },
+      {
+        "target": "retroplug-launchpad-desktop",
+        "device": false,
+        "provider": "rp_launchpad_provider",
+        "rpc": { "header": "launchpad/desktop/LaunchpadRpc.hpp", "register": "rp::launchpad::registerRpc" }
+      }
+    ]
   }
 }

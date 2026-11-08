@@ -1,0 +1,1 @@
+{"category":"device","id":"rp.launchpad.surface-in","name":"Launchpad In","params":[],"ports":[{"capacity":{"bytes":16384,"messages":1024},"dir":"out","id":"in","kind":"events"},{"dir":"out","id":"connected","kind":"control"},{"dir":"out","id":"drops","kind":"control"}],"requires":{"heap":false,"threads":false},"settings":{"type":"object"},"unique":true,"version":"1.0.0"}
