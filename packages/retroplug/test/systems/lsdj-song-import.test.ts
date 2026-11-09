@@ -1,9 +1,10 @@
-// The shell's end-to-end song import: LSDj's `.lsdsng`/`.lsdprj` importer driven through the adapter the shell supplies
-// (src/songImportHost.ts: the backend's files, the store's battery read and reload, and the `.sav` a save pairs with),
-// over a real SystemsStore and MockBackend. The importer's own cases run over a fake host in
-// packages/lsdj/ts/test/songImport.test.ts; what only this file can hold is that the adapter's pairing, write and
-// reboot carry a batch through the store: one cold boot for the whole drop, and a `.lsdprj`'s kit riding an lsdj-assets
-// override into the ROM the core is rebooted from. Routing (which drops reach here) is test/file-drop/route.test.ts.
+// The shell's end-to-end song import: LSDj's `.lsdsng`/`.lsdprj` importer driven through the host groups the shell
+// builds over its backend and systems store (ui/host/uiHost.ts's importHost: the files, the PNG codec, the battery read
+// and reload, and the `.sav` a save pairs with), over a real SystemsStore and MockBackend. The importer's own cases
+// run over a fake host in packages/lsdj/ts/test/songImport.test.ts; what only this file can hold is that the host's
+// pairing, write and reboot carry a batch through the store: one cold boot for the whole drop, and a `.lsdprj`'s kit
+// riding an lsdj-assets override into the ROM the core is rebooted from. Routing (which drops reach here) is
+// test/file-drop/route.test.ts.
 import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
@@ -12,7 +13,7 @@ import { registerCoreRoles } from "../_coreRoles";
 import { registerFeatureRoles } from "../_featureRoles";
 import { registerLsdjAssetsRole, readOverrides } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { songImportHost } from "../../src/songImportHost";
+import { importHost } from "../../ui/host/uiHost";
 import { LSDJ_SONG_IMPORT } from "@retroplug/lsdj/lsdjSongImport";
 import { savFrom, encodeLsdsngRaw, encodeLsdprj, decompressSlot, listProjects } from "@retroplug/lsdj";
 import { LsdjRom, buildKitBank, ROM_SIZE } from "@retroplug/lsdj/rom";
@@ -65,8 +66,7 @@ test("dropping a .lsdsng + a .lsdprj adds both songs in ONE reboot; kits ride ov
 
   const before = be.bootedIds.length;
   const sys = store.view().find((s) => s.id === id)!;
-  const target = { id: sys.id, romPath: sys.romPath, roles: sys.roles };
-  expect(LSDJ_SONG_IMPORT.import(songImportHost(be, store), target, ["/s/a.lsdsng", "/s/b.lsdprj"])).toBeTruthy();
+  expect(LSDJ_SONG_IMPORT.import(importHost(be, store), sys, ["/s/a.lsdsng", "/s/b.lsdprj"])).toBeTruthy();
 
   // Exactly one rebuild for the whole batch.
   expect(be.bootedIds.length - before).toBe(1);

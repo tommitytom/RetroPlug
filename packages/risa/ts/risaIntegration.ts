@@ -8,6 +8,7 @@
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import { risaSongCatalog } from "./risaSongCatalog";
 import { risaAssetCatalog } from "./risaAssetCatalog";
+import { isRisaSav, listSongs } from "./risaSav";
 import { identifyRisaVersion } from "./runtime/identify";
 import { resolveRisaLayout } from "./runtime/layout";
 import { RISA_RENDER } from "./risaRender";
@@ -26,4 +27,18 @@ export const risaIntegration: TrackerIntegration = {
   // resolves no layout. See supportedRisaVersions() in ./runtime/layout.
   isVersionSupported: (rom) => resolveRisaLayout(identifyRisaVersion(rom)) !== null,
   render: RISA_RENDER,
+  // risa's battery rows, printed for a CLI listing: the slot, the record's name, its version and its length. risa is
+  // tried before LSDj (rank 0), as the listing's first cart.
+  batteryListing: {
+    name: "risa",
+    noun: "song",
+    rank: 0,
+    describe: (sav) =>
+      isRisaSav(sav)
+        ? listSongs(sav).map((song) => {
+            const index = String(song.index).padStart(2);
+            return `  [${index}] ${song.name.trim() || "(unnamed)"}  v${song.version}  ${song.length}B`;
+          })
+        : null,
+  },
 };

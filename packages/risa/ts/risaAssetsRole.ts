@@ -9,7 +9,8 @@
 // build-kit compiles one, and a kit override just splices that ready-made bank with rom.setKit (which
 // dual-writes the resident metadata mirror). ./kitFormat can compile a .rkit in the plugin too, though no UI row does.
 // Applying reuses the pure-TS patcher (./rom).
-import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
+import type { RoleRegistry, RoleType } from "@retroplug/core/systemRoles";
+import type { Host } from "@retroplug/core/host";
 import type { ConstructSpec } from "@retroplug/core/constructSpec";
 import { z } from "zod";
 import { RisaRom } from "./rom";
@@ -44,14 +45,14 @@ export function readOverrides(config: Record<string, unknown> | undefined): Risa
 export function applyOverridesToRom(
   baseBytes: Uint8Array,
   overrides: RisaAssetOverride[],
-  caps: ConstructCaps,
+  host: Host<"files" | "png">,
   onSkip?: (ov: RisaAssetOverride, message: string) => void,
 ): Uint8Array {
   const rom = RisaRom.fromBytes(baseBytes);
   if (!rom.isRisa) return baseBytes;
   for (const ov of overrides) {
     try {
-      applyRitOverride(rom, ov, caps);
+      applyRitOverride(rom, ov, host);
     } catch (e) {
       const message = (e as Error).message;
       // Logged only when nobody is listening. A caller that supplies onSkip owns the reporting, and a
@@ -67,12 +68,12 @@ export function applyOverridesToRom(
 
 // Load-time hook: fold the overrides into the base ROM and hand native the patched bytes. Additive — a
 // no-op when there are no overrides or when romBytes is already set.
-function applyAssetOverrides(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec {
+function applyAssetOverrides(spec: ConstructSpec, host: Host<"files" | "png">, config: Record<string, unknown>): ConstructSpec {
   const overrides = readOverrides(config);
   if (overrides.length === 0 || spec.romBytes || spec.embeddedRom || !spec.romPath) return spec;
-  const base = caps.readFile(spec.romPath);
+  const base = host.files.readFile(spec.romPath);
   if (!base) return spec;
-  const patched = applyOverridesToRom(base, overrides, caps);
+  const patched = applyOverridesToRom(base, overrides, host);
   return patched !== base ? { ...spec, romBytes: patched } : spec;
 }
 

@@ -13,6 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
+import type { MidiClient } from "@retroplug/core/host";
 import type { ApuState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult, LoadScriptPackRequest, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, TraceLine, ZipEntry } from "./backend";
 import { makeCall } from "./rpcClient";
 import { CapabilityJobs, type JobCompletion, type JobRequest, type JobSubmitResult } from "./capability";
@@ -227,24 +228,9 @@ export function createDebugClient(): DebugBackend {
   };
 }
 
-/** A live-MIDI client (mounted CLI-only today), for the TS N8 bridges (which reach the cart through
- *  the n8 package's createN8Client) and the Launchpad probe. `poll()` drains the messages queued since the last
- *  call (each = raw bytes; MIDI carries no timing). Synchronous like every other facet. `listInputs` returns []
- *  on a host that didn't mount it.
- *
- *  The output half exists because a control surface has to be LIT as well as read, and `send` takes any
- *  length - a bulk-LED sysex runs to hundreds of bytes. */
-export interface MidiClient {
-  listInputs(): string[];
-  listOutputs(): string[];
-  /** Open a virtual "<clientName> In/Out" + the selected hardware input ("" = all inputs). False if no MIDI system. */
-  open(clientName: string, input: string): boolean;
-  /** Mirror sends to this hardware output ("" = the virtual port only). Applied immediately. */
-  selectOutput(output: string): void;
-  poll(): Uint8Array[];
-  send(bytes: Uint8Array | number[]): void;
-  close(): void;
-}
+// The live-MIDI client's shape is core's (@retroplug/core/host), because the host contract's devices group names it;
+// re-exported here so every bridge and probe that opens one keeps one import.
+export type { MidiClient } from "@retroplug/core/host";
 
 /** @deprecated the input-only name this had before the output half existed. */
 export type MidiInputClient = MidiClient;

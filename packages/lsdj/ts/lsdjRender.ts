@@ -47,5 +47,5 @@ export const LSDJ_RENDER: TrackerRender = {
     return encodeSav(decoded, sav.length >= kSavSize ? sav : undefined);
   },
 
-  playingProbe: (host, id) => () => ((host.readCpu(id, NR52_ADDR) ?? 0) & NR52_ON) !== 0,
+  playingProbe: (host, id) => () => ((host.emulator.readCpu(id, NR52_ADDR) ?? 0) & NR52_ON) !== 0,
 };

@@ -10,7 +10,7 @@
 // LSDj is not here. Its assets are kits, palettes and font IMAGES, its overrides carry colorSets rather
 // than a theme, and it validates by trial-applying to a parsed ROM rather than by length. Sharing a name
 // with it would cost more than it saved.
-import type { ConstructCaps } from "@retroplug/core/systemRoles";
+import type { Host } from "@retroplug/core/host";
 import type { RisaTheme } from "./nes/types";
 import { z } from "zod";
 import { CHR_BANK_SIZE, KIT_BANK_SIZE } from "./nes/constants";
@@ -65,7 +65,7 @@ export interface RitAssetRom {
 /** Apply one override onto an open ROM. Themes apply from their inline object; fonts and kits read their
  *  linked file. Isolated + THROWING so the caller can try/catch per entry - a moved file or a bad asset
  *  skips that override rather than failing the whole construct. */
-export function applyRitOverride(rom: RitAssetRom, ov: RitAssetOverride, caps: ConstructCaps): void {
+export function applyRitOverride(rom: RitAssetRom, ov: RitAssetOverride, host: Host<"files">): void {
   if (ov.type === "theme") {
     if (!ov.theme) throw new Error(`theme override slot ${ov.slot}: no theme`);
     const theme = normalizeTheme(ov.theme);
@@ -78,7 +78,7 @@ export function applyRitOverride(rom: RitAssetRom, ov: RitAssetOverride, caps: C
       return;
     }
     if (!ov.path) throw new Error(`kit override slot ${ov.slot}: no path`);
-    const bank = caps.readFile(ov.path);
+    const bank = host.files.readFile(ov.path);
     if (!bank) throw new Error(`kit override slot ${ov.slot}: cannot read ${ov.path}`);
     if (bank.length !== KIT_BANK_SIZE) throw new Error(`kit override slot ${ov.slot}: .rkit must be exactly 8 KB`);
     if (!isBankPopulated(bank)) throw new Error(`kit override slot ${ov.slot}: not a populated kit bank`);
@@ -87,7 +87,7 @@ export function applyRitOverride(rom: RitAssetRom, ov: RitAssetOverride, caps: C
   }
   // font
   if (!ov.path) throw new Error(`font override slot ${ov.slot}: no path`);
-  const bytes = caps.readFile(ov.path);
+  const bytes = host.files.readFile(ov.path);
   if (!bytes) throw new Error(`font override slot ${ov.slot}: cannot read ${ov.path}`);
   if (bytes.length !== CHR_BANK_SIZE) throw new Error(`font override slot ${ov.slot}: .chr must be exactly 8 KB`);
   rom.setChrFontSlot(ov.slot, bytes);

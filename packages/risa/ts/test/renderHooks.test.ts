@@ -1,8 +1,9 @@
-// risa's render hooks over a fake RenderHost: what the shell's render library asks of the cart, without a core, an
+// risa's render hooks over a fake emulator host: what the shell's render library asks of the cart, without a core, an
 // engine or a WAV. risa presses SELECT+START with two discarded prep chunks, reads its own sequencer flag for the end of
 // a song, and says what it cannot do when the ROM predates a runtime layout.
 import { test, expect } from "@retroplug/testing";
-import type { RenderFacts, RenderHost, RenderPlaySink } from "@retroplug/tracker/trackerRender";
+import type { EmulatorHost, Host } from "@retroplug/core/host";
+import type { RenderFacts, RenderPlaySink } from "@retroplug/tracker/trackerRender";
 import { risaIntegration } from "../risaIntegration";
 import { risaSongCatalog } from "../risaSongCatalog";
 import { savBytes as risaSav } from "../fixtures";
@@ -12,8 +13,8 @@ const RISA = risaIntegration.render!;
 
 /** A host over one work-RAM buffer, so a write is what the next read sees. Buttons and audio time are recorded, and
  *  the CPU answers what a case sets. */
-function fakeHost(over: Partial<RenderHost> & { ram?: Uint8Array } = {}): {
-  host: RenderHost;
+function fakeHost(over: Partial<EmulatorHost> & { ram?: Uint8Array } = {}): {
+  host: Host<"emulator">;
   ram: Uint8Array;
   buttons: [number, boolean][];
   audioMs: number[];
@@ -21,17 +22,19 @@ function fakeHost(over: Partial<RenderHost> & { ram?: Uint8Array } = {}): {
   const ram = over.ram ?? new Uint8Array(0x2000);
   const buttons: [number, boolean][] = [];
   const audioMs: number[] = [];
-  const host: RenderHost = {
-    renderAudio: (ms) => audioMs.push(ms),
-    readCpu: () => null,
-    readRam: () => ram,
-    writeRam: (_id, offset, bytes) => {
-      if (offset < 0 || offset + bytes.length > ram.length) return false;
-      ram.set(bytes, offset);
-      return true;
+  const host: Host<"emulator"> = {
+    emulator: {
+      renderAudio: (ms) => audioMs.push(ms),
+      readCpu: () => null,
+      readRam: () => ram,
+      writeRam: (_id, offset, bytes) => {
+        if (offset < 0 || offset + bytes.length > ram.length) return false;
+        ram.set(bytes, offset);
+        return true;
+      },
+      pressButton: (_id, button, down) => buttons.push([button, down]),
+      ...over,
     },
-    pressButton: (_id, button, down) => buttons.push([button, down]),
-    ...over,
   };
   return { host, ram, buttons, audioMs };
 }

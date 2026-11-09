@@ -15,16 +15,16 @@ export { TRACKER_INTEGRATIONS };
 
 /** The tracker integration for a system, resolved from its attached roles (the first role whose kind is an
  *  integration's markerRole). undefined for a non-tracker system. */
-export function resolveTracker(roles: RoleInstance[]): TrackerIntegration | undefined {
+export function resolveTracker(roles: readonly RoleInstance[]): TrackerIntegration | undefined {
   return TRACKER_INTEGRATIONS.find((t) => roles.some((r) => r.kind === t.markerRole));
 }
 
 /** The song catalog for a system (convenience over resolveTracker) - used by the recent list. */
-export function resolveSongCatalog(roles: RoleInstance[]): SongCatalog | undefined {
+export function resolveSongCatalog(roles: readonly RoleInstance[]): SongCatalog | undefined {
   return resolveTracker(roles)?.songs;
 }
 
 /** The asset catalog for a system (convenience over resolveTracker). */
-export function resolveAssetCatalog(roles: RoleInstance[]): AssetCatalog | undefined {
+export function resolveAssetCatalog(roles: readonly RoleInstance[]): AssetCatalog | undefined {
   return resolveTracker(roles)?.assets;
 }

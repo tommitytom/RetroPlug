@@ -21,13 +21,14 @@ import { resolveSavPath } from "../savPaths";
 import { resolveSongCatalog, resolveTracker } from "../trackerRegistry"; // the shell registry: the list is generated
 import type { WorkingSongImage } from "@retroplug/tracker/songCatalog";
 
-/** The per-system fields a live-sav edit needs - SystemView and SystemEntry both satisfy it. */
+/** The per-system fields a live-sav edit needs - SystemView and SystemEntry both satisfy it, and so does core's
+ *  SystemInfo, which is what a host hands it. */
 export interface LiveSavTarget {
   id: number;
   romPath: string;
   savPath: string; // the paired-save override ("" = the suffix sibling)
   savSuffix: number;
-  roles: RoleInstance[];
+  roles: readonly RoleInstance[];
 }
 
 // `readFile` is here for the LIVE load only: the write offsets come from the ROM build's symbol layout,

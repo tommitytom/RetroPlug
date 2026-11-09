@@ -1,9 +1,10 @@
-// LSDj's render hooks (packages/tracker/ts/trackerRender.ts) over a fake RenderHost: what the shell's render library asks
-// of the cart, without a core, an engine or a WAV. The library itself is held to its own suites; what is pinned here is
-// that the cart's hook answers what the pipeline needs - LSDj promotes a slot into the SRAM it boots from, probes NR52
-// for the end of a song, and spells its song listings its own way.
+// LSDj's render hooks (packages/tracker/ts/trackerRender.ts) over a fake emulator host: what the shell's render library
+// asks of the cart, without a core, an engine or a WAV. The library itself is held to its own suites; what is pinned
+// here is that the cart's hook answers what the pipeline needs - LSDj promotes a slot into the SRAM it boots from,
+// probes NR52 for the end of a song, and spells its song listings its own way.
 import { test, expect } from "@retroplug/testing";
-import type { RenderFacts, RenderHost } from "@retroplug/tracker/trackerRender";
+import type { EmulatorHost, Host } from "@retroplug/core/host";
+import type { RenderFacts } from "@retroplug/tracker/trackerRender";
 import { lsdjIntegration } from "../lsdjIntegration";
 import { lsdjSongCatalog } from "../lsdjSongCatalog";
 import { savBytes as lsdjSav } from "../fixtures";
@@ -12,8 +13,8 @@ const LSDJ = lsdjIntegration.render!;
 
 /** A host over one work-RAM buffer, so a write is what the next read sees: the pitch a cart's load loop verifies
  *  against. Buttons and audio time are recorded, and the CPU answers what a case sets. */
-function fakeHost(over: Partial<RenderHost> & { ram?: Uint8Array } = {}): {
-  host: RenderHost;
+function fakeHost(over: Partial<EmulatorHost> & { ram?: Uint8Array } = {}): {
+  host: Host<"emulator">;
   ram: Uint8Array;
   buttons: [number, boolean][];
   audioMs: number[];
@@ -21,17 +22,19 @@ function fakeHost(over: Partial<RenderHost> & { ram?: Uint8Array } = {}): {
   const ram = over.ram ?? new Uint8Array(0x2000);
   const buttons: [number, boolean][] = [];
   const audioMs: number[] = [];
-  const host: RenderHost = {
-    renderAudio: (ms) => audioMs.push(ms),
-    readCpu: () => null,
-    readRam: () => ram,
-    writeRam: (_id, offset, bytes) => {
-      if (offset < 0 || offset + bytes.length > ram.length) return false;
-      ram.set(bytes, offset);
-      return true;
+  const host: Host<"emulator"> = {
+    emulator: {
+      renderAudio: (ms) => audioMs.push(ms),
+      readCpu: () => null,
+      readRam: () => ram,
+      writeRam: (_id, offset, bytes) => {
+        if (offset < 0 || offset + bytes.length > ram.length) return false;
+        ram.set(bytes, offset);
+        return true;
+      },
+      pressButton: (_id, button, down) => buttons.push([button, down]),
+      ...over,
     },
-    pressButton: (_id, button, down) => buttons.push([button, down]),
-    ...over,
   };
   return { host, ram, buttons, audioMs };
 }

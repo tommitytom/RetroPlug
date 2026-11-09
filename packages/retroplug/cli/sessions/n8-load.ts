@@ -6,6 +6,7 @@
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import { makeCall } from "../../src/rpcClient";
+import { cliHost } from "../cliHost";
 import {
   createN8Client,
   baseName,
@@ -39,8 +40,6 @@ import {
   type N8SaveState,
 } from "@retroplug/n8";
 import { chrToPng, chrToPngColor, pngToChr } from "@retroplug/tracker/nes/chrImage";
-import { isRisaSav, listSongs } from "@retroplug/risa";
-import { isLsdjSav, listProjects } from "@retroplug/lsdj";
 
 const DEFAULT_ROM = "resources/roms/bliptoaster.nes";
 const VALUE_FLAGS = new Set([
@@ -97,19 +96,8 @@ function readOrThrow(s: Session, path: string, what: string): Uint8Array {
   return data;
 }
 
-function decodeAndPrint(sram: Uint8Array): void {
-  if (isRisaSav(sram)) {
-    const songs = listSongs(sram);
-    console.log(`risa battery - ${songs.length} song(s):`);
-    for (const song of songs)
-      console.log(`  [${String(song.index).padStart(2)}] ${song.name.trim() || "(unnamed)"}  v${song.version}  ${song.length}B`);
-  } else if (isLsdjSav(sram)) {
-    const projects = listProjects(sram);
-    console.log(`LSDj battery - ${projects.length} project(s):`);
-    for (const p of projects) console.log(`  [${String(p.slot).padStart(2)}] ${p.name.trim() || "(unnamed)"}`);
-  } else {
-    console.log(`unrecognized battery image (${sram.length} bytes) - not a risa or LSDj save`);
-  }
+function decodeAndPrint(s: Session, args: string[], sram: Uint8Array): void {
+  for (const line of cliHost(s, args).songs.list(sram)) console.log(line);
 }
 
 const DUTY = ["12.5%", "25%", "50%", "75%"];
@@ -483,7 +471,7 @@ export const n8LoadTool: CliTool = {
         return;
       }
       if (showSong) {
-        decodeAndPrint(n8.dumpSram());
+        decodeAndPrint(s, args, n8.dumpSram());
         return;
       }
       if (sramOnly) {

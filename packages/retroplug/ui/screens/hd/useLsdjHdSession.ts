@@ -20,6 +20,7 @@ import { LsdjReader } from "@retroplug/lsdj/runtime";
 import { decodeSong, type Song } from "@retroplug/lsdj";
 import { LsdjRom } from "@retroplug/lsdj/rom";
 import { applyOverridesToRom, readOverrides } from "@retroplug/lsdj/lsdjAssetsRole";
+import { filesPngHost } from "../../../src/hostGroups";
 import { LsdjHdCanvas, HD_COLS, HD_ROWS, renderMode2, type KitSampleNameLookup } from "@retroplug/lsdj/hd";
 import type { ControlPlaneBackend } from "../../../src/backend";
 
@@ -138,7 +139,7 @@ function buildSession(
   // Fold in the lsdj-assets overrides so the HD view reads the SAME effective ROM the emulator was
   // constructed with - otherwise a replaced font or palette would show on the cart but not here.
   const overrides = readOverrides(overrideConfig);
-  const effective = overrides.length ? applyOverridesToRom(base, overrides, backend) : base;
+  const effective = overrides.length ? applyOverridesToRom(base, overrides, filesPngHost(backend)) : base;
   const rom = LsdjRom.fromBytes(effective);
   if (!rom.isLsdj) return null;
 

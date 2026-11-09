@@ -1,11 +1,10 @@
 // LSDj's song importer (lsdjSongImport.ts), the batch behind the Songs menu's Add and a drag-and-drop: fold one or more
 // .lsdsng/.lsdprj into the live SAV in ONE readSram -> edit -> write -> loadSram cycle, with a .lsdprj's kits recorded as
-// lsdj-assets overrides. Driven over a fake SongImportHost - the shell adapts its backend and stores to that contract -
-// so every write, reload and role edit the import makes is recorded here, and no store is needed.
+// lsdj-assets overrides. Driven over a fake host built from the three groups an import uses - files, png, systems - so
+// every write, reload and role edit the import makes is recorded here, and no store is needed.
 import { test, expect } from "@retroplug/testing";
 import { sameBytes } from "@retroplug/testing/bytes";
-import type { ConstructCaps } from "@retroplug/core/systemRoles";
-import type { SongImportHost, SongImportTarget } from "@retroplug/tracker/trackerSongImport";
+import type { Host, SystemInfo } from "@retroplug/core/host";
 import { LSDJ_SONG_IMPORT } from "../lsdjSongImport";
 import { savFrom, encodeLsdsngRaw, encodeLsdprj, decompressSlot, listProjects } from "..";
 import { applyOverridesToRom, readOverrides, type LsdjAssetOverride } from "../lsdjAssetsRole";
@@ -26,9 +25,10 @@ const song = (tempo: number, sentinel: number): Uint8Array => {
 };
 const rawSong = (tempo: number) => savFrom({ workingSong: { settings: { tempo } } }).subarray(0, 0x8000).slice();
 
-/** The host an import is handed: an in-memory disk, one live battery, one written .sav, and the role edits and reloads
- *  it made. `writeOk` is the disk's answer, so a failed write is a case. */
-class FakeHost implements SongImportHost {
+/** The fake shell an import is handed: an in-memory disk, one live battery, one written .sav, and the role edits and
+ *  reloads it made. `writeOk` is the disk's answer, so a failed write is a case. `host()` is the three groups the import
+ *  uses, over this fake. */
+class FakeHost {
   readonly files = new Map<string, Uint8Array>();
   readonly writes: { path: string; bytes: Uint8Array }[] = [];
   readonly loads: { id: number; path: string }[] = [];
@@ -36,11 +36,37 @@ class FakeHost implements SongImportHost {
   sram: Uint8Array;
   writeOk = true;
   private readonly roles = new Map<string, Record<string, unknown>>();
-  readonly caps: ConstructCaps = {
-    fileExists: (path) => this.files.has(path),
-    readFile: (path) => this.files.get(path) ?? null,
-    pngDecode: () => null,
-  };
+
+  /** The host the import calls: the disk's files, a PNG codec that decodes nothing, and the one fake system. */
+  host(): Host<"files" | "png" | "systems"> {
+    return {
+      files: {
+        readFile: (path) => this.files.get(path) ?? null,
+        writeFile: (path, bytes) => this.write(path, bytes),
+        writeFileAtomic: (path, bytes) => this.writeFileAtomic(path, bytes),
+        fileExists: (path) => this.files.has(path),
+      },
+      png: { encode: () => null, decode: () => null },
+      systems: {
+        view: () => [],
+        setRoleConfig: (id, kind, config) => this.setRoleConfig(id, kind, config),
+        reload: () => null,
+        readSram: () => this.readSram(),
+        loadSram: (id, path) => this.loadSram(id, path),
+        savPathOf: () => this.savPathOf(),
+        nodeIdOf: (id) => `sys-${id}`,
+        drivenCart: () => null,
+        stageNodeMidi: () => false,
+        capability: () => Promise.reject(new Error("a song import runs no capability job")),
+      },
+    };
+  }
+
+  private write(path: string, bytes: Uint8Array): boolean {
+    if (!this.writeOk) return false;
+    this.files.set(path, bytes);
+    return true;
+  }
 
   constructor(rom: Uint8Array, sram: Uint8Array) {
     this.files.set("/roms/song.gb", rom);
@@ -48,8 +74,7 @@ class FakeHost implements SongImportHost {
   }
 
   writeFileAtomic(path: string, bytes: Uint8Array): boolean {
-    if (!this.writeOk) return false;
-    this.files.set(path, bytes);
+    if (!this.write(path, bytes)) return false;
     this.writes.push({ path, bytes });
     return true;
   }
@@ -74,10 +99,17 @@ class FakeHost implements SongImportHost {
   }
 }
 
-function target(): SongImportTarget {
+function target(): SystemInfo {
   return {
     id: 1,
+    platform: "gb",
+    core: "sameboy",
     romPath: "/roms/song.gb",
+    savPath: "",
+    savSuffix: 0,
+    embedded: false,
+    battery: true,
+    missing: false,
     roles: [{ kind: "lsdj-assets", config: { overrides: [] } }],
   };
 }
@@ -93,7 +125,7 @@ test("a .lsdsng + a .lsdprj land in ONE reload; kits ride overrides", () => {
     encodeLsdprj({ name: "BBB", version: 2, songBytes: bSong, kitBanks: [buildKitBank("DRUMS", [{ name: "BD", bytes: Uint8Array.of(1, 2, 3, 4) }])] }),
   );
 
-  expect(LSDJ_SONG_IMPORT.import(host, target(), ["/s/a.lsdsng", "/s/b.lsdprj"])).toBeTruthy();
+  expect(LSDJ_SONG_IMPORT.import(host.host(), target(), ["/s/a.lsdsng", "/s/b.lsdprj"])).toBeTruthy();
 
   // Exactly one rebuild for the whole batch, from the one file written.
   expect(host.loads).toEqual([{ id: 1, path: "/roms/song.sav" }]);
@@ -109,13 +141,13 @@ test("a .lsdsng + a .lsdprj land in ONE reload; kits ride overrides", () => {
   expect(host.roleEdits[0].kind).toBe("lsdj-assets");
   const ov = readOverrides(host.roleEdits[0].config);
   expect(ov.some((o) => o.type === "kit" && o.path === "/s/b.lsdprj" && o.lsdprjKit === 0)).toBeTruthy();
-  expect(LsdjRom.fromBytes(applyOverridesToRom(lsdjRom1M(), ov as LsdjAssetOverride[], host.caps)).kit(0).name()).toBe("DRUMS");
+  expect(LsdjRom.fromBytes(applyOverridesToRom(lsdjRom1M(), ov as LsdjAssetOverride[], host.host())).kit(0).name()).toBe("DRUMS");
 });
 
 test("an empty or all-bad list writes nothing and reloads nothing", () => {
   const host = new FakeHost(lsdjRom1M(), savFrom({}));
-  expect(LSDJ_SONG_IMPORT.import(host, target(), [])).toBe(false);
-  expect(LSDJ_SONG_IMPORT.import(host, target(), ["/nope.lsdsng"])).toBe(false); // unreadable
+  expect(LSDJ_SONG_IMPORT.import(host.host(), target(), [])).toBe(false);
+  expect(LSDJ_SONG_IMPORT.import(host.host(), target(), ["/nope.lsdsng"])).toBe(false); // unreadable
   expect(host.loads.length).toBe(0);
   expect(host.writes.length).toBe(0);
 });
@@ -124,7 +156,7 @@ test("a .lsdprj whose base ROM cannot be read is skipped (nothing written, no re
   const host = new FakeHost(lsdjRom1M(), savFrom({}));
   host.files.delete("/roms/song.gb"); // the ROM becomes unreadable: .lsdprj needs it to patch its kits
   host.files.set("/s/b.lsdprj", encodeLsdprj({ name: "BBB", version: 2, songBytes: rawSong(120), kitBanks: [] }));
-  expect(LSDJ_SONG_IMPORT.import(host, target(), ["/s/b.lsdprj"])).toBe(false);
+  expect(LSDJ_SONG_IMPORT.import(host.host(), target(), ["/s/b.lsdprj"])).toBe(false);
   expect(host.loads.length).toBe(0);
   expect(host.writes.length).toBe(0);
 });
@@ -134,7 +166,7 @@ test("the valid song lands and a malformed one in the same batch is skipped, in 
   const good = rawSong(90);
   host.files.set("/s/good.lsdsng", encodeLsdsngRaw("GOOD", 1, good));
   host.files.set("/s/bad.lsdprj", new Uint8Array([9, 9, 9])); // malformed
-  expect(LSDJ_SONG_IMPORT.import(host, target(), ["/s/good.lsdsng", "/s/bad.lsdprj"])).toBe(true);
+  expect(LSDJ_SONG_IMPORT.import(host.host(), target(), ["/s/good.lsdsng", "/s/bad.lsdprj"])).toBe(true);
   expect(host.loads.length).toBe(1);
   const sav = host.writes[0].bytes;
   expect(listProjects(sav).map((p) => p.name)).toEqual(["GOOD"]); // only the good song; the bad file corrupted nothing
@@ -145,7 +177,7 @@ test("a failed atomic write aborts cleanly: false, no reload, nothing on disk", 
   const host = new FakeHost(lsdjRom1M(), savFrom({}));
   host.files.set("/s/good.lsdsng", encodeLsdsngRaw("GOOD", 1, rawSong(90)));
   host.writeOk = false; // the disk write fails
-  expect(LSDJ_SONG_IMPORT.import(host, target(), ["/s/good.lsdsng"])).toBe(false);
+  expect(LSDJ_SONG_IMPORT.import(host.host(), target(), ["/s/good.lsdsng"])).toBe(false);
   expect(host.loads.length).toBe(0); // no cold-boot from a failed write
   expect(host.files.has("/roms/song.sav")).toBe(false); // nothing was written
   expect(host.roleEdits.length).toBe(0); // the lsdj-assets role was never touched
@@ -156,7 +188,7 @@ test("a system that went away between the target and the write imports nothing",
   const host = new FakeHost(lsdjRom1M(), savFrom({}));
   host.files.set("/s/good.lsdsng", encodeLsdsngRaw("GOOD", 1, rawSong(90)));
   host.savPathOf = () => null;
-  expect(LSDJ_SONG_IMPORT.import(host, target(), ["/s/good.lsdsng"])).toBe(false);
+  expect(LSDJ_SONG_IMPORT.import(host.host(), target(), ["/s/good.lsdsng"])).toBe(false);
   expect(host.writes.length).toBe(0);
   expect(host.loads.length).toBe(0);
 });

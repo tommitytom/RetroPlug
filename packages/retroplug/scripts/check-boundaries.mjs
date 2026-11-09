@@ -114,12 +114,14 @@ const EXCEPTIONS = [];
 const SHELL_IMPORTS = [
   // The contract every package implements: the shell is its host, not a participant.
   { specifier: "@retroplug/core/canonicalJson", reason: "the document encoder every protocol driver writes through" },
+  { specifier: "@retroplug/core/capability", reason: "the capability jobs' operation table a host's systems group names and a cart types a job by" },
   { specifier: "@retroplug/core/configFields", reason: "the schema field helpers a role config and the stores' configs build with" },
   { specifier: "@retroplug/core/consoles", reason: "the console descriptor contract the generated registry is read through" },
   { specifier: "@retroplug/core/constructSpec", reason: "the construct spec a backend and a role hook carry" },
   { specifier: "@retroplug/core/definePackage", reason: "the contribution contract an app module (and the generated registry) implements" },
   { specifier: "@retroplug/core/descriptor", reason: "a node's span label and category, which the shell's node definitions state" },
   { specifier: "@retroplug/core/graphDocument", reason: "the graph document the shell's planner writes and the engine reads" },
+  { specifier: "@retroplug/core/host", reason: "the host contract a cart's or a console's hook asks its surface for, and every surface's builder returns" },
   { specifier: "@retroplug/core/midiRouting", reason: "the MIDI routing model the project settings store and the planner share" },
   { specifier: "@retroplug/core/offlineJob", reason: "the offline job's document and result types the render and kit drivers carry" },
   { specifier: "@retroplug/core/platform", reason: "the platform and core ids, open strings since the descriptors register them" },
@@ -139,7 +141,6 @@ const SHELL_IMPORTS = [
   { specifier: "@retroplug/tracker/trackerIntegration", reason: "the tracker integration contract an app module contributes" },
   { specifier: "@retroplug/tracker/trackerPlayback", reason: "the playback hook the controller's row-timing poll asks for" },
   { specifier: "@retroplug/tracker/trackerRender", reason: "the render hooks the render pipeline asks a ROM's integration for" },
-  { specifier: "@retroplug/tracker/trackerSongImport", reason: "the song import contract the drop path and the menu call" },
   { specifier: "@retroplug/tracker/workingSongBlob", reason: "the working-song image a project carries across a reboot" },
 ];
 

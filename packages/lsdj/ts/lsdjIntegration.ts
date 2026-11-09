@@ -10,6 +10,7 @@ import { LSDJ_SONG_IMPORT } from "./lsdjSongImport";
 import { identifyLsdj } from "./runtime/identify";
 import { lsdjSongCatalog } from "./lsdjSongCatalog";
 import { lsdjAssetCatalog } from "./lsdjAssetCatalog";
+import { isLsdjSav, listProjects } from "./codec/sav";
 
 export const lsdjIntegration: TrackerIntegration = {
   id: "lsdj",
@@ -25,4 +26,14 @@ export const lsdjIntegration: TrackerIntegration = {
   playback: LSDJ_PLAYBACK,
   sramSignature: lsdjSramSignature,
   songImport: LSDJ_SONG_IMPORT,
+  // LSDj's battery rows, printed for a CLI listing: the project's slot and its name. Tried after risa (rank 1).
+  batteryListing: {
+    name: "LSDj",
+    noun: "project",
+    rank: 1,
+    describe: (sav) =>
+      isLsdjSav(sav)
+        ? listProjects(sav).map((p) => `  [${String(p.slot).padStart(2)}] ${p.name.trim() || "(unnamed)"}`)
+        : null,
+  },
 };

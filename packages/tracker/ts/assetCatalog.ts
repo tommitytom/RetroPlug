@@ -7,7 +7,7 @@
 // stay in the UI menu layer, exactly like SongCatalog's Export/Replace/Add. Concrete catalogs: each cart's own
 // (packages/lsdj's and risa's ts/ trees), contributed through its package's app module; resolution rides the shell's
 // packages/retroplug/src/trackerRegistry (resolveAssetCatalog), over the product's generated list.
-import type { ConstructCaps } from "@retroplug/core/systemRoles";
+import type { Host } from "@retroplug/core/host";
 
 /** A base-ROM asset slot: its index + a display name (name-fallbacks already applied). */
 export interface AssetSlot {
@@ -71,7 +71,7 @@ export interface AssetCatalog {
   applyRoleConfig(
     romBytes: Uint8Array,
     config: Record<string, unknown> | undefined,
-    caps: ConstructCaps,
+    host: Host<"files" | "png">,
     onSkip?: (ov: AssetOverride, message: string) => void,
   ): Uint8Array;
 }

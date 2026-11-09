@@ -2,7 +2,8 @@
 // the asset-override role), the ROM provider that attaches them, its Songs/Assets tracker integration and its kit bank
 // format. The lists' order within a package is the order they register in where one list carries several.
 import { definePackage } from "@retroplug/core/definePackage";
-import type { RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
+import type { RoleType } from "@retroplug/core/systemRoles";
+import type { Host } from "@retroplug/core/host";
 import type { ConstructSpec } from "@retroplug/core/constructSpec";
 import { z } from "zod";
 import { clampedInt, boolField, enumField } from "@retroplug/core/configFields";
@@ -21,10 +22,10 @@ import type {} from "@retroplug/dsp/packageContributions";
 // When nothing else will seed the battery (no savestate, no sram blob, no on-disk .sav for native to
 // load), hand it a valid empty sav (savFromJson stamps the jk/rb validity markers LSDj checks) so it
 // boots straight to the song screen. Additive: return the spec untouched when real save data is present.
-// The bytes are this cart's own codec's: no other cart's battery is anything like them, so the shell's construct caps
-// carry no sav encoder.
-const lsdjSeedSav = (spec: ConstructSpec, caps: ConstructCaps): ConstructSpec => {
-  const willLoadData = !!spec.stateBytes || !!spec.sramBytes || (spec.savPath != null && caps.fileExists(spec.savPath));
+// The bytes are this cart's own codec's: no other cart's battery is anything like them, so the host carries no sav
+// encoder.
+const lsdjSeedSav = (spec: ConstructSpec, host: Host<"files" | "png">): ConstructSpec => {
+  const willLoadData = !!spec.stateBytes || !!spec.sramBytes || (spec.savPath != null && host.files.fileExists(spec.savPath));
   if (willLoadData) return spec;
   return { ...spec, sramBytes: savFromJson("{}") };
 };

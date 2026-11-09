@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { clampedInt, stringField, enumField } from "@retroplug/core/configFields";
+import type { ControlSurfaceSettings } from "@retroplug/core/host";
 import type { SplitMode } from "./render";
 
 /** The persisted render-menu selections (System > Render): what to split into, the output sample rate, and
@@ -47,19 +48,10 @@ const renderSchema = z.preprocess(
   }),
 );
 
-/** The control surface this machine uses (Settings > MIDI's scan and the instance menu's Launchpad submenu). HOST state
- *  rather than project state, because port names belong to the machine: a project opened elsewhere would carry names
- *  that do not exist there, and one process holds one device for every project it has open. What the surface DOES (which
- *  app, its knobs, which cart) is per project, in the .rplg.
- *
- *  The port names are opaque - often an interface's, not the device's, since a Launchpad also speaks TRS/DIN - and
- *  `device` is what a scan read off the hardware ("" = never scanned), shown and never interpreted. */
-export interface ControlSurfaceSettings {
-  input: string; // "" = none chosen
-  output: string;
-  enabled: boolean; // the user's Connect: claim the pair now, and again at the next launch
-  device: string;
-}
+// The control surface's shape is core's (@retroplug/core/host): HOST state rather than project state, because port
+// names belong to the machine, and the host contract's config group names it. What the surface DOES (which app, its
+// knobs, which cart) is per project, in the .rplg. Re-exported here so this schema and every reader keep one import.
+export type { ControlSurfaceSettings };
 
 const controlSurfaceSchema = z.preprocess(
   (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}),

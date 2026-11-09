@@ -44,7 +44,7 @@ import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE, type AppAction } from "../src/keyCodes";
 import { resolveDropAction } from "../src/fileDrop";
-import { songImportHost } from "../src/songImportHost";
+import { createUiHost } from "./host/uiHost";
 import { resolveTracker } from "../src/trackerRegistry";
 
 const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
@@ -81,6 +81,21 @@ export function App() {
   // The LSDj HD player, when open: the id of the system it's showing. It replaces the grid but is NOT an
   // input overlay - the cart keeps playing and keys still reach its joypad, so it doesn't gate `playing`.
   const [hdSystemId, setHdSystemId] = useState<number | null>(null);
+  // The UI's host (docs/modular-graph-phase-f4b-design.md section 3.2), built once over the stores: the groups a cart's
+  // or a console's UI code reaches the shell through. Its views are the shell's own screens (the HD player today), and
+  // its import picker is useSongImport's overlay, which is resolved against the live system an import names rather than
+  // the snapshot the caller held.
+  const uiHost = useMemo(
+    () =>
+      createUiHost(stores, {
+        views: { open: (_id, systemId) => setHdSystemId(systemId) },
+        beginImport: (sys, source) => {
+          const live = stores.project.systems.view().find((s) => s.id === sys.id);
+          if (live) songImport.begin(live, source);
+        },
+      }),
+    [stores, songImport.begin],
+  );
   // The five standalone-only menu sources. Each owns state that lives in the NATIVE host rather than in
   // a store, so a change there has no path back into React and must be pushed: the Audio submenu's
   // staged rate/block draft, a MIDI device pick, the transport toggle (which the audio thread publishes
@@ -269,7 +284,7 @@ export function App() {
       case "patchSongs": {
         const sys = systems.find((s) => s.id === action.id);
         const importer = sys ? resolveTracker(sys.roles)?.songImport : undefined;
-        if (sys && importer) importer.import(songImportHost(stores.backend, stores.project.systems), sys, action.paths);
+        if (sys && importer) importer.import(uiHost, sys, action.paths);
         break;
       }
       case "pairSav":

@@ -5,10 +5,11 @@
 // imports its kits as `lsdj-assets` overrides (linking the file by path), accumulating across the batch. Both importers
 // load their song into working memory, so the LAST file dropped is the one showing after the reboot.
 //
-// The host is the shell's ADAPTER over its backend and systems store (packages/retroplug/src/songImportHost.ts), and the
-// target is the system view's id, ROM path and roles: they are narrowed here rather than imported, because a package
-// imports no shell.
-import type { SongImportHost, SongImportTarget, TrackerSongImport } from "@retroplug/tracker/trackerSongImport";
+// The host is core's contract, narrowed to the groups an import uses: the file I/O (files), the PNG codec the applied
+// asset overrides may need (png) and the running system (systems). The target is core's SystemInfo, the shell's system
+// view minus the fields a cart has no business reading.
+import type { Host, SystemInfo } from "@retroplug/core/host";
+import type { TrackerSongImport } from "@retroplug/tracker/trackerSongImport";
 import { addLsdsngToSav } from "./lsdjSongOps";
 import { planLsdprjImport } from "./lsdjLsdprjImport";
 import { applyOverridesToRom, readOverrides, type LsdjAssetOverride } from "./lsdjAssetsRole";
@@ -21,23 +22,23 @@ const isSongPath = (path: string): boolean => extensions.some((ext) => path.toLo
 /** Apply `paths` (each `.lsdsng`/`.lsdprj`) to LSDj system `sys` and reboot it once. Returns true if at least one
  *  song was imported (and the SAV written + core reloaded), false otherwise (no readable SRAM, none applied, or the
  *  write failed). */
-function importSongs(host: SongImportHost, sys: SongImportTarget, paths: readonly string[]): boolean {
-  let sav = host.readSram(sys.id);
+function importSongs(host: Host<"files" | "png" | "systems">, sys: SystemInfo, paths: readonly string[]): boolean {
+  let sav = host.systems.readSram(sys.id);
   if (!sav) return false;
-  const baseRom = sys.romPath ? host.caps.readFile(sys.romPath) : null;
+  const baseRom = sys.romPath ? host.files.readFile(sys.romPath) : null;
   let overrides = readOverrides(sys.roles.find((r) => r.kind === "lsdj-assets")?.config);
   let overridesChanged = false;
   let applied = 0;
 
   for (const path of paths) {
-    const data = isSongPath(path) ? host.caps.readFile(path) : null;
+    const data = isSongPath(path) ? host.files.readFile(path) : null;
     if (!data) continue;
     if (/\.lsdprj$/i.test(path)) {
       if (!baseRom) continue; // .lsdprj needs a base ROM to patch its kits into
       const plan = planLsdprjImport({
         file: data,
         path,
-        effectiveRom: applyOverridesToRom(baseRom, overrides, host.caps),
+        effectiveRom: applyOverridesToRom(baseRom, overrides, host),
         overrides,
         liveSram: sav,
       });
@@ -57,10 +58,10 @@ function importSongs(host: SongImportHost, sys: SongImportTarget, paths: readonl
   }
 
   if (applied === 0) return false;
-  const target = host.savPathOf(sys.id);
-  if (!target || !host.writeFileAtomic(target, sav)) return false;
-  if (overridesChanged) host.setRoleConfig(sys.id, "lsdj-assets", { overrides: overrides as LsdjAssetOverride[] });
-  host.loadSram(sys.id, target); // one rebuild: kit overrides → romBytes + boot the last imported song
+  const target = host.systems.savPathOf(sys.id);
+  if (!target || !host.files.writeFileAtomic(target, sav)) return false;
+  if (overridesChanged) host.systems.setRoleConfig(sys.id, "lsdj-assets", { overrides: overrides as LsdjAssetOverride[] });
+  host.systems.loadSram(sys.id, target); // one rebuild: kit overrides → romBytes + boot the last imported song
   return true;
 }
 

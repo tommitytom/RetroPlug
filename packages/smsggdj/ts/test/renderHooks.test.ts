@@ -1,8 +1,9 @@
-// smsggdj's render hooks over a fake RenderHost: what the shell's render library asks of the cart, without a core, an
-// engine or a WAV. smsggdj writes a song into work RAM after the boot and verifies it held, presses Pause only on a build
-// it recognises and while the transport is stopped, and says what a render of it cannot do.
+// smsggdj's render hooks over a fake emulator host: what the shell's render library asks of the cart, without a core,
+// an engine or a WAV. smsggdj writes a song into work RAM after the boot and verifies it held, presses Pause only on a
+// build it recognises and while the transport is stopped, and says what a render of it cannot do.
 import { test, expect } from "@retroplug/testing";
-import type { RenderFacts, RenderHost, RenderPlaySink } from "@retroplug/tracker/trackerRender";
+import type { EmulatorHost, Host } from "@retroplug/core/host";
+import type { RenderFacts, RenderPlaySink } from "@retroplug/tracker/trackerRender";
 import { smsggdjIntegration } from "../smsggdjIntegration";
 import { SMDJ4_BLOCK_LEN, buildSav, readSongBlock } from "../codec/sav";
 import { resolveSmsggdjLayout } from "../runtime/layout";
@@ -11,8 +12,8 @@ const SMSGGDJ = smsggdjIntegration.render!;
 
 /** A host over one work-RAM buffer, so a write is what the next read sees. Buttons and audio time are recorded, and
  *  the CPU answers what a case sets. */
-function fakeHost(over: Partial<RenderHost> & { ram?: Uint8Array } = {}): {
-  host: RenderHost;
+function fakeHost(over: Partial<EmulatorHost> & { ram?: Uint8Array } = {}): {
+  host: Host<"emulator">;
   ram: Uint8Array;
   buttons: [number, boolean][];
   audioMs: number[];
@@ -20,17 +21,19 @@ function fakeHost(over: Partial<RenderHost> & { ram?: Uint8Array } = {}): {
   const ram = over.ram ?? new Uint8Array(0x2000);
   const buttons: [number, boolean][] = [];
   const audioMs: number[] = [];
-  const host: RenderHost = {
-    renderAudio: (ms) => audioMs.push(ms),
-    readCpu: () => null,
-    readRam: () => ram,
-    writeRam: (_id, offset, bytes) => {
-      if (offset < 0 || offset + bytes.length > ram.length) return false;
-      ram.set(bytes, offset);
-      return true;
+  const host: Host<"emulator"> = {
+    emulator: {
+      renderAudio: (ms) => audioMs.push(ms),
+      readCpu: () => null,
+      readRam: () => ram,
+      writeRam: (_id, offset, bytes) => {
+        if (offset < 0 || offset + bytes.length > ram.length) return false;
+        ram.set(bytes, offset);
+        return true;
+      },
+      pressButton: (_id, button, down) => buttons.push([button, down]),
+      ...over,
     },
-    pressButton: (_id, button, down) => buttons.push([button, down]),
-    ...over,
   };
   return { host, ram, buttons, audioMs };
 }

@@ -10,6 +10,7 @@
   "exports": {
     ".": "./ts/index.ts",
     "./canonicalJson": "./ts/canonicalJson.ts",
+    "./capability": "./ts/capability.ts",
     "./clock": "./ts/clock.ts",
     "./configFields": "./ts/configFields.ts",
     "./consoles": "./ts/consoles.ts",
@@ -18,6 +19,7 @@
     "./definePackage": "./ts/definePackage.ts",
     "./descriptor": "./ts/descriptor.ts",
     "./graphDocument": "./ts/graphDocument.ts",
+    "./host": "./ts/host.ts",
     "./midiRoute": "./ts/midiRoute.ts",
     "./midiRouting": "./ts/midiRouting.ts",
     "./offlineJob": "./ts/offlineJob.ts",

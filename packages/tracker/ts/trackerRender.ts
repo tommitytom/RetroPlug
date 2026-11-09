@@ -6,29 +6,18 @@
 // starts playback, the register or flag that says the song is still playing, and what a render of it should be warned it
 // cannot do.
 //
-// The host and sink types are the shell's capabilities, narrowed to what these hooks use, so a hook is testable without a
-// render: the library's RenderContext satisfies them structurally (render.ts builds the host over its backend and
-// audio). Nothing here reads a file: the library passes the ROM and the battery bytes in, because resolving a sibling
-// .sav is the host's (it owns the paths and the backend).
+// The host a hook drives is core's contract, narrowed to the groups it uses: `Host<"emulator">` is the booted
+// system's memory, buttons and audio time, which the render library builds over its backend and audio
+// (src/render/renderHost.ts). The sink is NOT a host group: it is the request's own output stream, built after the
+// host, so it is passed to the one hook that captures into it. Nothing here reads a file: the library passes the ROM
+// and the battery bytes in, because resolving a sibling .sav is the host's (it owns the paths and the backend).
+import type { Host } from "@retroplug/core/host";
 import type { SongInfo } from "./songCatalog";
 
 /** The hold a play gesture's press needs to register, in whole milliseconds: the length of the chunk a gesture
  *  captures its head in. The render's pull length defaults to it too, so the lead-in a gesture returns is what its poll
  *  granularity counts per chunk; a cart reading its own value would skew the length cap. */
 export const PLAY_HOLD_MS = 100;
-
-/** What a render hook drives of the booted system: the cart's memory, its buttons and audio time. */
-export interface RenderHost {
-  /** The audio a hook discards while it works (a boot wait, a prep press): whole milliseconds, in the render's mix. */
-  renderAudio(ms: number): void;
-  /** A CPU register's value, or null when the core cannot be read: LSDj's NR52 sound-enable is the one such read. */
-  readCpu(id: number, addr: number): number | null;
-  /** The system's work RAM, or null when a snapshot is not available this block. */
-  readRam(id: number): Uint8Array | null;
-  /** Write into the system's work RAM; false when the range is refused (a wrong layout, a full command ring). */
-  writeRam(id: number, offset: number, bytes: Uint8Array): boolean;
-  pressButton(id: number, button: number, down: boolean): void;
-}
 
 /** The render's own stream: a chunk in the shape the request asked for (one mix buffer, or one per stream), rendered
  *  through the sink so what a play gesture captures is the recording's head rather than audio thrown away. */
@@ -82,15 +71,15 @@ export interface TrackerRender {
   /** After the boot settle: write song `index` into the booted core (smsggdj, whose working song is work RAM). Throws
    *  on every failure path, because rendering the blank boot song instead would make a silent WAV that looks like a
    *  successful render. */
-  loadSong?(host: RenderHost, id: number, rom: Uint8Array, sav: Uint8Array, index: number): void;
+  loadSong?(host: Host<"emulator">, id: number, rom: Uint8Array, sav: Uint8Array, index: number): void;
   /** Press play and return the lead-in chunks the press rendered (they are the recording's head). Absent: the console's
    *  default gesture, or none. */
-  pressPlay?(host: RenderHost, id: number, rom: Uint8Array, sink: RenderPlaySink): Float32Array[][];
+  pressPlay?(host: Host<"emulator">, id: number, rom: Uint8Array, sink: RenderPlaySink): Float32Array[][];
   /** The "still playing?" probe for length auto-detect, or null when this build cannot tell (the render then runs for
    *  the fixed length). `facts` is the request, so the reason can quote the length the render falls back to, and `warn`
    *  says it when the reason is the cart's, not the request's. */
   playingProbe?(
-    host: RenderHost,
+    host: Host<"emulator">,
     id: number,
     rom: Uint8Array,
     facts: RenderFacts,

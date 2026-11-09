@@ -5,6 +5,8 @@
 // Synchronous is the whole point, and it is why this is not a promise-based client: the stores and the
 // audio driver are driven from code that cannot await, and the native side answers inline
 // (QuickJSTransport returns the reply value from the same call). See spec/02-native-host.md.
+import type { Call } from "@retroplug/core/host";
+
 export type RpcSend = (request: unknown) => unknown;
 
 export interface Reply {
@@ -21,7 +23,9 @@ export function resolveSend(): RpcSend {
   return ns.__rpcSend;
 }
 
-export type Call = (method: string, ...params: unknown[]) => unknown;
+// The caller's shape is core's (@retroplug/core/host), because the host contract's devices group names it; re-exported
+// here so every client built over makeCall keeps one import.
+export type { Call };
 
 /** A caller over the bound channel. Each client keeps its own id counter; ids are only cosmetic here (the
  *  reply is returned inline), so independent counters across facets are fine. */

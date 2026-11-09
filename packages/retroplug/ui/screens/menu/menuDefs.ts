@@ -39,7 +39,8 @@ import {
   canSaveWorkingToCatalog,
 } from "@retroplug/lsdj/lsdjSongOps";
 import { activeSlot as lsdjActiveSlot } from "@retroplug/lsdj/codec/sav";
-import { songImportHost } from "../../../src/songImportHost";
+import { filesPngHost } from "../../../src/hostGroups";
+import { importHost } from "../../host/uiHost";
 import { embeddedRoms } from "../../../src/embeds";
 import {
   songRecordBytes,
@@ -1181,14 +1182,19 @@ function bakeRom(
   const base = sys.romPath ? ctx.stores.backend.readFile(sys.romPath) : null;
   if (!base) return null;
   const skipped: string[] = [];
-  const bytes = spec.catalog.applyRoleConfig(base, roleConfig(sys.roles, spec.catalog.assetRole), ctx.stores.backend, (ov, message) => {
-    skipped.push(`${ov.type} ${ov.slot}`);
-    // The row label is what the overlay shows; the REASON ("cannot read /kits/moved.rkit") has nowhere to
-    // go in one line of red text, and it is the half that says what to do about it. The role modules used
-    // to log it themselves, from library code, whether or not anyone was listening - so it is logged here
-    // instead, by the caller that asked to be told.
-    console.log(`[${spec.id}-assets] skipped ${ov.type} slot ${ov.slot}: ${message}`);
-  });
+  const bytes = spec.catalog.applyRoleConfig(
+    base,
+    roleConfig(sys.roles, spec.catalog.assetRole),
+    filesPngHost(ctx.stores.backend),
+    (ov, message) => {
+      skipped.push(`${ov.type} ${ov.slot}`);
+      // The row label is what the overlay shows; the REASON ("cannot read /kits/moved.rkit") has nowhere to
+      // go in one line of red text, and it is the half that says what to do about it. The role modules used
+      // to log it themselves, from library code, whether or not anyone was listening - so it is logged here
+      // instead, by the caller that asked to be told.
+      console.log(`[${spec.id}-assets] skipped ${ov.type} slot ${ov.slot}: ${message}`);
+    },
+  );
   return { bytes, skipped, recognised: bytes !== base };
 }
 
@@ -1625,7 +1631,7 @@ function importLsdprj(ctx: MenuContext, sys: SystemView, path: string, targetSlo
   if (!file || !liveSram || !baseRom) return;
 
   const overrides = lsdjOverrides(sys);
-  const effectiveRom = applyOverridesToRom(baseRom, overrides, be);
+  const effectiveRom = applyOverridesToRom(baseRom, overrides, filesPngHost(be));
   const plan = planLsdprjImport({ file, path, effectiveRom, overrides, liveSram, targetSlot });
   if (!plan) return; // malformed file / out of kit or song slots
 
@@ -1645,7 +1651,7 @@ function addSongFromDisk(ctx: MenuContext, sys: SystemView): void {
       if (data) ctx.beginSongImport(sys, data);
     } else {
       const importer = resolveTracker(sys.roles)?.songImport;
-      importer?.import(songImportHost(be, ctx.stores.project.systems), sys, [path]);
+      importer?.import(importHost(be, ctx.stores.project.systems), sys, [path]);
     }
   });
 }

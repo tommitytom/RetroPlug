@@ -2,7 +2,7 @@
 // builds the overlay as a plain MenuTree each render (so handlers never go stale), rendered full-window by
 // App and gated exactly like useProjectModals. All console-specific work lives in the resolved SongCatalog.
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import type { SystemView } from "../../src/systemsStore";
@@ -19,16 +19,20 @@ export function useSongImport(stores: AppStores): SongImport {
   const [pending, setPending] = useState<ImportPending | null>(null);
 
   const onClose = (): void => setPending(null);
-  const begin = (sys: SystemView, source: Uint8Array): void =>
-    // Importing rewrites the battery and cold-boots the cart like every other song edit, so on a console
-    // whose working song lives outside the battery it discards unsaved work too.
-    setPending(
-      planImport(
-        sys,
-        source,
-        savEditWouldDiscard(stores.project.systems, sys) ? "! Unsaved changes to the working song will be lost" : undefined,
+  // Stable across renders, so App can build the UI host once over it.
+  const begin = useCallback(
+    (sys: SystemView, source: Uint8Array): void =>
+      // Importing rewrites the battery and cold-boots the cart like every other song edit, so on a console
+      // whose working song lives outside the battery it discards unsaved work too.
+      setPending(
+        planImport(
+          sys,
+          source,
+          savEditWouldDiscard(stores.project.systems, sys) ? "! Unsaved changes to the working song will be lost" : undefined,
+        ),
       ),
-    );
+    [stores],
+  );
 
   const toggle = (index: number): void =>
     setPending((p: ImportPending | null) => {

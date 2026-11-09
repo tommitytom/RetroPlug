@@ -16,7 +16,8 @@
 //
 // Both ride the one patcher (applyConfigToRom), which is also what the menu bakes with — so "what the cart
 // runs" and "what Patch ROM in Place writes" cannot drift apart.
-import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
+import type { RoleRegistry, RoleType } from "@retroplug/core/systemRoles";
+import type { Host } from "@retroplug/core/host";
 import type { ConstructSpec } from "@retroplug/core/constructSpec";
 import { z } from "zod";
 import {
@@ -69,10 +70,10 @@ export function readSettings(config: Record<string, unknown> | undefined): BlipT
 export function applyOverridesToRom(
   baseBytes: Uint8Array,
   overrides: BlipToasterAssetOverride[],
-  caps: ConstructCaps,
+  host: Host<"files" | "png">,
   onSkip?: (ov: BlipToasterAssetOverride, message: string) => void,
 ): Uint8Array {
-  return applyConfigToRom(baseBytes, { overrides }, caps, onSkip);
+  return applyConfigToRom(baseBytes, { overrides }, host, onSkip);
 }
 
 /** Fold a whole `bliptoaster-assets` role config (asset overrides + the baked-settings patch) onto base ROM
@@ -82,14 +83,14 @@ export function applyOverridesToRom(
 export function applyConfigToRom(
   baseBytes: Uint8Array,
   config: Record<string, unknown>,
-  caps: ConstructCaps,
+  host: Host<"files" | "png">,
   onSkip?: (ov: BlipToasterAssetOverride, message: string) => void,
 ): Uint8Array {
   const rom = BlipToasterRom.fromBytes(baseBytes);
   if (!rom.isBlipToaster) return baseBytes;
   for (const ov of readOverrides(config)) {
     try {
-      applyRitOverride(rom, ov, caps);
+      applyRitOverride(rom, ov, host);
     } catch (e) {
       const msg = (e as Error).message;
       // Logged only when nobody is listening. A caller that supplies onSkip owns the reporting, and a
@@ -114,11 +115,11 @@ function configIsEmpty(config: Record<string, unknown>): boolean {
 
 // Load-time hook: fold the config into the base ROM and hand native the patched bytes. Additive — a
 // no-op when the config is empty or when romBytes is already set.
-function applyAssetOverrides(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec {
+function applyAssetOverrides(spec: ConstructSpec, host: Host<"files" | "png">, config: Record<string, unknown>): ConstructSpec {
   if (configIsEmpty(config) || spec.romBytes || spec.embeddedRom || !spec.romPath) return spec;
-  const base = caps.readFile(spec.romPath);
+  const base = host.files.readFile(spec.romPath);
   if (!base) return spec;
-  const patched = applyConfigToRom(base, config, caps);
+  const patched = applyConfigToRom(base, config, host);
   return patched !== base ? { ...spec, romBytes: patched } : spec;
 }
 

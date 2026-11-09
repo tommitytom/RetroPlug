@@ -35,15 +35,15 @@ export const RISA_RENDER: TrackerRender = {
   seedRefusal: (index) => `render: could not load risa song ${index} (needs a current-layout catalog)`,
 
   pressPlay: (host, id, _rom, sink) => {
-    host.pressButton(id, NES_START, true);
+    host.emulator.pressButton(id, NES_START, true);
     sink.renderChunk(PLAY_HOLD_MS); // prep: nudge off an empty phrase context (pre-song, discarded)
-    host.pressButton(id, NES_START, false);
+    host.emulator.pressButton(id, NES_START, false);
     sink.renderChunk(PLAY_HOLD_MS); // prep (discarded)
-    host.pressButton(id, NES_SELECT, true);
-    host.pressButton(id, NES_START, true);
+    host.emulator.pressButton(id, NES_SELECT, true);
+    host.emulator.pressButton(id, NES_START, true);
     const head = sink.renderChunk(PLAY_HOLD_MS); // the song starts here: capture it as the lead-in
-    host.pressButton(id, NES_START, false);
-    host.pressButton(id, NES_SELECT, false);
+    host.emulator.pressButton(id, NES_START, false);
+    host.emulator.pressButton(id, NES_SELECT, false);
     return [head];
   },
 
@@ -63,7 +63,7 @@ export const RISA_RENDER: TrackerRender = {
     // A work-RAM read is the per-block snapshot (safe while the core plays). If it is momentarily unavailable, report
     // "playing" so a read gap never trims the song early; the render's maxDurationMs cap still bounds it.
     return () => {
-      const ram = host.readRam(id);
+      const ram = host.emulator.readRam(id);
       return ram ? decodeRisaState(ram, layout).playing : true;
     };
   },

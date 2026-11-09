@@ -40,6 +40,7 @@ import { derivedRoleConfigs, rolesForRom } from "./rolesForRom";
 
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
 import { flushBatteryForTeardown, type SramTarget } from "./sramAutoSave";
+import { filesPngHost } from "./hostGroups";
 import {
   type SystemEntry,
   findById,
@@ -53,6 +54,7 @@ import {
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import { ROLE_HEADER_LEN, type RoleRegistry, type RoleInstance } from "@retroplug/core/systemRoles";
+import type { Host } from "@retroplug/core/host";
 import { protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
 import type { TrackedSlot, WorkingSongImage } from "@retroplug/tracker/songCatalog";
@@ -127,6 +129,8 @@ export class SystemsStore {
   /** The handles on the engine's resources every live entry's node names (graph/systemResources.ts): every boot puts
    *  its own ROM and seeds, and a system holds one handle on each until it goes. */
   private readonly pool: ResourcePool;
+  /** The groups a load-time role hook is handed (src/hostGroups.ts): the backend's files and PNG codec, built once. */
+  private readonly constructHost: Host<"files" | "png">;
   private onFocusChange: () => void = () => {};
   // A store on its own publishes its systems at the default (stereo) routing, with no MIDI routing and no
   // controller, through a graph of its own; the ProjectStore that owns one replaces this with its own publish, which
@@ -180,6 +184,7 @@ export class SystemsStore {
     private readonly registry?: RoleRegistry,
   ) {
     this.pool = new ResourcePool(backend);
+    this.constructHost = filesPngHost(backend);
   }
 
   /** The id system `id` goes by NOW. Every in-place rebuild - reset, reload, Load SRAM / State, a ROM
@@ -1506,13 +1511,13 @@ export class SystemsStore {
   // Fold each attached role's load-time hook over the tentative spec, letting a role seed data that
   // is otherwise absent (e.g. a fresh LSDj ROM gets a valid empty sav so it skips its self-test).
   // Additive by contract — a hook returns the spec unchanged when the data it would seed is present.
-  // The backend satisfies ConstructCaps structurally (fileExists, readFile, pngDecode), so it's the caps arg.
+  // A hook is handed the two host groups it may use (the backend's files and PNG codec), built once here.
   private applyConstructHooks(spec: ConstructSpec, roles: RoleInstance[]): ConstructSpec {
     let s = spec;
     if (this.registry)
       for (const r of roles) {
         const rt = this.registry.roleType(r.kind);
-        if (rt?.onConstruct) s = rt.onConstruct(s, this.backend, r.config);
+        if (rt?.onConstruct) s = rt.onConstruct(s, this.constructHost, r.config);
       }
     return s;
   }

@@ -11,6 +11,22 @@ import type { TrackerPlayback } from "./trackerPlayback";
 import type { SramSignature } from "./trackerSramSignature";
 import type { TrackerSongImport } from "./trackerSongImport";
 
+/** One cart's answer to "what songs does this battery image hold" (docs/modular-graph-phase-f4b-design.md section
+ *  5.2). What the cart's battery MEANS stays the cart's: it names itself, says what one saved song is called and
+ *  describes its own records. The shell composes the header, the trial order across carts and the "not a ... save"
+ *  line, so a tool's listing names no cart. */
+export interface BatteryListing {
+  /** The cart's name, as the listing's header and its refusal line spell it ("risa", "LSDj"). */
+  readonly name: string;
+  /** What one saved song is called ("song", "project"), so a header reads `<n> <noun>(s):`. */
+  readonly noun: string;
+  /** This cart's place in the trial order: lowest first, and the first that reads an image prints it. */
+  readonly rank: number;
+  /** One line per saved song, or null for an image that is not this cart's battery. The row text is the cart's own
+   *  (its index, its name, whatever else its codec knows), so no column of a listing is the shell's to change. */
+  describe(sav: Uint8Array): string[] | null;
+}
+
 export interface TrackerIntegration {
   /** Row-id prefix + instance-submenu id suffix, e.g. "lsdj" / "risa". */
   readonly id: string;
@@ -70,6 +86,9 @@ export interface TrackerIntegration {
   /** The song files this cart imports onto a running system, and how (section 4.4). Absent for a cart with no song
    *  files to import. */
   readonly songImport?: TrackerSongImport;
+  /** How this cart lists a battery image's saved songs (F4b section 5.2), which is what a CLI listing prints. Absent
+   *  for a cart whose battery holds no songs (an asset-only cart, such as BlipToaster). */
+  readonly batteryListing?: BatteryListing;
 }
 
 /** One contiguous poke into a system's work RAM: `offset` indexes the same region `readRam` returns. */

@@ -20,6 +20,7 @@
 import type { CapabilityArgs, CapabilityOp, CapabilityProgress, CapabilityResults } from "./capability";
 import type { EngineJobKind, EngineRunHandle, EngineRunOptions, OfflineRunHandle, OfflineRunRequest } from "./offline";
 import type { TapArm } from "./graph/buildGraph";
+import type { FileBrowserOpts, PngImageData } from "@retroplug/core/host";
 
 export interface Backend {
   // --- Filesystem ---------------------------------------------------------
@@ -510,13 +511,9 @@ export interface ZipEntry {
   bytes: Uint8Array;
 }
 
-/** A raw RGBA8888 image (`rgba` is `width*height*4` bytes, row-major, top-to-bottom) — the output of
- *  `pngDecode` and the shape the LSDj font layer maps to/from tiles. */
-export interface PngImageData {
-  width: number;
-  height: number;
-  rgba: Uint8Array;
-}
+// The PNG image and the file dialog's options are core's (@retroplug/core/host), because the host contract's groups
+// name them; re-exported here so this module's own members and every existing caller keep one import.
+export type { FileBrowserOpts, PngImageData } from "@retroplug/core/host";
 
 /** One system's video frame for display: raw XRGB8888 pixels (`width*height*4` bytes — the LVGL
  *  Canvas's native format). `published` is false, and `pixels` empty, until the core has rendered a
@@ -851,24 +848,6 @@ export interface LoadScriptPackResult {
   error: string;
   errors: GraphError[];
   types: ScriptPackType[];
-}
-
-/** Presentation for an OS file dialog: its title + the glob patterns to show. */
-export interface FileBrowserOpts {
-  title: string;
-  patterns: string[];
-  /** True for a SAVE dialog (a filename can be typed and an overwrite confirmed); absent/false
-   *  opens for reading. Drives DPF's FileBrowserOptions.saving. */
-  saving?: boolean;
-  /** A suggested filename for a save dialog (e.g. `"project.rplg"`); ignored when opening. */
-  defaultName?: string;
-  /** Directory the dialog opens in (DPF's FileBrowserOptions.startDir). Absent/empty → the OS default (CWD).
-   *  Used to reopen a dialog where the user last saved (currently the render dialog). */
-  startDir?: string;
-  /** Pick a FOLDER instead of a file (DPF's FileBrowserOptions.directory — our DPF fork). `patterns`/
-   *  `defaultName` are then ignored. Supported on Linux + macOS; on Windows the OS opens a file dialog
-   *  (the caller takes the dirname). Used by the render "Output Dir". */
-  directory?: boolean;
 }
 
 export type { ConstructSpec } from "@retroplug/core/constructSpec";

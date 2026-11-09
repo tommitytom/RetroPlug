@@ -2,7 +2,7 @@
 // lsdjInventory). No overrides here (that's the role config, read live at the menu) and no memoization (the UI
 // caches the file read). The file-dialog Export/Replace stay in the menu (they own the .kit/.lsdpal/.png formats).
 import { readAssetOverrides, type AssetCatalog, type AssetSlot } from "@retroplug/tracker/assetCatalog";
-import type { ConstructCaps } from "@retroplug/core/systemRoles";
+import type { Host } from "@retroplug/core/host";
 import { LsdjRom, KIT_COUNT } from "./rom";
 import { applyOverridesToRom, type LsdjAssetOverride } from "./lsdjAssetsRole";
 
@@ -24,7 +24,7 @@ export const lsdjAssetCatalog: AssetCatalog = {
   // The role's own patcher. LSDj persists nothing but the override list, so that is all this reads out of the
   // config. The loose AssetOverride entries ARE the typed ones (the menu builds them; the extra fields ride
   // through structurally).
-  applyRoleConfig(romBytes: Uint8Array, config: Record<string, unknown> | undefined, caps: ConstructCaps, onSkip): Uint8Array {
-    return applyOverridesToRom(romBytes, readAssetOverrides(config) as LsdjAssetOverride[], caps, onSkip);
+  applyRoleConfig(romBytes: Uint8Array, config: Record<string, unknown> | undefined, host: Host<"files" | "png">, onSkip): Uint8Array {
+    return applyOverridesToRom(romBytes, readAssetOverrides(config) as LsdjAssetOverride[], host, onSkip);
   },
 };

@@ -7,13 +7,8 @@
 // The menus themselves are the shell's (ui/screens/menu); an integration is the data they are built from, resolved by
 // a system's markerRole (the shell's trackerRegistry).
 import type { TrackerIntegration, RamWrite } from "@retroplug/tracker/trackerIntegration";
-import {
-  PLAY_HOLD_MS,
-  type RenderFacts,
-  type RenderHost,
-  type RenderPlaySink,
-  type TrackerRender,
-} from "@retroplug/tracker/trackerRender";
+import type { Host } from "@retroplug/core/host";
+import { PLAY_HOLD_MS, type RenderFacts, type RenderPlaySink, type TrackerRender } from "@retroplug/tracker/trackerRender";
 import type { SongInfo } from "@retroplug/tracker/songCatalog";
 import { smsggdjSongCatalog } from "./smsggdjSongCatalog";
 import { smsggdjAssetCatalog } from "./smsggdjAssetCatalog";
@@ -154,18 +149,18 @@ const isSmsggdjRom = (rom: Uint8Array | null): boolean =>
  *  tp_stop when playing (main.asm:928-936). From the boot SONG screen tp_start is engine_play in MODE_SONG, the whole song
  *  from song_cur, which is what a render wants. It is a TOGGLE, so pressing it blind is wrong whenever the cart is already
  *  running - which a render restored from a savestate very much can be. So ask first. */
-function pressSmsggdjPlay(host: RenderHost, id: number, rom: Uint8Array, sink: RenderPlaySink): Float32Array[][] {
+function pressSmsggdjPlay(host: Host<"emulator">, id: number, rom: Uint8Array, sink: RenderPlaySink): Float32Array[][] {
   // The play button IS the Pause NMI on this console, so an ordinary Master System game would be PAUSED by it: only
   // a cart this build recognises is pressed. The role's marker and this gate are not the same question - the marker is
   // the provider's, and it need not require the version string the layout does.
   if (!isSmsggdjRom(rom)) return [];
   const layout = resolveSmsggdjLayout(identifySmsggdjVersion(rom));
-  const ram = layout ? host.readRam(id) : null;
+  const ram = layout ? host.emulator.readRam(id) : null;
   // A cart whose transport cannot be read is pressed as before.
   if (layout && ram && ram.length > layout.playState && ram[layout.playState] !== 0) return [];
-  host.pressButton(id, SMS_START, true);
+  host.emulator.pressButton(id, SMS_START, true);
   const head = sink.renderChunk(PLAY_HOLD_MS); // the song starts here: capture it as the lead-in
-  host.pressButton(id, SMS_START, false);
+  host.emulator.pressButton(id, SMS_START, false);
   return [head];
 }
 
@@ -219,7 +214,7 @@ export const SMSGGDJ_RENDER: TrackerRender = {
   // every failure path: the user named a song, and rendering the blank boot song instead would produce a silent WAV that
   // looks like a successful render - exactly the bug this path exists to fix.
   loadSong: (host, id, rom, sav, index) => {
-    const writes = smsggdjLiveLoad(rom, sav, index, host.readRam(id) ?? undefined);
+    const writes = smsggdjLiveLoad(rom, sav, index, host.emulator.readRam(id) ?? undefined);
     const layout = resolveSmsggdjLayout(identifySmsggdjVersion(rom));
     if (!layout || !writes?.length) {
       throw new Error(
@@ -232,9 +227,9 @@ export const SMSGGDJ_RENDER: TrackerRender = {
 
     // wave_ram is the block's first field, so it spans [song, song + phrasePool) - no extra symbol needed.
     for (let i = 0; i < SMSGGDJ_BOOT_STEPS; i++) {
-      const ram = host.readRam(id);
+      const ram = host.emulator.readRam(id);
       if (ram && anyNonZero(ram, layout.song, layout.phrasePool)) break;
-      host.renderAudio(SMSGGDJ_STEP_MS);
+      host.emulator.renderAudio(SMSGGDJ_STEP_MS);
     }
 
     // The whole block is compared, not a witness field: nothing else writes it while the transport is stopped, and a
@@ -243,14 +238,14 @@ export const SMSGGDJ_RENDER: TrackerRender = {
       for (const w of writes) {
         // Refused only for a range past the work RAM (a wrong layout) or a full command ring; a render drives its blocks
         // on this thread, so the ring is drained inline and the second cannot happen here.
-        if (!host.writeRam(id, w.offset, w.bytes)) {
+        if (!host.emulator.writeRam(id, w.offset, w.bytes)) {
           throw new Error(`render: work-RAM write refused at +$${w.offset.toString(16)} loading smsggdj song ${index}`);
         }
       }
       let held = 0;
       while (held < SMSGGDJ_HOLD_STEPS) {
-        host.renderAudio(SMSGGDJ_STEP_MS); // let the queued writes land, and the boot move on
-        const ram = host.readRam(id);
+        host.emulator.renderAudio(SMSGGDJ_STEP_MS); // let the queued writes land, and the boot move on
+        const ram = host.emulator.readRam(id);
         if (!ram || !ramMatches(ram, layout.song, want, 0, want.length)) break;
         held++;
       }

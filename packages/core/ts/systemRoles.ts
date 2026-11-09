@@ -18,6 +18,7 @@
 import type { Platform, Core } from "./platform";
 import type { ConstructSpec } from "./constructSpec";
 import type { RomParameter } from "./romParameters";
+import type { Host } from "./host";
 
 export type RoleCategory = "system" | "feature";
 
@@ -61,8 +62,9 @@ export interface RoleType {
    *  (after paths + any seed blobs are resolved). ADDITIVE by contract — seed data that is otherwise
    *  absent (e.g. a fresh LSDj cart gets a valid empty sav), never clobber what's already there.
    *  Runs only for roles actually attached to the system, so it's inherently ROM-gated. `config` is this
-   *  role's own config (e.g. an LSDj asset-override list). */
-  onConstruct?(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec;
+   *  role's own config (e.g. an LSDj asset-override list), and `host` the two groups a hook may use: the
+   *  file reads (the base ROM, a linked asset) and the PNG codec (a linked font image). */
+  onConstruct?(spec: ConstructSpec, host: Host<"files" | "png">, config: Record<string, unknown>): ConstructSpec;
   /** The DAW automation parameters this role's ROM exposes, for the config the role carries (a BlipToaster's `chip`
    *  picks its build's set), or undefined for a role that exposes none. The projection onto the plugin's slot pool is
    *  the shell's (packages/retroplug/src/parameterMap.ts); what a control IS belongs to the cart. */
@@ -98,16 +100,6 @@ export const ROLE_HEADER_LEN = 0x150;
 export interface RoleDerive {
   headerBytes(short: Uint8Array): number;
   derive(header: Uint8Array, config: Record<string, unknown>): Record<string, unknown>;
-}
-
-/** The narrow Backend slice a load-time `onConstruct` hook may use: check whether native will find a real sav on disk,
- *  read the base ROM (to patch it), and decode a PNG (for an LSDj font override). The full `Backend` satisfies this
- *  structurally, so the store passes itself. A cart that needs bytes of its own (an empty LSDj battery) builds them with
- *  its own codec, so nothing cart-specific sits on this contract. */
-export interface ConstructCaps {
-  fileExists(path: string): boolean;
-  readFile(path: string): Uint8Array | null;
-  pngDecode(bytes: Uint8Array): { width: number; height: number; rgba: Uint8Array } | null;
 }
 
 /** What a ROM provider inspects to decide feature roles: the platform + core, the ROM

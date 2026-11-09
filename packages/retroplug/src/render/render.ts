@@ -37,15 +37,11 @@ import {
 import { rolesForRom } from "../rolesForRom";
 import { TRACKER_INTEGRATIONS, resolveTracker } from "../trackerRegistry";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
+import type { Host } from "@retroplug/core/host";
 import type { SongInfo } from "@retroplug/tracker/songCatalog";
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
-import {
-  PLAY_HOLD_MS,
-  type RenderFacts,
-  type RenderHost,
-  type RenderPlaySink,
-  type TrackerRender,
-} from "@retroplug/tracker/trackerRender";
+import { PLAY_HOLD_MS, type RenderFacts, type RenderPlaySink, type TrackerRender } from "@retroplug/tracker/trackerRender";
+import { renderHost } from "./renderHost";
 import {
   type RenderContext,
   type RenderHooks,
@@ -605,19 +601,6 @@ function driveAutoDetect(
   return { startFrame, endFrame: committed, hff: false };
 }
 
-/** The shell's capabilities as a render hook sees them (tracker's RenderHost): the booted system's memory and buttons,
- *  and audio time for the waiting a cart's load does. The render's own sink is passed separately, so a play gesture
- *  captures into the recording. */
-function renderHost(ctx: RenderContext): RenderHost {
-  return {
-    renderAudio: (ms) => ctx.audio.renderAudio(ms),
-    readCpu: (id, addr) => ctx.backend.readCpu(id, addr),
-    readRam: (id) => ctx.backend.readRam(id),
-    writeRam: (id, offset, bytes) => ctx.backend.writeRam(id, offset, bytes),
-    pressButton: (id, button, down) => ctx.audio.pressButton(id, button, down),
-  };
-}
-
 /** Validate a resolved render request against the console it runs on. Throws on a bad split or a song flag no cart of
  *  the console can honour, so the caller fails before loading anything. (Shared by the CLI and the worker.) */
 export function validateRenderOpts(
@@ -660,7 +643,7 @@ export function validateRenderOpts(
  *  descriptor's default (a Game Boy's Start, which LSDj and mGB begin on), else none (a generic NES or SMS ROM is left
  *  untouched). Returns the captured lead-in chunks (in the sink's mix/split shape). */
 function pressPlay(
-  host: RenderHost,
+  host: Host<"emulator">,
   sink: RenderPlaySink,
   o: RenderOpts,
   id: number,
@@ -672,9 +655,9 @@ function pressPlay(
   if (render?.pressPlay) return render.pressPlay(host, id, rom ?? new Uint8Array(), sink);
   const button = descriptor?.render?.defaultPlay?.button;
   if (button === undefined) return [];
-  host.pressButton(id, button, true);
+  host.emulator.pressButton(id, button, true);
   const head = sink.renderChunk(PLAY_HOLD_MS); // hold it across one captured chunk to register the press
-  host.pressButton(id, button, false); // a play toggle: the song keeps running once the release lands next block
+  host.emulator.pressButton(id, button, false); // a play toggle: the song keeps running once the release lands next block
   return [head];
 }
 

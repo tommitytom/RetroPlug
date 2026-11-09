@@ -6,7 +6,8 @@
 // asset FILE on disk by path (a `.kit` bank / `.lsdpal` / `.png`) — NEVER embedded bytes — mirroring how the
 // project references its ROM/sav by path; the file is read at construct. Applying reuses the pure-TS patcher
 // (./rom).
-import type { RoleRegistry, RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
+import type { RoleRegistry, RoleType } from "@retroplug/core/systemRoles";
+import type { Host } from "@retroplug/core/host";
 import type { ConstructSpec } from "@retroplug/core/constructSpec";
 import type { RomColorSet } from "./rom";
 import { z } from "zod";
@@ -52,7 +53,7 @@ export function readOverrides(config: Record<string, unknown> | undefined): Lsdj
 // Apply one override onto an open LsdjRom. Palettes apply from their inline colour-sets; kits/fonts read
 // their linked file. Isolated + throwing so the caller can try/catch per entry (a moved/deleted file, a
 // bad asset, or a malformed override just skips that entry).
-function applyOne(rom: LsdjRom, ov: LsdjAssetOverride, caps: ConstructCaps): void {
+function applyOne(rom: LsdjRom, ov: LsdjAssetOverride, host: Host<"files" | "png">): void {
   if (ov.type === "kit" && ov.erase) {
     rom.eraseKit(ov.slot);
     return;
@@ -63,7 +64,7 @@ function applyOne(rom: LsdjRom, ov: LsdjAssetOverride, caps: ConstructCaps): voi
     return;
   }
   if (!ov.path) throw new Error(`${ov.type} override slot ${ov.slot}: no path`);
-  const bytes = caps.readFile(ov.path);
+  const bytes = host.files.readFile(ov.path);
   if (!bytes) throw new Error(`override ${ov.type} slot ${ov.slot}: cannot read ${ov.path}`);
   if (ov.type === "kit") {
     // A kit override sourced from a .lsdprj extracts its bank ordinal; otherwise `bytes` is a whole .kit.
@@ -71,7 +72,7 @@ function applyOne(rom: LsdjRom, ov: LsdjAssetOverride, caps: ConstructCaps): voi
     if (!bank) throw new Error(`kit override slot ${ov.slot}: no bank ${ov.lsdprjKit} in ${ov.path}`);
     rom.importKitFile(ov.slot, bank);
   } else {
-    const img = caps.pngDecode(bytes);
+    const img = host.png.decode(bytes);
     if (!img) throw new Error(`font override slot ${ov.slot}: not a decodable PNG`);
     rom.importFontImage(ov.slot, img);
   }
@@ -85,14 +86,14 @@ function applyOne(rom: LsdjRom, ov: LsdjAssetOverride, caps: ConstructCaps): voi
 export function applyOverridesToRom(
   baseBytes: Uint8Array,
   overrides: LsdjAssetOverride[],
-  caps: ConstructCaps,
+  host: Host<"files" | "png">,
   onSkip?: (ov: LsdjAssetOverride, message: string) => void,
 ): Uint8Array {
   const rom = LsdjRom.fromBytes(baseBytes);
   if (!rom.isLsdj) return baseBytes;
   for (const ov of overrides) {
     try {
-      applyOne(rom, ov, caps);
+      applyOne(rom, ov, host);
     } catch (e) {
       const message = (e as Error).message;
       // Logged only when nobody is listening. A caller that supplies onSkip owns the reporting, and a
@@ -108,12 +109,12 @@ export function applyOverridesToRom(
 
 // Load-time hook: fold the overrides into the base ROM and hand native the patched bytes. Additive — a
 // no-op when there are no overrides or when romBytes is already set.
-function applyAssetOverrides(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec {
+function applyAssetOverrides(spec: ConstructSpec, host: Host<"files" | "png">, config: Record<string, unknown>): ConstructSpec {
   const overrides = readOverrides(config);
   if (overrides.length === 0 || spec.romBytes || spec.embeddedRom || !spec.romPath) return spec;
-  const base = caps.readFile(spec.romPath);
+  const base = host.files.readFile(spec.romPath);
   if (!base) return spec;
-  const patched = applyOverridesToRom(base, overrides, caps);
+  const patched = applyOverridesToRom(base, overrides, host);
   return patched !== base ? { ...spec, romBytes: patched } : spec;
 }
 

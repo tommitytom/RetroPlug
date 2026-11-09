@@ -4,6 +4,7 @@
 // the patched ROM boots. SKIPs when the built risa ROM is absent.
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
+import { filesPngHost } from "../src/hostGroups";
 import { createAudioDriver } from "../src/audioDriver";
 import type { RisaKitCompileSpec } from "@retroplug/risa/kitFormat";
 import { RisaRom, bankToModel, isBankPopulated, dpcmDecode, assembleKitBank } from "@retroplug/risa/rom";
@@ -141,10 +142,10 @@ test("the risa-assets kit override links a pre-built .rkit at construct (offline
   expect(be.writeFileAtomic(KIT, bank)).toBe(true);
 
   // The risa-assets role folds the LINKED bank into the base ROM in memory (the onConstruct path: read the
-  // .rkit by path via caps.readFile → setKit → romBytes), leaving the base .nes on disk untouched.
+  // .rkit by path via host.files.readFile → setKit → romBytes), leaving the base .nes on disk untouched.
   const base = be.readFile(RISA_ROM)!;
   const overrides: RisaAssetOverride[] = [{ type: "kit", slot: 0, name: "DRUMS", path: KIT }];
-  const patched = applyOverridesToRom(base, overrides, be);
+  const patched = applyOverridesToRom(base, overrides, filesPngHost(be));
   expect(patched !== base).toBe(true);
   const rom = RisaRom.fromBytes(patched);
   expect([...rom.getKitBank(0)!]).toEqual([...bank]); // bank linked from disk, byte-for-byte
