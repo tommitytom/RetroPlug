@@ -477,9 +477,9 @@ hostLatencyMs?(config: Record<string, unknown>): number;
   writes no `chip`, and `readRoleHeader`'s NES branch (83 to 90) goes. An untagged S5B ROM gets `s5b` in the same construct
   that builds it, as today, so nothing visible changes, and `chip` has one writer.
 - **`hostLatencyMs`.** `lsdj-sync` returns 33 for `MidiSync` and `MidiSyncArduinoboy` and 0 otherwise; the 33 and the
-  `LsdjSyncMode` import leave `pluginControlPlane.ts:19, 99 to 104`. `__rp_syncLatencyMs` sums over the systems'
-  PLACED roles (`protocolPipeline`, so an `lsdj-sync` the pipeline leaves out on an mGB cart still contributes nothing) as the
-  maximum (a hook's doc says only a placed role counts), asking `registry.roleType(kind)?.hostLatencyMs?.(config)`.
+  `LsdjSyncMode` import leave `pluginControlPlane.ts:19, 99 to 104`. `__rp_syncLatencyMs` takes the maximum over the
+  systems' PLACED roles (`protocolPipeline`, so an `lsdj-sync` the pipeline leaves out on an mGB cart still contributes
+  nothing) (a hook's doc says only a placed role counts), asking `registry.roleType(kind)?.hostLatencyMs?.(config)`.
 
 ### 4.6 Link groups and `savFromJson`
 
@@ -680,6 +680,12 @@ Each was checked against the code; none moves a baseline. Edges E1 to E4 are cor
   sentence names what is missing (`this ROM runs no tracker`) and `test/render/render-classify.test.ts` pins both flags on a
   `gbRom()` beside an LSDj battery. A malformed full-size LSDj battery is still refused in the codec's words
   (`missing 'jk' SRAM init magic`), because the cart's `listSongs` decodes it as every render path always did.
+- **E8. A ROM that cannot be read refuses `--song` and `--list-songs`.** A path with no file classifies by its extension
+  (E1), so it reads as a console whose header derives no roles and the flags are refused, where the old code read only
+  the battery and, by the file's extension, listed its songs (`--list-songs` on a missing ROM beside its `.sav` printed
+  them). It is the same consequence of decisions 4 and 5 as E7. The refusal names the cause rather than the console
+  (`this ROM could not be read`), since the console's carts do run trackers; `RenderRom.readable` carries it from the
+  classification, and `test/render/render-classify.test.ts` pins both flags on a path with no file.
 
 ## 7. Proof
 
@@ -1018,7 +1024,9 @@ stage 5 100). Nothing was pushed.
 - **The `--song` and `--list-songs` refusal names the integrations' labels** (`LSDj, SMSGGDJ, Risa (this ROM runs no tracker:
   its console is Game Boy)`), not `label (platform label)`; no contract ties an integration to a platform.
 - **E3 is wider than designed and E7 is new** (section 6): the gate is the ROM's roles; a generic ROM beside a tracker battery
-  reads no playback and refuses the song flags. Both accepted by the controller as consequences of decisions 4 and 5.
+  reads no playback and refuses the song flags. Both accepted by the controller as consequences of decisions 4 and 5. E8 is
+  the same consequence for a file that cannot be read at all: its song flags refuse with the read named as the cause (the
+  follow-up added the wording; the refusal itself was already the build's).
 - **`songImport.import` takes a `SongImportHost` adapter** (`src/songImportHost.ts`), and `savPathOf` answers null for a system
   that went away, in which case the import refuses; the design passed the store's pieces ad hoc.
 - **One shared `src/rolesForRom.ts`** serves the store and the render; `ROLE_HEADER_LEN` lives in core; `derivedRoleConfigs`

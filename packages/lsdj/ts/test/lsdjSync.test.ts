@@ -4,6 +4,10 @@
 // host MIDI, are rp.lsdj.serial-out's (lsdjSerialOut.test.ts); here they send nothing.
 import { test, expect } from "@retroplug/testing";
 import { LSDJ_SYNC_NODE_TYPE, lsdjSyncNode } from "../lsdjSyncNode";
+import { LSDJ_MODE_VALUES } from "../enums";
+
+// The runtime's file read, declared locally as every test that reads a file does.
+declare const tjs: { readFile(path: string): Promise<Uint8Array> };
 import { NodeRig, bytesOn, on, type BlockSpec, type In, type Sent } from "@retroplug/testing/rig";
 
 const lsdj = (mode: string, config: Record<string, unknown> = {}) => new NodeRig(lsdjSyncNode, { mode, ...config });
@@ -21,6 +25,21 @@ test("its ports: the routed MIDI and the launches in; serial in and buttons out"
   const caps = lsdjSyncNode.layout(lsdjSyncNode.parseSettings({})).ports.slice(2).map((p) => p.capacity);
   expect(caps).toEqual([{ messages: 4096, bytes: 73728 }, { messages: 64, bytes: 128 }]);
   expect(lsdjSyncNode.reshapes).toBe(true);
+});
+
+test("the manifest's serial-out capture is keyed by this cart's own sync modes", async () => {
+  // The generator checks a capture VALUE ("off", "listen" or "drive") but cannot know the cart's mode spellings: the
+  // manifest is data it reads, and the modes are this package's. A misspelt key would make the capture lookup answer
+  // "off" for that mode and clock nothing, silently, so the package holds its own manifest to its own list. The
+  // manifest is read as the file it is, relative to the runner's working directory (the shell's package), because a
+  // package's test may not import a file outside its own ts/ tree.
+  const manifest = JSON.parse(new TextDecoder().decode(await tjs.readFile("../lsdj/package.json"))) as {
+    retroplug: { protocol: { nodes: { type: string; capture?: Record<string, string> }[] } };
+  };
+  const nodes = manifest.retroplug.protocol.nodes;
+  const keys = Object.keys(nodes.find((node) => node.type === LSDJ_SYNC_NODE_TYPE)?.capture ?? {});
+  expect(keys.length > 0).toBe(true);
+  expect(keys.filter((mode) => !(LSDJ_MODE_VALUES as readonly string[]).includes(mode))).toEqual([]);
 });
 
 test("settings default as the role's schema does, and refuse what it would clamp", () => {

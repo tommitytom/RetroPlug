@@ -144,6 +144,13 @@ test("a mixed song + ROM drop onto an LSDj instance → patchSongs (ROM ignored)
   expect(out).toEqual({ type: "patchSongs", id: 4, paths: ["/s/a.lsdsng"] });
 });
 
+test("a drop of two trackers' song types hands the target only the ones it declares", () => {
+  const be = new MockBackend("/cfg");
+  // Both are product-wide song types; this target's tracker imports only the second, so the first is not its file.
+  const out = resolveDropAction(be, ctx({ count: 2, targetId: 4, onTile: true, targetSongExtensions: [".lsdprj"] }), ["/s/a.lsdsng", "/s/b.lsdprj"]);
+  expect(out).toEqual({ type: "patchSongs", id: 4, paths: ["/s/b.lsdprj"] });
+});
+
 test("song files onto a non-LSDj target → ignore", () => {
   const be = new MockBackend("/cfg");
   expect(resolveDropAction(be, ctx({ count: 2, targetId: 4, onTile: true, targetSongExtensions: [] }), ["/s/a.lsdsng"])).toEqual({

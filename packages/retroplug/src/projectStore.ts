@@ -17,7 +17,7 @@ import type { ControlPlaneBackend, GraphError, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
 import { EngineGraph } from "./engineGraph";
 import type { SystemEntry } from "./systemsList";
-import type { RoleInstance, RoleRegistry } from "@retroplug/core/systemRoles";
+import { ROLE_HEADER_LEN, type RoleInstance, type RoleRegistry } from "@retroplug/core/systemRoles";
 import type { RecentStore } from "./recentStore";
 import { workingSongReady, songLoadByNameWouldDiscard, songLoadWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker/liveSav";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
@@ -130,7 +130,7 @@ export class ProjectStore {
   private controllerSync: string | null = null; // the controller cart's SYNC setting at the last poll
   private controllerAnchor: ControllerAnchor | null = null; // where the cart last started on its own
   private controllerWasPlaying = false; // edge detector for the above
-  private controllerReaderPath = ""; // the system and ROM the cached reader was built from
+  private controllerReaderPath = ""; // the ROM path the cached reader was built from
   private controllerReaderCache: PlaybackReader | null = null;
   private systemsObservers: Array<() => void> = [];
   private onChangeCb: () => void = () => {};
@@ -540,7 +540,7 @@ export class ProjectStore {
     if (!playback || !romPath) return null;
     if (this.controllerReaderPath !== romPath) {
       this.controllerReaderPath = romPath;
-      const header = this.backend.readFilePrefix(romPath, 0x150);
+      const header = this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN);
       this.controllerReaderCache = header ? playback.anchor.reader(header) : null;
     }
     return this.controllerReaderCache;

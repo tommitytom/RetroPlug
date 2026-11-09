@@ -1,6 +1,5 @@
 // The two axes a loaded system carries, as the console contract names them, and the console lookups the shell's
-// callers know: the core that runs a platform, the graph node that places it, the sniffer, and the two prefix lengths
-// it reads.
+// callers know: the core that runs a platform, the graph node that places it and the sniffer.
 //
 // The authority is the console registry (./consoles.ts) over the descriptors the product's packages contribute
 // (docs/modular-graph-phase-f4a-design.md section 3): a console is a package that contributes one, so nothing here names
@@ -11,7 +10,6 @@ import {
   defaultCoreFor,
   detectPlatform,
   romHasBattery,
-  sniffLengths,
   systemNodeTypeFor as nodeTypeFor,
   type PrefixReader,
   type Platform,
@@ -38,14 +36,6 @@ export function systemNodeTypeFor(platform: Platform): SystemNodeType {
   if (type === undefined) throw new Error(`no console registers the platform ${JSON.stringify(platform)}`);
   return type;
 }
-
-/** The two reads a classification makes, as the descriptors' shortest and longest detector prefix: the Nintendo headers
- *  fit the first (the Game Boy logo ends at $0133, so a 0x134-byte prefix covers the NES's 4 bytes and the GBA's 36),
- *  and a Sega 8-bit header sits at the END of its first bank ($7FF0, or $81F0 with a copier header), 33 KB further in.
- *  Only a file the cheap tier declines pays the second read (classifyRom). */
-const SNIFFS = sniffLengths();
-export const ROM_SNIFF_LEN = SNIFFS[0];
-export const SEGA_SNIFF_LEN = SNIFFS[SNIFFS.length - 1];
 
 export { classifyRom, detectPlatform, romHasBattery };
 export type { PrefixReader };

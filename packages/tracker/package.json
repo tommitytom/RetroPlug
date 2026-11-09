@@ -23,7 +23,6 @@
     "./trackerIntegration": "./ts/trackerIntegration.ts",
     "./trackerPlayback": "./ts/trackerPlayback.ts",
     "./trackerRender": "./ts/trackerRender.ts",
-    "./trackerSramSignature": "./ts/trackerSramSignature.ts",
     "./trackerSongImport": "./ts/trackerSongImport.ts",
     "./workingSongBlob": "./ts/workingSongBlob.ts"
   },

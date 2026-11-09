@@ -199,7 +199,7 @@ The rules below are the parts that don't fit those.
   or names no file) where another package imports it. Adding one has a checklist, spec/06's "Adding a package", which
   is what a new pack is copied from. `retroplug.app`
   names the module that default-exports `definePackage({ roles, romProviders, trackerIntegrations, kitFormats, embeds })`
-  - the lists the app used to hardcode - and `retroplug.consoles` names a module (its own, because the planner reads it
+  (the lists the app used to hardcode), and `retroplug.consoles` names a module (its own, because the planner reads it
   and must carry no schema) default-exporting a package's console descriptors and the physical carts one of them can
   drive; `retroplug.protocol` names the module that default-exports a package's `DefinedNode`s beside the `nodes` (type,
   span label: 16 up with no gaps, unique) and the role kinds it places. A tracker integration carries the cart hooks the

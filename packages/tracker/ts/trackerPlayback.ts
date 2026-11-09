@@ -43,7 +43,8 @@ export interface PlaybackReader {
 /** Where a cart's playhead is, read from its live state. */
 export interface PlaybackAnchor {
   /** The reader for a ROM header prefix (the cart's build, which decides the memory layout), or null for a version
-   *  this build has no layout for. */
+   *  this build has no layout for. The prefix is core's `ROLE_HEADER_LEN` bytes (0x150), the length every role hook sees;
+   *  a build whose version id sat deeper would need the shell to read more and could not ask for it here. */
   reader(header: Uint8Array): PlaybackReader | null;
   /** Whether anything is playing at all: the signal a start edge is detected on. Reads what `reader` returned. */
   playing(state: unknown): boolean;

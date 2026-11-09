@@ -83,7 +83,7 @@ test("graph/buildGraph.ts carries the protocol tables but neither zod nor the ap
   const { inputs, bytes } = await bundle("src/graph/buildGraph.ts");
   console.log(`# buildGraph.ts: ${inputs.length} modules, ${bytes} bytes`);
   expect(inputs.includes("src/generated/protocol.ts")).toBe(true);
-  // The planner and its own helpers: 12 modules today; the ceiling keeps a whole package's app out of a quiet arrival.
+  // The planner and its own helpers: 15 modules today; the ceiling keeps a whole package's app out of a quiet arrival.
   expect(inputs.length < 20, `${inputs.length} modules went in`).toBe(true);
   expect(bytes < 64 * 1024, `the bundle is ${bytes} bytes`).toBe(true);
   expect(forbidden(inputs)).toEqual([]);

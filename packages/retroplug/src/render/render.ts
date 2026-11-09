@@ -73,11 +73,18 @@ export interface RenderRom {
   readonly core: Core | undefined;
   readonly roles: RoleInstance[];
   readonly integration: TrackerIntegration | undefined;
+  /** False when the file could not be read at all: its platform is then the extension's (edge E1) and its roles are
+   *  the console's defaults with nothing the header would derive, so a song flag's refusal names the read rather than
+   *  a console that runs no tracker (edge E8). */
+  readonly readable: boolean;
 }
 
 /** Classify a render's ROM: its content first, and its extension only for a file there is no content to read from (edge
  *  E1 - the failure then comes from the load, as it always did, and names the file). */
-function classifyForRender(reader: PrefixReader, romPath: string): Platform | "unknown" {
+function classifyForRender(
+  reader: PrefixReader,
+  romPath: string,
+): { platform: Platform | "unknown"; readable: boolean } {
   let unreadable = false;
   const platform = classifyRom(
     {
@@ -89,26 +96,34 @@ function classifyForRender(reader: PrefixReader, romPath: string): Platform | "u
     },
     romPath,
   );
-  if (!unreadable) return platform;
+  if (!unreadable) return { platform, readable: true };
   const ext = extensionLower(romPath);
-  return (ext === "" ? undefined : platformForExtension(ext)) ?? platform;
+  return { platform: (ext === "" ? undefined : platformForExtension(ext)) ?? platform, readable: false };
 }
 
 /** The console, core, roles and integration a render's ROM names (see RenderRom). */
 export function resolveRenderRom(ctx: RenderContext, romPath: string): RenderRom {
-  const platform = classifyForRender(ctx.backend, romPath);
-  if (platform === "unknown") return { platform, core: undefined, roles: [], integration: undefined };
+  const { platform, readable } = classifyForRender(ctx.backend, romPath);
+  if (platform === "unknown") return { platform, core: undefined, roles: [], integration: undefined, readable };
   const core = defaultCoreFor(platform);
   // The store's own build reads the roles through this same function, so the integration a render asks is the one the
   // built system will have, whatever a role derives from the file (src/rolesForRom.ts).
   const roles = core === undefined ? [] : rolesForRom(ctx.registry, ctx.backend, { core, platform, romPath });
-  return { platform, core, roles, integration: resolveTracker(roles) };
+  return { platform, core, roles, integration: resolveTracker(roles), readable };
 }
 
 /** The console's name as its descriptor spells it ("Game Boy Advance"), for text that says what a render refused. */
 function platformLabel(platform: Platform | "unknown"): string {
   if (platform === "unknown") return "unknown";
   return platformEntry(platform)?.label ?? platform;
+}
+
+/** Why a song flag found no cart for a render's ROM: the console names no tracker, or, when the file could not be read,
+ *  that is the cause and the console word would mislead (edge E8). */
+function noTrackerReason(readable: boolean, platform: Platform | "unknown"): string {
+  return readable
+    ? `this ROM runs no tracker: its console is ${platformLabel(platform)}`
+    : "this ROM could not be read";
 }
 
 /** The word a split refusal uses for a ROM's console: the platform id, and `other` for a file nothing classifies (the
@@ -162,9 +177,9 @@ export function renderSongs(
   const resolved = resolveRenderRom(ctx, o.rom);
   const render = resolved.integration?.render;
   if (!render?.listSongs) {
-    const console = platformLabel(resolved.platform);
     throw new Error(
-      `render: --list-songs is a feature of ${songCartLabels()} (this ROM runs no tracker: its console is ${console})`,
+      `render: --list-songs is a feature of ${songCartLabels()} ` +
+        `(${noTrackerReason(resolved.readable, resolved.platform)})`,
     );
   }
   const { path, raw } = readBattery(ctx, o);
@@ -609,17 +624,18 @@ export function validateRenderOpts(
   o: RenderOpts,
   platform: Platform | "unknown",
   render?: TrackerRender | undefined,
+  readable = true,
 ): void {
   // Song selection promotes or loads a saved song, which only a cart with a render hook for it can do: LSDj, risa and
   // smsggdj do, BlipToaster (no song battery) does not, and neither does a console the build runs no tracker on.
   const canPlaySaved = render?.seedSong !== undefined || render?.loadSong !== undefined;
-  const console = platformLabel(platform);
   if ((o.song !== undefined || o.songIndex !== undefined) && !canPlaySaved) {
     const carts = songCartLabels();
     // The reason is the ROM's ROLES, not its console: a Game Boy ROM whose title names no tracker (mGB, a homebrew
-    // cart) runs none, though the console has carts that do, so the sentence says what this ROM lacks.
+    // cart) runs none, though the console has carts that do, so the sentence says what this ROM lacks; a file that
+    // could not be read has no roles at all, and says so rather than blaming its console (edge E8).
     throw new Error(
-      `render: --song/--song-index is a feature of ${carts} (this ROM runs no tracker: its console is ${console})`,
+      `render: --song/--song-index is a feature of ${carts} (${noTrackerReason(readable, platform)})`,
     );
   }
   // A split is the console descriptor's: which output layouts its core can be built in, and the file each stream takes.
@@ -669,7 +685,7 @@ function pressPlay(
 export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHooks = {}): RenderResult {
   const log = hooks.log ?? ((m: string) => console.log(m));
   const warn = hooks.warn ?? ((m: string) => console.warn(m));
-  const { platform, core, integration } = resolveRenderRom(ctx, o.rom);
+  const { platform, core, integration, readable } = resolveRenderRom(ctx, o.rom);
   const render = integration?.render;
   const descriptor = platform === "unknown" ? undefined : consoleOfPlatform(platform);
   const split = splitOf(descriptor, o.split);
@@ -677,7 +693,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // that declares neither shape, or no render at all, is treated as stereo, which is what its mix is.
   const mono = (descriptor?.render?.mixLanes ?? "stereo") === "left";
 
-  validateRenderOpts(o, platform, render);
+  validateRenderOpts(o, platform, render, readable);
   const pullMs = o.pullMs ?? PLAY_HOLD_MS;
   if (!(Number.isFinite(pullMs) && pullMs > 0))
     throw new Error(`render: pullMs must be a positive number of ms (got ${o.pullMs})`);
@@ -699,9 +715,17 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     if (hooks.isCancelled?.()) throw new RenderCancelled();
   };
   cancelPoint();
+  // The ROM's whole bytes are read on first use, not here: a build hands the ROM to a core as a path (the store's own
+  // read) and only a cart's hooks take the bytes into this process, so a render of a ROM with no tracker (a plain mGB
+  // boot, a GBA that can never have hooks) does not pull the whole file across for nothing. A hook that reads them
+  // twice gets the one read.
+  let romBytes: Uint8Array | null | undefined;
+  const readRom = (): Uint8Array | undefined => {
+    if (romBytes === undefined) romBytes = ctx.backend.readFile(o.rom);
+    return romBytes ?? undefined;
+  };
   // A chosen song is resolved BEFORE the boot, so a bad --song fails fast: one cart seeds the SRAM the fresh system
   // boots from, the other has it written in after the settle (below).
-  const rom = ctx.backend.readFile(o.rom) ?? undefined;
   const songFlags = o.song !== undefined || o.songIndex !== undefined;
   const battery = songFlags ? readBattery(ctx, o) : undefined;
   const chosen = battery && render?.listSongs ? chooseSong(o, render, render.listSongs(battery.raw), warn) : undefined;
@@ -744,7 +768,10 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // What this cart's render owes the user a word about (a boot that will be silent), then AFTER the settle the cart's
   // own song load: a cart whose working song is work RAM blanks it on the way up, so an earlier write would be wiped.
   const facts: RenderFacts = {
-    rom: rom ?? null,
+    // A getter, so a cart's warnings are what reads the ROM: the boot already handed it to the core as a path.
+    get rom() {
+      return readRom() ?? null;
+    },
     sav: battery?.raw ?? ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom)),
     state: o.state !== undefined,
     song: chosen !== undefined,
@@ -755,6 +782,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   if (chosen && render?.loadSong) {
     // The build just read the ROM, but a load that cannot is the same failure the cart's own reader reported, and a
     // silent skip would leave the boot song rendering under the chosen song's name.
+    const rom = readRom();
     if (!rom || !battery) {
       throw new Error(`render: could not re-read the ROM/sav to load ${integration!.id} song ${chosen.index}`);
     }
@@ -780,7 +808,9 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     // didn't pin a duration, render to the song's end instead of a fixed window, report the length, and trim the
     // silent tail. A cart with no probe (smsggdj, a generic ROM) renders a fixed length, and says why where the probe
     // answers null.
-    const isPlaying = render?.playingProbe?.(host, id, rom ?? new Uint8Array(), facts, warn) ?? null;
+    const isPlaying = render?.playingProbe
+      ? render.playingProbe(host, id, readRom() ?? new Uint8Array(), facts, warn)
+      : null;
     // Auto-detect applies to both mix and split - split just renders per-channel chunks.
     const autoDetect = isPlaying !== null && o.start && o.durationMs === undefined;
 
@@ -790,7 +820,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
       : `${o.durationMs ?? o.maxDurationMs}ms`;
     log(`rendering ${o.rom} → ${base}${o.split === "mix" ? "" : "_*"} (${how})…`);
 
-    const leadIn = pressPlay(host, sink, o, id, rom, descriptor, render);
+    const leadIn = pressPlay(host, sink, o, id, render?.pressPlay ? readRom() : undefined, descriptor, render);
 
     if (autoDetect) {
       const m = driveAutoDetect(sink, isPlaying!, o.maxDurationMs, sr, hooks, pullMs, leadIn);

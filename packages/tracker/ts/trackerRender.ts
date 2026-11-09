@@ -39,7 +39,8 @@ export interface RenderPlaySink {
 
 /** What a render of a cart is told about the request, for the warnings it is the cart's to raise. */
 export interface RenderFacts {
-  /** The ROM's bytes, as the render read them for its classification (null when the file could not be read). */
+  /** The ROM's whole bytes, read on the first hook that asks for them (null when the file could not be read): the
+   *  render classifies on a prefix through another call, so this is its own whole-file read. */
   readonly rom: Uint8Array | null;
   /** The battery the render will boot from, or null when there is none to read. */
   readonly sav: Uint8Array | null;

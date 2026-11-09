@@ -148,13 +148,8 @@ export function detectorAnswer(descriptor: ConsoleDescriptor, answer: Platform):
  *  Reading whole buffers, it runs every detector over the one buffer, in rank order (so the order of the answers is
  *  data, not the product list's); classifyRom is the reader that pays for each prefix once. */
 export function detectPlatform(bytes: Uint8Array, ext?: string): Platform | "unknown" {
-  for (const { descriptor, detect } of RANK_ORDERED) {
-    // The extension breaks a tie only on the last tier (the Sega header's region nibble): a detector reading a shorter
-    // prefix answers on content alone.
-    const answer = detect.run(bytes, detect.prefixBytes === SNIFF_LENGTHS[SNIFF_LENGTHS.length - 1] ? ext : undefined);
-    if (answer !== null) return detectorAnswer(descriptor, answer);
-  }
-  return extensionOnly(ext) ?? "unknown";
+  const answer = detectAt(bytes, SNIFF_LENGTHS[SNIFF_LENGTHS.length - 1], true, ext);
+  return answer ?? extensionOnly(ext) ?? "unknown";
 }
 
 /** Whether a cart has battery-backed save memory, read from its `header`. Only ever returns `false` when we're certain
@@ -198,14 +193,26 @@ export function classifyRom(reader: PrefixReader, romPath: string): Platform | "
     // One read per tier and none after the first answer: the lengths ascend, so a tier is reached only when every
     // shorter one declined.
     const bytes = reader.readFilePrefix(romPath, length) ?? new Uint8Array();
-    const last = length === SNIFF_LENGTHS[SNIFF_LENGTHS.length - 1];
-    for (const { descriptor, detect } of RANK_ORDERED) {
-      if (detect.prefixBytes > length) continue;
-      const answer = detect.run(bytes, last ? ext : undefined);
-      if (answer !== null) return detectorAnswer(descriptor, answer);
-    }
+    const answer = detectAt(bytes, length, length === SNIFF_LENGTHS[SNIFF_LENGTHS.length - 1], ext);
+    if (answer !== null) return answer;
   }
   return extensionOnly(ext) ?? "unknown";
+}
+
+/** One tier of a classification: the detectors that read `length` bytes or fewer, in rank order, over one buffer. The
+ *  extension is shown only at the deepest tier and only to the detectors that read that far (`ConsoleDetect.run`'s
+ *  contract), so classifyRom, which walks the tiers, and detectPlatform, which hands over one whole buffer, show it to
+ *  the same detectors and cannot disagree. */
+function detectAt(bytes: Uint8Array, length: number, last: boolean, ext: string | undefined): Platform | null {
+  const deepest = SNIFF_LENGTHS[SNIFF_LENGTHS.length - 1];
+  for (const { descriptor, detect } of RANK_ORDERED) {
+    if (detect.prefixBytes > length) continue;
+    // The extension breaks a tie only at the tier whose header sits deepest (the Sega header's region nibble): a
+    // detector reading a shorter prefix answers on content alone.
+    const answer = detect.run(bytes, last && detect.prefixBytes === deepest ? ext : undefined);
+    if (answer !== null) return detectorAnswer(descriptor, answer);
+  }
+  return null;
 }
 
 /** The detectors in rank order: the tiebreak among detectors that both match one prefix, so a crafted file carrying two

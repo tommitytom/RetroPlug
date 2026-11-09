@@ -58,8 +58,10 @@ export interface ConsoleDetect {
   /** Tiebreak among detectors that both match one prefix: lower first, so the order is data rather than the product
    *  list's. Two detectors of one rank run in their descriptors' id order, which makes the whole order total. */
   readonly rank: number;
-  /** The platform the content names, or null. `ext` (lowercase, dot included) is passed on the last tier only and may
-   *  only break a tie the content cannot (a Sega header with an unfilled region nibble); it never overrides a match. */
+  /** The platform the content names, or null. `ext` (lowercase, dot included) is passed on the deepest tier only, and
+   *  only to a detector whose own `prefixBytes` is the deepest registered prefix, so classifyRom's tiered walk and
+   *  detectPlatform's whole-buffer one show it to the same detectors; it may only break a tie the content cannot (a
+   *  Sega header with an unfilled region nibble) and never overrides a match. */
   run(bytes: Uint8Array, ext: string | undefined): Platform | null;
 }
 

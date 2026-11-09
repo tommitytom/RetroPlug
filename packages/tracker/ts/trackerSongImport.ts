@@ -42,7 +42,9 @@ export interface SongImportTarget {
 export interface TrackerSongImport {
   /** The file types this cart imports, lowercase and dot included (".lsdsng", ".lsdprj"), for a drop's routing. */
   readonly extensions: readonly string[];
-  /** Apply `paths` to `sys` and reboot it once. Returns true if at least one file was imported (and the save written
-   *  and the core reloaded), false otherwise: no readable battery, none applied, or the write failed. */
+  /** Apply `paths` to `sys` and reboot it once. The shell hands it only files whose extension `extensions` declares
+   *  (the drop routing filters a mixed drop), so an import need not re-check the type. Returns true if at least one
+   *  file was imported (and the save written and the core reloaded), false otherwise: no readable battery, none
+   *  applied, or the write failed. */
   import(host: SongImportHost, sys: SongImportTarget, paths: readonly string[]): boolean;
 }

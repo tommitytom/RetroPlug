@@ -206,6 +206,25 @@ test("E4: --list-songs on the same ROM is refused the same way", () => {
   );
 });
 
+test("E8: a ROM that cannot be read refuses the song flags, saying the file could not be read", () => {
+  // A missing ROM classifies by its extension (E1), so it reads as a Game Boy whose header derives no roles and no song
+  // flag has a cart to reach. The old code read only the battery, so --list-songs listed the sibling sav's songs; the
+  // render classifies through the ROM's roles now, and the sentence names the read rather than a console that runs no
+  // tracker, which is not the reason.
+  const backend = new MockBackend("/config");
+  backend.seed("/roms/missing.sav", lsdjSav("lsdj499"));
+  const ctx = ctxOf(backend, silentAudio());
+  expect(() => renderSongs(ctx, opts({ rom: "/roms/missing.gb" }))).toThrow(
+    "render: --list-songs is a feature of LSDj, SMSGGDJ, Risa (this ROM could not be read)",
+  );
+  expect(() =>
+    runRenderJob(ctx, opts({ rom: "/roms/missing.gb", songIndex: 0, durationMs: 50 }), {
+      log: () => {},
+      warn: () => {},
+    }),
+  ).toThrow("render: --song/--song-index is a feature of LSDj, SMSGGDJ, Risa (this ROM could not be read)");
+});
+
 test("LSDj's song flags read the battery through the codec, so a malformed image is refused in its words", () => {
   // A full-size image with no 'jk' magic: the render has always decoded the battery it lists, so both flags refuse it
   // with the codec's sentence rather than answering "no songs" from a header scan.

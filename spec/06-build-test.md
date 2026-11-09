@@ -230,7 +230,14 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    console descriptors (a platform id, a node type, the extensions it can be recognised by, its detectors in rank order,
    its setting/construct fields and params, its split modes, its link cable, its real-cart option) and any physical cart
    it can drive; the generator refuses a duplicate platform, node type or real cart, a descriptor whose core has no
-   registered system role, and a real cart naming a platform no descriptor registers. A package that bakes bytes in
+   registered system role, and a real cart naming a platform no descriptor registers. A **tracker package** adds a
+   `trackerIntegrations` entry to its app module carrying the cart hooks the shell reaches through it
+   ([trackerRender.ts](../packages/tracker/ts/trackerRender.ts),
+   [trackerPlayback.ts](../packages/tracker/ts/trackerPlayback.ts) and
+   [trackerSongImport.ts](../packages/tracker/ts/trackerSongImport.ts), beside its `sramSignature`) and the role hooks
+   its role types declare ([systemRoles.ts](../packages/core/ts/systemRoles.ts): `parameters`, `deriveConfig`,
+   `hostLatencyMs`); its manifest `capture` keys are its own sync-mode spellings, held by its own test as `lsdj`'s is. A
+   package that bakes bytes in
    declares `retroplug.embed` AND the app module's matching `embeds` entry (its id, label and platform), as `mgb` does. `embed` carries a file inside the package into every product that lists
    it, for `putResource`'s `embedded` field: `[{ "id": "mgb", "file": "rom/mGB.gb" }]`, the id a C identifier (it
    names the generated array) and the file inside the package. Use it for an asset the binary must run without a file

@@ -5,6 +5,7 @@
 // test-native/plugin-controlplane.test.ts.
 import { test, expect } from "@retroplug/testing";
 import { buildAppRegistry } from "../../src/appHost";
+import { syncLatencyMs } from "../../src/syncLatency";
 import { LSDJ_MODE_VALUES } from "@retroplug/lsdj/enums";
 
 const registry = buildAppRegistry();
@@ -16,6 +17,21 @@ test("the two host-clocked LSDj modes add the cart's 33 ms, and every other mode
     const hostClocked = mode === "midiSync" || mode === "midiSyncArduinoboy";
     expect(latencyOf("lsdj-sync", { mode })).toBe(hostClocked ? 33 : 0);
   }
+});
+
+test("a hook's non-finite or negative answer is ignored, so the host is never handed a bad PDC", () => {
+  // The answer is a package's, so the shell does not trust it: a NaN would ride Math.max into every later comparison and
+  // reach the host as "NaN" PDC, an infinity as an infinite one, and a negative number is no delay at all. The role is
+  // placed by its node, so the pipeline is what asks it, as for the maximum itself.
+  const registry = buildAppRegistry();
+  const roles = [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: {} }];
+  const type = registry.roleType("lsdj-sync")!;
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -12]) {
+    registry.registerRole({ ...type, hostLatencyMs: () => bad });
+    expect(syncLatencyMs([{ roles }], registry)).toBe(0);
+  }
+  registry.registerRole({ ...type, hostLatencyMs: () => 33 });
+  expect(syncLatencyMs([{ roles }], registry)).toBe(33);
 });
 
 test("a role that adds no latency declares no hook", () => {

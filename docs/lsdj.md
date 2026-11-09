@@ -235,14 +235,14 @@ backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
   algorithm), so a kit compiles to the same bytes every time, and the other three
   algorithms are deterministic already; `test-native`'s `kit-baseline` and `kit-compile` hold every compiled bank to a
   golden (D1 and D2, [modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md) and
-  [modular-graph-phase-d2-design.md](modular-graph-phase-d2-design.md) section 11). The CLI and the harness hosts
-  compile through `AudioDriver`'s `compileKitFormat` (settled by the driver's native wait); a host with a UI
-  tick, the plugin included, calls the same `compileKitFormat` (the cart's format behind the registry) on its backend,
-  settled by the job pump. The pure-TS `rom`
-  module orchestrates: whole-kit
-  builds take the returned 16 KB bank directly; single-sample imports splice the compiled bytes beside existing
-  samples' **raw** bytes and rebuild the offset table (`buildKitBank`), budget-checked against `0x3fa0`. A slot that
-  does not compile is left empty and the result's `errors[i]` says why; the CLI's read-back prints it.
+  [modular-graph-phase-d2-design.md](modular-graph-phase-d2-design.md) section 11). The CLI and the harness hosts compile
+  through `AudioDriver`'s `compileKitFormat`, the cart's format behind the shell's `kitFormat(id)` registry, settled by
+  the driver's native wait. A host with a UI tick must not: no plugin kit row exists, and one would call the cart's
+  `kitFormat` found through that registry with the stores' backend as its job runner, settled by the UI's job pump,
+  because the driver's native wait would block the frame (spec/07, spec/04). The pure-TS `rom` module orchestrates: a
+  whole-kit build takes the returned 16 KB bank directly; a single-sample import splices the compiled bytes beside
+  existing samples' **raw** bytes and rebuilds the offset table (`buildKitBank`), budget-checked against `0x3fa0`. A
+  slot that does not compile is left empty and the result's `errors[i]` says why; the CLI's read-back prints it.
 - **Asset files (community formats, lsdpatch-compatible).** Whole assets interchange as the standard
   files: **`.lsdpal`** palettes (4-char name + the 40-byte palette body), **`.png`** fonts (an 8-tile-wide
   greyscale image — 64×72 for the 71 main tiles, 64×120 for the **extended** layout that also carries the

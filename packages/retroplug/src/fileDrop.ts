@@ -77,11 +77,15 @@ export function resolveDropAction(backend: HostBackend, ctx: DropContext, paths:
   if (project) return { type: "loadProject", path: project };
 
   // Song files patch into the target instance that imports them - added to free slots, one reboot. Any non-song files
-  // in a mixed drop are ignored. Requires such a target (else a no-op).
+  // in a mixed drop are ignored, and so is a song file of a type the target's own tracker does not declare: with a
+  // second importing tracker in the product, a mixed drop must not hand one cart the other's files. Requires such a
+  // target (else a no-op).
   const songs = files.filter((p) => isSongPath(SONG_EXTENSIONS, p));
   if (songs.length > 0) {
-    const targetImports = songs.some((p) => isSongPath(ctx.targetSongExtensions, p));
-    if (targetImports && ctx.targetId != null) return { type: "patchSongs", id: ctx.targetId, paths: songs };
+    const targetSongs = songs.filter((p) => isSongPath(ctx.targetSongExtensions, p));
+    if (targetSongs.length > 0 && ctx.targetId != null) {
+      return { type: "patchSongs", id: ctx.targetId, paths: targetSongs };
+    }
     return { type: "ignore", reason: "song files need a tracker that imports them" };
   }
 
