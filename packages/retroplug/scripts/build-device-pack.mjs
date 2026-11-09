@@ -73,7 +73,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 
@@ -630,19 +630,35 @@ console.log("  ok: no library calls outside MicroQuickJS's stdlib, in the pack o
 
 // ---- a scenario ---------------------------------------------------------------------------------------------------
 
-/** The package's control-plane module: the one its manifest names as `app` (zod and the stores, the desktop's alone),
- *  or null. It is the one module of the package the whole-core scan must skip, and the one a core module may not import. */
-function appModulePath() {
+/** The package's control-plane modules: the ones its manifest names as `app`, `ui` and `cli` (zod, the stores, the
+ *  desktop's menus and tools), as `{ member, path }`. They are what the whole-core scan must skip, and a core module may
+ *  not import them. */
+function controlPlaneEntries() {
   const found = nearestManifest(PACK_DIR);
-  return found && typeof found.json.retroplug?.app === "string"
-    ? resolve(found.dir, found.json.retroplug.app) : null;
+  if (!found) return [];
+  const members = found.json.retroplug ?? {};
+  return ["app", "ui", "cli"]
+    .flatMap((member) => (typeof members[member] === "string"
+      ? [{ member, path: resolve(found.dir, members[member]) }] : []));
 }
 
-/** The package's portable core: every module under its ts/ but its tests and its control-plane half (appModulePath). A
- *  scenario is how a package proves that core on the engine, and the scenario's own bundle keeps only what it reaches, so
- *  the scan has to see the rest. */
+function controlPlanePaths() {
+  return controlPlaneEntries().map((entry) => entry.path);
+}
+
+/** The package's portable core: every module under its ts/ but its tests and its control-plane half (the modules its
+ *  manifest names as `app`, `ui` and `cli`, and the directory of one that is its directory's index - a `ts/ui/index.ts`
+ *  marks the whole ts/ui tree as the menu's). A scenario is how a package proves that core on the engine, and the
+ *  scenario's own bundle keeps only what it reaches, so the scan has to see the rest. */
 function coreModules() {
-  const appModule = appModulePath();
+  const controlPlane = controlPlanePaths();
+  const excluded = new Set(controlPlane);
+  for (const path of controlPlane) {
+    if (/^index[.]tsx?$/.test(basename(path))) {
+      const dir = dirname(path);
+      excluded.add(dir);
+    }
+  }
   const out = [];
   const walk = (dir) => {
     let entries;
@@ -654,8 +670,8 @@ function coreModules() {
     for (const e of entries) {
       const at = join(dir, e.name);
       if (e.isDirectory()) {
-        if (e.name !== "test" && e.name !== "testSupport") walk(at);
-      } else if (/[.]tsx?$/.test(e.name) && !/[.]test[.]tsx?$/.test(e.name) && at !== appModule) {
+        if (e.name !== "test" && e.name !== "testSupport" && !excluded.has(at)) walk(at);
+      } else if (/[.]tsx?$/.test(e.name) && !/[.]test[.]tsx?$/.test(e.name) && !excluded.has(at)) {
         out.push(at);
       }
     }
@@ -689,9 +705,19 @@ if (SCENARIO) {
   // core, so this refuses rather than passing on nothing.
   const core = coreModules();
   if (core.length === 0) fail(`no core to scan: no module under ${repoPath(PACK_DIR)}/ts`);
-  const appModule = appModulePath();
+  // The control plane's half is what the scan below skips deliberately. A core module reaching any of it is refused
+  // HERE, by name: it would drag the desktop's half into a node's bundle too, and left to the scan the report would be
+  // whichever library call that code happens to make, naming neither module.
+  const controlPlane = controlPlaneEntries();
+  // A member whose module is its directory's index marks the whole directory as that member's (a `ts/ui/index.ts` is the
+  // menu's, helpers beside it included), as the scan's own skip does.
+  const controlPlaneDirs = controlPlane
+    .filter((entry) => /^index[.]tsx?$/.test(basename(entry.path)))
+    .map((entry) => ({ member: entry.member, path: dirname(entry.path) }));
+  const controlPlaneOf = (abs) => controlPlane.find((entry) => entry.path === abs)
+    ?? controlPlaneDirs.find((entry) => abs === entry.path || abs.startsWith(entry.path + sep));
   // Every module of the core, every export kept, resolved by the same toolchain as a pack: the metafile is what names
-  // the module that imported what (the allowlist's and the app module's checks below both need it).
+  // the module that imported what (the allowlist's and the control-plane checks below both need it).
   let coreBuilt;
   try {
     coreBuilt = await esbuild.build({
@@ -706,14 +732,20 @@ if (SCENARIO) {
     fail(`bundling the package's core failed:\n${e.message}`);
   }
   const coreInputs = Object.entries(coreBuilt.metafile.inputs);
-  // The control plane's half is the app module's, and it is the module the scan below skips deliberately. A core module
-  // reaching it is refused HERE, by name: it would drag zod into a node's bundle too, and left to the scan the report
-  // would be whichever library call zod's internals happen to make, naming neither module.
-  const appImporters = appModule === null ? [] : coreInputs
-    .filter(([, mod]) => mod.imports.some((imp) => resolve(REPO, imp.path) === appModule))
-    .map(([from]) => `${repoPath(resolve(REPO, from))} imports the package's app module ${repoPath(appModule)}`);
-  if (appImporters.length > 0) {
-    fail(`a core module imports the control plane's half:\n  ${appImporters.join("\n  ")}`);
+  const controlImporters = [];
+  for (const [from, mod] of coreInputs) {
+    const fromAbs = resolve(REPO, from);
+    if (controlPlaneOf(fromAbs)) continue; // the control plane itself, which the scan skips
+    for (const imp of mod.imports) {
+      const entry = controlPlaneOf(resolve(REPO, imp.path));
+      if (entry) {
+        controlImporters.push(`${repoPath(fromAbs)} imports the package's ${entry.member} module ` +
+          `${repoPath(entry.path)}`);
+      }
+    }
+  }
+  if (controlImporters.length > 0) {
+    fail(`a core module imports the control plane's half:\n  ${controlImporters.join("\n  ")}`);
   }
   // The core bundle is EVERY module of the package's `ts/`, so it gets the scenario bundle's allowlist too: a module the
   // scenario never reaches must not import another package either. check:boundaries covers the real packages; a fixture

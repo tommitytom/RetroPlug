@@ -24,9 +24,7 @@ import { useSongImport } from "./app/useSongImport";
 import { useSongWatch } from "./app/useSongWatch";
 import { useSramAutoSave } from "./app/useSramAutoSave";
 import { useJobPump } from "./app/useJobPump";
-import { useN8SdWatch } from "./app/useN8SdWatch";
-import { useLaunchpadScanWatch } from "./app/useLaunchpadScanWatch";
-import { restoreLaunchpad, subscribeLaunchpad } from "./screens/menu/launchpadDevices";
+import { useUiServices } from "./app/useUiServices";
 import { topOverlay } from "./app/overlay";
 import { native } from "./host/nativeHooks";
 import { useGameInput } from "./input/useGameInput";
@@ -40,7 +38,6 @@ import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel
 import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import { subscribeMidi } from "./screens/menu/midiDevices";
 import { subscribeTransport, pollTransport } from "./screens/menu/transport";
-import { subscribeN8 } from "./screens/menu/n8Devices";
 import type { MenuTree } from "@retroplug/ui/menu";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE, type AppAction } from "../src/keyCodes";
@@ -67,14 +64,6 @@ export function App() {
   useSongWatch(stores); // records the focused cart's song in Recent when it changes (incl. loads made inside the cart)
   useSramAutoSave(stores); // mirrors each battery to its .sav under the Continuous preference (no-op otherwise)
   useJobPump(stores); // settles capability jobs as their completions arrive (no native call while none is pending)
-  useN8SdWatch(); // re-renders the Settings > N8 Pro progress row while a native SD job (ROM/SRAM) runs
-  useLaunchpadScanWatch(stores); // drives a control-surface scan, records what answered (Settings > MIDI)
-  // Reclaim the control surface config.json left enabled, once the UI is up, and tell the host it is done: a standalone
-  // holds its MIDI stream and audio back until that word arrives (rp_device_host::restored), so a restored device's pair
-  // is reserved before the shared stream ever opens it and costs no audio restart. Inert where no facet is mounted.
-  useEffect(() => {
-    restoreLaunchpad(stores.userConfig);
-  }, [stores.userConfig]);
   const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title
 
   const [menuOpen, setMenuOpen] = useState(true);
@@ -97,6 +86,9 @@ export function App() {
     stores,
     beginImport,
   ]);
+  // The product's UI services: the devices whose state lives in the native host (the N8 Pro's card job, a control
+  // surface's scan and its startup restore) started, subscribed and polled at their own cadences.
+  useUiServices(uiHost);
   // The five standalone-only menu sources. Each owns state that lives in the NATIVE host rather than in
   // a store, so a change there has no path back into React and must be pushed: the Audio submenu's
   // staged rate/block draft, a MIDI device pick, the transport toggle (which the audio thread publishes
@@ -105,7 +97,7 @@ export function App() {
   //
   // A render is a render, so which source fired does not change what happens next. Inert in a DAW / the
   // harness, where nothing ever emits.
-  useRerenderOn(subscribeAudioDraft, subscribeMidi, subscribeTransport, subscribeN8, subscribeLaunchpad);
+  useRerenderOn(subscribeAudioDraft, subscribeMidi, subscribeTransport);
   // The cartridge sound chip sits at ONE level, whether you are hearing the emulator or a real console: a system's
   // "Expansion Volume" knob drives Mesen's expansion channels, and the driven cart's node carries the same value as its
   // own `expansionVolume` param, which the node sends to the cart's master-volume register (and again on every

@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/test-ui-directory-imported",
+  "private": true,
+  "retroplug": { "ui": "ts/ui/index.ts" }
+}

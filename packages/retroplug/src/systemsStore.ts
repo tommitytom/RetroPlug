@@ -112,6 +112,8 @@ export interface SystemView {
   savPath: string; // the override ("" = derived from suffix)
   savSuffix: number;
   embedded: boolean;
+  /** The embedded ROM's id ("" for a system booted from a file): what a title reads the declaration's short name from. */
+  embeddedRom: string;
   battery: boolean; // the cart has battery-backed save memory (a real .sav target)
   focused: boolean;
   missing: boolean;
@@ -212,6 +214,7 @@ export class SystemsStore {
       savPath: e.savPath,
       savSuffix: e.savSuffix,
       embedded: e.embeddedRom !== "",
+      embeddedRom: e.embeddedRom,
       battery: e.battery,
       focused: e.id === this.focusedId,
       missing: e.romPath !== "" && e.embeddedRom === "" && !this.backend.fileExists(e.romPath),

@@ -9,8 +9,8 @@ import type { SystemView } from "../../../src/systemsStore";
 import type { ProjectSettings } from "../../../src/projectConfig";
 import { MIDI_ROUTING_VALUES } from "@retroplug/core/midiRouting";
 import { consoleOfPlatform } from "../../../src/consoles";
-import { configRowCycler, roleRowItems } from "./configRows";
-import { contributedTrackerUi, roleRows } from "../../host/menuContributions";
+import { roleRowItems } from "./configRows";
+import { assertUniqueMenuIds, contributedTrackerUi, menuPlacement, roleRows } from "../../host/menuContributions";
 import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, type AudioRouting } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
@@ -24,7 +24,7 @@ import { stem, dirname, basename, extension, joinPath, sanitizeName, shortenMidd
 import { ROM_PATTERNS } from "../../../src/fileSelection";
 import { filesPngHost } from "../../../src/hostGroups";
 import { createUiHost, uiViews, type UiHost } from "../../host/uiHost";
-import { embeddedRoms } from "../../../src/embeds";
+import { embeddedRomOf, embeddedRoms } from "../../../src/embeds";
 import {
   savEditWouldDiscard,
   saveWorkingSong,
@@ -45,20 +45,7 @@ import { SONG_BLOCKED } from "../../app/unsavedRows";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
 import { getTransport, setTransport, setClockBpm, CLOCK_BPM_STEP, CLOCK_BPM_COARSE_STEP } from "./transport";
-import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
-import { getN8CartJob, n8DumpSram, n8LoadRom, n8RestoreSram, projectCart, type N8CartJob } from "./n8SdOps";
-import {
-  getLaunchpadConfig, setLaunchpadPorts, connectLaunchpad, looksLikeLaunchpad, launchpadDetected,
-  hasLaunchpad, startLaunchpadScan, cancelLaunchpadScan, getLaunchpadScan, launchpadScanBusy, forgetLaunchpad,
-  type LaunchpadConfig, type LaunchpadScanStatus,
-} from "./launchpadDevices";
-import { controllerApps, controllerApp } from "../../../src/controller/registry";
-import type { ControllerAppContribution } from "@retroplug/launchpad/registry";
-import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "@retroplug/launchpad/enums";
-import { controllerSyncOverride } from "../../../src/graph/controller";
-import {
-  legacyConfigIndex, type AssetMenuSpec, type MenuBuildContext, type SongMenuSpec,
-} from "@retroplug/ui/contribution";
+import type { AssetMenuSpec, MenuBuildContext, SongMenuSpec } from "@retroplug/ui/contribution";
 import type { MenuAction, MenuItem, MenuTree } from "@retroplug/ui/menu";
 import { roleConfig } from "@retroplug/core/systemRoles";
 import {
@@ -263,39 +250,9 @@ function inputCyclerNames(devices: string[], selected: string): { names: string[
   return { names, index: names.length - 1 };
 }
 
-/** The read-only line under the scan row: what it is doing, or what the last one concluded.
- *
- *  A finished scan outranks the recorded device, and reads its own replies rather than waiting for them to
- *  be applied. Both halves matter: re-scanning after unplugging something has to be able to say "nothing
- *  answered" instead of going on naming what used to be there, and the verdict must not flicker through
- *  "nothing" while the apply edge lands a frame later.
- *
- *  `skipped` is worth showing rather than swallowing. A MIDI input is exclusive on Windows, so a port
- *  another application is holding simply cannot be listened on - and "nothing answered" then means
- *  something quite different from "nothing is there". */
-function launchpadScanLabel(scan: LaunchpadScanStatus | null, cfg: LaunchpadConfig | null): string {
-  if (scan?.busy) return scan.phase || "Scanning...";
-  if (scan?.cancelled) return "Cancelled";
-  if (scan?.done) {
-    // A confirmed find leads even if something went wrong afterwards (a port that would not close): it was applied, so
-    // the row has to say so.
-    const hit = scan.found;
-    if (hit) return `${hit.name} on ${hit.input}`;
-    // "Could not look" stays attached to whatever else is said: on Windows a port another program holds cannot be
-    // probed at all, and the device being looked for may be behind exactly that port.
-    const inUse = scan.skipped > 0 ? ` (${scan.skipped} port(s) in use elsewhere)` : "";
-    if (scan.error) return `Error: ${scan.error}${inUse}`;
-    if (scan.unsupported) return `${scan.unsupported} - not supported${inUse}`;
-    return `Nothing answered${inUse}`;
-  }
-  if (cfg?.deviceLabel && cfg.selectedInput) return `${cfg.deviceLabel} on ${cfg.selectedInput}`;
-  return "Not scanned";
-}
-
-// Settings > MIDI. The device pickers, plus the control-surface scan - the one place a Launchpad can be
-// FOUND, which is why it lives here and not in the instance menu's Launchpad submenu: that submenu only
-// appears once a device is known, so a TRS-attached surface would have nowhere to be set up from. Settings
-// is where you describe your rig; the instance menu is where you play the hardware you have.
+// Settings > MIDI. The device pickers, plus whatever a package contributes at the `settings.midi` placement - the
+// control-surface scan today, because Settings is where you describe your rig and the instance menu's Launchpad submenu
+// only exists once a device is known.
 function midiSettingsChildren(ctx: MenuContext): MenuItem[] {
   const cfg = getMidiConfig() ?? { inputs: [], outputs: [], selectedInput: "", selectedOutput: "" };
   const inp = inputCyclerNames(cfg.inputs, cfg.selectedInput);
@@ -304,275 +261,11 @@ function midiSettingsChildren(ctx: MenuContext): MenuItem[] {
   // single sentinel at 0.
   const inName = (n: number) => (n === 0 ? "" : n === 1 ? ALL_INPUTS : cfg.inputs[n - 2] ?? cfg.selectedInput);
   const outName = (n: number) => (n === 0 ? "" : cfg.outputs[n - 1] ?? cfg.selectedOutput);
-  const store = ctx.stores.userConfig;
-  const lpcfg = getLaunchpadConfig(store);
-  const scan = getLaunchpadScan();
   return [
     cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),
     cycler("midi-output", "Output Device", out.names, out.index, (n) => setMidiOutput(outName(n))),
-    // Writing MIDI at a stranger's gear is never something to do on a timer or a render, so this is the
-    // only trigger: one Universal Device Inquiry per output, on request. Disabled while the link holds a
-    // pair - those ports cannot be reopened, and a connected device is already found.
-    ...(hasLaunchpad()
-      ? [
-          separator("midi-sep-surface"),
-          // Cancel stays reachable whatever the link holds: it is the only way to stop a scan, and a pair claimed
-          // behind one (a restore landing mid-scan) would otherwise leave it running with nothing to press.
-          action("midi-scan", scan?.busy ? "Cancel Control Surface Scan" : "Scan for Control Surface",
-            () => void (scan?.busy ? cancelLaunchpadScan() : startLaunchpadScan()),
-            !!lpcfg?.connected && !scan?.busy),
-          infoRow("midi-scan-status", `Control Surface: ${launchpadScanLabel(scan, lpcfg)}`),
-          // Greyed while a scan runs as well: its answer is about to become the selection, and forgetLaunchpad refuses
-          // mid-scan (a Forget that did nothing would read as a broken row).
-          action("midi-scan-forget", "Forget Control Surface", () => forgetLaunchpad(store),
-            !lpcfg?.selectedInput || !!lpcfg?.connected || !!scan?.busy),
-        ]
-      : []),
+    ...menuPlacement("settings.midi", hostOf(ctx), ctx.system ?? null, buildContext(ctx)),
   ];
-}
-
-// "Everdrive N8 Pro" submenu (in the instance menu's tracker block, beside risa/LSDj - it drives a real
-// NES), available in BOTH the SDL standalone and the DAW plugin. The submenu shows only when a physical N8 is
-// actually detected (a serial port with the cart's USB VID:PID, n8Detected below) - no hardware, no menu.
-// Streaming: pick a serial port (auto-detecting the N8), Connect to open the link, tune the timed-release
-// lookahead; the native host reconnects + persists (n8.cfg) on the spot. Card ops (Load ROM / back up and
-// restore the battery): long capability jobs on the driven cart's rp.n8.nes node, which report progress on the
-// read-only card row (useN8SdWatch keeps it live). Those appear only once the link is up (see the gate below).
-// One job at a time - every action is disabled while one runs.
-const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
-
-// A physical N8 counts as "here" only when one is actually enumerated (a serial port flagged isN8 by its USB
-// VID:PID). null cfg = the host lacks the seam (headless harness). Gates whether the whole submenu renders.
-function n8Detected(cfg: N8Config | null): boolean {
-  return !!cfg && cfg.ports.some((p) => p.isN8);
-}
-
-// The read-only card-operation row: progress while busy, else the last result / error, else Ready.
-function n8SdLabel(job: N8CartJob): string {
-  if (job.busy) {
-    const pct = job.bytesTotal > 0 ? ` ${Math.floor((job.bytesDone / job.bytesTotal) * 100)}%` : "";
-    return `${job.op === "load" ? "Uploading" : job.op === "dump" ? "Reading" : "Writing"}${pct}`;
-  }
-  if (job.error) return `Error: ${job.error}`;
-  if (job.result) return job.result;
-  return "Ready";
-}
-
-/** The cart node this menu's card rows act on: the project's driven cart when `sys` is that system, or (with no
- *  `sys`) the project's cart alone. Null when the project drives none, and the card block is not built at all. */
-function cartFor(ctx: MenuContext, sys: SystemView | null): { system: SystemView; nodeId: string } | null {
-  const cart = projectCart(ctx.systems);
-  return cart && (sys === null || cart.system.id === sys.id) ? cart : null;
-}
-
-// "Launchpad" submenu (in the instance menu's tracker block, beside N8 Pro - a control surface plays a
-// tracker, so it belongs with them). Standalone-only, and shown only when a device is actually there
-// (launchpadDetected), the same rule the N8 Pro submenu next door follows.
-//
-// Detecting one is not a name test, because a Launchpad also speaks TRS/DIN: on a machine short of USB ports
-// it arrives through an ordinary MIDI interface, on a port named after the INTERFACE, and nothing about that
-// name says "Launchpad". Nor can it be done passively - DIN has no enumeration and no idle heartbeat, so the
-// OS sees the interface and nothing else. It takes a Universal Device Inquiry, which is a transmit, which is
-// why FINDING one lives in Settings > MIDI as a deliberate user action and this submenu only ever reads the
-// answer. The port cyclers still offer every port unfiltered, so a wrong guess is fixable here.
-//
-// The rows straddle two scopes on purpose, because setting the feature up needs both: the ports + Connect
-// are HOST state (persisted in config.json's controlSurface, shared by every project), while the app, its own knobs and
-// Enable are PROJECT state (persisted in the .rplg, since which cart a surface drives is a property of the project).
-//
-// The app's rows are built from the registry: the project's app id picks the contribution, and the knobs are the ones ITS
-// module declares (menu), defaulted and bounded by ITS schema. So a second app is a package's change, not a shell one.
-const CONTROLLER_TARGET_LABELS: Record<ControllerTarget, string> = {
-  system: "Emulated Cart",
-  midiOut: "MIDI Out (real hardware)",
-};
-
-/** The read-only line describing what the controller has done to the cart's sync role. `driving` is the app's own answer
- *  (controllerSyncOverride): the mode its launches need is the one the cart is being put in, which is NOT "the mode is
- *  not the string off" - an app whose off-mode is spelt differently, or that has none, would then read as driving while
- *  nothing was sent. `cartSync` is the cart's OWN SYNC setting as last polled, which is what decided it. The wording
- *  names the APP and no mode, so a second app needs no change here. */
-function cartSyncLabel(app: string, driving: boolean, cartSync: string | null): string {
-  if (driving) return cartSync ? `Cart: ${app} - driving it` : `Cart: ${app} - driving it (SYNC unread)`;
-  return `Cart: ${app} - not driving it: its SYNC is ${cartSync ?? "unread"}`;
-}
-
-/** The read-only status line: what the link is doing, in the words a player would use. */
-function launchpadStatus(cfg: LaunchpadConfig): string {
-  if (cfg.connected) {
-    // `dropped` is what the device never got while it WAS attached (a full send ring, an oversized message): frames the
-    // surface is missing, which a repaint replaces but the row still reports.
-    if (cfg.dropped > 0) return `connected (${cfg.dropped} dropped)`;
-    // The name a scan read off the device, when there is one. Worth the room: it is the difference between
-    // "the cable reaches a Launchpad" and "the ports opened", which otherwise read identically here.
-    return cfg.deviceLabel ? `connected - ${cfg.deviceLabel}` : "connected";
-  }
-  if (cfg.error) return `Error: ${cfg.error}`;
-  if (cfg.enabled) return !cfg.selectedInput || !cfg.selectedOutput ? "pick both ports" : "not connected";
-  // Nothing chosen, the feature off, and a device on a port named like its own USB interface: the whole of what an upgrade
-  // from the legacy host needs is that there is nothing to migrate and where a device is found (design section 5). The
-  // scan lives in Settings > MIDI because this submenu only exists for a device already known.
-  if (!cfg.selectedInput && !cfg.selectedOutput && cfg.inputs.some(looksLikeLaunchpad))
-    return "a Launchpad is here - Connect, or Settings > MIDI to scan for one";
-  return "not connected";
-}
-
-/** Cycler names for one direction's ports, hinted ones tagged. Index 0 is "(none)" - a port must be chosen,
- *  since there is no sensible "all devices" for a device we claim exclusively. */
-function launchpadPortNames(ports: string[], selected: string): { names: string[]; index: number } {
-  const label = (p: string) => (looksLikeLaunchpad(p) ? `${p} (detected)` : p);
-  const names = ["(none)", ...ports.map(label)];
-  if (selected === "") return { names, index: 0 };
-  const i = ports.indexOf(selected);
-  if (i >= 0) return { names, index: i + 1 };
-  names.push(`${selected} (not connected)`); // a persisted pick whose device is away still shows
-  return { names, index: names.length - 1 };
-}
-
-/** The app's own rows, built from the registry and the app's schema: one per knob the app declares (`menu`), showing
- *  what the project holds and defaulting to what the schema fills, so the shell names no app, no knob and no value. */
-function controllerAppRows(ctx: MenuContext, app: ControllerAppContribution | undefined, config: Record<string, unknown>): MenuItem[] {
-  if (!app || !app.menu) return [];
-  const project = ctx.stores.project;
-  const defaults = app.config.parse({}); // the schema is the source of a knob's default, as it is of its bounds
-  const current = (key: string): unknown => (config[key] !== undefined ? config[key] : defaults[key]);
-  const set = (key: string, value: unknown) => project.setController({ appConfig: { [key]: value } });
-  return app.menu.map((field) =>
-    configRowCycler(`lp-app-${field.key}`, field, current(field.key), defaults[field.key], (value) =>
-      set(field.key, value),
-    legacyConfigIndex(field, current(field.key))),
-  );
-}
-
-function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem[] {
-  const project = ctx.stores.project;
-  const controller = ctx.settings.controller;
-  const store = ctx.stores.userConfig;
-  const inp = launchpadPortNames(cfg.inputs, cfg.selectedInput);
-  const out = launchpadPortNames(cfg.outputs, cfg.selectedOutput);
-  const portAt = (ports: string[], n: number, current: string) => (n === 0 ? "" : ports[n - 1] ?? current);
-
-  // Polled on the song-watch timer (refreshControllerSong), so reading it here costs a field access
-  // rather than a 128 KB battery copy per menu render.
-  const cartSync = controller.enabled ? project.controllerCartSync() : null;
-  // What the published document will have the cart's sync node run, computed by the SAME helper buildGraph uses - so
-  // the row cannot describe something other than what is happening.
-  const syncOverride = controllerSyncOverride(ctx.systems, controller.enabled ? { ...controller, cartSync } : null);
-  const apps = controllerApps.list();
-  const appIdx = Math.max(0, apps.findIndex((a) => a.id === controller.app));
-  const app = controllerApp(controller.app);
-
-  // Greyed while a scan runs: its answer is about to become the selection (launchpadScanBusy). The port pickers are
-  // greyed while connected too: stepping one live would claim every pair it passed - Programmer-mode bytes at whatever
-  // device each step landed on. Disconnect, pick, Connect.
-  const scanning = launchpadScanBusy();
-  const pickable = (item: MenuItem): MenuItem => (scanning || cfg.connected ? { ...item, disabled: true } : item);
-
-  return [
-    pickable(cycler("lp-input", "Input Device", inp.names, inp.index, (n) =>
-      setLaunchpadPorts(store, portAt(cfg.inputs, n, cfg.selectedInput), cfg.selectedOutput))),
-    pickable(cycler("lp-output", "Output Device", out.names, out.index, (n) =>
-      setLaunchpadPorts(store, cfg.selectedInput, portAt(cfg.outputs, n, cfg.selectedOutput)))),
-    // Keyed on what the link IS doing, not on the saved intent: a pair saved as connected whose device was away at
-    // launch is not connected, and reading "Disconnect" there left no way to retry but pressing twice. So it offers
-    // Connect (which retries) beside a way to stop it reconnecting at every launch.
-    action("lp-connect", cfg.connected ? "Disconnect" : "Connect", () => connectLaunchpad(store, !cfg.connected, cfg), scanning),
-    ...(cfg.enabled && !cfg.connected
-      ? [action("lp-stop", "Stop Connecting at Launch", () => connectLaunchpad(store, false, cfg), scanning)]
-      : []),
-    infoRow("lp-status", `Status: ${launchpadStatus(cfg)}`), // read-only
-    // What the controller is doing to the cart's sync role, and why. Shown rather than applied silently: the override
-    // does not touch the saved project (it happens in the published document), so without a row here the LSDj submenu
-    // would go on reporting the user's own setting while the cart ran a different one.
-    //
-    // A cart that is not in the mode the app needs ignores row launches ENTIRELY WITHOUT COMPLAINT - it goes on playing
-    // and stepping to the host clock, so the only symptom is that the pads stop doing anything. And the way players land
-    // there is nasty: LSDj refuses to change SYNC while the cart is playing, so reaching for the setting mid-session
-    // leaves it wherever the first press landed, with no way back until playback stops (measured in
-    // test-native/lsdj-sync-toggle).
-    ...(syncOverride
-      ? [infoRow("lp-cart-sync", cartSyncLabel(app?.label ?? controller.app, syncOverride.driving, cartSync))]
-      : []),
-    separator("lp-sep-app"),
-    // Project scope from here down: these ride the .rplg, and each edit publishes the graph.
-    cycler("lp-enabled", "Use in Project", OFF_ON, controller.enabled ? 1 : 0, (n) =>
-      project.setController({ enabled: n === 1 })),
-    cycler("lp-app", "App", apps.map((a) => a.label), appIdx, (n) =>
-      project.setController({ app: apps[n].id, appConfig: {} })),
-    ...controllerAppRows(ctx, app, controller.appConfig),
-    // Where launches go. "Emulated Cart" hands them to the tracker's own sync role in the same block; "MIDI Out" sends
-    // them out of the host, which is how a real Game Boy behind an Arduinoboy is driven.
-    cycler("lp-target", "Launches To", CONTROLLER_TARGET_VALUES.map((t) => CONTROLLER_TARGET_LABELS[t]),
-      Math.max(0, CONTROLLER_TARGET_VALUES.indexOf(controller.target)), (n) =>
-        project.setController({ target: CONTROLLER_TARGET_VALUES[n] })),
-  ];
-}
-
-function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
-  // Port cycler: index 0 = "(auto-detect)" (empty selection); the rest are the DETECTED N8 ports only. A plain
-  // serial port can't be an Everdrive, so we don't offer it (the cart is identified by its USB VID:PID). A
-  // persisted selection that isn't currently enumerated is still shown, tagged "(not detected)", so it never
-  // silently vanishes.
-  const n8Ports = cfg.ports.filter((p) => p.isN8);
-  const portValues = n8Ports.map((p) => p.port);
-  const names = ["(auto-detect)", ...portValues];
-  let index = 0;
-  if (cfg.selectedPort !== "") {
-    const i = portValues.indexOf(cfg.selectedPort);
-    if (i >= 0) index = i + 1;
-    else { names.push(`${cfg.selectedPort} (not detected)`); index = names.length - 1; }
-  }
-  const portName = (n: number) => (n === 0 ? "" : portValues[n - 1] ?? cfg.selectedPort);
-  const laIdx = Math.max(0, N8_LOOKAHEADS.indexOf(cfg.lookaheadMs));
-  const status = cfg.enabled
-    ? cfg.connected
-      ? `Streaming (${cfg.bytes} bytes)`
-      : cfg.error
-        ? `Error: ${cfg.error}`
-        : "Connecting..."
-    : "Off";
-
-  // A card job is one at a time and holds the cart, so every action here (Connect included, which would have to wait
-  // for the job's current step) is disabled while one runs, and the status row shows its progress.
-  const job = getN8CartJob();
-  const busy = job.busy;
-  const items: MenuItem[] = [
-    // The port, the link and the lookahead are the host's link, which a card job holds while it runs (a disconnect
-    // during one waits for its current step), so all three wait too.
-    cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n)), busy),
-    action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled), busy),
-    cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx,
-      (n) => setN8Lookahead(N8_LOOKAHEADS[n]), busy),
-    separator("n8-sep-status"),
-    infoRow("n8-status", `Status: ${status}`),  // read-only streaming status row
-  ];
-
-  // The card operations (Load ROM / back up and restore the battery) are the driven cart's node's capability jobs, so
-  // they appear while the project drives a cart - or while one runs. They need the link up (a job reaches the cart
-  // only through it), and a job reads disconnected while it runs, so `connected` blips false mid-job; `busy` keeps the
-  // block put. After a ROM load streaming stays stopped (a new game booted), so the block hides until you reconnect.
-  const cart = cartFor(ctx, null);
-  if (cart && (cfg.connected || busy)) {
-    // Load ROM needs the cart at its menu; the battery rows reach its SD card's save file for the driven ROM (see
-    // n8SdOps.ts): back up takes about a minute for 64 KB and shows its progress, and a restore only lands when the
-    // game next boots - so restore first, then load.
-    items.push(
-      separator("n8-sep-sd"),
-      action("n8-load-rom", "Load ROM to N8...", () =>
-        browseThen(hostOf(ctx), { title: "Load ROM to N8", patterns: ROM_PATTERNS },
-          (p) => n8LoadRom(ctx.stores.backend, cart, p)), busy),
-      action("n8-dump-sram", "Dump SRAM to file...", () =>
-        browseThen(
-          hostOf(ctx),
-          { title: "Dump N8 SRAM", patterns: ["*.srm", "*.sav"], saving: true, defaultName: "n8.srm" },
-          (p) => n8DumpSram(ctx.stores.backend, cart, p)), busy),
-      action("n8-restore-sram", "Restore SRAM from file...", () =>
-        browseThen(hostOf(ctx), { title: "Restore N8 SRAM", patterns: ["*.srm", "*.sav"] },
-          (p) => n8RestoreSram(ctx.stores.backend, cart, p)), busy),
-      infoRow("n8-sd-status", `SD: ${n8SdLabel(job)}`),  // read-only card-operation status row
-    );
-  }
-  return items;
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -601,8 +294,6 @@ export function validAudioRoutings(systems: readonly Pick<SystemView, "platform"
 }
 const LAYOUT_NAMES = ["Auto", "Row", "Column", "Grid"];
 const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { OnProjectSave: "On Save", Continuous: "Continuous" };
-// Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
-const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
 const OFF_ON = ["Off", "On"]; // boolean toggles rendered as 2-value cyclers (Left/Right + Enter step)
 
 // Glob filters for the file dialogs (realBackend space-joins them for DPF).
@@ -1372,7 +1063,11 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
 /** What a contributed builder reads beyond the host: the project's systems and the shell's per-path base-ROM cache (a
  *  catalogue parses a ROM once per path rather than once per menu build, and a bake drops it when it rewrites one). */
 function buildContext(ctx: MenuContext): MenuBuildContext {
-  return { systems: ctx.systems, assetRom: (path) => assetRomBytes(ctx.stores.backend, path) };
+  return {
+    systems: ctx.systems,
+    assetRom: (path) => assetRomBytes(ctx.stores.backend, path),
+    romPatterns: ROM_PATTERNS,
+  };
 }
 
 /** One tracker's instance-submenu children, composed from what its package contributes: the rows its `extras` declare
@@ -1717,13 +1412,15 @@ export function composeWindowTitle(version: string, project: string, cart?: stri
 
 /** The instance-menu title. For a tracker cart: "RetroPlug v<version> - <song> - <ROM name>" (the cart's
  *  own name, not the filename). Otherwise "RetroPlug v<version> - <project> - <rom>", where ROM = the file
- *  stem (or "mGB" for the embedded synth), dropped when it equals the project name so it isn't shown twice. */
+ *  stem, or the embedded ROM's OWN short name ("mGB" for the synth, its declaration's shortLabel), dropped when it
+ *  equals the project name so it isn't shown twice. */
 function instanceTitle(ctx: MenuContext, sys: SystemView): string {
   const base = ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug";
   const cart = trackerCartLabel(ctx.stores.backend, sys);
   if (cart) return `${base} - ${cart}`;
   const project = ctx.stores.project.displayName(); // the user's name, else the one derived from the systems
-  const rom = sys.embedded ? "mGB" : stem(sys.romPath);
+  const embed = sys.embeddedRom ? embeddedRomOf(sys.embeddedRom) : undefined;
+  const rom = embed ? embed.shortLabel ?? embed.label : stem(sys.romPath);
   const segs = [base];
   if (project) segs.push(project);
   if (rom && rom !== project) segs.push(rom);
@@ -1736,40 +1433,29 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const multi = ctx.systems.length > 1; // Replace / Remove / Link Group are peer-only rows
   // The tracker submenu (LSDj / risa / …) — one generic branch, gated on the marker role the ROM sniffed.
   const tracker = resolveTracker(sys.roles);
-  const n8cfg = getN8Config();     // null without the seam; enumerates ports + link state fresh each render
-  const n8Here = n8Detected(n8cfg); // true only when a physical N8 is attached -> the submenu renders
-  // Launchpad: null without the seam (a DAW / the harness), and shown only when a surface is actually here -
-  // over USB by port name, or on any port pair a Settings > MIDI scan found. See launchpadMenuChildren.
-  const lpcfg = getLaunchpadConfig(ctx.stores.userConfig);
-  const lpHere = launchpadDetected(lpcfg);
-  return {
-    title: instanceTitle(ctx, sys),
-    items: [
+  // The tracker submenu, then the contributed device entries in product order (Launchpad, then N8 Pro): both drive
+  // real hardware, so they belong beside the trackers rather than buried in Settings, and an entry whose device is
+  // not here contributes nothing and hides itself.
+  const block: MenuItem[] = [
+    ...(tracker
+      ? [
+          trackerVersionSupported(tracker, ctx.stores.backend, sys.romPath)
+            ? submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))
+            : infoRow(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`),
+        ]
+      : []),
+    ...menuPlacement("instance.devices", hostOf(ctx), sys, buildContext(ctx)),
+  ];
+  const items: MenuItem[] = [
       // "Load…" is a project-level op (load the sibling project / new project from the ROM) — it never
       // swaps this instance. Swapping a single instance in place is "Replace Instance".
       action("inst-load", "Load...", () => runLoad(ctx)),
       action("inst-save", saveProjectLabel(ctx), () => void saveProjectInteractive(ctx.stores)),
       action("inst-new", "New Project", () => ctx.newProject()),
       submenu("inst-recent", "Recent", recentChildren(ctx)),
-      // The tracker submenu (LSDj / risa) and the two hardware submenus share the block right under Recent,
-      // fenced by a separator on each side (the one below here, and inst-sep-top). The tracker is present only
-      // when the cart sniffed one; N8 Pro only when a physical N8 is actually detected (n8Here) and Launchpad
-      // only when a control surface is (lpHere) - both drive real hardware, so they belong beside the trackers
-      // rather than buried in Settings, but there's nothing to show without the device.
-      ...(tracker || n8Here || lpHere
-        ? [
-            separator("inst-sep-tracker"),
-            ...(tracker
-              ? [
-                  trackerVersionSupported(tracker, ctx.stores.backend, sys.romPath)
-                    ? submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))
-                    : infoRow(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`),
-                ]
-              : []),
-            ...(lpHere ? [submenu("inst-launchpad", "Launchpad", launchpadMenuChildren(ctx, lpcfg!))] : []),
-            ...(n8Here ? [submenu("inst-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
-          ]
-        : []),
+      // The tracker submenu and the contributed device entries share the block right under Recent, fenced by a
+      // separator on each side (the one below here, and inst-sep-top). The fence appears when anything in it does.
+      ...(block.length > 0 ? [separator("inst-sep-tracker"), ...block] : []),
       separator("inst-sep-top"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       submenu("inst-project", "Project", projectChildren(ctx)),
@@ -1789,35 +1475,18 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
             songGuardedAction(ctx, sys, "inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
           ]
         : []),
-      // Link Group is SameBoy-only (the GB serial link cable); on a NES/GBA peer it would be a dead
-      // always-"Off" row, so gate it on the core too, not just on having a peer. A stored value that is
-      // not a number (a hand-edited project) reads as Off, which is what the core does with it too.
-      ...(multi && sys.core === "sameboy"
-        ? [
-            separator("inst-sep-link"),
-            cycler(
-              "inst-link",
-              "Link Group",
-              LINK_GROUP_NAMES,
-              typeof roleConfig(sys.roles, "sameboy")?.linkGroupId === "number"
-                ? (roleConfig(sys.roles, "sameboy")?.linkGroupId as number)
-                : 0,
-              (n) => systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
-            ),
-          ]
-        : []),
+      // The instance footer: what a console contributes after Remove Instance and before Exit (the Game Boy's Link
+      // Group, a peer-only row), so a console's own rows sit with the instance's rather than in its System submenu.
+      ...menuPlacement("instance.footer", hostOf(ctx), sys, buildContext(ctx)),
       ...(isStandalone() ? [separator("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
-    ],
-  };
+  ];
+  assertUniqueMenuIds(items, `the ${sys.platform} instance menu`);
+  return { title: instanceTitle(ctx, sys), items };
 }
 
 export function buildStartMenu(ctx: MenuContext): MenuTree {
-  const n8cfg = getN8Config();
-  const n8Here = n8Detected(n8cfg); // shown only when a physical N8 is actually attached
-  return {
-    title: ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug",
-    items: [
+  const items: MenuItem[] = [
       submenu("start-recent", "Recent", recentChildren(ctx)),
       action("start-load", "Load...", () => runLoad(ctx)),
       // One row per embedded ROM the product's packages declare (mGB's synth today), its label from the declaration, so
@@ -1825,15 +1494,16 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
       ...embeddedRoms().map((embed) =>
         action(`start-${embed.id}`, `Load ${embed.label}`, () => ctx.stores.project.systems.loadEmbedded(embed.id)),
       ),
-      // N8 Pro (physical NES) in its own fenced block, mirroring the instance menu's tracker block. The
-      // streaming + SD ops don't need a loaded system, so it belongs here too (configure/connect the cart, or
-      // load a ROM onto it, before opening anything in RetroPlug). Only when a cart is actually detected.
-      ...(n8Here ? [separator("start-sep-n8"), submenu("start-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
+      // A device's start-menu block (the N8 Pro's today), in its own fenced block mirroring the instance menu's
+      // tracker block: its streaming + card ops need no loaded system, so the cart can be configured - or a ROM
+      // loaded onto it - before anything is opened in RetroPlug.
+      ...menuPlacement("start", hostOf(ctx), null, buildContext(ctx)),
       separator("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),
       ...(isStandalone() ? [separator("start-sep-exit"), action("start-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
-    ],
-  };
+  ];
+  assertUniqueMenuIds(items, "the start menu");
+  return { title: ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug", items };
 }

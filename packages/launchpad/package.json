@@ -25,7 +25,8 @@
     "./surface": "./ts/surface.ts",
     "./testSupport/fakeDevice": "./ts/testSupport/fakeDevice.ts",
     "./launchTarget": "./ts/launchTarget.ts",
-    "./client": "./ts/client.ts"
+    "./client": "./ts/client.ts",
+    "./ui": "./ts/ui/index.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
@@ -38,6 +39,7 @@
     "typescript": "^7.0.2"
   },
   "retroplug": {
+    "ui": "ts/ui/index.ts",
     "protocol": {
       "module": "ts/nodes.ts",
       "nodes": [

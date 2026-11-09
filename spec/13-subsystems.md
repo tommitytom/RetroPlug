@@ -114,7 +114,7 @@ writes with a re-read, so two processes can share the file.
 - Code: [packages/launchpad](../packages/launchpad) - the portable target (`retroplug-launchpad`, `device: true`) with
   the two surface nodes, and `retroplug-launchpad-desktop` with the transport (`ControllerLink`, `PortClaim`,
   `MidiPortPool`, `RtMidiPort`), the provider and the facet (`LaunchpadRpc`) - beside
-  [ui/screens/menu/launchpadDevices.ts](../packages/retroplug/ui/screens/menu/launchpadDevices.ts), which drives the
+  [ui/launchpadDevices.ts](../packages/launchpad/ts/ui/launchpadDevices.ts), which drives the
   facet, and the MI.MAP app in [packages/lsdj-launchpad](../packages/lsdj-launchpad).
 - **Prove a change:** `retroplug-launchpad-test` (one of the eleven `pnpm test:plugin` binaries),
   `pnpm test:native launchpad` (the facet's cases over the headless host's scripted device, and

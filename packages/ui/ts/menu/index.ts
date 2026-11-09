@@ -4,3 +4,4 @@
 // imports neither React nor the shell (the tree builders stay in packages/retroplug/ui/screens/menu).
 export * from "./menuTree";
 export * from "./menuItems";
+export * from "./subscribable";

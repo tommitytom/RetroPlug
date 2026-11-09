@@ -8,7 +8,7 @@
 // (subscribeMidi) so a device pick forces a rebuild and the cycler label tracks the new value at once. The seam
 // is absent in a DAW / JACK standalone / the headless harness (hasMidiConfig() is false → the submenu hidden).
 
-import { createSubscribable } from "./subscribable";
+import { createSubscribable } from "@retroplug/ui/menu";
 import { native } from "../../host/nativeHooks";
 
 /** The input selection meaning "every hardware port at once" - an explicit choice, not the default.

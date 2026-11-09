@@ -7,7 +7,7 @@
 // re-renders on toggle via useSyncExternalStore, without threading a prop through the grid.
 import { useSyncExternalStore } from "react";
 
-import { createSubscribable } from "../menu/subscribable";
+import { createSubscribable } from "@retroplug/ui/menu";
 
 let visible = false;
 const notify = createSubscribable();

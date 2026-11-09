@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/fake",
+  "private": true,
+  "retroplug": { "app": "ts/index.ts" }
+}

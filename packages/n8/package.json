@@ -12,11 +12,13 @@
     "./app": "./ts/app.ts",
     "./consoles": "./ts/consoles.ts",
     "./n8MidiToFifoNode": "./ts/n8MidiToFifoNode.ts",
-    "./protocol": "./ts/protocol.ts"
+    "./protocol": "./ts/protocol.ts",
+    "./ui": "./ts/ui/index.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/node-sdk": "workspace:*",
+    "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -25,6 +27,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "ui": "ts/ui/index.ts",
     "consoles": "ts/consoles.ts",
     "protocol": {
       "module": "ts/protocol.ts",

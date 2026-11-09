@@ -4,27 +4,11 @@
 // DOES is the caller's, because that is the one part only a surface knows (systems.setRoleConfig, a project's
 // controller).
 import { hasRole, roleConfig, type RoleInstance, type RoleType } from "@retroplug/core/systemRoles";
-import type { ConfigRow, RoleRow } from "@retroplug/ui/contribution";
-import { readConfigRow, rowShownFor, rowShownOn } from "@retroplug/ui/contribution";
-import { cycler, separator, type MenuItem } from "@retroplug/ui/menu";
+import type { RoleRow } from "@retroplug/ui/contribution";
+import { configRowCycler, rowShownFor, rowShownOn } from "@retroplug/ui/contribution";
+import { separator, type MenuItem } from "@retroplug/ui/menu";
 
-/** One config row as the menu draws it. The value a row reads is the stored one when its type matches the schema's
- *  default, else the default (`readConfigRow`, core's rule), so a role row and a controller-app row fall back alike.
- *
- *  `index` overrides where the stored value points, for the one caller whose rows predate that rule: a controller app's
- *  knobs keep the index they have always shown for a hand-edited config, so an invalid stored value reads as it did
- *  (the labels and the value a step writes are the same either way). Omitted, the typed reader's index is used. */
-export function configRowCycler(
-  id: string,
-  row: ConfigRow,
-  stored: unknown,
-  fallback: unknown,
-  apply: (value: string | number | boolean) => void,
-  index?: number,
-): MenuItem {
-  const reading = readConfigRow(row, stored, fallback);
-  return cycler(id, row.label, [...reading.names], index ?? reading.index, (step) => apply(reading.at(step)));
-}
+export { configRowCycler };
 
 /** What a role-row renderer reads of a system: the platform a row may be gated on and the roles whose configs hold the
  *  values. A view of a system satisfies it. */

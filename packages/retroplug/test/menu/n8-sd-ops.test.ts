@@ -11,9 +11,10 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "@retroplug/ui/menu";
-import { getN8CartJob, n8RestoreSram, projectCart, resetN8CartJob } from "../../ui/screens/menu/n8SdOps";
-import { setN8LinkClient } from "../../ui/screens/menu/n8Devices";
+import { getN8CartJob, n8RestoreSram, projectCart, resetN8CartJob, setN8LinkClient } from "@retroplug/n8/ui";
+import { importHost } from "../../ui/host/uiHost";
 import { nesRom, gbRom } from "../systems/fixtures";
+import { ROM_PATTERNS } from "../../src/fileSelection";
 
 // The MenuContext App.tsx assembles from its hooks, minus React (mirrors leaves.test's ctxOf).
 function ctxOf(stores: AppStores): MenuContext {
@@ -33,6 +34,10 @@ function ctxOf(stores: AppStores): MenuContext {
     openLsdjHd: () => {},
   };
 }
+
+// The card ops read the cart through the UI host's systems group (the same rule buildGraph places it by) and the local
+// file through its files group, so a direct call in a test builds the two-group host it needs.
+const hostOf = (stores: AppStores) => importHost(stores.backend, stores.project.systems);
 
 const findItem = (items: MenuItem[], id: string): MenuItem | undefined => items.find((i) => i.id === id);
 function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
@@ -109,15 +114,17 @@ test("N8 Pro (instance menu) shows the card rows when connected, and each browse
     expect(findItem(rows, "n8-load-rom")).toBeTruthy();
     expect(findItem(rows, "n8-dump-sram")).toBeTruthy();
     expect(findItem(rows, "n8-restore-sram")).toBeTruthy();
-    const cart = projectCart(stores.project.systems.view())!;
+    const cart = projectCart(hostOf(stores))!;
     expect(cart.nodeId).toBe(`cart-${cart.system.id}`);
 
-    // Load ROM: a ROM-only browser (patterns include *.nes), then a rom.upload of the file's bytes under its own name.
+    // Load ROM: a ROM-only browser, then a rom.upload of the file's bytes under its own name. The filter is the
+    // product's whole ROM list (every console's globs), exactly as it was before the row moved into this pack.
     be.seed("/roms/game.nes", nesRom());
     be.queueBrowse("/roms/game.nes");
     findItem(rows, "n8-load-rom")!.onSelect!();
     await flush();
-    expect(be.fileBrowserCalls[be.fileBrowserCalls.length - 1].patterns.includes("*.nes")).toBeTruthy();
+    expect(be.fileBrowserCalls[be.fileBrowserCalls.length - 1].patterns).toEqual(ROM_PATTERNS);
+    expect(ROM_PATTERNS.includes("*.nes")).toBe(true);
     const upload = be.jobRequests[be.jobRequests.length - 1];
     expect([upload.nodeId, upload.capability, upload.op, upload.name]).toEqual([
       cart.nodeId, "rp.system.rom/1", "upload", "game.nes",
@@ -204,7 +211,7 @@ test("a file that cannot be read leaves a running job's row alone", async () => 
     findItem(n8Submenu(stores, be), "n8-dump-sram")!.onSelect!();
     await flush();
     expect(getN8CartJob().busy).toBe(true);
-    n8RestoreSram(be, projectCart(stores.project.systems.view())!, "/saves/missing.srm");
+    n8RestoreSram(hostOf(stores), projectCart(hostOf(stores))!, "/saves/missing.srm");
     expect(getN8CartJob().busy).toBe(true);
     expect(getN8CartJob().error).toBe("");
     expect(getN8CartJob().bytesDone).toBe(4096);
@@ -225,7 +232,7 @@ test("a picked file that cannot be read shows its error when no job holds the ro
     const be = new MockBackend("/cfg");
     const stores = composeAppStores({ backend: be });
     n8Submenu(stores, be);
-    n8RestoreSram(be, projectCart(stores.project.systems.view())!, "/saves/missing.srm");
+    n8RestoreSram(hostOf(stores), projectCart(hostOf(stores))!, "/saves/missing.srm");
     const job = getN8CartJob();
     expect(job.busy).toBe(false);
     expect(job.error).toBe("cannot read /saves/missing.srm");
@@ -254,7 +261,7 @@ test("a handover to another NES keeps the ROM this runtime booted on the card", 
     // gone. The ROM booted on the card is still game.nes - the physical cart's state, not the old node's - so a dump
     // after the handover names it, not the new system's own ROM file.
     stores.project.systems.setRoleConfig(a, "mesen", { driveRealCart: false });
-    expect(projectCart(stores.project.systems.view())!.nodeId).toBe(`cart-${b}`);
+    expect(projectCart(hostOf(stores))!.nodeId).toBe(`cart-${b}`);
     be.queueBrowse("/saves/out.srm");
     findItem(n8Submenu(stores, be), "n8-dump-sram")!.onSelect!();
     await flush();

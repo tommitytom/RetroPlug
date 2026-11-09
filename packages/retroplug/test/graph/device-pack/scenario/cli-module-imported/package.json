@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/test-cli-module-imported",
+  "private": true,
+  "retroplug": { "cli": "ts/cli/index.ts" }
+}

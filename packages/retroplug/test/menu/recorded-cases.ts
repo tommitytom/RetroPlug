@@ -15,11 +15,10 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "@retroplug/ui/menu";
-import { resetN8CartJob } from "../../ui/screens/menu/n8SdOps";
-import { setN8LinkClient } from "../../ui/screens/menu/n8Devices";
+import { resetN8CartJob, setN8LinkClient } from "@retroplug/n8/ui";
 import {
   resetLaunchpadScanForTest, setLaunchpadClient, setLaunchpadScanClock, startLaunchpadScan,
-} from "../../ui/screens/menu/launchpadDevices";
+} from "@retroplug/launchpad/ui";
 import type { LaunchpadClient } from "@retroplug/launchpad/client";
 import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "@retroplug/lsdj/rom";
 import { loadSongToWorking, savFrom, injectSong } from "@retroplug/lsdj";

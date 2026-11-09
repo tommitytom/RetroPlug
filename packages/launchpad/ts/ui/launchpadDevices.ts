@@ -18,15 +18,14 @@
 //      model's own query on the pair that answered.
 //
 // So a second controller model - or a different kind of device altogether - is a TS change, never a native one.
+import type { Call, ConfigHost } from "@retroplug/core/host";
+import { createSubscribable } from "@retroplug/ui/menu";
 import {
   PRO_MK3, PRO_MK3_PORT_HINT, deviceInquiry, deviceName, exitToLiveMode, familyHex, isModelReply, modelQuery,
   parseInquiryReply, profilesForFamily,
-} from "@retroplug/launchpad";
-import { IDLE_SCAN, PortScan, type MidiPortApi, type ScanStatus } from "@retroplug/launchpad/portScan";
-import { createLaunchpadClient, type LaunchpadClient } from "@retroplug/launchpad/client";
-import { makeCall } from "../../../src/rpcClient";
-import type { UserConfigStore } from "../../../src/userConfigStore";
-import { createSubscribable } from "./subscribable";
+} from "../index";
+import { IDLE_SCAN, PortScan, type MidiPortApi, type ScanStatus } from "../portScan";
+import { createLaunchpadClient, type LaunchpadClient } from "../client";
 
 export interface LaunchpadConfig {
   inputs: string[]; // every hardware MIDI input port, unfiltered
@@ -73,10 +72,20 @@ export const subscribeLaunchpad = notify.subscribe;
 // an older build).
 let facet: LaunchpadClient | null | undefined;
 
-function resolveClient(): LaunchpadClient | null {
+/** The client the module acts through: a test's fake when one is installed, else the caller's channel. `rpc` is the
+ *  UI host's `devices.rpc` (or the shell's `makeCall()`, for the native facet tests): the module reaches the shell only
+ *  through what its caller hands it, never through a global of its own. No caller means no facet, read as none rather
+ *  than latched for the bundle's life. */
+function resolveClient(rpc: Call | undefined): LaunchpadClient | null {
+  // The one thing a prebuilt UI's realm and a test's bundle share is a global: the App's copy of this module is not the
+  // test's, so `setLaunchpadClient` cannot reach it. A test that drives the App's services injects its fake here;
+  // nothing in production sets one.
+  const injected = (globalThis as { __rp_launchpadClient?: LaunchpadClient | null }).__rp_launchpadClient;
+  if (injected !== undefined) return injected;
   if (facet !== undefined) return facet;
+  if (!rpc) return null;
   try {
-    const client = createLaunchpadClient(makeCall());
+    const client = createLaunchpadClient(rpc);
     client.status(); // a host without the facet throws here (no such method)
     facet = client;
   } catch {
@@ -94,8 +103,8 @@ export function setLaunchpadClient(client: LaunchpadClient | null | undefined): 
 /** Whether the host mounted the Launchpad facet (the SDL standalone, the CLI and the headless harness do; the DAW plugin
  *  deliberately does not). Everything the facet offers hangs off this: the port pickers, the claim, and the SCAN - which
  *  writes MIDI, so it is never implicit: only Settings > MIDI starts one, and only when the user asks. */
-export function hasLaunchpad(): boolean {
-  return resolveClient() !== null;
+export function hasLaunchpad(rpc?: Call): boolean {
+  return resolveClient(rpc) !== null;
 }
 
 /** A port name without the suffix the MIDI backend adds to keep names unique: ALSA's " <client>:<port>" and WinMM's
@@ -147,8 +156,8 @@ const names = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((n): n is string => typeof n === "string") : [];
 
 /** The live MIDI ports + current link state, read fresh each render, beside the persisted selection. */
-export function getLaunchpadConfig(store: UserConfigStore): LaunchpadConfig | null {
-  const client = resolveClient();
+export function getLaunchpadConfig(store: ConfigHost, rpc?: Call): LaunchpadConfig | null {
+  const client = resolveClient(rpc);
   if (!client) return null;
   const ports = client.ports();
   const status = client.status();
@@ -175,10 +184,10 @@ function closeBytes(): number[] {
 /** Make the link match the stored selection: claim the pair when enabled and both ports are chosen, else let go. A
  *  claim always carries the bytes that release the device, so native can never be holding a device it has no way to
  *  give back. */
-function applyLink(store: UserConfigStore): void {
-  const client = resolveClient();
+function applyLink(store: ConfigHost, rpc?: Call): void {
+  const client = resolveClient(rpc);
   if (!client) return;
-  rematchPorts(store);
+  rematchPorts(store, rpc);
   const sel = store.controlSurface();
   const status = client.status();
   const want = sel.enabled && sel.input !== "" && sel.output !== "";
@@ -198,10 +207,10 @@ function applyLink(store: UserConfigStore): void {
 /** A saved port that is not here by its exact name, but is by its stem (portStem) - the same device, renamed because
  *  something else was plugged in - is re-pointed at its new name before the claim. Only on a UNIQUE stem match: two
  *  ports with one stem (two identical interfaces) are left for the user to pick. */
-function rematchPorts(store: UserConfigStore): void {
+function rematchPorts(store: ConfigHost, rpc?: Call): void {
   const sel = store.controlSurface();
   if (sel.input === "" && sel.output === "") return;
-  const ports = resolveClient()?.ports();
+  const ports = resolveClient(rpc)?.ports();
   if (!ports) return;
   const rematch = (saved: string, list: string[]): string => {
     if (saved === "" || list.includes(saved)) return saved;
@@ -219,11 +228,11 @@ function rematchPorts(store: UserConfigStore): void {
  *  Then tell the host it is done, whether or not there was anything to claim: the standalone holds its own MIDI stream
  *  and audio back until it hears this (the facet's restored() reaches the product, rp_device_host::restored), so a
  *  restored device's input is reserved before that stream ever opens it and the claim costs no audio restart. */
-export function restoreLaunchpad(store: UserConfigStore): void {
-  const client = resolveClient();
+export function restoreLaunchpad(store: ConfigHost, rpc?: Call): void {
+  const client = resolveClient(rpc);
   if (!client) return;
   try {
-    applyLink(store);
+    applyLink(store, rpc);
   } catch (e) {
     // A claim that throws (an RPC failure, which the native facet catches and answers rather than throwing) must not
     // escape into the caller's mount effect: the host is still waiting for the rendezvous word below, and the menu
@@ -239,17 +248,22 @@ export function restoreLaunchpad(store: UserConfigStore): void {
 
 /** Choose the in/out pair by port name. Persists, and switches live if connected (the old device is told goodbye first,
  *  by the claim that replaces it). */
-export function setLaunchpadPorts(store: UserConfigStore, input: string, output: string): void {
+export function setLaunchpadPorts(store: ConfigHost, input: string, output: string, rpc?: Call): void {
   if (launchpadScanBusy()) return; // the scan's answer is about to land here - see launchpadScanBusy
   store.setControlSurface({ input, output });
-  applyLink(store);
+  applyLink(store, rpc);
   emit();
 }
 
 /** Take or release the device. Enabling with nothing chosen resolves the hinted default first, so a plugged-in Pro MK3
  *  needs no port picking at all. Enabling with no default leaves it down rather than guessing - the status row says to
  *  pick both ports. */
-export function connectLaunchpad(store: UserConfigStore, enabled: boolean, cfg?: LaunchpadConfig | null): void {
+export function connectLaunchpad(
+  store: ConfigHost,
+  enabled: boolean,
+  cfg?: LaunchpadConfig | null,
+  rpc?: Call,
+): void {
   if (launchpadScanBusy()) return;
   if (enabled && cfg && (!cfg.selectedInput || !cfg.selectedOutput)) {
     const input = cfg.selectedInput || defaultPort(cfg.inputs);
@@ -257,16 +271,16 @@ export function connectLaunchpad(store: UserConfigStore, enabled: boolean, cfg?:
     if (input && output) store.setControlSurface({ input, output });
   }
   store.setControlSurface({ enabled });
-  applyLink(store);
+  applyLink(store, rpc);
   emit();
 }
 
 /** Forget the recorded device: clears the pair and the label (releasing the device if held), so the instance submenu
  *  goes away again. */
-export function forgetLaunchpad(store: UserConfigStore): void {
+export function forgetLaunchpad(store: ConfigHost, rpc?: Call): void {
   if (launchpadScanBusy()) return;
   store.setControlSurface({ input: "", output: "", device: "" });
-  applyLink(store);
+  applyLink(store, rpc);
   emit();
 }
 
@@ -292,6 +306,10 @@ let lastScan: LaunchpadScanStatus = IDLE;
 // scan re-applied then would stomp whatever the user picked since.
 let appliedScan: LaunchpadScanStatus | null = null;
 let clock: () => number = () => Date.now();
+// A test driving the App injects its clock the same way it injects the client: the App has its own copy of this
+// module, so `setLaunchpadScanClock` cannot reach it.
+const now = (): number =>
+  (globalThis as { __rp_launchpadClock?: () => number }).__rp_launchpadClock?.() ?? clock();
 
 /** Replace the scan's clock. Tests only - the scan must be steppable a millisecond at a time. */
 export function setLaunchpadScanClock(fn: () => number): void {
@@ -316,13 +334,13 @@ function askModels(reply: { bytes: number[] }): number[][] {
 
 /** Ask every output "what are you?" and listen on every input. Returns whether a scan started - refused while one is
  *  running, or while the link holds a pair (those ports cannot be reopened, and a connected device needs no finding). */
-export function startLaunchpadScan(): boolean {
-  const client = resolveClient();
+export function startLaunchpadScan(rpc?: Call): boolean {
+  const client = resolveClient(rpc);
   if (!client || launchpadScanBusy() || client.status().connected) return false;
   const ports = client.ports();
   scan = new PortScan(facetPorts(client), names(ports.inputs), names(ports.outputs), deviceInquiry(), SCAN_WINDOW_MS,
     { followUp: askModels });
-  scan.step(clock()); // the first probe goes out now, not a poll later
+  scan.step(now()); // the first probe goes out now, not a poll later
   publish(scan.status(), false);
   emit();
   return true;
@@ -343,12 +361,12 @@ export function cancelLaunchpadScan(): void {
   emit();
 }
 
-/** Advance a running scan and return where it is. The frame poll (useLaunchpadScanWatch) calls this; it is what moves the
- *  scan along, so nothing runs while nothing polls. null without the facet. */
-export function pollLaunchpadScan(): LaunchpadScanStatus | null {
-  if (!hasLaunchpad()) return null;
+/** Advance a running scan and return where it is. The launchpad service's frame poll (`UiService.poll`, every 3 frames)
+ *  calls this; it is what moves the scan along, so nothing runs while nothing polls. null without the facet. */
+export function pollLaunchpadScan(rpc?: Call): LaunchpadScanStatus | null {
+  if (!hasLaunchpad(rpc)) return null;
   if (scan) {
-    scan.step(clock());
+    scan.step(now());
     publish(scan.status(), false);
     if (!lastScan.busy) scan = null;
   }
@@ -388,19 +406,23 @@ function publish(st: ScanStatus, cancelled: boolean): void {
 }
 
 /** The current/last scan without advancing it - what a menu render reads. null without the facet. */
-export function getLaunchpadScan(): LaunchpadScanStatus | null {
-  return hasLaunchpad() ? lastScan : null;
+export function getLaunchpadScan(rpc?: Call): LaunchpadScanStatus | null {
+  return hasLaunchpad(rpc) ? lastScan : null;
 }
 
 /** Record what a finished scan found: the pair it answered on becomes the selection, so the device is configured and the
  *  instance submenu appears. Returns the find, or null when nothing was confirmed. */
-export function applyLaunchpadScan(store: UserConfigStore, s: LaunchpadScanStatus): LaunchpadFind | null {
+export function applyLaunchpadScan(
+  store: ConfigHost,
+  s: LaunchpadScanStatus,
+  rpc?: Call,
+): LaunchpadFind | null {
   if (s === appliedScan || s.busy) return null;
   appliedScan = s;
   const hit = s.found;
   if (!hit) return null;
   store.setControlSurface({ input: hit.input, output: hit.output, device: hit.name });
-  applyLink(store);
+  applyLink(store, rpc);
   emit();
   return hit;
 }
@@ -421,14 +443,24 @@ let releaseIn = 0;
  *  reading "connected". So the claim's close bytes are sent here, with the pair still claimed: turning the feature back
  *  on brings a fresh role, which takes the device again on its own (it re-enters Programmer mode and repaints on the
  *  link edge it sees). */
-export function pollControllerRole(wanted: boolean): void {
-  const client = resolveClient();
+export function pollControllerRole(wanted: boolean, rpc?: Call): void {
+  const client = resolveClient(rpc);
   if (!client) return;
   if (roleWanted && !wanted) releaseIn = RELEASE_DELAY_POLLS;
   if (wanted) releaseIn = 0;
   roleWanted = wanted;
   if (releaseIn > 0 && --releaseIn === 0 && client.status().connected)
     client.send(Uint8Array.from(closeBytes()));
+}
+
+/** The UI entry's latch reset, registered by the entry itself (this module may not import it): the service's version
+ *  and finishing-edge latches live beside the contribution, and a test that puts the scan back must put them back too. */
+let resetServiceLatches: (() => void) | null = null;
+
+/** The entry registers its service's latch reset here, so `resetLaunchpadScanForTest` clears both halves of the scan
+ *  state. */
+export function onResetLaunchpadScanForTest(fn: () => void): void {
+  resetServiceLatches = fn;
 }
 
 /** Drop the module's scan state. Tests only: each case starts from no scan at all. */
@@ -441,4 +473,5 @@ export function resetLaunchpadScanForTest(): void {
   roleWanted = false;
   releaseIn = 0;
   clock = () => Date.now();
+  resetServiceLatches?.();
 }

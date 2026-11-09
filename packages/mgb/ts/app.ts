@@ -21,5 +21,5 @@ export default definePackage({
   // The synth's bytes are baked into every product that lists this package (the manifest's embed), and the id, its label
   // and the console it runs on are declared here, so a load of the embedded ROM takes its platform from this rather than
   // the shell assuming one. The generator pairs the two halves.
-  embeds: [{ id: "mgb", label: "mGB (GB MIDI Synth)", platform: "gb" }],
+  embeds: [{ id: "mgb", label: "mGB (GB MIDI Synth)", shortLabel: "mGB", platform: "gb" }],
 });

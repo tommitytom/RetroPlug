@@ -28,6 +28,9 @@ import type { Platform } from "./consoles";
 export interface Embed {
   readonly id: string;
   readonly label: string;
+  /** What a menu title calls it: the short name a narrow row has room for, where `label` is the full one a Load row
+   *  spells out ("mGB" against "mGB (GB MIDI Synth)"). Absent, the label is the title's name. */
+  readonly shortLabel?: string;
   readonly platform: Platform;
 }
 

@@ -7,7 +7,10 @@
 // and the DMG palette only to a DMG one (see app.ts). `auto` counts as CGB, because RetroPlug resolves it to CGB-C, so
 // it gets the CGB rows. The separator before the group is `separatorBefore` on the first row of either side, so the
 // fence shows whichever of the two groups is up.
-import { defineUi, type RoleRow } from "@retroplug/ui/contribution";
+import type { SystemInfo } from "@retroplug/core/host";
+import { hasRole, roleConfig } from "@retroplug/core/systemRoles";
+import { defineUi, type MenuBuilder, type RoleRow, type UiHost } from "@retroplug/ui/contribution";
+import { cycler, separator } from "@retroplug/ui/menu";
 import {
   COLOR_CORRECTION_VALUES,
   DMG_PALETTE_VALUES,
@@ -108,4 +111,30 @@ export const SAMEBOY_ROWS: readonly RoleRow[] = [
   },
 ];
 
-export default defineUi({ rows: SAMEBOY_ROWS });
+// Link Group cycles 0..4 (0 = Off), mirroring the core's LINK_GROUP_MAX.
+const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
+
+/** The Game Boy link cable's group: which of the project's systems share a serial link. A peer-only row, so it lives in
+ *  the instance footer (after Remove Instance, the whole-instance rows) rather than in the System submenu, where it
+ *  would be a dead always-"Off" row for a lone instance. Gate it on the console too: a NES or GBA peer has no link
+ *  cable. A stored value that is not a number (a hand-edited project) reads as Off, which is what the core does with it
+ *  too. */
+const linkGroup: MenuBuilder = {
+  placement: "instance.footer",
+  build(host: UiHost, sys: SystemInfo | null, ctx) {
+    if (!sys || ctx.systems.length < 2 || !hasRole(sys.roles, "sameboy")) return [];
+    const stored = roleConfig(sys.roles, "sameboy")?.linkGroupId;
+    return [
+      separator("inst-sep-link"),
+      cycler(
+        "inst-link",
+        "Link Group",
+        LINK_GROUP_NAMES,
+        typeof stored === "number" ? stored : 0,
+        (n) => host.systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
+      ),
+    ];
+  },
+};
+
+export default defineUi({ rows: SAMEBOY_ROWS, menus: [linkGroup] });

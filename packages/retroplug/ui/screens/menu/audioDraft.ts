@@ -9,7 +9,7 @@
 // track the pending value immediately. The seam is absent in a DAW / the headless harness (hasAudioConfig()
 // is false → the submenu is hidden).
 
-import { createSubscribable } from "./subscribable";
+import { createSubscribable } from "@retroplug/ui/menu";
 import { native } from "../../host/nativeHooks";
 
 export interface AudioCfg {

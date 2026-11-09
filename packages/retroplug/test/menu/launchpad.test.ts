@@ -26,7 +26,7 @@ import {
   RELEASE_DELAY_POLLS, SCAN_WINDOW_MS, applyLaunchpadScan, connectLaunchpad, forgetLaunchpad, getLaunchpadConfig,
   looksLikeLaunchpad, pollControllerRole, pollLaunchpadScan, resetLaunchpadScanForTest, restoreLaunchpad,
   setLaunchpadClient, setLaunchpadPorts, setLaunchpadScanClock,
-} from "../../ui/screens/menu/launchpadDevices";
+} from "@retroplug/launchpad/ui";
 import type { ControlSurfaceSettings } from "../../src/userConfig";
 import * as R from "@retroplug/lsdj/codec/regions";
 import { gbRom, lsdjRom, nesRom } from "../systems/fixtures";

@@ -242,6 +242,13 @@ test("the whole-core scan skips the package's app module, and only it", async ()
     `${FIXTURES}/scenario/app-module-skip`);
   expect(skipped.ok, `the whole-core scan refused the app module's own call:\n${skipped.out}${skipped.err}`).toBe(true);
   contains(skipped.out, "no library calls outside MicroQuickJS's stdlib, in the core's 1 module(s)");
+  // A manifest's `ui` member names the desktop's menu half: its INDEX marks the whole directory as control-plane code, so
+  // a package whose menu reaches what the engine lacks still proves its core (this stage moved the device menus into
+  // their packages, which is where the rule first mattered).
+  const ui = await scenarioOf(`${FIXTURES}/scenario/ui-module-skip/scenario.ts`, "scenario-ui-module-skip", 65536,
+    `${FIXTURES}/scenario/ui-module-skip`);
+  expect(ui.ok, `the whole-core scan refused the ui module's own call:\n${ui.out}${ui.err}`).toBe(true);
+  contains(ui.out, "no library calls outside MicroQuickJS's stdlib, in the core's 1 module(s)");
   // And a module the app IMPORTS is not skipped: the scan sees it, so the zod-using half must be the app module itself.
   const sibling = await scenarioOf(`${FIXTURES}/scenario/app-module-sibling/scenario.ts`, "scenario-app-module-sibling",
     65536, `${FIXTURES}/scenario/app-module-sibling`);
@@ -259,6 +266,37 @@ test("a core module that imports the package's app module is refused by name", a
   expect(run.ok).toBe(false);
   contains(run.err, "packages/retroplug/test/graph/device-pack/scenario/app-module-imported/ts/core.ts imports the " +
     "package's app module packages/retroplug/test/graph/device-pack/scenario/app-module-imported/ts/app.ts");
+});
+
+test("a core module that imports the package's ui module, by its directory, is refused by name", async () => {
+  // A `ui` member whose module is its directory's index marks the whole directory as the menu's, as the scan's own skip
+  // does. A core module reaching into it would carry the menu's half (the host, the shell's hooks) into a node's
+  // bundle, so the toolchain refuses the import itself rather than let the scan report one of its library calls.
+  const run = await scenarioOf(`${FIXTURES}/scenario/ui-module-imported/scenario.ts`, "scenario-ui-module-imported",
+    65536, `${FIXTURES}/scenario/ui-module-imported`);
+  expect(run.ok).toBe(false);
+  contains(run.err, "packages/retroplug/test/graph/device-pack/scenario/ui-module-imported/ts/core.ts imports the " +
+    "package's ui module packages/retroplug/test/graph/device-pack/scenario/ui-module-imported/ts/ui/index.ts");
+});
+
+test("a core module that imports a file beside the ui module's index is refused, naming the directory", async () => {
+  // The ui member's index marks its whole DIRECTORY as control-plane code, as the scan's own skip does, so a helper
+  // beside it is refused too: the exact module path is not what makes the directory the menu's.
+  const run = await scenarioOf(`${FIXTURES}/scenario/ui-directory-imported/scenario.ts`,
+    "scenario-ui-directory-imported", 65536, `${FIXTURES}/scenario/ui-directory-imported`);
+  expect(run.ok).toBe(false);
+  contains(run.err, "packages/retroplug/test/graph/device-pack/scenario/ui-directory-imported/ts/core.ts imports the " +
+    "package's ui module packages/retroplug/test/graph/device-pack/scenario/ui-directory-imported/ts/ui");
+});
+
+test("a core module that imports the package's cli module is refused by name", async () => {
+  // A tool runs on the host and takes paths; it is no part of a node's bundle. The `cli` member marks its module the
+  // same way `ui`'s does, so a core reaching it is refused by the toolchain rather than carried onto the engine.
+  const run = await scenarioOf(`${FIXTURES}/scenario/cli-module-imported/scenario.ts`, "scenario-cli-module-imported",
+    65536, `${FIXTURES}/scenario/cli-module-imported`);
+  expect(run.ok).toBe(false);
+  contains(run.err, "packages/retroplug/test/graph/device-pack/scenario/cli-module-imported/ts/core.ts imports the " +
+    "package's cli module packages/retroplug/test/graph/device-pack/scenario/cli-module-imported/ts/cli/index.ts");
 });
 
 test("a core module that imports outside the allowlist is refused, even one no scenario reaches", async () => {

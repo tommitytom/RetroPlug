@@ -20,7 +20,11 @@ import { makeCall } from "../src/rpcClient";
 import {
   applyLaunchpadScan, connectLaunchpad, forgetLaunchpad, getLaunchpadConfig, pollLaunchpadScan,
   resetLaunchpadScanForTest, restoreLaunchpad, setLaunchpadClient, setLaunchpadScanClock, startLaunchpadScan,
-} from "../ui/screens/menu/launchpadDevices";
+} from "@retroplug/launchpad/ui";
+
+// The host's channel, which every facet call threads down: the module no longer binds one of its own, so a caller with
+// no host (this test) hands the shell's.
+const CALL = makeCall();
 
 declare const __CONFIG_DIR__: string;
 /** The test host's own seam: this file runs INSIDE the native host (txiki.js), whose spawn runs a second process. */
@@ -98,7 +102,7 @@ test("a second PROCESS cannot claim the port this one holds, and says so in the 
   const cfg = store();
   const client = createLaunchpadClient(makeCall());
   cfg.setControlSurface({ input: PRO, output: PRO, device: PRO_NAME, enabled: true });
-  restoreLaunchpad(cfg);
+  restoreLaunchpad(cfg, CALL);
   expect(client.status().connected).toBe(true);
   try {
     createRealBackend().deleteFile(ANSWER);
@@ -130,7 +134,7 @@ test("the restore claims the pair config.json remembers, then tells the host it 
   const cfg = store();
   cfg.setControlSurface({ input: PRO, output: PRO, device: PRO_NAME, enabled: true });
   audio.drainProductCalls(); // whatever earlier cases did, this case reads from here
-  restoreLaunchpad(cfg);
+  restoreLaunchpad(cfg, CALL);
   const status = createLaunchpadClient(makeCall()).status();
   expect(status.connected).toBe(true);
   expect(status.input).toBe(PRO);
@@ -152,18 +156,18 @@ test("a scan stepped to its end finds the device, persists the pair and claims i
     // host, has in config.json.
     cfg.setControlSurface({ input: "", output: "", device: "", enabled: true });
     if (client.status().connected) client.release();
-    restoreLaunchpad(cfg); // nothing to claim, and the word still goes out
+    restoreLaunchpad(cfg, CALL); // nothing to claim, and the word still goes out
     audio.drainProductCalls();
-    expect(startLaunchpadScan()).toBe(true);
+    expect(startLaunchpadScan(CALL)).toBe(true);
     // The frame poll's own step loop: the scan is a clocked state machine, and nothing advances it but this.
     for (let i = 0; i < 1000; i++) {
-      const s = pollLaunchpadScan();
+      const s = pollLaunchpadScan(CALL);
       if (!s || !s.busy) break;
       clock.ms += 16;
     }
-    const done = pollLaunchpadScan()!;
+    const done = pollLaunchpadScan(CALL)!;
     expect(done.busy).toBe(false);
-    const found = applyLaunchpadScan(cfg, done);
+    const found = applyLaunchpadScan(cfg, done, CALL);
     expect(found?.input).toBe(PRO);
     expect(found?.name).toBe(PRO_NAME);
     // Persisted (a fresh store reads config.json back) and claimed: the answer the instance submenu gates on.
@@ -193,10 +197,10 @@ test("Forget clears the pair AND the name, and gives the device back", () => {
   const cfg = store();
   const client = createLaunchpadClient(makeCall());
   cfg.setControlSurface({ input: PRO, output: PRO, device: PRO_NAME, enabled: true });
-  restoreLaunchpad(cfg);
+  restoreLaunchpad(cfg, CALL);
   expect(client.status().connected).toBe(true);
   audio.drainProductCalls();
-  forgetLaunchpad(cfg);
+  forgetLaunchpad(cfg, CALL);
   // The pair and the NAME go; "Use in Project" is the project's switch, not the device's, and stays as the user left it.
   expect(cfg.controlSurface()).toEqual({ input: "", output: "", enabled: true, device: "" });
   expect(client.status().connected).toBe(false);
@@ -209,9 +213,9 @@ test("Connect resolves the hinted default, and a pair whose device is away is re
   const client = createLaunchpadClient(makeCall());
   if (client.status().connected) client.release();
   cfg.setControlSurface({ input: "", output: "", device: "", enabled: false });
-  const before = getLaunchpadConfig(cfg)!;
-  connectLaunchpad(cfg, true, before);
-  expect(getLaunchpadConfig(cfg)!.connected).toBe(true);
+  const before = getLaunchpadConfig(cfg, CALL)!;
+  connectLaunchpad(cfg, true, before, CALL);
+  expect(getLaunchpadConfig(cfg, CALL)!.connected).toBe(true);
   expect(cfg.controlSurface().input).toBe(PRO); // the Pro's own port, found by its hint, not picked by the user
 
   // Now a saved pick whose device is not on the machine: the claim fails, the row says why in the FACET's words
@@ -222,14 +226,14 @@ test("Connect resolves the hinted default, and a pair whose device is away is re
   const warned: string[] = [];
   console.warn = (...parts: unknown[]) => void warned.push(parts.map(String).join(" "));
   try {
-    restoreLaunchpad(cfg);
+    restoreLaunchpad(cfg, CALL);
   } finally {
     console.warn = warn;
   }
   expect(warned.length).toBe(1);
   expect(warned[0].includes("not connected: Some Synth")).toBe(true);
   expect(client.status().connected).toBe(false);
-  expect(getLaunchpadConfig(cfg)!.error).toBe("not connected: Some Synth");
+  expect(getLaunchpadConfig(cfg, CALL)!.error).toBe("not connected: Some Synth");
   // The pick is kept: the device may be plugged back in, and forgetting it would make the user scan again.
   expect(cfg.controlSurface().input).toBe("Some Synth");
   cfg.setControlSurface({ input: "", output: "", device: "", enabled: false });

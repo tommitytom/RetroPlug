@@ -10,7 +10,7 @@
 // Absent in a DAW / the headless harness (the host owns the transport there) → hasTransport() false → the row
 // is hidden, exactly like the audio/MIDI device rows.
 
-import { createSubscribable } from "./subscribable";
+import { createSubscribable } from "@retroplug/ui/menu";
 import { native } from "../../host/nativeHooks";
 
 export interface TransportState {

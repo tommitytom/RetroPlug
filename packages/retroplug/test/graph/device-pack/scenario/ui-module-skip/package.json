@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/test-ui-module-skip",
+  "private": true,
+  "retroplug": { "ui": "ts/ui/index.ts" }
+}

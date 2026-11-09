@@ -84,15 +84,17 @@ export interface SystemInfo {
   readonly roles: readonly RoleInstance[];
 }
 
+/** One of a controller app's knobs: a fixed choice list, an Off/On toggle, or a numeric range offered in steps (the
+ *  shape `@retroplug/ui/contribution` calls a ConfigRow, declared here because a controller app is a control-plane
+ *  contribution and the launchpad package's registry is downstream of core). */
+export type ControllerAppField = { readonly key: string; readonly label: string } & (
+  | { readonly choices: readonly { readonly value: string | number; readonly label: string }[] }
+  | { readonly toggle: true }
+  | { readonly range: { readonly steps: readonly number[]; readonly labels: readonly string[] } }
+);
 /** A controller app as a project surface reads it: its id, its menu text, the rows that edit its config and the schema
  *  a saved config is parsed with. The launchpad package's own contribution type satisfies this as written; core keeps
  *  the narrow shape so the host can name the list without importing the package that registers it. */
-export interface ControllerAppField {
-  readonly key: string;
-  readonly label: string;
-  readonly choices?: readonly { readonly value: string | number; readonly label: string }[];
-  readonly toggle?: boolean;
-}
 export interface ControllerApp {
   readonly id: string;
   readonly label: string;

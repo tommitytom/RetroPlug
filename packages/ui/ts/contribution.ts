@@ -9,7 +9,7 @@
 import type { Host, SystemInfo } from "@retroplug/core/host";
 import type { AssetCatalog, AssetTypeInfo } from "@retroplug/tracker/assetCatalog";
 import type { SongCatalog } from "@retroplug/tracker/songCatalog";
-import type { MenuItem } from "./menu";
+import { cycler, type MenuItem } from "./menu";
 
 /** The groups a UI surface's host has: what a package's UI code may reach. The shell builds this host once per UI
  *  (ui/host/uiHost.ts) and a contribution is handed it; core declares the groups, so this is a selection, not a new
@@ -61,11 +61,13 @@ export const PLACEMENTS = [
 ] as const;
 export type Placement = (typeof PLACEMENTS)[number];
 
-/** What a builder reads that is not the host: the project's systems, and the shell's per-path base-ROM cache (a
- *  catalog parses the ROM once per path rather than per menu build). */
+/** What a builder reads that is not the host: the project's systems, the shell's per-path base-ROM cache (a catalog
+ *  parses the ROM once per path rather than per menu build), and the ROM globs a file dialog offers (every console the
+ *  product registers, which only the shell's console registry can name). */
 export interface MenuBuildContext {
   readonly systems: readonly SystemInfo[];
   assetRom(romPath: string): Uint8Array | null;
+  readonly romPatterns: readonly string[];
 }
 
 /** A menu fragment a package builds itself, because its content is state the row data cannot hold. `[]` hides the
@@ -193,6 +195,21 @@ export function readConfigRow(row: ConfigRow, stored: unknown, fallback: unknown
     index: nearestIndex(row.range.steps, Number.isFinite(numeric) ? numeric : row.range.steps[0]),
     at: (step) => row.range.steps[step],
   };
+}
+
+/** One config row as the menu draws it: `readConfigRow`'s labels and step values, at `index` when the caller has one
+ *  of its own (the controller-app rows keep the index they always showed: `legacyConfigIndex`). The STEP writes the
+ *  value the row's table gives, so a role row and a controller-app row apply the same thing they display. */
+export function configRowCycler(
+  id: string,
+  row: ConfigRow,
+  stored: unknown,
+  fallback: unknown,
+  apply: (value: string | number | boolean) => void,
+  index?: number,
+): MenuItem {
+  const reading = readConfigRow(row, stored, fallback);
+  return cycler(id, row.label, [...reading.names], index ?? reading.index, (step) => apply(reading.at(step)));
 }
 
 /** Where a controller app's row points for a stored value, the way those rows have always read it: the rule predates
