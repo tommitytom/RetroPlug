@@ -34,7 +34,9 @@ import {
   type Platform,
   type Core,
 } from "./platform";
-import { platformEntry, providerHeaderBytes } from "./consoles";
+import { platformCapabilities, platformEntry } from "./consoles";
+import { embeddedRomOf } from "./embeds";
+import { derivedRoleConfigs, rolesForRom } from "./rolesForRom";
 
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
 import { flushBatteryForTeardown, type SramTarget } from "./sramAutoSave";
@@ -50,9 +52,8 @@ import {
   nextFocusAfterRemove,
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
-import type { RoleRegistry, RoleInstance } from "@retroplug/core/systemRoles";
+import { ROLE_HEADER_LEN, type RoleRegistry, type RoleInstance } from "@retroplug/core/systemRoles";
 import { protocolNodeOf, protocolPipeline, protocolWrites } from "./graph/protocolNodes";
-import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "@retroplug/bliptoaster/romDetect";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
 import type { TrackedSlot, WorkingSongImage } from "@retroplug/tracker/songCatalog";
 
@@ -62,36 +63,6 @@ const LANDING_FRAMES = 120;
 // Frames a clean working song that matched no saved slot is re-checked before the verdict sticks (~1 s):
 // long enough to outlast a battery that lags work RAM by a block or two, short enough to cost nothing.
 const UNMATCHED_RECHECKS = 60;
-
-// How much ROM header to read for the role providers (title lives at 0x134).
-const ROLE_HEADER_LEN = 0x150;
-
-/** What the role providers get to look at. Read in TIERS, the same shape `classifyRom` uses, because two
- *  cases need far more than a header and neither is the common one:
- *
- *  - **Sega always.** No title field, and the header itself sits at the END of a bank. smsggdj's marker
- *    is at $3640, so a ROLE_HEADER_LEN read would leave the provider nothing to match on and force
- *    `sms-sync` onto every SMS cart - which it must not, since it drives Player 2's button lines.
- *  - **A BlipToaster ROM predating the SIG chip tag.** Newer ones declare their build in the SIG block,
- *    inside the short prefix; older ones name it only in the on-screen label their linker pins inside the
- *    PRG region, and that is the ONLY thing separating the two mapper-69 builds (bliptoaster/romDetect).
- *    So the deep read is the fallback path, not the normal one, and no other NES cart pays it.
- *
- *  One read at construct, not on the classify path. */
-function readRoleHeader(backend: RoleHeaderCaps, platform: Platform, romPath: string): Uint8Array {
-  // The console's own prefix where its header sits deep in the file (a Sega's is at the end of a bank): that is how much
-  // its descriptor asks the ROM providers to be shown.
-  const deep = providerHeaderBytes(platform);
-  if (deep !== undefined) return backend.readFilePrefix(romPath, deep) ?? new Uint8Array();
-
-  const short = backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array();
-  if (platform !== "nes" || !needsChipLabelScan(short)) return short;
-  return backend.readFilePrefix(romPath, BLIPTOASTER_CHIP_SCAN_LEN) ?? short;
-}
-
-interface RoleHeaderCaps {
-  readFilePrefix(path: string, length: number): Uint8Array | null;
-}
 
 /** The role schema's parse of a stored role config: its fields as this build reads them, each defaulted, clamped or
  *  rounded. A load holds the stored config against it to note a key no build reads (SystemsStore.adopt); the stored
@@ -363,9 +334,12 @@ export class SystemsStore {
     return id === null ? null : { system: id };
   }
 
-  /** Load the binary-baked mGB (no file, no dialog), replacing the focused tile. */
-  loadMgb(): number | null {
-    return this.loadInPlace("", "mgb", undefined);
+  /** Load the binary-baked ROM `id` names (mGB's synth, say), replacing the focused tile: no file, no dialog. The
+   *  platform comes from the package's declaration, and an id no package declares loads nothing. */
+  loadEmbedded(id: string): number | null {
+    const embed = embeddedRomOf(id);
+    if (!embed) return null;
+    return this.loadInPlace("", embed.id, undefined);
   }
 
   /** Swap a specific system for `romPath`, in place. */
@@ -1044,17 +1018,28 @@ export class SystemsStore {
   }
 
   /** Link a freshly-created instance to the one it was created from: the child joins the parent's link group,
-   *  and if the parent is ungrouped (0) the parent is promoted to group 1 so the pair is linked. A no-op unless
-   *  BOTH are SameBoy (GB) systems — link groups are a Game Boy link-cable concept. Routes through
-   *  setRoleConfig, so dirty and the publish are handled. */
+   *  and if the parent is ungrouped (0) the parent is promoted to group 1 so the pair is linked. A no-op unless BOTH
+   *  consoles declare the SAME link-cable field (a Game Boy's `linkGroupId`, the only one today), which is the field
+   *  the group is written to. Routes through setRoleConfig, so dirty and the publish are handled. */
   inheritLinkGroup(childId: number, parentId: number): void {
-    const parentSb = findById(this.entries, parentId)?.roles.find((r) => r.kind === "sameboy");
-    const childSb = findById(this.entries, childId)?.roles.find((r) => r.kind === "sameboy");
-    if (!parentSb || !childSb) return;
-    const g = (parentSb.config as { linkGroupId?: number }).linkGroupId ?? 0;
-    const target = g > 0 ? g : 1;
-    if (g === 0) this.setRoleConfig(parentId, "sameboy", { linkGroupId: target }); // promote the lone parent
-    this.setRoleConfig(childId, "sameboy", { linkGroupId: target }); // child joins the parent's group
+    const parent = findById(this.entries, parentId);
+    const child = findById(this.entries, childId);
+    if (!parent || !child) return;
+    // A core's config role is the one named after its core (graphSystems reads the same rule).
+    const parentCore = parent.roles.find((r) => r.kind === parent.core);
+    const childCore = child.roles.find((r) => r.kind === child.core);
+    // The cable is the pair's ONE field: a console declares the core-config field its cable's group number lives in,
+    // and that number means a cable only to a core that reads the field. Two consoles could each declare a cable under
+    // a different field, and the pair would then share a number neither core carries - so both must name the same one.
+    const parentCable = platformCapabilities(parent.platform).linkCable;
+    const childCable = platformCapabilities(child.platform).linkCable;
+    if (!parentCore || !childCore || parentCable === undefined || childCable === undefined) return;
+    if (parentCable.field !== childCable.field) return;
+    const field = parentCable.field;
+    const g = (parentCore.config as Record<string, unknown>)[field];
+    const target = typeof g === "number" && g > 0 ? g : 1;
+    if (target === 1 && g !== target) this.setRoleConfig(parentId, parentCore.kind, { [field]: target }); // the lone parent
+    this.setRoleConfig(childId, childCore.kind, { [field]: target }); // child joins the parent's group
   }
 
   // --- project-load rebuild seam ------------------------------------------
@@ -1154,7 +1139,11 @@ export class SystemsStore {
     const override = config.savPath ?? "";
     let platform: Platform;
     if (embeddedRom) {
-      platform = "gb";
+      // A stored project names the embedded ROM by id; the declaration that id belongs to says which console it runs on.
+      // An id this product does not declare has no platform and nothing native can boot, so the entry is dropped.
+      const declared = embeddedRomOf(embeddedRom);
+      if (!declared) return null;
+      platform = declared.platform;
     } else {
       const fmt = classifyRom(this.backend, romPath);
       if (fmt === "unknown") return null;
@@ -1298,7 +1287,11 @@ export class SystemsStore {
   ): Prepared | null {
     let platform: Platform;
     if (embeddedRom) {
-      platform = "gb"; // embedded ROMs are always Game Boy
+      // An embedded ROM has no bytes to classify: the declaration that names it carries its console's platform, so an
+      // id this product does not declare places nothing rather than assuming a console.
+      const declared = embeddedRomOf(embeddedRom);
+      if (!declared) return null;
+      platform = declared.platform;
     } else {
       const fmt = classifyRom(this.backend, romPath);
       if (fmt === "unknown") return null;
@@ -1347,15 +1340,12 @@ export class SystemsStore {
     return ""; // nothing on disk → default to <rom>.sav for new saves
   }
 
-  // The default roles for a freshly-built system: the core's config role + any feature
-  // roles the registry's providers suggest for this ROM's header. Empty when no registry
-  // is wired (back-compat) or for an embedded ROM (no file to sniff).
-  //
+  // The default roles for a freshly-built system: the core's config role, any feature roles the registry's providers
+  // suggest for this ROM's header, and the config fields those roles derive from the file (src/rolesForRom.ts does the
+  // whole read, and a render asks through the same function). Empty when no registry is wired (back-compat).
   private defaultRoles(core: Core, platform: Platform, romPath: string, embeddedRom: string): RoleInstance[] {
     if (!this.registry) return [];
-    const header =
-      romPath && !embeddedRom ? readRoleHeader(this.backend, platform, romPath) : new Uint8Array();
-    return this.registry.defaultRoles(core, platform, header, embeddedRom);
+    return rolesForRom(this.registry, this.backend, { core, platform, romPath, embeddedRom });
   }
 
   /** `stored` with each config that reaches a protocol node parsed by its role's schema, as an edit's and a fresh
@@ -1488,37 +1478,20 @@ export class SystemsStore {
     return this.withDerivedRoleFacts(missing.length ? [...stored, ...missing] : stored, romPath, embeddedRom);
   }
 
-  /** Re-derive the role-config fields that are FACTS ABOUT THE ROM FILE rather than user choices, so a
-   *  loaded project reflects the ROM on disk today. The same reasoning as `battery` below, which is
-   *  re-derived at every build instead of being serialized - the difference is only that these live
-   *  inside a role config, so they cannot simply be left out of the file.
+  /** Re-derive the role-config fields that are FACTS ABOUT THE ROM FILE rather than user choices, so a loaded project
+   *  reflects the ROM on disk today. The same reasoning as `battery` below, which is re-derived at every build instead
+   *  of being serialized - the difference is only that these live inside a role config, so they cannot simply be left
+   *  out of the file.
    *
-   *  Today that is exactly one field: `bliptoaster.chip`, which expansion build the ROM is. It decides
-   *  which CC set the DAW parameter map exposes (parameterMap.ts), and overwriting it repairs the two
-   *  cases a stored value gets wrong: a project written before the field existed (which would read as
-   *  the 2A03 core and silently show none of the expansion lanes), and a ROM swapped for a different
-   *  build at the same path. It is deliberately NOT covered by "a stored role is never touched" above:
-   *  that rule protects configuration, and this is not configuration.
-   *
-   *  Also the repair path for a project stored while the chip was read off the ambiguous mapper: an S5B
-   *  ROM saved then reads back as "2a03", and re-deriving from the deeper prefix corrects it in place. */
+   *  Which fields those are is each role's own (`deriveConfig`, core/systemRoles): today BlipToaster's `chip`, which
+   *  expansion build the ROM is. It decides which CC set the DAW parameter map exposes, and deriving it repairs the two
+   *  cases a stored value gets wrong: a project written before the field existed (which would read as the 2A03 core and
+   *  silently show none of the expansion lanes), and a ROM swapped for a different build at the same path. It is
+   *  deliberately NOT covered by "a stored role is never touched" above: that rule protects configuration, and this is
+   *  not configuration. (A fresh build derives the same fields in the same construct, through `defaultRoles`.) */
   private withDerivedRoleFacts(roles: RoleInstance[], romPath: string, embeddedRom: string): RoleInstance[] {
-    const i = roles.findIndex((r) => r.kind === "bliptoaster");
-    if (i < 0 || !romPath || embeddedRom) return roles;
-
-    // The same tiered read `defaultRoles` gives the providers. A `bliptoaster` role means the cart is
-    // NES; passing a shorter prefix would "correct" an untagged S5B ROM back onto the ambiguous mapper
-    // fallback on every load.
-    const header = readRoleHeader(this.backend, "nes", romPath);
-    if (!header.length) return roles;
-
-    const chip = blipToasterChip(header);
-    const cfg = roles[i].config as { chip?: string } | undefined;
-    if (cfg?.chip === chip) return roles;
-
-    const out = [...roles];
-    out[i] = { ...roles[i], config: { ...(cfg ?? {}), chip } };
-    return out;
+    if (!this.registry) return roles;
+    return derivedRoleConfigs(this.registry, this.backend, roles, { romPath, embeddedRom });
   }
 
   // Whether this cart has battery-backed save memory, derived from the ROM header (embedded/missing → false).
@@ -1533,7 +1506,7 @@ export class SystemsStore {
   // Fold each attached role's load-time hook over the tentative spec, letting a role seed data that
   // is otherwise absent (e.g. a fresh LSDj ROM gets a valid empty sav so it skips its self-test).
   // Additive by contract — a hook returns the spec unchanged when the data it would seed is present.
-  // The backend satisfies ConstructCaps structurally (savFromJson + fileExists), so it's the caps arg.
+  // The backend satisfies ConstructCaps structurally (fileExists, readFile, pngDecode), so it's the caps arg.
   private applyConstructHooks(spec: ConstructSpec, roles: RoleInstance[]): ConstructSpec {
     let s = spec;
     if (this.registry)

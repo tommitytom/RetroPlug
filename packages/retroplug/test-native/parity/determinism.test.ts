@@ -35,8 +35,8 @@ function bytesDiffering(a: Uint8Array, b: Uint8Array): number {
 }
 
 test("two SameBoy boots power on with identical work RAM", () => {
-  const a = bootAndReadRam(() => session.project.systems.loadMgb());
-  const b = bootAndReadRam(() => session.project.systems.loadMgb());
+  const a = bootAndReadRam(() => session.project.systems.loadEmbedded("mgb"));
+  const b = bootAndReadRam(() => session.project.systems.loadEmbedded("mgb"));
   expect(a.length).toBeGreaterThan(0);
   expect(bytesDiffering(a, b), "needs RETROPLUG_DETERMINISTIC=1 (the runner sets it for parity/ files)").toBe(0);
 });

@@ -27,7 +27,6 @@ import {
   defaultCoreFor,
   platformEntry,
   platformForExtension,
-  providerHeaderLength,
   registeredPlatforms,
   type ConsoleDescriptor,
   type ConsoleSplit,
@@ -35,6 +34,7 @@ import {
   type Platform,
   type PrefixReader,
 } from "../consoles";
+import { rolesForRom } from "../rolesForRom";
 import { TRACKER_INTEGRATIONS, resolveTracker } from "../trackerRegistry";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { SongInfo } from "@retroplug/tracker/songCatalog";
@@ -99,11 +99,9 @@ export function resolveRenderRom(ctx: RenderContext, romPath: string): RenderRom
   const platform = classifyForRender(ctx.backend, romPath);
   if (platform === "unknown") return { platform, core: undefined, roles: [], integration: undefined };
   const core = defaultCoreFor(platform);
-  // The store reads a ROM's roles through the same registry call, from the same header: whatever a role does with a
-  // deeper read is the role's hook, so the providers here and there see one kind of header (the console's prefix where
-  // its header sits deep).
-  const header = ctx.backend.readFilePrefix(romPath, providerHeaderLength(platform)) ?? new Uint8Array();
-  const roles = core === undefined ? [] : ctx.registry.defaultRoles(core, platform, header, "");
+  // The store's own build reads the roles through this same function, so the integration a render asks is the one the
+  // built system will have, whatever a role derives from the file (src/rolesForRom.ts).
+  const roles = core === undefined ? [] : rolesForRom(ctx.registry, ctx.backend, { core, platform, romPath });
   return { platform, core, roles, integration: resolveTracker(roles) };
 }
 
@@ -111,6 +109,12 @@ export function resolveRenderRom(ctx: RenderContext, romPath: string): RenderRom
 function platformLabel(platform: Platform | "unknown"): string {
   if (platform === "unknown") return "unknown";
   return platformEntry(platform)?.label ?? platform;
+}
+
+/** The word a split refusal uses for a ROM's console: the platform id, and `other` for a file nothing classifies (the
+ *  name the render's own union gave it before the registry, which the refusal text still prints). */
+function refusalWord(platform: Platform | "unknown"): string {
+  return platform === "unknown" ? "other" : platform;
 }
 
 /** The consoles that can write `split`, as their platform labels ("Game Boy", "NES"), in product order: what a
@@ -621,11 +625,14 @@ export function validateRenderOpts(
   // A split is the console descriptor's: which output layouts its core can be built in, and the file each stream takes.
   const splits = platform === "unknown" ? undefined : consoleOfPlatform(platform)?.splits;
   if (o.split === "pins" && splits?.pins === undefined) {
-    throw new Error(`render: --split pins is ${splitPlatformLabels("pins").join(" or ")}-only (got ${platform})`);
+    throw new Error(
+      `render: --split pins is ${splitPlatformLabels("pins").join(" or ")}-only (got ${refusalWord(platform)})`,
+    );
   }
   if (o.split === "channels" && splits?.channels === undefined) {
     throw new Error(
-      `render: --split channels needs a ${splitPlatformLabels("channels").join(" or ")} ROM (got ${platform})`,
+      `render: --split channels needs a ${splitPlatformLabels("channels").join(" or ")} ROM ` +
+        `(got ${refusalWord(platform)})`,
     );
   }
 }

@@ -22,7 +22,10 @@
 //   app-unpaired-runtime | app-unpaired-control | app-runtime-mismatch | app-module-empty | sync-unknown-key |
 //   sync-unused-off | sync-node-undeclared | sync-not-object | sync-no-node | sync-no-mode | sync-off-is-mode |
 //   duplicate-app-one-package | identifier-collision | apps-only | capture-unwired | capture-no-decoder |
-//   capture-not-object | capture-out-undeclared | capture-out-not-serial | capture-form | duplicate-console-platform |
+//   capture-not-object | capture-out-undeclared | capture-out-not-serial | capture-form | embed-form |
+//   embed-unpaired-manifest | embed-unpaired-declaration | embed-unregistered-platform | embed-duplicate |
+//   embed-declared-twice | embed-manifest-not-list | embed-manifest-no-id | embed-manifest-no-file |
+//   embed-manifest-id-twice | embed-mismatched-package | duplicate-console-platform |
 //   console-core-norole | duplicate-console-type | realcart-unregistered | realcart-platform-twice |
 //   realcart-node-twice
 //                   { error: <the generator's message, or null when it did not refuse> }
@@ -132,6 +135,7 @@ async function loadPackages() {
     romProviders: loaded.ROM_PROVIDERS.map((provider) => provider.id),
     trackerIntegrations: loaded.TRACKER_INTEGRATIONS.map((integration) => integration.id),
     kitFormats: loaded.KIT_FORMATS.map((format) => format.id),
+    embeds: loaded.EMBEDS.map((embed) => ({ id: embed.id, label: embed.label, platform: embed.platform })),
     consoles: consoles.CONSOLES.map((descriptor) => ({
       id: descriptor.id,
       core: descriptor.core,
@@ -171,6 +175,25 @@ function consoleApp({ role, keepsApp = false }) {
     (keepsApp
       ? '  controllerApps: [{ id: "alpha-app", label: "Alpha App", config: { parse: (v) => v ?? {} } }],\n'
       : "") +
+    "};\n"
+  );
+}
+
+/** A fixture app module declaring embedded ROMs (the shell loads by the declaration; the manifest bakes the bytes). It
+ *  keeps the role the modes' console descriptors name as their core, and alpha's control-plane half, since the fixture
+ *  manifests declare both. */
+function embedApp(name, embeds) {
+  const entry = (e) =>
+    `{ id: ${JSON.stringify(e.id)}, label: ${JSON.stringify(e.label ?? e.id)}, platform: ${JSON.stringify(e.platform)} }`;
+  const app =
+    name === "alpha"
+      ? '  controllerApps: [{ id: "alpha-app", label: "Alpha App", config: { parse: (v) => v ?? {} } }],\n'
+      : "";
+  return (
+    "export default {\n" +
+    `  roles: [{ kind: "${name}-core", category: "system" }],\n` +
+    app +
+    `  embeds: [${embeds.map(entry).join(", ")}],\n` +
     "};\n"
   );
 }
@@ -889,6 +912,141 @@ try {
       writeTree("packages/alpha/ts/nodes.ts", 'export default [{ id: "rp.alpha.midi" }, { id: "rp.alpha.serial" }];\n');
       generate({ root });
       result = { files: outputs() };
+      break;
+    case "embed-form":
+      // The declaration and the manifest entry of one embedded ROM, and what the shell reads of it: the load takes its
+      // platform from the declaration, so it comes through with the label and the console.
+      writeTree("packages/alpha/ts/app.ts", embedApp("alpha", [{ id: "alpha-rom", label: "Alpha ROM", platform: "nes" }]));
+      writeTree(
+        "packages/alpha/ts/consoles.ts",
+        consoleModule({ descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }] }),
+      );
+      editManifest("alpha", (json) => {
+        json.retroplug.embed = [{ id: "alpha-rom", file: "rom/alpha.bin" }];
+      });
+      writeTree("packages/retroplug/src/app.ts", "export default {};\n");
+      generate({ root });
+      result = await loadPackages();
+      break;
+    case "embed-unpaired-manifest":
+      // The bytes baked in and nothing declaring them: the shell would have no label and no console to load by.
+      editManifest("alpha", (json) => {
+        json.retroplug.embed = [{ id: "alpha-rom", file: "rom/alpha.bin" }];
+      });
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "embed-unpaired-declaration":
+      // A declaration whose bytes no manifest bakes in: the load would name a resource native has not got.
+      writeTree("packages/alpha/ts/app.ts", embedApp("alpha", [{ id: "alpha-rom", platform: "nes" }]));
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "embed-unregistered-platform":
+      // A console this product does not run: the load would have no core to build.
+      writeTree("packages/alpha/ts/app.ts", embedApp("alpha", [{ id: "alpha-rom", platform: "n64" }]));
+      editManifest("alpha", (json) => {
+        json.retroplug.embed = [{ id: "alpha-rom", file: "rom/alpha.bin" }];
+      });
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "embed-duplicate":
+      // One id, two packages: a project stores the id alone, so one of the two ROMs would be unreachable.
+      writeTree("packages/alpha/ts/app.ts", embedApp("alpha", [{ id: "shared-rom", platform: "nes" }]));
+      writeTree("packages/beta/ts/app.ts", embedApp("beta", [{ id: "shared-rom", platform: "nes" }]));
+      editManifest("alpha", (json) => {
+        json.retroplug.embed = [{ id: "shared-rom", file: "rom/alpha.bin" }];
+      });
+      editManifest("beta", (json) => {
+        json.retroplug.embed = [{ id: "shared-rom", file: "rom/beta.bin" }];
+      });
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "embed-declared-twice":
+      // One package declaring one id twice: the menu would offer two rows for one ROM and the store would take the
+      // first, so the generated module counts declarations, not declaring packages.
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        embedApp("alpha", [
+          { id: "alpha-rom", platform: "nes" },
+          { id: "alpha-rom", platform: "nes" },
+        ]),
+      );
+      writeTree(
+        "packages/alpha/ts/consoles.ts",
+        consoleModule({ descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }] }),
+      );
+      editManifest("alpha", (json) => {
+        json.retroplug.embed = [{ id: "alpha-rom", file: "rom/alpha.bin" }];
+      });
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "embed-manifest-not-list":
+      // The manifest half is a list of resources; anything else names no bytes to bake in.
+      editManifest("alpha", (json) => {
+        json.retroplug.embed = { id: "alpha-rom", file: "rom/alpha.bin" };
+      });
+      result = refusal();
+      break;
+    case "embed-manifest-no-id":
+      // A resource native's table cannot name: it is looked up by the id an app module declares.
+      editManifest("alpha", (json) => {
+        json.retroplug.embed = [{ file: "rom/alpha.bin" }];
+      });
+      result = refusal();
+      break;
+    case "embed-manifest-no-file":
+      // An id with nothing baked in under it.
+      editManifest("alpha", (json) => {
+        json.retroplug.embed = [{ id: "alpha-rom" }];
+      });
+      result = refusal();
+      break;
+    case "embed-manifest-id-twice":
+      // Two files under one id: which resource native bakes in would be whichever the table listed last.
+      editManifest("alpha", (json) => {
+        json.retroplug.embed = [
+          { id: "alpha-rom", file: "rom/alpha.bin" },
+          { id: "alpha-rom", file: "rom/other.bin" },
+        ];
+      });
+      result = refusal();
+      break;
+    case "embed-mismatched-package":
+      // Declared by one package and baked in by another: the two halves of an embedded ROM are one package's.
+      writeTree("packages/alpha/ts/app.ts", embedApp("alpha", [{ id: "beta-rom", platform: "nes" }]));
+      editManifest("beta", (json) => {
+        json.retroplug.embed = [{ id: "beta-rom", file: "rom/beta.bin" }];
+      });
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
       break;
     default:
       console.error(`run-generator.mjs: unknown mode "${MODE}"`);

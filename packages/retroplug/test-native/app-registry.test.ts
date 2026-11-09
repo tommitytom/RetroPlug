@@ -22,7 +22,7 @@ test("frame + state read through the registry while the background audio thread 
   const audio = createAudioDriver();
 
   // Ownership discipline (per dsp-threaded): construct BEFORE startAudio.
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
 
   // Seeded at construct: state reads even before a block is rendered.

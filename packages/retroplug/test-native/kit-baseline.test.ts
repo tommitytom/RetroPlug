@@ -26,7 +26,7 @@
 import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver, type KitEffect } from "../src/audioDriver";
-import { compileKit, compileDmc, type KitCompileResult } from "../src/kit";
+import { compileLsdjKit, compileRisaKit, type KitCompileResult } from "../src/kit";
 import {
   SOURCE_HASHES,
   fnv1a64Hex,
@@ -282,7 +282,7 @@ function compileCase(c: KitCase): Promise<KitCompileResult> {
   if (c.codec === "lsdj") {
     const slot = { path, name: "KIK", effects: c.effects };
     const extra = (c.extraSlots ?? []).map((x) => ({ ...slot, name: x.name, effects: x.effects }));
-    return compileKit(be, { name: kitName, samples: [slot, ...extra], rotate: c.rotate ?? true });
+    return compileLsdjKit(be, { name: kitName, samples: [slot, ...extra], rotate: c.rotate ?? true });
   }
   const slot = {
     path,
@@ -298,7 +298,7 @@ function compileCase(c: KitCase): Promise<KitCompileResult> {
     effects: x.effects,
     rate: x.dmcRate ?? slot.rate,
   }));
-  return compileDmc(be, { name: kitName, samples: [slot, ...extra] });
+  return compileRisaKit(be, { name: kitName, samples: [slot, ...extra] });
 }
 
 const LSDJ_BANK = 0x4000;

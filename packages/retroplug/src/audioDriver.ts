@@ -8,8 +8,6 @@
 import { pumpAllJobs, setJobWait } from "./capability";
 import { kitFormat } from "./kitFormats";
 import type { KitCompileResult } from "./kit/compile";
-import type { KitCompileSpec } from "@retroplug/lsdj/kitFormat";
-import type { RisaKitCompileSpec } from "@retroplug/risa/kitFormat";
 import { setOfflineWait, setOfflineYield } from "./offline";
 import { makeCall } from "./rpcClient";
 import { offlineRunner } from "./realBackend";
@@ -106,15 +104,14 @@ export interface AudioDriver {
    *  buffer per stream in its `channelLayout()` (Game Boy = 4: Pulse 1, Pulse 2, Wave, Noise). Empty
    *  unless the project holds exactly ONE system (the PerChannel shape fans a single core's channels). */
   renderAudioPerChannel(id: number, ms: number): Float32Array[];
-  /** Compile an LSDJ sample kit from source audio files into a 16 KB kit bank: the TypeScript compiler's chain of
-   *  offline graph jobs per slot, slots in parallel (src/kit/). The promise settles where this host pumps or waits
-   *  for offline jobs: createAudioDriver turns the wait on, and a host with a UI tick pumps from it. A per-sample
-   *  failure leaves that slot empty rather than failing the whole kit, and the slot's reason comes back beside the
-   *  bank - the caller validates by reading the bank back, and can say why a slot did not land. */
-  compileKit(spec: KitCompileSpec): Promise<KitCompileResult>;
-  /** Compile a risa NES-DPCM sample kit into an 8 KB kit bank (the same chain, resampled to the PAL DPCM rate and
-   *  encoded by rp.dsp.dpcm). Same settling and failure behaviour as compileKit. */
-  compileDmc(spec: RisaKitCompileSpec): Promise<KitCompileResult>;
+  /** Compile a sample kit of the bank format `id` names (a cart's own, e.g. "lsdj" or "risa") from source audio files
+   *  into its bank: the TypeScript compiler's chain of offline graph jobs per slot, slots in parallel (src/kit/). The
+   *  spec's type is the owning package's, so a caller writes `compileKitFormat<KitCompileSpec>("lsdj", spec)` and this
+   *  driver names no cart (an id no package registers rejects the promise, naming it). The promise settles where this host pumps
+   *  or waits for offline jobs: createAudioDriver turns the wait on, and a host with a UI tick pumps from it. A
+   *  per-sample failure leaves that slot empty rather than failing the whole kit, and the slot's reason comes back
+   *  beside the bank - the caller validates by reading the bank back, and can say why a slot did not land. */
+  compileKitFormat<S>(id: string, spec: S): Promise<KitCompileResult>;
   /** The engine's audio sample rate (Hz) — thread into encodeWav so WAV headers are labelled correctly. */
   sampleRate(): number;
   /** Set the host sample rate (Hz). Baked into cores at construct, so it only takes effect BEFORE any
@@ -290,10 +287,12 @@ export function createAudioDriver(graph?: EngineGraph): AudioDriver {
         },
         () => [],
       ),
-    // The 16 KB kit bank and each slot's reason, and the 8 KB risa DMC bank's: the formats the product's packages
-    // register, by the ids they name (each cart's app contribution, src/generated/packages.ts).
-    compileKit: (spec) => kitFormat<KitCompileSpec>("lsdj").compile(kitRunner, spec),
-    compileDmc: (spec) => kitFormat<RisaKitCompileSpec>("risa").compile(kitRunner, spec),
+    // The 16 KB kit bank and each slot's reason, or the 8 KB risa DMC bank's: the format `id` names among the ones the
+    // product's packages register (each cart's app contribution, src/generated/packages.ts). The spec's type is the
+    // owner's, so a caller writes compileKitFormat<KitCompileSpec>("lsdj", spec) and the driver names no cart.
+    // Async so an unknown id rejects the returned promise, as the contract says, rather than throwing before one
+    // exists.
+    compileKitFormat: async <S>(id: string, spec: S) => kitFormat<S>(id).compile(kitRunner, spec),
     sampleRate: () => call("sampleRate") as number,
     setSampleRate: (sampleRate) => call("setSampleRate", sampleRate) as boolean,
     setTransport: (running) => call("setTransport", running) as boolean,

@@ -30,7 +30,7 @@ import {
   resolveEffects,
   type ParamRange,
 } from "@retroplug/dsp/chain";
-import { compileDmc, compileKit, type KitJobRunner } from "../../src/kit";
+import { compileRisaKit, compileLsdjKit, type KitJobRunner } from "../../src/kit";
 import { buildKitBank } from "@retroplug/lsdj/rom/buildKit";
 import { assembleKitBank } from "@retroplug/tracker/nes/kitBank";
 import type { KitEffect, KitSampleSpec } from "../../src/audioDriver";
@@ -415,7 +415,7 @@ test("an LSDj slot is a load, its effects passes, the resample cut at its length
     { type: "gain", gain: 0.5 },
     { type: "dither", ditherType: "ShapedTPDF" },
   ];
-  const kit = await compileKit(runner, { name: "K", samples: [{ path: "/a.wav", name: "A", effects }] });
+  const kit = await compileLsdjKit(runner, { name: "K", samples: [{ path: "/a.wav", name: "A", effects }] });
   expect(kit.errors).toEqual([null]);
   expect(runner.requests.map(typesOf)).toEqual([
     ["load"],
@@ -446,7 +446,7 @@ test("an LSDj slot that resamples to under one wave frame, or is empty, submits 
       "/empty.wav": { samples: new Float32Array(0), rate: 44100 },
     },
   });
-  const kit = await compileKit(runner, {
+  const kit = await compileLsdjKit(runner, {
     name: "K",
     samples: [
       { path: "/short.wav", name: "S", effects: [{ type: "gain", gain: 1 }] },
@@ -468,7 +468,7 @@ test("a risa slot that resamples to no frames is the one-byte {0}, and one that 
   const runner = scriptedRunner({
     files: { "/tiny.wav": { samples: new Float32Array(3), rate: 48000 }, "/b.wav": { samples: levels, rate: 22050 } },
   });
-  const kit = await compileDmc(runner, {
+  const kit = await compileRisaKit(runner, {
     name: "R",
     samples: [
       { path: "/tiny.wav", name: "T", effects: [], rate: 0 },
@@ -514,7 +514,7 @@ test("a failed slot is left empty with its reason, and the rest of the kit compi
     { path: "/ok.wav", name: "F", effects: [{ type: "filter", frequency: 30000 } as KitEffect] },
     { path: "/ok.wav", name: "OK", effects: [] },
   ];
-  const kit = await compileKit(runner, { name: "K", samples });
+  const kit = await compileLsdjKit(runner, { name: "K", samples });
   expect(kit.errors).toEqual([
     "/missing.wav could not be read or decoded", // native's job error, without the job's input numbering
     "/nan.wav has a sample that is not finite in the window",
@@ -526,7 +526,7 @@ test("a failed slot is left empty with its reason, and the rest of the kit compi
   expect([entry(1), entry(2), entry(3)]).toEqual([0x4060, 0x4060, 0x4060]);
   expect(entry(4)).toBeGreaterThan(0x4060);
   // risa leaves a failed slot's index entry empty instead.
-  const dmc = await compileDmc(runner, { name: "R", samples: [samples[0], samples[3]] });
+  const dmc = await compileRisaKit(runner, { name: "R", samples: [samples[0], samples[3]] });
   expect(dmc.errors).toEqual(["/missing.wav could not be read or decoded", null]);
   expect([dmc.bytes[0x1f00], dmc.bytes[0x1f04]]).toEqual([0xff, 0]);
 });
@@ -534,7 +534,7 @@ test("a failed slot is left empty with its reason, and the rest of the kit compi
 test("a spec's window is a whole frame count, refused as its slot's reason before any job is submitted", async () => {
   const ok = Float32Array.from({ length: 4410 }, (_, i) => levelOf(i % 16));
   const runner = scriptedRunner({ files: { "/ok.wav": { samples: ok, rate: 44100 } } });
-  const kit = await compileKit(runner, {
+  const kit = await compileLsdjKit(runner, {
     name: "K",
     samples: [
       { path: "/ok.wav", name: "N", offset: -1, effects: [] },
@@ -560,7 +560,7 @@ test("a null window field is absent, which native's optional reads as zero", asy
   // A kit spec read from a user's JSON (lsdj-rom's build-kit takes one straight from the file) can carry an explicit
   // null, which the spec's type does not. Native's optional offset and length read null as absent, so the window is
   // the whole file, as it is for a spec that leaves them out.
-  const kit = await compileKit(runner, {
+  const kit = await compileLsdjKit(runner, {
     name: "K",
     samples: [
       { path: "/ok.wav", name: "N", offset: null, length: null, effects: [] } as unknown as KitSampleSpec,
@@ -601,9 +601,9 @@ test("a pass that records a non-finite sample, or that a node's guard stepped in
     { path: "/ok.wav", name: "A", effects: [{ type: "gain", gain: 0.5 }, { type: "filter" }] as KitEffect[] },
     { path: "/ok.wav", name: "B", effects: [] },
   ];
-  const infinity = await compileKit(runner("infinity"), { name: "K", samples });
+  const infinity = await compileLsdjKit(runner("infinity"), { name: "K", samples });
   expect(infinity.errors).toEqual(["the pass running effects 0, 1 made a sample that is not finite", null]);
-  const guard = await compileKit(runner("guard"), { name: "K", samples });
+  const guard = await compileLsdjKit(runner("guard"), { name: "K", samples });
   expect(guard.errors[0]).toBe(
     "the pass running effects 0, 1 overflowed a filter, which rp.dsp.biquad reset (2 times)",
   );
@@ -616,7 +616,7 @@ test("a sample the bank does not hold whole says so: clipped, no room, or not fi
   const runner = scriptedRunner({
     files: { "/long.wav": { samples: long, rate: 44100 }, "/dmc.wav": { samples: long.map(() => 1), rate: 22050 } },
   });
-  const kit = await compileKit(runner, {
+  const kit = await compileLsdjKit(runner, {
     name: "K",
     samples: [
       { path: "/long.wav", name: "A", effects: [] },
@@ -629,7 +629,7 @@ test("a sample the bank does not hold whole says so: clipped, no room, or not fi
     `the kit's 16288 bytes of sample space are full, so none of this sample's ${packed} bytes fit`,
   ]);
   // risa: the encode at the slowest rate is cut at 4081 bytes, and a second one finds no room after it.
-  const dmc = await compileDmc(runner, {
+  const dmc = await compileRisaKit(runner, {
     name: "R",
     samples: [
       { path: "/dmc.wav", name: "A", effects: [], rate: 15 },
@@ -645,18 +645,18 @@ test("a sample the bank does not hold whole says so: clipped, no room, or not fi
 test("samples past the bank's slot count are not compiled, and say so", async () => {
   const runner = scriptedRunner({ files: { "/e.wav": { samples: new Float32Array(0), rate: 44100 } } });
   const sixteen = Array.from({ length: 16 }, (_, i) => ({ path: "/e.wav", name: `S${i}`, effects: [] }));
-  const kit = await compileKit(runner, { name: "K", samples: sixteen });
+  const kit = await compileLsdjKit(runner, { name: "K", samples: sixteen });
   expect(kit.errors.length).toBe(16);
   expect(kit.errors[14]).toBe("the window holds no frames (offset 0, at or past the source's 0 frames)");
   expect(kit.errors[15]).toBe("the LSDj kit bank holds 15 samples, so this one is dropped");
   expect(runner.requests.length).toBe(15);
   const seventeen = [...sixteen, { path: "/e.wav", name: "X", effects: [] }];
-  const dmc = await compileDmc(runner, { name: "R", samples: seventeen });
+  const dmc = await compileRisaKit(runner, { name: "R", samples: seventeen });
   expect(dmc.errors[16]).toBe("the risa kit bank holds 16 samples, so this one is dropped");
 });
 
 test("on the mock backend every slot fails with its reason, since only a native host runs graphs", async () => {
-  const kit = await compileKit(new MockBackend(), { name: "K", samples: [{ path: "/a.wav", name: "A", effects: [] }] });
+  const kit = await compileLsdjKit(new MockBackend(), { name: "K", samples: [{ path: "/a.wav", name: "A", effects: [] }] });
   expect(kit.errors).toEqual(["offline jobs need a native host: the mock backend cannot run graphs"]);
   expect(kit.bytes.length).toBe(0x4000);
 });

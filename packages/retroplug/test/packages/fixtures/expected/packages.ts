@@ -11,6 +11,7 @@ import type { RoleType, RomProvider } from "@retroplug/core";
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import type { KitFormat } from "@retroplug/dsp/kitContract";
 import type { ControllerAppContribution } from "@retroplug/launchpad/registry";
+import type { Embed } from "@retroplug/core/definePackage";
 import { CONSOLES } from "./consoles";
 import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
@@ -119,5 +120,56 @@ for (const controllerApp of CONTROLLER_APPS) {
   if (!RUNTIME_APP_IDS.includes(controllerApp.id)) {
     throw new Error(`the controller app ${controllerApp.id} has no runtime half: no package's protocol.apps ` +
       "declares it (the app, its playback model and its target)");
+  }
+}
+
+/** The embedded ROMs the product's packages declare, in product order: the id native's resource table knows them
+ *  by, the label a menu offers one under, and the console it runs on. A load takes its platform from here, so an
+ *  embedded ROM is not assumed to be any console's. */
+export const EMBEDS: readonly Embed[] = [
+  ...(app_alpha.embeds ?? []),
+  ...(app_beta.embeds ?? []),
+  ...(app_retroplug.embeds ?? []),
+];
+// The other half of each declaration: the manifest entries (`retroplug.embed`) that put the bytes in the binary, by
+// the package that bakes them in.
+const EMBED_SOURCES: readonly { pkg: string; embeds: readonly Embed[] }[] = [
+  { pkg: "alpha", embeds: app_alpha.embeds ?? [] },
+  { pkg: "beta", embeds: app_beta.embeds ?? [] },
+  { pkg: "retroplug", embeds: app_retroplug.embeds ?? [] },
+];
+const MANIFEST_EMBEDS: readonly { pkg: string; id: string }[] = [];
+// A declaration and a manifest entry are one embedded ROM's two halves: the shell loads it by the declaration,
+// native boots the bytes the manifest names, so neither can stand alone. The id belongs to the package whose bytes
+// carry it, an id is one ROM, and its platform is a console this product runs - the same rule the consoles' own
+// checks hold the descriptors to.
+for (const source of EMBED_SOURCES) {
+  for (const embed of source.embeds) {
+    const declarers = EMBED_SOURCES.flatMap((s) => s.embeds.filter((e) => e.id === embed.id).map(() => s.pkg));
+    if (declarers.length > 1) {
+      const [first, second] = declarers;
+      throw new Error(first === second
+        ? `the package ${first} declares the embedded ROM ${embed.id} twice: an id is one ROM`
+        : `two packages declare the embedded ROM ${embed.id}: ${first} and ${second}`);
+    }
+    const baked = MANIFEST_EMBEDS.filter((e) => e.id === embed.id);
+    if (!baked.length) {
+      throw new Error(`the package ${source.pkg} declares the embedded ROM ${embed.id}, which its manifest does ` +
+        "not bake in (its retroplug.embed)");
+    }
+    if (!baked.some((e) => e.pkg === source.pkg)) {
+      throw new Error(`the embedded ROM ${embed.id} is declared by ${source.pkg} and baked in by ${baked[0].pkg}: ` +
+        "the two halves belong to one package");
+    }
+    if (!CONSOLES.some((c) => c.platforms.some((p) => p.id === embed.platform))) {
+      throw new Error(`the embedded ROM ${embed.id} names the platform ${embed.platform}, which no console ` +
+        "descriptor registers");
+    }
+  }
+}
+for (const baked of MANIFEST_EMBEDS) {
+  if (!EMBEDS.some((e) => e.id === baked.id)) {
+    throw new Error(`the package ${baked.pkg} bakes in the embedded ROM ${baked.id}, which no app module ` +
+      "declares (an embeds entry with its label and platform)");
   }
 }

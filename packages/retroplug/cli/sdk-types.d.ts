@@ -387,8 +387,9 @@ export interface SystemsStore {
   addSystem(romPath: string, opts?: { explicitSav?: string }): number | null;
   /** The full loader (may defer to a sibling `<rom>.rplg`). */
   loadRom(romPath: string, opts?: { explicitSav?: string }): LoadResult;
-  /** Load the embedded mGB Game Boy synth (no external file). */
-  loadMgb(): number | null;
+  /** Load an embedded ROM a package bakes in, by the id it declares (mGB's synth: "mgb"); no external file. An id no
+   *  package declares loads nothing. */
+  loadEmbedded(id: string): number | null;
   removeSystem(id: number): boolean;
   /** The live systems, in project order. A construct-time `setRoleConfig` rebuilds its system under a
    *  new id, so read the rebuilt system's id here. */

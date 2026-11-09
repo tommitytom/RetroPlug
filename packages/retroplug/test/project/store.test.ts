@@ -230,7 +230,7 @@ test("adoptRomProject: an existing sibling .rplg is tracked, never overwritten, 
 
 test("adoptRomProject: an embedded ROM (no path) is a no-op — nothing written or tracked", () => {
   const { be, recent, project } = newProject();
-  project.systems.loadMgb(); // embedded mGB: no on-disk sibling
+  project.systems.loadEmbedded("mgb"); // embedded mGB: no on-disk sibling
   project.adoptRomProject("");
   expect(recent.view().length).toBe(0);
   expect(be.log.includes("writeFile") || be.log.includes("writeFileAtomic")).toBeFalsy(); // no write of either kind

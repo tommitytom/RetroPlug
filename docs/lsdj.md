@@ -225,7 +225,7 @@ backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
   import.
 - **Nibble encoding.** Kit sample PCM is 4-bit, stored **inverted** (`stored = 0xF - amp`) and, for
   **LSDj 9.2.0+**, with each 32-sample frame **rotated right by one** (GB wave-refresh-bug compensation).
-  Both decode (`kit.sampleData()`) and encode (`compileKit`'s `rotate`) gate on the ROM version, so import
+  Both decode (`kit.sampleData()`) and encode (the kit compiler's `rotate`) gate on the ROM version, so import
   is byte-correct for any version — `LsdjRom.rotatesSamples` (true for 9.2.0+) drives both. Byte-exact with
   the LSDj tool's own kits.
 - **Sample import = the kit compiler, TypeScript over native DSP nodes.** Resample (r8brain, anti-aliased), effects
@@ -236,7 +236,7 @@ backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
   algorithms are deterministic already; `test-native`'s `kit-baseline` and `kit-compile` hold every compiled bank to a
   golden (D1 and D2, [modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md) and
   [modular-graph-phase-d2-design.md](modular-graph-phase-d2-design.md) section 11). The CLI and the harness hosts
-  compile through `AudioDriver`'s `compileKit` / `compileDmc` (settled by the driver's native wait); a host with a UI
+  compile through `AudioDriver`'s `compileKitFormat` (settled by the driver's native wait); a host with a UI
   tick, the plugin included, calls `src/kit`'s entry points on its backend, settled by the job pump. The pure-TS `rom`
   module orchestrates: whole-kit
   builds take the returned 16 KB bank directly; single-sample imports splice the compiled bytes beside existing
@@ -291,7 +291,7 @@ Tests: [test/lsdj/rom.test.ts](../packages/lsdj/ts/test/rom.test.ts) (pure — d
 invert+rotation, patch round-trips, `buildKitBank`/budget, font tile↔RGBA mapping + variant regen,
 `.lsdpal`/`.kit` file round-trips on synthetic buffers) +
 [test-native/lsdj-rom.test.ts](../packages/retroplug/test-native/lsdj-rom.test.ts) (real
-`lsdj9_4_2.gb`: read TR-606 + 7 palettes + 3 fonts; surgical kit-rename round-trip; `compileKit` an
+`lsdj9_4_2.gb`: read TR-606 + 7 palettes + 3 fonts; surgical kit-rename round-trip; a kit compile of an
 authored WAV; import-sample splice into TR-606 preserving the other samples; importing real `7.png`/
 `BLSD.png`/`0D-BLOO.lsdpal`/`DONK.kit` through the native codec; and the `build-kit`→`import-kit` and
 `patch`-manifest verbs driven through the real CLI tool — each patched ROM boots).

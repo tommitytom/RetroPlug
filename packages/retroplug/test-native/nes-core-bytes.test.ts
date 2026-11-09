@@ -141,8 +141,8 @@ test("a ROM's CMD_USB_WR reaches the host through drainCoreBytes", () => {
 
 test("drainCoreBytes is empty, not an error, on a core with no back-channel", () => {
   const s = bootSession();
-  const id = s.project.systems.loadMgb();
-  if (id == null) throw new Error("loadMgb failed");
+  const id = s.project.systems.loadEmbedded("mgb");
+  if (id == null) throw new Error("loadEmbedded failed");
   s.audio.renderAudio(50);
   expect(Array.from(s.backend.drainCoreBytes(id))).toEqual([]);
   // A dead handle answers the same way, so a polling caller never has to guard.

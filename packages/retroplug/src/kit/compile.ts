@@ -12,8 +12,8 @@
 
 // The compilers and the contract they share live in their packages, re-exported here so a caller of this door has one
 // spelling for them.
-export { compileKit, LSDJ_KIT_FORMAT } from "@retroplug/lsdj/kitFormat";
-export { compileDmc, RISA_KIT_FORMAT } from "@retroplug/risa/kitFormat";
+export { compileLsdjKit, LSDJ_KIT_FORMAT } from "@retroplug/lsdj/kitFormat";
+export { compileRisaKit, RISA_KIT_FORMAT } from "@retroplug/risa/kitFormat";
 export { NO_SLOT_REASON } from "@retroplug/dsp/kitJobs";
 export type { KitCompileResult, KitJobRunner } from "@retroplug/dsp/kitContract";
 export type { KitFormat } from "@retroplug/dsp/kitContract";

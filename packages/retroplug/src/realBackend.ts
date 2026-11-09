@@ -14,7 +14,6 @@
 // a UI-direct native hook rather than the RPC bridge (see below).
 
 import type { ApuState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult, LoadScriptPackRequest, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, TraceLine, ZipEntry } from "./backend";
-import { savFromJson as savFromJsonTs } from "@retroplug/lsdj";
 import { makeCall } from "./rpcClient";
 import { CapabilityJobs, type JobCompletion, type JobRequest, type JobSubmitResult } from "./capability";
 import {
@@ -91,7 +90,6 @@ export function createHostClient(): HostBackend {
     unzip: (bytes) => (call("unzip", bytes) as ZipEntry[] | null) ?? null,
     pngEncode: (width, height, rgba) => bytesOrNull(call("pngEncode", { width, height, rgba })), // PngImage DTO
     pngDecode: (bytes) => (call("pngDecode", bytes) as PngImageData | null) ?? null,
-    savFromJson: (json) => savFromJsonTs(json), // pure-TS codec (was a native RPC round-trip)
     openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts), // async UI-direct hook, not RPC (see above)
   };
 }

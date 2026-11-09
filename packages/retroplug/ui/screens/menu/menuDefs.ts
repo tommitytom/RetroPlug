@@ -40,6 +40,7 @@ import {
 } from "@retroplug/lsdj/lsdjSongOps";
 import { activeSlot as lsdjActiveSlot } from "@retroplug/lsdj/codec/sav";
 import { songImportHost } from "../../../src/songImportHost";
+import { embeddedRoms } from "../../../src/embeds";
 import {
   songRecordBytes,
   replaceSongRecordInSav,
@@ -2558,7 +2559,11 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
     items: [
       submenu("start-recent", "Recent", recentChildren(ctx)),
       action("start-load", "Load...", () => runLoad(ctx)),
-      action("start-mgb", "Load mGB (GB MIDI Synth)", () => ctx.stores.project.systems.loadMgb()),
+      // One row per embedded ROM the product's packages declare (mGB's synth today), its label from the declaration, so
+      // the menu names no cart. The action's id keeps the embedded id, which is what a menu test keys on.
+      ...embeddedRoms().map((embed) =>
+        action(`start-${embed.id}`, `Load ${embed.label}`, () => ctx.stores.project.systems.loadEmbedded(embed.id)),
+      ),
       // N8 Pro (physical NES) in its own fenced block, mirroring the instance menu's tracker block. The
       // streaming + SD ops don't need a loaded system, so it belongs here too (configure/connect the cart, or
       // load a ROM onto it, before opening anything in RetroPlug). Only when a cart is actually detected.

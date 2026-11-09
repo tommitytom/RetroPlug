@@ -41,7 +41,7 @@ test("autoload an mGB .rplg.zip → the kernel plays it; base64 getState/setStat
   // __rp_loadProjectPath routes through load(), which picks the zip path by the `.rplg.zip` extension.
   const author = new ProjectStore(createRealBackend(), new RecentStore(createRealBackend()), buildAppRegistry());
   const rplg = __CONFIG_DIR__ + "/cp_mgb.rplg.zip";
-  author.systems.loadMgb();
+  author.systems.loadEmbedded("mgb");
   expect(author.export(rplg)).toBeTruthy();
   author.newProject(); // remove the author's system from the shared native engine
 
@@ -108,7 +108,7 @@ test("a render listed for a system leaves the list when the plugin's own wiring 
     throw new Error("no engine in this test"); // a submission that cannot be made is listed as an error, at once
   };
   try {
-    stores.project.systems.loadMgb();
+    stores.project.systems.loadEmbedded("mgb");
     const systemId = stores.project.systems.view()[0].id;
     stores.renders.start(systemId, {});
     expect(stores.renders.list().map((r) => r.systemId)).toEqual([systemId]); // its system has a tile: kept

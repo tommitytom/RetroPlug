@@ -17,7 +17,7 @@ import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver, type KitEffect, type KitSampleSpec } from "../src/audioDriver";
 import type { RisaDmcSampleSpec } from "../src/audioDriver";
-import { compileKit, compileDmc, type KitCompileResult } from "../src/kit";
+import { compileLsdjKit, compileRisaKit, type KitCompileResult } from "../src/kit";
 import { fnv1a64Hex, floatWav, signalSamples } from "./kit/sources";
 
 declare const __KIT_EDGES_GOLDEN__: string;
@@ -166,19 +166,19 @@ edgeCase("a refused LSDj slot leaves the rest compiling, says why, and empties i
     lsdj(NOISE, "N", [filter("LowShelf", 800, 0.7, -6)]),
     refused[3],
   ];
-  const kit = await held("lsdj/refused", () => compileKit(be, { name: "REFUSE", samples }));
+  const kit = await held("lsdj/refused", () => compileLsdjKit(be, { name: "REFUSE", samples }));
   expect(kit.errors).toEqual([null, NONFINITE, null, NYQUIST, GAIN, null, Q]);
 
   // Each refused slot is empty: no bytes, its name kept, which is how a slot whose file fails to load is left. So the
   // bank is the same kit compiled with those slots' files missing, byte for byte.
   const missing = samples.map((s) => (refused.includes(s) ? { ...s, path: MISSING } : s));
-  const again = await compileKit(be, { name: "REFUSE", samples: missing });
+  const again = await compileLsdjKit(be, { name: "REFUSE", samples: missing });
   expect(again.errors).toEqual([null, UNREADABLE, null, UNREADABLE, UNREADABLE, null, UNREADABLE]);
   expect(firstDifference(kit.bytes, again.bytes), "the bank with the refused slots' files missing").toBe(-1);
   // Not the kit without those slots, though: an LSDj slot with no bytes is named, with a zero length, where a slot the
   // spec does not have is the empty-slot marker. So a refused last slot differs from the kit one shorter in exactly
   // that entry and that name.
-  const shorter = await compileKit(be, { name: "REFUSE", samples: samples.slice(0, 6) });
+  const shorter = await compileLsdjKit(be, { name: "REFUSE", samples: samples.slice(0, 6) });
   const entry = (bank: Uint8Array, i: number): number => bank[i * 2] | (bank[i * 2 + 1] << 8);
   expect([entry(kit.bytes, 7), entry(shorter.bytes, 7)]).toEqual([entry(kit.bytes, 6), 0]);
   expect([kit.bytes[0x22 + 6 * 3], shorter.bytes[0x22 + 6 * 3]]).toEqual(["Q".charCodeAt(0), 0]);
@@ -191,14 +191,14 @@ edgeCase("a refused risa slot leaves the rest compiling, its entry empty: a miss
     { path: NOISE, name: "N", effects: [gain(0.4, false)], rate: 15, loop: true },
     { path: SINE, name: "NYQ", effects: [filter("HighPass", 22050, 1)], rate: 4 },
   ];
-  const kit = await held("risa/refused", () => compileDmc(be, { name: "REFUSE", samples }));
+  const kit = await held("risa/refused", () => compileRisaKit(be, { name: "REFUSE", samples }));
   expect(kit.errors).toEqual([null, NONFINITE, null, NYQUIST]);
   expect([kit.bytes[0x1f04], kit.bytes[0x1f0c]]).toEqual([0xff, 0xff]);
   const missing = samples.map((s, i) => (i === 1 || i === 3 ? { ...s, path: MISSING } : s));
-  const again = await compileDmc(be, { name: "REFUSE", samples: missing });
+  const again = await compileRisaKit(be, { name: "REFUSE", samples: missing });
   expect(firstDifference(kit.bytes, again.bytes), "the bank with the refused slots' files missing").toBe(-1);
   // risa's bank leaves an empty slot where it is and moves no cursor, so a refused LAST slot is the kit without it.
-  const shorter = await compileDmc(be, { name: "REFUSE", samples: samples.slice(0, 3) });
+  const shorter = await compileRisaKit(be, { name: "REFUSE", samples: samples.slice(0, 3) });
   expect(firstDifference(kit.bytes, shorter.bytes), "the kit without its refused last slot").toBe(-1);
 });
 
@@ -228,7 +228,7 @@ edgeCase("a full LSDj kit of every slot edge is the bank kit-edges.json records"
   expect(samples.length).toBe(15);
   for (const rotate of [true, false]) {
     const spec = { name: "edges", samples, rotate };
-    const kit = await held(`lsdj/edges-rotate-${rotate ? "on" : "off"}`, () => compileKit(be, spec));
+    const kit = await held(`lsdj/edges-rotate-${rotate ? "on" : "off"}`, () => compileLsdjKit(be, spec));
     // Every slot the bank does not hold whole says why: the empty window, the window under one wave frame, the slot
     // the bank's space ran out on part way (the noise, 2128 bytes, before the capped source), and the capped source,
     // which finds none left.
@@ -250,7 +250,7 @@ edgeCase("a full LSDj kit of every slot edge is the bank kit-edges.json records"
   // A source past the cap fills the whole sample space on its own, and a slot after it finds none: the empty-slot
   // marker, which the bank writes for a slot with no room as for one the spec does not have.
   const full = { name: "FULL", samples: [lsdj(LONG, "LNG"), lsdj(SINE, "AFT")] };
-  const kit = await held("lsdj/full", () => compileKit(be, full));
+  const kit = await held("lsdj/full", () => compileLsdjKit(be, full));
   const noRoom = "the kit's 16288 bytes of sample space are full, so none of this sample's 1056 bytes fit";
   expect(kit.errors).toEqual([null, noRoom]);
   const entry = (i: number): number => kit.bytes[i * 2] | (kit.bytes[i * 2 + 1] << 8);
@@ -276,7 +276,7 @@ edgeCase("a full risa kit of every DMC slot edge is the bank kit-edges.json reco
     { path: CHIRP, name: "C3", effects: [], rate: 10 },
     { path: SINE, name: "S3", effects: [], rate: 11 },
   ];
-  const kit = await held("risa/edges", () => compileDmc(be, { name: "edges-kit", samples }));
+  const kit = await held("risa/edges", () => compileRisaKit(be, { name: "edges-kit", samples }));
   // A {0} slot is a placed sample; L15 found no room after L0, and says so.
   const noFit = "this sample's 4081 bytes do not fit the 7872-byte sample region after the slots before it";
   expect(kit.errors).toEqual(samples.map((s) => (s.name === "L15" ? noFit : null)));
@@ -299,7 +299,7 @@ edgeCase("a finite source the chain overflows refuses its slot with the reason, 
     lsdj(HUGE, "BIQ", [filter("Peak", 1000, 1, 96)]),
     lsdj(LOUD, "DIT", [dither("JJN")]),
   ];
-  const kit = await held("lsdj/overflow", () => compileKit(be, { name: "OVER", samples }));
+  const kit = await held("lsdj/overflow", () => compileLsdjKit(be, { name: "OVER", samples }));
   expect(kit.errors[0]).toBe("the pass running effect 0 made a sample that is not finite");
   expect(kit.errors[1]).toBe(null);
   expect(kit.errors[2]).toBe("the pass running effect 0 made a sample that is not finite");
@@ -311,13 +311,13 @@ edgeCase("a finite source the chain overflows refuses its slot with the reason, 
   expect(guard(kit.errors[4], ditherWords), String(kit.errors[4])).toBe(true);
   // The refused slots are left as the slots whose files fail to load.
   const missing = samples.map((s) => (s.name === "A" ? s : { ...s, path: MISSING }));
-  const bank = await compileKit(be, { name: "OVER", samples: missing });
+  const bank = await compileLsdjKit(be, { name: "OVER", samples: missing });
   expect(firstDifference(kit.bytes, bank.bytes), "the bank with the refused slots' files missing").toBe(-1);
 });
 
 edgeCase("samples past the slot count are dropped, each saying so", async () => {
   const sixteen = Array.from({ length: 16 }, (_, i) => lsdj(i % 2 ? SINE : SHORT, `S${i}`, i % 3 ? [] : [gain(0.5)]));
-  const kit = await held("lsdj/sixteen", () => compileKit(be, { name: "SIXTEEN", samples: sixteen }));
+  const kit = await held("lsdj/sixteen", () => compileLsdjKit(be, { name: "SIXTEEN", samples: sixteen }));
   expect(kit.errors[15]).toBe("the LSDj kit bank holds 15 samples, so this one is dropped");
   const seventeen: RisaDmcSampleSpec[] = Array.from({ length: 17 }, (_, i) => ({
     path: i % 2 ? SINE : SHORT,
@@ -325,7 +325,7 @@ edgeCase("samples past the slot count are dropped, each saying so", async () => 
     effects: [],
     rate: i % 16,
   }));
-  const dmc = await held("risa/seventeen", () => compileDmc(be, { name: "SEVENTEEN", samples: seventeen }));
+  const dmc = await held("risa/seventeen", () => compileRisaKit(be, { name: "SEVENTEEN", samples: seventeen }));
   expect(dmc.errors[16]).toBe("the risa kit bank holds 16 samples, so this one is dropped");
 });
 
@@ -334,18 +334,18 @@ edgeCase("a refusal beats an empty window: a refused slot is empty where its win
     { path: SINE, name: "A", effects: [], rate: 12 },
     { path: SINE, name: "REF", effects: [gain(150, false)], rate: 12, offset: 9000 },
   ];
-  const kit = await held("risa/refusal-over-empty-window", () => compileDmc(be, { name: "R", samples }));
+  const kit = await held("risa/refusal-over-empty-window", () => compileRisaKit(be, { name: "R", samples }));
   expect(kit.errors).toEqual([null, GAIN]);
   expect(kit.bytes[0x1f04]).toBe(0xff);
   // An empty window is not a refusal: the same slot without the out-of-range gain compiles to the one-byte {0}, a
   // placed slot. The refused slot is the slot left for a file that fails to load.
-  const window = await compileDmc(be, {
+  const window = await compileRisaKit(be, {
     name: "R",
     samples: [samples[0], { ...samples[1], effects: [], offset: 9000 }],
   });
   expect(window.errors).toEqual([null, null]);
   expect(window.bytes[0x1f04] !== 0xff).toBe(true);
-  const missing = await compileDmc(be, { name: "R", samples: [samples[0], { ...samples[1], path: MISSING }] });
+  const missing = await compileRisaKit(be, { name: "R", samples: [samples[0], { ...samples[1], path: MISSING }] });
   expect(firstDifference(kit.bytes, missing.bytes)).toBe(-1);
 });
 
@@ -354,14 +354,14 @@ edgeCase("a field the spec leaves out takes the effect's default, the spelled-ou
   // normalising gain of 1; HighPassTPDF. The sparse spec must compile to the spelled-out one's bank.
   const sparse: KitEffect[] = [{ type: "filter" }, { type: "gain" }, { type: "dither" }];
   const spelled: KitEffect[] = [filter("LowPass", 5734, 1, 0), gain(1, true), dither("HighPassTPDF")];
-  const kit = await held("lsdj/defaults", () => compileKit(be, { name: "DEF", samples: [lsdj(CHIRP, "SP", sparse)] }));
+  const kit = await held("lsdj/defaults", () => compileLsdjKit(be, { name: "DEF", samples: [lsdj(CHIRP, "SP", sparse)] }));
   expect(kit.errors).toEqual([null]);
-  const lsdjSpelled = await compileKit(be, { name: "DEF", samples: [lsdj(CHIRP, "SP", spelled)] });
+  const lsdjSpelled = await compileLsdjKit(be, { name: "DEF", samples: [lsdj(CHIRP, "SP", spelled)] });
   expect(firstDifference(kit.bytes, lsdjSpelled.bytes), "the spelled-out LSDj spec's bank").toBe(-1);
   const dmcSparse = [{ path: CHIRP, name: "SP", effects: sparse.slice(0, 2) }];
-  const dmc = await held("risa/defaults", () => compileDmc(be, { name: "DEF", samples: dmcSparse }));
+  const dmc = await held("risa/defaults", () => compileRisaKit(be, { name: "DEF", samples: dmcSparse }));
   expect(dmc.errors).toEqual([null]);
-  const dmcSpelled = await compileDmc(be, {
+  const dmcSpelled = await compileRisaKit(be, {
     name: "DEF",
     samples: [{ path: CHIRP, name: "SP", effects: spelled.slice(0, 2), rate: 12, loop: false, normalize: true }],
   });

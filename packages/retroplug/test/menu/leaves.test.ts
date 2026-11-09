@@ -245,7 +245,7 @@ test("Project > Name is absent with no systems; reads (None) when there's nothin
   expect(findItem(rows(), "proj-name")).toBe(undefined); // nothing to name yet
 
   // The embedded mGB has no on-disk path, so no name can be derived from it.
-  stores.project.systems.loadMgb();
+  stores.project.systems.loadEmbedded("mgb");
   expect(findItem(rows(), "proj-name")!.label).toBe("Name: (None)");
 });
 
@@ -299,7 +299,7 @@ test("instance title shows a distinct project + ROM, and 'mGB' for the embedded 
 
   // The embedded mGB synth (no ROM path, no project name) → just "mGB".
   stores.project.newProject();
-  stores.project.systems.loadMgb();
+  stores.project.systems.loadEmbedded("mgb");
   const mgb = stores.project.systems.view()[0];
   expect(buildInstanceMenu({ ...ctxOf(stores), version: "0.6.2", system: mgb }).title).toBe("RetroPlug v0.6.2 - mGB");
 });
@@ -717,7 +717,7 @@ test("system Save SRAM (quick) writes the battery to the resolved sibling .sav, 
 test("the embedded mGB synth omits the quick-save items (no on-disk ROM target)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  stores.project.systems.loadMgb();
+  stores.project.systems.loadEmbedded("mgb");
   const anchored = stores.project.systems.view()[0];
   expect(anchored.romPath).toBe(""); // embedded
   const items = submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-system");
@@ -1112,11 +1112,11 @@ test("instance menu Save Project saves to the known path without browsing", asyn
 test("instance menu Save Project shows a * marker only while there are unsaved changes", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  stores.project.systems.loadMgb(); // embedded synth: no romPath, so its battery is never counted SRAM-dirty
+  stores.project.systems.loadEmbedded("mgb"); // embedded synth: no romPath, so its battery is never counted SRAM-dirty
   const anchored = () => stores.project.systems.view()[0];
   const saveLabel = () => findItem(buildInstanceMenu({ ...ctxOf(stores), system: anchored() }).items, "inst-save")!.label;
 
-  // Save to a path for a clean baseline (loadMgb dirtied the project) → no star, star purely tracks the project.
+  // Save to a path for a clean baseline (loadEmbedded dirtied the project) → no star, star purely tracks the project.
   stores.project.save("/proj/p.rplg");
   expect(stores.project.isDirty()).toBe(false);
   expect(saveLabel()).toBe("Save Project");

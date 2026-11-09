@@ -2,7 +2,7 @@
 // one bank. A risa kit's DMC encode skips the dither, so an LSDj kit compile is the only path that reaches one; its
 // callers are the CLI sessions (`cli/sessions/lsdj-rom.ts`) and the tests.
 //
-// Everything here goes through the path a session uses (audioDriver.compileKit -> the TypeScript kit compiler -> its
+// Everything here goes through the path a session uses (audioDriver.compileKitFormat -> the TypeScript kit compiler -> its
 // offline jobs -> rp.dsp.dither), not the kernel directly, so the case covers the effect settings decoding and the
 // node's seeded quantise as well.
 // The bank is read back through `KitView` before it is compared: an empty or undecoded slot would make two compiles
@@ -14,7 +14,7 @@
 import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import type { KitEffect } from "../src/audioDriver";
+import type { KitCompileSpec, KitEffect } from "../src/audioDriver";
 import { KitView } from "@retroplug/lsdj/rom/kit";
 import { KIT_LOOKUP, BANK_SIZE, ROM_SIZE } from "@retroplug/lsdj/rom/constants";
 import { encodeWav } from "../cli/wav";
@@ -50,14 +50,14 @@ function firstDifference(a: Uint8Array, b: Uint8Array): number {
   return -1;
 }
 
-test("compileKit gives identical bytes twice for each TPDF dither", async () => {
+test("the kit compiler gives identical bytes twice for each TPDF dither", async () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   writeSource(be);
 
   // The control: the same source with no effect at all. Its slot is a real, varied sample too, so a difference from
   // the dithered banks below is the dither's and not an empty slot's.
-  const plain = (await audio.compileKit({ name: "DITH", samples: [{ path: WAV, name: "SIN", effects: [] }] })).bytes;
+  const plain = (await audio.compileKitFormat<KitCompileSpec>("lsdj", { name: "DITH", samples: [{ path: WAV, name: "SIN", effects: [] }] })).bytes;
   const plainRead = readBack(plain);
   expect(plainRead.frames).toBeGreaterThan(0);
   expect(plainRead.hi - plainRead.lo).toBeGreaterThan(0.5);
@@ -66,8 +66,8 @@ test("compileKit gives identical bytes twice for each TPDF dither", async () => 
     const effects: KitEffect[] = [{ type: "dither", ditherType }];
     const spec = { name: "DITH", samples: [{ path: WAV, name: "SIN", effects }] };
 
-    const first = (await audio.compileKit(spec)).bytes;
-    const second = (await audio.compileKit(spec)).bytes;
+    const first = (await audio.compileKitFormat<KitCompileSpec>("lsdj", spec)).bytes;
+    const second = (await audio.compileKitFormat<KitCompileSpec>("lsdj", spec)).bytes;
 
     // The compared bank is a whole 16 KB bank whose slot decoded to a varying sample in both polarities (a decaying
     // sine keeps its energy through the resample and the 4-bit quantise), so "identical" can never mean "identically

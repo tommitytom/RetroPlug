@@ -20,7 +20,7 @@ function newProject(be = new MockBackend("/cfg")) {
 test("export: PKZIP of project.json + each system's state & sram, from the pump", () => {
   const { be, recent, project } = newProject();
   be.seed("/proj/a.gb", gbRom());
-  const mgbId = project.systems.loadMgb()!; // embedded, appended into empty → id 1
+  const mgbId = project.systems.loadEmbedded("mgb")!; // embedded, appended into empty → id 1
   const gbId = project.systems.addSystem("/proj/a.gb")!; // path-backed → id 2
   project.setLayout("grid");
 
@@ -64,7 +64,7 @@ test("export: PKZIP of project.json + each system's state & sram, from the pump"
 test("export then load: round-trips systems (blobs seed each emulator) + settings", () => {
   const { be, project } = newProject();
   be.seed("/proj/a.gb", gbRom());
-  const mgbId = project.systems.loadMgb()!; // export id (mgb) — TS-allocated, not assumed to be 1
+  const mgbId = project.systems.loadEmbedded("mgb")!; // export id (mgb): TS-allocated, not assumed to be 1
   const aId = project.systems.addSystem("/proj/a.gb")!; // export id (a.gb)
   project.setZoom(4);
   project.export("/proj/song.rplg.zip");

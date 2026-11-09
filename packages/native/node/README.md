@@ -83,7 +83,7 @@ globalThis.tjs = { exit: (c) => { process.exitCode = c; } };
 
 const sdk = await import("./build/cli-sdk/retroplug-cli.mjs");
 const s = sdk.bootSession();
-s.project.systems.loadMgb();
+s.project.systems.loadEmbedded("mgb");
 s.audio.stageMidiIn([0x90, 60, 100]);
 const pcm = s.audio.renderAudio(250);   // Float32Array
 ```

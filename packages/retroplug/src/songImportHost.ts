@@ -16,7 +16,9 @@ export function songImportHost(backend: HostBackend, systems: SystemsStore): Son
     setRoleConfig: (id, kind, config) => systems.setRoleConfig(id, kind, config),
     savPathOf: (id) => {
       const sys = systems.view().find((s) => s.id === id);
-      return sys ? resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath) : "";
+      // A system that went away between the import's target being read and its write has no path, and quietly writing
+      // its battery to "" would be a failure reported as a success.
+      return sys ? resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath) : null;
     },
   };
 }

@@ -126,10 +126,11 @@ function readPackage(root, name) {
   return { name, dir, manifest, manifestJson: json, retroplug: json.retroplug };
 }
 
-/** Whether a package contributes to the app: its manifest has an `app`, a `consoles` or a `protocol` member. */
+/** Whether a package contributes to the app: its manifest has an `app`, a `consoles`, a `protocol` or an `embed`
+ *  member (the last is bytes rather than code, and a product that dropped the package would bake nothing in). */
 function contributes(pkg) {
   return pkg.retroplug.app !== undefined || pkg.retroplug.consoles !== undefined ||
-    pkg.retroplug.protocol !== undefined;
+    pkg.retroplug.protocol !== undefined || pkg.retroplug.embed !== undefined;
 }
 
 /** Whether an unlisted dependency contributes to the app, judged tolerantly: a package with no manifest, or a manifest
@@ -241,8 +242,26 @@ function syncRule(pkg, appId, sync) {
 /** What one package contributes, from its manifest: its app module, its consoles module and its protocol nodes, each
  *  checked for what the generated modules need. */
 function contributions(pkg) {
-  const out = { app: null, consoles: null, protocol: null, nodes: [], roles: {}, apps: [] };
+  const out = { app: null, consoles: null, protocol: null, nodes: [], roles: {}, apps: [], embeds: [] };
   const retroplug = pkg.retroplug;
+  // The files this package bakes into a product's binary (`retroplug.embed`), which the app module declares as
+  // `embeds` entries (id, label, platform) for the shell to load them by. The generator emits both sides and the
+  // generated module pairs them: neither side alone can be loaded.
+  if (retroplug.embed !== undefined) {
+    if (!Array.isArray(retroplug.embed)) throw new Error(`${pkg.name}: retroplug.embed is not a list`);
+    for (const entry of retroplug.embed) {
+      if (!isObject(entry) || typeof entry.id !== "string" || entry.id === "") {
+        throw new Error(`${pkg.name}: every retroplug.embed entry needs an "id", the resource's name on the wire`);
+      }
+      if (typeof entry.file !== "string" || entry.file === "") {
+        throw new Error(`${pkg.name}: the embedded ROM ${entry.id} needs a "file", the bytes to bake in`);
+      }
+      if (out.embeds.some((baked) => baked.id === entry.id)) {
+        throw new Error(`${pkg.name}: its retroplug.embed lists the id ${entry.id} twice`);
+      }
+      out.embeds.push({ id: entry.id });
+    }
+  }
   if (retroplug.app !== undefined) {
     if (typeof retroplug.app !== "string" || retroplug.app === "") {
       throw new Error(`${pkg.name}: retroplug.app must be a module path, not ${JSON.stringify(retroplug.app)}`);
@@ -502,6 +521,7 @@ function renderPackages({ packages, outDir }) {
     'import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";',
     'import type { KitFormat } from "@retroplug/dsp/kitContract";',
     'import type { ControllerAppContribution } from "@retroplug/launchpad/registry";',
+    'import type { Embed } from "@retroplug/core/definePackage";',
     'import { CONSOLES } from "./consoles";',
   );
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
@@ -601,8 +621,63 @@ function renderPackages({ packages, outDir }) {
     "  }",
     "}",
     "",
+    "/** The embedded ROMs the product's packages declare, in product order: the id native's resource table knows them",
+    " *  by, the label a menu offers one under, and the console it runs on. A load takes its platform from here, so an",
+    " *  embedded ROM is not assumed to be any console's. */",
+    "export const EMBEDS: readonly Embed[] = [",
+    ...contributionLines(app, "embeds"),
+    "];",
+    "// The other half of each declaration: the manifest entries (`retroplug.embed`) that put the bytes in the binary, by",
+    "// the package that bakes them in.",
+    "const EMBED_SOURCES: readonly { pkg: string; embeds: readonly Embed[] }[] = [",
+    ...app.map((p) => `  { pkg: ${JSON.stringify(p.pkg.name)}, embeds: ${identifier(p.pkg.name)}.embeds ?? [] },`),
+    "];",
+    `const MANIFEST_EMBEDS: readonly { pkg: string; id: string }[] = [${manifestsWithEmbeds(packages)}];`,
+    "// A declaration and a manifest entry are one embedded ROM's two halves: the shell loads it by the declaration,",
+    "// native boots the bytes the manifest names, so neither can stand alone. The id belongs to the package whose bytes",
+    "// carry it, an id is one ROM, and its platform is a console this product runs - the same rule the consoles' own",
+    "// checks hold the descriptors to.",
+    "for (const source of EMBED_SOURCES) {",
+    "  for (const embed of source.embeds) {",
+    "    const declarers = EMBED_SOURCES.flatMap((s) => s.embeds.filter((e) => e.id === embed.id).map(() => s.pkg));",
+    "    if (declarers.length > 1) {",
+    "      const [first, second] = declarers;",
+    "      throw new Error(first === second",
+    "        ? `the package ${first} declares the embedded ROM ${embed.id} twice: an id is one ROM`",
+    "        : `two packages declare the embedded ROM ${embed.id}: ${first} and ${second}`);",
+    "    }",
+    "    const baked = MANIFEST_EMBEDS.filter((e) => e.id === embed.id);",
+    "    if (!baked.length) {",
+    "      throw new Error(`the package ${source.pkg} declares the embedded ROM ${embed.id}, which its manifest does ` +",
+    '        "not bake in (its retroplug.embed)");',
+    "    }",
+    "    if (!baked.some((e) => e.pkg === source.pkg)) {",
+    "      throw new Error(`the embedded ROM ${embed.id} is declared by ${source.pkg} and baked in by ${baked[0].pkg}: ` +",
+    '        "the two halves belong to one package");',
+    "    }",
+    "    if (!CONSOLES.some((c) => c.platforms.some((p) => p.id === embed.platform))) {",
+    "      throw new Error(`the embedded ROM ${embed.id} names the platform ${embed.platform}, which no console ` +",
+    '        "descriptor registers");',
+    "    }",
+    "  }",
+    "}",
+    "for (const baked of MANIFEST_EMBEDS) {",
+    "  if (!EMBEDS.some((e) => e.id === baked.id)) {",
+    "    throw new Error(`the package ${baked.pkg} bakes in the embedded ROM ${baked.id}, which no app module ` +",
+    '      "declares (an embeds entry with its label and platform)");',
+    "  }",
+    "}",
+    "",
   );
   return lines.join("\n");
+}
+
+/** The manifest embed entries the generated module pairs with the app modules' declarations, as source text. */
+function manifestsWithEmbeds(packages) {
+  return packages
+    .flatMap((p) => p.embeds.map((baked) => ({ pkg: p.pkg.name, id: baked.id })))
+    .map((baked) => `{ pkg: ${JSON.stringify(baked.pkg)}, id: ${JSON.stringify(baked.id)} }`)
+    .join(", ");
 }
 
 function renderConsoles({ packages, outDir }) {

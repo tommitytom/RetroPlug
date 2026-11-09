@@ -18,7 +18,7 @@
 import { test, expect, ui } from "ui-harness";
 import { createRealBackend } from "../src/realBackend";
 import { makeCall } from "../src/rpcClient";
-import { compileKit, type KitCompileResult } from "../src/kit";
+import { compileLsdjKit, type KitCompileResult } from "../src/kit";
 import { encodeWav } from "../cli/wav";
 import { KitView } from "@retroplug/lsdj/rom/kit";
 import { BANK_SIZE, KIT_LOOKUP, ROM_SIZE } from "@retroplug/lsdj/rom/constants";
@@ -41,7 +41,7 @@ test("the plugin's facet set compiles a kit, with no harness facet bound", async
   let result: KitCompileResult | null = null;
   let failure: unknown = null;
   let settled = false;
-  void compileKit(be, {
+  void compileLsdjKit(be, {
     name: "PLUG",
     samples: [{ path: wav, name: "SIN", effects: [{ type: "dither", ditherType: "HighPassTPDF" }] }],
   }).then(

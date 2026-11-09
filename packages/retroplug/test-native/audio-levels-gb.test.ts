@@ -17,7 +17,7 @@ test("audio levels: SameBoy (mGB)", () => {
   const be = createRealBackend();
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver(project.graph);
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   audio.renderAudio(1500); // boot + firmware init
 
   NOTES.forEach((n, i) => {

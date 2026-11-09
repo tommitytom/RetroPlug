@@ -21,7 +21,7 @@ test("saveState → disk → loadState round-trips a real core, saving while the
   const audio = createAudioDriver();
 
   // Ownership discipline (per dsp-threaded): construct BEFORE startAudio.
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
   audio.renderAudio(1500); // boot + publish a state snapshot into the registry
 

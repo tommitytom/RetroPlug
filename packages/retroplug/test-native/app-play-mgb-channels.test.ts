@@ -31,7 +31,7 @@ test("mGB renders as four isolated Game Boy channels (renderAudioPerChannel)", (
   const project = new ProjectStore(be, recent, registry);
   const audio = createAudioDriver(project.graph);
 
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
 
   audio.renderAudio(1500); // boot + firmware init (discarded)

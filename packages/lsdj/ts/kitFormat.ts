@@ -59,7 +59,7 @@ async function lsdjSlot(runner: KitJobRunner, spec: KitSampleSpec, rotate: boole
 }
 
 /** An LSDj kit: the 16 KB bank (its 15 slots, the rest dropped), and each sample's reason. */
-export async function compileKit(runner: KitJobRunner, spec: KitCompileSpec): Promise<KitCompileResult> {
+export async function compileLsdjKit(runner: KitJobRunner, spec: KitCompileSpec): Promise<KitCompileResult> {
   const rotate = spec.rotate ?? true;
   const compile = (s: KitSampleSpec): Promise<Compiled> => lsdjSlot(runner, s, rotate);
   const { results, dropped } = await compileSlots(spec.samples, KIT_MAX_SAMPLES, compile, "LSDj kit");
@@ -79,4 +79,4 @@ export async function compileKit(runner: KitJobRunner, spec: KitCompileSpec): Pr
 }
 
 /** The LSDj kit: a 16 KB bank of 15 rotated 4-bit samples. */
-export const LSDJ_KIT_FORMAT: KitFormat<KitCompileSpec> = { id: "lsdj", compile: compileKit };
+export const LSDJ_KIT_FORMAT: KitFormat<KitCompileSpec> = { id: "lsdj", compile: compileLsdjKit };

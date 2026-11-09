@@ -52,7 +52,7 @@ test("mGB (embedded) boots with no ROM file; a garbage file is rejected", () => 
   const be = createRealBackend();
   const store = new SystemsStore(be);
 
-  const mgb = store.loadMgb()!; // embedded -> the product's rp_embedded_resources() table boots a real core
+  const mgb = store.loadEmbedded("mgb")!; // embedded -> the product's rp_embedded_resources() table boots a real core
   expect(store.systems().length).toBe(1);
   expect(be.readState(mgb)!.length > 0).toBeTruthy(); // real mGB savestate
 

@@ -34,11 +34,12 @@ import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSo
 import { gbaRom } from "../test/systems/fixtures";
 
 declare const __REPO_RESOURCES_DIR__: string;
+declare const __CONFIG_DIR__: string;
 
 const ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
 // A Game Boy Advance ROM enough to CLASSIFY as one (its logo at 0x04): the case needs no boot, only the console the
 // content names, so it is written rather than read from a fixture tree.
-const GBA_ROM = "/tmp/rp-sms-render-gba.gba";
+const GBA_ROM = __CONFIG_DIR__ + "/sms-render-gba.gba";
 const GG_ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.gg";
 const SAV = "/tmp/rp-smsggdj-render.sav";
 

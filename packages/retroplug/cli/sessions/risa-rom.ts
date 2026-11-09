@@ -1,7 +1,7 @@
 // `retroplug-cli risa-rom` — inspect, extract and edit the static assets (DPCM sample kits, themes, fonts)
 // inside a risa (NES/MMC5) `.nes` ROM, headlessly. The risa twin of ./lsdj-rom.ts, backed by the pure-TS
 // packages/risa's rom module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile
-// is the TypeScript kit compiler (s.audio.compileDmc - the risa analog of compileKit); sample splicing
+// is the TypeScript kit compiler (s.audio.compileKitFormat with risa's format); sample splicing
 // re-packs existing DPCM + a freshly-compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
 //
 // ONE JSON schema drives the editing verbs (see RISA_ROM_HELP): a manifest of kit/theme/font entries, each
@@ -18,7 +18,7 @@
 //   retroplug-cli risa-rom export-kit    / import-kit     (.rkit raw 8 KB DPCM banks)
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
-import type { KitEffect, RisaDmcSampleSpec } from "../../src/audioDriver";
+import type { KitEffect, RisaDmcSampleSpec, RisaKitCompileSpec } from "../../src/audioDriver";
 import { NO_SLOT_REASON } from "../../src/kit";
 import { encodeWav } from "../wav";
 import {
@@ -78,7 +78,7 @@ function readOrThrow(s: Session, path: string, what: string): Uint8Array {
   return data;
 }
 
-// --- kit compile (the TypeScript kit compiler, s.audio.compileDmc) ---------------------------------------
+// --- kit compile (the TypeScript kit compiler, s.audio.compileKitFormat) -------------------------------
 
 // Per-sample shaping. risa's DMC compile skips dither (4-bit only), so gain/filter only. --no-normalize maps
 // to the DMC 7-bit normalize (spec.normalize) rather than a gain effect, so there's no double-normalize.
@@ -142,7 +142,7 @@ async function compileKitBank(s: Session, name: string, build: BuildSource[], ba
     loop: sm.loop ?? fb.loop,
     normalize: sm.normalize ?? fb.normalize,
   }));
-  const { bytes: bank, errors } = await s.audio.compileDmc({ name, samples });
+  const { bytes: bank, errors } = await s.audio.compileKitFormat<RisaKitCompileSpec>("risa", { name, samples });
   if (bank.length !== KIT_BANK_SIZE) throw new Error("the kit compiler returned an unexpected bank size");
   const model = bankToModel(bank);
   sources.forEach((sm, i) => {
@@ -275,7 +275,7 @@ async function importSample(s: Session, args: string[]): Promise<void> {
   const fb = fallbacks(args);
 
   // Compile the one sample (a throwaway 1-sample bank) and pull its DPCM back out.
-  const one = await s.audio.compileDmc({
+  const one = await s.audio.compileKitFormat<RisaKitCompileSpec>("risa", {
     name: "",
     samples: [{ path: audio, name, effects: fb.effects, rate: fb.rate, loop: fb.loop, normalize: fb.normalize }],
   });

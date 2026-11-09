@@ -29,7 +29,7 @@ test("a system's classified platform picks the node it is placed as, and the cor
 
 test("embedded mGB is placed as a Game Boy node, from its marker", () => {
   const { be, store } = makeStore();
-  store.loadMgb();
+  store.loadEmbedded("mgb");
   const spec = be.lastBoot()!;
   expect(spec.type).toBe("rp.sameboy.gb");
   expect(spec.embeddedRom).toBe("mgb");

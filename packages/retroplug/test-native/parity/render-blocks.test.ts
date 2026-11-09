@@ -31,12 +31,12 @@ function rms(a: Float32Array, from = 0, to = a.length): number {
 test("at 2 outputs in 1024-frame blocks it is renderAudio, bit for bit", () => {
   const frames = Math.floor((500 * audio.sampleRate()) / 1000); // what renderAudio(500) renders
   project.newProject();
-  project.systems.loadMgb();
+  project.systems.loadEmbedded("mgb");
   for (const m of CHORD) audio.stageMidiIn(m);
   const mixed = audio.renderAudio(500);
 
   project.newProject();
-  project.systems.loadMgb();
+  project.systems.loadEmbedded("mgb");
   const blocks = [];
   for (let at = 0; at < frames; at += 1024) blocks.push({ frames: Math.min(1024, frames - at) });
   blocks[0] = { ...blocks[0], midi: CHORD.map((bytes) => ({ frame: 0, bytes })) };
@@ -56,7 +56,7 @@ test("at 2 outputs in 1024-frame blocks it is renderAudio, bit for bit", () => {
 
 test("one system under Stereo routing lands on the first pair of an 8-lane host", () => {
   project.newProject();
-  project.systems.loadMgb();
+  project.systems.loadEmbedded("mgb");
   const { lanes } = audio.renderBlocks(8, [
     { frames: 512, midi: CHORD.map((bytes) => ({ frame: 100, bytes })) },
     ...Array.from({ length: 30 }, () => ({ frames: 512 })),
@@ -126,7 +126,7 @@ function bitwiseEqual(a: Float32Array, b: Float32Array): boolean {
 // A fresh mGB, booted past the ~1.5 s during which it ignores MIDI.
 function bootMgb(): void {
   project.newProject();
-  project.systems.loadMgb();
+  project.systems.loadEmbedded("mgb");
   audio.renderBlocks(2, partition(1600));
 }
 

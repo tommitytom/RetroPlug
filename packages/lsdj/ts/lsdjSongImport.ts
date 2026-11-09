@@ -58,7 +58,7 @@ function importSongs(host: SongImportHost, sys: SongImportTarget, paths: readonl
 
   if (applied === 0) return false;
   const target = host.savPathOf(sys.id);
-  if (!host.writeFileAtomic(target, sav)) return false;
+  if (!target || !host.writeFileAtomic(target, sav)) return false;
   if (overridesChanged) host.setRoleConfig(sys.id, "lsdj-assets", { overrides: overrides as LsdjAssetOverride[] });
   host.loadSram(sys.id, target); // one rebuild: kit overrides → romBytes + boot the last imported song
   return true;

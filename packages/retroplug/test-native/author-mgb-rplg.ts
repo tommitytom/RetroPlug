@@ -12,7 +12,7 @@ declare const __RPLG_OUT__: string;
 
 const be = createRealBackend();
 const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-const id = project.systems.loadMgb();
+const id = project.systems.loadEmbedded("mgb");
 const ok = id != null && project.export(__RPLG_OUT__);
 console.log(`[author-mgb-rplg] ${ok ? "wrote" : "FAILED"} ${__RPLG_OUT__}`);
 

@@ -383,7 +383,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   parity held bit for bit at every commit, and the baseline did not move by a hash through the kernel move. What it
   leaves:
   - **D2**: audio buffers in and out of a document, a run-to-completion driver over `GraphHost`, normalise in a graph,
-    the two-rate kit chain, and kit compiles as graphs behind `compileKit` / `compileDmc`, byte-identical to the
+    the two-rate kit chain, and kit compiles as graphs behind the kit formats' compilers, byte-identical to the
     baseline (as built, the TypeScript entry points of those names; the harness RPCs went with native's compiler, the
     next bullet). D1's build fixes the seed rule (hash the whole pre-trim buffer and pass `rp::dsp::inputSeed` in the
     node's `seed`), normalise (call `normalizedGain`, a reciprocal multiply), and the order (effects at the source
@@ -420,7 +420,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `rp.dsp.normalize`, dither's `seedFrom` and `rp.dsp.dpcm` join `rp.dsp`; and `src/kit/` compiles LSDj and risa kits
   as chains of those jobs, packing the banks in TypeScript. The 39 baseline banks and 12 edge banks are the
   compiler's, held by `test-native/kit-baseline.test.ts` and `kit-compile.test.ts`; native `KitCompiler`, the two
-  codecs, `KitUtil`, `SampleUtil` and the harness `compileKit` / `compileDmc` RPCs are gone, so the plugin compiles
+  codecs, `KitUtil`, `SampleUtil` and the harness's kit-compile RPCs are gone, so the plugin compiles
   kits too. Strict parity held bit for bit at every commit, and no parity or kit golden was re-recorded (the `rp.dsp`
   descriptor goldens were, in stages 1 and 3). What it leaves:
   - **D3** (built since: the next bullet): the CLI `render` and the UI background renders on the pool as engine jobs
@@ -826,7 +826,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     mirror together, and it is not a build seam.
   - **The TS unions** (`Platform` and `Core` in `packages/core/ts/platform.ts`, `NODE_TYPE`, `projectConfig`'s zod
     enums, the literal switches in `render.ts`, `menuDefs`, the CLI's render session and `buildGraph`) are F4's, and so
-    is `loadMgb` with its "an embedded ROM is a Game Boy" rule: the native side has a table, the TS still knows `"mgb"`.
+    was the shell's embedded-synth loader with its "an embedded ROM is a Game Boy" rule: the native side has a
+    table, the TS still knew `"mgb"`. F4a closed it (the id, its label and its platform are the package's `embeds`
+    declaration).
   - **`mesen` declares `n8` for one header** (`NesN8FifoRole` includes `transport/N8ReliableLink.hpp`). Making the
     emulated N8 FIFO a cart the pack offers through a link interface is the smaller edge's alternative, and it is not
     F2's.

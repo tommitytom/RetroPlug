@@ -1,14 +1,15 @@
 // The load-time LSDj sav-seed, proven end-to-end through the REAL native core. Adding a fresh LSDj
 // ROM with no on-disk .sav must NOT cold-boot into the 12–15 s cartridge self-test: the lsdj-sync
-// role's onConstruct hook hands the core a valid empty sav (savFromJson) as sramBytes, so the battery
-// is initialized at construct. We prove it two ways: (1) the Backend's savFromJson returns a valid
-// image stamped with LSDj's `jk` SRAM-init magic; (2) after a store-driven addSystem with no sav, the
-// core's battery (readSram) carries that same `jk` magic — i.e. the seed reached a real SameBoy core.
-// (A cold-booted fresh cart, self-test not yet run, has a zeroed battery — no `jk`.)
+// role's onConstruct hook hands the core a valid empty sav (its own codec's savFromJson) as sramBytes,
+// so the battery is initialized at construct. We prove it two ways: (1) the cart's own encoder returns
+// a valid image stamped with LSDj's `jk` SRAM-init magic; (2) after a store-driven addSystem with no
+// sav, the core's battery (readSram) carries that same image - i.e. the seed reached a real SameBoy core.
+// (A cold-booted fresh cart, self-test not yet run, has a zeroed battery - no `jk`.)
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { buildAppRegistry } from "../src/appHost";
 import { SystemsStore } from "../src/systemsStore";
+import { savFromJson } from "@retroplug/lsdj";
 
 declare const __RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;
@@ -27,8 +28,8 @@ test("a fresh LSDj ROM with no sav is seeded a valid empty sav — the real core
   const be = createRealBackend();
   if (!be.fileExists(LSDJ)) skip(`app-lsdj-seed: LSDj ROM not found at ${LSDJ}`); // resource-less environment — the devcontainer has it
 
-  // (1) The Backend's savFromJson encodes a valid empty image with the `jk` magic at 0x813E.
-  const emptySav = be.savFromJson("{}");
+  // (1) LSDj's own encoder yields a valid empty image with the `jk` magic at 0x813E.
+  const emptySav = savFromJson("{}");
   expect(emptySav.length > 0x8140).toBeTruthy();
   expect(emptySav[0x813e] === JK0 && emptySav[0x813f] === JK1).toBeTruthy();
 

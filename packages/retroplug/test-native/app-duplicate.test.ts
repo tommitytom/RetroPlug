@@ -18,7 +18,7 @@ test("duplicate (TS orchestration) clones off the state snapshot while the audio
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
 
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
 
   audio.renderAudio(1500); // GB boot + mGB init — enough blocks to publish a state snapshot

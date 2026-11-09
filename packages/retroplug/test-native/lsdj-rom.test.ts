@@ -6,6 +6,7 @@ import { lsdjRomTool } from "../cli/sessions/lsdj-rom";
 import type { Session } from "../cli/session";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
+import type { KitCompileSpec } from "../src/audioDriver";
 import { LsdjRom } from "@retroplug/lsdj/rom";
 import { KitView, decodeNibbles } from "@retroplug/lsdj/rom/kit";
 import { KIT_LOOKUP, BANK_SIZE, ROM_SIZE } from "@retroplug/lsdj/rom/constants";
@@ -102,14 +103,14 @@ test("LsdjRom reads real kit/palette/font assets and round-trips a surgical kit-
   console.log(`[lsdj-rom] TR-606 kit(7 samples) + 6 palettes + 3 fonts read; kit rename round-trips; patched ROM boots`);
 });
 
-test("compileKit renders an authored WAV into a 16 KB kit bank a KitView can read", async () => {
+test("the LSDj kit compiler renders an authored WAV into a 16 KB kit bank a KitView can read", async () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   const wav = "/tmp/rp-kit-src.wav";
   writeTestWav(be, wav);
 
   const spec = { name: "TEST", samples: [{ path: wav, name: "SIN", effects: [] }] };
-  const { bytes: bank, errors } = await audio.compileKit(spec);
+  const { bytes: bank, errors } = await audio.compileKitFormat<KitCompileSpec>("lsdj", spec);
   expect(bank.length).toBe(BANK_SIZE); // a whole 16 KB kit bank
   expect(errors[0]).toBe(null); // the bank holds the whole sample
 
@@ -127,7 +128,7 @@ test("compileKit renders an authored WAV into a 16 KB kit bank a KitView can rea
   let peak = 0;
   for (const v of pcm) peak = Math.max(peak, Math.abs(v));
   expect(peak > 0.3).toBeTruthy();
-  console.log(`[lsdj-rom] compileKit: TEST/SIN → ${bank.length}B bank, sample ${pcm.length} frames, peak ${peak.toFixed(2)}`);
+  console.log(`[lsdj-rom] kit compile: TEST/SIN → ${bank.length}B bank, sample ${pcm.length} frames, peak ${peak.toFixed(2)}`);
 });
 
 test("import-sample splice: compile one sample + rebuild a kit around the existing raw samples", async () => {
@@ -138,7 +139,7 @@ test("import-sample splice: compile one sample + rebuild a kit around the existi
   writeTestWav(be, wav, 600); // < 1024 source frames → a source shorter than one resampler chunk (rp::dsp::Resampler)
 
   // Compile the one sample (a throwaway 1-sample bank) and pull its nibble bytes.
-  const oneBank = await audio.compileKit({ name: "", samples: [{ path: wav, name: "NEW", effects: [] }] });
+  const oneBank = await audio.compileKitFormat<KitCompileSpec>("lsdj", { name: "", samples: [{ path: wav, name: "NEW", effects: [] }] });
   const bytes = sampleBytesFromBank(oneBank.bytes, 0);
   expect(bytes.length > 0).toBeTruthy(); // short-sample compile no longer crashes / drops
 
@@ -173,15 +174,15 @@ test("import-sample splice: compile one sample + rebuild a kit around the existi
   console.log(`[lsdj-rom] import-sample: TR-606 slot0 → NEW (${bytes.length}B), others preserved, ROM boots`);
 });
 
-test("compileKit rotate flag: rotated vs un-rotated banks differ but each round-trips per its mode", async () => {
+test("the rotate flag: rotated vs un-rotated banks differ but each round-trips per its mode", async () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   const wav = "/tmp/rp-kit-rot.wav";
   writeTestWav(be, wav, 4000);
 
-  const rotBank = await audio.compileKit({ name: "R", rotate: true, samples: [{ path: wav, name: "S", effects: [] }] });
+  const rotBank = await audio.compileKitFormat<KitCompileSpec>("lsdj", { name: "R", rotate: true, samples: [{ path: wav, name: "S", effects: [] }] });
   const flatSpec = { name: "F", rotate: false, samples: [{ path: wav, name: "S", effects: [] }] };
-  const flatBank = await audio.compileKit(flatSpec);
+  const flatBank = await audio.compileKitFormat<KitCompileSpec>("lsdj", flatSpec);
 
   const rotBytes = sampleBytesFromBank(rotBank.bytes, 0);
   const flatBytes = sampleBytesFromBank(flatBank.bytes, 0);

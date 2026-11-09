@@ -6,9 +6,10 @@ import type { RoleType, ConstructCaps } from "@retroplug/core/systemRoles";
 import type { ConstructSpec } from "@retroplug/core/constructSpec";
 import { z } from "zod";
 import { clampedInt, boolField, enumField } from "@retroplug/core/configFields";
-import { LSDJ_MODE_VALUES } from "./enums";
+import { LSDJ_MODE_VALUES, LsdjSyncMode } from "./enums";
 import { LSDJ_ASSETS_ROLE } from "./lsdjAssetsRole";
 import { LSDJ_ROM_PROVIDER } from "./romProvider";
+import { savFromJson } from "./index";
 import { lsdjIntegration } from "./lsdjIntegration";
 import { LSDJ_KIT_FORMAT } from "./kitFormat";
 // The keys the owner packages add to the contract (their modules augment PackageContributions): type-only, so nothing
@@ -20,11 +21,16 @@ import type {} from "@retroplug/dsp/packageContributions";
 // When nothing else will seed the battery (no savestate, no sram blob, no on-disk .sav for native to
 // load), hand it a valid empty sav (savFromJson stamps the jk/rb validity markers LSDj checks) so it
 // boots straight to the song screen. Additive: return the spec untouched when real save data is present.
+// The bytes are this cart's own codec's: no other cart's battery is anything like them, so the shell's construct caps
+// carry no sav encoder.
 const lsdjSeedSav = (spec: ConstructSpec, caps: ConstructCaps): ConstructSpec => {
   const willLoadData = !!spec.stateBytes || !!spec.sramBytes || (spec.savPath != null && caps.fileExists(spec.savPath));
   if (willLoadData) return spec;
-  return { ...spec, sramBytes: caps.savFromJson("{}") };
+  return { ...spec, sramBytes: savFromJson("{}") };
 };
+
+/** LSDj's clock-to-sound latency in a host-clocked sync mode, in milliseconds: what a host's PDC takes out. */
+const LSDJ_HOST_SYNC_LATENCY_MS = 33;
 
 export const LSDJ_SYNC_ROLE: RoleType = {
   kind: "lsdj-sync",
@@ -40,6 +46,13 @@ export const LSDJ_SYNC_ROLE: RoleType = {
     autoStart: boolField(false),
   }),
   onConstruct: lsdjSeedSav,
+  // The host-sync latency a host should compensate for: in the two modes that lock LSDj's playback to the DAW clock it
+  // runs a fixed distance behind it (an emulator clock to sound latency, not a drift), so a host applying this as PDC
+  // puts LSDj on the grid. Output modes (MI.OUT, master sync) and the rest do not host-clock playback, so they add none.
+  hostLatencyMs: (config) =>
+    config.mode === LsdjSyncMode.MidiSync || config.mode === LsdjSyncMode.MidiSyncArduinoboy
+      ? LSDJ_HOST_SYNC_LATENCY_MS
+      : 0,
 };
 
 export default definePackage({

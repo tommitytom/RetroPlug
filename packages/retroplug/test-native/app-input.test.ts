@@ -22,7 +22,7 @@ test("pressButton reaches a live core quiescent AND while the audio thread runs"
   const project = new ProjectStore(be, recent, registry);
   const audio = createAudioDriver();
 
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
 
   audio.renderAudio(1500); // GB boot + mGB firmware init

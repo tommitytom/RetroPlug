@@ -76,7 +76,7 @@ test("pump: seeds (no write) when an identical .sav is already on disk", () => {
 test("embedded system (no romPath) is skipped", () => {
   const be = new MockBackend("/config");
   const systems = new SystemsStore(be);
-  systems.loadMgb(); // embedded, no romPath / sibling
+  systems.loadEmbedded("mgb"); // embedded, no romPath / sibling
   expect(flushDirtySram(be, systems.systems())).toBe(0);
   expect(be.log.includes("writeFile") || be.log.includes("writeFileAtomic")).toBeFalsy(); // no write of either kind
 });
@@ -165,7 +165,7 @@ test("a cart with NO battery is never dirty, so it never grows a stray .sav", ()
 test("sramDirtyCount / flushDirtySram skip embedded systems (no romPath)", () => {
   const be = new MockBackend("/config");
   const systems = new SystemsStore(be);
-  systems.loadMgb(); // embedded, no sibling
+  systems.loadEmbedded("mgb"); // embedded, no sibling
   expect(sramDirtyCount(be, systems.systems())).toBe(0);
   expect(flushDirtySram(be, systems.systems())).toBe(0);
   expect(be.log.includes("writeFile") || be.log.includes("writeFileAtomic")).toBeFalsy(); // no write of either kind

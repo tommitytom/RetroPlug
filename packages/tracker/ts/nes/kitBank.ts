@@ -108,7 +108,7 @@ function writeSampleName(bank: Uint8Array, off: number, name: string): void {
  *  index entry per slot ([addr, lenReg, rate, flags]), 3-char sample names, the ≤6-char kit name, and the 0xA5
  *  populated magic. A null slot stays EMPTY with its index preserved (NOT compacted); a slot whose DPCM won't fit the
  *  remaining region is left empty. Because a slot's encode carries no cross-sample state, this is byte-identical to
- *  compiling the same samples together via compileDmc - so it losslessly re-packs existing slots' DPCM alongside a
+ *  compiling the same samples together in one kit compile - so it losslessly re-packs existing slots' DPCM alongside a
  *  new one. */
 export function assembleKitBank(kitName: string, slots: (AssembleSlot | null)[]): Uint8Array {
   return assembleKitBankPlaced(kitName, slots).bank;

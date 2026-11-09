@@ -26,8 +26,9 @@ export interface SongImportHost {
   /** Replace a role's config on the system: what an import that also carried ROM assets records beside the songs. */
   setRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
   /** The `.sav` a save of system `id` writes: its paired-save override when it has one, else the file beside its ROM.
-   *  The host pairs them, because which file a system's save is belongs to the shell. */
-  savPathOf(id: number): string;
+   *  The host pairs them, because which file a system's save is belongs to the shell. Null when the system is gone, so
+   *  an import writes nothing rather than an empty path. */
+  savPathOf(id: number): string | null;
 }
 
 /** The system an import edits: the id the host's methods name, the ROM its assets patch, and the roles it reads. */

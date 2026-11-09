@@ -10,6 +10,7 @@ import {
   needsChipLabelScan,
 } from "@retroplug/bliptoaster/romDetect";
 import { buildAppRegistry } from "../../src/appHost";
+import { rolesForRom } from "../../src/rolesForRom";
 import { blipToasterRom, nesRom, garbage } from "../systems/fixtures";
 
 // A header carrying the marker + a semver at `at`.
@@ -169,18 +170,30 @@ test("blipToasterChip falls back to the iNES mapper when the label is out of rea
   expect(blipToasterChip(withLabel(withMapper(rom, 85), "MMC5", BLIPTOASTER_CHIP_SCAN_LEN))).toBe("vrc7");
 });
 
-test("the provider records the build on the `bliptoaster` role", () => {
+test("the ROM's roles carry the build on the `bliptoaster` role, which derives it", () => {
+  // The PROVIDER only marks the cart (it writes no chip, so there is one writer); which build it is belongs to the role's
+  // `deriveConfig`, and the shell's rolesForRom is what asks it, with as deep a read as it needs (the label case reads
+  // past the short header, which is why the reader here serves whatever length is asked for).
   const reg = buildAppRegistry();
   const chipOf = (rom: Uint8Array): string | undefined => {
-    const role = reg.defaultRoles("mesen", "nes", rom).find((r) => r.kind === "bliptoaster");
-    return (role?.config as { chip?: string } | undefined)?.chip;
+    const roles = rolesForRom(
+      reg,
+      { readFilePrefix: (_path, length) => rom.subarray(0, length) },
+      { core: "mesen", platform: "nes", romPath: "/roms/synth.nes" },
+    );
+    return (roles.find((r) => r.kind === "bliptoaster")?.config as { chip?: string } | undefined)?.chip;
   };
   expect(chipOf(withLabel(withMapper(blipToasterRom(), 69), "S5B"))).toBe("s5b");
   expect(chipOf(withMapper(blipToasterRom(), 85))).toBe("vrc7");
   expect(chipOf(withMapper(blipToasterRom(), 24))).toBe("vrc6");
   expect(chipOf(blipToasterRom())).toBe("2a03");
   // a non-BlipToaster NES ROM gets no such role at all
-  expect(reg.defaultRoles("mesen", "nes", nesRom()).some((r) => r.kind === "bliptoaster")).toBe(false);
+  const roles = rolesForRom(
+    reg,
+    { readFilePrefix: (_path, length) => nesRom().subarray(0, length) },
+    { core: "mesen", platform: "nes", romPath: "/roms/game.nes" },
+  );
+  expect(roles.some((r) => r.kind === "bliptoaster")).toBe(false);
 });
 
 // The marker is a wire contract with the ROM repo's rom/src/core/sig.s, and it has moved twice ("EVERMIDI"

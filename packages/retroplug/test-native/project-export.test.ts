@@ -25,7 +25,7 @@ test("export: a real PKZIP of project.json + each core's savestate (+ SRAM for b
   be.writeFile(rom, gbRomBattery());
   const song = __CONFIG_DIR__ + "/song.rplg.zip";
 
-  project.systems.loadMgb(); // embedded → index 0
+  project.systems.loadEmbedded("mgb"); // embedded → index 0
   project.systems.addSystem(rom); // file-backed battery cart → index 1
   project.setLayout("grid");
 
@@ -53,7 +53,7 @@ test("export then load: round-trips systems + settings; the archive re-seeds the
   be.writeFile(rom, gbRomBattery());
   const song = __CONFIG_DIR__ + "/rt.rplg.zip";
 
-  project.systems.loadMgb();
+  project.systems.loadEmbedded("mgb");
   project.systems.addSystem(rom);
   project.setZoom(4);
   expect(project.export(song)).toBeTruthy();

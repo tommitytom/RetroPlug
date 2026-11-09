@@ -17,8 +17,8 @@ const CHORD: number[][] = [
 runSession((s) => {
   const out = hostArgs()[0] || "/tmp/cli-smoke.wav";
 
-  const id = s.project.systems.loadMgb();
-  if (id == null) throw new Error("loadMgb failed");
+  const id = s.project.systems.loadEmbedded("mgb");
+  if (id == null) throw new Error("loadEmbedded failed");
   s.audio.renderAudio(1500); // boot past the mGB splash (the store places the project's MIDI routing)
 
   CHORD.forEach((m) => s.audio.stageMidiIn(m));

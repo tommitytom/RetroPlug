@@ -39,8 +39,8 @@ export function runEmu(sdk, nesRom) {
     rec("sampleRate", s.audio.sampleRate());
 
     // --- the embedded Game Boy core (mGB, no external file) ---
-    const gb = s.project.systems.loadMgb();
-    if (gb == null) throw new Error("loadMgb failed");
+    const gb = s.project.systems.loadEmbedded("mgb");
+    if (gb == null) throw new Error("loadEmbedded failed");
     rec("gb:id", gb);
 
     // Render past the splash, then drive a note. mGB is a synth: it is SILENT until MIDI arrives, and

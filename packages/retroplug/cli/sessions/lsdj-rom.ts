@@ -17,7 +17,7 @@
 //   retroplug-cli lsdj-rom export-kit     / import-kit       (.kit raw sample banks)
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
-import type { KitEffect } from "../../src/audioDriver";
+import type { KitCompileSpec, KitEffect } from "../../src/audioDriver";
 import { NO_SLOT_REASON } from "../../src/kit";
 import { encodeWav } from "../wav";
 import { LsdjRom, buildKitBank, sampleBytesFromBank, kitSampleSpace, KIT_MAX_SAMPLE_SPACE, type KitSample } from "@retroplug/lsdj/rom";
@@ -104,7 +104,7 @@ function extract(s: Session, args: string[]): void {
   console.log(`extracted ${wavs} sample WAVs (@${rate}Hz) + rom.json to ${outDir}`);
 }
 
-// --- sample import (the TypeScript kit compiler, s.audio.compileKit) ---
+// --- sample import (the TypeScript kit compiler, s.audio.compileKitFormat) ---
 
 const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
@@ -186,7 +186,7 @@ function normalizeBuild(build: BuildSource[]): { file: string; name?: string; of
 // so it is warned about instead (a read-back cannot see a clipped sample).
 async function compileKitBank(s: Session, name: string, build: BuildSource[], baseFile: string, rotate: boolean, fallbackEffects: KitEffect[]): Promise<Uint8Array> {
   const sources = normalizeBuild(build);
-  const { bytes: bank, errors } = await s.audio.compileKit({
+  const { bytes: bank, errors } = await s.audio.compileKitFormat<KitCompileSpec>("lsdj", {
     name,
     rotate,
     samples: sources.map((sm) => ({ path: resolvePath(baseFile, sm.file), name: sm.name ?? sampleName(sm.file), offset: sm.offset, length: sm.length, effects: sm.effects ?? fallbackEffects })),
@@ -229,7 +229,7 @@ async function importSample(s: Session, args: string[]): Promise<void> {
 
   // Compile the one sample (a throwaway 1-sample bank) and pull its nibble bytes out. Encode to
   // match the target ROM's version so splicing into a pre-9.2.0 kit stays byte-correct.
-  const one = await s.audio.compileKit({
+  const one = await s.audio.compileKitFormat<KitCompileSpec>("lsdj", {
     name: "",
     rotate: rom.rotatesSamples,
     samples: [{ path: audio, name, effects: effectsFromFlags(args) }],

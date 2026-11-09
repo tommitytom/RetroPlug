@@ -1,4 +1,4 @@
-// SystemsStore.loadRom / loadMgb / replaceSystem — the "load" family: replace the
+// SystemsStore.loadRom / loadEmbedded / replaceSystem: the "load" family: replace the
 // focused tile in place (adopt into an empty project), defer to a sibling <rom>.rplg
 // when one exists (unless a save was paired), and build the embedded mGB.
 import { test, expect } from "@retroplug/testing";
@@ -62,9 +62,9 @@ test("load: a paired save equal to the natural sibling is NOT an override", () =
   expect(store.view()[0].savSuffix).toBe(0);
 });
 
-test("loadMgb: builds the embedded ROM (sameboy, no file, no header read)", () => {
+test("loadEmbedded: builds the embedded ROM (sameboy, no file, no header read)", () => {
   const { be, store } = newStore();
-  const id = store.loadMgb();
+  const id = store.loadEmbedded("mgb");
   expect(id).toBeTruthy();
   const v = store.view();
   expect(v[0].platform).toBe("gb");
@@ -77,6 +77,15 @@ test("loadMgb: builds the embedded ROM (sameboy, no file, no header read)", () =
   expect(spec.romPath).toBe("");
   expect(spec.savPath).toBe(null);
   expect(be.log.includes("readFilePrefix")).toBeFalsy(); // embedded skips classification
+});
+
+test("loadEmbedded: an id no package declares loads nothing", () => {
+  // The platform comes from the declaration, so an invented id has none: the load refuses rather than assuming a console
+  // (or asking native for a resource it has no bytes for).
+  const { be, store } = newStore();
+  expect(store.loadEmbedded("nope")).toBe(null);
+  expect(store.view().length).toBe(0);
+  expect(be.lastBoot()).toBe(undefined);
 });
 
 test("replaceSystem: swaps a specific id in place and re-points focus if it was focused", () => {

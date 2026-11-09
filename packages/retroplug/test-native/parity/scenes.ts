@@ -55,13 +55,13 @@ export function phrase(sampleRate: number, channels: number[], startMs = 0): { a
 /** mGB (the embedded build), loaded through the stores. MGB_CHANNELS are its two pulse voices and the wave
  *  voice, the channels a case plays a phrase on. */
 export function mgb(rig: Rig): number {
-  const id = rig.project.systems.loadMgb();
+  const id = rig.project.systems.loadEmbedded("mgb");
   if (id == null) throw new Error("mGB did not build");
   return id;
 }
 export const MGB_CHANNELS = [0, 1, 2];
 
-/** Another mGB, from the in-repo file: loadMgb() REPLACES the focused tile rather than adding one, so it
+/** Another mGB, from the in-repo file: loadEmbedded("mgb") REPLACES the focused tile rather than adding one, so it
  *  can only ever bring up the first. */
 export function mgbFile(rig: Rig): number {
   return rig.add(ROMS.mgb);

@@ -46,7 +46,7 @@ async function dmcSlot(runner: KitJobRunner, spec: RisaDmcSampleSpec): Promise<C
 }
 
 /** A risa DMC kit: the 8 KB bank (its 16 slots, the rest dropped), and each sample's reason. */
-export async function compileDmc(runner: KitJobRunner, spec: RisaKitCompileSpec): Promise<KitCompileResult> {
+export async function compileRisaKit(runner: KitJobRunner, spec: RisaKitCompileSpec): Promise<KitCompileResult> {
   const compile = (s: RisaDmcSampleSpec): Promise<Compiled> => dmcSlot(runner, s);
   const { results, dropped } = await compileSlots(spec.samples, KIT_SLOT_COUNT, compile, "risa kit");
   const slots = results.map((r, i): AssembleSlot | null => {
@@ -64,4 +64,4 @@ export async function compileDmc(runner: KitJobRunner, spec: RisaKitCompileSpec)
 }
 
 /** The risa DMC kit: an 8 KB bank of 16 DPCM samples, which BlipToaster's kits are too. */
-export const RISA_KIT_FORMAT: KitFormat<RisaKitCompileSpec> = { id: "risa", compile: compileDmc };
+export const RISA_KIT_FORMAT: KitFormat<RisaKitCompileSpec> = { id: "risa", compile: compileRisaKit };

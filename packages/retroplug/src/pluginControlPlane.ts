@@ -16,8 +16,7 @@
 // once after eval to run this top-level, then calls the globals directly with no further pumping.
 import { composeAppStores, type StoreChannel, type AppStores } from "./appStores";
 import { FileWatcher } from "./fileWatcher";
-import { LsdjSyncMode } from "@retroplug/lsdj/enums";
-import { placedRole } from "./graph/protocolNodes";
+import { protocolPipeline } from "./graph/protocolNodes";
 import { projectParameterMap } from "./parameterMap";
 import { b64encode, b64decode } from "./base64";
 
@@ -89,19 +88,20 @@ g.__rp_pumpWatcher = (): void => {
   fileWatcher.pump();
 };
 
-// LSDj in a host-clocked sync mode (MidiSync / MidiSyncArduinoboy) locks its playback a fixed distance
-// behind the DAW clock — an emulator clock→sound latency, not a drift. Reporting it as plugin latency lets
-// the host apply PDC so LSDj lands on the grid, for the DAW-timing renders and real users alike. Output
-// modes (MI.OUT / Master Sync) and Off/Keyboard don't host-clock playback, so they add no latency, and nor
-// does an lsdj-sync its system's pipeline leaves out (graph/protocolNodes.ts placedRole: on an mGB cart
-// whose project stored one, mgb is placed), which runs nothing. The plugin queries this (as ms) after each
-// load and converts to frames at the live sample rate.
-const LSDJ_HOST_SYNC_LATENCY_MS = 33;
+// A cart in a host-clocked sync mode (LSDj's MidiSync / MidiSyncArduinoboy) locks its playback a fixed distance
+// behind the DAW clock - an emulator clock->sound latency, not a drift. Reporting it as plugin latency lets the
+// host apply PDC so the cart lands on the grid, for the DAW-timing renders and real users alike. HOW MUCH is each
+// role's own knowledge (`RoleType.hostLatencyMs`), so this takes the maximum over the systems' PLACED roles and no cart
+// is named here: a role a system's pipeline leaves out (on an mGB cart whose project stored an lsdj-sync, mgb is placed)
+// runs nothing and adds nothing. The plugin queries this (as ms) after each load and converts to frames at the live
+// sample rate.
 g.__rp_syncLatencyMs = (): string => {
   let ms = 0;
   for (const s of project.systems.view()) {
-    const mode = (placedRole(s.roles, "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
-    if (mode === LsdjSyncMode.MidiSync || mode === LsdjSyncMode.MidiSyncArduinoboy) ms = Math.max(ms, LSDJ_HOST_SYNC_LATENCY_MS);
+    for (const placed of protocolPipeline(s.roles)) {
+      const latency = stores.registry.roleType(placed.kind)?.hostLatencyMs?.(placed.config);
+      if (latency !== undefined) ms = Math.max(ms, latency);
+    }
   }
   return String(ms);
 };
@@ -111,6 +111,6 @@ g.__rp_syncLatencyMs = (): string => {
 // instead of "CC 1". Polled by the plugin after each load, on activate, and from the editor's idle loop
 // (a ROM loaded through the UI never passes through setState); it re-declares only when the JSON moves.
 g.__rp_parameterMapJson = (): string =>
-  JSON.stringify(projectParameterMap(project.systems.view(), project.settings().midiRouting));
+  JSON.stringify(projectParameterMap(project.systems.view(), project.settings().midiRouting, stores.registry));
 
 g.__rp_ready = true;

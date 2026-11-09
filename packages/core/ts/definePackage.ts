@@ -19,11 +19,24 @@
 // the wrong place for them, because it is where the role schemas and zod are, and a bundle of the planner must carry
 // the descriptors without either (test/script/bundle-protocol.test.ts).
 import type { RoleType, RomProvider } from "./systemRoles";
+import type { Platform } from "./consoles";
 
-/** A package's contributions as core knows them: the role contract's objects and the ROM providers. */
+/** An embedded ROM a package bakes into the product's binary, and what the shell needs to load it: the id native's
+ *  resource table knows it by (the manifest's `retroplug.embed` names the file), the label a menu offers it under, and
+ *  the console it runs on, which a load takes instead of assuming one. The generator pairs the declaration with the
+ *  manifest entry, so an unpaired side refuses the build. */
+export interface Embed {
+  readonly id: string;
+  readonly label: string;
+  readonly platform: Platform;
+}
+
+/** A package's contributions as core knows them: the role contract's objects, the ROM providers, and the embedded
+ *  ROMs its bytes carry. */
 export interface PackageContributions {
   readonly roles?: readonly RoleType[];
   readonly romProviders?: readonly RomProvider[];
+  readonly embeds?: readonly Embed[];
 }
 
 /** The identity function with types: an app module's default export, checked against what a package may contribute. */

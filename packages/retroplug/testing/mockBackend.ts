@@ -5,7 +5,6 @@
 // and nothing else.
 
 import type { ApuState, ApuSquareState, Backend, BreakHitBatch, SetGraphRequest, SetGraphResult, LoadScriptPackResult, BreakInfo, Breakpoint, CallFrame, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, PutResourceResult, ResourceSpec, ResourceType, TraceLine, ZipEntry } from "../src/backend";
-import { savFromJson } from "@retroplug/lsdj";
 import {
   jobHandle,
   type EngineJobKind,
@@ -1065,13 +1064,6 @@ export class MockBackend implements Backend {
       off += byteLen;
     }
     return out;
-  }
-
-  savFromJson(json: string): Uint8Array {
-    this.log.push("savFromJson");
-    // The LSDj codec is now pure TS, so the mock runs the REAL encoder — a valid
-    // 128 KiB `jk`/`rb`-stamped image, no native host needed.
-    return savFromJson(json);
   }
 
   // A trivial lossless RGBA container (magic "RPNG" + w + h + raw rgba) — NOT real PNG. Like the mock

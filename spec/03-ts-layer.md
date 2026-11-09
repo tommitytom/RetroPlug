@@ -130,7 +130,8 @@ the entries, which is how a caller reads the new id a rebuild allocated.
 - **`classifyRom`** ([systemsStore.ts:89](../packages/retroplug/src/systemsStore.ts#L89))
   is the one place ROM bytes enter TS — and just the `ROM_SNIFF_LEN` (0x134) header prefix.
 - **Mutators through `Backend`:** `addSystem` (append), `loadRom` (replace focused, or defer to a sibling
-  `<rom>.rplg`), `loadMgb` (embedded), `replaceSystem`, `swapRom`, `removeSystem`, plus the per-system `setGain`,
+  `<rom>.rplg`), `loadEmbedded(id)` (a ROM a package bakes in, e.g. mGB's synth), `replaceSystem`, `swapRom`,
+  `removeSystem`, plus the per-system `setGain`,
   `setReloadOnRomChange` and `setRoleConfig`
   ([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)). A gain edit updates the store and
   sets the system node's `gain` param live (`backend.setParam("sys-<id>", "gain", dB)`) with no publish; the
@@ -213,7 +214,7 @@ Every in-place rebuild that keeps the system's identity (`reset`, `reloadSystem`
 ([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)), and `reset` is the one verb that reads it: a
 `reset(oldId)` follows a chain of rebuilds to the live system, resets that system and answers its id. That keeps
 the pre-C3 contract working, where a construct-time `setRoleConfig` was followed by `reset(id)` to learn the id
-that carried the new settings. A user's ROM replacement (`replaceSystem`, `swapRom`, `loadRom` / `loadMgb`) is
+that carried the new settings. A user's ROM replacement (`replaceSystem`, `swapRom`, `loadRom` / `loadEmbedded`) is
 not a rebuild of that system but a different one in its slot, so it records nothing and `reset` of the id it
 replaced answers null, as it did before C3. Every other verb treats a replaced id as absent, so a stale handle
 cannot remove or edit a system it never named. An entry goes when the live system its chain ends in does

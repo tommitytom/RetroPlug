@@ -5,8 +5,8 @@
 // the id lookup and the driver that dispatches through it are the shell's (src/kitFormats.ts), and nothing here reads
 // the registry: a compiler is handed the format it compiles.
 export {
-  compileKit,
-  compileDmc,
+  compileLsdjKit,
+  compileRisaKit,
   LSDJ_KIT_FORMAT,
   RISA_KIT_FORMAT,
   NO_SLOT_REASON,

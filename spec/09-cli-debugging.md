@@ -62,7 +62,7 @@ The current session verb vocabulary (all on the booted `Session`):
 
 | Area | Verbs |
 |---|---|
-| Load | `project.systems.addSystem(romPath)` / `loadMgb()` |
+| Load | `project.systems.addSystem(romPath)` / `loadEmbedded("mgb")` |
 | Drive | `audio.stageMidiIn(bytes)`, `audio.pressButton(id, button, down)`, `audio.setBpm(v)`, `audio.setTransport(running)` |
 | Render | `audio.renderAudio(ms): Float32Array` |
 | Observe — media/state | `audio.screenshot(id, path)`, `backend.readState/readSram(id)`, `backend.getFrame(id)` |

@@ -39,7 +39,7 @@ const chordRms = (): number => {
 };
 
 test("live gain silences/restores a ringing mGB, and sameboy role config dispatches (through the stores)", () => {
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
 
   const loud = chordRms(); // the chord rings
@@ -79,7 +79,7 @@ test("a duplicate of a sounding system plays its first block at the gain its doc
   // gain at that block, snapped in, so a turned-down duplicate is silent from its first sample rather than ramping
   // down from unity. (The loaded-project case below discards 1500 ms of boot, so a 20 ms ramp hides inside it.)
   const firstBlockRms = (gainDb: number): number => {
-    const src = project.systems.loadMgb()!;
+    const src = project.systems.loadEmbedded("mgb")!;
     audio.renderAudio(1500); // the GB boot and mGB's firmware init
     CHORD.forEach((m) => audio.stageMidiIn(m));
     audio.renderAudio(500); // the chord rings
@@ -100,7 +100,7 @@ test("a duplicate of a sounding system plays its first block at the gain its doc
 
 test("a project loaded with a saved gain plays at it from its first block, before any edit", () => {
   // Nothing but the published document carries the saved gain to a loaded core: it is built at 0 dB.
-  const saved = project.systems.loadMgb()!;
+  const saved = project.systems.loadEmbedded("mgb")!;
   expect(project.systems.setGain(saved, -90)).toBeTruthy();
   const bytes = project.exportBytes()!;
   project.newProject();

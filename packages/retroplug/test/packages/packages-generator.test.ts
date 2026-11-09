@@ -17,7 +17,8 @@
 //   contributes nothing, and one whose manifest has no retroplug member, are left out of the ordering rather than
 //   refused; a package contributing an app and no nodes names no nodes module and still registers its app;
 // - the generated module itself refuses a duplicate key in the lists the registries look up rather than sequence: a
-//   role kind, a kit format's id and a tracker integration's marker role, each with its own message;
+//   role kind, a kit format's id and a tracker integration's marker role, each with its own message, and an embedded
+//   ROM whose declaration and manifest entry do not pair (or name a console this product does not run);
 // - an unchanged input leaves the generated files untouched, mtime and all, so a build that changes nothing rewrites
 //   nothing.
 //
@@ -446,6 +447,84 @@ test("two real carts naming one cart node are refused, naming both", async () =>
   const { error } = await drive("realcart-node-twice");
   console.log(`# two carts on one node: ${error}`);
   expect(error).toBe("two real carts name the cart node rp.alpha.cart: nes and gba");
+});
+
+// ---- the embedded ROMs a package declares, and the manifest entry that bakes its bytes in --------------
+
+test("an embedded ROM's declaration and its manifest entry reach the shell together", async () => {
+  // The shell loads an embedded ROM by the package's declaration (its id, its label and the console it runs on), and
+  // native boots the bytes the manifest bakes in: the generated module pairs them, so the load takes a real platform.
+  const report = (await drive("embed-form")) as Record<string, any>;
+  console.log(`# embeds: ${JSON.stringify(report.embeds)}`);
+  expect(report.embeds).toEqual([{ id: "alpha-rom", label: "Alpha ROM", platform: "nes" }]);
+});
+
+test("a manifest embed entry no app module declares is refused", async () => {
+  const { error } = await drive("embed-unpaired-manifest");
+  console.log(`# embed with no declaration: ${error}`);
+  expect(error).toBe(
+    "the package alpha bakes in the embedded ROM alpha-rom, which no app module declares (an embeds entry with its " +
+      "label and platform)",
+  );
+});
+
+test("an embed declaration no manifest entry bakes in is refused", async () => {
+  const { error } = await drive("embed-unpaired-declaration");
+  console.log(`# declaration with no manifest entry: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the embedded ROM alpha-rom, which its manifest does not bake in (its retroplug.embed)",
+  );
+});
+
+test("an embed declaration naming an unregistered platform is refused", async () => {
+  const { error } = await drive("embed-unregistered-platform");
+  console.log(`# embed on no console: ${error}`);
+  expect(error).toBe("the embedded ROM alpha-rom names the platform n64, which no console descriptor registers");
+});
+
+test("an embed id two packages declare is refused, naming both", async () => {
+  const { error } = await drive("embed-duplicate");
+  console.log(`# embed declared twice: ${error}`);
+  expect(error).toBe("two packages declare the embedded ROM shared-rom: alpha and beta");
+});
+
+test("an embed id one package declares twice is refused, naming the package and the id", async () => {
+  // The menu would offer two rows for one ROM and the store would take the first: the id belongs to one declaration.
+  const { error } = await drive("embed-declared-twice");
+  console.log(`# embed declared twice in one package: ${error}`);
+  expect(error).toBe("the package alpha declares the embedded ROM alpha-rom twice: an id is one ROM");
+});
+
+test("a manifest embed that is not a list is refused", async () => {
+  const { error } = await drive("embed-manifest-not-list");
+  console.log(`# embed manifest not a list: ${error}`);
+  expect(error).toBe("alpha: retroplug.embed is not a list");
+});
+
+test("a manifest embed entry with no id is refused", async () => {
+  const { error } = await drive("embed-manifest-no-id");
+  console.log(`# embed manifest entry with no id: ${error}`);
+  expect(error).toBe('alpha: every retroplug.embed entry needs an "id", the resource\'s name on the wire');
+});
+
+test("a manifest embed entry with no file is refused, naming the id", async () => {
+  const { error } = await drive("embed-manifest-no-file");
+  console.log(`# embed manifest entry with no file: ${error}`);
+  expect(error).toBe('alpha: the embedded ROM alpha-rom needs a "file", the bytes to bake in');
+});
+
+test("a manifest embed listing one id twice is refused", async () => {
+  const { error } = await drive("embed-manifest-id-twice");
+  console.log(`# embed manifest id twice: ${error}`);
+  expect(error).toBe("alpha: its retroplug.embed lists the id alpha-rom twice");
+});
+
+test("an embed declared by one package and baked in by another is refused, naming both", async () => {
+  const { error } = await drive("embed-mismatched-package");
+  console.log(`# embed halves in two packages: ${error}`);
+  expect(error).toBe(
+    "the embedded ROM beta-rom is declared by alpha and baked in by beta: the two halves belong to one package",
+  );
 });
 
 test("an unchanged input leaves the generated files untouched", async () => {

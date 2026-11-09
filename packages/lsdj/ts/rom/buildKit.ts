@@ -92,7 +92,7 @@ export function buildKitBankPlaced(kitName: string, samples: readonly KitSample[
 }
 
 /** Extract sample `i`'s raw nibble bytes from a standalone 16 KB bank (base 0) - e.g. a 1-sample bank
- *  from compileKit's result, to splice into an existing kit. Empty when the slot is unused. */
+ *  from the kit compiler's result, to splice into an existing kit. Empty when the slot is unused. */
 export function sampleBytesFromBank(bank: Uint8Array, i: number): Uint8Array {
   const entry = (k: number): number => bank[k * 2] | (bank[k * 2 + 1] << 8);
   if (i < 0 || i >= KIT_MAX_SAMPLES) return new Uint8Array(0);

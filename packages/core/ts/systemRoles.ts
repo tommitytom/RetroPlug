@@ -17,6 +17,7 @@
 
 import type { Platform, Core } from "./platform";
 import type { ConstructSpec } from "./constructSpec";
+import type { RomParameter } from "./romParameters";
 
 export type RoleCategory = "system" | "feature";
 
@@ -62,17 +63,48 @@ export interface RoleType {
    *  Runs only for roles actually attached to the system, so it's inherently ROM-gated. `config` is this
    *  role's own config (e.g. an LSDj asset-override list). */
   onConstruct?(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec;
+  /** The DAW automation parameters this role's ROM exposes, for the config the role carries (a BlipToaster's `chip`
+   *  picks its build's set), or undefined for a role that exposes none. The projection onto the plugin's slot pool is
+   *  the shell's (packages/retroplug/src/parameterMap.ts); what a control IS belongs to the cart. */
+  parameters?(config: Record<string, unknown>): readonly RomParameter[];
+  /** A config field this role derives from the ROM FILE rather than from the user's choices (BlipToaster's `chip`): the
+   *  role says how much of the file it needs, and the store applies `derive` at every build, so a loaded project
+   *  reflects the ROM on disk today.
+   *
+   *  `headerBytes(short)` is asked of the short header (the first `ROLE_HEADER_LEN` bytes) and answers how many bytes
+   *  `derive` needs: a role whose fact is in the short header says so by returning the short length, and one that may
+   *  need a deeper read says so for the files that need it, so the read happens only when a role asks. */
+  deriveConfig?: RoleDerive;
+  /** How much plugin latency this role adds to a host, for the config it carries: the DAW applies it as PDC, so a cart
+   *  that locks its playback a fixed distance behind the host clock lands on the grid. Absent (or 0): none.
+   *
+   *  Only a role the system's protocol pipeline PLACES is asked: a role whose node the graph leaves out runs nothing,
+   *  so a product that stored the role but does not place it adds no latency. */
+  hostLatencyMs?(config: Record<string, unknown>): number;
   /** DEFERRED: a role-owned settings UI + its render descriptor. (Kit patching does NOT need this -
    *  `lsdj-assets` is a role with no protocol node that splices pre-built kit, palette and font files into
    *  the ROM on the control plane.) */
   ui?: unknown;
 }
 
-/** The narrow Backend slice a load-time `onConstruct` hook may use: synthesize an LSDj SRAM image, check
- *  whether native will find a real sav on disk, read the base ROM (to patch it), and decode a PNG (for an
- *  LSDj font override). The full `Backend` satisfies this structurally, so the store passes itself. */
+/** How much of a ROM the short header is: enough for the cartridge title at 0x134 and the fields around it. The store
+ *  reads this much for the role suggestions, and a role's `deriveConfig` is told it is the short header's length. */
+export const ROLE_HEADER_LEN = 0x150;
+
+/** A role's ROM-derived config: how much of the file `derive` needs for a given short header, and the fields it writes.
+ *  `config` is the role's config as the build has it (a stored one on a load), and the answer replaces it. `derive` is
+ *  called only with the bytes of a file that could be READ (a non-empty header): a file the backend cannot open derives
+ *  nothing, and the config the build already carries stands. */
+export interface RoleDerive {
+  headerBytes(short: Uint8Array): number;
+  derive(header: Uint8Array, config: Record<string, unknown>): Record<string, unknown>;
+}
+
+/** The narrow Backend slice a load-time `onConstruct` hook may use: check whether native will find a real sav on disk,
+ *  read the base ROM (to patch it), and decode a PNG (for an LSDj font override). The full `Backend` satisfies this
+ *  structurally, so the store passes itself. A cart that needs bytes of its own (an empty LSDj battery) builds them with
+ *  its own codec, so nothing cart-specific sits on this contract. */
 export interface ConstructCaps {
-  savFromJson(json: string): Uint8Array;
   fileExists(path: string): boolean;
   readFile(path: string): Uint8Array | null;
   pngDecode(bytes: Uint8Array): { width: number; height: number; rgba: Uint8Array } | null;

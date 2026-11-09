@@ -16,8 +16,8 @@ SRAM and drive host sync. Grouped by how far off each is. Companion to
 - **SD file API** - read / write / list files and directories (`Edio::listDir`, `fileOpen`/`fileWrite`).
 - **Host-sync playback** - `retroplug-cli n8-sync` turns a MIDI clock/transport into risa's arm/clock/stop
   protocol; verified audible on the real 2A03.
-- **RetroPlug codecs** - full risa + LSDj `.sav` decode/encode, runtime readers, and the `compileDmc`
-  DPCM kit compiler, all reusable against bytes we pull off the cart.
+- **RetroPlug codecs** - full risa + LSDj `.sav` decode/encode, runtime readers, and the DMC kit
+  compiler, all reusable against bytes we pull off the cart.
 - **Menu VRAM dump** (`*v`) - 2 KB nametable + 16 B palette, but only while the **menu** is running
   (menu-only screen, not a running game's).
 - **Tooling today:** `retroplug-cli n8-load` (`--srm` / `--dump-sram` / `--ls` / `--sram-only`),
@@ -73,7 +73,7 @@ checks RetroPlug's NES emulation against actual hardware - genuinely novel.
 *Effort: medium.*
 
 ### 7. Custom DMC sample kits onto the cart
-RetroPlug's `compileDmc` builds 1-bit DPCM kits; splice one into a risa save/ROM and push it, so hardware
+RetroPlug's kit compiler builds 1-bit DPCM kits; splice one into a risa save/ROM and push it, so hardware
 risa plays custom samples.
 *Effort: medium (reuses the risa-rom kit tooling).*
 
@@ -96,5 +96,5 @@ VRAM+CHR -> PNG pipeline that #5 needs for a running game.
 2. **Round-trip** (#4) - the practical win.
 3. **Savestate dump experiment** (#5) - cheap to probe, and it cracks the risa-screen-over-USB itch.
 
-Everything here reuses existing pieces (`Edio` memRD/memWR + file API, the risa/LSDj codecs, `compileDmc`,
+Everything here reuses existing pieces (`Edio` memRD/memWR + file API, the risa/LSDj codecs, the DMC kit compiler,
 `n8-sync`); nothing needs new hardware.

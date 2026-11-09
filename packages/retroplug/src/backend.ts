@@ -460,14 +460,6 @@ export interface Backend {
 
   /** Decode PNG bytes to a raw RGBA8888 image, or `null` when it isn't a decodable PNG. */
   pngDecode(bytes: Uint8Array): PngImageData | null;
-
-  // --- LSDj sav codec -----------------------------------------------------
-
-  /** Encode an LSDj `.sav` image from a JSON `Sav` model (lenient — unset cells default). Backed by
-   *  the pure-TS codec (@retroplug/lsdj); kept on the Backend seam so the load-time seed stays one call.
-   *  `savFromJson("{}")` yields a valid, self-test-skipping 128 KiB image (the codec always stamps the
-   *  `jk` + `rb` validity markers), which is how a load-time role seeds a fresh LSDj ROM. */
-  savFromJson(json: string): Uint8Array;
 }
 
 // --- Capability slices --------------------------------------------------------
@@ -483,7 +475,7 @@ export type HostBackend = Pick<
   | "readFile" | "writeFile" | "writeFileAtomic" | "appendFile" | "writeFileAt" | "fileExists" | "rename" | "syncFile"
   | "listDir" | "deleteFile"
   | "drainChangedPaths" | "setWatchedRoms" | "canonicalize" | "readFilePrefix" | "configDir" | "version"
-  | "zip" | "unzip" | "pngEncode" | "pngDecode" | "savFromJson" | "openFileBrowser"
+  | "zip" | "unzip" | "pngEncode" | "pngDecode" | "openFileBrowser"
 >;
 
 /** Emulator lifecycle / live params / input / snapshot reads: bound by the plugin, UI, CLI, test host. */

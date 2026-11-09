@@ -38,7 +38,7 @@ test("audioRouting reaches native and playback survives a mode switch", () => {
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
 
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
 
   // The seam, through the store (the real UI path: the menu cycler calls this): every mode plans, and an

@@ -13,6 +13,7 @@
     "./bliptoasterAssetsRole": "./ts/bliptoasterAssetsRole.ts",
     "./bliptoasterIntegration": "./ts/bliptoasterIntegration.ts",
     "./bliptoasterRole": "./ts/bliptoasterRole.ts",
+    "./parameters": "./ts/parameters.ts",
     "./testFixtures": "./ts/fixtures.ts",
     "./rom": "./ts/rom/index.ts",
     "./rom/rom": "./ts/rom/rom.ts",

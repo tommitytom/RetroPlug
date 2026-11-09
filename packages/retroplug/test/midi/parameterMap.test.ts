@@ -5,17 +5,24 @@ import { test, expect } from "@retroplug/testing";
 import { MidiRouting } from "@retroplug/core/midiRouting";
 
 import { blipToasterChip, inesMapper } from "@retroplug/bliptoaster/romDetect";
+import { MGB_PARAMETERS } from "@retroplug/mgb/parameters";
+import { BLIPTOASTER_SPECS } from "@retroplug/bliptoaster/parameters";
+import { expandRomSpec, type RomParameter } from "@retroplug/core/romParameters";
+import { buildAppRegistry } from "../../src/appHost";
 import {
   CC_SLOTS_PER_SYSTEM,
   MAX_PARAMETER_SYSTEMS,
-  MGB_PARAMETERS,
-  BLIPTOASTER_SPECS,
-  expandRomSpec,
-  parametersForRole,
   preRoutingChannel,
   projectParameterMap,
   type ParameterSystem,
 } from "../../src/parameterMap";
+
+// The product's registry, which is what answers a role's `parameters`: the table a ROM exposes is its cart's, and the
+// shell asks the role type rather than holding a copy.
+const registry = buildAppRegistry();
+/** The lanes a role kind contributes for `config`, as the projection and this file read them. */
+const parametersOf = (kind: string, config: Record<string, unknown> = {}): readonly RomParameter[] | undefined =>
+  registry.roleType(kind)?.parameters?.(config);
 
 const mgb: ParameterSystem = { roles: [{ kind: "mgb" }] };
 const bt = (chip: string): ParameterSystem => ({ roles: [{ kind: "bliptoaster", config: { chip } }] });
@@ -31,7 +38,7 @@ const inesHeader = (mapper: number): Uint8Array => {
 };
 
 test("a single mGB system claims slots from 0, in table order", () => {
-  const map = projectParameterMap([mgb], MidiRouting.SendToAll);
+  const map = projectParameterMap([mgb], MidiRouting.SendToAll, registry);
   expect(map.length).toEqual(MGB_PARAMETERS.length);
   expect(map[0].slot).toEqual(0);
   expect(map[0].name).toEqual("PU1 Pulse Width");
@@ -131,16 +138,16 @@ test("no ROM table overflows its system's slot budget", () => {
 });
 
 test("a system with no parameter-bearing role claims nothing", () => {
-  expect(projectParameterMap([plain], MidiRouting.SendToAll)).toEqual([]);
-  expect(projectParameterMap([], MidiRouting.SendToAll)).toEqual([]);
-  expect(parametersForRole({ kind: "lsdj" })).toEqual(undefined);
+  expect(projectParameterMap([plain], MidiRouting.SendToAll, registry)).toEqual([]);
+  expect(projectParameterMap([], MidiRouting.SendToAll, registry)).toEqual([]);
+  expect(parametersOf("lsdj")).toEqual(undefined);
 });
 
 test("an unknown or absent chip falls back to the 2A03 core", () => {
   const core = expandRomSpec(BLIPTOASTER_SPECS["2a03"]).length;
-  expect(parametersForRole({ kind: "bliptoaster", config: { chip: "fictional" } })?.length).toEqual(core);
-  expect(parametersForRole({ kind: "bliptoaster", config: {} })?.length).toEqual(core);
-  expect(parametersForRole({ kind: "bliptoaster" })?.length).toEqual(core);
+  expect(parametersOf("bliptoaster", { chip: "fictional" })?.length).toEqual(core);
+  expect(parametersOf("bliptoaster", {})?.length).toEqual(core);
+  expect(parametersOf("bliptoaster")?.length).toEqual(core);
 });
 
 test("the chip comes off the iNES mapper, with 69 resolving to the base build", () => {
@@ -156,7 +163,7 @@ test("the chip comes off the iNES mapper, with 69 resolving to the base build", 
 });
 
 test("system N's slots start at N * CC_SLOTS_PER_SYSTEM", () => {
-  const map = projectParameterMap([plain, bt("2a03")], MidiRouting.SendToAll);
+  const map = projectParameterMap([plain, bt("2a03")], MidiRouting.SendToAll, registry);
   const core = expandRomSpec(BLIPTOASTER_SPECS["2a03"]).length;
   expect(map.length).toEqual(core);
   expect(map[0].slot).toEqual(CC_SLOTS_PER_SYSTEM);
@@ -164,7 +171,7 @@ test("system N's slots start at N * CC_SLOTS_PER_SYSTEM", () => {
 });
 
 test("every claimed slot stays inside the pool and is claimed once", () => {
-  const map = projectParameterMap([bt("vrc7"), bt("mmc5"), mgb, bt("n163")], MidiRouting.SendToAll);
+  const map = projectParameterMap([bt("vrc7"), bt("mmc5"), mgb, bt("n163")], MidiRouting.SendToAll, registry);
   for (const s of map) {
     expect(s.slot >= 0 && s.slot < MAX_PARAMETER_SYSTEMS * CC_SLOTS_PER_SYSTEM).toEqual(true);
     expect(s.cc >= 0 && s.cc <= 127).toEqual(true);
@@ -174,7 +181,7 @@ test("every claimed slot stays inside the pool and is claimed once", () => {
 });
 
 test("systems past the pool's reach claim nothing", () => {
-  const map = projectParameterMap([mgb, mgb, mgb, mgb, mgb], MidiRouting.SendToAll);
+  const map = projectParameterMap([mgb, mgb, mgb, mgb, mgb], MidiRouting.SendToAll, registry);
   const systems = new Set(map.map((s) => Math.floor(s.slot / CC_SLOTS_PER_SYSTEM)));
   expect([...systems].sort()).toEqual([0, 1, 2, 3]);
 });
@@ -203,17 +210,17 @@ test("preRoutingChannel: the one-channel modes reach only the ROM's first voice"
 
 test("an unreachable voice leaves its slot unclaimed rather than mis-routing", () => {
   // FourChannelsPerInstance cannot address a ROM's fifth voice onward, so DMC and every VRC7 FM lane go.
-  const four = projectParameterMap([bt("vrc7"), bt("vrc7")], MidiRouting.FourChannelsPerInstance);
+  const four = projectParameterMap([bt("vrc7"), bt("vrc7")], MidiRouting.FourChannelsPerInstance, registry);
   expect(four.some((s) => s.name.startsWith("DMC "))).toEqual(false);
   expect(four.some((s) => s.name.startsWith("FM "))).toEqual(false);
   expect(four.some((s) => s.name === "Pulse 1 Duty")).toEqual(true);
   // OneChannelPerInstance reaches only voice 1, so nothing but Pulse 1 survives.
-  const one = projectParameterMap([bt("vrc7"), bt("vrc7")], MidiRouting.OneChannelPerInstance);
+  const one = projectParameterMap([bt("vrc7"), bt("vrc7")], MidiRouting.OneChannelPerInstance, registry);
   expect(one.every((s) => s.name.startsWith("Pulse 1 "))).toEqual(true);
   expect(one.length > 0).toEqual(true);
 });
 
 test("claimed slots pack from 0 with no gaps, so dropping one does not shift the rest apart", () => {
-  const map = projectParameterMap([bt("vrc7")], MidiRouting.FourChannelsPerInstance);
+  const map = projectParameterMap([bt("vrc7")], MidiRouting.FourChannelsPerInstance, registry);
   expect(map.map((s) => s.slot)).toEqual(map.map((_, i) => i));
 });

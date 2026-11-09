@@ -198,8 +198,11 @@ export class ProjectStore {
     const views = this.systems.systems();
     const systemId = controller.systemId > 0 ? controller.systemId : (views[0]?.id ?? 0);
     const sys = views.find((s) => s.id === systemId);
-    const sram = systemId > 0 ? this.systems.readSram(systemId) : null;
-    const table = sys ? (this.controllerPlayback(sys)?.rowTicks(sram) ?? null) : null;
+    // The battery is read only when a tracker actually predicts rows from it: a read is an RPC, and a system whose
+    // roles run no playback has nothing to say from it.
+    const playback = sys ? this.controllerPlayback(sys) : null;
+    const sram = playback && systemId > 0 ? this.systems.readSram(systemId) : null;
+    const table = playback ? (playback.rowTicks(sram) ?? null) : null;
     // No readable battery is not a failure: the app still launches rows, it just cannot shade the ones that
     // hold chains. An empty table reads as "no content anywhere".
     return {

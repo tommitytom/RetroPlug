@@ -47,7 +47,7 @@ test("sameboy display knobs change the live core's rendered pixels, on the model
   const project = new ProjectStore(be, recent, registry);
   const audio = createAudioDriver();
 
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
 
   // Advance far enough to boot the GB and settle mGB's screen, then re-read after every edit so the

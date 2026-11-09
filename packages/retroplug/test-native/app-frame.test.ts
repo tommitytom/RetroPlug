@@ -1,5 +1,5 @@
 // The video-frame path, end to end through the native backend: construct a real system via the STORES
-// (loadMgb → putResource + setGraph), advance the core with renderAudio, then read its framebuffer back over
+// (loadEmbedded → putResource + setGraph), advance the core with renderAudio, then read its framebuffer back over
 // the new getFrame RPC. Proves the per-system FrameBufferTriple escapes to TS as raw XRGB8888 pixels —
 // the data an EmulatorTile blits into an LVGL Canvas. (Frames are produced by the core rendering vblanks
 // during processBlock, independent of the script nodes, so no protocol node is placed here.)
@@ -17,7 +17,7 @@ test("getFrame returns a live per-system framebuffer once the core has rendered"
   const project = new ProjectStore(be, recent, registry);
   const audio = createAudioDriver();
 
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
 
   // Before the core is advanced the triple buffer has published nothing: dimensions are known, but the

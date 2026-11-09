@@ -1,6 +1,6 @@
 // The composition root, proven for mGB: a real project assembled from the app-layer STORES
 // (ProjectStore/SystemsStore) + the role registry + the protocol script nodes plays real audio driven
-// entirely THROUGH the stores. loadMgb() attaches the `mgb` feature role via the ROM provider;
+// entirely THROUGH the stores. loadEmbedded("mgb") attaches the `mgb` feature role via the ROM provider;
 // the graph the store publishes places its protocol node; a staged MIDI chord - routed by the
 // routing node and serialized by the `mgb` role's node (rp.mgb.midi) - makes the core
 // sing. Same proof as audio-render.test.ts, but reached via the stores instead of a hand-set
@@ -34,7 +34,7 @@ test("mGB plays a MIDI chord driven through the app stores (composition root)", 
   const audio = createAudioDriver();
 
   // Embedded mGB → the ROM provider attaches the `mgb` role; the store publishes the projected structure.
-  const id = project.systems.loadMgb()!;
+  const id = project.systems.loadEmbedded("mgb")!;
   expect(typeof id).toBe("number");
   // The STORE attached the feature role from the ROM identity — not a hand-written pipeline.
   expect(project.systems.view()[0].roles.map((r) => r.kind).includes("mgb")).toBeTruthy();

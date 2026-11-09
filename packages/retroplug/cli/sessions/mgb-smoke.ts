@@ -6,8 +6,8 @@
 import { runSession } from "../session";
 
 runSession((s) => {
-  const id = s.project.systems.loadMgb();
-  if (id == null) throw new Error("loadMgb failed");
+  const id = s.project.systems.loadEmbedded("mgb");
+  if (id == null) throw new Error("loadEmbedded failed");
   s.audio.renderAudio(1500); // boot + render past the mGB splash
   s.audio.screenshot(id, "/tmp/cli-mgb.png");
   console.log("cli: rendered mGB → /tmp/cli-mgb.png");

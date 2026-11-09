@@ -157,16 +157,18 @@ test("swapRom: an LSDj→LSDj swap carries the song forward — the seed-hook st
   be.seed("/roms/v1.gb", lsdjRom());
   be.seed("/roms/v2.gb", lsdjRom("LSDJV2")); // a fresh LSDj cart, no on-disk .sav
   const a = store.addSystem("/roms/v1.gb") as number;
-  // The fresh v1 add seeds its own empty sav (savFromJson); count that so we can prove the SWAP adds none.
-  const seedsBeforeSwap = be.log.filter((e) => e === "savFromJson").length;
+  // The fresh v1 add seeds its own empty sav (the hook's sramBytes); the swap must not add a second, empty one.
+  expect(be.lastBoot()!.sramBytes != null).toBeTruthy();
   const newId = store.swapRom(a, "/roms/v2.gb");
   expect(newId).toBeTruthy();
   const call = be.lastBoot()!;
   expect(call.romPath).toBe("/roms/v2.gb");
-  // The carried live battery must survive: lsdjSeedSav sees spec.sramBytes set and stands down, so it does
-  // NOT overwrite it with an empty savFromJson("{}") seed. This is the whole point of the feature.
+  // The carried live battery must survive: lsdjSeedSav sees the live SRAM and stands down, so it does NOT overwrite it
+  // with an empty seed. This is the whole point of the feature.
   expect(new Uint8Array(call.sram!.bytes)).toEqual(sramBytesFor(a));
-  expect(be.log.filter((e) => e === "savFromJson").length).toBe(seedsBeforeSwap); // no empty-sav seed during the swap
+  // The seed the boot was handed is the carried battery itself (the store passes it as the cold-boot SRAM), not a fresh
+  // empty image the hook made: that is what "the hook stood down" looks like from the boot.
+  expect(call.sramBytes).toEqual(sramBytesFor(a));
   expect(store.view()[0].roles.some((r) => r.kind === "lsdj-sync")).toBeTruthy(); // new cart re-sniffed as LSDj
 });
 
@@ -293,7 +295,7 @@ test("newSramAs: cold-boots blank, repoints the auto-save target to the picked f
 
 test("newSramAs: the embedded synth (no on-disk save) is a no-op", () => {
   const { store } = newStore();
-  const mgb = store.loadMgb() as number;
+  const mgb = store.loadEmbedded("mgb") as number;
   expect(store.newSramAs(mgb, "/saves/x.sav")).toBe(null);
   expect(store.view()[0].id).toBe(mgb); // untouched
 });

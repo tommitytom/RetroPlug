@@ -231,4 +231,9 @@ test("the --split refusals are rebuilt from the descriptors, so today's consoles
   expect(() => validateRenderOpts(opts({ rom: "/roms/cart.sms", split: "pins" }), "sms")).toThrow(
     "render: --split pins is NES-only (got sms)",
   );
+  // A file nothing classifies prints the word the render's own union gave it, as it always has: this refusal did not
+  // change when classification moved to the registry.
+  expect(() => validateRenderOpts(opts({ rom: "/roms/cart.bin", split: "pins" }), "unknown")).toThrow(
+    "render: --split pins is NES-only (got other)",
+  );
 });

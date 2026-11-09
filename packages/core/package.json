@@ -25,6 +25,7 @@
     "./ports": "./ts/ports.ts",
     "./protocol": "./ts/protocol.ts",
     "./register": "./ts/register.ts",
+    "./romParameters": "./ts/romParameters.ts",
     "./settingsSchema": "./ts/settingsSchema.ts",
     "./systemRoles": "./ts/systemRoles.ts",
     "./ticks": "./ts/ticks.ts"

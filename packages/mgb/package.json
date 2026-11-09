@@ -10,6 +10,7 @@
   "exports": {
     "./app": "./ts/app.ts",
     "./mgbMidiNode": "./ts/mgbMidiNode.ts",
+    "./parameters": "./ts/parameters.ts",
     "./protocol": "./ts/protocol.ts",
     "./romProvider": "./ts/romProvider.ts"
   },
