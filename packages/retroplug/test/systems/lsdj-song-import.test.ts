@@ -1,6 +1,9 @@
-// importSongFiles — the batch importer behind the Songs menu Add and drag-and-drop: fold multiple
-// .lsdsng/.lsdprj into a live LSDj SAV in ONE readSram→write→loadSram cycle. Byte-level; .lsdprj kits
-// accumulate as lsdj-assets overrides. Routing (which drops reach here) is in test/file-drop/route.test.ts.
+// The shell's end-to-end song import: LSDj's `.lsdsng`/`.lsdprj` importer driven through the adapter the shell supplies
+// (src/songImportHost.ts: the backend's files, the store's battery read and reload, and the `.sav` a save pairs with),
+// over a real SystemsStore and MockBackend. The importer's own cases run over a fake host in
+// packages/lsdj/ts/test/songImport.test.ts; what only this file can hold is that the adapter's pairing, write and
+// reboot carry a batch through the store: one cold boot for the whole drop, and a `.lsdprj`'s kit riding an lsdj-assets
+// override into the ROM the core is rebooted from. Routing (which drops reach here) is test/file-drop/route.test.ts.
 import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
@@ -9,8 +12,8 @@ import { registerCoreRoles } from "../_coreRoles";
 import { registerFeatureRoles } from "../_featureRoles";
 import { registerLsdjAssetsRole, readOverrides } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { lsdjIntegration } from "@retroplug/lsdj/lsdjIntegration";
 import { songImportHost } from "../../src/songImportHost";
+import { LSDJ_SONG_IMPORT } from "@retroplug/lsdj/lsdjSongImport";
 import { savFrom, encodeLsdsngRaw, encodeLsdprj, decompressSlot, listProjects } from "@retroplug/lsdj";
 import { LsdjRom, buildKitBank, ROM_SIZE } from "@retroplug/lsdj/rom";
 import { deepEqual } from "@retroplug/testing/deepEqual";
@@ -45,15 +48,25 @@ test("dropping a .lsdsng + a .lsdprj adds both songs in ONE reboot; kits ride ov
   const id = store.addSystem("/roms/song.gb")!;
   be.setSram(id, savFrom({})); // blank live battery
 
-  const aSong = song(100, 0x11); // a plain .lsdsng (no kits) — stays byte-exact
+  const aSong = song(100, 0x11); // a plain .lsdsng (no kits) - stays byte-exact
   // a .lsdprj whose song references a kit (so the bundled bank imports as an override + the refs remap)
-  const bSong = savFrom({ workingSong: { settings: { tempo: 140 }, instruments: [{ type: "kit", kit1: 5, kit2: 5 }] } }).subarray(0, 0x8000);
+  const bSong = savFrom({ workingSong: { settings: { tempo: 140 }, instruments: [{ type: "kit", kit1: 5, kit2: 5 }] } })
+    .subarray(0, 0x8000);
   be.seed("/s/a.lsdsng", encodeLsdsngRaw("AAA", 1, aSong));
-  be.seed("/s/b.lsdprj", encodeLsdprj({ name: "BBB", version: 2, songBytes: bSong, kitBanks: [buildKitBank("DRUMS", [{ name: "BD", bytes: Uint8Array.of(1, 2, 3, 4) }])] }));
+  be.seed(
+    "/s/b.lsdprj",
+    encodeLsdprj({
+      name: "BBB",
+      version: 2,
+      songBytes: bSong,
+      kitBanks: [buildKitBank("DRUMS", [{ name: "BD", bytes: Uint8Array.of(1, 2, 3, 4) }])],
+    }),
+  );
 
   const before = be.bootedIds.length;
   const sys = store.view().find((s) => s.id === id)!;
-  expect(lsdjIntegration.songImport!.import(songImportHost(be, store), sys, ["/s/a.lsdsng", "/s/b.lsdprj"])).toBeTruthy();
+  const target = { id: sys.id, romPath: sys.romPath, roles: sys.roles };
+  expect(LSDJ_SONG_IMPORT.import(songImportHost(be, store), target, ["/s/a.lsdsng", "/s/b.lsdprj"])).toBeTruthy();
 
   // Exactly one rebuild for the whole batch.
   expect(be.bootedIds.length - before).toBe(1);
@@ -61,23 +74,17 @@ test("dropping a .lsdsng + a .lsdprj adds both songs in ONE reboot; kits ride ov
   const sav = spec.sram!.bytes;
   expect(listProjects(sav).map((p) => p.slot)).toEqual([0, 1]); // both songs present
   deepEqual([...decompressSlot(sav, 0)!], [...aSong], ".lsdsng byte-exact in slot 0");
-  deepEqual([...sav.subarray(0, 0x8000)], [...decompressSlot(sav, 1)!], "working memory = the LAST dropped song (slot 1)");
+  deepEqual(
+    [...sav.subarray(0, 0x8000)],
+    [...decompressSlot(sav, 1)!],
+    "working memory = the LAST dropped song (slot 1)",
+  );
 
   // The .lsdprj's kit was recorded as an lsdj-assets override (linking the .lsdprj by path), and the
   // rebuild's effective ROM carries it.
-  const ov = readOverrides(store.view().find((s) => s.romPath === "/roms/song.gb")!.roles.find((r) => r.kind === "lsdj-assets")?.config);
+  const ov = readOverrides(
+    store.view().find((s) => s.romPath === "/roms/song.gb")!.roles.find((r) => r.kind === "lsdj-assets")?.config,
+  );
   expect(ov.some((o) => o.type === "kit" && o.path === "/s/b.lsdprj" && o.lsdprjKit === 0)).toBeTruthy();
   expect(LsdjRom.fromBytes(spec.rom!.bytes).kit(0).name()).toBe("DRUMS");
-});
-
-test("importSongFiles is a no-op (no write) for an empty / all-bad list", () => {
-  const { be, store } = newStore();
-  be.seed("/roms/song.gb", lsdjRom1M());
-  const id = store.addSystem("/roms/song.gb")!;
-  be.setSram(id, savFrom({}));
-  const before = be.bootedIds.length;
-  const sys = store.view().find((s) => s.id === id)!;
-  expect(lsdjIntegration.songImport!.import(songImportHost(be, store), sys, [])).toBe(false);
-  expect(lsdjIntegration.songImport!.import(songImportHost(be, store), sys, ["/nope.lsdsng"])).toBe(false); // unreadable
-  expect(be.bootedIds.length).toBe(before); // never rebooted
 });

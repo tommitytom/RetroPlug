@@ -21,8 +21,9 @@
 //   retroplug-cli bliptoaster-rom export-kit    / import-kit     (.rkit raw 8 KB DPCM banks)
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
-import type { KitEffect, RisaDmcSampleSpec, RisaKitCompileSpec } from "../../src/audioDriver";
-import { NO_SLOT_REASON } from "../../src/kit";
+import type { KitEffect } from "@retroplug/dsp/kitEffect";
+import type { RisaDmcSampleSpec, RisaKitCompileSpec } from "@retroplug/risa/kitFormat";
+import { NO_SLOT_REASON } from "@retroplug/dsp";
 import { encodeWav } from "../wav";
 import {
   BlipToasterRom,

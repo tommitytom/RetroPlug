@@ -27,7 +27,8 @@ import/export paths are written once:
 - **`TRACKER_INTEGRATIONS`** — the registry that maps a system to its catalogs.
 - **`liveSav`** — reads the battery out of the *running* core rather than off disk, which is why
   the Songs menu acts on what the cart currently has.
-- **Kit compiles** are TypeScript ([`src/kit/`](../packages/retroplug/src/kit)): each slot is a chain of offline graph
+- **Kit compiles** are TypeScript (a cart's [`ts/kitFormat.ts`](../packages/lsdj/ts/kitFormat.ts) over dsp's
+  [`kitJobs.ts`](../packages/dsp/ts/kitJobs.ts)): each slot is a chain of offline graph
   jobs whose passes are `rp.dsp` documents (the effects and resample kernels in `packages/dsp/native/src/dsp/`, which
   those nodes wrap), and TypeScript packs the codes and bits and assembles the bank. TPDF dither seeds from a hash of
   its input, so a kit compiles to the same bytes every time, and `test-native`'s `kit-baseline` and `kit-compile` hold

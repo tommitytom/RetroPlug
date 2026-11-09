@@ -7,7 +7,7 @@
 
 import { pumpAllJobs, setJobWait } from "./capability";
 import { kitFormat } from "./kitFormats";
-import type { KitCompileResult } from "./kit/compile";
+import type { KitCompileResult } from "@retroplug/dsp/kitContract";
 import { setOfflineWait, setOfflineYield } from "./offline";
 import { makeCall } from "./rpcClient";
 import { offlineRunner } from "./realBackend";
@@ -45,18 +45,6 @@ export interface DspTraceSpan {
   t0: number;
   t1: number;
 }
-
-// The kit compiler's effect spec lives with the kit chain that reads it, in dsp (packages/dsp/ts/kitEffect.ts); this
-// driver and the compile specs it declares re-export the names, so a caller keeps one spelling.
-export type { KitDitherEffect, KitEffect, KitFilterEffect, KitGainEffect } from "@retroplug/dsp/kitEffect";
-
-// A kit's source sample and each cart's whole spec are their owners': the slot is the kit contract's
-// (@retroplug/dsp/kitContract, beside the format a cart contributes), the LSDj spec is @retroplug/lsdj/kitFormat's and
-// the risa one @retroplug/risa/kitFormat's. They are re-exported here, as the effect spec above is, so a caller of this
-// driver keeps one spelling.
-export type { KitSampleSpec } from "@retroplug/dsp/kitContract";
-export type { KitCompileSpec } from "@retroplug/lsdj/kitFormat";
-export type { RisaDmcSampleSpec, RisaKitCompileSpec } from "@retroplug/risa/kitFormat";
 
 /** One host block for renderBlocks: what a DAW hands the plugin per process call. */
 export interface RenderBlock {
@@ -105,11 +93,12 @@ export interface AudioDriver {
    *  unless the project holds exactly ONE system (the PerChannel shape fans a single core's channels). */
   renderAudioPerChannel(id: number, ms: number): Float32Array[];
   /** Compile a sample kit of the bank format `id` names (a cart's own, e.g. "lsdj" or "risa") from source audio files
-   *  into its bank: the TypeScript compiler's chain of offline graph jobs per slot, slots in parallel (src/kit/). The
-   *  spec's type is the owning package's, so a caller writes `compileKitFormat<KitCompileSpec>("lsdj", spec)` and this
-   *  driver names no cart (an id no package registers rejects the promise, naming it). The promise settles where this host pumps
-   *  or waits for offline jobs: createAudioDriver turns the wait on, and a host with a UI tick pumps from it. A
-   *  per-sample failure leaves that slot empty rather than failing the whole kit, and the slot's reason comes back
+   *  into its bank: the TypeScript compiler's chain of offline graph jobs per slot, slots in parallel (the cart's kit
+   *  format and dsp's shared half). The spec's type is the owning package's, so a caller writes
+   *  `compileKitFormat<KitCompileSpec>("lsdj", spec)` and this driver names no cart (an id no package registers
+   *  rejects the promise, naming it). The promise settles where this host pumps or waits for offline jobs:
+   *  createAudioDriver turns the wait on, and a host with a UI tick pumps from it. A per-sample failure leaves that
+   *  slot empty rather than failing the whole kit, and the slot's reason comes back
    *  beside the bank - the caller validates by reading the bank back, and can say why a slot did not land. */
   compileKitFormat<S>(id: string, spec: S): Promise<KitCompileResult>;
   /** The engine's audio sample rate (Hz) — thread into encodeWav so WAV headers are labelled correctly. */

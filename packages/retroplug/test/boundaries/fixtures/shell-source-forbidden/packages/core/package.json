@@ -1,0 +1,7 @@
+{
+  "name": "@retroplug/core",
+  "private": true,
+  "exports": {
+    "./systemRoles": "./ts/systemRoles.ts"
+  }
+}

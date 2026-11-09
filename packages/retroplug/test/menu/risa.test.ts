@@ -11,7 +11,7 @@ import { RisaRom } from "@retroplug/risa/rom";
 import { savBytes } from "@retroplug/risa/testFixtures";
 import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, decodeRecord, CURRENT_LAYOUT, kSaveSize } from "@retroplug/risa/risaSav";
 import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "@retroplug/risa/codec/constants";
-import { risaSongCatalog } from "../../src/tracker";
+import { risaSongCatalog } from "@retroplug/risa/risaSongCatalog";
 import { loadSongToWorkingInSav } from "@retroplug/risa/risaSongOps";
 
 // A leaf that browses (Export) fires openFileBrowser fire-and-forget; flush the microtask chain it kicks off.

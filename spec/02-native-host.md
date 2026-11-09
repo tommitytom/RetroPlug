@@ -1152,8 +1152,12 @@ nodes are their own packages' (`system/sameboy/SameBoyNode.cpp`, `system/mesen/M
 host-io package's, the cart's node the N8 pack's and the control surface's two the Launchpad pack's; and the script host
 (`src/host/script/`), the engine and the RPC services are `retroplug-backend`, the shell.
 
-ROM classification (the legacy build's C++ `RomSniffer`) and the LSDj sav codec are TS-owned - neither is in
-the C++ tree.
+ROM classification (the legacy build's C++ `RomSniffer`) is TS-owned, and since F4a it is the CONSOLE PACKAGES' data:
+each console package contributes a descriptor saying how its ROMs are recognised (its detectors in rank order and the
+extensions it falls back to), which node type places a system, the settings and construct fields that node reads, its
+split modes and its link cable, so `packages/retroplug/src` has no platform union or table keyed by one and reaches a
+console only through its package (the boundary check's rule 9). The LSDj sav codec is TS-owned too - neither is in the
+C++ tree.
 
 ### The DSP targets and the `rp.dsp` packages
 
@@ -1286,8 +1290,9 @@ the server's names are global and a repeat replaces without a word. The N8 port 
 
 ### Kit reproducibility
 
-A kit compiles to the same bytes every time. The compiler is TypeScript (`packages/retroplug/src/kit/`): it builds
-each pass of a slot's chain as a graph document and packs the bank, and native does every float the bytes depend on,
+A kit compiles to the same bytes every time. The compiler is TypeScript (each cart's `ts/kitFormat.ts` over
+`@retroplug/dsp/kitJobs`): it builds each pass of a slot's chain as a graph document and packs the bank, and native does
+every float the bytes depend on,
 through the `rp.dsp` nodes in offline jobs (the seam below). The two TPDF dither algorithms seed their `std::mt19937`
 from `rp::dsp::inputSeed` over the resampled, pre-trim sample the dither receives, salted with a per-algorithm constant,
 and the other three algorithms are deterministic already. The kit baseline

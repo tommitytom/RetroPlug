@@ -7,7 +7,7 @@ import { useState } from "react";
 import type { AppStores } from "../../src/appStores";
 import type { SystemView } from "../../src/systemsStore";
 import { planImport, buildImportModal, applyImport, type ImportPending } from "./songImport";
-import { savEditWouldDiscard } from "../../src/tracker";
+import { savEditWouldDiscard } from "../../src/tracker/liveSav";
 import type { Overlay } from "./overlay";
 
 export interface SongImport extends Overlay {

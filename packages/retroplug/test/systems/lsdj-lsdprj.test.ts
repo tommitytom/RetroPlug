@@ -1,6 +1,6 @@
-// .lsdprj import: the pure planner (planLsdprjImport — song injected byte-level + missing kits assigned to
-// free slots, linking the .lsdprj by path+ordinal) and the role path (a lsdprjKit override patches the
-// effective ROM at construct through the store's reload).
+// The lsdprjKit role path: a .lsdprj's bundled kit is recorded as an lsdj-assets override, and a reload folds it into the
+// ROM the core boots. The pure planner (planLsdprjImport) and the batch importer are the LSDj package's own tests
+// (packages/lsdj/ts/test/lsdprjImport.test.ts, songImport.test.ts); what stays here is the store end to end.
 import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
@@ -9,8 +9,7 @@ import { registerCoreRoles } from "../_coreRoles";
 import { registerFeatureRoles } from "../_featureRoles";
 import { registerLsdjAssetsRole } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { planLsdprjImport } from "@retroplug/lsdj/lsdjLsdprjImport";
-import { decodeSav, encodeLsdprj, savFrom } from "@retroplug/lsdj";
+import { encodeLsdprj, savFrom } from "@retroplug/lsdj";
 import { LsdjRom, buildKitBank, ROM_SIZE } from "@retroplug/lsdj/rom";
 import { gbRomBattery } from "./fixtures";
 
@@ -29,29 +28,6 @@ function lsdprjWithKit(): { file: Uint8Array; kit: Uint8Array } {
   const kit = buildKitBank("DRUMS", [{ name: "BD", bytes: Uint8Array.of(1, 2, 3, 4) }]);
   return { file: encodeLsdprj({ name: "MYPRJ", version: 0x40, songBytes: song, kitBanks: [kit] }), kit };
 }
-
-test("planLsdprjImport assigns a missing kit to a free slot + injects the song", () => {
-  const { file } = lsdprjWithKit();
-  const plan = planLsdprjImport({ file, path: "/p.lsdprj", effectiveRom: lsdjRom1M(), overrides: [], liveSram: savFrom({}) })!;
-  expect(plan != null).toBeTruthy();
-  expect(plan.addedKits).toBe(1);
-  expect(plan.songSlot).toBe(0);
-  const ov = plan.overrides[0];
-  expect(ov.type).toBe("kit");
-  expect(ov.path).toBe("/p.lsdprj");
-  expect(ov.lsdprjKit).toBe(0);
-  expect(ov.name).toBe("DRUMS");
-  expect(decodeSav(plan.savBytes).projects[0]!.name).toBe("MYPRJ"); // song injected
-});
-
-test("planLsdprjImport dedupes a kit already present in the ROM (no new override)", () => {
-  const { file, kit } = lsdprjWithKit();
-  const rom = LsdjRom.fromBytes(lsdjRom1M());
-  rom.importKitFile(3, kit); // the same kit already lives at slot 3
-  const plan = planLsdprjImport({ file, path: "/p.lsdprj", effectiveRom: rom.bytes(), overrides: [], liveSram: savFrom({}) })!;
-  expect(plan.addedKits).toBe(0); // reused slot 3, no new override
-  expect(plan.overrides.length).toBe(0);
-});
 
 function newStore() {
   const be = new MockBackend("/cfg");

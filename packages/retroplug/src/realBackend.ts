@@ -228,7 +228,7 @@ export function createDebugClient(): DebugBackend {
 }
 
 /** A live-MIDI client (mounted CLI-only today), for the TS N8 bridges (which reach the cart through
- *  @retroplug/n8's createN8Client) and the Launchpad probe. `poll()` drains the messages queued since the last
+ *  the n8 package's createN8Client) and the Launchpad probe. `poll()` drains the messages queued since the last
  *  call (each = raw bytes; MIDI carries no timing). Synchronous like every other facet. `listInputs` returns []
  *  on a host that didn't mount it.
  *

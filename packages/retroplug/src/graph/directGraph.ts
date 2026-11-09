@@ -116,7 +116,7 @@ export class DirectGraph {
   }
 
   /** Edit system `id`'s core config as the stores' core-config role spells it (`sameboy` or `mesen`,
-   *  @retroplug/sameboy and @retroplug/mesen: an
+   *  the sameboy and mesen packages: an
    *  enum as its label, never an ordinal), merged over what this graph gave it before: none at first, so its node
    *  carries no setting field and its core keeps the settings it was built with (the params it does not name start at
    *  their defaults at its first block). Its setting fields ride its node's settings and a NES's expansionVolume its

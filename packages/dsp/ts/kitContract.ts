@@ -1,7 +1,7 @@
 // What a kit compiler is and what it runs on (docs/modular-graph-phase-d2-design.md section 5), apart from the
 // compilers themselves: the audio driver dispatches by `KitFormat`'s id to a format a cart's app module contributed, and
-// a compiler takes a `KitJobRunner` (a host's offline jobs) rather than a backend, so nothing here names the shell.
-// compile.ts, which stays the shell's with the formats registered, re-exports these names.
+// a compiler takes a `KitJobRunner` (a host's offline jobs) rather than a backend, so nothing here names the shell: the
+// driver reads these types and dispatches by the id a cart's package registered.
 import type { OfflineRunRequest, OfflineRunResult } from "@retroplug/core/offlineJob";
 import type { KitEffect } from "./kitEffect";
 

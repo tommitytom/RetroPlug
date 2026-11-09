@@ -24,7 +24,7 @@ import type { Platform } from "../src/platform";
 import { buildSav, isSongSaved, SMDJ4_BLOCK_LEN } from "@retroplug/smsggdj/codec/sav";
 import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
 import { SMSGGDJ_SYMBOLS } from "@retroplug/smsggdj/runtime/symbols.generated";
-import { smsggdjIntegration } from "../src/trackerRegistry";
+import { smsggdjIntegration } from "@retroplug/smsggdj/smsggdjIntegration";
 import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
 import { directGraph } from "../src/graph/directGraph";

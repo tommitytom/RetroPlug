@@ -3,7 +3,10 @@
 // every other saved song must be untouched. If saving didn't actually clear the dirty flag, the user
 // would save, be prompted again, and reasonably conclude the save did nothing.
 import { test, expect } from "@retroplug/testing";
-import { lsdjSongCatalog, risaSongCatalog, workingSongTargets, type SongCatalog } from "../../src/tracker";
+import { workingSongTargets } from "@retroplug/tracker/songCatalog";
+import type { SongCatalog } from "@retroplug/tracker/songCatalog";
+import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
+import { risaSongCatalog } from "@retroplug/risa/risaSongCatalog";
 import { savBytes as lsdjSav } from "@retroplug/lsdj/testFixtures";
 import { savBytes as risaSav } from "@retroplug/risa/testFixtures";
 import { loadSongToWorking, decompressSlot, savSongName } from "@retroplug/lsdj/codec/sav";

@@ -454,7 +454,7 @@ export interface Backend {
   unzip(bytes: Uint8Array): ZipEntry[] | null;
 
   /** Encode a raw RGBA8888 image (`width*height*4` bytes, row-major) to PNG bytes, or `null` on failure.
-   *  Backed by native lodepng; used by the LSDj font import/export (@retroplug/lsdj's rom) - the tile↔pixel
+   *  Backed by native lodepng; used by the LSDj font import/export (the lsdj package's rom) - the tile↔pixel
    *  mapping stays in TS, this is just the codec so it works from the plugin as well as the CLI. */
   pngEncode(width: number, height: number, rgba: Uint8Array): Uint8Array | null;
 

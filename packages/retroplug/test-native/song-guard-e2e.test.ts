@@ -6,7 +6,8 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { mutateLiveSav, lsdjSongCatalog, songLoadWouldDiscard } from "../src/tracker";
+import { mutateLiveSav, songLoadWouldDiscard } from "../src/tracker/liveSav";
+import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
 import { saveWorkingToCatalog } from "@retroplug/lsdj/lsdjSongOps";
 import { decompressSlot, activeSlot } from "@retroplug/lsdj/codec/sav";
 

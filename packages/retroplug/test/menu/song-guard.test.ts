@@ -8,7 +8,7 @@ import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuD
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { lsdjRom } from "../systems/fixtures";
 import { savFrom, loadSongToWorking, type SavInput } from "@retroplug/lsdj";
-import { lsdjSongCatalog } from "../../src/tracker";
+import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
 import { savSongName, decompressSlot, freeSongSlot, injectSong } from "@retroplug/lsdj/codec/sav";
 import { canSaveWorkingToCatalog } from "@retroplug/lsdj/lsdjSongOps";
 

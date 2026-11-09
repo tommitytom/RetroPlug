@@ -5,7 +5,7 @@ import { resolveSongCatalog, resolveTracker } from "../../src/trackerRegistry";
 import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
 import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
 import { risaSongCatalog } from "@retroplug/risa/risaSongCatalog";
-import { smsggdjIntegration } from "../../src/trackerRegistry";
+import { smsggdjIntegration } from "@retroplug/smsggdj/smsggdjIntegration";
 import { buildSav, curSlot, SMDJ4_BLOCK_LEN, songLengthRows, sanitizeEcho, isGrooveEmpty, GLIDE_GROOVE_SEL } from "@retroplug/smsggdj/codec/sav";
 import { resolveSmsggdjLayout, supportedSmsggdjVersions, commonBootedOffset } from "@retroplug/smsggdj/runtime/layout";
 import { identifySmsggdjVersion } from "@retroplug/smsggdj/romDetect";

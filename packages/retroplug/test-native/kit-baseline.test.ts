@@ -1,5 +1,6 @@
-// The kit compilers' byte baseline through the TypeScript compiler (src/kit/, docs/modular-graph-phase-d2-design.md
-// sections 5 and 6): every case of packages/native/test/audio/golden/kit-baseline.json compiled as chains of offline
+// The kit compilers' byte baseline through the TypeScript compiler (the carts' kit formats,
+// docs/modular-graph-phase-d2-design.md sections 5 and 6): every case of
+// packages/native/test/audio/golden/kit-baseline.json compiled as chains of offline
 // graph jobs on this host's real engine, its bank held to the golden's record. The matrix is this file's CASES and the
 // sources are test-native/kit/sources.ts; this file is the baseline's only runner, and the golden holds the target and
 // each case's record.
@@ -25,8 +26,11 @@
 // the variable the file is only ever read.
 import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
-import { createAudioDriver, type KitEffect } from "../src/audioDriver";
-import { compileLsdjKit, compileRisaKit, type KitCompileResult } from "../src/kit";
+import { createAudioDriver } from "../src/audioDriver";
+import type { KitEffect } from "@retroplug/dsp/kitEffect";
+import type { KitCompileResult } from "@retroplug/dsp/kitContract";
+import { compileLsdjKit } from "@retroplug/lsdj/kitFormat";
+import { compileRisaKit } from "@retroplug/risa/kitFormat";
 import {
   SOURCE_HASHES,
   fnv1a64Hex,

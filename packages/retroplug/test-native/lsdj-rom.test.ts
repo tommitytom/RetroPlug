@@ -6,7 +6,7 @@ import { lsdjRomTool } from "../cli/sessions/lsdj-rom";
 import type { Session } from "../cli/session";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import type { KitCompileSpec } from "../src/audioDriver";
+import type { KitCompileSpec } from "@retroplug/lsdj/kitFormat";
 import { LsdjRom } from "@retroplug/lsdj/rom";
 import { KitView, decodeNibbles } from "@retroplug/lsdj/rom/kit";
 import { KIT_LOOKUP, BANK_SIZE, ROM_SIZE } from "@retroplug/lsdj/rom/constants";

@@ -3,8 +3,10 @@
 // imports what it declares and nothing else, and no package imports the shell.
 //
 // What it judges: every workspace package that has a ts/ tree, which means every file under packages/<name>/ts, sources
-// and tests alike. packages/retroplug (the app) and packages/native (the engine's own tree) are the shells: they may
-// import anything and are not judged, and nothing may import them.
+// and tests alike, and - by rule 9 below - the app shell's own sources: packages/retroplug/src may reach only the
+// contract modules the list names, and through them no cart's or console's code. packages/native (the engine's tree) is
+// the other shell: it may import anything and is not judged, and nothing may import either shell. The app's ui/, cli/
+// and test trees are outside src and are not judged (F4b extends the rule to ui/ and cli/).
 //
 // Each file's imports come from TypeScript's own scanner (ts.preProcessFile), so every form a compiler follows is
 // judged: a value import, an `import type`, an `export type ... from`, a type-position `import("x").T`, a `require`,
@@ -33,7 +35,13 @@
 //   8. an `exports` entry that publishes a test module (a target, or a pattern's reach, that covers ts/test/ or a
 //      *.test.ts), handing a test file's devDependencies to another package's source; one that reaches outside the
 //      package's ts/ tree, which no check reads; or one naming no file, an entry still saying the package publishes a
-//      module that moved away.
+//      module that moved away;
+//   9. an @retroplug/<package> specifier in packages/retroplug/src that is not one of SHELL_IMPORTS below, the shell's
+//      explicit list of contract modules (each entry with the reason it is a contract rather than a cart), or a
+//      RELATIVE import from there that lands outside packages/retroplug/src: a file of the app may reach a cart or a
+//      console only through the generated registries src/generated/ writes, and the app's ui/, cli/ and test trees are
+//      not a source's to import. src/generated/ is not judged (it is the one place that names every package), and an
+//      entry no import uses fails the check.
 //
 // Rule 1's second half and rule 8's first are one leak: a test file may use its package's devDependencies, so source
 // that reaches a test file - by a relative import, or because the test file is published - hands those devDependencies
@@ -97,6 +105,43 @@ const ts = createRequire(import.meta.url)("typescript-5");
  *  entry no refusal matches fails this check, so a fixed line cannot outlive its fix. Empty: nothing in the tree breaks
  *  a rule today. */
 const EXCEPTIONS = [];
+
+/** Rule 9's list: every @retroplug/<package> specifier packages/retroplug/src may import, with the reason it is the
+ *  shell's to reach. Each is a contract module (or a library that is not a cart), so a second console or a second
+ *  tracker still needs no edit here; a cart's or a console's own module is reached through the generated registries
+ *  (src/generated/packages.ts, protocol.ts, consoles.ts), which this rule does not judge. An entry no import uses fails
+ *  the check, so this shrinks with the shell. */
+const SHELL_IMPORTS = [
+  // The contract every package implements: the shell is its host, not a participant.
+  { specifier: "@retroplug/core/canonicalJson", reason: "the document encoder every protocol driver writes through" },
+  { specifier: "@retroplug/core/configFields", reason: "the schema field helpers a role config and the stores' configs build with" },
+  { specifier: "@retroplug/core/consoles", reason: "the console descriptor contract the generated registry is read through" },
+  { specifier: "@retroplug/core/constructSpec", reason: "the construct spec a backend and a role hook carry" },
+  { specifier: "@retroplug/core/definePackage", reason: "the contribution contract an app module (and the generated registry) implements" },
+  { specifier: "@retroplug/core/descriptor", reason: "a node's span label and category, which the shell's node definitions state" },
+  { specifier: "@retroplug/core/graphDocument", reason: "the graph document the shell's planner writes and the engine reads" },
+  { specifier: "@retroplug/core/midiRouting", reason: "the MIDI routing model the project settings store and the planner share" },
+  { specifier: "@retroplug/core/offlineJob", reason: "the offline job's document and result types the render and kit drivers carry" },
+  { specifier: "@retroplug/core/platform", reason: "the platform and core ids, open strings since the descriptors register them" },
+  { specifier: "@retroplug/core/romParameters", reason: "the ROM parameter lane a role's parameters hook answers in" },
+  { specifier: "@retroplug/core/systemRoles", reason: "the role contract every system role implements, the shell's role registry included" },
+  // The kit compile driver's contract and its shared half: dsp is a library of graph nodes, not a cart.
+  { specifier: "@retroplug/dsp/kitContract", reason: "the kit format contract the shell's format registry dispatches through" },
+  { specifier: "@retroplug/dsp/packageContributions", reason: "the contribution shape an app module declares its kit formats through" },
+  // The control surface's registry and the controller target the project settings store persists.
+  { specifier: "@retroplug/launchpad/enums", reason: "the controller target enum the project config serializes" },
+  { specifier: "@retroplug/launchpad/registry", reason: "the controller app registry the shell fills from the generated list" },
+  // The tracker contract: the neutral catalogs, the integration shape, the hooks the shell's pollers and renderer ask,
+  // and the working-song image the store carries.
+  { specifier: "@retroplug/tracker/assetCatalog", reason: "the asset catalog and the neutral effective-asset merge" },
+  { specifier: "@retroplug/tracker/packageContributions", reason: "the contribution shape an app module declares its tracker integration through" },
+  { specifier: "@retroplug/tracker/songCatalog", reason: "the song catalog and the working-song targets the store and the render read" },
+  { specifier: "@retroplug/tracker/trackerIntegration", reason: "the tracker integration contract an app module contributes" },
+  { specifier: "@retroplug/tracker/trackerPlayback", reason: "the playback hook the controller's row-timing poll asks for" },
+  { specifier: "@retroplug/tracker/trackerRender", reason: "the render hooks the render pipeline asks a ROM's integration for" },
+  { specifier: "@retroplug/tracker/trackerSongImport", reason: "the song import contract the drop path and the menu call" },
+  { specifier: "@retroplug/tracker/workingSongBlob", reason: "the working-song image a project carries across a reboot" },
+];
 
 function readJson(path) {
   try {
@@ -633,6 +678,61 @@ export function checkBoundaries({ root = REPO } = {}) {
     }
   }
 
+  // Rule 9: the app shell's own sources reach only SHELL_IMPORTS' contract modules, never a cart's or a console's code
+  // (which the generated registries in src/generated name instead, and which this rule does not judge), and a relative
+  // import of theirs stays inside src. The list is the real tree's and applies to a fixture tree too: the allowed
+  // fixture passes because its one contract import is an entry (core's systemRoles), not because a fixture states a
+  // list of its own.
+  const shell = packages.get("retroplug");
+  const shellAllowed = new Map(SHELL_IMPORTS.map((entry) => [entry.specifier, entry.reason]));
+  const shellUsed = new Set();
+  if (shell !== undefined) {
+    const src = join(shell.dir, "src");
+    for (const file of walk(src, isTypeScript)) {
+      const path = shown(root, file);
+      if (path.startsWith(`${PACKAGES}/retroplug/src/generated/`)) continue;
+      for (const imported of ts.preProcessFile(readFileSync(file, "utf8"), true, true).importedFiles) {
+        const specifier = imported.fileName;
+        // A relative import is judged by where it lands: rules 1 to 8 do not judge the shell's src, so this is the one
+        // place a `../../lsdj/ts/...` reach out of it (or into the app's own ui/ and cli/, which still import carts)
+        // would be seen.
+        if (specifier.startsWith(".")) {
+          const reached = relative(src, resolve(dirname(file), specifier));
+          if (reached !== "" && !reached.startsWith("..") && !isAbsolute(reached)) continue;
+          refuse(
+            "shell-source",
+            path,
+            specifier,
+            `${path}: imports "${specifier}", which resolves outside packages/retroplug/src (rule 9): a cart's or a ` +
+              "console's code is reached through the generated registries src/generated writes, and the app's ui/, " +
+              "cli/ and test trees are not a source's to import",
+          );
+          continue;
+        }
+        if (!specifier.startsWith("@retroplug/")) continue;
+        if (shellAllowed.has(specifier)) {
+          shellUsed.add(specifier);
+          continue;
+        }
+        refuse(
+          "shell-source",
+          path,
+          specifier,
+          `${path}: imports "${specifier}", which is not one of the contract modules packages/retroplug/src may reach ` +
+            "(rule 9): a cart's or a console's code is reached through the generated registries src/generated writes",
+        );
+      }
+    }
+  }
+  const shellStale =
+    root === REPO
+      ? SHELL_IMPORTS.filter((entry) => !shellUsed.has(entry.specifier)).map(
+          (entry) =>
+            `SHELL_IMPORTS names ${entry.specifier} (${entry.reason}), which no file of packages/retroplug/src imports: ` +
+            "delete the entry",
+        )
+      : [];
+
   // Rule 5: a cycle in the declared dependencies, over every package (the shell's declarations can close a loop too).
   for (const cycle of cycles(packages)) {
     const path = [...cycle, cycle[0]].join(" -> ");
@@ -679,11 +779,16 @@ export function checkBoundaries({ root = REPO } = {}) {
     allowedRefusals.add(refusal);
     allowed.push({ ...refusal, removedBy: exceptions[at].removedBy });
   }
-  const stale = exceptions.filter((_, index) => !spent.has(index)).map(
-    (exception) =>
-      `the exception for ${exception.file}'s "${exception.import}" matches nothing: ${exception.removedBy} removed it, ` +
-      "so delete the entry",
-  );
+  const stale = [
+    ...exceptions
+      .filter((_, index) => !spent.has(index))
+      .map(
+        (exception) =>
+          `the exception for ${exception.file}'s "${exception.import}" matches nothing: ${exception.removedBy} ` +
+          "removed it, so delete the entry",
+      ),
+    ...shellStale,
+  ];
 
   return { refusals: refusals.filter((refusal) => !allowedRefusals.has(refusal)), allowed, warnings, stale };
 }

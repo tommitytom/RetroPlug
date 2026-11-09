@@ -63,13 +63,12 @@ export interface GraphSystem {
    *  as that node's settings (graph/protocolNodes.ts protocolPipeline, which leaves out a role with no node and one
    *  whose node would write an input an earlier role's does; ProtocolRole says who parsed the config). */
   pipeline: ProtocolRole[];
-  /** The config of the system's core-config role, the one whose kind is its core (`sameboy` or `mesen`,
-   *  @retroplug/sameboy and @retroplug/mesen):
-   *  where its node's setting fields and a NES's expansionVolume come from (systemKnobs), and where a NES's "drive the
-   *  real cart" setting decides whether the document places its rp.n8.nes at all. Absent for a system with
-   *  none (a DirectGraph's, a store's with no registry, the B1 goldens' models), whose node carries none of the live
-   *  fields (its construct-time fields are still written, at the node's default), so its core keeps the settings it was
-   *  built with; the params it does not name still start at their defaults at its first block. */
+  /** The config of the system's core-config role, the one whose kind is its core (`sameboy` or `mesen`, the role each
+   *  package contributes): where its node's setting fields and a NES's expansionVolume come from (systemKnobs), and
+   *  where a NES's "drive the real cart" setting decides whether the document places its rp.n8.nes at all. Absent for
+   *  a system with none (a DirectGraph's, a store's with no registry, the B1 goldens' models), whose node carries none
+   *  of the live fields (its construct-time fields are still written, at the node's default), so its core keeps the
+   *  settings it was built with; the params it does not name still start at their defaults at its first block. */
   coreConfig?: Readonly<Record<string, unknown>>;
   /** The system's gain in dB (CommonSettings.gainDb), its node's `gain` param. Absent places no value, which leaves
    *  the param's stream where it is: at its default, 0 dB, on a new node. */
@@ -123,7 +122,7 @@ const protocolId = (system: number, kind: string): string => `${systemNodeId(sys
 export const cartNodeId = (system: number): string => `cart-${system}`;
 
 /** Whether a system drives a physical cart: the core-config field its platform's console declares as the opt-out
- *  (`realCartOptOut`: a NES's `driveRealCart`, @retroplug/mesen's Mesen role) is not `false`. An absent value drives
+ *  (`realCartOptOut`: a NES's `driveRealCart`, mesen's Mesen role) is not `false`. An absent value drives
  *  one, which is what a project saved before the setting existed did - the first NES's traffic reached the cart whether
  *  or not one was plugged in - and what a DirectGraph's system, built from a spec with no core config, still does.
  *  `platform` narrows the question to that platform's cart, which is what places one; without it, a config opting out
@@ -160,13 +159,13 @@ export function drivenCartSystem<T extends { platform: Platform; coreConfig?: Re
 // ---- the system nodes' knobs ----------------------------------------------------------------------------------------
 //
 // A system node's knobs (docs/modular-graph-phase-c2-design.md section 3): the setting fields each type takes from its
-// core config, under the names and in the labels the role config spells them (@retroplug/sameboy, @retroplug/mesen),
-// which are what the C++ node reads (the console packages' SameBoyNode.cpp and MesenNode.cpp), and the params it takes
-// from the system. A value the node would refuse (another label, a number out of its range, another type) is left out
-// rather than sent: the planner refuses the whole document for one node's settings, and a loaded project keeps its core
-// config as written (SystemsStore.adopt), so a hand edit or a newer build's label would silence every system. Left
-// out, the core keeps what it has. Params are not checked so: the planner clamps a param's value to its range, and
-// rounds an int's, so any finite number is sent.
+// core config, under the names and in the labels the role config spells them (the sameboy and mesen packages' role
+// schemas, whose enum lists the descriptors' tables read), which are what the C++ node reads (the console packages'
+// SameBoyNode.cpp and MesenNode.cpp), and the params it takes from the system. A value the node would refuse (another
+// label, a number out of its range, another type) is left out rather than sent: the planner refuses the whole document
+// for one node's settings, and a loaded project keeps its core config as written (SystemsStore.adopt), so a hand edit
+// or a newer build's label would silence every system. Left out, the core keeps what it has. Params are not checked so:
+// the planner clamps a param's value to its range, and rounds an int's, so any finite number is sent.
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
@@ -186,8 +185,8 @@ const splitOf = (type: SystemNodeType, mode: "pins" | "channels"): ConsoleSplit 
 
 /** A construct-time field's rule, as the console descriptor declares it: whether the node takes the stored value as
  *  written, and the value written when it does not. The fallback is the node's own default (the console packages' config
- *  structs), which the role schema fills for a fresh config (@retroplug/sameboy, @retroplug/mesen), so a document names
- *  the same value whether or not the stored config held one. Every construct-time field is written to every document,
+ *  structs), which the role schema fills for a fresh config (each package's own), so a document names the same value
+ *  whether or not the stored config held one. Every construct-time field is written to every document,
  *  its default where the config holds no value the node takes: an absent field and one at its default are different
  *  rebuild keys, so a re-publish that flipped between them would ask for a new core under a live id
  *  (docs/modular-graph-phase-c3-design.md section 3). */

@@ -9,7 +9,8 @@ import { createRealBackend } from "../src/realBackend";
 import { buildAppRegistry } from "../src/appHost";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { loadSongByName, lsdjSongCatalog } from "../src/tracker";
+import { loadSongByName } from "../src/tracker/liveSav";
+import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
 import { savFrom, type SavInput } from "@retroplug/lsdj";
 
 declare const __RESOURCES_DIR__: string;

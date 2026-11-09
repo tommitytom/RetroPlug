@@ -417,8 +417,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
 - **D2 built: kit compiles as offline graphs**
   ([modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md), seven commits): an offline job
   seam runs a graph document to completion on a host of its own, on an engine-owned worker pool (`[offline]`);
-  `rp.dsp.normalize`, dither's `seedFrom` and `rp.dsp.dpcm` join `rp.dsp`; and `src/kit/` compiles LSDj and risa kits
-  as chains of those jobs, packing the banks in TypeScript. The 39 baseline banks and 12 edge banks are the
+  `rp.dsp.normalize`, dither's `seedFrom` and `rp.dsp.dpcm` join `rp.dsp`; and the kit compilers (since F4a each
+  cart's `ts/kitFormat.ts`, over dsp's `kitJobs`) compile LSDj and risa kits as chains of those jobs, packing the banks
+  in TypeScript. The 39 baseline banks and 12 edge banks are the
   compiler's, held by `test-native/kit-baseline.test.ts` and `kit-compile.test.ts`; native `KitCompiler`, the two
   codecs, `KitUtil`, `SampleUtil` and the harness's kit-compile RPCs are gone, so the plugin compiles
   kits too. Strict parity held bit for bit at every commit, and no parity or kit golden was re-recorded (the `rp.dsp`
@@ -427,8 +428,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     (kind `render`: a bare QuickJS runtime and an `Engine` of their own on a worker), not as graph jobs, so a job's
     registry, transport and MIDI input needed no extension. A graph job's transport stays fixed at 120 bpm, ppq 0, not
     playing, and takes no MIDI.
-  - **A plugin kit row** is possible and not built: it imports `src/kit` and runs it on the stores' backend, not
-    `audioDriver` (the driver's compile would turn on the offline poll's native wait and block the UI frame).
+  - **A plugin kit row** is possible and not built: it would call the cart's `kitFormat`, found through the shell's
+    `kitFormat(id)` registry, with the stores' backend as its job runner, not `AudioDriver.compileKitFormat` (the
+    driver's compile would turn on the offline poll's native wait and block the UI frame).
   - **Residuals.** `src/lsdj/` is test-reference code only now (`Effects`, `KitBank.hpp`); `OffsetLookup.hpp` is dead
     (nothing includes it) and a candidate for the same cleanup as enkiTS. Nothing in production calls
     `rp::lsdj::processEffect`, so do not wire a caller back to it thinking it is the kit path. A
@@ -530,8 +532,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **E4 is built** (below): MicroQuickJS on the box and the desktop, `defineNode` made portable, package memory in
     the SDK and the loader, and BlipToaster's MIDI policy as a TypeScript node.
   - **The rest of the package split** (the main design's section 11): its TypeScript half is F1's (below); what it
-    leaves is `sameboy` and `mesen`'s native trees (F2), and per-product esbuild bundles, downloadable packs and the
-    menus on extensions (F4). F3 took the Launchpad, the controller and the controller session node on the way.
+    left is `sameboy` and `mesen`'s native trees (F2), and per-product esbuild bundles, downloadable packs and the menus
+    on extensions. F3 took the Launchpad, the controller and the controller session node on the way; F4 split into
+    **F4a** (the non-UI registrations and the shell's boundary, below) and **F4b** (the UI and the cart tools), and
+    per-product bundles stay owed until a product's list differs.
   - **Windows and MSVC have never built E1's targets.** The `<target>-device` object libraries are in the default build
     under `/W4 /WX`, so a Windows problem breaks `build.bat` itself: a `build.bat` and `test.bat` run is owed. Device
     mode no longer relies on an inline namespace (MSVC does not extend one through a later `namespace rp::graph`, CWG
@@ -808,6 +812,28 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     rendered into the cart's sync node, or walks at the divisor the cart is set to.
   - **The store's song poll stays in the shell** (the controller's song refresh, the anchor and the SYNC poll in
     `projectStore.ts`) until F4, which also takes the menu rows.
+- **F4a built: the non-UI registrations** ([modular-graph-phase-f4a-design.md](../docs/modular-graph-phase-f4a-design.md),
+  five commits on `feature/modularize`): the `consoles` contribution (a package's descriptor says how a ROM is
+  classified, which node type places a system, its settings and construct fields, its split modes, its link cable and
+  its real-cart option, so `Platform` / `Core` are open strings and the shell's tables, `NODE_TYPE` and the platform
+  switches are gone), the cart hooks the stores and the renderer reach through their package's contribution (a tracker
+  integration's `render`, `playback`, `sramSignature` and `songImport`, a role's `parameters`, `deriveConfig` and
+  `hostLatencyMs`, link groups, and `savFromJson` off the construct caps), the embedded ROM declared in TS beside its
+  manifest `embed` (`SystemsStore.loadEmbedded(id)`), `AudioDriver.compileKitFormat(id, spec)`, and the shell's own
+  boundary: the four doors are deleted (a caller names `@retroplug/lsdj/kitFormat`, `@retroplug/dsp`,
+  `@retroplug/smsggdj/smsggdjIntegration`), the boundary check's **rule 9** holds `packages/retroplug/src` to an explicit
+  list of contract modules, and a scanner test refuses a platform or ROM-extension literal there. The moved tests follow
+  their code into the packages' `ts/test`. Nothing was re-recorded: strict parity, the kit and render baselines, every
+  golden and digest and both image hashes held. What it leaves:
+  - **F4b: the UI and the cart tools.** The menu contributions replacing `TRACKER_UI`, the console settings rows, the N8
+    and Launchpad menus, TSX in the packages, the LSDj HD player and the two overlays as views, and the cart CLI tools
+    (`lsdj-rom`, `risa-rom`, `bliptoaster-rom`, `n8-load`, `n8-play`, `n8-bridge`, `n8-sync`, `launchpad-probe`) as a
+    second surface on the same host contract; `ui/` and `cli/` join rule 9 and the scanner test there.
+  - **Per-product bundles are owed** until a product's package list differs from the desktop's: every product lists the
+    same sixteen packages, so the plumbing would build identical bundles. F4a keeps the precondition true - no bundle
+    reaches a cart except through the generated registries.
+  - **`MemoryType` stays a closed wire enum** (F2's item, unchanged), and the Windows, macOS and arm64 builds F2 and F3
+    left owed are still owed; F4a touches only TypeScript, so it adds none of its own.
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the
   follow-up that closed it): `packages/system` (the contract every console implements and the engine drives, the

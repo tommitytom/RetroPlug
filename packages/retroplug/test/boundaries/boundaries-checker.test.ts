@@ -21,8 +21,11 @@
 // - an `npm:` alias naming a package the workspace does not have;
 // - a declared dependency a native target names by path (a use) beside one only a CMake comment names (no use, and the
 //   warning says so);
+// - a shell source file importing a cart's module, which rule 9 admits only through the generated registries beside the
+//   contract modules the list names (and the positive tree imports a contract module, with a cart reached from
+//   src/generated/ and not judged);
 //
-// and two positive trees: one where a package declares a package it imports by name, a declared third-party subpath, a
+// and three positive trees: one where a package declares a package it imports by name, a declared third-party subpath, a
 // devDependency from a test file (a type package's globals included), its own interface by a relative path, a
 // specifier that spells a module's emitted name ("./types.js" for types.ts, "./types.mjs" for types.mts), the
 // compiler its typecheck script runs, and exports that stay inside ts/; and the real tree, where no exception is left.
@@ -280,6 +283,42 @@ test("a native target's path is a use and a CMake comment is not, which the warn
   expect(report.status).toBe(0);
   expect(report.refused).toEqual([]);
   expect(report.warnings).toEqual(["alpha: declares @retroplug/gamma, which no file of its imports and no native target of it names"]);
+});
+
+test("a shell source importing a cart's module is refused, naming the file and the specifier (rule 9)", async () => {
+  const report = await drive("shell-source-forbidden");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/retroplug/src/index.ts: imports "@retroplug/alpha/app", which is not one of the contract modules ' +
+      "packages/retroplug/src may reach (rule 9): a cart's or a console's code is reached through the generated " +
+      "registries src/generated writes",
+  ]);
+});
+
+test("a shell source's relative import that lands outside src is refused (rule 9)", async () => {
+  // Rules 1 to 8 do not judge the shell's src, so a relative reach into a package's own files or into the app's ui/ is
+  // the one form only rule 9 sees.
+  const report = await drive("shell-source-relative");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/retroplug/src/index.ts: imports "../../alpha/ts/app", which resolves outside packages/retroplug/src ' +
+      "(rule 9): a cart's or a console's code is reached through the generated registries src/generated writes, and " +
+      "the app's ui/, cli/ and test trees are not a source's to import",
+    'packages/retroplug/src/index.ts: imports "../../ui/App", which resolves outside packages/retroplug/src ' +
+      "(rule 9): a cart's or a console's code is reached through the generated registries src/generated writes, and " +
+      "the app's ui/, cli/ and test trees are not a source's to import",
+  ]);
+});
+
+test("a shell source may import a contract module and its own, and src/generated is not judged (rule 9)", async () => {
+  // The shell's registry modules import every package by name, which is the one place the rule leaves alone, and a
+  // relative import of another src module is the shell's own.
+  const report = await drive("shell-source-allowed");
+  expect(report.status).toBe(0);
+  expect(report.refused).toEqual([]);
+  expect(report.stale).toEqual([]);
 });
 
 test("the real tree holds its boundaries with no exception left", async () => {

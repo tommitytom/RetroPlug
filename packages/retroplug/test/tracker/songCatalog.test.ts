@@ -1,7 +1,8 @@
 // The tracker song-catalog layer: resolution by marker role + the risa adapter's list/workingName over a
 // real battery fixture. The LSDj/risa workingName round-trips against a booted core are in test-native.
 import { test, expect } from "@retroplug/testing";
-import { lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
+import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
+import { risaSongCatalog } from "@retroplug/risa/risaSongCatalog";
 import { resolveSongCatalog } from "../../src/trackerRegistry";
 import { loadSongToWorkingInSav } from "@retroplug/risa/risaSongOps";
 import { normalizeSaveContainer } from "@retroplug/risa/risaSav";

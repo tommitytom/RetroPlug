@@ -230,14 +230,15 @@ backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
   the LSDj tool's own kits.
 - **Sample import = the kit compiler, TypeScript over native DSP nodes.** Resample (r8brain, anti-aliased), effects
   (gain/normalize, RBJ filter, TPDF dither) and the DMC encode run as `rp.dsp` graph nodes inside offline jobs, and
-  TypeScript (`packages/retroplug/src/kit/`) builds each pass's document, cuts the buffers and packs the 4-bit
-  nibbles into the bank. The two TPDF dithers seed from a hash of the sample the dither receives (salted by
+  TypeScript (LSDj's `ts/kitFormat.ts` over dsp's `kitJobs`) builds each pass's document, cuts the buffers and packs the
+  4-bit nibbles into the bank. The two TPDF dithers seed from a hash of the sample the dither receives (salted by
   algorithm), so a kit compiles to the same bytes every time, and the other three
   algorithms are deterministic already; `test-native`'s `kit-baseline` and `kit-compile` hold every compiled bank to a
   golden (D1 and D2, [modular-graph-phase-d1-design.md](modular-graph-phase-d1-design.md) and
   [modular-graph-phase-d2-design.md](modular-graph-phase-d2-design.md) section 11). The CLI and the harness hosts
   compile through `AudioDriver`'s `compileKitFormat` (settled by the driver's native wait); a host with a UI
-  tick, the plugin included, calls `src/kit`'s entry points on its backend, settled by the job pump. The pure-TS `rom`
+  tick, the plugin included, calls the same `compileKitFormat` (the cart's format behind the registry) on its backend,
+  settled by the job pump. The pure-TS `rom`
   module orchestrates: whole-kit
   builds take the returned 16 KB bank directly; single-sample imports splice the compiled bytes beside existing
   samples' **raw** bytes and rebuild the offset table (`buildKitBank`), budget-checked against `0x3fa0`. A slot that

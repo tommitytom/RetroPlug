@@ -1,11 +1,13 @@
 # The package split
 
-**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3 and F2 built
+**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3, F2 and F4a built
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records it and its follow-up
 pass; [modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records it;
 [modular-graph-phase-f2-design.md](modular-graph-phase-f2-design.md), whose section 12 records its execution and its
-follow-up pass; what each leaves is
-[07-remaining-work.md](../spec/07-remaining-work.md)'s F1, F3 and F2 bullets), F4 not yet designed
+follow-up pass; [modular-graph-phase-f4a-design.md](modular-graph-phase-f4a-design.md), the non-UI half of F4; what each
+leaves is [07-remaining-work.md](../spec/07-remaining-work.md)'s F1, F3, F2 and F4a bullets). F4 split into **F4a**, the
+non-UI registrations and the shell's boundary (built), and **F4b**, the UI and the cart tools (not yet designed);
+per-product bundles stay owed until a product's package list differs from the desktop's.
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
 workspace packages would take. E1 started it (`node-sdk`, `graph-runtime`, `core`, `dsp`), E2 carved `n8`, and E4 made
@@ -41,17 +43,27 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
   consoles RetroPlug never runs are compiled out (`MESEN_ENABLE_SNES` / `-PCE` / `-WS`). The `[packages]` golden is the
   one re-record. What it leaves: `MemoryType`'s closed wire enum, the TS unions (F4), the Mesen library chosen per
   product, and the Windows run.
-- **F4: the UI onto extensions.** A menu item model for the cart-specific menu code, `TRACKER_UI`, the LSDj HD player and
-  the overlays move into their packs; the stores' deep imports of carts (`projectStore`, `render.ts`, `systemsStore`)
-  go through the registrations; per-product bundles.
+- **F4: the UI onto extensions**, split into two:
+  - **F4a: the non-UI registrations** ([design](modular-graph-phase-f4a-design.md), **built** on `feature/modularize`).
+    The `consoles` contribution (a descriptor classifies a ROM, places a system and carries its settings, splits, link
+    cable and real cart), the cart hooks the stores and the renderer reach through (a tracker integration's `render`,
+    `playback`, `sramSignature` and `songImport`; a role's `parameters`, `deriveConfig` and `hostLatencyMs`; link groups;
+    `savFromJson` off the construct caps), the embedded ROM declared in TS, `loadEmbedded` / `compileKitFormat`, the four
+    doors deleted, and the shell's own boundary: the boundary check's rule 9 (an explicit list of contract modules
+    `packages/retroplug/src` may import, each with its reason) and a scanner test refusing a platform or ROM-extension
+    literal there. Nothing re-recorded.
+  - **F4b: the UI and the cart tools** (not yet designed). A menu item model for the cart-specific menu code,
+    `TRACKER_UI`, the console settings rows, the N8 and Launchpad menus, the LSDj HD player and the overlays move into
+    their packs; `ui/` and `cli/` join rule 9 and the scanner test; the cart CLI tools become a second surface on the
+    host contract. Per-product bundles are owed until a product's package list differs.
 
 ## 3. The order
 
-F1, then F3, then F2, then F4. F1 gives `packages/launchpad` somewhere to be (a TS package, a script-pack home, the
-boundary checks), so the port lands there directly rather than in `packages/retroplug` and moving again. F3 does not need F2:
-it adds a pack beside the native carve, not inside it. F2 is the largest and the riskiest (Mesen is vendored and patched
-in about twenty files), so it runs on a tree whose TS side is already settled. F4 needs F1's registrations and F2's
-per-product lists, so it is last.
+F1, then F3, then F2, then F4a, then F4b. F1 gives `packages/launchpad` somewhere to be (a TS package, a script-pack
+home, the boundary checks), so the port lands there directly rather than in `packages/retroplug` and moving again. F3 does
+not need F2: it adds a pack beside the native carve, not inside it. F2 is the largest and the riskiest (Mesen is vendored
+and patched in about twenty files), so it runs on a tree whose TS side is already settled. F4a needs F2's console
+descriptors and F1's registrations; F4b needs F4a's hook seams.
 
 ## 4. Rules for every phase
 
@@ -69,11 +81,12 @@ per-product lists, so it is last.
 Section 11 listed two backlog items that the tree no longer needs:
 
 - *LSDj kit DTOs out of `BackendTypes.hpp`*: gone with the native kit compiler (8aa4e7b51); the kit compiles in TS
-  (`packages/retroplug/src/kit/compile.ts`).
+  (each cart's `ts/kitFormat.ts` over dsp's `kitJobs`).
 - *The risa DMC codec's dependency on LSDj files*: `rp.dsp.dpcm` in `packages/dsp` includes nothing of LSDj's.
 
-What was left of the TS kit side was a coupling in the other direction (`src/kit/compile.ts` imported
-`../lsdj/rom/buildKit` and `../risa/rom/kit`), which F1 resolved with registered kit formats: the chain half of the driver
-is `dsp`'s, each cart's format is its package's, and the shell keeps the door. Section 11 also gives
+What was left of the TS kit side was a coupling in the other direction (the shell's `src/kit/compile.ts` imported
+`../lsdj/rom/buildKit` and `../risa/rom/kit`), which F1 resolved with registered kit formats: the chain half of the
+driver is `dsp`'s, each cart's format is its package's, and the shell keeps the registry that dispatches an id to one
+(F4a deleted the door). Section 11 also gives
 `menuDefs.ts` "240 cart-specific lines"; `ui/screens/menu/menuDefs.ts` is now 2532 lines with `TRACKER_UI` at line 2073, and the survey
 counted about 650 cart-specific lines in it; F4 will count them afresh.

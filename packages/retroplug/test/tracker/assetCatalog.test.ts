@@ -2,11 +2,10 @@
 // effective-asset merge (overlay / erase / add / name precedence / sort), and each console's baseSlots parse
 // over a fixture ROM. The deep ROM parse (kits/palettes/fonts) is covered by test/{lsdj,risa}/rom.test.ts.
 import { test, expect } from "@retroplug/testing";
-import { effectiveAssets,
-  lsdjAssetCatalog,
-  risaAssetCatalog,
-  type AssetSlot,
-} from "../../src/tracker";
+import { effectiveAssets } from "@retroplug/tracker/assetCatalog";
+import type { AssetSlot } from "@retroplug/tracker/assetCatalog";
+import { lsdjAssetCatalog } from "@retroplug/lsdj/lsdjAssetCatalog";
+import { risaAssetCatalog } from "@retroplug/risa/risaAssetCatalog";
 import { resolveTracker, resolveAssetCatalog } from "../../src/trackerRegistry";
 import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "@retroplug/lsdj/rom";
 import { risaRomFull, gbRomBattery } from "../systems/fixtures";

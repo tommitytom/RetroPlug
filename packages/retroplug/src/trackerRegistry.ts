@@ -9,13 +9,6 @@ import type { SongCatalog } from "@retroplug/tracker/songCatalog";
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import { TRACKER_INTEGRATIONS } from "./generated/packages";
 
-// The integrations themselves are each cart's package's app contribution, re-exported here because a leaf imports this
-// module for an integration (render.ts) and the tests reach one by its name on this path.
-export { lsdjIntegration } from "@retroplug/lsdj/lsdjIntegration";
-export { blipToasterIntegration } from "@retroplug/bliptoaster/bliptoasterIntegration";
-export { risaIntegration } from "@retroplug/risa/risaIntegration";
-export { smsggdjIntegration } from "@retroplug/smsggdj/smsggdjIntegration";
-
 /** Every tracker integration, in the product order: a system takes the one whose markerRole it has, and the markers are
  *  exclusive, so the order decides nothing. The generated list, re-exported below as a live binding. */
 export { TRACKER_INTEGRATIONS };

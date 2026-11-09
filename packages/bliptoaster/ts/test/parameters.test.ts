@@ -1,38 +1,14 @@
-// The DAW parameter tables RECORDED from the shell's own copies before they moved behind the carts' role hooks
-// (docs/modular-graph-phase-f4a-design.md section 4.5): `expandRomSpec` over mGB's table and over each BlipToaster build's,
-// exactly as `parameterMap.ts` answered them at the design commit. They are the oracle the moved tables are held to:
-// a lane added, dropped, renamed or renumbered for a chip fails here, and nowhere else would notice (a host re-labels
-// its slots from this list). Throwaway recording, kept as data.
+// BlipToaster's DAW parameter lanes per build (docs/modular-graph-phase-f4a-design.md section 4.5): the table is the
+// cart package's, and the shell's slot projection asks the `bliptoaster` role for the lanes of the chip its config names.
+// The recording below was taken from the design commit's parameterMap.ts before the table moved, so this pins the
+// MOVED table lane for lane: a lane added, dropped, renamed or renumbered changes what a host lists, and nothing else
+// would notice.
+import { test, expect } from "@retroplug/testing";
 import type { RomParameter } from "@retroplug/core/romParameters";
+import { blipToasterParameters } from "../parameters";
 
-/** The lane lists as the shell expanded them, by role kind (mGB) and by BlipToaster chip. */
-export const RECORDED_PARAMETER_LANES: Readonly<Record<string, readonly RomParameter[]>> = {
-  mgb: [
-    { channel: 0, cc: 1, name: "PU1 Pulse Width", shortName: "PU1 Width" },
-    { channel: 0, cc: 2, name: "PU1 Envelope", shortName: "PU1 Env" },
-    { channel: 0, cc: 3, name: "PU1 Pitch Sweep", shortName: "PU1 Sweep" },
-    { channel: 0, cc: 4, name: "PU1 Bend Range", shortName: "PU1 Bend" },
-    { channel: 0, cc: 5, name: "PU1 Load Preset", shortName: "PU1 Preset" },
-    { channel: 0, cc: 10, name: "PU1 Pan", shortName: "PU1 Pan" },
-    { channel: 0, cc: 64, name: "PU1 Sustain", shortName: "PU1 Sus" },
-    { channel: 1, cc: 1, name: "PU2 Pulse Width", shortName: "PU2 Width" },
-    { channel: 1, cc: 2, name: "PU2 Envelope", shortName: "PU2 Env" },
-    { channel: 1, cc: 4, name: "PU2 Bend Range", shortName: "PU2 Bend" },
-    { channel: 1, cc: 5, name: "PU2 Load Preset", shortName: "PU2 Preset" },
-    { channel: 1, cc: 10, name: "PU2 Pan", shortName: "PU2 Pan" },
-    { channel: 1, cc: 64, name: "PU2 Sustain", shortName: "PU2 Sus" },
-    { channel: 2, cc: 1, name: "WAV Shape", shortName: "WAV Shape" },
-    { channel: 2, cc: 2, name: "WAV Shape Offset", shortName: "WAV Offset" },
-    { channel: 2, cc: 3, name: "WAV Pitch Sweep", shortName: "WAV Sweep" },
-    { channel: 2, cc: 4, name: "WAV Bend Range", shortName: "WAV Bend" },
-    { channel: 2, cc: 5, name: "WAV Load Preset", shortName: "WAV Preset" },
-    { channel: 2, cc: 10, name: "WAV Pan", shortName: "WAV Pan" },
-    { channel: 2, cc: 64, name: "WAV Sustain", shortName: "WAV Sus" },
-    { channel: 3, cc: 2, name: "Noise Envelope", shortName: "Noi Env" },
-    { channel: 3, cc: 5, name: "Noise Load Preset", shortName: "Noi Preset" },
-    { channel: 3, cc: 10, name: "Noise Pan", shortName: "Noi Pan" },
-    { channel: 3, cc: 64, name: "Noise Sustain", shortName: "Noi Sus" },
-  ],
+/** The lanes as the shell expanded them before the move, recorded from 96d748e5c's parameterMap.ts. */
+const RECORDED_LANES: Readonly<Record<string, readonly RomParameter[]>> = {
   "2a03": [
     { channel: 0, cc: 1, name: "Pulse 1 Duty", shortName: "P1 Duty" },
     { channel: 0, cc: 7, name: "Pulse 1 Volume", shortName: "P1 Vol" },
@@ -475,3 +451,16 @@ export const RECORDED_PARAMETER_LANES: Readonly<Record<string, readonly RomParam
     { channel: 11, cc: 117, name: "Poly Fine Bend", shortName: "Poly Fine" },
   ],
 };
+
+for (const chip of ["2a03", "vrc6", "vrc7", "s5b", "n163", "mmc5"]) {
+  test(`BlipToaster's ${chip} build serves exactly the lanes the shell's own table expanded`, () => {
+    expect(blipToasterParameters({ chip })).toEqual(RECORDED_LANES[chip]);
+  });
+}
+
+test("an unknown chip, or none, serves the 2A03 core's lanes", () => {
+  // An older project (before the field) or a build newer than this table: the core set is never wrong for a build,
+  // only narrower.
+  expect(blipToasterParameters({ chip: "fictional" })).toEqual(RECORDED_LANES["2a03"]);
+  expect(blipToasterParameters({})).toEqual(RECORDED_LANES["2a03"]);
+});

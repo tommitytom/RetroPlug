@@ -1,4 +1,5 @@
-// The TypeScript kit compiler's pure parts (src/kit/, docs/modular-graph-phase-d2-design.md section 5), with no host:
+// The TypeScript kit compiler's pure parts (the carts' kit formats and dsp's shared half,
+// docs/modular-graph-phase-d2-design.md section 5), with no host:
 // the 4-bit level-to-code inversion over every level the dither node produces, the trim, the nibble pack with and
 // without rotate against an independent transcription of the LSDj nibble format, the DMC bit pack, pad and truncation,
 // the spec's refusals and their messages, the segment split at normalising gains and the documents each pass runs, the
@@ -30,10 +31,13 @@ import {
   resolveEffects,
   type ParamRange,
 } from "@retroplug/dsp/chain";
-import { compileRisaKit, compileLsdjKit, type KitJobRunner } from "../../src/kit";
+import type { KitJobRunner } from "@retroplug/dsp/kitContract";
+import { compileLsdjKit } from "@retroplug/lsdj/kitFormat";
+import { compileRisaKit } from "@retroplug/risa/kitFormat";
 import { buildKitBank } from "@retroplug/lsdj/rom/buildKit";
 import { assembleKitBank } from "@retroplug/tracker/nes/kitBank";
-import type { KitEffect, KitSampleSpec } from "../../src/audioDriver";
+import type { KitEffect } from "@retroplug/dsp/kitEffect";
+import type { KitSampleSpec } from "@retroplug/dsp/kitContract";
 import { OfflineRunError, type OfflineRunRequest, type OfflineRunResult } from "../../src/offline";
 import gainDescriptor from "../../../native/test/graph/golden/rp.dsp.gain.descriptor.json";
 import biquadDescriptor from "../../../native/test/graph/golden/rp.dsp.biquad.descriptor.json";
@@ -44,8 +48,8 @@ const F = Math.fround;
 // quotient rounded once from the double quotient is the binary32 quotient, and so for the multiply and the subtract.
 const levelOf = (code: number): number => F(F(F(code / 15) * 2) - 1);
 
-// The LSDj nibble pack, transcribed independently of src/kit: stored = 0xF - code, and each frame rotated right by
-// one for 9.2.0+.
+// The LSDj nibble pack, transcribed independently of the cart kit format: stored = 0xF - code, and each frame rotated
+// right by one for 9.2.0+.
 function referenceNibbles(codes: number[], rotate: boolean): number[] {
   const out: number[] = [];
   for (let chunk = 0; chunk + 32 <= codes.length; chunk += 32) {

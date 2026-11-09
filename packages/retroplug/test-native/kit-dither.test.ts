@@ -2,9 +2,9 @@
 // one bank. A risa kit's DMC encode skips the dither, so an LSDj kit compile is the only path that reaches one; its
 // callers are the CLI sessions (`cli/sessions/lsdj-rom.ts`) and the tests.
 //
-// Everything here goes through the path a session uses (audioDriver.compileKitFormat -> the TypeScript kit compiler -> its
-// offline jobs -> rp.dsp.dither), not the kernel directly, so the case covers the effect settings decoding and the
-// node's seeded quantise as well.
+// Everything here goes through the path a session uses (audioDriver.compileKitFormat -> the TypeScript kit compiler ->
+// its offline jobs -> rp.dsp.dither), not the kernel directly, so the case covers the effect settings decoding and
+// the node's seeded quantise as well.
 // The bank is read back through `KitView` before it is compared: an empty or undecoded slot would make two compiles
 // agree byte for byte for the wrong reason, so the readback holds the slot to a real sample's shape (both polarities
 // and a span no constant gives) and not only to a peak. LSDj stores inverted nibbles, so an all-zero data region
@@ -14,7 +14,8 @@
 import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import type { KitCompileSpec, KitEffect } from "../src/audioDriver";
+import type { KitCompileSpec } from "@retroplug/lsdj/kitFormat";
+import type { KitEffect } from "@retroplug/dsp/kitEffect";
 import { KitView } from "@retroplug/lsdj/rom/kit";
 import { KIT_LOOKUP, BANK_SIZE, ROM_SIZE } from "@retroplug/lsdj/rom/constants";
 import { encodeWav } from "../cli/wav";

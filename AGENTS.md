@@ -198,24 +198,38 @@ The rules below are the parts that don't fit those.
   convention: each entry is public deliberately, and the boundary check refuses one that could publish a test module
   or names no file) where another package imports it. Adding one has a checklist, spec/06's "Adding a package", which
   is what a new pack is copied from. `retroplug.app`
-  names the module that default-exports `definePackage({ roles, romProviders, trackerIntegrations, kitFormats })` -
-  the lists the app used to hardcode - and `retroplug.protocol` names the module that default-exports a package's
-  `DefinedNode`s beside the `nodes` (type, span label: 16 up with no gaps, unique) and the role kinds it places.
-  `retroplug.native` names the package's C++ target and the `extern "C"` entry a product registers it by (`system`
-  has a `target` and no entry: a contract, not a node set), and `retroplug.embed` declares a file the package bakes in
-  (`{ "id", "file" }`, as `mgb`'s ROM is), which `retroplug_package` turns into an array and `retroplug_product` into
-  the product's `rp_embedded_resources()` table. Both are generated registries' inputs:
+  names the module that default-exports `definePackage({ roles, romProviders, trackerIntegrations, kitFormats, embeds })`
+  - the lists the app used to hardcode - and `retroplug.consoles` names a module (its own, because the planner reads it
+  and must carry no schema) default-exporting a package's console descriptors and the physical carts one of them can
+  drive; `retroplug.protocol` names the module that default-exports a package's `DefinedNode`s beside the `nodes` (type,
+  span label: 16 up with no gaps, unique) and the role kinds it places. A tracker integration carries the cart hooks the
+  shell's stores and renderer reach through it (`render`, `playback`, `sramSignature`, `songImport`), so a cart's code
+  is never imported by the shell: `SystemsStore.loadEmbedded(id)` takes an embedded ROM's platform from the `embeds`
+  declaration the package's app module makes, and `AudioDriver.compileKitFormat(id, spec)` dispatches to the
+  `kitFormats` contribution the id names. `retroplug.native` names the package's C++ target and the `extern "C"` entry a
+  product registers it by (`system` has a `target` and no entry: a contract, not a node set), and `retroplug.embed`
+  declares a file the package bakes in (`{ "id", "file" }`, as `mgb`'s ROM is), which `retroplug_package` turns into an
+  array and `retroplug_product` into the product's `rp_embedded_resources()` table; the generated module pairs each
+  manifest entry with the app module's `embeds` declaration (the id, the label and the console), refusing an unpaired
+  side, an id declared twice and a platform no console registers. Both are generated registries' inputs:
   [packages/retroplug/scripts/lib/packages.mjs](packages/retroplug/scripts/lib/packages.mjs)
-  writes `packages/retroplug/src/generated/{packages,protocol,scriptNodes}.ts` from `retroplug.products.desktop`, which
+  writes `packages/retroplug/src/generated/{packages,consoles,protocol,scriptNodes}.ts` from
+  `retroplug.products.desktop`, which
   is a **dependency order** (a package before the ones using it, the shell last) AND the registration order. Only a ROM
   provider's place in it is behaviour: the providers run in that order, and the first to match a ROM fixes a system's
   role-list order. Roles, kit formats and tracker integrations are looked up by kind, id or an exclusive marker role,
   so for those a duplicate - refused by the generated module - is the hazard, not the order. Two checks hold the
-  boundary, both with an empty allowlist: `pnpm check:boundaries`
+  boundary, with one deliberate allowlist between them (rule 9's `SHELL_IMPORTS`; `EXCEPTIONS` is empty, and the native
+  check has none): `pnpm check:boundaries`
   ([check-boundaries.mjs](packages/retroplug/scripts/check-boundaries.mjs): a package imports only what its
-  `dependencies` declare, nothing imports a shell, and a cycle is refused) and
-  [cmake/packages.cmake](cmake/packages.cmake)'s native twin (a package's targets link and include only declared
-  packages' trees). Details: [spec/06-build-test.md](spec/06-build-test.md) and
+  `dependencies` declare, nothing imports a shell, a cycle is refused, and - rule 9 - the app shell's own
+  `packages/retroplug/src` may import only the contract modules its explicit list names, each with its reason, so a
+  cart's or a console's code is reached only through the generated registries; an entry no import uses fails it, and
+  `src/generated/` is not judged) and [cmake/packages.cmake](cmake/packages.cmake)'s native twin (a package's targets
+  link and include only declared packages' trees). A test also walks `packages/retroplug/src` with TypeScript's syntax
+  tree and refuses a platform id or a ROM-extension literal there (`test/source-literals`), with the ids and extensions
+  read from the console registry, so a console's knowledge is its descriptor's alone. Details:
+  [spec/06-build-test.md](spec/06-build-test.md) and
   [docs/modular-graph-phase-f1-design.md](docs/modular-graph-phase-f1-design.md).
 - **A device pack is TypeScript on MicroQuickJS, and it runs the same bytes on the desktop and the box.** A package
   whose manifest has a `retroplug.script` member (`entry`, `device: true`, `heapBytes`, the box's 32-bit context) is
@@ -654,7 +668,8 @@ own change with a re-record, as the LSDj master-sync fix and the narrow-host NES
 fixture-only), so a Phase B step is accepted only on a run with the fixtures present and `RP_FAIL_ON_SKIP=1`.
 
 **The kit baselines** (`pnpm test:native kit`, [spec/06-build-test.md](spec/06-build-test.md)) hold the kit compiler's
-bytes: `packages/retroplug/src/kit` compiles each case as chains of offline graph jobs, and the 39 synthesised cases'
+bytes: each cart's `ts/kitFormat.ts` (lsdj's and risa's, over `@retroplug/dsp/kitJobs`) compiles each case as chains of
+offline graph jobs, and the 39 synthesised cases'
 banks (and 12 edge banks) are compared as FNV-1a-64 and size (and, for the 39, slot length) against
 `packages/native/test/audio/golden/kit-baseline.json` and `.../kit-edges.json` (the edge records carry no slot).
 Exact bytes are compared only on `linux-x64-gnu13` (CI's linux-x64 job sets `RP_KIT_GOLDEN_REQUIRE_TARGET=1` on its

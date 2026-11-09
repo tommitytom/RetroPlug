@@ -10,15 +10,17 @@
 // harness facet is checked to be absent (its renderAudio is refused), so a compile that needed one of its methods would
 // pass here only by accident of some other host's registration.
 //
-// The compile is src/kit's entry point over the real backend, never an audio driver: making a driver turns the
-// offline poll's native wait on (src/offline.ts), and that is the settle path of a host with NO UI tick. The plugin
+// The compile is the cart kit format's entry point over the real backend, never an audio driver: making a driver
+// turns the offline poll's native wait on (src/offline.ts), and that is the settle path of a host with NO UI tick. The
+// plugin
 // has a tick, and its only mover of these promises is useJobPump's backend.pumpJobs on a frame. So the promise below
 // is settled by ui.pump + be.pumpJobs alone, and the microtask-only stretch before that loop is what proves no
 // native wait is running underneath it.
 import { test, expect, ui } from "ui-harness";
 import { createRealBackend } from "../src/realBackend";
 import { makeCall } from "../src/rpcClient";
-import { compileLsdjKit, type KitCompileResult } from "../src/kit";
+import { compileLsdjKit } from "@retroplug/lsdj/kitFormat";
+import type { KitCompileResult } from "@retroplug/dsp/kitContract";
 import { encodeWav } from "../cli/wav";
 import { KitView } from "@retroplug/lsdj/rom/kit";
 import { BANK_SIZE, KIT_LOOKUP, ROM_SIZE } from "@retroplug/lsdj/rom/constants";

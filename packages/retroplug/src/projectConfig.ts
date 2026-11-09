@@ -19,13 +19,10 @@ import { z } from "zod";
 import { clampedInt, boolField, stringField, enumField } from "@retroplug/core/configFields";
 import { stringifyConfig } from "./configSchema";
 import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
-import { MODEL_VALUES, HIGHPASS_VALUES } from "@retroplug/sameboy/enums";
-import { REGION_VALUES, CHANNEL_EXPORT_VALUES } from "@retroplug/mesen/enums";
 import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
 import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALUES } from "./settingsEnums";
 import { type ControllerTarget, CONTROLLER_TARGET_VALUES } from "@retroplug/launchpad/enums";
 import { controllerApps } from "./controller/registry";
-import { LSDJ_MODE_VALUES } from "@retroplug/lsdj/enums";
 
 /** The controller app a fresh project starts with: the first the product registers (an app's position in the product's
  *  package order is its position in the menu). "" when the product carries none, which runs nothing. */
@@ -197,10 +194,34 @@ const V3_SETTINGS_ENUMS: Record<string, readonly string[]> = {
   midiRouting: MIDI_ROUTING_VALUES,
   audioRouting: AUDIO_ROUTING_VALUES,
 };
-const V3_ROLE_ENUMS: Record<string, Record<string, readonly string[]>> = {
-  sameboy: { model: MODEL_VALUES, highpass: HIGHPASS_VALUES },
-  mesen: { region: REGION_VALUES, channelExportMode: CHANNEL_EXPORT_VALUES },
-  "lsdj-sync": { mode: LSDJ_MODE_VALUES },
+// The v2 file's five cart-owned enum lists, FROZEN as the ordinals it wrote (the index was the integer value). A
+// package may rename a member or add one, and that is its business: this step rewrites a file written years ago, so it
+// reads the values that file's writers had, never today's. test/project/migrate-v3-frozen.test.ts asserts every frozen
+// value is still one the owning package's schema accepts, so a rename fails there instead of migrating an old file to a
+// default (an append or a reorder is the package's to make and passes).
+const V3_SAMEBOY_MODELS = [
+  "auto", "dmgB", "mgb", "sgb", "sgbPal", "sgb2", "cgb0", "cgbA", "cgbB", "cgbC", "cgbD", "cgbE", "agb", "gbp",
+] as const;
+const V3_SAMEBOY_HIGHPASS = ["off", "accurate", "removeDcOffset"] as const;
+const V3_MESEN_REGIONS = ["auto", "ntsc", "pal", "dendy", "ntscJapan"] as const;
+const V3_MESEN_CHANNEL_EXPORTS = ["mix", "stereoModPins", "pinsPlusRef", "individualMono"] as const;
+const V3_LSDJ_SYNC_MODES = [
+  "off",
+  "midiSync",
+  "midiSyncArduinoboy",
+  "midiMap",
+  "keyboard",
+  "keyboardMidi",
+  "midiPassthrough",
+  "midiOut",
+  "masterSync",
+] as const;
+/** The v2 writer's five cart-owned enum lists by role kind and field, exported so the frozen-list test can hold them
+ *  to the packages' current schemas and to what the step writes. */
+export const V3_ROLE_ENUMS: Record<string, Record<string, readonly string[]>> = {
+  sameboy: { model: V3_SAMEBOY_MODELS, highpass: V3_SAMEBOY_HIGHPASS },
+  mesen: { region: V3_MESEN_REGIONS, channelExportMode: V3_MESEN_CHANNEL_EXPORTS },
+  "lsdj-sync": { mode: V3_LSDJ_SYNC_MODES },
 };
 
 // Rewrite one integer enum field to its string value in place. Idempotent: an already-string value

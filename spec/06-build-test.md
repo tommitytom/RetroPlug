@@ -125,7 +125,16 @@ message. The generator itself refuses a list that puts a package before a depend
 not carry whose contribution would be lost, a dependency on the shell, a duplicate product entry, a node type or span
 label declared twice, a label that is below 16 or leaves a gap, a role naming a node no package wires, a manifest that
 names a missing module or one its `exports` do not publish, and a contributing package the shell does not declare.
-The generated modules are gitignored, and `retroplug-ts-packages` writes them only when their content changes. Seven
+A package's `retroplug.embed` entry (the bytes a product bakes in) is paired at load with the `embeds` declaration its
+**app module** makes (`{ id, label, platform }`): the generated module refuses a manifest entry no app module declares, a
+declaration no manifest bakes in (or one whose halves are in two packages), an id declared twice and a platform no
+console registers, each naming the package(s). A protocol node whose core must CAPTURE its serial out declares, in the
+manifest, what the core's capture should do in each of the cart's sync modes:
+`capture: { "midiOut": "drive", "masterSync": "listen", ... }`, each value `"off"`, `"listen"` or `"drive"`. The
+generator refuses a capture that is not an object of mode: capture, a value that is none of the three, and a capture on
+a node that is not wired (no `midiIn` and no `writes`), on a node with no `out`, or on one whose `out` no package
+declares or declares no `serialOut`: a capture whose bytes nothing decodes would clock a core for nothing. The
+generated modules are gitignored, and `retroplug-ts-packages` writes them only when their content changes. Seven
 targets depend on it, so they exist before the first esbuild run of a fresh checkout: the control-plane, UI, script,
 render-worker and CLI bundles, the example sessions and the CLI SDK assets.
 
@@ -135,14 +144,17 @@ and the boundary check still sees the file as the package's source (it is outsid
 `devDependencies`). The shell's own tests ([test/systems/fixtures.ts](../packages/retroplug/test/systems/fixtures.ts))
 re-export the ones they share, so a store or menu test keeps one import.
 
-**The shell keeps four doors, until F4.** A shell module may re-export a name a package owns where the shell's own
-modules and tests import it through that module rather than the package's subpath: `src/kit/compile.ts` (each cart's
-compiler and kit format), `src/audioDriver.ts` (the kit effect and compile specs), `src/tracker/index.ts` (the tracker
-contracts and the carts' catalogs) and `src/trackerRegistry.ts` (the carts' integrations and the generated list). These
-are the shell's front door, not a package's: a pack imports `@retroplug/<name>` directly, and nothing else in the shell
-re-exports another package's name (the settings enums' door went in F1). They stay because their call sites are the
-shell's own - `menuDefs.ts`, `render.ts`, the stores and `test-native` - and retargeting them is the UI/store work F4
-does, not the split's.
+**The shell imports contracts, not carts (F4a's rule 9).** `packages/retroplug/src` may import an `@retroplug/*`
+specifier only from the boundary check's explicit list, each entry with the reason it is a contract rather than a cart:
+core's contract modules (`systemRoles`, `consoles`, `graphDocument`, `midiRouting`, `romParameters` and the rest), the
+tracker contract (`songCatalog`, `assetCatalog`, `trackerIntegration`, `trackerRender`, `trackerPlayback`,
+`trackerSongImport`, `workingSongBlob`), dsp's kit contract and package-contributions shape, and launchpad's registry
+and enums. A cart's or a console's own module is reached through the generated registries, which is why the four doors
+that used to re-export carts (`src/kit`, `src/tracker/index.ts`, `trackerRegistry`'s integration re-exports and
+`audioDriver`'s spec re-exports) are gone: an importer names the owning package's subpath (`@retroplug/lsdj/kitFormat`,
+`@retroplug/dsp`, `@retroplug/smsggdj/smsggdjIntegration`), and the shell's own cart-named entry points are lookups in
+the registries (`SystemsStore.loadEmbedded(id)`, `AudioDriver.compileKitFormat(id, spec)`). An allowlist entry no import
+uses fails the check, and `src/generated/` is not judged (it is the one place that names every package).
 
 **The two boundary checks.** `pnpm check:boundaries`
 ([check-boundaries.mjs](../packages/retroplug/scripts/check-boundaries.mjs)) judges every file under a package's
@@ -158,11 +170,25 @@ trees, by target, by a library path, or through an include flag (`-I`, `-iquote`
 binary that opens a package's file, say its embedded ROM, reaches that package's tree though it links nothing of it),
 and the configure refuses anything else. It reads the TARGET's own properties, never a CMakeLists' text, so a path a
 comment names is no reach; the TS check, which has no target to read, counts a declaration as used from the file's text
-with its comments stripped, and only to raise or silence a warning. Both run with an
-empty allowlist, and each has its own fixtures ([test/boundaries](../packages/retroplug/test/boundaries);
-`packages/native/test/packages`) that fail one rule each. They guard against accident and drift, not a determined
-author: each checker's header lists what it deliberately does not cover. `pnpm test` runs the TS check before it
-bundles a single test file, so a boundary a change broke is named as such rather than surfacing as a bundler error.
+with its comments stripped, and only to raise or silence a warning. The TS check's one allowlist is rule 9's
+`SHELL_IMPORTS` (the shell's contract modules, each with the reason it is one); otherwise neither check excuses a reach
+(`EXCEPTIONS` is empty, and the native check has no exception at all). Each has its own fixtures
+([test/boundaries](../packages/retroplug/test/boundaries);
+`packages/native/test/packages`) that fail one rule each; the TS check's rule 9 (the shell's source may import only its
+contract modules) has a shell tree per answer, one with a cart import and one with only contract imports beside a
+generated one. They guard against accident and drift, not a determined author: each checker's header lists what it
+deliberately does not cover. `pnpm test` runs the TS check before it bundles a single test file, so a boundary a change
+broke is named as such rather than surfacing as a bundler error.
+
+**The shell's sources hold no cart or console literal.** A test
+([test/source-literals](../packages/retroplug/test/source-literals)) walks `packages/retroplug/src` (not
+`src/generated/`) with TypeScript's own syntax tree and fails on a string literal that is a platform id (`"gb"`,
+`"nes"`, ...) or a ROM extension (`".gb"`, `"*.gba"`, ...): a quoted string, a template with no substitution, and each
+span of a template that has one are read, while a comment is trivia and a regular expression or a `${...}` cannot move
+the walk's place. The ids and extensions are the console registry's, read from the generated `CONSOLES` list, so a
+console a product adds is guarded without an edit to the test, and a console's knowledge stays its descriptor's. Like
+rule 9 it catches an accident rather than a determined author (a computed `["g", "b"].join("")` is invisible to it), and
+`ui/` and `cli/` join both in F4b.
 
 **A package's tests are its own.** A test whose subject is wholly in a package lives in its `ts/test/`, runs on the
 package's `tsconfig` and keeps its fixtures and goldens beside it
@@ -193,8 +219,13 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
 
 1. The directory's name is the package's name: `packages/<name>` is `@retroplug/<name>`.
 2. `package.json`: `private`, `type: "module"`, the `retroplug` member(s) it contributes (`native`, `script`, `app`,
-   `protocol`, `embed`), an `exports` map of explicit entries with no wildcard, and a `typecheck` script (`tsc -p
-   tsconfig.json`) when it has TypeScript. `embed` carries a file inside the package into every product that lists
+   `consoles`, `protocol`, `embed`), an `exports` map of explicit entries with no wildcard, and a `typecheck` script
+   (`tsc -p tsconfig.json`) when it has TypeScript. A **console package** adds a `consoles` module default-exporting its
+   console descriptors (a platform id, a node type, the extensions it can be recognised by, its detectors in rank order,
+   its setting/construct fields and params, its split modes, its link cable, its real-cart option) and any physical cart
+   it can drive; the generator refuses a duplicate platform, node type or real cart, a descriptor whose core has no
+   registered system role, and a real cart naming a platform no descriptor registers. A package that bakes bytes in
+   declares `retroplug.embed` AND the app module's matching `embeds` entry (its id, label and platform), as `mgb` does. `embed` carries a file inside the package into every product that lists
    it, for `putResource`'s `embedded` field: `[{ "id": "mgb", "file": "rom/mGB.gb" }]`, the id a C identifier (it
    names the generated array) and the file inside the package. Use it for an asset the binary must run without a file
    on disk and that belongs to one package - the mGB synth's ROM is F2's one
@@ -460,7 +491,8 @@ through real offline jobs before any caller moved, and they are still the oracle
 ([modular-graph-phase-d1-design.md](../docs/modular-graph-phase-d1-design.md),
 [modular-graph-phase-d2-design.md](../docs/modular-graph-phase-d2-design.md) section 11).
 
-- **The compiler.** [`src/kit/`](../packages/retroplug/src/kit) compiles a spec as chains of offline graph jobs (D2):
+- **The compiler.** Each cart's [`ts/kitFormat.ts`](../packages/lsdj/ts/kitFormat.ts) (over dsp's
+  [`kitJobs.ts`](../packages/dsp/ts/kitJobs.ts)) compiles a spec as chains of offline graph jobs (D2):
   each pass of a slot is a graph document the `rp.dsp` nodes run, native does every float the bytes depend on, and
   TypeScript cuts the buffers, packs the codes and bits and assembles the bank.
 - **Matrix.** The kit baseline

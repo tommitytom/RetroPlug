@@ -1,8 +1,7 @@
 // The UNIVERSAL per-system settings — the ones every core has, so they live on the system itself
 // rather than in a core-config role. Core-specific knobs (SameBoy model/highpass/…) are system roles
 // (@retroplug/sameboy, @retroplug/mesen); LSDj etc. are feature roles. ("Common" here = common to all cores; not to be
-// confused
-// with the `Core` emulator axis in platform.ts.)
+// confused with the `Core` emulator axis in platform.ts.)
 //
 // The shape + defaults + clamping are a zod schema (the load-time validator); the
 // interface is kept as the public type. The schema is a plain `z.object`, so unknown keys

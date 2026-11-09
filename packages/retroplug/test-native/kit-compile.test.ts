@@ -1,6 +1,7 @@
-// The TypeScript kit compiler (src/kit/) past what the 39-case baseline covers (test-native/kit-baseline holds those),
-// on this host's real engine. A slot it refuses (a source with a NaN, a filter at Nyquist, a gain or a Q outside its
-// node's range, a pass that overflows a finite source to a value that is not finite, a job whose completion carries a
+// The TypeScript kit compilers (the carts' kit formats) past what the 39-case baseline covers
+// (test-native/kit-baseline holds those), on this host's real engine. A slot it refuses (a source with a NaN, a filter
+// at Nyquist, a gain or a Q outside its node's range, a pass that overflows a finite source to a value that is not
+// finite, a job whose completion carries a
 // node's guard count) leaves the rest of the kit compiling, says why, and leaves a slot of no bytes, the shape a slot
 // whose file fails to load has. Every edge a slot has - an empty window, a window cut by offset and length, a window
 // that resamples to less than one wave frame or to nothing, a silent source, a source past the frame cap, a bank whose
@@ -15,9 +16,12 @@
 // are synthesised, so it needs no fixtures.
 import { test, expect } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
-import { createAudioDriver, type KitEffect, type KitSampleSpec } from "../src/audioDriver";
-import type { RisaDmcSampleSpec } from "../src/audioDriver";
-import { compileLsdjKit, compileRisaKit, type KitCompileResult } from "../src/kit";
+import { createAudioDriver } from "../src/audioDriver";
+import type { KitEffect } from "@retroplug/dsp/kitEffect";
+import type { KitCompileResult, KitSampleSpec } from "@retroplug/dsp/kitContract";
+import { compileLsdjKit } from "@retroplug/lsdj/kitFormat";
+import type { RisaDmcSampleSpec } from "@retroplug/risa/kitFormat";
+import { compileRisaKit } from "@retroplug/risa/kitFormat";
 import { fnv1a64Hex, floatWav, signalSamples } from "./kit/sources";
 
 declare const __KIT_EDGES_GOLDEN__: string;

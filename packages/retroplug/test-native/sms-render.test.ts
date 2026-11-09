@@ -29,7 +29,7 @@ import {
   type RenderOpts,
 } from "../src/render";
 import { buildSav } from "@retroplug/smsggdj/codec/sav";
-import { smsggdjIntegration } from "../src/trackerRegistry";
+import { smsggdjIntegration } from "@retroplug/smsggdj/smsggdjIntegration";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
 import { gbaRom } from "../test/systems/fixtures";
 

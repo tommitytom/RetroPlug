@@ -17,7 +17,9 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { mutateLiveSav, lsdjSongCatalog, risaSongCatalog } from "../src/tracker";
+import { mutateLiveSav } from "../src/tracker/liveSav";
+import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
+import { risaSongCatalog } from "@retroplug/risa/risaSongCatalog";
 import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "@retroplug/risa/codec/constants";
 
 declare const __RESOURCES_DIR__: string;

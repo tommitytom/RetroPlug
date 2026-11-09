@@ -490,8 +490,9 @@ inventory of remaining work.
   per-block host `buttons` the same.
 - **kit-patch UI-thread behaviour.** LSDj kit-patch is orchestrated on the UI / control thread: the `lsdj-assets` role
   splices a pre-built kit file into the ROM in memory (its construct hook), and it compiles nothing. It has **no
-  protocol node** and never reaches the audio thread. A plugin kit row could compile through `src/kit` on the stores'
-  backend (design section 9), but no row does it; a role-owned settings UI would need the deferred `ui?` render seam.
+  protocol node** and never reaches the audio thread. A plugin kit row could compile through the cart's `kitFormat`
+  (the shell's `kitFormat(id)` registry) with the stores' backend as its job runner (design section 9), but no row does
+  it; a role-owned settings UI would need the deferred `ui?` render seam.
 - **`ui?` render descriptor + extension model.** The `ui?` field on `RoleType` is a labelled-deferred
   seam (a role's own settings UI), and the third-party extension model (registering `RoleType`s, ROM
   providers, and node types from outside the built-ins) is future work.

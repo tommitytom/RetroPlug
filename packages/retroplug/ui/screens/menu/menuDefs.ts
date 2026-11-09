@@ -79,27 +79,23 @@ import {
 } from "@retroplug/smsggdj/codec/sav";
 import {
   mutateLiveSav,
-  effectiveAssets,
-  readAssetOverrides,
-  lsdjSongCatalog,
-  risaSongCatalog,
-  workingSongTargets,
-  lsdjAssetCatalog,
-  risaAssetCatalog,
-  smsggdjSongCatalog,
-  smsggdjAssetCatalog,
-  bliptoasterAssetCatalog,
-  type SongCatalog,
-  type AssetCatalog,
-  type AssetSlotRow,
-  type AssetOverride,
-  type AssetTypeInfo,
-  type TrackerIntegration,
   savEditWouldDiscard,
+  saveWorkingSong,
   songLoadWouldDiscard,
-} from "../../../src/tracker";
+} from "../../../src/tracker/liveSav";
+import { effectiveAssets, readAssetOverrides } from "@retroplug/tracker/assetCatalog";
+import type { AssetCatalog, AssetOverride, AssetSlotRow, AssetTypeInfo } from "@retroplug/tracker/assetCatalog";
+import type { SongCatalog } from "@retroplug/tracker/songCatalog";
+import { workingSongTargets } from "@retroplug/tracker/songCatalog";
+import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
+import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
+import { lsdjAssetCatalog } from "@retroplug/lsdj/lsdjAssetCatalog";
+import { risaSongCatalog } from "@retroplug/risa/risaSongCatalog";
+import { risaAssetCatalog } from "@retroplug/risa/risaAssetCatalog";
+import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
+import { smsggdjAssetCatalog } from "@retroplug/smsggdj/smsggdjAssetCatalog";
+import { bliptoasterAssetCatalog } from "@retroplug/bliptoaster/bliptoasterAssetCatalog";
 import { resolveTracker } from "../../../src/trackerRegistry";
-import { saveWorkingSong } from "../../../src/tracker/liveSav";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../host/openPath";
 import { native } from "../../host/nativeHooks";
@@ -1346,7 +1342,7 @@ function replaceAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, sl
 // --- risa asset file actions (Export/Replace own the .rit/.chr/.rkit formats) -------------------------
 // THEMES are palette indices stored INLINE (readable JSON `.rit`, no file); FONTS LINK a `.chr` bank by path;
 // KITS LINK a pre-built 8 KB `.rkit` DMC bank by path (risa's Export writes one out of a ROM and the CLI's
-// build-kit compiles one; src/kit can compile one in the plugin, though no row does - so a kit override just
+// build-kit compiles one; the cart's kit format can compile one in the plugin, though no row does - so a kit override just
 // splices a ready-made bank).
 
 const readRisaRomFor = (be: HostBackend, romPath: string): RisaRom | null => {

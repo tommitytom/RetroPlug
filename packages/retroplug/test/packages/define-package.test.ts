@@ -17,7 +17,7 @@ import { MESEN_ROLE } from "@retroplug/mesen";
 import type {} from "@retroplug/tracker/packageContributions";
 import type {} from "@retroplug/dsp/packageContributions";
 import { lsdjIntegration } from "@retroplug/lsdj/lsdjIntegration";
-import { LSDJ_KIT_FORMAT } from "../../src/kit/compile";
+import { LSDJ_KIT_FORMAT } from "@retroplug/lsdj/kitFormat";
 
 test("definePackage is the identity", () => {
   const roles = [SAMEBOY_ROLE, MESEN_ROLE];

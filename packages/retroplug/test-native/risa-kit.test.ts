@@ -5,7 +5,7 @@
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import type { RisaKitCompileSpec } from "../src/audioDriver";
+import type { RisaKitCompileSpec } from "@retroplug/risa/kitFormat";
 import { RisaRom, bankToModel, isBankPopulated, dpcmDecode, assembleKitBank } from "@retroplug/risa/rom";
 import { applyOverridesToRom, type RisaAssetOverride } from "@retroplug/risa/risaAssetsRole";
 import { encodeWav } from "../cli/wav";

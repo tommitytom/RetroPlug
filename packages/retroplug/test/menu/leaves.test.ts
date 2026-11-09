@@ -11,7 +11,7 @@ import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadT
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery } from "../systems/fixtures";
 import { savFrom, loadSongToWorking, type SavInput } from "@retroplug/lsdj";
-import { lsdjSongCatalog } from "../../src/tracker";
+import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.

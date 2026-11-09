@@ -17,8 +17,9 @@
 //   retroplug-cli lsdj-rom export-kit     / import-kit       (.kit raw sample banks)
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
-import type { KitCompileSpec, KitEffect } from "../../src/audioDriver";
-import { NO_SLOT_REASON } from "../../src/kit";
+import type { KitCompileSpec } from "@retroplug/lsdj/kitFormat";
+import type { KitEffect } from "@retroplug/dsp/kitEffect";
+import { NO_SLOT_REASON } from "@retroplug/dsp";
 import { encodeWav } from "../wav";
 import { LsdjRom, buildKitBank, sampleBytesFromBank, kitSampleSpace, KIT_MAX_SAMPLE_SPACE, type KitSample } from "@retroplug/lsdj/rom";
 

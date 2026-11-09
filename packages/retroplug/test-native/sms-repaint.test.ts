@@ -17,7 +17,7 @@ import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildSav } from "@retroplug/smsggdj/codec/sav";
-import { smsggdjIntegration } from "../src/trackerRegistry";
+import { smsggdjIntegration } from "@retroplug/smsggdj/smsggdjIntegration";
 import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF, P_SONG } from "./smsSyncSong";
 import { directGraph } from "../src/graph/directGraph";
