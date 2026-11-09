@@ -1,6 +1,8 @@
 # Phase F4a: the non-UI registrations
 
-**Date:** 2026-11-09 · **Branch:** `feature/modularize` · **Status:** designed 96d748e5c; prototyped (five stages, each Opus-reviewed and fixed); as built in section 11; plan next. (Sections 1 to 4 were approved by the user 2026-11-08 and 09 and the four questions the draft raised answered 2026-11-09; sections 3 to 10 are corrected in place to what the prototype built, and section 11 records every departure.)
+**Date:** 2026-11-09 · **Branch:** `feature/modularize` · **Status:** designed 96d748e5c; prototyped on
+`proto/f4a-registrations` (five stages, each Opus-reviewed and fixed), section 11; built on `feature/modularize` as the
+plan's five task commits and a four-commit follow-up, whose acceptance run and final review section 12 records. (Sections 1 to 4 were approved by the user 2026-11-08 and 09 and the four questions the draft raised answered 2026-11-09; sections 3 to 10 are corrected in place to what the prototype built, and section 11 records every departure.)
 
 F4a is the first half of the fourth phase of the package split ([package-split.md](package-split.md)), after F1
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md)), F3
@@ -928,11 +930,13 @@ For `spec/07-remaining-work.md`'s F4a bullet:
 
 ## 11. As built (the prototype)
 
-The prototype, on `feature/modularize` over the design commit `96d748e5c`, is five commits, one per stage, each built by
-DeepSeek Flash and reviewed by Opus, with the reviews' fix passes folded into the commit they belong to by fixup and
-autosquash, so the five trees stand as final (the last pass folded into all five at once, which is why a stage report's sha
-is older than the branch's). Sections 3 to 10 above were corrected in place to what the build found; this section is the
-record of how, and the plan is written against it.
+The prototype, on `proto/f4a-registrations` over the design commit `96d748e5c`, is five commits, one per stage, each
+built by DeepSeek Flash and reviewed by Opus, with the reviews' fix passes folded into the commit they belong to by fixup
+and autosquash, so the five trees stand as final (the last pass folded into all five at once, which is why a stage
+report's sha is older than the branch's). **The shas in this section are the prototype's**; `feature/modularize` carries
+the plan's replay of them as five task commits (28c07e222, 1a526f41e, 0a6627587, 4e3d3d1fd, ac2446d92), each of whose
+trees is its prototype commit's plus the plan file, and section 12 records that execution. Sections 3 to 10 above were
+corrected in place to what the build found; this section is the record of how, and the plan is written against it.
 
 **The stages**, by commit subject and current sha:
 
@@ -1063,7 +1067,7 @@ design commit's. No golden, baseline, digest, image or pack byte moved at any st
 F2 kit's 42 plus the measure), every one exit 0, and each stage's summary matched the baseline's but for the counts below.
 The tip's run is `/tmp/f4apro/s5fv-*`, taken on the tip's tree.
 
-| | baseline | tip (`0ccc5a9cf`) |
+| | baseline | prototype tip (`0ccc5a9cf`) |
 | --- | --- | --- |
 | `pnpm test` | 190 files, 1999 cases, 0 skips | 207 files, 2094 cases, 0 skips |
 | `test:native` (fixtures, `RP_FAIL_ON_SKIP=1`) | 172 files, 629 ok, 2 bench skips | identical |
@@ -1133,3 +1137,128 @@ objects every registry-loading bundle already imports (section 10); it has not b
   index-ordered enums, since the migration no longer imports the packages' lists.
 - Beyond the review's list and still owed from F2 and F3: the Windows, macOS and arm64 builds and a first CI run, none of which
   F4a's TypeScript-only change adds to.
+
+## 12. Execution
+
+The execution, on `feature/modularize` over the design commit `96d748e5c`, is the plan commit `4d6d202ef` and five task
+commits after it, one per stage, each a replay of its prototype commit rather than a rewrite: every task's tree is the
+prototype's plus the plan document, held by a tree check against the archive of each commit, and the commit messages are
+the prototype's. The prototype is `proto/f4a-registrations` (`cf1d152da` .. `0ccc5a9cf`, section 11); the executed
+commits are:
+
+1. `feat(f4a): register the consoles as package descriptors` (`28c07e222`; the prototype's `cf1d152da`).
+2. `feat(f4a): render through the console registry and the carts' render hooks` (`1a526f41e`; `81e6f0f60`).
+3. `feat(f4a): the tracker playback and song-import hooks, and the shell's pollers through them` (`0a6627587`;
+   `60762c266`).
+4. `feat(f4a): the role hooks, the embedded ROM and the cart-named API` (`4e3d3d1fd`; `898d87866`).
+5. `feat(f4a): the shell's boundary, the doors gone and the tests with their code` (`ac2446d92`; `0ccc5a9cf`).
+
+**The implementers' findings** (the five task reports; every task recorded a clean tree and every suite green, none
+re-recorded anything, and each difference from the plan's text is a count the fix passes moved or a compiler's wording):
+
+- **Stage 1** (DONE_WITH_CONCERNS): four stale figures in the plan's red-step text, none a tree change. Its 11(b) grep
+  (`platformSchema|coreSchema`) prints 4 at `96d748e5c` where the plan says 0, because the claim is about the EXPORTED
+  schemas and the plan's command lost the `export ` half; `graph/build-graph` is 41 cases where the plan says 40 (the
+  fix pass's real-cart case); the generator's red run fails two cases where the plan quotes one (the mutation also
+  breaks the `consoles.ts` fixture); and `pnpm test` is 2018 cases and the registry 10 where the plan's arithmetic gives
+  2017 and 8, all fix-pass cases. One `-Wtsan` warning came from a system header in the ThreadSanitizer build.
+- **Stage 2**: three engine-graph and launchpad assertion totals moved (case counts exact), `pnpm test` printed 2036
+  `ok` lines against the stage table's 2032 (again the fix passes, which the plan says are not a finding), and the ASan
+  device-mode leg passed on its first run, so stage 2's recorded flake was not reproduced.
+- **Stage 3**: the file-drop red proof failed four cases (20 to 23) where the plan's log shows 22 and 23, with a throw
+  rather than the reason mismatch, because that log predates the fix pass that moved song recognition onto the product's
+  extension union; the tree is the prototype's, so the difference is the log's state. Assertion totals moved.
+- **Stage 4**: the `midi/role-parameters` red fails nine cases, not the seven the plan's prose says (the seven tables
+  and the two projections); the generator's red run fails 14 cases where the quoted log shows 9 (the five the fix pass
+  added, which the plan itself says the log predates); `pnpm test` is 2075 against the stage table's 2069. The plan's
+  "22 of 23" belongs to `typecheck`, while `pnpm install` prints "all 23 workspace projects".
+- **Stage 5**: the migrate red lists all twelve model values where the plan quotes one, because its mutation comments
+  out the other eleven; the failing case, the exit status and the pass count are as predicted. Assertion totals moved.
+
+**The acceptance run** (`/tmp/f4aexec/acc-report.md`, at `ac2446d92`) was PASS WITH FINDINGS. All 43 legs of
+`tip-verify.sh` exited 0 with the baseline's counts (the summary `diff` against `96d748e5c`'s run is empty): strict
+parity 30 files and 250 cases with `RP_FAIL_ON_SKIP=1`, `pnpm test` 207 files and 2094 cases, `test:native` 172 files
+and 629 cases (two counted bench skips; the fixture-free CI picture 144 skips in 65 files, byte-identical to the
+baseline), `test:ui` 42 files and 46 cases, `test:plugin` 13 binaries and 336 cases (325 passed, 11 skipped), the
+engine-graph binary 336 cases, `test:n8`, the ThreadSanitizer and AddressSanitizer legs, the kit and render baselines,
+`render-chunks`, `render-cli`, the risa and sms render suites, both device builds with the baseline's image hashes and
+the `bliptoaster` pack's three byte hashes, a cold build of a fresh clone, both consumer suites (57/57 and 19/19),
+`reaper:params` 2725/2725 and `reaper:params-clap` 644/644, and `check:boundaries`/`check:docs`. The nine-family
+bundle diff matched the plan's figures, with no package's app, node or integration module newly in a bundle and the
+planner at 15 modules. Its finding **F1**: `pnpm reaper:all` with no `RETROPLUG_RESOURCES_DIR` died in its pre-flight
+LSDj fixture author, which resolved its ROM under `<repo>/../resources` and reported `tests did not complete (tjs.exit
+never called)` from the host instead of skipping, a pre-existing harness edge F4a does not touch; with
+`RETROPLUG_RESOURCES_DIR=/workspaces/resources` all 15 checks passed. Its F2 and F3 were plan-text slips and the
+Windows/macOS/arm64/CI runs it owed, stated in full there.
+
+**The final review** (`/tmp/f4aexec/final-review.md`, a read-only pass over `96d748e5c..ac2446d92`) found no Critical
+issue and one Important: **the literal scanner saw string and template literals alone**, so the shape of the tables
+F4a deleted (a `Record<Platform, X>` keyed by identifiers, an extension regex such as `/\.gbc?$/i`, a core id, a node
+type) passed it, and section 7.2 and spec/06 overstated what it guarded. Its fourteen minors: the design's
+prototype-era status and shas, `docs/lsdj.md`'s claim that a plugin kit row can use `AudioDriver.compileKitFormat`, a
+song drop handing the target's importer every song file, an unreadable ROM's song-flag refusal blaming the console, a
+whole-ROM read on every render, the playback reader's unstated 0x150 prefix, no literal pin of the frozen v2 lists, no
+check of the LSDj capture keys, `classifyRom` and `detectPlatform` passing the extension to different detectors, dead
+`placedRole` and prefix lengths and five unused exports entries, four stale comments, AGENTS.md's broken bullet,
+spec/06's missing tracker-package line, and an unchecked `hostLatencyMs`. Its verdict: ready to call F4a complete
+**with fixes**; every behaviour change was sanctioned, and the move was held to the old code's answers by its own
+reruns (97 classify and 31 battery rows, 7,605 knob combinations, the parameter lanes, the bundle module lists, and
+the scanner's probe).
+
+**The follow-up** is four commits on top of the five (`3fd6a8706`, `39e56510e`, `22f36afdd`, and the commit this section
+is in), each with what it held green:
+
+- `fix(f4a): the literal scanner sees keys, regexes and node types` widens the walk to a table key's name (an object
+  literal's property, a shorthand, a method, an accessor, an interface member, an enum member), string and template text
+  that ends in a registered extension, and a pattern whose source spells an escaped dot and matches `rom<ext>` but not
+  the extension's bare letters; the guarded sets gain the descriptors' cores and node types. A property ACCESS is not a
+  hit (the declaration is), and the two frozen v2 role-kind keys (`sameboy`, `mesen`) are the one exemption, named in
+  the test and held to being used, because decision 13's step may not read the registry. RED: the old scanner found 6 of
+  the fixture's 15 literals; the new one finds 147 literals in 9 files on `96d748e5c`, 57 more than the 90 (30 node-type
+  literals, the `NODE_TYPE` and `DEFAULT_CORE` tables' 10 identifier keys, 17 core ids). The real tree's remainder is
+  empty. Section 7.2, section 11 and spec/06 now say what the walk sees and what it cannot.
+- `fix(f4a): the final review's minors` closes the other thirteen: the LSDj doc (M2), the drop filter and the
+  `TrackerSongImport` obligation (M3), edge **E8** for an unreadable ROM's song flags with the read named as the cause
+  (M4), the render's lazy whole-ROM read with a counting-backend case (M5), `ROLE_HEADER_LEN` in the playback contract
+  and the store (M6), the frozen v2 lists pinned as literals (M7), lsdj's capture keys held to `LSDJ_MODE_VALUES` (M8),
+  one shared tier walk so `classifyRom` and `detectPlatform` show a detector the extension identically (M9), the dead
+  `placedRole`, `ROM_SNIFF_LEN`/`SEGA_SNIFF_LEN` and five exports entries gone (M10), the stale comments (M11),
+  AGENTS.md's bullet (M12), spec/06's tracker-package line (M13) and a `hostLatencyMs` answer that is not a finite
+  positive number ignored in `syncLatencyMs` (M14). Each new behaviour check was shown RED first.
+- `fix(tools): the LSDj Reaper fixture author skips a missing ROM` closes acceptance F1: the author prints
+  `[author-lsdj-rplg] SKIP: lsdj ROM not found at <path>` and exits 0, the suite reads that line and skips the three
+  LSDj checks (and risa's, whose author had the same line and the same stale-fixture hole), and a run whose fixture is
+  absent takes the suite's exit-2 SKIP contract. Without `RETROPLUG_RESOURCES_DIR` the suite exits 0 with 11 passed and
+  4 skipped; with it, all 15 pass.
+- `docs(f4a): record the acceptance run, the review and the follow-up` is this section, the status line, section 11's
+  sha note, spec/07's bullet and package-split's status.
+
+**Verification of the final tree** (`/tmp/f4aexec/fuAv-*`, the same 43-leg `tip-verify.sh`): every leg exited 0 with
+the acceptance run's counts plus the follow-up's cases: `pnpm test` 208 files and 2101 cases with 0 skips (one new test
+file, seven new cases: the drop filter, E8, the two ROM-read cases, the frozen lists, the capture keys and the latency
+guard), strict parity 30 files and 250 cases, `test:native` 172 files and 629 cases with its two bench skips,
+`test:ui` 42 files and 46 cases, `test:plugin` 13 binaries and 336 cases, the engine-graph binary 336 cases,
+`check:docs` 94 files, `check:boundaries` clean, both device images and the three pack byte hashes identical to the
+baseline, and the two consumer suites at 57/57 and 19/19. `reaper:params` and `reaper:params-clap` passed on the final
+tree (2725 and 644 parameters, count unchanged), and `pnpm reaper:all` passed all 15 checks with the resources tree and
+11 with 4 counted skips without one. Nothing was re-recorded: no `RP_*_UPDATE` was set, and no golden, baseline,
+digest, image or pack byte moved.
+
+**What F4a leaves for F4b** (the final review's list, which section 10's items follow):
+
+1. **`ui/` and `cli/` join the boundary rule and the scanner.** Rule 9's relative half is written against
+   `packages/retroplug/src` alone and the scanner walks one `--root`, so F4b needs a root list and fixtures of its own;
+   the scanner is now ready for `ui/`, where identifier-keyed tables and extension regexes are the likely shapes.
+2. **`menuDefs.ts` still imports seven cart catalogs and lsdj's codec ops.** The menu contributions replace those, so a
+   third-party tracker still needs a shell edit until then (the instance title's `"mGB"` short name lives there too).
+3. **Three overlapping host slices** (`ConstructCaps`, tracker's `RenderHost` and `SongImportHost`, the last constructed
+   ad hoc in `ui/App.tsx` and `menuDefs.ts`) should be consolidated by decision 6's "same host contract" for the menus
+   and the cart CLI tools, rather than gaining a fourth.
+4. **The shell hard-depends on launchpad** (`launchpad/registry` and `launchpad/enums` on rule 9's allowlist, and the
+   controller target serialized in `projectConfig`): a product without the control surface needs those behind a
+   contribution first.
+5. **Hook code rides every bundle that loads the registry** (the render worker carries `.lsdprj` import and LSDj
+   playback; the control plane carries `risaRender` and `risaSav`), which per-product bundles cannot trim: the fix, if
+   it matters, is surface-specific contribution modules, as `retroplug.consoles` already does.
+6. **The instance title's `"mGB"` short name and the NES / Sega settings rows are still in the shell**; the descriptors
+   carry `label` for the menus to read.

@@ -44,14 +44,15 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
   one re-record. What it leaves: `MemoryType`'s closed wire enum, the TS unions (F4), the Mesen library chosen per
   product, and the Windows run.
 - **F4: the UI onto extensions**, split into two:
-  - **F4a: the non-UI registrations** ([design](modular-graph-phase-f4a-design.md), **built** on `feature/modularize`).
-    The `consoles` contribution (a descriptor classifies a ROM, places a system and carries its settings, splits, link
-    cable and real cart), the cart hooks the stores and the renderer reach through (a tracker integration's `render`,
-    `playback`, `sramSignature` and `songImport`; a role's `parameters`, `deriveConfig` and `hostLatencyMs`; link groups;
+  - **F4a: the non-UI registrations** ([design](modular-graph-phase-f4a-design.md), **built** on `feature/modularize`;
+    its section 12 records the execution, the acceptance run, the final review and the follow-up). The `consoles`
+    contribution (a descriptor classifies a ROM, places a system and carries its settings, splits, link cable and real
+    cart), the cart hooks the stores and the renderer reach through (a tracker integration's `render`, `playback`,
+    `sramSignature` and `songImport`; a role's `parameters`, `deriveConfig` and `hostLatencyMs`; link groups;
     `savFromJson` off the construct caps), the embedded ROM declared in TS, `loadEmbedded` / `compileKitFormat`, the four
     doors deleted, and the shell's own boundary: the boundary check's rule 9 (an explicit list of contract modules
-    `packages/retroplug/src` may import, each with its reason) and a scanner test refusing a platform or ROM-extension
-    literal there. Nothing re-recorded.
+    `packages/retroplug/src` may import, each with its reason) and a scanner test refusing a cart or console literal
+    there (a string, a table key, an extension regex, a core id, a node type). Nothing re-recorded.
   - **F4b: the UI and the cart tools** (not yet designed). A menu item model for the cart-specific menu code,
     `TRACKER_UI`, the console settings rows, the N8 and Launchpad menus, the LSDj HD player and the overlays move into
     their packs; `ui/` and `cli/` join rule 9 and the scanner test; the cart CLI tools become a second surface on the

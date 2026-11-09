@@ -812,23 +812,29 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     rendered into the cart's sync node, or walks at the divisor the cart is set to.
   - **The store's song poll stays in the shell** (the controller's song refresh, the anchor and the SYNC poll in
     `projectStore.ts`) until F4, which also takes the menu rows.
-- **F4a built: the non-UI registrations** ([modular-graph-phase-f4a-design.md](../docs/modular-graph-phase-f4a-design.md),
-  five commits on `feature/modularize`): the `consoles` contribution (a package's descriptor says how a ROM is
-  classified, which node type places a system, its settings and construct fields, its split modes, its link cable and
-  its real-cart option, so `Platform` / `Core` are open strings and the shell's tables, `NODE_TYPE` and the platform
-  switches are gone), the cart hooks the stores and the renderer reach through their package's contribution (a tracker
-  integration's `render`, `playback`, `sramSignature` and `songImport`, a role's `parameters`, `deriveConfig` and
-  `hostLatencyMs`, link groups, and `savFromJson` off the construct caps), the embedded ROM declared in TS beside its
-  manifest `embed` (`SystemsStore.loadEmbedded(id)`), `AudioDriver.compileKitFormat(id, spec)`, and the shell's own
-  boundary: the four doors are deleted (a caller names `@retroplug/lsdj/kitFormat`, `@retroplug/dsp`,
-  `@retroplug/smsggdj/smsggdjIntegration`), the boundary check's **rule 9** holds `packages/retroplug/src` to an explicit
-  list of contract modules, and a scanner test refuses a platform or ROM-extension literal there. The moved tests follow
-  their code into the packages' `ts/test`. Nothing was re-recorded: strict parity, the kit and render baselines, every
-  golden and digest and both image hashes held. What it leaves:
+- **F4a built: the non-UI registrations**
+  ([modular-graph-phase-f4a-design.md](../docs/modular-graph-phase-f4a-design.md), the plan's five task commits and a
+  four-commit follow-up on `feature/modularize`, whose section 12 records the execution, the acceptance run, the final
+  review and the follow-up): the `consoles` contribution (a package's descriptor says how a ROM is classified, which
+  node type places a system, its settings and construct fields, its split modes, its link cable and its real-cart
+  option, so `Platform` / `Core` are open strings and the shell's tables, `NODE_TYPE` and the platform switches are
+  gone), the cart hooks the stores and the renderer reach through their package's contribution (a tracker integration's
+  `render`, `playback`, `sramSignature` and `songImport`, a role's `parameters`, `deriveConfig` and `hostLatencyMs`,
+  link groups, and `savFromJson` off the construct caps), the embedded ROM declared in TS beside its manifest `embed`
+  (`SystemsStore.loadEmbedded(id)`), `AudioDriver.compileKitFormat(id, spec)`, and the shell's own boundary: the four
+  doors are deleted (a caller names `@retroplug/lsdj/kitFormat`, `@retroplug/dsp`,
+  `@retroplug/smsggdj/smsggdjIntegration`), the boundary check's **rule 9** holds `packages/retroplug/src` to an
+  explicit list of contract modules, and a scanner test refuses a cart or console literal there (a string or template
+  text, a table's key, an extension regex, a core id, a node type). The moved tests follow their code into the packages'
+  `ts/test`. Nothing was re-recorded: strict parity, the kit and render baselines, every golden and digest and both
+  image hashes held. What it leaves:
   - **F4b: the UI and the cart tools.** The menu contributions replacing `TRACKER_UI`, the console settings rows, the N8
     and Launchpad menus, TSX in the packages, the LSDj HD player and the two overlays as views, and the cart CLI tools
     (`lsdj-rom`, `risa-rom`, `bliptoaster-rom`, `n8-load`, `n8-play`, `n8-bridge`, `n8-sync`, `launchpad-probe`) as a
-    second surface on the same host contract; `ui/` and `cli/` join rule 9 and the scanner test there.
+    second surface on the same host contract; `ui/` and `cli/` join rule 9 and the scanner test there, whose walk is ready
+    for their identifier-keyed tables and extension patterns (the review's list: `menuDefs.ts` still imports seven cart
+    catalogs, three host slices want consolidating, the shell hard-depends on launchpad, and hook code rides every bundle
+    that loads the registry).
   - **Per-product bundles are owed** until a product's package list differs from the desktop's: every product lists the
     same sixteen packages, so the plumbing would build identical bundles. F4a keeps the precondition true - no bundle
     reaches a cart except through the generated registries.
