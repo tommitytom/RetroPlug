@@ -64,6 +64,9 @@ mkdir -p "$RESULTS_DIR"
 # Render scenarios: name -> author-lua, autoload fixture, .rpp, output .wav, jack period, an
 # optional scenario env (the lsdj author lua keys off RP_SCENARIO), and the analyzer command.
 declare -A AUTHOR_LUA FIXTURE RPP WAV JACKP SCEN_ENV ANALYZE
+# Scenarios whose fixture the author could not make because its ROM is not in the resources tree: a resource-less
+# checkout SKIPS them rather than failing, since nothing about the code is under test when the fixture is absent.
+declare -A FIXTURE_SKIPPED
 
 RENDER_SCENARIOS=(mgb-smoke mgb-midi-timing n8-midi-timing lsdj-midi-metro lsdj-arduinoboy-metro lsdj-midi-drift risa-sync sms-sync gg-sync)
 
@@ -174,6 +177,12 @@ _assert_nonsilent() {
 # Always re-authors: a stale embedded plugin identity renders silence (the .rpp is gitignored).
 run_render() {
     local n="$1"
+    # A fixture no author made (a no-build run, or one whose ROM the regen found absent) is skipped, not failed: the
+    # checks all read it, so a failure would be the absence rather than the code. 2 is the suite's SKIP contract.
+    if [ -n "${FIXTURE[$n]:-}" ] && [ ! -f "${FIXTURE[$n]}" ]; then
+        echo "SKIP: fixture ${FIXTURE[$n]} is absent (its ROM is not in the resources tree)"
+        return 2
+    fi
     echo "=== [$n] author ==="
     # shellcheck disable=SC2086
     env RP_JOB_TAG="suite-$n-author" REAPER_JACK_PERIOD="${JACKP[$n]}" ${SCEN_ENV[$n]:-} \
@@ -194,6 +203,12 @@ run_editor() {
 # Dispatch one scenario by name, recording rc + a one-line verdict for the summary.
 run_one() {
     local n="$1" rc
+    if [ -n "${FIXTURE_SKIPPED[$n]:-}" ]; then
+        echo "SKIP: ${FIXTURE[$n]} was not authored (its ROM is not in the resources tree)" >"$RESULTS_DIR/$n.log"
+        echo 2 >"$RESULTS_DIR/$n.rc"
+        echo "  - $n (skipped: no fixture)"
+        return
+    fi
     if [ -n "${EDITOR_SCRIPT[$n]:-}" ]; then
         run_editor "$n" >"$RESULTS_DIR/$n.log" 2>&1; rc=$?
     else
@@ -211,11 +226,13 @@ if [ "${RP_SUITE_NO_BUILD:-0}" != "1" ]; then
     node tools/author-rplg.js            >"$RESULTS_DIR/fixture-mgb.log" 2>&1 || { echo "[suite] mgb fixture failed" >&2; exit 1; }
     node tools/author-nes-rplg.js        >"$RESULTS_DIR/fixture-nes.log" 2>&1 || { echo "[suite] nes fixture failed" >&2; exit 1; }
     node tools/author-risa-rplg.js       >"$RESULTS_DIR/fixture-risa.log" 2>&1 || { echo "[suite] risa fixture failed" >&2; exit 1; }
+    grep -q "SKIP: risa ROM not found" "$RESULTS_DIR/fixture-risa.log" && FIXTURE_SKIPPED[risa-sync]=1
     node tools/author-sms-rplg.js        >"$RESULTS_DIR/fixture-sms.log" 2>&1 || { echo "[suite] sms fixture failed" >&2; exit 1; }
     node tools/author-sms-rplg.js resources/roms/smsggdj_v0_45.gg \
                                          >"$RESULTS_DIR/fixture-gg.log"  2>&1 || { echo "[suite] gg fixture failed"  >&2; exit 1; }
     for s in midi-metro arduinoboy-metro midi-drift; do
         node tools/author-lsdj-rplg.js "$s" >"$RESULTS_DIR/fixture-lsdj-$s.log" 2>&1 || { echo "[suite] lsdj $s fixture failed" >&2; exit 1; }
+        grep -q "SKIP: lsdj ROM not found" "$RESULTS_DIR/fixture-lsdj-$s.log" && FIXTURE_SKIPPED[lsdj-$s]=1
     done
 fi
 
@@ -234,10 +251,11 @@ ELAPSED=$((SECONDS - START))
 # ---- summary --------------------------------------------------------------------------------
 echo
 echo "================ reaper suite summary (${ELAPSED}s, jobs=$MAXJOBS) ================"
-# Exit 2 is the INCONCLUSIVE contract the mouse-driven checks already define (run-reaper-editor-reopen.sh,
+# Exit 2 is the SKIP contract the mouse-driven checks already define (run-reaper-editor-reopen.sh,
 # run-reaper-params.sh): the synthesized click that loads a ROM through the UI did not register, so the
 # check never got to assert anything. That is a harness miss, not a regression, and reporting it as FAIL
-# makes the suite cry wolf. It is still surfaced loudly and never silently folded into "all passed".
+# makes the suite cry wolf. It is still surfaced loudly and never silently folded into "all passed". A
+# check whose fixture author found no ROM in the resources tree is skipped the same way.
 fail=0
 skip=0
 for n in "${ALL_SCENARIOS[@]}"; do
@@ -245,7 +263,7 @@ for n in "${ALL_SCENARIOS[@]}"; do
     if [ "$rc" = "0" ]; then
         printf "  PASS  %s\n" "$n"
     elif [ "$rc" = "2" ]; then
-        printf "  SKIP  %s (inconclusive)\n" "$n"
+        printf "  SKIP  %s (inconclusive, or its fixture's ROM is absent)\n" "$n"
         sed 's/^/          /' <(tail -n 3 "$RESULTS_DIR/$n.log" 2>/dev/null) || true
         skip=$((skip + 1))
     else
@@ -261,7 +279,7 @@ if [ "$fail" -eq 0 ]; then
     if [ "$skip" -eq 0 ]; then
         echo "ALL ${#ALL_SCENARIOS[@]} REAPER CHECKS PASSED"
     else
-        echo "$((${#ALL_SCENARIOS[@]} - skip)) REAPER CHECKS PASSED, $skip SKIPPED (inconclusive, not a failure)"
+        echo "$((${#ALL_SCENARIOS[@]} - skip)) REAPER CHECKS PASSED, $skip SKIPPED (inconclusive or no fixture, not a failure)"
     fi
     exit 0
 fi

@@ -11,7 +11,7 @@
 const { buildSync } = require("esbuild");
 const { execFileSync } = require("child_process");
 const { resolve, dirname } = require("path");
-const { mkdirSync } = require("fs");
+const { mkdirSync, existsSync } = require("fs");
 
 const REPO = resolve(__dirname, "..");
 const PKG = resolve(REPO, "packages/retroplug");
@@ -38,6 +38,11 @@ const ROM = process.argv[3]
   ? resolve(REPO, process.argv[3])
   : resolve(RESOURCES, "roms/lsdj", DEFAULT_ROM[scenario]);
 const OUT = resolve(process.argv[4] || resolve(REPO, `build/lsdj_${scenario}.rplg.zip`));
+
+if (!existsSync(ROM)) {
+  console.log(`[author-lsdj-rplg] SKIP: lsdj ROM not found at ${ROM}`);
+  process.exit(0);
+}
 
 mkdirSync(dirname(OUT), { recursive: true });
 const bundle = resolve(REPO, `build/native/author-lsdj-rplg-${scenario}.js`);
