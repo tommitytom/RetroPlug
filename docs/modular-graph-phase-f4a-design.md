@@ -733,27 +733,48 @@ accepted beside a generated cart import) and `shell-source-relative` (two refusa
 
 ### 7.2 The literal scanner (the "grep test")
 
-**A test that `src/` holds no platform or ROM-extension literal outside comments is reliable and is stage 5's; as built it
-walks the syntax tree, with its sets read from the registry.** `test/source-literals/no-cart-literals.test.ts` runs
-`run-scan.mjs`, which parses every file of `packages/retroplug/src` (not `src/generated/`) with `ts.createSourceFile` from
-the same pinned `typescript-5` the boundary check loads (a `.tsx` file as TSX) and collects every `StringLiteral`, every
-`NoSubstitutionTemplateLiteral` and every template's head and span text. Comments are trivia, and neither a regular
-expression literal nor a template's `${...}` can move the walk's place. **The first version drove `ts.createScanner` and
-lost its place after a template or a regular expression, finding 46 of the 86 literals the base held** (the Critical finding
-of the whole-prototype review); the design's own sentence, "reads tokens with TypeScript's scanner", was the mistake, and a
-bare scanner does not track template nesting or regex-versus-division. The sets are not in the script: the test imports
-`CONSOLES` from `src/generated/consoles.ts` and passes every descriptor's platform ids (`gb, gba, gg, nes, sms`) and
-extensions (`.gb, .gba, .gbc, .gg, .nes, .sms`) as `--platforms` and `--extensions`; the script keeps no copy and exits 2
-without them. A hit is a platform id, a descriptor extension, or `*` plus an extension (the `*.gb` glob). A console a
-product registers later is therefore guarded with no edit to the test, and `.gbc` is guarded (a hard-coded list omitted it).
-What it cannot see is a computed platform (`["g", "b"].join("")`) or a platform id spelled in a string that is not a bare
-literal: it guards accident, not a determined author, as the boundary check says of itself. **RED on `96d748e5c`'s `src`:
-90 literals in 8 files** (`fileSelection.ts` 12, `buildGraph.ts` 2, `platform.ts` 12, `projectConfig.ts` 5, `render/render.ts`
-41, `render/types.ts` 5, `savPaths.ts` 6, `systemsStore.ts` 7); the design's 46 in 6 files was a different predicate (platform
-ids only, outside comments) that neither walk reproduces, and the 86 of the reviewer's independent scan differ from 90 by
-exactly the four `.gbc` literals its hard-coded set omitted. A fixture holds six literals (a bare one, a `.nes`, a `*.gba`
-glob, a template span, a literal after a substitution template and one after a regular expression) and a comment and a
-generated module it must skip; the old scanner found 3 of the 6. The real tree prints `{"literals":[]}`.
+**A test that `src/` holds no cart or console literal outside comments is reliable and is stage 5's; as built it walks
+the syntax tree, with its sets read from the registry, and the follow-up widened it to the shapes the removed tables
+took.** `test/source-literals/no-cart-literals.test.ts` runs `run-scan.mjs`, which parses every file of
+`packages/retroplug/src` (not `src/generated/`) with `ts.createSourceFile` from the same pinned `typescript-5` the
+boundary check loads (a `.tsx` file as TSX) and reads the three shapes that matter: every `StringLiteral`, every
+`NoSubstitutionTemplateLiteral` and every template's head and span text; the name a table's key is written with (a
+`PropertyAssignment`, a shorthand, a method, an accessor, a `PropertySignature`, a `PropertyDeclaration` or an
+`EnumMember`, whose identifier, string and numeric keys are read; a property ACCESS such as `x.gb` is not, since the
+table's declaration is what the walk judges); and every `RegularExpressionLiteral`'s pattern. Comments are trivia, and
+neither a regular expression nor a template's `${...}` can move the walk's place. **The first version drove
+`ts.createScanner` and lost its place after a template or a regular expression, finding 46 of the 86 literals the base
+held** (the Critical finding of the whole-prototype review); the design's own sentence, "reads tokens with
+TypeScript's scanner", was the mistake, and a bare scanner does not track template nesting or regex-versus-division.
+The sets are not in the script: the test imports `CONSOLES` from `src/generated/consoles.ts` and passes every
+descriptor's platform ids (`gb, gba, gg, nes, sms`), extensions (`.gb, .gba, .gbc, .gg, .nes, .sms`), cores (`mesen,
+sameboy`) and node types (`rp.mesen.gba, rp.mesen.nes, rp.mesen.sms, rp.sameboy.gb`) as `--platforms`, `--extensions`,
+`--cores` and `--node-types`; the script keeps no copy and exits 2 without them. A value is a hit when it is one of
+those, `*` plus an extension (the `*.gb` glob), or text that ends in a guarded extension (the `rom.gb` tail a suffix
+test or a template builds). A pattern is a hit when its source spells an escaped dot and it matches `rom<ext>` for a
+guarded extension but not the extension's bare letters: the escaped dot keeps a filename-sanitising character class
+out, and the bare-letter test keeps a permissive pattern such as `/^[\x20-\x7e]*$/` out. A console a product registers
+later is therefore guarded with no edit to the test, cores and node types included, and `.gbc` is guarded (a
+hard-coded list omitted it). **The one exemption** is the v2 to v3 step's enum tables, keyed by role kind, two of
+which are the consoles' own (`sameboy`, `mesen`): decision 13 freezes the v2 writer's lists so a package's rename
+cannot move what an old file means, so that step may not read the registry; the test names its two keys, exempts them
+by file and value, and fails if either stops being a hit. What it cannot see is what a program computes rather than
+spells: a platform assembled at runtime (`["g", "b"].join("")`), a table keyed by a computed name, a dotless pattern
+such as `/(gb|gbc)$/`, and a name built at runtime. It guards accident, not a determined author, as the boundary check
+says of itself. **RED on `96d748e5c`'s `src` with the widened walk: 147 literals in 9 files** (`fileSelection.ts` 12,
+`buildGraph.ts` 22, `directGraph.ts` 1, `platform.ts` 36, `projectConfig.ts` 9, `render/render.ts` 45,
+`render/types.ts` 5, `savPaths.ts` 6, `systemsStore.ts` 11), **57 more than the 90 the string-only walk found**
+(`buildGraph.ts` 2, `platform.ts` 12, `projectConfig.ts` 5, `render/render.ts` 41, `systemsStore.ts` 7 before): the 30
+node-type literals, the `NODE_TYPE` and `DEFAULT_CORE` tables' 10 identifier keys and the 17 core ids the removed
+tables held, which the literals alone could not see (one node type is the N8's cart, `rp.n8.nes`; no pattern in the
+base reads a ROM extension). The design's 46 in 6 files was a different predicate (platform ids only, outside
+comments) that neither walk reproduces, and the 86 of the reviewer's independent scan differ from the string-only 90
+by exactly the four `.gbc` literals its hard-coded set omitted. A fixture in two files holds fifteen literals in every
+shape (a bare one, a `.nes`, a `*.gba` glob, a template span, a literal after a substitution template and one after a
+regular expression, an identifier-keyed table, a string key, an enum member, a pattern, a node type, a core id and a
+`rom.gb` tail) and a comment, a property access, an unrelated key and two patterns it must skip; the old scanner found
+6 of the 15, missing every one the second file spells. The real tree's scan prints the two exempted keys and nothing
+else, and the test's remainder is empty.
 
 ### 7.3 The oracles held identical
 
@@ -1010,7 +1031,9 @@ stage 5 100). Nothing was pushed.
 - **Rule 9's allowlist is 24 entries derived from the tree**, with a refusal of a relative import out of `src` the design did not
   have; `EXCEPTIONS` stays empty and rule 9's `SHELL_IMPORTS` is the one deliberate list.
 - **The scanner walks the syntax tree and reads its sets from the registry**, finding `.gbc` too; RED 90 literals in 8 files on
-  `96d748e5c`.
+  `96d748e5c` as the prototype left it. The follow-up widened it to the shapes the removed tables took (a table's identifier
+  key, a pattern, a `rom.gb` tail) and to the descriptors' cores and node types, with the frozen v2 step's two role-kind keys
+  the one exemption; its RED is 147 literals in 9 files, 57 more (section 7.2).
 - **Decision 13's test iterates the frozen lists** and `V3_ROLE_ENUMS` is exported.
 - **Two non-TypeScript edits**, against "no C++ and no CMake": `SystemNode.test.cpp`'s `[settings]` oracle read the tables out
   of `buildGraph.ts` textually and now reads the descriptors (`descriptorSource(type)`, no case added, removed or
@@ -1089,8 +1112,9 @@ objects every registry-loading bundle already imports (section 10); it has not b
 - **A module-by-module bundle diff.** Run `tools/build-session.js`'s `bundleInputs` for each bundle entry (cp, ui, cli, render
   worker, CLI SDK) at `96d748e5c` and at the tip, and diff the module lists and bytes: the growth must be the new contract and
   registry modules and the hook code, and no package may newly appear.
-- **The scanner's RED and rule 9's RED over full archives**: the scanner on `96d748e5c`'s `src` (90 literals in 8 files) and rule 9
-  over a full archive of the pre-stage-5 tree (21 refusals over six files), re-run by the acceptance rather than read from the logs.
+- **The scanner's RED and rule 9's RED over full archives**: the scanner on `96d748e5c`'s `src` (90 literals in 8 files before
+  the follow-up widened it, 147 in 9 after) and rule 9 over a full archive of the pre-stage-5 tree (21 refusals over six files),
+  re-run by the acceptance rather than read from the logs.
 - **The fixtures-present run with `RP_FAIL_ON_SKIP=1`** for parity, the render baseline, `render-cli`, `render-chunks`,
   `sms-render` and the risa render suites (E2's claim that the affected cases are none rests on it), and the CI picture
   (`__RESOURCES_DIR__` and `__RISA_SRC__` pointed at a missing directory) for the fixture-free subset.

@@ -182,13 +182,19 @@ broke is named as such rather than surfacing as a bundler error.
 
 **The shell's sources hold no cart or console literal.** A test
 ([test/source-literals](../packages/retroplug/test/source-literals)) walks `packages/retroplug/src` (not
-`src/generated/`) with TypeScript's own syntax tree and fails on a string literal that is a platform id (`"gb"`,
-`"nes"`, ...) or a ROM extension (`".gb"`, `"*.gba"`, ...): a quoted string, a template with no substitution, and each
-span of a template that has one are read, while a comment is trivia and a regular expression or a `${...}` cannot move
-the walk's place. The ids and extensions are the console registry's, read from the generated `CONSOLES` list, so a
-console a product adds is guarded without an edit to the test, and a console's knowledge stays its descriptor's. Like
-rule 9 it catches an accident rather than a determined author (a computed `["g", "b"].join("")` is invisible to it), and
-`ui/` and `cli/` join both in F4b.
+`src/generated/`) with TypeScript's own syntax tree and fails on a literal that is a platform id (`"gb"`, `"nes"`,
+...), a ROM extension (`".gb"`, `"*.gba"`, ...), a console's core id or its node type: a quoted string, a template
+with no substitution and each span of a template that has one are read, as is the name a table's key is written with
+(an object literal's property, a shorthand, a method, an accessor, an interface member, an enum member; a property
+access such as `x.gb` is not, since the declaration is what is judged), and text that ends in a ROM extension (the
+`rom.gb` tail), and a regular expression whose source spells an escaped dot and matches `rom<ext>` but not the
+extension's bare letters (so `/\.gbc?$/i` is a hit and `/^[\x20-\x7e]*$/` is not). A comment is trivia and a `${...}`
+cannot move the walk's place. The ids, extensions, cores and node types are the console registry's, read from the
+generated `CONSOLES` list, so a console a product adds is guarded without an edit to the test, and a console's
+knowledge stays its descriptor's. The one exemption is the frozen v2 to v3 step's two console role-kind keys, which
+may not read the registry (decision 13). Like rule 9 it catches an accident rather than a determined author (a
+computed `["g", "b"].join("")`, a computed table key and a dotless pattern such as `/(gb|gbc)$/` are
+invisible to it), and `ui/` and `cli/` join both in F4b.
 
 **A package's tests are its own.** A test whose subject is wholly in a package lives in its `ts/test/`, runs on the
 package's `tsconfig` and keeps its fixtures and goldens beside it
