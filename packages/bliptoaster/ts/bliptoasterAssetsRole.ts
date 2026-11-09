@@ -26,7 +26,9 @@ import {
   SETTINGS_FONT_COUNT,
   type BlipToasterSettingsPatch,
 } from "./rom";
-import { applyRitOverride, ritOverrideSchema, type RitAssetOverride } from "@retroplug/tracker/ritAssets";
+import {
+  applyRitOverride, readRitOverrides, ritOverrideSchema, type RitAssetOverride,
+} from "@retroplug/tracker/ritAssets";
 
 /** One asset override for `slot`. KITS and FONTS are binary, so they LINK their file on disk by `path` (a
  *  pre-built 8 KB `.rkit` DMC bank / an 8 KB `.chr` CHR bank, read at construct). A kit override with
@@ -55,8 +57,7 @@ const blipToasterAssetsSchema = z.object({
 
 /** Read the override list off a system's `bliptoaster-assets` role config (empty when absent/invalid). */
 export function readOverrides(config: Record<string, unknown> | undefined): BlipToasterAssetOverride[] {
-  const raw = config?.overrides;
-  return Array.isArray(raw) ? (raw as BlipToasterAssetOverride[]) : [];
+  return readRitOverrides(config);
 }
 
 /** Read the baked-settings patch off a system's `bliptoaster-assets` role config ({} when absent/invalid). */

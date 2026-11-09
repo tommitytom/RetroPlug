@@ -9,21 +9,10 @@
 // `siblingRomCandidates` returns the ordered path list — the systems domain wires
 // the live-systems ownership + Backend reads on top.
 
-import { dirname, stem, joinPath, replaceExtension, replaceFilename, extensionLower } from "./pathUtil";
+import { dirname, stem, joinPath, replaceExtension, replaceFilename, SAV_EXTS } from "@retroplug/core/path";
 import { romExtensions } from "./consoles";
 
-/** Battery-save file extensions, most-preferred first. `.sav` is the default write target across
- *  GB/NES/GBA; `.srm` is the alternative some NES/risa saves ship with, so it's accepted when pairing a
- *  ROM to its battery and when loading SRAM (but new saves are still written as `.sav`). */
-export const SAV_EXTS = [".sav", ".srm"] as const;
-
-/** File-dialog globs for a battery save (`.sav` / `.srm`). */
-export const SAV_PATTERNS: string[] = SAV_EXTS.map((ext) => `*${ext}`);
-
-/** True when `path`'s extension is a recognised battery-save extension (`.sav` / `.srm`). */
-export function isSavPath(path: string): boolean {
-  return (SAV_EXTS as readonly string[]).includes(extensionLower(path));
-}
+export { SAV_EXTS, SAV_PATTERNS, isSavPath } from "@retroplug/core/path";
 
 /** `<rom>` + `ext` for suffix 0/1, or `<rom-stem>-<N><ext>` for suffix ≥ 2. Empty
  *  romPath → empty. `ext` includes the dot (e.g. `".sav"`, `".ss0"`). */

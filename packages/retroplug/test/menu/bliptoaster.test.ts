@@ -360,3 +360,47 @@ test("Select keeps the menu open, so a run of themes can be auditioned without r
   // Its neighbours do NOT: Export opens a dialog the menu should get out of the way of.
   expect(actionsOf(themes, "bliptoaster-theme-2").find((a) => a.id === "bliptoaster-theme-2-export")!.keepOpen).toBe(undefined);
 });
+
+test("a second NES project stages BlipToaster's settings at its OWN system only, not at the other NES's cart", () => {
+  // The cart node the project places belongs to the first NES in slot order, which is not necessarily this one: every
+  // NES drives a real cart by default. BlipToaster's rig SysEx is for the BlipToaster ROM's node, so a project where
+  // another system drives the N8 must not send it there - the menu's old cartFor() rule, which only staged at the
+  // cart when it WAS this system's.
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/other.nes", nesRom());
+  const other = stores.project.systems.addSystem("/roms/other.nes")!;
+  be.seed("/roms/synth.nes", blipToasterRom());
+  const bt = stores.project.systems.addSystem("/roms/synth.nes")!;
+  const rows = () =>
+    submenuChildren(
+      buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === bt)! }).items,
+      "inst-bliptoaster",
+    );
+
+  findItem(rows(), "bliptoaster-set-basech")!.onCycle!(1);
+
+  expect(be.stageNodeMidiCalls.map((c) => c.nodeId)).toEqual([`sys-${bt}`]);
+  expect(be.stageNodeMidiCalls.some((c) => c.nodeId === `cart-${other}`)).toBe(false);
+});
+
+test("the live theme's marker reads the same cached ROM the rows do: a rebuild reads the file no more than once",
+  () => {
+  // The `*` marker is what makes the theme/font lists the picker, so it is read once per ROW. Reading it from disk
+  // there copied the whole image for every one of the sixteen theme rows on every menu build (a synchronous native RPC
+  // in the plugin); it goes through the shell's per-path cache the rows already use, so a warm rebuild reads nothing.
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const items = blipToasterItems(be, stores, "/roms/counted.nes");
+  let romReads = 0;
+  const read = be.readFile.bind(be);
+  be.readFile = (path: string): Uint8Array | null => {
+    if (path === "/roms/counted.nes") romReads++;
+    return read(path);
+  };
+  items(); // the first build seeds the per-path caches
+  romReads = 0;
+  items();
+  items();
+  expect(romReads).toBe(0);
+});

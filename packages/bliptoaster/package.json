@@ -9,6 +9,7 @@
   "description": "The BlipToaster cart: the MIDI policy the box's built-in plan runs as a device script pack (rp.bliptoaster.midi-policy), and the cart's half of the app - the ROM's SIG block and chip detection, the DMC kit/theme/CHR-font asset view and the in-memory patcher that applies its overrides and baked rig settings, the bliptoaster and bliptoaster-assets roles, its ROM provider, and its asset-only tracker integration.",
   "exports": {
     "./app": "./ts/app.ts",
+    "./ui": "./ts/ui/index.ts",
     "./bliptoasterAssetCatalog": "./ts/bliptoasterAssetCatalog.ts",
     "./bliptoasterAssetsRole": "./ts/bliptoasterAssetsRole.ts",
     "./bliptoasterIntegration": "./ts/bliptoasterIntegration.ts",
@@ -24,6 +25,7 @@
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/tracker": "workspace:*",
+    "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -32,6 +34,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "ui": "ts/ui/index.ts",
     "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 24576 }
   }
 }

@@ -104,9 +104,11 @@ export interface AssetMenuSpec {
   exportAsset(host: UiHost, sys: SystemInfo, type: AssetTypeInfo, slot: number, label: string): void;
   replaceAsset(host: UiHost, sys: SystemInfo, type: AssetTypeInfo, slot: number): void;
   /** A console where one slot of an asset type is the LIVE one returns it, so the list is also the picker; null for a
-   *  type that has no such notion. Omitted by a console whose rows are the plain override list. */
-  selectedSlot?(host: UiHost, sys: SystemInfo, kind: string): number | null;
-  selectSlot?(host: UiHost, sys: SystemInfo, kind: string, slot: number): void;
+   *  type that has no such notion. Omitted by a console whose rows are the plain override list. The build context is
+   *  passed because a live slot can be BAKED in the ROM (BlipToaster's theme and font are), and reading that file per
+   *  row per build would copy the whole image once for every row: `ctx.assetRom` is the shell's per-path cache. */
+  selectedSlot?(host: UiHost, sys: SystemInfo, kind: string, ctx: MenuBuildContext): number | null;
+  selectSlot?(host: UiHost, sys: SystemInfo, kind: string, slot: number, ctx: MenuBuildContext): void;
 }
 
 /** A tracker's UI: its song and asset specs, its role-config rows and any fragment it builds. Keyed to its integration

@@ -14,7 +14,9 @@ import type { Host } from "@retroplug/core/host";
 import type { ConstructSpec } from "@retroplug/core/constructSpec";
 import { z } from "zod";
 import { RisaRom } from "./rom";
-import { applyRitOverride, ritOverrideSchema, CHR_BANK_SIZE, type RitAssetOverride } from "@retroplug/tracker/ritAssets";
+import {
+  applyRitOverride, readRitOverrides, ritOverrideSchema, CHR_BANK_SIZE, type RitAssetOverride,
+} from "@retroplug/tracker/ritAssets";
 
 /** @deprecated Use CHR_BANK_SIZE from @retroplug/tracker/ritAssets - kept because it is a public export. */
 export const RISA_CHR_BANK_SIZE = CHR_BANK_SIZE;
@@ -34,8 +36,7 @@ const risaAssetsSchema = z.object({
 
 /** Read the override list off a system's `risa-assets` role config (empty when absent/invalid). */
 export function readOverrides(config: Record<string, unknown> | undefined): RisaAssetOverride[] {
-  const raw = config?.overrides;
-  return Array.isArray(raw) ? (raw as RisaAssetOverride[]) : [];
+  return readRitOverrides(config);
 }
 
 /** Fold a list of overrides onto base ROM bytes, returning the patched image (per-override try/catch so a

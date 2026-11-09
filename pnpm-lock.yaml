@@ -36,6 +36,9 @@ importers:
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -350,6 +353,9 @@ importers:
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -394,6 +400,9 @@ importers:
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
       zod:
         specifier: ^4.4.3
         version: 4.4.3

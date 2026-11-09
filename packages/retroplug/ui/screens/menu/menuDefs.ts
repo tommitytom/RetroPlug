@@ -3,6 +3,7 @@
 // label IS the display). The bindings editor is no longer deferred - it is `bindingsChildren` below,
 // a profile switcher plus a capture row per button.
 
+import type { SystemInfo } from "@retroplug/core/host";
 import type { AppStores } from "../../../src/appStores";
 import type { SystemView } from "../../../src/systemsStore";
 import type { ProjectSettings } from "../../../src/projectConfig";
@@ -18,74 +19,21 @@ import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { keyDisplayName } from "../../../src/keyCodes";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
-import { resolveSavPath, siblingPath, SAV_PATTERNS, isSavPath } from "../../../src/savPaths";
-import { stem, dirname, basename, extension, joinPath, shortenMiddle } from "../../../src/pathUtil";
+import { resolveSavPath, siblingPath, SAV_PATTERNS } from "../../../src/savPaths";
+import { stem, dirname, basename, extension, joinPath, sanitizeName, shortenMiddle } from "../../../src/pathUtil";
 import { ROM_PATTERNS } from "../../../src/fileSelection";
-import { LsdjRom, decodeLsdpal, encodeLsdpal } from "@retroplug/lsdj/rom";
-import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "@retroplug/lsdj";
-import {
-  replaceSongInSav,
-  saveWorkingToCatalog as lsdjSaveWorkingToCatalog,
-  canSaveWorkingToCatalog,
-} from "@retroplug/lsdj/lsdjSongOps";
-import { activeSlot as lsdjActiveSlot } from "@retroplug/lsdj/codec/sav";
 import { filesPngHost } from "../../../src/hostGroups";
-import { importHost } from "../../host/uiHost";
+import { createUiHost, uiViews, type UiHost } from "../../host/uiHost";
 import { embeddedRoms } from "../../../src/embeds";
 import {
-  songRecordBytes,
-  replaceSongRecordInSav,
-  addSongRecordToSav,
-  workingSongRecord,
-  saveWorkingToCatalog,
-  canSaveWorkingToCatalog as canRisaSaveWorking,
-} from "@retroplug/risa/risaSongOps";
-import {
-  RisaRom,
-  serializeRit,
-  parseRit,
-  decodeThemeFromRom,
-  isBankPopulated,
-  bankToModel,
-  KIT_BANK_SIZE,
-} from "@retroplug/risa/rom";
-import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "@retroplug/risa/risaAssetsRole";
-import {
-  BlipToasterRom,
-  blipToasterSettingsSysex,
-  type BlipToasterSettings,
-  type BlipToasterSettingsPatch,
-} from "@retroplug/bliptoaster/rom";
-import { readSettings as readBlipToasterSettingsConfig } from "@retroplug/bliptoaster/bliptoasterAssetsRole";
-import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "@retroplug/lsdj/lsdjAssetsRole";
-import { planLsdprjImport } from "@retroplug/lsdj/lsdjLsdprjImport";
-// Aliased: `replaceSong` and `addSong` are already taken here by the LSDj row helpers.
-import {
-  readSongBlock as readSmdjSongBlock,
-  readSongEcho as readSmdjSongEcho,
-  wrapSong as wrapSmdjSong,
-  unwrapSong as unwrapSmdjSong,
-  replaceSong as replaceSmdjSong,
-  addSong as addSmdjSong,
-} from "@retroplug/smsggdj/codec/sav";
-import {
-  mutateLiveSav,
   savEditWouldDiscard,
   saveWorkingSong,
   songLoadWouldDiscard,
 } from "../../../src/tracker/liveSav";
 import { effectiveAssets, readAssetOverrides } from "@retroplug/tracker/assetCatalog";
-import type { AssetCatalog, AssetOverride, AssetSlotRow, AssetTypeInfo } from "@retroplug/tracker/assetCatalog";
-import type { SongCatalog } from "@retroplug/tracker/songCatalog";
+import type { AssetOverride, AssetSlotRow, AssetTypeInfo } from "@retroplug/tracker/assetCatalog";
 import { workingSongTargets } from "@retroplug/tracker/songCatalog";
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
-import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
-import { lsdjAssetCatalog } from "@retroplug/lsdj/lsdjAssetCatalog";
-import { risaSongCatalog } from "@retroplug/risa/risaSongCatalog";
-import { risaAssetCatalog } from "@retroplug/risa/risaAssetCatalog";
-import { smsggdjSongCatalog } from "@retroplug/smsggdj/smsggdjSongCatalog";
-import { smsggdjAssetCatalog } from "@retroplug/smsggdj/smsggdjAssetCatalog";
-import { bliptoasterAssetCatalog } from "@retroplug/bliptoaster/bliptoasterAssetCatalog";
 import { resolveTracker } from "../../../src/trackerRegistry";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../host/openPath";
@@ -94,7 +42,6 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../app/saveProjectInteractive";
 import { hasUnsavedChanges, unsavedChanges } from "../../../src/unsavedChanges";
 import { SONG_BLOCKED } from "../../app/unsavedRows";
-import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
 import { getTransport, setTransport, setClockBpm, CLOCK_BPM_STEP, CLOCK_BPM_COARSE_STEP } from "./transport";
@@ -109,11 +56,22 @@ import { controllerApps, controllerApp } from "../../../src/controller/registry"
 import type { ControllerAppContribution } from "@retroplug/launchpad/registry";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "@retroplug/launchpad/enums";
 import { controllerSyncOverride } from "../../../src/graph/controller";
-import { legacyConfigIndex } from "@retroplug/ui/contribution";
-import { systemNodeId } from "../../../src/graph/buildGraph";
+import {
+  legacyConfigIndex, type AssetMenuSpec, type MenuBuildContext, type SongMenuSpec,
+} from "@retroplug/ui/contribution";
 import type { MenuAction, MenuItem, MenuTree } from "@retroplug/ui/menu";
 import { roleConfig } from "@retroplug/core/systemRoles";
-import { action, actionCycler, button, cycleInt, cycler, infoRow, separator, submenu } from "@retroplug/ui/menu";
+import {
+  action,
+  actionCycler,
+  browseThen,
+  button,
+  cycleInt,
+  cycler,
+  infoRow,
+  separator,
+  submenu,
+} from "@retroplug/ui/menu";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
 export interface MenuContext {
@@ -134,11 +92,32 @@ export interface MenuContext {
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
   /** Quit the standalone (unsaved-changes guarded). No-op in a DAW (the host owns the window). */
   requestExit: () => void;
+  // Inputs to the FALLBACK host only (below), for a composer that has no `host` of its own: the menu tests, which
+  // build this context over the stores alone. App passes a host, so it reads neither of these.
+  //
   // Open the Songs "import from a .sav" picker (validate the source against the cart's console, then show a
-  // checkbox list) — owned by useSongImport, wired from App like the project modals.
-  beginSongImport: (sys: SystemView, source: Uint8Array) => void;
-  /** Show the LSDj HD player for a system (a full-window view; Esc closes it). Owned by App. */
+  // checkbox list) - owned by useSongImport, wired from App like the project modals.
+  beginSongImport: (sys: SystemInfo, source: Uint8Array) => void;
+  /** Show the LSDj HD player for a system (a full-window view; Esc closes it). Owned by App; F4c removes the id. */
   openLsdjHd: (systemId: number) => void;
+  /** The UI host a contributed builder or cart callback reaches the shell through. App passes the one it built over
+   *  the stores; a composer that only has the stores (a menu test) leaves it out and `hostOf` builds the same host
+   *  from this context's own peers, so a contribution sees the groups either way. */
+  host?: UiHost;
+}
+
+/** The UI host for a context: the one App built when it passed one, else one built from the context's own peers (the
+ *  views mapping and the song-import picker), cached for the context's life so a callback sees a stable host. */
+const hosts = new WeakMap<MenuContext, UiHost>();
+function hostOf(ctx: MenuContext): UiHost {
+  const given = ctx.host;
+  if (given) return given;
+  let built = hosts.get(ctx);
+  if (!built) {
+    built = createUiHost(ctx.stores, { views: uiViews(ctx.openLsdjHd), beginImport: ctx.beginSongImport });
+    hosts.set(ctx, built);
+  }
+  return built;
 }
 
 /** True only in a standalone host (the SDL handheld build or the DPF JACK standalone), which installs
@@ -580,13 +559,15 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
     items.push(
       separator("n8-sep-sd"),
       action("n8-load-rom", "Load ROM to N8...", () =>
-        browseThen(ctx, { title: "Load ROM to N8", patterns: ROM_PATTERNS },
+        browseThen(hostOf(ctx), { title: "Load ROM to N8", patterns: ROM_PATTERNS },
           (p) => n8LoadRom(ctx.stores.backend, cart, p)), busy),
       action("n8-dump-sram", "Dump SRAM to file...", () =>
-        browseThen(ctx, { title: "Dump N8 SRAM", patterns: ["*.srm", "*.sav"], saving: true, defaultName: "n8.srm" },
+        browseThen(
+          hostOf(ctx),
+          { title: "Dump N8 SRAM", patterns: ["*.srm", "*.sav"], saving: true, defaultName: "n8.srm" },
           (p) => n8DumpSram(ctx.stores.backend, cart, p)), busy),
       action("n8-restore-sram", "Restore SRAM from file...", () =>
-        browseThen(ctx, { title: "Restore N8 SRAM", patterns: ["*.srm", "*.sav"] },
+        browseThen(hostOf(ctx), { title: "Restore N8 SRAM", patterns: ["*.srm", "*.sav"] },
           (p) => n8RestoreSram(ctx.stores.backend, cart, p)), busy),
       infoRow("n8-sd-status", `SD: ${n8SdLabel(job)}`),  // read-only card-operation status row
     );
@@ -681,14 +662,6 @@ function runLoad(ctx: MenuContext): void {
   });
 }
 
-/** Open the OS browser with `opts` and apply the picked path (a cancel is ignored). For the project file
- *  ops, whose store methods already take a resolved path — the dialog is the only missing piece. */
-function browseThen(ctx: MenuContext, opts: FileBrowserOpts, apply: (path: string) => void): void {
-  void ctx.stores.backend.openFileBrowser(opts).then((path) => {
-    if (path) apply(path);
-  });
-}
-
 // --- child builders -----------------------------------------------------------------------------------
 // Build the System > Render submenu (a WAV background job on a COPY of the live SRAM/savestate — never the
 // running core, like `retroplug-cli render`). NO dialog at render time: the output folder, filename,
@@ -732,7 +705,7 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
       keepOpen: true,
       onSelect: () =>
         // A per-session override (setRenderDir) — deliberately NOT the persisted Settings default.
-        browseThen(ctx, { title: "Output Dir", patterns: [], directory: true, startDir: effectiveDir }, (p) =>
+        browseThen(hostOf(ctx), { title: "Output Dir", patterns: [], directory: true, startDir: effectiveDir }, (p) =>
           userConfig.setRenderDir(sys.id, p),
         ),
     },
@@ -832,7 +805,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     items.push(
       songGuardedAction(ctx, sys, "sys-newsram", "New SRAM...", () =>
         browseThen(
-          ctx,
+          hostOf(ctx),
           { title: "New SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: sramName },
           (p) => void systems.newSramAs(sys.id, p),
         ),
@@ -840,7 +813,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     );
   items.push(
     songGuardedAction(ctx, sys, "sys-loadsram", "Load SRAM...", () =>
-      browseThen(ctx, { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
+      browseThen(hostOf(ctx), { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
     ),
   );
   if (sys.romPath)
@@ -852,18 +825,28 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       "sys-savesram",
       "Save SRAM As...",
       () =>
-        browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${romStem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
+        browseThen(
+          hostOf(ctx),
+          { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${romStem || "sram"}.sav` },
+          (p) => systems.saveSram(sys.id, p),
+        ),
       noSave,
     ),
     songGuardedAction(ctx, sys, "sys-loadstate", "Load State...", () =>
-      browseThen(ctx, { title: "Load State", patterns: STATE_PATTERNS }, (p) => void systems.loadState(sys.id, p)),
+      browseThen(hostOf(ctx), { title: "Load State", patterns: STATE_PATTERNS }, (p) =>
+        void systems.loadState(sys.id, p),
+      ),
     ),
   );
   if (sys.romPath)
     items.push(action("sys-quicksavestate", "Save State", () => systems.saveState(sys.id, siblingPath(sys.romPath, sys.savSuffix, ".ss0"))));
   items.push(
     action("sys-savestate", "Save State As...", () =>
-      browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${romStem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
+      browseThen(
+        hostOf(ctx),
+        { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${romStem || "savestate"}.ss0` },
+        (p) => systems.saveState(sys.id, p),
+      ),
     ),
   );
   return items;
@@ -877,19 +860,6 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
 // supplies the base-ROM slot list (baseSlots) + the effective merge (effectiveAssets). The per-console FILE
 // actions (Export/Replace — which own the .kit/.lsdpal/.png vs .rit/.chr/.rkit formats) stay below as the
 // spec's callbacks. A new console adds an AssetCatalog + an AssetMenuSpec.
-interface AssetMenuSpec {
-  id: string; // row-id prefix + submenu-id prefix, e.g. "lsdj" / "risa"
-  catalog: AssetCatalog;
-  exportAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void;
-  replaceAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void;
-  // Optional: a console where one slot of an asset type is the LIVE one (BlipToaster's theme + font, which its
-  // settings block names). Where it applies, the list is also the picker - the row carries a `Select` verb and
-  // the live slot wears a `*` - rather than a separate cycler somewhere else naming a slot by number. Return
-  // null for a type that has no such notion; every other console leaves this unset and its rows are unchanged.
-  selectedSlot?(ctx: MenuContext, sys: SystemView, kind: string): number | null;
-  selectSlot?(ctx: MenuContext, sys: SystemView, kind: string, slot: number): void;
-}
-
 // Read + cache the base ROM bytes once per romPath (the menu rebuilds every render; the catalog re-parses on
 // demand — cheap vs the file read). Shared by both consoles (romPath is unique per ROM).
 const assetRomCache = new Map<string, Uint8Array | null>();
@@ -947,7 +917,7 @@ function addAsset(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: 
   let slot = 0;
   while (slot < type.maxSlots && used.has(slot)) slot++;
   if (slot >= type.maxSlots) return; // all slots full
-  spec.replaceAsset(ctx, sys, type, slot);
+  spec.replaceAsset(hostOf(ctx), sys, type, slot);
 }
 
 // One asset item: Export / Replace, plus Select (where the console has a live slot), Delete (kits only) and
@@ -958,19 +928,35 @@ function addAsset(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: 
 //
 // Two markers, and they mean different things: `*` is the LIVE slot (what the cart is set to), `~` is an
 // overridden one (its contents replaced from disk). A slot can be both.
-function assetRow(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, row: AssetSlotRow): MenuItem {
+function assetRow(
+  spec: AssetMenuSpec,
+  ctx: MenuContext,
+  sys: SystemView,
+  type: AssetTypeInfo,
+  row: AssetSlotRow,
+  build: MenuBuildContext,
+): MenuItem {
   const id = `${spec.id}-${type.kind}-${row.slot}`;
-  const selected = spec.selectedSlot?.(ctx, sys, type.kind) ?? null;
+  const selected = spec.selectedSlot?.(hostOf(ctx), sys, type.kind, build) ?? null;
   const verbs: MenuAction[] = [];
   // Select leads, so landing on a row offers the thing the list is FOR; it keeps the menu open so a run of
   // themes can be auditioned without reopening it each time. Absent on the slot already live - there is
   // nothing to select - which also stops it being the default verb on exactly the row where it is a no-op.
   if (spec.selectSlot && selected !== null && selected !== row.slot) {
-    verbs.push({ id: `${id}-select`, label: "Select", keepOpen: true, onSelect: () => spec.selectSlot!(ctx, sys, type.kind, row.slot) });
+    verbs.push({
+      id: `${id}-select`,
+      label: "Select",
+      keepOpen: true,
+      onSelect: () => spec.selectSlot!(hostOf(ctx), sys, type.kind, row.slot, build),
+    });
   }
   verbs.push(
-    { id: `${id}-export`, label: "Export...", onSelect: () => spec.exportAsset(ctx, sys, type, row.slot, row.name) },
-    { id: `${id}-replace`, label: "Replace...", onSelect: () => spec.replaceAsset(ctx, sys, type, row.slot) },
+    {
+      id: `${id}-export`,
+      label: "Export...",
+      onSelect: () => spec.exportAsset(hostOf(ctx), sys, type, row.slot, row.name),
+    },
+    { id: `${id}-replace`, label: "Replace...", onSelect: () => spec.replaceAsset(hostOf(ctx), sys, type, row.slot) },
   );
   if (type.addable) verbs.push({ id: `${id}-delete`, label: "Delete", onSelect: () => deleteAsset(spec, ctx, sys, type, row.slot) });
   if (row.overridden) verbs.push({ id: `${id}-remove`, label: "Remove Override", onSelect: () => removeOverride(spec, ctx, sys, type.kind, row.slot) });
@@ -987,6 +973,7 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
   const overrides = overridesFor(sys, spec.catalog.assetRole);
   // A catalog may refine its types per-ROM (BlipToaster: single-kit on NROM, addable/16 on a banking cart).
   const types = spec.catalog.resolveTypes ? spec.catalog.resolveTypes(bytes) : spec.catalog.types;
+  const build = buildContext(ctx);
   return types.map((type) => {
     const rows = effectiveAssets(spec.catalog.baseSlots(bytes, type.kind), overrides, type.kind, type.noun);
     const children: MenuItem[] = [];
@@ -994,7 +981,7 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
       children.push(action(`${spec.id}-${type.kind}-add`, "Add...", () => addAsset(spec, ctx, sys, type)));
       children.push(separator(`${spec.id}-${type.kind}-add-sep`));
     }
-    children.push(...rows.map((row) => assetRow(spec, ctx, sys, type, row)));
+    children.push(...rows.map((row) => assetRow(spec, ctx, sys, type, row, build)));
     return submenu(`${spec.id}-${type.kind}s`, type.title, children);
   });
 }
@@ -1069,7 +1056,8 @@ function patchRomInPlace(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView)
 // Export... row.
 function exportPatchedRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): void {
   const defaultName = `${stem(sys.romPath)}-patched${extension(sys.romPath)}`;
-  browseThen(ctx, { title: "Export Patched ROM", patterns: ROM_PATTERNS, saving: true, defaultName }, (path) => {
+  const opts = { title: "Export Patched ROM", patterns: ROM_PATTERNS, saving: true, defaultName };
+  browseThen(hostOf(ctx), opts, (path) => {
     const baked = bakeRom(spec, ctx, sys);
     if (baked) ctx.stores.backend.writeFileAtomic(path, baked.bytes);
   });
@@ -1102,432 +1090,21 @@ function romPatchRows(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): M
   ];
 }
 
-// A safe filename fragment (mirrors the CLI's sanitize).
-const sanitizeName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") || "asset";
 // Per-keystroke filter for the render Filename prompt: block path separators / dodgy chars at entry (a
 // space is allowed and folded to "_" by sanitizeName on confirm).
 const isFilenameChar = (ch: string): boolean => /^[A-Za-z0-9 ._-]$/.test(ch);
 // LSDj song names are 8 chars from its own font: uppercase letters, digits and space. Distinct from
-// sanitizeName above, which builds a FILENAME (lowercase + dots are fine there, not here). The prompt
-// pairs this with casing:"upper", so the field already shows what will be stored.
+// sanitizeName (`@retroplug/core/path`), which builds a FILENAME (lowercase + dots are fine there, not here). The
+// prompt pairs this with casing:"upper", so the field already shows what will be stored.
 const isSongNameChar = (ch: string): boolean => /^[A-Z0-9 ]$/.test(ch);
 const toSongName = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9 ]/g, "").trim().slice(0, 8);
-const readLsdjRom = (be: HostBackend, romPath: string): LsdjRom | null => {
-  const bytes = romPath ? be.readFile(romPath) : null;
-  if (!bytes) return null;
-  const rom = LsdjRom.fromBytes(bytes);
-  return rom.isLsdj ? rom : null;
-};
-
-// --- LSDj asset file actions (Export/Replace own the .kit/.lsdpal/.png formats) -----------------------
-const lsdjOverrides = (sys: SystemView): LsdjAssetOverride[] =>
-  readOverrides(roleConfig(sys.roles, "lsdj-assets"));
-
-// Export asset `type`/`slot` to a picked file: the override bytes if replaced (already the file format), else
-// the base ROM's asset read straight out via the pure-TS module.
-function exportAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void {
-  const be = ctx.stores.backend;
-  const kind = type.kind;
-  const ov = lsdjOverrides(sys).find((o) => o.type === kind && o.slot === slot);
-  const defaultName = `${sanitizeName(label)}${type.ext}`;
-  browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: type.patterns, saving: true, defaultName }, (path) => {
-    // An overridden slot's current asset comes from the override (a palette re-encodes its inline colours;
-    // a kit/font copies its linked file); otherwise read it from the base ROM.
-    let bytes: Uint8Array | null = null;
-    if (ov) bytes = ov.type === "palette" && ov.colorSets ? encodeLsdpal(ov.name ?? "", ov.colorSets) : ov.path ? be.readFile(ov.path) : null;
-    if (!bytes) {
-      const rom = readLsdjRom(be, sys.romPath);
-      if (!rom) return;
-      if (kind === "kit") bytes = rom.exportKitFile(slot);
-      else if (kind === "palette") bytes = rom.exportPaletteFile(slot);
-      else {
-        const img = rom.exportFontImage(slot, true); // include the extended gfx tiles (64×120) — lossless
-        bytes = be.pngEncode(img.width, img.height, img.rgba);
-      }
-    }
-    if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
-  });
-}
-
-// Replace asset `type`/`slot` from a picked file: validate by trial-applying to the base ROM (import* throws
-// on a bad file), record the override (kit/font by PATH, palette INLINE) in role config, and reload so it
-// takes effect. NON-DESTRUCTIVE — the base .gb is never written.
-function replaceAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
-  const be = ctx.stores.backend;
-  const kind = type.kind;
-  browseThen(ctx, { title: `Replace ${kind} ${slot}`, patterns: type.patterns }, (path) => {
-    const data = be.readFile(path);
-    if (!data) return;
-    const rom = readLsdjRom(be, sys.romPath);
-    if (!rom) return;
-    // The new override: PALETTES are stored inline as structured colours (never a file link); KITS/FONTS
-    // link to the file on disk by path. Validate by trial-applying to the base ROM (import* throws on a
-    // bad file / out-of-range slot) — leaving the real ROM untouched.
-    let entry: LsdjAssetOverride;
-    try {
-      if (kind === "kit") {
-        rom.importKitFile(slot, data);
-        entry = { type: "kit", slot, name: rom.kit(slot).name() || stem(path), path };
-      } else if (kind === "palette") {
-        const decoded = decodeLsdpal(data);
-        if (!decoded) return; // not a valid .lsdpal
-        rom.importPaletteFile(slot, data); // validates the slot is in range on this ROM
-        entry = { type: "palette", slot, name: decoded.name || stem(path), colorSets: decoded.colorSets };
-      } else {
-        const img = be.pngDecode(data);
-        if (!img) return; // not a decodable PNG
-        rom.importFontImage(slot, img);
-        entry = { type: "font", slot, name: stem(path), path };
-      }
-    } catch {
-      return; // invalid asset file (wrong size / bad image) → leave the ROM untouched
-    }
-    writeOverrides(ctx, sys, "lsdj-assets", [...lsdjOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot)), entry]);
-  });
-}
-
-// --- risa asset file actions (Export/Replace own the .rit/.chr/.rkit formats) -------------------------
-// THEMES are palette indices stored INLINE (readable JSON `.rit`, no file); FONTS LINK a `.chr` bank by path;
-// KITS LINK a pre-built 8 KB `.rkit` DMC bank by path (risa's Export writes one out of a ROM and the CLI's
-// build-kit compiles one; the cart's kit format can compile one in the plugin, though no row does - so a kit override just
-// splices a ready-made bank).
-
-const readRisaRomFor = (be: HostBackend, romPath: string): RisaRom | null => {
-  const bytes = romPath ? be.readFile(romPath) : null;
-  if (!bytes) return null;
-  const rom = RisaRom.fromBytes(bytes);
-  return rom.isRisa ? rom : null;
-};
-
-// risa and BlipToaster carry the SAME asset surface - a 7-role theme table, 8 KB CHR font banks and 8 KB
-// DMC kit banks - down to the file formats (.rit / .chr / .rkit), the validation constants and the
-// inline-vs-by-path split. Their two Export/Replace pairs were four functions that differed only in which
-// class parsed the ROM and which role kind the override was written to, so those are the two things a
-// console supplies here. LSDj is deliberately NOT folded in: its formats differ, and it validates by
-// trial-applying to a parsed ROM rather than by length, which is a genuinely different shape.
-interface RitAssetOps {
-  role: string;
-  openRom(be: HostBackend, romPath: string): {
-    getTheme(slot: number): { recordBytes: Uint8Array; nameBytes: Uint8Array } | null;
-    getKitBank(slot: number): Uint8Array | null;
-    getChrFontSlot(slot: number): Uint8Array | null;
-  } | null;
-}
-
-/** An override's linked bank, or null when the link is broken. A `.rkit` / `.chr` override records a PATH,
- *  and the user is free to move or delete that file afterwards — at which point Export used to produce
- *  nothing at all, silently, because a null read fell through the `if (bytes && bytes.length)` guard with no
- *  message. Returning null here lets the caller fall back to the base ROM's own bank, which is both useful
- *  (that is the asset the cart will actually boot with once the dead override is removed) and what the LSDj
- *  copy of these actions has always done. */
-const readLinked = (be: HostBackend, path: string | undefined): Uint8Array | null =>
-  path ? be.readFile(path) : null;
-
-const ritOverrides = (sys: SystemView, role: string): RisaAssetOverride[] =>
-  readRisaOverrides(roleConfig(sys.roles, role));
-
-// Export theme/font/kit `slot` to a picked file: the override's data if replaced, else the base ROM's asset.
-function exportRitAsset(
-  ops: RitAssetOps,
-  ctx: MenuContext,
-  sys: SystemView,
-  type: AssetTypeInfo,
-  slot: number,
-  label: string,
-): void {
-  const be = ctx.stores.backend;
-  const kind = type.kind;
-  const ov = ritOverrides(sys, ops.role).find((o) => o.type === kind && o.slot === slot);
-  const defaultName = `${sanitizeName(label)}${type.ext}`;
-  browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: type.patterns, saving: true, defaultName }, (path) => {
-    let bytes: Uint8Array | null = null;
-    if (kind === "theme") {
-      // The theme comes from the inline override, or the base ROM decoded; emit a .rit (readable JSON).
-      let theme = ov?.theme ?? null;
-      if (!theme) {
-        const t = ops.openRom(be, sys.romPath)?.getTheme(slot);
-        if (t) theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
-      }
-      if (theme) bytes = new TextEncoder().encode(JSON.stringify(serializeRit(theme), null, 2) + "\n");
-    } else if (kind === "kit") {
-      // The linked bank if overridden, else the base ROM's 8 KB DMC bank — either is a ready-to-link .rkit.
-      bytes = readLinked(be, ov?.path) ?? ops.openRom(be, sys.romPath)?.getKitBank(slot) ?? null;
-    } else {
-      bytes = readLinked(be, ov?.path) ?? ops.openRom(be, sys.romPath)?.getChrFontSlot(slot) ?? null;
-    }
-    if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
-  });
-}
-
-// Replace theme/font/kit `slot` from a picked file: validate it, record the override (theme INLINE / font +
-// kit by PATH) in role config, and reload so it takes effect. NON-DESTRUCTIVE — the base .nes is never written.
-function replaceRitAsset(ops: RitAssetOps, ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
-  const be = ctx.stores.backend;
-  const kind = type.kind;
-  browseThen(ctx, { title: `Replace ${kind} ${slot}`, patterns: type.patterns }, (path) => {
-    const data = be.readFile(path);
-    if (!data) return;
-    let entry: RisaAssetOverride;
-    try {
-      if (kind === "theme") {
-        const { theme } = parseRit(JSON.parse(new TextDecoder().decode(data))); // throws on a bad .rit
-        entry = { type: "theme", slot, name: theme.name.trim() || stem(path), theme };
-      } else if (kind === "kit") {
-        if (data.length !== KIT_BANK_SIZE || !isBankPopulated(data)) return; // a .rkit is exactly one populated 8 KB DMC bank
-        entry = { type: "kit", slot, name: bankToModel(data).name.trim() || stem(path), path };
-      } else {
-        if (data.length !== 0x2000) return; // a .chr is exactly one 8 KB CHR bank
-        entry = { type: "font", slot, name: stem(path), path };
-      }
-    } catch {
-      return; // malformed .rit / unreadable → leave the ROM untouched
-    }
-    writeOverrides(ctx, sys, ops.role, [...ritOverrides(sys, ops.role).filter((o) => !(o.type === kind && o.slot === slot)), entry]);
-  });
-}
-
-const lsdjAssetSpec: AssetMenuSpec = { id: "lsdj", catalog: lsdjAssetCatalog, exportAsset, replaceAsset };
-const risaAssetSpec: AssetMenuSpec = {
-  id: "risa",
-  catalog: risaAssetCatalog,
-  exportAsset: (ctx, sys, type, slot, label) => exportRitAsset(risaOps, ctx, sys, type, slot, label),
-  replaceAsset: (ctx, sys, type, slot) => replaceRitAsset(risaOps, ctx, sys, type, slot),
-};
-
-// --- BlipToaster asset file actions (Export/Replace own the .rkit/.chr formats) ---------------------------
-// BlipToaster's overrides: a 16-entry theme table (INLINE), plus the DMC kit and CHR font banks, both LINKED
-// by path (a pre-built 8 KB .rkit / .chr, read at construct). This comment used to say the cart had no themes
-// "yet" and that the actions mirrored risa's "minus themes"; the theme table landed and the comment did not
-// follow it, while the copy underneath grew a theme branch. The actions are now literally risa's - see
-// RitAssetOps - which is the version of "mirrors risa" that cannot drift.
-
-/** The baked-settings fields this PROJECT pins (not the ROM's own bytes) — only what the user has changed. */
-const readBlipToasterSettings = (sys: SystemView): BlipToasterSettingsPatch =>
-  readBlipToasterSettingsConfig(roleConfig(sys.roles, "bliptoaster-assets"));
-
-const readBlipToasterRomFor = (be: HostBackend, romPath: string): BlipToasterRom | null => {
-  const bytes = romPath ? be.readFile(romPath) : null;
-  if (!bytes) return null;
-  const rom = BlipToasterRom.fromBytes(bytes);
-  return rom.isBlipToaster ? rom : null;
-};
-
-const risaOps: RitAssetOps = { role: "risa-assets", openRom: readRisaRomFor };
-const blipToasterOps: RitAssetOps = { role: "bliptoaster-assets", openRom: readBlipToasterRomFor };
-
-// The cart's settings block names one THEME and one FONT as the live ones, so for those two the asset list is
-// also the picker: the row that IS live wears a `*`, every other row offers `Select`. That replaces a pair of
-// cyclers at the menu's root which named a slot by number, in a different place from the list of slots.
-const BLIPTOASTER_SELECTABLE: Record<string, "theme" | "font" | undefined> = { theme: "theme", font: "font" };
-
-const blipToasterAssetSpec: AssetMenuSpec = {
-  id: "bliptoaster",
-  catalog: bliptoasterAssetCatalog,
-  exportAsset: (ctx, sys, type, slot, label) => exportRitAsset(blipToasterOps, ctx, sys, type, slot, label),
-  replaceAsset: (ctx, sys, type, slot) => replaceRitAsset(blipToasterOps, ctx, sys, type, slot),
-  selectedSlot(ctx, sys, kind) {
-    const field = BLIPTOASTER_SELECTABLE[kind];
-    if (!field) return null; // kits have no live slot: ch5 CC 14 picks one, and nothing is baked
-    const s = blipToasterEffectiveSettings(ctx, sys);
-    return s ? s[field] : null;
-  },
-  selectSlot(ctx, sys, kind, slot) {
-    const field = BLIPTOASTER_SELECTABLE[kind];
-    if (field) blipToasterPinSettings(ctx, sys, { [field]: slot });
-  },
-};
-
-// --- BlipToaster settings rows (the cart's baked rig defaults) -----------------------------------------
-// BlipToaster has no settings memory - no battery, and nothing survives a RESET on purpose - so what you would
-// set once for your rig is baked into the `.nes`: a 16-byte block in its code bank
-// (@retroplug/bliptoaster/rom/settings).
-// These rows edit it exactly the way the asset rows edit assets: the pick is persisted on the
-// `bliptoaster-assets` role and folded into the ROM IN MEMORY at construct, and the file on disk is untouched.
-//
-// THEME and FONT have no row here: the cart names one of each as live, so their lists ARE the picker (a `*` on
-// the live slot, `Select` on every other - see blipToasterAssetSpec). The DMC kit has none either: ch5 CC 14
-// picks it, which a song does before it plays anything. What is left is the rig proper - the base channel, the
-// screen, the velocity curve - which nothing else in the menu names.
-//
-// Every row pins the field AND tells the running cart over SysEx, so it takes effect now; the pin is what a
-// later LOAD replays and what a bake writes. A project load needs neither - construct applies the pins on the
-// way in.
-const baseChannelNames = Array.from({ length: 16 }, (_v, i) => String(i + 1).padStart(2, "0"));
-
-/** The cart's baked block with the project's pins on top - what it is set to right now. Null when the ROM has
- *  no readable block (one predating it, or a format this build does not read). */
-function blipToasterEffectiveSettings(ctx: MenuContext, sys: SystemView): BlipToasterSettings | null {
-  const bytes = assetRomBytes(ctx.stores.backend, sys.romPath);
-  if (!bytes) return null;
-  const rom = BlipToasterRom.fromBytes(bytes);
-  if (!rom.isBlipToaster || !rom.hasSettings) return null;
-  return { ...rom.settings()!, ...readBlipToasterSettings(sys) };
-}
-
-/** Pin `patch` on the role AND declare the resulting rig to the RUNNING cart. Both halves matter and neither
- *  is redundant: the pin is what a load replays and a bake writes, the SysEx is what the cart in front of you
- *  hears. Staged at this system's node, so it reaches THIS cart whatever the project's MUSICAL routing is doing, and
- *  at its rp.n8.nes too when the document places one (the real console, in the block the emulated core hears it). */
-function blipToasterPinSettings(ctx: MenuContext, sys: SystemView, patch: BlipToasterSettingsPatch): void {
-  const effective = blipToasterEffectiveSettings(ctx, sys);
-  if (!effective) return;
-  const next = { ...readBlipToasterSettings(sys), ...patch };
-  ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: next });
-  const sysex = blipToasterSettingsSysex({ ...effective, ...patch });
-  // The system's own node, and the cart node when this is the system that drives one (the first NES in slot order
-  // whose setting is on): the emulated core and the real console hear the same message in the same block.
-  ctx.stores.backend.stageNodeMidi(systemNodeId(sys.id), sysex);
-  const cart = cartFor(ctx, sys);
-  if (cart !== null) ctx.stores.backend.stageNodeMidi(cart.nodeId, sysex);
-}
-
-function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] {
-  const effective = blipToasterEffectiveSettings(ctx, sys);
-  if (!effective) return [];
-  const pinned = readBlipToasterSettings(sys);
-  const pin = (patch: BlipToasterSettingsPatch): void => blipToasterPinSettings(ctx, sys, patch);
-
-  return [
-    cycler("bliptoaster-set-basech", "Base MIDI Channel", baseChannelNames, effective.baseChannel, (n) => pin({ baseChannel: n })),
-    cycler("bliptoaster-set-ppu", "PPU Enabled", OFF_ON, effective.ppu ? 1 : 0, (n) => pin({ ppu: n === 1 })),
-    // "not on the VRC7 build" is the ROM's own behaviour (it has no velocity curve), not something to hide here:
-    // the byte is still baked and still honoured by every other build of the same project's ROM.
-    cycler("bliptoaster-set-curve", "Velocity Curve", ["Linear", "Log"], effective.velCurve ? 1 : 0, (n) => pin({ velCurve: n === 1 })),
-    // Reset is the one row left. There is no "Apply" any more: every row above already reached the cart over
-    // SysEx as it was stepped, so there was nothing left for a reboot to do that the row had not done. Reset
-    // still reboots, because dropping the pins means going back to the ROM's OWN bytes, which are only read at
-    // boot. Offered only once something IS pinned - with nothing pinned the rows show the ROM's bytes already.
-    ...(Object.keys(pinned).length
-      ? [
-          separator("bliptoaster-set-apply-sep"),
-          action("bliptoaster-set-reset", "Reset to ROM Defaults", () => {
-            ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: {} });
-            ctx.stores.project.systems.reloadSystem(sys.id);
-          }),
-        ]
-      : []),
-  ];
-}
-
-// The BlipToaster tracker extras: the settings rows sit at the TOP of the BlipToaster menu, above the asset
-// submenus and fenced off from them (they are what the cart BOOTS with, the asset menus are what it boots
-// FROM). Inline rather than behind a "Settings" submenu of their own: there are only a handful, and one of the
-// two things you come to this menu to do should not cost a level. Empty when the ROM carries no readable
-// settings block.
-function blipToasterExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
-  const rows = blipToasterSettingsRows(ctx, sys);
-  if (rows.length === 0) return [];
-  return [...rows, separator("bliptoaster-settings-sep")];
-}
-
-// --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
-// Songs are the battery, NOT a ROM override: edits act directly on the live SRAM (like LSDj's own FILE
-// screen) via mutateLiveSav (src/tracker/liveSav) - read the live sav, apply a BYTE-LEVEL transform (never
-// the lossy Song model - see lsdjSongOps), write the resolved .sav, cold-boot the core from it. Durable on
-// disk and reflected in the running LSDj. A no-op if there's no readable SRAM or the op returns null.
-// Returns whether the edit landed, so a caller that CHAINS edits (save the working song, then load another)
-// can stop when the first one declined rather than discarding work the save didn't actually preserve.
-function mutateSavBytes(ctx: MenuContext, sys: SystemView, fn: (sav: Uint8Array) => Uint8Array | null): boolean {
-  return mutateLiveSav(ctx.stores.backend, ctx.stores.project.systems, sys, fn);
-}
-
-// Export the saved song in `slot` to a picked `.lsdsng` file (byte-exact — decompress the slot, re-wrap).
-function exportSong(ctx: MenuContext, sys: SystemView, slot: number, name: string): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: `Export song ${slot}`, patterns: ["*.lsdsng"], saving: true, defaultName: `${sanitizeName(name)}.lsdsng` }, (path) => {
-    const bytes = ctx.stores.project.systems.readSram(sys.id);
-    if (!bytes) return;
-    const raw = decompressSlot(bytes, slot);
-    if (!raw) return;
-    be.writeFileAtomic(path, encodeLsdsngRaw(savSongName(bytes, slot) || name, savSongVersion(bytes, slot), raw));
-  });
-}
-
-// Replace the song in `slot` from a picked `.lsdsng` or `.lsdprj` (byte-exact; a bad file leaves the sav
-// alone). A `.lsdprj` also imports its kits (see importLsdprj).
-function replaceSong(ctx: MenuContext, sys: SystemView, slot: number): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: `Replace song ${slot}`, patterns: ["*.lsdsng", "*.lsdprj"] }, (path) => {
-    if (path.toLowerCase().endsWith(".lsdprj")) {
-      importLsdprj(ctx, sys, path, slot);
-      return;
-    }
-    const data = be.readFile(path);
-    if (!data) return;
-    mutateSavBytes(ctx, sys, (sav) => replaceSongInSav(sav, slot, data));
-  });
-}
-
-// Import a `.lsdprj` (song + its kit banks). The song goes into a slot (targetSlot for Replace, else the
-// first free slot); its kits are deduped against the effective ROM and the missing ones are recorded as
-// lsdj-assets kit overrides that LINK the `.lsdprj` by path (+ ordinal), with the song's kit references
-// remapped to the assigned slots (all byte-level — the Song model can't hold 6-bit kit indices). One rebuild
-// (loadSram) applies the kit overrides → romBytes and boots the imported song from the .sav.
-function importLsdprj(ctx: MenuContext, sys: SystemView, path: string, targetSlot?: number): void {
-  const be = ctx.stores.backend;
-  const systems = ctx.stores.project.systems;
-  const file = be.readFile(path);
-  const liveSram = systems.readSram(sys.id);
-  const baseRom = sys.romPath ? be.readFile(sys.romPath) : null;
-  if (!file || !liveSram || !baseRom) return;
-
-  const overrides = lsdjOverrides(sys);
-  const effectiveRom = applyOverridesToRom(baseRom, overrides, filesPngHost(be));
-  const plan = planLsdprjImport({ file, path, effectiveRom, overrides, liveSram, targetSlot });
-  if (!plan) return; // malformed file / out of kit or song slots
-
-  const target = resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath);
-  if (!be.writeFileAtomic(target, plan.savBytes)) return;
-  if (plan.addedKits > 0) systems.setRoleConfig(sys.id, "lsdj-assets", { overrides: plan.overrides });
-  systems.loadSram(sys.id, target); // one rebuild: kit overrides → romBytes + boot the imported song
-}
-
-// Add a song: a `.lsdsng`/`.lsdprj` into the first free slot (the same importer drag-and-drop uses), or a
-// selection of songs from a `.sav`/`.srm` (the checkbox picker, validated against the cart's console).
-function addSongFromDisk(ctx: MenuContext, sys: SystemView): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Add Song", patterns: ["*.lsdsng", "*.lsdprj", ...SAV_PATTERNS] }, (path) => {
-    if (isSavPath(path)) {
-      const data = be.readFile(path);
-      if (data) ctx.beginSongImport(sys, data);
-    } else {
-      const importer = resolveTracker(sys.roles)?.songImport;
-      importer?.import(importHost(be, ctx.stores.project.systems), sys, [path]);
-    }
-  });
-}
 
 // --- the shared Songs submenu (SongCatalog-driven) -------------------------------------------------
-// LSDj + risa songs are both the BATTERY, not a ROM override: edits act on the live SRAM via mutateSavBytes
-// (readSram → byte-level catalog op → writeFileAtomic → loadSram cold-boot). One generic songMenu renders
+// LSDj + risa songs are both the BATTERY, not a ROM override: edits act on the live SRAM through the host's liveSongs
+// group (readSram → byte-level catalog op → writeFileAtomic → loadSram cold-boot). One generic songMenu renders
 // the structure over a SongCatalog — Load / Delete / reorder are its byte-ops; the console supplies the
 // file-dialog actions (Export/Replace/Add, which own their formats). Reorder (Move Up/Down) rows show only
 // when the catalog implements reorder — risa's positional records, or LSDj by swapping saved slots.
-interface SongMenuSpec {
-  id: string; // row-id prefix, e.g. "lsdj" / "risa"
-  catalog: SongCatalog;
-  exportSong(ctx: MenuContext, sys: SystemView, index: number, name: string): void;
-  replaceSong(ctx: MenuContext, sys: SystemView, index: number): void;
-  addSong(ctx: MenuContext, sys: SystemView): void;
-  // The synthetic working-song row's actions (only for a console whose catalog reports an unsaved working
-  // song — risa). Export writes the working song to disk; saveToCatalog promotes it to a real saved slot.
-  exportWorking?(ctx: MenuContext, sys: SystemView, name: string): void;
-  saveWorkingToCatalog?(ctx: MenuContext, sys: SystemView): void;
-  // Commit the live working song into the catalog - the pure byte-op behind "Save Working Song & Load",
-  // which is the only answer to the discard prompt that PRESERVES the work. Null = declined (full catalog
-  // / malformed working song), which the menu surfaces as a disabled row rather than an action that fails.
-  // `name` arrives only when `workingNeedsName` asked for one. Omitted by a console with no such op.
-  commitWorking?(sav: Uint8Array, name?: string): Uint8Array | null;
-  // True when the working song has no name to inherit and the user must supply one. LSDj keeps names on the
-  // stored project rather than in the song, so an UNLINKED working song genuinely has none; risa's working
-  // song carries its own, and a LINKED LSDj song inherits its slot's - both answer false and save outright.
-  workingNeedsName?(sav: Uint8Array): boolean;
-  // Cheap "is there anywhere to put it" test, so the menu can grey the row instead of offering a save that
-  // fails. Deliberately NOT `commitWorking(sav) === null`: that compresses the whole song, and the answer is
-  // needed once per menu build (the guard is identical on every song row). Omitted = assume yes.
-  canCommitWorking?(sav: Uint8Array): boolean;
-}
-
 // The "Load..." row when loading would discard uncommitted work: a submenu whose children are the two real
 // answers, with Esc/Back as cancel. The first child is an inert line naming the casualty, so the warning is
 // visible without having to read the option labels - the same "say what is unsaved" convention the
@@ -1549,7 +1126,7 @@ function loadGuard(
   // a dead id and silently do nothing - discarding the very work the user asked to save. One transform also
   // makes it atomic: either both land or the sav is untouched. Mirrors addLsdsngToSav's add-then-load.
   const saveAndLoad = (name?: string): boolean => {
-    const ok = mutateSavBytes(ctx, sys, (bytes) => {
+    const ok = hostOf(ctx).liveSongs.mutate(sys, (bytes) => {
       const saved = spec.commitWorking?.(bytes, name);
       return saved ? spec.catalog.load(saved, song.index) : null;
     });
@@ -1658,7 +1235,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
       // backing out (Esc) IS the cancel. A submenu rather than a yes/no prompt because there are three
       // answers and PromptSpec only carries two.
       discards ? loadGuard(spec, ctx, sys, bytes!, workingLabel, s, doLoad) : action(`${spec.id}-song-${s.index}-load`, "Load...", doLoad),
-      action(`${spec.id}-song-${s.index}-export`, "Export...", () => spec.exportSong(ctx, sys, s.index, name)),
+      action(`${spec.id}-song-${s.index}-export`, "Export...", () => spec.exportSong(hostOf(ctx), sys, s.index, name)),
       // Replace overwrites a SAVED slot - the durable copy, gone with no undo - so it always confirms,
       // whatever the working song's state. Confirm first, then browse: the picker is the console's own
       // (it owns the file formats), and a cancel there simply does nothing.
@@ -1672,7 +1249,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
           hint: "Enter to pick a file  |  Esc to cancel",
           confirm: true,
           onConfirm: () => {
-            spec.replaceSong(ctx, sys, s.index);
+            spec.replaceSong(hostOf(ctx), sys, s.index);
             return null;
           },
         },
@@ -1688,7 +1265,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
         const label = dir === "up" ? "Move Up" : "Move Down";
         const id = `${spec.id}-song-${s.index}-${dir}`;
         const run = (): void => {
-          mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, i, to));
+          hostOf(ctx).liveSongs.mutate(sys, (sav) => cat.reorder!(sav, i, to));
         };
         if (disabled || !rebootDiscards) return action(id, label, run, disabled);
         return {
@@ -1720,7 +1297,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
         hint: "Enter to delete  |  Esc to cancel",
         confirm: true,
         onConfirm: () => {
-          mutateSavBytes(ctx, sys, (sav) => cat.delete(sav, s.index));
+          hostOf(ctx).liveSongs.mutate(sys, (sav) => cat.delete(sav, s.index));
           return null;
         },
       },
@@ -1747,7 +1324,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
       for (const t of workingSongTargets(cat, bytes!)) {
         wItems.push(
           action(`${spec.id}-song-working-save-${t.index}`, `Save Changes to [${t.index}] ${t.name}`, () => {
-            mutateSavBytes(ctx, sys, (sav) => cat.saveWorkingToSlot!(sav, t.index));
+            hostOf(ctx).liveSongs.mutate(sys, (sav) => cat.saveWorkingToSlot!(sav, t.index));
           }),
         );
       }
@@ -1756,10 +1333,14 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     // user cares about: a LINKED song overwrites the slot it came from, an unlinked one grows the catalog.
     if (spec.saveWorkingToCatalog)
       wItems.push(
-        action(`${spec.id}-song-working-save`, working.linked ? "Save Changes" : "Save as New Song", () => spec.saveWorkingToCatalog!(ctx, sys)),
+        action(`${spec.id}-song-working-save`, working.linked ? "Save Changes" : "Save as New Song", () =>
+          spec.saveWorkingToCatalog!(hostOf(ctx), sys),
+        ),
       );
     if (spec.exportWorking)
-      wItems.push(action(`${spec.id}-song-working-export`, "Export...", () => spec.exportWorking!(ctx, sys, wName)));
+      wItems.push(
+        action(`${spec.id}-song-working-export`, "Export...", () => spec.exportWorking!(hostOf(ctx), sys, wName)),
+      );
     // "(unsaved)" is what separates this row from the identically-named slot row below it when the song is
     // linked - without it the two read as two songs rather than one song and its uncommitted edits.
     workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName} (unsaved)`, wItems), separator(`${spec.id}-song-working-sep`));
@@ -1778,218 +1359,41 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
           hint: "Enter to pick a file  |  Esc to cancel",
           confirm: true,
           onConfirm: () => {
-            spec.addSong(ctx, sys);
+            spec.addSong(hostOf(ctx), sys);
             return null;
           },
         },
       }
-    : action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys));
+    : action(`${spec.id}-song-add`, "Add...", () => spec.addSong(hostOf(ctx), sys));
   return submenu(`${spec.id}-songs`, "Songs", [...workingRows, addRow, separator(`${spec.id}-song-add-sep`), ...body]);
 }
 
-// The throw→null wrapper for risa's catalog ops used by its file actions (LSDj's ops return null directly;
-// risa's byte-ops throw on a bad index / no space).
-function tryOp(fn: () => Uint8Array): Uint8Array | null {
-  try {
-    return fn();
-  } catch {
-    return null; // out of range / malformed → leave the sav untouched
-  }
+// --- one tracker's instance submenu --------------------------------------------------------------------
+/** What a contributed builder reads beyond the host: the project's systems and the shell's per-path base-ROM cache (a
+ *  catalogue parses a ROM once per path rather than once per menu build, and a bake drops it when it rewrites one). */
+function buildContext(ctx: MenuContext): MenuBuildContext {
+  return { systems: ctx.systems, assetRom: (path) => assetRomBytes(ctx.stores.backend, path) };
 }
 
-// risa song file I/O: a `.risong` is the raw self-describing song record — the `.lsdsng` analog (song only,
-// no kits). Export writes songRecordBytes; Replace/Add inject the record via the byte-level catalog ops.
-function risaExportSong(ctx: MenuContext, sys: SystemView, index: number, name: string): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: `Export song ${index}`, patterns: ["*.risong"], saving: true, defaultName: `${sanitizeName(name)}.risong` }, (path) => {
-    const bytes = ctx.stores.project.systems.readSram(sys.id);
-    if (!bytes) return;
-    const record = songRecordBytes(bytes, index);
-    if (record) be.writeFileAtomic(path, record);
-  });
-}
-function risaReplaceSong(ctx: MenuContext, sys: SystemView, index: number): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: `Replace song ${index}`, patterns: ["*.risong"] }, (path) => {
-    const data = be.readFile(path);
-    if (!data) return;
-    mutateSavBytes(ctx, sys, (sav) => tryOp(() => replaceSongRecordInSav(sav, index, data)));
-  });
-}
-function risaAddSong(ctx: MenuContext, sys: SystemView): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Add Song", patterns: ["*.risong", ...SAV_PATTERNS] }, (path) => {
-    const data = be.readFile(path);
-    if (!data) return;
-    if (isSavPath(path)) ctx.beginSongImport(sys, data); // a whole .sav/.srm → the checkbox picker
-    else mutateSavBytes(ctx, sys, (sav) => tryOp(() => addSongRecordToSav(sav, data))); // a single .risong record
-  });
-}
-// The synthetic working-song row's actions. Export writes the LIVE working song (banks 0-3, encoded as a
-// record) to a `.risong`; Save to Catalog promotes it into a new saved slot + links it, so it stops being
-// unsaved and moves into the numbered list.
-function risaExportWorking(ctx: MenuContext, sys: SystemView, name: string): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Export working song", patterns: ["*.risong"], saving: true, defaultName: `${sanitizeName(name)}.risong` }, (path) => {
-    const bytes = ctx.stores.project.systems.readSram(sys.id);
-    if (!bytes) return;
-    const record = workingSongRecord(bytes);
-    if (record) be.writeFileAtomic(path, record);
-  });
-}
-function risaSaveWorking(ctx: MenuContext, sys: SystemView): void {
-  mutateSavBytes(ctx, sys, (sav) => tryOp(() => saveWorkingToCatalog(sav)));
-}
-
-// risa's working song carries its own name, so it never needs one asked for - `workingNeedsName` is simply
-// absent (false) and the menu offers a plain "Save Working Song & Load".
-const risaCommitWorking = (sav: Uint8Array): Uint8Array | null => tryOp(() => saveWorkingToCatalog(sav));
-
-// The LSDj working-song row's actions. The row shows only for a LINKED working song (see lsdjSongCatalog),
-// so both of these inherit the active slot's name + version - LSDj keeps those on the stored project rather
-// than in the song, so a detached working song has neither.
-function lsdjExportWorking(ctx: MenuContext, sys: SystemView, name: string): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Export working song", patterns: ["*.lsdsng"], saving: true, defaultName: `${sanitizeName(name)}.lsdsng` }, (path) => {
-    const bytes = ctx.stores.project.systems.readSram(sys.id);
-    if (!bytes) return;
-    const slot = lsdjActiveSlot(bytes);
-    if (slot < 0) return;
-    // The LIVE working song (the first 0x8000), not the stored slot - exporting the edits is the point.
-    be.writeFileAtomic(path, encodeLsdsngRaw(savSongName(bytes, slot) || name, savSongVersion(bytes, slot), bytes.slice(0, 0x8000)));
-  });
-}
-function lsdjSaveWorking(ctx: MenuContext, sys: SystemView): void {
-  // No name argument: the row is linked-only, so saveWorkingToCatalog overwrites its slot and keeps its name.
-  mutateSavBytes(ctx, sys, (sav) => lsdjSaveWorkingToCatalog(sav));
-}
-
-const lsdjSongSpec: SongMenuSpec = {
-  id: "lsdj",
-  catalog: lsdjSongCatalog,
-  exportSong,
-  replaceSong,
-  addSong: addSongFromDisk,
-  exportWorking: lsdjExportWorking,
-  saveWorkingToCatalog: lsdjSaveWorking,
-  commitWorking: lsdjSaveWorkingToCatalog,
-  // Only an UNLINKED LSDj working song needs a name: a linked one inherits its slot's.
-  workingNeedsName: (sav) => lsdjActiveSlot(sav) < 0,
-  canCommitWorking: canSaveWorkingToCatalog,
-};
-const risaSongSpec: SongMenuSpec = {
-  id: "risa",
-  catalog: risaSongCatalog,
-  exportSong: risaExportSong,
-  replaceSong: risaReplaceSong,
-  addSong: risaAddSong,
-  exportWorking: risaExportWorking,
-  saveWorkingToCatalog: risaSaveWorking,
-  commitWorking: risaCommitWorking,
-  canCommitWorking: canRisaSaveWorking,
-};
-
-// --- smsggdj Songs file actions (the `.smdj4` single-song unit tools/savetool.html speaks) ------------
-// A `.smdj4` is a 16-byte header (magic + block checksum + the echo settings, which live in the
-// DIRECTORY entry rather than the song) followed by the verbatim 6,912-byte block. Uncompressed on
-// purpose: a single song on disk has no space pressure, and staying raw means the file IS what the cart
-// holds in work RAM.
-function smsggdjExportSong(ctx: MenuContext, sys: SystemView, index: number, name: string): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: `Export song ${index}`, patterns: ["*.smdj4"], saving: true, defaultName: `${sanitizeName(name)}.smdj4` }, (path) => {
-    const sav = ctx.stores.project.systems.readSram(sys.id);
-    if (!sav) return;
-    const block = readSmdjSongBlock(sav, index);
-    if (!block) return; // free slot / failed its checksum: nothing honest to write
-    const file = wrapSmdjSong(block, readSmdjSongEcho(sav, index) ?? undefined);
-    if (file) be.writeFileAtomic(path, file);
-  });
-}
-function smsggdjReplaceSong(ctx: MenuContext, sys: SystemView, index: number): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: `Replace song ${index}`, patterns: ["*.smdj4"] }, (path) => {
-    const data = be.readFile(path);
-    if (!data) return;
-    const song = unwrapSmdjSong(data); // rejects a wrong magic / length / checksum rather than importing junk
-    if (!song) return;
-    mutateSavBytes(ctx, sys, (sav) => replaceSmdjSong(sav, index, song.block, song.echo));
-  });
-}
-function smsggdjAddSong(ctx: MenuContext, sys: SystemView): void {
-  const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Add Song", patterns: ["*.smdj4", ...SAV_PATTERNS] }, (path) => {
-    const data = be.readFile(path);
-    if (!data) return;
-    if (isSavPath(path)) {
-      ctx.beginSongImport(sys, data); // a whole .sav/.srm -> the checkbox picker
-      return;
-    }
-    const song = unwrapSmdjSong(data);
-    if (!song) return;
-    const name = path.replace(/^.*[\\/]/, "").replace(/\.smdj4$/i, "").slice(0, 8).toUpperCase();
-    mutateSavBytes(ctx, sys, (sav) => addSmdjSong(sav, song.block, name));
-  });
-}
-const smsggdjSongSpec: SongMenuSpec = {
-  id: "smsggdj",
-  catalog: smsggdjSongCatalog,
-  exportSong: smsggdjExportSong,
-  replaceSong: smsggdjReplaceSong,
-  addSong: smsggdjAddSong,
-  // No working-song rows: this cart's working song is work RAM, so the catalog reports no unsaved
-  // working song to export or promote. See smsggdjSongCatalog.
-};
-const smsggdjAssetSpec: AssetMenuSpec = {
-  id: "smsggdj",
-  catalog: smsggdjAssetCatalog,
-  exportAsset: () => {},
-  replaceAsset: () => {},
-}; // `types: []`, so assetMenu renders nothing and neither action is reachable
-
-// The per-console UI bindings for a tracker integration: the file-dialog specs (Songs + assets, which own
-// file formats) plus any per-console extras not yet unified (LSDj's sync cyclers). Keyed by integration id;
-// the integration itself (id/label/markerRole/songs/assets) rides src/tracker (the one place a console is
-// registered).
-interface TrackerUi {
-  song?: SongMenuSpec; // omitted for asset-only consoles (e.g. BlipToaster) — no Songs submenu is built
-  asset: AssetMenuSpec;
-  extras?(ctx: MenuContext, sys: SystemView): MenuItem[];
-}
-const TRACKER_UI: Record<string, TrackerUi> = {
-  lsdj: { song: lsdjSongSpec, asset: lsdjAssetSpec, extras: lsdjExtras },
-  risa: { song: risaSongSpec, asset: risaAssetSpec },
-  smsggdj: { song: smsggdjSongSpec, asset: smsggdjAssetSpec },
-  bliptoaster: { asset: blipToasterAssetSpec, extras: blipToasterExtras },
-};
-
-// One tracker's instance-submenu children: the rows its package contributes (its sync knobs), its extras (if any), the
-// shared Songs menu (only if the console has a song battery), its asset menus, then the whole-ROM bake rows.
+/** One tracker's instance-submenu children, composed from what its package contributes: the rows its `extras` declare
+ *  (its sync knobs), the fragment its `extras.build` returns (the HD Player, BlipToaster's settings), the shared Songs
+ *  menu over its `song` spec, its asset menus and then the whole-ROM bake rows. A cart contributes the specs it has, so
+ *  an asset-only console (BlipToaster) builds no Songs menu and an asset-less one builds no asset rows. */
 function trackerChildren(t: TrackerIntegration, ctx: MenuContext, sys: SystemView): MenuItem[] {
-  const ui = TRACKER_UI[t.id];
-  const contributed = contributedTrackerUi(t.id);
+  const ui = contributedTrackerUi(t.id);
+  if (!ui) return [];
+  const host = hostOf(ctx);
   const systems = ctx.stores.project.systems;
   return [
     ...roleRowItems(
-      contributed?.extras?.rows ?? [],
+      ui.extras?.rows ?? [],
       sys,
       (kind) => ctx.stores.registry.roleType(kind),
       (role, key, val) => systems.setRoleConfig(sys.id, role, { [key]: val }),
     ),
-    ...(ui.extras ? ui.extras(ctx, sys) : []),
+    ...(ui.extras?.build ? ui.extras.build(host, sys, buildContext(ctx)) : []),
     ...(ui.song ? [songMenu(ui.song, ctx, sys)] : []),
-    ...assetMenu(ui.asset, ctx, sys),
-    ...romPatchRows(ui.asset, ctx, sys),
-  ];
-}
-
-// The tail of LSDj's tracker extras, after the sync rows its package contributes: the HD Player action and the
-// separator before the asset menus. Both are the shell's until the tracker entries' own builders land.
-function lsdjExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
-  return [
-    // The HD player: song + all four chains + all four phrases on one full-window screen, in the cart's
-    // own font and palette. The cart keeps playing and stays playable underneath; Esc returns to the grid.
-    action("lsdj-hd", "HD Player", () => ctx.openLsdjHd(sys.id)),
-    separator("lsdj-assets-sep"),
+    ...(ui.asset ? [...assetMenu(ui.asset, ctx, sys), ...romPatchRows(ui.asset, ctx, sys)] : []),
   ];
 }
 
@@ -2001,7 +1405,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.systems.length > 0) items.push(action("proj-new", "New Project", () => ctx.newProject()));
   // Load is guarded + outcome-aware via ctx.loadProject.
   items.push(action("proj-load", "Load Project...", () =>
-    browseThen(ctx, { title: "Load Project", patterns: LOAD_PATTERNS }, (p) => ctx.loadProject(p)),
+    browseThen(hostOf(ctx), { title: "Load Project", patterns: LOAD_PATTERNS }, (p) => ctx.loadProject(p)),
   ));
   if (ctx.systems.length > 0) {
     // Save writes to the known path when there is one (else Save As covers it). Save As / Export browse
@@ -2013,12 +1417,18 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     items.push(action("proj-saveas", "Save Project As...", () =>
       // Through the same save as every other route, so an unsaved work-RAM working song is saved into its
       // battery first - flushing and saving directly here skipped it, and the user believed they had saved.
-      browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) =>
-        void saveProjectInteractive(ctx.stores, p),
+      browseThen(
+        hostOf(ctx),
+        { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" },
+        (p) => void saveProjectInteractive(ctx.stores, p),
       ),
     ));
     items.push(action("proj-export", "Export Zip...", () =>
-      browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.rplg.zip" }, (p) => project.export(p)),
+      browseThen(
+        hostOf(ctx),
+        { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.rplg.zip" },
+        (p) => project.export(p),
+      ),
     ));
   }
   items.push(separator("proj-sep0"));
@@ -2203,8 +1613,10 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
   const defaultDir = ctx.userConfig.render.outputDir;
   const renderDirItem = submenu("set-render-dir", dirLabel("Default Render Dir: ", defaultDir || "(unset)"), [
     action("set-render-dir-set", "Set...", () =>
-      browseThen(ctx, { title: "Default Render Dir", patterns: [], directory: true, startDir: defaultDir }, (p) =>
-        userConfig.setRenderOutputDir(p),
+      browseThen(
+        hostOf(ctx),
+        { title: "Default Render Dir", patterns: [], directory: true, startDir: defaultDir },
+        (p) => userConfig.setRenderOutputDir(p),
       ),
     ),
     action("set-render-dir-clear", "Clear", () => userConfig.setRenderOutputDir(""), !defaultDir),
@@ -2250,7 +1662,12 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
       kind: "action",
       warn: entry.missing,
       onSelect: entry.missing
-        ? () => browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p))
+        ? () =>
+            browseThen(
+              hostOf(ctx),
+              { title: "Locate Project", patterns: LOAD_PATTERNS },
+              (p) => ctx.stores.recent.relink(entry.path, p),
+            )
         : () => ctx.loadProject(entry.path, entry.song),
       onDelete: () => ctx.stores.recent.remove(entry.path, entry.song),
     };

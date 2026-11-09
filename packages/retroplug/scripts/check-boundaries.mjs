@@ -124,6 +124,7 @@ const SHELL_IMPORTS = [
   { specifier: "@retroplug/core/host", reason: "the host contract a cart's or a console's hook asks its surface for, and every surface's builder returns" },
   { specifier: "@retroplug/core/midiRouting", reason: "the MIDI routing model the project settings store and the planner share" },
   { specifier: "@retroplug/core/offlineJob", reason: "the offline job's document and result types the render and kit drivers carry" },
+  { specifier: "@retroplug/core/path", reason: "the pure path and save-file naming helpers a project store, a menu and a cart's own file actions all derive names with" },
   { specifier: "@retroplug/core/platform", reason: "the platform and core ids, open strings since the descriptors register them" },
   { specifier: "@retroplug/core/romParameters", reason: "the ROM parameter lane a role's parameters hook answers in" },
   { specifier: "@retroplug/core/systemRoles", reason: "the role contract every system role implements, the shell's role registry included" },

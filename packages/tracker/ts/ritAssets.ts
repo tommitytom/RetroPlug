@@ -34,6 +34,14 @@ export interface RitAssetOverride {
   erase?: boolean; // kit — empty the slot instead of linking a bank
 }
 
+/** The override list a `*-assets` role config carries, typed for the `.rit` actions. One raw cast lives here, so the
+ *  shared actions and both carts' role modules read the same list the same way (the config is raw JSON from a saved
+ *  project, and each entry's shape is validated where it is APPLIED rather than here). */
+export function readRitOverrides(config: Record<string, unknown> | undefined): RitAssetOverride[] {
+  const raw = config?.overrides;
+  return Array.isArray(raw) ? (raw as RitAssetOverride[]) : [];
+}
+
 export const ritThemeSchema = z.object({
   name: z.string(),
   bg: z.string(),

@@ -23,6 +23,7 @@
     "./midiRoute": "./ts/midiRoute.ts",
     "./midiRouting": "./ts/midiRouting.ts",
     "./offlineJob": "./ts/offlineJob.ts",
+    "./path": "./ts/path.ts",
     "./platform": "./ts/platform.ts",
     "./ports": "./ts/ports.ts",
     "./protocol": "./ts/protocol.ts",

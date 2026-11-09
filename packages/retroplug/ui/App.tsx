@@ -7,9 +7,10 @@
 // start menu (empty project) is always open. When the grid shows without a menu, the keypad is pointed at
 // the sink group so arrow keys don't leak into the clickable tiles.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { setKeyboardGroup } from "lvgljs";
 
+import type { SystemInfo } from "@retroplug/core/host";
 import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent, useBindings } from "./stores/useStores";
 import { useSinkGroup } from "./lvgl/FocusProvider";
 import { Box } from "./lvgl/Box";
@@ -44,7 +45,7 @@ import type { MenuTree } from "@retroplug/ui/menu";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE, type AppAction } from "../src/keyCodes";
 import { resolveDropAction } from "../src/fileDrop";
-import { createUiHost } from "./host/uiHost";
+import { createUiHost, uiViews } from "./host/uiHost";
 import { resolveTracker } from "../src/trackerRegistry";
 
 const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
@@ -85,17 +86,17 @@ export function App() {
   // or a console's UI code reaches the shell through. Its views are the shell's own screens (the HD player today), and
   // its import picker is useSongImport's overlay, which is resolved against the live system an import names rather than
   // the snapshot the caller held.
-  const uiHost = useMemo(
-    () =>
-      createUiHost(stores, {
-        views: { open: (_id, systemId) => setHdSystemId(systemId) },
-        beginImport: (sys, source) => {
-          const live = stores.project.systems.view().find((s) => s.id === sys.id);
-          if (live) songImport.begin(live, source);
-        },
-      }),
+  const beginImport = useCallback(
+    (sys: SystemInfo, source: Uint8Array): void => {
+      const live = stores.project.systems.view().find((s) => s.id === sys.id);
+      if (live) songImport.begin(live, source);
+    },
     [stores, songImport.begin],
   );
+  const uiHost = useMemo(() => createUiHost(stores, { views: uiViews(setHdSystemId), beginImport }), [
+    stores,
+    beginImport,
+  ]);
   // The five standalone-only menu sources. Each owns state that lives in the NATIVE host rather than in
   // a store, so a change there has no path back into React and must be pushed: the Audio submenu's
   // staged rate/block draft, a MIDI device pick, the transport toggle (which the audio thread publishes
@@ -310,7 +311,7 @@ export function App() {
     if (!veto) native.__rp_quitWindow?.();
   };
 
-  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: songImport.begin, openLsdjHd: setHdSystemId };
+  const ctx: MenuContext = { stores, host: uiHost, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: beginImport, openLsdjHd: setHdSystemId };
 
   // A full-window overlay (file browser / close prompt / project modal / song import) draws above
   // everything and owns the keypad; the start menu (empty project) is the same full-window menu, always open.

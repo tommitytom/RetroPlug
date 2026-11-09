@@ -24,7 +24,8 @@
     "./trackerPlayback": "./ts/trackerPlayback.ts",
     "./trackerRender": "./ts/trackerRender.ts",
     "./trackerSongImport": "./ts/trackerSongImport.ts",
-    "./workingSongBlob": "./ts/workingSongBlob.ts"
+    "./workingSongBlob": "./ts/workingSongBlob.ts",
+    "./ritAssetOps": "./ts/ritAssetOps.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",

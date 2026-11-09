@@ -4,6 +4,7 @@
 // a read-only line was `disabled` in one prompt and a focusable no-op in the next, so the cursor landed on
 // it and Enter did nothing.
 
+import type { DialogsHost, FileBrowserOpts } from "@retroplug/core/host";
 import type { MenuAction, MenuItem, MenuTree } from "./menuTree";
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
@@ -68,4 +69,16 @@ export function cycler(
 /** A dismissible notice: the body as a read-only line, then a single OK. Ids are `${idp}-body` / `${idp}-ok`. */
 export function noticeTree(idp: string, title: string, body: string, onOk: () => void): MenuTree {
   return { title, items: [infoRow(`${idp}-body`, body), button(`${idp}-ok`, "OK", onOk)] };
+}
+
+/** Open the host's file dialog with `opts` and apply the picked path; a cancel is ignored. Every cart's Export/Replace
+ *  row and every Add... row is this, so the picker belongs beside the builders rather than in each cart's module. */
+export function browseThen(
+  host: { readonly dialogs: DialogsHost },
+  opts: FileBrowserOpts,
+  apply: (path: string) => void,
+): void {
+  void host.dialogs.browse(opts).then((path) => {
+    if (path) apply(path);
+  });
 }

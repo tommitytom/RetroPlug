@@ -39,12 +39,14 @@
     "./runtime/layout": "./ts/runtime/layout.ts",
     "./runtime/reader": "./ts/runtime/reader.ts",
     "./runtime/symbols.generated": "./ts/runtime/symbols.generated.ts",
-    "./runtime/types": "./ts/runtime/types.ts"
+    "./runtime/types": "./ts/runtime/types.ts",
+    "./ui": "./ts/ui/index.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/dsp": "workspace:*",
     "@retroplug/tracker": "workspace:*",
+    "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -53,6 +55,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "ui": "ts/ui/index.ts",
     "protocol": {
       "module": "ts/protocol.ts",
       "nodes": [{ "type": "rp.risa.sync", "label": 19, "midiIn": null, "writes": ["bytes"] }],

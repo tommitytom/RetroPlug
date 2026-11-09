@@ -22,11 +22,13 @@
     "./smsSyncNode": "./ts/smsSyncNode.ts",
     "./smsggdjAssetCatalog": "./ts/smsggdjAssetCatalog.ts",
     "./smsggdjIntegration": "./ts/smsggdjIntegration.ts",
-    "./smsggdjSongCatalog": "./ts/smsggdjSongCatalog.ts"
+    "./smsggdjSongCatalog": "./ts/smsggdjSongCatalog.ts",
+    "./ui": "./ts/ui/index.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/tracker": "workspace:*",
+    "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -35,6 +37,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "ui": "ts/ui/index.ts",
     "protocol": {
       "module": "ts/protocol.ts",
       "nodes": [{ "type": "rp.sms.sync", "label": 20, "midiIn": null, "writes": ["bytes"] }],
