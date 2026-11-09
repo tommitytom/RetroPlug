@@ -15,38 +15,18 @@ import { parseRenderArgs, RENDER_SUMMARY, RENDER_HELP, type RenderOpts } from ".
 import type { CliTool } from "../tools";
 import { keepAlive, onInterrupt, type Session } from "../session";
 import { echoJobLog, setOfflineYield } from "../../src/offline";
-import { platformOf, readSav, readRisaSongs, readSmsggdjSongs } from "../../src/render";
+import { renderSongs } from "../../src/render";
 
 declare function setTimeout(fn: () => void, ms: number): unknown; // txiki's timers
 
-/** --list-songs: print the sav's populated song slots and exit (renders nothing). GB (LSDj), NES (risa),
- *  SMS/GG (smsggdj). */
+/** --list-songs: print the battery's saved songs and exit (renders nothing). The songs are the ROM's own tracker
+ *  integration's (LSDj, risa, smsggdj), so this names no cart: a ROM whose console runs no song cart is refused, and
+ *  the refusal names the carts that do. `empty` is the cart's own sentence for a battery that holds none. */
 function listSongs(s: Session, o: RenderOpts): void {
-  const platform = platformOf(o.rom);
-  if (platform === "gb") {
-    const { path, sav } = readSav(s, o);
-    console.log(`songs in ${path}:`);
-    sav.projects.forEach((p, i) => { if (p) console.log(`  ${i}: ${p.name || "(unnamed)"}`); });
-    if (sav.projects.every((p) => !p)) console.log("  (no named projects — only the working song)");
-    return;
-  }
-  if (platform === "nes") {
-    const { path, songs } = readRisaSongs(s, o);
-    console.log(`songs in ${path}:`);
-    if (!songs.length) console.log("  (no saved songs in the catalog)");
-    for (const song of songs) console.log(`  ${song.index}: ${song.name || "(unnamed)"}`);
-    return;
-  }
-  if (platform === "sms" || platform === "gg") {
-    const { path, songs } = readSmsggdjSongs(s, o);
-    console.log(`songs in ${path}:`);
-    if (!songs.length) console.log("  (no saved songs in the catalog)");
-    for (const song of songs) console.log(`  ${song.index}: ${song.name || "(unnamed)"}`);
-    return;
-  }
-  throw new Error(
-    `render: --list-songs is a Game Boy (LSDj) / NES (risa) / Master System + Game Gear (smsggdj) feature (got ${platform})`,
-  );
+  const { path, songs, empty } = renderSongs(s, o);
+  console.log(`songs in ${path}:`);
+  if (!songs.length) console.log(`  ${empty}`);
+  for (const song of songs) console.log(`  ${song.index}: ${song.name || "(unnamed)"}`);
 }
 
 async function runRender(s: Session, args: string[]): Promise<void> {

@@ -40,8 +40,9 @@ const opts = (over: Partial<RenderOpts> = {}): RenderOpts => ({
 test("a render's document carries the instance's gain as its system node's gain param", () => {
   const be = new MockBackend("/config");
   be.seed("/roms/song.gb", gbRom());
-  const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
-  runRenderJob({ backend: be, audio: silentAudio(), project }, opts({ gainDb: -6 }), {
+  const registry = buildAppRegistry();
+  const project = new ProjectStore(be, new RecentStore(be), registry);
+  runRenderJob({ backend: be, audio: silentAudio(), project, registry }, opts({ gainDb: -6 }), {
     log: () => {},
     warn: () => {},
   });

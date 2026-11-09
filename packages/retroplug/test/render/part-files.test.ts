@@ -9,6 +9,7 @@
 // It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
+import { buildAppRegistry } from "../../src/appHost";
 import { runRenderJob, decodeWav, type RenderContext, type RenderOpts } from "../../src/render";
 
 const SR = 44100;
@@ -39,6 +40,7 @@ const levelAudio = (level: number, onPull: (n: number) => void = () => {}, strea
 const ctxOf = (backend: MockBackend, audio: RenderContext["audio"]): RenderContext => ({
   backend,
   audio,
+  registry: buildAppRegistry(),
   project: {
     systems: { addSystem: () => 1, view: () => [{ id: 1 }], adopt: () => {}, loadState: () => 1 },
   } as unknown as RenderContext["project"],

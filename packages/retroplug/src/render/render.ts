@@ -1,34 +1,52 @@
 // The shared render orchestration: boot a fresh system from a ROM (+ its battery .sav / a savestate) and
-// stream its audio to WAV — full mix or per-channel/per-pin stems, with tracker song-length auto-detection.
+// stream its audio to WAV - full mix or per-channel/per-pin stems, with tracker song-length auto-detection.
 // Host-neutral: it drives a RenderContext (a booted control plane) and reports through RenderHooks. The render
 // worker (worker.ts) calls runRenderJob inside every engine job, and the CLI `render` command (cli/sessions/render.ts)
 // and the UI's System > Render both submit one; improving this file improves both.
 //
-// Song-length auto-detect: when a supported tracker is loaded (and no fixed duration is pinned), render to
-// the song's HFF stop, report the length, and trim the output to it. LSDj (GB) detects the stop via the APU
-// master-enable NR52 going off (lsdpack's technique); risa (NES) via its sequencer flag hitting
-// SEQ_MODE_STOPPED (read through the pure runtime reader). A pinned duration forces a fixed length;
-// maxDurationMs caps the detection.
+// Nothing here names a console or a cart (docs/modular-graph-phase-f4a-design.md section 5.1). A ROM is classified
+// through the console registry (its content first, its extension only where there is no content to read), the roles it
+// will get are the registry's defaults for that console, the tracker integration those roles name supplies the song,
+// play and end-detection hooks, and the console's descriptor supplies the splits, their file names and the default
+// gesture. The pipeline stays this file's: the boot, the settle, the lead-in, the sink, the end detection's framing
+// and the part files.
 //
-// LSDj (GB) song selection: a .sav holds up to 32 named projects but LSDj only plays its WORKING song on
-// boot, so song / songIndex promote a chosen project to the working song before booting (decode → assign →
-// re-encode → seed the fresh system).
+// Song-length auto-detect: when the ROM's integration offers a probe (LSDj's NR52, risa's sequencer flag) and no fixed
+// duration is pinned, render to the song's end, report the length, and trim the output to it. A pinned duration forces
+// a fixed length; maxDurationMs caps the detection.
+//
+// Song selection: a sav holds saved songs, and a cart that keeps its working song in the battery takes the chosen one
+// as the SRAM a fresh system boots from (LSDj, risa), while one whose working song is work RAM (smsggdj) has it
+// written in after the boot settle. Which is which is the integration's (`render.seedSong` / `render.loadSong`).
 import { createWavWriter, type WavWriter } from "./wav";
-import { extensionLower, basename, dirname, stem, joinPath, uniqueBase } from "../pathUtil";
+import { basename, dirname, extensionLower, stem, joinPath, uniqueBase } from "../pathUtil";
 import { siblingSavPath } from "../savPaths";
-import { decodeSav, encodeSav, kSavSize } from "@retroplug/lsdj";
-import { listSongs as risaListSongs, type RisaSongInfo } from "@retroplug/risa/risaSav";
-import { loadSongToWorkingInSav } from "@retroplug/risa/risaSongOps";
-import { listSongs as smsggdjListSongs, isSmsggdjSav } from "@retroplug/smsggdj/codec/sav";
-import { identifySmsggdjVersion } from "@retroplug/smsggdj/romDetect";
-import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
-import { isRisaRomHeader, runtime as risaRuntime } from "@retroplug/risa";
-import { lsdjSongCatalog, risaSongCatalog, smsggdjSongCatalog } from "../tracker";
-import { smsggdjIntegration } from "../trackerRegistry"; // the shell registry: an integration is its package's app contribution
-import type { ChannelExportMode } from "@retroplug/mesen/enums";
-import type { RoleInstance } from "@retroplug/core/systemRoles";
 import {
+  classifyRom,
+  consoleOfPlatform,
+  defaultCoreFor,
+  platformEntry,
+  platformForExtension,
+  providerHeaderLength,
+  registeredPlatforms,
+  type ConsoleDescriptor,
+  type ConsoleSplit,
+  type Core,
   type Platform,
+  type PrefixReader,
+} from "../consoles";
+import { TRACKER_INTEGRATIONS, resolveTracker } from "../trackerRegistry";
+import type { RoleInstance } from "@retroplug/core/systemRoles";
+import type { SongInfo } from "@retroplug/tracker/songCatalog";
+import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
+import {
+  PLAY_HOLD_MS,
+  type RenderFacts,
+  type RenderHost,
+  type RenderPlaySink,
+  type TrackerRender,
+} from "@retroplug/tracker/trackerRender";
+import {
   type RenderContext,
   type RenderHooks,
   type RenderOpts,
@@ -36,378 +54,179 @@ import {
   type SplitMode,
   RenderCancelled,
 } from "./types";
-// Re-exported as well as used: this module used to declare its own copy, spelled in literals
-// (0x20000 / 0x813e) where the codec spells it in named constants, and that copy has importers.
-import { isLsdjSav } from "@retroplug/lsdj";
-export { isLsdjSav };
 
-const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
-const NES_START = 7; // NesButton::Start (same index) ; NES_SELECT = 6. risa plays a song on SELECT+START.
-const NES_SELECT = 6;
-const SMS_START = 7; // SmsButton::Start -> SmsController::Buttons::Pause. smsggdj toggles play/stop on it.
-// A fixed (non-auto-detect) render runs for `durationMs` if pinned, else `maxDurationMs` — so "max duration"
-// bounds every render, not just the LSDj auto-length cap. maxDurationMs defaults to 600000 (10 min) at the
+// A fixed (non-auto-detect) render runs for `durationMs` if pinned, else `maxDurationMs` - so "max duration"
+// bounds every render, not just the auto-length cap. maxDurationMs defaults to 600000 (10 min) at the
 // CLI / worker seams, so a render with neither pinned falls back to that cap.
 
-// LSDj song-length auto-detect: LSDj's HFF command stops the song by powering the APU off — a 0 write to
-// NR52 ($FF26), the sound master-enable register (bit 7). We poll it each render chunk and stop at the
-// high→low edge (the technique lsdpack uses). Hardware-level, so version-independent + tempo/hop-agnostic.
-const NR52_ADDR = 0xff26;
-const NR52_ON = 0x80; // bit 7 = all-sound-on
-const DETECT_CHUNK_MS = 100; // the play gestures' hold, and the pull (so the poll granularity) unless pullMs says
-const DETECT_OFF_CHUNKS = 2; // NR52 must read off this many consecutive chunks to count as the HFF stop
+const DETECT_OFF_CHUNKS = 2; // the probe must read off this many consecutive chunks to count as the song's stop
 
-
-// Per-mode stream labels, matching each system's channelLayout() order.
-const GB_CHANNELS = ["pulse1", "pulse2", "wave", "noise"]; // SameBoySystem::channelLayout (stereo streams)
-const NES_PINS = ["pulse", "tnd", "expansion"]; // MesenNesSystem StereoModPins (--split pins; mono streams)
-const NES_CHANNELS = ["square1", "square2", "triangle", "noise", "dmc"]; // MesenNesSystem IndividualMono (--split channels; mono)
-
-export function platformOf(rom: string): Platform {
-  switch (extensionLower(rom)) {
-    case ".gb":
-    case ".gbc": return "gb";
-    case ".nes": return "nes";
-    case ".gba": return "gba";
-    case ".sms": return "sms";
-    case ".gg": return "gg";
-    default: return "other";
-  }
+/** The console a render's ROM runs on, the core that runs it, the roles a fresh system of it will get, and the tracker
+ *  integration those roles name. `platform` is "unknown" for a file whose content names no registered console and whose
+ *  extension names none either; the render then has no hooks and no splits, and the host's own classify (the store's)
+ *  reports the failure when it builds the system.
+ *
+ *  The roles are the registry's defaults for the console - the same list the store's build starts from - so a render
+ *  asks the integration the built system would have, rather than sniffing a ROM marker itself (edge E2). */
+export interface RenderRom {
+  readonly platform: Platform | "unknown";
+  readonly core: Core | undefined;
+  readonly roles: RoleInstance[];
+  readonly integration: TrackerIntegration | undefined;
 }
 
-/** NES channelExportMode for a split mode: channels → the 5 individual mono core channels,
- *  pins → the 3 analog output pins. Only meaningful for NES + a non-mix split. */
-function nesExportMode(split: SplitMode): ChannelExportMode {
-  return split === "channels" ? "individualMono" : "stereoModPins";
-}
-
-/** True when `o.rom` is a risa cart (iNES header fingerprint) — gates the risa play gesture so generic NES
- *  ROMs are left untouched (their audio, if any, plays without a synthetic button press). */
-function isRisaRom(ctx: RenderContext, o: RenderOpts): boolean {
-  const bytes = ctx.backend.readFile(o.rom);
-  return !!bytes && isRisaRomHeader(bytes.subarray(0, 16));
-}
-
-/** risa begins song playback on SELECT+START (a plain START first nudges it off an empty phrase context —
- *  the sequence the runtime-reader test proved reliable). The two prep renders are pre-song and discarded;
- *  the SELECT+START render — where the song begins — is CAPTURED through the sink and returned as the
- *  recording's lead-in, so the opening frames aren't lost. */
-function pressRisaPlay(ctx: RenderContext, sink: RenderSink, id: number): Float32Array[][] {
-  ctx.audio.pressButton(id, NES_START, true);
-  sink.renderChunk(DETECT_CHUNK_MS); // prep: nudge off an empty phrase context (pre-song, discarded)
-  ctx.audio.pressButton(id, NES_START, false);
-  sink.renderChunk(DETECT_CHUNK_MS); // prep (discarded)
-  ctx.audio.pressButton(id, NES_SELECT, true);
-  ctx.audio.pressButton(id, NES_START, true);
-  const head = sink.renderChunk(DETECT_CHUNK_MS); // the song starts here — capture it as the lead-in
-  ctx.audio.pressButton(id, NES_START, false);
-  ctx.audio.pressButton(id, NES_SELECT, false);
-  return [head];
-}
-
-type Logger = (msg: string) => void;
-
-// --- LSDj song selection (GB only) ----------------------------------------------------------------
-
-type LsdjSav = ReturnType<typeof decodeSav>;
-
-/** Read + decode the LSDj sav a song-selection flag needs: the given sav else the sibling <rom>.sav. */
-export function readSav(ctx: RenderContext, o: RenderOpts): { path: string; sav: LsdjSav; raw: Uint8Array } {
-  const path = o.sav ?? siblingSavPath(o.rom);
-  const raw = ctx.backend.readFile(path);
-  if (!raw) throw new Error(`render: no sav to read songs from at ${path}`);
-  return { path, sav: decodeSav(raw), raw };
-}
-
-/** "0: HAPPYBD, 3: DEMO" — the populated project slots, for --list-songs and not-found errors. */
-export function songList(sav: LsdjSav): string {
-  const names = sav.projects
-    .map((p, i) => (p ? `${i}: ${p.name || "(unnamed)"}` : null))
-    .filter((x): x is string => x !== null);
-  return names.length ? names.join(", ") : "(no named projects)";
-}
-
-/** A chosen-song seed (raw SRAM promoting the catalog song to the working song) plus the selected song's
- *  name — the name defaults the output filename when --song/--song-index is used. */
-interface SongSeed {
-  seed: Uint8Array;
-  name: string | null;
-}
-
-/** Resolve a song-selection flag to the SRAM bytes that seed the fresh system with the chosen catalog song
- *  promoted to the working song. Platform-aware: GB → LSDj projects, NES → risa catalog. Undefined when no
- *  song flag is set. */
-function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SongSeed | undefined {
-  if (o.song === undefined && o.songIndex === undefined) return undefined;
-  const platform = platformOf(o.rom);
-  if (platform === "gb") return resolveLsdjSongSeed(ctx, o, log, warn);
-  if (platform === "nes") return resolveRisaSongSeed(ctx, o, log, warn);
-  // sms/gg is deliberately absent: smsggdj cannot be seeded through SRAM (see resolveSmsggdjSong), so
-  // runRenderJob resolves and applies it separately, after the boot settle.
-  if (platform === "sms" || platform === "gg") return undefined;
-  throw new Error(
-    `render: --song/--song-index is a Game Boy (LSDj) / NES (risa) / Master System + Game Gear (smsggdj) feature (got ${platform})`,
+/** Classify a render's ROM: its content first, and its extension only for a file there is no content to read from (edge
+ *  E1 - the failure then comes from the load, as it always did, and names the file). */
+function classifyForRender(reader: PrefixReader, romPath: string): Platform | "unknown" {
+  let unreadable = false;
+  const platform = classifyRom(
+    {
+      readFilePrefix: (path: string, length: number) => {
+        const bytes = reader.readFilePrefix(path, length);
+        if (bytes === null) unreadable = true;
+        return bytes;
+      },
+    },
+    romPath,
   );
+  if (!unreadable) return platform;
+  const ext = extensionLower(romPath);
+  return (ext === "" ? undefined : platformForExtension(ext)) ?? platform;
 }
 
-function resolveLsdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SongSeed {
-  const { sav, raw } = readSav(ctx, o);
-  let idx: number;
-  if (o.songIndex !== undefined) {
-    idx = o.songIndex;
-    if (!sav.projects[idx]) throw new Error(`render: slot ${idx} is empty; songs: ${songList(sav)}`);
-  } else {
-    const want = o.song!.trim().toUpperCase().slice(0, 8); // LSDj names are ≤8 chars, uppercase
-    const hits = sav.projects
-      .map((p, i) => ({ p, i }))
-      .filter((x) => x.p && x.p.name.trim().toUpperCase() === want);
-    if (hits.length === 0) throw new Error(`render: no song named "${o.song}"; songs: ${songList(sav)}`);
-    if (hits.length > 1) warn(`render: ${hits.length} songs named "${o.song}"; using slot ${hits[0].i}`);
-    idx = hits[0].i;
-  }
-
-  const project = sav.projects[idx]!;
-  sav.workingSong = project.song; // working song and project songs share the decoded Song shape
-  sav.activeProjectIndex = idx;
-  log(`song "${project.name || "(unnamed)"}" (slot ${idx}) → working song`);
-  // Seed unmodeled regions from the original sav when it's a full 128 KiB image (else author fresh).
-  return { seed: encodeSav(sav, raw.length >= kSavSize ? raw : undefined), name: project.name || null };
+/** The console, core, roles and integration a render's ROM names (see RenderRom). */
+export function resolveRenderRom(ctx: RenderContext, romPath: string): RenderRom {
+  const platform = classifyForRender(ctx.backend, romPath);
+  if (platform === "unknown") return { platform, core: undefined, roles: [], integration: undefined };
+  const core = defaultCoreFor(platform);
+  const header = ctx.backend.readFilePrefix(romPath, providerHeaderLength(platform)) ?? new Uint8Array();
+  const roles = core === undefined ? [] : ctx.registry.defaultRoles(core, platform, header, "");
+  return { platform, core, roles, integration: resolveTracker(roles) };
 }
 
-// --- risa (NES) song selection ---------------------------------------------------------------------
+/** The console's name as its descriptor spells it ("Game Boy Advance"), for text that says what a render refused. */
+function platformLabel(platform: Platform | "unknown"): string {
+  if (platform === "unknown") return "unknown";
+  return platformEntry(platform)?.label ?? platform;
+}
 
-/** Read the raw risa battery a song flag needs (the given sav else the sibling <rom>.sav). */
-export function readRisaSav(ctx: RenderContext, o: RenderOpts): { path: string; raw: Uint8Array } {
+/** The consoles that can write `split`, as their platform labels ("Game Boy", "NES"), in product order: what a
+ *  --split refusal says the flag needs. */
+function splitPlatformLabels(split: "channels" | "pins"): string[] {
+  return registeredPlatforms()
+    .filter((platform) => consoleOfPlatform(platform.id)?.splits?.[split] !== undefined)
+    .map((platform) => platform.label);
+}
+
+/** The integrations whose carts can play a saved song, by label, in product order: what a --song refusal names. */
+function songCartLabels(): string {
+  const labels = TRACKER_INTEGRATIONS.filter(
+    (t) => t.render?.seedSong !== undefined || t.render?.loadSong !== undefined,
+  ).map((t) => t.label);
+  return labels.length ? labels.join(", ") : "no cart this build carries";
+}
+
+/** A battery's saved songs as "--list-songs" and a not-found message spell them, unless the cart has a spelling of its
+ *  own (its `songList`). */
+export function songList(songs: readonly SongInfo[]): string {
+  return songs.length ? songs.map((s) => `${s.index}: ${s.name || "(unnamed)"}`).join(", ") : "(no saved songs)";
+}
+
+/** The one-line listing a song-selection error prints for this cart. */
+function listingOf(render: TrackerRender | undefined, songs: readonly SongInfo[]): string {
+  return render?.songList?.listing?.(songs) ?? songList(songs);
+}
+
+/** The battery a render's song flags read: `--sav` when given, else the ROM's sibling .sav. */
+function readBattery(ctx: RenderContext, o: RenderOpts): { path: string; raw: Uint8Array } {
   const path = o.sav ?? siblingSavPath(o.rom);
   const raw = ctx.backend.readFile(path);
   if (!raw) throw new Error(`render: no sav to read songs from at ${path}`);
   return { path, raw };
 }
 
-/** The risa catalog's saved songs (index + name), for --list-songs. */
-export function readRisaSongs(ctx: RenderContext, o: RenderOpts): { path: string; songs: RisaSongInfo[] } {
-  const { path, raw } = readRisaSav(ctx, o);
-  return { path, songs: risaListSongs(raw) };
-}
-
-const risaSongList = (songs: RisaSongInfo[]): string =>
-  songs.length ? songs.map((sg) => `${sg.index}: ${sg.name || "(unnamed)"}`).join(", ") : "(no saved songs)";
-
-function resolveRisaSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SongSeed {
-  const { raw } = readRisaSav(ctx, o);
-  const songs = risaListSongs(raw);
-  let idx: number;
-  if (o.songIndex !== undefined) {
-    idx = o.songIndex;
-    if (!songs.some((sg) => sg.index === idx)) throw new Error(`render: slot ${idx} is empty; songs: ${risaSongList(songs)}`);
-  } else {
-    const want = o.song!.trim().toUpperCase();
-    const hits = songs.filter((sg) => sg.name.trim().toUpperCase() === want);
-    if (hits.length === 0) throw new Error(`render: no song named "${o.song}"; songs: ${risaSongList(songs)}`);
-    if (hits.length > 1) warn(`render: ${hits.length} songs named "${o.song}"; using slot ${hits[0].index}`);
-    idx = hits[0].index;
-  }
-  // Promote the catalog song into the working banks (0-3), keeping the catalog (banks 4-7) intact. Requires a
-  // current-layout catalog — the firmware migrates legacy on boot, so a live-read battery is always current.
-  const seed = loadSongToWorkingInSav(raw, idx);
-  if (!seed) throw new Error(`render: could not load risa song ${idx} (needs a current-layout catalog)`);
-  const name = songs.find((sg) => sg.index === idx)?.name || null;
-  log(`song "${name || "(unnamed)"}" (slot ${idx}) → working song`);
-  return { seed, name };
-}
-
-/** The smsggdj catalog's saved songs (index + name), for --list-songs. */
-export function readSmsggdjSongs(ctx: RenderContext, o: RenderOpts): { path: string; songs: { index: number; name: string }[] } {
-  const { path, raw } = readRisaSav(ctx, o); // sibling-sav resolution, console-agnostic despite the name
-  return { path, songs: smsggdjListSongs(raw) };
-}
-
-/** smsggdj: unlike LSDj and risa, the seed does NOT move the song anywhere. This cart's working song is
- *  work RAM and it boots blank on purpose, so the save NAMES the slot and the cart loads it on the way
- *  up - the same mechanism the Songs menu uses. See packages/smsggdj/ts/smsggdjSongCatalog. */
-// --- smsggdj (SMS / GG) song selection --------------------------------------------------------------
-//
-// Unlike LSDj and risa this CANNOT be a seed. Those two keep the working song in the battery, so writing
-// the chosen song into the SRAM the fresh system boots from is enough. smsggdj's working song is the live
-// work-RAM block at $C000 and the cart boots deliberately blank (`song_new`, main.asm:238) - there is
-// nothing in the image to promote. An earlier version of this seeded the superblock's `cur_slot` byte,
-// which is the right durable record but only the unreleased cur-slot build reads it at boot, so on the shipped v0.45 it
-// selected nothing and the render came out silent. Selection therefore resolves to an INDEX here and the
-// song is written into the booted core by loadSmsggdjSongLive, the same path the Songs menu Load uses.
-
-/** True when `o.rom` is an smsggdj cart. Gates the play press, the song load and the no-song warning, so a
- *  generic Master System game is left alone - on SMS the play button IS the Pause NMI, and pressing it on
- *  an ordinary game would pause it. */
-function isSmsggdjRom(ctx: RenderContext, o: RenderOpts): boolean {
-  const bytes = ctx.backend.readFile(o.rom);
-  return !!bytes && identifySmsggdjVersion(bytes) !== null;
-}
-
-/** Is the smsggdj cart's transport running? Null when it cannot be told (no layout, no RAM snapshot) —
- *  the caller then behaves as it did before, which is to press play. */
-function smsggdjIsPlaying(ctx: RenderContext, o: RenderOpts, id: number): boolean | null {
-  const rom = ctx.backend.readFile(o.rom);
-  const layout = rom ? resolveSmsggdjLayout(identifySmsggdjVersion(rom)) : null;
-  const ram = layout ? ctx.backend.readRam(id) : null;
-  if (!layout || !ram || ram.length <= layout.playState) return null;
-  return ram[layout.playState] !== 0;
-}
-
-/** The chosen smsggdj song: which slot, and its name for the output filename. */
-interface SmsggdjSongPick {
-  index: number;
-  name: string | null;
-}
-
-function resolveSmsggdjSong(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SmsggdjSongPick {
-  const { raw } = readRisaSav(ctx, o); // the sibling-sav resolution is console-agnostic despite the name
-  const songs = smsggdjListSongs(raw);
-  const listing = songs.map((sg) => `${sg.index}:${sg.name}`).join(", ") || "(none)";
-  let idx: number;
-  if (o.songIndex !== undefined) {
-    idx = o.songIndex;
-    if (!songs.some((sg) => sg.index === idx)) throw new Error(`render: slot ${idx} is empty; songs: ${listing}`);
-  } else {
-    const want = o.song!.trim().toUpperCase();
-    const hits = songs.filter((sg) => sg.name.trim().toUpperCase() === want);
-    if (hits.length === 0) throw new Error(`render: no song named "${o.song}"; songs: ${listing}`);
-    if (hits.length > 1) warn(`render: ${hits.length} songs named "${o.song}"; using slot ${hits[0].index}`);
-    idx = hits[0].index;
-  }
-  const name = songs.find((sg) => sg.index === idx)?.name || null;
-  log(`song "${name || "(unnamed)"}" (slot ${idx}) → work RAM`);
-  return { index: idx, name };
-}
-
-// The load has to land AFTER the cart's boot-time `song_new`, which blanks the song block on the way up
-// (main.asm:224, right after the splash). The shared 1500 ms settle is tuned for the GB splash and is not
-// enough here: measured on the shipped v0.45, a write at 1500 or 2000 ms is silently undone and only
-// 2500 ms and later survive. A bigger fixed number would be guessing - the margin is ~500 ms on NTSC and
-// PAL runs ~17% slower - and simply retrying until the block reads back is NOT enough either: measured,
-// a write at 1750 ms verifies perfectly (the whole 6,912-byte block byte-identical) and is then wiped
-// 400 ms later, so the loop stops on a match that does not last.
-//
-// So wait for the cart to tell us it is past that point. `song_new` fills wave_ram with the 8 preset
-// waves, and work RAM powers on all zeros (MesenSmsSystem pins RamPowerOnState = AllZeros), so a
-// non-zero wave_ram IS "song_new has run". The write then still has to verify, and hold across several
-// checks - the readback is the guarantee, the boot signal is what stops it passing too early.
-const SMSGGDJ_STEP_MS = 250;
-const SMSGGDJ_BOOT_STEPS = 24; // x STEP = 6s of boot to wait through before writing
-const SMSGGDJ_HOLD_STEPS = 4; // consecutive verified checks (1s) before the load is believed
-const SMSGGDJ_WRITE_TRIES = 4;
-
-/** Any non-zero byte in `ram[at .. at+len)`. */
-function anyNonZero(ram: Uint8Array, at: number, len: number): boolean {
-  for (let i = at; i < at + len && i < ram.length; i++) if (ram[i] !== 0) return true;
-  return false;
-}
-
-/** `ram[at .. at+len) === want[from .. from+len)`. */
-function ramMatches(ram: Uint8Array, at: number, want: Uint8Array, from: number, len: number): boolean {
-  if (ram.length < at + len || want.length < from + len) return false;
-  for (let i = 0; i < len; i++) if (ram[at + i] !== want[from + i]) return false;
-  return true;
-}
-
-/** Write the chosen song into the booted cart's work RAM and confirm it stuck (see above). Returns having
- *  verified the song is really in memory and stable.
- *
- *  Throws rather than warns, on every failure path. The user named a song; rendering the blank boot song
- *  instead would produce a silent WAV that looks like a successful render - exactly the bug this whole
- *  path exists to fix. */
-function loadSmsggdjSongLive(ctx: RenderContext, o: RenderOpts, id: number, index: number): void {
-  const rom = ctx.backend.readFile(o.rom);
-  const sav = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
-  if (!rom || !sav) throw new Error(`render: could not re-read the ROM/sav to load smsggdj song ${index}`);
-  const version = identifySmsggdjVersion(rom);
-  const layout = resolveSmsggdjLayout(version);
-  const writes = layout ? smsggdjIntegration.liveLoad?.(rom, sav, index, ctx.backend.readRam(id) ?? undefined) : null;
-  if (!layout || !writes?.length) {
+/** The saved songs a --list-songs asks for: the battery next to the ROM (or `--sav`), read through the ROM's
+ *  integration. Throws when the ROM's cart has no song list, naming the carts that do; `empty` is what the caller
+ *  prints under its header when the battery holds none. */
+export function renderSongs(
+  ctx: RenderContext,
+  o: RenderOpts,
+): { path: string; songs: readonly SongInfo[]; empty: string } {
+  const resolved = resolveRenderRom(ctx, o.rom);
+  const render = resolved.integration?.render;
+  if (!render?.listSongs) {
+    const console = platformLabel(resolved.platform);
     throw new Error(
-      `render: could not load smsggdj song ${index} - no work-RAM layout for this build ` +
-        `(${version ?? "unrecognized version"}), or the song will not decode`,
+      `render: --list-songs is a feature of ${songCartLabels()} (this ROM runs no tracker: its console is ${console})`,
     );
   }
-  const want = writes.find((w) => w.offset === layout.song)?.bytes;
-  if (!want) throw new Error(`render: smsggdj song ${index} produced no song block to write`);
-
-  // wave_ram is the block's first field, so it spans [song, song + phrasePool) - no extra symbol needed.
-  for (let i = 0; i < SMSGGDJ_BOOT_STEPS; i++) {
-    const ram = ctx.backend.readRam(id);
-    if (ram && anyNonZero(ram, layout.song, layout.phrasePool)) break;
-    ctx.audio.renderAudio(SMSGGDJ_STEP_MS);
-  }
-
-  // The whole block is compared, not a witness field: nothing else writes it while the transport is
-  // stopped, and a partial match is exactly the failure being guarded against.
-  for (let tries = 0; tries < SMSGGDJ_WRITE_TRIES; tries++) {
-    for (const w of writes) {
-      // Refused only for a range past the work RAM (a wrong layout) or a full command ring; a render drives its blocks
-      // on this thread, so the ring is drained inline and the second cannot happen here.
-      if (!ctx.backend.writeRam(id, w.offset, w.bytes))
-        throw new Error(`render: work-RAM write refused at +$${w.offset.toString(16)} loading smsggdj song ${index}`);
-    }
-    let held = 0;
-    while (held < SMSGGDJ_HOLD_STEPS) {
-      ctx.audio.renderAudio(SMSGGDJ_STEP_MS); // let the queued writes land, and the boot move on
-      const ram = ctx.backend.readRam(id);
-      if (!ram || !ramMatches(ram, layout.song, want, 0, want.length)) break;
-      held++;
-    }
-    if (held === SMSGGDJ_HOLD_STEPS) return;
-  }
-  throw new Error(
-    `render: smsggdj song ${index} would not stay in work RAM - the cart kept overwriting it (still booting?)`,
-  );
+  const { path, raw } = readBattery(ctx, o);
+  return { path, songs: render.listSongs(raw), empty: render.songList?.empty ?? "(no saved songs)" };
 }
 
-/** Warn when an smsggdj render was given no song to play. LSDj and risa boot into their working song, so a
- *  bare `render cart.gb` makes music; this cart boots blank ON PURPOSE (`song_new`, so a first power-on
- *  still makes a sound) and there is no working song in the battery to fall back on. Without --song the
- *  output is therefore silence, which used to happen with no explanation at all. Not an error: rendering
- *  the boot state is legitimate (it is what --no-start does elsewhere), and a `.sav` may hold no songs. */
-function warnIfSmsggdjHasNoSong(ctx: RenderContext, o: RenderOpts, platform: Platform, warn: Logger): void {
-  if (platform !== "sms" && platform !== "gg") return;
-  // A savestate carries work RAM, so it carries the working song - that is exactly how the UI's
-  // System > Render reaches this console, and warning there would be false.
-  if (o.state) return;
-  if (!isSmsggdjRom(ctx, o)) return;
-  const raw = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
-  if (!raw || !isSmsggdjSav(raw)) return;
-  const songs = smsggdjListSongs(raw);
-  if (!songs.length) return;
-  warn(
-    `render: smsggdj boots to a BLANK song (it keeps no working song in the battery), so this will render ` +
-      `silence — pass --song <name> or --song-index <n> to play one of: ` +
-      songs.map((sg) => `${sg.index}:${sg.name || "(unnamed)"}`).join(", "),
-  );
+/** The slot a song flag names, resolved through the integration's own list: by index, else by name (case-insensitive; a
+ *  name several slots share takes the first and says so). A cart whose names have a fixed length matches the requested
+ *  name truncated to it, as LSDj's always did. Throws naming the songs a miss could have meant. */
+function chooseSong(
+  o: RenderOpts,
+  render: TrackerRender,
+  songs: readonly SongInfo[],
+  warn: (msg: string) => void,
+): SongInfo {
+  let hit: SongInfo | undefined;
+  if (o.songIndex !== undefined) {
+    hit = songs.find((s) => s.index === o.songIndex);
+    if (!hit) throw new Error(`render: slot ${o.songIndex} is empty; songs: ${listingOf(render, songs)}`);
+  } else {
+    const wanted = o.song!.trim().toUpperCase();
+    const want = render.songNameLength === undefined ? wanted : wanted.slice(0, render.songNameLength);
+    const hits = songs.filter((s) => s.name.trim().toUpperCase() === want);
+    if (hits.length === 0) throw new Error(`render: no song named "${o.song}"; songs: ${listingOf(render, songs)}`);
+    if (hits.length > 1) warn(`render: ${hits.length} songs named "${o.song}"; using slot ${hits[0].index}`);
+    hit = hits[0];
+  }
+  return hit;
 }
 
-/** The role list to build the render's core from: the instance's own roles when the caller carried them (the
- *  UI's System > Render), else none — which lets adopt/addSystem attach defaults, as a CLI render wants.
- *  `exportMode` (a NES split) is folded INTO the carried `mesen` role rather than replacing the list, so
- *  `--split channels` and a project's region / expansion volume / accuracy switches all survive together.
- *  The render's own split decides channelExportMode outright: it is the one knob the request owns, and a
- *  stale value pinned in the project must not arm capture the request did not ask for. */
-function rolesForRender(carried: RoleInstance[] | undefined, exportMode?: ChannelExportMode): RoleInstance[] | undefined {
-  if (!carried?.length) return exportMode ? [{ kind: "mesen", config: { channelExportMode: exportMode } }] : undefined;
-  if (!exportMode) return carried;
-  const merged = carried.map((r) => (r.kind === "mesen" ? { ...r, config: { ...r.config, channelExportMode: exportMode } } : r));
-  return merged.some((r) => r.kind === "mesen") ? merged : [...merged, { kind: "mesen", config: { channelExportMode: exportMode } }];
+/** The role list to build the render's core from: the instance's own roles when the caller carried them (the UI's
+ *  System > Render), else none - which lets adopt/addSystem attach defaults, as a CLI render wants. A split's
+ *  `configPatch` is folded INTO the carried core-config role (the role named after the core) rather than replacing the
+ *  list, so `--split channels` and a project's region / expansion volume / accuracy switches all survive together. The
+ *  render's own split decides the patched field outright: it is the one knob the request owns, and a stale value pinned
+ *  in the project must not arm capture the request did not ask for. */
+function rolesForRender(
+  carried: RoleInstance[] | undefined,
+  core: Core | undefined,
+  patch: Readonly<Record<string, unknown>> | undefined,
+): RoleInstance[] | undefined {
+  if (core === undefined || patch === undefined) return carried?.length ? carried : undefined;
+  if (!carried?.length) return [{ kind: core, config: { ...patch } }];
+  const merged = carried.map((r) => (r.kind === core ? { ...r, config: { ...r.config, ...patch } } : r));
+  return merged.some((r) => r.kind === core) ? merged : [...merged, { kind: core, config: { ...patch } }];
+}
+
+/** The split the request asks for on this console, if it has one: its names, its config patch and its tap mode. */
+function splitOf(descriptor: ConsoleDescriptor | undefined, split: SplitMode): ConsoleSplit | undefined {
+  return split === "mix" ? undefined : descriptor?.splits?.[split];
 }
 
 /** Build the single system; the graph it publishes places its protocol nodes, and its system node the carried gain
- *  and core config's knobs. `seed` (LSDj song bytes) forces the adopt path; so do carried roles / gain (adopt takes
- *  them as a load takes a stored system: the roles' construct-time fields reach the build) and a NES split mode arming
- *  construct-time capture; otherwise addSystem auto-detects. */
-function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed?: Uint8Array): number {
+ *  and core config's knobs. `seed` (the chosen song's SRAM) forces the adopt path; so do carried roles / gain (adopt
+ *  takes them as a load takes a stored system: the roles' construct-time fields reach the build) and a split's config
+ *  patch arming construct-time capture; otherwise addSystem auto-detects. */
+function buildSystem(
+  ctx: RenderContext,
+  o: RenderOpts,
+  core: Core | undefined,
+  patch: Readonly<Record<string, unknown>> | undefined,
+  seed?: Uint8Array,
+): number {
   let id: number | null;
-  const nesSplit = platform === "nes" && o.split !== "mix";
-  const roles = rolesForRender(o.roles, nesSplit ? nesExportMode(o.split) : undefined);
+  const roles = rolesForRender(o.roles, core, patch);
   if (seed || roles || o.gainDb) {
-    // A chosen-song seed (adopt takes raw SRAM bytes), the instance's carried configuration, and NES
-    // per-channel capture (channelExportMode engages at construct/onActivate) all go through adopt — combined
-    // here so `--song-index … --split channels` arms both. A seed replaces the sav; without one, pair the sav.
+    // A chosen song's SRAM (adopt takes raw SRAM bytes), the instance's carried configuration, and a split's
+    // construct-time capture all go through adopt - combined here so `--song-index ... --split channels` arms both. A
+    // seed replaces the sav; without one, pair the sav.
     const spec: Parameters<typeof ctx.project.systems.adopt>[0] = { romPath: o.rom };
     if (!seed && o.sav) spec.savPath = o.sav;
     if (roles) spec.roles = roles;
@@ -415,7 +234,7 @@ function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed
     ctx.project.systems.adopt(spec, seed ? { sramBytes: seed } : undefined);
     id = ctx.project.systems.view()[0]?.id ?? null;
   } else {
-    // mix (any platform) + GB channels: addSystem auto-detects roles. Sibling <rom>.sav auto-pairs when sav absent.
+    // A mix or a split with no patch: addSystem auto-detects roles. Sibling <rom>.sav auto-pairs when sav absent.
     id = ctx.project.systems.addSystem(o.rom, { explicitSav: o.sav });
   }
   if (id == null) throw new Error(`render: could not load ROM: ${o.rom}`);
@@ -424,19 +243,18 @@ function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed
   return id;
 }
 
-/** The working song's name for a tracker cart (LSDj/risa), read straight from the sav — defaults the output
- *  filename when neither --out nor a --song selection is given. Null for a non-tracker ROM / no sav (→ ROM
- *  name). Uses the same catalog readers the UI's recents label + renderBaseName use. */
-function currentSongName(ctx: RenderContext, o: RenderOpts, platform: Platform): string | null {
+/** The working song's name for a tracker cart, read straight from the battery - defaults the output filename when
+ *  neither --out nor a --song selection is given. Null for a non-tracker ROM / no sav (the ROM name then). The catalog
+ *  is the ROM's integration's, which is the same rule the end detection follows (edge E2): a non-LSDj Game Boy next to
+ *  an LSDj battery is named after its ROM, not the battery's song. */
+function currentSongName(
+  ctx: RenderContext,
+  o: RenderOpts,
+  integration: TrackerIntegration | undefined,
+): string | null {
   const raw = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
   if (!raw) return null;
-  if (platform === "gb") return isLsdjSav(raw) ? lsdjSongCatalog.workingName(raw) : null;
-  if (platform === "nes") return risaSongCatalog.workingName(raw); // self-guards on the N8T magic
-  // smsggdj answers from the superblock's cur_slot with no work RAM to consult. No released cart writes
-  // that byte (only RetroPlug's own Songs load does), so it is usually null and this falls through to
-  // the ROM stem, as it did before.
-  if (platform === "sms" || platform === "gg") return smsggdjSongCatalog.workingName(raw);
-  return null;
+  return integration?.songs?.workingName(raw) ?? null;
 }
 
 /** The file a render streams `path` to before it is moved over `path`: `<path>.<token>.part`, the token the render's
@@ -484,8 +302,8 @@ function partToken(ctx: RenderContext, outputs: string[], tag: string | undefine
 const sanitizeRenderName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
 
 /** The WAV output base. With --out: the given path (mix) or a prefix (split, a trailing .wav trimmed).
- *  Without it: the working/selected SONG name for a tracker cart (LSDj/risa) else the ROM stem, written next
- *  to the ROM — so `songName === null` is byte-identical to the old ROM-derived default. Exported for tests. */
+ *  Without it: the working/selected SONG name for a tracker cart else the ROM stem, written next
+ *  to the ROM - so `songName === null` is byte-identical to the old ROM-derived default. Exported for tests. */
 export function outBase(o: RenderOpts, songName: string | null): string {
   if (o.out) return o.split === "mix" ? o.out : o.out.toLowerCase().endsWith(".wav") ? o.out.slice(0, -4) : o.out;
   const clean = songName ? sanitizeRenderName(songName) : "";
@@ -494,11 +312,10 @@ export function outBase(o: RenderOpts, songName: string | null): string {
 }
 
 /** The WAV file paths a render will write for `prefix` (a base WITHOUT the extension), mirroring buildSink's
- *  naming: mix → one `<prefix>.wav`; split → one `<prefix>_<channel>.wav` per stream. Used by the "rename"
- *  policy to detect a collision on any of the mode's outputs. */
-function renderOutputPaths(o: RenderOpts, platform: Platform, prefix: string): string[] {
+ *  naming: mix -> one `<prefix>.wav`; split -> one `<prefix>_<stream>.wav` per stream, in the split's own order. Used
+ *  by the "rename" policy to detect a collision on any of the mode's outputs. */
+function renderOutputPaths(o: RenderOpts, names: readonly string[], prefix: string): string[] {
   if (o.split === "mix") return [`${prefix}.wav`];
-  const names = platform === "gb" ? GB_CHANNELS : o.split === "channels" ? NES_CHANNELS : NES_PINS;
   return names.map((n) => `${prefix}_${n}.wav`);
 }
 
@@ -514,10 +331,14 @@ function renderOutputPaths(o: RenderOpts, platform: Platform, prefix: string): s
  *  is never removed by a later render, which cannot tell it from a live one's: it makes every later "rename" render of
  *  that name take the next one, with no `<name>.wav` there, until it is deleted by hand. */
 function resolveOnExists(
-  ctx: RenderContext, o: RenderOpts, platform: Platform, base: string, tag: string | undefined,
+  ctx: RenderContext,
+  o: RenderOpts,
+  names: readonly string[],
+  base: string,
+  tag: string | undefined,
 ): { base: string; token: string; reserved: string[] } {
   if (o.onExists !== "rename") {
-    const outputs = o.split === "mix" ? [base] : renderOutputPaths(o, platform, base);
+    const outputs = o.split === "mix" ? [base] : renderOutputPaths(o, names, base);
     return { base, token: partToken(ctx, outputs, tag), reserved: [] };
   }
   const isMix = o.split === "mix";
@@ -537,8 +358,8 @@ function resolveOnExists(
     const { names, folds } = entries(dirname(f));
     return names.some((n) => isPartOf(n, basename(f), folds));
   };
-  const unique = uniqueBase(prefix, (p) => renderOutputPaths(o, platform, p).some(taken));
-  const outputs = renderOutputPaths(o, platform, unique);
+  const unique = uniqueBase(prefix, (p) => renderOutputPaths(o, names, p).some(taken));
+  const outputs = renderOutputPaths(o, names, unique);
   const token = partToken(ctx, outputs, tag);
   const reserved = outputs.map((p) => partPath(p, token));
   for (const r of reserved) {
@@ -559,7 +380,7 @@ interface StopMarkers {
 }
 
 /** A render target: how to pull the next chunk, where each chunk's frames go (one interleaved buffer per
- *  stream — mix=1, split=N), and how to close the files. Writers are created lazily on the first chunk. */
+ *  stream - mix=1, split=N), and how to close the files. Writers are created lazily on the first chunk. */
 export interface RenderSink {
   renderChunk(ms: number): Float32Array[];
   emit(chunk: Float32Array[], takeFrames: number): void; // commit the first `takeFrames` frames of a chunk
@@ -567,7 +388,7 @@ export interface RenderSink {
   discard(): void; // delete the files opened so far: a render stopped part way leaves no WAV claiming it is empty
 }
 
-/** Left channel of an interleaved-stereo buffer, first `frames` frames (NES streams are mono in the L lane). */
+/** Left channel of an interleaved-stereo buffer, first `frames` frames (a mono console's streams are in the L lane). */
 function leftLane(b: Float32Array, frames: number): Float32Array {
   const out = new Float32Array(frames);
   for (let f = 0; f < frames; f++) out[f] = b[f * 2];
@@ -578,20 +399,28 @@ function leftLane(b: Float32Array, frames: number): Float32Array {
  *  known (from chunk.length). Each writer streams to `<path>.<token>.part` (partPath) and finishAll moves it over
  *  `<path>`, so a render that stops part way (cancelled, or failed) leaves an export that was already at `<path>` as
  *  it was, and any other render's `.part` of it too.
- *    mix       → 1 WAV: GB/GBA stereo, NES mono (its lanes are identical, so the left lane is lossless)
- *    channels  → GB 4 stereo stems; NES 5 mono core channels
- *    pins      → NES 3 mono analog pins
- *  (No combined multi-channel WAV — split modes write per-stream files only.) */
+ *    mix       -> 1 WAV: as many lanes as the console's mix has (a stereo console's two, a mono console's left one)
+ *    channels  -> one stem per stream of the split, in the split's order and lanes
+ *    pins      -> one stem per pin stream
+ *  (No combined multi-channel WAV - split modes write per-stream files only.) */
 function buildSink(
-  ctx: RenderContext, o: RenderOpts, id: number, platform: Platform, sr: number, base: string, token: string,
-  reserved: string[], log: Logger,
+  ctx: RenderContext,
+  o: RenderOpts,
+  id: number,
+  platform: Platform | "unknown",
+  names: readonly string[],
+  mono: boolean,
+  sr: number,
+  base: string,
+  token: string,
+  reserved: string[],
+  log: (msg: string) => void,
 ): RenderSink {
   const renderChunk = o.split === "mix"
     ? (ms: number) => [ctx.audio.renderAudio(ms)]
     : (ms: number) => ctx.audio.renderAudioPerChannel(id, ms);
 
-  const nesMono = platform === "nes"; // NES streams (mix + per-channel) are mono in the left lane
-  let writers: WavWriter[] | null = null; // per stream (mix=1; GB channels=N stereo; NES=N mono)
+  let writers: WavWriter[] | null = null; // per stream
   const paths: string[] = [];
   const partial = (path: string) => partPath(path, token);
   let finished = false; // every file is whole: what is left as a .part from here on is a render, not a partial
@@ -604,16 +433,18 @@ function buildSink(
 
   const ensure = (streamCount: number) => {
     if (writers) return;
+    const lanes = mono ? 1 : 2;
     if (o.split === "mix") {
-      writers = [open(base, nesMono ? 1 : 2)];
+      writers = [open(base, lanes)];
       summary = `rendered ${o.rom} → ${base} (@${sr}Hz)`;
-    } else if (platform === "gb") {
-      writers = Array.from({ length: streamCount }, (_, i) => open(`${base}_${GB_CHANNELS[i] ?? `ch${i}`}.wav`, 2));
-      summary = `GB ${streamCount}-channel render (@${sr}Hz) → ${base}_*`;
     } else {
-      const names = o.split === "channels" ? NES_CHANNELS : NES_PINS;
-      writers = Array.from({ length: streamCount }, (_, i) => open(`${base}_${names[i] ?? `ch${i}`}.wav`, 1));
-      summary = `NES ${o.split} (${streamCount} mono streams @${sr}Hz) → ${base}_*`;
+      writers = Array.from({ length: streamCount }, (_, i) => open(`${base}_${names[i] ?? `ch${i}`}.wav`, lanes));
+      // The console's short name is its platform id as the summaries always spelled it ("GB", "NES"); which form a
+      // split takes is its lanes', so a stereo split is the console's channel render and a mono one takes its mode's.
+      const consoleName = platform.toUpperCase();
+      summary = mono
+        ? `${consoleName} ${o.split} (${streamCount} mono streams @${sr}Hz) → ${base}_*`
+        : `${consoleName} ${streamCount}-channel render (@${sr}Hz) → ${base}_*`;
     }
   };
 
@@ -622,11 +453,9 @@ function buildSink(
     emit(chunk, take) {
       ensure(chunk.length);
       if (o.split === "mix") {
-        writers![0].append(nesMono ? leftLane(chunk[0], take) : chunk[0].subarray(0, take * 2));
-      } else if (platform === "gb") {
-        chunk.forEach((b, i) => writers![i].append(b.subarray(0, take * 2)));
+        writers![0].append(mono ? leftLane(chunk[0], take) : chunk[0].subarray(0, take * 2));
       } else {
-        chunk.forEach((b, i) => writers![i].append(leftLane(b, take))); // NES per-channel streams are mono
+        chunk.forEach((b, i) => writers![i].append(mono ? leftLane(b, take) : b.subarray(0, take * 2)));
       }
     },
     finishAll() {
@@ -671,7 +500,7 @@ function buildSink(
  *  of an engine job the output is byte-identical to a single renderAudio(ms) of the same length for any sample rate /
  *  ms / pull; on an exact-blocks engine (the in-process tests) only while no node consumes the transport or MIDI
  *  block by block (a sync node such as rp.sms.sync), whose clock then follows the pulls' splits. `leadIn` is the
- *  captured play-gesture audio (the song's opening frames) — committed first so the recording's head isn't
+ *  captured play-gesture audio (the song's opening frames) - committed first so the recording's head isn't
  *  lost, trimmed against the target like any other chunk. Exported for tests. */
 export function driveFixed(
   sink: RenderSink, targetFrames: number, sr: number, hooks: RenderHooks, pullMs: number, leadIn: Float32Array[][] = [],
@@ -692,9 +521,9 @@ export function driveFixed(
 }
 
 /** Length auto-detect render: stream chunk-by-chunk, polling `isPlaying` (LSDj's NR52 / risa's seq_mode),
- *  and stop at the HFF (the probe going true→false, sustained ≥DETECT_OFF_CHUNKS). Holds back the current
- *  contiguous off-streak (≤DETECT_OFF_CHUNKS whole chunks) so committed frames end exactly at the stop; a
- *  reset flushes them in order. Caps at maxMs (no-HFF fallback → keep everything). Each chunk is `pullMs` long,
+ *  and stop at the HFF (the probe going true->false, sustained >= DETECT_OFF_CHUNKS). Holds back the current
+ *  contiguous off-streak (<= DETECT_OFF_CHUNKS whole chunks) so committed frames end exactly at the stop; a
+ *  reset flushes them in order. Caps at maxMs (no-HFF fallback -> keep everything). Each chunk is `pullMs` long,
  *  so the poll, and with it where the render can end, follows it. */
 function driveAutoDetect(
   sink: RenderSink, isPlaying: () => boolean, maxMs: number, sr: number, hooks: RenderHooks, pullMs: number,
@@ -714,12 +543,12 @@ function driveAutoDetect(
   };
 
   // The captured play gesture: the song began on the Start press, so commit its frames from 0 and arm now
-  // (the HFF tail-detection below still ends the song at the right place). startFrame stays 0 — the whole
+  // (the HFF tail-detection below still ends the song at the right place). startFrame stays 0 - the whole
   // committed output is song, so the reported length includes this head.
   for (const chunk of leadIn) {
     commit(chunk);
     total += chunk[0].length / 2;
-    elapsed += DETECT_CHUNK_MS;
+    elapsed += PLAY_HOLD_MS;
     armed = true;
   }
 
@@ -738,118 +567,108 @@ function driveAutoDetect(
     if (!armed) {
       commit(chunk); // keep the lead-in from frame 0
       if (on) { armed = true; startFrame = frameBefore; } // playback began here
-      continue; // (still un-armed just means playback hasn't started yet — keep going to the cap)
+      continue; // (still un-armed just means playback hasn't started yet - keep going to the cap)
     }
     if (!on) {
-      held.push(chunk); // hold back — this may be the HFF tail
-      if (held.length >= DETECT_OFF_CHUNKS) // sustained → HFF stop; discard held, end at the first off frame
+      held.push(chunk); // hold back - this may be the HFF tail
+      if (held.length >= DETECT_OFF_CHUNKS) // sustained -> HFF stop; discard held, end at the first off frame
         return { startFrame, endFrame: committed, hff: true };
     } else {
-      for (const c of held) commit(c); // song continues: flush the (kept) off-streak in order…
+      for (const c of held) commit(c); // song continues: flush the (kept) off-streak in order...
       held.length = 0;
-      commit(chunk); // …then this chunk
+      commit(chunk); // ...then this chunk
     }
   }
-  for (const c of held) commit(c); // cap reached, no confirmed stop → keep everything
+  for (const c of held) commit(c); // cap reached, no confirmed stop -> keep everything
   return { startFrame, endFrame: committed, hff: false };
 }
 
-/** The "is the song still playing" probe for length auto-detect, or null when `o.rom` isn't a supported
- *  tracker (so the render uses a fixed duration instead). LSDj (GB) reads NR52 — the APU master-enable an
- *  HFF powers off; risa (NES) reads seq_mode through the pure runtime reader — SEQ_MODE_STOPPED when the
- *  last track HFFs. Both go true while sounding, false at the author's HFF stop. */
-function buildPlayingProbe(ctx: RenderContext, o: RenderOpts, id: number, platform: Platform, warn: Logger): (() => boolean) | null {
-  if (platform === "gb") {
-    const raw = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
-    if (!raw || !isLsdjSav(raw)) return null;
-    return () => ((ctx.backend.readCpu(id, NR52_ADDR) ?? 0) & NR52_ON) !== 0;
-  }
-  if (platform === "nes") {
-    const rom = ctx.backend.readFile(o.rom);
-    if (!rom || !isRisaRomHeader(rom.subarray(0, 16))) return null; // generic NES ROMs: no end-detect
-    const version = risaRuntime.identifyRisaVersion(rom);
-    const layout = risaRuntime.resolveRisaLayout(version);
-    if (!layout) {
-      // A risa cart whose version has no internal-RAM layout: the reader can't find seq_mode, so we fall
-      // back to a fixed render — but say why, or it just looks like the song never stops (it can't be seen
-      // to stop). Only these versions expose the addresses song-length auto-detect needs.
-      warn(`render: risa ${version ?? "(unrecognized version)"} has no runtime layout — song-length ` +
-        `auto-detect unavailable (supported: ${risaRuntime.supportedRisaVersions().join(", ")}); ` +
-        `rendering a fixed ${o.durationMs ?? o.maxDurationMs}ms`);
-      return null;
-    }
-    // readRam is the per-block WRAM snapshot (safe while the core plays). If it's momentarily unavailable,
-    // report "playing" so a read gap never trims the song early — the maxMs cap still bounds the render.
-    return () => {
-      const ram = ctx.backend.readRam(id);
-      return ram ? risaRuntime.decodeRisaState(ram, layout).playing : true;
-    };
-  }
-  return null;
+/** The shell's capabilities as a render hook sees them (tracker's RenderHost): the booted system's memory and buttons,
+ *  and audio time for the waiting a cart's load does. The render's own sink is passed separately, so a play gesture
+ *  captures into the recording. */
+function renderHost(ctx: RenderContext): RenderHost {
+  return {
+    renderAudio: (ms) => ctx.audio.renderAudio(ms),
+    readCpu: (id, addr) => ctx.backend.readCpu(id, addr),
+    readRam: (id) => ctx.backend.readRam(id),
+    writeRam: (id, offset, bytes) => ctx.backend.writeRam(id, offset, bytes),
+    pressButton: (id, button, down) => ctx.audio.pressButton(id, button, down),
+  };
 }
 
-/** Validate a resolved render request against its platform. Throws on a bad split/platform or song/platform
- *  combo so the caller fails before loading anything. (Shared by the CLI and the worker.) */
-export function validateRenderOpts(o: RenderOpts, platform: Platform): void {
-  // Song selection promotes a saved catalog song to the working song — LSDj (GB), risa (NES) and smsggdj
-  // (SMS/GG). smsggdj is not a seed but a post-boot work-RAM write; the flag is accepted all the same.
-  const songPlatforms: Platform[] = ["gb", "nes", "sms", "gg"];
-  if ((o.song !== undefined || o.songIndex !== undefined) && !songPlatforms.includes(platform))
+/** Validate a resolved render request against the console it runs on. Throws on a bad split or a song flag no cart of
+ *  the console can honour, so the caller fails before loading anything. (Shared by the CLI and the worker.) */
+export function validateRenderOpts(
+  o: RenderOpts,
+  platform: Platform | "unknown",
+  render?: TrackerRender | undefined,
+): void {
+  // Song selection promotes or loads a saved song, which only a cart with a render hook for it can do: LSDj, risa and
+  // smsggdj do, BlipToaster (no song battery) does not, and neither does a console the build runs no tracker on.
+  const canPlaySaved = render?.seedSong !== undefined || render?.loadSong !== undefined;
+  const console = platformLabel(platform);
+  if ((o.song !== undefined || o.songIndex !== undefined) && !canPlaySaved) {
+    const carts = songCartLabels();
+    // The reason is the ROM's ROLES, not its console: a Game Boy ROM whose title names no tracker (mGB, a homebrew
+    // cart) runs none, though the console has carts that do, so the sentence says what this ROM lacks.
     throw new Error(
-      `render: --song/--song-index is a Game Boy (LSDj) / NES (risa) / Master System + Game Gear (smsggdj) feature (got ${platform})`,
+      `render: --song/--song-index is a feature of ${carts} (this ROM runs no tracker: its console is ${console})`,
     );
-  if (o.split === "pins") {
-    if (platform !== "nes") throw new Error(`render: --split pins is NES-only (got ${platform})`);
-  } else if (o.split === "channels" && platform !== "gb" && platform !== "nes") {
-    throw new Error(`render: --split channels needs a Game Boy or NES ROM (got ${platform})`);
+  }
+  // A split is the console descriptor's: which output layouts its core can be built in, and the file each stream takes.
+  const splits = platform === "unknown" ? undefined : consoleOfPlatform(platform)?.splits;
+  if (o.split === "pins" && splits?.pins === undefined) {
+    throw new Error(`render: --split pins is ${splitPlatformLabels("pins").join(" or ")}-only (got ${platform})`);
+  }
+  if (o.split === "channels" && splits?.channels === undefined) {
+    throw new Error(
+      `render: --split channels needs a ${splitPlatformLabels("channels").join(" or ")} ROM (got ${platform})`,
+    );
   }
 }
 
 /** Auto-start playback and CAPTURE the song's opening frames through the sink. The song begins the moment
  *  Start is pressed, so the button-hold render (needed to register the press) must be captured as the
- *  recording's head — not discarded, which drops the first ~100 ms. Returns the captured lead-in chunks (in
- *  the sink's mix/split shape); empty when o.start is off or the platform has no play gesture. */
-function pressPlay(ctx: RenderContext, sink: RenderSink, o: RenderOpts, id: number, platform: Platform): Float32Array[][] {
+ *  recording's head - not discarded, which drops the first ~100 ms. The gesture is the cart's own where its integration
+ *  has one (risa's SELECT+START with its prep presses, smsggdj's Pause and its already-playing check), else the console
+ *  descriptor's default (a Game Boy's Start, which LSDj and mGB begin on), else none (a generic NES or SMS ROM is left
+ *  untouched). Returns the captured lead-in chunks (in the sink's mix/split shape). */
+function pressPlay(
+  host: RenderHost,
+  sink: RenderPlaySink,
+  o: RenderOpts,
+  id: number,
+  rom: Uint8Array | undefined,
+  descriptor: ConsoleDescriptor | undefined,
+  render: TrackerRender | undefined,
+): Float32Array[][] {
   if (!o.start) return [];
-  if (platform === "gb") {
-    // LSDj/mGB begin on the Start press; hold it across one captured chunk to register the press, then
-    // release (Start is a play toggle — the song keeps running once the release lands next block).
-    ctx.audio.pressButton(id, GB_START, true);
-    const head = sink.renderChunk(DETECT_CHUNK_MS);
-    ctx.audio.pressButton(id, GB_START, false);
-    return [head];
-  }
-  if (platform === "nes" && isRisaRom(ctx, o)) return pressRisaPlay(ctx, sink, id); // generic NES ROMs untouched
-  if ((platform === "sms" || platform === "gg") && isSmsggdjRom(ctx, o)) {
-    // The cart's play/stop control is the PAUSE button (SMS: the Z80 NMI; GG: its real Start): it sets
-    // nmi_event and the frame loop turns that into tp_start when stopped, tp_stop when playing
-    // (main.asm:928-936). From the boot SONG screen tp_start is engine_play in MODE_SONG - the whole song
-    // from song_cur, which is what a render wants. Gated on the cart being smsggdj: on a generic SMS game
-    // this button pauses it.
-    //
-    // It is a TOGGLE, so pressing it blind is wrong whenever the cart is already running - which a render
-    // restored from a savestate (the UI's System > Render carries one, so the render starts from what you
-    // were hearing) very much can be. Ask first.
-    if (smsggdjIsPlaying(ctx, o, id) === true) return [];
-    ctx.audio.pressButton(id, SMS_START, true);
-    const head = sink.renderChunk(DETECT_CHUNK_MS); // the song starts here — capture it as the lead-in
-    ctx.audio.pressButton(id, SMS_START, false);
-    return [head];
-  }
-  return [];
+  if (render?.pressPlay) return render.pressPlay(host, id, rom ?? new Uint8Array(), sink);
+  const button = descriptor?.render?.defaultPlay?.button;
+  if (button === undefined) return [];
+  host.pressButton(id, button, true);
+  const head = sink.renderChunk(PLAY_HOLD_MS); // hold it across one captured chunk to register the press
+  host.pressButton(id, button, false); // a play toggle: the song keeps running once the release lands next block
+  return [head];
 }
 
 /** Boot a fresh system from the request and stream its audio to WAV. Returns the written paths (+ the
- *  detected length for an LSDj auto-detect render). Host-neutral — the CLI and the render worker both call
+ *  detected length for an auto-detect render). Host-neutral - the CLI and the render worker both call
  *  this; hooks default to console logging with no progress/cancel. Does NOT handle --list-songs (a query,
- *  not a render — the CLI wrapper handles that). */
+ *  not a render - the CLI wrapper handles that through renderSongs). */
 export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHooks = {}): RenderResult {
   const log = hooks.log ?? ((m: string) => console.log(m));
   const warn = hooks.warn ?? ((m: string) => console.warn(m));
-  const platform = platformOf(o.rom);
+  const { platform, core, integration } = resolveRenderRom(ctx, o.rom);
+  const render = integration?.render;
+  const descriptor = platform === "unknown" ? undefined : consoleOfPlatform(platform);
+  const split = splitOf(descriptor, o.split);
+  // A mono console's streams are in the left lane (a NES's), a stereo one's are interleaved (a Game Boy's); a console
+  // that declares neither shape, or no render at all, is treated as stereo, which is what its mix is.
+  const mono = (descriptor?.render?.mixLanes ?? "stereo") === "left";
 
-  validateRenderOpts(o, platform);
-  const pullMs = o.pullMs ?? DETECT_CHUNK_MS;
+  validateRenderOpts(o, platform, render);
+  const pullMs = o.pullMs ?? PLAY_HOLD_MS;
   if (!(Number.isFinite(pullMs) && pullMs > 0))
     throw new Error(`render: pullMs must be a positive number of ms (got ${o.pullMs})`);
 
@@ -862,7 +681,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     throw new Error(`render: pullMs ${pullMs} is under one frame at ${rate}Hz`);
   }
 
-  // The boot (the song's promotion, the system's build, the settle, smsggdj's song load) is checked for a cancel
+  // The boot (the song's promotion, the system's build, the settle, a cart's song load) is checked for a cancel
   // between its steps, as the stream is between its chunks: a cancel taken while it boots ends the render at its next
   // step rather than after its Start press, and before it has reserved or opened a file, so there is nothing to
   // discard.
@@ -870,15 +689,34 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     if (hooks.isCancelled?.()) throw new RenderCancelled();
   };
   cancelPoint();
-  const seed = resolveSongSeed(ctx, o, log, warn);
-  // smsggdj resolves its song here rather than through the seed, because its working song is not in the
-  // battery — see resolveSmsggdjSong. Resolved BEFORE the boot so a bad --song fails fast.
-  const smsSong =
-    (platform === "sms" || platform === "gg") && (o.song !== undefined || o.songIndex !== undefined)
-      ? resolveSmsggdjSong(ctx, o, log, warn)
-      : undefined;
+  // A chosen song is resolved BEFORE the boot, so a bad --song fails fast: one cart seeds the SRAM the fresh system
+  // boots from, the other has it written in after the settle (below).
+  const rom = ctx.backend.readFile(o.rom) ?? undefined;
+  const songFlags = o.song !== undefined || o.songIndex !== undefined;
+  const battery = songFlags ? readBattery(ctx, o) : undefined;
+  const chosen = battery && render?.listSongs ? chooseSong(o, render, render.listSongs(battery.raw), warn) : undefined;
+  // One cart promotes the chosen song into the SRAM the fresh system boots from (a seed), the other has it written in
+  // after the settle (a load); which ran is worth saying, because it is where the song ends up that decides what the
+  // cart does with it. A seed the cart cannot make refuses the song here, before anything boots: playing the battery's
+  // own working song under the chosen song's name would be a successful-looking render of the wrong music.
+  let seed: Uint8Array | undefined;
+  if (chosen && render?.seedSong) {
+    const promoted = render.seedSong(battery!.raw, chosen.index);
+    if (promoted === null) {
+      throw new Error(
+        render.seedRefusal?.(chosen.index) ??
+          `render: could not seed song ${chosen.index} (${integration!.label}) from ${battery!.path}`,
+      );
+    }
+    seed = promoted;
+  }
+  if (chosen) {
+    // Where the song went: a seed is promoted into the battery's working song, a load writes into work RAM.
+    const destination = render?.seedSong ? "working song" : "work RAM";
+    log(`song "${chosen.name || "(unnamed)"}" (slot ${chosen.index}) → ${destination}`);
+  }
   cancelPoint();
-  const id = buildSystem(ctx, o, platform, seed?.seed);
+  const id = buildSystem(ctx, o, core, split?.configPatch, seed);
   cancelPoint();
 
   // Settle boot (past the mGB/LSDj splash) before driving playback. Discarded, but it runs in the shape the render
@@ -893,42 +731,48 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   if (o.bpm) ctx.audio.setBpm(o.bpm);
   if (o.transport) ctx.audio.setTransport(true);
 
-  // AFTER the settle: the cart's boot blanks the song block, so an earlier write would be wiped.
-  if (smsSong) loadSmsggdjSongLive(ctx, o, id, smsSong.index);
-  else warnIfSmsggdjHasNoSong(ctx, o, platform, warn);
+  // What this cart's render owes the user a word about (a boot that will be silent), then AFTER the settle the cart's
+  // own song load: a cart whose working song is work RAM blanks it on the way up, so an earlier write would be wiped.
+  const facts: RenderFacts = {
+    rom: rom ?? null,
+    sav: battery?.raw ?? ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom)),
+    state: o.state !== undefined,
+    song: chosen !== undefined,
+    durationMs: o.durationMs,
+    maxDurationMs: o.maxDurationMs,
+  };
+  render?.warnings?.(facts, warn);
+  if (chosen && render?.loadSong) {
+    // The build just read the ROM, but a load that cannot is the same failure the cart's own reader reported, and a
+    // silent skip would leave the boot song rendering under the chosen song's name.
+    if (!rom || !battery) {
+      throw new Error(`render: could not re-read the ROM/sav to load ${integration!.id} song ${chosen.index}`);
+    }
+    render.loadSong(renderHost(ctx), id, rom, battery.raw, chosen.index);
+  }
   cancelPoint();
 
   const sr = ctx.audio.sampleRate();
-  // Default the filename to the SONG: the selected song when --song/--song-index is used, else the sav's
-  // working song. --out overrides both, so skip the sav read then.
-  const songName = o.out ? null : seed ? seed.name : smsSong ? smsSong.name : currentSongName(ctx, o, platform);
-  const { base, token, reserved } = resolveOnExists(ctx, o, platform, outBase(o, songName), hooks.partTag);
+  // Default the filename to the SONG: the selected song when --song/--song-index is used, else the battery's
+  // working song. --out overrides both, so skip the battery read then.
+  const songName = o.out ? null : chosen ? chosen.name : currentSongName(ctx, o, integration);
+  const names = split?.names ?? [];
+  const { base, token, reserved } = resolveOnExists(ctx, o, names, outBase(o, songName), hooks.partTag);
 
   // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
-  const sink = buildSink(ctx, o, id, platform, sr, base, token, reserved, log);
+  const sink = buildSink(ctx, o, id, platform, names, mono, sr, base, token, reserved, log);
 
   // Auto-start playback, capturing the song's opening frames as the recording's head (see pressPlay). The
   // sink exists first so the button-hold render is captured in the right mix/split shape, not discarded.
   try {
-    // Song-length auto-detect: when the ROM is a supported tracker (LSDj on GB, risa on NES) and the user
-    // didn't pin a duration, render to the HFF stop instead of a fixed window, report the length, and trim
-    // the silent tail. buildPlayingProbe returns null for anything else → a fixed render.
-    const isPlaying = buildPlayingProbe(ctx, o, id, platform, warn);
-    // Auto-detect applies to both mix and split (GB channels) - split just renders per-channel chunks.
+    const host = renderHost(ctx);
+    // Song-length auto-detect: when the ROM's cart offers a probe (LSDj on a Game Boy, risa on a NES) and the user
+    // didn't pin a duration, render to the song's end instead of a fixed window, report the length, and trim the
+    // silent tail. A cart with no probe (smsggdj, a generic ROM) renders a fixed length, and says why where the probe
+    // answers null.
+    const isPlaying = render?.playingProbe?.(host, id, rom ?? new Uint8Array(), facts, warn) ?? null;
+    // Auto-detect applies to both mix and split - split just renders per-channel chunks.
     const autoDetect = isPlaying !== null && o.start && o.durationMs === undefined;
-
-    // smsggdj has no song end to detect, so a render with no --duration silently ran for the whole 10-minute
-    // cap. That is not a missing probe we could add: `H` is a phrase hop, not LSDj's HFF stop, nothing in the
-    // command set touches the transport, and when a chain ends the track loops back to the top of its own
-    // contiguous block (engine.asm at_loopblk) - columns loop independently and forever, by design. Say so
-    // instead of leaving the user to guess why the WAV is exactly the cap long.
-    if (!autoDetect && o.durationMs === undefined && isSmsggdjRom(ctx, o)) {
-      warn(
-        `render: smsggdj songs loop forever (no HFF-style stop exists on this console), so song-length ` +
-          `auto-detect is not possible - rendering the full ${o.maxDurationMs}ms cap; ` +
-          `pass --duration to pin a length`,
-      );
-    }
 
     // Announce before the (possibly multi-minute) render so callers don't look hung while it works.
     const how = autoDetect
@@ -936,7 +780,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
       : `${o.durationMs ?? o.maxDurationMs}ms`;
     log(`rendering ${o.rom} → ${base}${o.split === "mix" ? "" : "_*"} (${how})…`);
 
-    const leadIn = pressPlay(ctx, sink, o, id, platform);
+    const leadIn = pressPlay(host, sink, o, id, rom, descriptor, render);
 
     if (autoDetect) {
       const m = driveAutoDetect(sink, isPlaying!, o.maxDurationMs, sr, hooks, pullMs, leadIn);

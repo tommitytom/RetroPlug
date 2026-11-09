@@ -21,6 +21,7 @@
     "./risaAssetCatalog": "./ts/risaAssetCatalog.ts",
     "./risaAssetsRole": "./ts/risaAssetsRole.ts",
     "./risaIntegration": "./ts/risaIntegration.ts",
+    "./risaRender": "./ts/risaRender.ts",
     "./risaRole": "./ts/risaRole.ts",
     "./risaSav": "./ts/risaSav.ts",
     "./risaSongCatalog": "./ts/risaSongCatalog.ts",

@@ -5,11 +5,9 @@
 import type { Backend } from "../backend";
 import type { ProjectStore } from "../projectStore";
 import type { AudioDriver } from "../audioDriver";
-import type { RoleInstance } from "@retroplug/core/systemRoles";
+import type { RoleInstance, RoleRegistry } from "@retroplug/core/systemRoles";
 
 export type SplitMode = "mix" | "channels" | "pins";
-
-export type Platform = "gb" | "nes" | "gba" | "sms" | "gg" | "other";
 
 /** Target-exists policy for a render: clobber the file, or write to the next free "<name>_N". */
 export type OnExists = "overwrite" | "rename";
@@ -65,6 +63,11 @@ export interface RenderContext {
   backend: Backend; // readFile / readCpu + the WavBackend writers (writeFile / appendFile / writeFileAt)
   project: ProjectStore;
   audio: RenderAudioDriver;
+  // The role registry the product's packages fill: the render classifies its ROM through the console registry and asks
+  // this one for the roles a fresh system of that console gets, so it resolves the tracker integration the built system
+  // will have rather than sniffing a ROM marker itself (docs/modular-graph-phase-f4a-design.md sections 5.1 and 9.5).
+  // Both constructors hold one: the CLI's session (bootSession) and the render worker (its bootSession).
+  registry: RoleRegistry;
 }
 
 /** Host callbacks. All optional so the CLI passes none (logging defaults to console, no progress/cancel).

@@ -70,12 +70,12 @@ function main(): void {
   }
 
   const serial = pluginNamespace()?.renderSerial;
-  const session = bootSession(); // structurally satisfies RenderContext (backend / project / audio)
+  const session = bootSession(); // structurally satisfies RenderContext (backend / project / audio / registry)
   // A render is an EXPORT. It builds systems, may load a savestate into one, and drops them again, so the
   // before-teardown battery flush would turn an export into a write in the user's save folder.
   session.project.systems.setBatteryFlush(false);
   try {
-    const ctx = { backend: session.backend, project: session.project, audio: session.audio };
+    const ctx = { backend: session.backend, project: session.project, audio: session.audio, registry: session.registry };
     const result = runRenderJob(ctx, opts, {
       onRendered: (ms) => __rp_reportRenderedMs?.(ms),
       isCancelled: () => __rp_isRenderCancelled?.() ?? false,

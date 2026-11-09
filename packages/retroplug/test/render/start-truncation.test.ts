@@ -11,6 +11,7 @@
 // It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
+import { buildAppRegistry } from "../../src/appHost";
 import {
   runRenderJob,
   decodeWav,
@@ -80,7 +81,7 @@ function mockCtx(): { ctx: RenderContext; backend: MockBackend } {
   const project = {
     systems: { addSystem: () => 1, view: () => [{ id: 1 }], adopt: () => {}, loadState: () => 1 },
   } as unknown as RenderContext["project"];
-  const ctx: RenderContext = { backend, audio: new SpyAudio(), project };
+  const ctx: RenderContext = { backend, audio: new SpyAudio(), project, registry: buildAppRegistry() };
   return { ctx, backend };
 }
 

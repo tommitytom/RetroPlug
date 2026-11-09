@@ -32,9 +32,10 @@ export const rms = (a: Float32Array): number => {
 };
 
 export function newCtx(be: ReturnType<typeof createRealBackend>): RenderContext {
-  const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
+  const registry = buildAppRegistry();
+  const project = new ProjectStore(be, new RecentStore(be), registry);
   const audio = createAudioDriver();
-  return { backend: be, project, audio };
+  return { backend: be, project, audio, registry };
 }
 
 // `sav` is deliberately required rather than defaulted: these files now run as concurrent

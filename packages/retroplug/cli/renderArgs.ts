@@ -22,10 +22,11 @@ const RENDER_HINT = "run 'retroplug-cli render --help' for the full options";
 export const RENDER_HELP = `usage: retroplug-cli render <rom> [options]
 
 Render a Game Boy (.gb/.gbc), GBA (.gba), NES (.nes), Master System (.sms) or Game Gear (.gg) ROM to a WAV file. The ROM is booted and its audio
-is written to disk. For a saved LSDj / risa / smsggdj song, play is pressed so it begins playing (use
---no-start to capture raw boot audio); mGB needs no such press, as it plays from incoming MIDI. With a
-loaded LSDj (Game Boy) or risa (NES) sav the song length is auto-detected (rendered up to the HFF stop)
-unless you pin a fixed length with --duration.
+is written to disk. Play is pressed so a song begins (use --no-start to capture raw boot audio): a cart's
+own gesture where it has one (risa's SELECT+START, smsggdj's Pause), else its console's default (a Game
+Boy's Start, which starts LSDj and leaves mGB alone - it plays from incoming MIDI). The song length is
+auto-detected (rendered up to the cart's end of song) for a ROM whose cart has a probe (LSDj on a Game
+Boy, risa on a NES) - its battery need not be beside it - unless you pin a fixed length with --duration.
 
 smsggdj (.sms/.gg) differs twice. It boots to a BLANK song by design - it keeps no working song in its
 battery - so --song/--song-index is REQUIRED or the render is silence. And its songs loop forever: H is
@@ -44,7 +45,7 @@ Options:
   --out <file>           Output path. Default: the working/selected song's name for a tracker cart, else
                          the ROM name; <name>.wav for a mix, <name>_<channel>.wav for --split.
   --duration <time>      Fixed render length (e.g. 3s, 500ms, 2m). Turns OFF song-length auto-detection.
-                         Default: auto for a loaded LSDj / risa sav, otherwise the --max-duration cap (10m).
+                         Default: auto for an LSDj / risa ROM, otherwise the --max-duration cap (10m).
                          smsggdj songs have no end, so pin this for any .sms/.gg render.
   --max-duration <time>  Safety cap for song-length auto-detect when no HFF stop is found. Default: 10m.
   --sample-rate <hz>     Output sample rate. Default: 44100. Higher rates resample the console's audio up

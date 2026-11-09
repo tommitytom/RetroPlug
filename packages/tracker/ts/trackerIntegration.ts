@@ -6,6 +6,7 @@
 // shell's (packages/retroplug/src/trackerRegistry.ts); this module is the contract one satisfies, reads nothing.
 import type { SongCatalog, WorkingSongImage } from "./songCatalog";
 import type { AssetCatalog } from "./assetCatalog";
+import type { TrackerRender } from "./trackerRender";
 
 export interface TrackerIntegration {
   /** Row-id prefix + instance-submenu id suffix, e.g. "lsdj" / "risa". */
@@ -50,6 +51,11 @@ export interface TrackerIntegration {
    *  a song that was unsaved before the reset is still unsaved after it. Null when the version has no
    *  layout. Pure, like liveLoad; the caller applies it once the cart is ready. */
   restoreWorkingSong?(rom: Uint8Array, song: WorkingSongImage, ram?: Uint8Array): RamWrite[] | null;
+  /** What rendering a song of this cart needs of it (docs/modular-graph-phase-f4a-design.md section 4.1): its songs, the
+   *  SRAM a chosen one is seeded from or the live load it needs, the play gesture and the end-of-song probe. Absent for a
+   *  cart the render library cannot play a chosen song of (BlipToaster has no song battery at all). The types are
+   *  ./trackerRender's, so a hook is testable without a host. */
+  readonly render?: TrackerRender;
 }
 
 /** One contiguous poke into a system's work RAM: `offset` indexes the same region `readRam` returns. */

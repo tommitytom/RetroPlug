@@ -10,7 +10,14 @@ import { CONSOLES, REAL_CARTS } from "./generated/consoles";
 import type { ConsoleDescriptor, ConsolePlatform, Core, Platform, RealCart } from "@retroplug/core/consoles";
 import { extensionLower } from "./pathUtil";
 
-export type { ConsoleDescriptor, ConsolePlatform, Core, Platform, RealCart } from "@retroplug/core/consoles";
+export type {
+  ConsoleDescriptor,
+  ConsolePlatform,
+  ConsoleSplit,
+  Core,
+  Platform,
+  RealCart,
+} from "@retroplug/core/consoles";
 
 /** Every registered descriptor, in product order. */
 export const CONSOLE_DESCRIPTORS: readonly ConsoleDescriptor[] = CONSOLES;
@@ -151,6 +158,23 @@ export function detectPlatform(bytes: Uint8Array, ext?: string): Platform | "unk
 export function romHasBattery(header: Uint8Array, platform: Platform): boolean {
   const rule = BY_PLATFORM.get(platform)?.descriptor.hasBattery;
   return rule ? rule(header, platform) : true;
+}
+
+/** How much of a ROM the shell reads for its providers and its role suggestions where a console's header sits at the
+ *  start of the file: enough for the cartridge title at 0x134 and the fields around it. */
+export const ROLE_HEADER_LEN = 0x150;
+
+/** How much of a ROM its providers are shown: the console's own prefix where its header sits deep (a Sega's is at the
+ *  end of a bank), and the short header everywhere else. */
+export function providerHeaderLength(platform: Platform): number {
+  return BY_PLATFORM.get(platform)?.descriptor.providerHeaderBytes ?? ROLE_HEADER_LEN;
+}
+
+/** The platform whose console lists `ext` (lowercase, dot included), or undefined when none does: classification by a
+ *  file's CONTENT is the rule, so this only stands in where there is no content to read (render.ts's edge E1). */
+export function platformForExtension(ext: string): Platform | undefined {
+  for (const platform of PLATFORMS) if (platform.extensions.includes(ext)) return platform.id;
+  return undefined;
 }
 
 /** What a platform's ROM providers are shown: the console's own prefix where its header sits deep (Sega's does), and

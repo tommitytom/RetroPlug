@@ -9,7 +9,7 @@
 // It runs the library in-process, on an exact-blocks engine; the bytes users get are the render baseline's.
 import { test, expect, skip } from "@retroplug/testing";
 import { createRealBackend } from "../src/realBackend";
-import { runRenderJob, readRisaSongs, decodeWav, type RenderOpts } from "../src/render";
+import { runRenderJob, renderSongs, decodeWav, type RenderOpts } from "../src/render";
 import { dirname, joinPath } from "../src/pathUtil";
 import { savBytes } from "@retroplug/risa/testFixtures";
 import { RISA_ROM, rms, newCtx, baseOpts } from "./risa-render-lib";
@@ -19,11 +19,11 @@ import { RISA_ROM, rms, newCtx, baseOpts } from "./risa-render-lib";
 const SAV = "/tmp/rp-risa-render.srm";
 const opts = (over: Partial<RenderOpts>): RenderOpts => baseOpts({ sav: SAV, ...over });
 
-test("render --list-songs lists the risa catalog (readRisaSongs)", () => {
+test("render --list-songs lists the risa catalog through the ROM's integration (renderSongs)", () => {
   const be = createRealBackend();
   if (!be.fileExists(RISA_ROM)) skip(`risa-render: no ROM at ${RISA_ROM}`);
   expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy(); // current v2 catalog, one song: BLUMARBL
-  const { songs } = readRisaSongs(newCtx(be), opts({}));
+  const { songs } = renderSongs(newCtx(be), opts({}));
   expect(songs.length).toBe(1);
   expect(songs[0].index).toBe(0);
   expect(songs[0].name).toBe("BLUMARBL");

@@ -20,14 +20,25 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { runRenderJob, decodeWav, validateRenderOpts, type RenderContext, type RenderOpts } from "../src/render";
+import {
+  runRenderJob,
+  decodeWav,
+  resolveRenderRom,
+  validateRenderOpts,
+  type RenderContext,
+  type RenderOpts,
+} from "../src/render";
 import { buildSav } from "@retroplug/smsggdj/codec/sav";
 import { smsggdjIntegration } from "../src/trackerRegistry";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "./smsSyncSong";
+import { gbaRom } from "../test/systems/fixtures";
 
 declare const __REPO_RESOURCES_DIR__: string;
 
 const ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
+// A Game Boy Advance ROM enough to CLASSIFY as one (its logo at 0x04): the case needs no boot, only the console the
+// content names, so it is written rather than read from a fixture tree.
+const GBA_ROM = "/tmp/rp-sms-render-gba.gba";
 const GG_ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.gg";
 const SAV = "/tmp/rp-smsggdj-render.sav";
 
@@ -45,9 +56,10 @@ let shared: RenderContext | null = null;
 
 function ctxFor(be: ReturnType<typeof createRealBackend>): RenderContext {
   if (!shared) {
-    const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
+    const registry = buildAppRegistry();
+    const project = new ProjectStore(be, new RecentStore(be), registry);
     const audio = createAudioDriver();
-    shared = { backend: be, project, audio };
+    shared = { backend: be, project, audio, registry };
   }
   shared.project.systems.clear(); // tear down the previous test's cart before booting the next
   return shared;
@@ -166,11 +178,19 @@ test("a render restored from a savestate plays what was loaded, without re-toggl
 test("validateRenderOpts accepts a song flag on sms/gg and still rejects it on gba", () => {
   // The flag was rejected for every platform but gb/nes, which is what made the smsggdj seeding path
   // below it unreachable. gba stays rejected — it has no song catalog at all.
-  validateRenderOpts(baseOpts({ songIndex: 0 }), "sms");
-  validateRenderOpts(baseOpts({ songIndex: 0 }), "gg");
+  // Both answers come through the ROM-to-integration path: the hooks are the hooks of the cart the ROM's own roles
+  // name, so smsggdj's cart has them and a Game Boy Advance has no tracker cart to name.
+  const be = createRealBackend();
+  if (!be.fileExists(ROM)) skip(`sms-render: no ROM at ${ROM}`);
+  expect(be.writeFile(GBA_ROM, gbaRom())).toBeTruthy();
+  const ctx = ctxFor(be);
+  const smsggdj = resolveRenderRom(ctx, ROM).integration!.render;
+  validateRenderOpts(baseOpts({ songIndex: 0 }), "sms", smsggdj);
+  validateRenderOpts(baseOpts({ songIndex: 0 }), "gg", smsggdj);
+  const gba = resolveRenderRom(ctx, GBA_ROM);
   let threw = "";
   try {
-    validateRenderOpts(baseOpts({ songIndex: 0 }), "gba");
+    validateRenderOpts(baseOpts({ songIndex: 0 }), gba.platform, gba.integration?.render);
   } catch (e) {
     threw = String(e);
   }

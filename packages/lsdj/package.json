@@ -28,6 +28,7 @@
     "./lsdjAssetCatalog": "./ts/lsdjAssetCatalog.ts",
     "./lsdjAssetsRole": "./ts/lsdjAssetsRole.ts",
     "./lsdjIntegration": "./ts/lsdjIntegration.ts",
+    "./lsdjRender": "./ts/lsdjRender.ts",
     "./lsdjKeyboardMap": "./ts/lsdjKeyboardMap.ts",
     "./lsdjLsdprjImport": "./ts/lsdjLsdprjImport.ts",
     "./lsdjSerialOutNode": "./ts/lsdjSerialOutNode.ts",

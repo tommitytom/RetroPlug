@@ -9,7 +9,9 @@ export const lsdjSongCatalog: SongCatalog = {
   isValidSav: (bytes) => isLsdjSav(bytes),
   // indices are source SLOT numbers (LSDj's list index === slot); import copies them into free target slots.
   importSongs: (target, source, indices) => importSongsFromSav(target, source, indices),
-  workingName: (sav) => workingSongName(sav),
+  // The name is the battery's only when the battery IS an LSDj image (the jk magic): a mismatch (a non-LSDj save
+  // beside an LSDj cart) names no song rather than reading the bytes after the header as one.
+  workingName: (sav) => (isLsdjSav(sav) ? workingSongName(sav) : null),
   // A LINKED working song borrows its slot's name (LSDj stores names on the stored project, not in the song)
   // and reports linked, so saving overwrites that slot rather than claiming a new one.
   //

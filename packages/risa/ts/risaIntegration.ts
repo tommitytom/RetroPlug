@@ -10,6 +10,7 @@ import { risaSongCatalog } from "./risaSongCatalog";
 import { risaAssetCatalog } from "./risaAssetCatalog";
 import { identifyRisaVersion } from "./runtime/identify";
 import { resolveRisaLayout } from "./runtime/layout";
+import { RISA_RENDER } from "./risaRender";
 
 export const risaIntegration: TrackerIntegration = {
   id: "risa",
@@ -24,4 +25,5 @@ export const risaIntegration: TrackerIntegration = {
   // Only versions with a bundled RAM layout (2.2.0 / 2.2.1 / 2.3.0) are driveable; an unknown / unmarked version
   // resolves no layout. See supportedRisaVersions() in ./runtime/layout.
   isVersionSupported: (rom) => resolveRisaLayout(identifyRisaVersion(rom)) !== null,
+  render: RISA_RENDER,
 };
