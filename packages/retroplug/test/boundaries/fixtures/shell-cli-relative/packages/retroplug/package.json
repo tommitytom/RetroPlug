@@ -1,0 +1,8 @@
+{
+  "name": "@retroplug/retroplug",
+  "private": true,
+  "dependencies": {
+    "@retroplug/alpha": "workspace:*",
+    "@retroplug/core": "workspace:*"
+  }
+}

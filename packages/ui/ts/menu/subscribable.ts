@@ -1,16 +1,11 @@
-// The notify plumbing behind the standalone-only menu modules (audioDraft, midiDevices, transport,
-// n8Devices, launchpadDevices). Each owns state that lives in the NATIVE host rather than in a store, so
-// a change there has no React path back to the menu and has to be pushed. All five had grown a
-// character-identical copy of the same three pieces.
+// The notify plumbing behind the menu modules whose state lives in the NATIVE host rather than in a store (the audio
+// draft, the MIDI devices, the transport, and the device packs' n8 and Launchpad menus). A change there has no React
+// path back to the menu, so it is pushed: a module emits, a subscriber repaints. A module keeps one subscribable and no
+// version counter; a poll that needs to know a version reads the one it tracks itself.
 //
-// A note on what went with them. Every copy also kept a `version` counter and exported an `xVersion()`
-// reading it, each documented as "a stable snapshot for App's forced re-render". Nothing ever imported
-// one - App bumps a `useState` counter instead - so in five places a counter was incremented and never
-// read. They are gone, counter included.
-//
-// No React here on purpose: these modules are reachable from the pure-TS tests, whose tsconfig does not
-// resolve `react`. The React side is ui/hooks/useRerender.ts (`useRerenderOn(subscribeX, ...)`, what App
-// uses), or `useSyncExternalStore(x.subscribe, ...)` as ui/screens/grid/lsdjDebug.ts does.
+// No React here on purpose: the module is reachable from the pure-TypeScript tests, whose tsconfig does not resolve
+// `react`. The React side is the shell's useRerender hook (`useRerenderOn(subscribeX, ...)`, what the app uses), or
+// `useSyncExternalStore(x.subscribe, ...)` as the LSDj debug readout does.
 
 export interface Subscribable {
   /** Notify every listener. Call after mutating the module's own state. */

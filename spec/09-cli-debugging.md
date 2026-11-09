@@ -69,10 +69,14 @@ The current session verb vocabulary (all on the booted `Session`):
 | Observe — debug (NES) | `backend.getApuState(id)`, `getExpansionAudioState(id)`, `getPpuState(id)`, `drainEvents(id)`, `drainCoreBytes(id)`, `readCpu(id, addr)`, `readMemory(id, region)`, `getCpuRegisters(id)`, `setCpuRegister`, `stepInstruction`/`runUntilPc`, `setBreakpoints`/`runUntilBreak`, `setTrace`/`readTrace`, `stepInto`/`stepOver`/`stepOut`, `loadLabels`/`symbolAddress`, `beginProfile`/`readProfile`, `disassemble`, `getCallStack` |
 | Schedule / assert | `Timeline` (+ `.at(ms, fn)` — the observe/assert hook) + `renderTimeline` |
 
-Example sessions live in [cli/sessions/](../packages/retroplug/cli/sessions) (`mgb-smoke.ts`,
-`render-rom.ts`, `render-song.ts`, and `rom-test.ts` — the TAP-emitting debug/observe example) and are
-bundled by the `retroplug-example-session` CMake target via
-[tools/build-session.js](../tools/build-session.js). These are **loose `.js`** run by path
+Example sessions are their cart's: `mgb-smoke.ts`, `analyze-mgb.ts` and `export-mgb-channels.ts` in
+[mgb/examples](../packages/mgb/examples), `export-nes-channels.ts` and `export-nes-mono.ts` in
+[mesen/examples](../packages/mesen/examples), `analyze-lsdj-sync.ts` in [lsdj/examples](../packages/lsdj/examples),
+and the cart-free `render-rom.ts`, `render-song.ts` and `rom-test.ts` (the TAP-emitting debug/observe example) in
+[cli/sessions](../packages/retroplug/cli/sessions). Each package lists them in its manifest's `retroplug.examples`,
+and the `retroplug-example-session` CMake target bundles every one through
+[tools/build-session.js](../tools/build-session.js) to `build/cli/<name>.js`, with the `retroplug-cli` SDK left
+external (the binary serves it from its loaded-module table). They are **loose `.js`** run by path
 (`retroplug-cli build/cli/<name>.js …`) — a dev convenience that needs the build tree.
 
 ### The `render` subcommand (compiled-in)
@@ -200,7 +204,8 @@ The plumbing tier is integrated end to end; only the new-wrapper tier + external
 2. **External authoring.** The ROM (and its tests) live outside this repo, so the
    `session`/`timeline`/`observe`/`expect` API should become an **importable, stable entry** the bundler
    resolves, so out-of-repo scripts can `import { Timeline, expect } from "…"`. Today a test lives in-repo
-   (a `cli/sessions/*.ts` or `test-native/*.test.ts`).
+   (a shell session, a package's `examples/`, or `test-native/*.test.ts`), and the CLI's SDK serves the same
+   surface to a consumer's own tests.
 3. **Audio-active debug reads.** The shipped reads use `Engine::findSystem` — valid on the control thread
    while the audio thread isn't started (the CLI's direct render). Reading a live core *while the plugin
    plays* would need an invoker read-path; not needed for the CLI harness.

@@ -60,8 +60,8 @@ export interface ImportResult {
 }
 
 /** Import the checked songs into the live battery (readSram -> catalog.importSongs -> write .sav -> cold
- *  boot), the mutateSavBytes cycle done off `stores`. `imported` counts the songs the catalog actually
- *  gained (import is best-effort fill: a full target keeps what fit) — 0 when nothing was written. */
+ *  boot), the same cycle `host.liveSongs.mutate` runs for a cart's own rows. `imported` counts the songs the catalog
+ *  actually gained (import is best-effort fill: a full target keeps what fit) - 0 when nothing was written. */
 export function applyImport(stores: AppStores, pick: PickState): ImportResult {
   const indices = pick.songs.map((s) => s.index).filter((i) => pick.checked.has(i)); // keep source order
   const requested = indices.length;

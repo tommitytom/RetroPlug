@@ -24,7 +24,7 @@ namespace rp::launchpad {
 // thread.
 //
 // This is the transport and nothing else: the protocol, the choice of ports and their persistence all live in TS
-// (packages/launchpad/ts, ui/screens/menu/launchpadDevices.ts). Four decisions worth knowing before touching anything
+// (packages/launchpad/ts, its ui/launchpadDevices.ts). Four decisions worth knowing before touching anything
 // here:
 //
 //   1. **Both rings are fixed slots, because the audio thread is one end of each.** Device -> audio keeps one

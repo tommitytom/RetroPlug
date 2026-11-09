@@ -38,7 +38,7 @@ Key implication: the audio/graphics/state paths we care about are documented in 
 | SD file **write** | `CMD_F_FOPN/FWR/FCLOSE` (0xC9/CC/CE) | `Edio::fileOpen/Write/Close`; ROM upload |
 | SD file **read** | `CMD_F_FOPN/FRD/FCLOSE` (0xC9/CA/CE) | `Edio::fileRead`; `Ops::readFile` |
 | Menu | `'t'` test, `'n'` select, `'s'` start, `'r'` reboot | `Menu::test/install/start/reset` |
-| CLI/harness | `n8-load` (load/`--srm`/`--dump-sram`/`--ls`), `n8-bridge`, `n8-sync`, `retroplug-n8-hwtest` (dump/load/restore/**peek/poke**) | `cli/sessions/n8-*.ts` (over the pack's RPC facet), `packages/n8/native/test/n8-sd-hwtest.cpp` |
+| CLI/harness | `n8-load` (load/`--srm`/`--dump-sram`/`--ls`), `n8-bridge`, `n8-sync`, `retroplug-n8-hwtest` (dump/load/restore/**peek/poke**) | `packages/n8/ts/cli/n8*.ts` and `packages/risa/ts/cli/n8Sync.ts` (over the pack's RPC facet), `packages/n8/native/test/n8-sd-hwtest.cpp` |
 
 ## Full command set (`edlink/Device/DeviceIO_V1.cs`)
 

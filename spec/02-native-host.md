@@ -1155,8 +1155,10 @@ host-io package's, the cart's node the N8 pack's and the control surface's two t
 ROM classification (the legacy build's C++ `RomSniffer`) is TS-owned, and since F4a it is the CONSOLE PACKAGES' data:
 each console package contributes a descriptor saying how its ROMs are recognised (its detectors in rank order and the
 extensions it falls back to), which node type places a system, the settings and construct fields that node reads, its
-split modes and its link cable, so `packages/retroplug/src` has no platform union or table keyed by one and reaches a
-console only through its package (the boundary check's rule 9). The LSDj sav codec is TS-owned too - neither is in the
+split modes and its link cable, so `packages/retroplug/src` and `packages/retroplug/cli` have no platform union or
+table keyed by one and reach a console or a cart only through its package (the boundary check's rule 9 over both; the
+UI's menu contributions and the CLI's tools arrive through the generated `ui/generated/menus.ts` and
+`cli/generated/tools.ts`). The LSDj sav codec is TS-owned too - neither is in the
 C++ tree.
 
 ### The DSP targets and the `rp.dsp` packages

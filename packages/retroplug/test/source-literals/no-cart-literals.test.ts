@@ -17,6 +17,7 @@
 // The scanner is Node's, so the test spawns test/source-literals/run-scan.mjs, as the boundary test spawns its runner.
 import { test, expect } from "@retroplug/testing";
 import { CONSOLES } from "../../src/generated/consoles";
+import { EMBEDS, KIT_FORMATS, TRACKER_INTEGRATIONS } from "../../src/generated/packages";
 
 /** The console registry's platform ids, ROM extensions, cores and node types: the descriptors' own, so nothing here is a
  *  second copy. */
@@ -28,14 +29,25 @@ const ROM_EXTENSIONS = [
 ].sort();
 const CORE_IDS = [...new Set(CONSOLES.map((console) => console.core))].sort();
 const NODE_TYPES = [...new Set(CONSOLES.map((console) => console.nodeType))].sort();
+/** The packages' own ids: what a kit is compiled by, an embedded ROM is loaded by and an integration is looked up by.
+ *  A cart's or a console's id is its package's knowledge, so the shell spells none of them either. */
+const CART_IDS = [
+  ...new Set([
+    ...EMBEDS.map((embed) => embed.id),
+    ...TRACKER_INTEGRATIONS.map((integration) => integration.id),
+    ...KIT_FORMATS.map((format) => format.id),
+  ]),
+].sort();
 
-/** The one deliberate copy of a console's knowledge in the shell, held to being used: the v2 to v3 step's enum tables
- *  are keyed by role kind, and two of those kinds are the consoles' own. The step may not read the registry - it freezes
- *  the v2 writer's lists so a package's rename cannot move what an old file means (design decision 13) - so its keys are
- *  the old file's spellings, not a lookup, and its two console keys stay. */
+/** The one deliberate copy of a package's knowledge in the shell, held to being used: the v2 to v3 step's enum
+ *  tables are keyed by role kind, and four of those kinds are a console's or a cart's own. The step may not read the
+ *  registry - it freezes the v2 writer's lists so a package's rename cannot move what an old file means (decision
+ *  13) - so its keys are the old file's spellings, not a lookup, and its four package keys stay. */
 const FROZEN_MIGRATION_KEYS = [
   { file: "packages/retroplug/src/projectConfig.ts", value: "sameboy" },
   { file: "packages/retroplug/src/projectConfig.ts", value: "mesen" },
+  { file: "packages/retroplug/src/projectConfig.ts", value: "mgb" },
+  { file: "packages/retroplug/src/projectConfig.ts", value: "bliptoaster" },
 ];
 
 interface ByteStream {
@@ -74,7 +86,7 @@ async function text(stream: ByteStream | null): Promise<string> {
 }
 
 /** The scan's findings over a tree: `--root` names a fixture that spells literals, no argument the real tree. */
-async function scan(root?: string): Promise<{ file: string; value: string }[]> {
+async function scan(root?: string, dirs = "src"): Promise<{ file: string; value: string }[]> {
   const args = [
     tjs.env.RP_NODE || "node",
     "test/source-literals/run-scan.mjs",
@@ -86,6 +98,10 @@ async function scan(root?: string): Promise<{ file: string; value: string }[]> {
     CORE_IDS.join(","),
     "--node-types",
     NODE_TYPES.join(","),
+    "--carts",
+    CART_IDS.join(","),
+    "--dirs",
+    dirs,
     ...(root ? ["--root", root] : []),
   ];
   const child = tjs.spawn(args, { stdout: "pipe", stderr: "pipe" });
@@ -94,13 +110,13 @@ async function scan(root?: string): Promise<{ file: string; value: string }[]> {
   return (JSON.parse(out) as { literals: { file: string; value: string }[] }).literals;
 }
 
-test("the shell's sources spell no platform and no ROM extension", async () => {
+test("the shell's sources and cli/ spell no platform, ROM extension or cart id", async () => {
   console.log(
     `# the registry's ids: ${PLATFORM_IDS.join(", ")}; extensions: ${ROM_EXTENSIONS.join(", ")}; ` +
-      `cores: ${CORE_IDS.join(", ")}; node types: ${NODE_TYPES.join(", ")}`,
+      `cores: ${CORE_IDS.join(", ")}; node types: ${NODE_TYPES.join(", ")}; carts: ${CART_IDS.join(", ")}`,
   );
-  const literals = await scan();
-  console.log(`# platform/extension/core/node-type literals: ${JSON.stringify(literals)}`);
+  const literals = await scan(undefined, "src,cli");
+  console.log(`# platform/extension/core/node-type/cart literals: ${JSON.stringify(literals)}`);
   const remaining = literals.filter(
     (hit) => !FROZEN_MIGRATION_KEYS.some((key) => key.file === hit.file && key.value === hit.value),
   );
@@ -136,4 +152,11 @@ test("the walk reads a table's keys, a pattern and a template tail, not a commen
     { file: "packages/retroplug/src/tables.ts", value: "sameboy" },
     { file: "packages/retroplug/src/tables.ts", value: "rom.gb" },
   ]);
+});
+
+test("a whitespace string ending in an extension is prose, and a path is not", async () => {
+  // The CLI's help texts name their inputs in a sentence ("... a ROM (.nes/.gb), or a .sav"); a value a program
+  // compares is a path with no whitespace in it. The fixture holds one of each, and the prose is not a hit.
+  const literals = await scan("test/source-literals/fixtures/literals-cli", "cli");
+  expect(literals).toEqual([{ file: "packages/retroplug/cli/args.ts", value: "roms/cart.nes" }]);
 });

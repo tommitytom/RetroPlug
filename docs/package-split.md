@@ -1,13 +1,17 @@
 # The package split
 
-**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3, F2 and F4a built
+**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3, F2, F4a and F4b built
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records it and its follow-up
 pass; [modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records it;
 [modular-graph-phase-f2-design.md](modular-graph-phase-f2-design.md), whose section 12 records its execution and its
-follow-up pass; [modular-graph-phase-f4a-design.md](modular-graph-phase-f4a-design.md), the non-UI half of F4; what each
-leaves is [07-remaining-work.md](../spec/07-remaining-work.md)'s F1, F3, F2 and F4a bullets). F4 split into **F4a**, the
-non-UI registrations and the shell's boundary (built), and **F4b**, the UI and the cart tools (not yet designed);
-per-product bundles stay owed until a product's package list differs from the desktop's.
+follow-up pass; [modular-graph-phase-f4a-design.md](modular-graph-phase-f4a-design.md) and
+[modular-graph-phase-f4b-design.md](modular-graph-phase-f4b-design.md), the two halves of F4; what each leaves is
+[07-remaining-work.md](../spec/07-remaining-work.md)'s F1, F3, F2, F4a and F4b bullets). F4 split into **F4a**, the
+non-UI registrations and the shell's boundary (built), and **F4b**, the plain-TypeScript surfaces (built: the `ui`
+package and the menu contributions, the cart CLI tools and the example sessions, the `Host` contract, rule 9 and the
+scanner over `cli/`, and the bundle split). **F4c** (React in packages: a `@retroplug/ui/kit`, the views and the
+overlays, rule 9 and the scanner over `ui/`) is next and not yet designed. Per-product bundles stay owed until a
+product's package list differs from the desktop's.
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
 workspace packages would take. E1 started it (`node-sdk`, `graph-runtime`, `core`, `dsp`), E2 carved `n8`, and E4 made
@@ -53,10 +57,16 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
     doors deleted, and the shell's own boundary: the boundary check's rule 9 (an explicit list of contract modules
     `packages/retroplug/src` may import, each with its reason) and a scanner test refusing a cart or console literal
     there (a string, a table key, an extension regex, a core id, a node type). Nothing re-recorded.
-  - **F4b: the UI and the cart tools** (not yet designed). A menu item model for the cart-specific menu code,
-    `TRACKER_UI`, the console settings rows, the N8 and Launchpad menus, the LSDj HD player and the overlays move into
-    their packs; `ui/` and `cli/` join rule 9 and the scanner test; the cart CLI tools become a second surface on the
-    host contract. Per-product bundles are owed until a product's package list differs.
+  - **F4b: the plain-TypeScript surfaces** ([design](modular-graph-phase-f4b-design.md), **built** on
+    `feature/modularize`). One `Host<G>` contract in core replaces F4a's three slices, and each surface builds the
+    groups it has (UI, CLI, render); the new `ui` package holds the menu model and the contribution types, and every
+    package contributes its own rows, menu builders, tracker UI and services through `retroplug.ui`; the cart
+    callbacks, the device menus and the N8/Launchpad watchers move into their packs; the seven cart CLI tools become
+    `retroplug.cli` contributions run against the CLI host, the example sessions move into their packages and import
+    the SDK by its bare specifier, and the host-module list generates the typecheck paths. The proof: rule 9 and the
+    literal scanner over `cli/`, the `ui/` cart-import ratchet, and a bundle check that the control plane, the render
+    worker, the SDK, the dispatcher and the planner carry no UI while the UI carries no CLI. Nothing re-recorded; the
+    one behaviour edge is the CLI's command index order. What it leaves is F4c and the per-product bundles, below.
 
 ## 3. The order
 

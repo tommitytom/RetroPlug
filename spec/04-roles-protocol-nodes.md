@@ -109,13 +109,14 @@ The embedded-ROM **marker** is the only signal for a baked-in synth, whose bytes
 its header is empty and the provider matches on the marker instead. ROM providers are registered into
 the **control-plane** registry only; the script-node bundle never sees a role, a schema or a provider.
 
-### `ConstructCaps` + `onConstruct` hooks
+### `onConstruct` hooks
 
 `onConstruct` runs at boot time for each role actually attached to a system (so it is inherently
-ROM-gated), transforming the resolved `ConstructSpec` before its resources are put. It sees only a narrow
-`ConstructCaps` slice (`savFromJson`, `fileExists`, `readFile`, `pngDecode`), which the full `Backend` satisfies
-structurally, so the store passes itself. What it writes into the spec is what the system's node names: its `romBytes`
-become the `rom` resource's bytes, its `sramBytes` a battery seed's.
+ROM-gated), transforming the resolved `ConstructSpec` before its resources are put. What it may read comes
+from the host contract ([host.ts](../packages/core/ts/host.ts)): `Host<"files" | "png">`, i.e. the `files` group
+(`readFile`, `fileExists`, `writeFile`, `writeFileAtomic`) and the `png` group (`encode`, `decode`), which is
+the surface's builder's to satisfy. It gets no store and no backend. What it writes into the spec is what the
+system's node names: its `romBytes` become the `rom` resource's bytes, its `sramBytes` a battery seed's.
 
 LSDj's empty-sav seed ([@retroplug/lsdj's app module](../packages/lsdj/ts/app.ts)) is the plainest: a
 fresh LSDj cart with no save data runs a 12-15 s cartridge self-test on boot. When nothing else will seed
@@ -502,7 +503,9 @@ inventory of remaining work.
 TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
 
 - [systemRoles.ts](../packages/core/ts/systemRoles.ts): `RoleInstance` / `RoleType` /
-  `RoleRegistry` / `RomProvider` / `ConstructCaps`.
+  `RoleRegistry` / `RomProvider` / `onConstruct`.
+- [host.ts](../packages/core/ts/host.ts): the grouped `Host<G>` contract a hook asks a surface for, and the
+  groups the three surfaces (UI, CLI, render) build.
 - [packages/sameboy/ts/app.ts](../packages/sameboy/ts/app.ts) and [packages/mesen/ts/app.ts](../packages/mesen/ts/app.ts): the
   `sameboy` and `mesen` system-roles, each contributed by the package whose core it configures.
 - the sync roles, each in its package's `app` module: [mgb](../packages/mgb/ts/app.ts),

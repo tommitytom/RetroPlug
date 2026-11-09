@@ -10,7 +10,7 @@
 // `${...}` that closes a span.
 //
 //   node test/source-literals/run-scan.mjs --platforms <id,...> --extensions <.ext,...> \
-//     --cores <id,...> --node-types <type,...> [--root <dir>]
+//     --cores <id,...> --node-types <type,...> --carts <id,...> [--dirs src,cli] [--root <dir>]
 //
 // The guarded sets are the console registry's, not this file's: the test imports the generated CONSOLES list and passes
 // its platform ids, extensions, cores and node types, so a console a product registers later is guarded without an edit
@@ -40,30 +40,42 @@ const platforms = option("--platforms");
 const extensions = option("--extensions");
 const cores = option("--cores");
 const nodeTypes = option("--node-types");
-if (!platforms || !extensions || !cores || !nodeTypes) {
+// `--carts` may be EMPTY and the other four may not: a fixture tree whose generated package list declares no cart is
+// scanned with no cart guard, which is right, while every tree has consoles. An absent flag is still not the same as
+// an empty one - it would scan a real tree with none of the cart ids - so it is tested for undefined.
+const carts = option("--carts");
+if (!platforms || !extensions || !cores || !nodeTypes || carts === undefined) {
   console.error(
-    "run-scan: --platforms, --extensions, --cores and --node-types are required: they are the console registry's, " +
-      "which the caller reads from the generated CONSOLES list rather than this file keeping a second copy of them.",
+    "run-scan: --platforms, --extensions, --cores, --node-types and --carts are required: they are the console and " +
+      "package registries', which the caller reads from the generated lists rather than this file keeping a second " +
+      "copy of them.",
   );
   process.exit(2);
 }
 const root = resolve(option("--root") ?? REPO);
+const dirs = (option("--dirs") ?? "src").split(",").filter((entry) => entry !== "");
 const list = (csv) => csv.split(",").filter((entry) => entry !== "");
 const PLATFORMS = new Set(list(platforms));
 const EXTENSIONS = new Set(list(extensions));
 const CORES = new Set(list(cores));
 const NODE_TYPES = new Set(list(nodeTypes));
+const CARTS = new Set(list(carts));
 
-/** True for an exact guarded value: a platform id, an extension, a core id, a node type, or the `*.gb` glob. */
+/** True for an exact guarded value: a platform id, an extension, a core id, a node type, a cart id (a kit format's,
+ *  an embed's or a tracker integration's), or the `*.gb` glob. */
 const isGuarded = (value) =>
   PLATFORMS.has(value) ||
   EXTENSIONS.has(value) ||
   CORES.has(value) ||
   NODE_TYPES.has(value) ||
+  CARTS.has(value) ||
   (value.startsWith("*.") && EXTENSIONS.has(value.slice(1)));
 
-/** True for text that ends in a guarded extension: the `rom.gb` tail a suffix test or a template builds. */
+/** True for text that ends in a guarded extension: the `rom.gb` tail a suffix test or a template builds. A string with
+ *  whitespace in it is prose (a help text naming a file a user would type), not a path a program tests: a path has no
+ *  whitespace, and the CLI's help texts name their inputs. */
 const endsInExtension = (value) => {
+  if (/\s/.test(value)) return false;
   for (const extension of EXTENSIONS) {
     if (value.length > extension.length && value.endsWith(extension)) return true;
   }
@@ -91,13 +103,14 @@ const isPatternHit = (source, flags) => {
   return false;
 };
 
-/** Every .ts/.tsx file under `dir`, in a stable order, without the generated registries. */
+/** Every .ts/.tsx file under `dir`, in a stable order, without the generated registries or the SDK's declaration file
+ *  (a consumer's view of the SDK, written for an editor, not the shell's own code). */
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name !== "generated") walk(path, out);
-    } else if (/\.(ts|tsx)$/.test(entry.name)) out.push(path);
+    } else if (/\.(ts|tsx)$/.test(entry.name) && entry.name !== "sdk-types.d.ts") out.push(path);
   }
   return out;
 }
@@ -186,9 +199,11 @@ function hitsOf(file, text) {
 }
 
 const literals = [];
-for (const file of walk(join(root, "packages/retroplug/src"))) {
-  for (const value of hitsOf(file, readFileSync(file, "utf8"))) {
-    literals.push({ file: relative(root, file).split("\\").join("/"), value });
+for (const dir of dirs) {
+  for (const file of walk(join(root, "packages/retroplug", dir))) {
+    for (const value of hitsOf(file, readFileSync(file, "utf8"))) {
+      literals.push({ file: relative(root, file).split("\\").join("/"), value });
+    }
   }
 }
 console.log(JSON.stringify({ literals }));

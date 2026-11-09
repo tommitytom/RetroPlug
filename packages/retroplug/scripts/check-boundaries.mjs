@@ -118,6 +118,7 @@ const SHELL_IMPORTS = [
   // The contract every package implements: the shell is its host, not a participant.
   { specifier: "@retroplug/core/canonicalJson", reason: "the document encoder every protocol driver writes through" },
   { specifier: "@retroplug/core/capability", reason: "the capability jobs' operation table a host's systems group names and a cart types a job by" },
+  { specifier: "@retroplug/core/cliTool", reason: "the CLI tool contract the dispatcher and the generated tool table implement" },
   { specifier: "@retroplug/core/configFields", reason: "the schema field helpers a role config and the stores' configs build with" },
   { specifier: "@retroplug/core/consoles", reason: "the console descriptor contract the generated registry is read through" },
   { specifier: "@retroplug/core/constructSpec", reason: "the construct spec a backend and a role hook carry" },
@@ -147,6 +148,8 @@ const SHELL_IMPORTS = [
   { specifier: "@retroplug/tracker/trackerPlayback", reason: "the playback hook the controller's row-timing poll asks for" },
   { specifier: "@retroplug/tracker/trackerRender", reason: "the render hooks the render pipeline asks a ROM's integration for" },
   { specifier: "@retroplug/tracker/workingSongBlob", reason: "the working-song image a project carries across a reboot" },
+  // The test harness itself: the SDK serves it to a consumer's tests, and the ROM-test session imports it.
+  { specifier: "@retroplug/testing", reason: "the TAP harness a session's own tests run through (the SDK serves it to a consumer)" },
 ];
 
 function readJson(path) {
@@ -786,39 +789,53 @@ export function checkBoundaries({ root = REPO } = {}) {
   const shellUsed = new Set();
   if (shell !== undefined) {
     const src = join(shell.dir, "src");
-    for (const file of walk(src, isTypeScript)) {
-      const path = shown(root, file);
-      if (path.startsWith(`${PACKAGES}/retroplug/src/generated/`)) continue;
-      for (const imported of ts.preProcessFile(readFileSync(file, "utf8"), true, true).importedFiles) {
-        const specifier = imported.fileName;
-        // A relative import is judged by where it lands: rules 1 to 8 do not judge the shell's src, so this is the one
-        // place a `../../lsdj/ts/...` reach out of it (or into the app's own ui/ and cli/, which still import carts)
-        // would be seen.
-        if (specifier.startsWith(".")) {
-          const reached = relative(src, resolve(dirname(file), specifier));
-          if (reached !== "" && !reached.startsWith("..") && !isAbsolute(reached)) continue;
+    const cli = join(shell.dir, "cli");
+    // Rule 9's two roots and what each may reach relatively: a src file stays in src, and a cli file stays in cli or
+    // reaches src (the CLI is a surface OVER the shell's control plane). Anything else - ui/, test/, test-native/,
+    // tools-src/, another package - is reached only through a generated registry, or not at all.
+    const roots = [
+      { dir: src, ignores: [`${PACKAGES}/retroplug/src/generated/`], reaches: [src] },
+      { dir: cli, ignores: [`${PACKAGES}/retroplug/cli/generated/`], reaches: [cli, src] },
+    ];
+    for (const { dir, ignores, reaches } of roots) {
+      for (const file of walk(dir, isTypeScript)) {
+        const path = shown(root, file);
+        if (ignores.some((prefix) => path.startsWith(prefix))) continue;
+        for (const imported of ts.preProcessFile(readFileSync(file, "utf8"), true, true).importedFiles) {
+          const specifier = imported.fileName;
+          // A relative import is judged by where it lands: rules 1 to 8 do not judge the shell's own trees, so this is
+          // the one place a `../../lsdj/ts/...` reach out of one would be seen.
+          if (specifier.startsWith(".")) {
+            const target = resolve(dirname(file), specifier);
+            const landed = reaches.some((rootDir) => {
+              const reached = relative(rootDir, target);
+              return reached === "" || (!reached.startsWith("..") && !isAbsolute(reached));
+            });
+            if (landed) continue;
+            refuse(
+              "shell-source",
+              path,
+              specifier,
+              `${path}: imports "${specifier}", which resolves outside ${reaches
+                .map((rootDir) => shown(root, rootDir))
+                .join(" and ")} (rule 9): a cart's or a console's code is reached through the generated registries ` +
+                "the generator writes, and the shell's other trees are not a source's to import",
+            );
+            continue;
+          }
+          if (!specifier.startsWith("@retroplug/")) continue;
+          if (shellAllowed.has(specifier)) {
+            shellUsed.add(specifier);
+            continue;
+          }
           refuse(
             "shell-source",
             path,
             specifier,
-            `${path}: imports "${specifier}", which resolves outside packages/retroplug/src (rule 9): a cart's or a ` +
-              "console's code is reached through the generated registries src/generated writes, and the app's ui/, " +
-              "cli/ and test trees are not a source's to import",
+            `${path}: imports "${specifier}", which is not one of the contract modules the shell's src/ and cli/ may ` +
+              "reach (rule 9): a cart's or a console's code is reached through the generated registries",
           );
-          continue;
         }
-        if (!specifier.startsWith("@retroplug/")) continue;
-        if (shellAllowed.has(specifier)) {
-          shellUsed.add(specifier);
-          continue;
-        }
-        refuse(
-          "shell-source",
-          path,
-          specifier,
-          `${path}: imports "${specifier}", which is not one of the contract modules packages/retroplug/src may reach ` +
-            "(rule 9): a cart's or a console's code is reached through the generated registries src/generated writes",
-        );
       }
     }
   }
@@ -826,8 +843,8 @@ export function checkBoundaries({ root = REPO } = {}) {
     root === REPO
       ? SHELL_IMPORTS.filter((entry) => !shellUsed.has(entry.specifier)).map(
           (entry) =>
-            `SHELL_IMPORTS names ${entry.specifier} (${entry.reason}), which no file of packages/retroplug/src imports: ` +
-            "delete the entry",
+            `SHELL_IMPORTS names ${entry.specifier} (${entry.reason}), which no file of packages/retroplug/src or ` +
+            "packages/retroplug/cli imports: delete the entry",
         )
       : [];
 

@@ -292,9 +292,9 @@ test("a shell source importing a cart's module is refused, naming the file and t
   console.log(`# ${(report.refused as string[]).join("\n# ")}`);
   expect(report.status).toBe(1);
   expect(report.refused).toEqual([
-    'packages/retroplug/src/index.ts: imports "@retroplug/alpha/app", which is not one of the contract modules ' +
-      "packages/retroplug/src may reach (rule 9): a cart's or a console's code is reached through the generated " +
-      "registries src/generated writes",
+    'packages/retroplug/src/index.ts: imports "@retroplug/alpha/app", which is not one of the contract modules the ' +
+      "shell's src/ and cli/ may reach (rule 9): a cart's or a console's code is reached through the generated " +
+      "registries",
   ]);
 });
 
@@ -306,11 +306,12 @@ test("a shell source's relative import that lands outside src is refused (rule 9
   expect(report.status).toBe(1);
   expect(report.refused).toEqual([
     'packages/retroplug/src/index.ts: imports "../../alpha/ts/app", which resolves outside packages/retroplug/src ' +
-      "(rule 9): a cart's or a console's code is reached through the generated registries src/generated writes, and " +
-      "the app's ui/, cli/ and test trees are not a source's to import",
+      "(rule 9): a cart's or a console's code is reached through the generated registries the generator writes, and " +
+      "the shell's other trees are not a source's to import",
     'packages/retroplug/src/index.ts: imports "../../ui/App", which resolves outside packages/retroplug/src ' +
-      "(rule 9): a cart's or a console's code is reached through the generated registries src/generated writes, and " +
-      "the app's ui/, cli/ and test trees are not a source's to import",
+      '(rule 9): ' +
+      "a cart's or a console's code is reached through the generated registries the generator writes, and the " +
+      "shell's other trees are not a source's to import",
   ]);
 });
 
@@ -321,6 +322,42 @@ test("a shell source may import a contract module and its own, and src/generated
   expect(report.status).toBe(0);
   expect(report.refused).toEqual([]);
   expect(report.stale).toEqual([]);
+});
+
+test("a cli source may import a contract module and reach src, and names no package it does not declare", async () => {
+  // The CLI is a surface over the shell's control plane: a contract module is on the list, and a relative reach into
+  // src is its own tree. A cart's code arrives through the generated tool table, which the rule does not judge.
+  const report = await drive("shell-cli-allowed");
+  expect(report.status).toBe(0);
+  expect(report.refused).toEqual([]);
+});
+
+test("a cli source may not import a cart or a console (rule 9 over cli/)", async () => {
+  const report = await drive("shell-cli-forbidden");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/retroplug/cli/index.ts: imports "@retroplug/alpha/app", which is not one of the contract modules the ' +
+      "shell's src/ and cli/ may reach (rule 9): a cart's or a console's code is reached through the generated " +
+      "registries",
+  ]);
+});
+
+test("rule 9's relative half is per root: a src file reaches src, a cli file cli or src", async () => {
+  // The union of the two roots would admit both of these, so each direction has a file: src into cli/ is refused, and
+  // so is cli/ into ui/ (the UI is a surface above the control plane, not a tree the dispatcher's modules import).
+  const report = await drive("shell-cli-relative");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/retroplug/src/index.ts: imports "../cli/run", which resolves outside packages/retroplug/src ' +
+      '(rule 9): a ' +
+      "cart's or a console's code is reached through the generated registries the generator writes, and the shell's " +
+      "other trees are not a source's to import",
+    'packages/retroplug/cli/evil.ts: imports "../ui/App", which resolves outside packages/retroplug/cli and ' +
+      "packages/retroplug/src (rule 9): a cart's or a console's code is reached through the generated registries the " +
+      "generator writes, and the shell's other trees are not a source's to import",
+  ]);
 });
 
 test("a host module the package declares is admitted, from the files its surface owns", async () => {

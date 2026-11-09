@@ -25,6 +25,7 @@ import type * as Sdk from "./sdk";
 import type { ConstructSpec as RealConstructSpec } from "../src/backend";
 import type { EngineGraph as RealEngineGraph } from "../src/engineGraph";
 import { bootSession as realBootSession, DirectGraph } from "./sdk";
+import { CONSOLES, REAL_CARTS } from "../src/generated/consoles";
 import {
   bootSession,
   hostArgs,
@@ -77,15 +78,10 @@ export type _PngImageData = Assert<Exact<Sdk.PngImageData, Dts.PngImageData, "Pn
 export type _LoadResult = Assert<Exact<Sdk.LoadResult, Dts.LoadResult, "LoadResult">>;
 export type _NoteOpts = Assert<Exact<Sdk.NoteOpts, Dts.NoteOpts, "NoteOpts">>;
 
-// The two big interfaces are declared as a deliberate SUBSET - a ROM author does not need the DSP
-// profiling knobs - so these are one-way: the real thing must satisfy everything declared, while the
-// declaration stays free to omit. That direction still catches a declared member that does not exist or
-// whose type moved, which is the drift that has actually shipped. It does NOT catch an omission, so a
-// method the shipped example sessions call belongs in the declaration on purpose, not by accident.
-// F4b's four additions, shape by shape rather than name by name. The class and its two named types are compared
-// member-wise one way (the declaration is a curated view: `setRouting` widens the real routing union to `string`, and
-// `ConstructSpec` omits the optional `romBytes`), the graph type stays opaque on purpose, and the two pure helpers and
-// the session runner must agree exactly.
+// The class, the spec, the graph type and the three callables are compared shape by shape rather than name by name.
+// The class is one-way (the declaration is a curated view: `setRouting` widens the real routing union to `string`),
+// the graph type stays opaque on purpose, `ConstructSpec` keeps every real field with its own optionality while
+// declaring `platform` and `core` as plain strings, and the two pure helpers and the session runner must agree exactly.
 export type _DirectGraphCtorArity = Assert<
   Exact<ConstructorParameters<typeof Sdk.DirectGraph>["length"], ConstructorParameters<typeof Dts.DirectGraph>["length"],
     "DirectGraph's constructor takes a different number of arguments than the declaration says">
@@ -132,6 +128,11 @@ export type _DeinterleaveReturn = Assert<
     "deinterleaveStereo's return type">
 >;
 
+// The two big interfaces are declared as a deliberate SUBSET - a ROM author does not need the DSP
+// profiling knobs - so these are one-way: the real thing must satisfy everything declared, while the
+// declaration stays free to omit. That direction still catches a declared member that does not exist or
+// whose type moved, which is the drift that has actually shipped. It does NOT catch an omission, so a
+// method the shipped example sessions call belongs in the declaration on purpose, not by accident.
 export type _SystemsStore = Assert<Covers<Sdk.SystemsStore, Dts.SystemsStore, "SystemsStore: the declaration describes a member the implementation does not have">>;
 export type _AudioDriver = Assert<Covers<Sdk.AudioDriver, Dts.AudioDriver, "AudioDriver: the declaration describes a member the implementation does not have">>;
 
@@ -175,14 +176,21 @@ export function sdkSurfaceCheck(): void {
   // The declared constructor takes a session's backend and graph: the file's own session (from the declaration) is the
   // narrower view, so this one is built from the implementation.
   void s;
-  // The declaration's ConstructSpec is a narrower view of the real one, which a caller may hand it.
-  const spec = { romPath: rom ?? "", platform: "gb", core: "sameboy", embeddedRom: "", savPath: null,
-    statePath: null } satisfies Dts.ConstructSpec;
+  // The declaration's ConstructSpec is a narrower view of the real one, which a caller may hand it: a wider view, in
+  // fact, so every field below is the real one's and only `platform` and `core` read as plain strings.
+  // The console is the one a REAL cart drives - the FIFO knob at the end is that console's role config, not another
+  // console's - read from the registry by the cart's platform, so this check spells no console's knowledge either.
+  const realCart = REAL_CARTS[0]!;
+  const descriptor = CONSOLES.find((console) =>
+    console.platforms.some((platform) => platform.id === realCart.platform),
+  )!;
+  const spec = { romPath: rom ?? "", platform: realCart.platform, core: descriptor.core, embeddedRom: "",
+    savPath: null, statePath: null } satisfies Dts.ConstructSpec;
   void spec;
   // The two stereo helpers split and join a render's PCM.
   void interleaveStereoStreams([deinterleaveStereo(new Float32Array(4))[0]]);
   // `runSession` is not called here: it exits the process, which this compile-only check must not do.
 
   // The lossy-transport knob is a role config, so it is only checked for shape.
-  s.project.systems.setRoleConfig(id, "mesen", { fifo: "hardware", fifoBytesPerSecond: 20000 });
+  s.project.systems.setRoleConfig(id, descriptor.core, { fifo: "hardware", fifoBytesPerSecond: 20000 });
 }

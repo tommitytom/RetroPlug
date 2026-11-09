@@ -1,6 +1,6 @@
 // NES CHR <-> grayscale-PNG codec for the N8 live-patch loop: dump a running game's CHR bank as an editable
 // grayscale tile-grid image, edit a glyph in any image editor, and encode it back to CHR bytes to memWR over
-// USB (see packages/retroplug/cli/sessions/n8-load.ts --dump-chr / --patch-chr). Pure + host-agnostic like
+// USB (see packages/n8/ts/cli/n8Load.ts --dump-chr / --patch-chr). Pure + host-agnostic like
 // the CLI's menuImage/sniffer (decoding, not protocol - no C++ twin). Reuses the NES planar-2bpp tile codec
 // (decodeTile/encodeTile) and lays tiles out row-major exactly like the LSDj font-image layer.
 //

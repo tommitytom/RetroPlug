@@ -10,10 +10,10 @@ present tense: it documents what exists today, and calls out what does not yet
 exist in explicit "Not yet built" subsections.
 
 > **The port is complete.** RetroPlug is a single build. The older **legacy**
-> build (the twin `Plugin*.cpp` DSP/UI, `packages/ui/`, `packages/cli/`, and the
-> old generated RPC client) has been deleted; this is the sole build, with the
-> canonical `RetroPlug` plugin identity. The remaining feature gaps live in
-> [07-remaining-work.md](07-remaining-work.md).
+> build (the twin `Plugin*.cpp` DSP/UI and the old generated RPC client) has been
+> deleted; this is the sole build, with the canonical `RetroPlug` plugin identity.
+> `packages/ui/` is the F4b menu-contribution package, not the legacy UI. The
+> remaining feature gaps live in [07-remaining-work.md](07-remaining-work.md).
 
 ## The thesis: native owns bytes and cores; TypeScript owns meaning
 
@@ -90,7 +90,8 @@ system routed to one pair by its audio routing.
 | Package | Contents | Lifetime |
 |---|---|---|
 | [`packages/native/`](../packages/native) | The C++ **shell**: the RPC services + their facets, `Engine`, the command/snapshot/release seams, the script host the TS nodes (the MIDI routing, the controller session and the protocol nodes) run in, the offline job pool, the DPF plugin, both test hosts, and the format-neutral helpers only they use (`SampleCache`, `FileSync`, lodepng). It names no console: a system node carries its own package's build function (`rp.host.systems/2`). | The one tree every product links. |
-| [`packages/retroplug/`](../packages/retroplug) | The TypeScript control plane and React/LVGL UI: the `Backend` interface, the stores (Systems/Project/Recent/UserConfig/Bindings), roles + the protocol nodes that run them, and the UI. Its sources name no cart and no console (the boundary check's rule 9): a cart is reached through its package's contribution (its tracker integration's `render` / `playback` / `sramSignature` / `songImport` hooks, its role hooks, its kit format), a console through its descriptor, and an embedded ROM through the `embeds` declaration `SystemsStore.loadEmbedded(id)` looks up. | The sole control-plane + UI tree. |
+| [`packages/retroplug/`](../packages/retroplug) | The TypeScript control plane, the CLI and the React/LVGL UI: the `Backend` interface, the stores (Systems/Project/Recent/UserConfig/Bindings), roles + the protocol nodes that run them, the UI, and the CLI's dispatcher, sessions and SDK. Its own trees (`src/` and `cli/`) name no cart and no console (the boundary check's rule 9 over both): a cart is reached through its package's contribution (its tracker integration's hooks and render hooks, its role hooks, its kit format, its menu module and its CLI tool through the generated tables), a console through its descriptor, and an embedded ROM through the `embeds` declaration `SystemsStore.loadEmbedded(id)` looks up. | The sole control-plane + UI + CLI tree. |
+| [`packages/ui/`](../packages/ui) | The plain-TypeScript UI contract: `@retroplug/ui/menu` (the menu model and its item builders) and `@retroplug/ui/contribution` (the row, builder, tracker-UI and service shapes a package's `retroplug.ui` module declares, gated by `defineUi`). The React kit and the view registry are F4c's. | The shell and every package with menu rows. |
 | [`packages/system/`](../packages/system) | The **contract** every console implements and the engine drives: `SystemBase` and the capability interfaces, the shared system types, the transport primitives (`FrameBufferTriple`, `MemorySnapshotTriple`; `SpscRing` lives in `node-sdk`), the build request and the build function a node's package carries, the host's system services (`rp.host.systems/2`, `rp.engine.sync-trace/1`), the generic `SystemNode` template with the knob helpers, and the core-only utilities. | Shared by every console package and by the shell. |
 | [`packages/sameboy/`](../packages/sameboy) / [`packages/mesen/`](../packages/mesen) | The consoles, each beside its TS: `SameBoySystem` and the Game Boy node (`rp.sameboy.gb`); the NES, GBA and SMS/GG systems, their roles, the emulated N8 FIFO, their build functions and nodes (`rp.mesen.nes` / `.gba` / `.sms`). Their TS is the console descriptor the shell classifies a ROM with and places a system by (its detectors' rank, extensions, settings, split modes, link cable and real cart), plus their roles, catalogs and protocol nodes. `mesen` declares `n8` (the reliable link's header) and `system`; `sameboy` declares `system`. | The products that list them. |
 | [`packages/host-io/`](../packages/host-io) | The host's own I/O as node types (`rp.host.midi-in` / `rp.host.midi-out`) and the engine service they read, `rp.engine.host-io/3`, with the staging bounds the engine sizes from. | Every desktop product. |

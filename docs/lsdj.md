@@ -261,7 +261,8 @@ backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
   `import-sample <rom> <kit> <audio> [--name/--slot/--out + effect flags]` (compile one + splice),
   `remove-sample <rom> <kit> <slot>`, and the asset-file verbs `export-palette`/`import-palette`,
   `export-font`/`import-font` (`--gfx` for the extended set), `export-kit`/`import-kit`.
-  Tool: [lsdj/ts/cli/lsdjRom.ts](../packages/lsdj/ts/cli/lsdjRom.ts).
+  Tool: [lsdj/ts/cli/lsdjRom.ts](../packages/lsdj/ts/cli/lsdjRom.ts), which the shell reaches only through the
+  generated table the package's `retroplug.cli` module fills.
 - **One manifest schema for every editing verb.** `patch` reads a manifest of `kits`/`palettes`/`fonts`
   entries; `build-kit` reads a **single, slotless kit entry** from that same shape. Each entry either
   **builds/imports from a file** or **tweaks metadata** — `slot` = the asset index; a kit is a build
@@ -411,8 +412,10 @@ pre-built `.rplg` directly. Without the env var, the plugin starts empty (matche
 normal DAW behaviour).
 
 - **Audio-quality check on a render** — `pnpm reaper:analyze-smoke` (runs the CLI session
-  `build/cli/analyze-mgb.js` → `/tmp/cli-smoke.wav`) or `reaper:analyze-lsdj-sync`
-  (runs `build/cli/analyze-lsdj-sync.js`, per-system WAVs)
+  `build/cli/analyze-mgb.js` → `/tmp/cli-smoke.wav`, whose source is
+  [mgb/examples/analyze-mgb.ts](../packages/mgb/examples/analyze-mgb.ts)) or `reaper:analyze-lsdj-sync`
+  (runs `build/cli/analyze-lsdj-sync.js`, per-system WAVs, from
+  [lsdj/examples/analyze-lsdj-sync.ts](../packages/lsdj/examples/analyze-lsdj-sync.ts))
   stages the WAV into the reaper-mcp-server's projects dir; then ask the `reaper`
   MCP server for loudness/LUFS, frequency content, dynamics, stereo imaging.
   Catches regressions that aren't "no audio" but "audio is wrong" (clipping,

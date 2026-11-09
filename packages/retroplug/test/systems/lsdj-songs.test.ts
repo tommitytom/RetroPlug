@@ -119,7 +119,7 @@ function newStore() {
   return { be, store: new SystemsStore(be, () => {}, reg) };
 }
 
-// Mirror menuDefs.mutateSavBytes: readSram → byte-level op → writeFileAtomic(resolved .sav) → loadSram.
+// Mirror host.liveSongs.mutate's cycle: readSram → byte-level op → writeFileAtomic(resolved .sav) → loadSram.
 function mutate(be: MockBackend, store: SystemsStore, id: number, romPath: string, fn: (sav: Uint8Array) => Uint8Array | null): number {
   const bytes = store.readSram(id)!;
   const out = fn(bytes)!;

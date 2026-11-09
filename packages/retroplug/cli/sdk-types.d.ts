@@ -456,7 +456,7 @@ export interface AudioDriver {
    *  holds exactly ONE system (the engine fans a single core's channels, one pair each).
    *
    *  The rest of this interface is a deliberate subset, but this one is not optional: the shipped
-   *  example sessions call it (cli/sessions/export-{mgb,nes}-channels.ts, export-nes-mono.ts), so a
+   *  example sessions call it (packages/{mgb,mesen}/examples/export-*.ts), so a
    *  consumer copying one got a type error against the very declaration they were handed. */
   renderAudioPerChannel(id: number, ms: number): Float32Array[];
   /** Stage global host-MIDI bytes for the next render - any non-empty length: a channel message

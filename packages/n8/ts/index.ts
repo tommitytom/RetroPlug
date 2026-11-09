@@ -2,11 +2,12 @@
 // (packages/n8/native/src/n8/desktop/N8Rpc.hpp), the decoders of what the cart answers, and the load helpers. It takes
 // the app's RPC call rather than importing the app's backend, so the pack depends on nothing of packages/retroplug.
 //
-// The facet has two halves. The streaming link is what the UI's Settings > N8 drives (ui/screens/menu/n8Devices.ts):
+// The facet has two halves. The streaming link is what the UI's Settings > N8 drives (packages/n8/ts/ui/n8Devices.ts):
 // the serial ports, the chosen one, the link's state and its lookahead, read and set on the host's N8 provider; the
 // state lives in the native host (the serial link, n8.cfg), so every read is fresh. A session is what the CLI drives
-// (cli/sessions/n8-*.ts): openN8(port) opens the port in the native host, and the N8 it answers runs the protocol there
-// (the one Edio, n8/Edio.hpp), each call synchronous, as every facet's are. What a failed call throws is the protocol's
+// (packages/n8/ts/cli/n8*.ts): openN8(port) opens the port in the native host, and the N8 it answers runs the protocol
+// there (the one Edio, n8/Edio.hpp), each call synchronous, as every facet's are. What a failed call throws is the
+// protocol's
 // own text (an Error, or an N8TimeoutError when the N8 did not answer), the words the CLI prints and BlipToaster and
 // the hardware lab read.
 

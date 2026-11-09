@@ -828,18 +828,55 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   text, a table's key, an extension regex, a core id, a node type). The moved tests follow their code into the packages'
   `ts/test`. Nothing was re-recorded: strict parity, the kit and render baselines, every golden and digest and both
   image hashes held. What it leaves:
-  - **F4b: the UI and the cart tools.** The menu contributions replacing `TRACKER_UI`, the console settings rows, the N8
-    and Launchpad menus, TSX in the packages, the LSDj HD player and the two overlays as views, and the cart CLI tools
-    (`lsdj-rom`, `risa-rom`, `bliptoaster-rom`, `n8-load`, `n8-play`, `n8-bridge`, `n8-sync`, `launchpad-probe`) as a
-    second surface on the same host contract; `ui/` and `cli/` join rule 9 and the scanner test there, whose walk is ready
-    for their identifier-keyed tables and extension patterns (the review's list: `menuDefs.ts` still imports seven cart
-    catalogs, three host slices want consolidating, the shell hard-depends on launchpad, and hook code rides every bundle
-    that loads the registry).
+  - **F4b: the plain-TypeScript surfaces, built below.** The menu contributions (`TRACKER_UI` and the cart-specific
+    menu code) and the cart CLI tools moved into their packages; what it leaves is F4c (the React views, the `ui/`
+    rules) and the per-product bundles, below.
   - **Per-product bundles are owed** until a product's package list differs from the desktop's: every product lists the
     same sixteen packages, so the plumbing would build identical bundles. F4a keeps the precondition true - no bundle
     reaches a cart except through the generated registries.
   - **`MemoryType` stays a closed wire enum** (F2's item, unchanged), and the Windows, macOS and arm64 builds F2 and F3
     left owed are still owed; F4a touches only TypeScript, so it adds none of its own.
+- **F4b built: the plain-TypeScript surfaces** ([modular-graph-phase-f4b-design.md](../docs/modular-graph-phase-f4b-design.md),
+  on `feature/modularize`): one `Host<G>` contract in [core/ts/host.ts](../packages/core/ts/host.ts), an object of named
+  groups (`files`, `png`, `kits`, `systems`, `songs`, `liveSongs`, `emulator`, `dialogs`, `devices`, `process`, `views`,
+  `controller`, `config`), replacing F4a's `ConstructCaps`, `RenderHost` and `SongImportHost` and the shell's adapter:
+  each hook or tool names the groups it uses, each surface builds only its own (`ui/host/uiHost.ts` once per app,
+  `cli/cliHost.ts` per tool run, `src/render/renderHost.ts` per render), and asking for a group a surface lacks is a
+  `tsc` error. The new `ui` package holds the menu model and the contribution types (`@retroplug/ui/menu`,
+  `@retroplug/ui/contribution`); every package's `retroplug.ui` module contributes declarative role-config rows, menu
+  builders, tracker UI and UI services, generated in product order into `ui/generated/menus.ts` and imported only by the
+  UI, so the cart callbacks, the SameBoy/Mesen settings rows, the LSDj/risa/smsggdj/BlipToaster songs and asset menus and
+  the N8/Launchpad menus and watchers are their packages' (the three watchers became `services`). The CLI's tools are
+  `retroplug.cli` contributions (`core/ts/cliTool.ts`, generated into `cli/generated/tools.ts`): `lsdj-rom`, `risa-rom`,
+  `bliptoaster-rom`, `n8-load`, `n8-play`, `n8-bridge`, `n8-sync` (in `risa`) and `launchpad-probe` moved to their
+  packages and run against the CLI host, the pure WAV half moved to `@retroplug/dsp/wav`, `n8-load`'s battery listing
+  goes through `host.songs.list` (byte-identical), the six cart example sessions moved into their packages' `examples/`
+  and import the SDK by its bare `retroplug-cli` specifier, and `retroplug.host` + the shell's
+  [host-modules.json](../packages/retroplug/host-modules.json) generate the typecheck paths. The proof: rule 9 holds
+  both `src/` and `cli/` to an explicit contract list (with per-root relative semantics), the literal scanner covers
+  `cli/` with the console and cart registries' ids, a ratchet names the five `ui/` files F4c moves, and a bundle check
+  says the control plane, the render worker, the script nodes, the SDK, the dispatcher and the planner carry no UI (no
+  `ui` package module, no package's `ts/ui/`, no `ui/generated`) while the UI carries no CLI (no package's `ts/cli/`, no
+  `core/cliTool.ts`, no `cli/generated`). Nothing was re-recorded; the one behaviour edge is the CLI command index's
+  order (the shell's five, then the packages' in product order), which a test pins. What it leaves:
+  - **F4c: React in packages.** A `@retroplug/ui/kit` (`Box`, `lv`, `PixelCanvas`, `useNativeEvent`, the frame-poll
+    hooks, `DebugReadout`), the LSDj HD player and the two overlays as views, a UI-only view registry, how packages
+    declare React (`retroplug.host` gains `react`, `react/jsx-runtime`, `lvgljs-ui`, `lvgljs`), rule 9 and the scanner
+    over `ui/` (one literal there today: `useRisaRuntime.ts`'s `"risa"`), and the `ui/` ratchet deleted. The shell's
+    `tsconfig.json` includes `../*/ts`, so a `.tsx` in a package needs a `jsx` setting per package or a separate UI
+    program - and `tsconfig.ui.json`'s `react`, `react/jsx-runtime`, `lvgljs`, `lvgljs-ui` and `ui-harness` paths are
+    hand-written today, so that program's paths file must be generated from `host-modules.json` for the same
+    paths-replace reason `tsconfig.paths.json` exists.
+  - **The controller app's display bug is owed, deliberately kept identical.** A project whose controller app's config
+    is hand-edited (a value the schema or a row does not list) still shows what the old menu showed, fallback for
+    fallback; the display edge the F4b review found is recorded rather than fixed, because F4b changes no behaviour.
+  - **Per-product bundles** stay owed (F4a's item); F4b adds that `ui/generated/menus.ts` and `cli/generated/tools.ts`
+    are separate modules, so the UI and the CLI each carry only theirs, and the bundle check keeps that true.
+  - **The shell's hard dependency on `launchpad`** (`registry`, `enums`) is unchanged, and a UI kit compile
+    (`host.kits` in the UI host) and `systems.readRam` for F4c's views are not there yet.
+  - **Windows, macOS and arm64 builds** of every F4b package and script are owed, as F4a's were (`MemoryType` stays a
+    closed wire enum, F2's item).
+
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the
   follow-up that closed it): `packages/system` (the contract every console implements and the engine drives, the

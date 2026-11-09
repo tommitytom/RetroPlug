@@ -1,6 +1,6 @@
 // The kit compiler's two TPDF dithers are seeded from the samples they quantise, so two compiles of one sample give
 // one bank. A risa kit's DMC encode skips the dither, so an LSDj kit compile is the only path that reaches one; its
-// callers are the CLI sessions (`cli/sessions/lsdj-rom.ts`) and the tests.
+// callers are the cart's CLI tool (`packages/lsdj/ts/cli/lsdjRom.ts`) and the tests.
 //
 // Everything here goes through the path a session uses (audioDriver.compileKitFormat -> the TypeScript kit compiler ->
 // its offline jobs -> rp.dsp.dither), not the kernel directly, so the case covers the effect settings decoding and

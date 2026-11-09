@@ -9,7 +9,8 @@
 // separate EngineGraphs would each drop the other's systems from the document. Sharing a session's EngineGraph (so
 // the session's render calls render what this places) does not merge the two models either: each publish replaces
 // the graph's model with the publisher's own systems. It is safe only while the session's stores place nothing, the
-// two publishing in turn, as test-native/parity/render-blocks.test.ts and cli/sessions/analyze-lsdj-sync.ts do.
+// two publishing in turn, as test-native/parity/render-blocks.test.ts and
+// packages/lsdj/examples/analyze-lsdj-sync.ts do.
 import { createRealBackend } from "../realBackend";
 import { MidiRouting } from "@retroplug/core/midiRouting";
 import type { AudioRouting } from "../settingsEnums";

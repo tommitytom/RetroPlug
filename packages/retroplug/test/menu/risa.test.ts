@@ -213,7 +213,7 @@ test("Load is a safe no-op on a legacy-layout catalog (no cold-boot)", () => {
   const before = be.bootedIds.length;
 
   findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-load")!.onSelect!();
-  expect(be.bootedIds.length).toBe(before); // loadSongToWorkingInSav returned null -> mutateSavBytes no-op
+  expect(be.bootedIds.length).toBe(before); // loadSongToWorkingInSav returned null -> host.liveSongs.mutate's no-op
 });
 
 // A distinct romPath from the header-prefix risaRom() the Songs tests use — the asset inventory is memoised

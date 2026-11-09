@@ -29,7 +29,7 @@ void check(const rp::n8::Status& status, Edio& edio, std::string_view path = {})
 }
 
 // iNES mappers whose cartridge carries its own sound chip - the audio the N8's FPGA mixes in through
-// `master_vol`. The TS twin is EXPANSION_MAPPERS in cli/sessions/n8-play.ts (the same policy behind
+// `master_vol`. The TS twin is EXPANSION_MAPPERS in packages/n8/ts/cli/n8Play.ts (the same policy behind
 // `n8-play --rom`); keep the two in step.
 bool mapperHasExpansionAudio(int mapper) {
     switch (mapper) {
@@ -46,7 +46,7 @@ bool mapperHasExpansionAudio(int mapper) {
 }
 
 // The iNES mapper number from a ROM image's header, or -1 when the bytes are not an iNES image. Twin of
-// inesMapper in cli/sessions/n8-play.ts, down to ignoring NES 2.0's extra nibble (no expansion-audio mapper
+// inesMapper in packages/n8/ts/cli/n8Play.ts, down to ignoring NES 2.0's extra nibble (no expansion-audio mapper
 // needs it).
 int inesMapper(std::span<const std::uint8_t> rom) {
     if (rom.size() < 16 || rom[0] != 'N' || rom[1] != 'E' || rom[2] != 'S' || rom[3] != 0x1A) return -1;

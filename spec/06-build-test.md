@@ -114,8 +114,13 @@ writes the shell's `src/generated/{packages,consoles,protocol,scriptNodes}.ts` f
 (`retroplug.products.desktop` in the root [package.json](../package.json)): `packages.ts` concatenates each package's
 `app` contribution, `consoles.ts` each package's `retroplug.consoles` module (its console descriptors and the physical
 carts one of them can drive, kept apart from the app because the planner reads them and must carry no role schema),
-`protocol.ts` is the table `buildGraph` and the stores wire a role through, and `scriptNodes.ts`
-is the script-node bundle's entry, in span-label order. The product list is the **dependency order and the registration
+`protocol.ts` is the table `buildGraph` and the stores wire a role through, `scriptNodes.ts`
+is the script-node bundle's entry, in span-label order, `ui/generated/menus.ts` is each package's `retroplug.ui` module
+in product order (the menu contributions, imported only by the UI), and `cli/generated/tools.ts` is each package's
+`retroplug.cli` module in product order (the CLI tools, imported only by the dispatcher). The same run writes the
+typecheck paths: `tsconfig.host-modules.json` (each host module's declaration file, which a package with a
+`retroplug.host` declaration extends) and `tsconfig.paths.json` (the same entries plus the shell's own aliases, from
+`tsconfig.aliases.json`: a child's `paths` REPLACE its parent's, so the shell's program needs one file carrying both). The product list is the **dependency order and the registration
 order both** (a package before the ones that use it, the shell last), and only a ROM provider's place in it is
 behaviour: the providers run in that order, and the first to match a ROM fixes a system's role-list order. A role's
 kind, a kit format's id and a tracker integration's marker role are looked up rather than sequenced (one package's
@@ -134,9 +139,27 @@ manifest, what the core's capture should do in each of the cart's sync modes:
 generator refuses a capture that is not an object of mode: capture, a value that is none of the three, and a capture on
 a node that is not wired (no `midiIn` and no `writes`), on a node with no `out`, or on one whose `out` no package
 declares or declares no `serialOut`: a capture whose bytes nothing decodes would clock a core for nothing. The
-generated modules are gitignored, and `retroplug-ts-packages` writes them only when their content changes. Seven
-targets depend on it, so they exist before the first esbuild run of a fresh checkout: the control-plane, UI, script,
-render-worker and CLI bundles, the example sessions and the CLI SDK assets.
+generated modules and both path configs are gitignored, and `retroplug-ts-packages` writes them only when their
+content changes. Seven targets depend on it, so they exist before the first esbuild run of a fresh checkout: the
+control-plane, UI, script, render-worker and CLI bundles, the example sessions and the CLI SDK assets. The root
+`pnpm typecheck` script runs the generator before any package's `tsc`, so a checkout with no generated file typechecks
+(CI's order is install, typecheck, build). A package with examples must have a `tsconfig.json` whose parsed `extends`
+names `../<shell>/tsconfig.host-modules.json` (the generator refuses one without, because the shell's program compiles
+`../*/examples`; naming the file in a comment is not extending it); a package with `retroplug.host` declares each host
+module it imports, and the generator and rule 3 both hold the declaration to the one shell-owned list,
+[host-modules.json](../packages/retroplug/host-modules.json). That list's `surface` is enforced too: a host module is
+importable only from the files its surface owns, which is the package's `examples/` and `ts/cli/` for `cli` and its
+`ts/ui/` for `ui`, and rule 3 refuses one imported from an app, protocol, console or test file, saying which surface
+the module belongs to.
+
+**The host contract.** The three TypeScript surfaces build a host for their hooks and tools from
+[core/ts/host.ts](../packages/core/ts/host.ts): `Host<G>` is an object of named groups (`files`, `png`, `kits`,
+`systems`, `songs`, `liveSongs`, `emulator`, `dialogs`, `devices`, `process`, `views`, `controller`, `config`), and a
+hook or a tool names the groups it uses. The UI's host offers ten of them, the CLI's six (`files`, `png`, `kits`,
+`devices`, `process`, `songs`; `cli/cliHost.ts` builds it per tool run), and the render worker's two (`emulator`,
+`files`); asking a surface for a group it lacks is a `tsc` error, which is what makes a surface's abilities its type.
+`packages/ui/ts` holds the menu model and the contribution types the UI and the package menus share
+(`@retroplug/ui/menu`, `@retroplug/ui/contribution`).
 
 **Fixtures are a package's, published for tests by name.** A cart's synthetic ROM images live in its `ts/fixtures.ts`
 and a manifest that publishes them names the subpath `./testFixtures`, never `./fixtures`: the name says what it is,
@@ -187,14 +210,18 @@ broke is named as such rather than surfacing as a bundler error.
 with no substitution and each span of a template that has one are read, as is the name a table's key is written with
 (an object literal's property, a shorthand, a method, an accessor, an interface member, an enum member; a property
 access such as `x.gb` is not, since the declaration is what is judged), and text that ends in a ROM extension (the
-`rom.gb` tail), and a regular expression whose source spells an escaped dot and matches `rom<ext>` but not the
-extension's bare letters (so `/\.gbc?$/i` is a hit and `/^[\x20-\x7e]*$/` is not). A comment is trivia and a `${...}`
-cannot move the walk's place. The ids, extensions, cores and node types are the console registry's, read from the
-generated `CONSOLES` list, so a console a product adds is guarded without an edit to the test, and a console's
-knowledge stays its descriptor's. The one exemption is the frozen v2 to v3 step's two console role-kind keys, which
-may not read the registry (decision 13). Like rule 9 it catches an accident rather than a determined author (a
-computed `["g", "b"].join("")`, a computed table key and a dotless pattern such as `/(gb|gbc)$/` are
-invisible to it), and `ui/` and `cli/` join both in F4b.
+`rom.gb` tail; a string with whitespace in it is prose, not a path, so a help text naming a file is not a hit), and a
+regular expression whose source spells an escaped dot and matches `rom<ext>` but not the extension's bare letters (so
+`/\.gbc?$/i` is a hit and `/^[\x20-\x7e]*$/` is not). A comment is trivia and a `${...}` cannot move the walk's
+place. The ids, extensions, cores and node types are the console registry's, read from the generated `CONSOLES` list,
+and the cart ids (an embed's, a tracker integration's and a kit format's) from the generated package list, so a
+console or a cart a product adds is guarded without an edit to the test, and its knowledge stays its package's. The
+exemptions are the frozen v2 to v3 step's four package role-kind keys, which may not read the registry (decision 13).
+`cli/` is scanned too, skipping `cli/generated/` and the SDK's declaration file. `ui/` is F4c's. What it cannot see: a
+device package's ids and node types (an `n8`, a `launchpad`, an `rp.n8.*`), a non-console role kind, any id inside a
+string with whitespace in it, and the SDK's declaration file, which it skips. Like rule 9 it catches an accident rather
+than a determined author (a computed `["g", "b"].join("")`, a computed table key and a dotless pattern such as
+`/(gb|gbc)$/` are invisible to it).
 
 **A package's tests are its own.** A test whose subject is wholly in a package lives in its `ts/test/`, runs on the
 package's `tsconfig` and keeps its fixtures and goldens beside it
@@ -225,7 +252,8 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
 
 1. The directory's name is the package's name: `packages/<name>` is `@retroplug/<name>`.
 2. `package.json`: `private`, `type: "module"`, the `retroplug` member(s) it contributes (`native`, `script`, `app`,
-   `consoles`, `protocol`, `embed`), an `exports` map of explicit entries with no wildcard, and a `typecheck` script
+   `consoles`, `protocol`, `embed`, `ui`, `cli`, `examples`, `host`), an `exports` map of explicit entries with no
+   wildcard, and a `typecheck` script
    (`tsc -p tsconfig.json`) when it has TypeScript. A **console package** adds a `consoles` module default-exporting its
    console descriptors (a platform id, a node type, the extensions it can be recognised by, its detectors in rank order,
    its setting/construct fields and params, its split modes, its link cable, its real-cart option) and any physical cart
@@ -260,6 +288,12 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    `rp_register_packages()` holds, so moving a package moves its types in the registration golden
    (`test/engine-graph/golden/product-registrations.json`), which is re-recorded for an intended move alone.
 5. `tsconfig.json` extends [tsconfig.base.json](../tsconfig.base.json) in two lines, so the package typechecks alone.
+   A package with `retroplug.ui` exports the module it names (the shell imports it through the generated menus), one
+   with `retroplug.cli` exports its tools module (default-exporting `defineCliTools`), one with `retroplug.examples`
+   keeps each entry under `examples/` and adds the generated `../retroplug/tsconfig.host-modules.json` to its
+   `extends`, and one with `retroplug.host` declares every host module it imports (today `retroplug-cli` alone). The
+   generator refuses a missing module, a duplicate tool name or example name, an example outside `examples/`, a host
+   declaration the shell's list lacks and an examples package without that `extends`.
 6. A protocol node's span label is the next free one (24 today: 16 up, with no gaps), which the manifest's `label` and
    the generator's check demand.
 7. A new contribution KIND is not data. It means editing `renderPackages` in
@@ -720,7 +754,7 @@ Pick the cheapest tier that actually exercises the code you touched. Trust-but-v
 | **Anything you want to eyeball** in the standalone | `pnpm screenshot` → Read `/tmp/retroplug.png` | Runs the JACK standalone under Xvfb + dummy jackd and dumps the LVGL screen. Drive input mid-run with `tools/standalone-key.sh` using `RETROPLUG_WINDOW_NAME="RetroPlug"`. |
 | **The audio-thread / control-thread seam**: `QueuedInvoker`, the command ring, plan swaps, `SnapshotRegistry` publish/read, the release-ring ownership handoff | `tools/run-sanitizer.sh thread` and `… address` | Builds `retroplug-host` instrumented into `build-tsan/` / `build-asan/` (the load-bearing `build/` is untouched) and reruns the audio-thread native tests under TSan / ASan. `thread` proves the seam is race-free; `address` proves the cross-thread ownership handoff (a node builds its core at activation; remove → the replaced plan handed back → the core destroyed and its pins dropped at `reclaim` / `drainReleased`) has no use-after-free or leak. Both are expected to need **no** new suppressions. |
 | **DPF wrapper / plugin-format / state-restore behaviour** | `pnpm validate` | `clap-validator` + `pluginval` against the `.clap`/`.vst3`. Catches ABI / state-restore / threading regressions in the format adapters. |
-| **The control surface**: the pack's link, claim, pool and facet, the menu's device rows, and TS's restore/scan | `pnpm test:plugin` (`retroplug-launchpad-test`), `pnpm test:native launchpad` (`launchpad-facet`, `launchpad-devices`, over the headless host's scripted device), `pnpm test launchpad`, and `pnpm sdl:controller` (Linux, not CI) for the standalone against a fake device | The pack's binary holds the transport and the facet to its promises (generations, close bytes, one claim per port, the writer never blocking the UI); the native cases drive `ui/screens/menu/launchpadDevices.ts` over the real facet, a second PROCESS included; `sdl:controller` is the only check of the whole seam in a product (port filter on). |
+| **The control surface**: the pack's link, claim, pool and facet, the menu's device rows, and TS's restore/scan | `pnpm test:plugin` (`retroplug-launchpad-test`), `pnpm test:native launchpad` (`launchpad-facet`, `launchpad-devices`, over the headless host's scripted device), `pnpm test launchpad`, and `pnpm sdl:controller` (Linux, not CI) for the standalone against a fake device | The pack's binary holds the transport and the facet to its promises (generations, close bytes, one claim per port, the writer never blocking the UI); the native cases drive `packages/launchpad/ts/ui/launchpadDevices.ts` over the real facet, a second PROCESS included; `sdl:controller` is the only check of the whole seam in a product (port filter on). |
 | **End-to-end inside a real DAW** | `pnpm reaper:mgb-smoke` | Instantiates `retroplug.vst3` in headless Reaper 7.x, plays mGB, renders audio. The first proof the plugin works in a host (not just the harness, which bypasses DPF). |
 
 ### The device build

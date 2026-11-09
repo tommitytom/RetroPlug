@@ -176,10 +176,10 @@ void alreadyRestored(void*) {}
 } // namespace
 
 int main(int argc, char** argv) try {
-    // n8-load / n8-play / n8-bridge / n8-sync are TS tools (cli/sessions/n8-*.ts) over the N8 pack's facet and
-    // the MIDI facet: n8-load is a linear script, and the two bridges opt into the launcher's long-running
-    // pump (globalThis.__rp_keepAlive) so they ride it instead of a native loop. Nothing to intercept here -
-    // they route through the dispatcher below.
+    // n8-load / n8-play / n8-bridge / n8-sync are TS tools (packages/n8/ts/cli/n8*.ts, n8-sync in
+    // packages/risa/ts/cli) over the N8 pack's facet and the MIDI facet: n8-load is a linear script, and the two
+    // bridges opt into the launcher's long-running pump (globalThis.__rp_keepAlive) so they ride it instead of a
+    // native loop. Nothing to intercept here - they route through the dispatcher below.
 
     // A `.js` argv[1] is a session file we eval directly; anything else (incl. no args) goes to the
     // compiled-in dispatcher, which prints help and routes commands. The args exposed to JS start after
