@@ -33,7 +33,7 @@ defs=()
 roms=()
 secs=90 until_re= fail_re= log=/tmp/n8-host-console.log
 
-usage() { sed -n '3,/^set -u/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '3,/^set -u/{/^#/p;}' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 while [ $# -gt 0 ]; do
 	case $1 in
 		--no-build) do_build=0 ;;

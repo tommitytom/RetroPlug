@@ -27,7 +27,7 @@
 # instead of silently leaving the pack's inputs unwatched.
 set -u
 
-usage() { sed -n '3,/^set -u/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '3,/^set -u/{/^#/p;}' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then usage; fi
 stamp=$1

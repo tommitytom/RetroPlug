@@ -14,7 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # One output directory for every configuration, so the caller names the check's path once (a multi-config generator would
 # otherwise put it under a per-config directory).
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-foreach(_config Debug Release RelWithDebInfo MinSizeRel)
+foreach(_config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)  # the per-config suffix is upper case
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${_config} "${CMAKE_BINARY_DIR}/bin")
 endforeach()
 
