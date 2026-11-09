@@ -17,11 +17,12 @@
 //   missing-node    { error: <the generated entry's own refusal> }
 //   order | cycle | unlisted-contributes | unlisted-plain | depends-on-shell | duplicate | duplicate-type |
 //   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unexported-app | name-mismatch |
-//   outside-ts | shell-undeclared | unknown-key | half-wired | extra-node | duplicate-role-kind |
+//   outside-ts | shell-undeclared | unknown-key | capture-bad | half-wired | extra-node | duplicate-role-kind |
 //   duplicate-kit-format | duplicate-marker-role | duplicate-app | duplicate-app-control | app-unknown-key |
 //   app-unpaired-runtime | app-unpaired-control | app-runtime-mismatch | app-module-empty | sync-unknown-key |
 //   sync-unused-off | sync-node-undeclared | sync-not-object | sync-no-node | sync-no-mode | sync-off-is-mode |
-//   duplicate-app-one-package | identifier-collision | apps-only | duplicate-console-platform |
+//   duplicate-app-one-package | identifier-collision | apps-only | capture-unwired | capture-no-decoder |
+//   capture-not-object | capture-out-undeclared | capture-out-not-serial | capture-form | duplicate-console-platform |
 //   console-core-norole | duplicate-console-type | realcart-unregistered | realcart-platform-twice |
 //   realcart-node-twice
 //                   { error: <the generator's message, or null when it did not refuse> }
@@ -294,6 +295,13 @@ try {
       // A misspelt wiring knob (here `launchs` for `launches`) would drop out of PROTOCOL_NODES without a word.
       editManifest("alpha", (json) => {
         json.retroplug.protocol.nodes[0].launchs = true;
+      });
+      result = refusal();
+      break;
+    case "capture-bad":
+      // A capture value the planner's type does not have: the mode it is for would capture nothing, silently.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.nodes[0].capture = { midiMap: "sideways" };
       });
       result = refusal();
       break;
@@ -824,6 +832,63 @@ try {
       } catch (e) {
         result = { error: e.message };
       }
+      break;
+    case "capture-unwired":
+      // A capture on a node that is not wired: PROTOCOL_NODES drops the node whole, so the core would be clocked for
+      // bytes no decoder sees.
+      editManifest("alpha", (json) => {
+        const node = json.retroplug.protocol.nodes[0];
+        delete node.midiIn;
+        delete node.writes;
+        node.capture = { midiMap: "drive" };
+        node.out = "rp.alpha.serial";
+        json.retroplug.protocol.nodes.push({ type: "rp.alpha.serial", label: 18, midiIn: null, writes: [], serialOut: true });
+      });
+      writeTree("packages/alpha/ts/nodes.ts", 'export default [{ id: "rp.alpha.midi" }, { id: "rp.alpha.serial" }];\n');
+      result = refusal();
+      break;
+    case "capture-no-decoder":
+      // A wired capture with no `out`: nothing declares the serial-out node that decodes what the core clocks out.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.nodes[0].capture = { midiMap: "drive" };
+      });
+      result = refusal();
+      break;
+    case "capture-not-object":
+      // A capture that is not an object of mode: capture is data no rule can read.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.nodes[0].capture = "drive";
+      });
+      result = refusal();
+      break;
+    case "capture-out-undeclared":
+      // A decoder type no package declares: the bytes would have nowhere to go.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.nodes[0].capture = { midiMap: "drive" };
+        json.retroplug.protocol.nodes[0].out = "rp.alpha.nope";
+      });
+      result = refusal();
+      break;
+    case "capture-out-not-serial":
+      // A decoder that declares no serialOut: the node placed after the system would take no bytes.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.nodes[0].capture = { midiMap: "drive" };
+        json.retroplug.protocol.nodes[0].out = "rp.alpha.plainer";
+        json.retroplug.protocol.nodes.push({ type: "rp.alpha.plainer", label: 18 });
+      });
+      writeTree("packages/alpha/ts/nodes.ts", 'export default [{ id: "rp.alpha.midi" }, { id: "rp.alpha.plainer" }];\n');
+      result = refusal();
+      break;
+    case "capture-form":
+      // The emitted table's spelling of a capture table: spaced like the fields around it.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.nodes[0].capture = { midiMap: "drive", off: "listen" };
+        json.retroplug.protocol.nodes[0].out = "rp.alpha.serial";
+        json.retroplug.protocol.nodes.push({ type: "rp.alpha.serial", label: 18, midiIn: null, writes: [], serialOut: true });
+      });
+      writeTree("packages/alpha/ts/nodes.ts", 'export default [{ id: "rp.alpha.midi" }, { id: "rp.alpha.serial" }];\n');
+      generate({ root });
+      result = { files: outputs() };
       break;
     default:
       console.error(`run-generator.mjs: unknown mode "${MODE}"`);

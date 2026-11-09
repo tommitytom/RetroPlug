@@ -6,7 +6,8 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { UserConfigStore } from "../../src/userConfigStore";
-import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, dirtySramTargets, flushDirtySram, lsdjSramSignature, sramSignature } from "../../src/sramAutoSave";
+import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, dirtySramTargets, flushDirtySram, sramSignature } from "../../src/sramAutoSave";
+import { lsdjIntegration } from "@retroplug/lsdj/lsdjIntegration";
 import { savFrom } from "@retroplug/lsdj";
 import { gbRom, gbRomBattery } from "../systems/fixtures";
 
@@ -170,32 +171,23 @@ test("sramDirtyCount / flushDirtySram skip embedded systems (no romPath)", () =>
   expect(be.log.includes("writeFile") || be.log.includes("writeFileAtomic")).toBeFalsy(); // no write of either kind
 });
 
-// --- LSDj semantic dirty signature (normalises the per-frame working-RAM clock) ---
+// --- the semantic signature, through the product's tracker integrations ---
 
 const WORK_HOURS = 0x3fb2; // a ticking work-clock byte — LSDj rewrites it every frame; NOT modeled
 const TEMPO = 0x3fb4; // a meaningful, modeled byte
 
-test("lsdjSramSignature ignores the ticking work-clock but catches a real edit", () => {
+test("sramSignature asks the product's trackers, then hashes the image", () => {
+  // An LSDj image answers with its own signature (the case for the churn it normalises is that cart's own test).
   const orig = savFrom({ workingSong: { settings: { tempo: 150 } } });
-  expect(orig.length).toBe(0x20000);
-
-  // A frame tick bumps the work clock (and its checksum) but changes nothing meaningful.
-  const ticked = orig.slice();
-  ticked[WORK_HOURS] = (ticked[WORK_HOURS] + 7) & 0xff;
-  ticked[0x3fb9] = (ticked[0x3fb9] + 7) & 0xff; // totalTimeChecksum
-  expect(lsdjSramSignature(ticked)).toBe(lsdjSramSignature(orig)); // same signature
-  expect(hashBytes(ticked) === hashBytes(orig)).toBeFalsy(); // but the raw bytes differ
-
-  // A tempo change IS meaningful (a modeled field) → the signature changes.
+  expect(sramSignature(orig)).toBe(lsdjIntegration.sramSignature!(orig));
   const edited = orig.slice();
   edited[TEMPO] = 90;
-  expect(lsdjSramSignature(edited) === lsdjSramSignature(orig)).toBeFalsy();
-});
-
-test("sramSignature falls back to a whole-SRAM hash for a non-LSDj battery", () => {
-  const gb = bytes(1, 2, 3, 4); // not a 128 KiB jk-stamped image
-  expect(lsdjSramSignature(gb)).toBe(null);
+  expect(sramSignature(edited) !== sramSignature(orig)).toBe(true);
+  // Anything no cart claims falls through to a whole-image hash: a short non-LSDj battery, and a full 128 KiB image
+  // that carries no 'jk' magic (so LSDj's signature answers null).
+  const gb = bytes(1, 2, 3, 4);
   expect(sramSignature(gb)).toBe(hashBytes(gb));
+  expect(sramSignature(new Uint8Array(0x20000))).toBe(hashBytes(new Uint8Array(0x20000)));
 });
 
 test("an LSDj cart whose only diff from disk is the ticked clock is NOT dirty", () => {

@@ -9,7 +9,8 @@ import { registerCoreRoles } from "../_coreRoles";
 import { registerFeatureRoles } from "../_featureRoles";
 import { registerLsdjAssetsRole, readOverrides } from "@retroplug/lsdj/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { importSongFiles } from "../../src/lsdjSongImport";
+import { lsdjIntegration } from "@retroplug/lsdj/lsdjIntegration";
+import { songImportHost } from "../../src/songImportHost";
 import { savFrom, encodeLsdsngRaw, encodeLsdprj, decompressSlot, listProjects } from "@retroplug/lsdj";
 import { LsdjRom, buildKitBank, ROM_SIZE } from "@retroplug/lsdj/rom";
 import { deepEqual } from "@retroplug/testing/deepEqual";
@@ -52,7 +53,7 @@ test("dropping a .lsdsng + a .lsdprj adds both songs in ONE reboot; kits ride ov
 
   const before = be.bootedIds.length;
   const sys = store.view().find((s) => s.id === id)!;
-  expect(importSongFiles(be, store, sys, ["/s/a.lsdsng", "/s/b.lsdprj"])).toBeTruthy();
+  expect(lsdjIntegration.songImport!.import(songImportHost(be, store), sys, ["/s/a.lsdsng", "/s/b.lsdprj"])).toBeTruthy();
 
   // Exactly one rebuild for the whole batch.
   expect(be.bootedIds.length - before).toBe(1);
@@ -76,7 +77,7 @@ test("importSongFiles is a no-op (no write) for an empty / all-bad list", () => 
   be.setSram(id, savFrom({}));
   const before = be.bootedIds.length;
   const sys = store.view().find((s) => s.id === id)!;
-  expect(importSongFiles(be, store, sys, [])).toBe(false);
-  expect(importSongFiles(be, store, sys, ["/nope.lsdsng"])).toBe(false); // unreadable
+  expect(lsdjIntegration.songImport!.import(songImportHost(be, store), sys, [])).toBe(false);
+  expect(lsdjIntegration.songImport!.import(songImportHost(be, store), sys, ["/nope.lsdsng"])).toBe(false); // unreadable
   expect(be.bootedIds.length).toBe(before); // never rebooted
 });

@@ -29,7 +29,7 @@ import {
 } from "../../ui/screens/menu/launchpadDevices";
 import type { ControlSurfaceSettings } from "../../src/userConfig";
 import * as R from "@retroplug/lsdj/codec/regions";
-import { gbRom, nesRom } from "../systems/fixtures";
+import { gbRom, lsdjRom, nesRom } from "../systems/fixtures";
 
 function ctxOf(stores: AppStores): MenuContext {
   return {
@@ -499,7 +499,9 @@ test("the status row reads what the link is actually doing", () => {
 /** A project whose GB cart is in SYNC `sync` (8 = MidiMap, 9 = Lsdj), the controller enabled and its cart polled: what
  *  the menu's cart-sync row reads (controllerCartSync, from the battery). */
 function withCart(stores: AppStores, be: MockBackend, sync: number): void {
-  be.seed("/roms/cart.gb", gbRom());
+  // An LSDj cart: the SYNC byte is its working song's, and the poll asks the cart's own playback for it (edge E3), so a
+  // ROM whose title names no tracker would read "SYNC unread" whatever the battery holds.
+  be.seed("/roms/cart.gb", lsdjRom());
   stores.project.systems.addSystem("/roms/cart.gb");
   const b = new Uint8Array(0x20000);
   b[0x813e] = 0x6a; // 'j'

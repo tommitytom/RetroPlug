@@ -7,6 +7,9 @@
 import type { SongCatalog, WorkingSongImage } from "./songCatalog";
 import type { AssetCatalog } from "./assetCatalog";
 import type { TrackerRender } from "./trackerRender";
+import type { TrackerPlayback } from "./trackerPlayback";
+import type { SramSignature } from "./trackerSramSignature";
+import type { TrackerSongImport } from "./trackerSongImport";
 
 export interface TrackerIntegration {
   /** Row-id prefix + instance-submenu id suffix, e.g. "lsdj" / "risa". */
@@ -56,6 +59,17 @@ export interface TrackerIntegration {
    *  cart the render library cannot play a chosen song of (BlipToaster has no song battery at all). The types are
    *  ./trackerRender's, so a hook is testable without a host. */
   readonly render?: TrackerRender;
+  /** What the control plane polls of this cart to follow its song, and how it reads the cart's live position
+   *  (docs/modular-graph-phase-f4a-design.md section 4.2). Absent for a cart with no session to follow: the controller
+   *  poll then reads "no sync mode, no signature, no timing table, no reader" (edge E3). */
+  readonly playback?: TrackerPlayback;
+  /** The cart's meaningful-change signature over its battery, for the loose-`.sav` auto-save (section 4.3), or null for
+   *  an image that is not this cart's. Absent when the cart has no meaningful-change notion of its own (risa has a
+   *  battery and no signature), and the shell then hashes the whole image. */
+  readonly sramSignature?: SramSignature;
+  /** The song files this cart imports onto a running system, and how (section 4.4). Absent for a cart with no song
+   *  files to import. */
+  readonly songImport?: TrackerSongImport;
 }
 
 /** One contiguous poke into a system's work RAM: `offset` indexes the same region `readRam` returns. */

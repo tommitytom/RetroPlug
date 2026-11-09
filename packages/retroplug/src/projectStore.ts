@@ -17,15 +17,13 @@ import type { ControlPlaneBackend, GraphError, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
 import { EngineGraph } from "./engineGraph";
 import type { SystemEntry } from "./systemsList";
-import type { RoleRegistry } from "@retroplug/core/systemRoles";
+import type { RoleInstance, RoleRegistry } from "@retroplug/core/systemRoles";
 import type { RecentStore } from "./recentStore";
 import { workingSongReady, songLoadByNameWouldDiscard, songLoadWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
-import { workingSongSignature, savSyncMode, songRowTicksFromSav } from "@retroplug/lsdj/playback/fromSav";
 import type { GraphController } from "./graph/controller";
 import { parseAppConfig } from "./controller/registry";
-import { anchorRowsFromState, anyChannelPlaying, type ControllerAnchor } from "@retroplug/lsdj/playback/anchor";
-import { LsdjReader } from "@retroplug/lsdj/runtime";
+import type { ControllerAnchor, PlaybackReader, TrackerPlayback } from "@retroplug/tracker/trackerPlayback";
 import { basename, dirname, stem } from "./pathUtil";
 import { siblingRplgPath, resolveSavPath } from "./savPaths";
 import {
@@ -93,6 +91,11 @@ export interface SongRequest {
   confirmed: boolean;
 }
 
+/** What the controller's poll and its timing table read of a system: the id its battery and WRAM are read by, the ROM
+ *  its reader is built from, and the roles that name its tracker. Both of the store's shapes (a SystemEntry and a
+ *  SystemView) satisfy it, so a caller passes whichever it already has. */
+type ControllerSystem = { readonly id: number; readonly romPath: string; readonly roles: RoleInstance[] };
+
 /** What `settleSong` did with the parked request this time. */
 export type SongSettle =
   | "idle" // nothing requested
@@ -127,8 +130,8 @@ export class ProjectStore {
   private controllerSync: string | null = null; // the controller cart's SYNC setting at the last poll
   private controllerAnchor: ControllerAnchor | null = null; // where the cart last started on its own
   private controllerWasPlaying = false; // edge detector for the above
-  private controllerReaderPath = ""; // the ROM the cached reader was built from
-  private controllerReaderCache: LsdjReader | null = null;
+  private controllerReaderPath = ""; // the system and ROM the cached reader was built from
+  private controllerReaderCache: PlaybackReader | null = null;
   private systemsObservers: Array<() => void> = [];
   private onChangeCb: () => void = () => {};
   private holdGraph = false; // a load's adopts: the graph is published once they are all built
@@ -194,7 +197,9 @@ export class ProjectStore {
     if (!controller?.enabled) return null;
     const views = this.systems.systems();
     const systemId = controller.systemId > 0 ? controller.systemId : (views[0]?.id ?? 0);
-    const table = systemId > 0 ? songRowTicksFromSav(this.systems.readSram(systemId)) : null;
+    const sys = views.find((s) => s.id === systemId);
+    const sram = systemId > 0 ? this.systems.readSram(systemId) : null;
+    const table = sys ? (this.controllerPlayback(sys)?.rowTicks(sram) ?? null) : null;
     // No readable battery is not a failure: the app still launches rows, it just cannot shade the ones that
     // hold chains. An empty table reads as "no content anywhere".
     return {
@@ -478,12 +483,16 @@ export class ProjectStore {
     if (!controller.enabled) return false;
     const id = controller.systemId > 0 ? controller.systemId : (this.systems.view()[0]?.id ?? 0);
     if (id <= 0) return false;
+    // The cart's own playback answers it; a system whose integration has none reads "no sync mode, no signature",
+    // which is what the poll did before for anything that was not an LSDj cart (edge E3).
+    const sys = this.systems.view().find((s) => s.id === id);
+    const playback = this.controllerPlayback(sys);
     const sram = this.backend.readSram(id);
     // One read, two answers. The sync mode is recorded EVERY poll (the player can change it without
     // touching the song), while the re-push is gated on the song actually having moved.
-    this.controllerSync = savSyncMode(sram);
-    const anchored = this.sampleControllerAnchor(id);
-    const sig = workingSongSignature(sram);
+    this.controllerSync = playback?.syncMode(sram) ?? null;
+    const anchored = this.sampleControllerAnchor(sys, playback);
+    const sig = playback?.songSignature(sram) ?? 0;
     const songMoved = sig !== this.controllerSongSig;
     this.controllerSongSig = sig;
     if (!songMoved && !anchored) return false;
@@ -499,31 +508,37 @@ export class ProjectStore {
    *  already carries: a start is rare and discrete, where streaming the position every block would be M6. Returns
    *  whether a new anchor was captured. Emulated carts only - a real Game Boy has no WRAM to read, and
    *  dead reckoning stays all there is. */
-  private sampleControllerAnchor(id: number): boolean {
-    const reader = this.controllerReader(id);
-    if (!reader) return false;
-    const wram = this.backend.readRam(id);
+  private sampleControllerAnchor(sys: ControllerSystem | undefined, playback: TrackerPlayback | null): boolean {
+    if (!sys) return false;
+    const reader = this.controllerReader(sys, playback);
+    if (!reader || !playback) return false;
+    const wram = this.backend.readRam(sys.id);
     if (!wram) return false;
     const state = reader.read(wram);
-    const playing = anyChannelPlaying(state);
+    const playing = playback.anchor.playing(state);
     const started = playing && !this.controllerWasPlaying;
     this.controllerWasPlaying = playing;
     if (!started) return false;
-    this.controllerAnchor = { rows: anchorRowsFromState(state), seq: (this.controllerAnchor?.seq ?? 0) + 1 };
+    this.controllerAnchor = { rows: playback.anchor.rows(state), seq: (this.controllerAnchor?.seq ?? 0) + 1 };
     return true;
   }
 
-  /** The WRAM reader for the controller's cart, built once per ROM. Null for a non-LSDj system, an
-   *  embedded ROM (nothing to read a header from), or a version with no known layout. */
-  private controllerReader(id: number): LsdjReader | null {
-    const sys = this.systems.view().find((s) => s.id === id);
+  /** The playback of the tracker integration a system's roles name, or null for no such system, or one whose roles
+   *  name no tracker (a non-tracker cart, an mGB). The poll, the controller's timing table and the anchor all read
+   *  through it, so none of them names a cart. */
+  private controllerPlayback(sys: ControllerSystem | undefined): TrackerPlayback | null {
+    return sys ? (resolveTracker(sys.roles)?.playback ?? null) : null;
+  }
+
+  /** The WRAM reader for the controller's cart, built once per ROM. Null for a system whose integration has no
+   *  playback, an embedded ROM (nothing to read a header from), or a build its playback has no reader for. */
+  private controllerReader(sys: ControllerSystem | undefined, playback: TrackerPlayback | null): PlaybackReader | null {
     const romPath = sys?.romPath ?? "";
-    if (!romPath || !sys?.roles?.some((r) => r.kind === "lsdj-sync")) return null;
+    if (!playback || !romPath) return null;
     if (this.controllerReaderPath !== romPath) {
       this.controllerReaderPath = romPath;
       const header = this.backend.readFilePrefix(romPath, 0x150);
-      const r = header ? LsdjReader.fromHeader(header) : null;
-      this.controllerReaderCache = r && r.supported ? r : null;
+      this.controllerReaderCache = header ? playback.anchor.reader(header) : null;
     }
     return this.controllerReaderCache;
   }

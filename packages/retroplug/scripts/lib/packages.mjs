@@ -88,7 +88,7 @@ function isObject(v) {
 
 // The protocol node fields the generated tables carry (renderProtocol's key list): anything else in a manifest's node
 // entry is a knob nothing reads, which JSON cannot type-check and esbuild only warns about.
-const NODE_KEYS = ["type", "label", "midiIn", "writes", "launches", "serialOut", "midiOut", "out"];
+const NODE_KEYS = ["type", "label", "midiIn", "writes", "launches", "serialOut", "midiOut", "capture", "out"];
 
 // The controller app sync override's fields: the node type it applies to, the mode it sets, the polled SYNC value that
 // counts as the cart listening and the mode a cart that is not listening is put in. All data: nothing is imported.
@@ -310,6 +310,21 @@ function contributions(pkg) {
     }
     if (!Number.isInteger(node.label)) {
       throw new Error(`${pkg.name}: the node ${node.type} needs a "label", a whole number (its span label)`);
+    }
+    if (node.capture !== undefined) {
+      // The serial-out capture each of the node's modes asks its system's core for: data, so the planner reads it
+      // with no cart in its bundle. An unknown capture would be a mode nothing acts on.
+      if (!isObject(node.capture)) {
+        throw new Error(`${pkg.name}: the node ${node.type}'s capture is not an object of mode: capture`);
+      }
+      for (const [mode, capture] of Object.entries(node.capture)) {
+        if (!["off", "listen", "drive"].includes(capture)) {
+          throw new Error(
+            `${pkg.name}: the node ${node.type}'s capture for ${JSON.stringify(mode)} is ` +
+              `${JSON.stringify(capture)}, not "off", "listen" or "drive"`,
+          );
+        }
+      }
     }
     for (const key of Object.keys(node)) {
       if (!NODE_KEYS.includes(key)) {
@@ -672,6 +687,17 @@ function renderConsoles({ packages, outDir }) {
   return lines.join("\n");
 }
 
+/** A node field as the generated table spells it: a list inline, an object (a capture table) as spaced keys, so its
+ *  line reads like its neighbours'. */
+function literal(value) {
+  if (Array.isArray(value)) return `[${value.map((v) => JSON.stringify(v)).join(", ")}]`;
+  if (isObject(value)) {
+    const entries = Object.entries(value).map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`);
+    return `{ ${entries.join(", ")} }`;
+  }
+  return JSON.stringify(value);
+}
+
 function renderProtocol({ byType, roles, apps }) {
   const lines = [];
   lines.push(
@@ -696,12 +722,9 @@ function renderProtocol({ byType, roles, apps }) {
     lines.push("export const PROTOCOL_NODES = {");
     for (const { node } of wired) {
       const fields = [];
-      for (const key of ["midiIn", "writes", "launches", "serialOut", "midiOut", "out"]) {
+      for (const key of ["midiIn", "writes", "launches", "serialOut", "midiOut", "capture", "out"]) {
         if (node[key] === undefined) continue;
-        const value = Array.isArray(node[key])
-          ? `[${node[key].map((v) => JSON.stringify(v)).join(", ")}]`
-          : JSON.stringify(node[key]);
-        fields.push(`${key}: ${value}`);
+        fields.push(`${key}: ${literal(node[key])}`);
       }
       lines.push(`  ${JSON.stringify(node.type)}: { ${fields.join(", ")} },`);
     }
@@ -942,6 +965,34 @@ export function generate({ root = REPO } = {}) {
       if (!byType.has(app.sync.node)) {
         throw new Error(`${pkg.name}: the controller app ${app.id}'s syncOverride names the node ${app.sync.node}, ` +
           "which no package declares");
+      }
+    }
+  }
+
+  // A capture is for the node whose package DECODES the bytes: the core is clocked and its serial out captured, and
+  // the decoder is the second node the capture-carrier names as its `out` (rp.lsdj.serial-out for rp.lsdj.sync). Each
+  // misuse here would arm a core whose bytes nothing reads: an unwired node is dropped out of PROTOCOL_NODES whole, and
+  // an `out` that is no serial-out node decodes nothing, so the core would be clocked under the bytes the placed role
+  // writes.
+  for (const { pkg, nodes } of contributionsOf) {
+    for (const node of nodes) {
+      if (node.capture === undefined) continue;
+      if (node.midiIn === undefined && node.writes === undefined) {
+        throw new Error(`${pkg.name}: the node ${node.type} declares a capture and is not wired (no midiIn and ` +
+          "writes), so PROTOCOL_NODES would drop it whole and nothing would decode the bytes it clocked");
+      }
+      if (node.out === undefined) {
+        throw new Error(`${pkg.name}: the node ${node.type} declares a capture and no out: a capture is for the ` +
+          "serial-out node that decodes the bytes");
+      }
+      const decoder = byType.get(node.out);
+      if (decoder === undefined) {
+        throw new Error(`${pkg.name}: the node ${node.type} declares a capture decoded at ${node.out}, which no ` +
+          "package declares");
+      }
+      if (decoder.node.serialOut !== true) {
+        throw new Error(`${pkg.name}: the node ${node.type} declares a capture decoded at ${node.out}, which declares ` +
+          "no serialOut");
       }
     }
   }

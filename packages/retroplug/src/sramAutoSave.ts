@@ -12,7 +12,7 @@ import type { ControlPlaneBackend } from "./backend";
 import type { SystemsStore } from "./systemsStore";
 import type { UserConfigStore } from "./userConfigStore";
 import { resolveSavPath } from "./savPaths";
-import { decodeSong, encodeSong } from "@retroplug/lsdj";
+import { TRACKER_INTEGRATIONS } from "./trackerRegistry";
 
 function fnvInto(h: number, bytes: Uint8Array): number {
   for (let i = 0; i < bytes.length; i++) {
@@ -29,32 +29,17 @@ export function hashBytes(bytes: Uint8Array): number {
   return fnvInto(0x811c9dc5, bytes) >>> 0;
 }
 
-/** The MEANINGFUL-change signature of a full 128 KiB LSDj `.sav`, or `null` if `bytes`
- *  isn't one (the caller then falls back to a whole-SRAM hash). LSDj rewrites its working
- *  RAM every frame — the work/total-time clocks tick constantly — so a whole-SRAM hash reports
- *  a fresh sav as "dirty" the instant it boots. Those volatile bytes are NOT modeled by the
- *  codec, so a canonical re-encode `encodeSong(decodeSong(workingSong))` normalises them away;
- *  the header + stored-project archive (0x8000..end) is static (it changes only on an explicit
- *  LSDj SAVE) and is hashed raw. The signature is dedup-only, never persisted. */
-export function lsdjSramSignature(bytes: Uint8Array): number | null {
-  // A full LSDj image is 128 KiB with the 'jk' SRAM-init magic at 0x813E.
-  if (bytes.length < 0x20000 || bytes[0x813e] !== 0x6a || bytes[0x813f] !== 0x6b) return null;
-  let canonical: Uint8Array;
-  try {
-    canonical = encodeSong(decodeSong(bytes.subarray(0, 0x8000)));
-  } catch {
-    return null;
-  }
-  let h = fnvInto(0x811c9dc5, canonical);
-  h = fnvInto(h, bytes.subarray(0x8000));
-  return h >>> 0;
-}
-
-/** Change-detection signature for a system's SRAM: the LSDj semantic signature when `bytes`
- *  is an LSDj sav (normalising its per-frame clock churn), else a whole-SRAM hash. Used only
- *  for the dirty/dedup decision — the bytes actually written to disk are always the live SRAM. */
+/** Change-detection signature for a system's SRAM: the first tracker integration that claims `bytes` names its own
+ *  meaningful-change signature (LSDj's normalises its per-frame clock churn), else a whole-SRAM hash. The rule is the
+ *  IMAGE's, not a role's - it never looked at a system, only at the bytes - so each integration is asked in product
+ *  order, as the ROM sniffers are. Used only for the dirty/dedup decision; the bytes written to disk are always the
+ *  live SRAM. */
 export function sramSignature(bytes: Uint8Array): number {
-  return lsdjSramSignature(bytes) ?? hashBytes(bytes);
+  for (const t of TRACKER_INTEGRATIONS) {
+    const sig = t.sramSignature?.(bytes);
+    if (sig != null) return sig;
+  }
+  return hashBytes(bytes);
 }
 
 /** The per-system auto-save decision (port of autoSaveSramToSibling's core):
@@ -140,7 +125,7 @@ export function flushDirtySram(backend: ControlPlaneBackend, systems: SramTarget
  *  `named` is the file THIS OPERATION explicitly named — the sav being loaded, the savestate being
  *  booted, the file being created. When the system's own target IS that file, the flush is SKIPPED, and
  *  that skip is the point rather than an optimisation: the callers that write a sav and then cold-boot
- *  from it (tracker/liveSav.ts, lsdjSongImport, songImport, the Songs menu) leave the LIVE battery
+ *  from it (tracker/liveSav.ts, a cart's song import, the Songs menu) leave the LIVE battery
  *  holding the PRE-edit bytes, so flushing it would overwrite the edit that was just saved with the
  *  state it replaced. That is the exact data loss this function exists to prevent, pointed backwards. */
 export function flushBatteryForTeardown(

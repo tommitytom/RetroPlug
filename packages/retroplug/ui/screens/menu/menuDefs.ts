@@ -39,7 +39,7 @@ import {
   canSaveWorkingToCatalog,
 } from "@retroplug/lsdj/lsdjSongOps";
 import { activeSlot as lsdjActiveSlot } from "@retroplug/lsdj/codec/sav";
-import { importSongFiles } from "../../../src/lsdjSongImport";
+import { songImportHost } from "../../../src/songImportHost";
 import {
   songRecordBytes,
   replaceSongRecordInSav,
@@ -1647,7 +1647,8 @@ function addSongFromDisk(ctx: MenuContext, sys: SystemView): void {
       const data = be.readFile(path);
       if (data) ctx.beginSongImport(sys, data);
     } else {
-      importSongFiles(be, ctx.stores.project.systems, sys, [path]);
+      const importer = resolveTracker(sys.roles)?.songImport;
+      importer?.import(songImportHost(be, ctx.stores.project.systems), sys, [path]);
     }
   });
 }

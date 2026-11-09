@@ -99,7 +99,7 @@ test("an unreadable battery is inert rather than a change", () => {
 test("refreshControllerSong publishes the graph exactly once per real edit", () => {
   const be = new MockBackend();
   const stores = composeAppStores({ backend: be });
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", lsdjRom());
   stores.project.systems.addSystem("/roms/a.gb");
   const id = stores.project.systems.view()[0].id;
   be.setSram(id, sav());
@@ -135,7 +135,7 @@ test("refreshControllerSong costs nothing while no controller is enabled", () =>
 test("an edit does not dirty the project - the song lives in the cart, not the .rplg", () => {
   const be = new MockBackend();
   const stores = composeAppStores({ backend: be });
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", lsdjRom());
   stores.project.systems.addSystem("/roms/a.gb");
   const id = stores.project.systems.view()[0].id;
   be.setSram(id, sav());
@@ -160,7 +160,7 @@ test("the poll also records the cart's SYNC mode, which is how the menu can warn
   // broken" and "your cart is in MI.OUT".
   const be = new MockBackend();
   const stores = composeAppStores({ backend: be });
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", lsdjRom());
   stores.project.systems.addSystem("/roms/a.gb");
   const id = stores.project.systems.view()[0].id;
   stores.project.setController({ enabled: true });

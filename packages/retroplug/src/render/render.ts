@@ -99,6 +99,9 @@ export function resolveRenderRom(ctx: RenderContext, romPath: string): RenderRom
   const platform = classifyForRender(ctx.backend, romPath);
   if (platform === "unknown") return { platform, core: undefined, roles: [], integration: undefined };
   const core = defaultCoreFor(platform);
+  // The store reads a ROM's roles through the same registry call, from the same header: whatever a role does with a
+  // deeper read is the role's hook, so the providers here and there see one kind of header (the console's prefix where
+  // its header sits deep).
   const header = ctx.backend.readFilePrefix(romPath, providerHeaderLength(platform)) ?? new Uint8Array();
   const roles = core === undefined ? [] : ctx.registry.defaultRoles(core, platform, header, "");
   return { platform, core, roles, integration: resolveTracker(roles) };

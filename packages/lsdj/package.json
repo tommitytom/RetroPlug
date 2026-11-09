@@ -28,12 +28,15 @@
     "./lsdjAssetCatalog": "./ts/lsdjAssetCatalog.ts",
     "./lsdjAssetsRole": "./ts/lsdjAssetsRole.ts",
     "./lsdjIntegration": "./ts/lsdjIntegration.ts",
+    "./lsdjPlayback": "./ts/lsdjPlayback.ts",
     "./lsdjRender": "./ts/lsdjRender.ts",
     "./lsdjKeyboardMap": "./ts/lsdjKeyboardMap.ts",
     "./lsdjLsdprjImport": "./ts/lsdjLsdprjImport.ts",
     "./lsdjSerialOutNode": "./ts/lsdjSerialOutNode.ts",
     "./lsdjSongCatalog": "./ts/lsdjSongCatalog.ts",
+    "./lsdjSongImport": "./ts/lsdjSongImport.ts",
     "./lsdjSongOps": "./ts/lsdjSongOps.ts",
+    "./lsdjSramSignature": "./ts/lsdjSramSignature.ts",
     "./lsdjSyncBytes": "./ts/lsdjSyncBytes.ts",
     "./lsdjSyncNode": "./ts/lsdjSyncNode.ts",
     "./lsdjSyncSettings": "./ts/lsdjSyncSettings.ts",
@@ -84,6 +87,7 @@
       "nodes": [
         {
           "type": "rp.lsdj.sync", "label": 21, "midiIn": "midi", "writes": ["serialIn", "buttons"], "launches": true,
+          "capture": { "midiOut": "drive", "masterSync": "listen" },
           "out": "rp.lsdj.serial-out"
         },
         { "type": "rp.lsdj.serial-out", "label": 23, "midiIn": null, "writes": [], "serialOut": true, "midiOut": true }

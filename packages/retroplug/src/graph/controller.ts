@@ -5,11 +5,9 @@
 // DirectGraph) parses the app's config with the app's own schema before it gets here, so neither buildGraph nor the
 // node it places imports a zod schema.
 import { type ControllerTarget } from "@retroplug/launchpad/enums";
-import { LsdjSyncMode } from "@retroplug/lsdj/enums";
-import type { RowTicksTable } from "@retroplug/lsdj/playback/predict";
-import type { ControllerAnchor } from "@retroplug/lsdj/playback/anchor";
-import type { ProtocolRole } from "./protocolNodes";
-import { CONTROLLER_SYNC } from "../generated/protocol";
+import type { ControllerAnchor, RowTicksTable } from "@retroplug/tracker/trackerPlayback";
+import { type ProtocolNodeSpec, type ProtocolRole } from "./protocolNodes";
+import { CONTROLLER_SYNC, PROTOCOL_NODES } from "../generated/protocol";
 
 /** An app's sync override, as its manifest's `protocol.apps` entry declares it: which cart sync node type the app's
  *  launches need, the mode that node is put in, and the polled SYNC value that counts as the cart listening. Data, so
@@ -126,12 +124,18 @@ export function serialOutCaptureFor(
   pipeline: readonly ProtocolRole[],
   forced?: string | null,
 ): SerialOutCaptureMode {
-  const role = pipeline.find((r) => r.node === "rp.lsdj.sync");
+  // The node that declares a capture table is the one whose decoder the pipeline places (LSDj's lsdj-sync), and the
+  // table is its package's data: the mapping of a mode to what the core does is the cart's, while this runs in the
+  // planner, which may carry no cart at all. A pipeline with no such node captures nothing, whatever a role left out of
+  // it says - what a capture delivers is decoded by that role's node, which is not placed.
+  const role = pipeline.find((r) => (PROTOCOL_NODES[r.node] as ProtocolNodeSpec).capture !== undefined);
   if (!role) return "off";
+  const capture = (PROTOCOL_NODES[role.node] as ProtocolNodeSpec).capture!;
   const mode: unknown = forced ?? (role.config as { mode?: unknown }).mode;
-  if (mode === LsdjSyncMode.MidiOut) return "drive";
-  if (mode === LsdjSyncMode.MasterSync) return "listen";
-  return "off";
+  // An OWN key, not a bare index: the record's prototype would answer "constructor" or "toString" with a function,
+  // and a mode is only ever one of the cart's own strings. (hasOwnProperty.call, because the shell's lib target is
+  // below Object.hasOwn.)
+  return typeof mode === "string" && Object.prototype.hasOwnProperty.call(capture, mode) ? capture[mode]! : "off";
 }
 
 /** The controller node's settings (@retroplug/launchpad/controllerSession): its system resolved (0 is the node's

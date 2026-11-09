@@ -22,6 +22,7 @@
 // hide: groove 0 only (a phrase-level G command is ignored), no H hop handling, and no awareness of
 // edits made on the device.
 
+import type { RowTicksTable } from "@retroplug/tracker/trackerPlayback";
 import type { Song } from "../model";
 // The leaf, not ../runtime: this module is bundled into the controller session node (the audio thread), and the
 // runtime barrel would drag the whole WRAM reader in behind one four-element constant.
@@ -73,8 +74,9 @@ interface Cursor {
 
 /** How long each channel spends on each song row: `[channel][row]`, null where it has nothing playable.
  *  This is the ONLY thing the model consults about a song, which is what makes it pushable to a context
- *  that cannot decode a sav for itself - the DSP thread (docs/launchpad-plan.md M5). */
-export type RowTicksTable = (number | null)[][];
+ *  that cannot decode a sav for itself - the DSP thread (docs/launchpad-plan.md M5). The type is the tracker
+ *  contract's (@retroplug/tracker/trackerPlayback), because a cart's playback answers with it. */
+export type { RowTicksTable };
 
 /** A usable row duration: a whole number of ticks, at least one. A fraction or a denormal would let `advance`
  *  subtract almost nothing per row forever - a hang on the audio thread - and none can come from a real song

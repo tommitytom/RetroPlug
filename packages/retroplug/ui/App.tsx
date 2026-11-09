@@ -44,8 +44,8 @@ import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE, type AppAction } from "../src/keyCodes";
 import { resolveDropAction } from "../src/fileDrop";
-import { importSongFiles } from "../src/lsdjSongImport";
-import { hasRole } from "@retroplug/core/systemRoles";
+import { songImportHost } from "../src/songImportHost";
+import { resolveTracker } from "../src/trackerRegistry";
 
 const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
 const MOUSE_BUTTON_RIGHT = 2; // DPF kMouseButtonRight (left=1, right=2, middle=3) — the "mouse" bus button field
@@ -245,7 +245,7 @@ export function App() {
         count: systems.length,
         targetId,
         onTile: idx != null,
-        targetIsLsdj: hasRole(target?.roles, "lsdj-sync"),
+        targetSongExtensions: target ? (resolveTracker(target.roles)?.songImport?.extensions ?? []) : [],
         siblingRom: (sav) => stores.project.systems.resolveSiblingRom(sav),
       },
       paths,
@@ -268,7 +268,8 @@ export function App() {
         break;
       case "patchSongs": {
         const sys = systems.find((s) => s.id === action.id);
-        if (sys) importSongFiles(stores.backend, stores.project.systems, sys, action.paths);
+        const importer = sys ? resolveTracker(sys.roles)?.songImport : undefined;
+        if (sys && importer) importer.import(songImportHost(stores.backend, stores.project.systems), sys, action.paths);
         break;
       }
       case "pairSav":

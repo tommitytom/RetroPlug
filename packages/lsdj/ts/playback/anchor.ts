@@ -15,15 +15,11 @@
 // there is. That asymmetry is the whole shape of this feature, not a shortcut here.
 
 import { CHANNELS, type LsdjState } from "../runtime";
+import type { ControllerAnchor } from "@retroplug/tracker/trackerPlayback";
 
-/** What the audio thread is told: where each channel actually is, and a sequence number so it can tell one
- *  anchor from the next. Values are song rows, or null for a channel that is not playing. */
-export interface ControllerAnchor {
-  rows: (number | null)[];
-  /** Bumped once per anchoring event. The role re-anchors when this CHANGES, so the same anchor riding
-   *  along on later structure pushes is applied once rather than re-applied forever. */
-  seq: number;
-}
+// The anchor itself is the tracker contract's (@retroplug/tracker/trackerPlayback), because the controller poll hands
+// it to the graph without naming a cart; this module is what derives it from an LSDj state.
+export type { ControllerAnchor };
 
 /** Each channel's own song row, or null where it is not playing.
  *

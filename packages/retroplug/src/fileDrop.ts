@@ -17,7 +17,21 @@
 import type { HostBackend } from "./backend";
 import { classifyKind } from "./fileSelection";
 import { siblingRplgPath } from "./savPaths";
-import { isSongPath } from "./lsdjSongImport";
+import { TRACKER_INTEGRATIONS } from "./trackerRegistry";
+
+/** The song files ANY tracker this build carries imports, lowercase and dot included. Recognition is the product's, not
+ *  a target's: a song file dropped where nothing imports it is refused with a reason, and read as an unsupported file
+ *  only when no cart here claims the type. */
+const SONG_EXTENSIONS: readonly string[] = TRACKER_INTEGRATIONS.flatMap((t) => t.songImport?.extensions ?? []);
+
+/** True when `path` is one of the song files `extensions` names, as a tracker integration spells them: a dropped
+ *  file's type is the cart's, so the routing asks the product's. The CONTRACT is lowercase, dot included, and both
+ *  sides are folded to it, so a pack that spells an extension in capitals still matches rather than silently dropping
+ *  every file of that type. */
+function isSongPath(extensions: readonly string[], path: string): boolean {
+  const lower = path.toLowerCase();
+  return extensions.some((ext) => lower.endsWith(ext.toLowerCase()));
+}
 
 /** A project file (thin `.rplg` or the export `.rplg.zip`) — classified by extension, like ProjectStore. */
 function isProjectPath(path: string): boolean {
@@ -44,8 +58,9 @@ export interface DropContext {
   /** True iff `targetId` is an actual tile the drop hit (not the focus fallback) — gates whether a
    *  bare `.sav` loads into that instance vs. is treated as a project load. */
   onTile: boolean;
-  /** True iff the target instance is an LSDj cart — gates song-file patching. */
-  targetIsLsdj: boolean;
+  /** The song files the target instance's tracker imports (".lsdsng", ".lsdprj"), empty when it imports none: they are
+   *  what a drop of such a file patches, and what a refusal names. */
+  targetSongExtensions: readonly string[];
   /** Resolve a `.sav`'s sibling ROM, or null — `SystemsStore.resolveSiblingRom`. Injected to keep this
    *  module store-free. */
   siblingRom: (savPath: string) => string | null;
@@ -61,12 +76,13 @@ export function resolveDropAction(backend: HostBackend, ctx: DropContext, paths:
   const project = files.find(isProjectPath);
   if (project) return { type: "loadProject", path: project };
 
-  // Song files (.lsdsng/.lsdprj) patch into the target LSDj instance — added to free slots, one reboot.
-  // Any non-song files in a mixed drop are ignored. Requires an LSDj target (else a no-op).
-  const songs = files.filter(isSongPath);
+  // Song files patch into the target instance that imports them - added to free slots, one reboot. Any non-song files
+  // in a mixed drop are ignored. Requires such a target (else a no-op).
+  const songs = files.filter((p) => isSongPath(SONG_EXTENSIONS, p));
   if (songs.length > 0) {
-    if (ctx.targetIsLsdj && ctx.targetId != null) return { type: "patchSongs", id: ctx.targetId, paths: songs };
-    return { type: "ignore", reason: "song files need an LSDj instance" };
+    const targetImports = songs.some((p) => isSongPath(ctx.targetSongExtensions, p));
+    if (targetImports && ctx.targetId != null) return { type: "patchSongs", id: ctx.targetId, paths: songs };
+    return { type: "ignore", reason: "song files need a tracker that imports them" };
   }
 
   const roms = files.filter((p) => classifyKind(backend, p) === "rom");

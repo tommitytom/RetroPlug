@@ -6,7 +6,7 @@
 // - the generated entry, bundled and loaded, registers the manifests' controller app runtimes and their nodes in
 //   span-label order, and refuses when what the modules define or register is not the manifests' declarations;
 // - each of the generator's refusals is exercised with its own message: a list that puts a package before a
-//   dependency (a cycle is one), an unlisted dependency that would contribute, a dependency on the shell, a node key no
+//   dependency (a cycle is one), a capture on a node that is not wired or whose out decodes nothing, an unlisted dependency that would contribute, a dependency on the shell, a node key no
 //   protocol node reads, a node wired on one side only, a shared span label, a shared node type, a shared role kind, a
 //   controller app id two RUNTIMES declare and one two control-plane halves declare (each naming both packages), an app
 //   entry with a key no runtime reads, a controller app with only one of its two halves (each way), a nodes module named
@@ -173,7 +173,60 @@ test("a node key no protocol node reads is refused, naming the key", async () =>
   console.log(`# unknown node key: ${error}`);
   expect(error).toBe(
     'alpha: the node rp.alpha.midi has "launchs", which no protocol node reads (a node\'s keys are type, label, ' +
-      "midiIn, writes, launches, serialOut, midiOut, out)",
+      "midiIn, writes, launches, serialOut, midiOut, capture, out)",
+  );
+});
+
+test("a node's capture table is checked: what each mode asks the core to do", async () => {
+  const { error } = await drive("capture-bad");
+  console.log(`# bad capture: ${error}`);
+  expect(error).toBe(
+    'alpha: the node rp.alpha.midi\'s capture for "midiMap" is "sideways", not "off", "listen" or "drive"',
+  );
+});
+
+test("a capture is refused on a node that is not wired, or whose out decodes nothing", async () => {
+  // A capture arms a core to clock and capture its serial out: what reads those bytes is the serial-out node the
+  // capture-carrier names as its `out`. Each misuse here would clock the core under bytes nothing decodes.
+  const unwired = await drive("capture-unwired");
+  console.log(`# capture on an unwired node: ${unwired.error}`);
+  expect(unwired.error).toBe(
+    "alpha: the node rp.alpha.midi declares a capture and is not wired (no midiIn and writes), so PROTOCOL_NODES " +
+      "would drop it whole and nothing would decode the bytes it clocked",
+  );
+  const noDecoder = await drive("capture-no-decoder");
+  console.log(`# capture with no decoder: ${noDecoder.error}`);
+  expect(noDecoder.error).toBe(
+    "alpha: the node rp.alpha.midi declares a capture and no out: a capture is for the serial-out node that decodes " +
+      "the bytes",
+  );
+  const undeclared = await drive("capture-out-undeclared");
+  console.log(`# capture decoded at no package's node: ${undeclared.error}`);
+  expect(undeclared.error).toBe(
+    "alpha: the node rp.alpha.midi declares a capture decoded at rp.alpha.nope, which no package declares",
+  );
+  const notSerial = await drive("capture-out-not-serial");
+  console.log(`# capture decoded at a node that is no decoder: ${notSerial.error}`);
+  expect(notSerial.error).toBe(
+    "alpha: the node rp.alpha.midi declares a capture decoded at rp.alpha.plainer, which declares no serialOut",
+  );
+});
+
+test("a capture that is not an object of mode: capture is refused", async () => {
+  const { error } = await drive("capture-not-object");
+  console.log(`# capture not an object: ${error}`);
+  expect(error).toBe("alpha: the node rp.alpha.midi's capture is not an object of mode: capture");
+});
+
+test("the generated table spells a capture table like the fields around it", async () => {
+  // A capture table is data the planner reads, and its emitted form is what a reader of the generated module sees: the
+  // fields before and after it are spelled with a space after each colon, so the object is too.
+  const files = (await drive("capture-form")).files as Record<string, string>;
+  const line = files["protocol.ts"]!.split("\n").find((l) => l.includes('"rp.alpha.midi"'))!;
+  console.log(`# emitted capture: ${line}`);
+  expect(line).toBe(
+    '  "rp.alpha.midi": { midiIn: "midi", writes: ["serialIn"], capture: { "midiMap": "drive", "off": "listen" }, ' +
+      'out: "rp.alpha.serial" },',
   );
 });
 
