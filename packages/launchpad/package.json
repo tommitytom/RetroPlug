@@ -30,7 +30,8 @@
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/node-sdk": "workspace:*",
-    "@retroplug/tracker": "workspace:*"
+    "@retroplug/tracker": "workspace:*",
+    "@retroplug/ui": "workspace:*"
   },
   "devDependencies": {
     "@retroplug/testing": "workspace:*",

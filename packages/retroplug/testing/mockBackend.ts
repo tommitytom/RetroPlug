@@ -190,6 +190,11 @@ export class MockBackend implements Backend {
     this.files.set(this.canonicalize(path), bytes);
   }
 
+  /** Remove a file from the fake disk, as deleting it would: readFile answers null afterwards. */
+  unseed(path: string): void {
+    this.files.delete(this.canonicalize(path));
+  }
+
   /** Drive a system's live SRAM content (what readSram returns), overriding the
    *  deterministic default — lets a test model SRAM changing between flushes. */
   setRam(id: number, bytes: Uint8Array): void {

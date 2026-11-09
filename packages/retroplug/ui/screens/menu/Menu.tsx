@@ -41,7 +41,7 @@ import {
 } from "../../../src/keyCodes";
 import { setMenuModalActive } from "./menuModal";
 import { applyCasing } from "./promptCasing";
-import type { MenuItem, MenuTree, PromptSpec } from "./menuTree";
+import type { MenuItem, MenuTree, PromptSpec } from "@retroplug/ui/menu";
 
 const MOD_SHIFT = 1 << 0; // DPF modifier mask bit for Shift (mirrors Base.hpp kModifierShift), on the "key" bus
 

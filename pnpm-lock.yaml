@@ -118,6 +118,9 @@ importers:
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
     devDependencies:
       '@retroplug/testing':
         specifier: workspace:*
@@ -140,6 +143,9 @@ importers:
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -190,6 +196,9 @@ importers:
       '@retroplug/system':
         specifier: workspace:*
         version: link:../system
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -316,6 +325,9 @@ importers:
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -360,6 +372,9 @@ importers:
       '@retroplug/system':
         specifier: workspace:*
         version: link:../system
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -414,6 +429,22 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/ui:
+    dependencies:
+      '@retroplug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@retroplug/tracker':
+        specifier: workspace:*
+        version: link:../tracker
     devDependencies:
       '@retroplug/testing':
         specifier: workspace:*

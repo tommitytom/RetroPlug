@@ -8,8 +8,7 @@ import type { SystemView } from "../../src/systemsStore";
 import type { SongCatalog, SongInfo } from "@retroplug/tracker/songCatalog";
 import { resolveTracker } from "../../src/trackerRegistry";
 import { resolveSavPath } from "../../src/savPaths";
-import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
-import { button, infoRow, noticeTree, separator } from "../screens/menu/menuItems";
+import { button, infoRow, noticeTree, separator, type MenuItem, type MenuTree } from "@retroplug/ui/menu";
 
 // The picker for a validated source sav: its songs + the currently-checked source indices.
 export interface PickState {

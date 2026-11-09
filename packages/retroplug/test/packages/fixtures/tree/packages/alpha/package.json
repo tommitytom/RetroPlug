@@ -4,12 +4,14 @@
     "./app": "./ts/app.ts",
     "./consoles": "./ts/consoles.ts",
     "./nodes": "./ts/nodes.ts",
-    "./appRuntime": "./ts/appRuntime.ts"
+    "./appRuntime": "./ts/appRuntime.ts",
+    "./ui": "./ts/ui.ts"
   },
   "private": true,
   "retroplug": {
     "app": "ts/app.ts",
     "consoles": "ts/consoles.ts",
+    "ui": "ts/ui.ts",
     "protocol": {
       "module": "ts/nodes.ts",
       "nodes": [

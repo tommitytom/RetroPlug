@@ -12,12 +12,14 @@
     "./app": "./ts/app.ts",
     "./cartridge": "./ts/cartridge.ts",
     "./consoles": "./ts/consoles.ts",
+    "./ui": "./ts/ui/index.ts",
     "./enums": "./ts/enums.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/node-sdk": "workspace:*",
     "@retroplug/system": "workspace:*",
+    "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -26,6 +28,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "ui": "ts/ui/index.ts",
     "consoles": "ts/consoles.ts",
     "native": { "target": "retroplug-sameboy", "entry": "rp_sameboy_package", "device": false }
   }

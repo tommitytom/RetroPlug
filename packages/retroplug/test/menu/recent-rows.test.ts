@@ -7,7 +7,7 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildStartMenu, buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuItem } from "@retroplug/ui/menu";
 import { buildSav, SMDJ4_BLOCK_LEN } from "@retroplug/smsggdj/codec/sav";
 import { resolveSmsggdjLayout } from "@retroplug/smsggdj/runtime/layout";
 import { smsggdjRom, smsggdjRam } from "../systems/fixtures";

@@ -5,22 +5,12 @@
 
 import type { AppStores } from "../../../src/appStores";
 import type { SystemView } from "../../../src/systemsStore";
-import { drivesRealCartOf } from "../../../src/graph/buildGraph";
 import type { ProjectSettings } from "../../../src/projectConfig";
-import {
-  MODEL_VALUES,
-  HIGHPASS_VALUES,
-  COLOR_CORRECTION_VALUES,
-  DMG_PALETTE_VALUES,
-  type SameBoyModel,
-  type SameBoyHighpass,
-  type SameBoyColorCorrection,
-  type SameBoyDmgPalette,
-} from "@retroplug/sameboy/enums";
-import { REGION_VALUES, type ConsoleRegion } from "@retroplug/mesen/enums";
 import { MIDI_ROUTING_VALUES } from "@retroplug/core/midiRouting";
+import { consoleOfPlatform } from "../../../src/consoles";
+import { configRowCycler, roleRowItems } from "./configRows";
+import { contributedTrackerUi, roleRows } from "../../host/menuContributions";
 import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, type AudioRouting } from "../../../src/settingsEnums";
-import { LSDJ_MODE_VALUES, type LsdjSyncMode } from "@retroplug/lsdj/enums";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
 import type { SplitMode } from "../../../src/render";
@@ -119,10 +109,11 @@ import { controllerApps, controllerApp } from "../../../src/controller/registry"
 import type { ControllerAppContribution } from "@retroplug/launchpad/registry";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "@retroplug/launchpad/enums";
 import { controllerSyncOverride } from "../../../src/graph/controller";
+import { legacyConfigIndex } from "@retroplug/ui/contribution";
 import { systemNodeId } from "../../../src/graph/buildGraph";
-import type { MenuAction, MenuItem, MenuTree } from "./menuTree";
+import type { MenuAction, MenuItem, MenuTree } from "@retroplug/ui/menu";
 import { roleConfig } from "@retroplug/core/systemRoles";
-import { action, actionCycler, button, cycleInt, cycler, infoRow, separator, submenu } from "./menuItems";
+import { action, actionCycler, button, cycleInt, cycler, infoRow, separator, submenu } from "@retroplug/ui/menu";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
 export interface MenuContext {
@@ -467,13 +458,11 @@ function controllerAppRows(ctx: MenuContext, app: ControllerAppContribution | un
   const defaults = app.config.parse({}); // the schema is the source of a knob's default, as it is of its bounds
   const current = (key: string): unknown => (config[key] !== undefined ? config[key] : defaults[key]);
   const set = (key: string, value: unknown) => project.setController({ appConfig: { [key]: value } });
-  return app.menu.map((field) => {
-    const id = `lp-app-${field.key}`;
-    if (field.toggle) return cycler(id, field.label, OFF_ON, current(field.key) === false ? 0 : 1, (n) => set(field.key, n === 1));
-    const choices = field.choices ?? [];
-    const at = choices.findIndex((c) => c.value === current(field.key));
-    return cycler(id, field.label, choices.map((c) => c.label), Math.max(0, at), (n) => set(field.key, choices[n].value));
-  });
+  return app.menu.map((field) =>
+    configRowCycler(`lp-app-${field.key}`, field, current(field.key), defaults[field.key], (value) =>
+      set(field.key, value),
+    legacyConfigIndex(field, current(field.key))),
+  );
 }
 
 function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem[] {
@@ -620,42 +609,20 @@ const NES_ONLY_ROUTINGS: readonly AudioRouting[] = ["pinSplit", "stereoPinSplit"
 
 /** Which routing modes the Audio Routing cycler offers for a project. UX only — native re-checks.
  *  A split needs exactly one system (a lone system has no link peers), and the pin rows additionally
- *  need that system to be a NES. Mirrors `validSplits`, which gates the Render submenu on the same pair. */
+ *  need an output layout that HAS pins, which is the console descriptor's own declaration (`splits.pins`: the NES).
+ *  Mirrors `validSplits` (ui/host/render.ts), which gates the Render submenu on the same declaration. */
 export function validAudioRoutings(systems: readonly Pick<SystemView, "platform">[]): AudioRouting[] {
   if (systems.length !== 1) return [...AUDIO_ROUTING_VALUES.slice(0, 3)];
   const all = [...AUDIO_ROUTING_VALUES];
-  return systems[0].platform === "nes" ? all : all.filter((v) => !NES_ONLY_ROUTINGS.includes(v));
+  return consoleOfPlatform(systems[0].platform)?.splits?.pins
+    ? all
+    : all.filter((v) => !NES_ONLY_ROUTINGS.includes(v));
 }
 const LAYOUT_NAMES = ["Auto", "Row", "Column", "Grid"];
-const MODEL_NAMES = ["Auto", "DMG-B", "MGB", "SGB", "SGB PAL", "SGB2", "CGB-0", "CGB-A", "CGB-B", "CGB-C", "CGB-D", "CGB-E", "AGB", "GBP"];
-const HIGHPASS_NAMES = ["Off", "Accurate", "DC-Block"];
-// SameBoy display knobs (the "sameboy" role). Index == the value tuple in settingsEnums.
-const COLOR_CORRECTION_NAMES = ["Off", "Correct Curves", "Balanced", "Boost Contrast", "Reduce Contrast", "Low Contrast", "Accurate"];
-const DMG_PALETTE_NAMES = ["Grey", "DMG", "MGB", "GBL"];
-// Light temperature is a continuous -1..1 in the core; the menu has cyclers, not sliders, so offer it
-// as 11 steps over the full range. Upstream's own slider is 21 steps, which is a lot of key presses
-// for a tint. Stored as the double, so a value that came from elsewhere still round-trips through
-// nearestIndex() to the closest row.
-const LIGHT_TEMP_STEPS = [-1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1];
-const LIGHT_TEMP_NAMES = ["Cool 100%", "Cool 80%", "Cool 60%", "Cool 40%", "Cool 20%", "Neutral", "Warm 20%", "Warm 40%", "Warm 60%", "Warm 80%", "Warm 100%"];
-
-// The models that render in DMG mode, i.e. the ones the DMG palette applies to. Mirrors the core's own
-// split: GB_is_cgb is `model >= GB_MODEL_CGB_0`, and everything below that (DMG, the Game Boy Pocket,
-// and the three Super Game Boys) takes its colours from GB_update_dmg_palette instead of the CGB
-// palette RAM. `auto` is NOT one of them - RetroPlug resolves it to CGB-C (toSameBoyModel), so it gets
-// the CGB rows. Colour correction and light temperature are shown on exactly the complement.
-const DMG_MODELS: readonly SameBoyModel[] = ["dmgB", "mgb", "sgb", "sgbPal", "sgb2"];
-const isDmgModel = (m: SameBoyModel): boolean => DMG_MODELS.includes(m);
 const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { OnProjectSave: "On Save", Continuous: "Continuous" };
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
-// NES console region (ConsoleRegion 0..4), the "mesen" role's region knob.
-const REGION_NAMES = ["Auto", "NTSC", "PAL", "Dendy", "NTSC-J"];
 const OFF_ON = ["Off", "On"]; // boolean toggles rendered as 2-value cyclers (Left/Right + Enter step)
-// LSDj sync modes (LsdjSyncMode 0..8). All shown; Keyboard(4) is not yet driven. "MIDI Out"(7, SYNC=MI.OUT)
-// and "Master Sync"(8, SYNC=LSDJ) are the two LSDj→host MIDI-out modes. Tempo divisor subdivides the 24-PPQN clock.
-const LSDJ_MODE_NAMES = ["Off", "MIDI Sync", "MIDI Sync (Arduinoboy)", "MIDI Map", "Keyboard", "Keyboard MIDI", "MIDI Passthrough", "MIDI Out", "Master Sync"];
-const LSDJ_DIVISORS = [1, 2, 4, 8];
 
 // Glob filters for the file dialogs (realBackend space-joins them for DPF).
 const PROJECT_PATTERNS = ["*.rplg"]; // thin project (raw JSON) — the Save target
@@ -720,74 +687,6 @@ function browseThen(ctx: MenuContext, opts: FileBrowserOpts, apply: (path: strin
   void ctx.stores.backend.openFileBrowser(opts).then((path) => {
     if (path) apply(path);
   });
-}
-
-/** The SameBoy core-role config for a system (model / highpass / link group / fast boot + the display
- *  group), with defaults. Every display default matches the core's own, so a project saved before those
- *  knobs existed reads back as the appearance it was saved with. */
-function sameboyConfig(sys: SystemView): {
-  model: SameBoyModel;
-  highpass: SameBoyHighpass;
-  linkGroupId: number;
-  fastBoot: boolean;
-  colorCorrection: SameBoyColorCorrection;
-  dmgPalette: SameBoyDmgPalette;
-  lightTemperature: number;
-} {
-  const c = roleConfig(sys.roles, "sameboy") ?? {};
-  return {
-    model: typeof c.model === "string" ? (c.model as SameBoyModel) : "cgbC",
-    highpass: typeof c.highpass === "string" ? (c.highpass as SameBoyHighpass) : "accurate",
-    linkGroupId: typeof c.linkGroupId === "number" ? c.linkGroupId : 0,
-    fastBoot: c.fastBoot !== false,
-    colorCorrection: typeof c.colorCorrection === "string" ? (c.colorCorrection as SameBoyColorCorrection) : "disabled",
-    dmgPalette: typeof c.dmgPalette === "string" ? (c.dmgPalette as SameBoyDmgPalette) : "grey",
-    lightTemperature: typeof c.lightTemperature === "number" ? c.lightTemperature : 0,
-  };
-}
-
-// APU flush-window latency presets (ms) for the NES "APU Latency" cycler. The role config accepts any
-// value in [0.25, 6.0] (clampedNumber); the menu just offers a few sensible steps. 1.4ms ≈ the default.
-const APU_LATENCY_MS = [0.5, 1.0, 1.4, 3.0, 5.0];
-const APU_LATENCY_NAMES = ["0.5 ms", "1.0 ms", "1.4 ms", "3.0 ms", "5.0 ms"];
-
-// "Expansion Volume": how loud the CARTRIDGE's own sound chip is (VRC6 / VRC7 / N163 / S5B / MMC5 / FDS),
-// as a percentage of the level the hardware mixes it at. Not the 2A03 - a cart without an expansion chip
-// hears nothing from this row. A driven Everdrive N8 Pro gets the same value as its node's param, so the chip
-// sits at the same level emulated and on the console. The role accepts any value in [0, 200].
-const EXP_VOLUMES = [0, 25, 50, 75, 100, 125, 150, 200];
-const EXP_VOLUME_NAMES = EXP_VOLUMES.map((v) => (v === 0 ? "Off" : v === 100 ? "100% (unity)" : `${v}%`));
-
-/** Index of the preset in `presets` nearest `v`, so a cycler over a continuous value still shows the
- *  current setting even when it's off-grid (a project written by an older build, or by hand). */
-function nearestIndex(presets: readonly number[], v: number): number {
-  let best = 0;
-  for (let i = 1; i < presets.length; i++) {
-    if (Math.abs(presets[i] - v) < Math.abs(presets[best] - v)) best = i;
-  }
-  return best;
-}
-
-/** The Mesen core-role config, with defaults. The role attaches to any Mesen system but its knobs are
- *  per-platform, so the menu gates each group on `platform`: region / removeSpriteLimit / apuLatencyMs
- *  on "nes", enableFm on "sms" and "gg". */
-function mesenConfig(sys: SystemView): {
-  region: ConsoleRegion;
-  removeSpriteLimit: boolean;
-  apuLatencyMs: number;
-  expansionVolume: number;
-  driveRealCart: boolean;
-  enableFm: boolean;
-} {
-  const c = roleConfig(sys.roles, "mesen") ?? {};
-  return {
-    region: typeof c.region === "string" ? (c.region as ConsoleRegion) : "auto",
-    removeSpriteLimit: c.removeSpriteLimit === true,
-    apuLatencyMs: typeof c.apuLatencyMs === "number" ? c.apuLatencyMs : 1.4,
-    expansionVolume: typeof c.expansionVolume === "number" ? c.expansionVolume : 100,
-    driveRealCart: drivesRealCartOf(c), // the schema's default, read through the one predicate buildGraph places by
-    enableFm: c.enableFm !== false, // default ON, matching the schema + MesenSmsConfig
-  };
 }
 
 // --- child builders -----------------------------------------------------------------------------------
@@ -905,71 +804,13 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       systems.setReloadOnRomChange(sys.id, n === 1),
     ),
   );
-  // SameBoy-only core knobs.
-  if (sys.core === "sameboy") {
-    const cfg = sameboyConfig(sys);
-    items.push(
-      cycler("sys-model", "Model", MODEL_NAMES, Math.max(0, MODEL_VALUES.indexOf(cfg.model)), (n) => systems.setRoleConfig(sys.id, "sameboy", { model: MODEL_VALUES[n] })),
-      cycler("sys-highpass", "Highpass", HIGHPASS_NAMES, Math.max(0, HIGHPASS_VALUES.indexOf(cfg.highpass)), (n) => systems.setRoleConfig(sys.id, "sameboy", { highpass: HIGHPASS_VALUES[n] })),
-      cycler("sys-fastboot", "Fast Boot", OFF_ON, cfg.fastBoot ? 1 : 0, (n) => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: n === 1 })),
-    );
-    // Display. Live — the core applies these to the next rendered frame, no restart. Each row is shown
-    // only on the models where the core will actually use it: it gates colour correction and light
-    // temperature on GB_is_cgb and the DMG palette on the negation, so exactly one of the two groups
-    // applies to any given model. See isDmgModel.
-    items.push(separator("sys-sep-display"));
-    if (isDmgModel(cfg.model)) {
-      items.push(
-        cycler("sys-dmg-palette", "DMG Palette", DMG_PALETTE_NAMES, Math.max(0, DMG_PALETTE_VALUES.indexOf(cfg.dmgPalette)), (n) =>
-          systems.setRoleConfig(sys.id, "sameboy", { dmgPalette: DMG_PALETTE_VALUES[n] }),
-        ),
-      );
-    } else {
-      items.push(
-        cycler("sys-color-correction", "Color Correction", COLOR_CORRECTION_NAMES, Math.max(0, COLOR_CORRECTION_VALUES.indexOf(cfg.colorCorrection)), (n) =>
-          systems.setRoleConfig(sys.id, "sameboy", { colorCorrection: COLOR_CORRECTION_VALUES[n] }),
-        ),
-        cycler("sys-light-temp", "Light Temp", LIGHT_TEMP_NAMES, nearestIndex(LIGHT_TEMP_STEPS, cfg.lightTemperature), (n) =>
-          systems.setRoleConfig(sys.id, "sameboy", { lightTemperature: LIGHT_TEMP_STEPS[n] }),
-        ),
-      );
-    }
-  }
-  // NES-only core knobs (the "mesen" role also attaches to GBA, so gate on platform, not core).
-  if (sys.platform === "nes") {
-    const cfg = mesenConfig(sys);
-    items.push(
-      cycler("sys-nes-region", "Region", REGION_NAMES, Math.max(0, REGION_VALUES.indexOf(cfg.region)), (n) => systems.setRoleConfig(sys.id, "mesen", { region: REGION_VALUES[n] })),
-      cycler("sys-nes-spritelimit", "Remove Sprite Limit", OFF_ON, cfg.removeSpriteLimit ? 1 : 0, (n) =>
-        systems.setRoleConfig(sys.id, "mesen", { removeSpriteLimit: n === 1 }),
-      ),
-      cycler("sys-nes-apu-latency", "APU Latency", APU_LATENCY_NAMES, nearestIndex(APU_LATENCY_MS, cfg.apuLatencyMs), (n) =>
-        systems.setRoleConfig(sys.id, "mesen", { apuLatencyMs: APU_LATENCY_MS[n] }),
-      ),
-      cycler("sys-nes-exp-volume", "Expansion Volume", EXP_VOLUME_NAMES, nearestIndex(EXP_VOLUMES, cfg.expansionVolume), (n) =>
-        systems.setRoleConfig(sys.id, "mesen", { expansionVolume: EXP_VOLUMES[n] }),
-      ),
-      // This system's traffic reaches a real Everdrive N8 Pro (its rp.n8.nes takes the same MIDI and bytes the
-      // emulated core does). ON by default - it is what every project did before the setting existed - and the cart is
-      // driven by the FIRST NES in slot order that has it on, so a second system takes it over only if this one lets go.
-      cycler("sys-nes-drive-cart", "Drive Real Cart", OFF_ON, cfg.driveRealCart ? 1 : 0, (n) =>
-        systems.setRoleConfig(sys.id, "mesen", { driveRealCart: n === 1 }),
-      ),
-    );
-  }
-  // SMS/GG-only core knobs (same "mesen" role, gated on platform for the same reason as above).
-  // FM Audio is read only at construct (configureSms runs before LoadRom), so flipping it rebuilds the core:
-  // setRoleConfig's construct-time edit is a reset, which carries the battery and the working song.
-  // On Game Gear too: stock hardware has no YM2413, but Mesen's Game Gear port map falls through to the
-  // SMS ports (WriteGameGearPort's default) and so reaches it, and smsggdj drives it there for GG FM mods.
-  if (sys.platform === "sms" || sys.platform === "gg") {
-    const cfg = mesenConfig(sys);
-    items.push(
-      cycler("sys-sms-fm", "FM Audio", OFF_ON, cfg.enableFm ? 1 : 0, (n) =>
-        systems.setRoleConfig(sys.id, "mesen", { enableFm: n === 1 }),
-      ),
-    );
-  }
+  // A console's core-role knobs are its package's declarative rows (its UI contribution), rendered here over the role
+  // config: the SameBoy display group and the Mesen per-platform knobs, in the product order their packages sit in.
+  items.push(
+    ...roleRowItems(roleRows(), sys, (kind) => ctx.stores.registry.roleType(kind), (role, key, value) =>
+      systems.setRoleConfig(sys.id, role, { [key]: value }),
+    ),
+  );
   // Save/Load SRAM + State. The quick "Save SRAM"/"Save State" write to the ROM's sibling path with no
   // dialog (a real ROM only — the embedded synth has no on-disk target); the "As…" variants browse. The
   // store reads/writes the resolved path (the registry read is safe while playing; load reconstructs the
@@ -2121,11 +1962,19 @@ const TRACKER_UI: Record<string, TrackerUi> = {
   bliptoaster: { asset: blipToasterAssetSpec, extras: blipToasterExtras },
 };
 
-// One tracker's instance-submenu children: its extras (if any), the shared Songs menu (only if the
-// console has a song battery), its asset menus, then the whole-ROM bake rows.
+// One tracker's instance-submenu children: the rows its package contributes (its sync knobs), its extras (if any), the
+// shared Songs menu (only if the console has a song battery), its asset menus, then the whole-ROM bake rows.
 function trackerChildren(t: TrackerIntegration, ctx: MenuContext, sys: SystemView): MenuItem[] {
   const ui = TRACKER_UI[t.id];
+  const contributed = contributedTrackerUi(t.id);
+  const systems = ctx.stores.project.systems;
   return [
+    ...roleRowItems(
+      contributed?.extras?.rows ?? [],
+      sys,
+      (kind) => ctx.stores.registry.roleType(kind),
+      (role, key, val) => systems.setRoleConfig(sys.id, role, { [key]: val }),
+    ),
     ...(ui.extras ? ui.extras(ctx, sys) : []),
     ...(ui.song ? [songMenu(ui.song, ctx, sys)] : []),
     ...assetMenu(ui.asset, ctx, sys),
@@ -2133,24 +1982,10 @@ function trackerChildren(t: TrackerIntegration, ctx: MenuContext, sys: SystemVie
   ];
 }
 
-// LSDj's sync cyclers (Mode / Tempo Divisor / Auto Start) + a separator — the one per-console tracker extra
-// not yet unified (risa has no sync knobs).
+// The tail of LSDj's tracker extras, after the sync rows its package contributes: the HD Player action and the
+// separator before the asset menus. Both are the shell's until the tracker entries' own builders land.
 function lsdjExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
-  const systems = ctx.stores.project.systems;
-  const cfg = roleConfig(sys.roles, "lsdj-sync") ?? {};
-  const mode = typeof cfg.mode === "string" ? (cfg.mode as LsdjSyncMode) : "midiSync";
-  const divisor = typeof cfg.tempoDivisor === "number" ? cfg.tempoDivisor : 1;
-  const autoStart = cfg.autoStart === true;
   return [
-    cycler("lsdj-mode", "Mode", LSDJ_MODE_NAMES, Math.max(0, LSDJ_MODE_VALUES.indexOf(mode)), (n) => systems.setRoleConfig(sys.id, "lsdj-sync", { mode: LSDJ_MODE_VALUES[n] })),
-    cycler("lsdj-divisor", "Tempo Divisor", LSDJ_DIVISORS.map(String), Math.max(0, LSDJ_DIVISORS.indexOf(divisor)), (n) =>
-      systems.setRoleConfig(sys.id, "lsdj-sync", { tempoDivisor: LSDJ_DIVISORS[n] }),
-    ),
-    // Auto Start taps START on the host transport rise to auto-arm SYNC=MIDI carts (MidiSync / Arduinoboy) —
-    // off by default so the modes keep their manual-arm behaviour.
-    cycler("lsdj-autostart", "Auto Start", OFF_ON, autoStart ? 1 : 0, (n) =>
-      systems.setRoleConfig(sys.id, "lsdj-sync", { autoStart: n === 1 }),
-    ),
     // The HD player: song + all four chains + all four phrases on one full-window screen, in the cart's
     // own font and palette. The cart keeps playing and stays playable underneath; Esc returns to the grid.
     action("lsdj-hd", "HD Player", () => ctx.openLsdjHd(sys.id)),
@@ -2530,7 +2365,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         const id = systems.duplicateSystem(sys.id);
         if (id != null) systems.inheritLinkGroup(id, sys.id);
       }),
-      // Replace / Remove only make sense with a peer instance — hidden for a lone instance.
+      // Replace / Remove only make sense with a peer instance: hidden for a lone instance.
       ...(multi
         ? [
             songGuardedAction(ctx, sys, "inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
@@ -2538,12 +2373,19 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
           ]
         : []),
       // Link Group is SameBoy-only (the GB serial link cable); on a NES/GBA peer it would be a dead
-      // always-"Off" row, so gate it on the core too — not just on having a peer.
+      // always-"Off" row, so gate it on the core too, not just on having a peer. A stored value that is
+      // not a number (a hand-edited project) reads as Off, which is what the core does with it too.
       ...(multi && sys.core === "sameboy"
         ? [
             separator("inst-sep-link"),
-            cycler("inst-link", "Link Group", LINK_GROUP_NAMES, sameboyConfig(sys).linkGroupId, (n) =>
-              systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
+            cycler(
+              "inst-link",
+              "Link Group",
+              LINK_GROUP_NAMES,
+              typeof roleConfig(sys.roles, "sameboy")?.linkGroupId === "number"
+                ? (roleConfig(sys.roles, "sameboy")?.linkGroupId as number)
+                : 0,
+              (n) => systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
             ),
           ]
         : []),

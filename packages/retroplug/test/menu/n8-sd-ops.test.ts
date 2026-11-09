@@ -10,7 +10,7 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuItem } from "@retroplug/ui/menu";
 import { getN8CartJob, n8RestoreSram, projectCart, resetN8CartJob } from "../../ui/screens/menu/n8SdOps";
 import { setN8LinkClient } from "../../ui/screens/menu/n8Devices";
 import { nesRom, gbRom } from "../systems/fixtures";

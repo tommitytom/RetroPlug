@@ -8,7 +8,7 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuItem } from "@retroplug/ui/menu";
 import { LsdjRom, ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "@retroplug/lsdj/rom";
 import { lsdjAssetCatalog } from "@retroplug/lsdj/lsdjAssetCatalog";
 import { BlipToasterRom } from "@retroplug/bliptoaster/rom";

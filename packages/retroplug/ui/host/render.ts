@@ -6,6 +6,7 @@
 import type { SystemView } from "../../src/systemsStore";
 import type { SplitMode, OnExists } from "../../src/render";
 import { resolveSongCatalog } from "../../src/trackerRegistry";
+import { consoleOfPlatform } from "../../src/consoles";
 import { stem } from "../../src/pathUtil";
 import { resolveSavPath } from "../../src/savPaths";
 import type { RenderJobs, RenderJobStatus } from "../../src/renderJobs";
@@ -107,12 +108,15 @@ export function renderBaseName(backend: Pick<RenderBackend, "readSram">, sys: Sy
   return song || savName || stem(sys.romPath) || "render";
 }
 
-/** The split modes valid for a system's platform: mix always; channels on GB/NES; pins on NES only. Used to
- *  gate the Render menu's Split selector + to clamp a stored split to the system being rendered. */
-export function validSplits(sys: Pick<SystemView, "core" | "platform">): SplitMode[] {
+/** The split modes valid for a system's platform: mix always, then each layout the console descriptor declares
+ *  (`splits.channels` / `splits.pins`: the Game Boy's four channels, the NES's five and its pins, nothing for the GBA
+ *  or Sega consoles). Used to gate the Render menu's Split selector and to clamp a stored split to the system being
+ *  rendered. */
+export function validSplits(sys: Pick<SystemView, "platform">): SplitMode[] {
+  const splits = consoleOfPlatform(sys.platform)?.splits;
   const out: SplitMode[] = ["mix"];
-  if (sys.core === "sameboy" || sys.platform === "nes") out.push("channels");
-  if (sys.platform === "nes") out.push("pins");
+  if (splits?.channels) out.push("channels");
+  if (splits?.pins) out.push("pins");
   return out;
 }
 

@@ -121,6 +121,80 @@ test("the fixture product list and manifests generate the expected scriptNodes.t
   expect(await matchesFixture("generate", "scriptNodes.ts")).toBe(true);
 });
 
+test("the fixture product list and manifests generate the expected menus.ts", async () => {
+  expect(await matchesFixture("generate", "menus.ts")).toBe(true);
+});
+
+test("the generated menus module carries the packages' UI contributions in product order", async () => {
+  const { packages } = await drive("ui");
+  expect(packages).toEqual(["alpha", "beta"]);
+});
+
+test("the generated menus module refuses a row id used twice in a placement", async () => {
+  const { error } = await drive("ui-duplicate-row");
+  console.log(`# duplicate row id: ${error}`);
+  expect(error).toBe("the package alpha declares the row alpha-model twice in the placement system.settings");
+});
+
+test("the generated menus module refuses a builder at a placement no placement has", async () => {
+  const { error } = await drive("ui-unknown-placement");
+  console.log(`# unknown placement: ${error}`);
+  expect(error).toBe(
+    'the package alpha declares a menu builder at the placement instance.elsewhere, which is no placement (the ' +
+      "placements are instance.tracker, instance.devices, instance.footer, system.settings, start, settings.midi)",
+  );
+});
+
+test("the generated menus module refuses a row whose role kind no registered role type declares", async () => {
+  const { error } = await drive("ui-role-undeclared");
+  console.log(`# row role undeclared: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the row alpha-model over the role nowhere, which no registered role type has",
+  );
+});
+
+test("the generated menus module refuses a row whose key its role's schema does not declare", async () => {
+  const { error } = await drive("ui-unknown-key");
+  console.log(`# row key undeclared: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the row alpha-model over the key nonsense, which the role alpha-role does not read",
+  );
+});
+
+test("the generated menus module refuses a row gated on a key its role's schema does not declare", async () => {
+  const { error } = await drive("ui-unknown-when-key");
+  console.log(`# row gate key undeclared: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the row alpha-model gated on the key nonsense, which the role alpha-role does not read",
+  );
+});
+
+test("the generated menus module refuses a tracker UI id no registered integration has", async () => {
+  const { error } = await drive("ui-unknown-tracker");
+  console.log(`# tracker id unregistered: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares a tracker UI for nowhere, which no registered tracker integration has",
+  );
+});
+
+test("the generated menus module refuses a tracker UI id declared twice", async () => {
+  const { error } = await drive("ui-duplicate-tracker");
+  console.log(`# tracker id twice: ${error}`);
+  expect(error).toBe("the package alpha declares the tracker UI alpha-tracks twice");
+});
+
+test("the generated menus module refuses a UI service id declared twice", async () => {
+  const { error } = await drive("ui-duplicate-service");
+  console.log(`# service id twice: ${error}`);
+  expect(error).toBe("the package alpha declares the UI service alpha-watch twice");
+});
+
+test("a retroplug.ui member naming a module that is not there is refused", async () => {
+  const { error } = await drive("ui-missing-module");
+  console.log(`# missing ui module: ${error}`);
+  expect((error as string).includes("alpha: retroplug.ui names ts/nothing.ts, which does not exist (")).toBe(true);
+});
+
 test("the generated entry bundles and registers the manifests' nodes in span-label order", async () => {
   const { registered } = await drive("run");
   console.log(`# registered: ${(registered as string[]).join(", ")}`);
@@ -364,7 +438,8 @@ test("a contribution its exports do not publish is refused, naming the file and 
   console.log(`# unexported app: ${error}`);
   expect(error).toBe(
     "alpha: its manifest names ts/app.ts, which its exports do not publish: the generated import needs the entry " +
-      "whose target is ./ts/app.ts (its exports: ./consoles -> ./ts/consoles.ts, ./nodes -> ./ts/nodes.ts, ./appRuntime -> ./ts/appRuntime.ts)",
+      "whose target is ./ts/app.ts (its exports: ./consoles -> ./ts/consoles.ts, ./nodes -> ./ts/nodes.ts, " +
+      "./appRuntime -> ./ts/appRuntime.ts, ./ui -> ./ts/ui.ts)",
   );
 });
 
@@ -531,8 +606,8 @@ test("an unchanged input leaves the generated files untouched", async () => {
   const report = await drive("twice");
   const [changedFirst, changedSecond] = report.changed as [boolean[], boolean[]];
   const [before, after] = report.mtimes as [number[], number[]];
-  expect(changedFirst).toEqual([true, true, true, true]);
-  expect(changedSecond).toEqual([false, false, false, false]);
+  expect(changedFirst).toEqual([true, true, true, true, true]);
+  expect(changedSecond).toEqual([false, false, false, false, false]);
   // The driver aged the files by a minute before the second run, so a rewrite would show: these are the same stamps.
   expect(after).toEqual(before);
   expect(after[0]).toBe(before[0]);
@@ -540,6 +615,7 @@ test("an unchanged input leaves the generated files untouched", async () => {
   expect(after[2]).toBe(before[2]);
   expect(after[3]).toBe(before[3]);
   expect(after[4]).toBe(before[4]);
+  expect(after[5]).toBe(before[5]);
 });
 
 test("the generated module refuses two control-plane halves of one id, naming both packages", async () => {

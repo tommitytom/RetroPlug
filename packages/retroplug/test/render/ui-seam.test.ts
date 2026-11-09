@@ -269,9 +269,13 @@ test("renderBadgeLabel: the elapsed rendered duration while rendering, the failu
 });
 
 test("validSplits: gates channels/pins on platform", () => {
-  expect(validSplits({ core: "sameboy", platform: "gb" })).toEqual(["mix", "channels"]); // GB: no pins
-  expect(validSplits({ core: "mesen", platform: "nes" })).toEqual(["mix", "channels", "pins"]); // NES: all
-  expect(validSplits({ core: "mesen", platform: "gba" })).toEqual(["mix"]); // GBA: mix only
+  // The console descriptor's own declaration decides: the Game Boy channels, the NES channels and pins, the GBA
+  // neither, whatever the core.
+  expect(validSplits({ platform: "gb" })).toEqual(["mix", "channels"]); // GB: no pins
+  expect(validSplits({ platform: "nes" })).toEqual(["mix", "channels", "pins"]); // NES: all
+  expect(validSplits({ platform: "gba" })).toEqual(["mix"]); // GBA: mix only
+  expect(validSplits({ platform: "sms" })).toEqual(["mix"]); // SMS: mix only
+  expect(validSplits({ platform: "gg" })).toEqual(["mix"]); // GG: mix only
 });
 
 test("formatDuration: seconds → M:SS", () => {

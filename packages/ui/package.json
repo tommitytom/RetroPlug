@@ -1,0 +1,22 @@
+{
+  "name": "@retroplug/ui",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The UI's contract, plain TypeScript: the menu data model and its item builders, the contribution types a package's UI module declares (declarative role-config rows, menu builders and their placements, tracker specs and UI services), and the row-reading helpers the shell renders a row with. The React kit follows in F4c.",
+  "exports": {
+    "./contribution": "./ts/contribution.ts",
+    "./menu": "./ts/menu/index.ts"
+  },
+  "dependencies": {
+    "@retroplug/core": "workspace:*",
+    "@retroplug/tracker": "workspace:*"
+  },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
+  }
+}

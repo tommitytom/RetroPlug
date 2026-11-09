@@ -35,7 +35,7 @@ The hand-rolled copies drifted on read-only rows: `unsavedRows` marks them `disa
 nav), but the notice body, the song-discard "has unsaved changes" line and the import notice body were
 focusable no-op actions, so the cursor landed on them and Enter did nothing.
 
-Fix: a pure [menuItems.ts](../packages/retroplug/ui/screens/menu/menuItems.ts) with the builders plus
+Fix: a pure [menuItems.ts](../packages/ui/ts/menu/menuItems.ts) with the builders plus
 `button` (keepOpen action), `infoRow` (disabled readout) and `noticeTree` (body + OK).
 
 ## 3. `__rp_*` native hooks: 52 `globalThis as {...}` casts in 16 files (DONE)

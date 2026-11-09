@@ -1,8 +1,8 @@
 // Mesen's app contribution: the core-config "system" role whose kind IS the core (platform.ts's `Core` value). It is
 // keyed by the core, so this ONE role attaches to any Mesen system (NES, GBA, SMS/GG). The knobs are per-platform and
-// the app's settings menu gates each group on `platform` (its menuDefs.ts): the first three are NES-only, enableFm is
-// SMS/GG-only, and GBA has none of its own yet - it carries them all as inert bytes until it does, at which point the
-// schema grows again.
+// the System submenu gates each group on `platform` (this package's ts/ui/index.ts): the first three are NES-only,
+// enableFm is SMS/GG-only, and GBA has none of its own yet - it carries them all as inert bytes until it does, at which
+// point the schema grows again.
 //
 // The system node reads the fields each platform reads (the shell's graph/buildGraph.ts CONSTRUCT_FIELDS and
 // SETTING_FIELDS), so a field that means nothing on a platform is simply never placed in its settings. The native side

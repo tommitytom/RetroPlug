@@ -37,6 +37,7 @@
     "./lsdjSyncBytes": "./ts/lsdjSyncBytes.ts",
     "./lsdjSyncNode": "./ts/lsdjSyncNode.ts",
     "./lsdjSyncSettings": "./ts/lsdjSyncSettings.ts",
+    "./ui": "./ts/ui/index.ts",
     "./model": "./ts/model.ts",
     "./playback": "./ts/playback/index.ts",
     "./playback/anchor": "./ts/playback/anchor.ts",
@@ -71,6 +72,7 @@
     "@retroplug/dsp": "workspace:*",
     "@retroplug/sameboy": "workspace:*",
     "@retroplug/tracker": "workspace:*",
+    "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -79,6 +81,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "ui": "ts/ui/index.ts",
     "protocol": {
       "module": "ts/protocol.ts",
       "nodes": [

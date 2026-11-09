@@ -34,7 +34,7 @@ import { smsggdjRom, smsggdjRam } from "../systems/fixtures";
 import { commonConfigOffsets } from "@retroplug/smsggdj/runtime/layout";
 import { composeAppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuItem } from "@retroplug/ui/menu";
 
 const CART = 32 * 1024;
 const layout = resolveSmsggdjLayout("0.45")!;

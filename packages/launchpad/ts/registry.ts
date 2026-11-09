@@ -12,20 +12,13 @@
 // Loading user scripts at runtime stays the deferred extension model (spec/07).
 
 import type { RoleConfigSchema } from "@retroplug/core/systemRoles";
+import type { ConfigRow } from "@retroplug/ui/contribution";
 
-/** One of an app's knobs, as the menu offers it: which key of the config it edits and the row's text. A knob the app
+/** One of an app's knobs, as the menu offers it: the UI contract's config row (the same shape a system's role row
+ *  takes), so the shell renders an app's knobs and a console's with one cycler builder and one reader. A knob the app
  *  leaves out is one the menu has no row for (the session's live window, say), which is why this is a list of its own
  *  rather than something the shell derives: labels are the app's words, and only it has them. */
-export interface ControllerAppField {
-  /** A key of the app's config schema: what the row reads and writes. */
-  readonly key: string;
-  /** The row's text. */
-  readonly label: string;
-  /** A choice row: the values (each one the schema accepts) with the text the cycler shows, in offer order. */
-  readonly choices?: readonly { readonly value: string | number; readonly label: string }[];
-  /** An Off/On row (no choices). */
-  readonly toggle?: boolean;
-}
+export type ControllerAppField = ConfigRow;
 
 /** One app's control-plane half: what the registry holds, and what a package's app module contributes. */
 export interface ControllerAppContribution {

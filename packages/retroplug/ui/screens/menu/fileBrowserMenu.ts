@@ -6,8 +6,7 @@
 
 import type { FileBrowserOpts } from "../../../src/backend";
 import { matchesPatterns } from "../../../src/fileBrowser";
-import type { MenuItem, MenuTree } from "./menuTree";
-import { button, infoRow, separator } from "./menuItems";
+import { button, infoRow, separator, type MenuItem, type MenuTree } from "@retroplug/ui/menu";
 
 export interface FileBrowserActions {
   navigate: (dir: string) => void; // enter a directory (App re-renders with the new dir)

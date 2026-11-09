@@ -1,0 +1,43 @@
+// The menus held to what the OLD code built (docs/modular-graph-phase-f4b-design.md section 7.5, item 1), for the whole
+// matrix the case file describes: every console, every tracker cart, a project that drives an N8 and one with a
+// Launchpad running MI.MAP, a two-system project (the Link Group row), the start menu and the settings menus, a
+// standalone host with a control-surface scan idle and in flight, the trackers with songs and a working song, an
+// override and a pinned BlipToaster, a tracker whose ROM cannot be read, and the role and controller configs a
+// hand-edited project can hold.
+//
+// ./recorded-matrix.json was recorded from 8a74339b9's menu code before F4b moved any of it: a `git archive 8a74339b9`
+// tree, over the same ./recorded-cases.ts this test replays, printed `collect()`'s JSON from a throwaway recorder test
+// that stayed outside the repository. Each case's tree carries every item's id, kind, label, `disabled` flag, children
+// and an inline row's verbs in order; each cycler carries its starting label and, per step, the label it shows
+// afterwards beside the project state the step wrote (a diff of the systems' role configs, the project settings and the
+// user config) and the node MIDI it staged (by node position, and the bytes), so a row whose choice list is paired with
+// the wrong values, whose step writes another value than the old one did, or whose step aims a message at another node
+// fails here even though its labels read the same. Each case's card rows also carry the file dialogs they open (the
+// N8's Load ROM filter among them), recorded from the same old tree and held here.
+import { test, expect } from "@retroplug/testing";
+import recorded from "./recorded-matrix.json";
+import { CASES, collect, type RecordedMatrix } from "./recorded-cases";
+
+// One record for the whole file: rebuilding the matrix is the expensive part, and every case's own expectations are
+// independent of the others (a case builds its own stores and stubs its own facets).
+let recordedNow: RecordedMatrix | undefined;
+function matrix(): RecordedMatrix {
+  return (recordedNow ??= collect());
+}
+
+for (const c of CASES) {
+  test(`${c.name}: the menu tree is the recorded one`, () => {
+    const want = (recorded as unknown as RecordedMatrix)[c.name];
+    expect(matrix()[c.name].tree, `${c.name} tree`).toEqual(want.tree);
+  });
+
+  test(`${c.name}: every cycler reads and writes what was recorded`, () => {
+    const want = (recorded as unknown as RecordedMatrix)[c.name];
+    expect(matrix()[c.name].rows, `${c.name} rows`).toEqual(want.rows);
+  });
+
+  test(`${c.name}: every card dialog offers what was recorded`, () => {
+    const want = (recorded as unknown as RecordedMatrix)[c.name];
+    expect(matrix()[c.name].dialogs, `${c.name} dialogs`).toEqual(want.dialogs);
+  });
+}

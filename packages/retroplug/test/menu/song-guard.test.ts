@@ -5,7 +5,7 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuItem } from "@retroplug/ui/menu";
 import { lsdjRom } from "../systems/fixtures";
 import { savFrom, loadSongToWorking, type SavInput } from "@retroplug/lsdj";
 import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";

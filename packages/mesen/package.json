@@ -11,6 +11,7 @@
     ".": "./ts/index.ts",
     "./app": "./ts/app.ts",
     "./consoles": "./ts/consoles.ts",
+    "./ui": "./ts/ui/index.ts",
     "./enums": "./ts/enums.ts"
   },
   "dependencies": {
@@ -18,6 +19,7 @@
     "@retroplug/n8": "workspace:*",
     "@retroplug/node-sdk": "workspace:*",
     "@retroplug/system": "workspace:*",
+    "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -26,6 +28,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "ui": "ts/ui/index.ts",
     "consoles": "ts/consoles.ts",
     "native": { "target": "retroplug-mesen", "entry": "rp_mesen_package", "device": false }
   }

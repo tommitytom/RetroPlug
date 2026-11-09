@@ -92,13 +92,14 @@ export {
 } from "@retroplug/bliptoaster/testFixtures";
 
 /** An smsggdj build's ROM as the providers and the version gate see it: a "TMR SEGA" header whose region
- *  nibble says SMS, the SMSGGDJ marker at $3640 and a `V<version>` string at $367B - where the real v0.45
- *  build puts them (the version is NOT adjacent to the marker; the UI string table sits between). A
- *  supported version (0.45 / 0.46 / 0.47) resolves a work-RAM layout, so the live song path is open. */
-export function smsggdjRom(version = "0.45"): Uint8Array {
+ *  nibble says SMS (4) or Game Gear (6), the SMSGGDJ marker at $3640 and a `V<version>` string at $367B -
+ *  where the real v0.45 build puts them (the version is NOT adjacent to the marker; the UI string table sits
+ *  between). A supported version (0.45 / 0.46 / 0.47) resolves a work-RAM layout, so the live song path is
+ *  open. */
+export function smsggdjRom(version = "0.45", regionNibble = 4): Uint8Array {
   const b = new Uint8Array(0x8200);
   b.set([0x54, 0x4d, 0x52, 0x20, 0x53, 0x45, 0x47, 0x41], 0x7ff0); // "TMR SEGA"
-  b[0x7ff0 + 0xf] = 0x40; // region nibble 4 -> SMS
+  b[0x7ff0 + 0xf] = regionNibble << 4; // 4 -> SMS, 5-7 -> Game Gear
   for (let i = 0; i < "SMSGGDJ".length; i++) b[0x3640 + i] = "SMSGGDJ".charCodeAt(i);
   const v = `V${version}`;
   for (let i = 0; i < v.length; i++) b[0x367b + i] = v.charCodeAt(i);

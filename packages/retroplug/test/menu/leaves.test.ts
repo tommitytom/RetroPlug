@@ -6,10 +6,10 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildStartMenu, buildInstanceMenu, composeWindowTitle, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuItem } from "@retroplug/ui/menu";
 import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadToAction, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery } from "../systems/fixtures";
+import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery, smsggdjRom } from "../systems/fixtures";
 import { savFrom, loadSongToWorking, type SavInput } from "@retroplug/lsdj";
 import { lsdjSongCatalog } from "@retroplug/lsdj/lsdjSongCatalog";
 
@@ -447,6 +447,28 @@ test("Audio Routing offers the splits only for a single system (Channels), and t
   stores.project.setAudioRouting("onePerInstance");
   audioRow().onSelect!();
   expect(stores.project.settings().audioRouting).toBe("stereo");
+});
+
+test("Audio Routing offers no pin modes for a single SMS or Game Gear, only Channels", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/g.sms", smsggdjRom());
+  // A Game Gear's own header (region nibble 6), not an SMS image under a `.gg` name: the nibble decides when it names
+  // a machine, so only this seed actually makes the case a Game Gear.
+  be.seed("/roms/g.gg", smsggdjRom("0.45", 6));
+  const audioRow = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project"), "proj-audio")!;
+  for (const [path, platform] of [["/roms/g.sms", "sms"], ["/roms/g.gg", "gg"]]) {
+    stores.project.systems.addSystem(path);
+    expect(stores.project.systems.view()[0].platform).toBe(platform);
+    stores.project.setAudioRouting("onePerInstance");
+    audioRow().onSelect!();
+    expect(stores.project.settings().audioRouting).toBe("channelSplit");
+    expect(audioRow().label).toBe("Audio Routing: Channels");
+    // Past Channels there is no pins row to land on: the cycle wraps to Stereo.
+    audioRow().onSelect!();
+    expect(stores.project.settings().audioRouting).toBe("stereo");
+    stores.project.systems.removeSystem(stores.project.systems.view()[0].id);
+  }
 });
 
 test("Audio Routing offers both pin modes for a single NES, after Channels", () => {

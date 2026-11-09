@@ -8,7 +8,7 @@ import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
 import type { AppStores } from "../../src/appStores";
 import { buildProjectModal, type ProjectModalHandlers } from "../../ui/app/projectModals";
-import type { MenuItem, MenuTree } from "../../ui/screens/menu/menuTree";
+import type { MenuItem, MenuTree } from "@retroplug/ui/menu";
 import { gbRomBattery } from "../systems/fixtures";
 
 function setup() {

@@ -40,9 +40,15 @@ test("every row an app offers edits a key of its own schema, with values that sc
     for (const field of app.menu ?? []) {
       rows++;
       expect(Object.prototype.hasOwnProperty.call(schema, field.key)).toBe(true);
-      expect(field.toggle === true || field.choices !== undefined).toBe(true);
-      const values = field.choices?.map((c) => c.value) ?? [schema[field.key]];
-      if (field.choices) expect(field.choices.length > 0).toBe(true);
+      // The row is one of the config row's shapes (the UI contract's ConfigRow): a choice list, an Off/On toggle or a
+      // range of steps. Each step is held like a choice value: the schema must accept it unchanged.
+      expect("toggle" in field || "choices" in field || "range" in field).toBe(true);
+      const values = "choices" in field
+        ? field.choices.map((c) => c.value)
+        : "range" in field
+          ? field.range.steps
+          : [schema[field.key]];
+      if ("choices" in field) expect(field.choices.length > 0).toBe(true);
       for (const value of values) expect(app.config.parse({ [field.key]: value })[field.key]).toEqual(value);
     }
   }

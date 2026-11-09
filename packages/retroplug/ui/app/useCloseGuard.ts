@@ -16,8 +16,7 @@ import { saveProjectInteractive } from "./saveProjectInteractive";
 import { unsavedRows } from "./unsavedRows";
 import type { Overlay } from "./overlay";
 import { native } from "../host/nativeHooks";
-import type { MenuTree } from "../screens/menu/menuTree";
-import { button } from "../screens/menu/menuItems";
+import { button, type MenuTree } from "@retroplug/ui/menu";
 
 /** The unsaved-changes prompt as an overlay: Save & Quit / Discard & Quit / Cancel (= onClose). */
 export type CloseGuard = Overlay;

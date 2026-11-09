@@ -5,7 +5,7 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuAction, MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuAction, MenuItem } from "@retroplug/ui/menu";
 import { risaRom, risaRomFull, nesRom, setRisaVersionMarker } from "../systems/fixtures";
 import { RisaRom } from "@retroplug/risa/rom";
 import { savBytes } from "@retroplug/risa/testFixtures";

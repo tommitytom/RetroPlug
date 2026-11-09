@@ -20,6 +20,9 @@
 //   packages/retroplug/src/generated/scriptNodes.ts  the script-node bundle's entry, registering each package's
 //                                                    controller app runtime and then its node definitions, in
 //                                                    span-label order
+//   packages/retroplug/ui/generated/menus.ts          the packages' UI contributions, in product order, and the checks
+//                                                    their rows and builders are held to at load. Imported only by
+//                                                    ui/, so no other bundle carries a menu contribution
 //
 // The product list is the root package.json's retroplug.products.desktop, the same array the root CMakeLists.txt reads
 // into RP_DESKTOP_PACKAGES (string(JSON)), so the two languages cannot register different products. THE LIST IS ALSO
@@ -34,11 +37,13 @@
 //
 // A package's contributions are its manifest's retroplug.app (a module default-exporting definePackage's lists),
 // retroplug.consoles (a module default-exporting the console descriptors its cores run and the physical carts one of
-// them can drive) and retroplug.protocol (its node definitions' module, the nodes' wiring and labels, and which role
-// kind each is placed as). The consoles are apart from the app module because they are data the PLANNER reads, and the
-// app module is where a role's schema and zod are (test/script/bundle-protocol.test.ts holds the planner to carrying
-// neither). The app's lists are the product order's, and only a ROM provider's place in it is behaviour: the providers
-// run in order, and the first to match a ROM fixes the feature roles' order. A role's kind, a kit format's id and a
+// them can drive), retroplug.protocol (its node definitions' module, the nodes' wiring and labels, and which role
+// kind each is placed as) and retroplug.ui (a module default-exporting defineUi's contribution: the system-settings
+// rows, the menu builders, the tracker specs and the UI services its package adds). The consoles are apart from the app
+// module because they are data the PLANNER reads, and the app module is where a role's schema and zod are
+// (test/script/bundle-protocol.test.ts holds the planner to carrying neither). The app's lists are the product order's,
+// and only a ROM provider's place in it is behaviour: the providers run in order, and the first to match a ROM fixes
+// the feature roles' order. A role's kind, a kit format's id and a
 // tracker integration's marker role are looked up, not sequenced (one package's roles interleave another's without
 // consequence), so the generated module refuses a duplicate rather than let one silently replace another.
 //
@@ -130,7 +135,8 @@ function readPackage(root, name) {
  *  member (the last is bytes rather than code, and a product that dropped the package would bake nothing in). */
 function contributes(pkg) {
   return pkg.retroplug.app !== undefined || pkg.retroplug.consoles !== undefined ||
-    pkg.retroplug.protocol !== undefined || pkg.retroplug.embed !== undefined;
+    pkg.retroplug.protocol !== undefined || pkg.retroplug.embed !== undefined ||
+    pkg.retroplug.ui !== undefined;
 }
 
 /** Whether an unlisted dependency contributes to the app, judged tolerantly: a package with no manifest, or a manifest
@@ -242,7 +248,7 @@ function syncRule(pkg, appId, sync) {
 /** What one package contributes, from its manifest: its app module, its consoles module and its protocol nodes, each
  *  checked for what the generated modules need. */
 function contributions(pkg) {
-  const out = { app: null, consoles: null, protocol: null, nodes: [], roles: {}, apps: [], embeds: [] };
+  const out = { app: null, consoles: null, protocol: null, ui: null, nodes: [], roles: {}, apps: [], embeds: [] };
   const retroplug = pkg.retroplug;
   // The files this package bakes into a product's binary (`retroplug.embed`), which the app module declares as
   // `embeds` entries (id, label, platform) for the shell to load them by. The generator emits both sides and the
@@ -275,6 +281,12 @@ function contributions(pkg) {
       );
     }
     out.consoles = entryFile(pkg, "consoles", retroplug.consoles);
+  }
+  if (retroplug.ui !== undefined) {
+    if (typeof retroplug.ui !== "string" || retroplug.ui === "") {
+      throw new Error(`${pkg.name}: retroplug.ui must be a module path, not ${JSON.stringify(retroplug.ui)}`);
+    }
+    out.ui = entryFile(pkg, "ui", retroplug.ui);
   }
   if (retroplug.protocol === undefined) return out;
   const protocol = retroplug.protocol;
@@ -669,6 +681,129 @@ function renderPackages({ packages, outDir }) {
     "}",
     "",
   );
+  return lines.join("\n");
+}
+
+/** The generated UI contributions module (`<shell>/ui/generated/menus.ts`): each package's `retroplug.ui` module, in
+ *  product order, and the checks a contribution is held to at load. The order is the menus' order - a system-settings
+ *  block's rows and a device entry land where the package sits in the product list - so it is the list's, not a sort. */
+function renderMenus({ packages, outDir }) {
+  const contributors = packages.filter((p) => p.ui);
+  // A module identifier per package: the package name loses its punctuation, and a collision would be a tsc error
+  // naming neither manifest.
+  const local = (name) => `ui_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
+  const lines = [
+    "// Generated by packages/retroplug/scripts/lib/packages.mjs from the desktop product's package list and the",
+    "// packages' manifests. Do not edit; edit a manifest and rebuild.",
+    "//",
+    "// The product's UI contributions, in product order: each package's `retroplug.ui` module, which default-exports the",
+    "// system-settings rows, menu builders, tracker specs and services it adds. The shell composes the menus from this",
+    "// list, so a package's place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports",
+    "// this module: the control plane, the render worker, the SDK and the planner carry no menu contribution.",
+    'import { PLACEMENTS, type RoleRow, type UiContribution } from "@retroplug/ui/contribution";',
+  ];
+  for (const p of contributors) {
+    lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.ui)}";`);
+  }
+  // The role kinds and tracker integrations the product registers, for the checks below: a row over a kind nothing
+  // registers, or over a key its role's schema does not read, would render nowhere and do nothing, and a tracker UI no
+  // integration matches would never be found - typos the compiler cannot see in a data literal.
+  lines.push('import { ROLES, TRACKER_INTEGRATIONS } from "../../src/generated/packages";');
+  lines.push("");
+  lines.push("/** Each package's UI contribution, in product order. */");
+  lines.push("export const UI_CONTRIBUTIONS: readonly { pkg: string; ui: UiContribution }[] = [");
+  for (const p of contributors) {
+    lines.push(`  { pkg: ${JSON.stringify(p.pkg.name)}, ui: ${local(p.pkg.name)} },`);
+  }
+  lines.push("];");
+  lines.push("");
+  lines.push("// A row's id has to be unique inside its placement: the menu is keyed by id, so a second row of one id would");
+  lines.push("// take the first one's place (a system-settings row lands in the System submenu, a tracker's extras in its own");
+  lines.push("// submenu).");
+  lines.push("const rowOwners = new Map<string, string>();");
+  lines.push("function claimRow(placement: string, id: string, pkg: string): void {");
+  lines.push("  const owner = rowOwners.get(`${placement}:${id}`);");
+  lines.push("  if (owner === undefined) {");
+  lines.push("    rowOwners.set(`${placement}:${id}`, pkg);");
+  lines.push("    return;");
+  lines.push("  }");
+  lines.push("  throw new Error(owner === pkg");
+  lines.push("    ? `the package ${pkg} declares the row ${id} twice in the placement ${placement}`");
+  lines.push("    : `two packages declare the row ${id} in the placement ${placement}: ${owner} and ${pkg}`);");
+  lines.push("}");
+  lines.push("");
+  lines.push("const roleKinds = new Set(ROLES.map((role) => role.kind));");
+  lines.push("/** The keys a role's schema declares, which are the only ones a row can read (or gate on). */");
+  lines.push(
+    "const roleKeys = new Map(ROLES.map((role) => [role.kind, new Set(Object.keys(role.schema.parse({})))]));",
+  );
+  lines.push("const trackerIds = new Set(TRACKER_INTEGRATIONS.map((integration) => integration.id));");
+  lines.push("const trackerOwners = new Map<string, string>();");
+  lines.push("// A service is looked up by its id: two of one id would run one of them twice or the other never, so a");
+  lines.push("// duplicate is refused rather than let the second definition win.");
+  lines.push("const serviceOwners = new Map<string, string>();");
+  lines.push("const placements = new Set<string>(PLACEMENTS);");
+  lines.push("");
+  lines.push("/** One contributed row: its role must be registered, its id unique in its placement, and its key (and its");
+  lines.push(" *  gate's key) one its role's schema reads. */");
+  lines.push("function checkRow(placement: string, pkg: string, row: RoleRow): void {");
+  lines.push("  if (!roleKinds.has(row.role)) {");
+  lines.push("    throw new Error(`the package ${pkg} declares the row ${row.id} over the role ${row.role}, which no ` +");
+  lines.push('      "registered role type has");');
+  lines.push("  }");
+  lines.push("  claimRow(placement, row.id, pkg);");
+  lines.push("  const keys = roleKeys.get(row.role)!;");
+  lines.push("  if (!keys.has(row.key)) {");
+  lines.push(
+    "    throw new Error(`the package ${pkg} declares the row ${row.id} over the key ${row.key}, which the role ` +",
+  );
+  lines.push('      `${row.role} does not read`);');
+  lines.push("  }");
+  lines.push("  if (row.when && !keys.has(row.when.key)) {");
+  lines.push(
+    "    throw new Error(`the package ${pkg} declares the row ${row.id} gated on the key ${row.when.key}, which ` +",
+  );
+  lines.push('      `the role ${row.role} does not read`);');
+  lines.push("  }");
+  lines.push("}");
+  lines.push("");
+  lines.push("for (const { pkg, ui } of UI_CONTRIBUTIONS) {");
+  lines.push("  for (const row of ui.rows ?? []) checkRow(\"system.settings\", pkg, row);");
+  lines.push("  for (const tracker of ui.trackers ?? []) {");
+  lines.push("    if (!trackerIds.has(tracker.id)) {");
+  lines.push(
+    "      throw new Error(`the package ${pkg} declares a tracker UI for ${tracker.id}, which no registered ` +",
+  );
+  lines.push('        "tracker integration has");');
+  lines.push("    }");
+  lines.push("    const owner = trackerOwners.get(tracker.id);");
+  lines.push("    if (owner !== undefined) {");
+  lines.push("      throw new Error(owner === pkg");
+  lines.push("        ? `the package ${pkg} declares the tracker UI ${tracker.id} twice`");
+  lines.push("        : `two packages declare a tracker UI for ${tracker.id}: ${owner} and ${pkg}`);");
+  lines.push("    }");
+  lines.push("    trackerOwners.set(tracker.id, pkg);");
+  lines.push(
+    "    for (const row of tracker.extras?.rows ?? []) checkRow(`instance.tracker:${tracker.id}`, pkg, row);",
+  );
+  lines.push("  }");
+  lines.push("  for (const service of ui.services ?? []) {");
+  lines.push("    const owner = serviceOwners.get(service.id);");
+  lines.push("    if (owner !== undefined) {");
+  lines.push("      throw new Error(owner === pkg");
+  lines.push("        ? `the package ${pkg} declares the UI service ${service.id} twice`");
+  lines.push("        : `two packages declare a UI service ${service.id}: ${owner} and ${pkg}`);");
+  lines.push("    }");
+  lines.push("    serviceOwners.set(service.id, pkg);");
+  lines.push("  }");
+  lines.push("  for (const menu of ui.menus ?? []) {");
+  lines.push("    if (!placements.has(menu.placement)) {");
+  lines.push("      throw new Error(`the package ${pkg} declares a menu builder at the placement ${menu.placement}, ` +");
+  lines.push('        `which is no placement (the placements are ${PLACEMENTS.join(", ")})`);');
+  lines.push("    }");
+  lines.push("  }");
+  lines.push("}");
+  lines.push("");
   return lines.join("\n");
 }
 
@@ -1091,8 +1226,13 @@ export function generate({ root = REPO } = {}) {
     { path: join(outDir, "consoles.ts"), content: renderConsoles({ packages: contributionsOf, outDir }) },
     { path: join(outDir, "protocol.ts"), content: renderProtocol({ byType, roles, apps: contributionsOf }) },
     { path: join(outDir, "scriptNodes.ts"), content: renderScriptNodes({ packages: contributionsOf, outDir }) },
+    {
+      path: join(shell.dir, "ui/generated/menus.ts"),
+      content: renderMenus({ packages: contributionsOf, outDir: join(shell.dir, "ui/generated") }),
+    },
   ];
   mkdirSync(outDir, { recursive: true });
+  mkdirSync(join(shell.dir, "ui/generated"), { recursive: true });
   const stamp = Math.random().toString(36).slice(2, 10);
   const written = files.map((file) => ({ path: file.path, changed: writeIfChanged(file.path, file.content, stamp) }));
   return { packages: ordered.map((p) => p.name), files: written };

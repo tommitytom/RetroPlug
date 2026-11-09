@@ -572,7 +572,7 @@ widget's native uid for the test harness and is inert in production.
 
 ### The menu — [`screens/menu/`](../packages/retroplug/ui/screens/menu)
 
-- [`menuTree.ts`](../packages/retroplug/ui/screens/menu/menuTree.ts) is the pure data
+- [`menuTree.ts`](../packages/ui/ts/menu/menuTree.ts) is the pure data
   model: `MenuItem { id, label, kind: "action"|"submenu"|"separator"|"cycler"|"actionCycler", … }`
   where each leaf carries its own effect callback (no dispatch). An **`actionCycler`** is the flat
   alternative to a one-row submenu: the row carries an `actions` list and, **while focused**, renders as

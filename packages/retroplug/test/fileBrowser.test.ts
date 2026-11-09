@@ -3,7 +3,7 @@
 import { test, expect } from "@retroplug/testing";
 import { globToRegExp, matchesPatterns, requestFileBrowser, getFileBrowserRequest, resolveFileBrowser } from "../src/fileBrowser";
 import { buildFileBrowserMenu } from "../ui/screens/menu/fileBrowserMenu";
-import type { MenuItem } from "../ui/screens/menu/menuTree";
+import type { MenuItem } from "@retroplug/ui/menu";
 
 const find = (items: MenuItem[], id: string) => items.find((i) => i.id === id);
 

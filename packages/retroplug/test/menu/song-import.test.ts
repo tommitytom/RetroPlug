@@ -11,7 +11,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { planImport, buildImportModal, applyImport, type PickState, type ImportPending } from "../../ui/app/songImport";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuItem } from "@retroplug/ui/menu";
 import type { SystemView } from "../../src/systemsStore";
 import { savFrom, injectSong, listProjects, isLsdjSav } from "@retroplug/lsdj";
 import { sameBytes } from "@retroplug/testing/bytes";

@@ -9,8 +9,7 @@ import type { ControlPlaneBackend } from "../../src/backend";
 import type { ProjectStore } from "../../src/projectStore";
 import { unsavedChanges, type UnsavedItem } from "../../src/unsavedChanges";
 import { basename } from "../../src/pathUtil";
-import type { MenuItem } from "../screens/menu/menuTree";
-import { infoRow, separator } from "../screens/menu/menuItems";
+import { infoRow, separator, type MenuItem } from "@retroplug/ui/menu";
 
 /** Why Save cannot store a working song, as the row says it. */
 export const SONG_BLOCKED: Record<"full" | "format" | "corrupt", string> = {

@@ -14,7 +14,7 @@ import { useWindowSize } from "../../lvgl/useWindowSize";
 import { StableSlot } from "../../lvgl/StableSlot";
 import { EmulatorTile } from "./EmulatorTile";
 import { Menu } from "../menu/Menu";
-import type { MenuTree } from "../menu/menuTree";
+import type { MenuTree } from "@retroplug/ui/menu";
 import type { SystemView } from "../../../src/systemsStore";
 import { SystemLayout, shapeFor, tileWidth, tileHeight, displayZoom } from "./layout";
 

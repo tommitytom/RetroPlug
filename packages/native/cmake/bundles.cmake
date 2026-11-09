@@ -18,6 +18,7 @@
 set(RP_TS_GENERATOR "${CMAKE_SOURCE_DIR}/packages/retroplug/scripts/lib/packages.mjs")
 get_filename_component(RP_TS_SHELL "${RP_TS_GENERATOR}/../../.." ABSOLUTE)
 set(RP_TS_GENERATED "${RP_TS_SHELL}/src/generated")
+set(RP_TS_UI_GENERATED "${RP_TS_SHELL}/ui/generated")
 set(_rp_ts_manifests "${RP_TS_SHELL}/package.json")
 foreach(_rp_ts_package IN LISTS RP_DESKTOP_PACKAGES)
     list(APPEND _rp_ts_manifests "${CMAKE_SOURCE_DIR}/packages/${_rp_ts_package}/package.json")
@@ -26,8 +27,9 @@ add_custom_target(retroplug-ts-packages
     COMMAND ${NODE_EXECUTABLE} ${RP_TS_GENERATOR}
     BYPRODUCTS "${RP_TS_GENERATED}/packages.ts" "${RP_TS_GENERATED}/consoles.ts"
                "${RP_TS_GENERATED}/protocol.ts" "${RP_TS_GENERATED}/scriptNodes.ts"
+               "${RP_TS_UI_GENERATED}/menus.ts"
     SOURCES ${RP_TS_GENERATOR} ${_rp_ts_manifests} "${CMAKE_SOURCE_DIR}/package.json"
-    COMMENT "Generating the TS package registries (packages.ts, consoles.ts, protocol.ts, scriptNodes.ts)"
+    COMMENT "Generating the TS package registries (packages.ts, consoles.ts, protocol.ts, scriptNodes.ts, menus.ts)"
     VERBATIM)
 # The bundles whose esbuild inputs reach the generated modules but which are defined in packages/native/CMakeLists.txt
 # above this include: the render worker, the CLI dispatcher, its example sessions and the SDK it embeds. The control

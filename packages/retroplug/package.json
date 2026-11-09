@@ -24,6 +24,7 @@
     "@retroplug/launchpad": "workspace:*",
     "@retroplug/host-io": "workspace:*",
     "@retroplug/system": "workspace:*",
+    "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

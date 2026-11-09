@@ -5,7 +5,7 @@ import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuAction, MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuAction, MenuItem } from "@retroplug/ui/menu";
 import { blipToasterRom, blipToasterMultiKitRom, nesRom } from "../systems/fixtures";
 import { BlipToasterRom } from "@retroplug/bliptoaster/rom";
 

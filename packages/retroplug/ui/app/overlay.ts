@@ -3,7 +3,7 @@
 // and the input - so "is an overlay up", "what does Esc cancel" and "what is drawn" are each answered once,
 // rather than by a hand-written chain per call site that can (and did) forget one of them.
 
-import type { MenuTree } from "../screens/menu/menuTree";
+import type { MenuTree } from "@retroplug/ui/menu";
 
 export interface Overlay {
   /** The menu tree to draw full-window while the overlay is up; null when it isn't. The ONLY "is it up"

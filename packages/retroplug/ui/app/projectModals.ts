@@ -8,8 +8,7 @@ import { basename } from "../../src/pathUtil";
 import { SAV_PATTERNS } from "../../src/savPaths";
 import { ROM_PATTERNS } from "../../src/fileSelection";
 import { unsavedRows } from "./unsavedRows";
-import type { MenuTree } from "../screens/menu/menuTree";
-import { button, infoRow, noticeTree } from "../screens/menu/menuItems";
+import { button, infoRow, noticeTree, type MenuTree } from "@retroplug/ui/menu";
 
 const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm battery saves
 

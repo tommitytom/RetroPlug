@@ -2,6 +2,7 @@
 // graph, and the way a cart's or a console's UI code reaches the shell. It offers the ten groups a UI has - files, png,
 // systems, songs, liveSongs, dialogs, devices, views, controller, config - and nothing a UI cannot do: no kits (the UI
 // composes no audio driver) and no process (the UI does not own the process).
+import type { UiHost } from "@retroplug/ui/contribution";
 import type { AppStores } from "../../src/appStores";
 import type { ControlPlaneBackend } from "../../src/backend";
 import type { SystemsStore } from "../../src/systemsStore";
@@ -18,9 +19,10 @@ import { makeCall } from "../../src/rpcClient";
 import { createMidiClient } from "../../src/realBackend";
 import { batteryListing } from "../../src/batteryListing";
 
-export type UiHost = Host<
-  "files" | "png" | "systems" | "songs" | "liveSongs" | "dialogs" | "devices" | "views" | "controller" | "config"
->;
+/** The UI surface's host, and the one definition of it: the ui package declares it (`@retroplug/ui/contribution`), so a
+ *  contribution's builder is typed against the host the shell builds and a package, which may never import the shell,
+ *  can still name it. This module re-exports the package's type rather than restating the group list. */
+export type { UiHost } from "@retroplug/ui/contribution";
 
 /** What the host needs that is not a store: the views the shell owns and the song-import picker, both of them App's
  *  React state (the picker is useSongImport's overlay). */
@@ -30,8 +32,8 @@ export interface UiHostPeers {
 }
 
 /** The host groups an import uses - the file I/O, the PNG codec and the running systems - over a backend and a systems
- *  store. `createUiHost` spreads it into the UI host, and the host-groups test builds it on its own; a surface's whole
- *  host satisfies the import hook either way. */
+ *  store. The menu builds this where it imports a file; a surface's whole host satisfies the import hook as it
+ *  stands. */
 export function importHost(
   backend: ControlPlaneBackend,
   systems: SystemsStore,
@@ -61,8 +63,8 @@ export function createUiHost(stores: AppStores, peers: UiHostPeers): UiHost {
     views: peers.views,
     controller: {
       settings: () => stores.project.settings().controller,
-      // A package hands the target over as a plain string, and ProjectStore writes the patch into the live settings, the
-      // published document and the next .rplg save unread, so an unknown value would be a controller that launches
+      // A package hands the target over as a plain string, and ProjectStore writes the patch into the live settings,
+      // the published document and the next .rplg save unread, so an unknown value would be a controller that launches
       // nowhere. It is refused here, naming the value, rather than laundered into the closed type with a cast: a bad
       // target is a package's bug, not a user's input to drop quietly.
       set: (patch) => {

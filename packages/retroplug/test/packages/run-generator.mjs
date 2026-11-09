@@ -27,8 +27,12 @@
 //   embed-declared-twice | embed-manifest-not-list | embed-manifest-no-id | embed-manifest-no-file |
 //   embed-manifest-id-twice | embed-mismatched-package | duplicate-console-platform |
 //   console-core-norole | duplicate-console-type | realcart-unregistered | realcart-platform-twice |
-//   realcart-node-twice
+//   realcart-node-twice | ui-missing-module
 //                   { error: <the generator's message, or null when it did not refuse> }
+//   ui | ui-duplicate-row | ui-unknown-placement | ui-role-undeclared | ui-unknown-key | ui-unknown-when-key |
+//   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service
+//                   the menus module: ui reports the contributing packages in product order, the others load it into
+//                   its own refusal ({ error })
 //                   (unlisted-plain generates, and reports files like generate)
 //
 // The run, missing-node and extra-node modes bundle the generated entry with the same esbuild options the build uses
@@ -73,6 +77,7 @@ function outputs() {
     "consoles.ts": readFileSync(join(generated, "consoles.ts"), "utf8"),
     "protocol.ts": readFileSync(join(generated, "protocol.ts"), "utf8"),
     "scriptNodes.ts": readFileSync(join(generated, "scriptNodes.ts"), "utf8"),
+    "menus.ts": readFileSync(join(root, "packages/retroplug/ui/generated/menus.ts"), "utf8"),
   };
 }
 
@@ -144,6 +149,46 @@ async function loadPackages() {
     })),
     realCarts: consoles.REAL_CARTS.map((cart) => ({ platform: cart.platform, cartNode: cart.cartNode })),
   };
+}
+
+/** A fixture app for the menus modes: the role a ui row names, and alpha's controller-app control-plane half, which
+ *  its manifest's protocol.apps pair with (the generated module refuses one half alone). */
+function uiApp(name) {
+  return (
+    "export default {\n" +
+    // The role carries a schema, because a row's key (and its gate's) is held to the keys its role declares; the
+    // tracker integration is what a tracker UI's id is held to.
+    `  roles: [{ kind: "${name}-role", schema: { parse: () => ({ model: "a" }) } }],\n` +
+    `  trackerIntegrations: [{ id: "${name}-tracks" }],\n` +
+    (name === "alpha"
+      ? '  controllerApps: [{ id: "alpha-app", label: "Alpha App", config: { parse: (v) => v ?? {} } }],\n'
+      : "") +
+    "};\n"
+  );
+}
+
+/** The generated menus module, bundled and loaded as the UI loads it: its imports of the packages' ui modules are
+ *  aliased the way a pnpm link resolves them, and loading it runs its checks (a row's role kind, a row id twice, a
+ *  builder's placement). */
+async function loadMenus() {
+  const out = join(work, "menus.mjs");
+  const { buildSync } = require("esbuild");
+  buildSync({
+    ...buildOptions(join(root, "packages/retroplug/ui/generated/menus.ts"), out, "esm"),
+    alias: {
+      "@retroplug/alpha/app": join(root, "packages/alpha/ts/app.ts"),
+      "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
+      "@retroplug/alpha/consoles": join(root, "packages/alpha/ts/consoles.ts"),
+      "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
+      "@retroplug/alpha/ui": join(root, "packages/alpha/ts/ui.ts"),
+      "@retroplug/beta/ui": join(root, "packages/beta/ts/ui.ts"),
+      // The ui package itself is a workspace dependency of the shell, not a fixture package: a real build resolves it
+      // through the pnpm link, so the driver hands the bundle the tree's own copy.
+      "@retroplug/ui/contribution": join(HERE, "../../../ui/ts/contribution.ts"),
+    },
+  });
+  const loaded = await import(pathToFileURL(out).href);
+  return loaded.UI_CONTRIBUTIONS.map((entry) => entry.pkg);
 }
 
 // The generated entry, bundled and loaded as the build loads it. Loading it runs its checks and registers.
@@ -229,9 +274,10 @@ try {
     }
     case "twice": {
       const first = generate({ root });
-      const files = ["packages.ts", "consoles.ts", "protocol.ts", "scriptNodes.ts"].map((name) =>
-        join(generated, name),
-      );
+      const files = [
+        ...["packages.ts", "consoles.ts", "protocol.ts", "scriptNodes.ts"].map((name) => join(generated, name)),
+        join(root, "packages/retroplug/ui/generated/menus.ts"),
+      ];
       // An old, fixed mtime makes "the second run wrote it again" visible without depending on clock granularity: a
       // write replaces it with the run's time, a run that leaves the file alone leaves this.
       const old = new Date(Date.now() - 60000);
@@ -260,6 +306,133 @@ try {
         result = { error: e.message };
       }
       break;
+    case "ui":
+      // The positive side: alpha's app contributes the role its ui module's row names, and beta contributes a builder,
+      // so the menus module loads and its contributions are reported in product order (two contributors, so the order
+      // is what is reported rather than a list of one).
+      writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
+      writeTree("packages/beta/ts/ui.ts", 'export default { menus: [{ placement: "start", build: () => [] }] };\n');
+      editManifest("beta", (m) => {
+        m.retroplug.ui = "ts/ui.ts";
+        m.exports["./ui"] = "./ts/ui.ts";
+      });
+      generate({ root });
+      result = { packages: await loadMenus() };
+      break;
+    case "ui-duplicate-row":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default {\n  rows: [\n' +
+          '    { id: "alpha-model", key: "model", label: "Model", role: "alpha-role", toggle: true },\n' +
+          '    { id: "alpha-model", key: "other", label: "Other", role: "alpha-role", toggle: true },\n' +
+          "  ],\n};\n",
+      );
+      writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
+      generate({ root });
+      try {
+        result = { packages: await loadMenus() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "ui-unknown-placement":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { menus: [{ placement: "instance.elsewhere", build: () => [] }] };\n',
+      );
+      writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
+      generate({ root });
+      try {
+        result = { packages: await loadMenus() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "ui-role-undeclared":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default {\n  rows: [{ id: "alpha-model", key: "model", label: "Model", role: "nowhere", ' +
+          'toggle: true }],\n};\n',
+      );
+      writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
+      generate({ root });
+      try {
+        result = { packages: await loadMenus() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "ui-unknown-key":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default {\n  rows: [{ id: "alpha-model", key: "nonsense", label: "Model", role: "alpha-role", ' +
+          'toggle: true }],\n};\n',
+      );
+      writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
+      generate({ root });
+      try {
+        result = { packages: await loadMenus() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "ui-unknown-when-key":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default {\n  rows: [{ id: "alpha-model", key: "model", label: "Model", role: "alpha-role", ' +
+          'toggle: true, when: { key: "nonsense", in: ["a"] } }],\n};\n',
+      );
+      writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
+      generate({ root });
+      try {
+        result = { packages: await loadMenus() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "ui-unknown-tracker":
+      writeTree("packages/alpha/ts/ui.ts", 'export default { trackers: [{ id: "nowhere" }] };\n');
+      writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
+      generate({ root });
+      try {
+        result = { packages: await loadMenus() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "ui-duplicate-tracker":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { trackers: [{ id: "alpha-tracks" }, { id: "alpha-tracks" }] };\n',
+      );
+      writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
+      generate({ root });
+      try {
+        result = { packages: await loadMenus() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "ui-duplicate-service":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { services: [{ id: "alpha-watch" }, { id: "alpha-watch" }] };\n',
+      );
+      writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
+      generate({ root });
+      try {
+        result = { packages: await loadMenus() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "ui-missing-module": {
+      editManifest("alpha", (m) => {
+        m.retroplug.ui = "ts/nothing.ts";
+      });
+      result = refusal();
+      break;
+    }
     case "order":
       // beta depends on alpha, and the list puts beta first: the order is the list's, so this is refused rather than
       // re-sorted.

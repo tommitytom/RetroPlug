@@ -9,7 +9,7 @@
 // Which one bites is decided by the model, and the split is exact rather than a guess: the core
 // applies colour correction and light temperature only when GB_is_cgb (model >= GB_MODEL_CGB_0) and
 // the DMG palette only when it isn't. `auto` is not ambiguous here - RetroPlug maps it to CGB-C
-// (toSameBoyModel), so it counts as CGB. The menu gates the palette row on that (the app's menuDefs.ts).
+// (toSameBoyModel), so it counts as CGB. The menu gates the palette row on that (this package's ts/ui/index.ts).
 //
 // The native side is this package's: `rp_sameboy_package` registers the Game Boy node from packages/sameboy/native,
 // and graph/buildGraph.ts's systemKnobs turns these labels into the node's settings. linkGroupId is the graph's own,
