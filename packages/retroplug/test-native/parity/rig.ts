@@ -106,7 +106,8 @@ export class Rig {
    *  too. `prefix` is a file-name prefix, never a path: the reset wipes files only. */
   rom(src: string, prefix = ""): string {
     if (prefix.includes("/")) throw new Error(`rom prefix "${prefix}" must not contain "/"`);
-    const dst = `${this.romDir()}/${prefix}${src.slice(src.lastIndexOf("/") + 1)}`;
+    // Either separator: a source under the repository (an embedded ROM's path) is a Windows path there.
+    const dst = `${this.romDir()}/${prefix}${src.slice(Math.max(src.lastIndexOf("/"), src.lastIndexOf("\\")) + 1)}`;
     const bytes = this.session.backend.readFile(src);
     if (!bytes) throw new Error(`cannot read ${src}`);
     this.writeFile(dst, bytes);

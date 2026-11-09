@@ -9,7 +9,7 @@
 // Prints one JSON line: { current: { status, out }, newer: { status, out }, usage: { status, out }, missing: {
 // status, out } }, each the script's exit status and its output, so the test holds what a person running it sees.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,10 +35,20 @@ function put(root, path, text, at = T0) {
   utimesSync(file, at, at);
 }
 
+/** The bash to run the script in. On Windows a bare `bash` can be the WSL launcher (WindowsApps\bash.exe), which reads
+ *  `C:/...` as a Linux path, so Git for Windows' own bash is found from git's exec path (<git>/mingw64/libexec/git-core). */
+function bash() {
+  if (process.env.RP_BASH) return process.env.RP_BASH;
+  if (process.platform !== "win32") return "bash";
+  const exec = spawnSync("git", ["--exec-path"], { encoding: "utf8" });
+  const gitBash = exec.status === 0 ? resolve(exec.stdout.trim(), "../../../bin/bash.exe") : "";
+  return gitBash && existsSync(gitBash) ? gitBash : "bash";
+}
+
 /** The script's answer to one invocation, as its exit status and its output. */
 function stale(stamp, root) {
   const args = stamp === undefined ? [shellPath(SCRIPT)] : [shellPath(SCRIPT), shellPath(stamp), shellPath(root)];
-  const child = spawnSync(process.env.RP_BASH || "bash", args, { encoding: "utf8" });
+  const child = spawnSync(bash(), args, { encoding: "utf8" });
   if (child.error) throw new Error(`the script could not be run: ${child.error.message}`);
   return { status: child.status, out: `${child.stdout ?? ""}${child.stderr ?? ""}`.trim() };
 }
