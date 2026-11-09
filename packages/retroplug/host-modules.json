@@ -1,0 +1,8 @@
+[
+  {
+    "module": "retroplug-cli",
+    "surface": "cli",
+    "provider": "the retroplug-cli binary's loaded-module table",
+    "types": "cli/sdk-types.d.ts"
+  }
+]

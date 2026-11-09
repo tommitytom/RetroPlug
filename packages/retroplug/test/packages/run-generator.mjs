@@ -31,13 +31,15 @@
 //                   { error: <the generator's message, or null when it did not refuse> }
 //   ui | ui-duplicate-row | ui-unknown-placement | ui-role-undeclared | ui-unknown-key | ui-unknown-when-key |
 //   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service
+//   cli | cli-duplicate-tool | cli-missing-module | examples-outside | examples-tsconfig-missing |
+//   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | host-unknown | host-known
 //                   the menus module: ui reports the contributing packages in product order, the others load it into
 //                   its own refusal ({ error })
 //                   (unlisted-plain generates, and reports files like generate)
 //
 // The run, missing-node and extra-node modes bundle the generated entry with the same esbuild options the build uses
 // and load it, so the entry's own checks are what is exercised, not a copy of them.
-import { cpSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -191,6 +193,23 @@ async function loadMenus() {
   return loaded.UI_CONTRIBUTIONS.map((entry) => entry.pkg);
 }
 
+/** The generated CLI tools module, bundled and loaded as the dispatcher loads it: loading it runs its own refusal of a
+ *  name two packages declare. */
+async function loadCli() {
+  const out = join(work, "tools.mjs");
+  const { buildSync } = require("esbuild");
+  buildSync({
+    ...buildOptions(join(root, "packages/retroplug/cli/generated/tools.ts"), out, "esm"),
+    alias: {
+      "@retroplug/core/cliTool": join(HERE, "../../../core/ts/cliTool.ts"),
+      "@retroplug/alpha/cli": join(root, "packages/alpha/ts/cli.ts"),
+      "@retroplug/beta/cli": join(root, "packages/beta/ts/cli.ts"),
+    },
+  });
+  const loaded = await import(pathToFileURL(out).href);
+  return loaded.CLI_CONTRIBUTIONS.map((entry) => ({ pkg: entry.pkg, tools: entry.tools.map((tool) => tool.name) }));
+}
+
 // The generated entry, bundled and loaded as the build loads it. Loading it runs its checks and registers.
 async function loadEntry() {
   const out = join(work, "scriptNodes.mjs");
@@ -277,6 +296,9 @@ try {
       const files = [
         ...["packages.ts", "consoles.ts", "protocol.ts", "scriptNodes.ts"].map((name) => join(generated, name)),
         join(root, "packages/retroplug/ui/generated/menus.ts"),
+        join(root, "packages/retroplug/cli/generated/tools.ts"),
+        join(root, "packages/retroplug/tsconfig.host-modules.json"),
+        join(root, "packages/retroplug/tsconfig.paths.json"),
       ];
       // An old, fixed mtime makes "the second run wrote it again" visible without depending on clock granularity: a
       // write replaces it with the run's time, a run that leaves the file alone leaves this.
@@ -426,6 +448,102 @@ try {
         result = { error: e.message };
       }
       break;
+    case "cli": {
+      // The positive side: beta contributes one tool and alpha another, so the reported order is the product order.
+      writeTree("packages/alpha/ts/cli.ts", 'export default [{ name: "alpha-tool", summary: "", help: "", run: () => {} }];\n');
+      writeTree("packages/beta/ts/cli.ts", 'export default [{ name: "beta-tool", summary: "", help: "", run: () => {} }];\n');
+      for (const name of ["alpha", "beta"]) {
+        editManifest(name, (m) => {
+          m.retroplug.cli = "ts/cli.ts";
+          m.exports["./cli"] = "./ts/cli.ts";
+        });
+      }
+      generate({ root });
+      result = { tools: await loadCli() };
+      break;
+    }
+    case "cli-duplicate-tool": {
+      writeTree("packages/alpha/ts/cli.ts", 'export default [{ name: "same", summary: "", help: "", run: () => {} }];\n');
+      writeTree("packages/beta/ts/cli.ts", 'export default [{ name: "same", summary: "", help: "", run: () => {} }];\n');
+      for (const name of ["alpha", "beta"]) {
+        editManifest(name, (m) => {
+          m.retroplug.cli = "ts/cli.ts";
+          m.exports["./cli"] = "./ts/cli.ts";
+        });
+      }
+      generate({ root });
+      try {
+        result = { tools: await loadCli() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    }
+    case "cli-missing-module": {
+      editManifest("alpha", (m) => {
+        m.retroplug.cli = "ts/nothing.ts";
+      });
+      result = refusal();
+      break;
+    }
+    case "examples-outside": {
+      editManifest("alpha", (m) => {
+        m.retroplug.examples = [{ name: "away", entry: "ts/away.ts" }];
+      });
+      result = refusal();
+      break;
+    }
+    case "examples-tsconfig-missing":
+    case "examples-tsconfig-unextended":
+    case "examples-tsconfig-extended": {
+      // A package with examples must have a tsconfig extending the generated host-module paths: the shell's program
+      // compiles ../*/examples, and only that file tells `tsc` what `retroplug-cli` resolves to there.
+      editManifest("alpha", (m) => {
+        m.retroplug.examples = [{ name: "alpha-session", entry: "examples/alpha-session.ts" }];
+      });
+      mkdirSync(join(root, "packages/alpha/examples"), { recursive: true });
+      writeTree("packages/alpha/examples/alpha-session.ts", "export {};\n");
+      if (MODE !== "examples-tsconfig-missing") {
+        // The unextended case NAMES the generated file in a comment: only the parsed `extends` admits it, so a check
+        // that searched the text would pass a tsconfig which resolves nothing.
+        const extendsLine =
+          MODE === "examples-tsconfig-extended"
+            ? '"extends": ["../../tsconfig.base.json", "../retroplug/tsconfig.host-modules.json"]'
+            : '// extend tsconfig.host-modules.json (not really)\n  "extends": ["../../tsconfig.base.json"]';
+        writeTree("packages/alpha/tsconfig.json", `{\n  ${extendsLine},\n  "include": ["ts", "examples"]\n}\n`);
+      }
+      result = MODE === "examples-tsconfig-extended" ? { error: refusal().error } : refusal();
+      break;
+    }
+    case "examples-duplicate-name": {
+      for (const name of ["alpha", "beta"]) {
+        editManifest(name, (m) => {
+          m.retroplug.examples = [{ name: "same-session", entry: "examples/same-session.ts" }];
+        });
+        mkdirSync(join(root, `packages/${name}/examples`), { recursive: true });
+        writeTree(`packages/${name}/examples/same-session.ts`, "export {};\n");
+        writeTree(`packages/${name}/tsconfig.json`,
+          '{\n  "extends": ["../../tsconfig.base.json", "../retroplug/tsconfig.host-modules.json"],\n' +
+          '  "include": ["ts", "examples"]\n}\n');
+      }
+      result = refusal();
+      break;
+    }
+    case "host-unknown": {
+      editManifest("alpha", (m) => {
+        m.retroplug.host = ["not-a-host-module"];
+      });
+      result = refusal();
+      break;
+    }
+    case "host-known": {
+      editManifest("alpha", (m) => {
+        m.retroplug.host = ["fixture-lib"];
+      });
+      generate({ root });
+      result = { error: null };
+      break;
+    }
     case "ui-missing-module": {
       editManifest("alpha", (m) => {
         m.retroplug.ui = "ts/nothing.ts";

@@ -13,11 +13,14 @@
     "./consoles": "./ts/consoles.ts",
     "./n8MidiToFifoNode": "./ts/n8MidiToFifoNode.ts",
     "./protocol": "./ts/protocol.ts",
-    "./ui": "./ts/ui/index.ts"
+    "./ui": "./ts/ui/index.ts",
+    "./cli": "./ts/cli/index.ts",
+    "./bridge": "./ts/bridge.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
     "@retroplug/node-sdk": "workspace:*",
+    "@retroplug/tracker": "workspace:*",
     "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
   },
@@ -42,6 +45,7 @@
         "provider": "rp_n8_provider",
         "rpc": { "header": "n8/desktop/N8Rpc.hpp", "register": "rp::n8::registerRpc" }
       }
-    ]
+    ],
+    "cli": "ts/cli/index.ts"
   }
 }

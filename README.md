@@ -268,12 +268,15 @@ build/bin/retroplug-cli render song.gbc        # LSDj: auto-length stereo mix ->
 
 | Command | What it does |
 |---|---|
-| `render` | Render a ROM/SAV to a WAV (full mix or per-channel stems) |
 | `test` / `run` | Strip and run a directory of TypeScript tests, or a single session file |
-| `lsdj-rom` / `risa-rom` / `bliptoaster-rom` | Inspect, extract and patch a cart's kits, palettes, themes and fonts |
-| `n8-load` / `n8-bridge` / `n8-sync` / `n8-play` | Drive a physical Everdrive N8 Pro over USB |
+| `render` | Render a ROM/SAV to a WAV (full mix or per-channel stems) |
 | `analyze-capture` / `grab-frame` | Measure a hardware audio capture; grab a NES video frame off a capture card |
 | `launchpad-probe` | Drive a real Launchpad and report what it sends back |
+| `lsdj-rom` | Inspect, extract and patch an LSDj cart's kits, palettes and fonts |
+| `n8-load` / `n8-bridge` / `n8-play` | Drive a physical Everdrive N8 Pro over USB |
+| `risa-rom` | Inspect, extract and patch a risa cart's kits, themes and fonts |
+| `n8-sync` | Drive risa host-sync on a physical Everdrive N8 Pro from a MIDI clock |
+| `bliptoaster-rom` | Inspect, extract and edit a BlipToaster ROM's kits, theme and font |
 
 ### Rendering from the command line
 The `render` command boots a Game Boy (`.gb` / `.gbc`), NES (`.nes`), GBA (`.gba`),

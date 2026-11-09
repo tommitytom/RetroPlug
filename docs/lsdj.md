@@ -261,7 +261,7 @@ backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
   `import-sample <rom> <kit> <audio> [--name/--slot/--out + effect flags]` (compile one + splice),
   `remove-sample <rom> <kit> <slot>`, and the asset-file verbs `export-palette`/`import-palette`,
   `export-font`/`import-font` (`--gfx` for the extended set), `export-kit`/`import-kit`.
-  Tool: [cli/sessions/lsdj-rom.ts](../packages/retroplug/cli/sessions/lsdj-rom.ts).
+  Tool: [lsdj/ts/cli/lsdjRom.ts](../packages/lsdj/ts/cli/lsdjRom.ts).
 - **One manifest schema for every editing verb.** `patch` reads a manifest of `kits`/`palettes`/`fonts`
   entries; `build-kit` reads a **single, slotless kit entry** from that same shape. Each entry either
   **builds/imports from a file** or **tweaks metadata** — `slot` = the asset index; a kit is a build

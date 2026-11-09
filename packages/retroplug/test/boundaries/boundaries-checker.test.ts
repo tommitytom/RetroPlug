@@ -16,6 +16,8 @@
 //   reaches outside ts/, and one naming no file;
 // - a devDependency a source file imports, which only a test file may;
 // - source that imports one of its own package's test modules: the same devDependency leak, reached by a relative path;
+// - a host module imported from a file its surface does not own (a `cli` module from plain source, not examples/ or
+//   ts/cli/);
 // - a declared package that does not exist;
 // - a `workspace:` or `link:` alias of the shell, which the key alone would present as a third-party name;
 // - an `npm:` alias naming a package the workspace does not have;
@@ -319,6 +321,63 @@ test("a shell source may import a contract module and its own, and src/generated
   expect(report.status).toBe(0);
   expect(report.refused).toEqual([]);
   expect(report.stale).toEqual([]);
+});
+
+test("a host module the package declares is admitted, from the files its surface owns", async () => {
+  // The positive tree imports it from ts/cli/ and from examples/, which are the cli surface's own files.
+  const report = await drive("host-module-declared");
+  expect(report.status).toBe(0);
+  expect(report.refused).toEqual([]);
+  expect(report.warnings).toEqual([]);
+});
+
+test("a host module imported from a file its surface does not own is refused, naming the surface", async () => {
+  const report = await drive("host-module-surface");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/alpha/ts/index.ts: imports "fixture-lib", a cli host module, from a file that surface does not own: ' +
+      "a cli host module is reached only from the package's examples/ or ts/cli/ trees",
+  ]);
+});
+
+test("a host module the package does not declare is refused, naming the file and the module", async () => {
+  const report = await drive("host-module-undeclared");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/alpha/ts/index.ts: imports "fixture-lib", which is a host module, and alpha does not declare it in ' +
+      "retroplug.host",
+  ]);
+});
+
+test("a host module imported by an example session is refused too, naming that file", async () => {
+  // A package's examples/ are its code: the shell's own program compiles them (`../*/examples`), so a host module
+  // reached from one needs the same declaration a ts/ file's does.
+  const report = await drive("host-module-examples");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/alpha/examples/session.ts: imports "fixture-lib", which is a host module, and alpha does not declare ' +
+      "it in retroplug.host",
+  ]);
+});
+
+test("a host declaration the shell's list does not have is refused", async () => {
+  const report = await drive("host-module-unknown");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/alpha/package.json: declares retroplug.host "ghost", which the shell\'s host-modules.json does not list',
+  ]);
+});
+
+test("a host declaration nothing imports warns, as an unused dependency does", async () => {
+  const report = await drive("host-module-stale");
+  console.log(`# ${(report.warnings as string[]).join("\n# ")}`);
+  expect(report.status).toBe(0);
+  expect(report.refused).toEqual([]);
+  expect(report.warnings).toEqual(["alpha: declares the host module fixture-lib, which no file of its imports"]);
 });
 
 test("the real tree holds its boundaries with no exception left", async () => {

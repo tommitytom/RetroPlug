@@ -289,38 +289,38 @@ set_target_properties(retroplug-cli PROPERTIES
 # The Node-API addon host (opt-in: -DRETROPLUG_NODE_ADDON=ON).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/node-addon.cmake)
 
-# The example sessions, esbuild-bundled to runnable .js (mirroring the cp-bundle recipe). A normal build
-# yields both the binary and demos
-# the binary can run, e.g. build/bin/retroplug-cli build/cli/mgb-smoke.js.
+# The example sessions, esbuild-bundled to runnable .js (mirroring the cp-bundle recipe). A package's examples come
+# from its manifest's `retroplug.examples` list, in product order, and the three the shell owns - the ones that name no
+# cart - stay here. A normal build yields both the binary and demos the binary can run, e.g.
+# build/bin/retroplug-cli build/cli/mgb-smoke.js.
 set(CLI_SESSIONS "${CMAKE_SOURCE_DIR}/packages/retroplug/cli/sessions")
+retroplug_examples(EXAMPLE_NAMES EXAMPLE_ENTRIES)
+list(APPEND EXAMPLE_NAMES render-rom render-song rom-test)
+list(APPEND EXAMPLE_ENTRIES
+    "${CLI_SESSIONS}/render-rom.ts" "${CLI_SESSIONS}/render-song.ts" "${CLI_SESSIONS}/rom-test.ts")
+# One bundle per name: the shell's three are appended to the packages' list, so a name declared twice (by two packages,
+# or by a package and the shell) would have one session overwrite another's build/cli/<name>.js.
+list(LENGTH EXAMPLE_NAMES _example_name_count)
+list(REMOVE_DUPLICATES EXAMPLE_NAMES)
+list(LENGTH EXAMPLE_NAMES _example_name_unique)
+if(NOT _example_name_count EQUAL _example_name_unique)
+    message(FATAL_ERROR "two example sessions share a name, so one would overwrite the other's build/cli/<name>.js")
+endif()
+set(EXAMPLE_SESSION_OUTPUTS "")
+set(EXAMPLE_SESSION_COMMANDS "")
+list(LENGTH EXAMPLE_NAMES _example_count)
+math(EXPR _example_last "${_example_count} - 1")
+foreach(_i RANGE ${_example_last})
+    list(GET EXAMPLE_NAMES ${_i} _example_name)
+    list(GET EXAMPLE_ENTRIES ${_i} _example_entry)
+    list(APPEND EXAMPLE_SESSION_OUTPUTS "${CMAKE_BINARY_DIR}/cli/${_example_name}.js")
+    list(APPEND EXAMPLE_SESSION_COMMANDS
+        COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
+                "${_example_entry}" "${CMAKE_BINARY_DIR}/cli/${_example_name}.js")
+endforeach()
 add_custom_target(retroplug-example-session ALL
-    BYPRODUCTS ${CMAKE_BINARY_DIR}/cli/mgb-smoke.js
-               ${CMAKE_BINARY_DIR}/cli/render-rom.js
-               ${CMAKE_BINARY_DIR}/cli/render-song.js
-               ${CMAKE_BINARY_DIR}/cli/rom-test.js
-               ${CMAKE_BINARY_DIR}/cli/analyze-mgb.js
-               ${CMAKE_BINARY_DIR}/cli/analyze-lsdj-sync.js
-               ${CMAKE_BINARY_DIR}/cli/export-mgb-channels.js
-               ${CMAKE_BINARY_DIR}/cli/export-nes-channels.js
-               ${CMAKE_BINARY_DIR}/cli/export-nes-mono.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CLI_SESSIONS}/mgb-smoke.ts   ${CMAKE_BINARY_DIR}/cli/mgb-smoke.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CLI_SESSIONS}/render-rom.ts  ${CMAKE_BINARY_DIR}/cli/render-rom.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CLI_SESSIONS}/render-song.ts ${CMAKE_BINARY_DIR}/cli/render-song.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CLI_SESSIONS}/rom-test.ts    ${CMAKE_BINARY_DIR}/cli/rom-test.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CLI_SESSIONS}/analyze-mgb.ts       ${CMAKE_BINARY_DIR}/cli/analyze-mgb.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CLI_SESSIONS}/analyze-lsdj-sync.ts ${CMAKE_BINARY_DIR}/cli/analyze-lsdj-sync.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CLI_SESSIONS}/export-mgb-channels.ts ${CMAKE_BINARY_DIR}/cli/export-mgb-channels.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CLI_SESSIONS}/export-nes-channels.ts ${CMAKE_BINARY_DIR}/cli/export-nes-channels.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CLI_SESSIONS}/export-nes-mono.ts ${CMAKE_BINARY_DIR}/cli/export-nes-mono.js
+    BYPRODUCTS ${EXAMPLE_SESSION_OUTPUTS}
+    ${EXAMPLE_SESSION_COMMANDS}
     COMMENT "Bundling CLI example sessions (esbuild)"
     VERBATIM)
 

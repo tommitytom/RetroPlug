@@ -195,6 +195,76 @@ test("a retroplug.ui member naming a module that is not there is refused", async
   expect((error as string).includes("alpha: retroplug.ui names ts/nothing.ts, which does not exist (")).toBe(true);
 });
 
+test("the generated cli module carries the packages' tools in product order", async () => {
+  const { tools } = await drive("cli");
+  expect(tools).toEqual([
+    { pkg: "alpha", tools: ["alpha-tool"] },
+    { pkg: "beta", tools: ["beta-tool"] },
+  ]);
+});
+
+test("the generated cli module refuses a tool name two packages declare", async () => {
+  const { error } = await drive("cli-duplicate-tool");
+  console.log(`# duplicate tool name: ${error}`);
+  expect(error).toBe("two packages declare the CLI tool same: alpha and beta");
+});
+
+test("a retroplug.cli member naming a module that is not there is refused", async () => {
+  const { error } = await drive("cli-missing-module");
+  console.log(`# missing cli module: ${error}`);
+  expect((error as string).includes("alpha: retroplug.cli names ts/nothing.ts, which does not exist (")).toBe(true);
+});
+
+test("an example whose entry is outside the package's examples/ tree is refused", async () => {
+  const { error } = await drive("examples-outside");
+  console.log(`# example outside examples/: ${error}`);
+  expect(error).toBe(
+    "alpha: the example away's entry ts/away.ts is outside its examples/ tree, where the shell's program includes it",
+  );
+});
+
+test("a package with examples and no tsconfig extending the generated host modules is refused", async () => {
+  const { error } = await drive("examples-tsconfig-missing");
+  console.log(`# examples without a tsconfig: ${error}`);
+  expect(error).toBe(
+    "alpha: it lists examples but has no tsconfig.json, which must extend ../retroplug/tsconfig.host-modules.json so " +
+      "an example resolves its host module",
+  );
+});
+
+test("a package with examples whose tsconfig does not extend the generated host modules is refused", async () => {
+  const { error } = await drive("examples-tsconfig-unextended");
+  console.log(`# examples tsconfig unextended: ${error}`);
+  expect(error).toBe(
+    "alpha: it lists examples but its tsconfig.json does not extend ../retroplug/tsconfig.host-modules.json, where " +
+      "an example resolves a host module",
+  );
+});
+
+test("a package with examples whose tsconfig extends the generated host modules is accepted", async () => {
+  const { error } = await drive("examples-tsconfig-extended");
+  expect(error).toBe(null);
+});
+
+test("two packages declaring the same example session name are refused", async () => {
+  const { error } = await drive("examples-duplicate-name");
+  console.log(`# duplicate example name: ${error}`);
+  expect(error).toBe("the example session same-session is declared twice: alpha and beta");
+});
+
+test("a host declaration the shell's list does not have is refused", async () => {
+  const { error } = await drive("host-unknown");
+  console.log(`# unknown host module: ${error}`);
+  expect(error).toBe(
+    "alpha: retroplug.host names not-a-host-module, which the shell's host-modules.json does not list",
+  );
+});
+
+test("a host declaration on the shell's list is accepted", async () => {
+  const { error } = await drive("host-known");
+  expect(error).toBe(null);
+});
+
 test("the generated entry bundles and registers the manifests' nodes in span-label order", async () => {
   const { registered } = await drive("run");
   console.log(`# registered: ${(registered as string[]).join(", ")}`);
@@ -606,8 +676,8 @@ test("an unchanged input leaves the generated files untouched", async () => {
   const report = await drive("twice");
   const [changedFirst, changedSecond] = report.changed as [boolean[], boolean[]];
   const [before, after] = report.mtimes as [number[], number[]];
-  expect(changedFirst).toEqual([true, true, true, true, true]);
-  expect(changedSecond).toEqual([false, false, false, false, false]);
+  expect(changedFirst).toEqual([true, true, true, true, true, true, true, true]);
+  expect(changedSecond).toEqual([false, false, false, false, false, false, false, false]);
   // The driver aged the files by a minute before the second run, so a rewrite would show: these are the same stamps.
   expect(after).toEqual(before);
   expect(after[0]).toBe(before[0]);
@@ -616,6 +686,8 @@ test("an unchanged input leaves the generated files untouched", async () => {
   expect(after[3]).toBe(before[3]);
   expect(after[4]).toBe(before[4]);
   expect(after[5]).toBe(before[5]);
+  expect(after[6]).toBe(before[6]);
+  expect(after[7]).toBe(before[7]);
 });
 
 test("the generated module refuses two control-plane halves of one id, naming both packages", async () => {

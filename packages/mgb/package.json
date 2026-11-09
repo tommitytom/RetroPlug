@@ -30,6 +30,12 @@
       "module": "ts/protocol.ts",
       "nodes": [{ "type": "rp.mgb.midi", "label": 17, "midiIn": "midi", "writes": ["serialIn"] }],
       "roles": { "mgb": "rp.mgb.midi" }
-    }
+    },
+    "examples": [
+      { "name": "mgb-smoke", "entry": "examples/mgb-smoke.ts" },
+      { "name": "analyze-mgb", "entry": "examples/analyze-mgb.ts" },
+      { "name": "export-mgb-channels", "entry": "examples/export-mgb-channels.ts" }
+    ],
+    "host": ["retroplug-cli"]
   }
 }

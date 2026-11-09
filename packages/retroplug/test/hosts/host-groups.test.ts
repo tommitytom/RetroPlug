@@ -5,7 +5,7 @@
 import { test, expect } from "@retroplug/testing";
 import type { Host, KitBank } from "@retroplug/core/host";
 import type { KitCompileResult } from "@retroplug/dsp/kitContract";
-import type { CliHost } from "../../cli/cliHost";
+import type { CliHost } from "@retroplug/core/cliTool";
 import { cliHost } from "../../cli/cliHost";
 import type { RenderHostGroups } from "../../src/render/renderHost";
 import { renderHost } from "../../src/render/renderHost";

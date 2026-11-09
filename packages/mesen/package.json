@@ -30,6 +30,11 @@
     "app": "ts/app.ts",
     "ui": "ts/ui/index.ts",
     "consoles": "ts/consoles.ts",
-    "native": { "target": "retroplug-mesen", "entry": "rp_mesen_package", "device": false }
+    "native": { "target": "retroplug-mesen", "entry": "rp_mesen_package", "device": false },
+    "examples": [
+      { "name": "export-nes-channels", "entry": "examples/export-nes-channels.ts" },
+      { "name": "export-nes-mono", "entry": "examples/export-nes-mono.ts" }
+    ],
+    "host": ["retroplug-cli"]
   }
 }

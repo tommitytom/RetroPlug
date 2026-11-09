@@ -1,0 +1,8 @@
+[
+  {
+    "module": "fixture-lib",
+    "surface": "cli",
+    "provider": "the fixture's own loaded-module table",
+    "types": "src/fixture-lib.d.ts"
+  }
+]

@@ -430,6 +430,18 @@ export interface SystemsStore {
    *  records that move: loading a different ROM (`loadRom`, `replaceSystem`, `swapRom`) builds a system of its
    *  own in the slot, so an id one of those replaced answers null, as it did before. */
   reset(id: number): number | null;
+  /** The live systems, in project order (their ids and ROM paths): what a session that constructs its own graph reads
+   *  the placed system it wanted from. */
+  view(): { id: number; romPath: string }[];
+  /** Adopt a documented system (the loader's own path): its roles are the construct-time configs the session wants, and
+   *  the returned id is where it landed, or null when the adopt was refused. */
+  adopt(config: {
+    core?: string;
+    romPath?: string;
+    savPath?: string;
+    embeddedRom?: string;
+    roles?: { kind: string; config: Record<string, unknown> }[];
+  }, blobs?: { sramBytes?: Uint8Array; stateBytes?: Uint8Array }): number | null;
 }
 
 // ─── The audio driver (Session.audio): render + drive input/MIDI. Curated ROM-testing subset. ─────────
@@ -467,6 +479,8 @@ export interface AudioDriver {
   screenshot(id: number, path: string): boolean;
   setTransport(running: boolean): boolean;
   setBpm(bpm: number): boolean;
+  /** The host's sample rate (Hz): what an exported WAV's header must say. */
+  sampleRate(): number;
   /** Set the host sample rate (Hz). Only takes effect BEFORE any system is built (baked into cores at
    *  construct); returns false once a system exists or for a non-positive rate. */
   setSampleRate(sampleRate: number): boolean;
@@ -478,10 +492,45 @@ export interface AudioDriver {
  *  are wired for you and rarely touched directly in a ROM test. */
 export interface Session {
   backend: Backend;
-  project: { systems: SystemsStore };
+  project: { systems: SystemsStore; graph: EngineGraph };
   audio: AudioDriver;
   registry: unknown;
   recent: unknown;
+}
+
+/** The engine graph a session's project renders through: opaque here, the thing `new DirectGraph(backend, graph)` shares
+ *  so a graph a session builds directly is the graph its renders go through. */
+export interface EngineGraph {}
+
+/** A system a session constructs directly, for a graph of its own. */
+export interface ConstructSpec {
+  romPath: string;
+  platform: string;
+  core: string;
+  embeddedRom: string;
+  savPath: string | null;
+  statePath: string | null;
+  /** Patched ROM bytes to boot instead of reading `romPath`. */
+  romBytes?: Uint8Array;
+  /** Seed battery bytes, instead of `savPath`'s file (which stays the auto-save target). */
+  sramBytes?: Uint8Array;
+  /** Seed savestate bytes; a savestate wins over a battery, as at the core. */
+  stateBytes?: Uint8Array;
+  /** The system's construct-time and live settings, in its console node's labels. */
+  coreConfig?: Readonly<Record<string, unknown>>;
+}
+
+/** A graph of systems a session builds directly, beside the project's own (see `Session.project.graph`). */
+export declare class DirectGraph {
+  constructor(backend: Backend, graph?: EngineGraph);
+  ids(): number[];
+  add(spec: ConstructSpec, id: number): boolean;
+  replace(oldId: number, spec: ConstructSpec, id: number): boolean;
+  remove(id: number): boolean;
+  setRouting(routing: string): boolean;
+  setMidiRouting(mode: string | null): boolean;
+  setCoreConfig(id: number, partial: Record<string, unknown>): boolean;
+  setParam(id: number, param: string, value: number): boolean;
 }
 
 /** Stand up the control plane the way every host does (backend + stores; the script nodes are built into the engine).
@@ -492,6 +541,10 @@ export declare function bootSession(): Session;
 /** The session's argument vector — everything after the session `.js` on the CLI
  *  (`retroplug-cli <session.js> [args...]`). Empty when absent. */
 export declare function hostArgs(): string[];
+
+/** Run a session through the control plane by PATH (`retroplug-cli <file>.js`): boots, calls `main`, and exits with its
+ *  outcome (0, or 1 on a throw). For a session file, never for a test file, which would exit the harness. */
+export declare function runSession(main: (session: Session) => void | Promise<void>): void;
 
 // ─── Timed-event scripting (Timeline + renderTimeline). ──────────────────────────────────────────────
 
@@ -557,6 +610,10 @@ export declare const Button: Record<string, number>;
 
 /** Encode interleaved PCM (as renderAudio returns it) to a 16-bit RIFF/PCM WAV. */
 export declare function encodeWav(pcm: Float32Array, sampleRate?: number, channels?: number): Uint8Array;
+/** Interleave K equal-length stereo streams into one 2K-channel buffer (channel order s0.L, s0.R, s1.L, ...). */
+export declare function interleaveStereoStreams(streams: Float32Array[]): Float32Array;
+/** Split one interleaved-stereo buffer into its two mono channels. */
+export declare function deinterleaveStereo(pcm: Float32Array): [Float32Array, Float32Array];
 
 // ─── TAP test harness. Register cases at top level; they run on a microtask, print TAP, set exit code. ──
 

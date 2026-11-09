@@ -59,7 +59,7 @@
 // --root names a tree laid out as this one is (a package.json with the same retroplug members, packages/<name>/
 // package.json), which is how the generator's tests drive it over fixtures.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -136,7 +136,7 @@ function readPackage(root, name) {
 function contributes(pkg) {
   return pkg.retroplug.app !== undefined || pkg.retroplug.consoles !== undefined ||
     pkg.retroplug.protocol !== undefined || pkg.retroplug.embed !== undefined ||
-    pkg.retroplug.ui !== undefined;
+    pkg.retroplug.ui !== undefined || pkg.retroplug.cli !== undefined;
 }
 
 /** Whether an unlisted dependency contributes to the app, judged tolerantly: a package with no manifest, or a manifest
@@ -248,7 +248,10 @@ function syncRule(pkg, appId, sync) {
 /** What one package contributes, from its manifest: its app module, its consoles module and its protocol nodes, each
  *  checked for what the generated modules need. */
 function contributions(pkg) {
-  const out = { app: null, consoles: null, protocol: null, ui: null, nodes: [], roles: {}, apps: [], embeds: [] };
+  const out = {
+    app: null, consoles: null, protocol: null, ui: null, cli: null, examples: [], host: [],
+    nodes: [], roles: {}, apps: [], embeds: [],
+  };
   const retroplug = pkg.retroplug;
   // The files this package bakes into a product's binary (`retroplug.embed`), which the app module declares as
   // `embeds` entries (id, label, platform) for the shell to load them by. The generator emits both sides and the
@@ -287,6 +290,50 @@ function contributions(pkg) {
       throw new Error(`${pkg.name}: retroplug.ui must be a module path, not ${JSON.stringify(retroplug.ui)}`);
     }
     out.ui = entryFile(pkg, "ui", retroplug.ui);
+  }
+  if (retroplug.cli !== undefined) {
+    if (typeof retroplug.cli !== "string" || retroplug.cli === "") {
+      throw new Error(`${pkg.name}: retroplug.cli must be a module path, not ${JSON.stringify(retroplug.cli)}`);
+    }
+    out.cli = entryFile(pkg, "cli", retroplug.cli);
+  }
+  // A package's example sessions (`{ "name", "entry" }`): the CMake target bundles each to build/cli/<name>.js, and
+  // the entry must live under the package's examples/ tree, beside the TS the shell's program includes.
+  if (retroplug.examples !== undefined) {
+    if (!Array.isArray(retroplug.examples)) throw new Error(`${pkg.name}: retroplug.examples is not a list`);
+    const examplesDir = join(pkg.dir, "examples");
+    for (const example of retroplug.examples) {
+      if (!isObject(example) || typeof example.name !== "string" || example.name === "") {
+        throw new Error(`${pkg.name}: every retroplug.examples entry needs a "name", the session it is run as`);
+      }
+      if (typeof example.entry !== "string" || example.entry === "") {
+        throw new Error(`${pkg.name}: the example ${example.name} needs an "entry", its module`);
+      }
+      const file = resolve(pkg.dir, example.entry);
+      if (!file.startsWith(examplesDir + sep)) {
+        throw new Error(`${pkg.name}: the example ${example.name}'s entry ${example.entry} is outside its examples/ ` +
+          "tree, where the shell's program includes it");
+      }
+      if (!existsSync(file)) {
+        throw new Error(`${pkg.name}: the example ${example.name} names ${example.entry}, which does not exist (${file})`);
+      }
+      if (out.examples.some((other) => other.name === example.name)) {
+        throw new Error(`${pkg.name}: its retroplug.examples lists the name ${example.name} twice`);
+      }
+      out.examples.push({ name: example.name, entry: file });
+    }
+  }
+  // A host module the package's code imports by bare specifier (`retroplug-cli` today, React's modules in F4c): the
+  // shell's host-modules.json is the list, and the generated typecheck paths come from it.
+  if (retroplug.host !== undefined) {
+    if (!Array.isArray(retroplug.host)) throw new Error(`${pkg.name}: retroplug.host is not a list`);
+    for (const module of retroplug.host) {
+      if (typeof module !== "string" || module === "") {
+        throw new Error(`${pkg.name}: every retroplug.host entry must be a module specifier`);
+      }
+      if (out.host.includes(module)) throw new Error(`${pkg.name}: its retroplug.host lists ${module} twice`);
+      out.host.push(module);
+    }
   }
   if (retroplug.protocol === undefined) return out;
   const protocol = retroplug.protocol;
@@ -807,6 +854,151 @@ function renderMenus({ packages, outDir }) {
   return lines.join("\n");
 }
 
+/** The generated CLI tools module (`<shell>/cli/generated/tools.ts`): each package's `retroplug.cli` module, in product
+ *  order, with the load-time refusal of a name two packages declare (the shell's own five are refused by the dispatcher,
+ *  which is where they are). Imported only by cli/, so no other bundle carries a tool. */
+function renderCliTools({ packages, outDir }) {
+  const contributors = packages.filter((p) => p.cli);
+  const local = (name) => `cli_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
+  const lines = [
+    "// Generated by packages/retroplug/scripts/lib/packages.mjs from the desktop product's package list and the",
+    "// packages' manifests. Do not edit; edit a manifest and rebuild.",
+    "//",
+    "// The product's CLI tools, in product order: each package's `retroplug.cli` module, which default-exports the",
+    "// subcommands it adds. The dispatcher appends them after the shell's own five, so a package's place in",
+    "// `retroplug.products.desktop` is where its commands land in the index. Imported only by cli/, so the control",
+    "// plane, the render worker, the SDK and the UI carry no tool.",
+    'import type { CliTool } from "@retroplug/core/cliTool";',
+  ];
+  for (const p of contributors) {
+    lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.cli)}";`);
+  }
+  lines.push("");
+  lines.push("/** Each package's CLI tools, in product order, and the package they came from. */");
+  lines.push("export const CLI_CONTRIBUTIONS: readonly { pkg: string; tools: readonly CliTool[] }[] = [");
+  for (const p of contributors) {
+    lines.push(`  { pkg: ${JSON.stringify(p.pkg.name)}, tools: ${local(p.pkg.name)} },`);
+  }
+  lines.push("];");
+  lines.push("");
+  lines.push("// One subcommand, one tool: the index is what a user types, so two packages may not declare a name (the");
+  lines.push("// shell's five are checked where they are listed).");
+  lines.push("const toolOwners = new Map<string, string>();");
+  lines.push("for (const { pkg, tools } of CLI_CONTRIBUTIONS) {");
+  lines.push("  for (const tool of tools) {");
+  lines.push("    const owner = toolOwners.get(tool.name);");
+  lines.push("    if (owner !== undefined) {");
+  lines.push("      throw new Error(owner === pkg");
+  lines.push("        ? `the package ${pkg} declares the CLI tool ${tool.name} twice`");
+  lines.push("        : `two packages declare the CLI tool ${tool.name}: ${owner} and ${pkg}`);");
+  lines.push("    }");
+  lines.push("    toolOwners.set(tool.name, pkg);");
+  lines.push("  }");
+  lines.push("}");
+  lines.push("");
+  lines.push("/** Every contributed tool, in product order. */");
+  lines.push("export const CLI_TOOLS: readonly CliTool[] = CLI_CONTRIBUTIONS.flatMap((entry) => entry.tools);");
+  lines.push("");
+  return lines.join("\n");
+}
+
+/** The files a tsconfig extends, as it writes them: `extends` takes one specifier or a list, and a tsconfig may carry
+ *  comments, so the text is read as JSON with its comments removed rather than searched for a name. */
+function tsconfigExtends(path) {
+  const text = readFileSync(path, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${path}: it does not parse as a tsconfig (${error.message}), so its extends cannot be read`);
+  }
+  const value = parsed?.extends;
+  if (typeof value === "string") return [value];
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : [];
+}
+
+/** The shell's host-module list (`host-modules.json`): the bare specifiers a package may import through its surface's
+ *  host, and the declaration file a typecheck resolves each to. */
+function hostModules(shellDir) {
+  const path = join(shellDir, "host-modules.json");
+  if (!existsSync(path)) throw new Error(`the shell has no ${path}: its host-module list names every host module`);
+  const list = readJson(path);
+  if (!Array.isArray(list)) throw new Error(`${path} is not a list`);
+  for (const entry of list) {
+    if (!isObject(entry) || typeof entry.module !== "string" || entry.module === "") {
+      throw new Error(`${path} has an entry with no "module"`);
+    }
+  }
+  return list;
+}
+
+/** The shell's own typecheck aliases (`tsconfig.aliases.json`): the paths only its program needs, which must ride in
+ *  the file it extends because a child's `paths` replace the parent's rather than merging with it. `ui-harness` is the
+ *  test harness alias scripts/run-ui-tests.mjs gives esbuild. */
+function shellAliases(shellDir) {
+  const path = join(shellDir, "tsconfig.aliases.json");
+  if (!existsSync(path)) throw new Error(`the shell has no ${path}: it names the aliases its own program adds`);
+  const aliases = readJson(path);
+  if (!isObject(aliases)) throw new Error(`${path} is not an object of specifier: [path]`);
+  for (const [specifier, targets] of Object.entries(aliases)) {
+    if (!Array.isArray(targets) || targets.some((target) => typeof target !== "string" || target === "")) {
+      throw new Error(`${path}: ${specifier} is not a list of paths`);
+    }
+  }
+  return aliases;
+}
+
+/** One `paths` entry, as the generated tsconfigs spell it. */
+function pathEntry(specifier, targets) {
+  return `      ${JSON.stringify(specifier)}: [${targets.map((target) => JSON.stringify(target)).join(", ")}]`;
+}
+
+/** The generated typecheck paths: each host module's `types` file, resolved from the shell (where the generated config
+ *  lives), so a package's tsconfig can extend it and `tsc` reads the same declaration the binary serves. */
+function renderHostModules(list) {
+  const typed = list.filter((entry) => typeof entry.types === "string" && entry.types !== "");
+  const entries = typed.map((entry) => pathEntry(entry.module, [`./${entry.types.replaceAll("\\", "/")}`]));
+  return [
+    "// Generated by packages/retroplug/scripts/lib/packages.mjs from the shell's host-modules.json. Do not edit; edit",
+    "// the list and rebuild. A package whose tsconfig extends this resolves a host module (`retroplug-cli` today) to",
+    "// the declaration file a consumer reads, exactly as their tsconfig does.",
+    "{",
+    '  "compilerOptions": {',
+    '    "paths": {',
+    ...entries.map((entry, i) => `${entry}${i === entries.length - 1 ? "" : ","}`),
+    "    }",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+}
+
+/** The shell program's own generated config: the same host modules, plus the shell's aliases. It exists because
+ *  TypeScript REPLACES a child's `paths` with the extending config's rather than merging them, so the shell cannot
+ *  extend the package-facing file and add its aliases beside it. */
+function renderShellPaths(list, aliases) {
+  const typed = list.filter((entry) => typeof entry.types === "string" && entry.types !== "");
+  const entries = [
+    ...typed.map((entry) => pathEntry(entry.module, [`./${entry.types.replaceAll("\\", "/")}`])),
+    ...Object.entries(aliases).map(([specifier, targets]) => pathEntry(specifier, targets)),
+  ];
+  return [
+    "// Generated by packages/retroplug/scripts/lib/packages.mjs from the shell's host-modules.json and its",
+    "// tsconfig.aliases.json. Do not edit; edit those and rebuild. This is the shell program's paths: the host modules",
+    "// every package resolves, and the aliases only the shell's own tests use.",
+    "{",
+    '  "compilerOptions": {',
+    '    "paths": {',
+    ...entries.map((entry, i) => `${entry}${i === entries.length - 1 ? "" : ","}`),
+    "    }",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+}
+
 /** The manifest embed entries the generated module pairs with the app modules' declarations, as source text. */
 function manifestsWithEmbeds(packages) {
   return packages
@@ -1218,6 +1410,51 @@ export function generate({ root = REPO } = {}) {
     .map((role) => ({ ...role, label: byType.get(role.type).node.label }))
     .sort((a, b) => a.label - b.label || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 
+  // A package's declared host modules are the shell's list, and a name it does not have is refused here rather than at
+  // a bundle: the generated typecheck paths come from the same list.
+  const hostList = hostModules(shell.dir);
+  for (const { pkg, host } of contributionsOf) {
+    for (const module of host) {
+      if (!hostList.some((entry) => entry.module === module)) {
+        throw new Error(`${pkg.name}: retroplug.host names ${module}, which the shell's host-modules.json does not list`);
+      }
+    }
+  }
+
+  // An example's TypeScript is part of the shell's own program (`../*/examples`), and it resolves a host module through
+  // the generated paths, so its package's tsconfig must extend them. A tsconfig that includes `examples` without the
+  // extend fails its own `tsc` (an unresolved host specifier), which is the visible half; one that leaves `examples`
+  // out of `include` typechecks clean and hands the file to the shell's program alone, which is the half nothing else
+  // catches. The parsed `extends` decides, never the text: naming the file in a comment resolves nothing.
+  const hostConfigName = "tsconfig.host-modules.json";
+  const hostConfig = join(shell.dir, hostConfigName);
+  for (const { pkg, examples } of contributionsOf) {
+    if (!examples.length) continue;
+    const tsconfigPath = join(pkg.dir, "tsconfig.json");
+    if (!existsSync(tsconfigPath)) {
+      throw new Error(`${pkg.name}: it lists examples but has no tsconfig.json, which must extend ` +
+        `../${SHELL}/${hostConfigName} so an example resolves its host module`);
+    }
+    const extensions = tsconfigExtends(tsconfigPath).map((entry) => resolve(pkg.dir, entry));
+    if (!extensions.includes(hostConfig)) {
+      throw new Error(`${pkg.name}: it lists examples but its tsconfig.json does not extend ` +
+        `../${SHELL}/${hostConfigName}, where an example resolves a host module`);
+    }
+  }
+
+  // One build/cli/<name>.js per session: two packages' examples (or one package's twice) writing the same stem would
+  // silently overwrite each other's bundle.
+  const exampleOwners = new Map();
+  for (const { pkg, examples } of contributionsOf) {
+    for (const example of examples) {
+      const owner = exampleOwners.get(example.name);
+      if (owner !== undefined) {
+        throw new Error(`the example session ${example.name} is declared twice: ${owner} and ${pkg.name}`);
+      }
+      exampleOwners.set(example.name, pkg.name);
+    }
+  }
+
   const files = [
     {
       path: join(outDir, "packages.ts"),
@@ -1230,9 +1467,19 @@ export function generate({ root = REPO } = {}) {
       path: join(shell.dir, "ui/generated/menus.ts"),
       content: renderMenus({ packages: contributionsOf, outDir: join(shell.dir, "ui/generated") }),
     },
+    {
+      path: join(shell.dir, "cli/generated/tools.ts"),
+      content: renderCliTools({ packages: contributionsOf, outDir: join(shell.dir, "cli/generated") }),
+    },
+    { path: join(shell.dir, hostConfigName), content: renderHostModules(hostList) },
+    {
+      path: join(shell.dir, "tsconfig.paths.json"),
+      content: renderShellPaths(hostList, shellAliases(shell.dir)),
+    },
   ];
   mkdirSync(outDir, { recursive: true });
   mkdirSync(join(shell.dir, "ui/generated"), { recursive: true });
+  mkdirSync(join(shell.dir, "cli/generated"), { recursive: true });
   const stamp = Math.random().toString(36).slice(2, 10);
   const written = files.map((file) => ({ path: file.path, changed: writeIfChanged(file.path, file.content, stamp) }));
   return { packages: ordered.map((p) => p.name), files: written };

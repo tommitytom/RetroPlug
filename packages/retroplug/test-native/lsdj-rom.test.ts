@@ -2,7 +2,8 @@
 // lsdj9_4_2.gb, patch a kit name, write the .gb back, re-open and confirm — and assert the patch is
 // surgical (only the intended bytes changed) and the patched ROM still boots on a real core.
 import { test, expect, skip } from "@retroplug/testing";
-import { lsdjRomTool } from "../cli/sessions/lsdj-rom";
+import { lsdjRomTool } from "@retroplug/lsdj/cli";
+import { cliHost } from "../cli/cliHost";
 import type { Session } from "../cli/session";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
@@ -213,7 +214,7 @@ test("CLI build-kit reports the compiler's reason for a slot that did not land",
 
   let message = "";
   try {
-    await lsdjRomTool.run(s, ["build-kit", "/tmp/rp-bk-bad-spec.json", "/tmp/rp-bk-bad.kit"]);
+    await lsdjRomTool.run(cliHost(s), ["build-kit", "/tmp/rp-bk-bad-spec.json", "/tmp/rp-bk-bad.kit"]);
   } catch (e) {
     message = (e as Error).message;
   }
@@ -333,13 +334,13 @@ test("CLI build-kit writes a bootable .kit that import-kit places into a ROM", a
   writeTestWav(be, wav);
   expect(be.writeFile("/tmp/rp-bk-spec.json", jenc({ name: "MYDR", build: [{ file: wav, name: "BD" }] }))).toBeTruthy();
 
-  await lsdjRomTool.run(s, ["build-kit", "/tmp/rp-bk-spec.json", "/tmp/rp-bk.kit"]);
+  await lsdjRomTool.run(cliHost(s), ["build-kit", "/tmp/rp-bk-spec.json", "/tmp/rp-bk.kit"]);
   const kitBytes = be.readFile("/tmp/rp-bk.kit")!;
   expect(kitBytes.length).toBe(BANK_SIZE); // a raw 16 KB bank, not a ROM
 
   // import-kit it into slot 20 of a copy of the ROM.
   expect(be.writeFile("/tmp/rp-bk.gb", be.readFile(LSDJ)!)).toBeTruthy();
-  lsdjRomTool.run(s, ["import-kit", "/tmp/rp-bk.gb", "/tmp/rp-bk.kit", "20", "--out", "/tmp/rp-bk.gb"]);
+  lsdjRomTool.run(cliHost(s), ["import-kit", "/tmp/rp-bk.gb", "/tmp/rp-bk.kit", "20", "--out", "/tmp/rp-bk.gb"]);
   const rom = LsdjRom.fromBytes(be.readFile("/tmp/rp-bk.gb")!);
   expect(rom.kit(20).name()).toBe("MYDR");
   expect(rom.kit(20).sampleName(0)).toBe("BD-"); // the kit compiler pads a short name to 3 chars with '-'
@@ -370,7 +371,7 @@ test("CLI patch realizes a mixed manifest (build + .kit + rename + palette + fon
   expect(be.writeFile("/tmp/rp-ap-manifest.json", jenc(manifest))).toBeTruthy();
   expect(be.writeFile("/tmp/rp-ap.gb", be.readFile(LSDJ)!)).toBeTruthy();
 
-  await lsdjRomTool.run(s, ["patch", "/tmp/rp-ap.gb", "/tmp/rp-ap-manifest.json", "/tmp/rp-ap-out.gb"]);
+  await lsdjRomTool.run(cliHost(s), ["patch", "/tmp/rp-ap.gb", "/tmp/rp-ap-manifest.json", "/tmp/rp-ap-out.gb"]);
 
   const rom = LsdjRom.fromBytes(be.readFile("/tmp/rp-ap-out.gb")!);
   expect(rom.kit(21).name()).toBe("BILT"); // built

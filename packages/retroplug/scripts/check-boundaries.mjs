@@ -106,11 +106,14 @@ const ts = createRequire(import.meta.url)("typescript-5");
  *  a rule today. */
 const EXCEPTIONS = [];
 
-/** Rule 9's list: every @retroplug/<package> specifier packages/retroplug/src may import, with the reason it is the
- *  shell's to reach. Each is a contract module (or a library that is not a cart), so a second console or a second
- *  tracker still needs no edit here; a cart's or a console's own module is reached through the generated registries
- *  (src/generated/packages.ts, protocol.ts, consoles.ts), which this rule does not judge. An entry no import uses fails
- *  the check, so this shrinks with the shell. */
+/** Rule 9's list: every @retroplug/<package> specifier `packages/retroplug/src` and `packages/retroplug/cli` may
+ *  import, with the reason it is the shell's to reach. Each is a contract module (or a library that is not a cart), so
+ *  a second console or a second tracker still needs no edit here; a cart's or a console's own module is reached through
+ *  the generated registries (src/generated/packages.ts, protocol.ts and consoles.ts for the control plane,
+ *  cli/generated/tools.ts for the CLI), which this rule does not judge. One list serves both roots on purpose: they are
+ *  one program's two halves, so a contract module only cli/ imports today stays reachable from src/ without a second
+ *  entry, and an entry per root would claim a precision the rule does not need. An entry no import of either root uses
+ *  fails the check, so this shrinks with the shell. */
 const SHELL_IMPORTS = [
   // The contract every package implements: the shell is its host, not a participant.
   { specifier: "@retroplug/core/canonicalJson", reason: "the document encoder every protocol driver writes through" },
@@ -131,6 +134,7 @@ const SHELL_IMPORTS = [
   // The kit compile driver's contract and its shared half: dsp is a library of graph nodes, not a cart.
   { specifier: "@retroplug/dsp/kitContract", reason: "the kit format contract the shell's format registry dispatches through" },
   { specifier: "@retroplug/dsp/packageContributions", reason: "the contribution shape an app module declares its kit formats through" },
+  { specifier: "@retroplug/dsp/wav", reason: "the pure WAV codec the render library and its tests share with a package's CLI tool" },
   // The control surface's registry and the controller target the project settings store persists.
   { specifier: "@retroplug/launchpad/enums", reason: "the controller target enum the project config serializes" },
   { specifier: "@retroplug/launchpad/registry", reason: "the controller app registry the shell fills from the generated list" },
@@ -219,6 +223,18 @@ function workspace(root) {
   return new Map([...packages.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
+/** The shell's host-module list (`packages/retroplug/host-modules.json`): the bare specifiers a package may import
+ *  through its surface's host, by name. A tree with no list has none, as a fixture tree without host modules does. */
+function readHostModules(root) {
+  const path = join(root, PACKAGES, "retroplug", "host-modules.json");
+  const list = existsSync(path) ? readJson(path) : [];
+  return new Map(
+    (Array.isArray(list) ? list : [])
+      .filter((entry) => entry !== null && typeof entry === "object" && typeof entry.module === "string")
+      .map((entry) => [entry.module, entry]),
+  );
+}
+
 const isShell = (name) => SHELLS.includes(name);
 /** Whether a specifier is a module name rather than a path. */
 const isBare = (specifier) => !(specifier.startsWith(".") || specifier.startsWith("/") || /^[A-Za-z]:[\\/]/.test(specifier));
@@ -252,6 +268,29 @@ function isTestPath(rel) {
 /** A test file may use its package's devDependencies, so it is judged against a looser manifest than a source is. */
 function isTestFile(pkg, file) {
   return isTestPath(relative(pkg.dir, file).split("\\").join("/"));
+}
+
+/** The surface a package file belongs to, from where it sits in the package: `examples/` is a CLI program the
+ *  retroplug-cli binary runs, `ts/cli/` is the package's own CLI module tree and `ts/ui/` its UI tree. Anywhere else -
+ *  the app, protocol, console or core module, and a test - belongs to no surface, so no host module is reachable from
+ *  it: a host is a surface's, and a package reaches the rest of the shell through its group's contract.
+ *
+ *  The directory is the whole rule on purpose. A manifest member cannot decide it (the app and protocol modules are
+ *  named by paths that would have to be read and trusted), and a filename convention would let a rename open the hole
+ *  this closes. */
+function surfaceOf(pkg, file) {
+  const rel = relative(pkg.dir, file).split("\\").join("/");
+  if (rel.startsWith("examples/")) return "cli";
+  if (rel.startsWith("ts/cli/")) return "cli";
+  if (rel.startsWith("ts/ui/")) return "ui";
+  return null;
+}
+
+/** The surfaces a host-module list entry provides: its `surface`, as one name or a list of the ones that share the
+ *  module (F4c's React modules are the UI program's alone). An entry with none matches no file. */
+function surfacesOf(entry) {
+  if (typeof entry.surface === "string") return [entry.surface];
+  return Array.isArray(entry.surface) ? entry.surface.filter((s) => typeof s === "string") : [];
 }
 
 /** Whether an import of `name` (a nameOf name) by `file` is declared: dependencies everywhere, devDependencies in a
@@ -418,6 +457,7 @@ function cycles(packages) {
  *  and the owner), the warnings, the exceptions that matched a refusal, and the exception lines nothing matches. */
 export function checkBoundaries({ root = REPO } = {}) {
   const packages = workspace(root);
+  const hostModules = readHostModules(root);
   const refusals = [];
   const warnings = [];
   const used = new Map(); // a package's name -> the dependency names some file of it (or a native target) uses
@@ -537,9 +577,29 @@ export function checkBoundaries({ root = REPO } = {}) {
       }
     }
 
-    // Rules 1 to 4, the import half.
+    // The host modules this package declares: a name the shell's list does not have is refused here (the list is the
+    // one place they are spelled), and one no file imports warns, as an unused dependency does.
+    const declaredHost = Array.isArray(pkg.manifest.retroplug?.host) ? pkg.manifest.retroplug.host : [];
+    for (const module of declaredHost) {
+      if (!hostModules.has(module)) {
+        refuse(
+          "host-module",
+          shown(root, pkg.manifestPath),
+          module,
+          `${shown(root, pkg.manifestPath)}: declares retroplug.host "${module}", which the shell's ` +
+            "host-modules.json does not list",
+        );
+      }
+    }
+    const usedHost = new Set();
+
+    // Rules 1 to 4, the import half. A package's examples/ sessions are its code too (they import the CLI SDK through
+    // the host), so the walk sees ts/ and examples/.
     const problems = [];
-    const imports = importsOf(root, pkg, walk(pkg.ts, isTypeScript), problems);
+    const examplesDir = join(pkg.dir, "examples");
+    const sourceFiles = walk(pkg.ts, isTypeScript);
+    if (existsSync(examplesDir)) sourceFiles.push(...walk(examplesDir, isTypeScript));
+    const imports = importsOf(root, pkg, sourceFiles, problems);
     for (const problem of problems) refuse("unresolvable", shown(root, problem.file), "", problem.message);
     for (const { file, specifier, form, target } of imports) {
       if (form === "types") {
@@ -565,7 +625,7 @@ export function checkBoundaries({ root = REPO } = {}) {
       if (!isBare(specifier)) {
         // A relative import (or reference path), resolved against the importing file: it must stay in the package's
         // own tree, so a package reaches another as a declared @retroplug/<name> and the shell not at all.
-        if (target !== null && under(pkg.ts, target)) {
+        if (target !== null && (under(pkg.ts, target) || under(join(pkg.dir, "examples"), target))) {
           // Staying inside the package is not the whole rule: a test file may use the package's devDependencies, so
           // source that imports one hands them to every importer of the source, by an edge no manifest declares.
           if (!isTestFile(pkg, file) && isTestFile(pkg, target)) {
@@ -596,6 +656,36 @@ export function checkBoundaries({ root = REPO } = {}) {
       markUsed(pkg, name);
       const owner = packageOf(specifier);
       if (owner === null) {
+        // A host module is reached through the surface's host, not a dependency: the package declares it in its
+        // manifest's retroplug.host, a declaration the shell's list does not have is refused above, and only the files
+        // the module's own surface owns may import it.
+        if (hostModules.has(specifier)) {
+          const entry = hostModules.get(specifier);
+          const surface = surfaceOf(pkg, file);
+          const surfaces = surfacesOf(entry);
+          if (!declaredHost.includes(specifier)) {
+            refuse(
+              "host-module",
+              shown(root, file),
+              specifier,
+              `${shown(root, file)}: imports "${specifier}", which is a host module, and ${pkg.name} does not ` +
+                "declare it in retroplug.host",
+            );
+          } else if (surface === null || !surfaces.includes(surface)) {
+            refuse(
+              "host-module",
+              shown(root, file),
+              specifier,
+              `${shown(root, file)}: imports "${specifier}", a ${surfaces.join(" or ")} host module, from a ` +
+                `file that surface does not own: a ${surfaces.join(" or ")} host module is reached only from the ` +
+                `package's ` +
+                `${surfaces.map((s) => (s === "cli" ? "examples/ or ts/cli/" : `ts/${s}/`)).join(" or ")} trees`,
+            );
+          } else {
+            usedHost.add(specifier);
+          }
+          continue;
+        }
         if (!declares(pkg, file, name)) {
           refuse(
             "third-party",
@@ -626,6 +716,12 @@ export function checkBoundaries({ root = REPO } = {}) {
           `${shown(root, file)}: imports "${specifier}", which is ${describeOwner(owner)}, and ${pkg.name} does not ` +
             "declare it in its dependencies (its tests may also use devDependencies)",
         );
+      }
+    }
+
+    for (const module of declaredHost) {
+      if (hostModules.has(module) && !usedHost.has(module)) {
+        warnings.push(`${pkg.name}: declares the host module ${module}, which no file of its imports`);
       }
     }
 

@@ -7,7 +7,8 @@
 // words. Each run opens and closes its own session, as each CLI process does.
 import { test, expect } from "@retroplug/testing";
 import { bootSession } from "../cli/session";
-import { n8LoadTool } from "../cli/sessions/n8-load";
+import { n8LoadTool } from "@retroplug/n8/cli";
+import { cliHost } from "../cli/cliHost";
 import { makeCall } from "../src/rpcClient";
 import { createN8Client, N8TimeoutError, ADDR_SSR, decodeSniffer, SNIFFER_REGION_SIZE } from "@retroplug/n8";
 
@@ -19,7 +20,7 @@ function n8Load(...args: string[]): string[] {
   const log = console.log;
   console.log = (...parts: unknown[]) => void lines.push(parts.map(String).join(" "));
   try {
-    n8LoadTool.run(s, args);
+    n8LoadTool.run(cliHost(s), args);
   } finally {
     console.log = log;
   }

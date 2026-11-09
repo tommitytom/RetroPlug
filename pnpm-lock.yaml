@@ -33,6 +33,9 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+      '@retroplug/dsp':
+        specifier: workspace:*
+        version: link:../dsp
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
@@ -240,6 +243,9 @@ importers:
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
+      '@retroplug/tracker':
+        specifier: workspace:*
+        version: link:../tracker
       '@retroplug/ui':
         specifier: workspace:*
         version: link:../ui
@@ -353,6 +359,9 @@ importers:
       '@retroplug/dsp':
         specifier: workspace:*
         version: link:../dsp
+      '@retroplug/n8':
+        specifier: workspace:*
+        version: link:../n8
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
@@ -438,6 +447,9 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+      '@retroplug/dsp':
+        specifier: workspace:*
+        version: link:../dsp
       zod:
         specifier: ^4.4.3
         version: 4.4.3

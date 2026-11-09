@@ -65,7 +65,8 @@
     "./runtime/legacyOffsets.generated": "./ts/runtime/legacyOffsets.generated.ts",
     "./runtime/offsets": "./ts/runtime/offsets.ts",
     "./runtime/reader": "./ts/runtime/reader.ts",
-    "./runtime/types": "./ts/runtime/types.ts"
+    "./runtime/types": "./ts/runtime/types.ts",
+    "./cli": "./ts/cli/index.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
@@ -93,6 +94,11 @@
         { "type": "rp.lsdj.serial-out", "label": 23, "midiIn": null, "writes": [], "serialOut": true, "midiOut": true }
       ],
       "roles": { "lsdj-sync": "rp.lsdj.sync" }
-    }
+    },
+    "cli": "ts/cli/index.ts",
+    "examples": [
+      { "name": "analyze-lsdj-sync", "entry": "examples/analyze-lsdj-sync.ts" }
+    ],
+    "host": ["retroplug-cli"]
   }
 }

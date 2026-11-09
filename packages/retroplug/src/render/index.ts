@@ -3,4 +3,5 @@
 
 export * from "./types";
 export * from "./render";
+// The whole WAV codec: the stream writer here, and the pure half it re-exports from @retroplug/dsp/wav.
 export * from "./wav";

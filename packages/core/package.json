@@ -11,6 +11,7 @@
     ".": "./ts/index.ts",
     "./canonicalJson": "./ts/canonicalJson.ts",
     "./capability": "./ts/capability.ts",
+    "./cliTool": "./ts/cliTool.ts",
     "./clock": "./ts/clock.ts",
     "./configFields": "./ts/configFields.ts",
     "./consoles": "./ts/consoles.ts",

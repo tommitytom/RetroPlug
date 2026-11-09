@@ -7,6 +7,11 @@
 /packages/retroplug/src/generated/
 # the packages' UI contributions, written by the same generator for ui/ alone
 /packages/retroplug/ui/generated/
+# the packages' CLI tools, written by the same generator for cli/ alone
+/packages/retroplug/cli/generated/
+# the typecheck paths, written by the same generator from the shell's host-modules.json and tsconfig.aliases.json
+/packages/retroplug/tsconfig.host-modules.json
+/packages/retroplug/tsconfig.paths.json
 # sanitizer build dirs (tools/run-sanitizer.sh)
 /build-tsan/
 /build-asan/

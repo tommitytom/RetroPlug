@@ -25,10 +25,12 @@
     "./trackerRender": "./ts/trackerRender.ts",
     "./trackerSongImport": "./ts/trackerSongImport.ts",
     "./workingSongBlob": "./ts/workingSongBlob.ts",
-    "./ritAssetOps": "./ts/ritAssetOps.ts"
+    "./ritAssetOps": "./ts/ritAssetOps.ts",
+    "./nes/kitSpec": "./ts/nes/kitSpec.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
+    "@retroplug/dsp": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

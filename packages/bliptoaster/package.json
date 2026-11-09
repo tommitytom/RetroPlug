@@ -20,10 +20,12 @@
     "./rom/rom": "./ts/rom/rom.ts",
     "./rom/settings": "./ts/rom/settings.ts",
     "./romDetect": "./ts/romDetect.ts",
-    "./romProvider": "./ts/romProvider.ts"
+    "./romProvider": "./ts/romProvider.ts",
+    "./cli": "./ts/cli/index.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
+    "@retroplug/dsp": "workspace:*",
     "@retroplug/tracker": "workspace:*",
     "@retroplug/ui": "workspace:*",
     "zod": "^4.4.3"
@@ -35,6 +37,7 @@
   "retroplug": {
     "app": "ts/app.ts",
     "ui": "ts/ui/index.ts",
-    "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 24576 }
+    "script": { "entry": "ts/index.ts", "device": true, "heapBytes": 24576 },
+    "cli": "ts/cli/index.ts"
   }
 }

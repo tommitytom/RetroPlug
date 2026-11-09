@@ -14,7 +14,8 @@
     "./kitEffect": "./ts/kitEffect.ts",
     "./kitJobs": "./ts/kitJobs.ts",
     "./pack": "./ts/pack.ts",
-    "./packageContributions": "./ts/packageContributions.ts"
+    "./packageContributions": "./ts/packageContributions.ts",
+    "./wav": "./ts/wav.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",

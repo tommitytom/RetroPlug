@@ -22,12 +22,17 @@
 // consumer has to report into a build failure.
 import type * as Dts from "retroplug-cli";
 import type * as Sdk from "./sdk";
+import type { ConstructSpec as RealConstructSpec } from "../src/backend";
+import type { EngineGraph as RealEngineGraph } from "../src/engineGraph";
+import { bootSession as realBootSession, DirectGraph } from "./sdk";
 import {
   bootSession,
   hostArgs,
   Timeline,
   renderTimeline,
   skip,
+  interleaveStereoStreams,
+  deinterleaveStereo,
   type BreakHitBatch,
   type CoreTransportStats,
   type TimelineInvariant,
@@ -77,6 +82,56 @@ export type _NoteOpts = Assert<Exact<Sdk.NoteOpts, Dts.NoteOpts, "NoteOpts">>;
 // declaration stays free to omit. That direction still catches a declared member that does not exist or
 // whose type moved, which is the drift that has actually shipped. It does NOT catch an omission, so a
 // method the shipped example sessions call belongs in the declaration on purpose, not by accident.
+// F4b's four additions, shape by shape rather than name by name. The class and its two named types are compared
+// member-wise one way (the declaration is a curated view: `setRouting` widens the real routing union to `string`, and
+// `ConstructSpec` omits the optional `romBytes`), the graph type stays opaque on purpose, and the two pure helpers and
+// the session runner must agree exactly.
+export type _DirectGraphCtorArity = Assert<
+  Exact<ConstructorParameters<typeof Sdk.DirectGraph>["length"], ConstructorParameters<typeof Dts.DirectGraph>["length"],
+    "DirectGraph's constructor takes a different number of arguments than the declaration says">
+>;
+export type _DirectGraph = Assert<
+  Covers<InstanceType<typeof Sdk.DirectGraph>, InstanceType<typeof Dts.DirectGraph>,
+    "DirectGraph: the declaration describes a member the class does not have">
+>;
+export type _ConstructSpec = Assert<
+  Covers<RealConstructSpec, Dts.ConstructSpec,
+    "ConstructSpec: the declaration describes a field the real spec does not have">
+>;
+export type _EngineGraphOpaque = Assert<
+  keyof Dts.EngineGraph extends never ? true : "EngineGraph: the declaration names a member, so it is no longer opaque"
+>;
+export type _EngineGraph = Assert<
+  Covers<RealEngineGraph, Dts.EngineGraph, "EngineGraph: the real graph does not satisfy the declared one">
+>;
+export type _RunSessionArity = Assert<
+  Exact<Parameters<typeof Sdk.runSession>["length"], Parameters<typeof Dts.runSession>["length"],
+    "runSession takes a different number of arguments than the declaration says">
+>;
+export type _RunSessionReturn = Assert<
+  Exact<ReturnType<typeof Sdk.runSession>, ReturnType<typeof Dts.runSession>, "runSession's return type">
+>;
+export type _RunSessionArg = Assert<
+  Covers<Parameters<typeof Dts.runSession>, Parameters<typeof Sdk.runSession>,
+    "runSession: the declaration's callback does not match the implementation's">
+>;
+export type _Interleave = Assert<
+  Exact<Parameters<typeof Sdk.interleaveStereoStreams>, Parameters<typeof Dts.interleaveStereoStreams>,
+    "interleaveStereoStreams' parameters">
+>;
+export type _InterleaveReturn = Assert<
+  Exact<ReturnType<typeof Sdk.interleaveStereoStreams>, ReturnType<typeof Dts.interleaveStereoStreams>,
+    "interleaveStereoStreams' return type">
+>;
+export type _Deinterleave = Assert<
+  Exact<Parameters<typeof Sdk.deinterleaveStereo>, Parameters<typeof Dts.deinterleaveStereo>,
+    "deinterleaveStereo's parameters">
+>;
+export type _DeinterleaveReturn = Assert<
+  Exact<ReturnType<typeof Sdk.deinterleaveStereo>, ReturnType<typeof Dts.deinterleaveStereo>,
+    "deinterleaveStereo's return type">
+>;
+
 export type _SystemsStore = Assert<Covers<Sdk.SystemsStore, Dts.SystemsStore, "SystemsStore: the declaration describes a member the implementation does not have">>;
 export type _AudioDriver = Assert<Covers<Sdk.AudioDriver, Dts.AudioDriver, "AudioDriver: the declaration describes a member the implementation does not have">>;
 
@@ -112,6 +167,21 @@ export function sdkSurfaceCheck(): void {
     if (why) return skip(why);
   };
   guard(rom ? "" : "no ROM argument");
+
+  // A direct graph shares the session's engine graph, and its instance satisfies the declaration's class.
+  const real = realBootSession();
+  const direct: Dts.DirectGraph = new DirectGraph(real.backend, real.project.graph);
+  void direct.ids();
+  // The declared constructor takes a session's backend and graph: the file's own session (from the declaration) is the
+  // narrower view, so this one is built from the implementation.
+  void s;
+  // The declaration's ConstructSpec is a narrower view of the real one, which a caller may hand it.
+  const spec = { romPath: rom ?? "", platform: "gb", core: "sameboy", embeddedRom: "", savPath: null,
+    statePath: null } satisfies Dts.ConstructSpec;
+  void spec;
+  // The two stereo helpers split and join a render's PCM.
+  void interleaveStereoStreams([deinterleaveStereo(new Float32Array(4))[0]]);
+  // `runSession` is not called here: it exits the process, which this compile-only check must not do.
 
   // The lossy-transport knob is a role config, so it is only checked for shape.
   s.project.systems.setRoleConfig(id, "mesen", { fifo: "hardware", fifoBytesPerSecond: 20000 });

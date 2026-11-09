@@ -1,24 +1,14 @@
 {
   // The shell's own program: the app, its tests, the UI harness and every workspace package's TS half. The compiler
-  // options are tsconfig.base.json's (the same ones each package's tsconfig extends), plus the two path aliases the app
-  // needs; the runtime's ambient globals come from the base's `files`.
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    // Resolve the bare specifier a CONSUMER uses to the shipped declaration file, exactly as their
-    // tsconfig does. Nothing in the app imports it; it exists so cli/sdkSurfaceCheck.ts can be
-    // type-checked against the .d.ts, which is hand-maintained and has twice shipped out of step
-    // with the implementation it describes.
-    "paths": {
-      "retroplug-cli": ["./cli/sdk-types.d.ts"],
-      // The alias scripts/run-ui-tests.mjs gives esbuild. Without it the 37 test-ui files cannot be
-      // type-checked at all, which is why they were excluded - and therefore never checked.
-      "ui-harness": ["./test-ui/uiHarness.ts"]
-    }
-  },
+  // options are tsconfig.base.json's (the same ones each package's tsconfig extends); the paths are the generated
+  // file's, which carries both the host modules a package imports through its surface's host (`retroplug-cli` today,
+  // from host-modules.json) and the one alias the UI tests use (from tsconfig.aliases.json). The runtime's ambient
+  // globals come from the base's `files`.
+  "extends": ["../../tsconfig.base.json", "./tsconfig.paths.json"],
   // The shell's own trees, and every workspace package's TS half by one glob, so a package added to the workspace is
   // type-checked without an entry here: its own ts/ tree, sources and ts/test alike. packages/native's device-mode
   // fixture packs stay listed (they are fixtures of a native test, not a package).
-  "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../*/ts",
+  "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../*/ts", "../*/examples",
               "../native/test/device-mode/script-packs"],
   // The package generator's and the boundary check's fixture trees: data they read (and the generator writes), laid out
   // as a workspace root and its packages are, not modules of this program (their imports name a fixture tree's files,

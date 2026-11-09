@@ -1,0 +1,484 @@
+// `retroplug-cli risa-rom` — inspect, extract and edit the static assets (DPCM sample kits, themes, fonts)
+// inside a risa (NES/MMC5) `.nes` ROM, headlessly. The risa twin of ./lsdj-rom.ts, backed by the pure-TS
+// packages/risa's rom module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile
+// is the TypeScript kit compiler (host.kits.compile with risa's format); sample splicing
+// re-packs existing DPCM + a freshly-compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
+//
+// ONE JSON schema drives the editing verbs (see RISA_ROM_HELP): a manifest of kit/theme/font entries, each
+// of which BUILDS/IMPORTS from a file or TWEAKS metadata; `build-kit` reads a single, slotless kit entry.
+//
+//   retroplug-cli risa-rom info          <rom> [--json]
+//   retroplug-cli risa-rom extract       <rom> <outDir> [--rate N]
+//   retroplug-cli risa-rom patch         <rom> <manifest.json> <out>       (the whole-ROM manifest)
+//   retroplug-cli risa-rom build-kit     <kit.json> <out.rkit> [flags]     (compile → .rkit file)
+//   retroplug-cli risa-rom import-sample <rom> <kit> <audio> [flags]       (compile one + splice)
+//   retroplug-cli risa-rom remove-sample <rom> <kit> <slot> [--out rom]
+//   retroplug-cli risa-rom export-theme  / import-theme   (.rit palette-role JSON)
+//   retroplug-cli risa-rom export-font   / import-font    (.chr raw 8 KB CHR banks)
+//   retroplug-cli risa-rom export-kit    / import-kit     (.rkit raw 8 KB DPCM banks)
+import type { CliHost, CliTool } from "@retroplug/core/cliTool";
+import type { KitEffect } from "@retroplug/dsp/kitEffect";
+import type { RisaDmcSampleSpec, RisaKitCompileSpec } from "../kitFormat";
+import { NO_SLOT_REASON } from "@retroplug/dsp";
+import { encodeWav } from "@retroplug/dsp/wav";
+import {
+  RisaRom,
+  bankToModel,
+  isBankPopulated,
+  assembleKitBank,
+  dpcmDecode,
+  serializeRit,
+  parseRit,
+  decodeThemeFromRom,
+  normalizeTheme,
+  encodeThemeRecord,
+  encodeThemeName,
+  PAL_DPCM_RATES_HZ,
+  KIT_BANK_SIZE,
+  KIT_SLOT_COUNT,
+  CHR_BANK_SIZE,
+  type AssembleSlot,
+} from "../rom";
+
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+const sanitize = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") || "_";
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+
+function openRom(host: CliHost, path: string): RisaRom {
+  const bytes = host.files.readFile(path);
+  if (!bytes) throw new Error(`cannot read ROM: ${path}`);
+  const rom = RisaRom.fromBytes(bytes);
+  if (!rom.isRisa) throw new Error(`not a recognised risa ROM (size=${bytes.length})`);
+  return rom;
+}
+
+const flag = (args: string[], name: string): string | undefined => {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+};
+const has = (args: string[], name: string): boolean => args.includes(name);
+const positionals = (args: string[]): string[] => {
+  // Tokens that aren't a flag and aren't a flag's value. Only value-taking flags consume the next token.
+  const valueFlags = new Set(["--out", "--name", "--slot", "--rate", "--gain", "--filter", "--cutoff", "--q"]);
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith("--")) {
+      if (valueFlags.has(args[i])) i++;
+      continue;
+    }
+    out.push(args[i]);
+  }
+  return out;
+};
+
+function readOrThrow(host: CliHost, path: string, what: string): Uint8Array {
+  const data = host.files.readFile(path);
+  if (!data) throw new Error(`cannot read ${what}: ${path}`);
+  return data;
+}
+
+// --- kit compile (the TypeScript kit compiler, host.kits.compile) -------------------------------
+
+// Per-sample shaping. risa's DMC compile skips dither (4-bit only), so gain/filter only. --no-normalize maps
+// to the DMC 7-bit normalize (spec.normalize) rather than a gain effect, so there's no double-normalize.
+function effectsFromFlags(args: string[]): KitEffect[] {
+  const fx: KitEffect[] = [];
+  const gain = flag(args, "--gain");
+  if (gain != null) fx.push({ type: "gain", normalize: false, gain: Number(gain) });
+  const filter = flag(args, "--filter");
+  if (filter) {
+    fx.push({
+      type: "filter",
+      frequency: flag(args, "--cutoff") != null ? Number(flag(args, "--cutoff")) : 5734,
+      q: flag(args, "--q") != null ? Number(flag(args, "--q")) : 1,
+      filterType: filter,
+    } as KitEffect);
+  }
+  return fx;
+}
+
+// The CLI fallbacks a build source uses when it doesn't carry its own value.
+interface Fallbacks {
+  effects: KitEffect[];
+  rate?: number;
+  loop: boolean;
+  normalize: boolean;
+}
+function fallbacks(args: string[]): Fallbacks {
+  return {
+    effects: effectsFromFlags(args),
+    rate: flag(args, "--rate") != null ? Number(flag(args, "--rate")) : undefined,
+    loop: has(args, "--loop"),
+    normalize: !has(args, "--no-normalize"),
+  };
+}
+
+function sampleName(file: string): string {
+  return file.slice(file.lastIndexOf("/") + 1).replace(/\.[^.]*$/, "");
+}
+function resolvePath(baseFile: string, p: string): string {
+  if (p.startsWith("/")) return p;
+  return baseFile.slice(0, baseFile.lastIndexOf("/") + 1) + p;
+}
+
+type BuildSource = string | { file: string; name?: string; offset?: number; length?: number; effects?: KitEffect[]; rate?: number; loop?: boolean; normalize?: boolean };
+function normalizeBuild(build: BuildSource[]): Exclude<BuildSource, string>[] {
+  return build.map((b) => (typeof b === "string" ? { file: b } : b));
+}
+
+// Compile a whole 8 KB DPCM bank from `build` sources, asserting every source landed. Shared by build-kit +
+// patch. The compiler leaves a refused slot empty and says why, so a slot that did not land is reported with
+// its reason rather than a generic failure.
+async function compileKitBank(host: CliHost, name: string, build: BuildSource[], baseFile: string, fb: Fallbacks): Promise<Uint8Array> {
+  const sources = normalizeBuild(build);
+  const samples: RisaDmcSampleSpec[] = sources.map((sm) => ({
+    path: resolvePath(baseFile, sm.file),
+    name: sm.name ?? sampleName(sm.file),
+    offset: sm.offset,
+    length: sm.length,
+    effects: sm.effects ?? fb.effects,
+    rate: sm.rate ?? fb.rate,
+    loop: sm.loop ?? fb.loop,
+    normalize: sm.normalize ?? fb.normalize,
+  }));
+  const { bytes: bank, errors } = await host.kits.compile<RisaKitCompileSpec>("risa", { name, samples });
+  if (bank.length !== KIT_BANK_SIZE) throw new Error("the kit compiler returned an unexpected bank size");
+  const model = bankToModel(bank);
+  sources.forEach((sm, i) => {
+    if (!model.slots[i])
+      throw new Error(
+        `sample ${i} (${sm.file}) did not compile: ${errors[i] ?? NO_SLOT_REASON}`,
+      );
+  });
+  return bank;
+}
+
+// --- manifest schema (patch whole-ROM + build-kit single entry) -----------------------------------------
+
+interface KitEntry {
+  slot?: number;
+  name?: string;
+  build?: BuildSource[];
+  file?: string; // import a .rkit bank
+  samples?: { index: number; name: string }[]; // renames
+}
+interface ThemeEntry {
+  slot: number;
+  file: string; // import a .rit
+}
+interface FontEntry {
+  slot: number;
+  file: string; // import a .chr
+}
+interface Manifest {
+  kits?: KitEntry[];
+  themes?: ThemeEntry[];
+  fonts?: FontEntry[];
+}
+
+// The kit's 16 slots as re-packable AssembleSlots (null where empty), for splice/rename.
+function kitSlots(rom: RisaRom, kitIndex: number): { name: string; slots: (AssembleSlot | null)[] } {
+  const bank = rom.getKitBank(kitIndex);
+  if (!bank) throw new Error(`kit index ${kitIndex} out of range`);
+  const model = bankToModel(bank);
+  return {
+    name: model.name,
+    slots: model.slots.map((sl) => (sl ? { dpcm: sl.dpcm, rate: sl.rate, loop: sl.loop, name: sl.name } : null)),
+  };
+}
+
+// Apply kit metadata renames (kit name and/or per-sample names) by re-assembling the current bank.
+function applyKitRenames(rom: RisaRom, slot: number, newName: string | undefined, renames: { index: number; name: string }[] | undefined): void {
+  const { name, slots } = kitSlots(rom, slot);
+  for (const r of renames ?? []) if (slots[r.index]) slots[r.index]!.name = r.name;
+  rom.setKit(slot, assembleKitBank(newName ?? name, slots));
+}
+
+// --- verbs ----------------------------------------------------------------------------------------------
+
+function romToJson(rom: RisaRom): unknown {
+  const themes = rom.themes().map((t) => ({ slot: t.slot, theme: serializeRit(t.theme).theme }));
+  const fonts = rom.fonts().map((f) => ({ slot: f.slot }));
+  const kits = rom.kits().map((k) => ({
+    slot: k.slot,
+    name: k.name,
+    samples: k.model.slots.map((sm, i) => (sm ? { slot: i, name: sm.name, rate: sm.rate, loop: sm.loop, bytes: sm.dpcm.length } : null)).filter(Boolean),
+  }));
+  return { themes, fonts, kits };
+}
+
+function info(host: CliHost, args: string[]): void {
+  const romPath = positionals(args)[0];
+  if (!romPath) throw new Error("usage: risa-rom info <rom> [--json]");
+  const rom = openRom(host, romPath);
+  if (has(args, "--json")) {
+    console.log(JSON.stringify(romToJson(rom), null, 2));
+    return;
+  }
+  const themes = rom.themes();
+  console.log(`themes: ${themes.length}`);
+  for (const t of themes) console.log(`  [${String(t.slot).padStart(2)}] ${t.theme.name.trim() || "(unnamed)"}`);
+  const fonts = rom.fonts();
+  console.log(`fonts: ${fonts.length}`);
+  const kits = rom.kits();
+  console.log(`kits: ${kits.length} populated`);
+  for (const k of kits) console.log(`  [${String(k.slot).padStart(2)}] ${k.name.padEnd(6)}  ${k.model.slots.filter(Boolean).length} samples`);
+}
+
+function extract(host: CliHost, args: string[]): void {
+  const [romPath, outDir] = positionals(args);
+  if (!romPath || !outDir) throw new Error("usage: risa-rom extract <rom> <outDir> [--rate N]");
+  const rateOverride = flag(args, "--rate") != null ? parseInt(flag(args, "--rate")!, 10) : undefined;
+  const rom = openRom(host, romPath);
+  const write = (name: string, bytes: Uint8Array) => {
+    if (!host.files.writeFile(`${outDir}/${name}`, bytes)) throw new Error(`write failed: ${outDir}/${name}`);
+  };
+
+  write("rom.json", enc.encode(JSON.stringify(romToJson(rom), null, 2)));
+  for (const t of rom.themes())
+    write(`theme${pad2(t.slot)}_${sanitize(t.theme.name)}.rit`, enc.encode(JSON.stringify(serializeRit(t.theme), null, 2) + "\n"));
+  for (const f of rom.fonts()) {
+    const bank = rom.getChrFontSlot(f.slot);
+    if (bank) write(`font${pad2(f.slot)}.chr`, bank);
+  }
+
+  let wavs = 0;
+  for (const k of rom.kits()) {
+    const kitName = sanitize(k.name);
+    k.model.slots.forEach((sm, i) => {
+      if (!sm) return;
+      const rate = rateOverride ?? Math.round(PAL_DPCM_RATES_HZ[sm.rate] ?? PAL_DPCM_RATES_HZ[12]);
+      write(`kit${pad2(k.slot)}_${kitName}_${pad2(i)}_${sanitize(sm.name)}.wav`, encodeWav(dpcmDecode(sm.dpcm), rate, 1));
+      wavs++;
+    });
+  }
+  console.log(`extracted ${wavs} sample WAVs + ${rom.themes().length} themes + ${rom.fonts().length} fonts + rom.json to ${outDir}`);
+}
+
+async function buildKit(host: CliHost, args: string[]): Promise<void> {
+  const [specPath, outKit] = positionals(args);
+  if (!specPath || !outKit) throw new Error("usage: risa-rom build-kit <kit.json> <out.rkit> [effect flags]");
+  const spec = JSON.parse(dec.decode(readOrThrow(host, specPath, "kit spec"))) as KitEntry;
+  if (!spec.build || spec.build.length === 0) throw new Error('kit spec needs a "build" array of source audio files');
+  const bank = await compileKitBank(host, spec.name ?? "", spec.build, specPath, fallbacks(args));
+  if (!host.files.writeFile(outKit, bank)) throw new Error(`write failed: ${outKit}`);
+  console.log(`built kit "${spec.name ?? ""}" (${spec.build.length} samples); wrote ${outKit}`);
+}
+
+async function importSample(host: CliHost, args: string[]): Promise<void> {
+  const [romPath, kitStr, audio] = positionals(args);
+  if (!romPath || kitStr == null || !audio) throw new Error("usage: risa-rom import-sample <rom> <kit> <audio> [--slot N] [--name X] [--out rom] [flags]");
+  const kitIndex = parseInt(kitStr, 10);
+  const rom = openRom(host, romPath);
+  const name = flag(args, "--name") ?? sampleName(audio);
+  const fb = fallbacks(args);
+
+  // Compile the one sample (a throwaway 1-sample bank) and pull its DPCM back out.
+  const one = await host.kits.compile<RisaKitCompileSpec>("risa", {
+    name: "",
+    samples: [{ path: audio, name, effects: fb.effects, rate: fb.rate, loop: fb.loop, normalize: fb.normalize }],
+  });
+  const compiled = bankToModel(one.bytes).slots[0];
+  if (!compiled) throw new Error(`failed to compile ${audio}: ${one.errors[0] ?? NO_SLOT_REASON}`);
+
+  const { name: kitName, slots } = kitSlots(rom, kitIndex);
+  const slotStr = flag(args, "--slot");
+  let slot: number;
+  if (slotStr == null || slotStr === "next") {
+    slot = slots.findIndex((x) => x == null);
+    if (slot < 0) throw new Error("kit is full (16 samples) — target a slot with --slot N");
+  } else {
+    slot = parseInt(slotStr, 10);
+    if (slot < 0 || slot >= KIT_SLOT_COUNT) throw new Error(`--slot ${slot} out of range (0..${KIT_SLOT_COUNT - 1})`);
+  }
+  slots[slot] = { dpcm: compiled.dpcm, rate: compiled.rate, loop: compiled.loop, name };
+
+  rom.setKit(kitIndex, assembleKitBank(kitName, slots));
+  const out = flag(args, "--out") ?? romPath;
+  if (!host.files.writeFileAtomic(out, rom.bytes())) throw new Error(`write failed: ${out}`);
+  console.log(`imported ${name} into kit ${kitIndex} slot ${slot}; wrote ${out}`);
+}
+
+function removeSample(host: CliHost, args: string[]): void {
+  const [romPath, kitStr, slotStr] = positionals(args);
+  if (!romPath || kitStr == null || slotStr == null) throw new Error("usage: risa-rom remove-sample <rom> <kit> <slot> [--out rom]");
+  const kitIndex = parseInt(kitStr, 10);
+  const slot = parseInt(slotStr, 10);
+  const rom = openRom(host, romPath);
+  const { name, slots } = kitSlots(rom, kitIndex);
+  if (slot < 0 || slot >= KIT_SLOT_COUNT || !slots[slot]) throw new Error(`slot ${slot} is not populated`);
+  slots[slot] = null; // empty the slot — its index is preserved (risa slots are index-addressed)
+  rom.setKit(kitIndex, assembleKitBank(name, slots));
+  const out = flag(args, "--out") ?? romPath;
+  if (!host.files.writeFileAtomic(out, rom.bytes())) throw new Error(`write failed: ${out}`);
+  console.log(`removed slot ${slot} from kit ${kitIndex}; wrote ${out}`);
+}
+
+function exportTheme(host: CliHost, args: string[]): void {
+  const [romPath, idxStr, out] = positionals(args);
+  if (!romPath || idxStr == null || !out) throw new Error("usage: risa-rom export-theme <rom> <index> <out.rit>");
+  const rom = openRom(host, romPath);
+  const t = rom.getTheme(parseInt(idxStr, 10));
+  if (!t) throw new Error(`theme ${idxStr} out of range / no theme table`);
+  const theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
+  if (!host.files.writeFile(out, enc.encode(JSON.stringify(serializeRit(theme), null, 2) + "\n"))) throw new Error(`write failed: ${out}`);
+  console.log(`wrote theme ${idxStr} to ${out}`);
+}
+
+function importTheme(host: CliHost, args: string[]): void {
+  const [romPath, file, idxStr] = positionals(args);
+  if (!romPath || !file || idxStr == null) throw new Error("usage: risa-rom import-theme <rom> <in.rit> <index> [--out rom]");
+  const rom = openRom(host, romPath);
+  const { theme } = parseRit(JSON.parse(dec.decode(readOrThrow(host, file, "theme .rit")))); // throws on a bad .rit
+  const t = normalizeTheme(theme);
+  rom.setTheme(parseInt(idxStr, 10), encodeThemeRecord(t), encodeThemeName(t));
+  const out = flag(args, "--out") ?? romPath;
+  if (!host.files.writeFileAtomic(out, rom.bytes())) throw new Error(`write failed: ${out}`);
+  console.log(`imported ${file} into theme ${idxStr}; wrote ${out}`);
+}
+
+function exportFont(host: CliHost, args: string[]): void {
+  const [romPath, idxStr, out] = positionals(args);
+  if (!romPath || idxStr == null || !out) throw new Error("usage: risa-rom export-font <rom> <index> <out.chr>");
+  const rom = openRom(host, romPath);
+  const bank = rom.getChrFontSlot(parseInt(idxStr, 10));
+  if (!bank) throw new Error(`font ${idxStr} out of range / no CHR region`);
+  if (!host.files.writeFile(out, bank)) throw new Error(`write failed: ${out}`);
+  console.log(`wrote font ${idxStr} (8 KB CHR bank) to ${out}`);
+}
+
+function importFont(host: CliHost, args: string[]): void {
+  const [romPath, file, idxStr] = positionals(args);
+  if (!romPath || !file || idxStr == null) throw new Error("usage: risa-rom import-font <rom> <in.chr> <index> [--out rom]");
+  const rom = openRom(host, romPath);
+  const data = readOrThrow(host, file, "font .chr");
+  if (data.length !== CHR_BANK_SIZE) throw new Error(`.chr must be exactly 8 KB (got ${data.length})`);
+  rom.setChrFontSlot(parseInt(idxStr, 10), data);
+  const out = flag(args, "--out") ?? romPath;
+  if (!host.files.writeFileAtomic(out, rom.bytes())) throw new Error(`write failed: ${out}`);
+  console.log(`imported ${file} into font ${idxStr}; wrote ${out}`);
+}
+
+function exportKit(host: CliHost, args: string[]): void {
+  const [romPath, idxStr, out] = positionals(args);
+  if (!romPath || idxStr == null || !out) throw new Error("usage: risa-rom export-kit <rom> <index> <out.rkit>");
+  const rom = openRom(host, romPath);
+  const bank = rom.getKitBank(parseInt(idxStr, 10));
+  if (!bank || !isBankPopulated(bank)) throw new Error(`kit ${idxStr} is empty / out of range`);
+  if (!host.files.writeFile(out, bank)) throw new Error(`write failed: ${out}`);
+  console.log(`wrote kit ${idxStr} (8 KB DPCM bank) to ${out}`);
+}
+
+function importKit(host: CliHost, args: string[]): void {
+  const [romPath, file, idxStr] = positionals(args);
+  if (!romPath || !file || idxStr == null) throw new Error("usage: risa-rom import-kit <rom> <in.rkit> <index> [--out rom]");
+  const rom = openRom(host, romPath);
+  const data = readOrThrow(host, file, "kit .rkit");
+  if (data.length !== KIT_BANK_SIZE || !isBankPopulated(data)) throw new Error(`.rkit must be a populated 8 KB DPCM bank`);
+  rom.setKit(parseInt(idxStr, 10), data); // dual-writes the ROM's kit-metadata mirror
+  const out = flag(args, "--out") ?? romPath;
+  if (!host.files.writeFileAtomic(out, rom.bytes())) throw new Error(`write failed: ${out}`);
+  console.log(`imported ${file} into kit ${idxStr}; wrote ${out}`);
+}
+
+async function patchManifest(host: CliHost, args: string[]): Promise<void> {
+  const [romPath, manifestPath, outRom] = positionals(args);
+  if (!romPath || !manifestPath || !outRom) throw new Error("usage: risa-rom patch <rom> <manifest.json> <out>");
+  const rom = openRom(host, romPath);
+  const m = JSON.parse(dec.decode(readOrThrow(host, manifestPath, "manifest"))) as Manifest;
+  const fb = fallbacks(args);
+  let applied = 0;
+
+  for (const ke of m.kits ?? []) {
+    if (ke.slot == null) throw new Error('a manifest kit entry needs a "slot"');
+    if (ke.build) {
+      const bank = await compileKitBank(host, ke.name ?? "", ke.build, manifestPath, fb);
+      rom.setKit(ke.slot, bank);
+    } else if (ke.file) {
+      const bank = readOrThrow(host, resolvePath(manifestPath, ke.file), "kit");
+      if (bank.length !== KIT_BANK_SIZE || !isBankPopulated(bank)) throw new Error(`kit file ${ke.file}: not a populated 8 KB .rkit`);
+      rom.setKit(ke.slot, bank);
+    }
+    // Metadata renames (a bare-metadata entry, or renames layered on a build/import). `build` already baked
+    // the kit name, so only rename it when there was no build.
+    if ((ke.name != null && !ke.build) || (ke.samples && ke.samples.length)) {
+      applyKitRenames(rom, ke.slot, ke.name != null && !ke.build ? ke.name : undefined, ke.samples);
+    }
+    applied++;
+  }
+
+  for (const te of m.themes ?? []) {
+    if (!te.file) throw new Error(`theme entry (slot ${te.slot}) needs "file"`);
+    const { theme } = parseRit(JSON.parse(dec.decode(readOrThrow(host, resolvePath(manifestPath, te.file), "theme"))));
+    const t = normalizeTheme(theme);
+    rom.setTheme(te.slot, encodeThemeRecord(t), encodeThemeName(t));
+    applied++;
+  }
+
+  for (const fe of m.fonts ?? []) {
+    if (!fe.file) throw new Error(`font entry (slot ${fe.slot}) needs "file"`);
+    const data = readOrThrow(host, resolvePath(manifestPath, fe.file), "font");
+    if (data.length !== CHR_BANK_SIZE) throw new Error(`font ${fe.file}: .chr must be exactly 8 KB`);
+    rom.setChrFontSlot(fe.slot, data);
+    applied++;
+  }
+
+  if (!host.files.writeFileAtomic(outRom, rom.bytes())) throw new Error(`write failed: ${outRom}`);
+  console.log(`applied ${applied} manifest entr${applied === 1 ? "y" : "ies"}; wrote ${outRom}`);
+}
+
+const RISA_ROM_HELP = [
+  "usage: retroplug-cli risa-rom <subcommand> ...",
+  "",
+  "  info          <rom> [--json]                     theme / font / kit inventory",
+  "  extract       <rom> <outDir> [--rate N]          dump each kit sample to a mono WAV + themes/fonts + rom.json",
+  "  patch         <rom> <manifest.json> <out>        realize a manifest (builds/imports/metadata)",
+  "  build-kit     <kit.json> <out.rkit> [flags]      compile a .rkit from a (slotless) kit entry",
+  "  import-sample <rom> <kit> <audio> [flags]        compile one sample + splice into a kit",
+  "  remove-sample <rom> <kit> <slot> [--out]         empty a kit slot (index preserved)",
+  "  export-theme  <rom> <index> <out.rit>            write theme <index> to a .rit (palette-role JSON)",
+  "  import-theme  <rom> <in.rit> <index> [--out]     import a .rit into theme <index>",
+  "  export-font   <rom> <index> <out.chr>            write font <index>'s 8 KB CHR bank to a .chr",
+  "  import-font   <rom> <in.chr> <index> [--out]     import a .chr bank into font <index>",
+  "  export-kit    <rom> <index> <out.rkit>           write kit <index>'s 8 KB DPCM bank to a .rkit",
+  "  import-kit    <rom> <in.rkit> <index> [--out]    import a .rkit bank into kit <index>",
+  "  (themes are risa's .rit palette-role JSON; fonts are raw 8 KB NES CHR banks; kits are 8 KB DPCM banks)",
+  "",
+  "build-kit / import-sample flags:  --rate N (PAL DPCM index 0-15, default 12)  --loop  --no-normalize",
+  "                     --gain X  --filter LowPass|HighPass|...  --cutoff HZ  --q Q   (no dither; DMC is 1-bit)",
+  "",
+  "ONE schema for patch (whole ROM) and build-kit (a single, slotless kit entry). Every entry either",
+  "BUILDS/IMPORTS from a file or TWEAKS metadata; `slot` = the asset index.",
+  '  { "kits":   [{ "slot": 0, "name": "DRUMS", "build": ["kick.wav", {"file":"sn.wav","name":"SN","rate":12}] },',
+  '               { "slot": 1, "file": "HAT.rkit" },',
+  '               { "slot": 2, "name": "RENAMED", "samples": [{ "index": 0, "name": "BD" }] }],',
+  '    "themes": [{ "slot": 0, "file": "dark.rit" }],',
+  '    "fonts":  [{ "slot": 0, "file": "big.chr" }] }',
+  "build-kit takes ONE kit entry without a slot, e.g.",
+  '  { "name": "MYKIT", "build": [{ "file": "kick.wav", "name": "BD", "rate": 12 }, "snare.wav"] }   → then import-kit',
+  "  (build source: a path string, or { file, name?, rate?, loop?, normalize?, offset?, length?, effects? })",
+].join("\n");
+
+export const risaRomTool: CliTool = {
+  name: "risa-rom",
+  summary: "inspect / extract / metadata-patch risa ROM kits, themes and fonts",
+  help: RISA_ROM_HELP,
+  run(host: CliHost, args: string[]): void | Promise<void> {
+    const sub = args[0];
+    const rest = args.slice(1);
+    if (sub === "info") return info(host, rest);
+    if (sub === "extract") return extract(host, rest);
+    if (sub === "patch") return patchManifest(host, rest);
+    if (sub === "build-kit") return buildKit(host, rest);
+    if (sub === "import-sample") return importSample(host, rest);
+    if (sub === "remove-sample") return removeSample(host, rest);
+    if (sub === "export-theme") return exportTheme(host, rest);
+    if (sub === "import-theme") return importTheme(host, rest);
+    if (sub === "export-font") return exportFont(host, rest);
+    if (sub === "import-font") return importFont(host, rest);
+    if (sub === "export-kit") return exportKit(host, rest);
+    if (sub === "import-kit") return importKit(host, rest);
+    throw new Error(`unknown subcommand '${sub ?? ""}'\n\n${RISA_ROM_HELP}`);
+  },
+};

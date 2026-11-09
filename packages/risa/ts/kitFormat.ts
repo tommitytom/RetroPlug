@@ -7,27 +7,21 @@
 //
 // What a slot is when its window comes out empty is settled here rather than run, since a job can neither take an
 // input of no frames nor record one.
-import type { KitCompileResult, KitFormat, KitJobRunner, KitSampleSpec } from "@retroplug/dsp/kitContract";
+import type { KitCompileResult, KitFormat, KitJobRunner } from "@retroplug/dsp/kitContract";
 import { compileSlots, load, recorded, runEffects, type Compiled } from "@retroplug/dsp/kitJobs";
 import { dpcmJob, resampleJob, resolveEffects } from "@retroplug/dsp/chain";
 import { DMC_MAX_BYTES, packDmc, palDmcRate, resampledLength } from "@retroplug/dsp/pack";
 import type { OfflineCap } from "@retroplug/core/offlineJob";
 import { assembleKitBankPlaced, type AssembleSlot } from "@retroplug/tracker/nes/kitBank";
+import type { NesDmcKitSpec, NesDmcSampleSpec } from "@retroplug/tracker/nes/kitSpec";
 import { KIT_SAMPLE_REGION, KIT_SLOT_COUNT } from "@retroplug/tracker/nes/constants";
 
-/** One source sample for the risa DMC compiler: a kit sample plus the PAL DPCM playback-rate index (0..15,
- *  default 12), a loop flag, and whether to peak-normalize into the 7-bit domain (default true). */
-export interface RisaDmcSampleSpec extends KitSampleSpec {
-  rate?: number;
-  loop?: boolean;
-  normalize?: boolean;
-}
+/** One source sample for the risa DMC compiler. The shape is shared with BlipToaster's kits, so it is tracker's
+ *  (docs/modular-graph-phase-f4b-design.md section 5.2); risa keeps its own name as an alias. */
+export type RisaDmcSampleSpec = NesDmcSampleSpec;
 
 /** A whole risa DMC kit compile: a 6-char kit name + up to 16 samples. */
-export interface RisaKitCompileSpec {
-  name: string;
-  samples: RisaDmcSampleSpec[];
-}
+export type RisaKitCompileSpec = NesDmcKitSpec;
 
 // The DMC window cap: at most a kit's worth of frames at the rate, scaled to the decoded rate in double with the
 // product first (OfflineJobs' offlineWindow).

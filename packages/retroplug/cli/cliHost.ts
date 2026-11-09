@@ -2,15 +2,14 @@
 // over the backend, the audio driver and the process the tool runs in. It offers the six groups a tool has - files,
 // png, kits, devices, process, songs - and nothing a tool cannot do: no dialogs (a tool takes paths), no live systems
 // and no views.
-import type { Call, Host } from "@retroplug/core/host";
+import type { Call } from "@retroplug/core/host";
+import type { CliHost } from "@retroplug/core/cliTool";
 import type { Session } from "./session";
 import { keepAlive, exitProcess } from "./session";
 import { makeCall } from "../src/rpcClient";
 import { createMidiClient } from "../src/realBackend";
 import { filesPngHost } from "../src/hostGroups";
 import { batteryListing } from "../src/batteryListing";
-
-export type CliHost = Host<"files" | "png" | "kits" | "devices" | "process" | "songs">;
 
 /** `args` is the tool's own argument vector, exactly what its `run(host, args)` was given: the dispatcher strips the
  *  command name, so a tool reads its flags from either. A tool that builds its host without them (or a session run by

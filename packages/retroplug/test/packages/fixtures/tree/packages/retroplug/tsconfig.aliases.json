@@ -1,0 +1,3 @@
+{
+  "ui-harness": ["./test-ui/uiHarness.ts"]
+}

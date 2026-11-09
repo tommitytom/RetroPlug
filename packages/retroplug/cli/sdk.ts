@@ -5,10 +5,11 @@
 // (bundle) + tsc (typecheck) — no copy of this package's src/ tree.
 //
 // Keep this the SSOT for what's "public": adding a symbol here widens the SDK; nothing else does.
-// `runSession` is intentionally NOT exported — a test file uses `test()`/`bootSession()` (runSession
-// would call tjs.exit(0) synchronously and preempt the harness, reporting a false pass).
 
-export { bootSession, hostArgs } from "./session";
+// `runSession` is for a SESSION FILE run by path (`retroplug-cli <file>.js`), which is how the example sessions are
+// written: it boots the control plane, runs the callback and exits with its outcome. A TEST file must not call it - it
+// would exit the process and preempt the harness, reporting a false pass - so a test uses `test()`/`bootSession()`.
+export { bootSession, hostArgs, runSession } from "./session";
 export type { Session } from "./session";
 
 export { Timeline, renderTimeline, Button } from "./timeline";
@@ -21,7 +22,11 @@ export type { CoreTransportStats, BreakHit, BreakHitBatch, PngImageData } from "
 export type { LoadResult, SystemsStore } from "../src/systemsStore";
 export type { AudioDriver } from "../src/audioDriver";
 
-export { encodeWav } from "./wav";
+export { encodeWav, interleaveStereoStreams, deinterleaveStereo } from "./wav";
+
+// A graph of systems a session builds directly, beside the project's own (`s.project.graph`), for a session that
+// constructs its systems rather than loading them from a document (the link-cable example does).
+export { DirectGraph } from "../src/graph/directGraph";
 
 export { test, expect, skip } from "@retroplug/testing";
 

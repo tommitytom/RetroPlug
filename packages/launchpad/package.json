@@ -26,7 +26,8 @@
     "./testSupport/fakeDevice": "./ts/testSupport/fakeDevice.ts",
     "./launchTarget": "./ts/launchTarget.ts",
     "./client": "./ts/client.ts",
-    "./ui": "./ts/ui/index.ts"
+    "./ui": "./ts/ui/index.ts",
+    "./cli": "./ts/cli/index.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
@@ -58,6 +59,7 @@
         "provider": "rp_launchpad_provider",
         "rpc": { "header": "launchpad/desktop/LaunchpadRpc.hpp", "register": "rp::launchpad::registerRpc" }
       }
-    ]
+    ],
+    "cli": "ts/cli/index.ts"
   }
 }

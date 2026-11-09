@@ -31,6 +31,10 @@ function buildOptions(entry, outFile, format = "esm") {
     // "use strict" directive today, so it is pinned on: tools/ts-options.js says why a bundle names its own options.
     tsconfigRaw: tsOptions({ alwaysStrict: true }),
     outfile: resolve(outFile),
+    // A package's example session imports the SDK by the bare `retroplug-cli` specifier, which the binary serves from
+    // its loaded-module table at run time (as it does for a test file), so it must not be bundled in: the example is a
+    // few lines against the binary's own SDK. The shell's own sessions import their modules relatively and still bundle.
+    external: ["retroplug-cli"],
     define: {
       "process.env.NODE_ENV": '"production"',
     },
