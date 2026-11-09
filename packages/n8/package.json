@@ -10,6 +10,7 @@
   "exports": {
     ".": "./ts/index.ts",
     "./app": "./ts/app.ts",
+    "./consoles": "./ts/consoles.ts",
     "./n8MidiToFifoNode": "./ts/n8MidiToFifoNode.ts",
     "./protocol": "./ts/protocol.ts"
   },
@@ -24,6 +25,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "consoles": "ts/consoles.ts",
     "protocol": {
       "module": "ts/protocol.ts",
       "nodes": [{ "type": "rp.n8.midi-to-fifo", "label": 18, "midiIn": "midiIn", "writes": ["midi"] }],

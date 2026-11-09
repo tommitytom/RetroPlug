@@ -10,6 +10,7 @@
   "exports": {
     ".": "./ts/index.ts",
     "./app": "./ts/app.ts",
+    "./consoles": "./ts/consoles.ts",
     "./enums": "./ts/enums.ts"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
   },
   "retroplug": {
     "app": "ts/app.ts",
+    "consoles": "ts/consoles.ts",
     "native": { "target": "retroplug-mesen", "entry": "rp_mesen_package", "device": false }
   }
 }

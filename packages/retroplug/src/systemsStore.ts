@@ -27,19 +27,17 @@ import { bootSystem, ResourcePool, systemHandles } from "./graph/systemResources
 import { canonicalJson } from "@retroplug/core/canonicalJson";
 import { EngineGraph } from "./engineGraph";
 import {
-  detectPlatform,
+  classifyRom as classifyRomByContent,
   romHasBattery,
-  ROM_SNIFF_LEN,
-  SEGA_SNIFF_LEN,
   defaultCoreFor,
   systemNodeTypeFor,
   type Platform,
   type Core,
 } from "./platform";
+import { platformEntry, providerHeaderBytes } from "./consoles";
 
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
 import { flushBatteryForTeardown, type SramTarget } from "./sramAutoSave";
-import { extensionLower } from "./pathUtil";
 import {
   type SystemEntry,
   findById,
@@ -81,8 +79,10 @@ const ROLE_HEADER_LEN = 0x150;
  *
  *  One read at construct, not on the classify path. */
 function readRoleHeader(backend: RoleHeaderCaps, platform: Platform, romPath: string): Uint8Array {
-  if (platform === "sms" || platform === "gg")
-    return backend.readFilePrefix(romPath, SEGA_SNIFF_LEN) ?? new Uint8Array();
+  // The console's own prefix where its header sits deep in the file (a Sega's is at the end of a bank): that is how much
+  // its descriptor asks the ROM providers to be shown.
+  const deep = providerHeaderBytes(platform);
+  if (deep !== undefined) return backend.readFilePrefix(romPath, deep) ?? new Uint8Array();
 
   const short = backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array();
   if (platform !== "nes" || !needsChipLabelScan(short)) return short;
@@ -119,18 +119,13 @@ const BLANK_SRAM_BYTES = 0x20000;
 /** Classify a ROM's platform from its header only - the one place ROM bytes enter TS. Native never
  *  classifies.
  *
- *  Two tiers, because the Nintendo headers sit at the START of the file while a Sega 8-bit header sits
- *  at the end of the first bank ($7FF0, or $81F0 with a copier header). Reading that far on every
- *  classify would make GB/NES/GBA - the overwhelmingly common case - pay 33 KB to find a logo in the
- *  first 0x134 bytes. So the deep read happens only for a file the cheap tier already declined, which
- *  is SMS/GG ROMs and genuine non-ROMs. `readFilePrefix` truncates to the real file size, so asking for
- *  more than a file holds is safe. */
+ *  The reading is the console registry's (consoles.ts classifyRom), which does it in tiers because the Nintendo headers
+ *  sit at the START of the file while a Sega 8-bit header sits at the end of the first bank ($7FF0, or $81F0 with a
+ *  copier header): reading that far on every classify would make GB/NES/GBA - the overwhelmingly common case - pay 33 KB
+ *  to find a logo in the first 0x134 bytes, so the deep read happens only for a file the cheap tier already declined.
+ *  `readFilePrefix` truncates to the real file size, so asking for more than a file holds is safe. */
 export function classifyRom(backend: HostBackend, romPath: string): Platform | "unknown" {
-  const head = backend.readFilePrefix(romPath, ROM_SNIFF_LEN) ?? new Uint8Array();
-  const fast = detectPlatform(head);
-  if (fast !== "unknown") return fast;
-  const deep = backend.readFilePrefix(romPath, SEGA_SNIFF_LEN) ?? new Uint8Array();
-  return detectPlatform(deep, extensionLower(romPath));
+  return classifyRomByContent(backend, romPath);
 }
 
 /** A system as the UI sees it: identity + live `focused`/`missing` flags + the
@@ -263,12 +258,13 @@ export class SystemsStore {
   graphSystems(): GraphSystem[] {
     return this.entries.map((e) => {
       const coreConfig = e.roles.find((r) => r.kind === e.core)?.config;
+      const type = systemNodeTypeFor(e.platform);
       const system: GraphSystem = {
         id: e.id,
         platform: e.platform,
-        type: systemNodeTypeFor(e.platform),
-        linkGroup: linkGroupOf(coreConfig),
-        exportMode: exportModeOf(coreConfig),
+        type,
+        linkGroup: linkGroupOf(type, coreConfig),
+        exportMode: exportModeOf(type, coreConfig),
         resources: e.resources,
         romName: e.romName,
         pipeline: protocolPipeline(e.roles),
@@ -1005,10 +1001,10 @@ export class SystemsStore {
     // live unless that document carries it anyway, and a construct-time field that moved is a new system.
     const before = systemKnobs({ type, coreConfig: was });
     const after = systemKnobs({ type, coreConfig: config });
-    const linkGroupMoved = roleKind === e.core && linkGroupOf(was) !== linkGroupOf(config);
+    const linkGroupMoved = roleKind === e.core && linkGroupOf(type, was) !== linkGroupOf(type, config);
     // Whether the system drives a physical N8 is placement, not a knob: the document either places its rp.n8.nes or
     // does not, so a change publishes rather than riding setParam or a live settings commit.
-    const cartMoved = roleKind === e.core && drivesRealCartOf(was) !== drivesRealCartOf(config);
+    const cartMoved = roleKind === e.core && drivesRealCartOf(was, e.platform) !== drivesRealCartOf(config, e.platform);
     const params: [string, number][] = [];
     if (roleKind === e.core) {
       for (const [param, value] of Object.entries(after.params))
@@ -1166,6 +1162,7 @@ export class SystemsStore {
     }
     // Prefer the persisted core (v2+); fall back to auto-derive for a pre-migration/hand-built entry.
     const core = config.core ?? defaultCoreFor(platform);
+    if (core === undefined) return null; // a platform no console registers, which its own classify could not name
     const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
     // Stored roles win, each config that reaches a protocol node parsed first (parsedForTheirNodes), but a
     // role kind they PREDATE is added (see withMissingFeatureRoles), and of two that collide the one this ROM
@@ -1232,15 +1229,16 @@ export class SystemsStore {
     if (systemRole) {
       const refused = droppedKnobs(systemNodeTypeFor(platform), systemRole.config);
       const reported = new Set(refused.map(([field]) => field));
-      // `gameGear` is written by buildGraph from the platform, not read from the stored config, so a Game Gear
-      // document carries it whether or not the stored config does (and the role schema knows no such key).
-      const supplied = platform === "gg" ? "gameGear" : null;
+      // The settings a console's platform gives its node for that platform alone (a Game Gear's `gameGear`) are
+      // written by buildGraph from the platform, not read from the stored config, so the document carries them whether
+      // or not the stored config does (and the role schema knows no such key).
+      const supplied = Object.keys(platformEntry(platform)?.nodeSettings ?? {});
       const changes = [
         ...refused.map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`),
         ...Object.entries(systemRole.config)
           .filter(
             ([field]) =>
-              field !== supplied && !reported.has(field) && !Object.prototype.hasOwnProperty.call(parsed, field),
+              !supplied.includes(field) && !reported.has(field) && !Object.prototype.hasOwnProperty.call(parsed, field),
           )
           .map(([field, value]) => `dropped ${field} ${JSON.stringify(value)}`),
       ];
@@ -1307,6 +1305,7 @@ export class SystemsStore {
       platform = fmt;
     }
     const core = defaultCoreFor(platform);
+    if (core === undefined) return null; // a platform no console registers, which its own classify could not name
     let override = resolveSavOverride(romPath, suffix, explicitSav ?? "", (p) =>
       this.backend.canonicalize(p),
     );

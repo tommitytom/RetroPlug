@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 // The TS package generator (docs/modular-graph-phase-f1-design.md section 3): from the product list and the packages'
-// manifests, writes the three gitignored modules the shell builds against.
+// manifests, writes the four gitignored modules the shell builds against.
 //
 //   packages/retroplug/src/generated/packages.ts     the app's registrations, in product order (the list's, then the
-//                                                    shell): the roles buildAppRegistry applies, the ROM providers, the
-//                                                    tracker integrations, the kit formats and the controller apps, and a
-//                                                    duplicate in any list a key or an exclusive marker identifies refused
-//                                                    at load
+//                                                    shell): the roles buildAppRegistry applies, the ROM providers,
+//                                                    the tracker integrations, the kit formats and the controller apps,
+//                                                    and a duplicate in any list a key or an exclusive marker
+//                                                    identifies refused at load
+//   packages/retroplug/src/generated/consoles.ts      the consoles the shell classifies a ROM with and places systems
+//                                                    by, and the physical carts a project can drive, from each
+//                                                    package's retroplug.consoles module. It imports only those
+//                                                    modules and a type, so a bundle of the planner carries the
+//                                                    descriptors without an app module or zod
 //   packages/retroplug/src/generated/protocol.ts     PROTOCOL_NODES and ROLE_NODES, the wiring buildGraph reads, and
 //                                                    CONTROLLER_SYNC, the sync mode the cart an app's launches drive
 //                                                    must be in. It imports nothing but types, so a bundle of
@@ -27,16 +32,19 @@
 // live, and its manifest contributes the roles and protocol nodes no package owns yet. It closes the list, and no
 // package may depend on it.
 //
-// A package's contributions are its manifest's retroplug.app (a module default-exporting definePackage's lists) and
-// retroplug.protocol (its node definitions' module, the nodes' wiring and labels, and which role kind each is placed
-// as). The app's lists are the product order's, and only a ROM provider's place in it is behaviour: the providers run
-// in order, and the first to match a ROM fixes the feature roles' order. A role's kind, a kit format's id and a
+// A package's contributions are its manifest's retroplug.app (a module default-exporting definePackage's lists),
+// retroplug.consoles (a module default-exporting the console descriptors its cores run and the physical carts one of
+// them can drive) and retroplug.protocol (its node definitions' module, the nodes' wiring and labels, and which role
+// kind each is placed as). The consoles are apart from the app module because they are data the PLANNER reads, and the
+// app module is where a role's schema and zod are (test/script/bundle-protocol.test.ts holds the planner to carrying
+// neither). The app's lists are the product order's, and only a ROM provider's place in it is behaviour: the providers
+// run in order, and the first to match a ROM fixes the feature roles' order. A role's kind, a kit format's id and a
 // tracker integration's marker role are looked up, not sequenced (one package's roles interleave another's without
 // consequence), so the generated module refuses a duplicate rather than let one silently replace another.
 //
-// A @retroplug dependency the list does not carry is refused only when it contributes (its manifest has an app or
-// protocol member), which would silently lose it; one that contributes nothing (a native library a package links, a
-// pure TS library with no retroplug member) is left out of the ordering.
+// A @retroplug dependency the list does not carry is refused only when it contributes (its manifest has an app, a
+// consoles or a protocol member), which would silently lose it; one that contributes nothing (a native library a
+// package links, a pure TS library with no retroplug member) is left out of the ordering.
 //
 // It writes only a file whose content changed, so a build that changes nothing touches nothing (CMake and the test
 // runners can call it before every bundle without churning mtimes). Run it by hand with:
@@ -118,9 +126,10 @@ function readPackage(root, name) {
   return { name, dir, manifest, manifestJson: json, retroplug: json.retroplug };
 }
 
-/** Whether a package contributes to the app: its manifest has an `app` or a `protocol` member. */
+/** Whether a package contributes to the app: its manifest has an `app`, a `consoles` or a `protocol` member. */
 function contributes(pkg) {
-  return pkg.retroplug.app !== undefined || pkg.retroplug.protocol !== undefined;
+  return pkg.retroplug.app !== undefined || pkg.retroplug.consoles !== undefined ||
+    pkg.retroplug.protocol !== undefined;
 }
 
 /** Whether an unlisted dependency contributes to the app, judged tolerantly: a package with no manifest, or a manifest
@@ -229,16 +238,24 @@ function syncRule(pkg, appId, sync) {
   return { node: sync.node, mode: sync.mode, listening: sync.listening, off: sync.off };
 }
 
-/** What one package contributes, from its manifest: its app module and its protocol nodes, each checked for what the
- *  generated modules need. */
+/** What one package contributes, from its manifest: its app module, its consoles module and its protocol nodes, each
+ *  checked for what the generated modules need. */
 function contributions(pkg) {
-  const out = { app: null, protocol: null, nodes: [], roles: {}, apps: [] };
+  const out = { app: null, consoles: null, protocol: null, nodes: [], roles: {}, apps: [] };
   const retroplug = pkg.retroplug;
   if (retroplug.app !== undefined) {
     if (typeof retroplug.app !== "string" || retroplug.app === "") {
       throw new Error(`${pkg.name}: retroplug.app must be a module path, not ${JSON.stringify(retroplug.app)}`);
     }
     out.app = entryFile(pkg, "app", retroplug.app);
+  }
+  if (retroplug.consoles !== undefined) {
+    if (typeof retroplug.consoles !== "string" || retroplug.consoles === "") {
+      throw new Error(
+        `${pkg.name}: retroplug.consoles must be a module path, not ${JSON.stringify(retroplug.consoles)}`,
+      );
+    }
+    out.consoles = entryFile(pkg, "consoles", retroplug.consoles);
   }
   if (retroplug.protocol === undefined) return out;
   const protocol = retroplug.protocol;
@@ -463,12 +480,14 @@ function renderPackages({ packages, outDir }) {
     "//",
     "// The app's registrations, in product order (the list's, which is a dependency order, then the shell): the roles",
     "// buildAppRegistry applies, the ROM providers it offers, the tracker integrations the Songs and Assets menus",
-    "// search, and the kit formats the audio driver dispatches to. The protocol tables buildGraph reads are apart, in",
-    "// ./protocol.ts, so a module that needs them imports no package's app.",
+    "// search, and the kit formats the audio driver dispatches to. The consoles and the real carts are apart, in",
+    "// ./consoles.ts, and the protocol tables in ./protocol.ts, so a module that needs either imports no package's",
+    "// app.",
     'import type { RoleType, RomProvider } from "@retroplug/core";',
     'import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";',
     'import type { KitFormat } from "@retroplug/dsp/kitContract";',
     'import type { ControllerAppContribution } from "@retroplug/launchpad/registry";',
+    'import { CONSOLES } from "./consoles";',
   );
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   lines.push(
@@ -483,6 +502,16 @@ function renderPackages({ packages, outDir }) {
     "    throw new Error(`the app's roles declare the role kind ${role.kind} twice`);",
     "  }",
     "  roleKinds.add(role.kind);",
+    "}",
+    "",
+    "// A console's core is the kind of its core-config role (the role is named after its core), so a descriptor",
+    "// naming a core nothing contributes could be classified and never configured. The check is here rather than in",
+    "// ./consoles.ts because the roles are this module's (that one imports no package's app).",
+    "for (const consoleDescriptor of CONSOLES) {",
+    "  if (!ROLES.some((role) => role.kind === consoleDescriptor.core && role.category === \"system\")) {",
+    "    throw new Error(`the console ${consoleDescriptor.id} names the core ${consoleDescriptor.core}, whose system ` +",
+    "      \"role no package contributes\");",
+    "  }",
     "}",
     "",
     "/** The ROM providers, in product order: the first to match a ROM fixes its feature roles' order, so this list's",
@@ -555,6 +584,88 @@ function renderPackages({ packages, outDir }) {
     "    throw new Error(`the controller app ${controllerApp.id} has no runtime half: no package's protocol.apps ` +",
     '      "declares it (the app, its playback model and its target)");',
     "  }",
+    "}",
+    "",
+  );
+  return lines.join("\n");
+}
+
+function renderConsoles({ packages, outDir }) {
+  const contributors = packages.filter((p) => p.consoles);
+  // A module identifier per package: the package name loses its punctuation, as the app imports' do, and a collision
+  // would be a tsc error naming neither manifest.
+  const local = (name) => `consoles_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
+  const lines = [
+    "// Generated by packages/retroplug/scripts/lib/packages.mjs from the desktop product's package list and the",
+    "// packages' manifests. Do not edit; edit a manifest and rebuild.",
+    "//",
+    "// The consoles the product's packages contribute, in product order, and the physical carts a project can drive.",
+    "// The descriptors say how a ROM is classified, which node type places a system, what that node's knobs and stream",
+    "// layouts are and how a render of it splits and shapes its output; a real cart says which platform's systems",
+    "// reach it. Nothing here imports an app module or zod: the planner reads this list, and a bundle of the planner",
+    "// must carry no role's schema (test/script/bundle-protocol.test.ts).",
+    'import type { ConsoleDescriptor, RealCart } from "@retroplug/core/consoles";',
+  ];
+  for (const p of contributors) {
+    lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.consoles)}";`);
+  }
+  lines.push(
+    "",
+    "/** The consoles, in product order: each package's descriptors, which the classifier, the node table, the battery",
+    " *  rules and the render are read from. */",
+    "export const CONSOLES: readonly ConsoleDescriptor[] = [",
+    ...contributors.map((p) => `  ...(${local(p.pkg.name)}.consoles ?? []),`),
+    "];",
+    "// A platform id is looked up by the classifier, a stored project's validation and the menus, so one declared",
+    "// twice would leave one of the two consoles unreachable; a node type places a system, so two descriptors sharing",
+    "// one would make the node table depend on the order. (A descriptor's core must also be a system role, which",
+    "// ./packages.ts checks: the roles are its.)",
+    "const consolePlatforms = new Map<string, string>();",
+    "const consoleNodeTypes = new Map<string, string>();",
+    "for (const consoleDescriptor of CONSOLES) {",
+    "  for (const consolePlatform of consoleDescriptor.platforms) {",
+    "    const owner = consolePlatforms.get(consolePlatform.id);",
+    "    if (owner !== undefined) {",
+    "      throw new Error(`two console descriptors declare the platform ${consolePlatform.id}: ${owner} and ` +",
+    "        consoleDescriptor.id);",
+    "    }",
+    "    consolePlatforms.set(consolePlatform.id, consoleDescriptor.id);",
+    "  }",
+    "  const nodeOwner = consoleNodeTypes.get(consoleDescriptor.nodeType);",
+    "  if (nodeOwner !== undefined) {",
+    "    throw new Error(`two console descriptors declare the node type ${consoleDescriptor.nodeType}: ` +",
+    "      `${nodeOwner} and ${consoleDescriptor.id}`);",
+    "  }",
+    "  consoleNodeTypes.set(consoleDescriptor.nodeType, consoleDescriptor.id);",
+    "}",
+    "",
+    "/** The physical carts a project can drive, in product order: each names the platform whose systems it receives",
+    " *  and the node that owns its link. */",
+    "export const REAL_CARTS: readonly RealCart[] = [",
+    ...contributors.map((p) => `  ...(${local(p.pkg.name)}.realCarts ?? []),`),
+    "];",
+    "// One cart per platform and one per node, because a document places at most one: the store's lookup,",
+    "// buildGraph's placement and the menu's jobs all resolve a platform's cart, and with two registered the answer",
+    "// would be whichever package the product listed last.",
+    "const cartPlatforms = new Map<string, string>();",
+    "const cartNodes = new Map<string, string>();",
+    "for (const realCart of REAL_CARTS) {",
+    "  if (!consolePlatforms.has(realCart.platform)) {",
+    "    throw new Error(`the real cart ${realCart.cartNode} names the platform ${realCart.platform}, which no ` +",
+    "      \"console descriptor registers\");",
+    "  }",
+    "  const platformOwner = cartPlatforms.get(realCart.platform);",
+    "  if (platformOwner !== undefined) {",
+    "    throw new Error(`two real carts name the platform ${realCart.platform}: ${platformOwner} and ` +",
+    "      realCart.cartNode);",
+    "  }",
+    "  cartPlatforms.set(realCart.platform, realCart.cartNode);",
+    "  const nodeOwner = cartNodes.get(realCart.cartNode);",
+    "  if (nodeOwner !== undefined) {",
+    "    throw new Error(`two real carts name the cart node ${realCart.cartNode}: ${nodeOwner} and ` +",
+    "      realCart.platform);",
+    "  }",
+    "  cartNodes.set(realCart.cartNode, realCart.platform);",
     "}",
     "",
   );
@@ -851,6 +962,7 @@ export function generate({ root = REPO } = {}) {
       path: join(outDir, "packages.ts"),
       content: renderPackages({ packages: contributionsOf, outDir }),
     },
+    { path: join(outDir, "consoles.ts"), content: renderConsoles({ packages: contributionsOf, outDir }) },
     { path: join(outDir, "protocol.ts"), content: renderProtocol({ byType, roles, apps: contributionsOf }) },
     { path: join(outDir, "scriptNodes.ts"), content: renderScriptNodes({ packages: contributionsOf, outDir }) },
   ];

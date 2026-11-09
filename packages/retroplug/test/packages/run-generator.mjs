@@ -9,8 +9,9 @@
 // Each mode copies fixtures/tree to a fresh directory (so a refusal cannot leave the fixtures mutated and a mode can
 // edit what it needs), edits it where the mode is a refusal, runs the generator and prints one JSON line:
 //
-//   generate        { files: { "packages.ts": <text>, "protocol.ts": <text>, "scriptNodes.ts": <text> },
-//                              packages: [...] }
+//   generate        { files: { "packages.ts": <text>, "consoles.ts": <text>, "protocol.ts": <text>,
+//                              "scriptNodes.ts": <text> }, packages: [...] }
+//   consoles        { consoles: [{ id, core, nodeType, platforms }], realCarts: [{ platform, cartNode }] }
 //   twice           { mtimes: [<after one run>, <after a second>], changed: [<first run>, <second run>] }
 //   run             { registered: [<the ids the generated entry registers, in order>] }
 //   missing-node    { error: <the generated entry's own refusal> }
@@ -20,7 +21,9 @@
 //   duplicate-kit-format | duplicate-marker-role | duplicate-app | duplicate-app-control | app-unknown-key |
 //   app-unpaired-runtime | app-unpaired-control | app-runtime-mismatch | app-module-empty | sync-unknown-key |
 //   sync-unused-off | sync-node-undeclared | sync-not-object | sync-no-node | sync-no-mode | sync-off-is-mode |
-//   duplicate-app-one-package | identifier-collision | apps-only
+//   duplicate-app-one-package | identifier-collision | apps-only | duplicate-console-platform |
+//   console-core-norole | duplicate-console-type | realcart-unregistered | realcart-platform-twice |
+//   realcart-node-twice
 //                   { error: <the generator's message, or null when it did not refuse> }
 //                   (unlisted-plain generates, and reports files like generate)
 //
@@ -63,6 +66,7 @@ function editList(...names) {
 function outputs() {
   return {
     "packages.ts": readFileSync(join(generated, "packages.ts"), "utf8"),
+    "consoles.ts": readFileSync(join(generated, "consoles.ts"), "utf8"),
     "protocol.ts": readFileSync(join(generated, "protocol.ts"), "utf8"),
     "scriptNodes.ts": readFileSync(join(generated, "scriptNodes.ts"), "utf8"),
   };
@@ -107,20 +111,33 @@ function appWith({ kind, provider, markerRole, kitId }) {
 // loading reports exactly what a build's registries would see.
 async function loadPackages() {
   const out = join(work, "packages.mjs");
+  const consolesOut = join(work, "consoles.mjs");
   const { buildSync } = require("esbuild");
-  buildSync({
-    ...buildOptions(join(generated, "packages.ts"), out, "esm"),
-    alias: {
-      "@retroplug/alpha/app": join(root, "packages/alpha/ts/app.ts"),
-      "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
-    },
-  });
+  const alias = {
+    "@retroplug/alpha/app": join(root, "packages/alpha/ts/app.ts"),
+    "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
+    "@retroplug/alpha/consoles": join(root, "packages/alpha/ts/consoles.ts"),
+    "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
+  };
+  buildSync({ ...buildOptions(join(generated, "packages.ts"), out, "esm"), alias });
+  // The consoles are a module of their own, so each generated list is loaded as the build loads it: the app's
+  // registrations from packages.ts (which reads the console list for its core-role check) and the descriptors from
+  // consoles.ts.
+  buildSync({ ...buildOptions(join(generated, "consoles.ts"), consolesOut, "esm"), alias });
   const loaded = await import(pathToFileURL(out).href);
+  const consoles = await import(pathToFileURL(consolesOut).href);
   return {
     roles: loaded.ROLES.map((role) => role.kind),
     romProviders: loaded.ROM_PROVIDERS.map((provider) => provider.id),
     trackerIntegrations: loaded.TRACKER_INTEGRATIONS.map((integration) => integration.id),
     kitFormats: loaded.KIT_FORMATS.map((format) => format.id),
+    consoles: consoles.CONSOLES.map((descriptor) => ({
+      id: descriptor.id,
+      core: descriptor.core,
+      nodeType: descriptor.nodeType,
+      platforms: descriptor.platforms.map((platform) => platform.id),
+    })),
+    realCarts: consoles.REAL_CARTS.map((cart) => ({ platform: cart.platform, cartNode: cart.cartNode })),
   };
 }
 
@@ -143,6 +160,36 @@ async function loadEntry() {
   return { registered: globalThis.__rp_registered };
 }
 
+/** A fixture app contributing a system-category role (the core-config role a console's core is named for): the app
+ *  half of a package that runs a console. */
+function consoleApp({ role, keepsApp = false }) {
+  return (
+    "export default {\n" +
+    `  roles: [{ kind: "${role}", category: "system" }],\n` +
+    // The manifest still declares alpha's controller app runtime, so its control-plane half has to stay contributed.
+    (keepsApp
+      ? '  controllerApps: [{ id: "alpha-app", label: "Alpha App", config: { parse: (v) => v ?? {} } }],\n'
+      : "") +
+    "};\n"
+  );
+}
+
+/** A fixture package's retroplug.consoles module: the descriptors its cores run and the physical carts one of them can
+ *  drive. It is apart from the app module because the planner reads it and must carry no schema, so a mode that
+ *  registers a console writes this file. */
+function consoleModule({ descriptors = [], realCarts = [] }) {
+  const descriptor = (d) =>
+    `{ id: "${d.id}", core: "${d.core}", nodeType: "${d.nodeType}", platforms: [{ id: "${d.platform}", label: ` +
+    `"${d.platform}", extensions: [".${d.platform}"] }] }`;
+  const cart = (c) => `{ platform: "${c.platform}", cartNode: "${c.cartNode}" }`;
+  return (
+    "export default {\n" +
+    `  consoles: [${descriptors.map(descriptor).join(", ")}],\n` +
+    (realCarts.length ? `  realCarts: [${realCarts.map(cart).join(", ")}],\n` : "") +
+    "};\n"
+  );
+}
+
 // A file in the fixture tree, rewritten for a mode.
 function writeTree(relative, text) {
   writeFileSync(join(root, relative), text);
@@ -158,7 +205,9 @@ try {
     }
     case "twice": {
       const first = generate({ root });
-      const files = ["packages.ts", "protocol.ts", "scriptNodes.ts"].map((name) => join(generated, name));
+      const files = ["packages.ts", "consoles.ts", "protocol.ts", "scriptNodes.ts"].map((name) =>
+        join(generated, name),
+      );
       // An old, fixed mtime makes "the second run wrote it again" visible without depending on clock granularity: a
       // write replaces it with the run's time, a run that leaves the file alone leaves this.
       const old = new Date(Date.now() - 60000);
@@ -542,7 +591,10 @@ try {
         json.name = "@retroplug/a-b";
         json.retroplug.protocol.apps = [{ id: "c", module: "ts/appRuntime.ts" }];
       });
-      writeTree("packages/a-b/ts/app.ts", "export default { controllerApps: [{ id: \"c\", label: \"C\", config: { parse: (v) => v } }] };\n");
+      writeTree(
+        "packages/a-b/ts/app.ts",
+        "export default { controllerApps: [{ id: \"c\", label: \"C\", config: { parse: (v) => v } }] };\n",
+      );
       writeTree("packages/a-b/ts/appRuntime.ts", "export default { id: \"c\" };\n");
       editManifest("a", (json) => {
         json.name = "@retroplug/a";
@@ -550,7 +602,10 @@ try {
         json.exports["./appRuntime"] = "./ts/appRuntime.ts";
         json.retroplug.protocol = { apps: [{ id: "b-c", module: "ts/appRuntime.ts" }] };
       });
-      writeTree("packages/a/ts/app.ts", "export default { controllerApps: [{ id: \"b-c\", label: \"BC\", config: { parse: (v) => v } }] };\n");
+      writeTree(
+        "packages/a/ts/app.ts",
+        "export default { controllerApps: [{ id: \"b-c\", label: \"BC\", config: { parse: (v) => v } }] };\n",
+      );
       writeTree("packages/a/ts/appRuntime.ts", "export default { id: \"b-c\" };\n");
       result = refusal();
       break;
@@ -594,11 +649,178 @@ try {
       // the nodes' types.
       writeTree(
         "packages/alpha/ts/appRuntime.ts",
-        "export default { id: \"not-alpha-app\", factory: () => () => {}, playbackModel: () => null, target: () => null };\n",
+        "export default { id: \"not-alpha-app\", factory: () => () => {}, playbackModel: () => null, " +
+          "target: () => null };\n",
       );
       generate({ root });
       try {
         result = await loadEntry();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "consoles":
+      // A product whose packages register consoles and a real cart: the lists are the generated ones', in product
+      // order. The cart node is a type of its own: a real cart is never the system node it drives.
+      writeTree("packages/alpha/ts/app.ts", consoleApp({ role: "alpha-core", keepsApp: true }));
+      writeTree(
+        "packages/alpha/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }],
+          realCarts: [{ platform: "nes", cartNode: "rp.alpha.cart" }],
+        }),
+      );
+      writeTree("packages/beta/ts/app.ts", consoleApp({ role: "beta-core" }));
+      writeTree(
+        "packages/beta/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "beta.gb", core: "beta-core", nodeType: "rp.beta.gb", platform: "gb" }],
+        }),
+      );
+      writeTree("packages/retroplug/src/app.ts", "export default {};\n");
+      generate({ root });
+      result = await loadPackages();
+      break;
+    case "duplicate-console-platform":
+      // Two descriptors declaring one platform id: the classifier and a project's validation look one up, so one of the
+      // two consoles would be unreachable.
+      writeTree("packages/alpha/ts/app.ts", consoleApp({ role: "alpha-core", keepsApp: true }));
+      writeTree(
+        "packages/alpha/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }],
+        }),
+      );
+      writeTree("packages/beta/ts/app.ts", consoleApp({ role: "beta-core" }));
+      writeTree(
+        "packages/beta/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "beta.nes", core: "beta-core", nodeType: "rp.beta.nes", platform: "nes" }],
+        }),
+      );
+      writeTree("packages/retroplug/src/app.ts", "export default {};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "console-core-norole":
+      // A console whose core names no system-category role: the core-config role is named after its core, so its
+      // systems could be classified and never configured.
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        "export default {\n" +
+          '  roles: [{ kind: "alpha-core" }],\n' +
+          '  controllerApps: [{ id: "alpha-app", label: "Alpha App", config: { parse: (v) => v ?? {} } }],\n' +
+          "};\n",
+      );
+      writeTree(
+        "packages/alpha/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }],
+        }),
+      );
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "duplicate-console-type":
+      // Two descriptors declaring one node type: a system is placed by the node type, so the node table would depend on
+      // the order.
+      writeTree("packages/alpha/ts/app.ts", consoleApp({ role: "alpha-core", keepsApp: true }));
+      writeTree(
+        "packages/alpha/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }],
+        }),
+      );
+      writeTree("packages/beta/ts/app.ts", consoleApp({ role: "beta-core" }));
+      writeTree(
+        "packages/beta/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "beta.gb", core: "beta-core", nodeType: "rp.alpha.nes", platform: "gb" }],
+        }),
+      );
+      writeTree("packages/retroplug/src/app.ts", "export default {};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "realcart-unregistered":
+      // A real cart naming a platform no descriptor registers: nothing would ever receive what it sends.
+      writeTree("packages/alpha/ts/app.ts", consoleApp({ role: "alpha-core", keepsApp: true }));
+      writeTree(
+        "packages/alpha/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }],
+          realCarts: [{ platform: "n64", cartNode: "rp.alpha.cart" }],
+        }),
+      );
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "realcart-platform-twice":
+      // Two packs each register a cart for one platform: a project has one cart and one link, so which package's cart a
+      // NES drove would be whichever the product listed last.
+      writeTree("packages/alpha/ts/app.ts", consoleApp({ role: "alpha-core", keepsApp: true }));
+      writeTree(
+        "packages/alpha/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }],
+          realCarts: [{ platform: "nes", cartNode: "rp.alpha.cart" }],
+        }),
+      );
+      writeTree("packages/beta/ts/app.ts", consoleApp({ role: "beta-core" }));
+      writeTree(
+        "packages/beta/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "beta.gba", core: "beta-core", nodeType: "rp.beta.gba", platform: "gba" }],
+          realCarts: [{ platform: "nes", cartNode: "rp.beta.cart" }],
+        }),
+      );
+      writeTree("packages/retroplug/src/app.ts", "export default {};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "realcart-node-twice":
+      // Two packs naming one cart node: the node a document places for a cart would be claimed twice, and the second
+      // platform's systems would drive the first's link.
+      writeTree("packages/alpha/ts/app.ts", consoleApp({ role: "alpha-core", keepsApp: true }));
+      writeTree(
+        "packages/alpha/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }],
+          realCarts: [{ platform: "nes", cartNode: "rp.alpha.cart" }],
+        }),
+      );
+      writeTree("packages/beta/ts/app.ts", consoleApp({ role: "beta-core" }));
+      writeTree(
+        "packages/beta/ts/consoles.ts",
+        consoleModule({
+          descriptors: [{ id: "beta.gba", core: "beta-core", nodeType: "rp.beta.gba", platform: "gba" }],
+          realCarts: [{ platform: "gba", cartNode: "rp.alpha.cart" }],
+        }),
+      );
+      writeTree("packages/retroplug/src/app.ts", "export default {};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
       } catch (e) {
         result = { error: e.message };
       }

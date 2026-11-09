@@ -108,6 +108,10 @@ test("the fixture product list and manifests generate the expected packages.ts",
   expect(await matchesFixture("generate", "packages.ts")).toBe(true);
 });
 
+test("the fixture product list and manifests generate the expected consoles.ts", async () => {
+  expect(await matchesFixture("generate", "consoles.ts")).toBe(true);
+});
+
 test("the fixture product list and manifests generate the expected protocol.ts", async () => {
   expect(await matchesFixture("generate", "protocol.ts")).toBe(true);
 });
@@ -306,7 +310,7 @@ test("a contribution its exports do not publish is refused, naming the file and 
   console.log(`# unexported app: ${error}`);
   expect(error).toBe(
     "alpha: its manifest names ts/app.ts, which its exports do not publish: the generated import needs the entry " +
-      "whose target is ./ts/app.ts (its exports: ./nodes -> ./ts/nodes.ts, ./appRuntime -> ./ts/appRuntime.ts)",
+      "whose target is ./ts/app.ts (its exports: ./consoles -> ./ts/consoles.ts, ./nodes -> ./ts/nodes.ts, ./appRuntime -> ./ts/appRuntime.ts)",
   );
 });
 
@@ -339,18 +343,71 @@ test("a manifest naming a module that does not exist is refused, naming the file
   );
 });
 
+// ---- the consoles a package contributes, and the real carts ---------------------------------
+
+test("a product's consoles and real carts register in product order, read from the generated lists", async () => {
+  const report = await drive("consoles");
+  expect(report.consoles).toEqual([
+    { id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platforms: ["nes"] },
+    { id: "beta.gb", core: "beta-core", nodeType: "rp.beta.gb", platforms: ["gb"] },
+  ]);
+  expect(report.realCarts).toEqual([{ platform: "nes", cartNode: "rp.alpha.cart" }]);
+});
+
+test("a platform id two descriptors declare is refused, naming both", async () => {
+  const { error } = await drive("duplicate-console-platform");
+  console.log(`# duplicate console platform: ${error}`);
+  expect(error).toBe("two console descriptors declare the platform nes: alpha.nes and beta.nes");
+});
+
+test("a console whose core has no registered system role is refused", async () => {
+  // The core-config role is named after its core, so a descriptor naming a core nothing contributes could be classified
+  // and never configured.
+  const { error } = await drive("console-core-norole");
+  console.log(`# console core with no system role: ${error}`);
+  expect(error).toBe("the console alpha.nes names the core alpha-core, whose system role no package contributes");
+});
+
+test("a node type two descriptors declare is refused, naming both", async () => {
+  const { error } = await drive("duplicate-console-type");
+  console.log(`# duplicate console node type: ${error}`);
+  expect(error).toBe("two console descriptors declare the node type rp.alpha.nes: alpha.nes and beta.gb");
+});
+
+test("a real cart naming a platform no descriptor registers is refused", async () => {
+  const { error } = await drive("realcart-unregistered");
+  console.log(`# real cart with no platform: ${error}`);
+  expect(error).toBe("the real cart rp.alpha.cart names the platform n64, which no console descriptor registers");
+});
+
+test("two real carts naming one platform are refused, naming both", async () => {
+  // A project drives one cart: with two registered for a platform, which package's cart a NES sent to would be whichever
+  // the product listed last, and the store's lookup and buildGraph's placement could each answer differently.
+  const { error } = await drive("realcart-platform-twice");
+  console.log(`# two carts on one platform: ${error}`);
+  expect(error).toBe("two real carts name the platform nes: rp.alpha.cart and rp.beta.cart");
+});
+
+test("two real carts naming one cart node are refused, naming both", async () => {
+  // The node owns a link: two carts naming it would claim the same node for two platforms' traffic.
+  const { error } = await drive("realcart-node-twice");
+  console.log(`# two carts on one node: ${error}`);
+  expect(error).toBe("two real carts name the cart node rp.alpha.cart: nes and gba");
+});
+
 test("an unchanged input leaves the generated files untouched", async () => {
   const report = await drive("twice");
   const [changedFirst, changedSecond] = report.changed as [boolean[], boolean[]];
   const [before, after] = report.mtimes as [number[], number[]];
-  expect(changedFirst).toEqual([true, true, true]);
-  expect(changedSecond).toEqual([false, false, false]);
+  expect(changedFirst).toEqual([true, true, true, true]);
+  expect(changedSecond).toEqual([false, false, false, false]);
   // The driver aged the files by a minute before the second run, so a rewrite would show: these are the same stamps.
   expect(after).toEqual(before);
   expect(after[0]).toBe(before[0]);
   expect(after[1]).toBe(before[1]);
   expect(after[2]).toBe(before[2]);
   expect(after[3]).toBe(before[3]);
+  expect(after[4]).toBe(before[4]);
 });
 
 test("the generated module refuses two control-plane halves of one id, naming both packages", async () => {

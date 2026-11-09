@@ -13,17 +13,11 @@
 // expansion volume as params. Pure, and held to test/graph/golden/build-graph.json, whose audio wiring is the B1
 // native translator's, so every audio node id, the document order (which is the plan order on ties) and every
 // per-lane sum is the translator's.
-import { COLOR_CORRECTION_VALUES, DMG_PALETTE_VALUES, HIGHPASS_VALUES, MODEL_VALUES } from "@retroplug/sameboy/enums";
-import {
-  CARTRIDGE_ACCURACY_VALUES,
-  CHANNEL_EXPORT_VALUES,
-  FIFO_PROFILE_VALUES,
-  N8_LINK_VALUES,
-  REGION_VALUES,
-} from "@retroplug/mesen/enums";
 import { type AudioRouting } from "../settingsEnums";
 import { type MidiRouting } from "@retroplug/core/midiRouting";
 import { type Platform, type SystemNodeType } from "../platform";
+import { consoleFor, platformEntry, realCartOf, registeredRealCarts } from "../consoles";
+import type { ConsoleCapabilities, ConsoleSplit, ConsoleStream, Knob } from "@retroplug/core/consoles";
 import { resourceRef, type SystemResources } from "./systemResources";
 import type { GraphDocument, NodeDoc, WireDoc } from "@retroplug/core/graphDocument";
 import {
@@ -117,11 +111,6 @@ const ADD_INPUTS = 16;
 const MIDI_ROUTE = "rp.midi.route";
 const CONTROLLER_SESSION = "rp.controller.session";
 
-interface Stream {
-  port: string;
-  stereo: boolean;
-}
-
 // A system's node id in the documents buildGraph builds (`sys-<id>`), which the store and `DirectGraph` address a
 // system node by.
 export const systemNodeId = (id: number): string => `sys-${id}`;
@@ -133,23 +122,39 @@ const protocolId = (system: number, kind: string): string => `${systemNodeId(sys
  *  the system's id alone (the UI stages a settings message at it, and reads its capabilities, without the document). */
 export const cartNodeId = (system: number): string => `cart-${system}`;
 
-/** Whether a system drives a physical N8: its core config's `driveRealCart` (@retroplug/mesen's Mesen role). An
- *  absent value drives one,
- *  which is what a project saved before the setting existed did - the first NES's traffic reached the cart whether or
- *  not one was plugged in - and what a DirectGraph's system, built from a spec with no core config, still does. */
-export function drivesRealCartOf(config: Readonly<Record<string, unknown>> | undefined): boolean {
-  return config?.driveRealCart !== false;
+/** Whether a system drives a physical cart: the core-config field its platform's console declares as the opt-out
+ *  (`realCartOptOut`: a NES's `driveRealCart`, @retroplug/mesen's Mesen role) is not `false`. An absent value drives
+ *  one, which is what a project saved before the setting existed did - the first NES's traffic reached the cart whether
+ *  or not one was plugged in - and what a DirectGraph's system, built from a spec with no core config, still does.
+ *  `platform` narrows the question to that platform's cart, which is what places one; without it, a config opting out
+ *  of any registered cart drives none of them (one predicate, so the store's comparison and the menu's row cannot
+ *  disagree). */
+export function drivesRealCartOf(config: Readonly<Record<string, unknown>> | undefined, platform?: Platform): boolean {
+  // One cart per platform (the generated list's rule), so the narrowing form reads that cart and the other walks them.
+  // A platform with no cart has nothing to opt out of, so it drives one (a GBA's mesen config keeps the NES's field).
+  if (platform !== undefined) {
+    const cart = realCartOf(platform);
+    if (cart === undefined) return true;
+    const field = platformEntry(cart.platform)?.realCartOptOut;
+    return field === undefined || config?.[field] !== false;
+  }
+  for (const each of registeredRealCarts()) {
+    const field = platformEntry(each.platform)?.realCartOptOut;
+    if (field !== undefined && config?.[field] === false) return false;
+  }
+  return true;
 }
 
-/** The system a document places an rp.n8.nes for, if any: the first NES in slot order whose core config drives the real
- *  cart (drivesRealCartOf). The type is unique, so a project has one cart and one link at most, and everything that
- *  picks the node reads it here - buildGraph's placement, the menu's card jobs, the store's live expansion volume - so
- *  the document and the UI cannot disagree about which system's cart it is. A caller holds its systems as whatever it
- *  has, with the core-config role's config as `coreConfig` (a SystemView's is roleConfig(roles, "mesen")). */
+/** The system a document places a real cart for, if any: the first in slot order whose platform has a registered cart
+ *  and whose core config drives it (drivesRealCartOf). A cart's platform and its node are unique, which the generated
+ *  console list refuses otherwise, so a project has one cart and one link at most; everything that picks the node reads
+ *  it here - buildGraph's placement, the menu's card jobs, the store's live expansion volume - so the document and the
+ *  UI cannot disagree about which system's cart it is. A caller holds its systems as whatever it has, with the
+ *  core-config role's config as `coreConfig` (a SystemView's is roleConfig(roles, "mesen")). */
 export function drivenCartSystem<T extends { platform: Platform; coreConfig?: Readonly<Record<string, unknown>> }>(
   systems: readonly T[],
 ): T | null {
-  return systems.find((s) => s.platform === "nes" && drivesRealCartOf(s.coreConfig)) ?? null;
+  return systems.find((s) => realCartOf(s.platform) !== undefined && drivesRealCartOf(s.coreConfig, s.platform)) ?? null;
 }
 
 // ---- the system nodes' knobs ----------------------------------------------------------------------------------------
@@ -163,76 +168,30 @@ export function drivenCartSystem<T extends { platform: Platform; coreConfig?: Re
 // out, the core keeps what it has. Params are not checked so: the planner clamps a param's value to its range, and
 // rounds an int's, so any finite number is sent.
 
-type Knob = (v: unknown) => boolean;
-const label = (values: readonly string[]): Knob => (v) => typeof v === "string" && values.includes(v);
-const flag: Knob = (v) => typeof v === "boolean";
-const within = (min: number, max: number): Knob => (v) => typeof v === "number" && v >= min && v <= max;
-// Native reads a construct-time int with static_cast<int>, so a fraction is a value its node cannot carry faithfully:
-// left out like any other it would refuse, rather than silently truncated.
-const intIn = (min: number, max: number): Knob => (v) => within(min, max)(v) && Number.isInteger(v);
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-/** Each system node type's setting fields from its core config, and what the node takes for each. */
-const SETTING_FIELDS: Readonly<Record<SystemNodeType, Readonly<Record<string, Knob>>>> = {
-  "rp.sameboy.gb": {
-    model: label(MODEL_VALUES),
-    fastBoot: flag,
-    highpass: label(HIGHPASS_VALUES),
-    colorCorrection: label(COLOR_CORRECTION_VALUES),
-    dmgPalette: label(DMG_PALETTE_VALUES),
-    lightTemperature: within(-1, 1), // SameBoy's own range
-  },
-  "rp.mesen.nes": {
-    region: label(REGION_VALUES),
-    removeSpriteLimit: flag,
-    apuLatencyMs: within(0.25, 6),
-    s5bNoise: label(CARTRIDGE_ACCURACY_VALUES),
-    mmc5PhaseReset: label(CARTRIDGE_ACCURACY_VALUES),
-  },
-  "rp.mesen.gba": {},
-  "rp.mesen.sms": {},
-};
+/** The setting fields, construct-time fields and params `type` reads from its core config: its console's descriptor,
+ *  which owns them (docs/modular-graph-phase-f4a-design.md section 3). A type no console registers reads none, so a
+ *  document's node carries no knob it does not read and its core keeps what it was built with. */
+const settingFieldsOf = (type: SystemNodeType) => consoleFor(type)?.settingFields ?? {};
+const constructFieldsOf = (type: SystemNodeType) => consoleFor(type)?.constructFields ?? {};
+const configParamsOf = (type: SystemNodeType) => consoleFor(type)?.configParams ?? [];
 
-/** The params each system node type takes from its core config, beside the gain every one takes from the system. */
-const CONFIG_PARAMS: Readonly<Record<SystemNodeType, readonly string[]>> = {
-  "rp.sameboy.gb": [],
-  "rp.mesen.nes": ["expansionVolume"],
-  "rp.mesen.gba": [],
-  "rp.mesen.sms": [],
-};
+/** What `type`'s node can be asked for beyond its knobs (a link cable, a serial-out capture, the engine's tap). */
+export const capabilitiesOf = (type: SystemNodeType): ConsoleCapabilities => consoleFor(type)?.capabilities ?? {};
 
-/** A construct-time field: whether the node takes the stored value as written, and the value written when it does not.
- *  The fallback is the node's own default (the console packages' config structs), which the role schema fills for a
- *  fresh config (@retroplug/sameboy, @retroplug/mesen), so a document names the same value whether or not the stored
- *  config held one. */
-interface ConstructField {
-  takes: Knob;
-  fallback: unknown;
-}
+/** The split `type`'s console declares under `mode` ("pins" or "channels"), if it has one. */
+const splitOf = (type: SystemNodeType, mode: "pins" | "channels"): ConsoleSplit | undefined =>
+  consoleFor(type)?.splits?.[mode];
 
-/** Each node type's construct-time fields, by type id and field name. Indexed by string because a document's node
- *  `type` is one (rebuildKeyOf); a type with no construct-time field has an empty entry rather than a miss. */
-type ConstructFieldTable = Readonly<Record<string, Readonly<Record<string, ConstructField>>>>;
-
-/** Each system node type's CONSTRUCT-TIME fields from its core config: the ones its node reads once, when it builds
- *  its core at activation, so a change to one is a rebuild under a new system id rather than a document
- *  (docs/modular-graph-phase-c3-design.md section 3). Every one is written to every document, its default where the
- *  config holds no value the node takes: an absent field and one at its default are different rebuild keys, so a
- *  re-publish that flipped between them would ask for a new core under a live id. */
-const CONSTRUCT_FIELDS: ConstructFieldTable = {
-  "rp.sameboy.gb": {},
-  "rp.mesen.nes": {
-    sdRoot: { takes: (v) => typeof v === "string", fallback: "" },
-    fifo: { takes: label(FIFO_PROFILE_VALUES), fallback: "instant" },
-    fifoDepth: { takes: intIn(0, 1 << 20), fallback: 0 },
-    fifoBytesPerSecond: { takes: intIn(0, 100_000_000), fallback: 0 },
-    n8Link: { takes: label(N8_LINK_VALUES), fallback: "auto" },
-    n8LinkRttUs: { takes: intIn(0, 100_000), fallback: 2200 },
-    channelExportMode: { takes: label(CHANNEL_EXPORT_VALUES), fallback: "mix" },
-  },
-  "rp.mesen.gba": {},
-  "rp.mesen.sms": { enableFm: { takes: flag, fallback: true } },
-};
+/** A construct-time field's rule, as the console descriptor declares it: whether the node takes the stored value as
+ *  written, and the value written when it does not. The fallback is the node's own default (the console packages' config
+ *  structs), which the role schema fills for a fresh config (@retroplug/sameboy, @retroplug/mesen), so a document names
+ *  the same value whether or not the stored config held one. Every construct-time field is written to every document,
+ *  its default where the config holds no value the node takes: an absent field and one at its default are different
+ *  rebuild keys, so a re-publish that flipped between them would ask for a new core under a live id
+ *  (docs/modular-graph-phase-c3-design.md section 3). */
+type ConstructField = { readonly takes: Knob; readonly fallback: unknown };
 
 /** A system node's knobs: what its settings carry beside its resources and its system id (and a Game Boy's capture,
  *  which buildGraph adds from its pipeline), and its param values. `construct` are the fields its core reads once, at
@@ -274,11 +233,11 @@ function constructFields(
  *  live, and a construct-time field's, which rebuilds the system (SystemsStore.setRoleConfig). */
 export function systemKnobs(system: Pick<GraphSystem, "type" | "coreConfig" | "gainDb">): SystemKnobs {
   const config: Readonly<Record<string, unknown>> = system.coreConfig ?? {};
-  const settings = takenFields(SETTING_FIELDS[system.type] ?? {}, config);
-  const construct = constructFields(CONSTRUCT_FIELDS[system.type] ?? {}, config);
+  const settings = takenFields(settingFieldsOf(system.type), config);
+  const construct = constructFields(constructFieldsOf(system.type), config);
   const params: Record<string, number> = {};
   if (finite(system.gainDb)) params.gain = system.gainDb;
-  for (const param of CONFIG_PARAMS[system.type] ?? []) {
+  for (const param of configParamsOf(system.type)) {
     const value = config[param];
     if (finite(value)) params[param] = value;
   }
@@ -292,9 +251,9 @@ export function systemKnobs(system: Pick<GraphSystem, "type" | "coreConfig" | "g
  *  caller with a config as written, not through its role's schema (SystemsStore.adopt), notes them, so a stored knob
  *  the document drops leaves a trace. */
 export function droppedKnobs(type: SystemNodeType, config: Readonly<Record<string, unknown>>): [string, unknown][] {
-  const settings = SETTING_FIELDS[type];
-  const construct = CONSTRUCT_FIELDS[type];
-  const params = CONFIG_PARAMS[type] ?? [];
+  const settings = settingFieldsOf(type);
+  const construct = constructFieldsOf(type);
+  const params = configParamsOf(type);
   return Object.entries(config).filter(
     ([field, value]) =>
       (Object.prototype.hasOwnProperty.call(settings, field) && !settings[field](value)) ||
@@ -311,26 +270,43 @@ export function droppedKnobs(type: SystemNodeType, config: Readonly<Record<strin
  *  NodeDoc settings absent from the key are the live knobs and params, which a document may change under the same
  *  id. */
 export function rebuildKeyOf(node: Pick<NodeDoc, "type" | "settings">): Record<string, unknown> {
-  const construct = CONSTRUCT_FIELDS[node.type];
-  const fields = ["system", "rom", "sram", "state", "romName", "gameGear", ...Object.keys(construct ?? {})];
+  // The machine a platform's node is set to (a Game Gear's `gameGear`) is the descriptor's nodeSettings, not a name
+  // spelled here: a console that gives its node a setting per machine has it in the key.
+  const machineFields = (consoleFor(node.type)?.platforms ?? []).flatMap((platform) =>
+    Object.keys(platform.nodeSettings ?? {}),
+  );
+  const fields = [
+    "system",
+    "rom",
+    "sram",
+    "state",
+    "romName",
+    ...machineFields,
+    ...Object.keys(constructFieldsOf(node.type)),
+  ];
   const settings = node.settings ?? {};
   const key: Record<string, unknown> = { type: node.type };
   for (const field of fields) if (Object.prototype.hasOwnProperty.call(settings, field)) key[field] = settings[field];
   return key;
 }
 
-/** The link group a system's core config names (a Game Boy's cable): its `linkGroupId`, or 0 for unlinked. */
-export function linkGroupOf(config: Readonly<Record<string, unknown>> | undefined): number {
-  const group = config?.linkGroupId;
+/** The link group a system's core config names (a Game Boy's cable): the value of the field its own console declares
+ *  for it (capabilities.linkCable), or 0 for unlinked and for a config naming none. Keyed by the system's node type, so
+ *  what another console declares can never answer for it. */
+export function linkGroupOf(type: SystemNodeType, config: Readonly<Record<string, unknown>> | undefined): number {
+  const field = capabilitiesOf(type).linkCable?.field;
+  const group = field === undefined ? undefined : config?.[field];
   return typeof group === "number" && Number.isInteger(group) && group > 0 && group <= 255 ? group : 0;
 }
 
 /** The export mode a system's core config names (a NES's channel split), as the native enum's ordinal: the position of
- *  its label in CHANNEL_EXPORT_VALUES, or 0 (mix) where it names none this build reads. */
-export function exportModeOf(config: Readonly<Record<string, unknown>> | undefined): number {
-  const mode = config?.channelExportMode;
-  const index = typeof mode === "string" ? (CHANNEL_EXPORT_VALUES as readonly string[]).indexOf(mode) : -1;
-  return index < 0 ? 0 : index;
+ *  the label the config holds for the field its own console declares for it (exportModes). A config naming none is 0,
+ *  the mix every console falls back to. */
+export function exportModeOf(type: SystemNodeType, config: Readonly<Record<string, unknown>> | undefined): number {
+  const modes = consoleFor(type)?.exportModes;
+  const label = modes === undefined ? undefined : config?.[modes.field];
+  const index = modes !== undefined && typeof label === "string" ? modes.values.indexOf(label) : -1;
+  return index > 0 ? index : 0;
 }
 
 /** A system's node: its system id, the resources its core boots from, its ROM's name, its construct-time fields, its
@@ -346,23 +322,23 @@ function systemNode(system: GraphSystem, capture: SerialOutCaptureMode | null): 
     ...knobs.settings,
     ...knobs.construct,
   };
-  if (system.platform === "gg") settings.gameGear = true;
+  // The settings the platform gives its node for that platform alone (a Game Gear's `gameGear`): the descriptor's, not
+  // the stored config's, so a document names the machine whatever state a hand-edited config is in.
+  Object.assign(settings, platformEntry(system.platform)?.nodeSettings ?? {});
   if (capture !== null) settings.serialOutCapture = capture;
   const node: NodeDoc = { id: systemNodeId(system.id), type: system.type, settings };
   if (Object.keys(knobs.params).length > 0) node.params = knobs.params;
   return node;
 }
 
-/** The streams a core reports in `mode` (a NES's export mode; ignored otherwise), as channelLayout() does. */
-function streamsOf(type: SystemNodeType, mode: number): Stream[] {
-  const mono = (port: string): Stream => ({ port, stereo: false });
-  if (type === "rp.sameboy.gb") return ["ch1", "ch2", "ch3", "ch4"].map((port) => ({ port, stereo: true }));
-  if (type === "rp.mesen.nes") {
-    if (mode === 1) return ["pins.pulse", "pins.tnd", "pins.expansion"].map(mono);
-    if (mode === 2) return ["pins.pulse", "pins.tnd", "pins.expansion", "pins.mixref"].map(mono);
-    if (mode === 3) return ["channels.sq1", "channels.sq2", "channels.tri", "channels.noise", "channels.dmc"].map(mono);
-  }
-  return [{ port: "mix", stereo: true }];
+// The layout every console falls back to: one stereo mix, which a console with no layout of its own (a GBA, a Sega)
+// reports in every mode.
+const MIX: readonly ConsoleStream[] = [{ port: "mix", stereo: true }];
+
+/** The streams a core reports in `mode` (an export mode; a console with one layout ignores it), as its descriptor
+ *  declares them and channelLayout() reports them. */
+function streamsOf(type: SystemNodeType, mode: number): readonly ConsoleStream[] {
+  return consoleFor(type)?.streams?.(mode) ?? MIX;
 }
 
 /** rp.host.audio-out's port for the bus starting at host channel `first` (0-based), `n` channels wide. */
@@ -376,7 +352,7 @@ const isSplit = (r: AudioRouting): boolean => isPins(r) || r === "channelSplit";
 function linkGroups(systems: readonly GraphSystem[]): number[][] {
   const groups: { group: number; members: number[] }[] = [];
   systems.forEach((s, i) => {
-    if (s.type !== "rp.sameboy.gb" || s.linkGroup === 0) return;
+    if (capabilitiesOf(s.type).linkCable === undefined || s.linkGroup === 0) return;
     const g = groups.find((e) => e.group === s.linkGroup);
     if (g) g.members.push(i);
     else groups.push({ group: s.linkGroup, members: [i] });
@@ -393,11 +369,14 @@ function sumOrder(systems: readonly GraphSystem[], groups: number[][]): number[]
   return order;
 }
 
-/** The tap the engine arms for this model: a split routing with exactly one system, and that one a NES. */
+/** The tap the engine arms for this model: a split routing with exactly one system, and that one a console whose core
+ *  can be tapped (a NES). The mode is the split's own (its tapMode), so which splits exist is the descriptor's. */
 function tapArmOf(model: GraphModel): TapArm | null {
   const only = model.systems.length === 1 ? model.systems[0] : undefined;
-  if (!isSplit(model.routing) || !only || only.type !== "rp.mesen.nes") return null;
-  return { id: only.id, mode: isPins(model.routing) ? 1 : 3 };
+  if (!isSplit(model.routing) || !only || capabilitiesOf(only.type).channelTap !== true) return null;
+  const mode = splitOf(only.type, isPins(model.routing) ? "pins" : "channels")?.tapMode;
+  if (mode !== 1 && mode !== 3) return null;
+  return { id: only.id, mode };
 }
 
 /** The export mode a NES has once the engine's SyncTap has armed or restored it. */
@@ -482,7 +461,7 @@ export function buildGraph(model: GraphModel): BuiltGraph {
       const outType = outNodeOf(role.node);
       if (outType === undefined) continue;
       const out: ProtocolNodeSpec = PROTOCOL_NODES[outType];
-      if (out.serialOut && s.type !== "rp.sameboy.gb") continue;
+      if (out.serialOut && capabilitiesOf(s.type).serialOut !== true) continue;
       const outId = `${id}/out`;
       after.push({ node: { id: outId, type: outType, settings }, reads: out.serialOut ? `${n}.serialOut` : null });
       if (out.midiOut) hostMidi.push({ from: `${outId}.midiOut`, system: s.id });
@@ -499,7 +478,8 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     // nothing about what this Game Boy captures.
     const forced =
       sync !== null && sync.systemId === s.id && s.pipeline.some((role) => role.node === sync.node) ? sync.mode : null;
-    nodes.push(systemNode(s, s.type === "rp.sameboy.gb" ? serialOutCaptureFor(s.pipeline, forced) : null));
+    const captures = capabilitiesOf(s.type).serialOut === true ? serialOutCaptureFor(s.pipeline, forced) : null;
+    nodes.push(systemNode(s, captures));
   }
   for (const g of groups)
     for (let k = 1; k < g.length; ++k) {
@@ -521,7 +501,8 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   if (cart) {
     const id = cartNodeId(cart.id);
     const expansionVolume = systemKnobs(cart).params.expansionVolume;
-    nodes.push({ id, type: "rp.n8.nes", ...(expansionVolume === undefined ? {} : { params: { expansionVolume } }) });
+    const nodeType = realCartOf(cart.platform)!.cartNode;
+    nodes.push({ id, type: nodeType, ...(expansionVolume === undefined ? {} : { params: { expansionVolume } }) });
     for (const role of cart.pipeline)
       for (const input of PROTOCOL_NODES[role.node].writes as readonly SystemInput[])
         if (input === "midi" || input === "bytes") wire(`${protocolId(cart.id, role.kind)}.${input}`, `${id}.${input}`);
@@ -563,9 +544,11 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     const addTo = (lane: number, from: string) => {
       if (lane < n) lanes[lane].push(from);
     };
-    // A split holds for one system, the pin splits only on a NES, and only with room for its lanes.
-    let splitValid = isSplit(routing) && systems.length === 1 && !(isPins(routing) && systems[0].type !== "rp.mesen.nes");
-    let streams: Stream[] = [];
+    // A split holds for one system, the pin splits only on a console that declares a pins layout (a NES), and only with
+    // room for its lanes.
+    let splitValid =
+      isSplit(routing) && systems.length === 1 && !(isPins(routing) && splitOf(systems[0].type, "pins") === undefined);
+    let streams: readonly ConsoleStream[] = [];
     let stride = 2;
     if (splitValid) {
       streams = streamsOf(systems[0].type, nesMode(tapArm, systems[0]));

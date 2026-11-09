@@ -11,6 +11,7 @@
 
 import type { SystemEntry } from "./systemsList";
 import { defaultCoreFor, type Platform, type Core } from "./platform";
+import { registeredCores, registeredPlatforms } from "./consoles";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
 import { commonSettingsSchema, type CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
@@ -119,9 +120,22 @@ const roleInstanceSchema = z.object({
 // Structural identity — the ROM's platform + the emulator backend. Both REQUIRED: a valid
 // system always has them, and a migration backfills any pre-v2 file (see projectV1toV2).
 // An entry missing/with an invalid value fails the strict parse and is dropped in parseConfig.
-// Additive: no pre-existing file can carry "sms"/"gg", so widening the enum needs no migration step.
-const platformSchema = z.enum(["gb", "nes", "gba", "sms", "gg"]);
-const coreSchema = z.enum(["sameboy", "mesen"]);
+//
+// The known values are the console registry's (src/consoles.ts over the descriptors the product's packages contribute),
+// read when the refine runs rather than when this module loads, so a package's console reaches validation without an
+// import of it. A file naming a platform or core no build registers is refused rather than parsed: the refinement's
+// message names the set, which a direct caller sees and parseConfig's silent drop does not.
+export const platformSchema = z.string().superRefine((v: string, ctx) => {
+  if (registeredPlatforms().some((platform) => platform.id === v)) return;
+  ctx.addIssue({
+    code: "custom",
+    message: `unknown platform ${JSON.stringify(v)} (known: ${registeredPlatforms().map((p) => p.id).join(", ")})`,
+  });
+});
+export const coreSchema = z.string().superRefine((v: string, ctx) => {
+  if (registeredCores().includes(v)) return;
+  ctx.addIssue({ code: "custom", message: `unknown core ${JSON.stringify(v)} (known: ${registeredCores().join(", ")})` });
+});
 
 // A serialized system: structural fields (platform/core) required; asset paths + overrides
 // optional (genuine either-ors — file-backed vs embedded, sav override); unknowns stripped.

@@ -1,9 +1,10 @@
 {
   "name": "@retroplug/beta",
   "exports": {
-    "./app": "./ts/app.ts"
+    "./app": "./ts/app.ts",
+    "./consoles": "./ts/consoles.ts"
   },
   "private": true,
   "dependencies": { "@retroplug/alpha": "workspace:*" },
-  "retroplug": { "app": "ts/app.ts" }
+  "retroplug": { "app": "ts/app.ts", "consoles": "ts/consoles.ts" }
 }

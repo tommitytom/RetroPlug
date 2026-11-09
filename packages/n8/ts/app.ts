@@ -16,6 +16,8 @@ export const NES_N8_MIDI_ROLE: RoleType = { kind: "nes-n8-midi", category: "feat
 export const NES_N8_MIDI_ROM_PROVIDER: RomProvider = (rom) =>
   rom.platform === "nes" ? [{ kind: "nes-n8-midi", config: {} }] : [];
 
+// The physical cart is ./consoles.ts's, which the manifest's retroplug.consoles member names: a RealCart is data the
+// planner reads, and this module is where zod and the role schema are.
 export default definePackage({
   roles: [NES_N8_MIDI_ROLE],
   romProviders: [NES_N8_MIDI_ROM_PROVIDER],

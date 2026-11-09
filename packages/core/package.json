@@ -12,6 +12,7 @@
     "./canonicalJson": "./ts/canonicalJson.ts",
     "./clock": "./ts/clock.ts",
     "./configFields": "./ts/configFields.ts",
+    "./consoles": "./ts/consoles.ts",
     "./constructSpec": "./ts/constructSpec.ts",
     "./defineNode": "./ts/defineNode.ts",
     "./definePackage": "./ts/definePackage.ts",

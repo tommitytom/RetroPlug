@@ -6,8 +6,9 @@
 # The embedded JS bytecode bundles: the control plane, the React UI, and the script nodes (with a test-only twin).
 
 # --- the TS package registries (docs/modular-graph-phase-f1-design.md section 3): packages/retroplug/src/generated/
-# packages.ts, protocol.ts and scriptNodes.ts, from the product list (the root package.json's retroplug.products.desktop)
-# and every package's manifest. Every bundle whose inputs reach src imports them, so each is ordered after this target.
+# packages.ts, consoles.ts, protocol.ts and scriptNodes.ts, from the product list (the root package.json's
+# retroplug.products.desktop) and every package's manifest. Every bundle whose inputs reach src imports them, so each is
+# ordered after this target.
 # It runs on every build (the bundle targets regenerate unconditionally anyway) and writes only a file whose content
 # changed, so a manifest edit rebuilds the bundles and a build that changes nothing touches no source file.
 #
@@ -23,10 +24,10 @@ foreach(_rp_ts_package IN LISTS RP_DESKTOP_PACKAGES)
 endforeach()
 add_custom_target(retroplug-ts-packages
     COMMAND ${NODE_EXECUTABLE} ${RP_TS_GENERATOR}
-    BYPRODUCTS "${RP_TS_GENERATED}/packages.ts" "${RP_TS_GENERATED}/protocol.ts"
-               "${RP_TS_GENERATED}/scriptNodes.ts"
+    BYPRODUCTS "${RP_TS_GENERATED}/packages.ts" "${RP_TS_GENERATED}/consoles.ts"
+               "${RP_TS_GENERATED}/protocol.ts" "${RP_TS_GENERATED}/scriptNodes.ts"
     SOURCES ${RP_TS_GENERATOR} ${_rp_ts_manifests} "${CMAKE_SOURCE_DIR}/package.json"
-    COMMENT "Generating the TS package registries (packages.ts, protocol.ts, scriptNodes.ts)"
+    COMMENT "Generating the TS package registries (packages.ts, consoles.ts, protocol.ts, scriptNodes.ts)"
     VERBATIM)
 # The bundles whose esbuild inputs reach the generated modules but which are defined in packages/native/CMakeLists.txt
 # above this include: the render worker, the CLI dispatcher, its example sessions and the SDK it embeds. The control

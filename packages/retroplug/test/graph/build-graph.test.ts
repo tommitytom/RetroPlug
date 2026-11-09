@@ -8,7 +8,14 @@
 // (docs/modular-graph-phase-c2-design.md section 5): its core config's setting fields and a Game Boy's serial-out
 // capture as settings, its gain and a NES's expansion volume as params.
 import { test, expect } from "@retroplug/testing";
-import { buildGraph, exportModeOf, type GraphModel, type GraphSystem, type HostShape } from "../../src/graph/buildGraph";
+import {
+  buildGraph,
+  drivesRealCartOf,
+  exportModeOf,
+  type GraphModel,
+  type GraphSystem,
+  type HostShape,
+} from "../../src/graph/buildGraph";
 import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
 import { controllerSyncOverride, serialOutCaptureFor, type GraphController } from "../../src/graph/controller";
 import { CONTROLLER_SYNC } from "../../src/generated/protocol";
@@ -457,6 +464,18 @@ test("two NESes that both drive a cart still give one cart node, the first in sl
   expect(off.nodeOrder.some((id) => id.startsWith("cart-"))).toBe(false);
 });
 
+test("a platform with no registered cart has nothing to opt out of, so it drives one", () => {
+  // The GBA registers no cart, so the NES's opt-out field in its mesen config says nothing about it: the old walk of
+  // the cart list skipped every other platform and answered true, which is what the narrowing form must still say.
+  expect(drivesRealCartOf({ driveRealCart: false }, "gba")).toBe(true);
+  expect(drivesRealCartOf({}, "gba")).toBe(true);
+  expect(drivesRealCartOf(undefined, "gba")).toBe(true);
+  // The platform that does have one reads its own opt-out, which the list-walk form agrees with.
+  expect(drivesRealCartOf({ driveRealCart: false }, "nes")).toBe(false);
+  expect(drivesRealCartOf({ driveRealCart: false })).toBe(false);
+  expect(drivesRealCartOf({ driveRealCart: true }, "nes")).toBe(true);
+});
+
 test("a cart node carries the system's expansion volume param, the same value its emulated node gets", () => {
   const withKnob = (volume: number) =>
     built([{ ...nes(2, 0, [N8]), coreConfig: { expansionVolume: volume } }]);
@@ -582,7 +601,7 @@ test("each system node's settings carry its core config's setting fields, and it
   // A NES's model export mode and its core config's label name the same thing, and the node carries the label.
   const exportLabel = "individualMono";
   const configured = { ...nes(2, 3), coreConfig: coreConfig("mesen", { channelExportMode: exportLabel }) };
-  expect(exportModeOf(configured.coreConfig)).toBe(configured.exportMode);
+  expect(exportModeOf(configured.type, configured.coreConfig)).toBe(configured.exportMode);
   expect(built([configured]).node("sys-2")?.settings?.channelExportMode).toBe(exportLabel);
 });
 

@@ -921,6 +921,20 @@ std::string settingsTsSource(const std::string& where) {
     return hits.front();
 }
 
+// The console descriptor that declares `type`: the one listed source whose text names it, which is the package's
+// consoles.ts (packages/*/ts/*.ts is the configure's list). A node type two sources declare fails, as an enum two do.
+std::string descriptorSource(const std::string& type) {
+    const std::string line = "nodeType: \"" + type + "\"";
+    std::vector<std::string> hits;
+    for (const auto& path : settingsTsSources())
+        if (readText(path).find(line) != std::string::npos) hits.push_back(path);
+    std::string where;
+    for (const auto& path : hits) where += (where.empty() ? ": " : " and ") + path;
+    INFO("the console descriptor of " << type << " is declared by " << hits.size() << " source(s)" << where);
+    REQUIRE(hits.size() == 1);
+    return hits.front();
+}
+
 // The quoted strings of `export const <name> = [...] as const;`, read from whichever source declares it: an enum lives
 // with the package that owns the knob reading it (SameBoy's MODEL_VALUES is @retroplug/sameboy's, the app's own enums
 // are settingsEnums.ts's). A name no source spells leaves the case failing on an empty list; one two sources spell
@@ -1024,21 +1038,26 @@ double tsConstant(const std::string& where, const std::string& name) {
     return std::strtod(ts.c_str() + ts.find('=', at) + 1, nullptr);
 }
 
-// A construct-time field of a node type in buildGraph.ts's CONSTRUCT_FIELDS, with the fallback a document names when
-// the stored config holds none the node takes, e.g. `n8LinkRttUs: { takes: intIn(0, 100'000), fallback: 2200 },`.
-// Both are read out of the type's entry, so a field added there is one the case must cover: the fallback is the JSON
-// token after `fallback:`, so a label comes back with its quotes and a number or a flag as written.
+// A construct-time field of a node type's console descriptor, with the fallback a document names when the stored config
+// holds none the node takes, e.g. `n8LinkRttUs: { takes: intIn(0, 100'000), fallback: 2200 },`. Both are read out of the
+// descriptor's constructFields, so a field added there is one the case must cover: the fallback is the JSON token after
+// `fallback:`, so a label comes back with its quotes and a number or a flag as written.
 struct TsConstructField {
     std::string name;
     std::string fallback;
 };
 
 std::vector<TsConstructField> tsConstructFields(const std::string& type) {
-    const std::string ts = readText(settingsTsSource("src/graph/buildGraph.ts"));
-    const auto table = ts.find("const CONSTRUCT_FIELDS:");
-    if (table == std::string::npos) return {};
-    const auto at = ts.find("\"" + type + "\": {", table);
+    const std::string ts = readText(descriptorSource(type));
+    // One source may declare several descriptors (a package's consoles.ts holds its console's three), so the block is
+    // the one after the node type's own line and before the next descriptor's: `constructFields` is optional, so a
+    // descriptor that omits it must not read the next one's table.
+    const auto nodeType = ts.find("nodeType: \"" + type + "\"");
+    if (nodeType == std::string::npos) return {};
+    const auto at = ts.find("constructFields: {", nodeType);
     if (at == std::string::npos) return {};
+    const auto next = ts.find("nodeType: \"", nodeType + 1);
+    if (next != std::string::npos && at > next) return {};
     const auto open = ts.find('{', at);
     if (open == std::string::npos) return {};
     std::size_t depth = 0;
@@ -1139,12 +1158,13 @@ TEST_CASE("a system node's enum knobs take the labels the role configs spell, an
                 if (const auto v = branch.to_object()->get(key)) b.push_back(*v->to_double());
         return b;
     };
-    // Each range is TS's, in all three copies: buildGraph's SETTING_FIELDS, which picks a value for the document, the
-    // role schema's clamped field, which a stored or edited config comes through, and the node's own declaration.
-    CHECK(bounds(knobSchema(gb, "lightTemperature")) == tsRange("src/graph/buildGraph.ts", "lightTemperature:"));
+    // Each range is TS's, in all three copies: the console descriptor's setting field, which picks a value for the
+    // document, the role schema's clamped field, which a stored or edited config comes through, and the node's own
+    // declaration.
+    CHECK(bounds(knobSchema(gb, "lightTemperature")) == tsRange(descriptorSource("rp.sameboy.gb"), "lightTemperature:"));
     CHECK(bounds(knobSchema(gb, "lightTemperature")) == tsRange("packages/sameboy/ts/app.ts", "lightTemperature:"));
     CHECK(bounds(knobSchema(gb, "lightTemperature")) == std::vector<double>{-1.0, 1.0});
-    CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == tsRange("src/graph/buildGraph.ts", "apuLatencyMs:"));
+    CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == tsRange(descriptorSource("rp.mesen.nes"), "apuLatencyMs:"));
     CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == tsRange("packages/mesen/ts/app.ts", "apuLatencyMs:"));
     CHECK(bounds(knobSchema(nesSchema, "apuLatencyMs")) == std::vector<double>{0.25, 6.0});
     // The NES's one param whose value comes from its core config, whole percent, the same range its role schema clamps.

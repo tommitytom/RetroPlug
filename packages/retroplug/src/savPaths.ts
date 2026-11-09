@@ -10,6 +10,7 @@
 // the live-systems ownership + Backend reads on top.
 
 import { dirname, stem, joinPath, replaceExtension, replaceFilename, extensionLower } from "./pathUtil";
+import { romExtensions } from "./consoles";
 
 /** Battery-save file extensions, most-preferred first. `.sav` is the default write target across
  *  GB/NES/GBA; `.srm` is the alternative some NES/risa saves ship with, so it's accepted when pairing a
@@ -74,13 +75,10 @@ export function nextFreeSavSuffix(
   return n;
 }
 
-const ROM_EXTS = [".gb", ".gbc", ".gba", ".nes", ".sms", ".gg"];
-
-/** The ordered ROM paths to probe when pairing a picked `.sav`, mirroring
- *  findSiblingRom: the save's own stem first, then — only when the stem ends in
- *  `-<digits>` (a duplicate slot) — the base stem; each crossed with `.gb/.gbc/
- *  .gba/.nes/.sms/.gg` (stem-outer, ext-inner). The caller keeps the first
- *  candidate that exists AND content-validates as a real ROM. */
+/** The ordered ROM paths to probe when pairing a picked `.sav`, mirroring findSiblingRom: the save's own stem first,
+ *  then - only when the stem ends in `-<digits>` (a duplicate slot) - the base stem; each crossed with the extensions the
+ *  registered consoles read (stem-outer, ext-inner). The caller keeps the first candidate that exists AND
+ *  content-validates as a real ROM. */
 export function siblingRomCandidates(savPath: string): string[] {
   const dir = dirname(savPath);
   const s = stem(savPath);
@@ -91,7 +89,7 @@ export function siblingRomCandidates(savPath: string): string[] {
 
   const out: string[] = [];
   for (const st of stems) {
-    for (const ext of ROM_EXTS) out.push(joinPath(dir, st + ext));
+    for (const ext of romExtensions()) out.push(joinPath(dir, st + ext));
   }
   return out;
 }

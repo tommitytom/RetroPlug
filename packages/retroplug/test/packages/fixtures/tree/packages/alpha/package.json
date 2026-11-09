@@ -2,12 +2,14 @@
   "name": "@retroplug/alpha",
   "exports": {
     "./app": "./ts/app.ts",
+    "./consoles": "./ts/consoles.ts",
     "./nodes": "./ts/nodes.ts",
     "./appRuntime": "./ts/appRuntime.ts"
   },
   "private": true,
   "retroplug": {
     "app": "ts/app.ts",
+    "consoles": "ts/consoles.ts",
     "protocol": {
       "module": "ts/nodes.ts",
       "nodes": [

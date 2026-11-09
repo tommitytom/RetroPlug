@@ -110,9 +110,11 @@ without naming it would silently lose its node type). Today the SDL standalone, 
 product takes the same argument.
 
 **The registries are generated, not written.** [packages/retroplug/scripts/lib/packages.mjs](../packages/retroplug/scripts/lib/packages.mjs)
-writes the shell's `src/generated/{packages,protocol,scriptNodes}.ts` from the product list
+writes the shell's `src/generated/{packages,consoles,protocol,scriptNodes}.ts` from the product list
 (`retroplug.products.desktop` in the root [package.json](../package.json)): `packages.ts` concatenates each package's
-`app` contribution, `protocol.ts` is the table `buildGraph` and the stores wire a role through, and `scriptNodes.ts`
+`app` contribution, `consoles.ts` each package's `retroplug.consoles` module (its console descriptors and the physical
+carts one of them can drive, kept apart from the app because the planner reads them and must carry no role schema),
+`protocol.ts` is the table `buildGraph` and the stores wire a role through, and `scriptNodes.ts`
 is the script-node bundle's entry, in span-label order. The product list is the **dependency order and the registration
 order both** (a package before the ones that use it, the shell last), and only a ROM provider's place in it is
 behaviour: the providers run in that order, and the first to match a ROM fixes a system's role-list order. A role's

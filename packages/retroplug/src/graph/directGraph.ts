@@ -17,7 +17,7 @@ import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { ConstructSpec, EmulatorBackend, HostBackend } from "../backend";
 import { EngineGraph } from "../engineGraph";
 import { parseAppConfig } from "../controller/registry";
-import { exportModeOf, linkGroupOf, systemKnobs, systemNodeId, type GraphSystem } from "./buildGraph";
+import { capabilitiesOf, exportModeOf, linkGroupOf, systemKnobs, systemNodeId, type GraphSystem } from "./buildGraph";
 import { bootSystem, ResourcePool, systemHandles, type BootedSystem } from "./systemResources";
 import type { GraphController } from "./controller";
 import { protocolPipeline, type LeftOutRole } from "./protocolNodes";
@@ -131,12 +131,13 @@ export class DirectGraph {
     if (at < 0) return false;
     const system = this.systems[at];
     const knobs = systemKnobs({ type: system.type, coreConfig: partial });
-    const group = partial.linkGroupId;
+    // The link cable is wiring, not a knob: the field its console declares (capabilities.linkCable) is taken when its
+    // value is a group, and the key it is read from here is that field's, never a literal of the shell's.
+    const cable = capabilitiesOf(system.type).linkCable?.field;
+    const group = cable === undefined ? undefined : partial[cable];
     const isGroup = typeof group === "number" && Number.isInteger(group) && group >= 0 && group <= 255;
     const takes = (field: string): boolean =>
-      has(knobs.settings, field) ||
-      has(knobs.params, field) ||
-      (field === "linkGroupId" && system.type === "rp.sameboy.gb" && isGroup);
+      has(knobs.settings, field) || has(knobs.params, field) || (cable === field && isGroup);
     if (!Object.keys(partial).every(takes)) return false;
     const coreConfig = { ...system.coreConfig, ...partial };
     const linkGroup = typeof group === "number" ? group : system.linkGroup;
@@ -224,8 +225,8 @@ export class DirectGraph {
       id,
       platform: spec.platform,
       type: booted.type,
-      linkGroup: linkGroupOf(spec.coreConfig),
-      exportMode: exportModeOf(spec.coreConfig),
+      linkGroup: linkGroupOf(booted.type, spec.coreConfig),
+      exportMode: exportModeOf(booted.type, spec.coreConfig),
       resources: booted.resources,
       romName: booted.romName,
       pipeline: [],

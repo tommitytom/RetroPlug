@@ -15,10 +15,12 @@
 
 import type { HostBackend } from "./backend";
 import { siblingRplgPath, isSavPath, SAV_PATTERNS } from "./savPaths";
+import { romExtensions } from "./consoles";
 import { classifyRom, type SystemsStore } from "./systemsStore";
 
-export const ROM_OR_SAV_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sms", "*.gg", ...SAV_PATTERNS];
-export const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sms", "*.gg"];
+/** The file-dialog globs for a ROM: one per extension the registered consoles read, in product order. */
+export const ROM_PATTERNS: string[] = romExtensions().map((ext) => `*${ext}`);
+export const ROM_OR_SAV_PATTERNS = [...ROM_PATTERNS, ...SAV_PATTERNS];
 
 /** What a picked file is: a ROM (any known format, by content), a battery save (`.sav`/`.srm`, by
  *  extension since it isn't a ROM), or something else. */
