@@ -15,7 +15,8 @@ it:
   `systemsList.ts`, `savPaths.ts`, `projectConfig.ts`, `projectPaths.ts`, `pathUtil.ts`,
   `midiRouting.ts`, `projectBinaries.ts`, `projectMissing.ts`, `recentList.ts`, the
   `*Serialization.ts` codecs, the zod models, plus `graph/buildGraph.ts` / `graph/protocolNodes.ts` /
-  `graph/controller.ts`.
+  `graph/serialCapture.ts`. The controller's placement is a package's now (the launchpad pack's
+  `ts/control/placer.ts`, the F5a design's section 6.3): the shell builds the slots and each package fills its own.
 - **Stores** — a kernel wired to the `Backend`, owning live state: `systemsStore.ts`,
   `projectStore.ts`, `recentStore.ts`, `userConfigStore.ts`, `bindingsStore.ts`, plus the
   store-adjacent services `fileSelection.ts`, `fileWatcher.ts`, `sramAutoSave.ts`.
@@ -262,15 +263,16 @@ missing files, and holds `pendingLoad` for `relink` or `commit`
 Three project settings reach the engine, each through the graph the project publishes
 ([`publishGraph`, projectStore.ts:166](../packages/retroplug/src/projectStore.ts#L166)):
 `setAudioRouting` as its wiring (`publishRouting()`, which re-arms the NES tap), and `setMidiRouting`
-and `setController` as the script nodes ahead of the systems. `publishGraph` publishes
-`{ systems, routing, midiRouting, controller }`: each system with its roles that have a protocol node
+as the script nodes ahead of the systems, with each package's `models` beside them. `publishGraph` publishes
+`{ systems, routing, midiRouting, models }`: each system with its roles that have a protocol node
 ([`graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts)), the MIDI routing, and
-the controller with its app config parsed by the app's schema and the song-timing table it reads from
-the controller cart's battery here, on the control plane. [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts)
-places the routing node, the controller node and a node per role from them, forcing the MI.MAP
-controller's cart into the sync mode it needs ([`launchpad/ts/control/placer.ts`](../packages/launchpad/ts/control/placer.ts)).
-`refreshControllerSong` publishes too, when its poll finds the controller cart's song
-moved or a new start anchor. A load holds the publishes back while it adopts and publishes once; a
+what each package's project service published as its model (the controller's, with its app config parsed by the app's
+schema and the song-timing table it read from the cart's battery here, on the control plane).
+[`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts)
+reads the generated placer table in product order, places the routing node, each placer's nodes and a node per role
+from them, and the launchpad pack's placer forces the MI.MAP controller's cart into the sync mode it needs
+([`launchpad/ts/control/placer.ts`](../packages/launchpad/ts/control/placer.ts)). `ProjectStore.pollServices()`
+publishes too, when a service's poll finds what it watches moved (the controller cart's song, or a new start anchor). A load holds the publishes back while it adopts and publishes once; a
 load that throws partway places what it adopted through the same drop-and-retry before rethrowing (a system the
 placement refuses does not stay listed), and every exit of a load tells the structure's observers
 (`onSystemsChange`) once.
@@ -354,8 +356,8 @@ planned, a refused change giving back what it put and restoring the document bef
 engine or transport fault, which the graph counts as refused) rolls back the same way before the error reaches the
 caller, as the store's `commitEdit` does. A system it adds or replaces has no roles, and what the script nodes are told
 is three calls of its own, each a publish: `setPipeline(id, roles)` (each role with a protocol node placed as one, its
-config as given), `setMidiRouting(mode)` and `setController(controller)` (its app config parsed by the app's schema,
-as the project's is). Until `setMidiRouting` names a mode, no host MIDI is routed to any system. A system it adds has
+config as given), `setMidiRouting(mode)` and `setModel("controller", controller)` (its app config parsed by the placer's
+`normalize`, as the project's is). Until `setMidiRouting` names a mode, no host MIDI is routed to any system. A system it adds has
 no core config either, so its node carries no live setting field (a NES's or SMS's construct-time fields are written at
 their node's defaults) and its core keeps the settings it was built with, while its params still reach it at their
 defaults (its gain at 0 dB; a NES's expansion volume at 100%), until `setCoreConfig(id, partial)`, a publish, merges

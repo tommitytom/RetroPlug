@@ -6,7 +6,7 @@
   "description": "TS-first reimplementation of RetroPlug's orchestration layer (project/systems/paths/recent/config/SRAM/kits), developed test-driven against a mocked native backend. No C++ in the loop — see README.",
   "scripts": {
     "test": "node scripts/run-tests.mjs",
-    "typecheck": "node scripts/lib/packages.mjs && tsc --noEmit"
+    "typecheck": "node scripts/lib/packages.mjs && tsc --noEmit && node scripts/typecheck-products.mjs"
   },
   "dependencies": {
     "@retroplug/bliptoaster": "workspace:*",

@@ -336,9 +336,10 @@ routing node's outputs follow the systems); a system removed and added again get
   back opens a fresh run. Its settings are the role's config through the schema `rp.lsdj.sync` takes too
   ([nodes/lsdjSyncSettings.ts](../packages/lsdj/ts/lsdjSyncSettings.ts)); it reads only `mode`.
 - **`rp.controller.session`** runs a `ControllerSession` ([session.ts](../packages/launchpad/ts/session.ts))
-  for the app its settings name, which the generated script bundle registers from the manifests' `protocol.apps`
-  entries ([apps/index.ts](../packages/launchpad/ts/apps/index.ts), the apps' runtime, zod-free: each app's factory and
-  playback model, and its launch target): the surface's traffic and the block's clock in (its tick derived from ppq at
+  for the app its settings name, which the generated script bundle registers from the manifests'
+  `protocol.kinds.controllerApps` entries ([apps/index.ts](../packages/launchpad/ts/apps/index.ts), the apps' runtime,
+  zod-free: each app's factory and playback model, and its launch target; the contribution kind, section 6.5 of the
+  F5a design, is what hands the declaring package its items and refuses a half): the surface's traffic and the block's clock in (its tick derived from ppq at
   24 PPQN), its LED bytes out on `controllerOut`, and its row launches at frame 0 on `launches` (into the target cart's
   `rp.lsdj.sync`) or `midiOut` (out of the host, to a real Game Boy's Arduinoboy). It takes a device on the block a
   link first reports a new generation. Its settings are what the control plane resolved: it parses nothing. A settings
@@ -464,10 +465,11 @@ The rest of the document follows from those nodes:
   "0 is the first system" is resolved here (`controllerTarget`), so it follows a change of first system;
   with no system its host MIDI is tagged `NO_SYSTEM` (4294967295) and the node takes 0, its none. The
   publisher hands it the app config already parsed by the app's own schema (`parseAppConfig`,
-  [controller/registry.ts](../packages/launchpad/ts/registry.ts)) and the timing table it read
+  [registry.ts](../packages/launchpad/ts/registry.ts)) and the timing table it read
   from the cart's battery, on the control plane. The `lsdj-sync` nodes of the cart the MI.MAP app drives
   are forced to `midiMap`, or to `off` when the cart's own SYNC setting is not MI.MAP
-  (`controllerSyncOverride`, whose rule is the app's `protocol.apps` entry `syncOverride` as DATA: the cart sync node
+  (`controllerSyncOverride`, whose rule is the app's `protocol.kinds.controllerApps` entry `syncOverride` as DATA: the
+  cart sync node
   type, the mode it forces, the polled SYNC value that counts as the cart listening, and the mode not listening
   means), its `rp.lsdj.serial-out` with its `rp.lsdj.sync`, so a forced cart sends no
   host MIDI, and its Game Boy's node captures nothing for them. The override is those nodes' settings and that
@@ -533,10 +535,12 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   a bundle registers its node types.
 - [launchpad/ts/apps/index.ts](../packages/launchpad/ts/apps/index.ts) /
   [lsdj-launchpad/ts/app.ts](../packages/lsdj-launchpad/ts/app.ts) /
-  [controller/registry.ts](../packages/launchpad/ts/registry.ts): the controller apps' runtime (the
-  manifests' `protocol.apps`), the MI.MAP app's control-plane half (its id, label, config schema and the cart sync mode
-  its `protocol.apps` entry names as data), and the shell's registry over the generated list, beside `parseAppConfig`,
-  which hands the publishers an app's config parsed by its own schema.
+  [registry.ts](../packages/launchpad/ts/registry.ts) /
+  [control/kind.ts](../packages/launchpad/ts/control/kind.ts): the controller apps' runtime (the
+  manifests' `protocol.kinds.controllerApps` entries), the MI.MAP app's control-plane half (its id, label, config schema
+  and the cart sync mode its manifest entry names as data), the package's registry, which its contribution kind's
+  `accept` fills from the product's app modules, beside `parseAppConfig`, which hands the publishers an app's config
+  parsed by its own schema.
 - [appHost.ts](../packages/retroplug/src/appHost.ts): `buildAppRegistry`.
 
 Native ([packages/native/src/](../packages/native/src/)):

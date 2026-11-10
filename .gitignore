@@ -12,6 +12,10 @@
 # the typecheck paths, written by the same generator from the shell's host-modules.json and tsconfig.aliases.json
 /packages/retroplug/tsconfig.host-modules.json
 /packages/retroplug/tsconfig.paths.json
+# the non-desktop products' generated trees, written by the typecheck (scripts/typecheck-products.mjs): under the shell
+# rather than build/, because a typecheck must not leave the directory build.sh looks for to decide whether the tree
+# has been configured (build.sh and build.bat test build/CMakeCache.txt)
+/packages/retroplug/.products/
 # sanitizer build dirs (tools/run-sanitizer.sh)
 /build-tsan/
 /build-asan/

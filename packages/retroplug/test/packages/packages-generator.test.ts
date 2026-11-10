@@ -71,8 +71,8 @@ async function text(stream: ByteStream | null): Promise<string> {
 }
 
 /** The driver's report for one mode, parsed. */
-async function drive(mode: string): Promise<Record<string, any>> {
-  const child = tjs.spawn([tjs.env.RP_NODE || "node", "test/packages/run-generator.mjs", mode], {
+async function drive(mode: string, args: string[] = []): Promise<Record<string, any>> {
+  const child = tjs.spawn([tjs.env.RP_NODE || "node", "test/packages/run-generator.mjs", mode, ...args], {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -328,6 +328,69 @@ test("a contribution kind's item with no control-plane half is refused", async (
   const { error } = await drive("kind-one-half");
   console.log(`# kind item with no control half: ${error}`);
   expect(error).toBe("the widgets item w has no control-plane half");
+});
+
+test("a product list that is the desktop's subsequence gets its own tree, its nodes at its positions", async () => {
+  // "solo" is [zeta], so the desktop's node labels (alpha's 16, the shell's 17) are not what it has: the shell's single
+  // node is its position 16. Its tree is under the build directory, in the shell's shape, and the desktop's is still
+  // where it was (design 7.1, decision 9, E6).
+  const report = await drive("product", ["solo"]);
+  const files = report.files as Record<string, string>;
+  const labels = files["scriptNodes.ts"].match(/"rp\.[a-z.]+": \d+/g) ?? [];
+  console.log(`# the product's script-node labels: ${labels.join(", ")}`);
+  expect(labels).toEqual(['"rp.fixture.shell": 16']);
+  // The desktop still writes its own tree, with both labels.
+  expect((report.desktop as Record<string, string>)["scriptNodes.ts"].includes('"rp.alpha.midi": 16')).toBe(true);
+  expect((report.desktop as Record<string, string>)["scriptNodes.ts"].includes('"rp.fixture.shell": 17')).toBe(true);
+  // Its typecheck program is written beside it, extends the shell's, and takes a paths file of its own.
+  expect(files.tsconfig.includes("packages/retroplug/tsconfig")).toBe(true);
+  expect(files.tsconfig.includes("./tsconfig.paths.json")).toBe(true);
+});
+
+test("the desktop's list must carry every contributing package the shell declares", async () => {
+  // The desktop's list is the union: a package the shell declares and that contributes and the list leaves out would be
+  // imported by the shell's generated modules and registered by nothing. A product list that is not the desktop's may
+  // drop one deliberately, which the `product` case's "solo" list (alpha and beta dropped) holds.
+  const { error } = await drive("shell-unlisted");
+  console.log(`# desktop list without a contributing shell dependency: ${error}`);
+  expect(error).toBe(
+    "retroplug depends on @retroplug/zeta, which contributes to the app and the product does not list",
+  );
+});
+
+test("a product list that is not the desktop's subsequence is refused", async () => {
+  const { error } = await drive("product-refused", ["out-of-order"]);
+  console.log(`# product list out of order: ${error}`);
+  expect(error).toBe(
+    "retroplug.products.out-of-order is not a subsequence of retroplug.products.desktop: alpha is in no order there, " +
+      "or out of it",
+  );
+});
+
+test("a product list naming a package the desktop does not is refused", async () => {
+  const { error } = await drive("product-refused", ["unknown-package"]);
+  console.log(`# product list with an unknown package: ${error}`);
+  expect(error).toBe(
+    "retroplug.products.unknown-package is not a subsequence of retroplug.products.desktop: nowhere is in no order " +
+      "there, or out of it",
+  );
+});
+
+test("a product list is validated as the desktop's is, and a product the manifest has not is refused", async () => {
+  const twice = await drive("product-refused", ["twice"]);
+  console.log(`# product list twice: ${twice.error}`);
+  expect((twice.error as string).endsWith("lists a package twice in retroplug.products.twice")).toBe(true);
+  const shell = await drive("product-refused", ["shell"]);
+  console.log(`# product list with the shell: ${shell.error}`);
+  expect((shell.error as string).endsWith("lists the shell (retroplug) in retroplug.products.shell")).toBe(true);
+  const unknown = await drive("product-refused", ["nowhere"]);
+  console.log(`# unknown product: ${unknown.error}`);
+  expect(
+    (unknown.error as string).endsWith(
+      "has no retroplug.products.nowhere list of package names (the products are desktop, solo, out-of-order, " +
+        "unknown-package, twice, shell)",
+    ),
+  ).toBe(true);
 });
 
 test("a contribution kind named after an app member is refused", async () => {

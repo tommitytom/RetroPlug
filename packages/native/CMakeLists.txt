@@ -37,28 +37,11 @@ endif()
 # package finds its own, for r8brain, and the N8 pack its own, for N8Link's serial thread.)
 find_package(Threads REQUIRED)
 
-# The render-worker bundle — src/render/worker.ts esbuilt to a global-code IIFE (NOT an ES module: the
-# RenderHost loads it on a BARE QuickJS runtime with no module loader) + tjsc'd to bytecode C array,
-# COMPILED INTO retroplug-backend so every consumer (plugin, test host, the parity test) can render on a
-# worker thread. tjsc WITHOUT -m yields global-code bytecode (JS_ReadObject + JS_EvalFunction); the symbol
-# name derives from the output stem → rp_render_worker_bundle[] + _size. Derived; never committed. Defined
-# before retroplug-backend so its sources can embed the array.
-set(RENDER_WORKER_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/render-worker-bundle.js")
-set(RENDER_WORKER_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/render-worker-bundle_data.c")
-set_source_files_properties(${RENDER_WORKER_BUNDLE_C} PROPERTIES GENERATED TRUE)
-add_custom_target(retroplug-render-worker-bundle
-    BYPRODUCTS ${RENDER_WORKER_BUNDLE_JS} ${RENDER_WORKER_BUNDLE_C} ${RENDER_WORKER_BUNDLE_C}.new
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${CMAKE_SOURCE_DIR}/packages/retroplug/src/render/worker.ts ${RENDER_WORKER_BUNDLE_JS} iife
-    COMMAND ${_TJSC_COMMAND} -s -p rp_ -o ${RENDER_WORKER_BUNDLE_C}.new ${RENDER_WORKER_BUNDLE_JS}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RENDER_WORKER_BUNDLE_C}.new ${RENDER_WORKER_BUNDLE_C}
-    COMMENT "Bundling render worker (esbuild iife + global-code bytecode)"
-    VERBATIM)
-# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
-# path (not a target) — the custom command's DEPENDS already tracks it.
-if(TARGET ${_TJSC_DEP})
-  add_dependencies(retroplug-render-worker-bundle ${_TJSC_DEP})
-endif()
+# A product's embedded bundles (the control plane, the UI, the script nodes and the render worker) are
+# cmake/product-bundles.cmake's, declared there before the first product below: the script nodes and the render worker
+# are target sources of each product now (the backend declares their arrays extern), so a product's script host loads
+# its own node set rather than one every product shared.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/product-bundles.cmake)
 
 # --- retroplug-tjs-runtime and retroplug-file-watcher: the two host runtime libraries
 # (docs/modular-graph-phase-f2-design.md section 6). Each is a library of its own, linked by the hosts that use it, so
@@ -114,10 +97,7 @@ add_library(retroplug-backend STATIC
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (script packs' source, the tests' toys)
     src/host/script/ScriptHost.cpp          # the script-node runtimes: TS nodes behind the C ABI, a pair per pack
     src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
-    ${RENDER_WORKER_BUNDLE_C}               # embedded render-worker bytecode (rp_render_worker_bundle)
 )
-add_dependencies(retroplug-backend retroplug-render-worker-bundle)  # the embedded worker bytecode must exist first
-
 target_include_directories(retroplug-backend PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     # `native/core/img/png/lodepng.h` lives under this root (in dpf.js).
@@ -216,6 +196,10 @@ add_custom_target(retroplug-cli-bundle
 if(TARGET ${_TJSC_DEP})
   add_dependencies(retroplug-cli-bundle ${_TJSC_DEP})
 endif()
+# ...and against the shell's generator: cli.ts imports cli/generated/tools.ts and the dispatcher's own modules import
+# src/generated, which a fresh tree has not written yet. Unbundled from this edge, a parallel build from a tree with no
+# src/generated can bundle the CLI before the generator has written it (the desktop's set: these bundles are its).
+add_dependencies(retroplug-cli-bundle ${RP_BUNDLE_desktop_GENERATOR})
 
 # The TypeScript type stripper — ts-blank-space + the TS parser → tjsc bytecode C array, COMPILED INTO
 # retroplug-cli so `retroplug-cli test/run` can execute `.ts` directly with no Node, npm or bundler on
@@ -270,6 +254,9 @@ add_custom_target(retroplug-cli-sdk-assets
 if(TARGET ${_TJSC_DEP})
   add_dependencies(retroplug-cli-sdk-assets ${_TJSC_DEP})
 endif()
+# The SDK's bundle embeds the CLI's dispatcher (tools/embed-sdk.mjs), which imports the generated tools and modules: the
+# generator must have written them first, as for the dispatcher's own bundle.
+add_dependencies(retroplug-cli-sdk-assets ${RP_BUNDLE_desktop_GENERATOR})
 
 # retroplug-cli: the standalone runner — the backend lib + a main() that evals either the COMPILED-IN
 # dispatcher bundle (commands + help) or, when argv[1] is a `.js`, a session file by path. No Node at
@@ -325,6 +312,9 @@ add_custom_target(retroplug-example-session ALL
     ${EXAMPLE_SESSION_COMMANDS}
     COMMENT "Bundling CLI example sessions (esbuild)"
     VERBATIM)
+# An example session imports the shell's modules, which import src/generated: a fresh tree's parallel build can reach
+# the session before the generator has written them.
+add_dependencies(retroplug-example-session ${RP_BUNDLE_desktop_GENERATOR})
 
 # The embedded control-plane, React-UI and script-node bytecode bundles.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bundles.cmake)

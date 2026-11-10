@@ -1504,8 +1504,52 @@ function(_retroplug_embed_entries product outVar)
     set(${outVar} "${_entries}" PARENT_SCOPE)
 endfunction()
 
-# retroplug_product(<product> PACKAGES <package>... [PROVIDERS <package>...] [TARGETS <target>...] [DEVICE]): declares a
-# product and the packages it carries, in registration order. Generates build/packages/products/<product>.cpp, which
+# retroplug_check_product_lists(): every list but the desktop's is the desktop's SUBSEQUENCE, in the same relative
+# order: the registration order and the set of packages the configure adds cannot then disagree with the desktop's own
+# order, and a product's script-node span labels are its own positions in that order (the TS generator refuses one out
+# of order, and a duplicate, with its own words). A list naming a package twice is refused here rather than as "out of
+# order" at the same index, which is what a plain increasing check would say. It reads the globals the root configure
+# sets from the manifest (RP_PRODUCT_LIST_NAMES and RP_PRODUCT_PACKAGES_<name>), so a configure-time fixture can call it.
+function(retroplug_check_product_lists)
+    foreach(_rp_name IN LISTS RP_PRODUCT_LIST_NAMES)
+        if(_rp_name STREQUAL "desktop")
+            continue()
+        endif()
+        set(_rp_seen -1)
+        set(_rp_listed "")
+        foreach(_rp_package IN LISTS RP_PRODUCT_PACKAGES_${_rp_name})
+            if(_rp_package IN_LIST _rp_listed)
+                message(FATAL_ERROR "retroplug.products.${_rp_name} lists ${_rp_package} twice")
+            endif()
+            list(APPEND _rp_listed "${_rp_package}")
+            list(FIND RP_DESKTOP_PACKAGES "${_rp_package}" _rp_at)
+            if(_rp_at EQUAL -1)
+                message(FATAL_ERROR "retroplug.products.${_rp_name} lists ${_rp_package}, which "
+                                    "retroplug.products.desktop does not")
+            endif()
+            if(_rp_at LESS_EQUAL _rp_seen)
+                message(FATAL_ERROR "retroplug.products.${_rp_name} lists ${_rp_package} out of the order "
+                                    "retroplug.products.desktop has it in: a product list is a subsequence of the "
+                                    "desktop's")
+            endif()
+            set(_rp_seen ${_rp_at})
+        endforeach()
+    endforeach()
+endfunction()
+
+# retroplug_product(<product> [LIST <name> | PACKAGES <package>...] [PROVIDERS <package>...] [TARGETS <target>...]
+#                    [DEVICE]): declares a product and the packages it carries, in registration order.
+#
+# LIST names one of the root package.json's retroplug.products lists (read into RP_PRODUCT_PACKAGES_<name>), and is how
+# a product says it carries a different set from the desktop's: its generated registries, its generated modules'
+# tree and its four embedded bundles are the list's (packages/native/cmake/product-bundles.cmake), so the plugin's
+# carry no Launchpad. Exactly one of LIST and PACKAGES is accepted. PACKAGES is the long form a product whose packages
+# are not in a list of their own writes out, and a non-DEVICE product's must equal one of the lists' contents: its four
+# embedded bundles are built from that list's generated tree (a product whose packages match no list is refused, below).
+# A DEVICE product, and a project configured without the bundle machinery (a package's fixture child project), may name
+# any packages: neither builds a bundle. A non-DEVICE product also takes its script-node and render-worker bundle
+# arrays as target sources, because the backend declares those two symbols extern. Generates
+# build/packages/products/<product>.cpp, which
 # defines the product's rp_register_packages() and rp_embedded_resources() (the embedded resources of the packages it
 # lists, `embed` above), and adds it to each of TARGETS (default: the target named <product>) with the packages' targets
 # and their embed libraries linked. TARGETS is for one product built as several binaries: the plugin's formats, each its
@@ -1532,7 +1576,7 @@ endfunction()
 # the targets. A package with no native part (its contributions are its `app` and `protocol` members, TypeScript's) has
 # no entries and no targets, so listing it here contributes nothing to the registration and nothing to link.
 function(retroplug_product product)
-    cmake_parse_arguments(P "DEVICE" "" "PACKAGES;TARGETS;PROVIDERS" ${ARGN})
+    cmake_parse_arguments(P "DEVICE" "LIST" "PACKAGES;TARGETS;PROVIDERS" ${ARGN})
     if(P_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "retroplug_product(${product}): unrecognised argument(s): ${P_UNPARSED_ARGUMENTS}")
     endif()
@@ -1541,8 +1585,19 @@ function(retroplug_product product)
     if("TARGETS" IN_LIST ARGN AND NOT P_TARGETS)
         message(FATAL_ERROR "retroplug_product(${product}): TARGETS names no target")
     endif()
+    if(P_LIST AND P_PACKAGES)
+        message(FATAL_ERROR "retroplug_product(${product}): LIST and PACKAGES are one choice; a product names the "
+                            "list it carries or the packages it names")
+    endif()
+    if(P_LIST)
+        if(NOT DEFINED RP_PRODUCT_PACKAGES_${P_LIST})
+            message(FATAL_ERROR "retroplug_product(${product}): LIST names the product ${P_LIST}, which the root "
+                                "package.json's retroplug.products does not declare")
+        endif()
+        set(P_PACKAGES "${RP_PRODUCT_PACKAGES_${P_LIST}}")
+    endif()
     if(NOT P_PACKAGES)
-        message(FATAL_ERROR "retroplug_product(${product}): PACKAGES is required")
+        message(FATAL_ERROR "retroplug_product(${product}): PACKAGES is required (or LIST <name>)")
     endif()
     if(RP_DEVICE_BUILD AND NOT P_DEVICE)
         message(FATAL_ERROR "retroplug_product(${product}): a device build declares DEVICE products alone")
@@ -1766,6 +1821,35 @@ ${_body}}${_embedSection}")
     set_property(GLOBAL APPEND PROPERTY RP_PRODUCTS ${product})
     set_property(GLOBAL APPEND PROPERTY RP_PRODUCT_TARGETS ${P_TARGETS})
     set_property(GLOBAL PROPERTY RP_PRODUCT_${product}_ENTRIES ${_entries})
+    # Its four embedded bundles, for the package list it carries: the two the backend declares extern (the script nodes
+    # and the render worker) become target sources here, and a product whose packages equal a list's shares that list's
+    # set (every test binary naming RP_DESKTOP_PACKAGES shares the desktop's). A product configured without the bundle
+    # machinery (a package's fixture child project) gets none: it constructs no engine.
+    if(COMMAND retroplug_bundles)
+        string(REPLACE ";" "-" _content "${P_PACKAGES}")
+        set(_bundleName "")
+        foreach(_rp_list IN LISTS RP_PRODUCT_LIST_NAMES)
+            string(REPLACE ";" "-" _listContent "${RP_PRODUCT_PACKAGES_${_rp_list}}")
+            if(_listContent STREQUAL _content)
+                set(_bundleName "${_rp_list}")
+                break()
+            endif()
+        endforeach()
+        if(NOT _bundleName)
+            message(FATAL_ERROR "retroplug_product(${product}): PACKAGES names no retroplug.products list, and this "
+                                "build makes bundles, whose generated tree is a list's: give the product a LIST, or "
+                                "declare the list in the root package.json's retroplug.products")
+        endif()
+        set_property(GLOBAL PROPERTY RP_BUNDLE_PACKAGES_${_bundleName} "${P_PACKAGES}")
+        retroplug_bundles(${_bundleName})
+        foreach(_t IN LISTS P_TARGETS)
+            target_sources(${_t} PRIVATE $<TARGET_OBJECTS:${RP_BUNDLE_${_bundleName}_OBJECTS}>)
+            add_dependencies(${_t} ${RP_BUNDLE_${_bundleName}_OBJECTS}
+                                ${RP_BUNDLE_${_bundleName}_SCRIPT_TARGET}
+                                ${RP_BUNDLE_${_bundleName}_RENDER_TARGET})
+        endforeach()
+        set_property(GLOBAL PROPERTY RP_PRODUCT_${product}_BUNDLES ${_bundleName})
+    endif()
 endfunction()
 
 # retroplug_device_mode_objects(<target> PACKAGES <package>... [SOURCES <source>...] [INCLUDES <dir>...]

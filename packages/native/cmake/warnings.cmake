@@ -66,6 +66,10 @@ if(MSVC)
     # And each device entry's device-mode compile (cmake/packages.cmake's _retroplug_device_check).
     get_property(_rp_device_checks GLOBAL PROPERTY RP_DEVICE_CHECK_TARGETS)
     list(APPEND _rp_werror_targets ${_rp_device_checks})
+    # And a product's embedded bundle arrays (packages/native/cmake/product-bundles.cmake names them by the set, which
+    # is a list's name, so the list stays wherever they are made).
+    get_property(_rp_bundle_objects GLOBAL PROPERTY RP_BUNDLE_OBJECTS_TARGETS)
+    list(APPEND _rp_werror_targets ${_rp_bundle_objects})
     foreach(_t IN LISTS _rp_werror_targets)
         if(TARGET ${_t})
             target_compile_options(${_t} PRIVATE ${_rp_warn_flags})

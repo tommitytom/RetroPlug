@@ -2,6 +2,13 @@
   "name": "@retroplug/fixture-root",
   "private": true,
   "retroplug": {
-    "products": { "desktop": ["zeta", "alpha", "beta"] }
+    "products": {
+      "desktop": ["zeta", "alpha", "beta"],
+      "solo": ["zeta"],
+      "out-of-order": ["beta", "alpha"],
+      "unknown-package": ["alpha", "nowhere"],
+      "twice": ["alpha", "alpha"],
+      "shell": ["alpha", "retroplug"]
+    }
   }
 }

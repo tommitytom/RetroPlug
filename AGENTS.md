@@ -15,7 +15,9 @@ Start with these — all short:
   UI contract (the menu model, the contribution and view types) in `packages/ui/` with the React kit in
   `packages/ui-react/` (and its component-view fixture, listed by no product, in `packages/ui-fixture/`), the test
   harness in `packages/testing/`, the box's device nodes in `packages/device-io/`, the device check's test nodes in
-  `packages/devtest/` (listed by no product), and everything about the Everdrive N8 Pro in `packages/n8/`. The older
+  `packages/devtest/` (listed by no product), the two headers a real Everdrive N8 Pro and the emulated NES FIFO that
+  stands in for it share in `packages/n8-wire/` (BlipToaster's reliable link and the expansion-volume range), and
+  everything about the N8 pack in `packages/n8/`. The older
   **legacy** build has been removed; [spec/07-remaining-work.md](spec/07-remaining-work.md) tracks the residual
   cleanup + feature gaps.
 - [docs/lsdj.md](docs/lsdj.md) — the LSDj domain reference + how to test LSDj sync /
@@ -200,14 +202,19 @@ The rules below are the parts that don't fit those.
   convention: each entry is public deliberately, and the boundary check refuses one that could publish a test module
   or names no file) where another package imports it. Adding one has a checklist, spec/06's "Adding a package", which
   is what a new pack is copied from. `retroplug.app`
-  names the module that default-exports `definePackage({ roles, romProviders, trackerIntegrations, kitFormats, embeds })`
-  (the lists the app used to hardcode), and `retroplug.consoles` names a module (its own, because the planner reads it
+  names the module that default-exports `definePackage({ roles, romProviders, trackerIntegrations, kitFormats, embeds,
+  projectSections, projectServices })` (the lists the app used to hardcode; a section is a package's block under a
+  project's `settings`, which the shell keeps verbatim without a contributor, and a service is its control-plane half,
+  whose types the tracker owns), and `retroplug.consoles` names a module (its own, because the planner reads it
   and must carry no schema) default-exporting a package's console descriptors and the physical carts one of them can
   drive; `retroplug.protocol` names the module that default-exports a package's `DefinedNode`s beside the `nodes` (type,
-  span label: 16 up with no gaps, unique) and the role kinds it places; `retroplug.ui` names a module default-exporting
-  the package's `defineUi({ rows, menus, trackers, services, views, actions })` (the menu contributions, the UI
-  services, the views the shell renders and the app actions the key maps dispatch, imported only by the UI),
-  `retroplug.cli` one default-exporting `defineCliTools` (the package's subcommands), and
+  span label, unique: 16 up with no gaps in the desktop's list, a product's own positions in its), the role kinds it
+  places, its `placer` (where a model's nodes go in a graph document) and its `kinds` (the contribution kinds it
+  declares for other packages to fill); `retroplug.ui` names a module default-exporting the package's
+  `defineUi({ rows, menus, trackers, services, actions })` (the menu contributions, the UI services and the app actions
+  the key maps dispatch, imported only by the UI), `retroplug.views` one default-exporting `defineViews({ views })` (the
+  window and tile views the shell's view slots render, a module of its own so a component view's React is reached only
+  there), `retroplug.cli` one default-exporting `defineCliTools` (the package's subcommands), and
   `retroplug.examples` its example sessions under `examples/`; `retroplug.host` names each host module the package
   imports by bare specifier (the CLI SDK, or React's modules for a UI one), from the shell-owned list in
   `packages/retroplug/host-modules.json`. A tracker integration carries the cart hooks the
@@ -221,11 +228,16 @@ The rules below are the parts that don't fit those.
   manifest entry with the app module's `embeds` declaration (the id, the label and the console), refusing an unpaired
   side, an id declared twice and a platform no console registers. Both are generated registries' inputs:
   [packages/retroplug/scripts/lib/packages.mjs](packages/retroplug/scripts/lib/packages.mjs)
-  writes `packages/retroplug/src/generated/{packages,consoles,protocol,scriptNodes}.ts`, the UI's
-  `ui/generated/menus.ts`, the CLI's `cli/generated/tools.ts` and the typecheck paths
-  (`tsconfig.host-modules.json` for a package, `tsconfig.paths.json` for the shell) from
-  `retroplug.products.desktop`, which
-  is a **dependency order** (a package before the ones using it, the shell last) AND the registration order. Only a ROM
+  writes `packages/retroplug/src/generated/{packages,consoles,protocol,scriptNodes,placers}.ts`, the UI's
+  `ui/generated/{menus,views}.ts`, the CLI's `cli/generated/tools.ts` and the typecheck paths
+  (`tsconfig.host-modules.json` for a package, `tsconfig.paths.json` for the shell) from a product list,
+  `retroplug.products.<name>`, which
+  is a **dependency order** (a package before the ones using it, the shell last) AND the registration order. Every
+  product but the desktop gets its own generated tree and its own four embedded bundles
+  (`retroplug_product(<p> LIST <name> ...)`: `build/products/<name>/`, written by the same generator with `--product`,
+  with a `tsconfig.json` `pnpm typecheck` runs, and read by the shell's sources through esbuild's `onResolve`,
+  [tools/product-generated.js](tools/product-generated.js)). A non-desktop list must be a SUBSEQUENCE of the desktop's
+  in the same relative order, and its script-node span labels are its own positions. `desktop` is the union. Only a ROM
   provider's place in it is behaviour: the providers run in that order, and the first to match a ROM fixes a system's
   role-list order. Roles, kit formats and tracker integrations are looked up by kind, id or an exclusive marker role,
   so for those a duplicate - refused by the generated module - is the hazard, not the order. Two checks hold the
@@ -297,8 +309,9 @@ The rules below are the parts that don't fit those.
   **`PROVIDERS` is the product's half: a product starts only the providers it names.** The list has no default (a
   provider opens ports and runs threads), the order it names them in is the start order, a duplicate is refused, and a
   manifest item may not be both an `entry` and a `provider`. The SDL standalone, the headless host and the CLI name
-  `n8 launchpad`; the plugin names `n8` alone, and its configure refuses a plugin linked to the desktop target, so a
-  DAW host is handed no control surface. **The provider ABI is 2:** `reserve_midi` keeps a claimed pair out of
+  `n8 launchpad`; the plugin names `n8` alone and carries the `plugin` product list, which `launchpad` and
+  `lsdj-launchpad` are not in, so a DAW host is handed no control surface and the plugin's bundles carry neither
+  package. **The provider ABI is 2:** `reserve_midi` keeps a claimed pair out of
   `MidiIo`'s shared stream (`MidiIo` reopens only what actually moves, with audio stopped and restarted),
   `suspend_hardware_inputs` is the scan's held edge (a real lever on Windows alone, where a MIDI input is exclusive),
   `restored` ends the startup rendezvous, and `rp_provider`'s `wake` is the per-frame pump (`rp_wake_providers`) that
@@ -307,14 +320,17 @@ The rules below are the parts that don't fit those.
   1..2^24 - 1, so a wrap never reads as nothing attached). **TS owns the selection:** `config.json`'s `controlSurface`
   (`input`, `output`, `device`, `enabled`, additive so no migration), written through a re-read so two processes can
   share the file, and the standalone holds MIDI and audio until TS's `restored()` lands or 500 ms pass, so a restored
-  pair is never opened by the shared stream first. **A controller app is a contribution in two halves:** the control
-  plane's `definePackage({ controllerApps })` (`id`, `label`, the app's config schema; the shell's
-  `src/controller/registry.ts` fills the registry from the generated list and adds `parseAppConfig`) and the runtime's
-  `protocol.apps` entry (`module`, naming the app's factory, playback model and launch target; `syncOverride` as data
-  for the cart sync mode an app needs), joined by `id`, with the generator refusing a duplicate id and the generated
-  module refusing an unpaired half at load. MI.MAP is `packages/lsdj-launchpad`'s, which depends on `launchpad` and `lsdj` and which `launchpad` never
-  imports. **The scenario mode is the portability proof:** `build-device-pack.mjs --scenario <file.ts>` bundles a
-  package's portable core instead of a node entry, runs it under Node and on `retroplug-mqjs-run` and demands
+  pair is never opened by the shared stream first. **A controller app is a contribution in two halves, of a
+  contribution kind the pack declares:** the control plane's `definePackage({ controllerApps })` (`id`, `label`, the
+  app's config schema; the pack's own `ts/registry.ts` holds the table, which the kind's `accept` fills, and
+  `parseAppConfig` reads it) and the manifest's `protocol.kinds.controllerApps` entry (`module`, naming the app's
+  factory, playback model and launch target; `syncOverride` as data for the cart sync mode an app needs), joined by
+  `id`, with the generator refusing a duplicate id and the generated module refusing an unpaired half at load. The
+  shell names neither: it reads the generated registries, and the pack's graph placer
+  (`launchpad/ts/control/placer.ts`) fills the slots buildGraph holds. MI.MAP is `packages/lsdj-launchpad`'s, which
+  depends on `launchpad` and `lsdj` and which `launchpad` never imports. **The scenario mode is the portability
+  proof:** `build-device-pack.mjs --scenario <file.ts>` bundles a package's portable core instead of a node entry, runs
+  it under Node and on `retroplug-mqjs-run` and demands
   byte-identical transcripts in `--heap-bytes`; both scenarios run in `pnpm test` (the core's budget 76800, the
   bridge's 184320, measured, not claimed to fit the box's 64 KiB arena). The pack declares NO `script` member in F3,
   so the scenarios are the proof and no box image carries it. The pack's tests are `retroplug-launchpad-test` (one of

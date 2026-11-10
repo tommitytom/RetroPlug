@@ -32,5 +32,5 @@ function appModules() {
   return out;
 }
 
-const built = bundleInputs("src/script/bundle.ts", "iife");
+const built = await bundleInputs("src/script/bundle.ts", "iife");
 console.log(JSON.stringify({ inputs: built.inputs, bytes: built.bytes, appModules: appModules() }));

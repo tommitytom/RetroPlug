@@ -1,6 +1,7 @@
 # The package split
 
-**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3, F2, F4a, F4b and F4c built
+**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3, F2, F4a, F4b, F4c and F5a
+built
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records it and its follow-up
 pass; [modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records it;
 [modular-graph-phase-f2-design.md](modular-graph-phase-f2-design.md), whose section 12 records its execution and its
@@ -13,7 +14,7 @@ package and the menu contributions, the cart CLI tools and the example sessions,
 scanner over `cli/`, and the bundle split), and **F4c**, the React half (built: the `ui-react` kit, the view contract
 and the action shape, the shell's renderers and slots, the LSDj HD player and the two debug overlays in their
 packages, and rule 9 and the scanner over `ui/`). Per-product bundles stay owed until a product's package list differs
-from the desktop's.
+from the desktop's, until F5a built the plugin's list (below).
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
 workspace packages would take. E1 started it (`node-sdk`, `graph-runtime`, `core`, `dsp`), E2 carved `n8`, and E4 made
@@ -85,6 +86,15 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
     (each bindings menu gains a row per contributed action); the follow-up adds one more, E10 (a contributed action does
     not fire while the menu is modal, so a backtick typed into a prompt no longer also toggles the overlays). What it
     leaves is design section 11's.
+- **F5a: the package split's leftovers** ([design](modular-graph-phase-f5a-design.md), on `feature/modularize`): the
+  six items F4 recorded as owed, and the first product whose package list differs from the desktop's. The controller-app
+  display bug, the `tsconfig.ui.json` fold and spec/07's stale lines; `n8-wire`, so `mesen` no longer declares `n8`; the
+  views split out of `menus.ts` into `retroplug.views`; the shell and the backend free of the Launchpad (project
+  sections, project services, graph placers and contribution kinds are contributions, and the backend stages controller
+  messages through a hook); real per-product bundles. The plugin's `plugin` list is the desktop's minus `launchpad` and
+  `lsdj-launchpad`, and its generated tree, its four embedded bundles and its checks prove it. **The split's property is
+  now a build's**: the plugin links and bundles neither pack. F5b (the SDL standalone's audio and MIDI as packages) is
+  next; what F5a leaves is the design's section 12.
 
 ## 3. The order
 

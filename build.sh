@@ -52,9 +52,11 @@ if [[ $CLEAN -eq 1 ]]; then
     rm -rf build
 fi
 
-# Configure when there's no build dir yet, or when --tests / a -D is requested
-# (so those cache entries are (re)applied to an already-configured tree).
-if [[ ! -d build || $TESTS -eq 1 || ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+# Configure when the tree has no cache yet, or when --tests / a -D is requested (so those cache entries are
+# (re)applied to an already-configured tree). The cache, not the directory: a build/ that only holds something else (a
+# typecheck's or a tool's output) is not a configured tree, and cmake --build would fail on it with "could not load
+# cache".
+if [[ ! -f build/CMakeCache.txt || $TESTS -eq 1 || ${#EXTRA_ARGS[@]} -gt 0 ]]; then
     echo "==> Configuring (${CONFIGURE_ARGS[*]})"
     cmake -S . -B build "${CONFIGURE_ARGS[@]}"
 fi

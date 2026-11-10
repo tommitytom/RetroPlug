@@ -49,10 +49,16 @@ async function text(stream: ByteStream | null): Promise<string> {
   return new TextDecoder().decode(all);
 }
 
-/** Every bundle's input modules, as absolute paths with forward slashes (a Windows build's metafile paths are made
- *  absolute with backslashes, which the patterns below would never match). */
-async function bundles(): Promise<Record<string, string[]>> {
-  const child = tjs.spawn([tjs.env.RP_NODE || "node", "test/script/bundle-split.mjs"], {
+/** A product's driver output: its bundles' input modules (absolute paths, forward slashes - a Windows build's metafile
+ *  paths are absolute with backslashes, which the patterns below would never match), and, when a product was named, the
+ *  text of the generated modules it built from. */
+type Built = Record<string, string[]> & { product?: string; generated?: { scriptNodes: string } };
+
+/** Every bundle's input modules, for the desktop or for a product's list. */
+async function bundles(product?: string): Promise<Built> {
+  const child = tjs.spawn(
+    [tjs.env.RP_NODE || "node", "test/script/bundle-split.mjs", ...(product ? [product] : [])],
+    {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -60,8 +66,10 @@ async function bundles(): Promise<Record<string, string[]>> {
   if (status.term_signal || status.exit_status !== 0) {
     throw new Error(`the bundle split could not be built: ${err || out}`);
   }
-  const built = JSON.parse(out) as Record<string, string[]>;
-  for (const name of Object.keys(built)) built[name] = built[name]!.map((path) => path.split("\\").join("/"));
+  const built = JSON.parse(out) as Built;
+  for (const name of Object.keys(built)) {
+    if (Array.isArray(built[name])) built[name] = built[name].map((path) => path.split("\\").join("/"));
+  }
   return built;
 }
 
@@ -79,6 +87,47 @@ const isCli = (path: string): boolean =>
   /\/packages\/core\/ts\/cliTool\.ts$/.test(path);
 
 const NON_UI = ["control-plane", "render-worker", "script-nodes", "cli-sdk", "cli-dispatcher", "planner"];
+
+test("the plugin's product bundles carry no Launchpad module, and the desktop's carry both", async () => {
+  // The plugin is the first product whose package list differs from the desktop's, and this is the whole point of the
+  // per-product bundles (docs/modular-graph-phase-f5a-design.md sections 7.2 and 7.3): its four bundles are built from
+  // ITS generated tree (tools/product-generated.js), so nothing reaches a package it does not list. The desktop is the
+  // positive control: the same four surfaces built the same way do carry both packages, so a filter that matched
+  // nothing would fail here.
+  const desktop = await bundles();
+  const plugin = await bundles("plugin");
+  const launchpad = (path: string): boolean => /\/packages\/(lsdj-)?launchpad\//.test(path);
+  for (const name of ["control-plane", "render-worker", "script-nodes", "ui"]) {
+    const carried = (plugin[name] as string[]).filter(launchpad);
+    console.log(`# plugin ${name}: ${(plugin[name] as string[]).length} modules, ${carried.length} Launchpad`);
+    expect(carried, `the plugin's ${name} bundle carries the Launchpad`).toEqual([]);
+  }
+  // The positive control, on every one of the desktop's FOUR bundles and on each package separately: a filter that
+  // matched nothing, or one that only ever matched the pack or only the bridge beside it, fails here. The script-node
+  // bundle reaches the pack's kind runtime and the bridge's item, and the render worker reaches the placer and the
+  // planner tables; the control plane and the UI reach both through the generated registries.
+  const pack = (path: string): boolean => /\/packages\/launchpad\//.test(path);
+  const bridge = (path: string): boolean => /\/packages\/lsdj-launchpad\//.test(path);
+  for (const name of ["control-plane", "render-worker", "script-nodes", "ui"]) {
+    const carried = (desktop[name] as string[]).filter(launchpad);
+    console.log(`# desktop ${name}: ${(desktop[name] as string[]).length} modules, ${carried.length} Launchpad`);
+    expect(carried.filter(pack).length > 0, `the desktop's ${name} bundle carries no launchpad module`).toBe(true);
+    expect(carried.filter(bridge).length > 0, `the desktop's ${name} bundle carries no lsdj-launchpad module`).toBe(
+      true,
+    );
+  }
+});
+
+test("the plugin's script entry registers no controller session and numbers rp.lsdj.serial-out 22", async () => {
+  // A product's span labels are its POSITIONS (decision 9, E6): the Launchpad's session held 22 on the desktop, and
+  // with the pack dropped every later label moves down one. Nothing else about the node set changes.
+  const plugin = await bundles("plugin");
+  const script = plugin.generated!.scriptNodes;
+  expect(script.includes("rp.controller.session")).toBe(false);
+  expect(script.includes("registerControllerApps")).toBe(false);
+  expect(/"rp\.lsdj\.serial-out": 22,/.test(script), "rp.lsdj.serial-out is not at 22").toBe(true);
+  expect(/"rp\.lsdj\.sync": 21,/.test(script)).toBe(true);
+});
 
 test("no non-UI bundle carries any package's UI module or the generated menu table", async () => {
   const built = await bundles();

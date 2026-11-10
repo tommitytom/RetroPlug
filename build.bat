@@ -114,16 +114,18 @@ if "%CLEAN%"=="1" (
 )
 
 rem ---- configure -----------------------------------------------------------
-rem Mirror build.sh: configure when there's no build dir yet, or when --tests
+rem Mirror build.sh: configure when the tree has no cache yet, or when --tests
 rem is requested (so BUILD_TESTING is (re)applied to an already-configured tree).
+rem The cache, not the directory: a build\ that only holds something else is
+rem not a configured tree, and cmake --build would fail on it.
 set "TESTING_ARG="
 if "%TESTS%"=="1" set "TESTING_ARG=-DBUILD_TESTING=ON"
 
-set "BUILD_EXISTED=1"
-if not exist build set "BUILD_EXISTED=0"
+set "CONFIGURED=1"
+if not exist build\CMakeCache.txt set "CONFIGURED=0"
 
 set "DO_CONFIGURE=0"
-if "%BUILD_EXISTED%"=="0" set "DO_CONFIGURE=1"
+if "%CONFIGURED%"=="0" set "DO_CONFIGURE=1"
 if "%TESTS%"=="1" set "DO_CONFIGURE=1"
 if not "%EXTRA_ARGS%"=="" set "DO_CONFIGURE=1"
 
@@ -139,7 +141,7 @@ if "%DO_CONFIGURE%"=="1" (
         echo error: configure failed 1>&2
         rem Only wipe a build dir we just created; never nuke a pre-existing
         rem tree just because a --tests reconfigure failed.
-        if "%BUILD_EXISTED%"=="0" (
+        if "%CONFIGURED%"=="0" (
             echo removing build\ so the next run retries clean 1>&2
             rmdir /s /q build 2>nul
         )

@@ -263,9 +263,11 @@ past `renderAudio`'s 1024-frame block).
   length, so nothing that reads it depends on that order. The labels are fixed: `script-node` (0), `marshal`,
   `js-call`, `apu-render`, `state-publish` (1 to 4), then the packs' types from `DSP_SPAN_TYPE_BASE` (16) up,
   in the order their packs first loaded them, each named by its id and keeping its label across its pack's
-  reloads, so a dev loop's reloads do not use up the table (the production bundle's eight are 16 to 23:
+  reloads, so a dev loop's reloads do not use up the table (the desktop's production bundle has eight, 16 to 23:
   `rp.midi.route`, `rp.mgb.midi`, `rp.n8.midi-to-fifo`, `rp.risa.sync`, `rp.sms.sync`, `rp.lsdj.sync`,
-  `rp.controller.session` and `rp.lsdj.serial-out`, registered last so the others kept their labels). By type
+  `rp.controller.session` and `rp.lsdj.serial-out`, registered last so the others kept their labels; a product that
+  drops a package has its own positions, so the plugin's seven are 16 to 22 and `rp.lsdj.serial-out` is 22 there). By
+  type
   rather than node id, as the DSP kernel's per-role spans were per kind until B3b made each role a node: a
   type's label is fixed when the bundle loads, where an id comes and goes with every document, so two systems'
   nodes of one type are two spans of one label a block, in plan order. Every label is below `kDspSpanLabels`
@@ -331,7 +333,8 @@ modes are out.
   (a script node's span labelled by its type, holding `marshal` then `js-call` and closed every way a call
   ends; nodes of one type sharing its label and each type labelled in load order; the calls refused while
   the audio thread runs and the trace reads reading nothing then; a type past the name table traced as
-  `script-node`; the embedded bundle's types labelled 16 to 23 in order, `rp.lsdj.serial-out` 23; and an
+  `script-node`; the desktop bundle's types labelled 16 to 23 in order, `rp.lsdj.serial-out` 23 (a product's list is
+  its own positions: the plugin numbers that type 22, which its bundle case holds); and an
   Engine's `apu-render` spanning its plan's whole run, each block's holding the process spans of a script node
   before its Game Boy and of one after it, the first ending before the second starts; and two pack cases: a type's
   label kept across its pack's reloads, and a freed generation's share taken off the live heap, quiescent and under an audio thread). Nothing else runs them:

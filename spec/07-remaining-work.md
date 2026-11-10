@@ -25,15 +25,18 @@ each (a phase name means its "What it leaves" list in section 5).
 - [ ] `RP_NATIVE_USB` box image flashed and run once (E3, E4)
 
 **Package split**
-- [ ] Per-product bundles, with views split out of `ui/generated/menus.ts`; blocks the first React view (F4a, F4c)
+- [x] Per-product bundles, with views split out of `ui/generated/menus.ts`; blocks the first React view (F4a, F4c;
+      F5a built the plugin as the first product whose list differs)
 - [ ] A real `component` view on a host, with its `test:ui` case (F4c)
-- [ ] Controller-app display bug: a hand-edited `appConfig` shows one value and runs another (F4b)
-- [ ] The shell's hard dependency on `launchpad` (F4b)
+- [x] Controller-app display bug: a hand-edited `appConfig` showed one value and ran another (F4b; F5a's stage 1, edge E1)
+- [x] The shell's hard dependency on `launchpad` (F4b; F5a's stage 4: no hand-written shell source names the pack)
 - [ ] A UI kit compile (`host.kits` in the UI host) (F4b, F4c)
 - [ ] Gamepad axis tokens as action bindings (F4c)
-- [ ] `mesen` declares `n8` for one header; `MemoryType` is a closed wire enum (F2)
+- [x] `mesen` declares `n8` for one header (F2; F5a's stage 2 moved the header to `n8-wire`)
+- [ ] `MemoryType` is a closed wire enum (F2)
 - [ ] Downloadable packs: format, authoring loop, unload, third-party controller apps, menus on extensions (C1, F3)
-- [ ] Shape questions: fold `tsconfig.ui.json` into the shell's program; the reopen key's width (F4c)
+- [x] The shape question `tsconfig.ui.json` folds into the shell's program (F4c; F5a's stage 1)
+- [ ] The shape question the view reopen key's width leaves open (F4c)
 
 **Known bugs, recorded and not fixed**
 - [ ] "Is this LSDj" decided by a role's presence, not its placement; needs `placedRole` (found building B3b)
@@ -982,6 +985,31 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **Windows, macOS, arm64 and CI** for F4c's scripts and packages, as F4a's and F4b's; and two shape questions left
     as built: whether `tsconfig.ui.json` folds into the shell's program (folded in F5a), and whether the reopen key
     stays as wide as a role write.
+
+- **F5a built: the package split's leftovers** ([modular-graph-phase-f5a-design.md](../docs/modular-graph-phase-f5a-design.md),
+  on `feature/modularize`): five commits. The controller-app rows show what the app runs (the display bug, edge E1: one
+  cycler in the recorded matrix's `hand-controller` case, re-recorded, and one class of toggle row changes with no
+  shipped app having one); `tsconfig.ui.json` folded into the shell's program; `n8-wire` is a package of its own, so
+  `mesen` no longer declares `n8` and both link the wire; a package's views are their own module (`retroplug.views`,
+  `defineViews`, `ui/generated/views.ts`) which the menus never import; and the shell and the backend carry no
+  Launchpad: the project's `controller` block is a project section the pack owns (a product that does not carry the
+  pack contributes no section, so nothing supplies the block's `defaults()` and a fresh plugin project writes none,
+  E8, while a project that already carries one keeps it verbatim), a project service publishes its model, the
+  graph placer is a package's manifest member, a contribution kind is manifest data (`defineKind`, the controller apps
+  the worked example), and the backend reaches a controller message through a staging hook rather than a concrete
+  surface link, so `packages/native` links no Launchpad target. The proof is a SECOND product list: the plugin's
+  (`retroplug.products.plugin`, the desktop's minus `launchpad` and `lsdj-launchpad`), with its own generated tree
+  (a build's under `build/products/plugin/`, the typecheck's under `packages/retroplug/.products/`, so a typecheck
+  before a build leaves no `build/`; `pnpm typecheck` runs every non-desktop list), its own four embedded bundles
+  (the script-node and
+  render-worker bundles are a product's sources now, not the backend's), and bundle checks that hold the plugin's
+  bundles to carrying no Launchpad module. Also: the generator refuses a product list that is not a subsequence of the
+  desktop's; a product's script-node span labels are its positions (the plugin numbers `rp.lsdj.serial-out` 22, E6);
+  the literal scanner guards every listed package's node types and a `rp.<package>.` family; and the registration
+  golden's `retroplug` row loses `rp.launchpad.surface-in`/`-out` (E3, the one re-record beside E1). Edges: E1 to E8,
+  design section 8 - E2 is the one behaviour change users can see (in the plugin a project with an enabled controller
+  places no controller nodes and forces no cart sync mode; its section is kept verbatim). What it leaves, F5b first: the
+  design's section 12.
 
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the

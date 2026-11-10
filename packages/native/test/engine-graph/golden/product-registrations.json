@@ -11,8 +11,6 @@
     "rp.core.buffer-player",
     "rp.core.buffer-recorder",
     "rp.core.midi-filter",
-    "rp.launchpad.surface-in",
-    "rp.launchpad.surface-out",
     "rp.sameboy.gb",
     "rp.dsp.gain",
     "rp.dsp.biquad",

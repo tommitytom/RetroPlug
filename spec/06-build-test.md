@@ -110,17 +110,31 @@ without naming it would silently lose its node type). Today the SDL standalone, 
 product takes the same argument.
 
 **The registries are generated, not written.** [packages/retroplug/scripts/lib/packages.mjs](../packages/retroplug/scripts/lib/packages.mjs)
-writes the shell's `src/generated/{packages,consoles,protocol,scriptNodes}.ts` from the product list
-(`retroplug.products.desktop` in the root [package.json](../package.json)): `packages.ts` concatenates each package's
+writes the shell's `src/generated/{packages,consoles,protocol,scriptNodes,placers}.ts` from a product list
+(`retroplug.products.<name>` in the root [package.json](../package.json)): `packages.ts` concatenates each package's
 `app` contribution, `consoles.ts` each package's `retroplug.consoles` module (its console descriptors and the physical
 carts one of them can drive, kept apart from the app because the planner reads them and must carry no role schema),
-`protocol.ts` is the table `buildGraph` and the stores wire a role through, `scriptNodes.ts`
-is the script-node bundle's entry, in span-label order, `ui/generated/menus.ts` is each package's `retroplug.ui` module
-in product order (the menu contributions, imported only by the UI), and `cli/generated/tools.ts` is each package's
-`retroplug.cli` module in product order (the CLI tools, imported only by the dispatcher). The same run writes the
-typecheck paths: `tsconfig.host-modules.json` (each host module's declaration file, which a package with a
-`retroplug.host` declaration extends) and `tsconfig.paths.json` (the same entries plus the shell's own aliases, from
-`tsconfig.aliases.json`: a child's `paths` REPLACE its parent's, so the shell's program needs one file carrying both).
+`protocol.ts` is the table `buildGraph` and the stores wire a role through (and the contribution kinds' data),
+`scriptNodes.ts` is the script-node bundle's entry, in span-label order, `placers.ts` each package's
+`retroplug.protocol.placer` module, `ui/generated/menus.ts` is each package's `retroplug.ui` module in product order
+(the menu contributions, imported only by the UI), `ui/generated/views.ts` each package's `retroplug.views` module (the
+views, imported only by the shell's view slots), and `cli/generated/tools.ts` is each package's `retroplug.cli` module
+in product order (the CLI tools, imported only by the dispatcher).
+**Every product but the desktop gets its own tree**, and its own bundles: `generate({ product })` (the CLI's
+`--product` with `--build-dir`, or `--products-dir` for the typecheck's tree) writes
+`build/products/<name>/packages/retroplug/{src,ui}/generated/`, in the shell's
+shape, with a `tsconfig.json` over it that `pnpm typecheck` runs for every non-desktop list (into
+`packages/retroplug/.products/`, so the typecheck creates no `build/` for a build to mistake for a configured tree); no
+product but the desktop has a CLI tree. The shell's sources read their `../generated/*` modules through esbuild's
+`onResolve`
+([tools/product-generated.js](../tools/product-generated.js)): a bundle built for a product answers those relative
+imports with the product's file. A product list is validated as the desktop's is, and it must be a SUBSEQUENCE of the
+desktop's, in its relative order; its script-node span labels are its own positions (the plugin numbers
+`rp.lsdj.serial-out` 22, where the desktop's Launchpad session holds 22 and the decoder 23).
+The desktop's run also writes the typecheck paths: `tsconfig.host-modules.json` (each host module's declaration
+file, which a package with a `retroplug.host` declaration extends) and `tsconfig.paths.json` (the same entries plus the
+shell's own aliases, from `tsconfig.aliases.json`: a child's `paths` REPLACE its parent's, so the shell's program needs
+one file carrying both).
 The product list is the **dependency order and the registration order both** (a package before the ones that use it,
 the shell last), and only a ROM provider's place in it is
 behaviour: the providers run in that order, and the first to match a ROM fixes a system's role-list order. A role's
@@ -159,7 +173,7 @@ specifier, so a package with one declares that module.
 
 **The host contract.** The three TypeScript surfaces build a host for their hooks and tools from
 [core/ts/host.ts](../packages/core/ts/host.ts): `Host<G>` is an object of named groups (`files`, `png`, `kits`,
-`systems`, `songs`, `liveSongs`, `emulator`, `dialogs`, `devices`, `process`, `views`, `controller`, `config`), and a
+`systems`, `songs`, `liveSongs`, `emulator`, `dialogs`, `devices`, `process`, `views`, `project`, `config`), and a
 hook or a tool names the groups it uses. The UI's host offers ten of them, the CLI's six (`files`, `png`, `kits`,
 `devices`, `process`, `songs`; `cli/cliHost.ts` builds it per tool run), and the render worker's two (`emulator`,
 `files`); asking a surface for a group it lacks is a `tsc` error, which is what makes a surface's abilities its type.
@@ -264,8 +278,8 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
 
 1. The directory's name is the package's name: `packages/<name>` is `@retroplug/<name>`.
 2. `package.json`: `private`, `type: "module"`, the `retroplug` member(s) it contributes (`native`, `script`, `app`,
-   `consoles`, `protocol`, `embed`, `ui`, `cli`, `examples`, `host`), an `exports` map of explicit entries with no
-   wildcard, and a `typecheck` script
+   `consoles`, `protocol`, `embed`, `ui`, `views`, `kinds`, `cli`, `examples`, `host`), an `exports` map of explicit
+   entries with no wildcard, and a `typecheck` script
    (`tsc -p tsconfig.json`) when it has TypeScript. A **console package** adds a `consoles` module default-exporting its
    console descriptors (a platform id, a node type, the extensions it can be recognised by, its detectors in rank order,
    its setting/construct fields and params, its split modes, its link cable, its real-cart option) and any physical cart
@@ -296,40 +310,78 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    contributing package the shell does not declare.
 4. Its place in `retroplug.products.desktop` (the root [package.json](../package.json)) is after its dependencies: the
    list is the dependency order and the registration order both, and the generator refuses a package listed before one
-   it depends on. Only a ROM provider's place is behaviour. A node type's place in it is what a product's
+   it depends on. A product that differs from the desktop names its own list (`retroplug.products.<name>`), which is a
+   subsequence of the desktop's in the same order, and `retroplug_product(<product> LIST <name> ...)` is how that
+   product carries it. A package a product should carry must therefore be in that product's list too: the plugin's
+   `plugin` list is the desktop's without `launchpad` and `lsdj-launchpad`, and that is what makes the package split a
+   fact about a build. Only a ROM provider's place is behaviour. A node type's place in the list is what a product's
    `rp_register_packages()` holds, so moving a package moves its types in the registration golden
    (`test/engine-graph/golden/product-registrations.json`), which is re-recorded for an intended move alone.
-5. `tsconfig.json` extends [tsconfig.base.json](../tsconfig.base.json) in two lines, so the package typechecks alone.
+5. The four members through which a package owns part of a project and of the graph. `retroplug.app` may declare
+   `projectSections`: a block of a project's `settings`, as `{ key, schema, defaults, version?, migrations?, merge? }`.
+   The key is the block's name under `settings`, and it is never one of the shell's own core keys
+   (`layout`, `midiRouting`, `audioRouting`, `zoom`), never two packages' (the generated registry refuses both), and
+   `__proto__` is refused by the writer. `schema.parse` is the raw value's one door (defaults filled, junk clamped,
+   never a throw), `defaults()` is what a fresh project reads, an optional `version` stamps the block (an unstamped one
+   reads as version 1) with `migrations` keyed by FROM-version, and `merge` is how a patch lands (a shallow merge by
+   default; it may throw to refuse one). The UI reaches a section through `host.project.section(key)` and
+   `host.project.setSection(key, patch)`; a block no package contributes is kept verbatim and written back, which is
+   what a product without the pack reads. `projectServices` is the section's control-plane half: a per-store factory
+   (`{ key, create() }`) the store builds one instance of, whose `poll` the editor's watch drives, whose `graphModel`
+   the store publishes into `GraphModel.models` and whose `state()` a UI reads through `host.project.serviceState(key)`.
+   `projectServices` and the service context are typed by `@retroplug/tracker`'s augmentation of
+   `PackageContributions`, so an app module that declares one imports `@retroplug/tracker/packageContributions` for the
+   type. The manifest's `protocol.placer` names a module default-exporting `definePlacer({ key, normalize, place })`,
+   which buildGraph calls at the slots it holds; its `key` is the `projectServices` factory's key whose `graphModel` is
+   the model it places. A `placer`, a kind's `control` module and a kind item's control-plane half are CONTROL-PLANE
+   code: they live in the package's `ts/control/`, which a device pack's scenario leaves out (the scanner excludes the
+   directory of an `index` entry, so a sibling of `index.ts` is never part of the portable core), and they may read no
+   node module and no zod beyond what the planner's bundle check allows.
+6. `tsconfig.json` extends [tsconfig.base.json](../tsconfig.base.json) in two lines, so the package typechecks alone.
    A package with `retroplug.ui` exports the module it names (the shell imports it through the generated menus), one
-   with `retroplug.cli` exports its tools module (default-exporting `defineCliTools`), one with `retroplug.examples`
+   with `retroplug.views` exports `./views` (the generated view table imports it there), one with `retroplug.cli`
+   exports its tools module (default-exporting `defineCliTools`), one with `retroplug.examples`
    keeps each entry under `examples/` and adds the generated `../retroplug/tsconfig.host-modules.json` to its
    `extends`, and one with `retroplug.host` declares every host module it imports (one of the shell's five:
    `retroplug-cli` for the `cli` surface, or a React module for `ui`). The
    generator refuses a missing module, a duplicate tool name or example name, an example outside `examples/`, a host
    declaration the shell's list lacks, and a missing `extends` on a package that lists examples or declares a UI host
-   module. Rule 3 (the boundary check) is what refuses React outside a package's `ts/ui/`: a `.tsx` there, a React host
-   module imported from another tree, and `@retroplug/ui-react` from a file that is not the package's UI.
-6. A protocol node's span label is the next free one (24 today: 16 up, with no gaps), which the manifest's `label` and
-   the generator's check demand.
-7. A new contribution KIND is not data. It means editing `renderPackages` in
-   [packages.mjs](../packages/retroplug/scripts/lib/packages.mjs) (the list and its type import), a `declare module
-   "@retroplug/core/definePackage"` augmentation in the owning package, the type-only import of the owning package's
-   `packageContributions` in each app module that uses the key, and the generator fixture's
-   [expected/packages.ts](../packages/retroplug/test/packages/fixtures/expected/packages.ts). `controllerApps` is the
-   worked example ([modular-graph-phase-f3-design.md](../docs/modular-graph-phase-f3-design.md) section 4): the key is
-   declared in [launchpad/ts/packageContributions.ts](../packages/launchpad/ts/packageContributions.ts), a contributing
-   package's `app` module states `controllerApps: [{ id, label, config, ... }]` (the control plane's half, alone with the
-   package's zod) and its `protocol.apps` entry names the runtime module (`{ id, module, syncOverride? }`, the module
-   default-exporting the app's factory, playback model and launch target), the two halves join by `id`, and the
-   GENERATED module refuses at load: an app with a control-plane half and no runtime half, or the reverse, is a thrown
-   error naming the id, and the generator refuses a duplicate runtime id, naming both packages. The script entry
-   registers the runtimes before the nodes and checks the registered set against the manifests, as it does the nodes;
-   what the app's launches need the cart to run in travels as `syncOverride` DATA (`node`, `mode`, `listening`, `off`),
-   applied by the shell's `controllerSyncOverride`, never as a function a planner's bundle would have to import.
-8. A device pack's imports are limited to `build-device-pack.mjs`'s four-file core SDK (`defineNode`,
+   module. Every module a manifest names must be PUBLISHED: the generated imports name a package's contribution by the
+   export key whose target is that same file (`.`, `./app`, `./views`, `./placer`, a kind's `./control`, a
+   contributing item's runtime key), and a specifier derived from the path would load another module or nothing, which
+   only the bundler would say. Rule 3 (the boundary check) is what refuses React outside a package's `ts/ui/`: a `.tsx`
+   there, a React host module imported from another tree, and `@retroplug/ui-react` from a file that is not the
+   package's UI.
+7. A protocol node's span label is the next free one (16 up, with no gaps in the DESKTOP's list), which the manifest's
+   `label` and the generator's check demand. Any other product's list is the desktop's with packages dropped, so its
+   labels are its positions; nothing is renumbered in a manifest.
+8. A contribution KIND is data (the F5a design's section 6.5). The declaring package's manifest states it
+   (`retroplug.kinds.<kind>`): a `control` module default-exporting `defineKind({ accept, check? })` from
+   [core/ts/defineKind.ts](../packages/core/ts/defineKind.ts), a `runtime` `{ module, register, type }`, and the `data`
+   keys a contributing entry may carry. Any listed package may contribute items: its app module carries a `<kind>` list
+   (the control-plane halves, so the type-only import of the declaring package's `packageContributions`, which owes the
+   `declare module "@retroplug/core/definePackage"` augmentation, and its `ts/control/` tree is where that module lives
+   when it must not reach a device pack's core) and its manifest's `protocol.kinds.<kind>` entries name each item's
+   runtime module and its data. The generated `packages.ts` joins the halves by id, refuses a duplicate id (naming both
+   packages, or the one that listed it twice) and an item with one half alone, runs the declaring package's `check` over
+   the data with the product's WIRED protocol node types, then hands the package its items and their data (`accept`, at
+   load); the generated `scriptNodes.ts` registers the runtime halves in product order and holds the registered set to
+   the manifests. A kind may not be named after an app member (`roles`, `embeds`, `projectSections`, ...), which the
+   generator refuses. `controllerApps` is the worked example
+   ([modular-graph-phase-f3-design.md](../docs/modular-graph-phase-f3-design.md) section 4 and the F5a design's 6.5):
+   declared in [launchpad/package.json](../packages/launchpad/package.json), its control half
+   [launchpad/ts/control/kind.ts](../packages/launchpad/ts/control/kind.ts), with MI.MAP contributing the control-plane
+   half from [lsdj-launchpad/ts/app.ts](../packages/lsdj-launchpad/ts/app.ts) and the runtime half and `syncOverride`
+   data from its manifest. What an app's launches need the cart to run in travels as `syncOverride` DATA (`node`,
+   `mode`,
+   `listening`, `off`), applied by the launchpad pack's graph placer (`ts/control/placer.ts`), never as a function a
+   planner's bundle would have to import. The generator and the fixture suite hold the mechanism over a fixture kind
+   that is no real pack's (`widgets`); each real kind's own rules are its package's test
+   ([kind.test.ts](../packages/launchpad/ts/test/kind.test.ts)).
+9. A device pack's imports are limited to `build-device-pack.mjs`'s four-file core SDK (`defineNode`,
    `settingsSchema`, `descriptor`, `register`), and `pico/n8-host/exporter-stale.sh` watches `packages/core/ts` plus
    each pack's own `ts/`.
-9. A scenario's whole-core scan skips ONE module of the package: the manifest's `retroplug.app`, the control plane's
+10. A scenario's whole-core scan skips ONE module of the package: the manifest's `retroplug.app`, the control plane's
    half, because that half is the desktop's (zod's) and never runs on the engine. So every zod-using control-plane
    module has to BE that `app` module: a helper it imports is scanned like any other module of the core, and a library
    call the engine lacks there is refused, naming the helper's source line. A core module that imports the `app` module is
@@ -339,7 +391,7 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    [test/graph/device-pack.test.ts](../packages/retroplug/test/graph/device-pack.test.ts) holds all of it (a pack whose
    `app` calls what the engine lacks, accepted; a pack whose app imports one that does, refused; a core importing its own
    `app` module, refused by name; an unreached core module importing an undeclared package, refused by name).
-10. A provider is the pack's device service, and a product starts it only by naming it (above). The manifest's native
+11. A provider is the pack's device service, and a product starts it only by naming it (above). The manifest's native
     entry carries `provider` (and `rpc` where the pack has a facet), on the package's DESKTOP half, and a target carries a
     provider or an entry, never both: a configure refusal, because a product that listed the package without naming it
     would keep the entry and drop the target. A product adds `PROVIDERS <package>` to its `retroplug_product` call, in its
@@ -348,7 +400,9 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
     service). A host and a provider of different `RP_PROVIDER_ABI_VERSION`s refuse each other in both directions, at
     runtime: there is no optional read of a newer member. The product calls `rp_wake_providers` once per frame, and stops
     its providers after reclaiming its plans.
-11. A **view** is declared in the package's `retroplug.ui` module (`defineUi({ views })`), not coded in the shell: an
+12. A **view** is declared in the package's `retroplug.views` module (`defineViews({ views })`, under `ts/ui/`), which
+    the generator writes into `ui/generated/views.ts` - apart from the menus' module, so the pure tier never bundles a
+    React view - not coded in the shell: an
     id, a label, `placement` `window` or `tile`, an optional `when(sys)` gate, an optional `visible` flag (a tile view
     only), and one body kind. Two need nothing but plain TypeScript: a `pixels` body's `open` returns a session whose
     `frame()` is the next `{ pixels, width, height }` (or null when nothing moved), and a `readout` body's `open`
@@ -371,7 +425,7 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
     SHELL's type slice ([lvgljs-ui.d.ts](../packages/retroplug/ui/types/lvgljs-ui.d.ts)), since the package ships
     TypeScript source and the slice is what `tsc` reads: a component pack that needs a widget the slice lacks extends
     that shell file, which is the one thing about a component view a package cannot do alone.
-12. An **action** is a key binding the package owns (`defineUi({ actions })`): `{ id, label, keys?, pad?, run }`. Its id
+13. An **action** is a key binding the package owns (`defineUi({ actions })`): `{ id, label, keys?, pad?, run }`. Its id
     is prefixed by its own package's manifest name (`lsdj.debug-overlay`), because a stored binding profile keeps
     ids and a user's profile must name the owner; `label` is the bindings menus' row text, `keys`/`pad` are the
     DEFAULTS (a missing entry reads `-`), and `run(host, ctx)` gets the UI host and the focused system's id (null on the
@@ -416,12 +470,12 @@ three rules the two console packages (four node types between them) follow (F2,
 <file.ts>` bundles a scenario instead of a node entry: under the same allow list (which a scenario may widen to the
 package's declared dependencies, since a bridge's scenario is how it proves its half), lowered to ES5, scanned for the
 library calls MicroQuickJS lacks both as the scenario and over the package's whole portable core (every module under
-its `ts/` but its tests and the `app` module, item 9 above), then run under Node and on `retroplug-mqjs-run` with
+its `ts/` but its tests and the `app` module, item 10 above), then run under Node and on `retroplug-mqjs-run` with
 byte-identical transcripts required inside `--heap-bytes`; it writes no pack. A package's scenario test runs it from
 `pnpm test`, so a library call the engine lacks on the path the scenario takes fails there rather than on the box. The
 launchpad pack and its LSDj bridge are the two that have one (budgets 76800 and 184320 bytes, each measured by
 bisecting the heap, and neither a claim that the box's 64 KiB arena fits the core). The toolchain's other consequence
-for a package's sources is item 9's: a zod-using control-plane module has to BE the manifest's `app` module.
+for a package's sources is item 10's: a zod-using control-plane module has to BE the manifest's `app` module.
 
 ## Hosts → test tiers
 

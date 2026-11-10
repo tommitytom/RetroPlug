@@ -131,8 +131,8 @@ writes with a re-read, so two processes can share the file.
 A project-level setting (`settings.controller`) that points one attached controller at one target:
 `{ enabled, app, target, systemId, appConfig }`, additive and off by default. `ProjectStore` hands it to
 `buildGraph`, which places it as the `rp.controller.session` script node (its target resolved, the MI.MAP
-cart's sync mode forced: `graph/controller.ts`), so the chosen app runs on the audio thread as part of the
-per-block graph rather than as UI-thread glue. `appConfig` is deliberately opaque at this level: the
+cart's sync mode forced: `launchpad/ts/control/placer.ts`, a package's placer), so the chosen app runs on the audio
+thread as part of the per-block graph rather than as UI-thread glue. `appConfig` is deliberately opaque at this level: the
 chosen app's own schema validates it on the control plane (`parseAppConfig`), and the node takes it parsed.
 The apps themselves are contributions (`controllerApps`, in two halves joined by id, F3): MI.MAP is
 [packages/lsdj-launchpad](../packages/lsdj-launchpad)'s, and a tracker with another app adds its own bridge.

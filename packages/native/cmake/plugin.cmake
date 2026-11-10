@@ -8,17 +8,23 @@
 # --- retroplug.{vst3,clap} + the jack standalone: the DPF plugin hosting the
 # Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
 # legacy `retroplug` (they coexist).
+# The plugin is its own product list: the desktop's minus the Launchpad and the bridge beside it, so its registries,
+# its generated modules' tree and its four bundles carry neither (docs/modular-graph-phase-f5a-design.md section 7).
+# Its bundles are made here, before dpf_add_plugin embeds the control plane and the UI.
+set_property(GLOBAL PROPERTY RP_BUNDLE_PACKAGES_plugin "${RP_PRODUCT_PACKAGES_plugin}")
+retroplug_bundles(plugin)
+
 dpf_add_plugin(retroplug
     TARGETS clap vst3 vst2 au jack  # au is macOS-only (DPF gates it to APPLE; a no-op elsewhere)
     USE_FILE_BROWSER                    # DPF's own (helper-free) file dialog is the fallback when no pfd helper
                                         # exists; also auto-enables DGL_USE_FILE_DROP for drag-and-drop (uiFileDropped)
     FILES_DSP
         plugin/PluginDSP.cpp
-        ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
+        ${RP_BUNDLE_plugin_CP_C}      # the embedded control-plane bytecode (rp_cp_bundle)
     FILES_UI
         plugin/PluginUI.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
-        ${UI_BUNDLE_C}                # the embedded React UI bytecode (rp_ui_bundle)
+        ${RP_BUNDLE_plugin_UI_C}      # the embedded React UI bytecode (rp_ui_bundle)
         ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)  # the generic DPF↔LVGL base widget
 
 # plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h ahead of DPF's own default. The `src` root
@@ -30,10 +36,11 @@ target_include_directories(retroplug PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/gener
 # shared with retroplug-sdl. No link libs on Linux/macOS; Windows pulls comdlg32/ole32 through its header.
 target_include_directories(retroplug PUBLIC ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
 
-# This static library is the PLUGIN product's own (every format is built from it), so its link is the plugin's package
-# list rather than the backend's declarations: the boundary check's voucher, and the formats' line is held by this
-# file's no-Launchpad assertions (cmake/packages.cmake's generic rule).
-set_target_properties(retroplug PROPERTIES RP_BOUNDARY_SKIP "the plugin product's own library")
+# This static library is the PLUGIN product's own (every format is built from it), so its links, includes and sources
+# are judged against the PLUGIN's package list rather than its directory package's manifest (cmake/packages.cmake's
+# generic rule): a link of anything the plugin's list does not carry, the Launchpad among them, is refused at configure.
+# The formats' own link line is held by this file's assertions below.
+set_target_properties(retroplug PROPERTIES RP_BOUNDARY_PACKAGES plugin)
 target_link_libraries(retroplug PUBLIC
     retroplug-backend  # Engine/Backend + (transitively) the cores + rpcpp
     # The plugin's control plane runs on the txiki host (PluginDSP.cpp) and its config/bindings/ROM watcher is efsw
@@ -75,33 +82,32 @@ foreach(_t IN LISTS _rp_dir_targets)
     endif()
 endforeach()
 # PROVIDERS n8: the plugin starts the N8 pack's provider (Settings > N8, all formats) and no other. The Launchpad pack
-# is carried for its node types alone, so the formats link no MIDI port library and mount no control-surface facet: a
+# is not in the plugin's list at all, so no format links a MIDI port library and none mounts a control-surface facet: a
 # DAW host gives the plugin its MIDI, and the pack's ports are a standalone's (docs/modular-graph-phase-f3-design.md
-# section 11).
-retroplug_product(retroplug PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 TARGETS ${_rp_plugin_binaries})
+# section 11). LIST plugin is that list (the root package.json's).
+retroplug_product(retroplug LIST plugin PROVIDERS n8 TARGETS ${_rp_plugin_binaries})
 # The product's generated providers header (rp_product_providers.hpp), which PluginDSP.cpp includes: retroplug_product()
 # puts its directory on the product's TARGETS, the format binaries, and the DSP library that compiles PluginDSP.cpp is
 # not one of them.
 target_include_directories(retroplug PUBLIC "${RP_PRODUCTS_DIR}/retroplug")
 
-# The selection is also a linking one, and this is the product that would hide a mistake: every format links the pack's
-# node types and none of them links its desktop half's ports, threads and system frameworks. DPF's DSP library links
-# the N8 pack's desktop half by hand above (its sources start that provider), which is why the check is per target and
-# by name rather than a rule over every provider target. It reads each format target's DIRECT links only: a provider
-# library reached through an interface library of ours would pass it unseen.
-foreach(_t IN LISTS _rp_plugin_binaries)
+# The selection is a linking one too, and the product that would hide a mistake: NO format links the Launchpad pack at
+# all, neither its node types (the plugin's list carries neither package) nor its desktop half's ports, threads and
+# system frameworks, and the plugin's own static library names neither either: the backend links no Launchpad code (the
+# generic boundary check holds that), and this file's own library is the one target the boundary check vouches for, so
+# the property is restated here. A format that named one has left the product's list behind.
+foreach(_t IN LISTS _rp_plugin_binaries retroplug)
     get_target_property(_links ${_t} LINK_LIBRARIES)
-    if("retroplug-launchpad-desktop" IN_LIST _links)
-        message(FATAL_ERROR "plugin.cmake: ${_t} links the Launchpad pack's desktop half, which this product's "
-                            "PROVIDERS does not name")
-    endif()
-    if(NOT "retroplug-launchpad" IN_LIST _links)
-        message(FATAL_ERROR "plugin.cmake: ${_t} does not link the Launchpad pack's node types")
-    endif()
+    foreach(_link IN LISTS _links)
+        if(_link MATCHES "^retroplug-launchpad")
+            message(FATAL_ERROR "plugin.cmake: ${_t} links ${_link}: the plugin's product list carries no Launchpad, "
+                                "so no format links its node types or its desktop half")
+        endif()
+    endforeach()
 endforeach()
 
 # The embedded bundles must exist before the plugin compiles them.
-add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)
+add_dependencies(retroplug ${RP_BUNDLE_plugin_CP_TARGET} ${RP_BUNDLE_plugin_UI_TARGET})
 
 # Windows only: the standalone (retroplug-jack, OUTPUT_NAME "retroplug") exports
 # symbols, so link.exe emits an import library "retroplug.lib" — the same name,

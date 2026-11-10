@@ -50,11 +50,12 @@ async function text(stream: ByteStream | null): Promise<string> {
   return new TextDecoder().decode(all);
 }
 
-/** One entry's inputs and size, bundled as the build bundles a session (the suite runs from packages/retroplug). */
-async function bundle(entry: string): Promise<{ inputs: string[]; bytes: number }> {
+/** One entry's inputs and size, bundled as the build bundles a session (the suite runs from packages/retroplug), for
+ *  the desktop or for a product's generated tree (whose file the shell's `../generated/*` imports resolve to). */
+async function bundle(entry: string, product?: string): Promise<{ inputs: string[]; bytes: number }> {
   const script =
-    `const r = require("../../tools/build-session.js").bundleInputs(${JSON.stringify(entry)}, "esm");` +
-    "process.stdout.write(JSON.stringify(r));";
+    `require("../../tools/build-session.js").bundleInputs(${JSON.stringify(entry)}, "esm", ` +
+    `${product ? JSON.stringify(product) : "undefined"}).then((r) => process.stdout.write(JSON.stringify(r)));`;
   const child = tjs.spawn([tjs.env.RP_NODE || "node", "-e", script], { stdout: "pipe", stderr: "pipe" });
   // Both pipes drained beside the wait, so a child that fills one cannot block on it.
   const [out, err, status] = await Promise.all([text(child.stdout), text(child.stderr), child.wait()]);
@@ -65,10 +66,11 @@ async function bundle(entry: string): Promise<{ inputs: string[]; bytes: number 
 /** The repo-relative paths of every module that defines protocol nodes: each listed manifest's `protocol.module`, and
  *  core's `defineNode` helper, which a node module reaches. Read from the manifests, so a package added to the product
  *  has its node module refused here without editing this test. */
-async function nodeModules(): Promise<string[]> {
+async function nodeModules(product = "desktop"): Promise<string[]> {
   const script =
     'const fs = require("fs"), path = require("path");' +
-    'const ids = JSON.parse(fs.readFileSync("../../package.json", "utf8")).retroplug.products.desktop;' +
+    'const ids = JSON.parse(fs.readFileSync("../../package.json", "utf8")).retroplug.products[' +
+    `${JSON.stringify(product)}];` +
     'const mods = [path.relative(process.cwd(), path.resolve("../../packages/core/ts/defineNode.ts"))];' +
     'for (const id of ids) {' +
     '  const manifest = JSON.parse(fs.readFileSync(path.join("../../packages", id, "package.json"), "utf8"));' +
@@ -108,6 +110,34 @@ test("graph/protocolNodes.ts reads the generated protocol data and nothing else"
   // The module and the data it reads: the tables are apart from the node modules that describe them.
   expect(inputs.length).toBe(2);
   expect(forbidden(inputs, await nodeModules())).toEqual([]);
+});
+
+test("the planner's bundle carries the protocol tables, and no node module, for a product too", async () => {
+  // The same rule per product (docs/modular-graph-phase-f5a-design.md sections 7.2 and 7.3): the plugin's generated
+  // tree is what its bundles read, so its planner is held to carrying no node module either - and its placer table
+  // holds no package placer, because the plugin lists no package that declares one.
+  const script =
+    'const fs = require("fs"), os = require("os"), path = require("path");' +
+    'const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "rp-protocol-"));' +
+    'require("../../packages/retroplug/scripts/lib/packages.mjs")' +
+    '.generate({ root: path.resolve("../../"), product: "plugin", buildDir });' +
+    'const product = path.join(buildDir, "products/plugin/packages/retroplug");' +
+    'const r = require("../../tools/build-session.js")' +
+    '.bundleInputs("src/graph/protocolNodes.ts", "esm", product);' +
+    'r.then((built) => { fs.rmSync(buildDir, { recursive: true, force: true });' +
+    '  process.stdout.write(JSON.stringify(built)); });';
+  const child = tjs.spawn([tjs.env.RP_NODE || "node", "-e", script], { stdout: "pipe", stderr: "pipe" });
+  const [out, err, status] = await Promise.all([text(child.stdout), text(child.stderr), child.wait()]);
+  if (status.term_signal || status.exit_status !== 0) {
+    throw new Error(`the plugin's tree or its protocol bundle failed: ${err}`);
+  }
+  const { inputs, bytes } = JSON.parse(out) as { inputs: string[]; bytes: number };
+  console.log(`# the plugin's planner: ${inputs.length} modules, ${bytes} bytes: ${inputs.join(", ")}`);
+  // The shell's entry and the product's table: the redirect answered the shell's `../generated/protocol` with the
+  // plugin's file, and nothing else came with it.
+  expect(inputs.length).toBe(2);
+  expect(inputs.some((path) => path.includes("/products/plugin/"))).toBe(true);
+  expect(forbidden(inputs, await nodeModules("plugin"))).toEqual([]);
 });
 
 test("graph/buildGraph.ts carries the protocol tables but neither zod nor the app", async () => {

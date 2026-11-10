@@ -318,34 +318,51 @@ include(cmake/test-binary.cmake)
 # and tracker integrations are looked up by kind, id or an exclusive marker role, so a duplicate of one of those is
 # what the generated module refuses, not a reordering.
 set(_rp_root_manifest "${CMAKE_SOURCE_DIR}/package.json")
-# A configure input, so editing the list re-runs the configure retroplug_product() needs before it reads it. The whole
+# A configure input, so editing a list re-runs the configure retroplug_product() needs before it reads it. The whole
 # file is the input (CMake cannot depend on one JSON member), so an edit to its scripts reconfigures too; that is the
 # price of the list living where both languages read it, and a reconfigure of this tree is cheap.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_rp_root_manifest}")
-file(READ "${_rp_root_manifest}" _rp_root_json)
-string(JSON _rp_products_kind ERROR_VARIABLE _rp_products_error TYPE "${_rp_root_json}" retroplug products desktop)
-if(_rp_products_error)
-    message(FATAL_ERROR "${_rp_root_manifest} has no retroplug.products.desktop list (${_rp_products_error})")
+# Every member of retroplug.products, read into RP_PRODUCT_PACKAGES_<name>: CMake's JSON reader takes a member by
+# name and cannot enumerate an object's keys, so the enumeration is a small Node script beside the generator (which
+# reads the same lists, and validates each one's shape: names, no duplicate, no shell).
+execute_process(
+    COMMAND ${NODE_EXECUTABLE} "${CMAKE_SOURCE_DIR}/packages/retroplug/scripts/lib/product-lists.mjs"
+            "${_rp_root_manifest}"
+    RESULT_VARIABLE _rp_products_result OUTPUT_VARIABLE _rp_products_output ERROR_VARIABLE _rp_products_error)
+if(NOT _rp_products_result EQUAL 0)
+    message(FATAL_ERROR "${_rp_root_manifest}: the product lists could not be read: ${_rp_products_error}")
 endif()
-if(NOT _rp_products_kind STREQUAL "ARRAY")
-    message(FATAL_ERROR "retroplug.products.desktop in ${_rp_root_manifest} is a ${_rp_products_kind}, not a list")
-endif()
-string(JSON _rp_products_count LENGTH "${_rp_root_json}" retroplug products desktop)
-if(_rp_products_count EQUAL 0)
-    message(FATAL_ERROR "retroplug.products.desktop in ${_rp_root_manifest} lists no package")
-endif()
-set(RP_DESKTOP_PACKAGES "")
-math(EXPR _rp_products_last "${_rp_products_count} - 1")
-foreach(_rp_i RANGE ${_rp_products_last})
-    string(JSON _rp_package GET "${_rp_root_json}" retroplug products desktop ${_rp_i})
-    # Read as JSON, so a number or an object would arrive as its JSON text and name no package directory.
-    string(JSON _rp_package_kind ERROR_VARIABLE _rp_package_error TYPE "${_rp_root_json}" retroplug products desktop ${_rp_i})
-    if(_rp_package_error OR NOT _rp_package_kind STREQUAL "STRING")
-        message(FATAL_ERROR "retroplug.products.desktop's entry ${_rp_i} in ${_rp_root_manifest} is a "
-                            "${_rp_package_kind}, not a package name")
+string(REPLACE "\r" "" _rp_products_output "${_rp_products_output}")
+string(REPLACE "\n" ";" _rp_product_lines "${_rp_products_output}")
+set(_rp_product_names "")
+foreach(_rp_line IN LISTS _rp_product_lines)
+    if(_rp_line STREQUAL "")
+        continue()
     endif()
-    list(APPEND RP_DESKTOP_PACKAGES "${_rp_package}")
+    string(FIND "${_rp_line}" "=" _rp_at)
+    if(_rp_at EQUAL -1)
+        message(FATAL_ERROR "${_rp_root_manifest}: a product list arrived as ${_rp_line}, not name=packages")
+    endif()
+    string(SUBSTRING "${_rp_line}" 0 ${_rp_at} _rp_name)
+    math(EXPR _rp_at "${_rp_at} + 1")
+    string(SUBSTRING "${_rp_line}" ${_rp_at} -1 _rp_packages)
+    if(_rp_packages STREQUAL "")
+        message(FATAL_ERROR "${_rp_root_manifest} lists no package in retroplug.products.${_rp_name}")
+    endif()
+    string(REPLACE "," ";" _rp_packages "${_rp_packages}")
+    set(RP_PRODUCT_PACKAGES_${_rp_name} "${_rp_packages}")
+    list(APPEND _rp_product_names "${_rp_name}")
 endforeach()
+if(NOT DEFINED RP_PRODUCT_PACKAGES_desktop)
+    message(FATAL_ERROR "${_rp_root_manifest} has no retroplug.products.desktop list")
+endif()
+set(RP_DESKTOP_PACKAGES "${RP_PRODUCT_PACKAGES_desktop}")
+# Every list's name, in the order the manifest declares them, for retroplug_product()'s content match: a product that
+# names no list shares the set of the list its packages equal.
+set(RP_PRODUCT_LIST_NAMES "${_rp_product_names}")
+# A list that is not the desktop's is its subsequence, which packages.cmake's rule refuses otherwise (and the TS
+# generator does, with its own words, writing the product's tree from the list).
+retroplug_check_product_lists()
 
 # The shell imports every workspace package it declares BY PACKAGE NAME (its sources, and the modules the generator
 # writes into packages/retroplug/src/generated), and pnpm links a workspace package into the shell's node_modules only
@@ -387,11 +404,11 @@ endforeach()
 # because every other package's library is built on it; the native test helpers next, which no product lists (a test
 # binary links them through its package's devDependency); a device host's own I/O (rp.device.midi-in, the plan
 # exporter's and the devices') and the device check's test types (rp.devtest.plan) last, because registering a script
-# pack needs the MicroQuickJS host the graph-runtime package adds. packages/native is in the product list as the shell:
-# the engine, the graph and script hosts, the RPC services, the job pools and the devices' I/O, whose targets are defined
-# below, where the root adds the engine's own tree. It registers no node type of its own (each console's, the host I/O's
-# and the system contract's are their packages'). @retroplug/tracker is in neither list: it contributes no registration of
-# any kind, only modules the shell and the cart packages import, so CMake is never told about it.
+# pack needs the MicroQuickJS host the graph-runtime package adds. packages/native is in the product list as the
+# shell: the engine, the graph and script hosts, the RPC services, the job pools and the devices' I/O, whose targets
+# are defined below, where the root adds the engine's own tree. It registers no node type of its own (each console's,
+# the host I/O's and the system contract's are their packages'). @retroplug/tracker is in neither list: it contributes
+# no registration of any kind, only modules the shell and the cart packages import, so CMake is never told about it.
 set(_rp_first_packages node-sdk)          # first: every other package's library is built on it
 set(_rp_test_packages testing)            # no product lists it: the test binaries' shared helpers
 set(_rp_last_packages device-io devtest)  # after the list: a script pack needs graph-runtime's host

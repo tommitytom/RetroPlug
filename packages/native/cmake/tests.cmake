@@ -439,6 +439,37 @@ foreach(_rp_case IN LISTS _rp_gather_cases)
     endif()
 endforeach()
 
+# retroplug_product()'s list rules and the subsequence rule the root configure applies, which are refusals of the
+# DECLARATION rather than of a target's properties: test/packages/product-lists is a project of its own, and a case
+# must fail with its reason. The two that did not exist before this pass are `packages-no-list` (a product whose
+# packages are no list's used to build a set of bundles its generator could not write) and `subsequence-twice` (a
+# duplicate list passed, since the same index is not less than itself).
+set(_rp_list_cases
+    "list-both|refused|LIST and PACKAGES are one choice"
+    "list-unknown|refused|LIST names the product nowhere, which the root package.json's retroplug.products does not declare"
+    "packages-no-list|refused|PACKAGES names no retroplug.products list, and this build makes bundles"
+    "subsequence-out-of-order|refused|retroplug.products.out-of-order lists alpha out of the order"
+    "subsequence-twice|refused|retroplug.products.twice lists alpha twice")
+foreach(_rp_case IN LISTS _rp_list_cases)
+    string(REPLACE "|" ";" _rp_case "${_rp_case}")
+    list(GET _rp_case 0 _rp_name)
+    list(GET _rp_case 2 _rp_reason)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/product-lists
+                -B ${CMAKE_BINARY_DIR}/packages/product-lists-${_rp_name}
+                -DPRODUCT_LIST_CASE=${_rp_name} -DRP_ROOT=${CMAKE_SOURCE_DIR}
+        RESULT_VARIABLE _rp_result OUTPUT_VARIABLE _rp_output ERROR_VARIABLE _rp_output)
+    if(_rp_result EQUAL 0)
+        message(FATAL_ERROR "test/packages/product-lists (${_rp_name}) held; the configure must refuse it:\n${_rp_output}")
+    endif()
+    string(REGEX REPLACE "[ \t\r\n]+" " " _rp_folded "${_rp_output}")
+    string(FIND "${_rp_folded}" "${_rp_reason}" _rp_at)
+    if(_rp_at EQUAL -1)
+        message(FATAL_ERROR "test/packages/product-lists (${_rp_name}) was refused, but not with \"${_rp_reason}\":\n"
+                            "${_rp_output}")
+    endif()
+endforeach()
+
 # Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive detection,
 # registered-ROM parent-dir watches, and the unregistered-file filter. It links the watcher library alone (the host
 # runtime library takes its own threads), so it is no engine carrier and needs no exemption from the product check;

@@ -9,6 +9,9 @@
 // Each mode copies fixtures/tree to a fresh directory (so a refusal cannot leave the fixtures mutated and a mode can
 // edit what it needs), edits it where the mode is a refusal, runs the generator and prints one JSON line:
 //
+//   product <name>  the same, from a product list the root manifest declares, read from its tree under
+//                   build/products/<name>/ (and the desktop's tree too, for a case that checks the two moved apart);
+//                   it also reports the product's own script-node labels
 //   generate        { files: { "packages.ts": <text>, "consoles.ts": <text>, "protocol.ts": <text>,
 //                              "scriptNodes.ts": <text>, "placers.ts": <text>, "menus.ts": <text>,
 //                              "views.ts": <text> }, packages: [...] }
@@ -16,9 +19,10 @@
 //   twice           { mtimes: [<after one run>, <after a second>], changed: [<first run>, <second run>] }
 //   run             { registered: [<the ids the generated entry registers, in order>] }
 //   missing-node    { error: <the generated entry's own refusal> }
-//   order | cycle | unlisted-contributes | unlisted-plain | depends-on-shell | duplicate | duplicate-type |
-//   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unexported-app | name-mismatch |
-//   outside-ts | shell-undeclared | unknown-key | capture-bad | half-wired | extra-node | duplicate-role-kind |
+//   order | cycle | shell-unlisted | unlisted-contributes | unlisted-plain | depends-on-shell | duplicate | duplicate-type |
+//   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unexported-app |
+//   name-mismatch | outside-ts | shell-undeclared | unknown-key | capture-bad | half-wired | extra-node |
+//   duplicate-role-kind |
 //   duplicate-kit-format | duplicate-marker-role | duplicate-app | duplicate-app-control | app-unknown-key |
 //   duplicate-section | duplicate-service | duplicate-placer | shell-section | placer-missing |
 //   kind-duplicate-item | kind-one-half | kind-check-unknown-node | kind-app-member |
@@ -33,8 +37,8 @@
 //                   { error: <the generator's message, or null when it did not refuse> }
 //   ui | ui-duplicate-row | ui-unknown-placement | ui-role-undeclared | ui-unknown-key | ui-unknown-when-key |
 //   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service | views | views-duplicate-id |
-//   views-duplicate-across | views-bad-placement | views-bad-kind | views-no-body | views-no-open | views-no-component |
-//   views-window-visible | views-outside-ui | ui-outside-ui
+//   views-duplicate-across | views-bad-placement | views-bad-kind | views-no-body | views-no-open |
+//   views-no-component | views-window-visible | views-outside-ui | ui-outside-ui
 //   cli | cli-duplicate-tool | cli-missing-module | examples-outside | examples-tsconfig-missing |
 //   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | examples-shell-name |
 //   examples-unsafe-name | host-unknown | host-known | react-tsconfig-missing | react-tsconfig-unextended |
@@ -47,7 +51,9 @@
 //
 // The run, missing-node and extra-node modes bundle the generated entry with the same esbuild options the build uses
 // and load it, so the entry's own checks are what is exercised, not a copy of them.
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -80,6 +86,22 @@ function editList(...names) {
   const json = JSON.parse(readFileSync(path, "utf8"));
   json.retroplug.products.desktop = names;
   writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
+}
+
+/** A product's generated tree, as a product writes it: under the build directory, in the shell's shape. */
+function productOutputs(work, name) {
+  const tree = join(work, "build/products", name, "packages/retroplug");
+  const read = (...parts) => readFileSync(join(tree, ...parts), "utf8");
+  return {
+    "packages.ts": read("src/generated/packages.ts"),
+    "consoles.ts": read("src/generated/consoles.ts"),
+    "protocol.ts": read("src/generated/protocol.ts"),
+    "scriptNodes.ts": read("src/generated/scriptNodes.ts"),
+    "placers.ts": read("src/generated/placers.ts"),
+    "menus.ts": read("ui/generated/menus.ts"),
+    "views.ts": read("ui/generated/views.ts"),
+    tsconfig: readFileSync(join(work, "build/products", name, "tsconfig.json"), "utf8"),
+  };
 }
 
 function outputs() {
@@ -197,7 +219,8 @@ async function loadPackages() {
 }
 
 /** A fixture app for the menus modes: the role a ui row names, and alpha's controller-app control-plane half, which
- *  its manifest's protocol.apps pair with (the generated module refuses one half alone). */
+ *  its manifest's protocol.kinds.controllerApps entry pairs with (the generated module refuses one half
+ *  alone). */
 function uiApp(name) {
   return (
     "export default {\n" +
@@ -339,7 +362,8 @@ function consoleApp({ role, keepsApp = false }) {
  *  manifests declare both. */
 function embedApp(name, embeds) {
   const entry = (e) =>
-    `{ id: ${JSON.stringify(e.id)}, label: ${JSON.stringify(e.label ?? e.id)}, platform: ${JSON.stringify(e.platform)} }`;
+    `{ id: ${JSON.stringify(e.id)}, label: ${JSON.stringify(e.label ?? e.id)}, ` +
+    `platform: ${JSON.stringify(e.platform)} }`;
   const app =
     name === "alpha"
       ? '  controllerApps: [{ id: "alpha-app", label: "Alpha App", config: { parse: (v) => v ?? {} } }],\n'
@@ -400,6 +424,26 @@ try {
       };
       break;
     }
+    case "product": {
+      // A product list that is a subsequence of the desktop's: its own tree under the build directory, laid out as the
+      // shell's is, and the desktop's tree unchanged beside it.
+      const name = process.argv[3];
+      generate({ root });
+      generate({ root, product: name, buildDir: join(work, "build") });
+      result = { files: productOutputs(work, name), desktop: outputs() };
+      break;
+    }
+    case "product-refused": {
+      // Every list is validated as the desktop's is, and one that is not the desktop's is a subsequence of it.
+      const name = process.argv[3];
+      try {
+        generate({ root, product: name, buildDir: join(work, "build") });
+        result = { error: null };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    }
     case "twice": {
       const first = generate({ root });
       const files = [
@@ -445,7 +489,10 @@ try {
       // of its own and is named FIRST in the product list, so the reported order (zeta, alpha, beta) is the list's and
       // not a sort of the three names.
       writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
-      writeTree("packages/beta/ts/ui/index.ts", 'export default { menus: [{ placement: "start", build: () => [] }] };\n');
+      writeTree(
+        "packages/beta/ts/ui/index.ts",
+        'export default { menus: [{ placement: "start", build: () => [] }] };\n',
+      );
       editManifest("beta", (m) => {
         m.retroplug.ui = "ts/ui/index.ts";
         m.exports["./ui"] = "./ts/ui/index.ts";
@@ -839,8 +886,14 @@ try {
         m.retroplug.cli = "ts/cli.ts";
         m.exports["./cli"] = "./ts/cli.ts";
       });
-      writeTree("packages/alpha/ts/cli.ts", 'export default [{ name: "alpha-tool", summary: "", help: "", run: () => {} }];\n');
-      writeTree("packages/beta/ts/cli.ts", 'export default [{ name: "beta-tool", summary: "", help: "", run: () => {} }];\n');
+      writeTree(
+        "packages/alpha/ts/cli.ts",
+        'export default [{ name: "alpha-tool", summary: "", help: "", run: () => {} }];\n',
+      );
+      writeTree(
+        "packages/beta/ts/cli.ts",
+        'export default [{ name: "beta-tool", summary: "", help: "", run: () => {} }];\n',
+      );
       for (const name of ["alpha", "beta"]) {
         editManifest(name, (m) => {
           m.retroplug.cli = "ts/cli.ts";
@@ -852,8 +905,14 @@ try {
       break;
     }
     case "cli-duplicate-tool": {
-      writeTree("packages/alpha/ts/cli.ts", 'export default [{ name: "same", summary: "", help: "", run: () => {} }];\n');
-      writeTree("packages/beta/ts/cli.ts", 'export default [{ name: "same", summary: "", help: "", run: () => {} }];\n');
+      writeTree(
+        "packages/alpha/ts/cli.ts",
+        'export default [{ name: "same", summary: "", help: "", run: () => {} }];\n',
+      );
+      writeTree(
+        "packages/beta/ts/cli.ts",
+        'export default [{ name: "same", summary: "", help: "", run: () => {} }];\n',
+      );
       for (const name of ["alpha", "beta"]) {
         editManifest(name, (m) => {
           m.retroplug.cli = "ts/cli.ts";
@@ -982,6 +1041,14 @@ try {
       editManifest("alpha", (m) => {
         m.retroplug.ui = "ts/nothing.ts";
       });
+      result = refusal();
+      break;
+    }
+    case "shell-unlisted": {
+      // The DESKTOP list is the union, so a package the shell declares and that contributes must be in it or the
+      // shell's generated modules name a package nothing registered. A product list that is not the desktop's may
+      // drop one deliberately (the `product` mode's "solo" drops two), so the rule is the desktop's alone.
+      editList("alpha", "beta");
       result = refusal();
       break;
     }
@@ -1666,7 +1733,9 @@ try {
         delete node.writes;
         node.capture = { midiMap: "drive" };
         node.out = "rp.alpha.serial";
-        json.retroplug.protocol.nodes.push({ type: "rp.alpha.serial", label: 18, midiIn: null, writes: [], serialOut: true });
+        json.retroplug.protocol.nodes.push({
+          type: "rp.alpha.serial", label: 18, midiIn: null, writes: [], serialOut: true,
+        });
       });
       writeTree("packages/alpha/ts/nodes.ts", 'export default [{ id: "rp.alpha.midi" }, { id: "rp.alpha.serial" }];\n');
       result = refusal();
@@ -1700,7 +1769,10 @@ try {
         json.retroplug.protocol.nodes[0].out = "rp.alpha.plainer";
         json.retroplug.protocol.nodes.push({ type: "rp.alpha.plainer", label: 18 });
       });
-      writeTree("packages/alpha/ts/nodes.ts", 'export default [{ id: "rp.alpha.midi" }, { id: "rp.alpha.plainer" }];\n');
+      writeTree(
+        "packages/alpha/ts/nodes.ts",
+        'export default [{ id: "rp.alpha.midi" }, { id: "rp.alpha.plainer" }];\n',
+      );
       result = refusal();
       break;
     case "capture-form":
@@ -1708,7 +1780,9 @@ try {
       editManifest("alpha", (json) => {
         json.retroplug.protocol.nodes[0].capture = { midiMap: "drive", off: "listen" };
         json.retroplug.protocol.nodes[0].out = "rp.alpha.serial";
-        json.retroplug.protocol.nodes.push({ type: "rp.alpha.serial", label: 18, midiIn: null, writes: [], serialOut: true });
+        json.retroplug.protocol.nodes.push({
+          type: "rp.alpha.serial", label: 18, midiIn: null, writes: [], serialOut: true,
+        });
       });
       writeTree("packages/alpha/ts/nodes.ts", 'export default [{ id: "rp.alpha.midi" }, { id: "rp.alpha.serial" }];\n');
       generate({ root });
@@ -1717,10 +1791,15 @@ try {
     case "embed-form":
       // The declaration and the manifest entry of one embedded ROM, and what the shell reads of it: the load takes its
       // platform from the declaration, so it comes through with the label and the console.
-      writeTree("packages/alpha/ts/app.ts", embedApp("alpha", [{ id: "alpha-rom", label: "Alpha ROM", platform: "nes" }]));
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        embedApp("alpha", [{ id: "alpha-rom", label: "Alpha ROM", platform: "nes" }]),
+      );
       writeTree(
         "packages/alpha/ts/consoles.ts",
-        consoleModule({ descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }] }),
+        consoleModule({
+          descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }],
+        }),
       );
       editManifest("alpha", (json) => {
         json.retroplug.embed = [{ id: "alpha-rom", file: "rom/alpha.bin" }];
@@ -1793,7 +1872,9 @@ try {
       );
       writeTree(
         "packages/alpha/ts/consoles.ts",
-        consoleModule({ descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }] }),
+        consoleModule({
+          descriptors: [{ id: "alpha.nes", core: "alpha-core", nodeType: "rp.alpha.nes", platform: "nes" }],
+        }),
       );
       editManifest("alpha", (json) => {
         json.retroplug.embed = [{ id: "alpha-rom", file: "rom/alpha.bin" }];
