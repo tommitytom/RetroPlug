@@ -34,6 +34,10 @@
 //      delete the recorder. Replay it here first: a deliberate change makes exactly the cases it changes fail.
 // A case added on purpose AFTER the old commit (hand-no-core-role) cannot be recorded from it: its record is the new
 // code's, and the design section 6 names it as the edge.
+// Parts of the record are DELIBERATE SPLICES from a newer tree, which the recipe above does not cover: every case's two
+// bindings menus carry F4c's four action rows (its display edge E1), and hand-controller's `lp-app-quantise` cycler
+// carries F5a's starting label and step order (its display edge E1). Each was spliced from a throwaway recorder run on
+// the tree that changed it, so replaying this file over the old tree fails exactly those rows, as it should.
 
 import { test, expect } from "@retroplug/testing";
 import recorded from "./recorded-matrix.json";

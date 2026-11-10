@@ -1,9 +1,0 @@
-{
-  // The React/LVGL UI (ui/) as a program of its own: the shell's config over one more tree, no paths of its own, because
-  // a child's paths REPLACE what it extends rather than merging. It needs nothing the shell's config lacks - the React,
-  // lvgljs and lvgljs-ui specifiers resolve through the generated host-module paths both configs now carry - so it is
-  // kept apart only until someone folds ui/ into tsconfig.json's include (docs/modular-graph-phase-f4c-design.md
-  // section 10.12 leaves that open).
-  "extends": "./tsconfig.json",
-  "include": ["ui"]
-}

@@ -20,7 +20,7 @@
 // shell one.
 import { action, cycler, infoRow, separator, submenu, type MenuItem } from "@retroplug/ui/menu";
 import {
-  configRowCycler, defineUi, legacyConfigIndex, type MenuBuilder, type UiHost, type UiService,
+  configRowCycler, defineUi, type MenuBuilder, type UiHost, type UiService,
 } from "@retroplug/ui/contribution";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../enums";
 import type { ControllerApp } from "@retroplug/core/host";
@@ -78,22 +78,22 @@ function launchpadPortNames(ports: string[], selected: string): { names: string[
   return { names, index: names.length - 1 };
 }
 
-/** The app's own rows, built from the registry and the app's schema: one per knob the app declares (`menu`), showing
- *  what the project holds and defaulting to what the schema fills, so the shell names no app, no knob and no value.
- *  A hand-edited value keeps the index these rows have always shown (legacyConfigIndex), so the menu reads as it did
- *  before the rows moved; the app's runtime still falls back to the schema's default (parseAppConfig). */
+/** The app's own rows, built from the registry and the app's schema: one per knob the app declares (`menu`), so the
+ *  shell names no app, no knob and no value. They show what the app RUNS rather than what the project literally holds:
+ *  the stored config goes through the app's own parse, the same one parseAppConfig hands the runtime, so a hand-edited
+ *  value the schema snaps to its default shows the snapped one, and a step writes the next value of that same list.
+ *  `defaults` is the schema's default per knob, the fallback readConfigRow takes for a value of the wrong type. */
 function controllerAppRows(
   host: UiHost,
   app: ControllerApp | undefined,
   config: Record<string, unknown>,
 ): MenuItem[] {
   if (!app || !app.menu) return [];
+  const running = app.config.parse(config); // exactly what parseAppConfig(app.id, config) hands the runtime
   const defaults = app.config.parse({}); // the schema is the source of a knob's default, as it is of its bounds
-  const current = (key: string): unknown => (config[key] !== undefined ? config[key] : defaults[key]);
-  const set = (key: string, value: unknown) => host.controller.set({ appConfig: { [key]: value } });
   return app.menu.map((field) =>
-    configRowCycler(`lp-app-${field.key}`, field, current(field.key), defaults[field.key], (value) =>
-      set(field.key, value), legacyConfigIndex(field, current(field.key))),
+    configRowCycler(`lp-app-${field.key}`, field, running[field.key], defaults[field.key], (value) =>
+      host.controller.set({ appConfig: { [field.key]: value } })),
   );
 }
 

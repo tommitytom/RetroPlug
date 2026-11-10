@@ -28,8 +28,9 @@ export interface ControllerAppContribution {
   readonly label: string;
   /** The app's own knobs: the schema the publishers parse a saved config with, and the menu its rows from. */
   readonly config: RoleConfigSchema;
-  /** The app's rows in the Launchpad submenu, in order. A field's current value is the project's, and its DEFAULT is the
-   *  schema's (`config.parse({})`), so a project stored before a knob existed still shows the value the app will run. */
+  /** The app's rows in the Launchpad submenu, in order. A field's current value is the project's as the app's schema
+   *  parses it, and its DEFAULT is the schema's (`config.parse({})`), so a project stored before a knob existed still
+   *  shows the value the app will run. */
   readonly menu?: readonly ControllerAppField[];
 }
 

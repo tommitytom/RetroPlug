@@ -28,6 +28,9 @@ import {
   setLaunchpadClient, setLaunchpadPorts, setLaunchpadScanClock,
 } from "@retroplug/launchpad/ui";
 import type { ControlSurfaceSettings } from "../../src/userConfig";
+import { controllerApps } from "../../src/controller/registry";
+import { boolField, clampedInt } from "@retroplug/core/configFields";
+import { z } from "zod";
 import * as R from "@retroplug/lsdj/codec/regions";
 import { gbRom, lsdjRom, nesRom } from "../systems/fixtures";
 
@@ -559,6 +562,43 @@ test("the app rows edit PROJECT settings, and each edit re-pushes the kernel", (
     // ...and none of it is machine state: config.json's selection is untouched.
     expect(stores.userConfig.controlSurface().enabled).toBe(false);
   });
+});
+
+test("an app knob's row shows the value the app's own parse gives the runtime", () => {
+  // A choice the app's schema does not have snaps to the schema's default when the runtime parses the stored config
+  // (parseAppConfig). MI.MAP's default is "bar", index 2 of its four values, so a stored value outside the list runs
+  // "Next bar" and its row has to show that rather than the first label.
+  withHost(() => {}, (_h, stores, be) => {
+    stores.project.setController({ appConfig: { quantise: "whenever" } });
+    expect(findItem(submenu(stores, be), "lp-app-quantise")?.label).toBe("Launches: Next bar");
+  });
+});
+
+test("a toggle and a range knob read the app's parse too", () => {
+  // MI.MAP's knobs are choices and a toggle defaulting true, so its own rows cannot show these two shapes: a toggle
+  // whose schema default is false, stored as a non-boolean (the schema snaps it to Off), and a range stored past its
+  // top bound. The range's step table reaches past the schema's bound on purpose: the row has to show the clamped
+  // value the app runs (10), not the step a literal reading of the stored 999 points at (15).
+  const real = controllerApps.get("lsdj-midimap")!;
+  controllerApps.register({
+    id: "lsdj-midimap",
+    label: "Fake App",
+    config: z.object({ follow: boolField(false), level: clampedInt(0, 10, 5) }),
+    menu: [
+      { key: "follow", label: "Follow", toggle: true },
+      { key: "level", label: "Level", range: { steps: [0, 5, 10, 15], labels: ["Low", "Mid", "High", "Top"] } },
+    ],
+  });
+  try {
+    withHost(() => {}, (_h, stores, be) => {
+      stores.project.setController({ appConfig: { follow: "yes", level: 999 } });
+      const rows = submenu(stores, be);
+      expect(findItem(rows, "lp-app-follow")?.label).toBe("Follow: Off");
+      expect(findItem(rows, "lp-app-level")?.label).toBe("Level: High");
+    });
+  } finally {
+    controllerApps.register(real);
+  }
 });
 
 test("one app knob at a time: setting quantise does not wipe follow", () => {

@@ -5,10 +5,10 @@
   // React modules the UI alone may name, from host-modules.json) and the one alias the UI tests use (from
   // tsconfig.aliases.json). The runtime's ambient globals come from the base's `files`.
   "extends": ["../../tsconfig.base.json", "./tsconfig.paths.json"],
-  // The shell's own trees, and every workspace package's TS half by one glob, so a package added to the workspace is
-  // type-checked without an entry here: its own ts/ tree, sources and ts/test alike. packages/native's device-mode
-  // fixture packs stay listed (they are fixtures of a native test, not a package).
-  "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../*/ts", "../*/examples",
+  // The shell's own trees, the LVGL UI among them, and every workspace package's TS half by one glob, so a package
+  // added to the workspace is type-checked without an entry here: its own ts/ tree, sources and ts/test alike.
+  // packages/native's device-mode fixture packs stay listed (they are fixtures of a native test, not a package).
+  "include": ["src", "ui", "testing", "test", "test-native", "test-ui", "cli", "tools-src", "../*/ts", "../*/examples",
               "../native/test/device-mode/script-packs"],
   // The package generator's and the boundary check's fixture trees: data they read (and the generator writes), laid out
   // as a workspace root and its packages are, not modules of this program (their imports name a fixture tree's files,

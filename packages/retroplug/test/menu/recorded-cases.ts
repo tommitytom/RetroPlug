@@ -442,8 +442,8 @@ export const CASES: readonly RecordedCase[] = [
     launchpad: true,
     build: (be, s) => {
       add(be, s, "/roms/g.nes", nesRom());
-      // A project whose controller config was written by hand (or by an older build): the rows show what they always
-      // showed for it, which is not what the schema would default.
+      // A project whose controller config was written by hand (or by an older build): the rows show what the app RUNS
+      // for it, which is the schema's default for a value it does not know rather than the raw stored one.
       launchpadProject(s, "lsdj-midimap", { quantise: 3, follow: "yes" });
     },
   },

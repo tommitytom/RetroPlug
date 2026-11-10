@@ -637,8 +637,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     by `-Wstack-usage` (the chains are still summed by hand); `UsbCdcTransport` has its host fake (`[usb-cdc]`).
   - **The Launchpad's nodes now declare no `threads`** (F3's pack, below), which closes this exception to "the flag is
     what the node itself needs": their link's callback and writer threads are the provider's.
-  - **The N8 menus, the CLI sessions and `buildGraph`'s `cart-<id>` placement stay in `packages/retroplug`** until menus
-    move onto extensions; `chrImage.ts` and `risaSyncTranslator.ts` stay there too, as each imports `retroplug` modules.
+  - **The CLI sessions and `buildGraph`'s `cart-<id>` placement stay in `packages/retroplug`** until menus move onto
+    extensions; the N8 menus are `packages/n8/ts/ui/` (F4b), `chrImage.ts` is `packages/tracker/ts/nes/chrImage.ts` and
+    `risaSyncTranslator.ts` is `packages/risa/ts/risaSyncTranslator.ts` (F1).
   - **The gate's latency comparison is partial.** The `[stats] lat=` figure is per window, not cumulative, and the SysEx
     window peaks at 20.9 ms (a 40-byte SysEx is about 13 ms on the wire); no baseline window was kept for it.
   - **Windows, macOS and arm64 have never built E2.** The new `/W4 /WX` surface on MSVC is `retroplug-n8`,
@@ -654,7 +655,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     scripts on sessions. Scoping a product (an `rpc` list with a scope per entry) is for when packs become downloadable.
   - **Template gaps a second pack meets** (design 13.8): method names are global and a repeat replaces silently; a pack
     cannot add a capability beyond `rp.system.memory/sram/rom`; the test host has no seam for a pack's test provider;
-    the TS half needs its `ts/` in `packages/retroplug/tsconfig.json`'s `include`; a provider cannot be downloaded.
+    the TS half's `ts/` in the shell's `include` (closed in F1 by the `../*/ts` glob); a provider cannot be downloaded.
   - **The pack boundary has three standing exceptions** (design 13.6): the shell's core library included
     `retroplug-n8`'s roots for `N8ReliableLink.hpp`, `plugin.cmake` links `retroplug-n8-desktop` by name, and the test
     host's `main.cpp` names the provider. F2 removed the first: the `mesen` package declares `n8` and links its target.
@@ -979,8 +980,8 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   - **The controller app's display bug**, the per-product bundles and the shell's hard dependency on `launchpad`,
     unchanged.
   - **Windows, macOS, arm64 and CI** for F4c's scripts and packages, as F4a's and F4b's; and two shape questions left
-    as built: whether `tsconfig.ui.json` folds into the shell's program, and whether the reopen key stays as wide as a
-    role write.
+    as built: whether `tsconfig.ui.json` folds into the shell's program (folded in F5a), and whether the reopen key
+    stays as wide as a role write.
 
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the

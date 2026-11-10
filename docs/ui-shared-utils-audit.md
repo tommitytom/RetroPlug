@@ -152,9 +152,9 @@ both SystemGrid and hitTestTile call it.
 - `menuDefs.ts` uses `console` / `TextEncoder` / `TextDecoder`, which the `lib` setting does not declare.
 - `lvgljs` (the native module: `on` / `off` / `createGroup` / `setKeyboardGroup`) has no declaration file.
 
-Done: [tsconfig.ui.json](../packages/retroplug/tsconfig.ui.json) maps `react` to lv_binding_js's @types,
-`lvgljs` to dpf.js's typed `runtime/lvgljs/index.ts`, and `lvgljs-ui` to
-[ui/types/lvgljs-ui.d.ts](../packages/retroplug/ui/types/lvgljs-ui.d.ts) - a declaration of the slice we
-use, because the package ships TS source that fails our strict settings ~1600 times. `pnpm typecheck` runs
-it after the main config, so CI (which already installs lv_binding_js first) covers it. It is clean: the
+Done: the `react`, `lvgljs` and `lvgljs-ui` specifiers resolve through the generated host-module paths, and
+[ui/types/lvgljs-ui.d.ts](../packages/retroplug/ui/types/lvgljs-ui.d.ts) declares the `lvgljs-ui` slice we
+use, because the package ships TS source that fails our strict settings ~1600 times. The shell's program
+[tsconfig.json](../packages/retroplug/tsconfig.json) includes `ui/`, so `pnpm typecheck` type-checks it with
+the rest, and CI (which already installs lv_binding_js first) covers it. It is clean: the
 `console` / `TextEncoder` errors above were an artifact of the scratch config missing `src/env.d.ts`.

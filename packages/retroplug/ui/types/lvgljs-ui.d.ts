@@ -1,5 +1,5 @@
 // The slice of lvgljs-ui the UI uses, declared for the type-check only: host-modules.json maps the bare
-// specifier here, through the generated paths both the shell's and the UI's programs extend, while every bundle
+// specifier here, through the generated paths the shell's program extends, while every bundle
 // (esbuild) still resolves the real package. It exists because the
 // package ships TypeScript SOURCE rather than declarations, which tsc then checks under our strict settings
 // (~1600 errors in code we don't own; skipLibCheck only skips .d.ts files).

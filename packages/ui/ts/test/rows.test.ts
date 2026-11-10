@@ -88,8 +88,8 @@ test("a platform gate and a when gate decide whether a row shows", () => {
   expect(rowShownFor(CHANNELS, undefined, undefined)).toBe(true);
 });
 
-// One row is one shape. A row declaring two of the three would read one way in `readConfigRow` (choices first) and
-// another in `legacyConfigIndex` (toggle first), so the union keeps them exclusive and each of these is a compile error.
+// One row is one shape. A row declaring two of the three would read as whichever member `readConfigRow` checks first
+// rather than as its author meant, so the union keeps them exclusive and each of these is a compile error.
 // @ts-expect-error a row is a choice list or a toggle, never both
 const choiceOrToggle: ConfigRow = { key: "k", label: "L", choices: [{ value: "a", label: "A" }], toggle: true };
 // @ts-expect-error a row is a toggle or a range, never both

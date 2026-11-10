@@ -122,8 +122,8 @@ export interface ConfigChoice {
 }
 
 /** A row over one config key: a fixed choice list, an Off/On toggle, or a numeric range offered in steps. The three
- *  are exclusive on purpose: a row declaring two of them would be read one way by `readConfigRow` (choices first) and
- *  another by `legacyConfigIndex` (toggle first), so the compiler refuses it rather than the two readers disagreeing. */
+ *  are exclusive on purpose: a row declaring two of them would read as whichever member `readConfigRow` checks first
+ *  rather than as its author meant, so the compiler refuses it. */
 export type ConfigRow = { readonly key: string; readonly label: string } & (
   // Exact match; a value the list does not have reads as index 0.
   | { readonly choices: readonly ConfigChoice[]; readonly toggle?: never; readonly range?: never }
@@ -343,31 +343,17 @@ export function readConfigRow(row: ConfigRow, stored: unknown, fallback: unknown
   };
 }
 
-/** One config row as the menu draws it: `readConfigRow`'s labels and step values, at `index` when the caller has one
- *  of its own (the controller-app rows keep the index they always showed: `legacyConfigIndex`). The STEP writes the
- *  value the row's table gives, so a role row and a controller-app row apply the same thing they display. */
+/** One config row as the menu draws it: `readConfigRow`'s labels and step values. The STEP writes the value the row's
+ *  table gives, so a role row and a controller-app row apply the same thing they display. */
 export function configRowCycler(
   id: string,
   row: ConfigRow,
   stored: unknown,
   fallback: unknown,
   apply: (value: string | number | boolean) => void,
-  index?: number,
 ): MenuItem {
   const reading = readConfigRow(row, stored, fallback);
-  return cycler(id, row.label, [...reading.names], index ?? reading.index, (step) => apply(reading.at(step)));
-}
-
-/** Where a controller app's row points for a stored value, the way those rows have always read it: the rule predates
- *  the typed fallback `readConfigRow` gives a role row, and an app's knobs keep it so a hand-edited project's menu reads
- *  exactly as it did. A toggle is On unless it is `false`; a choice list with no match shows its first label. The app's
- *  RUNTIME still falls back to its schema's default (`parseAppConfig`), so an invalid stored value can read one way and
- *  run another: that latent display bug is owed, not fixed by a move. A `range` row (which these rows did not have) has
- *  no legacy reading, so the caller reads it the typed way. */
-export function legacyConfigIndex(row: ConfigRow, value: unknown): number | undefined {
-  if (row.range !== undefined) return undefined;
-  if (row.toggle !== undefined) return value === false ? 0 : 1;
-  return Math.max(0, row.choices.findIndex((choice) => choice.value === value));
+  return cycler(id, row.label, [...reading.names], reading.index, (step) => apply(reading.at(step)));
 }
 
 /** Whether a row is shown on `platform` (no `platforms` means the role's own reach is the gate). */

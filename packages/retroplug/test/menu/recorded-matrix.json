@@ -48986,7 +48986,7 @@
      {
       "id": "lp-app-quantise",
       "kind": "cycler",
-      "label": "Launches: Immediately"
+      "label": "Launches: Next bar"
      },
      {
       "id": "lp-app-follow",
@@ -49598,22 +49598,8 @@
     ]
    },
    "lp-app-quantise": {
-    "default": "Launches: Immediately",
+    "default": "Launches: Next bar",
     "steps": [
-     {
-      "label": "Launches: Next beat",
-      "stored": {
-       "project.controller.appConfig.quantise": "beat"
-      },
-      "staged": []
-     },
-     {
-      "label": "Launches: Next bar",
-      "stored": {
-       "project.controller.appConfig.quantise": "bar"
-      },
-      "staged": []
-     },
      {
       "label": "Launches: End of row",
       "stored": {
@@ -49625,6 +49611,20 @@
       "label": "Launches: Immediately",
       "stored": {
        "project.controller.appConfig.quantise": "immediate"
+      },
+      "staged": []
+     },
+     {
+      "label": "Launches: Next beat",
+      "stored": {
+       "project.controller.appConfig.quantise": "beat"
+      },
+      "staged": []
+     },
+     {
+      "label": "Launches: Next bar",
+      "stored": {
+       "project.controller.appConfig.quantise": "bar"
       },
       "staged": []
      }
