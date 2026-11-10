@@ -34,6 +34,12 @@ const GENERATED = {
 
 const NAME = /\/generated\/([A-Za-z]+)(?:\.ts)?$/;
 
+/** The generated trees the desktop's sources read: a product's bundle must carry none of them. A redirect can miss
+ *  (an import spelled with .js, a new generated module the map above does not know, an importer whose path compares
+ *  unequal on Windows), and a miss silently bundles the DESKTOP's registry into the product. This is the one check
+ *  that covers every list and every platform. */
+const SHELL_GENERATED = ["src", "ui", "cli"].map((tree) => path.join(SHELL, tree, "generated"));
+
 const under = (file, dir) => file === dir || file.startsWith(dir + path.sep);
 
 /** The plugin, or null when no product tree was given (the desktop's bundle). */
@@ -43,6 +49,8 @@ function productGenerated({ dir } = {}) {
   return {
     name: "retroplug-product-generated",
     setup(build) {
+      // The metafile is what onEnd below reads, and a plugin cannot ask for one after the build starts.
+      build.initialOptions.metafile = true;
       build.onResolve({ filter: /\/generated\/[A-Za-z]+(?:\.ts)?$/ }, (args) => {
         if (args.kind === "entry-point" || !args.importer) return undefined;
         const found = NAME.exec(args.path.split("\\").join("/"));
@@ -51,6 +59,22 @@ function productGenerated({ dir } = {}) {
         if (!under(importer, path.join(SHELL, "src")) && !under(importer, path.join(SHELL, "ui"))) return undefined;
         const name = found[1];
         return { path: path.join(productTree, GENERATED[name], "generated", `${name}.ts`) };
+      });
+      // Every module the bundle carries, after the fact: a file under the shell's generated trees is the desktop's
+      // registry, which this product must not carry. Refused by name, so the build says which import missed.
+      build.onEnd((result) => {
+        if (!result.metafile) return undefined;
+        const base = path.resolve(build.initialOptions.absWorkingDir ?? process.cwd());
+        const offenders = Object.keys(result.metafile.inputs)
+          .map((input) => path.resolve(base, input))
+          .filter((file) => SHELL_GENERATED.some((dir) => under(file, dir)));
+        if (!offenders.length) return undefined;
+        return {
+          errors: offenders.map((file) => ({
+            text: `the product bundle carries ${path.relative(REPO_ROOT, file)}, one of the desktop's generated ` +
+              "modules; a product's own tree does not import it",
+          })),
+        };
       });
     },
   };
