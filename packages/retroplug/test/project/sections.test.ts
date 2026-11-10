@@ -18,6 +18,7 @@ import {
   serializeProjectSection,
 } from "../../src/projectConfig";
 import type { ProjectSection } from "@retroplug/core/definePackage";
+import { buildGraph } from "../../src/graph/buildGraph";
 import { type ControllerSection } from "@retroplug/launchpad/projectSection";
 
 /** A section a package could contribute, with the version and one step a real one would carry when it breaks its shape:
@@ -232,4 +233,121 @@ test("a store builds one instance per contributed service, not per publish", () 
   be.setSram(stores.project.systems.view()[0].id, lsdjBattery(8));
   expect(stores.project.pollServices()).toBe(true);
   expect(stores.project.pollServices()).toBe(false);
+});
+
+
+// ---- one package's throw, at a store's seams -----------------------------------------------------------------
+
+/** Capture console.warn for one case: a contributor's throw is reported once, and the test can say which line. */
+function captureWarnings(): { lines: string[]; restore: () => void } {
+  const lines: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+  return { lines, restore: () => { console.warn = original; } };
+}
+
+test("a section stamped newer reads its defaults, refuses a patch once, and is written back as it came", () => {
+  const fromTheFuture = { schemaVersion: 9, knob: { anything: true } };
+  const be = new MockBackend();
+  be.seed(
+    "/p/newer.rplg",
+    JSON.stringify({ schemaVersion: K_PROJECT, settings: { versioned: fromTheFuture }, systems: [] }),
+  );
+  const stores = composeAppStores({
+    backend: be,
+    contributions: { sections: [{ pkg: "acme", section: VERSIONED }] },
+  });
+  const warnings = captureWarnings();
+  try {
+    expect(stores.project.load("/p/newer.rplg").kind).toBe("loaded");
+    // A reader gets what it can honestly type: the contributor's defaults, not a block it could not parse.
+    expect(stores.project.section("versioned")).toEqual({ knob: "a", size: 0 });
+    // The writer keeps the block, so two refused patches warn once and change nothing.
+    stores.project.setSection("versioned", { knob: "b" });
+    stores.project.setSection("versioned", { knob: "b" });
+    expect(warnings.lines.filter((line) => line.includes("versioned")).length).toBe(1);
+    expect(buildConfig(stores.project.settings(), []).settings.versioned).toEqual(fromTheFuture);
+  } finally {
+    warnings.restore();
+  }
+});
+
+test("a contributor's schema that throws is isolated: its defaults read, and the project loads and warns once", () => {
+  const THROWING: ProjectSection<{ ok: string }> = {
+    key: "throwing",
+    schema: { parse: () => { throw new Error("a block this build cannot read"); } },
+    defaults: () => ({ ok: "default" }),
+  };
+  const be = new MockBackend();
+  be.seed(
+    "/p/throwing.rplg",
+    JSON.stringify({ schemaVersion: K_PROJECT, settings: { throwing: { anything: true }, layout: "grid" }, systems: [] }),
+  );
+  const stores = composeAppStores({
+    backend: be,
+    contributions: { sections: [{ pkg: "acme", section: THROWING }] },
+  });
+  const warnings = captureWarnings();
+  try {
+    expect(stores.project.load("/p/throwing.rplg").kind).toBe("loaded");
+    expect(stores.project.section("throwing")).toEqual({ ok: "default" });
+    // The rest of the project parsed: the shell's own field is not the throwing section's casualty.
+    expect(stores.project.settings().layout).toBe("grid");
+    expect(warnings.lines.filter((line) => line.includes("throwing")).length).toBe(1);
+  } finally {
+    warnings.restore();
+  }
+});
+
+test("a service or a placer that throws is isolated, and the rest of the project publishes and places", () => {
+  const ACME: ProjectSection<Record<string, unknown>> = {
+    key: "acme",
+    schema: { parse: (raw: unknown) => (raw ?? {}) as Record<string, unknown> },
+    defaults: () => ({}),
+  };
+  const be = new MockBackend();
+  const stores = composeAppStores({
+    backend: be,
+    contributions: {
+      sections: [{ pkg: "acme", section: ACME }],
+      services: [{
+        pkg: "acme",
+        service: {
+          key: "acme",
+          create: () => ({
+            poll: () => { throw new Error("poll"); },
+            graphModel: () => { throw new Error("model"); },
+            state: () => { throw new Error("state"); },
+          }),
+        },
+      }],
+    },
+  });
+  const warnings = captureWarnings();
+  try {
+    expect(stores.project.pollServices()).toBe(false);
+    expect(stores.project.serviceState("acme")).toBe(undefined);
+    // A publish still happens: the throwing model is simply no model, so the graph is built for the rest.
+    stores.project.setSection("acme", { anything: true });
+  } finally {
+    warnings.restore();
+  }
+  // A throwing placer is no placement; the placer after it still places its node.
+  const built = buildGraph(
+    { systems: [], routing: "stereo", shape: { kind: "multi", channels: 2 }, midiRouting: null,
+      models: { acme: {}, survivor: {} } },
+    [
+      { pkg: "acme", placer: { key: "acme", place: () => { throw new Error("place"); } } },
+      {
+        pkg: "acme-survivor",
+        placer: {
+          key: "survivor",
+          place: () => ({ session: { nodes: [{ id: "survivor-node", type: "rp.core.gain" }], wires: [] } }),
+        },
+      },
+    ],
+  );
+  expect(built.document.nodes.some((node) => node.id === "survivor-node")).toBe(true);
 });

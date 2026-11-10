@@ -102,18 +102,61 @@ export const projectSettingsSchema = z.object({
   zoom: clampedInt(0, 6, 0),
 });
 
-/** The section a package contributes under `key`, or undefined for a key no package of this product contributes (its
- *  value is then kept verbatim). */
-export function projectSectionOf(key: string): ProjectSection | undefined {
-  return PROJECT_SECTIONS.find((entry) => entry.section.key === key)?.section;
+/** A section's contributor and the package that declares it: the generated registry's entry, and the unit a warning
+ *  names when the contributor's own code throws. */
+export interface SectionEntry {
+  readonly pkg: string;
+  readonly section: ProjectSection;
+}
+
+/** The package's section under `key`, or undefined for a key no package of this product contributes (its value is then
+ *  kept verbatim). */
+export function projectSectionEntryOf(
+  key: string,
+  sections: readonly SectionEntry[] = PROJECT_SECTIONS,
+): SectionEntry | undefined {
+  return sections.find((entry) => entry.section.key === key);
+}
+
+/** The section a package contributes under `key`, or undefined for a key no package of this product contributes. */
+export function projectSectionOf(
+  key: string,
+  sections: readonly SectionEntry[] = PROJECT_SECTIONS,
+): ProjectSection | undefined {
+  return projectSectionEntryOf(key, sections)?.section;
+}
+
+/** Warning keys already reported: a contributor's throw is one package's fault, so it is reported once per package and
+ *  key, not once per load or per publish. */
+const warnedSections = new Set<string>();
+
+function warnSectionOnce(entry: SectionEntry, doing: string, error: unknown): void {
+  const key = `${entry.pkg}\u0000${entry.section.key}`;
+  if (warnedSections.has(key)) return;
+  warnedSections.add(key);
+  console.warn(
+    `[project] the ${entry.pkg} package's section ${entry.section.key} threw while ${doing}: ${String(error)}. ` +
+      "Reading its defaults instead; the rest of the project is unchanged.",
+  );
+}
+
+/** A contributor's defaults, or `{}` when even those throw: a package's own breakage must not stop the project from
+ *  loading, and there is nothing better to read than an empty block. */
+export function sectionDefaults(entry: SectionEntry): unknown {
+  try {
+    return entry.section.defaults();
+  } catch (e) {
+    warnSectionOnce(entry, "reading its defaults", e);
+    return {};
+  }
 }
 
 /** Every contributor's defaults, by key: what a project that never set a section reads, and what a fresh project
  *  starts with. */
-export function defaultSections(): Record<string, unknown> {
-  const sections: Record<string, unknown> = {};
-  for (const { section } of PROJECT_SECTIONS) sections[section.key] = section.defaults();
-  return sections;
+export function defaultSections(sections: readonly SectionEntry[] = PROJECT_SECTIONS): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const entry of sections) out[entry.section.key] = sectionDefaults(entry);
+  return out;
 }
 
 /** A settings object's core fields, in the order the .rplg writes them. */
@@ -126,9 +169,27 @@ function coreSettings(settings: ProjectSettings): Omit<ProjectSettings, "section
   };
 }
 
-/** The typed read of a section: the contributor's parsed value, or the raw JSON of a key no package contributes. */
+/** The typed read of a section as its contributor parsed it, or the raw JSON of a key no package contributes. The
+ *  writer reads through here (ProjectStore.setSection's stamp check and serializeSection): a block stamped newer is
+ *  kept verbatim, and written back as it came. */
 export function projectSection<T = unknown>(settings: ProjectSettings, key: string): T {
   return settings.sections[key] as T;
+}
+
+/** What a READER of a section gets: its contributor's parsed value, or its defaults when the block is stamped newer
+ *  than this build reads (the refuse-newer rule at section scope). Only the writer keeps the raw block, through
+ *  projectSection and buildConfig: a reader handed a block it cannot parse would be typed `T` and hold something else. */
+export function readableProjectSection<T = unknown>(
+  settings: ProjectSettings,
+  key: string,
+  sections: readonly SectionEntry[] = PROJECT_SECTIONS,
+): T {
+  const raw = projectSection<unknown>(settings, key);
+  const entry = projectSectionEntryOf(key, sections);
+  if (entry?.section.version !== undefined && raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    if (readSectionVersion(raw as RawObject) > entry.section.version) return sectionDefaults(entry) as T;
+  }
+  return raw as T;
 }
 
 /** A raw section carried up to its contributor's version and parsed, or kept verbatim. Kept verbatim when it is stamped
@@ -184,10 +245,18 @@ export function assertSectionKey(key: string): void {
   if (key === "__proto__") throw new Error("__proto__ is not a project section: it names a prototype");
 }
 
-/** A section's raw value by key: its contributor's parse, or the value itself for a key no package contributes. */
-function parseSectionValue(key: string, raw: unknown): unknown {
-  const contributor = projectSectionOf(key);
-  return contributor ? parseProjectSection(contributor, raw) : raw;
+/** A section's raw value by key: its contributor's parse (its defaults when that throws), or the value itself for a
+ *  key no package contributes. A contributor's own `schema.parse` may throw on a block this build does not understand;
+ *  parseConfig's contract is that it never throws, so one package's breakage is isolated to its section. */
+function parseSectionValue(key: string, raw: unknown, sections: readonly SectionEntry[]): unknown {
+  const entry = projectSectionEntryOf(key, sections);
+  if (!entry) return raw;
+  try {
+    return parseProjectSection(entry.section, raw);
+  } catch (e) {
+    warnSectionOnce(entry, "parsing its saved block", e);
+    return sectionDefaults(entry);
+  }
 }
 
 /** Store a section by key as an own, enumerable property. `Object.defineProperty` rather than assignment, because a
@@ -199,16 +268,16 @@ function putSection(sections: Record<string, unknown>, key: string, value: unkno
 
 /** The sections of a raw `settings` object: every key the shell does not own, through its contributor (or kept
  *  verbatim), then `defaults()` for each contributor whose key the file does not have. */
-function parseSections(raw: unknown): Record<string, unknown> {
+function parseSections(raw: unknown, contributors: readonly SectionEntry[]): Record<string, unknown> {
   const block = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const sections: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(block)) {
     if ((CORE_SETTING_KEYS as readonly string[]).includes(key)) continue;
-    putSection(sections, key, parseSectionValue(key, value));
+    putSection(sections, key, parseSectionValue(key, value, contributors));
   }
-  for (const { section } of PROJECT_SECTIONS) {
-    if (!Object.prototype.hasOwnProperty.call(sections, section.key)) {
-      putSection(sections, section.key, section.defaults());
+  for (const entry of contributors) {
+    if (!Object.prototype.hasOwnProperty.call(sections, entry.section.key)) {
+      putSection(sections, entry.section.key, sectionDefaults(entry));
     }
   }
   return sections;
@@ -507,7 +576,7 @@ export function serializeConfig(cfg: ProjectFileConfig, baseDir: string, canonic
  *  (unknown fields are stripped, except a `settings` key no package contributes, which is kept: E5). Never
  *  throws — malformed JSON / a non-object root yield an empty-default config, a
  *  garbage system entry is dropped, out-of-range/wrong-type values are coerced. */
-export function parseConfig(json: string): ProjectConfig {
+export function parseConfig(json: string, sections: readonly SectionEntry[] = PROJECT_SECTIONS): ProjectConfig {
   let doc: unknown;
   try {
     doc = JSON.parse(json);
@@ -522,7 +591,7 @@ export function parseConfig(json: string): ProjectConfig {
   // Settings: default when missing/invalid, else clamped/defaulted; then the sections, each through its contributor.
   const sp = projectSettingsSchema.safeParse(parsed.settings);
   const core = (sp.success ? sp.data : projectSettingsSchema.parse({})) as Omit<ProjectSettings, "sections">;
-  const settings: ProjectSettings = { ...core, sections: parseSections(parsed.settings) };
+  const settings: ProjectSettings = { ...core, sections: parseSections(parsed.settings, sections) };
 
   // Systems: keep each valid (object) entry, drop garbage.
   const systems: SystemThin[] = [];

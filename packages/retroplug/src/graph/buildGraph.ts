@@ -28,10 +28,34 @@ import {
   type SystemInput,
 } from "./protocolNodes";
 import { serialOutCaptureFor, type SerialOutCaptureMode } from "./serialCapture";
-import type { Placement, Placed } from "@retroplug/core/placer";
+import type { GraphPlacer, PlaceContext, Placement, Placed } from "@retroplug/core/placer";
 import type { KindData } from "@retroplug/core/defineKind";
 import { PLACERS } from "../generated/placers";
 import { KIND_DATA } from "../generated/protocol";
+
+/** A placer's throw is one package's fault: it is warned about once per package and model key, and the placement is
+ *  treated as none, so the rest of the graph still builds. */
+const warnedPlacers = new Set<string>();
+
+function placeOne(
+  pkg: string,
+  placer: GraphPlacer<any>,
+  model: unknown,
+  ctx: PlaceContext,
+): Placement | null {
+  try {
+    return placer.place(model, ctx);
+  } catch (e) {
+    if (!warnedPlacers.has(`${pkg}\u0000${placer.key}`)) {
+      warnedPlacers.add(`${pkg}\u0000${placer.key}`);
+      console.warn(
+        `[graph] the ${pkg} package's placer ${placer.key} threw: ${String(e)}. ` +
+          "Placing none of its nodes; the rest of the graph is unchanged.",
+      );
+    }
+    return null;
+  }
+}
 
 /** The output shape a document is built for: the host's own outputs routed by the project's mode (multi),
  *  each system on its own pair (perSystem), or one system's streams on a pair each (perChannel). A multi
@@ -385,7 +409,10 @@ function nesMode(arm: TapArm | null, s: GraphSystem): number {
   return arm && arm.id === s.id ? arm.mode : s.exportMode;
 }
 
-export function buildGraph(model: GraphModel): BuiltGraph {
+export function buildGraph(
+  model: GraphModel,
+  placers: readonly { pkg: string; placer: GraphPlacer<any> }[] = PLACERS,
+): BuiltGraph {
   const { systems, routing, shape } = model;
   // One decision for the wiring and the arm returned with it, so the two always agree.
   const tapArm = tapArmOf(model);
@@ -403,10 +430,11 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   // (docs/modular-graph-phase-f5a-design.md section 6.3). A placer's nodes land at its slot's position, which is what
   // makes document order the same for a product that lists the package and for the tests that build the model by hand.
   const placements: { key: string; placement: Placement }[] = [];
-  for (const { placer } of PLACERS) {
+  for (const { pkg, placer } of placers) {
     const value = model.models ? model.models[placer.key] : undefined;
     if (value === null || value === undefined) continue;
-    placements.push({ key: placer.key, placement: placer.place(value, { systems, kindData }) });
+    const placement = placeOne(pkg, placer, value, { systems, kindData });
+    if (placement !== null) placements.push({ key: placer.key, placement });
   }
   const slot = (pick: (placement: Placement) => Placed | undefined): Placed[] => {
     const out: Placed[] = [];

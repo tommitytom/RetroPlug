@@ -22,7 +22,7 @@ import { buildAppRegistry } from "./appHost";
 import { RecentStore } from "./recentStore";
 import { UserConfigStore } from "./userConfigStore";
 import { BindingsStore } from "./bindingsStore";
-import { ProjectStore } from "./projectStore";
+import { ProjectStore, type ProjectContributions } from "./projectStore";
 import { FileSelection } from "./fileSelection";
 import { RenderJobs } from "./renderJobs";
 
@@ -49,12 +49,19 @@ export interface ComposeOptions {
   backend?: ControlPlaneBackend;
   /** Called with the changed channel on every store mutation. Defaults to a no-op. */
   notify?: (channel: StoreChannel) => void;
+  /** The project's contributions, when a test wants its own instead of the generated registries': a synthetic section
+   *  is the only way to exercise the versioned and throw-isolated paths no product's package uses today. */
+  contributions?: ProjectContributions;
 }
 
 /** Build the store graph over `backend` (the real native backend by default). Mirrors
  *  pluginControlPlane.ts's sequence and additionally composes the config/bindings stores (nothing in
  *  src/ constructs them yet), loading each store's on-disk state. */
-export function composeAppStores({ backend = createRealBackend({ debug: false }), notify = () => {} }: ComposeOptions = {}): AppStores {
+export function composeAppStores({
+  backend = createRealBackend({ debug: false }),
+  notify = () => {},
+  contributions,
+}: ComposeOptions = {}): AppStores {
   const registry = buildAppRegistry();
 
   const recent = new RecentStore(backend, () => notify("recent"));
@@ -71,7 +78,7 @@ export function composeAppStores({ backend = createRealBackend({ debug: false })
   const bindings = new BindingsStore(backend, userConfig, () => notify("bindings"));
   bindings.ensureDefaults();
 
-  const project = new ProjectStore(backend, recent, registry);
+  const project = new ProjectStore(backend, recent, registry, contributions);
   const renders = new RenderJobs(backend, () => project.systems.view().map((s) => s.id));
   project.addOnSystemsChange(() => {
     renders.prune();

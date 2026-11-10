@@ -21,8 +21,8 @@ import type { RoleRegistry } from "@retroplug/core/systemRoles";
 import type { RecentStore } from "./recentStore";
 import { workingSongReady, songLoadByNameWouldDiscard, songLoadWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker/liveSav";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
-import type { ProjectService, ProjectServiceContext } from "@retroplug/tracker/projectService";
-import { PROJECT_SERVICES } from "./generated/packages";
+import type { ProjectService, ProjectServiceContext, ProjectServiceFactory } from "@retroplug/tracker/projectService";
+import { PROJECT_SERVICES, PROJECT_SECTIONS } from "./generated/packages";
 import { basename, dirname, stem } from "./pathUtil";
 import { siblingRplgPath, resolveSavPath } from "./savPaths";
 import {
@@ -40,8 +40,10 @@ import {
   parseConfig,
   toAbsolute,
   projectSection,
+  readableProjectSection,
   defaultSections,
   readSectionVersion,
+  type SectionEntry,
 } from "./projectConfig";
 import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
 import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALUES } from "./settingsEnums";
@@ -57,6 +59,27 @@ export type LoadOutcome =
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
+
+/** What a store takes from the generated registries, and what a test may hand it instead: the sections its project
+ *  parses, and the services it builds one instance of. A synthetic contributor is the only way to exercise the
+ *  versioned, throw-isolated half of the mechanism, because no product's section declares a version today. */
+export interface ProjectContributions {
+  readonly sections?: readonly SectionEntry[];
+  readonly services?: readonly { pkg: string; service: ProjectServiceFactory }[];
+}
+
+/** A service's throw is one package's fault, so it is warned about once per package and key, not once per publish. */
+const warnedServices = new Set<string>();
+
+function warnServiceOnce(pkg: string, key: string, doing: string, error: unknown): void {
+  const id = `${pkg}\u0000${key}\u0000${doing}`;
+  if (warnedServices.has(id)) return;
+  warnedServices.add(id);
+  console.warn(
+    `[project] the ${pkg} package's project service ${key} threw while ${doing}: ${String(error)}. ` +
+      "Treating it as having none; the rest of the project is unchanged.",
+  );
+}
 
 // Parse JSON to a plain object, or null (invalid JSON / not an object). Used both to guard a thin `.rplg`
 // load (it must be pure JSON — never a zip) and to edit a single field of a project file in place.
@@ -130,7 +153,9 @@ export class ProjectStore {
   private recentPending = false; // the open project's Recent row is owed, once its cart can say what it holds (see syncRecent)
   /** One instance per contributed service FACTORY, for this store's whole life: a service's state is its store's, and a
    *  plugin host's two instances share nothing. A factory's key is its model's and its section's (`controller`). */
-  private readonly services: readonly { key: string; service: ProjectService }[];
+  private readonly services: readonly { pkg: string; key: string; service: ProjectService }[];
+  /** The product's sections, or a test's: what parseConfig and the readers below consult. */
+  private readonly sections: readonly SectionEntry[];
   private systemsObservers: Array<() => void> = [];
   private onChangeCb: () => void = () => {};
   private holdGraph = false; // a load's adopts: the graph is published once they are all built
@@ -147,7 +172,9 @@ export class ProjectStore {
     private readonly backend: ControlPlaneBackend,
     private readonly recent: RecentStore,
     registry?: RoleRegistry,
+    contributions: ProjectContributions = {},
   ) {
+    this.sections = contributions.sections ?? PROJECT_SECTIONS;
     this.graph = new EngineGraph(backend);
     // Any user mutation of the systems list marks the project dirty and tells the structure's observers; the systems
     // store publishes the graph itself where the edit changes it.
@@ -163,7 +190,11 @@ export class ProjectStore {
     this.systems.setOnLiveParam((systems) => this.graph.systemsMovedLive(systems));
     // Built once, here: a service's poll and model read the systems and the backend, never a file, so nothing
     // about them is per-project the way the settings are. `newProject` leaves them standing, as it leaves their state.
-    this.services = PROJECT_SERVICES.map(({ service: factory }) => ({ key: factory.key, service: factory.create() }));
+    this.services = (contributions.services ?? PROJECT_SERVICES).map(({ pkg, service: factory }) => ({
+      pkg,
+      key: factory.key,
+      service: factory.create(),
+    }));
   }
 
   // Publish the engine's graph for the systems, the audio and MIDI routing and the controller as they stand
@@ -190,9 +221,15 @@ export class ProjectStore {
    *  record and no node of theirs appears. */
   private graphModels(): Record<string, unknown> {
     const models: Record<string, unknown> = {};
-    for (const { key, service } of this.services) {
+    for (const { pkg, key, service } of this.services) {
       if (!service.graphModel) continue;
-      const model = service.graphModel(this.serviceContext(key));
+      let model: unknown;
+      try {
+        model = service.graphModel(this.serviceContext(key));
+      } catch (e) {
+        warnServiceOnce(pkg, key, "publishing its model", e);
+        continue;
+      }
       if (model !== null && model !== undefined) models[key] = model;
     }
     return models;
@@ -219,8 +256,13 @@ export class ProjectStore {
    *  Deliberately does NOT mark the project dirty: what a service notices lives in the hardware, not the .rplg. */
   pollServices(): boolean {
     let moved = false;
-    for (const { key, service } of this.services) {
-      if (service.poll?.(this.serviceContext(key)) === true) moved = true;
+    for (const { pkg, key, service } of this.services) {
+      if (!service.poll) continue;
+      try {
+        if (service.poll(this.serviceContext(key)) === true) moved = true;
+      } catch (e) {
+        warnServiceOnce(pkg, key, "polling", e);
+      }
     }
     if (!moved) return false;
     this.publishGraph(false);
@@ -233,7 +275,12 @@ export class ProjectStore {
   serviceState<T = unknown>(key: string): T | undefined {
     const entry = this.services.find((candidate) => candidate.key === key);
     if (!entry?.service.state) return undefined;
-    return entry.service.state(this.serviceContext(key)) as T;
+    try {
+      return entry.service.state(this.serviceContext(key)) as T;
+    } catch (e) {
+      warnServiceOnce(entry.pkg, key, "answering its state", e);
+      return undefined;
+    }
   }
 
   /** A section of the project's settings, as its contributor parses it (raw JSON for a key no package contributes).
@@ -241,7 +288,7 @@ export class ProjectStore {
    *  undefined. */
   section<T = unknown>(key: string): T {
     assertSectionKey(key);
-    return projectSection<T>(this.projectSettings, key);
+    return readableProjectSection<T>(this.projectSettings, key, this.sections);
   }
 
   /** Apply a patch to a section through its contributor's `merge`, then mark the project dirty, publish the graph and
@@ -251,11 +298,13 @@ export class ProjectStore {
    *  one warning naming the key and both versions: this build must not rewrite what it cannot read. */
   setSection(key: string, patch: Readonly<Record<string, unknown>>): void {
     assertSectionKey(key);
-    const contributor = projectSectionOf(key);
-    const current = this.section<Record<string, unknown>>(key);
+    const contributor = projectSectionOf(key, this.sections);
+    // The writer reads the STORED block, not the reader's view: a block stamped newer is kept raw so it can be written
+    // back as it came, and the stamp check below needs the stamp the file carries.
+    const stored = projectSection<unknown>(this.projectSettings, key);
     const version = contributor?.version;
     // A section's stamp is its own rule (unstamped reads as version 1), not a root's.
-    const stamped = version !== undefined && isObject(current) ? readSectionVersion(current) : 0;
+    const stamped = version !== undefined && isObject(stored) ? readSectionVersion(stored) : 0;
     if (version !== undefined && stamped > version) {
       if (!this.refusedSections.has(key)) {
         this.refusedSections.add(key);
@@ -266,6 +315,7 @@ export class ProjectStore {
       }
       return;
     }
+    const current = this.section<Record<string, unknown>>(key);
     // A contributor's schema parses the patched block, so `section()` answers the same shape a reload would: an
     // unparsed shallow merge would leave a hand-patched value in memory only.
     const next = contributor
@@ -559,7 +609,7 @@ export class ProjectStore {
   /** Empty project: tear down systems, reset settings/path, mark clean. */
   newProject(): void {
     this.systems.clear();
-    this.projectSettings = { ...DEFAULT_SETTINGS, sections: defaultSections() };
+    this.projectSettings = { ...DEFAULT_SETTINGS, sections: defaultSections(this.sections) };
     this.publishRouting(); // place nothing, at the default routing
     this.path = "";
     this.projectName = "";
@@ -662,7 +712,7 @@ export class ProjectStore {
     if (!entries) return { kind: "error" };
     const { config, blobs } = partitionEntries(entries);
     if (!config) return { kind: "error" }; // no project.json → not a RetroPlug archive
-    return this.beginLoad(parseConfig(dec.decode(config)), "", blobs, baseDir);
+    return this.beginLoad(parseConfig(dec.decode(config), this.sections), "", blobs, baseDir);
   }
 
   /** Load a project — a thin `.rplg` (raw JSON) or an export `.rplg.zip` (PKZIP). Routing is by
@@ -704,7 +754,7 @@ export class ProjectStore {
       console.error(`.rplg is not pure JSON (a zip? zip projects must use .rplg.zip): ${path}`);
       return { kind: "error" };
     }
-    return this.beginLoad(parseConfig(text), path, new Map(), dirname(path));
+    return this.beginLoad(parseConfig(text, this.sections), path, new Map(), dirname(path));
   }
 
   // Export `.rplg.zip`: PKZIP of project.json + per-system blobs that seed each emulator.
@@ -715,7 +765,7 @@ export class ProjectStore {
     if (!entries) return { kind: "error" };
     const { config, blobs } = partitionEntries(entries);
     if (!config) return { kind: "error" }; // no project.json → not a RetroPlug archive
-    return this.beginLoad(parseConfig(dec.decode(config)), path, blobs, dirname(path));
+    return this.beginLoad(parseConfig(dec.decode(config), this.sections), path, blobs, dirname(path));
   }
 
   // Shared load tail: refuse-newer, absolutize, blob-aware missing scan, then pend for
