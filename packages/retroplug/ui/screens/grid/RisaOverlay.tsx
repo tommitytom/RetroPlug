@@ -3,7 +3,7 @@
 // decodeRisaState): the visible screen + cursor, play/mode, tempo, ROM version, and each of the 5 tracks'
 // playing phrase.row. Renders nothing for a non-risa / unsupported ROM, so EmulatorTile mounts it
 // unconditionally. Shares the backtick debug toggle with LsdjOverlay (one dev switch, per-system readout).
-import { DebugReadout, hex2 } from "./DebugReadout";
+import { DebugReadout, hex2 } from "@retroplug/ui-react";
 import { useRisaRuntime } from "./useRisaRuntime";
 import { useLsdjDebugVisible } from "./lsdjDebug";
 import type { RisaTrackState } from "@retroplug/risa/runtime";

@@ -3,7 +3,7 @@
 // → LsdjReader): the visible screen + its cursor position, play/stop, song position, tempo, the ROM
 // version, and each channel's playing phrase.row. Renders nothing for a non-LSDj / unsupported ROM, so
 // EmulatorTile can mount it unconditionally.
-import { DebugReadout, hex2 } from "./DebugReadout";
+import { DebugReadout, hex2 } from "@retroplug/ui-react";
 import { useLsdjRuntime } from "./useLsdjRuntime";
 import { useLsdjDebugVisible } from "./lsdjDebug";
 import type { LsdjChannelState, LsdjState } from "@retroplug/lsdj/runtime";

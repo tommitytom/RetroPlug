@@ -17,7 +17,9 @@
 // - a devDependency a source file imports, which only a test file may;
 // - source that imports one of its own package's test modules: the same devDependency leak, reached by a relative path;
 // - a host module imported from a file its surface does not own (a `cli` module from plain source, not examples/ or
-//   ts/cli/);
+//   ts/cli/, and React from a package's CLI tree);
+// - a .tsx outside the package's ts/ui/ tree, and a package whose .tsx has no react/jsx-runtime declaration (automatic
+//   JSX imports it with no specifier, so the .tsx is its only use);
 // - a declared package that does not exist;
 // - a `workspace:` or `link:` alias of the shell, which the key alone would present as a third-party name;
 // - an `npm:` alias naming a package the workspace does not have;
@@ -415,6 +417,49 @@ test("a host declaration nothing imports warns, as an unused dependency does", a
   expect(report.status).toBe(0);
   expect(report.refused).toEqual([]);
   expect(report.warnings).toEqual(["alpha: declares the host module fixture-lib, which no file of its imports"]);
+});
+
+test("a .tsx under the package's ts/ui/ tree with the React host modules declared is admitted", async () => {
+  // The good shape: the component in ts/ui/, the four host modules in retroplug.host, and the .tsx counted as the use
+  // of react/jsx-runtime (which no import names), so nothing is declared unused.
+  const report = await drive("react-allowed");
+  expect(report.status).toBe(0);
+  expect(report.refused).toEqual([]);
+  expect(report.warnings).toEqual([]);
+});
+
+test("a .tsx outside the package's ts/ui/ tree is refused, naming the file and the tree", async () => {
+  const report = await drive("react-outside-ui");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    "packages/alpha/ts/Badge.tsx: is a .tsx file outside packages/alpha/ts/ui/, the one tree rule 3 admits React " +
+      "into: a component belongs to the package's UI surface, whose files are the only ones a React host module is " +
+      "reachable from",
+  ]);
+});
+
+test("a package with a .tsx and no react/jsx-runtime declaration is refused", async () => {
+  // Automatic JSX imports react/jsx-runtime with no specifier in the source, so a declaration check that read only
+  // what an import names would admit a component whose React was never declared.
+  const report = await drive("react-undeclared");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    "packages/alpha/package.json: has a .tsx file (packages/alpha/ts/ui/Badge.tsx) and does not declare " +
+      "react/jsx-runtime in retroplug.host: automatic JSX imports it with no specifier, so the declaration is the only " +
+      "place the dependency shows",
+  ]);
+});
+
+test("a React import from a package's CLI tree is refused as a surface error", async () => {
+  const report = await drive("react-cli-import");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/alpha/ts/cli/tool.ts: imports "react", a ui host module, from a file that surface does not own: ' +
+      "a ui host module is reached only from the package's ts/ui/ trees",
+  ]);
 });
 
 test("the real tree holds its boundaries with no exception left", async () => {

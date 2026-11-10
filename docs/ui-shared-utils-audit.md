@@ -60,7 +60,7 @@ channel map (`{ key: [code, press, mod]; frame: [tick]; mouse: [button, press, x
 [pad, name, press]; "gamepad-axis": [pad, axis, value]; resize: [w, h]; "file-drop": [paths, x, y] }`)
 makes `useNativeEvent("key", (code, press, mod) => ...)` type-checked.
 
-Done: `NativeEvents` in [useNativeEvent.ts](../packages/retroplug/ui/lvgl/useNativeEvent.ts), each channel
+Done: `NativeEvents` in [useNativeEvent.ts](../packages/ui-react/ts/ui/useNativeEvent.ts), each channel
 annotated with the native files that emit it; every `args[n] as T` is gone. Note the type is only as good
 as the emit sites it was read off - nothing checks the C++ side against it.
 
@@ -77,10 +77,10 @@ Related: `sys.roles.find((r) => r.kind === X)?.config` appears ~10 times (menuDe
 runtime hooks, the HD session) and `systems.find((s) => s.id === id)` 6 times. `roleConfig(sys, kind)` /
 `hasRole(sys, kind)` helpers and a `useSystem(id)` hook.
 
-Done: `useFrameSampled(sample, signature)` in [useFramePoll.ts](../packages/retroplug/ui/lvgl/useFramePoll.ts)
+Done: `useFrameSampled(sample, signature)` in [useFramePoll.ts](../packages/ui-react/ts/ui/useFramePoll.ts)
 (sample per frame, re-render only when the displayed signature moves; `undefined` skips a frame; a new
 `sample` identity resets) now backs both runtime hooks and the render badge.
-[DebugReadout.tsx](../packages/retroplug/ui/screens/grid/DebugReadout.tsx) is the shared overlay shell + `hex2`.
+[DebugReadout.tsx](../packages/ui-react/ts/ui/DebugReadout.tsx) is the shared overlay shell + `hex2`.
 `findRole` / `roleConfig` / `hasRole` live next to `RoleInstance` in
 [systemRoles.ts](../packages/core/ts/systemRoles.ts) and replace every `roles.find(...)` in `ui/`
 (menuDefs' private `roleConfigFor` is gone); `src/` still has 10 of its own, untouched. `useSystem(id)` is
@@ -97,9 +97,9 @@ Proposal: `lvgl/lv.ts` with the constants and typed `TextEx` / `CanvasEx` wrappe
 binding traps currently documented only inside Menu.tsx comments (`flex-grow` needs `display: flex` on the
 child, a Box needs a measured height since there's no LV_SIZE_CONTENT, Texts bubble clicks).
 
-Done: [lv.ts](../packages/retroplug/ui/lvgl/lv.ts) holds `ViewEx` / `TextEx` / `CanvasEx` (the one place the
+Done: [lv.ts](../packages/ui-react/ts/ui/lv.ts) holds `ViewEx` / `TextEx` / `CanvasEx` (the one place the
 components are cast, behind prop types for what native accepts), `CanvasHandle`, the event types and
-`LV_IMAGE_ALIGN_CONTAIN`; [PixelCanvas.tsx](../packages/retroplug/ui/lvgl/PixelCanvas.tsx) is the shared
+`LV_IMAGE_ALIGN_CONTAIN`; [PixelCanvas.tsx](../packages/ui-react/ts/ui/PixelCanvas.tsx) is the shared
 nearest-neighbour CONTAIN canvas. The `LV_ALIGN_*` copies are gone: lvgljs-ui already exports `EAlignType`.
 No `as any` is left in `ui/`. The binding-trap notes were left in Menu.tsx next to the code they explain.
 
@@ -122,7 +122,7 @@ both SystemGrid and hitTestTile call it.
   ([useStateRef.ts](../packages/retroplug/ui/hooks/useStateRef.ts)).
 - DONE: `const [, bump] = useState(0)` force-updates in App, `useFileBrowser`, `useVersionedPoll`, and App's
   five-subscribable effect: `useForceUpdate` / `useRerenderOn(...subscribes)`
-  ([useRerender.ts](../packages/retroplug/ui/hooks/useRerender.ts)).
+  ([useRerender.ts](../packages/ui-react/ts/ui/useRerender.ts)).
 - DONE: `lsdjDebug.ts` hand-rolled a listener set; it uses `createSubscribable` now.
 - DONE: held-slot press/release routing (useGameInput / useGamepadInput) is `useHeldRouting`, and stick
   edge detection (useGamepadInput / Menu) is `useAxisEdges`

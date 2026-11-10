@@ -10,12 +10,14 @@ import { useCallback, useRef } from "react";
 import { EAlignType, Text } from "lvgljs-ui";
 
 import { useStores } from "../../stores/useStores";
-import { useNativeEvent } from "../../lvgl/useNativeEvent";
-import { useFrameSampled } from "../../lvgl/useFramePoll";
-import { Box } from "../../lvgl/Box";
-import { PixelCanvas } from "../../lvgl/PixelCanvas";
-import type { CanvasHandle } from "../../lvgl/lv";
-import { tagTestId } from "../../lvgl/StableSlot";
+import {
+  Box,
+  PixelCanvas,
+  tagTestId,
+  useFrameSampled,
+  useNativeEvent,
+  type CanvasHandle,
+} from "@retroplug/ui-react";
 import { LsdjOverlay } from "./LsdjOverlay";
 import { RisaOverlay } from "./RisaOverlay";
 import { pickActiveRenderJob, renderBadgeLabel, type RenderJobStatus } from "../../host/render";

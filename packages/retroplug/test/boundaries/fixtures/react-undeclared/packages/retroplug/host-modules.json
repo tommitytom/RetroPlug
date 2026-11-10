@@ -1,0 +1,6 @@
+[
+  { "module": "react", "surface": "ui", "types": "types/react.d.ts" },
+  { "module": "react/jsx-runtime", "surface": "ui", "types": "types/react-jsx-runtime.d.ts" },
+  { "module": "lvgljs", "surface": "ui", "types": "types/lvgljs.d.ts" },
+  { "module": "lvgljs-ui", "surface": "ui", "types": "types/lvgljs-ui.d.ts" }
+]

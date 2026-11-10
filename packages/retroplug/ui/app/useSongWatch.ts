@@ -12,7 +12,7 @@
 // opened again.
 
 import type { AppStores } from "../../src/appStores";
-import { useFrameDivider } from "../lvgl/useFramePoll";
+import { useFrameDivider } from "@retroplug/ui-react";
 
 // ~0.5 s at 60 fps. Fast enough that the row is there by the time the user reopens the menu, slow enough
 // that the battery read never shows up in a profile.

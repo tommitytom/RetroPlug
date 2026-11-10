@@ -340,6 +340,9 @@ importers:
       '@retroplug/ui':
         specifier: workspace:*
         version: link:../ui
+      '@retroplug/ui-react':
+        specifier: workspace:*
+        version: link:../ui-react
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -469,6 +472,32 @@ importers:
       '@retroplug/tracker':
         specifier: workspace:*
         version: link:../tracker
+    devDependencies:
+      '@retroplug/testing':
+        specifier: workspace:*
+        version: link:../testing
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/ui-fixture:
+    dependencies:
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@retroplug/ui-react':
+        specifier: workspace:*
+        version: link:../ui-react
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/ui-react:
+    dependencies:
+      '@retroplug/ui':
+        specifier: workspace:*
+        version: link:../ui
     devDependencies:
       '@retroplug/testing':
         specifier: workspace:*

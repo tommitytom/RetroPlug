@@ -20,11 +20,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Text, ELvKey } from "lvgljs-ui";
 
 import { useFocusGroup } from "../../lvgl/useFocusGroup";
-import { useNativeEvent } from "../../lvgl/useNativeEvent";
+import { Box, TextEx, useNativeEvent, type LvEvent, type LvKeyEvent } from "@retroplug/ui-react";
 import { useStateRef } from "../../hooks/useStateRef";
 import { useAxisEdges } from "../../input/useHeldInput";
-import { Box } from "../../lvgl/Box";
-import { TextEx, type LvEvent, type LvKeyEvent } from "../../lvgl/lv";
 import {
   dpfCodeToKeyName,
   menuNavForButton,

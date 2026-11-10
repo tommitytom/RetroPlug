@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/alpha",
+  "private": true,
+  "retroplug": { "host": ["react", "react/jsx-runtime", "lvgljs", "lvgljs-ui"] }
+}

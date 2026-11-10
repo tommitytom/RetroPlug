@@ -12,17 +12,7 @@
 
 import type { ReactNode } from "react";
 
-import { Box } from "./Box";
-import { native } from "../host/nativeHooks";
-
-/** A ref callback that tags a widget's native uid with a stable testId (findByTestId). Inert in
- *  production — the __rp_tagTestId hook only exists in the UI test harness. Shared by any widget a test
- *  needs to locate. */
-export function tagTestId(testId: string) {
-  return (node: { uid?: unknown } | null) => {
-    if (node) native.__rp_tagTestId?.(String(node.uid), testId);
-  };
-}
+import { Box, tagTestId } from "@retroplug/ui-react";
 
 export function StableSlot({
   testId,

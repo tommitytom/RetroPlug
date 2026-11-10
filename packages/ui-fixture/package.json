@@ -1,0 +1,24 @@
+{
+  "name": "@retroplug/ui-fixture",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "node ../retroplug/scripts/lib/packages.mjs && tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The fixture pack a package's React view is proved by: a real workspace package no product lists, whose one tile view draws a Box and a Text through @retroplug/ui-react. It is what `pnpm -r typecheck` holds a .tsx to, what rule 3's refusals are copies of, and the worked example a new pack's view is copied from; nothing ships it.",
+  "exports": {
+    "./ui": "./ts/ui/index.ts"
+  },
+  "dependencies": {
+    "@retroplug/ui": "workspace:*",
+    "@retroplug/ui-react": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "ui": "ts/ui/index.ts",
+    "host": ["react", "react/jsx-runtime"]
+  }
+}

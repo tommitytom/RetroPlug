@@ -25,6 +25,7 @@
     "@retroplug/host-io": "workspace:*",
     "@retroplug/system": "workspace:*",
     "@retroplug/ui": "workspace:*",
+    "@retroplug/ui-react": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

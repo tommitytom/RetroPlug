@@ -11,7 +11,7 @@
 import { useMemo } from "react";
 
 import { useBindings } from "../stores/useStores";
-import { useNativeEvent } from "../lvgl/useNativeEvent";
+import { useNativeEvent } from "@retroplug/ui-react";
 import { buildGamepadToButton } from "../../src/keyCodes";
 import { useAxisEdges, useHeldRouting } from "./useHeldInput";
 

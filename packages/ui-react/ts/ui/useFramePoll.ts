@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useNativeEvent } from "./useNativeEvent";
-import { useForceUpdate } from "../hooks/useRerender";
+import { useForceUpdate } from "./useRerender";
 
 /** Run `fn` on every `frames`-th render frame. The counter is per-component, not global. */
 export function useFrameDivider(frames: number, fn: () => void): void {

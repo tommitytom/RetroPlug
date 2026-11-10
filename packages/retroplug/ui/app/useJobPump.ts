@@ -11,7 +11,7 @@
 // opened again, or at the next submission.
 
 import type { AppStores } from "../../src/appStores";
-import { useFrameDivider } from "../lvgl/useFramePoll";
+import { useFrameDivider } from "@retroplug/ui-react";
 
 export function useJobPump(stores: AppStores): void {
   useFrameDivider(1, () => {

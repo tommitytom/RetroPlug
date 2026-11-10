@@ -4,5 +4,11 @@
     "surface": "cli",
     "provider": "the fixture's own loaded-module table",
     "types": "src/fixture-lib.d.ts"
+  },
+  {
+    "module": "fixture-react",
+    "surface": "ui",
+    "provider": "the fixture's own React types",
+    "types": "src/fixture-react.d.ts"
   }
 ]

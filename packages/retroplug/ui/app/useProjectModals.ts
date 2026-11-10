@@ -23,7 +23,7 @@ import type { LoadOutcome } from "../../src/projectStore";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import { savEditWouldDiscard, saveWorkingSong } from "../../src/tracker/liveSav";
 import { flushDirtySram } from "../../src/sramAutoSave";
-import { useNativeEvent } from "../lvgl/useNativeEvent";
+import { useNativeEvent } from "@retroplug/ui-react";
 import type { Overlay } from "./overlay";
 import { buildProjectModal, SONG_SAVE_REFUSED, type PendingModal } from "./projectModals";
 import { saveProjectInteractive } from "./saveProjectInteractive";

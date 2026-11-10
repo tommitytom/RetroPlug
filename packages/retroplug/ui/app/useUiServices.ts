@@ -9,8 +9,7 @@ import { useEffect, useRef } from "react";
 
 import type { UiHost } from "@retroplug/ui/contribution";
 import { uiServices } from "../host/menuContributions";
-import { useRerenderOn } from "../hooks/useRerender";
-import { useNativeEvent } from "../lvgl/useNativeEvent";
+import { useNativeEvent, useRerenderOn } from "@retroplug/ui-react";
 import { startServices, tickServices } from "./serviceTicker";
 
 export function useUiServices(host: UiHost): void {

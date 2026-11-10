@@ -15,7 +15,9 @@
 //   module that does not exist, a contribution its exports do not publish, a manifest whose name is not its
 //   directory's, a contribution outside ts/ and a contributing package the shell does not declare. A dependency that
 //   contributes nothing, and one whose manifest has no retroplug member, are left out of the ordering rather than
-//   refused; a package contributing an app and no nodes names no nodes module and still registers its app;
+//   refused; a package contributing an app and no nodes names no nodes module and still registers its app; a tsconfig
+//   that must extend the generated host-module paths because it lists an example session or declares a host module the
+//   UI owns;
 // - the generated module itself refuses a duplicate key in the lists the registries look up rather than sequence: a
 //   role kind, a kit format's id and a tracker integration's marker role, each with its own message, and an embedded
 //   ROM whose declaration and manifest entry do not pair (or name a console this product does not run);
@@ -243,6 +245,29 @@ test("a package with examples whose tsconfig does not extend the generated host 
 
 test("a package with examples whose tsconfig extends the generated host modules is accepted", async () => {
   const { error } = await drive("examples-tsconfig-extended");
+  expect(error).toBe(null);
+});
+
+test("a package declaring a UI host module without a tsconfig is refused", async () => {
+  const { error } = await drive("react-tsconfig-missing");
+  console.log(`# a UI host module without a tsconfig: ${error}`);
+  expect(error).toBe(
+    "alpha: it declares a UI host module but has no tsconfig.json, which must extend " +
+      "../retroplug/tsconfig.host-modules.json so a .tsx resolves React",
+  );
+});
+
+test("a package declaring a UI host module whose tsconfig does not extend the generated host modules is refused", async () => {
+  const { error } = await drive("react-tsconfig-unextended");
+  console.log(`# a UI host module's tsconfig unextended: ${error}`);
+  expect(error).toBe(
+    "alpha: it declares a UI host module but its tsconfig.json does not extend " +
+      "../retroplug/tsconfig.host-modules.json, where a .tsx resolves React",
+  );
+});
+
+test("a package declaring a UI host module whose tsconfig extends the generated host modules is accepted", async () => {
+  const { error } = await drive("react-tsconfig-extended");
   expect(error).toBe(null);
 });
 

@@ -33,7 +33,8 @@
 //   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service
 //   cli | cli-duplicate-tool | cli-missing-module | examples-outside | examples-tsconfig-missing |
 //   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | examples-shell-name |
-//   examples-unsafe-name | host-unknown | host-known
+//   examples-unsafe-name | host-unknown | host-known | react-tsconfig-missing | react-tsconfig-unextended |
+//   react-tsconfig-extended
 //                   the menus module: ui reports the contributing packages in product order, the others load it into
 //                   its own refusal ({ error })
 //                   (unlisted-plain generates, and reports files like generate)
@@ -570,6 +571,24 @@ try {
       });
       generate({ root });
       result = { error: null };
+      break;
+    }
+    case "react-tsconfig-missing":
+    case "react-tsconfig-unextended":
+    case "react-tsconfig-extended": {
+      // A package that declares a host module the UI owns resolves React through the generated host-module paths, so
+      // its tsconfig must extend them even without an example session.
+      editManifest("alpha", (m) => {
+        m.retroplug.host = ["fixture-react"];
+      });
+      if (MODE !== "react-tsconfig-missing") {
+        const extendsLine =
+          MODE === "react-tsconfig-extended"
+            ? '"extends": ["../../tsconfig.base.json", "../retroplug/tsconfig.host-modules.json"]'
+            : '// extend tsconfig.host-modules.json (not really)\n  "extends": ["../../tsconfig.base.json"]';
+        writeTree("packages/alpha/tsconfig.json", `{\n  ${extendsLine},\n  "include": ["ts"]\n}\n`);
+      }
+      result = MODE === "react-tsconfig-extended" ? { error: refusal().error } : refusal();
       break;
     }
     case "ui-missing-module": {

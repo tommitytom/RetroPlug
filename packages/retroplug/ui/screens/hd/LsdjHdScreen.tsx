@@ -12,11 +12,7 @@
 import { useRef } from "react";
 import { EAlignType, Text } from "lvgljs-ui";
 
-import { useNativeEvent } from "../../lvgl/useNativeEvent";
-import { Box } from "../../lvgl/Box";
-import { PixelCanvas } from "../../lvgl/PixelCanvas";
-import type { CanvasHandle } from "../../lvgl/lv";
-import { tagTestId } from "../../lvgl/StableSlot";
+import { Box, PixelCanvas, tagTestId, useNativeEvent, type CanvasHandle } from "@retroplug/ui-react";
 import { useLsdjHdSession } from "./useLsdjHdSession";
 
 export function LsdjHdScreen({

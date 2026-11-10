@@ -4,5 +4,29 @@
     "surface": "cli",
     "provider": "the retroplug-cli binary's loaded-module table",
     "types": "cli/sdk-types.d.ts"
+  },
+  {
+    "module": "react",
+    "surface": "ui",
+    "provider": "lv_binding_js's node_modules (@types/react)",
+    "types": "../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react"
+  },
+  {
+    "module": "react/jsx-runtime",
+    "surface": "ui",
+    "provider": "lv_binding_js's node_modules (@types/react/jsx-runtime)",
+    "types": "../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react/jsx-runtime"
+  },
+  {
+    "module": "lvgljs",
+    "surface": "ui",
+    "provider": "dpf.js's typed runtime front door",
+    "types": "../../deps/dpf.js/runtime/lvgljs/index.ts"
+  },
+  {
+    "module": "lvgljs-ui",
+    "surface": "ui",
+    "provider": "lv_binding_js's component registry, declared by the shell's slice of it",
+    "types": "ui/types/lvgljs-ui.d.ts"
   }
 ]

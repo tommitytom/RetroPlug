@@ -1,0 +1,4 @@
+{
+  "extends": ["../../tsconfig.base.json", "../retroplug/tsconfig.host-modules.json"],
+  "include": ["ts"]
+}

@@ -2,8 +2,8 @@
 // tile's bottom edge carrying a few lines of live readout. Each overlay only decides WHAT the lines say.
 import { EAlignType, Text } from "lvgljs-ui";
 
-import { Box } from "../../lvgl/Box";
-import { tagTestId } from "../../lvgl/StableSlot";
+import { Box } from "./Box";
+import { tagTestId } from "./tagTestId";
 
 const HEIGHT = 44;
 

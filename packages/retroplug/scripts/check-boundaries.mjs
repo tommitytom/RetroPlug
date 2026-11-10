@@ -43,6 +43,13 @@
 //      not a source's to import. src/generated/ is not judged (it is the one place that names every package), and an
 //      entry no import uses fails the check.
 //
+// A host module (the bare specifiers packages/retroplug/host-modules.json lists) is judged twice more: the package must
+// declare it in `retroplug.host`, and it is importable only from the files of the surface its entry names (a package's
+// `ts/ui/` for `surface: "ui"`, its `ts/cli/` for `"cli"`), since a package's halves are separate programs. A `.tsx` is
+// also a use of `react/jsx-runtime` with no specifier naming it, because automatic JSX imports it implicitly, so the
+// declaration is the only place it shows; and a `.tsx` outside the package's `ts/ui/` tree is refused, that tree being
+// the one place a React host module is admissible from.
+//
 // Rule 1's second half and rule 8's first are one leak: a test file may use its package's devDependencies, so source
 // that reaches a test file - by a relative import, or because the test file is published - hands those devDependencies
 // to every importer of that source.
@@ -721,6 +728,37 @@ export function checkBoundaries({ root = REPO } = {}) {
           `${shown(root, file)}: imports "${specifier}", which is ${describeOwner(owner)}, and ${pkg.name} does not ` +
             "declare it in its dependencies (its tests may also use devDependencies)",
         );
+      }
+    }
+
+    // Rule 3, the React half: a package's React lives in its ts/ui/ tree alone, so a .tsx anywhere else is a component
+    // no surface owns (its host modules would be refused from there as well; this names the placement, which is the
+    // rule). And automatic JSX imports `react/jsx-runtime` with no specifier, so no import of it is ever seen: the
+    // declaration is what a .tsx requires, and the .tsx is what makes the declaration used.
+    const components = sourceFiles.filter((file) => file.endsWith(".tsx"));
+    for (const file of components) {
+      if (surfaceOf(pkg, file) === "ui") continue;
+      refuse(
+        "jsx-surface",
+        shown(root, file),
+        "",
+        `${shown(root, file)}: is a .tsx file outside packages/${pkg.name}/ts/ui/, the one tree rule 3 admits React ` +
+          "into: a component belongs to the package's UI surface, whose files are the only ones a React host module " +
+          "is reachable from",
+      );
+    }
+    if (components.length) {
+      if (!declaredHost.includes("react/jsx-runtime")) {
+        refuse(
+          "host-module",
+          shown(root, pkg.manifestPath),
+          "react/jsx-runtime",
+          `${shown(root, pkg.manifestPath)}: has a .tsx file (${shown(root, components[0])}) and does not declare ` +
+            "react/jsx-runtime in retroplug.host: automatic JSX imports it with no specifier, so the declaration is the " +
+            "only place the dependency shows",
+        );
+      } else {
+        usedHost.add("react/jsx-runtime");
       }
     }
 

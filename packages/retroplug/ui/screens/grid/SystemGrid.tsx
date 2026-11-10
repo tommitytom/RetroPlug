@@ -9,7 +9,7 @@
 // are handled by the menu (App), not here.
 
 import { useStores, useSystems, useProjectSettings, useUserConfig } from "../../stores/useStores";
-import { Box } from "../../lvgl/Box";
+import { Box } from "@retroplug/ui-react";
 import { useWindowSize } from "../../lvgl/useWindowSize";
 import { StableSlot } from "../../lvgl/StableSlot";
 import { EmulatorTile } from "./EmulatorTile";

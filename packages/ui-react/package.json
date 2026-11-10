@@ -1,0 +1,23 @@
+{
+  "name": "@retroplug/ui-react",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "node ../retroplug/scripts/lib/packages.mjs && tsc -p tsconfig.json"
+  },
+  "type": "module",
+  "description": "The UI's React half: the typed handles on the lvgljs-ui components (lv, Box, PixelCanvas), the frame-bus and re-render hooks, the debug readout, reactView for a component view, and tagTestId. Its own ts/ui/ tree is the one place rule 3 admits React into, and @retroplug/ui stays plain TypeScript so a package that does not want React never meets it.",
+  "exports": {
+    ".": "./ts/ui/index.ts"
+  },
+  "dependencies": {
+    "@retroplug/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@retroplug/testing": "workspace:*",
+    "typescript": "^7.0.2"
+  },
+  "retroplug": {
+    "host": ["react", "react/jsx-runtime", "lvgljs", "lvgljs-ui"]
+  }
+}

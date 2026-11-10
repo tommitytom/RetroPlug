@@ -13,6 +13,11 @@
     "noImplicitOverride": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
+    // Automatic JSX: a .tsx compiles to react/jsx-runtime calls, which is the one place a component names React without
+    // importing it. Every bundle already builds this way (tools/build-ui.js passes jsx: "automatic"); this makes the
+    // typecheck accept the same sources. The runtime and its types are mapped by the host-module list, never resolved
+    // from node_modules.
+    "jsx": "react-jsx",
     "skipLibCheck": true,
     // ES2022.Array only, for Array.prototype.at() in the UI tests. NOT the whole of ES2022: the app runs on QuickJS,
     // and a blanket lib bump would let src reach for APIs the runtime may not have.

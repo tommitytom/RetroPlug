@@ -16,7 +16,7 @@ import {
 } from "../../src/fileBrowser";
 import { buildFileBrowserMenu } from "../screens/menu/fileBrowserMenu";
 import type { Overlay } from "./overlay";
-import { useRerenderOn } from "../hooks/useRerender";
+import { useRerenderOn } from "@retroplug/ui-react";
 import { native } from "../host/nativeHooks";
 
 /** The browse as an overlay; onClose (Esc / B) cancels it (resolves null). */

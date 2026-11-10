@@ -5,7 +5,7 @@
 import { useMemo } from "react";
 
 import { useStores, useSystem } from "../../stores/useStores";
-import { useFrameSampled } from "../../lvgl/useFramePoll";
+import { useFrameSampled } from "@retroplug/ui-react";
 import { hasRole } from "@retroplug/core/systemRoles";
 import { LsdjReader, type LsdjState } from "@retroplug/lsdj/runtime";
 

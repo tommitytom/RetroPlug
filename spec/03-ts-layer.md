@@ -624,7 +624,7 @@ widget's native uid for the test harness and is inert in production.
 
 ### LVGL primitives — [`ui/lvgl/`](../packages/retroplug/ui/lvgl)
 
-- [`Box.tsx`](../packages/retroplug/ui/lvgl/Box.tsx) — a `<View>` with the LVGL
+- [`Box.tsx`](../packages/ui-react/ts/ui/Box.tsx) - a `<View>` with the LVGL
   default-theme chrome zeroed, caller style merged on top.
 - [`FocusProvider.tsx`](../packages/retroplug/ui/lvgl/FocusProvider.tsx) — owns the
   app-wide empty **"sink"** keyboard group's lifecycle so LVGL doesn't route arrows/Enter into
@@ -634,17 +634,17 @@ widget's native uid for the test harness and is inert in production.
   claim-the-keypad dance: a `useLayoutEffect` builds a fresh group from ordered refs, focuses a
   target, `setKeyboardGroup(group)`, and on cleanup restores the sink (**never null**) and
   destroys the group.
-- [`useNativeEvent.ts`](../packages/retroplug/ui/lvgl/useNativeEvent.ts) — subscribes to
+- [`useNativeEvent.ts`](../packages/ui-react/ts/ui/useNativeEvent.ts) - subscribes to
   the `lvgljs` `on`/`off` bus (`frame` / `key` / `resize` / …) with a stable listener + handler
   ref (no re-subscribe on inline closures).
 - [`useWindowSize.ts`](../packages/retroplug/ui/lvgl/useWindowSize.ts) — the live window
   size reactive to `"resize"`; `requestWindowSize` / `isWindowSizeControlled` are the TS side of
   the `__rp_*` native window seam.
-- [`lv.ts`](../packages/retroplug/ui/lvgl/lv.ts) - typed `ViewEx` / `TextEx` / `CanvasEx`: the one
+- [`lv.ts`](../packages/ui-react/ts/ui/lv.ts) - typed `ViewEx` / `TextEx` / `CanvasEx`: the one
   place the lvgljs-ui components are cast, behind prop types for what native accepts. Plus
-  [`PixelCanvas.tsx`](../packages/retroplug/ui/lvgl/PixelCanvas.tsx) (a crisp, aspect-kept frame
+  [`PixelCanvas.tsx`](../packages/ui-react/ts/ui/PixelCanvas.tsx) (a crisp, aspect-kept frame
   canvas) and [`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx).
-- [`useFramePoll.ts`](../packages/retroplug/ui/lvgl/useFramePoll.ts) - the frame-clocked polls:
+- [`useFramePoll.ts`](../packages/ui-react/ts/ui/useFramePoll.ts) - the frame-clocked polls:
   every-N-frames, versioned native status, and per-frame sampling deduped on a display signature.
 
 The rest of `ui/` outside `screens/` is split by what it depends on:

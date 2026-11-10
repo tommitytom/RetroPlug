@@ -1,9 +1,9 @@
 {
   // The shell's own program: the app, its tests, the UI harness and every workspace package's TS half. The compiler
   // options are tsconfig.base.json's (the same ones each package's tsconfig extends); the paths are the generated
-  // file's, which carries both the host modules a package imports through its surface's host (`retroplug-cli` today,
-  // from host-modules.json) and the one alias the UI tests use (from tsconfig.aliases.json). The runtime's ambient
-  // globals come from the base's `files`.
+  // file's, which carries both the host modules a package imports through its surface's host (`retroplug-cli`, and the
+  // React modules the UI alone may name, from host-modules.json) and the one alias the UI tests use (from
+  // tsconfig.aliases.json). The runtime's ambient globals come from the base's `files`.
   "extends": ["../../tsconfig.base.json", "./tsconfig.paths.json"],
   // The shell's own trees, and every workspace package's TS half by one glob, so a package added to the workspace is
   // type-checked without an entry here: its own ts/ tree, sources and ts/test alike. packages/native's device-mode

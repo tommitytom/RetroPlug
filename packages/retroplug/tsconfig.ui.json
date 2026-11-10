@@ -1,16 +1,9 @@
 {
-  // The React/LVGL UI (ui/), which the main tsconfig can't reach: `react` and `lvgljs-ui` only resolve at
-  // bundle time, through lv_binding_js. Mapped here instead - react to lv_binding_js's own @types, lvgljs to
-  // dpf.js's typed runtime front door, lvgljs-ui to a declaration of the slice we use (ui/types/).
+  // The React/LVGL UI (ui/) as a program of its own: the shell's config over one more tree, no paths of its own, because
+  // a child's paths REPLACE what it extends rather than merging. It needs nothing the shell's config lacks - the React,
+  // lvgljs and lvgljs-ui specifiers resolve through the generated host-module paths both configs now carry - so it is
+  // kept apart only until someone folds ui/ into tsconfig.json's include (docs/modular-graph-phase-f4c-design.md
+  // section 10.12 leaves that open).
   "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "jsx": "react-jsx",
-    "paths": {
-      "react": ["../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react"],
-      "react/jsx-runtime": ["../../deps/dpf.js/deps/lv_binding_js/node_modules/@types/react/jsx-runtime"],
-      "lvgljs": ["../../deps/dpf.js/runtime/lvgljs/index.ts"],
-      "lvgljs-ui": ["./ui/types/lvgljs-ui.d.ts"]
-    }
-  },
   "include": ["ui"]
 }

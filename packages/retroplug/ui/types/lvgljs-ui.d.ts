@@ -1,17 +1,18 @@
-// The slice of lvgljs-ui the UI uses, declared for the type-check only: tsconfig.ui.json maps the bare
-// specifier here, while every bundle (esbuild) still resolves the real package. It exists because the
+// The slice of lvgljs-ui the UI uses, declared for the type-check only: host-modules.json maps the bare
+// specifier here, through the generated paths both the shell's and the UI's programs extend, while every bundle
+// (esbuild) still resolves the real package. It exists because the
 // package ships TypeScript SOURCE rather than declarations, which tsc then checks under our strict settings
 // (~1600 errors in code we don't own; skipLibCheck only skips .d.ts files).
 //
-// Keep it to what ui/ imports. The widgets are declared loosely on purpose: ui/lvgl/lv.ts gives each one the
-// prop types native actually accepts, and that is where call sites should get them from.
+// Keep it to what the UI imports. The widgets are declared loosely on purpose: @retroplug/ui-react's lv.ts gives each
+// one the prop types native actually accepts, and that is where call sites should get them from.
 
 import type { ComponentType, ReactElement } from "react";
 
 export declare const View: unknown;
 export declare const Canvas: unknown;
-/** Plain styled text. For ref / key / hover props use TextEx (ui/lvgl/lv.ts). Children are as narrow as
- *  native's setter: a string, a number, or an array of only those (see TextChildren in lv.ts). */
+/** Plain styled text. For ref / key / hover props use TextEx (the kit's lv.ts). Children are as narrow as
+ *  native's setter: a string, a number, or an array of only those (see TextChildren in @retroplug/ui-react's lv.ts). */
 export declare const Text: ComponentType<{ style?: Record<string, unknown>; children?: string | number | (string | number)[] }>;
 
 /** lv_align_t (lv_area.h). */
