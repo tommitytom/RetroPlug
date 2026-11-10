@@ -13,7 +13,9 @@
 //   with no nodes, a sync override whose key, node type or unused off-mode is wrong, two contributions whose generated
 //   identifiers mangle to one name, a label below 16, a gap, a role naming an undeclared or an unwired type, a named
 //   module that does not exist, a contribution its exports do not publish, a manifest whose name is not its
-//   directory's, a contribution outside ts/ and a contributing package the shell does not declare. A dependency that
+//   directory's, a contribution outside ts/ and a contributing package the shell does not declare, an action id
+//   twice (one package or two), an action id its package does not prefix, and an action default on a key or pad
+//   name the shell does not resolve or already binds. A dependency that
 //   contributes nothing, and one whose manifest has no retroplug member, are left out of the ordering rather than
 //   refused; a package contributing an app and no nodes names no nodes module and still registers its app; a tsconfig
 //   that must extend the generated host-module paths because it lists an example session or declares a host module the
@@ -246,6 +248,91 @@ test("the generated menus module refuses a visible flag on a window view", async
   console.log(`# window view visible: ${error}`);
   expect(error).toBe("the package alpha declares the window view alpha-view with a visible flag, which only a tile " +
     "view has");
+});
+
+test("the generated menus module carries the packages' actions in product order", async () => {
+  // One action per package, in the product list's order (zeta first); zeta's and alpha's share a backtick, which two
+  // contributions may, and beta's has a pad default and no key.
+  const { actions, error } = await drive("actions");
+  if (error) console.log(`# actions: ${error}`);
+  expect(actions).toEqual([
+    { pkg: "zeta", id: "zeta.first", label: "Zeta First", keys: ["`"], pad: [] },
+    { pkg: "alpha", id: "alpha.second", label: "Alpha Second", keys: ["`"], pad: [] },
+    { pkg: "beta", id: "beta.third", label: "Beta Third", keys: [], pad: ["guide"] },
+  ]);
+});
+
+test("the generated menus module refuses an action id one package declares twice", async () => {
+  const { error } = await drive("actions-duplicate-id");
+  console.log(`# duplicate action id: ${error}`);
+  expect(error).toBe("the package alpha declares the action alpha.same twice");
+});
+
+test("the generated menus module refuses an action id two packages declare", async () => {
+  const { error } = await drive("actions-duplicate-across");
+  console.log(`# action id across packages: ${error}`);
+  expect(error).toBe("two packages declare the action alpha.same: alpha and beta");
+});
+
+test("the generated menus module refuses an action id its own package does not prefix", async () => {
+  const { error } = await drive("actions-bad-prefix");
+  console.log(`# action id prefix: ${error}`);
+  expect(error).toBe(
+    'the package alpha declares the action zeta.stolen, which is not prefixed by its own name ("alpha.")',
+  );
+});
+
+test("the generated menus module refuses an action default key name no key resolves", async () => {
+  const { error } = await drive("actions-unknown-key");
+  console.log(`# action key name: ${error}`);
+  expect(error).toBe("the package alpha declares the action alpha.key on the key Nonsense, which is no key name");
+});
+
+test("the generated menus module refuses an action default pad name outside SDL's button names", async () => {
+  const { error } = await drive("actions-unknown-pad");
+  console.log(`# action pad name: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the action alpha.pad on the gamepad button nonsense, which is no SDL button name " +
+      "(the names are GAMEPAD_BUTTON_NAMES)",
+  );
+});
+
+test("the generated menus module refuses an action default on a key a shell action already binds", async () => {
+  const { error } = await drive("actions-shell-key");
+  console.log(`# action on a shell key: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the action alpha.menu on the key Escape by default, which the shell already binds " +
+      "(a shell action or a Game Boy button)",
+  );
+});
+
+test("the generated menus module refuses an action default on a Game Boy button's keyboard key", async () => {
+  const { error } = await drive("actions-gb-key");
+  console.log(`# action on a GB key: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the action alpha.jump on the key Z by default, which the shell already binds " +
+      "(a shell action or a Game Boy button)",
+  );
+});
+
+test("the generated menus module refuses an action default on a key code a Game Boy button already binds", async () => {
+  // "Return" is a different name from the Start default "Enter" and the same code (0x0d): the check compares resolved
+  // codes, which is what one press sees.
+  const { error } = await drive("actions-return-key");
+  console.log(`# action on a GB key code: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the action alpha.enter on the key Return by default, which the shell already binds " +
+      "(a shell action or a Game Boy button)",
+  );
+});
+
+test("the generated menus module refuses an action default on a Game Boy button's gamepad button", async () => {
+  const { error } = await drive("actions-gb-pad");
+  console.log(`# action on a GB pad button: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the action alpha.jump on the gamepad button a by default, which the shell already " +
+      "binds (a shell action or a Game Boy button)",
+  );
 });
 
 test("a retroplug.ui member naming a module that is not there is refused", async () => {

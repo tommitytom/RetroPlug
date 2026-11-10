@@ -35,7 +35,9 @@
 //   cli | cli-duplicate-tool | cli-missing-module | examples-outside | examples-tsconfig-missing |
 //   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | examples-shell-name |
 //   examples-unsafe-name | host-unknown | host-known | react-tsconfig-missing | react-tsconfig-unextended |
-//   react-tsconfig-extended
+//   react-tsconfig-extended | actions | actions-duplicate-id | actions-duplicate-across | actions-bad-prefix |
+//   actions-unknown-key | actions-unknown-pad | actions-shell-key | actions-gb-key | actions-return-key |
+//   actions-gb-pad
 //                   the menus module: ui reports the contributing packages in product order, the others load it into
 //                   its own refusal ({ error })
 //                   (unlisted-plain generates, and reports files like generate)
@@ -172,51 +174,79 @@ function uiApp(name) {
   );
 }
 
-/** The generated menus module, bundled and loaded as the UI loads it: its imports of the packages' ui modules are
- *  aliased the way a pnpm link resolves them, and loading it runs its checks (a row's role kind, a row id twice, a
- *  builder's placement). */
-async function loadMenus() {
-  const out = join(work, "menus.mjs");
-  const { buildSync } = require("esbuild");
-  buildSync({
-    ...buildOptions(join(root, "packages/retroplug/ui/generated/menus.ts"), out, "esm"),
-    alias: {
-      "@retroplug/alpha/app": join(root, "packages/alpha/ts/app.ts"),
-      "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
-      "@retroplug/alpha/consoles": join(root, "packages/alpha/ts/consoles.ts"),
-      "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
-      "@retroplug/alpha/ui": join(root, "packages/alpha/ts/ui.ts"),
-      "@retroplug/beta/ui": join(root, "packages/beta/ts/ui.ts"),
-      "@retroplug/zeta/ui": join(root, "packages/zeta/ts/ui.ts"),
-      // The ui package itself is a workspace dependency of the shell, not a fixture package: a real build resolves it
-      // through the pnpm link, so the driver hands the bundle the tree's own copy.
-      "@retroplug/ui/contribution": join(HERE, "../../../ui/ts/contribution.ts"),
-    },
-  });
-  const loaded = await import(pathToFileURL(out).href);
-  return loaded.UI_CONTRIBUTIONS.map((entry) => entry.pkg);
+/** The aliases every menu-module loader needs: the fixture packages' ui and app modules the way a pnpm link resolves
+ *  them, the real @retroplug/ui contract, and the fixture shell's src/*.ts shims of the real shell's binding
+ *  vocabulary. */
+function menusAlias() {
+  return {
+    "@retroplug/alpha/app": join(root, "packages/alpha/ts/app.ts"),
+    "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
+    "@retroplug/alpha/consoles": join(root, "packages/alpha/ts/consoles.ts"),
+    "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
+    "@retroplug/alpha/ui": join(root, "packages/alpha/ts/ui.ts"),
+    "@retroplug/beta/ui": join(root, "packages/beta/ts/ui.ts"),
+    "@retroplug/zeta/ui": join(root, "packages/zeta/ts/ui.ts"),
+    // The ui package itself is a workspace dependency of the shell, not a fixture package: a real build resolves it
+    // through the pnpm link, so the driver hands the bundle the tree's own copy.
+    "@retroplug/ui/contribution": join(HERE, "../../../ui/ts/contribution.ts"),
+    // The fixture shell's src/*.ts shims re-export the real shell's modules, so an action's defaults are checked
+    // against the real key names, pad names and shell defaults rather than against a copy of them.
+    "@retroplug/shell/keyCodes": join(HERE, "../../src/keyCodes.ts"),
+    "@retroplug/shell/bindingMap": join(HERE, "../../src/bindingMap.ts"),
+  };
 }
 
-/** The generated menus module's VIEWS, bundled and loaded the way the shell loads it: product order, and each view's
- *  id, placement and body kind as the registry reports them. */
-async function loadViews() {
-  const out = join(work, "views.mjs");
+/** Load the generated menus module the way the UI loads it, running its checks (a row's role kind, a row id twice, a
+ *  builder's placement, a view's id and body, an action's id and defaults). */
+async function importMenus(name) {
+  const out = join(work, name);
   const { buildSync } = require("esbuild");
   buildSync({
     ...buildOptions(join(root, "packages/retroplug/ui/generated/menus.ts"), out, "esm"),
-    alias: {
-      "@retroplug/alpha/app": join(root, "packages/alpha/ts/app.ts"),
-      "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
-      "@retroplug/alpha/consoles": join(root, "packages/alpha/ts/consoles.ts"),
-      "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
-      "@retroplug/alpha/ui": join(root, "packages/alpha/ts/ui.ts"),
-      "@retroplug/beta/ui": join(root, "packages/beta/ts/ui.ts"),
-      "@retroplug/zeta/ui": join(root, "packages/zeta/ts/ui.ts"),
-      "@retroplug/ui/contribution": join(HERE, "../../../ui/ts/contribution.ts"),
-    },
+    alias: menusAlias(),
   });
-  const loaded = await import(pathToFileURL(out).href);
+  return import(pathToFileURL(out).href);
+}
+
+async function loadMenus() {
+  return (await importMenus("menus.mjs")).UI_CONTRIBUTIONS.map((entry) => entry.pkg);
+}
+
+/** The generated menus module's VIEWS: product order, and each view's id, placement and body kind as the registry
+ *  reports them. */
+async function loadViews() {
+  const loaded = await importMenus("views.mjs");
   return loaded.VIEWS.map(({ pkg, view }) => ({ pkg, id: view.id, placement: view.placement, kind: view.body.kind }));
+}
+
+/** The generated menus module's ACTIONS: product order, and each action's id, label and default key and pad names as
+ *  the registry reports them. */
+async function loadActions() {
+  const loaded = await importMenus("actions.mjs");
+  return loaded.ACTIONS.map(({ pkg, action }) => ({
+    pkg,
+    id: action.id,
+    label: action.label,
+    keys: action.keys ?? [],
+    pad: action.pad ?? [],
+  }));
+}
+
+/** Load the menus module with alpha contributing `ui`, and report the registry's own refusal (or null): the action
+ *  checks run as the module loads, so a bad default is a load error. */
+async function actionRefusal(ui) {
+  writeTree("packages/alpha/ts/ui.ts", ui);
+  editManifest("alpha", (m) => {
+    m.retroplug.ui = "ts/ui.ts";
+    m.exports["./ui"] = "./ts/ui.ts";
+  });
+  generate({ root });
+  try {
+    await loadActions();
+    return { error: null };
+  } catch (e) {
+    return { error: e.message };
+  }
 }
 
 /** The generated CLI tools module, bundled and loaded as the dispatcher loads it: loading it runs its own refusal of a
@@ -616,6 +646,102 @@ try {
       } catch (e) {
         result = { error: e.message };
       }
+      break;
+    case "actions": {
+      // The positive side: one action per package, two of them on the same backtick (which two CONTRIBUTIONS may
+      // share), so the report is the product order and the defaults as declared.
+      writeTree(
+        "packages/zeta/ts/ui.ts",
+        'export default { actions: [{ id: "zeta.first", label: "Zeta First", keys: ["`"], run: () => {} }] };\n',
+      );
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { actions: [{ id: "alpha.second", label: "Alpha Second", keys: ["`"], run: () => {} }] };\n',
+      );
+      writeTree(
+        "packages/beta/ts/ui.ts",
+        'export default { actions: [{ id: "beta.third", label: "Beta Third", pad: ["guide"], run: () => {} }] };\n',
+      );
+      for (const name of ["alpha", "beta"]) {
+        editManifest(name, (m) => {
+          m.retroplug.ui = "ts/ui.ts";
+          m.exports["./ui"] = "./ts/ui.ts";
+        });
+      }
+      generate({ root });
+      try {
+        result = { actions: await loadActions() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    }
+    case "actions-duplicate-id":
+      result = await actionRefusal(
+        'export default { actions: [\n' +
+          '  { id: "alpha.same", label: "First", keys: ["9"], run: () => {} },\n' +
+          '  { id: "alpha.same", label: "Second", keys: ["0"], run: () => {} },\n' +
+          '] };\n',
+      );
+      break;
+    case "actions-duplicate-across": {
+      // Both packages in one load: the check runs as the module loads, and a module already loaded is not checked
+      // again.
+      for (const name of ["alpha", "beta"]) {
+        writeTree(
+          `packages/${name}/ts/ui.ts`,
+          `export default { actions: [{ id: "alpha.same", label: "${name}", run: () => {} }] };\n`,
+        );
+        editManifest(name, (m) => {
+          m.retroplug.ui = "ts/ui.ts";
+          m.exports["./ui"] = "./ts/ui.ts";
+        });
+      }
+      generate({ root });
+      try {
+        await loadActions();
+        result = { error: null };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    }
+    case "actions-bad-prefix":
+      result = await actionRefusal(
+        'export default { actions: [{ id: "zeta.stolen", label: "Stolen", keys: ["9"], run: () => {} }] };\n',
+      );
+      break;
+    case "actions-unknown-key":
+      result = await actionRefusal(
+        'export default { actions: [{ id: "alpha.key", label: "Key", keys: ["Nonsense"], run: () => {} }] };\n',
+      );
+      break;
+    case "actions-unknown-pad":
+      result = await actionRefusal(
+        'export default { actions: [{ id: "alpha.pad", label: "Pad", pad: ["nonsense"], run: () => {} }] };\n',
+      );
+      break;
+    case "actions-shell-key":
+      result = await actionRefusal(
+        'export default { actions: [{ id: "alpha.menu", label: "Menu", keys: ["Escape"], run: () => {} }] };\n',
+      );
+      break;
+    case "actions-gb-key":
+      result = await actionRefusal(
+        'export default { actions: [{ id: "alpha.jump", label: "Jump", keys: ["Z"], run: () => {} }] };\n',
+      );
+      break;
+    case "actions-return-key":
+      // "Return" and the Game Boy Start default "Enter" are one DPF code (0x0d), so the collision is by code, not by
+      // name: a check that compared names would let this through.
+      result = await actionRefusal(
+        'export default { actions: [{ id: "alpha.enter", label: "Enter", keys: ["Return"], run: () => {} }] };\n',
+      );
+      break;
+    case "actions-gb-pad":
+      result = await actionRefusal(
+        'export default { actions: [{ id: "alpha.jump", label: "Jump", pad: ["a"], run: () => {} }] };\n',
+      );
       break;
     case "cli": {
       // The positive side: beta contributes one tool and alpha another, and zeta a third; zeta is listed first, so the

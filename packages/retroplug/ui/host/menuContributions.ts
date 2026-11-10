@@ -5,11 +5,12 @@
 // kind no registered type declares or over a key its schema does not read, and a tracker UI no integration matches, so
 // what this module reads it can index.
 import type {
-  MenuBuildContext, MenuBuilder, RoleRow, TileView, TrackerUi, UiHost, UiService, ViewDef, WindowView,
+  ContributedAction, MenuBuildContext, MenuBuilder, RoleRow, TileView, TrackerUi, UiHost, UiService, ViewDef,
+  WindowView,
 } from "@retroplug/ui/contribution";
 import type { SystemInfo } from "@retroplug/core/host";
 import type { MenuItem } from "@retroplug/ui/menu";
-import { UI_CONTRIBUTIONS, VIEWS } from "../generated/menus";
+import { ACTIONS, UI_CONTRIBUTIONS, VIEWS } from "../generated/menus";
 
 /** Every contributed role row, in product order: the System submenu's package-owned block. */
 export function roleRows(): readonly RoleRow[] {
@@ -56,6 +57,21 @@ export function menuPlacement(
   return UI_CONTRIBUTIONS.flatMap((entry) =>
     (entry.ui.menus ?? []).filter((menu) => menu.placement === placement).flatMap((menu) => menu.build(host, sys, ctx)),
   );
+}
+
+/** Every app action a package contributes, in product order, with the package it came from: the bindings menus' rows,
+ *  the key and gamepad maps' "known" ids, and the dispatch's lookups. The generated list itself, so the export the
+ *  generator's checks run over is the one the product reads. A module constant, so a hook's dependency (and a memo
+ *  over it) is stable. */
+const ACTION_IDS: readonly string[] = ACTIONS.map((entry) => entry.action.id);
+
+export function contributedActions(): readonly ContributedAction[] {
+  return ACTIONS;
+}
+
+/** Their ids alone, for the maps' "known" set and the bindings rows. */
+export function contributedActionIds(): readonly string[] {
+  return ACTION_IDS;
 }
 
 /** Every service a package contributes, in product order: the list `useUiServices` runs, subscribes and polls. It is a

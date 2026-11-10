@@ -45,6 +45,32 @@ export const bindingMapSchema = z.object({
   gamepadActions: actionChannel(DEFAULT_GAMEPAD_ACTIONS),
 });
 
+/** A contributed action's defaults: the two channels' own names for what a UI contribution declares (src/ knows no
+ *  contribution, so this is the shape it reads, and @retroplug/ui's UiAction is assignable to it). */
+export interface ActionDefaults {
+  readonly id: string;
+  readonly keys?: readonly string[];
+  readonly pad?: readonly string[];
+}
+
+/** Fill a stored profile's two app-action sections with the contributed actions' defaults
+ *  (docs/modular-graph-phase-f4c-design.md section 5.6). A stored profile has no entry for a contributed id until the
+ *  user edits one, and an id PRESENT in a section is the user's, `[]` included: a cleared binding is a choice, as
+ *  CyclePrev's empty default is.
+ *
+ *  A pure function at the two readers (App builds its maps through it, the bindings menus read theirs through it), not
+ *  a store change: AppStores is shared by the control plane and the UI, the contributions are UI-only, and the file
+ *  on disk is not rewritten until the user edits a binding (the menus load raw and save only what was edited). */
+export function withActionDefaults(map: BindingMap, actions: readonly ActionDefaults[]): BindingMap {
+  const keyboardActions = { ...map.keyboardActions };
+  const gamepadActions = { ...map.gamepadActions };
+  for (const action of actions) {
+    if (!(action.id in keyboardActions)) keyboardActions[action.id] = [...(action.keys ?? [])];
+    if (!(action.id in gamepadActions)) gamepadActions[action.id] = [...(action.pad ?? [])];
+  }
+  return { ...map, keyboardActions, gamepadActions };
+}
+
 /** The built-in "default" profile — the seed for bindings/default.json and the fallback when an active
  *  profile is absent. Keyboard mirrors native's defaultBindingMap(); the gamepad channel additionally binds
  *  the LEFT STICK alongside the d-pad hat (the `<axis><sign>` tokens — TS-only, native binds only the

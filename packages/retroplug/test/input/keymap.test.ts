@@ -74,17 +74,47 @@ test("buildKeyToButton: unknown button names + unresolvable keys are skipped", (
   expect(m.size).toBe(1);
 });
 
-test("buildKeyToAction: the default app-action bindings invert to DPF-code → action", () => {
+test("buildKeyToAction: the default app-action bindings invert to DPF-code → a one-id list", () => {
   const m = buildKeyToAction(defaultBindingMap().keyboardActions);
-  expect(m.get(0x1b)).toBe("OpenMenu"); // Escape
-  expect(m.get(0x09)).toBe("CycleNext"); // Tab
+  expect(m.get(0x1b)).toEqual(["OpenMenu"]); // Escape
+  expect(m.get(0x09)).toEqual(["CycleNext"]); // Tab
   expect(m.get(0x5a)).toBe(undefined); // Z is a GB button, not an action key
 });
 
 test("buildKeyToAction: unknown action ids + unresolvable keys skipped; null-tolerant", () => {
   const m = buildKeyToAction({ OpenMenu: ["Escape"], Bogus: ["Enter"], CyclePrev: ["Nonsense"] });
-  expect(m.get(0x1b)).toBe("OpenMenu");
+  expect(m.get(0x1b)).toEqual(["OpenMenu"]);
   expect(m.get(0x0d)).toBe(undefined); // Bogus action id dropped
   expect(m.size).toBe(1); // CyclePrev's "Nonsense" doesn't resolve
   expect(buildKeyToAction(undefined).size).toBe(0); // an older profile lacking the section
+});
+
+test("buildKeyToAction: one key carries every action bound to it, in the profile's order", () => {
+  // The shell's Open Menu and two contributed actions on one key: a press fires all three, so the map keeps the list.
+  const m = buildKeyToAction(
+    { OpenMenu: ["Escape"], "lsdj.debug-overlay": ["Escape", "`"], "risa.debug-overlay": ["`"] },
+    ["lsdj.debug-overlay", "risa.debug-overlay"],
+  );
+  expect(m.get(0x1b)).toEqual(["OpenMenu", "lsdj.debug-overlay"]);
+  expect(m.get(0x60)).toEqual(["lsdj.debug-overlay", "risa.debug-overlay"]);
+});
+
+test("buildKeyToAction: a contributed id nobody passes as known is skipped, as an unknown one is", () => {
+  // A profile keeps an id after its action leaves the product: "known" is the shell's three plus the caller's list.
+  const profile = { "gone.action": ["`"], "lsdj.debug-overlay": ["`"] };
+  expect(buildKeyToAction(profile, ["lsdj.debug-overlay"]).get(0x60)).toEqual(["lsdj.debug-overlay"]);
+  expect(buildKeyToAction(profile).get(0x60)).toBe(undefined);
+});
+
+test("buildKeyToAction: only one of the shell's own actions keeps a key, and the later binding wins", () => {
+  // Two shell ids on one key is reachable from the editor (capturing Tab for Open Menu while Cycle Next keeps its
+  // Tab default). The old Map.set let the later one replace the earlier, so firing both would change what the key
+  // does today; a contributed id is not a shell id and still accumulates.
+  expect(buildKeyToAction({ OpenMenu: ["Tab"], CycleNext: ["Tab"] }).get(0x09)).toEqual(["CycleNext"]);
+  expect(buildKeyToAction({ CycleNext: ["Tab"], OpenMenu: ["Tab"] }).get(0x09)).toEqual(["OpenMenu"]);
+});
+
+test("buildKeyToAction: one action bound to one key twice fires once", () => {
+  // "Enter" and "Return" are one DPF code; a hand-edited profile listing both must not toggle the menu twice.
+  expect(buildKeyToAction({ OpenMenu: ["Enter", "Return"] }).get(0x0d)).toEqual(["OpenMenu"]);
 });

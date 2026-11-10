@@ -942,7 +942,9 @@ test("Keyboard Bindings: 8 GB + 3 app-action rows; capture rebinds write-through
   // Rebind Open Menu → M: written into keyboardActions; the action lookup follows.
   keyboardBindings(stores).find((r) => r.id === "bind-act-OpenMenu")!.capture!.onCapture("M");
   expect(stores.bindings.loadProfile(active)!.keyboardActions.OpenMenu).toEqual(["M"]);
-  expect(buildKeyToAction(stores.bindings.resolvedBindings().keyboardActions).get("M".charCodeAt(0))).toBe("OpenMenu");
+  expect(buildKeyToAction(stores.bindings.resolvedBindings().keyboardActions).get("M".charCodeAt(0))).toEqual([
+    "OpenMenu",
+  ]);
 
   // Clear A → the button unbinds.
   keyboardBindings(stores).find((r) => r.id === "bind-A")!.capture!.onClear();
@@ -1005,7 +1007,9 @@ test("Gamepad Bindings: gamepad-source capture rows; button + axis-token rebinds
   // Bind Cycle (Back) → a stick click: written into gamepadActions; the action lookup follows.
   gamepadBindings(stores).find((r) => r.id === "bind-gp-act-CyclePrev")!.capture!.onCapture("leftstick");
   expect(stores.bindings.loadProfile(active)!.gamepadActions.CyclePrev).toEqual(["leftstick"]);
-  expect(buildGamepadToAction(stores.bindings.resolvedBindings().gamepadActions).get("leftstick")).toBe("CyclePrev");
+  expect(buildGamepadToAction(stores.bindings.resolvedBindings().gamepadActions).get("leftstick")).toEqual([
+    "CyclePrev",
+  ]);
 
   // Clear A → unbinds; reset restores BOTH the default gamepad map and the app actions (preserving keyboard).
   gamepadBindings(stores).find((r) => r.id === "bind-gp-A")!.capture!.onClear();

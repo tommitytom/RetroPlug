@@ -179,19 +179,20 @@ export class ViewSessionController {
   }
 
   /** Read the session held NOW, for a per-frame handler that must not use a render's closure: a session a hide or a
-   *  reopen closed since that render answers undefined and is not called. A reader that throws is reported once and
-   *  drops the session, the key staying held so the shell retries at the next key change (as it does for an open that
-   *  threw). */
-  read<R>(reader: (session: OpenedSession) => R): R | undefined {
+   *  reopen closed since that render answers null and is not called, so a readout that was showing a dropped session
+   *  clears rather than keeping its last lines (a `null` sample is "draw nothing"; the sampler's own `undefined` is
+   *  "unreadable this frame, keep what shows"). A reader that throws is reported once, naming the view, and drops the
+   *  session, the key staying held so the shell retries at the next key change (as it does for an open that threw). */
+  read<R>(reader: (session: OpenedSession) => R): R | null {
     const held = this.held;
-    if (held === null || held.session === null) return undefined;
+    if (held === null || held.session === null) return null;
     try {
       return reader(held.session);
     } catch (error) {
-      console.warn(`[views] reading a session failed: ${message(error)}`);
+      console.warn(`[views] ${held.key.id}: reading a session failed: ${message(error)}`);
       closeSession(held.session);
       held.session = null;
-      return undefined;
+      return null;
     }
   }
 

@@ -128,36 +128,77 @@ export function buildGamepadToButton(gamepad: Record<string, string[]>): Map<str
 
 /** An app-level (non-GB) action a key or controller button can be bound to: open/close the menu, and cycle
  *  which instance is focused (forward / back). These live in the separate keyboardActions/gamepadActions
- *  binding sections, so they never collide with the GB-button resolvers above. */
+ *  binding sections, so they never collide with the GB-button resolvers above. A package contributes more of
+ *  them (docs/modular-graph-phase-f4c-design.md section 3.2); the shell's three keep their bare ids. */
 export type AppAction = "OpenMenu" | "CycleNext" | "CyclePrev";
 const APP_ACTIONS: readonly AppAction[] = ["OpenMenu", "CycleNext", "CyclePrev"];
-const isAppAction = (id: string): id is AppAction => (APP_ACTIONS as readonly string[]).includes(id);
 
-/** Invert a keyboard app-action map (AppAction id → key-name[]) into a DPF-code → action lookup — the
- *  app-action twin of buildKeyToButton. Null-tolerant (an older profile may lack the section); unknown action
- *  ids and unresolvable key names are skipped; a later binding for the same code wins. */
-export function buildKeyToAction(actions: Record<string, string[]> | undefined): Map<number, AppAction> {
-  const map = new Map<number, AppAction>();
+/** Whether an id is one of the shell's three app actions (not a contribution's, which carries a package prefix). */
+export function isAppAction(id: string): id is AppAction {
+  return (APP_ACTIONS as readonly string[]).includes(id);
+}
+
+/** Every name the native GamepadManager hands the "gamepad-button" bus: SDL's canonical button names, from
+ *  SDL_GameControllerGetStringForButton over SDL_CONTROLLER_BUTTON_* in order (GamepadManager.cpp is the one emitter,
+ *  so this is SDL's set and not ours). A stick half-axis token ("leftx+") is NOT a button: the axis bus dispatches no
+ *  app action, so a default on one could never fire, which is why the set excludes it. */
+export const GAMEPAD_BUTTON_NAMES: readonly string[] = [
+  "a", "b", "x", "y", "back", "guide", "start", "leftstick", "rightstick", "leftshoulder", "rightshoulder",
+  "dpup", "dpdown", "dpleft", "dpright", "misc1", "paddle1", "paddle2", "paddle3", "paddle4", "touchpad",
+];
+
+/** Add one action id to a key's list: a key keeps at most ONE of the shell's own ids, a later shell binding
+ *  replacing the earlier in place (what the old Map.set did, so a key two shell actions share fires what it fires
+ *  today), while contributed ids accumulate, and an id the list already holds is skipped (a hand-edited
+ *  `OpenMenu: ["Enter", "Return"]` is one code once). */
+function addActionId<K>(map: Map<K, string[]>, key: K, id: string): void {
+  const ids = map.get(key);
+  if (ids === undefined) {
+    map.set(key, [id]);
+    return;
+  }
+  if (ids.includes(id)) return;
+  if (!isAppAction(id)) {
+    ids.push(id);
+    return;
+  }
+  const at = ids.findIndex((held) => isAppAction(held));
+  if (at === -1) ids.push(id);
+  else ids[at] = id;
+}
+
+/** Invert a keyboard app-action map (action id → key-name[]) into a DPF-code → action-id LIST, the app-action twin
+ *  of buildKeyToButton. A key can carry several actions (the shell's and a package's, or two packages'), and the list
+ *  keeps the order the profile gives them, since a press fires all of them. Null-tolerant (an older profile may lack
+ *  the section); an id that is neither the shell's nor in `contributed` is skipped, as an unresolvable key name is. */
+export function buildKeyToAction(
+  actions: Record<string, string[]> | undefined,
+  contributed: readonly string[] = [],
+): Map<number, string[]> {
+  const map = new Map<number, string[]>();
   if (!actions) return map;
   for (const [id, keyNames] of Object.entries(actions)) {
-    if (!isAppAction(id)) continue;
+    if (!isAppAction(id) && !contributed.includes(id)) continue;
     for (const keyName of keyNames) {
       const code = resolveKeyName(keyName);
-      if (code !== null) map.set(code, id);
+      if (code === null) continue;
+      addActionId(map, code, id);
     }
   }
   return map;
 }
 
-/** The gamepad twin: SDL-button-name → action (the names ARE the raw "gamepad-button" bus names, so no code
- *  table, like buildGamepadToButton). Null-tolerant; unknown action ids skipped; a later binding for the same
- *  name wins. */
-export function buildGamepadToAction(actions: Record<string, string[]> | undefined): Map<string, AppAction> {
-  const map = new Map<string, AppAction>();
+/** The gamepad twin: SDL-button-name → action-id list (the names ARE the raw "gamepad-button" bus names, so no code
+ *  table, like buildGamepadToButton). Null-tolerant; the same "known" rule as the keyboard map. */
+export function buildGamepadToAction(
+  actions: Record<string, string[]> | undefined,
+  contributed: readonly string[] = [],
+): Map<string, string[]> {
+  const map = new Map<string, string[]>();
   if (!actions) return map;
   for (const [id, padNames] of Object.entries(actions)) {
-    if (!isAppAction(id)) continue;
-    for (const padName of padNames) map.set(padName, id);
+    if (!isAppAction(id) && !contributed.includes(id)) continue;
+    for (const padName of padNames) addActionId(map, padName, id);
   }
   return map;
 }

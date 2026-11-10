@@ -765,7 +765,8 @@ function renderMenus({ packages, outDir }) {
     "// system-settings rows, menu builders, tracker specs and services it adds. The shell composes the menus from this",
     "// list, so a package's place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports",
     "// this module: the control plane, the render worker, the SDK and the planner carry no menu contribution.",
-    'import { PLACEMENTS, type RoleRow, type UiContribution, type ViewDef } from "@retroplug/ui/contribution";',
+    'import { PLACEMENTS, type ContributedAction, type RoleRow, type UiAction, type UiContribution, type ViewDef } ' +
+      'from "@retroplug/ui/contribution";',
   ];
   for (const p of contributors) {
     lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.ui)}";`);
@@ -774,6 +775,12 @@ function renderMenus({ packages, outDir }) {
   // registers, or over a key its role's schema does not read, would render nowhere and do nothing, and a tracker UI no
   // integration matches would never be found - typos the compiler cannot see in a data literal.
   lines.push('import { ROLES, TRACKER_INTEGRATIONS } from "../../src/generated/packages";');
+  // The binding vocabulary an action's default is checked against (the key names the profiles resolve, SDL's pad
+  // names, and the defaults the shell and the Game Boy buttons already take), all of it the shell's own modules.
+  lines.push('import { GAMEPAD_BUTTON_NAMES, resolveKeyName } from "../../src/keyCodes";');
+  lines.push(
+    'import { DEFAULT_GAMEPAD_ACTIONS, DEFAULT_KEYBOARD_ACTIONS, defaultBindingMap } from "../../src/bindingMap";',
+  );
   lines.push("");
   lines.push("/** Each package's UI contribution, in product order. */");
   lines.push("export const UI_CONTRIBUTIONS: readonly { pkg: string; ui: UiContribution }[] = [");
@@ -786,6 +793,12 @@ function renderMenus({ packages, outDir }) {
   lines.push(" *  a window view up by id, and the tile layers every tile mounts in turn. */");
   lines.push("export const VIEWS: readonly { pkg: string; view: ViewDef }[] = UI_CONTRIBUTIONS.flatMap(({ pkg, ui }) =>");
   lines.push("  (ui.views ?? []).map((view) => ({ pkg, view })),");
+  lines.push(");");
+  lines.push("");
+  lines.push("/** The product's app actions, in product order, with the package each came from: the bindings menus'");
+  lines.push(" *  rows, the key and gamepad maps' known ids, and the dispatch's lookups. */");
+  lines.push("export const ACTIONS: readonly ContributedAction[] = UI_CONTRIBUTIONS.flatMap(({ pkg, ui }) =>");
+  lines.push("  (ui.actions ?? []).map((action) => ({ pkg, action })),");
   lines.push(");");
   lines.push("");
   lines.push("// A row's id has to be unique inside its placement: the menu is keyed by id, so a second row of one id would");
@@ -819,6 +832,26 @@ function renderMenus({ packages, outDir }) {
   lines.push("const viewOwners = new Map<string, string>();");
   lines.push('const viewPlacements = new Set<string>(["window", "tile"]);');
   lines.push('const bodyKinds = new Set<string>(["pixels", "readout", "component"]);');
+  lines.push("// An action's id is what a binding profile stores, so it is unique across the product and names its");
+  lines.push("// package. Its defaults are held to the names the shell binds and to the ones it already binds at a");
+  lines.push("// default: a key on both would fire the action AND the Game Boy button (or the shell action) it is on.");
+  lines.push("const actionOwners = new Map<string, string>();");
+  lines.push("const padButtonNames = new Set<string>(GAMEPAD_BUTTON_NAMES);");
+  lines.push("const defaultMap = defaultBindingMap();");
+  lines.push("const takenKeyCodes = new Set<number>();");
+  lines.push("for (const names of Object.values(DEFAULT_KEYBOARD_ACTIONS)) {");
+  lines.push("  for (const name of names) takenKeyCodes.add(resolveKeyName(name)!);");
+  lines.push("}");
+  lines.push("for (const names of Object.values(defaultMap.keyboard)) {");
+  lines.push("  for (const name of names) takenKeyCodes.add(resolveKeyName(name)!);");
+  lines.push("}");
+  lines.push("const takenPadNames = new Set<string>();");
+  lines.push("for (const names of Object.values(DEFAULT_GAMEPAD_ACTIONS)) {");
+  lines.push("  for (const name of names) takenPadNames.add(name);");
+  lines.push("}");
+  lines.push("for (const names of Object.values(defaultMap.gamepad)) {");
+  lines.push("  for (const name of names) takenPadNames.add(name);");
+  lines.push("}");
   lines.push("");
   lines.push("/** One contributed row: its role must be registered, its id unique in its placement, and its key (and its");
   lines.push(" *  gate's key) one its role's schema reads. */");
@@ -868,9 +901,49 @@ function renderMenus({ packages, outDir }) {
   lines.push("  }");
   lines.push("}");
   lines.push("");
+  lines.push("/** One contributed action: its id unique across the product and prefixed by its own package's name,");
+  lines.push(" *  its default key and pad names ones the shell resolves, and no default the shell (or a Game Boy");
+  lines.push(" *  button) already binds, since one press would fire both.");
+  lines.push(" *  Two contributions on one key are allowed: the overlays' backtick. */");
+  lines.push("function checkAction(pkg: string, action: UiAction): void {");
+  lines.push("  const owner = actionOwners.get(action.id);");
+  lines.push("  if (owner !== undefined) {");
+  lines.push("    throw new Error(owner === pkg");
+  lines.push("      ? `the package ${pkg} declares the action ${action.id} twice`");
+  lines.push("      : `two packages declare the action ${action.id}: ${owner} and ${pkg}`);");
+  lines.push("  }");
+  lines.push("  actionOwners.set(action.id, pkg);");
+  lines.push("  if (!action.id.startsWith(`${pkg}.`)) {");
+  lines.push("    throw new Error(`the package ${pkg} declares the action ${action.id}, which is not prefixed ` +");
+  lines.push('      `by its own name ("${pkg}.")`);');
+  lines.push("  }");
+  lines.push("  for (const name of action.keys ?? []) {");
+  lines.push("    const code = resolveKeyName(name);");
+  lines.push("    if (code === null) {");
+  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ` +");
+  lines.push('        `${name}, which is no key name`);');
+  lines.push("    }");
+  lines.push("    if (takenKeyCodes.has(code)) {");
+  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ` +");
+  lines.push('        `${name} by default, which the shell already binds (a shell action or a Game Boy button)`);');
+  lines.push("    }");
+  lines.push("  }");
+  lines.push("  for (const name of action.pad ?? []) {");
+  lines.push("    if (!padButtonNames.has(name)) {");
+  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the gamepad button ` +");
+  lines.push('        `${name}, which is no SDL button name (the names are GAMEPAD_BUTTON_NAMES)`);');
+  lines.push("    }");
+  lines.push("    if (takenPadNames.has(name)) {");
+  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the gamepad button ` +");
+  lines.push('        `${name} by default, which the shell already binds (a shell action or a Game Boy button)`);');
+  lines.push("    }");
+  lines.push("  }");
+  lines.push("}");
+  lines.push("");
   lines.push("for (const { pkg, ui } of UI_CONTRIBUTIONS) {");
   lines.push("  for (const row of ui.rows ?? []) checkRow(\"system.settings\", pkg, row);");
   lines.push("  for (const view of ui.views ?? []) checkView(pkg, view);");
+  lines.push("  for (const action of ui.actions ?? []) checkAction(pkg, action);");
   lines.push("  for (const tracker of ui.trackers ?? []) {");
   lines.push("    if (!trackerIds.has(tracker.id)) {");
   lines.push(

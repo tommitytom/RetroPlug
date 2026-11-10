@@ -11,6 +11,7 @@ import { createSignal } from "@retroplug/ui/menu";
 import { warned } from "../_warnings";
 import {
   isPixelSession,
+  isReadoutSampler,
   openSession,
   readoutKey,
   reopenKey,
@@ -203,7 +204,7 @@ test("a frame reads the session held now: none before the first open, none after
   const frames: string[] = [];
   const view = fakeView("test-view", opened, closed, frames);
   const held = new ViewSessionController();
-  expect(held.read((s) => (isPixelSession(s) ? s.frame() : null))).toBe(undefined); // nothing opened: no call at all
+  expect(held.read((s) => (isPixelSession(s) ? s.frame() : null))).toBe(null); // nothing opened: no call at all
 
   const sys = system();
   held.sync(view, host, sys, true);
@@ -212,7 +213,7 @@ test("a frame reads the session held now: none before the first open, none after
 
   // A hide closes the session, and a frame that lands before the next render must not reach it.
   held.sync(view, host, sys, false);
-  expect(held.read((s) => (isPixelSession(s) ? s.frame() : null))).toBe(undefined);
+  expect(held.read((s) => (isPixelSession(s) ? s.frame() : null))).toBe(null);
   expect(closed).toEqual(["test-view"]);
   expect(frames).toEqual(["test-view"]);
 
@@ -250,14 +251,45 @@ test("a reader that throws is reported once and drops the session until the key 
   const sys = system();
   held.sync(view, host, sys, true);
   const { result, warnings } = warned(() => held.read((s) => (isPixelSession(s) ? s.frame() : null)));
-  expect(result).toBe(undefined);
-  expect(warnings).toEqual(["[views] reading a session failed: the frame is broken"]);
+  expect(result).toBe(null);
+  expect(warnings).toEqual(["[views] test-view: reading a session failed: the frame is broken"]);
   expect(closed).toEqual(["test-view"]); // the faulted session is closed, not left half-usable
   // Dropped, so the next frame does not call it again: one report per faulty session.
   const after = warned(() => held.read((s) => (isPixelSession(s) ? s.frame() : null)));
-  expect(after.result).toBe(undefined);
+  expect(after.result).toBe(null);
   expect(after.warnings).toEqual([]);
   expect(reads).toBe(1);
+});
+
+test("a live sampler's undefined passes through, and a dropped session answers null so its strip clears", () => {
+  // The two "nothing shows" answers are different: a sampler's undefined is "unreadable this frame, keep what shows",
+  // while a session the controller dropped is null ("draw nothing"), which is what clears a readout's last lines.
+  const view: WindowView = {
+    id: "test-view",
+    label: "Test View",
+    placement: "window",
+    body: {
+      kind: "readout",
+      open: () => ({
+        sample: () => {
+          throw new Error("the RAM is unreadable");
+        },
+      }),
+    },
+  };
+  const held = new ViewSessionController();
+  held.sync(view, host, system(), true);
+  const { result } = warned(() => held.read((s) => (isReadoutSampler(s) ? s.sample() : null)));
+  expect(result).toBe(null); // the sampler threw, so the session was dropped
+  const unreadable = new ViewSessionController();
+  const view2: WindowView = {
+    id: "test-view-2",
+    label: "Test View 2",
+    placement: "window",
+    body: { kind: "readout", open: () => ({ sample: () => undefined }) },
+  };
+  unreadable.sync(view2, host, system(), true);
+  expect(unreadable.read((s) => (isReadoutSampler(s) ? s.sample() : null))).toBe(undefined); // not dropped
 });
 
 test("a view that has not opened yet draws nothing, and a hide drops the session in the same render", () => {

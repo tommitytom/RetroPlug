@@ -1,8 +1,9 @@
 // What a package's UI module declares (docs/modular-graph-phase-f4b-design.md section 4.2): the system-settings rows it
 // adds as DATA (a role-config knob, its choices and its gate), the menu fragments a function builds where data cannot
-// say it (a state machine over a native host, a peer count), its tracker specs, and the services its device needs
-// polled or subscribed to. A manifest's `retroplug.ui` member names the module, which default-exports
-// defineUi({ ... }); the generator concatenates them in product order into packages/retroplug/ui/generated/menus.ts.
+// say it (a state machine over a native host, a peer count), its tracker specs, the services its device needs polled or
+// subscribed to, its views, and its app actions. A manifest's `retroplug.ui` member names the module, which
+// default-exports defineUi({ ... }); the generator concatenates them in product order into
+// packages/retroplug/ui/generated/menus.ts.
 //
 // Everything here is plain TypeScript: the contract a package's module is checked against, and the helpers that read a
 // row's stored value the way the shell renders it. The React kit is @retroplug/ui-react, a package of its own, so a
@@ -242,6 +243,35 @@ export interface UiService {
   poll?: { readonly frames: number; run(host: UiHost): boolean };
 }
 
+/** An app action a package contributes: a rebindable key or gamepad press, carried by the binding profiles and shown in
+ *  the bindings menus beside the shell's own three. The shell dispatches it in the states the shell's app actions fire
+ *  in (no full-window overlay), once per matching press, and reports a throw rather than letting it stop the others.
+ *  Not persisted as a contribution: the profile stores the id, and an id absent from a stored profile reads the
+ *  default here (src/bindingMap.ts `withActionDefaults`), so adding an action needs no migration. */
+export interface UiAction {
+  /** "<package>.<name>", the manifest's package name and a dot: the profile stores it, so it names its owner, and the
+   *  generated registry refuses an id its own package does not prefix. */
+  readonly id: string;
+  /** The bindings menus' row text ("LSDj Debug Overlay"); the row shows it, then the bound names. */
+  readonly label: string;
+  /** Default keyboard bindings, by the names the profiles store ("`", "F"). A key the shell already binds by default
+   *  (a shell action's or a Game Boy button's) is refused at load, since one press would fire both. */
+  readonly keys?: readonly string[];
+  /** Default gamepad bindings, by SDL's button names ("leftshoulder", "leftstick"); absent = unbound, which the
+   *  gamepad bindings menu shows as "-". */
+  readonly pad?: readonly string[];
+  /** Run the action. `systemId` is the focused system, null on the start screen. */
+  run(host: UiHost, ctx: { readonly systemId: number | null }): void;
+}
+
+/** A contributed action with the package it came from: the generated registry's shape (`ACTIONS`), which the shell's
+ *  dispatch, the key maps' "known" set and the bindings menus all read. One declaration, so a consumer cannot drift
+ *  from the generated list. */
+export interface ContributedAction {
+  readonly pkg: string;
+  readonly action: UiAction;
+}
+
 /** Everything a package's UI module contributes. */
 export interface UiContribution {
   /** Role-config rows, which the shell renders in the System submenu for every system whose roles they name. */
@@ -252,6 +282,8 @@ export interface UiContribution {
   /** The window and tile views the package draws (declarative: the shell renders pixels and readout, and mounts a
    *  component the package built with @retroplug/ui-react). */
   readonly views?: readonly ViewDef[];
+  /** The app actions the package contributes, which the key and gamepad maps dispatch and the bindings menus list. */
+  readonly actions?: readonly UiAction[];
 }
 
 /** The identity function with types: a UI module's default export, checked against what a package may contribute. */

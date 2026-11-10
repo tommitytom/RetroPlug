@@ -2,7 +2,7 @@
 // on-disk shape + field spellings + defaultBindingMap values match native's
 // BindingMapJson, so a real bindings/*.json round-trips.
 import { test, expect } from "@retroplug/testing";
-import { defaultBindingMap } from "../../src/bindingMap";
+import { defaultBindingMap, withActionDefaults } from "../../src/bindingMap";
 import { parseBindingMap, serializeBindingMap, BINDINGS_SCHEMA } from "../../src/bindingSerialization";
 import { isValidProfileName } from "../../src/bindingsStore";
 
@@ -70,4 +70,35 @@ test("isValidProfileName: allows names, rejects empty / reserved / bad chars", (
   expect(isValidProfileName("has space")).toBeFalsy();
   expect(isValidProfileName("a.b")).toBeFalsy();
   expect(isValidProfileName("a/b")).toBeFalsy();
+});
+
+test("withActionDefaults: an absent id takes the action's default, a present one (a key or []) is the user's", () => {
+  const map = defaultBindingMap();
+  const filled = withActionDefaults(map, [
+    { id: "lsdj.debug-overlay", keys: ["`"] },
+    { id: "risa.debug-overlay", keys: ["`"], pad: ["misc1"] },
+  ]);
+  // Absent from both sections: the action's own defaults, and no pad default reads as an empty list.
+  expect(filled.keyboardActions["lsdj.debug-overlay"]).toEqual(["`"]);
+  expect(filled.keyboardActions["risa.debug-overlay"]).toEqual(["`"]);
+  expect(filled.gamepadActions["lsdj.debug-overlay"]).toEqual([]);
+  expect(filled.gamepadActions["risa.debug-overlay"]).toEqual(["misc1"]);
+  // The shell's own three are untouched, and the profile is a new object: both channels are copied, not mutated.
+  expect(filled.keyboardActions.OpenMenu).toEqual(["Escape"]);
+  expect(map.keyboardActions["lsdj.debug-overlay"]).toBe(undefined);
+
+  // A present entry is the user's, `[]` included (a cleared binding is a choice, as CyclePrev's is).
+  const mine = { ...map, keyboardActions: { ...map.keyboardActions, "lsdj.debug-overlay": ["F"] } };
+  expect(withActionDefaults(mine, [{ id: "lsdj.debug-overlay", keys: ["`"] }]).keyboardActions[
+    "lsdj.debug-overlay"
+  ]).toEqual(["F"]);
+  const cleared = { ...map, keyboardActions: { ...map.keyboardActions, "lsdj.debug-overlay": [] } };
+  expect(withActionDefaults(cleared, [{ id: "lsdj.debug-overlay", keys: ["`"] }]).keyboardActions[
+    "lsdj.debug-overlay"
+  ]).toEqual([]);
+
+  // No contributed actions at all is the profile unchanged, and a profile with an id no action names keeps it.
+  expect(withActionDefaults(map, []).keyboardActions).toEqual(map.keyboardActions);
+  const stale = { ...map, gamepadActions: { ...map.gamepadActions, "gone.action": ["misc1"] } };
+  expect(withActionDefaults(stale, [{ id: "lsdj.debug-overlay" }]).gamepadActions["gone.action"]).toEqual(["misc1"]);
 });

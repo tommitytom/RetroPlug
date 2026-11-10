@@ -10,12 +10,18 @@ import type { ProjectSettings } from "../../../src/projectConfig";
 import { MIDI_ROUTING_VALUES } from "@retroplug/core/midiRouting";
 import { consoleOfPlatform } from "../../../src/consoles";
 import { roleRowItems } from "./configRows";
-import { contributedTrackerUi, firstWinsMenuIds, menuPlacement, roleRows } from "../../host/menuContributions";
+import {
+  contributedActions,
+  contributedTrackerUi,
+  firstWinsMenuIds,
+  menuPlacement,
+  roleRows,
+} from "../../host/menuContributions";
 import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, type AudioRouting } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
 import type { SplitMode } from "../../../src/render";
-import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
+import { defaultBindingMap, withActionDefaults, type BindingMap } from "../../../src/bindingMap";
 import { keyDisplayName } from "../../../src/keyCodes";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
@@ -34,6 +40,7 @@ import { effectiveAssets, readAssetOverrides } from "@retroplug/tracker/assetCat
 import type { AssetOverride, AssetSlotRow, AssetTypeInfo } from "@retroplug/tracker/assetCatalog";
 import { workingSongTargets } from "@retroplug/tracker/songCatalog";
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
+import type { ContributedAction } from "@retroplug/ui/contribution";
 import { resolveTracker } from "../../../src/trackerRegistry";
 import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../host/openPath";
@@ -91,6 +98,10 @@ export interface MenuContext {
    *  the stores; a composer that only has the stores (a menu test) leaves it out and `hostOf` builds the same host
    *  from this context's own peers, so a contribution sees the groups either way. */
   host?: UiHost;
+  /** The contributed app actions the bindings editor lists after the shell's three. App leaves it out and the
+   *  generated registry answers; a test passes its own action, which is the only way a row for an action no product
+   *  ships can be built. */
+  actions?: readonly ContributedAction[];
 }
 
 /** The UI host for a context: the one App built when it passed one, else one built from the context's own peers (the
@@ -1203,7 +1214,10 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
   const label = channel === "keyboard" ? "Keyboard" : "Gamepad";
 
   const actionsKey: "keyboardActions" | "gamepadActions" = channel === "keyboard" ? "keyboardActions" : "gamepadActions";
-  const actMap = ctx.bindings[actionsKey]; // resolved active app-action map
+  // The active app-action map, filled with the contributed actions' defaults first (design 5.6): a profile with no
+  // entry for a contributed id shows the action's default, and only an id the user wrote (a key or `[]`) is theirs.
+  const contributed = ctx.actions ?? contributedActions();
+  const actMap = withActionDefaults(ctx.bindings, contributed.map((entry) => entry.action))[actionsKey];
 
   // The bound-names half of a row label ("-" when unbound). Gamepad names are the raw SDL names and show
   // as-is; keyboard names get their display form, so a space reads "Space" rather than an invisible glyph.
@@ -1268,9 +1282,14 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
     },
   }));
 
-  // The app-action rows (Open Menu / Cycle Instances / Cycle Instances (Back)) — same capture plumbing as a GB
-  // row, written into the actions section. The "<label>: " head is kept so Menu's "Press a key/button…" swap works.
-  const actionRows: MenuItem[] = APP_ACTION_ROWS.map((a) => ({
+  // The app-action rows: the shell's three (Open Menu / Cycle Instances / Cycle Instances (Back)), then one per
+  // contributed action in registration order. Same capture plumbing as a GB row, written into the actions section
+  // under the action's own id (a dot included, which nothing here or in Menu parses). The "<label>: " head is kept so
+  // Menu's "Press a key/button…" swap works.
+  const actionRows: MenuItem[] = [
+    ...APP_ACTION_ROWS.map((a) => ({ id: a.id, label: a.label })),
+    ...contributed.map(({ action }) => ({ id: action.id, label: action.label })),
+  ].map((a) => ({
     id: `${idp}-act-${a.id}`,
     label: `${a.label}: ${shown(actMap[a.id])}`,
     kind: "capture" as const,

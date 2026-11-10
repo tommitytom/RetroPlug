@@ -4,7 +4,15 @@
 // so there is no code table — unlike the keyboard channel's resolveKeyName.
 import { test, expect } from "@retroplug/testing";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { buildGamepadToButton, buildGamepadToAction, axisToken, menuNavForButton, menuNavForAxisToken, BUTTON_VALUE } from "../../src/keyCodes";
+import {
+  buildGamepadToButton,
+  buildGamepadToAction,
+  axisToken,
+  menuNavForButton,
+  menuNavForAxisToken,
+  BUTTON_VALUE,
+  GAMEPAD_BUTTON_NAMES,
+} from "../../src/keyCodes";
 
 test("buildGamepadToButton: the default bindings invert to the native button values", () => {
   const m = buildGamepadToButton(defaultBindingMap().gamepad);
@@ -84,17 +92,52 @@ test("menuNavForAxisToken: only the left stick navigates, per the SDL sign conve
   expect(menuNavForAxisToken("")).toBe(null);
 });
 
-test("buildGamepadToAction: the default app-action bindings invert to SDL-name → action", () => {
+test("buildGamepadToAction: the default app-action bindings invert to SDL-name → a one-id list", () => {
   const m = buildGamepadToAction(defaultBindingMap().gamepadActions);
-  expect(m.get("leftshoulder")).toBe("OpenMenu"); // L1
-  expect(m.get("rightshoulder")).toBe("CycleNext"); // R1
+  expect(m.get("leftshoulder")).toEqual(["OpenMenu"]); // L1
+  expect(m.get("rightshoulder")).toEqual(["CycleNext"]); // R1
   expect(m.get("a")).toBe(undefined); // a face button is a GB button, not an action
 });
 
 test("buildGamepadToAction: unknown action ids skipped; null-tolerant", () => {
   const m = buildGamepadToAction({ OpenMenu: ["guide"], Bogus: ["x"] });
-  expect(m.get("guide")).toBe("OpenMenu");
+  expect(m.get("guide")).toEqual(["OpenMenu"]);
   expect(m.get("x")).toBe(undefined); // Bogus action id dropped
   expect(m.size).toBe(1);
   expect(buildGamepadToAction(undefined).size).toBe(0); // older profile lacking the section
+});
+
+test("buildGamepadToAction: one button carries every action bound to it, and an unknown id is skipped", () => {
+  const m = buildGamepadToAction(
+    { "lsdj.debug-overlay": ["misc1"], "risa.debug-overlay": ["misc1"], "gone.action": ["misc1"] },
+    ["lsdj.debug-overlay", "risa.debug-overlay"],
+  );
+  expect(m.get("misc1")).toEqual(["lsdj.debug-overlay", "risa.debug-overlay"]);
+});
+
+test("GAMEPAD_BUTTON_NAMES: SDL's canonical button names, and no stick token", () => {
+  // SDL_GameControllerGetStringForButton over SDL_CONTROLLER_BUTTON_* in order; the axis tokens are not buttons.
+  expect(GAMEPAD_BUTTON_NAMES.length).toBe(21);
+  expect(GAMEPAD_BUTTON_NAMES.slice(0, 6)).toEqual(["a", "b", "x", "y", "back", "guide"]);
+  expect(GAMEPAD_BUTTON_NAMES.slice(-4)).toEqual(["paddle2", "paddle3", "paddle4", "touchpad"]);
+  for (const name of ["leftstick", "rightstick", "leftshoulder", "rightshoulder", "dpup", "misc1", "paddle1"]) {
+    expect(GAMEPAD_BUTTON_NAMES.includes(name)).toBe(true);
+  }
+  // Every GB button's default pad name is one of them, except the left stick's half-axis tokens (TS-only, native
+  // binds just the hat), which is why a stick token cannot be an action's default.
+  for (const names of Object.values(defaultBindingMap().gamepad)) {
+    for (const name of names) {
+      if (name.startsWith("leftx") || name.startsWith("lefty")) continue;
+      expect(GAMEPAD_BUTTON_NAMES.includes(name)).toBe(true);
+    }
+  }
+});
+
+test("buildGamepadToAction: only one of the shell's own actions keeps a button, and the later binding wins", () => {
+  expect(buildGamepadToAction({ OpenMenu: ["misc1"], CycleNext: ["misc1"] }).get("misc1")).toEqual(["CycleNext"]);
+  expect(buildGamepadToAction({ CycleNext: ["misc1"], OpenMenu: ["misc1"] }).get("misc1")).toEqual(["OpenMenu"]);
+});
+
+test("buildGamepadToAction: one action bound to one button twice fires once", () => {
+  expect(buildGamepadToAction({ OpenMenu: ["misc1", "misc1"] }).get("misc1")).toEqual(["OpenMenu"]);
 });

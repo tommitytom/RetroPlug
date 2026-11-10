@@ -38,10 +38,12 @@ import { subscribeMidi } from "./screens/menu/midiDevices";
 import { subscribeTransport, pollTransport } from "./screens/menu/transport";
 import type { MenuTree } from "@retroplug/ui/menu";
 import { isMenuModalActive } from "./screens/menu/menuModal";
-import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE, type AppAction } from "../src/keyCodes";
+import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE } from "../src/keyCodes";
 import { resolveDropAction } from "../src/fileDrop";
 import { createUiHost } from "./host/uiHost";
-import { viewById, windowViewOf } from "./host/menuContributions";
+import { contributedActionIds, contributedActions, viewById, windowViewOf } from "./host/menuContributions";
+import { runActions } from "./input/appActions";
+import { withActionDefaults } from "../src/bindingMap";
 import { ViewWindow } from "./views/ViewWindow";
 import { viewAppliesTo } from "./views/viewSession";
 import { resolveTracker } from "../src/trackerRegistry";
@@ -146,9 +148,23 @@ export function App() {
   const overlayActive = overlay !== null; // a stable effect dep (the hooks return a fresh object each render)
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.
   const playing = !empty && !menuOpen && !overlay;
-  // App-action lookups (open menu / cycle instances), rebuilt only when the bindings change.
-  const keyToAction = useMemo(() => buildKeyToAction(bindings.keyboardActions), [bindings.keyboardActions]);
-  const padToAction = useMemo(() => buildGamepadToAction(bindings.gamepadActions), [bindings.gamepadActions]);
+  // App-action lookups (open menu / cycle instances, and each package's contributed actions), rebuilt only when the
+  // profile changes. The profile is filled with the contributed actions' defaults first (design 5.6), so an id the
+  // user has never edited reads its default; a `[]` the user wrote stays empty. The value is a LIST per key: one press
+  // can carry the shell's action and a package's, and each runs.
+  const actionIds = contributedActionIds(); // a module constant of the generated registry: a stable dep
+  const actionBindings = useMemo(
+    () => withActionDefaults(bindings, contributedActions().map((entry) => entry.action)),
+    [bindings],
+  );
+  const keyToAction = useMemo(
+    () => buildKeyToAction(actionBindings.keyboardActions, actionIds),
+    [actionBindings, actionIds],
+  );
+  const padToAction = useMemo(
+    () => buildGamepadToAction(actionBindings.gamepadActions, actionIds),
+    [actionBindings, actionIds],
+  );
   const resolvedZoom = resolveZoom(settings.zoom, userConfig.defaultZoom);
 
   // The standalone OS window title: version + the focused tracker cart's "<song> - <ROM name>" when one is
@@ -222,11 +238,24 @@ export function App() {
     }
   };
 
-  // Dispatch a resolved app action: open/close the menu, or cycle the focused instance (only in play).
-  const runAction = (action: AppAction | undefined) => {
-    if (action === "OpenMenu") toggleMenuCore();
-    else if (action === "CycleNext" && playing) stores.project.systems.focusNext(1);
-    else if (action === "CyclePrev" && playing) stores.project.systems.focusNext(-1);
+  // Dispatch a resolved press's action ids: the shell's three (open/close the menu, or cycle the focused instance,
+  // the cycles only in play), then each contributed action, which gets the focused system or null on the start screen.
+  const runResolved = (ids: readonly string[]): void => {
+    runActions(
+      ids,
+      {
+        OpenMenu: toggleMenuCore,
+        CycleNext: () => {
+          if (playing) stores.project.systems.focusNext(1);
+        },
+        CyclePrev: () => {
+          if (playing) stores.project.systems.focusNext(-1);
+        },
+      },
+      contributedActions(),
+      uiHost,
+      empty ? null : stores.project.systems.focused(),
+    );
   };
 
   useNativeEvent("key", (key, press) => {
@@ -238,14 +267,14 @@ export function App() {
     }
     if (overlay) return; // an overlay owns input; actions don't fire under it
     if (key === KEY_BACKTICK) return void toggleLsdjDebug(); // dev: show/hide the LSDj runtime readout
-    runAction(keyToAction.get(key));
+    runResolved(keyToAction.get(key) ?? []);
   });
   // Gamepad app actions. Overlays (close prompt / project modal) render a <Menu>, so they're cancelled by the
   // Menu B button — the gamepad handler just defers under them.
   useNativeEvent("gamepad-button", (_pad, name, press) => {
     if (!press) return;
     if (overlay) return;
-    runAction(padToAction.get(name));
+    runResolved(padToAction.get(name) ?? []);
   });
 
   // Right-click an instance → open its menu (anchored to the clicked tile, which also becomes focused). The

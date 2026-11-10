@@ -11,7 +11,7 @@ import { shownSession, ViewSessionController, type OpenedSession } from "./viewS
 /** What a renderer gets: the session to draw (`shownSession` has its three states) and the per-frame reader. */
 export interface ViewSessionHandle {
   readonly session: OpenedSession | null | undefined;
-  read<R>(reader: (session: OpenedSession) => R): R | undefined;
+  read<R>(reader: (session: OpenedSession) => R): R | null;
 }
 
 /** `shown` is the renderer's own reading of the view's visibility (`viewShown`, subscribed by the caller): a window
@@ -37,7 +37,7 @@ export function useViewSession(
   // The reader is the controller's, not this render's closure: a frame that lands after a hide or a reopen must not
   // read the session that change closed. It is stable, so a source that memoises it does not reset every render.
   const read = useCallback(
-    <R,>(reader: (session: OpenedSession) => R): R | undefined => controller.current!.read(reader),
+    <R,>(reader: (session: OpenedSession) => R): R | null => controller.current!.read(reader),
     [],
   );
 
