@@ -11,6 +11,78 @@ changes it.
 
 ---
 
+## Checklist
+
+One line per open item, tick it or delete it when it lands; the detail is in the section or phase entry named after
+each (a phase name means its "What it leaves" list in section 5).
+
+**Before `feature/modularize` merges to main**
+- [ ] Windows `build.bat` + `test.bat`: nothing since D2 has built under MSVC `/W4 /WX` (D2, E1-E4, F2's list)
+- [ ] macOS and arm64 builds, and the first CI run of the whole branch (F2), `device:box`'s first runner run included
+- [ ] `pnpm test:n8` and `tools/build-mesen-all-consoles.sh --off` are in no CI job (E2, F2)
+- [ ] Launchpad real-device checklist, about 10 min with the Pro MK3 and LSDj, plus its Windows items (F3)
+- [ ] F4c's overlay strip placement (edge E4) seen on a real host (F4c)
+- [ ] `RP_NATIVE_USB` box image flashed and run once (E3, E4)
+
+**Package split**
+- [ ] Per-product bundles, with views split out of `ui/generated/menus.ts`; blocks the first React view (F4a, F4c)
+- [ ] A real `component` view on a host, with its `test:ui` case (F4c)
+- [ ] Controller-app display bug: a hand-edited `appConfig` shows one value and runs another (F4b)
+- [ ] The shell's hard dependency on `launchpad` (F4b)
+- [ ] A UI kit compile (`host.kits` in the UI host) (F4b, F4c)
+- [ ] Gamepad axis tokens as action bindings (F4c)
+- [ ] `mesen` declares `n8` for one header; `MemoryType` is a closed wire enum (F2)
+- [ ] Downloadable packs: format, authoring loop, unload, third-party controller apps, menus on extensions (C1, F3)
+- [ ] Shape questions: fold `tsconfig.ui.json` into the shell's program; the reopen key's width (F4c)
+
+**Known bugs, recorded and not fixed**
+- [ ] "Is this LSDj" decided by a role's presence, not its placement; needs `placedRole` (found building B3b)
+- [ ] MI.MAP's predicted playhead runs ahead at a tempo divisor of 2 or more (F3)
+- [ ] `__rp_syncLatencyMs` follows the stored sync mode, not the one MI.MAP forces (C2)
+- [ ] MI.OUT decodes about half the NoteOns a song plays; not investigated (LSDj's serial-out node)
+- [ ] The DPF JACK standalone's control handoff runs on JACK's thread at a buffer-size or rate change (C5)
+- [ ] A Game Boy's press queue can drop a flood's last release, leaving a button held (C4)
+- [ ] A UI render's snapshot files are left behind when the instance ends first (D3)
+- [ ] emu2413's VRC7 tables: an unsynchronised static flag, a race for two VRC7 carts built at once (D3)
+
+**Engine**
+- [ ] DAW automation of node params through `setParam` (C2)
+- [ ] P3: cores borrow their node's pinned ROM, one fewer full ROM copy per system (C3, C4)
+- [ ] P4: the snapshot registry's double copy (section 3)
+- [ ] P7: the rest of the `SystemBase` capability split: video, buttons, debug, `state/1` (C4, C5)
+- [ ] Block-thread allocations: Mesen's 0.5 s state publish, the N8 firmware's SD path, `rp.host.midi-out`'s vector
+      per message (C4, found building B3a)
+- [ ] Input-drop counters surfaced beside the graph's (C4)
+- [ ] `rp.host.midi-in`'s sort is quadratic on three or more staged runs (found building B3a)
+- [ ] Script packs: isolation inside a pack, state across a reload, a failing node refusing the whole document, the
+      memory limit counting garbage (C1)
+- [ ] Dead code: `routeBlockInto`, `OffsetLookup.hpp`, the vendored `enkiTS`; test names still saying "the kernel"
+      (found building B3b, D2)
+
+**Renders and kits**
+- [ ] A plugin kit row, and the kit patcher's latency budget (D2)
+- [ ] CI sees 5 of 13 render cases: MIDI-driven renders; a GBA render case (D3)
+- [ ] A sanitizer leg for renders; `retroplug-host` swallowing a top-level throw; the Reaper fixture authors ignoring
+      `RETROPLUG_RESOURCES_DIR` (D3)
+- [ ] Each Engine keeps 8 offline workers parked for life (D2)
+
+**Pico**
+- [ ] Audio on the box: codec, DMA, a fixed-cadence block driver (E3)
+- [ ] Live plan upload: a per-node port signature and a bytecode trust model (E3, E4)
+- [ ] A controller path on the box; the launchpad core alone is past the 64 KiB arena (F3)
+- [ ] A 32-bit runner in the build (E4)
+
+**Feature gaps (section 1) and SDL**
+- [ ] Raw LSDj Keyboard sync mode
+- [ ] NES per-mapper expansion sub-channels
+- [ ] Standalone reopens the last project on launch
+- [ ] Live memory-region subscription
+- [ ] MIDI out past 4 bytes
+- [ ] Mesen `.mlb` labels in the CLI debugger
+- [ ] The SDL standalone sends host MIDI at block time, not at its frame (LSDj's serial-out node)
+
+---
+
 ## 1. Feature gaps
 
 Things a user could reasonably expect that aren't wired yet. None block shipping.
