@@ -171,6 +171,9 @@ async function loadPlacers() {
 function sectionApp(sectionKey, serviceKey = sectionKey) {
   return (
     "export default {\n" +
+    // alpha's manifest declares a controllerApps runtime, so the app keeps its control-plane half: a mode testing a
+    // section or service rule must not fail the kind pairing first.
+    '  controllerApps: [{ id: "alpha-app", label: "Alpha App", config: { parse: (v) => v ?? {} } }],\n' +
     `  projectSections: [{ key: ${JSON.stringify(sectionKey)}, schema: { parse: (v) => v }, ` +
     `defaults: () => ({}) }],\n` +
     `  projectServices: [{ key: ${JSON.stringify(serviceKey)}, create: () => ({}) }],\n` +
@@ -192,6 +195,9 @@ async function loadPackages() {
     // The two declaring packages' control-plane halves (a kind's `accept` and `check`, run at load).
     "@retroplug/beta/kind": join(root, "packages/beta/ts/kind.ts"),
     "@retroplug/alpha/kind": join(root, "packages/alpha/ts/widgetKind.ts"),
+    // packages.ts imports the generated placers for their keys' section check, so the fixture's placer resolves too.
+    "@retroplug/alpha/placer": join(root, "packages/alpha/ts/placer.ts"),
+    "@retroplug/beta/placer": join(root, "packages/beta/ts/placer.ts"),
   };
   buildSync({ ...buildOptions(join(generated, "packages.ts"), out, "esm"), alias });
   // The consoles are a module of their own, so each generated list is loaded as the build loads it: the app's
@@ -1322,6 +1328,48 @@ try {
       // A section under a key the shell owns: `layout` is the shell's own setting, so its schema would be read as the
       // section's and its bytes written back as one.
       writeTree("packages/alpha/ts/app.ts", sectionApp("layout"));
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "service-no-section":
+      // A service's key is its section's: one naming no section would read undefined where the store asserts, so the
+      // generated registry refuses it before the store ever builds an instance.
+      writeTree("packages/alpha/ts/app.ts", sectionApp("alpha", "nowhere"));
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "service-shell-key":
+      // A service under one of the shell's own settings would read the shell's field as its section.
+      writeTree("packages/alpha/ts/app.ts", sectionApp("alpha", "layout"));
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "placer-no-section":
+      // A placer's key is the section whose model it places, so one naming no section would place a model no reader
+      // can produce.
+      writeTree("packages/alpha/ts/placer.ts", 'export default { key: "nowhere", place: () => ({}) };\n');
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "placer-shell-key":
+      // A placer under one of the shell's own settings would be handed the shell's field as a model.
+      writeTree("packages/alpha/ts/placer.ts", 'export default { key: "layout", place: () => ({}) };\n');
       generate({ root });
       try {
         result = await loadPackages();

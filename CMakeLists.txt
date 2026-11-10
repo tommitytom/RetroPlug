@@ -304,7 +304,7 @@ include(cmake/packages.cmake)
 # The shape every native test binary shares (see the file for why), for packages/native's and the packs' alike.
 include(cmake/test-binary.cmake)
 
-# The packages a desktop product carries (retroplug_product), every one today; a product that differs lists its own.
+# The packages a desktop product carries (retroplug_product); a product that differs lists its own.
 # The LIST is the root package.json's retroplug.products.desktop, read here and by the TS generator
 # (packages/retroplug/scripts/lib/packages.mjs), so the two languages cannot register different products, and a package
 # follows the ones it depends on (the generator refuses a list that does not).

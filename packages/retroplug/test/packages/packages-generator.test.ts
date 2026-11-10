@@ -434,6 +434,42 @@ test("the generated registry refuses two project services under one key", async 
   expect(error).toBe("two packages declare the project service shared: alpha and beta");
 });
 
+test("the generated registry refuses a project service whose key names no section", async () => {
+  const { error } = await drive("service-no-section");
+  console.log(`# project service with no section: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the project service nowhere, which matches no project section " +
+      "(the service key is its section's key)",
+  );
+});
+
+test("the generated registry refuses a project service under one of the shell's own keys", async () => {
+  const { error } = await drive("service-shell-key");
+  console.log(`# shell-owned project service: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the project service layout, which is one of the shell's own settings " +
+      "(layout, midiRouting, audioRouting, zoom)",
+  );
+});
+
+test("the generated registry refuses a graph placer whose key names no section", async () => {
+  const { error } = await drive("placer-no-section");
+  console.log(`# graph placer with no section: ${error}`);
+  expect(error).toBe(
+    "the package alpha places the graph's model nowhere, which matches no project section " +
+      "(a placer's key is its section's key)",
+  );
+});
+
+test("the generated registry refuses a graph placer under one of the shell's own keys", async () => {
+  const { error } = await drive("placer-shell-key");
+  console.log(`# shell-owned graph placer: ${error}`);
+  expect(error).toBe(
+    "the package alpha places the graph's model layout, which is one of the shell's own settings " +
+      "(layout, midiRouting, audioRouting, zoom)",
+  );
+});
+
 test("the generated placers module refuses two packages placing one graph model", async () => {
   const { error } = await drive("duplicate-placer");
   console.log(`# duplicate graph model: ${error}`);

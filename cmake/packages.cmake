@@ -1602,6 +1602,14 @@ function(retroplug_product product)
     if(RP_DEVICE_BUILD AND NOT P_DEVICE)
         message(FATAL_ERROR "retroplug_product(${product}): a device build declares DEVICE products alone")
     endif()
+    # A non-DEVICE product gets its four embedded bundles and its list check from retroplug_bundles(), which
+    # cmake/product-bundles.cmake defines before the first product. Declared before it was included, the product would
+    # silently carry neither and fail only at link time; say so where the mistake is. A fixture that builds no engine
+    # opts out by setting RP_NO_PRODUCT_BUNDLES (test/packages/product does).
+    if(NOT P_DEVICE AND NOT COMMAND retroplug_bundles AND NOT RP_NO_PRODUCT_BUNDLES)
+        message(FATAL_ERROR "retroplug_product(${product}): declared before retroplug_bundles() exists, so it would "
+                            "carry no bundles and no list check; include cmake/product-bundles.cmake first")
+    endif()
     if(NOT P_TARGETS)
         set(P_TARGETS ${product})
     endif()

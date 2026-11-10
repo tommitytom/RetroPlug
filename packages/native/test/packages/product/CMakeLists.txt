@@ -22,6 +22,10 @@ if(NOT RP_ROOT)
     message(FATAL_ERROR "test/packages/product/CMakeLists.txt: pass -DRP_ROOT=<the repository root>")
 endif()
 
+# This fixture builds no engine and embeds no bundle, so it declares that it has no bundle machinery: without this,
+# retroplug_product() refuses a non-DEVICE product whose bundles are not defined yet (which is the real tree's
+# ordering rule, not this fixture's shape).
+set(RP_NO_PRODUCT_BUNDLES TRUE)
 include("${RP_ROOT}/cmake/packages.cmake")
 
 add_library(rp_fixture_alpha INTERFACE)

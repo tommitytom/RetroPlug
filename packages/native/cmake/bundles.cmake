@@ -3,14 +3,12 @@
 # relative source path below resolves exactly as it did inline. (add_subdirectory would NOT: it opens
 # a child scope and re-roots that variable, which is the trap this split is avoiding.)
 #
-# The embedded JS bytecode bundles a product does not own: the script test nodes, the CLI's dispatcher, the type
-# stripper, the SDK and the example sessions. A product's own four (the control plane, the React UI, the script nodes,
-# the render worker) are cmake/product-bundles.cmake's, because every retroplug_product() adds two of them to its
-# targets.
-
-# Its test-only twin: test/script/scriptTestBundle.ts (the authoring layer for the native tests' toy nodes, and one
-# node of its own) by the same recipe, embedded only in retroplug-engine-graph-test (cmake/tests.cmake), so the
-# toy nodes and the test node never ship. rp_script_test_bundle[] + _size.
+# The one embedded JS bundle a product does not own: the TEST-ONLY script bundle,
+# test/script/scriptTestBundle.ts (the authoring layer for the native tests' toy nodes, and one node of its own),
+# embedded only in retroplug-engine-graph-test (cmake/tests.cmake), so the toy nodes and the test node never ship.
+# A product's own four (the control plane, the React UI, the script nodes, the render worker) are
+# cmake/product-bundles.cmake's, because every retroplug_product() adds two of them to its targets.
+# rp_script_test_bundle[] + _size.
 set(SCRIPT_TEST_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/script-test-bundle.js")
 set(SCRIPT_TEST_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/script-test-bundle_data.c")
 set_source_files_properties(${SCRIPT_TEST_BUNDLE_C} PROPERTIES GENERATED TRUE)

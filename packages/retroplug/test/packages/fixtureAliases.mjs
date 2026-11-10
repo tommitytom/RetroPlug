@@ -25,6 +25,9 @@ export function fixtureAliases(root) {
     "@retroplug/alpha/ui": join(root, "packages/alpha/ts/ui/index.ts"),
     "@retroplug/beta/ui": join(root, "packages/beta/ts/ui/index.ts"),
     "@retroplug/zeta/ui": join(root, "packages/zeta/ts/ui/index.ts"),
+    // The generated packages.ts imports the placers for their keys' section check, so the two placers resolve too.
+    "@retroplug/alpha/placer": join(root, "packages/alpha/ts/placer.ts"),
+    "@retroplug/beta/placer": join(root, "packages/beta/ts/placer.ts"),
     "@retroplug/alpha/views": join(root, "packages/alpha/ts/ui/views.ts"),
     "@retroplug/beta/views": join(root, "packages/beta/ts/ui/views.ts"),
     "@retroplug/zeta/views": join(root, "packages/zeta/ts/ui/views.ts"),

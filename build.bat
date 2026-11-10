@@ -139,8 +139,9 @@ if "%DO_CONFIGURE%"=="1" (
         -DVCPKG_TARGET_TRIPLET=x64-windows-static
     if errorlevel 1 (
         echo error: configure failed 1>&2
-        rem Only wipe a build dir we just created; never nuke a pre-existing
-        rem tree just because a --tests reconfigure failed.
+        rem Only wipe a build dir with no CMakeCache.txt (one a typecheck or a
+        rem failed configure left); never nuke a configured tree just because a
+        rem --tests reconfigure failed.
         if "%CONFIGURED%"=="0" (
             echo removing build\ so the next run retries clean 1>&2
             rmdir /s /q build 2>nul

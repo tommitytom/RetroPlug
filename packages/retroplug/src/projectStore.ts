@@ -298,7 +298,13 @@ export class ProjectStore {
    *  one warning naming the key and both versions: this build must not rewrite what it cannot read. */
   setSection(key: string, patch: Readonly<Record<string, unknown>>): void {
     assertSectionKey(key);
+    // Writing a block no package of this product contributes would create a key E5 then keeps in every save forever,
+    // and a misspelt key would look like it worked: reading one is still allowed (a newer build's block), writing one
+    // is not.
     const contributor = projectSectionOf(key, this.sections);
+    if (!contributor) {
+      throw new Error(`${key} is not a project section this product's packages contribute, so it cannot be written`);
+    }
     // The writer reads the STORED block, not the reader's view: a block stamped newer is kept raw so it can be written
     // back as it came, and the stamp check below needs the stamp the file carries.
     const stored = projectSection<unknown>(this.projectSettings, key);

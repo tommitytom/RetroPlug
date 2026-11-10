@@ -1,8 +1,8 @@
 // What a Game Boy captures of its serial out for the mode its cart's sync node runs
 // (docs/modular-graph-phase-c2-design.md section 5), which is the shell's rather than a package's: it reads
 // PROTOCOL_NODES, the generated table every product carries, so naming a cart's capture table here names no package.
-// The controller's placement needs it the same way any
-// other override does (docs/modular-graph-phase-f5a-design.md section 6.3), and the placement itself is a package's.
+// The controller's placement needs it the same way any other override does (docs/modular-graph-phase-f5a-design.md
+// section 6.3), and the placement itself is a package's.
 import { PROTOCOL_NODES, type ProtocolNodeSpec, type ProtocolRole } from "./protocolNodes";
 
 /** What a Game Boy captures of its serial out for LSDj's decoder (its node's `serialOutCapture` setting, as the C++

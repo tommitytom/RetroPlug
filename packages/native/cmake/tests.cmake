@@ -441,9 +441,9 @@ endforeach()
 
 # retroplug_product()'s list rules and the subsequence rule the root configure applies, which are refusals of the
 # DECLARATION rather than of a target's properties: test/packages/product-lists is a project of its own, and a case
-# must fail with its reason. The two that did not exist before this pass are `packages-no-list` (a product whose
-# packages are no list's used to build a set of bundles its generator could not write) and `subsequence-twice` (a
-# duplicate list passed, since the same index is not less than itself).
+# must fail with its reason. `packages-no-list` holds the list rule (a product whose packages are no list's would
+# otherwise build a set of bundles its generator cannot write), and `subsequence-twice` the duplicate rule (a
+# duplicate sits at the same index, which is not less than itself).
 set(_rp_list_cases
     "list-both|refused|LIST and PACKAGES are one choice"
     "list-unknown|refused|LIST names the product nowhere, which the root package.json's retroplug.products does not declare"

@@ -235,8 +235,9 @@ The rules below are the parts that don't fit those.
   is a **dependency order** (a package before the ones using it, the shell last) AND the registration order. Every
   product but the desktop gets its own generated tree and its own four embedded bundles
   (`retroplug_product(<p> LIST <name> ...)`: `build/products/<name>/`, written by the same generator with `--product`,
-  with a `tsconfig.json` `pnpm typecheck` runs, and read by the shell's sources through esbuild's `onResolve`,
-  [tools/product-generated.js](tools/product-generated.js)). A non-desktop list must be a SUBSEQUENCE of the desktop's
+  and read by the shell's sources through esbuild's `onResolve`, [tools/product-generated.js](tools/product-generated.js)).
+  The `tsconfig.json` `pnpm typecheck` runs is the OTHER tree's, under `packages/retroplug/.products/<name>/` (so a
+  typecheck leaves no `build/`), not this one. A non-desktop list must be a SUBSEQUENCE of the desktop's
   in the same relative order, and its script-node span labels are its own positions. `desktop` is the union. Only a ROM
   provider's place in it is behaviour: the providers run in that order, and the first to match a ROM fixes a system's
   role-list order. Roles, kit formats and tracker integrations are looked up by kind, id or an exclusive marker role,

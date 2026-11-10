@@ -28,14 +28,14 @@ each (a phase name means its "What it leaves" list in section 5).
 - [x] Per-product bundles, with views split out of `ui/generated/menus.ts`; blocks the first React view (F4a, F4c;
       F5a built the plugin as the first product whose list differs)
 - [ ] A real `component` view on a host, with its `test:ui` case (F4c)
-- [x] Controller-app display bug: a hand-edited `appConfig` showed one value and ran another (F4b; F5a's stage 1, edge E1)
-- [x] The shell's hard dependency on `launchpad` (F4b; F5a's stage 4: no hand-written shell source names the pack)
+- [x] Controller-app display bug: a hand-edited `appConfig` showed one value and ran another (F4b; F5a, task 1, edge E1)
+- [x] The shell's hard dependency on `launchpad` (F4b; F5a, task 4: no hand-written shell source names the pack)
 - [ ] A UI kit compile (`host.kits` in the UI host) (F4b, F4c)
 - [ ] Gamepad axis tokens as action bindings (F4c)
-- [x] `mesen` declares `n8` for one header (F2; F5a's stage 2 moved the header to `n8-wire`)
+- [x] `mesen` declares `n8` for one header (F2; F5a, task 2, moved the header to `n8-wire`)
 - [ ] `MemoryType` is a closed wire enum (F2)
 - [ ] Downloadable packs: format, authoring loop, unload, third-party controller apps, menus on extensions (C1, F3)
-- [x] The shape question `tsconfig.ui.json` folds into the shell's program (F4c; F5a's stage 1)
+- [x] The shape question `tsconfig.ui.json` folds into the shell's program (F4c; F5a, task 1)
 - [ ] The shape question the view reopen key's width leaves open (F4c)
 
 **Known bugs, recorded and not fixed**
@@ -1006,10 +1006,15 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   bundles to carrying no Launchpad module. Also: the generator refuses a product list that is not a subsequence of the
   desktop's; a product's script-node span labels are its positions (the plugin numbers `rp.lsdj.serial-out` 22, E6);
   the literal scanner guards every listed package's node types and a `rp.<package>.` family; and the registration
-  golden's `retroplug` row loses `rp.launchpad.surface-in`/`-out` (E3, the one re-record beside E1). Edges: E1 to E8,
+  golden's `retroplug` row loses `rp.launchpad.surface-in`/`-out` (E3, the one re-record beside E1). Edges: E1 to E9,
   design section 8 - E2 is the one behaviour change users can see (in the plugin a project with an enabled controller
-  places no controller nodes and forces no cart sync mode; its section is kept verbatim). What it leaves, F5b first: the
-  design's section 12.
+  places no controller nodes and forces no cart sync mode; its section is kept verbatim), and E9 is the CLI SDK's
+  `DirectGraph`/store surface (`setModel(key, model)`, `settings().sections.controller`; BlipToaster and NESVJ use
+  none of it). What it leaves, F5b first: the design's section 12. For the Windows agent, three risks the final review
+  recorded and the follow-up did not fix (it fixed the cross-drive `./C:/` specifier and `build.bat`'s stale comment):
+  the fixture children pick their own generator (Visual Studio under a Ninja parent), `packages/native`'s targets meet
+  the native boundary rule first on Windows (`/bigobj`, `plugin.cmake`'s platform blocks, `RP_BOUNDARY_PACKAGES`), and
+  the long `build/products/plugin/...` and per-set object paths under `/W4 /WX`.
 
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the

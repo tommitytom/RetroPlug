@@ -14,6 +14,7 @@ import type { KitFormat } from "@retroplug/dsp/kitContract";
 import type { Embed, ProjectSection } from "@retroplug/core/definePackage";
 import type { ProjectServiceFactory } from "@retroplug/tracker/projectService";
 import { CONSOLES } from "./consoles";
+import { PLACERS } from "./placers";
 import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
@@ -104,6 +105,7 @@ export const PROJECT_SECTIONS: readonly { pkg: string; section: ProjectSection }
 // settings keys a package may not contribute a section under.
 const SHELL_SECTION_KEYS = ["layout", "midiRouting", "audioRouting", "zoom"];
 const sectionOwners = new Map<string, string>();
+const sectionKeysByPkg = new Map<string, string[]>();
 for (const { pkg, section } of PROJECT_SECTIONS) {
   if (SHELL_SECTION_KEYS.includes(section.key)) {
     throw new Error(`the package ${pkg} declares the project section ${section.key}, which is one of the ` +
@@ -116,6 +118,7 @@ for (const { pkg, section } of PROJECT_SECTIONS) {
       : `two packages declare the project section ${section.key}: ${owner} and ${pkg}`);
   }
   sectionOwners.set(section.key, pkg);
+  sectionKeysByPkg.set(pkg, [...(sectionKeysByPkg.get(pkg) ?? []), section.key]);
 }
 
 /** The project services the product's packages contribute, in product order: a feature's control-plane
@@ -136,6 +139,31 @@ for (const { pkg, service } of PROJECT_SERVICES) {
       : `two packages declare the project service ${service.key}: ${owner} and ${pkg}`);
   }
   serviceKeys.set(service.key, pkg);
+}
+for (const { pkg, service } of PROJECT_SERVICES) {
+  // A service's key is the section it reads and the model its placer places: a key no package declares a section
+  // for would read undefined where the store asserts, and one of the shell's keys would fight the shell's field.
+  if (SHELL_SECTION_KEYS.includes(service.key)) {
+    throw new Error(`the package ${pkg} declares the project service ${service.key}, which is one of the shell's ` +
+      `own settings (${SHELL_SECTION_KEYS.join(", ")})`);
+  }
+  // A package that declares no section at all is not held to one: a fixture tree may replace an app module, and a
+  // service key is judged against the sections the product actually declares.
+  if (!sectionOwners.has(service.key) && (sectionKeysByPkg.get(pkg) ?? []).length > 0) {
+    throw new Error(`the package ${pkg} declares the project service ${service.key}, which matches no project ` +
+      "section (the service key is its section's key)");
+  }
+}
+// A placer's key is the section whose model it places, so the same two rules hold where the placement is made.
+for (const { pkg, placer } of PLACERS) {
+  if (SHELL_SECTION_KEYS.includes(placer.key)) {
+    throw new Error(`the package ${pkg} places the graph's model ${placer.key}, which is one of the shell's own ` +
+      `settings (${SHELL_SECTION_KEYS.join(", ")})`);
+  }
+  if (!sectionOwners.has(placer.key) && (sectionKeysByPkg.get(pkg) ?? []).length > 0) {
+    throw new Error(`the package ${pkg} places the graph's model ${placer.key}, which matches no project ` +
+      "section (a placer's key is its section's key)");
+  }
 }
 
 /** The widgets items the product's packages contribute, in product order: each app module's

@@ -79,7 +79,7 @@
 // that products directory directly, which is how the typecheck keeps its tree out of build/ (a build directory is
 // build.sh's sentinel for a configured tree). The desktop writes into the shell's own tree and takes neither.
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -664,7 +664,8 @@ function roleTable(packages) {
 // A module path as the generated file imports it: relative, POSIX separators, no .ts (the bundler and tsc resolve it).
 function specifier(fromDir, file) {
   let spec = relative(fromDir, file).replace(/\\/g, "/").replace(/\.ts$/, "");
-  if (!spec.startsWith(".")) spec = `./${spec}`;
+  // `path.relative` across Windows drives returns an absolute path (`C:/...`), which `./` would turn into `./C:/...`.
+  if (!spec.startsWith(".") && !isAbsolute(spec)) spec = `./${spec}`;
   return spec;
 }
 
@@ -810,6 +811,9 @@ function renderPackages({ packages, outDir, names, product }) {
     'import type { Embed, ProjectSection } from "@retroplug/core/definePackage";',
     'import type { ProjectServiceFactory } from "@retroplug/tracker/projectService";',
     'import { CONSOLES } from "./consoles";',
+    // The placers are checked against the sections below (a placer's key is its section's), so this module imports
+    // them: the control plane already carries them through buildGraph, so only the check is new here.
+    'import { PLACERS } from "./placers";',
   );
   for (const p of app) lines.push(`import ${identifier(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.app)}";`);
   // The kind's data and the product's node types reach the declaring package's check: a mode naming a node type no
@@ -894,6 +898,7 @@ function renderPackages({ packages, outDir, names, product }) {
     "// settings keys a package may not contribute a section under.",
     "const SHELL_SECTION_KEYS = [\"layout\", \"midiRouting\", \"audioRouting\", \"zoom\"];",
     "const sectionOwners = new Map<string, string>();",
+    "const sectionKeysByPkg = new Map<string, string[]>();",
     "for (const { pkg, section } of PROJECT_SECTIONS) {",
     "  if (SHELL_SECTION_KEYS.includes(section.key)) {",
     "    throw new Error(`the package ${pkg} declares the project section ${section.key}, which is one of the ` +",
@@ -906,6 +911,7 @@ function renderPackages({ packages, outDir, names, product }) {
     "      : `two packages declare the project section ${section.key}: ${owner} and ${pkg}`);",
     "  }",
     "  sectionOwners.set(section.key, pkg);",
+    "  sectionKeysByPkg.set(pkg, [...(sectionKeysByPkg.get(pkg) ?? []), section.key]);",
     "}",
     "",
     "/** The project services the product's packages contribute, in product order: a feature's control-plane",
@@ -925,6 +931,31 @@ function renderPackages({ packages, outDir, names, product }) {
     "      : `two packages declare the project service ${service.key}: ${owner} and ${pkg}`);",
     "  }",
     "  serviceKeys.set(service.key, pkg);",
+    "}",
+    "for (const { pkg, service } of PROJECT_SERVICES) {",
+    "  // A service's key is the section it reads and the model its placer places: a key no package declares a section",
+    "  // for would read undefined where the store asserts, and one of the shell's keys would fight the shell's field.",
+    "  if (SHELL_SECTION_KEYS.includes(service.key)) {",
+    "    throw new Error(`the package ${pkg} declares the project service ${service.key}, which is one of the shell's ` +",
+    "      `own settings (${SHELL_SECTION_KEYS.join(\", \")})`);",
+    "  }",
+    "  // A package that declares no section at all is not held to one: a fixture tree may replace an app module, and a",
+    "  // service key is judged against the sections the product actually declares.",
+    "  if (!sectionOwners.has(service.key) && (sectionKeysByPkg.get(pkg) ?? []).length > 0) {",
+    "    throw new Error(`the package ${pkg} declares the project service ${service.key}, which matches no project ` +",
+    "      \"section (the service key is its section's key)\");",
+    "  }",
+    "}",
+    "// A placer's key is the section whose model it places, so the same two rules hold where the placement is made.",
+    "for (const { pkg, placer } of PLACERS) {",
+    "  if (SHELL_SECTION_KEYS.includes(placer.key)) {",
+    "    throw new Error(`the package ${pkg} places the graph's model ${placer.key}, which is one of the shell's own ` +",
+    "      `settings (${SHELL_SECTION_KEYS.join(\", \")})`);",
+    "  }",
+    "  if (!sectionOwners.has(placer.key) && (sectionKeysByPkg.get(pkg) ?? []).length > 0) {",
+    "    throw new Error(`the package ${pkg} places the graph's model ${placer.key}, which matches no project ` +",
+    "      \"section (a placer's key is its section's key)\");",
+    "  }",
     "}",
     "",
     ...kindBlocks({ packages, kindDecls }),
@@ -992,7 +1023,7 @@ function renderPlacers({ packages, outDir, product }) {
     "//",
     "// The product's graph placers, in product order: each package's `protocol.placer` module, which says where",
     "// the nodes of a model the shell hands it go (docs/modular-graph-phase-f5a-design.md section 6.3). buildGraph",
-    "// reads the slots in this order, so a package's place in `retroplug.products.desktop` is where its nodes land.",
+    `// reads the slots in this order, so a package's place in \`retroplug.products.${product}\` is where its nodes land.`,
     "// Only the planner imports this module, and it carries types and constants alone: no package's node code and",
     "// no schema.",
     'import type { GraphPlacer } from "@retroplug/core/placer";',
@@ -1037,7 +1068,7 @@ function renderMenus({ packages, outDir, generatedDir, shellSrc, product }) {
     "//",
     "// The product's UI contributions, in product order: each package's `retroplug.ui` module, which default-exports the",
     "// system-settings rows, menu builders, tracker specs and services it adds. The shell composes the menus from this",
-    "// list, so a package's place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports",
+    `// list, so a package's place in \`retroplug.products.${product}\` is where its rows and entries land. Only ui/ imports`,
     "// this module: the control plane, the render worker, the SDK and the planner carry no menu contribution.",
     'import { PLACEMENTS, type ContributedAction, type RoleRow, type UiAction, type UiContribution } ' +
       'from "@retroplug/ui/contribution";',
@@ -1328,7 +1359,10 @@ function workspacePathEntries(root, fromDir) {
       if (typeof target !== "string" || !target.endsWith(".ts")) continue;
       const specifierName = key === "." ? manifest.name : `${manifest.name}/${key.replace(/^\.\//, "")}`;
       const file = relative(fromDir, join(dir, name, target)).split(/[\\/]/).join("/");
-      entries.push({ specifier: specifierName, target: file.startsWith(".") ? file : `./${file}` });
+      entries.push({
+        specifier: specifierName,
+        target: file.startsWith(".") || isAbsolute(file) ? file : `./${file}`,
+      });
     }
   }
   return entries;
@@ -1341,14 +1375,17 @@ function shellPathEntries(shellDir, hostList, fromDir) {
   for (const entry of hostList) {
     if (typeof entry.types !== "string" || entry.types === "") continue;
     const file = relative(fromDir, join(shellDir, entry.types)).split(/[\\/]/).join("/");
-    entries.push({ specifier: entry.module, target: file.startsWith(".") ? file : `./${file}` });
+    entries.push({
+      specifier: entry.module,
+      target: file.startsWith(".") || isAbsolute(file) ? file : `./${file}`,
+    });
   }
   for (const [specifier, targets] of Object.entries(shellAliases(shellDir))) {
     entries.push({
       specifier,
       target: targets
         .map((target) => relative(fromDir, join(shellDir, target)).split(/[\\/]/).join("/"))
-        .map((target) => (target.startsWith(".") ? target : `./${target}`)),
+        .map((target) => (target.startsWith(".") || isAbsolute(target) ? target : `./${target}`)),
     });
   }
   return entries;
@@ -1408,7 +1445,7 @@ function renderCliTools({ packages, outDir, product }) {
     "//",
     "// The product's CLI tools, in product order: each package's `retroplug.cli` module, which default-exports the",
     "// subcommands it adds. The dispatcher appends them after the shell's own five, so a package's place in",
-    "// `retroplug.products.desktop` is where its commands land in the index. Imported only by cli/, so the control",
+    `// \`retroplug.products.${product}\` is where its commands land in the index. Imported only by cli/, so the control`,
     "// plane, the render worker, the SDK and the UI carry no tool.",
     'import type { CliTool } from "@retroplug/core/cliTool";',
   ];
@@ -2151,9 +2188,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const productAt = process.argv.indexOf("--product");
   const product = productAt === -1 ? DESKTOP : process.argv[productAt + 1];
   try {
-    const buildDir = flag("--build-dir") ?? join(REPO, "build");
+    // The root's build directory by default, as generate() itself defaults: a fixture run with --root and no
+    // --build-dir must not write into the real repository's build/.
+    const root = flag("--root") ?? REPO;
+    const buildDir = flag("--build-dir") ?? join(root, "build");
     generate({
-      root: flag("--root") ?? REPO,
+      root,
       product,
       buildDir,
       productsDir: flag("--products-dir") ?? join(buildDir, "products"),

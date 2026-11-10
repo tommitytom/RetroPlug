@@ -123,7 +123,7 @@ test("setSection merges through the contributor and refuses what it refuses", ()
 
 // ---- the versioned half of the mechanism ----------------------------------------------------------------------
 
-test("a section's own migrations run before its schema, and the root's first", () => {
+test("a section's own migrations run before its schema", () => {
   // The file's stamp is the OLD one, so the step rewrites what v1 wrote (an index) to what v2 reads (a name).
   expect(parseProjectSection(VERSIONED, { schemaVersion: 1, knob: 1, size: 4 })).toEqual({ knob: "b", size: 4 });
 });
@@ -148,6 +148,14 @@ test("a key the shell owns, or the prototype's, is not a section a host may read
     expect(() => stores.project.section(key)).toThrow(key);
     expect(() => stores.project.setSection(key, { value: 1 })).toThrow(key);
   }
+});
+
+test("setSection refuses a key no package of this product contributes", () => {
+  // Reading an unknown key is E5's forward compatibility (a newer build's block); WRITING one would create a key this
+  // build never reads and E5 then keeps in every save forever, and a misspelt section (`controler`) would look
+  // written.
+  const stores = composeAppStores({ backend: new MockBackend() });
+  expect(() => stores.project.setSection("controler", { enabled: true })).toThrow("controler");
 });
 
 test("a core key in a sections record never reaches the file", () => {
