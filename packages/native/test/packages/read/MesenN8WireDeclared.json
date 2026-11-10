@@ -1,0 +1,20 @@
+{
+  "package": "mesen",
+  "declared": [
+    "node-sdk",
+    "n8-wire"
+  ],
+  "devDeclared": [],
+  "test": false,
+  "links": [
+    "retroplug-mesen=retroplug-node-sdk",
+    "retroplug-mesen=retroplug-n8-wire"
+  ],
+  "includes": [
+    "retroplug-mesen=@PACKAGES@/n8-wire/native/src"
+  ],
+  "owners": [
+    "retroplug-node-sdk=node-sdk",
+    "retroplug-n8-wire=n8-wire"
+  ]
+}

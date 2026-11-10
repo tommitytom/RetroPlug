@@ -327,8 +327,11 @@ set(_rp_refused_native
     "UndeclaredSource|compiles ${CMAKE_SOURCE_DIR}/packages/graph-runtime/native/src/foo.cpp, which is in the graph-runtime package's tree"
     "ShellSource|compiles ${CMAKE_SOURCE_DIR}/packages/native/src/foo.cpp, which is in the shell (packages/native)"
     "Unjudged|which the boundary check cannot evaluate"
-    # The console packages' own edge: a Mesen-shaped package reaching the N8 pack, which it must declare.
+    # A Mesen-shaped package reaching the N8 pack must declare it.
     "MesenN8Undeclared|links retroplug-n8, a target of the n8 package, which mesen does not declare"
+    # And declaring the N8 pack grants nothing of n8-wire, which the N8 pack links: a declaration is not transitive, so
+    # linking the wire is refused the same way.
+    "N8WireUndeclared|links retroplug-n8-wire, a target of the n8-wire package, which mesen does not declare"
     # A test target that opens a package's file by the path its manifest gives: a compile definition is a link by another
     # name, so it is judged like one (the same test, declared as a devDependency, holds below).
     "TestDefinesUndeclared|defines RP_ROM_PATH as ${CMAKE_SOURCE_DIR}/packages/mgb/rom/mGB.gb, which is in the mgb package's tree, which scratch does not declare"
@@ -354,7 +357,7 @@ foreach(_rp_refused IN LISTS _rp_refused_native)
     endif()
 endforeach()
 foreach(_rp_read IN ITEMS DeclaredBoundaries TestDevDependency TestDefinesDevDeclared TestDefinesDevDeclaredQuoted
-                        MesenN8Declared)
+                        MesenN8Declared MesenN8WireDeclared)
     execute_process(
         COMMAND ${CMAKE_COMMAND} -DRP_BOUNDARY_FIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/test/packages/read/${_rp_read}.json
                 -P ${CMAKE_SOURCE_DIR}/cmake/check-native-boundaries.cmake

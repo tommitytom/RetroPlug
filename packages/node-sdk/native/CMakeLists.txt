@@ -1,8 +1,8 @@
 # The node SDK (docs/modular-graph-phase-e1-design.md section 4): the C ABI (graph/rp_node.h), the C++ authoring layer
 # (graph/node.hpp) and what that header compiles against: the descriptor writer, canonical JSON, the graph document
 # types it names and the queue views (graph/Queue.hpp), with the single-producer ring the runtime and the device links
-# share (transport/SpscRing.hpp) and the fixed-storage queue (util/FixedQueue.hpp) the cores' ingress queues and the N8
-# pack's reliable link hold their messages in. Added by retroplug_package(node-sdk) (cmake/packages.cmake).
+# share (transport/SpscRing.hpp) and the fixed-storage queue (util/FixedQueue.hpp) the cores' ingress queues and n8-wire's
+# reliable link hold their messages in. Added by retroplug_package(node-sdk) (cmake/packages.cmake).
 #
 # Its include root, src/, is where every one of these keeps the path it is included by ("graph/node.hpp"), so a node's
 # source is the same whichever package it sits in. A pack depends on this package and nothing else.

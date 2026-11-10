@@ -7,9 +7,9 @@
 // Their settings are the fields each type reads and nothing else: the system it names, the resources its core is built
 // from, and the console's knobs (docs/modular-graph-phase-c2-design.md section 3), each applied to the core the node has
 // or - a construct-time field - a rebuild. The settings and the consoles' knob helpers are this package's, the generic
-// ones are the system package's (system/SystemNode.hpp), and the NES's expansion-volume bounds are the N8 pack's
-// (n8/N8Node.hpp), which rescales the same document value onto the real cart's master-volume register: one range, so
-// the emulated NES and rp.n8.nes cannot disagree.
+// ones are the system package's (system/SystemNode.hpp), and the NES's expansion-volume bounds are the n8-wire
+// package's (n8wire/ExpansionVolume.hpp), which the N8 pack rescales onto the real cart's master-volume register: one
+// range, so the emulated NES and rp.n8.nes cannot disagree.
 
 #include <algorithm>
 #include <array>
@@ -21,7 +21,7 @@
 #include <utility>
 
 #include "graph/node.hpp"
-#include "n8/N8Node.hpp"
+#include "n8wire/ExpansionVolume.hpp"
 #include "system/SystemNode.hpp"
 #include "system/mesen/MesenBackend.hpp"
 #include "system/mesen/MesenGbaConfig.hpp"
@@ -74,7 +74,7 @@ using N8LinkRttUs        = rfl::Validator<int, Within<N8LinkRttRange>>;
 
 // The NES's second param (docs/modular-graph-phase-c2-design.md section 3): its cartridge sound chip's level in whole
 // percent of unity, as its core takes it and as rp.n8.nes rescales it onto the real cart's master-volume register, so the
-// same document value sounds the same on both. n8/N8Node.hpp holds the one range both types read.
+// same document value sounds the same on both. n8wire/ExpansionVolume.hpp holds the one range both types read.
 using ExpansionVolumeParam =
     rp::int_param<"Expansion volume", rp::range{rp::n8::kExpansionVolumeMin, rp::n8::kExpansionVolumeMax,
                                                 rp::n8::kExpansionVolumeDefault}, "%">;

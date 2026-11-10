@@ -82,6 +82,7 @@ retroplug_package(node-sdk)
 retroplug_package(graph-runtime)
 retroplug_package(core)
 retroplug_package(device-io)
+retroplug_package(n8-wire)   # before n8, which links it: a header-only package, with no device entry of its own
 retroplug_package(n8)
 retroplug_package(bliptoaster)
 # The box registers one script pack of one node type, so the host's static tables hold that many

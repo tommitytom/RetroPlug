@@ -79,6 +79,7 @@ include("${RP_REPO}/cmake/device-image.cmake")
 include("${RP_REPO}/cmake/packages.cmake")
 retroplug_package(node-sdk)
 retroplug_package(graph-runtime)
+retroplug_package(n8-wire)   # before n8, which links it: a header-only package, with no device entry of its own
 foreach(_rp_package IN LISTS RP_DEVICE_CHECK_PACKAGES)
     retroplug_package(${_rp_package})
 endforeach()

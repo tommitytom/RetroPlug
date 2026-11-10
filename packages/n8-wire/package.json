@@ -1,0 +1,12 @@
+{
+  "name": "@retroplug/n8-wire",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The wire a real Everdrive N8 Pro cart and the emulated NES FIFO that stands in for it share, and neither owns: BlipToaster's reliable link, whose one sender the cart's desktop link and the emulator's FIFO role both drive, and the expansion-volume range the emulated chip's knob and the cart's master-volume register are set from. Two headers and no code; `device-ready` here says what is checked: the range is compiled by every device build, through rp.n8.nes, while the link is compiled by no device target and its std::function emit may allocate, so the link is device-ready by inspection, not by a check.",
+  "dependencies": {
+    "@retroplug/node-sdk": "workspace:*"
+  },
+  "retroplug": {
+    "native": { "target": "retroplug-n8-wire" }
+  }
+}

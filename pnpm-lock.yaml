@@ -193,9 +193,9 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
-      '@retroplug/n8':
+      '@retroplug/n8-wire':
         specifier: workspace:*
-        version: link:../n8
+        version: link:../n8-wire
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
@@ -240,6 +240,9 @@ importers:
       '@retroplug/core':
         specifier: workspace:*
         version: link:../core
+      '@retroplug/n8-wire':
+        specifier: workspace:*
+        version: link:../n8-wire
       '@retroplug/node-sdk':
         specifier: workspace:*
         version: link:../node-sdk
@@ -259,6 +262,12 @@ importers:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
+
+  packages/n8-wire:
+    dependencies:
+      '@retroplug/node-sdk':
+        specifier: workspace:*
+        version: link:../node-sdk
 
   packages/native:
     dependencies:

@@ -1,9 +1,9 @@
-// Guards the emulated cart FIFO's use of BlipToaster's reliable link (system/mesen/roles/NesN8FifoRole.cpp): the role
-// frames MIDI and consumes the ROM's acks, numbers frames in the order it releases them, and carries a message into the
-// next block so that it is numbered when it is released. The sender's own half of the link is the N8 pack's
-// (packages/n8/native/test/N8ReliableLink.test.cpp), and the model of the ROM's rules both halves drive is the shared
-// test helper library's LinkRomModel.hpp (@retroplug/testing): the pack may not include this package, and this one
-// declares it.
+// Guards the emulated cart FIFO's use of BlipToaster's reliable link (system/mesen/roles/NesN8FifoRole.cpp, the link from
+// the n8-wire package): the role frames MIDI and consumes the ROM's acks, numbers frames in the order it releases them,
+// and carries a message into the next block so that it is numbered when it is released. The sender's own half of the link
+// is the N8 pack's test binary's (packages/n8/native/test/N8ReliableLink.test.cpp), and the model of the ROM's rules both
+// halves drive is the shared test helper library's LinkRomModel.hpp (@retroplug/testing): a test helper neither pack owns,
+// as neither owns the wire.
 //
 // Run via `pnpm test:plugin` (retroplug-mesen-test).
 
@@ -54,7 +54,8 @@ TEST_CASE("reliable link: the emulated FIFO role frames MIDI and consumes the RO
     CHECK(role.drainUsbTx().empty());
     CHECK(role.link()->outstanding() == 0);
 
-    // A lost frame: the ack says 1 is still expected and that the ROM READ frame 1 (damaged) - re-sent on the next pump.
+    // A lost frame: the ack says 1 is still expected and that the ROM READ frame 1 (damaged) - re-sent on the next
+    // pump.
     e.data[1] = 62;
     role.onMidi(&e, 1);
     role.pumpUntil(0);
@@ -137,7 +138,8 @@ TEST_CASE("reliable link: the emulated role numbers frames in the order it relea
     CHECK(role.link()->resends() == 0);
 }
 
-TEST_CASE("reliable link: a message carried into the next block is numbered when it is released", "[audio][nes][link]") {
+TEST_CASE("reliable link: a message carried into the next block is numbered when it is released",
+          "[audio][nes][link]") {
     // A message queued past the block end rides rebase into the next block. One queued there for an EARLIER offset
     // goes out first, so it must carry the earlier sequence number - framing at the carried message's first pump would
     // have numbered it first, and the ROM would drop it.

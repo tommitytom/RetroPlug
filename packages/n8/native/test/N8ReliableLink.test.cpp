@@ -1,8 +1,8 @@
-// Guards the sender half of BlipToaster's reliable link (transport/N8ReliableLink.hpp, the pack's): messages framed
-// behind one sync, the window and its acks, running status and SysEx, a re-send on the timeout, a ROM that lost track,
-// and a soak through a channel that eats 1-3 byte bursts, where every message must apply once, in order. The emulated
-// cart FIFO that speaks the link from the other side is the Mesen package's, and its own cases are that package's test
-// binary's (packages/mesen/native/test/N8ReliableLink.test.cpp).
+// Guards the sender half of BlipToaster's reliable link (transport/N8ReliableLink.hpp, the n8-wire package's): messages
+// framed behind one sync, the window and its acks, running status and SysEx, a re-send on the timeout, a ROM that lost
+// track, and a soak through a channel that eats 1-3 byte bursts, where every message must apply once, in order. The
+// emulated cart FIFO that speaks the link from the other side is the Mesen package's, and its own cases are that package's
+// test binary's (packages/mesen/native/test/N8ReliableLink.test.cpp).
 //
 // Run via `pnpm test:n8` (retroplug-n8-test).
 
@@ -31,7 +31,8 @@ using rp::N8ReliableSender;
 TEST_CASE("reliable link: messages go out as frames behind one sync", "[n8][link]") {
     N8ReliableSender s;
     Bytes wire;
-    s.send(noteOn(0, 60, 100).data(), 3, [&](const std::uint8_t* d, std::size_t n, int) { wire.insert(wire.end(), d, d + n); });
+    s.send(noteOn(0, 60, 100).data(), 3,
+           [&](const std::uint8_t* d, std::size_t n, int) { wire.insert(wire.end(), d, d + n); });
     const Bytes cc = { 0xB1, 7, 90 };
     s.send(cc.data(), 3, [&](const std::uint8_t* d, std::size_t n, int) { wire.insert(wire.end(), d, d + n); });
     CHECK(wire == cat({ { 0xF4, 0 }, frame(0, { 0x90, 60, 100 }), frame(1, { 0xB1, 7, 90 }) }));
@@ -217,7 +218,8 @@ TEST_CASE("reliable link: a SysEx longer than the ROM's frame buffer is not fram
     Bytes big = { 0xF0 };
     for (int i = 0; i < 45; ++i) big.push_back(0x10);
     big.push_back(0xF7);
-    s.send(big.data(), big.size(), [&](const std::uint8_t* d, std::size_t n, int) { wire.insert(wire.end(), d, d + n); });
+    s.send(big.data(), big.size(),
+           [&](const std::uint8_t* d, std::size_t n, int) { wire.insert(wire.end(), d, d + n); });
     CHECK(wire.empty());
     CHECK(s.outstanding() == 0);
 }
@@ -229,7 +231,10 @@ TEST_CASE("reliable link: an ack that has not seen the frame waits; one that has
     N8ReliableSender s;
     Bytes wire;
     std::int64_t now = 0;
-    auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) { wire.insert(wire.end(), d, d + n); if (seq >= 0) s.onSent(seq, now); };
+    auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) {
+        wire.insert(wire.end(), d, d + n);
+        if (seq >= 0) s.onSent(seq, now);
+    };
     s.send(noteOn(0, 60, 100).data(), 3, emit);
 
     const Bytes notSeen = { 0xF5, 0, 0x7F };
@@ -248,7 +253,10 @@ TEST_CASE("reliable link: an ack after a frame arrived settles it - no re-send",
     N8ReliableSender s;
     Bytes wire;
     std::int64_t now = 0;
-    auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) { wire.insert(wire.end(), d, d + n); if (seq >= 0) s.onSent(seq, now); };
+    auto emit = [&](const std::uint8_t* d, std::size_t n, int seq) {
+        wire.insert(wire.end(), d, d + n);
+        if (seq >= 0) s.onSent(seq, now);
+    };
     s.send(noteOn(0, 60, 100).data(), 3, emit);
     const Bytes early = { 0xF5, 0, 0x7F }, later = { 0xF5, 1, 0 };
     now = 1'000; s.onBackChannel(early.data(), early.size(), now);

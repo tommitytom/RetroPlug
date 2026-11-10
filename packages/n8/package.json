@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
+    "@retroplug/n8-wire": "workspace:*",
     "@retroplug/node-sdk": "workspace:*",
     "@retroplug/tracker": "workspace:*",
     "@retroplug/ui": "workspace:*",

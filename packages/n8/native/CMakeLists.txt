@@ -1,10 +1,10 @@
 # The Everdrive N8 Pro pack (docs/modular-graph-phase-e2-design.md section 3): rp.n8.nes, the cart as a node, and the
 # link interface it drives the cart through (n8/CartLink.hpp), with the desktop's half beside it: the Edio protocol, the
 # serial thread that streams to the cart, the host that owns the link and runs the cart's jobs, and the serial port
-# (n8/desktop/). BlipToaster's reliable link (transport/N8ReliableLink.hpp) is the pack's as well: N8Link speaks it to
-# the cart, and the emulated NES FIFO role in packages/native speaks it from the cart's side. Added by
-# retroplug_package(n8) (cmake/packages.cmake). Like any pack, it depends on node-sdk alone; nothing here links a
-# packages/native target.
+# (n8/desktop/). BlipToaster's reliable link (transport/N8ReliableLink.hpp) comes from the n8-wire package, which this
+# pack declares: N8Link speaks it to the cart, and the mesen pack's emulated NES FIFO role speaks it from the cart's
+# side. Added by retroplug_package(n8) (cmake/packages.cmake). Like any pack, it depends on the node SDK and on the wire
+# it shares with mesen, and on nothing of the shell; nothing here links a packages/native target.
 
 # --- retroplug-n8: the rp_n8_package entry, rp.n8.nes (src/n8/N8Node.cpp), and the Edio protocol written once for both
 # targets: Edio (the commands, over the abstract n8/Transport.hpp), Menu (the on-device menu's commands) and Ops (a file
@@ -18,8 +18,11 @@ retroplug_package_library(retroplug-n8
     ${CMAKE_CURRENT_SOURCE_DIR}/src/n8/Edio.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/n8/Menu.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/n8/Ops.cpp)
+# N8Node.cpp includes n8wire/ExpansionVolume.hpp, whose root reaches this target, and the device twin that compiles its
+# sources again and copies its INCLUDE_DIRECTORIES, through the link below: that property carries a linked INTERFACE
+# target's roots.
 target_include_directories(retroplug-n8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(retroplug-n8 PUBLIC retroplug-node-sdk)
+target_link_libraries(retroplug-n8 PUBLIC retroplug-node-sdk retroplug-n8-wire)
 
 # The device build (RP_DEVICE_BUILD, cmake/packages.cmake) stops here: the desktop's half below is a serial port and a
 # thread, which a device has neither of, and its manifest entry is not `device`.

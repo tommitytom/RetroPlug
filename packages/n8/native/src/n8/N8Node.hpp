@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "graph/rp_node.h"
+#include "n8wire/ExpansionVolume.hpp"
 
 namespace rp::n8 {
 
@@ -18,16 +19,10 @@ namespace rp::n8 {
 //                      console makes it.
 const rp_package* n8Package();
 
-// rp.n8.nes's `expansionVolume` param: whole percent of unity, as the emulated NES's. One TS knob drives both nodes, so
-// the range is rp.mesen.nes's (an engine-graph test holds the two equal); the pack keeps its own, since the node
-// includes nothing of the engine's.
-inline constexpr int kExpansionVolumeMin = 0;
-inline constexpr int kExpansionVolumeMax = 200;
-inline constexpr int kExpansionVolumeDefault = 100;
-
 // rp.n8.nes's `expansionVolume` (whole percent of unity, as the emulated NES's) as the cart's master-volume register:
 // 128 is unity, clamped to the register's 0..255. The node is the only writer now: buildGraph gives it the system's own
-// knob as its param, so the emulated chip and the cartridge's are set from one value.
+// knob as its param, so the emulated chip and the cartridge's are set from one value. The range it is a percent OF is
+// n8wire/ExpansionVolume.hpp's, the one rp.mesen.nes declares its own param from.
 int expansionVolumeRegister(double percent);
 
 }  // namespace rp::n8
