@@ -120,8 +120,9 @@ in product order (the menu contributions, imported only by the UI), and `cli/gen
 `retroplug.cli` module in product order (the CLI tools, imported only by the dispatcher). The same run writes the
 typecheck paths: `tsconfig.host-modules.json` (each host module's declaration file, which a package with a
 `retroplug.host` declaration extends) and `tsconfig.paths.json` (the same entries plus the shell's own aliases, from
-`tsconfig.aliases.json`: a child's `paths` REPLACE its parent's, so the shell's program needs one file carrying both). The product list is the **dependency order and the registration
-order both** (a package before the ones that use it, the shell last), and only a ROM provider's place in it is
+`tsconfig.aliases.json`: a child's `paths` REPLACE its parent's, so the shell's program needs one file carrying both).
+The product list is the **dependency order and the registration order both** (a package before the ones that use it,
+the shell last), and only a ROM provider's place in it is
 behaviour: the providers run in that order, and the first to match a ROM fixes a system's role-list order. A role's
 kind, a kit format's id and a tracker integration's marker role are looked up rather than sequenced (one package's
 roles interleave another's without consequence, and the markers are exclusive), so for those a duplicate is the
@@ -143,14 +144,18 @@ generated modules and both path configs are gitignored, and `retroplug-ts-packag
 content changes. Seven targets depend on it, so they exist before the first esbuild run of a fresh checkout: the
 control-plane, UI, script, render-worker and CLI bundles, the example sessions and the CLI SDK assets. The root
 `pnpm typecheck` script runs the generator before any package's `tsc`, so a checkout with no generated file typechecks
-(CI's order is install, typecheck, build). A package with examples must have a `tsconfig.json` whose parsed `extends`
-names `../<shell>/tsconfig.host-modules.json` (the generator refuses one without, because the shell's program compiles
-`../*/examples`; naming the file in a comment is not extending it); a package with `retroplug.host` declares each host
-module it imports, and the generator and rule 3 both hold the declaration to the one shell-owned list,
-[host-modules.json](../packages/retroplug/host-modules.json). That list's `surface` is enforced too: a host module is
-importable only from the files its surface owns, which is the package's `examples/` and `ts/cli/` for `cli` and its
-`ts/ui/` for `ui`, and rule 3 refuses one imported from an app, protocol, console or test file, saying which surface
-the module belongs to.
+(CI's order is install, typecheck, build). A package that lists examples, or declares a host module the UI's surface
+owns, must have a `tsconfig.json` whose parsed `extends` names `../<shell>/tsconfig.host-modules.json` (the generator
+refuses one without: the shell's program compiles `../*/examples`, and a `.tsx` resolves `react` and
+`react/jsx-runtime` only through those paths; naming the file in a comment is not extending it); a package with
+`retroplug.host` declares each host module it imports, and the generator and rule 3 both hold the declaration to the one
+shell-owned list, [host-modules.json](../packages/retroplug/host-modules.json): five modules over two surfaces,
+`retroplug-cli` for `cli` and `react`, `react/jsx-runtime`, `lvgljs` and `lvgljs-ui` for `ui`. That list's `surface` is
+enforced too: a host module is importable only from the files its surface owns, which is the package's `examples/` and
+`ts/cli/` for `cli` and its `ts/ui/` for `ui`, and rule 3 refuses one imported from an app, protocol, console or test
+file, saying which surface the module belongs to. Rule 3's other half is where a package's React may live: a `.tsx` is
+admitted only under the package's `ts/ui/` tree, and automatic JSX makes it a use of `react/jsx-runtime` with no
+specifier, so a package with one declares that module.
 
 **The host contract.** The three TypeScript surfaces build a host for their hooks and tools from
 [core/ts/host.ts](../packages/core/ts/host.ts): `Host<G>` is an object of named groups (`files`, `png`, `kits`,
@@ -167,17 +172,22 @@ and the boundary check still sees the file as the package's source (it is outsid
 `devDependencies`). The shell's own tests ([test/systems/fixtures.ts](../packages/retroplug/test/systems/fixtures.ts))
 re-export the ones they share, so a store or menu test keeps one import.
 
-**The shell imports contracts, not carts (F4a's rule 9).** `packages/retroplug/src` may import an `@retroplug/*`
-specifier only from the boundary check's explicit list, each entry with the reason it is a contract rather than a cart:
-core's contract modules (`systemRoles`, `consoles`, `graphDocument`, `midiRouting`, `romParameters` and the rest), the
-tracker contract (`songCatalog`, `assetCatalog`, `trackerIntegration`, `trackerRender`, `trackerPlayback`,
-`trackerSongImport`, `workingSongBlob`), dsp's kit contract and package-contributions shape, and launchpad's registry
-and enums. A cart's or a console's own module is reached through the generated registries, which is why the four doors
-that used to re-export carts (`src/kit`, `src/tracker/index.ts`, `trackerRegistry`'s integration re-exports and
-`audioDriver`'s spec re-exports) are gone: an importer names the owning package's subpath (`@retroplug/lsdj/kitFormat`,
-`@retroplug/dsp`, `@retroplug/smsggdj/smsggdjIntegration`), and the shell's own cart-named entry points are lookups in
-the registries (`SystemsStore.loadEmbedded(id)`, `AudioDriver.compileKitFormat(id, spec)`). An allowlist entry no import
-uses fails the check, and `src/generated/` is not judged (it is the one place that names every package).
+**The shell imports contracts, not carts (rule 9).** The boundary check judges the app shell's three own trees, `src/`,
+`cli/` and `ui/`, each against an explicit list of the `@retroplug/*` specifiers it may import, each entry with the
+reason it is a contract rather than a cart. `src/` and `cli/` share `SHELL_IMPORTS`: core's contract modules
+(`systemRoles`, `consoles`, `graphDocument`, `midiRouting`, `romParameters` and the rest), the tracker contract
+(`songCatalog`, `assetCatalog`, `trackerIntegration`, `trackerRender`, `trackerPlayback`, `trackerSongImport`,
+`workingSongBlob`), dsp's kit contract and package-contributions shape, launchpad's registry and enums, and the test
+harness. `ui/` has a list of its own, `UI_IMPORTS`, because the kit and the view contract are the UI's alone (no `src/`
+or `cli/` file may name `@retroplug/ui-react`) and the control plane needs no menu model or contribution type. A cart's
+or a console's own module is reached through the generated registries, which is why the four doors that used to
+re-export carts (`src/kit`, `src/tracker/index.ts`, `trackerRegistry`'s integration re-exports and `audioDriver`'s spec
+re-exports) are gone: an importer names the owning package's subpath (`@retroplug/lsdj/kitFormat`, `@retroplug/dsp`,
+`@retroplug/smsggdj/smsggdjIntegration`), and the shell's own cart-named entry points are lookups in the registries
+(`SystemsStore.loadEmbedded(id)`, `AudioDriver.compileKitFormat(id, spec)`). A relative import is judged by where it
+lands: a `src/` file stays in `src/`, a `cli/` file in `cli/` or `src/` (the CLI is a surface above the control plane),
+and a `ui/` file in `ui/` or `src/` (the UI is a surface over the stores). An allowlist entry no import of its root
+uses fails the check, and a root's `generated/` tree is not judged (it is the one place that names every package).
 
 **The two boundary checks.** `pnpm check:boundaries`
 ([check-boundaries.mjs](../packages/retroplug/scripts/check-boundaries.mjs)) judges every file under a package's
@@ -193,15 +203,16 @@ trees, by target, by a library path, or through an include flag (`-I`, `-iquote`
 binary that opens a package's file, say its embedded ROM, reaches that package's tree though it links nothing of it),
 and the configure refuses anything else. It reads the TARGET's own properties, never a CMakeLists' text, so a path a
 comment names is no reach; the TS check, which has no target to read, counts a declaration as used from the file's text
-with its comments stripped, and only to raise or silence a warning. The TS check's one allowlist is rule 9's
-`SHELL_IMPORTS` (the shell's contract modules, each with the reason it is one); otherwise neither check excuses a reach
-(`EXCEPTIONS` is empty, and the native check has no exception at all). Each has its own fixtures
-([test/boundaries](../packages/retroplug/test/boundaries);
-`packages/native/test/packages`) that fail one rule each; the TS check's rule 9 (the shell's source may import only its
-contract modules) has a shell tree per answer, one with a cart import and one with only contract imports beside a
-generated one. They guard against accident and drift, not a determined author: each checker's header lists what it
-deliberately does not cover. `pnpm test` runs the TS check before it bundles a single test file, so a boundary a change
-broke is named as such rather than surfacing as a bundler error.
+with its comments stripped, and only to raise or silence a warning. The TS check's allowlists are rule 9's
+`SHELL_IMPORTS` and `UI_IMPORTS` (the shell's contract modules per root, each with the reason it is one); otherwise
+neither check excuses a reach (`EXCEPTIONS` is empty, and the native check has no exception at all). Each has its own
+fixtures ([test/boundaries](../packages/retroplug/test/boundaries); `packages/native/test/packages`) that fail one rule
+each; the TS check's rule 9 (the shell's src, cli and ui may import only their own list's contract modules) has a
+shell tree per answer: one per root with a cart import, one per root with only contract imports beside a generated one,
+and a tree whose UI file names a contract module only the shell's own list carries. They guard against accident and
+drift, not a determined author: each checker's header lists what it deliberately does not cover. `pnpm test` runs the
+TS check before it bundles a single test file, so a boundary a change broke is named as such rather than surfacing as a
+bundler error.
 
 **The shell's sources hold no cart or console literal.** A test
 ([test/source-literals](../packages/retroplug/test/source-literals)) walks `packages/retroplug/src` (not
@@ -217,7 +228,8 @@ place. The ids, extensions, cores and node types are the console registry's, rea
 and the cart ids (an embed's, a tracker integration's and a kit format's) from the generated package list, so a
 console or a cart a product adds is guarded without an edit to the test, and its knowledge stays its package's. The
 exemptions are the frozen v2 to v3 step's four package role-kind keys, which may not read the registry (decision 13).
-`cli/` is scanned too, skipping `cli/generated/` and the SDK's declaration file. `ui/` is F4c's. What it cannot see: a
+`cli/` and `ui/` are scanned too, each skipping its own `generated/` tree, and the SDK's declaration file. What it
+cannot see: a
 device package's ids and node types (an `n8`, a `launchpad`, an `rp.n8.*`), a non-console role kind, any id inside a
 string with whitespace in it, and the SDK's declaration file, which it skips. Like rule 9 it catches an accident rather
 than a determined author (a computed `["g", "b"].join("")`, a computed table key and a dotless pattern such as
@@ -291,9 +303,11 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    A package with `retroplug.ui` exports the module it names (the shell imports it through the generated menus), one
    with `retroplug.cli` exports its tools module (default-exporting `defineCliTools`), one with `retroplug.examples`
    keeps each entry under `examples/` and adds the generated `../retroplug/tsconfig.host-modules.json` to its
-   `extends`, and one with `retroplug.host` declares every host module it imports (today `retroplug-cli` alone). The
+   `extends`, and one with `retroplug.host` declares every host module it imports (one of the shell's five:
+   `retroplug-cli` for the `cli` surface, or a React module for `ui`). The
    generator refuses a missing module, a duplicate tool name or example name, an example outside `examples/`, a host
-   declaration the shell's list lacks and an examples package without that `extends`.
+   declaration the shell's list lacks, a missing `extends` on a package that lists examples or declares a UI host
+   module, and a React import or `.tsx` outside the package's `ts/ui/`.
 6. A protocol node's span label is the next free one (24 today: 16 up, with no gaps), which the manifest's `label` and
    the generator's check demand.
 7. A new contribution KIND is not data. It means editing `renderPackages` in
@@ -333,6 +347,33 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
     service). A host and a provider of different `RP_PROVIDER_ABI_VERSION`s refuse each other in both directions, at
     runtime: there is no optional read of a newer member. The product calls `rp_wake_providers` once per frame, and stops
     its providers after reclaiming its plans.
+11. A **view** is declared in the package's `retroplug.ui` module (`defineUi({ views })`), not coded in the shell: an
+    id, a label, `placement` `window` or `tile`, an optional `when(sys)` gate, an optional `visible` flag (a tile view
+    only), and one body kind. Two need nothing but plain TypeScript: a `pixels` body's `open` returns a session whose
+    `frame()` is the next `{ pixels, width, height }` (or null when nothing moved), and a `readout` body's `open`
+    returns a sampler whose `sample()` is the strip's lines and playing flag (null = an unsupported cart, undefined =
+    unreadable this frame). The shell renders both. A `component` body is React and is built with `reactView` from
+    `@retroplug/ui-react`: the package declares that workspace package in `dependencies` (as
+    [ui-fixture's manifest](../packages/ui-fixture/package.json) does) and, in `retroplug.host`, the React host modules
+    it imports (`react`, `react/jsx-runtime`, and `lvgljs` / `lvgljs-ui` where it names them; `retroplug.host` takes
+    only what the shell's host-modules.json lists), and its `tsconfig.json` extends the generated
+    `../retroplug/tsconfig.host-modules.json` so the typecheck resolves them; a package whose views are plain TS needs
+    neither the dependency nor the host declarations. React is admitted only under a package's `ts/ui/` tree, so a React
+    view's test cannot live in `ts/test/`: the pure controller (open, reopen, close) is tested there over fake views and
+    a fake host ([view-session.test.ts](../packages/retroplug/test/ui/view-session.test.ts)), and what the component
+    draws is proved by a `test:ui` case in the shell, where the display is - which needs a product to list the package,
+    since the UI test binary embeds the production bundle. A plain-TypeScript view needs none of that: its own tests
+    live in the package's `ts/test/` over a fake host, as
+    [ui-views.test.ts](../packages/lsdj/ts/test/ui-views.test.ts) does. The generated registry refuses a duplicate view
+    id (naming both packages), a placement or body kind the shell has not, and a `visible` on a window view.
+12. An **action** is a key binding the package owns (`defineUi({ actions })`): `{ id, label, keys?, pad?, run }`. Its id
+    is prefixed by its own package's manifest name (`lsdj.debug-overlay`), because a stored binding profile keeps
+    ids and a user's profile must name the owner; `label` is the bindings menus' row text, `keys`/`pad` are the
+    DEFAULTS (a missing entry reads `-`), and `run(host, ctx)` gets the UI host and the focused system's id (null on the
+    start screen). The generated registry refuses a duplicate action id, an id not prefixed by its package's name, a
+    default key `resolveKeyName` cannot resolve, a default pad name outside `GAMEPAD_BUTTON_NAMES` (SDL's button set),
+    and a default that collides with a shell default or a Game Boy button's (a key on both would fire the action and the
+    joypad). Two packages may share a default key; that is how one backtick still flips both debug overlays.
 
 **A console package's native half.** A package whose console the engine runs is a native entry like any other, plus
 three rules the two console packages (four node types between them) follow (F2,
@@ -410,7 +451,8 @@ which has no reading for the files it did not execute), and set `RP_FAIL_ON_SKIP
 skips on a machine with a complete fixture set.
 
 Fixtures are reached through injected paths, never a literal: `__REPO_RESOURCES_DIR__` (committed,
-in-repo, always present), `__RESOURCES_DIR__` (the sibling resources tree, `RETROPLUG_RESOURCES_DIR`),
+in-repo, always present), `__RESOURCES_DIR__` (the sibling resources tree, `RETROPLUG_RESOURCES_DIR`, which the pure
+runner injects as the native one does),
 `__RISA_SRC__` (`RISA_SRC`) and `__MGB_ROM__` (the mGB synth's committed ROM, `packages/mgb/rom/mGB.gb`,
 which F2 moved into its package). Pointing `__RESOURCES_DIR__` and `__RISA_SRC__` at a nonexistent directory is how
 the CI picture is reproduced locally.

@@ -181,9 +181,9 @@ const state = reader.read(wramBytes);                  // -> LsdjState (supporte
   render regime). Running plugin: `backend.readRam(id)` — the SnapshotRegistry per-block WRAM
   triple on the emulator facet, safe while audio plays (the CLI-only debug `readMemory` is not
   on the plugin channel). The live overlay
-  ([LsdjOverlay.tsx](../packages/lsdj/ts/ui/overlayView.ts) +
-  [useLsdjRuntime.ts](../packages/lsdj/ts/ui/overlayView.ts)) reads `readRam`
-  each frame and renders the state over the emulator tile.
+  ([overlayView.ts](../packages/lsdj/ts/ui/overlayView.ts), the "lsdj-overlay" view the LSDj package
+  registers) reads `readRam` each frame and draws its three-line readout over the emulator tile; the
+  HD player ([hdView.ts](../packages/lsdj/ts/ui/hdView.ts)) is the other live reader.
 
 Tests: [test/lsdj/runtime.test.ts](../packages/lsdj/ts/test/runtime.test.ts) +
 [test/lsdj/detect.test.ts](../packages/lsdj/ts/test/detect.test.ts) (pure-TS — the reader

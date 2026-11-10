@@ -1,17 +1,19 @@
 # The package split
 
-**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3, F2, F4a and F4b built
+**Date:** 2026-11-07 · **Branch:** `feature/modularize` · **Status:** roadmap; F1, F3, F2, F4a, F4b and F4c built
 ([modular-graph-phase-f1-design.md](modular-graph-phase-f1-design.md), whose section 11 records it and its follow-up
 pass; [modular-graph-phase-f3-design.md](modular-graph-phase-f3-design.md), whose section 12 records it;
 [modular-graph-phase-f2-design.md](modular-graph-phase-f2-design.md), whose section 12 records its execution and its
-follow-up pass; [modular-graph-phase-f4a-design.md](modular-graph-phase-f4a-design.md) and
-[modular-graph-phase-f4b-design.md](modular-graph-phase-f4b-design.md), the two halves of F4; what each leaves is
-[07-remaining-work.md](../spec/07-remaining-work.md)'s F1, F3, F2, F4a and F4b bullets). F4 split into **F4a**, the
-non-UI registrations and the shell's boundary (built), and **F4b**, the plain-TypeScript surfaces (built: the `ui`
+follow-up pass; [modular-graph-phase-f4a-design.md](modular-graph-phase-f4a-design.md),
+[modular-graph-phase-f4b-design.md](modular-graph-phase-f4b-design.md) and
+[modular-graph-phase-f4c-design.md](modular-graph-phase-f4c-design.md), the three parts of F4; what each leaves is
+[07-remaining-work.md](../spec/07-remaining-work.md)'s F1, F3, F2, F4a, F4b and F4c bullets). F4 split into **F4a**, the
+non-UI registrations and the shell's boundary (built), **F4b**, the plain-TypeScript surfaces (built: the `ui`
 package and the menu contributions, the cart CLI tools and the example sessions, the `Host` contract, rule 9 and the
-scanner over `cli/`, and the bundle split). **F4c** (React in packages: a `@retroplug/ui/kit`, the views and the
-overlays, rule 9 and the scanner over `ui/`) is next and not yet designed. Per-product bundles stay owed until a
-product's package list differs from the desktop's.
+scanner over `cli/`, and the bundle split), and **F4c**, the React half (built: the `ui-react` kit, the view contract
+and the action shape, the shell's renderers and slots, the LSDj HD player and the two debug overlays in their
+packages, and rule 9 and the scanner over `ui/`). Per-product bundles stay owed until a product's package list differs
+from the desktop's.
 
 [modular-graph-design.md](modular-graph-design.md) section 11 ("Package split") listed what carving RetroPlug into
 workspace packages would take. E1 started it (`node-sdk`, `graph-runtime`, `core`, `dsp`), E2 carved `n8`, and E4 made
@@ -64,11 +66,21 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
     callbacks, the device menus and the N8/Launchpad watchers move into their packs; the seven cart CLI tools become
     `retroplug.cli` contributions run against the CLI host, the example sessions move into their packages and import
     the SDK by its bare specifier, and the host-module list generates the typecheck paths. The proof: rule 9 and the
-    literal scanner over `cli/`, the `ui/` cart-import ratchet, and a bundle check that the control plane, the render
-    worker, the script nodes, the SDK, the dispatcher and the planner carry no UI while the UI carries no CLI. Nothing
-    re-recorded; the one behaviour edge an existing output shows is the CLI's command index order, and the second
-    (design section 6's E13) is a hand-edited project whose roles omit the system's core role losing the core's rows.
-    What it leaves is F4c and the per-product bundles, below. F4c is next.
+    literal scanner over `cli/`, the `ui/` cart-import ratchet (F4c retired it for rule 9's `ui/` root), and a bundle
+    check that the control plane, the render worker, the script nodes, the SDK, the dispatcher and the planner carry no
+    UI while the UI carries no CLI. Nothing re-recorded; the one behaviour edge an existing output shows is the CLI's
+    command index order, and the second (design section 6's E13) is a hand-edited project whose roles omit the system's
+    core role losing the core's rows. What it left is F4c, below, and the per-product bundles.
+  - **F4c: React in packages** ([design](modular-graph-phase-f4c-design.md), **built** on `feature/modularize`). The
+    React kit moves into `packages/ui-react` (`Box`, `lv`, the frame-poll hooks, `DebugReadout`, `tagTestId`,
+    `reactView`), so `@retroplug/ui` stays plain TypeScript and a package that wants no React never meets it; the
+    contribution gains declarative views (a full-window screen, or a layer over a tile, drawn as pixels or a readout by
+    the shell, or mounted as a component the package built with `reactView`) and actions (a key binding the profile and
+    the bindings menus carry); the shell renders views in the grid's place and in per-tile slots, owns their sessions,
+    and routes the actions beside its own. The LSDj HD player, the LSDj and risa debug overlays and their two
+    `debug-overlay` actions are their packages', so the shell's `ui/` names no cart: rule 9's third root judges `ui/`
+    against its own list, the literal scanner covers it, and the ratchet is gone. The one re-record is the design's edge
+    E1 (each bindings menu gains a row per contributed action). What it leaves is design section 11's.
 
 ## 3. The order
 

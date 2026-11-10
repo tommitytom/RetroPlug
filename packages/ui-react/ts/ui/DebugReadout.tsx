@@ -1,5 +1,5 @@
-// The shell both tracker debug overlays draw into (LsdjOverlay, RisaOverlay): a translucent strip along the
-// tile's bottom edge carrying a few lines of live readout. Each overlay only decides WHAT the lines say.
+// The strip both tracker debug overlays draw into (the LSDj and risa packages' readout views): a translucent
+// strip along the tile's bottom edge carrying a few lines of live readout. Each view only decides WHAT the lines say.
 import { EAlignType, Text } from "lvgljs-ui";
 
 import { Box } from "./Box";

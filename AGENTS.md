@@ -12,8 +12,9 @@ Start with these — all short:
   `packages/risa/` and `packages/smsggdj/`, the tracker layer they share in
   `packages/tracker/`, BlipToaster's app half and its MicroQuickJS MIDI policy in `packages/bliptoaster/`, the control
   surface in `packages/launchpad/` with the LSDj MI.MAP app that drives it in `packages/lsdj-launchpad/`, the plain-TS
-  UI contract (the menu model and the contribution types) in `packages/ui/`, the test harness in `packages/testing/`, the
-  box's device nodes in `packages/device-io/`, the device check's test nodes in
+  UI contract (the menu model, the contribution and view types) in `packages/ui/` with the React kit in
+  `packages/ui-react/` (and its component-view fixture, listed by no product, in `packages/ui-fixture/`), the test
+  harness in `packages/testing/`, the box's device nodes in `packages/device-io/`, the device check's test nodes in
   `packages/devtest/` (listed by no product), and everything about the Everdrive N8 Pro in `packages/n8/`. The older
   **legacy** build has been removed; [spec/07-remaining-work.md](spec/07-remaining-work.md) tracks the residual
   cleanup + feature gaps.
@@ -204,8 +205,9 @@ The rules below are the parts that don't fit those.
   and must carry no schema) default-exporting a package's console descriptors and the physical carts one of them can
   drive; `retroplug.protocol` names the module that default-exports a package's `DefinedNode`s beside the `nodes` (type,
   span label: 16 up with no gaps, unique) and the role kinds it places; `retroplug.ui` names a module default-exporting
-  the package's `defineUi({ rows, menus, trackers, services })` (the menu contributions and the UI services, imported
-  only by the UI), `retroplug.cli` one default-exporting `defineCliTools` (the package's subcommands), and
+  the package's `defineUi({ rows, menus, trackers, services, views, actions })` (the menu contributions, the UI
+  services, the views the shell renders and the app actions the key maps dispatch, imported only by the UI),
+  `retroplug.cli` one default-exporting `defineCliTools` (the package's subcommands), and
   `retroplug.examples` its example sessions under `examples/`; `retroplug.host` names each host module the package
   imports by bare specifier (`retroplug-cli` today), from the shell-owned list in
   `packages/retroplug/host-modules.json`. A tracker integration carries the cart hooks the
@@ -227,28 +229,27 @@ The rules below are the parts that don't fit those.
   provider's place in it is behaviour: the providers run in that order, and the first to match a ROM fixes a system's
   role-list order. Roles, kit formats and tracker integrations are looked up by kind, id or an exclusive marker role,
   so for those a duplicate - refused by the generated module - is the hazard, not the order. Two checks hold the
-  boundary, with one deliberate allowlist between them (rule 9's `SHELL_IMPORTS`; `EXCEPTIONS` is empty, and the native
-  check has none): `pnpm check:boundaries`
+  boundary, with no exception between them (`EXCEPTIONS` is empty, and the native check has none):
+  `pnpm check:boundaries`
   ([check-boundaries.mjs](packages/retroplug/scripts/check-boundaries.mjs): a package imports only what its
   `dependencies` declare, nothing imports a shell, a cycle is refused, and - rule 9 - the app shell's own
-  `packages/retroplug/src` and `packages/retroplug/cli` may import only the contract modules its explicit list names,
-  each with its reason, so a cart's or a console's code is reached only through the generated registries (a src file
-  reaches only src, a cli file cli or src, and either root's `generated/` is not judged; an entry no import uses fails
-  it), and [cmake/packages.cmake](cmake/packages.cmake)'s native twin (a package's targets link and include only
-  declared packages' trees). A test also walks both roots with TypeScript's syntax tree and refuses a platform id, a ROM
+  `packages/retroplug/src`, `cli` and `ui` may each import only the contract modules its explicit list names
+  (`SHELL_IMPORTS` for the first two, `UI_IMPORTS` for the UI, which is where the kit and the view contract live so that
+  no src or cli file may name `@retroplug/ui-react`), each entry with its reason, so a cart's or a console's code is
+  reached only through the generated registries (a src file reaches only src, a cli file cli or src, a ui file ui or
+  src, and each root's `generated/` is not judged; an entry no import of its root uses fails it), and
+  [cmake/packages.cmake](cmake/packages.cmake)'s native twin (a package's targets link and include only declared
+  packages' trees). A test also walks all three roots with TypeScript's syntax tree and refuses a platform id, a ROM
   extension, a core id, a node type or a cart id there (`test/source-literals`, its ids read from the generated console
   and package registries, so a console's or a cart's knowledge is its package's alone), and a bundle check holds the
   control plane, the render worker, the script nodes, the SDK, the dispatcher and the planner to carrying no UI (no
   `ui` package module, no package's `ts/ui/`, no `ui/generated`) and the UI to carrying no CLI (no package's `ts/cli/`,
-  no `core/cliTool.ts`, no `cli/generated`) (`test/script/bundle-ui-split.test.ts`). Until F4c moves the five files that
-  import a cart, `test/boundaries/ui-cart-imports.test.ts` is a ratchet over `ui/`: the files on its list may import
-  one, any other file fails, and a listed file that stops fails too (`pnpm test boundaries`). The packages it guards
-  are derived from the manifests - any package contributing code or baked bytes (an `app`, `ui`, `cli`, `examples`,
-  `protocol`, `consoles`, `embed` or `script` member), so a device pack with no app module is guarded too - and a
-  specifier on rule 9's list is a contract module a view may name. One `Host<G>` contract in
+  no `core/cliTool.ts`, no `cli/generated`) (`test/script/bundle-ui-split.test.ts`). One `Host<G>` contract in
   `packages/core/ts/host.ts` is what a hook or a CLI tool asks a surface for: named groups, a surface's builder
   offering only its own, and a host module (`host-modules.json`'s `surface`) is importable only from that surface's
-  own files - a package's `examples/` or `ts/cli/` for `cli`, `ts/ui/` for `ui`. Details:
+  own files - a package's `examples/` or `ts/cli/` for `cli`, `ts/ui/` for `ui` - and a package's `.tsx` lives only
+  under its `ts/ui/` tree (rule 3; automatic JSX makes the `.tsx` a use of `react/jsx-runtime`, so a package with one
+  declares that host module). Details:
   [spec/06-build-test.md](spec/06-build-test.md) and
   [docs/modular-graph-phase-f1-design.md](docs/modular-graph-phase-f1-design.md).
 - **A device pack is TypeScript on MicroQuickJS, and it runs the same bytes on the desktop and the box.** A package

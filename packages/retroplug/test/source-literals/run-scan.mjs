@@ -10,7 +10,7 @@
 // `${...}` that closes a span.
 //
 //   node test/source-literals/run-scan.mjs --platforms <id,...> --extensions <.ext,...> \
-//     --cores <id,...> --node-types <type,...> --carts <id,...> [--dirs src,cli] [--root <dir>]
+//     --cores <id,...> --node-types <type,...> --carts <id,...> [--dirs src,cli,ui] [--root <dir>]
 //
 // The guarded sets are the console registry's, not this file's: the test imports the generated CONSOLES list and passes
 // its platform ids, extensions, cores and node types, so a console a product registers later is guarded without an edit
@@ -20,8 +20,8 @@
 // class that happens to hold one (a filename sanitiser) out, and the bare-letter test keeps a permissive pattern such as
 // /^[\x20-\x7e]*$/ out. What it cannot see is what a program computes rather than spells: a platform assembled at
 // runtime (["g", "b"].join("")), a table keyed by a computed name, and a dotless pattern such as /(gb|gbc)$/.
-// Prints one JSON line: { literals: [{ file, value }] }, src/generated/ not scanned.
-import { readdirSync, readFileSync } from "node:fs";
+// Prints one JSON line: { literals: [{ file, value }] }, each directory's generated/ tree not scanned.
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -104,8 +104,11 @@ const isPatternHit = (source, flags) => {
 };
 
 /** Every .ts/.tsx file under `dir`, in a stable order, without the generated registries or the SDK's declaration file
- *  (a consumer's view of the SDK, written for an editor, not the shell's own code). */
+ *  (a consumer's view of the SDK, written for an editor, not the shell's own code). A directory the tree does not have
+ *  is skipped, as the boundary check's walk does: a fixture may be given the list the real tree is given while holding
+ *  only one of its trees. */
 function walk(dir, out = []) {
+  if (!existsSync(dir)) return out;
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {

@@ -15,6 +15,8 @@
 // boundary check says of itself.
 //
 // The scanner is Node's, so the test spawns test/source-literals/run-scan.mjs, as the boundary test spawns its runner.
+// It walks src/, cli/ and ui/ (each skipping its generated/ tree), so the shell's three trees are held to the same
+// rule; the guard sets are the registries', and a fixture pins each directory's walk.
 import { test, expect } from "@retroplug/testing";
 import { CONSOLES } from "../../src/generated/consoles";
 import { EMBEDS, KIT_FORMATS, TRACKER_INTEGRATIONS } from "../../src/generated/packages";
@@ -38,6 +40,10 @@ const CART_IDS = [
     ...KIT_FORMATS.map((format) => format.id),
   ]),
 ].sort();
+
+/** The shell's own trees, which rule 9 judges and the scan below walks. One constant, because both cases have to name
+ *  all three: the fixture case scans it too, so a directory dropping out of the real case fails there as well. */
+const SHELL_DIRS = "src,cli,ui";
 
 /** The one deliberate copy of a package's knowledge in the shell, held to being used: the v2 to v3 step's enum
  *  tables are keyed by role kind, and four of those kinds are a console's or a cart's own. The step may not read the
@@ -110,12 +116,12 @@ async function scan(root?: string, dirs = "src"): Promise<{ file: string; value:
   return (JSON.parse(out) as { literals: { file: string; value: string }[] }).literals;
 }
 
-test("the shell's sources and cli/ spell no platform, ROM extension or cart id", async () => {
+test("the shell's sources, cli/ and ui/ spell no platform, ROM extension or cart id", async () => {
   console.log(
     `# the registry's ids: ${PLATFORM_IDS.join(", ")}; extensions: ${ROM_EXTENSIONS.join(", ")}; ` +
       `cores: ${CORE_IDS.join(", ")}; node types: ${NODE_TYPES.join(", ")}; carts: ${CART_IDS.join(", ")}`,
   );
-  const literals = await scan(undefined, "src,cli");
+  const literals = await scan(undefined, SHELL_DIRS);
   console.log(`# platform/extension/core/node-type/cart literals: ${JSON.stringify(literals)}`);
   const remaining = literals.filter(
     (hit) => !FROZEN_MIGRATION_KEYS.some((key) => key.file === hit.file && key.value === hit.value),
@@ -151,6 +157,17 @@ test("the walk reads a table's keys, a pattern and a template tail, not a commen
     { file: "packages/retroplug/src/tables.ts", value: "rp.sameboy.gb" },
     { file: "packages/retroplug/src/tables.ts", value: "sameboy" },
     { file: "packages/retroplug/src/tables.ts", value: "rom.gb" },
+  ]);
+});
+
+test("the third directory is walked: the pre-move ui/ hit is found there", async () => {
+  // Before the views moved, ui/screens/grid/useRisaRuntime.ts was the one ui/ file spelling a cart's id. It scans the
+  // list the real case scans, so a directory leaving SHELL_DIRS fails this case too, and a return of that shape fails
+  // the real tree's.
+  const literals = await scan("test/source-literals/fixtures/literals-ui", SHELL_DIRS);
+  expect(literals).toEqual([
+    { file: "packages/retroplug/ui/screens/grid/useRisaRuntime.ts", value: "risa" },
+    { file: "packages/retroplug/ui/screens/grid/useRisaRuntime.ts", value: "/roms/risa.nes" },
   ]);
 });
 

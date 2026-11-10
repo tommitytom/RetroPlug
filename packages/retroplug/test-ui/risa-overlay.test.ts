@@ -1,8 +1,9 @@
-// The risa runtime debug overlay, end to end on the headless display — the risa twin of lsdj-overlay.
-// HIDDEN by default, toggled with backtick (App → toggleLsdjDebug, shared). We load a real risa ROM
-// (auto-attaches the `risa` role, so useRisaRuntime engages + identifies the version from the PRG), then
-// assert: absent by default; backtick reveals the readout (even idle risa decodes a `supported` state);
-// backtick again hides it. SKIPs when no risa ROM was staged (see run-ui-tests.mjs).
+// The risa runtime debug overlay, end to end on the headless display, the risa twin of lsdj-overlay.
+// HIDDEN by default, toggled with backtick (the risa package's `risa.debug-overlay` action). We load a real
+// risa ROM (auto-attaches the `risa` role, so the package's "risa-overlay" view applies, identifies the
+// version from the PRG and resolves its layout), then assert: absent by default; backtick reveals the
+// readout (even idle risa decodes a `supported` state); backtick again hides it. SKIPs when no risa ROM was
+// staged (see run-ui-tests.mjs).
 import { test, expect, skip, ui } from "ui-harness";
 
 const RISA = () => ui.romDir() + "/risa.nes";
@@ -23,10 +24,10 @@ test("the risa overlay is hidden by default and toggles on/off with backtick", (
   // Hidden by default.
   expect(ui.findByTestId("risa-overlay")).toBe(null);
 
-  // Backtick reveals it: useRisaRuntime identifies v2.2.1 from the PRG + resolves the layout, so even the
+  // Backtick reveals it: the view identifies v2.2.1 from the PRG + resolves the layout, so even the
   // idle (stopped) state renders as a supported readout.
   ui.tapKey(BACKTICK);
-  ui.advance(300); // a frame tick drives useRisaRuntime to read + decode RAM
+  ui.advance(300); // a frame tick drives the view's sampler to read + decode RAM
   ui.pump(10);
   expect(ui.findByTestId("risa-overlay") != null).toBeTruthy();
   expect(ui.findByTextContaining("v2.2.1") != null).toBeTruthy(); // the decoded readout, not just the strip

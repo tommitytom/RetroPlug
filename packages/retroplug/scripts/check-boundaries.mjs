@@ -3,10 +3,10 @@
 // imports what it declares and nothing else, and no package imports the shell.
 //
 // What it judges: every workspace package that has a ts/ tree, which means every file under packages/<name>/ts, sources
-// and tests alike, and - by rule 9 below - the app shell's own sources: packages/retroplug/src may reach only the
-// contract modules the list names, and through them no cart's or console's code. packages/native (the engine's tree) is
-// the other shell: it may import anything and is not judged, and nothing may import either shell. The app's ui/, cli/
-// and test trees are outside src and are not judged (F4b extends the rule to ui/ and cli/).
+// and tests alike, and - by rule 9 below - the app shell's own sources: packages/retroplug's src, cli and ui may each
+// reach only the contract modules its list names, and through them no cart's or console's code. packages/native (the
+// engine's tree) is the other shell: it may import anything and is not judged, and nothing may import either shell.
+// The app's test and test-ui trees are not judged.
 //
 // Each file's imports come from TypeScript's own scanner (ts.preProcessFile), so every form a compiler follows is
 // judged: a value import, an `import type`, an `export type ... from`, a type-position `import("x").T`, a `require`,
@@ -36,12 +36,13 @@
 //      *.test.ts), handing a test file's devDependencies to another package's source; one that reaches outside the
 //      package's ts/ tree, which no check reads; or one naming no file, an entry still saying the package publishes a
 //      module that moved away;
-//   9. an @retroplug/<package> specifier in packages/retroplug/src that is not one of SHELL_IMPORTS below, the shell's
-//      explicit list of contract modules (each entry with the reason it is a contract rather than a cart), or a
-//      RELATIVE import from there that lands outside packages/retroplug/src: a file of the app may reach a cart or a
-//      console only through the generated registries src/generated/ writes, and the app's ui/, cli/ and test trees are
-//      not a source's to import. src/generated/ is not judged (it is the one place that names every package), and an
-//      entry no import uses fails the check.
+//   9. an @retroplug/<package> specifier in the shell's own src, cli or ui that is not one of that root's list
+//      (SHELL_IMPORTS for src and cli, UI_IMPORTS for ui), each an explicit list of contract modules with the reason
+//      each entry is a contract rather than a cart; or a RELATIVE import from there that lands outside what that root
+//      may reach (src: src; cli: cli and src; ui: ui and src): a file of the app may reach a cart or a console only
+//      through the generated registries the generator writes, and the app's other trees are not a source's to import.
+//      Each generated/ tree is not judged (it is the one place that names every package), and an entry no import of its
+//      root uses fails the check.
 //
 // A host module (the bare specifiers packages/retroplug/host-modules.json lists) is judged twice more: the package must
 // declare it in `retroplug.host`, and it is importable only from the files of the surface its entry names (a package's
@@ -113,17 +114,15 @@ const ts = createRequire(import.meta.url)("typescript-5");
  *  a rule today. */
 const EXCEPTIONS = [];
 
-/** Rule 9's list: every @retroplug/<package> specifier `packages/retroplug/src` and `packages/retroplug/cli` may
- *  import, with the reason it is the shell's to reach. Each is a contract module (or a library that is not a cart), so
- *  a second console or a second tracker still needs no edit here; a cart's or a console's own module is reached through
- *  the generated registries (src/generated/packages.ts, protocol.ts and consoles.ts for the control plane,
- *  cli/generated/tools.ts for the CLI), which this rule does not judge. One list serves both roots on purpose: they are
- *  one program's two halves, so a contract module only cli/ imports today stays reachable from src/ without a second
- *  entry, and an entry per root would claim a precision the rule does not need. An entry no import of either root uses
- *  fails the check, so this shrinks with the shell. */
-/** Rule 9's list, exported because the `ui/` ratchet reads it too (test/boundaries/run-ui-cart-imports.mjs): a
- *  specifier the shell may name as a contract is a module a view may name as well. */
-export const SHELL_IMPORTS = [
+/** Rule 9's list for `src/` and `cli/`: every @retroplug/<package> specifier they may import, with the reason it is the
+ *  shell's to reach. Each is a contract module (or a library that is not a cart), so a second console or a second
+ *  tracker still needs no edit here; a cart's or a console's own module is reached through the generated registries
+ *  (src/generated/packages.ts, protocol.ts and consoles.ts for the control plane, cli/generated/tools.ts for the CLI),
+ *  which this rule does not judge. One list serves both roots on purpose: they are one program's two halves, so a
+ *  contract module only cli/ imports today stays reachable from src/ without a second entry, and an entry per root
+ *  would claim a precision the rule does not need. An entry no import of either root uses fails the check, so this
+ *  shrinks with the shell. */
+const SHELL_IMPORTS = [
   // The contract every package implements: the shell is its host, not a participant.
   { specifier: "@retroplug/core/canonicalJson", reason: "the document encoder every protocol driver writes through" },
   { specifier: "@retroplug/core/capability", reason: "the capability jobs' operation table a host's systems group names and a cart types a job by" },
@@ -159,6 +158,24 @@ export const SHELL_IMPORTS = [
   { specifier: "@retroplug/tracker/workingSongBlob", reason: "the working-song image a project carries across a reboot" },
   // The test harness itself: the SDK serves it to a consumer's tests, and the ROM-test session imports it.
   { specifier: "@retroplug/testing", reason: "the TAP harness a session's own tests run through (the SDK serves it to a consumer)" },
+];
+
+/** Rule 9's list for `ui/`: a list of its own, because the kit and the view contract are the UI's alone (src/ and cli/
+ *  must never reach `@retroplug/ui-react`), and because the control plane needs no menu model or contribution type.
+ *  Each entry is a contract module rather than a cart's or a console's code, which the UI reaches through the
+ *  generated `ui/generated/menus.ts`; an entry no `ui/` file imports fails the check, as an unused SHELL_IMPORTS entry
+ *  does. */
+const UI_IMPORTS = [
+  { specifier: "@retroplug/ui/menu", reason: "the menu model every composer and the Menu draw" },
+  { specifier: "@retroplug/ui/contribution", reason: "the contribution and view types the generated registry and the composers read" },
+  { specifier: "@retroplug/ui-react", reason: "the kit the shell's own components and the three renderers are built from" },
+  { specifier: "@retroplug/core/host", reason: "the host contract the UI host implements" },
+  { specifier: "@retroplug/core/systemRoles", reason: "the role contract the UI reads a system's roles through" },
+  { specifier: "@retroplug/core/midiRouting", reason: "the routing model the MIDI settings menu edits" },
+  { specifier: "@retroplug/launchpad/enums", reason: "the controller target enum the UI host validates a package's target against" },
+  { specifier: "@retroplug/tracker/songCatalog", reason: "the song catalog the shell's Songs menu reads through the integration" },
+  { specifier: "@retroplug/tracker/assetCatalog", reason: "the asset catalog the shell's Assets menus read" },
+  { specifier: "@retroplug/tracker/trackerIntegration", reason: "the integration contract the shell resolves a cart's tracker by" },
 ];
 
 function readJson(path) {
@@ -819,25 +836,52 @@ export function checkBoundaries({ root = REPO } = {}) {
     }
   }
 
-  // Rule 9: the app shell's own sources reach only SHELL_IMPORTS' contract modules, never a cart's or a console's code
-  // (which the generated registries in src/generated name instead, and which this rule does not judge), and a relative
-  // import of theirs stays inside src. The list is the real tree's and applies to a fixture tree too: the allowed
-  // fixture passes because its one contract import is an entry (core's systemRoles), not because a fixture states a
-  // list of its own.
+  // Rule 9: the app shell's own sources reach only their list's contract modules, never a cart's or a console's code
+  // (which the generated registries name instead, and which this rule does not judge), and a relative import of theirs
+  // stays inside what that root may reach. The lists are the real tree's and apply to a fixture tree too: an allowed
+  // fixture passes because its contract imports are entries (core's systemRoles, the UI's menu model), not because a
+  // fixture states a list of its own.
   const shell = packages.get("retroplug");
   const shellAllowed = new Map(SHELL_IMPORTS.map((entry) => [entry.specifier, entry.reason]));
+  const uiAllowed = new Map(UI_IMPORTS.map((entry) => [entry.specifier, entry.reason]));
   const shellUsed = new Set();
+  const uiUsed = new Set();
   if (shell !== undefined) {
     const src = join(shell.dir, "src");
     const cli = join(shell.dir, "cli");
-    // Rule 9's two roots and what each may reach relatively: a src file stays in src, and a cli file stays in cli or
-    // reaches src (the CLI is a surface OVER the shell's control plane). Anything else - ui/, test/, test-native/,
-    // tools-src/, another package - is reached only through a generated registry, or not at all.
+    const ui = join(shell.dir, "ui");
+    // Rule 9's three roots, what each may reach relatively and the list its bare imports are judged against: a src file
+    // stays in src; a cli file stays in cli or reaches src (the CLI is a surface OVER the shell's control plane); and a
+    // ui file stays in ui or reaches src (the UI is a surface over the stores src owns, and reads nothing of the
+    // dispatcher or the SDK). Anything else - test/, test-native/, tools-src/, another package - is reached only
+    // through a generated registry, or not at all.
     const roots = [
-      { dir: src, ignores: [`${PACKAGES}/retroplug/src/generated/`], reaches: [src] },
-      { dir: cli, ignores: [`${PACKAGES}/retroplug/cli/generated/`], reaches: [cli, src] },
+      {
+        dir: src,
+        ignores: [`${PACKAGES}/retroplug/src/generated/`],
+        reaches: [src],
+        allowed: shellAllowed,
+        used: shellUsed,
+        bare: "the shell's src/ and cli/",
+      },
+      {
+        dir: cli,
+        ignores: [`${PACKAGES}/retroplug/cli/generated/`],
+        reaches: [cli, src],
+        allowed: shellAllowed,
+        used: shellUsed,
+        bare: "the shell's src/ and cli/",
+      },
+      {
+        dir: ui,
+        ignores: [`${PACKAGES}/retroplug/ui/generated/`],
+        reaches: [ui, src],
+        allowed: uiAllowed,
+        used: uiUsed,
+        bare: "the shell's ui/",
+      },
     ];
-    for (const { dir, ignores, reaches } of roots) {
+    for (const { dir, ignores, reaches, allowed, used, bare } of roots) {
       for (const file of walk(dir, isTypeScript)) {
         const path = shown(root, file);
         if (ignores.some((prefix) => path.startsWith(prefix))) continue;
@@ -864,29 +908,39 @@ export function checkBoundaries({ root = REPO } = {}) {
             continue;
           }
           if (!specifier.startsWith("@retroplug/")) continue;
-          if (shellAllowed.has(specifier)) {
-            shellUsed.add(specifier);
+          if (allowed.has(specifier)) {
+            used.add(specifier);
             continue;
           }
           refuse(
             "shell-source",
             path,
             specifier,
-            `${path}: imports "${specifier}", which is not one of the contract modules the shell's src/ and cli/ may ` +
+            `${path}: imports "${specifier}", which is not one of the contract modules ${bare} may ` +
               "reach (rule 9): a cart's or a console's code is reached through the generated registries",
           );
         }
       }
     }
   }
-  const shellStale =
+  // An entry no import of its own root uses has outlived what it allowed, so it fails the check as an unused exception
+  // does. A fixture tree is not the real tree, so it judges no list.
+  const staleList = (entries, used, name, where) =>
     root === REPO
-      ? SHELL_IMPORTS.filter((entry) => !shellUsed.has(entry.specifier)).map(
-          (entry) =>
-            `SHELL_IMPORTS names ${entry.specifier} (${entry.reason}), which no file of packages/retroplug/src or ` +
-            "packages/retroplug/cli imports: delete the entry",
-        )
+      ? entries
+          .filter((entry) => !used.has(entry.specifier))
+          .map(
+            (entry) =>
+              `${name} names ${entry.specifier} (${entry.reason}), which no file of ${where} imports: delete the entry`,
+          )
       : [];
+  const shellStale = staleList(
+    SHELL_IMPORTS,
+    shellUsed,
+    "SHELL_IMPORTS",
+    "packages/retroplug/src or packages/retroplug/cli",
+  );
+  const uiStale = staleList(UI_IMPORTS, uiUsed, "UI_IMPORTS", "packages/retroplug/ui");
 
   // Rule 5: a cycle in the declared dependencies, over every package (the shell's declarations can close a loop too).
   for (const cycle of cycles(packages)) {
@@ -943,6 +997,7 @@ export function checkBoundaries({ root = REPO } = {}) {
           "removed it, so delete the entry",
       ),
     ...shellStale,
+    ...uiStale,
   ];
 
   return { refusals: refusals.filter((refusal) => !allowedRefusals.has(refusal)), allowed, warnings, stale };

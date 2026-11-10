@@ -1,10 +1,11 @@
 // The LSDj runtime debug overlay, end to end on the headless display. The overlay is a developer aid,
-// HIDDEN by default and toggled with the backtick key (App → toggleLsdjDebug). We load a real LSDj ROM
-// (auto-attaches the lsdj-sync role, so useLsdjRuntime engages), then assert:
+// HIDDEN by default and toggled with the backtick key (the lsdj package's `lsdj.debug-overlay` action).
+// We load a real LSDj ROM (auto-attaches the lsdj-sync role, so the package's "lsdj-overlay" view applies
+// and opens its sampler), then assert:
 //   - it is absent by default (not shown to players);
-//   - backtick reveals it (the WRAM reader resolves a supported layout → the readout renders);
+//   - backtick reveals it (the WRAM reader resolves a supported layout -> the readout renders);
 //   - backtick again hides it.
-// SKIPs when no LSDj ROM was staged (a large external asset — see run-ui-tests.mjs).
+// SKIPs when no LSDj ROM was staged (a large external asset, see run-ui-tests.mjs).
 
 import { test, expect, skip, ui } from "ui-harness";
 
@@ -29,7 +30,7 @@ test("the LSDj overlay is hidden by default and toggles on/off with backtick", (
 
   // Backtick reveals it: the reader identifies v9.4.2 + resolves a layout, so the readout renders.
   ui.tapKey(BACKTICK);
-  ui.advance(300); // a frame tick drives useLsdjRuntime to read + decode WRAM
+  ui.advance(300); // a frame tick drives the view's sampler to read + decode WRAM
   ui.pump(10);
   expect(ui.findByTestId("lsdj-overlay") != null).toBeTruthy();
   expect(ui.findByTextContaining("v9.4.2") != null).toBeTruthy(); // the decoded readout, not just the strip

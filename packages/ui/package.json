@@ -6,7 +6,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "The UI's contract, plain TypeScript: the menu data model and its item builders, the contribution types a package's UI module declares (declarative role-config rows, menu builders and their placements, tracker specs and UI services), and the row-reading helpers the shell renders a row with. The React kit follows in F4c.",
+  "description": "The UI's contract, plain TypeScript: the menu data model and its item builders, the contribution types a package's UI module declares (declarative role-config rows, menu builders and their placements, tracker specs, UI services, the view and action shapes), the row-reading helpers the shell renders a row with, and the readout's byte format (`@retroplug/ui/format`). It imports no React: a React view's body comes from `@retroplug/ui-react`, and a plain-TypeScript view implements this package's view type directly.",
   "exports": {
     "./contribution": "./ts/contribution.ts",
     "./format": "./ts/format.ts",

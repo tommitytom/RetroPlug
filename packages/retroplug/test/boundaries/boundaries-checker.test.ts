@@ -28,6 +28,10 @@
 // - a shell source file importing a cart's module, which rule 9 admits only through the generated registries beside the
 //   contract modules the list names (and the positive tree imports a contract module, with a cart reached from
 //   src/generated/ and not judged);
+// - a ui source importing a cart's module, or a contract module the shell's src may reach but the UI's own list
+//   omits, or reaching outside ui/ and src/ by a relative path, into another package or into the shell's cli/ (and the
+//   positive tree imports the UI's contract module, reaches src, and has a ui/generated file naming a cart, which is
+//   not judged);
 //
 // and three positive trees: one where a package declares a package it imports by name, a declared third-party subpath, a
 // devDependency from a test file (a type package's globals included), its own interface by a relative path, a
@@ -360,6 +364,53 @@ test("rule 9's relative half is per root: a src file reaches src, a cli file cli
       "packages/retroplug/src (rule 9): a cart's or a console's code is reached through the generated registries the " +
       "generator writes, and the shell's other trees are not a source's to import",
   ]);
+});
+
+test("a ui source importing a cart's module is refused against the UI's own list (rule 9)", async () => {
+  // The UI reaches a cart's code through the generated registry it is handed, and a device pack's client is not a
+  // contract module: the refusal is UI_IMPORTS', which names no package that contributes code.
+  const report = await drive("shell-ui-forbidden");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/retroplug/ui/probe.ts: imports "@retroplug/launchpad/client", which is not one of the contract modules ' +
+      "the shell's ui/ may reach (rule 9): a cart's or a console's code is reached through the generated registries",
+  ]);
+});
+
+test("a contract module the shell's src may reach but the UI's list omits is refused there too (rule 9)", async () => {
+  // One list would let the UI name whatever the control plane names. It has its own, so a module only src/ and cli/
+  // need is refused here even though SHELL_IMPORTS carries it.
+  const report = await drive("shell-ui-unlisted");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/retroplug/ui/evil.ts: imports "@retroplug/core/path", which is not one of the contract modules the ' +
+      "shell's ui/ may reach (rule 9): a cart's or a console's code is reached through the generated registries",
+  ]);
+});
+
+test("a ui source's relative import stays in ui/ or reaches src/, never cli/ (rule 9)", async () => {
+  // One file per direction: ui into cli/ and ui into another package. The UI is a surface over the stores src/ owns, so
+  // neither the dispatcher's tree nor a cart's is a tree it may import, and the two refusals come in walk order.
+  const report = await drive("shell-ui-relative");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    'packages/retroplug/ui/evil.ts: imports "../../fake/ts/index", which resolves outside packages/retroplug/ui and ' +
+      "packages/retroplug/src (rule 9): a cart's or a console's code is reached through the generated registries the " +
+      "generator writes, and the shell's other trees are not a source's to import",
+    'packages/retroplug/ui/sneaky.ts: imports "../cli/run", which resolves outside packages/retroplug/ui and ' +
+      "packages/retroplug/src (rule 9): a cart's or a console's code is reached through the generated registries the " +
+      "generator writes, and the shell's other trees are not a source's to import",
+  ]);
+});
+
+test("a ui source may import its list's contract and reach src, and ui/generated is not judged (rule 9)", async () => {
+  const report = await drive("shell-ui-allowed");
+  expect(report.status).toBe(0);
+  expect(report.refused).toEqual([]);
+  expect(report.stale).toEqual([]);
 });
 
 test("a host module the package declares is admitted, from the files its surface owns", async () => {

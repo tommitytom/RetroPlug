@@ -557,7 +557,11 @@ short-circuits on the project flag precisely because it runs on every menu rebui
   `backend.getFrame(systemId)` on each native `"frame"` event and blits it into an LVGL
   `Canvas` via `setBuffer` ([EmulatorTile.tsx:50](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx#L50)).
   Click → `setFocus`; an unfocused tile gets a translucent dim overlay, a focused one an accent
-  border (both suppressed when it is the only tile).
+  border (both suppressed when it is the only tile). Between the dim and the border, `TileViews`
+  ([TileViews.tsx](../packages/retroplug/ui/views/TileViews.tsx)) mounts one `StableSlot` per registered
+  tile view whose `when` accepts the system: the two debug overlays are their carts' packages now
+  (`lsdj-overlay`, `risa-overlay`), and the slot's fixed place is what keeps a strip that appears
+  late from landing over the border and the render badge.
 - [`layout.ts`](../packages/retroplug/ui/screens/grid/layout.ts) is pure grid math
   (`GB_NATIVE_W/H`, `shapeFor`, `gridContentSize`, `getTileBounds`).
 
@@ -622,34 +626,46 @@ widget's native uid for the test harness and is inert in production.
   `useFocusGroup` claims the keypad; Enter → activate, Up/Down move the cursor, Left/Right →
   `onCycle(±1)`.
 
-### LVGL primitives — [`ui/lvgl/`](../packages/retroplug/ui/lvgl)
+### The LVGL kit - [`@retroplug/ui-react`](../packages/ui-react)
 
 - [`Box.tsx`](../packages/ui-react/ts/ui/Box.tsx) - a `<View>` with the LVGL
   default-theme chrome zeroed, caller style merged on top.
-- [`FocusProvider.tsx`](../packages/retroplug/ui/lvgl/FocusProvider.tsx) — owns the
-  app-wide empty **"sink"** keyboard group's lifecycle so LVGL doesn't route arrows/Enter into
-  clickable tiles. It deliberately does *not* claim the keypad itself (parent effects run
-  after children's, so it would clobber a just-mounted menu).
-- [`useFocusGroup.ts`](../packages/retroplug/ui/lvgl/useFocusGroup.ts) — the reusable
-  claim-the-keypad dance: a `useLayoutEffect` builds a fresh group from ordered refs, focuses a
-  target, `setKeyboardGroup(group)`, and on cleanup restores the sink (**never null**) and
-  destroys the group.
 - [`useNativeEvent.ts`](../packages/ui-react/ts/ui/useNativeEvent.ts) - subscribes to
   the `lvgljs` `on`/`off` bus (`frame` / `key` / `resize` / …) with a stable listener + handler
   ref (no re-subscribe on inline closures).
-- [`useWindowSize.ts`](../packages/retroplug/ui/lvgl/useWindowSize.ts) — the live window
-  size reactive to `"resize"`; `requestWindowSize` / `isWindowSizeControlled` are the TS side of
-  the `__rp_*` native window seam.
 - [`lv.ts`](../packages/ui-react/ts/ui/lv.ts) - typed `ViewEx` / `TextEx` / `CanvasEx`: the one
   place the lvgljs-ui components are cast, behind prop types for what native accepts. Plus
   [`PixelCanvas.tsx`](../packages/ui-react/ts/ui/PixelCanvas.tsx) (a crisp, aspect-kept frame
-  canvas) and [`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx).
+  canvas).
 - [`useFramePoll.ts`](../packages/ui-react/ts/ui/useFramePoll.ts) - the frame-clocked polls:
   every-N-frames, versioned native status, and per-frame sampling deduped on a display signature.
 
+### The shell's LVGL primitives - [`ui/lvgl/`](../packages/retroplug/ui/lvgl)
+
+These touch the app's own window and focus model, so they stay in the shell rather than the kit.
+
+- [`FocusProvider.tsx`](../packages/retroplug/ui/lvgl/FocusProvider.tsx) - owns the
+  app-wide empty **"sink"** keyboard group's lifecycle so LVGL doesn't route arrows/Enter into
+  clickable tiles. It deliberately does *not* claim the keypad itself (parent effects run
+  after children's, so it would clobber a just-mounted menu).
+- [`useFocusGroup.ts`](../packages/retroplug/ui/lvgl/useFocusGroup.ts) - the reusable
+  claim-the-keypad dance: a `useLayoutEffect` builds a fresh group from ordered refs, focuses a
+  target, `setKeyboardGroup(group)`, and on cleanup restores the sink (**never null**) and
+  destroys the group.
+- [`useWindowSize.ts`](../packages/retroplug/ui/lvgl/useWindowSize.ts) - the live window
+  size reactive to `"resize"`; `requestWindowSize` / `isWindowSizeControlled` are the TS side of
+  the `__rp_*` native window seam.
+- [`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx) - a fixed-position wrapper
+  for one item of a reordering or type-swapping list, because lv_binding_js's `insertChildBefore`
+  always appends: only the wrapper's single child ever changes.
+
 The rest of `ui/` outside `screens/` is split by what it depends on:
-[`ui/hooks/`](../packages/retroplug/ui/hooks) holds plain React helpers with no LVGL in them
-(`useStateRef`, `useForceUpdate` / `useRerenderOn`);
+[`ui/hooks/`](../packages/retroplug/ui/hooks) holds the one plain React helper left in the shell
+(`useStateRef`; the frame and re-render hooks are the React kit's);
+[`ui/views/`](../packages/retroplug/ui/views) is the shell's side of a package's views - `viewSession.ts`
+(the pure session controller), `useViewSession.ts` (the one effect the three renderers share), the pixels,
+readout and component renderers, the window and tile slots - and `ui/input/appActions.ts` dispatches the
+contributed actions beside the shell's own three;
 [`ui/host/`](../packages/retroplug/ui/host) is the native editor seam - `nativeHooks.ts` types
 every `__rp_*` hook once, beside the render-job and open-path seams; and
 [`ui/app/`](../packages/retroplug/ui/app) holds the app's own flows - the full-window overlays

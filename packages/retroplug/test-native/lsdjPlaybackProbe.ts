@@ -15,7 +15,7 @@
 //      experiment that is about our code.
 //
 //   2. It samples position per render slice via the per-block WRAM seam (backend.readRam →
-//      LsdjReader, the same path LsdjOverlay uses) and returns a TIMELINE, so a caller can watch how
+//      LsdjReader, the same path the overlay view uses) and returns a TIMELINE, so a caller can watch how
 //      state evolves rather than probing a single settled point.
 //
 // Every entry point returns null when the aboy ROM is absent so callers skip cleanly, matching the

@@ -49,7 +49,7 @@ built ([05-data-persistence.md](05-data-persistence.md)).
 There is no live "watch RAM" streaming path. Reads are one-shot through
 the [`SnapshotRegistry`](../packages/native/src/host/engine/SnapshotRegistry.hpp) read door, and the
 consumers that want live memory poll it: the LSDj overlay per frame, and the HD player
-([useLsdjHdSession.ts](../packages/lsdj/ts/ui/hdView.ts)) on a frame divider,
+([hdView.ts](../packages/lsdj/ts/ui/hdView.ts)) on a frame divider,
 because a full 128 KiB WRAM copy plus a song decode is too expensive to do every frame. So this is a
 cost question, not a capability one - an arming seam would let those two stop copying the whole image
 to read a few hundred bytes of it. Nothing of the old mechanism is left to switch on: `enableMemorySnapshot`,
@@ -678,9 +678,10 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     `trackerIntegrationFor` ([trackerIntegration.ts](../packages/tracker/ts/trackerIntegration.ts), by
     `markerRole` presence), so the LSDj menu's sync cyclers
     ([menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts)) edit a left-out `lsdj-sync` on an mGB cart;
-    `hasRole(..., "lsdj-sync")` in `ui/App.tsx`, `ui/screens/grid/useLsdjRuntime.ts`,
-    `ui/screens/hd/useLsdjHdSession.ts` and `projectStore.ts` (which tests `roles.some((r) => r.kind ===
-    "lsdj-sync")`); and `projectParameterMap`
+    `hasRole(..., "lsdj-sync")` in
+    [lsdj/ts/ui/hdView.ts](../packages/lsdj/ts/ui/hdView.ts) and
+    [lsdj/ts/ui/overlayView.ts](../packages/lsdj/ts/ui/overlayView.ts) and `projectStore.ts` (which tests
+    `roles.some((r) => r.kind === "lsdj-sync")`); and `projectParameterMap`
     ([parameterMap.ts](../packages/retroplug/src/parameterMap.ts)), which still exposes mGB's CC lanes for an LSDj
     cart carrying a stale `mgb`. The fix is `placedRole(...)`
     ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)) in those readers. Not fixed.
@@ -854,29 +855,53 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   and import the SDK by its bare `retroplug-cli` specifier, and `retroplug.host` + the shell's
   [host-modules.json](../packages/retroplug/host-modules.json) generate the typecheck paths. The proof: rule 9 holds
   both `src/` and `cli/` to an explicit contract list (with per-root relative semantics), the literal scanner covers
-  `cli/` with the console and cart registries' ids, a ratchet names the five `ui/` files F4c moves, and a bundle check
+  `cli/` with the console and cart registries' ids, a ratchet named the five `ui/` files F4c then moved (F4c retired it
+  for rule 9's `ui/` root), and a bundle check
   says the control plane, the render worker, the script nodes, the SDK, the dispatcher and the planner carry no UI (no
   `ui` package module, no package's `ts/ui/`, no `ui/generated`) while the UI carries no CLI (no package's `ts/cli/`, no
   `core/cliTool.ts`, no `cli/generated`). Nothing was re-recorded; the behaviour edges are the CLI command index's
   order (the shell's five, then the packages' in product order), which a test pins, and a hand-edited project whose
   roles omit the system's core role no longer drawing the core's dead rows (design section 6's E13). What it leaves:
-  - **F4c: React in packages, next.** A `@retroplug/ui/kit` (`Box`, `lv`, `PixelCanvas`, `useNativeEvent`, the
-    frame-poll hooks, `DebugReadout`), the LSDj HD player and the two overlays as views, a UI-only view registry, how
-    packages declare React (`retroplug.host` gains `react`, `react/jsx-runtime`, `lvgljs-ui`, `lvgljs`), rule 9 and the
-    scanner over `ui/` (one literal there today: `useRisaRuntime.ts`'s `"risa"`), and the `ui/` ratchet deleted. The
-    shell's `tsconfig.json` includes `../*/ts`, so a `.tsx` in a package needs a `jsx` setting per package or a separate
-    UI program - and `tsconfig.ui.json`'s four hand-written `paths` (`react`, `react/jsx-runtime`, `lvgljs`,
-    `lvgljs-ui`) must be generated from `host-modules.json` for the same paths-replace reason `tsconfig.paths.json`
-    exists, while `ui-harness` stays the shell-owned `tsconfig.aliases.json`'s entry.
+  - **F4c: React in packages, built below.** The React kit, the views and the actions moved into the packages; what
+    that left is the next bullet's.
   - **The controller app's display bug is owed, deliberately kept identical.** A project whose controller app's config
     is hand-edited (a value the schema or a row does not list) still shows what the old menu showed, fallback for
     fallback; the display edge the F4b review found is recorded rather than fixed, because F4b changes no behaviour.
   - **Per-product bundles** stay owed (F4a's item); F4b adds that `ui/generated/menus.ts` and `cli/generated/tools.ts`
     are separate modules, so the UI and the CLI each carry only theirs, and the bundle check keeps that true.
   - **The shell's hard dependency on `launchpad`** (`registry`, `enums`) is unchanged, and a UI kit compile
-    (`host.kits` in the UI host) and `systems.readRam` for F4c's views are not there yet.
+    (`host.kits` in the UI host) stayed F4c's and is still owed.
   - **Windows, macOS and arm64 builds** of every F4b package and script are owed, as F4a's were (`MemoryType` stays a
     closed wire enum, F2's item).
+
+- **F4c built: React in packages** ([modular-graph-phase-f4c-design.md](../docs/modular-graph-phase-f4c-design.md), on
+  `feature/modularize`): the React kit is a package of its own, `@retroplug/ui-react`
+  ([packages/ui-react](../packages/ui-react)), with its React under its own `ts/ui/` tree (the one place rule 3 admits
+  React into) and the four React host modules generated into the typecheck paths; `tsconfig.base.json` gains
+  `jsx: react-jsx`, and `packages/ui-fixture` (listed by no product) proves a `component` view typechecks. The `ui`
+  package's contribution gained the view contract (`Readable`/`Signal`, `PixelSession`/`ReadoutSampler`, the three body
+  kinds, window and tile views) and the action shape, and the generated `ui/generated/menus.ts` carries `VIEWS` and
+  `ACTIONS` beside `UI_CONTRIBUTIONS`, each with its load-time refusals. The shell renders a window view in place of the
+  grid and a tile view in a per-view `StableSlot` over every tile its `when` accepts, owns the session lifecycle in
+  `ui/views/` (open, reopen on a ROM path or role change, close on a hide or unmount), and dispatches contributed
+  actions beside its own three through the key and gamepad maps. The LSDj HD player, the LSDj and risa debug overlays
+  and their two `debug-overlay` actions are their packages' now
+  ([lsdj/ts/ui](../packages/lsdj/ts/ui), [risa/ts/ui](../packages/risa/ts/ui)); `uiViews`, `MenuContext.openLsdjHd`,
+  `lsdjDebug` and the six moved `ui/` files are gone, so the shell's `ui/` names no cart. The proof: rule 9's third root
+  (`ui/` judged against its own `UI_IMPORTS`), the literal scanner over `ui/`, the `ui/` ratchet deleted, and the
+  recorded menu matrix's one edge (E1: each bindings menu gains a row per contributed action, 700 added lines and
+  nothing else). Nothing else was re-recorded; the behaviour edges are design section 7's (the backtick is rebindable
+  per overlay, `views.open` reports what it refuses, a throwing action is isolated, and a role write reopens that
+  system's views). What it leaves (design section 11):
+  - **A real `component` view**: the kind and its fixture ship, and the first package that needs React for a view proves
+    it on a host, with the `test:ui` case that lands with it.
+  - **A kit compile** (`host.kits` in the UI host) when a UI feature needs one, and gamepad axis tokens as action
+    bindings if a package wants a stick-driven action.
+  - **The controller app's display bug**, the per-product bundles and the shell's hard dependency on `launchpad`,
+    unchanged.
+  - **Windows, macOS, arm64 and CI** for F4c's scripts and packages, as F4a's and F4b's; and two shape questions left
+    as built: whether `tsconfig.ui.json` folds into the shell's program, and whether the reopen key stays as wide as a
+    role write.
 
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the

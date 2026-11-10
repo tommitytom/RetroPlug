@@ -76,7 +76,8 @@ new native code — it polls `readRam` through the snapshot registry on a frame 
 copying 128 KiB and decoding a song every frame is too expensive (see the live-memory entry in
 [07-remaining-work.md](07-remaining-work.md)).
 
-- Code: `packages/lsdj/ts/hd/` (tiles, render, canvas), `ui/screens/hd/`.
+- Code: `packages/lsdj/ts/hd/` (tiles, render, canvas) and
+  `packages/lsdj/ts/ui/hdView.ts` (the "lsdj-hd" window view the shell renders).
 - **Prove a change:** `pnpm test:ui lsdj-hd`, `pnpm test lsdj/hd`.
 
 ---
