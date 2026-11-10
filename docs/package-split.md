@@ -65,8 +65,10 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
     `retroplug.cli` contributions run against the CLI host, the example sessions move into their packages and import
     the SDK by its bare specifier, and the host-module list generates the typecheck paths. The proof: rule 9 and the
     literal scanner over `cli/`, the `ui/` cart-import ratchet, and a bundle check that the control plane, the render
-    worker, the SDK, the dispatcher and the planner carry no UI while the UI carries no CLI. Nothing re-recorded; the
-    one behaviour edge is the CLI's command index order. What it leaves is F4c and the per-product bundles, below.
+    worker, the script nodes, the SDK, the dispatcher and the planner carry no UI while the UI carries no CLI. Nothing
+    re-recorded; the one behaviour edge an existing output shows is the CLI's command index order, and the second
+    (design section 6's E13) is a hand-edited project whose roles omit the system's core role losing the core's rows.
+    What it leaves is F4c and the per-product bundles, below. F4c is next.
 
 ## 3. The order
 

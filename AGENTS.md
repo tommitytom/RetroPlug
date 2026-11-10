@@ -240,9 +240,12 @@ The rules below are the parts that don't fit those.
   and package registries, so a console's or a cart's knowledge is its package's alone), and a bundle check holds the
   control plane, the render worker, the script nodes, the SDK, the dispatcher and the planner to carrying no UI (no
   `ui` package module, no package's `ts/ui/`, no `ui/generated`) and the UI to carrying no CLI (no package's `ts/cli/`,
-  no `core/cliTool.ts`, no `cli/generated`) (`test/script/bundle-ui-split.test.ts`). Until F4c moves the six files that
+  no `core/cliTool.ts`, no `cli/generated`) (`test/script/bundle-ui-split.test.ts`). Until F4c moves the five files that
   import a cart, `test/boundaries/ui-cart-imports.test.ts` is a ratchet over `ui/`: the files on its list may import
-  one, any other file fails, and a listed file that stops fails too (`pnpm test boundaries`). One `Host<G>` contract in
+  one, any other file fails, and a listed file that stops fails too (`pnpm test boundaries`). The packages it guards
+  are derived from the manifests - any package contributing code or baked bytes (an `app`, `ui`, `cli`, `examples`,
+  `protocol`, `consoles`, `embed` or `script` member), so a device pack with no app module is guarded too - and a
+  specifier on rule 9's list is a contract module a view may name. One `Host<G>` contract in
   `packages/core/ts/host.ts` is what a hook or a CLI tool asks a surface for: named groups, a surface's builder
   offering only its own, and a host module (`host-modules.json`'s `surface`) is importable only from that surface's
   own files - a package's `examples/` or `ts/cli/` for `cli`, `ts/ui/` for `ui`. Details:

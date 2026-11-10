@@ -1,9 +1,10 @@
 # Phase F4b: the plain-TypeScript surfaces
 
 **Date:** 2026-11-09 · **Branch:** `feature/modularize`
-**Status:** designed 8a74339b9; prototyped (six stages, each Opus-reviewed and fixed); as built in section 11; plan
-next. Designed over `b96fb1bb9` (the F4a tip plus the Windows and BSD-sed merge; sections 1-4 approved 2026-11-09, the
-draft's questions answered). Section 9 keeps only what is still open.
+**Status:** designed `8a74339b9`, built on `feature/modularize` in the six commits and the follow-up section 12 records
+(the prototype they replay is section 11), accepted and reviewed. Designed over `b96fb1bb9` (the F4a tip plus the
+Windows and BSD-sed merge; sections 1-4 approved 2026-11-09, the draft's questions answered). Section 9 keeps only what
+is still open.
 
 F4b is the second of three pieces of the package split's fourth phase ([package-split.md](package-split.md)), after F4a
 ([modular-graph-phase-f4a-design.md](modular-graph-phase-f4a-design.md)), which took the non-UI registrations out of
@@ -451,7 +452,10 @@ The shell composes the menus from the generated list in product order, so a pack
 `retroplug.products.desktop` puts it. Today's order is preserved by it: `sameboy` (4th) before `mesen` (11th) for the
 system settings, `launchpad` (2nd) before `n8` (10th) for the instance's device entries. The one function that reads the
 generated list is `menuPlacement(placement, host, sys, ctx)` in `ui/host/menuContributions.ts` (with
-`contributedTrackerUi(id)` and `uiServices()`).
+`contributedTrackerUi(id)` and `uiServices()`). The menu is keyed by an item's id, so the composer keeps the FIRST of
+two rows that share one and reports the rest on the console: a hand-edited asset override can produce a duplicate, and a
+missing row is better than a menu that does not render. `assertUniqueMenuIds` stays as the same rule for the
+generator's checks and a test.
 
 - `system.settings`: `systemChildren`' knob block becomes the rows of every contribution whose role the system has,
   then the shell's own rows. The first four contributions' rows are today's code.
@@ -523,7 +527,12 @@ edge once more (the applied-scan guard makes the re-applied edge a no-op for `co
 is the one generic hook: it runs `start` in an effect, subscribes every `subscribe` through `useRerenderOn` (the list is
 a module constant, so the call is stable) and hands the frame counting to `ui/app/serviceTicker.ts`'s `tickServices`
 over one `useNativeEvent("frame")`, which `test/services.test.ts` pins with fake services (per-service divisors, one
-repaint answer per frame, a list whose length changed re-sizing its counters). `App.tsx` lost `useN8SdWatch`,
+repaint answer per frame, a list whose length changed re-sizing its counters). `start` runs once per MOUNT and the hook
+holds that mount's record in a ref, so a host object a render rebuilt cannot restart a service (a start emits, which
+would re-render: a loop); a throw in a `start` or a poll is caught and reported, and skips only that service, which is
+what the separate hooks it replaced gave. The Launchpad service's `start` also records the host's RPC channel, so
+`__rp_scanControlSurface` (the SDL harness's hook, outside React) reaches the facet without a menu having read it
+first. `App.tsx` lost `useN8SdWatch`,
 `useLaunchpadScanWatch`, `restoreLaunchpad` and the two `subscribe*` imports. The packs' `resolveClient`, `resolveLink`
 and the scan clock read a test-injected global (`__rp_launchpadClient`, `__rp_launchpadClock`, `__rp_n8LinkClient`)
 before their module state, because the UI bundle holds its own copies of the modules a test could set; nothing in
@@ -642,9 +651,10 @@ cannot import the shell's `createRealBackend`); they import the tool from its pa
 SDK by the bare specifier. `retroplug-example-session` builds each to the same `build/cli/<name>.js` (so the three root
 scripts, the Reaper analyze steps and `docs/lsdj.md` keep working), through a `retroplug_examples()` function in
 `cmake/packages.cmake` that reads the manifests of `RP_DESKTOP_PACKAGES` (it skips an empty list, and refuses a
-duplicate name once the shell's three sessions are appended; the generator refuses the same duplicate, and an entry
-outside `examples/`, earlier); `tools/build-session.js` marks `retroplug-cli` external (the binary serves it from its
-loaded-module table, as it does for a test).
+duplicate name once the shell's three sessions are appended; the generator refuses the same duplicate, an entry
+outside `examples/`, a name one of the shell's three sessions already owns, and a name that is not a plain file stem,
+earlier); `tools/build-session.js` marks `retroplug-cli` external (the binary serves it from its loaded-module table,
+as it does for a test).
 
 **The SDK surface the examples need is larger than the brief's one addition (decision 10 accepts all four).** The six
 examples imported `runSession`, `hostArgs`, `encodeWav`, `interleaveStereoStreams`, `deinterleaveStereo` and
@@ -658,7 +668,9 @@ constructor's arity and every member the declaration describes, the real `Constr
 one, the declared `EngineGraph` opaque, `runSession`'s arity, return and argument tuple, and `Exact` types for both
 stereo helpers, with a usage body that constructs the declared class and round-trips the helpers (`runSession` is only
 referenced, never called). Its first run found real drift, fixed in the declaration: `ConstructSpec` now carries
-`romBytes?`, `sramBytes?`, `stateBytes?` and `coreConfig?` with the real types (`sramBytes` is `Uint8Array | null`).
+`romBytes?`, `sramBytes?`, `stateBytes?` and `coreConfig?` with the real types (`sramBytes` is `Uint8Array`). The check
+compares `ConstructSpec`'s key set exactly both ways and each value both ways except `platform` and `core`, which the
+declaration widens to plain strings on purpose (a one-way check cannot see an optional field the declaration drops).
 **E4 was checked first**, as the design asked: `retroplug-cli build/cli/mgb-smoke.js` (the bundle is 357 bytes and says
 `import { runSession } from "retroplug-cli"`) renders and writes its PNG, so the binary serves the SDK module to a
 session run by path.
@@ -734,6 +746,15 @@ None changes audio, a saved file or a graph document. Each is listed with what w
   label.
 - **E12. The N8 Load ROM dialog offers the shell's `ROM_PATTERNS`**, as before, through `MenuBuildContext.romPatterns`
   (the first cut narrowed it to `*.nes`; the matrix now records the card rows' dialog options).
+- **E13. A settings row needs its role, not just the core.** Base gated the core's rows on `sys.core === "sameboy"` (or
+  the platform) and read `roleConfig(...) ?? {}`; as built a row shows for a system whose roles hold the row's role
+  (`hasRole`). That is the same set of systems for every project the stores write, since a system always carries its
+  core role, and it differs for a hand-edited `.rplg` whose non-empty `roles` omits it: `withMissingFeatureRoles`
+  deliberately never re-adds the core role, so base drew the six sameboy rows and `setRoleConfig` refused every one of
+  them (an absent role is not writable), and the menu hides them now. Accepted as a fix of dead rows, pinned by the
+  matrix's `hand-no-core-role` case, which is the one case recorded from the NEW code: base's record of the same case
+  is the six items (`sys-model`, `sys-highpass`, `sys-fastboot`, `sys-sep-display`, `sys-color-correction`,
+  `sys-light-temp`) and five cyclers that the record kept here lacks.
 
 ## 7. Proof
 
@@ -783,11 +804,15 @@ by specifier or by a relative path that lands in such a package's tree. The list
 `RisaOverlay.tsx`, `useLsdjRuntime.ts`, `useRisaRuntime.ts`, `useLsdjHdSession.ts`; the brief and survey said six, adding
 `LsdjHdScreen.tsx`, which imports react, `lvgljs-ui` and `useLsdjHdSession` and no cart (the word "@retroplug/lsdj" on its
 line 3 is a comment). A listed file that stops importing one fails too, so F4c deletes the list by emptying it. The
-package list is DERIVED by the runner from the workspace manifests (a package with a `retroplug.app`, the shell
-excluded), so a package added to the product cannot be left off a hand-kept list; `@retroplug/launchpad/enums` and
-`/registry` are the two contract specifiers the shell itself reaches and are allowed; `ui/generated/` is not judged. RED
-first: on the pre-stage tree two files failed, and a relative-import fixture the first runner missed (it returned no
-hits) now fails.
+package list is DERIVED by the runner from the workspace manifests: a package a view may not name is one whose
+manifest declares any member that names contributed code or baked bytes (`app`, `ui`, `cli`, `examples`, `protocol`,
+`consoles`, `embed`, `script`), the shell excluded, so a package added to the product cannot be left off a hand-kept
+list and a device pack with no app module (the Launchpad) is guarded too. A specifier on rule 9's `SHELL_IMPORTS` list
+is a contract module and is allowed from either side (the Launchpad's `enums` and `registry` among them); a package
+declaring none of those members declares a contract or only native targets, and a view may name it. `ui/generated/` is
+not judged. RED first: on the pre-stage tree two files failed, and a relative-import fixture the first runner missed (it
+returned no hits) now fails; the device-pack fixture (a pack with `ui` and `cli` and no `app`, its client imported from
+`ui/`) found nothing under the app-only derivation and is a hit now.
 
 ### 7.4 The bundle check
 
@@ -986,9 +1011,10 @@ For `spec/07-remaining-work.md`'s F4b bullet:
   - **The controller-app display bug** (owed, deliberately not fixed by a move): an invalid stored value reads one way in
     the menu (`legacyConfigIndex`, the first label) while the runtime falls back to the schema's default
     (`parseAppConfig`); fix it with its own change and re-record `hand-controller`.
-  - **`tsconfig.ui.json`'s hand-written `paths`** (`react`, `react/jsx-runtime`, `lvgljs`, `lvgljs-ui`, `ui-harness`) are
-    F4c's to generate from `host-modules.json`, for the reason `tsconfig.paths.json` exists (a child's `paths` replace the
-    parent's); the shell-owned `tsconfig.aliases.json` is the place for `ui-harness`.
+  - **`tsconfig.ui.json`'s four hand-written `paths`** (`react`, `react/jsx-runtime`, `lvgljs`, `lvgljs-ui`) are F4c's
+    to generate from `host-modules.json`, for the reason `tsconfig.paths.json` exists (a child's `paths` replace the
+    parent's); `ui-harness` is not among them and stays the shell-owned `tsconfig.aliases.json`'s entry (with
+    `tsconfig.paths.json`'s, which a child's `paths` also replace).
   - **The surface rule extends to F4c's four modules**: rule 3 admits `react`, `react/jsx-runtime`, `lvgljs-ui` and
     `lvgljs` (surface `ui`) only from a package's `ts/ui/`, and the bundle check already keeps a React kit in
     `@retroplug/ui` out of the five non-UI bundles and the script-node bundle.
@@ -1013,8 +1039,9 @@ For `spec/07-remaining-work.md`'s F4b bullet:
 The prototype is six commits on the design commit `8a74339b9`, one per stage, each built by DeepSeek Flash and reviewed
 by Opus, with each review's fix pass folded into the commit it belongs to by fixup and autosquash (the last pass into
 stages 1 to 6 at once, and one pass rebuilt the history of stages 2 to 4: below), so the six trees stand as final and a
-stage report's sha is older than the branch's. **The shas in this section are the branch's now** (`feature/modularize` at
-`4350d9148`; they will be on `proto/f4b-surfaces` once the controller branches it). The whole prototype is 302 files,
+stage report's sha is older than the branch's. **The shas in this section are the PROTOTYPE's**, on
+`proto/f4b-surfaces` (`e11e84d44` is its stage 6); the commits executed on `feature/modularize` are section 12's, each
+the prototype's tree plus the plan document. The whole prototype is 302 files,
 +63,151 -3,060 over the design commit, 54,613 lines of it the menu matrix's recorded JSON. Sections 1 to 10 above were
 corrected in place to what the build found; this section is the record of how, and the plan is written against it. Nothing
 was pushed.
@@ -1216,4 +1243,128 @@ rig claims `/tmp/rp-launchpad-claim-test-<n>` from a counter starting at 0).
 - the Windows build and `test.bat` via the user's Windows agent (the new packages and scripts, and the root `typecheck`
   script's `&&` under cmd), with macOS and arm64 owed as for F4a.
 
-The plan is next.
+## 12. Execution
+
+The execution, on `feature/modularize` over the design commit `8a74339b9`, is the plan commit `9cf213f1f` and six task
+commits after it, one per stage, each a replay of its prototype commit rather than a rewrite: every task's tree is the
+prototype's plus the plan document (the final review's `git diff --name-only` names only
+`docs/modular-graph-phase-f4b-plan.md` for all six pairs), and the commit messages are the prototype's. The prototype is
+`proto/f4b-surfaces` (`bce662f7e` .. `e11e84d44`, section 11); the executed commits are:
+
+1. `feat(f4b): the host contract, and the three surfaces' hosts` (`5a14140b0`; the prototype's `bce662f7e`).
+2. `feat(f4b): the ui package and the declarative menu rows` (`52471e918`; `9539d0fe2`).
+3. `feat(f4b): the tracker entries contribute their own menus` (`f50c0c888`; `f7bc32050`).
+4. `feat(f4b): the device menus contribute themselves, and their services` (`e9e8b3e02`; `8e9c64128`).
+5. `feat(f4b): the CLI tools and the example sessions, and the host modules` (`4b3b8ec56`; `5777d1d59`).
+6. `feat(f4b): rule 9 and the scanner over cli/, the bundle split, and the docs` (`b553ef9e8`; `e11e84d44`).
+
+**The implementers' findings** (the six task reports; every task recorded a clean tree and every suite green, none
+re-recorded anything, and no difference from the plan's text is a tree change: each is a count a fix pass moved, a
+plan-text mechanics slip, or a compiler's wording):
+
+- **Stage 1**: the per-tree `git status` cannot run in a `git archive` tree (no `.git`), so the proof was the step's own
+  file-by-file hash loop re-run after the install, the generator and the suites (3,433 files, 0 differ); `pnpm test`
+  printed 211 files and 2,109 cases where the plan quotes the pre-fix-pass 210; the assertion totals moved where the
+  ground rules call them moving (engine-graph, its TSan and ASan legs, the launchpad TSan binary), every case count
+  exact.
+- **Stage 2**: `pnpm test`'s sealed tree is 215 files (the plan quotes 214, its own pre-fix-pass figure) and the
+  generator 74 cases (quoted 69); the install has to precede the configure, which the plan listed the other way round;
+  two assertion totals moved.
+- **Stage 3**: no code finding; the same `git status` slip, and the launchpad TSan total far enough below the
+  prototype's (-20%) to note while its case count and its non-TSan total match.
+- **Stage 4**: `pnpm test` 218 files and 2,247 cases where the plan quotes 217 and 2,202, and `test:ui` 43 files and 49
+  cases where it quotes 42 - both by exactly the files and cases the plan's own note says the fix pass adds, with the
+  tree's file lists identical to the commit's.
+- **Stage 5**: the recorded-help listing prints 14 entries where the step expects 13 (the 13 captures plus `index.txt`;
+  the substantive claim holds: every tool's help text byte-identical, only the index differing, which is E1); `pnpm
+  test` 2,267 cases where the plan quotes the 2,256 of a run before the fix pass's cases; the `git status` slip again.
+- **Stage 6**: no blocking finding; the runner's `jobs=16` (the box's pool) differs from every quoted figure by
+  construction, and the `git status` slip is the plan's, not a task's.
+
+**The acceptance run** (`/tmp/f4bexec/acc-report.md`, at `b553ef9e8`) was PASS WITH FINDINGS. All 43 legs of the
+serial `tip-verify.sh` exited 0, its summary identical to the two parallel baselines' but the `sdlctl` line a serial run
+prints differently: strict parity 30 files and 250 cases with `RP_FAIL_ON_SKIP=1`, `pnpm test` 219 files and 2,274
+cases, `test:native` 172 files (144 counted skips on the fixture-free CI picture, byte-identical to the baseline),
+`test:ui` 43 files and 49 cases, `test:plugin` 13 binaries and 336 cases, the engine-graph binary 336 cases, the kit
+and render baselines, `render-chunks`, the three device image hashes and the `bliptoaster` pack's three byte hashes
+identical to the baseline, a fresh clone typechecked before its cold build (`Scope: 23 of 24 workspace projects`, one
+pre-existing warning), both consumer suites against the rebuilt CLI (57/57 and 19/19), the BlipToaster `tsc` against
+the shipped `.d.ts`, `reaper:params` 2725/2725 and `reaper:params-clap` 644/644, the three `reaper:editor*` checks, all
+15 `reaper:all` checks with the resources tree, `sdl:smoke`, `sdl:controller` alone (its five functional lines identical
+to the baseline's), and `check:boundaries`/`check:docs` clean. Its finding **F1**: `pnpm test:native render-cli` prints 6
+cases where the plan expects 9; the file holds 6 at `8a74339b9` and at the tip and F4b never touches it, so the plan's
+figure matches no record (exit 0, 0 skips, 0 failures). Its F2 to F6 were plan-text slips (a scratch path, the serial
+summary's `sdlctl` line, `jobs=16`, moving assertion totals, and the "two documented skips" of the `ui` leg, which no
+log holds and which did not occur).
+
+**The final review** (`/tmp/f4bexec/final-review.md`, a read-only pass over `8a74339b9..b553ef9e8`) found no Critical
+issue and two Important: **the `ui/` ratchet's guarded set was derived from `retroplug.app` alone**, so the Launchpad
+(which contributes `ui`, `cli` and `protocol` and no app module) was never guarded and its two `CONTRACTS` entries were
+dead code; and **`UiService`'s doc promised `start` "runs once when the UI is up"**, the opposite of the per-mount
+behaviour the hook and every service implement, in the file a pack author copies. Its seventeen minors were the
+behaviour edges nothing recorded (a row needing its role, a duplicate menu id thrown inside App's render, a throw in one
+service skipping the others' frame, the startup restore keyed on the host object's identity, the automation hook needing
+a prior facet probe), the one-way `ConstructSpec` check, `runSession`'s false pass, the generator's example-name gaps,
+the non-exclusive `ConfigRow`, the examples packages' per-package `typecheck`, comments that recorded a change rather
+than the code, the matrix's unrecorded re-record recipe, and five docs claims. It reproduced the whole matrix from the
+design commit's own code (34 cases, 0 diffs) and audited every move line by line; its verdict was ready to call F4b
+complete **with fixes**, and that the two Important items should land before F4c copies the templates.
+
+**The follow-up** is four commits on top of the six, each with what it held green:
+
+- `fix(f4b): the ui ratchet guards every contributing pack` derives the guarded set from every manifest member that
+  names contributed code or baked bytes (`app`, `ui`, `cli`, `examples`, `protocol`, `consoles`, `embed`, `script`),
+  which makes the `CONTRACTS` allowance the real rule: a specifier on rule 9's `SHELL_IMPORTS` list (exported from
+  `check-boundaries.mjs` rather than hand-copied) is a contract module a view may name. RED: a device-pack fixture with
+  `ui` and `cli` and no `app`, its client imported from `ui/`, reported no hit; on the real tree a temporary `ui/` file
+  importing `@retroplug/launchpad/client` was one of the ten hits after the change and none before.
+- `fix(f4b): the services contract and the menu's edges` corrects the `UiService` doc and the hook's header to the
+  per-mount rule, runs each service's `start` and `poll` isolated (a throw is reported and skips only that service),
+  makes the startup restore once per mount explicitly (a mount record in a ref, the host read through a ref and not a
+  dependency), keeps the first of two menu rows that share an id and reports it instead of throwing inside App's
+  render, records the host's RPC channel for `__rp_scanControlSurface`, and adds the matrix's `hand-no-core-role` case
+  (E13). RED: the two thrown errors escaping `startServices`/`tickServices`, `expected true, got false` from the
+  automation hook, and E13's two expectations failing against base's record of the same case.
+- `fix(f4b): the final review's minors` closes the other fifteen: `ConstructSpec` compared both ways (RED: a dropped
+  `coreConfig` typechecked clean before, and fails naming the field after), `runSession` refusing when a test case is
+  registered (RED: the new cli-ts leg read `expected exit 1, got 0`), the generator's shell-name and file-stem refusals
+  for an example (RED: both accepted), the exclusive `ConfigRow`/`ControllerAppField` (RED: three unused
+  `@ts-expect-error`s), each examples package's `typecheck` running the generator first (RED: the filtered typecheck
+  failed on the gitignored paths file), the stale comments, and the matrix's re-record recipe written beside the test.
+- `docs(f4b): record the acceptance run, the review and the follow-up` is this section, the status line, section 11's
+  sha note, the corrections above, AGENTS.md's ratchet count, spec/07's bullet and package-split's status.
+
+**Verification of the final tree** (`/tmp/f4bexec/fuAv-*`, the same parallel 43-leg kit plus `sdl:controller` alone):
+every leg exited 0 with the acceptance run's counts plus the follow-up's cases: `pnpm test` 219 files and 2,286 cases
+with 0 skips (twelve new cases in five existing files: E13's three matrix cases, four service cases, two kept-first
+menu rows, the ratchet's device-pack fixture and the two generator refusals; two `@ts-expect-error` pins are
+compile-time), `test:ui` 43 files and 49 cases, `test:plugin` 13 binaries and 336 cases, parity 30 files and 250 cases,
+`test:native` 172 files, `check:docs` 96 files clean, `check:boundaries` clean, and the three device image hashes and
+the pack's three byte hashes identical to the baseline's (`compare.sh` against `8a74339b9`'s run reports only the
+`test`/`ui`/typecheck count lines above). `pnpm sdl:controller` alone passed with its 15 functional lines byte-identical
+to the baseline's, `pnpm reaper:params` and `pnpm reaper:params-clap` passed (2725 and 644 parameters, count
+unchanged), and a fresh `git archive` of the tree typechecked at the root (`Scope: 23 of 24 workspace projects`) and
+per package (`pnpm --filter @retroplug/mgb typecheck` with no generated paths file). Nothing was re-recorded: no
+`RP_*_UPDATE` was set, and no golden, baseline, digest, image or pack byte moved (the matrix gained one case, whose
+record is E13).
+
+**What F4b leaves for F4c** (the final review's list, which section 10's items follow):
+
+1. **The kit's location against rule 3's surface rule.** `surfaceOf` treats only a package's `ts/ui/` as the `ui`
+   surface, so a React kit at `packages/ui/ts/kit/` would have `react` and `lvgljs-ui` refused: either the kit lives
+   under `packages/ui/ts/ui/`, or `surfaceOf` learns that the `ui` package's whole tree is the UI surface. Decide
+   before writing the kit.
+2. **The UI program's paths and its `jsx`.** `tsconfig.ui.json` hand-writes four paths and its `paths` replace the
+   parent's, so it silently drops `retroplug-cli` and `ui-harness`: generate it from `host-modules.json` the way
+   `tsconfig.paths.json` is, and decide how a package's `.tsx` gets `jsx` (the shell's main program includes `../*/ts`).
+3. **The ratchet before rule 9**: rule 9 and the scanner over `ui/` should start from the fixed derivation, which now
+   guards a device pack without an app module.
+4. **The views' host needs and the interim mapping**: the five ratchet files are the views and hooks that need
+   `systems.readRam` (not yet on the UI host) plus a view registry kept out of the control plane; `uiViews`' `"lsdj-hd"`
+   mapping and `MenuContext.openLsdjHd`/`beginSongImport` (the fallback host's inputs) go with the HD player.
+5. **Services and remounts**: `UiService.start` runs per mount and is isolated now; if F4c's views mount and unmount
+   independently of App, keep services App-scoped.
+6. **The bundle check** already forbids `/packages/ui/` and any `ts/ui/` in the six non-UI bundles, so a kit that leaks
+   into the control plane fails a test; keep the kit's module set out of the planner and the script nodes when adding
+   view types.
+7. **The controller-app display bug** is still owed; fix it with its own change and re-record `hand-controller`.

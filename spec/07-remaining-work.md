@@ -857,16 +857,17 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   `cli/` with the console and cart registries' ids, a ratchet names the five `ui/` files F4c moves, and a bundle check
   says the control plane, the render worker, the script nodes, the SDK, the dispatcher and the planner carry no UI (no
   `ui` package module, no package's `ts/ui/`, no `ui/generated`) while the UI carries no CLI (no package's `ts/cli/`, no
-  `core/cliTool.ts`, no `cli/generated`). Nothing was re-recorded; the one behaviour edge is the CLI command index's
-  order (the shell's five, then the packages' in product order), which a test pins. What it leaves:
-  - **F4c: React in packages.** A `@retroplug/ui/kit` (`Box`, `lv`, `PixelCanvas`, `useNativeEvent`, the frame-poll
-    hooks, `DebugReadout`), the LSDj HD player and the two overlays as views, a UI-only view registry, how packages
-    declare React (`retroplug.host` gains `react`, `react/jsx-runtime`, `lvgljs-ui`, `lvgljs`), rule 9 and the scanner
-    over `ui/` (one literal there today: `useRisaRuntime.ts`'s `"risa"`), and the `ui/` ratchet deleted. The shell's
-    `tsconfig.json` includes `../*/ts`, so a `.tsx` in a package needs a `jsx` setting per package or a separate UI
-    program - and `tsconfig.ui.json`'s `react`, `react/jsx-runtime`, `lvgljs`, `lvgljs-ui` and `ui-harness` paths are
-    hand-written today, so that program's paths file must be generated from `host-modules.json` for the same
-    paths-replace reason `tsconfig.paths.json` exists.
+  `core/cliTool.ts`, no `cli/generated`). Nothing was re-recorded; the behaviour edges are the CLI command index's
+  order (the shell's five, then the packages' in product order), which a test pins, and a hand-edited project whose
+  roles omit the system's core role no longer drawing the core's dead rows (design section 6's E13). What it leaves:
+  - **F4c: React in packages, next.** A `@retroplug/ui/kit` (`Box`, `lv`, `PixelCanvas`, `useNativeEvent`, the
+    frame-poll hooks, `DebugReadout`), the LSDj HD player and the two overlays as views, a UI-only view registry, how
+    packages declare React (`retroplug.host` gains `react`, `react/jsx-runtime`, `lvgljs-ui`, `lvgljs`), rule 9 and the
+    scanner over `ui/` (one literal there today: `useRisaRuntime.ts`'s `"risa"`), and the `ui/` ratchet deleted. The
+    shell's `tsconfig.json` includes `../*/ts`, so a `.tsx` in a package needs a `jsx` setting per package or a separate
+    UI program - and `tsconfig.ui.json`'s four hand-written `paths` (`react`, `react/jsx-runtime`, `lvgljs`,
+    `lvgljs-ui`) must be generated from `host-modules.json` for the same paths-replace reason `tsconfig.paths.json`
+    exists, while `ui-harness` stays the shell-owned `tsconfig.aliases.json`'s entry.
   - **The controller app's display bug is owed, deliberately kept identical.** A project whose controller app's config
     is hand-edited (a value the schema or a row does not list) still shows what the old menu showed, fallback for
     fallback; the display edge the F4b review found is recorded rather than fixed, because F4b changes no behaviour.
