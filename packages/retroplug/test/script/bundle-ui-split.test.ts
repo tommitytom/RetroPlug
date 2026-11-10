@@ -48,7 +48,8 @@ async function text(stream: ByteStream | null): Promise<string> {
   return new TextDecoder().decode(all);
 }
 
-/** Every bundle's input modules, as absolute paths. */
+/** Every bundle's input modules, as absolute paths with forward slashes (a Windows build's metafile paths are made
+ *  absolute with backslashes, which the patterns below would never match). */
 async function bundles(): Promise<Record<string, string[]>> {
   const child = tjs.spawn([tjs.env.RP_NODE || "node", "test/script/bundle-split.mjs"], {
     stdout: "pipe",
@@ -58,7 +59,9 @@ async function bundles(): Promise<Record<string, string[]>> {
   if (status.term_signal || status.exit_status !== 0) {
     throw new Error(`the bundle split could not be built: ${err || out}`);
   }
-  return JSON.parse(out) as Record<string, string[]>;
+  const built = JSON.parse(out) as Record<string, string[]>;
+  for (const name of Object.keys(built)) built[name] = built[name]!.map((path) => path.split("\\").join("/"));
+  return built;
 }
 
 /** The UI's own modules: the `ui` package, any package's UI module tree, and the shell's generated menu table. No
