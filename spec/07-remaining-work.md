@@ -23,6 +23,8 @@ each (a phase name means its "What it leaves" list in section 5).
 - [ ] Launchpad real-device checklist, about 10 min with the Pro MK3 and LSDj, plus its Windows items (F3)
 - [ ] F4c's overlay strip placement (edge E4) seen on a real host (F4c)
 - [ ] `RP_NATIVE_USB` box image flashed and run once (E3, E4)
+- [ ] The pre-existing `-Wformat-truncation` at `packages/native/plugin/PluginDSP.cpp:177` (found by F5a's acceptance;
+      not F5a's, and no `/W4 /WX` Windows build has seen it): its own change, in the audio-port naming code
 
 **Package split**
 - [x] Per-product bundles, with views split out of `ui/generated/menus.ts`; blocks the first React view (F4a, F4c;
@@ -1014,7 +1016,9 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   recorded and the follow-up did not fix (it fixed the cross-drive `./C:/` specifier and `build.bat`'s stale comment):
   the fixture children pick their own generator (Visual Studio under a Ninja parent), `packages/native`'s targets meet
   the native boundary rule first on Windows (`/bigobj`, `plugin.cmake`'s platform blocks, `RP_BOUNDARY_PACKAGES`), and
-  the long `build/products/plugin/...` and per-set object paths under `/W4 /WX`.
+  the long `build/products/plugin/...` and per-set object paths under `/W4 /WX`. Also owed: the pre-existing
+  `-Wformat-truncation` at `packages/native/plugin/PluginDSP.cpp:177` a cold build shows (found by F5a's acceptance,
+  not F5a's), and no `/W4 /WX` build has seen it; fix it as its own change.
 
 - **F2 built: the native carve** ([modular-graph-phase-f2-design.md](../docs/modular-graph-phase-f2-design.md), on
   `feature/modularize`; the design's section 12 records its plan, task commits, acceptance run, final review and the

@@ -93,8 +93,9 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
   sections, project services, graph placers and contribution kinds are contributions, and the backend stages controller
   messages through a hook); real per-product bundles. The plugin's `plugin` list is the desktop's minus `launchpad` and
   `lsdj-launchpad`, and its generated tree, its four embedded bundles and its checks prove it. **The split's property is
-  now a build's**: the plugin links and bundles neither pack. F5b (the SDL standalone's audio and MIDI as packages) is
-  next; what F5a leaves is the design's section 12.
+  now a build's**: the plugin links and bundles neither pack. Its execution, acceptance run, final review and follow-up
+  are the design's section 14. F5b (the SDL standalone's audio and MIDI as packages) is next; what F5a leaves is the
+  design's section 12.
 
 ## 3. The order
 

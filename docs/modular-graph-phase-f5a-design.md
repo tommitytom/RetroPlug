@@ -1424,3 +1424,128 @@ proposed, because the cost the review feared is paid only when an input actually
 - Owed on push: Windows (`/W4 /WX` on the per-format C arrays, `product-lists.mjs` through `execute_process`, long
   `build/products/plugin/...` paths, `build.bat`'s `CONFIGURED`), macOS and arm64.
 
+## 14. Execution
+
+F5a was executed on `feature/modularize` over the design commit `bef622dac`, as the plan commit `16b1ff683`
+([modular-graph-phase-f5a-plan.md](modular-graph-phase-f5a-plan.md), a record) and the five task commits after it, one
+per stage, each a replay of its prototype commit rather than a rewrite:
+
+1. `fix(f5a): the app rows show what the app runs, and the UI joins one shell program` (`8d642b2aa`; the app row's
+   display fix, `tsconfig.ui.json`'s fold, spec/07's stale lines; E1's one re-record).
+2. `feat(f5a): the N8 wire is a package of its own, and mesen no longer declares n8` (`16913a72a`; `n8-wire`, the two
+   headers moved, `mesen` off `n8`, the lists and the device twin).
+3. `feat(f5a): a package's views are their own module, apart from the menus` (`7979e8451`; `defineViews`,
+   `retroplug.views`, the generated `views.ts`, the `menuContributions` split, the three-part pure-tier proof).
+4. `feat(f5a): the shell names no controller, and a contribution is manifest data` (`d9971b050`; project sections,
+   project services, graph placers, the `project` host group, contribution kinds, the backend's harness move, rule 9's
+   lists and the generic native boundary rule).
+5. `feat(f5a): the plugin is its own product, and a bundle is a product's` (`e7b7a7dc9`; the `plugin` list, the
+   generator's `--product`, the `onResolve` plugin, the product-supplied bundles, the inverted `plugin.cmake`
+   assertions, the per-product checks, E3, and the docs pass).
+
+**The implementers' findings** (the five task reports and the controller's log, `/tmp/f5aexec/results.md`; each task
+recorded SPEC OK and a clean tree, and no finding moved a golden, digest, image or pack byte):
+
+- **Task 1**: the RED reproduced; the stale prototype generated `placers.ts`/`views.ts` the controller's reset left
+  behind (the generator does not delete outputs) were moved aside; `compare.sh`'s Expected under-names one line; the UI
+  prose says seven skips where the run printed none.
+- **Task 2**: `nativeci`'s `nes-capture-mix-drain` flaked once under kit load (the pre-existing sensitivity F3 recorded)
+  and passed on the re-run; `compare`'s docs count 99 -> 100 is the plan file; assertion totals moved.
+- **Task 3**: only the moving assertion totals; a `compare` sentence allowed a mover that did not move; the two known
+  slips handled.
+- **Task 4**: plan-text only (the docs leg needs the new files tracked first; engine-graph is 337 cases, not the stale
+  336; `pnpm test` 230 files and 2,406 cases where the plan derives 2,405; the launchpad leg table transposed).
+- **Task 5**: plan-text only (Step 3's RED names case 32 where 31/33/34/35 fail; Step 5's fixture is needed before Step
+  4's configure; E4's desktop absolutes pre-reflow).
+
+**The acceptance run** (`/tmp/f5aexec/acc-report.md`, at `e7b7a7dc9`) was PASS WITH FINDINGS. Every step's exit status
+matched its Expected, nothing was re-recorded, and the tree held only ` m deps/sameboy` before and after. The serial
+kit's summary is 47 lines (43 `exit 0` legs plus the four markers) and `pnpm sdl:controller` passed alone. The figures:
+`pnpm test` 231 files with its one documented `lsdj/ui-views` skip, 2,648 cases counted per TAP plan; `test:plugin` 13
+binaries with engine-graph's 337 cases (326 passed, 11 skipped); strict parity 30 files and 250 cases with
+`RP_FAIL_ON_SKIP=1`; `test:native` 172 files and 629 cases with the two documented benchmark skips, and the CI picture's
+144 skips in 65 files; `test:ui` 48 files and 54 cases; `test:n8` 1,468 assertions in 104 cases and 17 in 2; the kit and
+render baselines, `render-chunks`, `render-cli`, the three device-image hashes and the three `bliptoaster` pack byte
+hashes identical; the device check (87 wrapped symbols) and both box images' traps and sizes; a fresh clone typechecked
+before its cold `./build.sh`, then the CLI built from a tree with no generated files; `reaper:all`'s 15 checks,
+`reaper:editor`, `-reopen` and `-autoload`, both two-instance legs on VST3 and CLAP, and `reaper:params` at 2725/2725
+and `-clap` at 644/644; BlipToaster 57/57 and NESVJ 19/19 against the synced CLI; `check:boundaries` clean and
+`check:docs` 100 files. The bundle module diff against `bef622dac` found exactly the seven expected module moves (no
+extras), and the images and pack bytes byte-identical. **E2's real-plugin render is owed** as a recorded MANUAL item (no
+harness authors a project with `controller.enabled: true`; the plan's four-step recipe stands).
+
+**The findings acceptance recorded.** **F1:** a cold Release build shows one pre-existing GCC warning, not F5a's:
+`packages/native/plugin/PluginDSP.cpp:177`, `'__builtin___snprintf_chk' output may be truncated` (the audio-port naming
+code), the same line the prototype's own final build logged and untouched by F5a; a `/W4 /WX` Windows build has never
+seen it, so it is recorded in spec/07 as owed and is not fixed here. **N1:** the plan's `pnpm test` case total uses a
+method that differs by one count per file from summing each TAP plan; the tip and the prototype agree exactly under the
+same method (2,648 in 231 files), so no behaviour differs. **N2:** the BlipToaster staging command names a `typescript`
+entry the checkout does not have (its own TypeScript is under `retroplug-cli/node_modules`, already staged); both of the
+leg's assertions still held. **N3:** five assertion totals moved, every case count exact (engine-graph,
+`retroplug-launchpad-test`, launchpad under TSan, engine-graph under TSan and under ASan); nothing else moved. **N4:**
+every consumer run used a `/tmp` copy; neither consumer repo nor the lockfile moved.
+
+**The final review** (`/tmp/f5aexec/final-review.md`, a read-only pass over `bef622dac..e7b7a7dc9`) found no Critical
+and four Important, its verdict "ready to call F5a complete with fixes". It verified the moves line by line against the
+old code (the controller section's parse, `ControllerService`, `systems()`, `backend.readSram`, the placer slots, the
+store's merge, the menu's `syncOverride` and the engine hook all agree), found nothing hiding in the moves, and held the
+s5f pass sound. Its Important items: (1) the refuse-newer rule was half-built and nothing isolated one package's
+section, service or placer from the whole project; (2) the per-product redirect failed silently, with only a
+Launchpad-specific test noticing; (3) spec/06's items 5 and 10 contradicted each other on `ts/control/`; (4) the
+persistence rules said nothing about sections or E5. Its eleven minors covered `setSection`'s unknown keys, the
+typecheck's tsconfig path, the generator CLI's default build directory, five Windows-shaped risks, dead and stale CMake
+text, `retroplug_product`'s silent ordering, the generated headers' hard-coded `desktop`, the unrecorded CLI SDK change
+(E9), prose leftovers, a misnamed test and the unmeasured dev-loop cost.
+
+**The follow-up** is five commits on top of the five, each with its RED quoted in `/tmp/f5aexec/fuA-report.md`:
+
+- `fix(f5a): a package's section, service or placer faults alone` is Important 1: readers of a section stamped newer
+  than its contributor get its `defaults()` (only the writer keeps the raw block), a contributor's
+  `schema.parse`/`defaults()`, a service's `poll`/`graphModel`/`state` and a placer's `place` are each isolated with one
+  warning per package and key and read as no section / no model / no state / no placement, and the store takes a
+  contributions seam so a synthetic contributor holds it (three store-level cases, RED at `e7b7a7dc9`).
+- `fix(f5a): a product bundle refuses the desktop's generated modules` is Important 2: in product mode the `onResolve`
+  plugin's `onEnd` reads the metafile and refuses any input under `packages/retroplug/{src,ui,cli}/generated/`, naming
+  the file, so a missed redirect (a `.js` spelling, a new module, a Windows path) fails the build rather than silently
+  bundling the desktop's registry. RED: a one-module bundle with a `.js`-spelled generated import built and carried four
+  desktop modules before, and is refused after.
+- `docs(f5a): ts/control and the persistence rules say what is` is Importants 3 and 4: spec/06's scan rule (three
+  skipped modules and the directory of an `index` one), item 5's `app: ts/control/index.ts` condition, AGENTS.md's and
+  spec/05's section policy (its own version, migrations, unstamped-as-1, refuse-newer at section scope) and E5.
+- `fix(f5a): the final review's minors` closes the eleven: `setSection` refuses a key no package of the product
+  contributes and the generated registry refuses a service or placer key that is a core key or names no section (each
+  RED), the typecheck's tree in AGENTS.md, the generator CLI's `<root>/build` default, the two cheap Windows fixes (no
+  `./` onto an absolute specifier, `build.bat`'s comment) with (b), (c) and (e) recorded for the user's Windows agent,
+  the dead and stale CMake text, the refusal of a non-DEVICE product before `retroplug_bundles` exists (RED), the
+  generated headers' product name (the desktop's bytes unchanged), E9 in sections 8 and 13 and spec/07, the prose
+  leftovers, the renamed test case, and the dev-loop measurement below.
+- `docs(f5a): record the acceptance run, the review and the follow-up` is this section, the status line, spec/07's F5a
+  entry and package-split's F5a note.
+
+**The dev-loop cost.** A warm no-op `./build.sh` was timed three times at `e7b7a7dc9` and three times on an archive of
+`bef622dac` configured and built to the same state. Every incremental build now also runs the plugin set's generator and
+its four always-out-of-date esbuild+tjsc pipelines, which `copy_if_different` cannot skip; the wall times are in
+`/tmp/f5aexec/fuA-report.md` and the design's finding is recorded there with the cheapest fix proposed rather than
+built.
+
+**What F5a leaves**, the final review's "what the next phase should know first", F5b first:
+
+- **F5b: the SDL standalone's audio and MIDI as packages behind generic backend interfaces** (section 12), after the two
+  unmerged branches land or are decided.
+- **`desktop` is two things at once.** It is the union (the shell's tree, the typecheck, the scanner and the boundaries
+  all read it) and it is also the list every shipping desktop product carries (the SDL app, the CLI, the host, the addon
+  and every test binary). So F5b cannot give the SDL app a backend package the CLI and the headless host do not also
+  carry without adding a list (`LIST sdl`), and a new list is not free: `retroplug-sdl` embeds the desktop's bundles,
+  and the CLI tree exists only for the desktop. `order()` cannot hold a native-only package to a list either:
+  `n8-wire`'s presence in `plugin` is held only by hand.
+- **Contribution checks run at load.** The kinds' checks and the registries' refusals run in generated TypeScript when a
+  module loads, so a malformed pack takes a product's control plane down at startup rather than failing the build. That
+  is fine for workspace packs (`pnpm test` loads the registries); downloadable packs need a per-pack refusal path, and
+  `ControllerRegistry` has no unregister.
+- **A project service is tied to `@retroplug/tracker` and to the editor.** Its contract lives in tracker (its context
+  names `TrackerPlayback`), so a non-tracker pack must depend on tracker to contribute one, and its `poll` is driven by
+  the editor's song watch, so a CLI session or a closed plugin editor polls nothing.
+- **A third product list is cheap but checked by hand.** Its tree, typecheck and bundles come for free, but only the
+  bundle refusal catches a registry leak, and a test binary that wants a narrower package set needs a root manifest list
+  of its own.
+- The rest of section 12 is unchanged.
