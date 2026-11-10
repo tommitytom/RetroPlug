@@ -5,8 +5,8 @@
 //
 // Everything else under ui/ reaches a cart, a console or a device through the generated registries: ui/generated/menus.ts
 // (not judged: it is the one place that names every package), src/generated/* through a store, or - for a menu entry -
-// the package's own `ui` module, which this stage moved the device menus into. A view importing a cart's runtime is the
-// last of F4c's work, which is why the list exists rather than a broad permission.
+// the package's own `ui` module, which the device menus moved into. A view importing a cart's runtime is the last of
+// F4c's work, which is why the list exists rather than a broad permission.
 //
 // The scanner is Node's (the boundary check's), so the test spawns test/boundaries/run-ui-cart-imports.mjs.
 import { test, expect } from "@retroplug/testing";
@@ -21,12 +21,11 @@ const ALLOWED = [
   "packages/retroplug/ui/screens/hd/useLsdjHdSession.ts",
 ];
 
-// The packages whose code a view may not name are DERIVED by the runner from the workspace manifests (a console, an
-// embedded ROM, a protocol or a device script), so a package added to the product cannot be left off a hand-kept list.
-
-/** The two contract modules of such a package the SHELL itself reaches (rule 9's own entries: the controller target enum
- *  the project config persists, and the app registry it fills), which a UI host may therefore name directly. */
-const CONTRACTS = ["@retroplug/launchpad/enums", "@retroplug/launchpad/registry"];
+// The packages whose code a view may not name are DERIVED by the runner from the workspace manifests: any package that
+// declares code or baked bytes (an app, ui, cli, examples, protocol, consoles, embed or script member) is guarded, and a
+// package that declares none of those is a contract a view may name. So a package added to the product cannot be left
+// off a hand-kept list, and a device pack without an app module (the Launchpad) is not invisible to it. A specifier on
+// rule 9's SHELL_IMPORTS list is a contract module and is allowed from either side.
 
 interface ByteStream {
   getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }> };
@@ -63,8 +62,7 @@ async function scan(root?: string): Promise<{ hits: { file: string; specifier: s
   // The runner resolves the repository from its own path, as the literal scan does; the test's working directory is the
   // shell package, so the script is named relative to it.
   const child = tjs.spawn(
-    [tjs.env.RP_NODE ?? "node", "test/boundaries/run-ui-cart-imports.mjs",
-      "--contracts", CONTRACTS.join(","), ...(root ? ["--root", root] : [])],
+    [tjs.env.RP_NODE ?? "node", "test/boundaries/run-ui-cart-imports.mjs", ...(root ? ["--root", root] : [])],
     { stdout: "pipe", stderr: "pipe" },
   );
   const [out, err, status] = await Promise.all([read(child.stdout), read(child.stderr), child.wait()]);
@@ -86,4 +84,11 @@ test("a relative reach from ui/ into a cart's tree is the same reach, and is cou
   // where it lands, so a run around the rule by `../..` fails here.
   const { hits } = await scan("test/boundaries/fixtures/ui-relative");
   expect(hits.map((hit) => hit.file)).toEqual(["packages/retroplug/ui/evil.ts"]);
+});
+
+test("a device pack with no app module is guarded too: a view naming its client is a hit", async () => {
+  // The Launchpad contributes a UI module and a CLI tool and no control-plane app module, so a derivation keyed on
+  // `retroplug.app` alone would leave the very pack a view must not name unguarded.
+  const { hits } = await scan("test/boundaries/fixtures/ui-device");
+  expect(hits.map((hit) => hit.file)).toEqual(["packages/retroplug/ui/probe.ts"]);
 });

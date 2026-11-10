@@ -2,7 +2,7 @@
 // Walks the app's ui/ tree for an import of a cart, console or device package, for
 // test/boundaries/ui-cart-imports.test.ts (docs/modular-graph-phase-f4b-design.md section 7.3).
 //
-//   node test/boundaries/run-ui-cart-imports.mjs [--packages <name,...>] [--contracts <specifier,...>] [--root <dir>]
+//   node test/boundaries/run-ui-cart-imports.mjs [--root <dir>]
 //
 // The imports come from the boundary check's own scanner (TypeScript's preProcessFile), so a type-only import, an
 // `export ... from` and a `require` all count: ui/ may carry a cart's code only through ui/generated/menus.ts, which is
@@ -11,14 +11,23 @@
 // reaching one by a path rather than a specifier is the same reach. Prints one JSON line:
 // { hits: [{ file specifier }] }, file relative to the repository root.
 //
-// The package list is DERIVED from the workspace manifests unless --packages names one (a fixture): a cart, a console
-// and a device pack each has a control-plane app module (`retroplug.app`), which is the code a view may not name, so a
-// package added to the product cannot be left off a hand-kept list. The shell is the one exclusion: its own app module
-// is what composes the UI, not a cart's.
+// The package list is DERIVED from the workspace manifests: a package a view may not name is one whose manifest
+// contributes CODE or baked bytes, any of `retroplug.app` (a cart's, a console's or a device pack's roles, ROM
+// providers, tracker integration and kit formats), `ui` (its menu contribution), `cli` (its tools), `examples` (its
+// sessions), `consoles` (the descriptors its cores run), `protocol` (its node types) or `embed` / `script` (bytes it
+// bakes in, or its device pack). A package with none of those declares a CONTRACT instead - core, ui, tracker, dsp,
+// testing - or nothing but native targets, and a view may name it: its code is the API the shell is built on. The
+// shell is the other exclusion, because its own UI tree is what this walk judges.
+//
+// A specifier on rule 9's list (`SHELL_IMPORTS`, the shell's own contract modules, each with the reason it is a
+// contract rather than a cart) is allowed even from a guarded package, so a guarded package's contract module a view
+// legitimately reaches stays reachable without a second hand-kept list: today that is the Launchpad's enums and app
+// registry.
 import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SHELL_IMPORTS } from "../../scripts/check-boundaries.mjs";
 
 const ts = createRequire(import.meta.url)("typescript-5");
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -29,19 +38,23 @@ function option(name) {
   return at === -1 ? undefined : process.argv[at + 1];
 }
 
-const packages = option("--packages");
-const contracts = option("--contracts");
 const root = resolve(option("--root") ?? REPO);
 
-/** Every workspace package with a control-plane app module but the shell: a cart's, a console's or a device pack's
- *  code, which is what a view may not name. */
+/** The manifest members that make a package code a view may not name: each names a module it contributes (its app, its
+ *  UI contribution, its CLI tools, its example sessions, its console descriptors, its node types) or the bytes it bakes
+ *  in (an embedded ROM, a device pack's script). A package with none of them contributes a contract or only native
+ *  targets. */
+const CODE_MEMBERS = ["app", "ui", "cli", "examples", "protocol", "consoles", "embed", "script"];
+
+/** Every workspace package with one of CODE_MEMBERS but the shell: a cart's, a console's or a device pack's code, which
+ *  is what a view may not name. */
 function derivedPackages() {
   const names = [];
   for (const entry of readdirSync(join(root, "packages"), { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === "retroplug") continue;
     try {
       const manifest = JSON.parse(readFileSync(join(root, "packages", entry.name, "package.json"), "utf8"));
-      if (manifest.retroplug?.app) names.push(manifest.name);
+      if (CODE_MEMBERS.some((member) => manifest.retroplug?.[member] !== undefined)) names.push(manifest.name);
     } catch {
       // A directory with no manifest of its own is not a package.
     }
@@ -49,8 +62,8 @@ function derivedPackages() {
   return names;
 }
 
-const PACKAGES = new Set(packages ? packages.split(",").filter((entry) => entry !== "") : derivedPackages());
-const CONTRACTS = new Set((contracts ?? "").split(",").filter((entry) => entry !== ""));
+const PACKAGES = new Set(derivedPackages());
+const CONTRACTS = new Set(SHELL_IMPORTS.map((entry) => entry.specifier));
 /** The directory under packages/ each of those names: a relative import is resolved to a path and matched by it. */
 const PACKAGE_DIRS = new Set([...PACKAGES].map((name) => name.split("/").pop()));
 const uiRoot = join(root, "packages/retroplug/ui");

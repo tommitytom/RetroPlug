@@ -114,7 +114,9 @@ const EXCEPTIONS = [];
  *  one program's two halves, so a contract module only cli/ imports today stays reachable from src/ without a second
  *  entry, and an entry per root would claim a precision the rule does not need. An entry no import of either root uses
  *  fails the check, so this shrinks with the shell. */
-const SHELL_IMPORTS = [
+/** Rule 9's list, exported because the `ui/` ratchet reads it too (test/boundaries/run-ui-cart-imports.mjs): a
+ *  specifier the shell may name as a contract is a module a view may name as well. */
+export const SHELL_IMPORTS = [
   // The contract every package implements: the shell is its host, not a participant.
   { specifier: "@retroplug/core/canonicalJson", reason: "the document encoder every protocol driver writes through" },
   { specifier: "@retroplug/core/capability", reason: "the capability jobs' operation table a host's systems group names and a cart types a job by" },

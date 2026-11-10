@@ -1,0 +1,5 @@
+{
+  "name": "@retroplug/launchpad",
+  "private": true,
+  "retroplug": { "ui": "ts/ui/index.ts", "cli": "ts/cli/index.ts" }
+}
