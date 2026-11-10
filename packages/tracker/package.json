@@ -18,6 +18,7 @@
     "./nes/types": "./ts/nes/types.ts",
     "./packageContributions": "./ts/packageContributions.ts",
     "./playbackModel": "./ts/playbackModel.ts",
+    "./projectService": "./ts/projectService.ts",
     "./ritAssets": "./ts/ritAssets.ts",
     "./songCatalog": "./ts/songCatalog.ts",
     "./trackerIntegration": "./ts/trackerIntegration.ts",

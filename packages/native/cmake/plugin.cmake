@@ -30,6 +30,10 @@ target_include_directories(retroplug PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/gener
 # shared with retroplug-sdl. No link libs on Linux/macOS; Windows pulls comdlg32/ole32 through its header.
 target_include_directories(retroplug PUBLIC ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
 
+# This static library is the PLUGIN product's own (every format is built from it), so its link is the plugin's package
+# list rather than the backend's declarations: the boundary check's voucher, and the formats' line is held by this
+# file's no-Launchpad assertions (cmake/packages.cmake's generic rule).
+set_target_properties(retroplug PROPERTIES RP_BOUNDARY_SKIP "the plugin product's own library")
 target_link_libraries(retroplug PUBLIC
     retroplug-backend  # Engine/Backend + (transitively) the cores + rpcpp
     # The plugin's control plane runs on the txiki host (PluginDSP.cpp) and its config/bindings/ROM watcher is efsw

@@ -1,7 +1,8 @@
 // The MI.MAP app's control-plane half (ts/app.ts): its id, its menu label and the schema its config is parsed with - plus
 // the sync mode it needs the cart its launches drive to be in, which is DATA in the package's manifest
-// (protocol.apps[].syncOverride) because the planner applies it and must carry no app and no zod. It reuses
-// RoleConfigSchema for the knobs, so the interesting assertions are the ones about tolerance: a stale or garbage config
+// (protocol.kinds.controllerApps[].syncOverride) because the planner applies it and must carry no app and no zod. It
+// reuses RoleConfigSchema for the knobs, so the interesting assertions are the ones about tolerance: a stale or garbage
+// config
 // must snap to something sane rather than fail the parse, because these values come off disk and a user should never be
 // locked out of their own controller by a bad enum.
 import { test, expect } from "@retroplug/testing";

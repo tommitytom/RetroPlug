@@ -4,15 +4,15 @@
 // actually there - but a Launchpad cannot be detected the way an N8 is. An N8 is a USB cart with a VID:PID and no other
 // way to attach it; a Launchpad also speaks TRS/DIN, arriving through an ordinary MIDI interface on a port named after
 // the INTERFACE, and nothing in that name says "Launchpad". Nor is there anything to listen for: DIN has no enumeration
-// and no idle heartbeat. So presence means one of three things, all pinned below - a port named like the device's own USB
-// interface, a live link, or a recorded pick whose BOTH ports are still enumerated. That last one is what a Settings >
-// MIDI scan writes, and the reason the scan lives in Settings: it is reachable when this submenu is not.
+// and no idle heartbeat. So presence means one of three things, all pinned below - a port named like the device's
+// own USB interface, a live link, or a recorded pick whose BOTH ports are still enumerated. That last one is what a
+// Settings > MIDI scan writes, and the reason the scan lives in Settings: it is reachable when this submenu is not.
 //
-// Native is the pack's FACET (packages/launchpad: rp_launchpad_provider and LaunchpadRpc): it lists ports, claims a pair,
-// opens loose ports, and replays the bytes it was handed when it lets a device go. The selection lives in config.json and
-// the scan is a TS state machine, so the fake here is the pack's CLIENT (createLaunchpadClient's interface) - the cases
-// assert on what TS decided to do through it: which pair it claimed, with which close bytes, what it wrote while
-// scanning, and what it persisted.
+// Native is the pack's FACET (packages/launchpad: rp_launchpad_provider and LaunchpadRpc): it lists ports, claims a
+// pair, opens loose ports, and replays the bytes it was handed when it lets a device go. The selection lives in
+// config.json and the scan is a TS state machine, so the fake here is the pack's CLIENT (createLaunchpadClient's
+// interface) - the cases assert on what TS decided to do through it: which pair it claimed, with which close bytes,
+// what it wrote while scanning, and what it persisted.
 import { test, expect } from "@retroplug/testing";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
@@ -28,11 +28,17 @@ import {
   setLaunchpadClient, setLaunchpadPorts, setLaunchpadScanClock,
 } from "@retroplug/launchpad/ui";
 import type { ControlSurfaceSettings } from "../../src/userConfig";
-import { controllerApps } from "../../src/controller/registry";
+import { controllerApps } from "@retroplug/launchpad/registry";
+import { type ControllerSection } from "@retroplug/launchpad/projectSection";
 import { boolField, clampedInt } from "@retroplug/core/configFields";
 import { z } from "zod";
 import * as R from "@retroplug/lsdj/codec/regions";
 import { gbRom, lsdjRom, nesRom } from "../systems/fixtures";
+
+/** The project section the Launchpad pack contributes: a test reads it through the store's typed read, as a menu
+ *  does. */
+const CONTROLLER_SECTION = "controller";
+const sectionOf = (stores: AppStores): ControllerSection => stores.project.section(CONTROLLER_SECTION);
 
 function ctxOf(stores: AppStores): MenuContext {
   return {
@@ -60,15 +66,16 @@ const findItem = (items: MenuItem[], id: string): MenuItem | undefined => items.
 /** A Pro MK3's Device Inquiry answer: F0 7E <dev> 06 02 <Novation> <family 13 01> 00 00 <version> F7. */
 const PRO_MK3_REPLY = [0xf0, 0x7e, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, 0x13, 0x01, 0, 0, 0, 1, 2, 3, 0xf7];
 
-// A machine with a Pro MK3 on USB, an unrelated keyboard, and a MIDI interface - the three cases the port cyclers have to
-// handle at once.
+// A machine with a Pro MK3 on USB, an unrelated keyboard, and a MIDI interface - the three cases the port cyclers
+// have to handle at once.
 const INPUTS = ["Arturia KeyStep 32", "LPProMK3 MIDI", "MIDISPORT 2x2 Port A"];
 const OUTPUTS = ["LPProMK3 MIDI", "MIDISPORT 2x2 Port A"];
 
 const same = (a: readonly number[], b: readonly number[]): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i]);
 
-/** The pack's facet, faked at its client: real enough to hold state, so a sequence of menu actions reads true. Its claim
+/** The pack's facet, faked at its client: real enough to hold state, so a sequence of menu actions reads true. Its
+ *  claim
  *  path is the facet's own order - the old pair let go first (its close bytes replayed), the ports checked against the
  *  list, then the open - so a refusal behaves as LaunchpadRpc's does. */
 class FakeFacet implements LaunchpadClient {
@@ -87,8 +94,8 @@ class FakeFacet implements LaunchpadClient {
 
   // loose ports (the scan)
   // output -> who answers the inquiry, on which input. `isPro` says whether it ALSO answers the Pro MK3's own model
-  // query - true by default for a reply carrying the Pro's family bytes, since that is a real Pro; set it false to play a
-  // Mini MK3, which answers the inquiry with the very same bytes but ignores the Pro header.
+  // query - true by default for a reply carrying the Pro's family bytes, since that is a real Pro; set it false to
+  // play a Mini MK3, which answers the inquiry with the very same bytes but ignores the Pro header.
   answers = new Map<string, { input: string; bytes: number[]; isPro?: boolean }>();
   busyPorts = new Set<string>(); // ports another application holds
   written: { port: string; bytes: number[] }[] = [];
@@ -130,8 +137,8 @@ class FakeFacet implements LaunchpadClient {
     if (input === "" || output === "") return fail("no port chosen");
     if (!this.inputs.includes(input)) return fail(`not connected: ${input}`);
     if (!this.outputs.includes(output)) return fail(`not connected: ${output}`);
-    // The real opener's words (RtMidiPort's RtMidiSinglePort), in ITS order: the claim opens the output first, so a pair
-    // whose device is away is refused by the output.
+    // The real opener's words (RtMidiPort's RtMidiSinglePort), in ITS order: the claim opens the output first, so a
+    // pair whose device is away is refused by the output.
     if (this.away.has(output)) return fail(`MIDI output port not found: ${output}`);
     if (this.away.has(input)) return fail(`MIDI input port not found: ${input}`);
     this.error = "";
@@ -336,8 +343,8 @@ test("a recorded pick speaks for a device no name could identify", () => {
   // The TRS topology, after a scan: the ports belong to somebody's interface and say nothing about what is plugged into
   // them, so the recorded pair is the only evidence there is.
   expect(submenuShown((h) => Object.assign(h, TRS), TRS_PICK)).toBe(true);
-  // Presence is checked, not trusted: unplug that interface and the row goes with it, exactly as the N8 Pro submenu next
-  // door behaves. Settings > MIDI still has the scan, so there is a way back.
+  // Presence is checked, not trusted: unplug that interface and the row goes with it, exactly as the N8 Pro submenu
+  // next door behaves. Settings > MIDI still has the scan, so there is a way back.
   expect(submenuShown((h) => { h.inputs = ["Arturia KeyStep 32"]; h.outputs = []; }, TRS_PICK)).toBe(false);
   // Half a pair is not a device either - an output alone cannot be listened to.
   expect(submenuShown((h) => { h.inputs = TRS.inputs; h.outputs = []; }, TRS_PICK)).toBe(false);
@@ -358,7 +365,8 @@ test("the port cycler offers EVERY hardware port, not just ones named like a Lau
     expect(input?.kind).toBe("cycler");
     expect(input?.label).toBe("Input Device: (none)");
     // Stepping forward from "(none)" reaches the FIRST port in the list, which is nothing like a Launchpad. A filtered
-    // list would have skipped it - and would have skipped the interface port a TRS-attached Launchpad actually arrives on.
+    // list would have skipped it - and would have skipped the interface port a TRS-attached Launchpad actually
+    // arrives on.
     input?.onCycle?.(1);
     expect(stores.userConfig.controlSurface().input).toBe("Arturia KeyStep 32");
   });
@@ -375,8 +383,8 @@ test("a hinted port is tagged; an unhinted one is perfectly selectable", () => {
 });
 
 test("picking a port stores the port's name, with the display tag stripped back off", () => {
-  // Cycling forward from the KeyStep lands on the Launchpad, whose ROW READS "LPProMK3 MIDI (detected)". The name stored
-  // has to be the port's, not the label's, or it would name a port that does not exist.
+  // Cycling forward from the KeyStep lands on the Launchpad, whose ROW READS "LPProMK3 MIDI (detected)". The name
+  // stored has to be the port's, not the label's, or it would name a port that does not exist.
   withHost(() => {}, (h, stores, be) => {
     findItem(submenu(stores, be), "lp-input")?.onCycle?.(1);
     expect(stores.userConfig.controlSurface().input).toBe("LPProMK3 MIDI");
@@ -408,8 +416,8 @@ test("Connect with no hinted port at all does not invent one", () => {
 });
 
 test("every claim carries the bytes that release the device", () => {
-  // Programmer mode locks the Launchpad's own Settings menu. Native replays these on release AND on destruct, so a claim
-  // without them would strand the user's hardware when RetroPlug quits.
+  // Programmer mode locks the Launchpad's own Settings menu. Native replays these on release AND on destruct, so a
+  // claim without them would strand the user's hardware when RetroPlug quits.
   withHost(() => {}, (h, stores, be) => {
     findItem(submenu(stores, be), "lp-connect")?.onSelect?.();
     expect(h.claims.length).toBe(1);
@@ -499,7 +507,7 @@ test("the status row reads what the link is actually doing", () => {
 // --- the app rows: project state --------------------------------------------------------------------------
 
 /** A project whose GB cart is in SYNC `sync` (8 = MidiMap, 9 = Lsdj), the controller enabled and its cart polled: what
- *  the menu's cart-sync row reads (controllerCartSync, from the battery). */
+ *  the menu's cart-sync row reads (the controller's service state, from the battery). */
 function withCart(stores: AppStores, be: MockBackend, sync: number): void {
   // An LSDj cart: the SYNC byte is its working song's, and the poll asks the cart's own playback for it (edge E3), so a
   // ROM whose title names no tracker would read "SYNC unread" whatever the battery holds.
@@ -510,14 +518,14 @@ function withCart(stores: AppStores, be: MockBackend, sync: number): void {
   b[0x813f] = 0x6b; // 'k': a readable LSDj battery
   b[R.kModernRegions.syncMode] = sync;
   be.setSram(stores.project.systems.view()[0].id, b);
-  stores.project.setController({ enabled: true, target: "system" });
-  stores.project.refreshControllerSong();
+  stores.project.setSection(CONTROLLER_SECTION, { enabled: true, target: "system" });
+  stores.project.pollServices();
 }
 
 test("the cart-sync row reads the app's own rule, not a mode string", () => {
-  // Whether the cart is being driven is the APP's answer (controllerSyncOverride's `driving`: the mode its launches need
-  // is the one the cart is put in), never "the mode is not the string off" - a second app may spell its off-mode anything
-  // or have none at all, and the row would then claim the cart was driven while nothing was sent.
+  // Whether the cart is being driven is the APP's answer (controllerSyncOverride's `driving`: the mode its launches
+  // need is the one the cart is put in), never "the mode is not the string off" - a second app may spell its
+  // off-mode anything or have none at all, and the row would then claim the cart was driven while nothing was sent.
   withHost(() => {}, (_h, stores, be) => {
     withCart(stores, be, 8); // MidiMap: what MI.MAP's launches need
     expect(findItem(submenu(stores, be), "lp-cart-sync")?.label).toBe("Cart: LSDj MI.MAP - driving it");
@@ -532,16 +540,16 @@ test("the cart-sync row reads the app's own rule, not a mode string", () => {
     // guessing that the cart is willing.
     be.seed("/roms/plain.gb", gbRom());
     stores.project.systems.addSystem("/roms/plain.gb");
-    stores.project.setController({ enabled: true, target: "system" });
-    stores.project.refreshControllerSong();
+    stores.project.setSection(CONTROLLER_SECTION, { enabled: true, target: "system" });
+    stores.project.pollServices();
     expect(findItem(submenu(stores, be), "lp-cart-sync")?.label).toBe("Cart: LSDj MI.MAP - driving it (SYNC unread)");
   });
 });
 
 test("the app rows edit PROJECT settings, and each edit re-pushes the kernel", () => {
   withHost(() => {}, (_h, stores, be) => {
-    // A cycler's onCycle takes a DIRECTION, so each of these steps once from its default: off -> on, bar -> beat, follow
-    // on -> off, and the emulated cart -> MIDI out.
+    // A cycler's onCycle takes a DIRECTION, so each of these steps once from its default: off -> on, bar -> beat,
+    // follow on -> off, and the emulated cart -> MIDI out.
     const rows = submenu(stores, be);
     let pushes = 0; // counted from HERE: seeding the cart above pushes once on its own
     stores.project.addOnSystemsChange(() => void pushes++);
@@ -551,7 +559,7 @@ test("the app rows edit PROJECT settings, and each edit re-pushes the kernel", (
     findItem(rows, "lp-app-follow")?.onCycle?.(-1);
     findItem(rows, "lp-target")?.onCycle?.(1);
 
-    const c = stores.project.settings().controller;
+    const c = sectionOf(stores);
     expect(c.enabled).toBe(true);
     expect(c.target).toBe("midiOut");
     expect(c.appConfig.quantise).toBe("beat");
@@ -569,7 +577,7 @@ test("an app knob's row shows the value the app's own parse gives the runtime", 
   // (parseAppConfig). MI.MAP's default is "bar", index 2 of its four values, so a stored value outside the list runs
   // "Next bar" and its row has to show that rather than the first label.
   withHost(() => {}, (_h, stores, be) => {
-    stores.project.setController({ appConfig: { quantise: "whenever" } });
+    stores.project.setSection(CONTROLLER_SECTION, { appConfig: { quantise: "whenever" } });
     expect(findItem(submenu(stores, be), "lp-app-quantise")?.label).toBe("Launches: Next bar");
   });
 });
@@ -591,7 +599,7 @@ test("a toggle and a range knob read the app's parse too", () => {
   });
   try {
     withHost(() => {}, (_h, stores, be) => {
-      stores.project.setController({ appConfig: { follow: "yes", level: 999 } });
+      stores.project.setSection(CONTROLLER_SECTION, { appConfig: { follow: "yes", level: 999 } });
       const rows = submenu(stores, be);
       expect(findItem(rows, "lp-app-follow")?.label).toBe("Follow: Off");
       expect(findItem(rows, "lp-app-level")?.label).toBe("Level: High");
@@ -604,9 +612,9 @@ test("a toggle and a range knob read the app's parse too", () => {
 test("one app knob at a time: setting quantise does not wipe follow", () => {
   withHost(() => {}, (_h, stores, be) => {
     submenu(stores, be);
-    stores.project.setController({ appConfig: { follow: false } });
-    stores.project.setController({ appConfig: { quantise: "beat" } });
-    const c = stores.project.settings().controller;
+    stores.project.setSection(CONTROLLER_SECTION, { appConfig: { follow: false } });
+    stores.project.setSection(CONTROLLER_SECTION, { appConfig: { quantise: "beat" } });
+    const c = sectionOf(stores);
     expect(c.appConfig.follow).toBe(false);
     expect(c.appConfig.quantise).toBe("beat");
   });
@@ -615,12 +623,12 @@ test("one app knob at a time: setting quantise does not wipe follow", () => {
 test("switching to a different app starts it from a clean config, not the old app's knobs", () => {
   // Merging kept every key of every app ever chosen in the .rplg, handed to whichever app came next.
   withHost(() => {}, (_h, stores) => {
-    stores.project.setController({ appConfig: { follow: false, quantise: "beat" } });
-    stores.project.setController({ app: "some-other-app", appConfig: {} });
-    expect(stores.project.settings().controller.appConfig).toEqual({});
-    stores.project.setController({ app: "some-other-app", appConfig: { x: 1 } }); // same app: merges as before
-    stores.project.setController({ appConfig: { y: 2 } });
-    expect(stores.project.settings().controller.appConfig).toEqual({ x: 1, y: 2 });
+    stores.project.setSection(CONTROLLER_SECTION, { appConfig: { follow: false, quantise: "beat" } });
+    stores.project.setSection(CONTROLLER_SECTION, { app: "some-other-app", appConfig: {} });
+    expect(sectionOf(stores).appConfig).toEqual({});
+    stores.project.setSection(CONTROLLER_SECTION, { app: "some-other-app", appConfig: { x: 1 } }); // same app: merges as before
+    stores.project.setSection(CONTROLLER_SECTION, { appConfig: { y: 2 } });
+    expect(sectionOf(stores).appConfig).toEqual({ x: 1, y: 2 });
   });
 });
 
@@ -771,9 +779,9 @@ test("Forget clears the pair AND the name, so the submenu goes away again", () =
 });
 
 test("Forget hands back a REFUSED claim's reservation, which is this process's to release", () => {
-  // "in use by another RetroPlug" keeps the pair out of THIS process's shared stream on purpose (its pads must not reach
-  // a cart), and the link is not connected behind it. Forget must still release: a pair left reserved stays out of the
-  // stream for the rest of the session, and the error stays on the status row.
+  // "in use by another RetroPlug" keeps the pair out of THIS process's shared stream on purpose (its pads must not
+  // reach a cart), and the link is not connected behind it. Forget must still release: a pair left reserved stays
+  // out of the stream for the rest of the session, and the error stays on the status row.
   withHost((h) => h.away.add("LPProMK3 MIDI"), (h, stores) => {
     restoreLaunchpad(stores.userConfig);
     expect(h.claims).toEqual([]);
@@ -788,8 +796,8 @@ test("Forget hands back a REFUSED claim's reservation, which is this process's t
 // --- startup restore, scan ownership, profiles -------------------------------------------------------------
 
 test("the startup restore tells the host it is done, claim or no claim", () => {
-  // The standalone holds its MIDI stream and audio back until it hears this, so a restored device is reserved before that
-  // stream opens and costs no audio restart. Silence would leave the host waiting out its bound.
+  // The standalone holds its MIDI stream and audio back until it hears this, so a restored device is reserved
+  // before that stream opens and costs no audio restart. Silence would leave the host waiting out its bound.
   withHost(() => {}, (h, stores) => {
     restoreLaunchpad(stores.userConfig);
     expect(h.restoredCalls).toBe(1);
@@ -804,8 +812,8 @@ test("the startup restore tells the host it is done, claim or no claim", () => {
 
 test("while a scan runs, the selection is the scan's: manual edits are greyed and refused", () => {
   // Otherwise a pick made mid-scan is stomped when the scan settles - and on Windows a mid-scan Connect fails outright,
-  // since the scan holds every input and a Windows MIDI input is exclusive. The case starts from a SAVED selection, so the
-  // Forget row would be ENABLED without the scan guard: it is the scan, not an empty pair, that greys it.
+  // since the scan holds every input and a Windows MIDI input is exclusive. The case starts from a SAVED selection,
+  // so the Forget row would be ENABLED without the scan guard: it is the scan, not an empty pair, that greys it.
   withHost((h) => h.answers.set("MIDISPORT 2x2 Port A", { input: "MIDISPORT 2x2 Port A", bytes: PRO_MK3_REPLY }),
     (h, stores, be, clock) => {
       stores.userConfig.setControlSurface({
@@ -815,8 +823,8 @@ test("while a scan runs, the selection is the scan's: manual edits are greyed an
       const rows = submenu(stores, be);
       for (const id of ["lp-input", "lp-output", "lp-connect"]) expect(findItem(rows, id)?.disabled).toBe(true);
       expect(findItem(midiSettingsRows(stores, be), "midi-scan-forget")?.disabled).toBe(true);
-      // ...and refused even if called directly: the saved pair is still there afterwards (a Forget that did nothing must
-      // not read as one that cleared it), and nothing was claimed.
+      // ...and refused even if called directly: the saved pair is still there afterwards (a Forget that did nothing
+      // must not read as one that cleared it), and nothing was claimed.
       setLaunchpadPorts(stores.userConfig, "Arturia KeyStep 32", "LPProMK3 MIDI");
       connectLaunchpad(stores.userConfig, true, getLaunchpadConfig(stores.userConfig));
       forgetLaunchpad(stores.userConfig);
@@ -878,8 +886,8 @@ test("a scan opens every input in one batch", () => {
 // --- model confirmation, cancel, labels, retry -------------------------------------------------------------
 
 test("a Mini MK3 answers with the Pro's own family bytes - and is still not taken for one", () => {
-  // Both manuals give 13 01. Only the confirm stage tells them apart: the Pro answers a question in its own SysEx header
-  // (0E); a Mini ignores it. Taken, a Mini would be claimed and sent messages it ignores.
+  // Both manuals give 13 01. Only the confirm stage tells them apart: the Pro answers a question in its own SysEx
+  // header (0E); a Mini ignores it. Taken, a Mini would be claimed and sent messages it ignores.
   withHost((h) => h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: PRO_MK3_REPLY, isPro: false }),
     (h, stores, be, clock) => {
       findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
@@ -905,8 +913,8 @@ test("a Mini answering first does not hide the Pro behind it", () => {
 
 test("the model is confirmed on the pair that answered, without reopening a single port", () => {
   // The question goes out as a follow-up while the sweep still holds the pair. A second stage would reopen it - another
-  // Windows round of stepping the shared stream aside, and a window for another program to grab the port and make a real
-  // Pro look silent.
+  // Windows round of stepping the shared stream aside, and a window for another program to grab the port and make a
+  // real Pro look silent.
   withHost((h) => h.answers.set("LPProMK3 MIDI", { input: "LPProMK3 MIDI", bytes: PRO_MK3_REPLY }), (h, stores, be, clock) => {
     findItem(midiSettingsRows(stores, be), "midi-scan")?.onSelect?.();
     const s = runScan(clock)!;
@@ -984,9 +992,9 @@ test("switching the controller off in the project lets the device go, with the p
     restoreLaunchpad(stores.userConfig);
     pollControllerRole(false); // at startup: nothing was running, nothing to let go of
     expect(h.sentToDevice).toEqual([]);
-    stores.project.setController({ enabled: true });
+    stores.project.setSection(CONTROLLER_SECTION, { enabled: true });
     pollControllerRole(true);
-    stores.project.setController({ enabled: false });
+    stores.project.setSection(CONTROLLER_SECTION, { enabled: false });
     pollControllerRole(false);
     expect(h.sentToDevice).toEqual([]); // not yet: the role's last blocks may still be on their way out
     for (let i = 1; i < RELEASE_DELAY_POLLS; i++) pollControllerRole(false);

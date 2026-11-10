@@ -26,7 +26,7 @@ import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "@retroplug/lsdj";
 import { LsdjReader, type LsdjState, CHANNELS, type ChannelName } from "@retroplug/lsdj/runtime";
 import { directGraph } from "../src/graph/directGraph";
-import type { GraphController } from "../src/graph/controller";
+import type { GraphController } from "@retroplug/launchpad/placer";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import { MidiRouting } from "@retroplug/core/midiRouting";
 
@@ -152,7 +152,8 @@ export class LsdjProbe {
     // skipped test.
     for (const other of graph.ids())
       if (other !== id && !graph.setPipeline(other, [])) throw new Error(`LsdjProbe: could not clear system ${other}'s pipeline`);
-    if (!graph.setController(null) || !graph.setMidiRouting(project.midiRouting) || !graph.setController(project.controller))
+    if (!graph.setModel("controller", null) || !graph.setMidiRouting(project.midiRouting) ||
+      !graph.setModel("controller", project.controller))
       throw new Error("LsdjProbe: the graph refused the project's routing or controller");
     if (!graph.setPipeline(id, project.roles)) throw new Error(`LsdjProbe: the graph refused system ${id}'s pipeline`);
 

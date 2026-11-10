@@ -21,9 +21,10 @@ const POLL_FRAMES = 30;
 export function useSongWatch(stores: AppStores): void {
   useFrameDivider(POLL_FRAMES, () => {
     stores.project.syncRecent();
-    // Same rhythm, same battery, different question: has the SONG ITSELF changed under a control surface?
-    // A cart being edited on its own screen tells the app nothing, so this is the only way the Launchpad's
-    // grid learns that row 12 just gained a chain. Inert unless a controller is enabled.
-    stores.project.refreshControllerSong();
+    // Same rhythm, same battery, different question, asked of every contributed project service: has the SONG ITSELF
+    // changed under a control surface? A cart being edited on its own screen tells the app nothing, so this is the only
+    // way the Launchpad's grid learns that row 12 just gained a chain. Inert for a service that has nothing to poll
+    // (the controller's is inert unless a controller is enabled).
+    stores.project.pollServices();
   });
 }

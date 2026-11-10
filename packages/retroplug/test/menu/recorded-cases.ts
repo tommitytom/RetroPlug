@@ -13,6 +13,7 @@
 // aimed at and which bytes it sent, which is how a hardware row (BlipToaster's SysEx) is pinned as well as its label.
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
+import { buildConfig } from "../../src/projectConfig";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "@retroplug/ui/menu";
 import { resetN8CartJob, setN8LinkClient } from "@retroplug/n8/ui";
@@ -177,6 +178,9 @@ function adoptHandEdited(
   stores.project.systems.adopt({ romPath: path, core: core as never, roles: [{ kind: core, config }] });
 }
 
+/** The project section the Launchpad pack contributes: a recorded case sets it through the store, as the menu does. */
+const CONTROLLER_SECTION = "controller";
+
 /** The Launchpad's own state (its selected pair and app) is project/user state, so it is set through the stores the
  *  way the shell's rows would leave it. `appConfig` is the project's stored config as written, which is what a
  *  hand-edited project (or an older build) leaves behind. */
@@ -187,7 +191,7 @@ function launchpadProject(stores: AppStores, app: string, appConfig: Record<stri
     output: "LPProMK3 MIDI",
     device: "Launchpad Pro [MK3]",
   });
-  stores.project.setController({ app, appConfig });
+  stores.project.setSection(CONTROLLER_SECTION, { app, appConfig });
 }
 
 /** A full 1 MiB LSDj ROM (the title makes the provider attach lsdj-sync). */
@@ -268,8 +272,8 @@ export const CASES: readonly RecordedCase[] = [
       b[R.kModernRegions.syncMode] = 8;
       be.setSram(id, b);
       launchpadProject(s, "lsdj-midimap");
-      s.project.setController({ enabled: true, target: "system" });
-      s.project.refreshControllerSong();
+      s.project.setSection(CONTROLLER_SECTION, { enabled: true, target: "system" });
+      s.project.pollServices();
     },
   },
   {
@@ -522,7 +526,9 @@ function walk(items: readonly MenuItem[], out: MenuItem[] = []): MenuItem[] {
 }
 
 /** The project state a menu row can change, as one JSON-shaped object: each system's role configs (by position, so a
- *  run's allocated ids do not reach the record), the project settings and the user config. */
+ *  run's allocated ids do not reach the record), the project's settings and the user config. A project's settings are
+ *  recorded as the .rplg writes them (buildConfig's `settings`: the core fields and each section at the top level under
+ *  its own key), so a row's path reads "project.controller.enabled" whatever the parsed model's shape. */
 function snapshot(stores: AppStores): unknown {
   const systems: Record<string, unknown> = {};
   stores.project.systems.view().forEach((s, i) => {
@@ -530,7 +536,7 @@ function snapshot(stores: AppStores): unknown {
     s.roles.forEach((r, j) => (roles[String(j)] = { kind: r.kind, config: r.config }));
     systems[`sys${i}`] = { roles };
   });
-  return { systems, project: stores.project.settings(), user: stores.userConfig.config() };
+  return { systems, project: buildConfig(stores.project.settings(), []).settings, user: stores.userConfig.config() };
 }
 
 /** A staging target by POSITION rather than by the id a run happened to allocate, so the record replays anywhere: a

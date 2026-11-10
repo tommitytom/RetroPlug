@@ -20,6 +20,8 @@ export function fixtureAliases(root) {
     "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
     "@retroplug/alpha/consoles": join(root, "packages/alpha/ts/consoles.ts"),
     "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
+    "@retroplug/alpha/kind": join(root, "packages/alpha/ts/widgetKind.ts"),
+    "@retroplug/beta/kind": join(root, "packages/beta/ts/kind.ts"),
     "@retroplug/alpha/ui": join(root, "packages/alpha/ts/ui/index.ts"),
     "@retroplug/beta/ui": join(root, "packages/beta/ts/ui/index.ts"),
     "@retroplug/zeta/ui": join(root, "packages/zeta/ts/ui/index.ts"),

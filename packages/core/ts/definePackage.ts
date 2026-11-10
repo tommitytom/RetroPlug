@@ -34,12 +34,40 @@ export interface Embed {
   readonly platform: Platform;
 }
 
-/** A package's contributions as core knows them: the role contract's objects, the ROM providers, and the embedded
- *  ROMs its bytes carry. */
+/** A section of a project's settings that a package owns (docs/modular-graph-phase-f5a-design.md section 6.1): a
+ *  top-level key under a .rplg's `settings` ("controller"), how it is parsed, and what a project that never set it
+ *  reads. The shell keeps every non-core key it does not know verbatim, so a project written by a build that carries
+ *  this package loses nothing in one that does not. */
+export interface ProjectSection<T = unknown> {
+  /** The key under `settings`. Never one of the shell's own (layout, midiRouting, audioRouting, zoom), and never a key
+   *  two packages declare: the generated registry refuses both. */
+  readonly key: string;
+  /** Raw, migrated value -> the section: defaults filled, values clamped, never throwing on junk. Anything with a
+   *  `parse` will do, as a controller app's config schema does. */
+  readonly schema: { parse(raw: unknown): T };
+  /** What a project that never set the section reads: a fresh project, a file with no such key. */
+  defaults(): T;
+  /** The stamp this build writes inside the section when the section ever needed a migration (a numeric
+   *  `schemaVersion`), and the steps that carry an older one up, keyed by FROM-version as migrate.ts's MigrationMap is.
+   *  Absent: the section is additive only, nothing is stamped, and nothing about its bytes moves. A section is NOT
+   *  stamped until it first versions, so a block with no stamp reads as version 1, the shape before any stamp: the
+   *  first versioned release declares 2 and adds one step keyed 1. */
+  readonly version?: number;
+  readonly migrations?: Readonly<Record<number, (raw: Record<string, unknown>) => Record<string, unknown>>>;
+  /** How a patch lands on the section; the default shallow-merges the patch over the current value and runs the
+   *  schema's `parse` over the result, so a read answers the same shape a reload would. It may throw to refuse a patch
+   *  (a value the package's own closed enum does not have), which the caller sees rather than a section nothing
+   *  reads. */
+  merge?(current: T, patch: Readonly<Record<string, unknown>>): T;
+}
+
+/** A package's contributions as core knows them: the role contract's objects, the ROM providers, the embedded ROMs its
+ *  bytes carry, and the project sections it owns. */
 export interface PackageContributions {
   readonly roles?: readonly RoleType[];
   readonly romProviders?: readonly RomProvider[];
   readonly embeds?: readonly Embed[];
+  readonly projectSections?: readonly ProjectSection[];
 }
 
 /** The identity function with types: an app module's default export, checked against what a package may contribute. */

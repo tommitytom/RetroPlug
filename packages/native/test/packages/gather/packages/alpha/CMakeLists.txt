@@ -93,8 +93,17 @@ elseif(RP_GATHER_CASE STREQUAL "link-options-name")
     target_link_options(retroplug-alpha INTERFACE -lretroplug-beta)
 elseif(RP_GATHER_CASE STREQUAL "link-options-name-shell")
     target_link_options(retroplug-alpha INTERFACE -lretroplug-backend)
+elseif(RP_GATHER_CASE STREQUAL "includes-target-property")
+    # beta's include directories named through a generator expression: a link to beta in everything but spelling, so
+    # the target named decides (docs/modular-graph-phase-f5a-design.md section 6.7's generic rule).
+    target_include_directories(retroplug-alpha INTERFACE
+        $<TARGET_PROPERTY:retroplug-beta,INTERFACE_INCLUDE_DIRECTORIES>)
+elseif(RP_GATHER_CASE STREQUAL "objects" OR RP_GATHER_CASE STREQUAL "objects-declared")
+    # Another target's objects, named by a generator expression: what they compile is that target's package's, judged
+    # as a link is (never as a source of alpha's own directory).
+    target_sources(retroplug-alpha INTERFACE $<TARGET_OBJECTS:retroplug-beta-objects>)
 elseif(RP_GATHER_CASE STREQUAL "unjudged")
     # A generator expression only the build generator resolves: refused rather than passed unseen.
     target_link_libraries(retroplug-alpha INTERFACE
-        $<TARGET_PROPERTY:retroplug-beta,INTERFACE_INCLUDE_DIRECTORIES>)
+        $<TARGET_PROPERTY:retroplug-beta,INTERFACE_COMPILE_DEFINITIONS>)
 endif()

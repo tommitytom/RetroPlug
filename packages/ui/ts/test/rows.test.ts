@@ -4,7 +4,6 @@
 // shows what it did: a value of the wrong type reads as the schema default, a choice the list does not hold reads as
 // index 0, and an off-grid number reads as the nearest step.
 import { test, expect } from "@retroplug/testing";
-import type { ControllerAppField } from "@retroplug/core/host";
 import { nearestIndex, readConfigRow, rowShownFor, rowShownOn, type ConfigRow, type RoleRow } from "../contribution";
 
 const CHANNELS: RoleRow = {
@@ -98,13 +97,3 @@ const toggleOrRange: ConfigRow = { key: "k", label: "L", toggle: true, range: { 
 const rangeOrChoices: ConfigRow = { key: "k", label: "L", range: { steps: [0], labels: ["x"] }, choices: [] };
 void [choiceOrToggle, toggleOrRange, rangeOrChoices];
 
-// A controller app's knob and a config row are one shape, declared twice because core cannot import this package (the
-// launchpad registry, which is downstream of core, aliases one to the other). The compiler holds them equal both ways:
-// if one grows a member the other lacks, the assignment below stops compiling.
-const asConfigRow = (field: ControllerAppField): ConfigRow => field;
-const asAppField = (row: ConfigRow): ControllerAppField => row;
-
-test("a controller app's field and a config row are the same shape", () => {
-  expect(typeof asConfigRow).toBe("function");
-  expect(typeof asAppField).toBe("function");
-});

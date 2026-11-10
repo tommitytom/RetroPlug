@@ -1,8 +1,9 @@
 // The launchpad package's two tables (ts/registry.ts and ts/apps/index.ts): the control plane's app registry, and the
-// runtime registry the generated script bundle fills. Each is looked up by id, so a re-registration replaces rather than
-// duplicating, and an unknown id - an Object.prototype name among them - is nothing.
+// runtime registry the generated script bundle fills. Each is looked up by id, so a re-registration replaces rather
+// than duplicating, and an unknown id - an Object.prototype name among them - is nothing.
 import { test, expect } from "@retroplug/testing";
-import { ControllerRegistry, type ControllerAppContribution } from "../registry";
+import type { ConfigRow } from "@retroplug/ui/contribution";
+import { ControllerRegistry, type ControllerAppContribution, type ControllerAppField } from "../registry";
 import { controllerApp, controllerApps, registerControllerApps, type ControllerAppRuntime } from "../apps";
 
 const entry = (id: string, label = id): ControllerAppContribution => ({
@@ -65,4 +66,15 @@ test("the runtime registry registers by id, and the generated bundle fills it", 
 
 test("the runtime registry knows no app it was not handed", () => {
   for (const id of ["nope", "toString", "__proto__", ""]) expect(controllerApp(id)).toBe(undefined);
+});
+
+// A controller app's knob IS a config row: the registry aliases the menu's row to the UI contract's (registry.ts),
+// so the menu renders both with one cycler. Held both ways, so a hand-written copy that grew (or lost) a member
+// would fail the assignment instead of rendering a row the kit cannot draw.
+const asConfigRow = (field: ControllerAppField): ConfigRow => field;
+const asAppField = (row: ConfigRow): ControllerAppField => row;
+
+test("a controller app's field and a config row are the same shape", () => {
+  expect(typeof asConfigRow).toBe("function");
+  expect(typeof asAppField).toBe("function");
 });

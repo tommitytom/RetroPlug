@@ -5,7 +5,7 @@
 // spell them. Nothing but a type is imported here: the data is apart from the node modules it describes, so a
 // bundle that reads it carries no node's code, no role's schema and nothing of the app.
 import type { ProtocolNodeSpec } from "../graph/protocolNodes";
-import type { ControllerSyncRule } from "../graph/controller";
+import type { KindData } from "@retroplug/core/defineKind";
 
 /** How buildGraph and the stores wire each protocol node type (graph/protocolNodes.ts's ProtocolNodeSpec): the
  *  input its system's routed MIDI arrives on, the system inputs it writes, and the wires it takes or makes. In
@@ -14,17 +14,27 @@ export const PROTOCOL_NODES = {
   "rp.alpha.midi": { midiIn: "midi", writes: ["serialIn"] },
 } as const satisfies Record<string, ProtocolNodeSpec>;
 
+/** Every protocol node type the product's packages declare, wired or not, in label order (a package's own placer
+ *  places the ones the graph does not wire). */
+export const DECLARED_NODE_TYPES: readonly string[] = [
+  "rp.alpha.midi",
+  "rp.fixture.shell",
+];
+
 /** The role kinds that have a protocol node, each with the type it is placed as (the ids PROTOCOL_NODES wires),
  *  in the order of the labels they are placed at. */
 export const ROLE_NODES: Readonly<Record<string, keyof typeof PROTOCOL_NODES>> = {
   "alpha-midi": "rp.alpha.midi",
 };
 
-/** The controller apps' sync overrides, by app id: the cart sync node type an app's launches need, the mode it
- *  puts that node in, and the polled SYNC value that counts as the cart listening (a cart polled at anything else
- *  is put in `off`; one that cannot be read yet is assumed willing). DATA, so the planner applies it without an
- *  app or a schema - the app modules have both - and it reaches the DOCUMENT only, never a project: turning the
- *  controller off restores whatever the user had. */
-export const CONTROLLER_SYNC: Readonly<Record<string, ControllerSyncRule>> = {
-  "alpha-app": {"node":"rp.alpha.midi","mode":"midiMap","listening":"MidiMap","off":"off"},
+/** The data the contributing manifests declare for each contribution kind's items, by kind and then item id (a
+ *  controller app's sync override, say): only the keys the declaring manifest lists as data, and nothing else.
+ *  DATA, so a planner applies it with no item code and no schema - an app module has both - and what a key means
+ *  is its declaring package's check's. */
+export const KIND_DATA: Readonly<Record<string, KindData>> = {
+  "widgets": {
+  },
+  "controllerApps": {
+    "alpha-app": {"syncOverride":{"node":"rp.alpha.midi","mode":"midiMap","listening":"MidiMap","off":"off"}},
+  },
 };

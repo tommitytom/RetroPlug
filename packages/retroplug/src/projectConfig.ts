@@ -16,40 +16,33 @@ import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
 import { commonSettingsSchema, type CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import { z } from "zod";
-import { clampedInt, boolField, stringField, enumField } from "@retroplug/core/configFields";
+import { clampedInt, stringField, enumField } from "@retroplug/core/configFields";
 import { stringifyConfig } from "./configSchema";
 import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
 import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
 import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALUES } from "./settingsEnums";
-import { type ControllerTarget, CONTROLLER_TARGET_VALUES } from "@retroplug/launchpad/enums";
-import { controllerApps } from "./controller/registry";
+import type { ProjectSection } from "@retroplug/core/definePackage";
+// The product's registrations, and through them every declared contribution kind's `accept`: each kind fills the table
+// its declaring package's schema, defaults or placer reads. A module that reads a kind-filled registry imports the
+// generated registry for that reason; this one also needs PROJECT_SECTIONS itself.
+import { PROJECT_SECTIONS } from "./generated/packages";
 
-/** The controller app a fresh project starts with: the first the product registers (an app's position in the product's
- *  package order is its position in the menu). "" when the product carries none, which runs nothing. */
-export const DEFAULT_CONTROLLER_APP: string = controllerApps.list()[0]?.id ?? "";
+/** The settings keys the SHELL owns, which no package may contribute as a section (the generated registry refuses one
+ *  that does). Everything else under `settings` belongs to whichever package contributed it. Keep in step with the
+ *  generated registry's SHELL_SECTION_KEYS (packages.mjs): the two lists are the one rule, checked and trusted. */
+export const CORE_SETTING_KEYS = ["layout", "midiRouting", "audioRouting", "zoom"] as const;
 
-/** Project-level settings. The three routing/layout enums are string-valued (see settingsEnums);
- *  `zoom` is a magnitude (0 = inherit the user default, else 1..6). */
+/** Project-level settings. The three routing/layout enums are string-valued (see settingsEnums); `zoom` is a magnitude
+ *  (0 = inherit the user default, else 1..6); and `sections` are the blocks a package contributes (the control
+ *  surface's `controller`), each parsed by its own contributor, or kept verbatim for a key no package of this product
+ *  contributes.
+ *  The .rplg keeps them at the top level of `settings`, so a section's key IS its key in the file. */
 export interface ProjectSettings {
   layout: SystemLayout;
   midiRouting: MidiRouting;
   audioRouting: AudioRouting; // channelSplit/pinSplit fan ONE system's channels across the outs
   zoom: number; // 0 inherit / 1..6
-  controller: ControllerSettings;
-}
-
-/** The control-surface (Launchpad) session — project scope, because on the real-hardware path there is no
- *  system to hang it off (docs/launchpad-plan.md 6.3). Only the user's CHOICES live here; the derived
- *  song-timing table the predictor needs is built at projection time and never persisted. */
-export interface ControllerSettings {
-  enabled: boolean;
-  app: string; // a ControllerRegistry id, e.g. "lsdj-midimap" (DEFAULT_CONTROLLER_APP above is the first registered)
-  target: ControllerTarget;
-  systemId: number; // 0 = the first system
-  /** The chosen app's OWN knobs (quantise, follow, …), validated by that app's schema rather than here -
-   *  the registry owns their shape, so a new app needs no change to the project schema. Small readable
-   *  JSON, so it persists inline like any other setting. */
-  appConfig: Record<string, unknown>;
+  sections: Readonly<Record<string, unknown>>;
 }
 
 /** A system as serialized: thin, with default per-system fields omitted. Its two structural
@@ -75,37 +68,162 @@ export interface ProjectConfig {
   systems: SystemThin[];
 }
 
+/** A `.rplg`'s `settings` as the file carries it, which buildConfig writes and serializeConfig serializes: the four
+ *  core fields, and every section at the top level under its own key. Distinct from ProjectSettings, whose sections
+ *  are nested by key, so a caller cannot read the file shape and mistake it for the parsed one (a built config has no
+ *  `sections` member, and a parsed one carries no section at the top level). */
+export interface ProjectFileSettings {
+  layout: SystemLayout;
+  midiRouting: MidiRouting;
+  audioRouting: AudioRouting;
+  zoom: number;
+  /** A section's block, by the key it is written under. */
+  [section: string]: unknown;
+}
+
+/** A config as the file carries it: buildConfig's output, which serializeConfig writes. */
+export interface ProjectFileConfig extends Omit<ProjectConfig, "settings"> {
+  settings: ProjectFileSettings;
+}
+
 // --- zod validation schemas -----------------------------------------------
-// STRICT schemas (unknown keys stripped). Forward-tolerance across config versions
-// is field `.default()`s (core's configFields builders) + refuse-newer detection, not passthrough.
+// STRICT schemas (unknown keys stripped, except under `settings`: a non-core key there is a package's section and is
+// kept, see parseSections). Forward-tolerance across config versions is field `.default()`s (core's configFields
+// builders) + refuse-newer detection, not passthrough.
 // A malformed/partial config is coerced (clamp/default), not rejected. The role
 // `config` stays an open record — its per-kind RoleType schema validates it elsewhere.
 
 /** Project-level settings: defaults filled, enum values snapped to the known set (unknown → default),
- *  zoom clamped to its magnitude range. */
+ *  zoom clamped to its magnitude range. The sections are the contributors' (see parseSections). */
 export const projectSettingsSchema = z.object({
   layout: enumField(LAYOUT_VALUES, "auto"),
   midiRouting: enumField(MIDI_ROUTING_VALUES, "sendToAll"),
   audioRouting: enumField(AUDIO_ROUTING_VALUES, "stereo"),
   zoom: clampedInt(0, 6, 0),
-  // ADDITIVE, so no migration step: an older project simply has no `controller` key and the field
-  // defaults fill it (AGENTS.md, config migrations). Off by default - a controller is opt-in hardware.
-  // Preprocessed so a malformed `controller` (null, an array, a number) becomes {} and takes its defaults, instead of
-  // failing the WHOLE settings object - which reset layout, zoom and the rest.
-  controller: z.preprocess((v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}), z.object({
-    enabled: boolField(false),
-    // The product's first registered app, not a literal: a build that carried no app would store "" (which runs
-    // nothing, visibly), and one that reordered them would store what the menu offers first. Which app runs is a
-    // registry fact, and a project that stored another id keeps it - this is only the default a fresh project gets.
-    app: stringField(DEFAULT_CONTROLLER_APP),
-    target: enumField(CONTROLLER_TARGET_VALUES, "system"),
-    systemId: clampedInt(0, 0x7fffffff, 0),
-    // Opaque here by design: the chosen app's own schema validates it.
-    appConfig: z.preprocess((v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}), z.record(z.string(), z.unknown())),
-  })),
 });
 
-export const DEFAULT_SETTINGS: ProjectSettings = projectSettingsSchema.parse({}) as ProjectSettings;
+/** The section a package contributes under `key`, or undefined for a key no package of this product contributes (its
+ *  value is then kept verbatim). */
+export function projectSectionOf(key: string): ProjectSection | undefined {
+  return PROJECT_SECTIONS.find((entry) => entry.section.key === key)?.section;
+}
+
+/** Every contributor's defaults, by key: what a project that never set a section reads, and what a fresh project
+ *  starts with. */
+export function defaultSections(): Record<string, unknown> {
+  const sections: Record<string, unknown> = {};
+  for (const { section } of PROJECT_SECTIONS) sections[section.key] = section.defaults();
+  return sections;
+}
+
+/** A settings object's core fields, in the order the .rplg writes them. */
+function coreSettings(settings: ProjectSettings): Omit<ProjectSettings, "sections"> {
+  return {
+    layout: settings.layout,
+    midiRouting: settings.midiRouting,
+    audioRouting: settings.audioRouting,
+    zoom: settings.zoom,
+  };
+}
+
+/** The typed read of a section: the contributor's parsed value, or the raw JSON of a key no package contributes. */
+export function projectSection<T = unknown>(settings: ProjectSettings, key: string): T {
+  return settings.sections[key] as T;
+}
+
+/** A raw section carried up to its contributor's version and parsed, or kept verbatim. Kept verbatim when it is stamped
+ *  NEWER than its contributor reads: the refuse-newer rule at section scope, so the rest of the project loads and this
+ *  one block is neither read nor (see serializeProjectSection / ProjectStore.setSection) written. Exported because the
+ *  versioned section a package contributes is what holds this rule: no product's section declares a version today (the
+ *  controller is additive), so the mechanism is tested through here (test/project/sections.test.ts). */
+export function parseProjectSection(contributor: ProjectSection, raw: unknown): unknown {
+  const block = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as RawObject) : {};
+  const version = contributor.version;
+  // An additive-only section declares no version: nothing is stamped in it, so nothing needs migrating, and a stray
+  // stamp in the file is just data its schema drops.
+  if (version === undefined) return contributor.schema.parse(block);
+  const stamped = readSectionVersion(block);
+  if (stamped > version) return raw;
+  return contributor.schema.parse(migrateRaw(block, stamped, version, contributor.migrations ?? {}));
+}
+
+/** A section as the .rplg writes it: a contributor that declares a version stamps its own, and a block this build kept
+ *  verbatim because it is stamped newer is written back exactly as it came. */
+export function serializeProjectSection(contributor: ProjectSection, value: unknown): unknown {
+  const version = contributor.version;
+  if (version === undefined) return value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const block = value as RawObject;
+  if (readSectionVersion(block) > version) return value;
+  return { ...block, schemaVersion: version };
+}
+
+/** The version an unstamped section reads as: the shape before any stamp. A section is not stamped until it first
+ *  versions, so its first versioned release declares 2 with a step keyed 1, and every project written before that
+ *  release carries the v1 shape. (A root is always stamped, so readNumericVersion's unstamped-is-current rule is the
+ *  root's alone.) */
+const SECTION_BASELINE_VERSION = 1;
+
+/** A section block's own stamp, or the baseline for a block that has none: an unstamped section reads as version 1 (the
+ *  shape before any stamp), which is why the first versioned release declares 2. A ROOT is always stamped, so its
+ *  readNumericVersion's unstamped-is-current rule is not this one. */
+export function readSectionVersion(block: RawObject): number {
+  const stamp = block.schemaVersion;
+  return typeof stamp === "number" && Number.isFinite(stamp) ? stamp : SECTION_BASELINE_VERSION;
+}
+
+/** Refuse a settings key that is not a section a host may read or write: one of the shell's own fields (whose value in
+ *  the file would become an object the next load clamps back to the default), or `__proto__`, which a plain assignment
+ *  treats as a prototype rather than as a value. The generated registry refuses a contributor of the shell's keys;
+ *  `__proto__` it cannot refuse (a manifest's member of that name is not its JSON's to declare), so this is the one
+ *  gate for it. */
+export function assertSectionKey(key: string): void {
+  if ((CORE_SETTING_KEYS as readonly string[]).includes(key)) {
+    throw new Error(`${key} is one of the shell's own settings, not a project section`);
+  }
+  if (key === "__proto__") throw new Error("__proto__ is not a project section: it names a prototype");
+}
+
+/** A section's raw value by key: its contributor's parse, or the value itself for a key no package contributes. */
+function parseSectionValue(key: string, raw: unknown): unknown {
+  const contributor = projectSectionOf(key);
+  return contributor ? parseProjectSection(contributor, raw) : raw;
+}
+
+/** Store a section by key as an own, enumerable property. `Object.defineProperty` rather than assignment, because a
+ *  hand-edited `__proto__` key is data E5 keeps: assigning it would set this object's prototype and drop the key on the
+ *  next save. */
+function putSection(sections: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(sections, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
+/** The sections of a raw `settings` object: every key the shell does not own, through its contributor (or kept
+ *  verbatim), then `defaults()` for each contributor whose key the file does not have. */
+function parseSections(raw: unknown): Record<string, unknown> {
+  const block = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const sections: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(block)) {
+    if ((CORE_SETTING_KEYS as readonly string[]).includes(key)) continue;
+    putSection(sections, key, parseSectionValue(key, value));
+  }
+  for (const { section } of PROJECT_SECTIONS) {
+    if (!Object.prototype.hasOwnProperty.call(sections, section.key)) {
+      putSection(sections, section.key, section.defaults());
+    }
+  }
+  return sections;
+}
+
+/** A section by key as the .rplg writes it: its contributor's stamping, or the raw value unchanged. */
+function serializeSection(key: string, value: unknown): unknown {
+  const contributor = projectSectionOf(key);
+  return contributor ? serializeProjectSection(contributor, value) : value;
+}
+
+export const DEFAULT_SETTINGS: ProjectSettings = {
+  ...(projectSettingsSchema.parse({}) as Omit<ProjectSettings, "sections">),
+  sections: defaultSections(),
+};
 
 // A role instance: kind + an opaque config record (the record is intentionally open;
 // the role's own RoleType schema validates the config's fields).
@@ -336,11 +454,21 @@ function thinSettings(s: CommonSettings | undefined): Partial<CommonSettings> | 
 /** Live systems + settings → a thin ProjectConfig, dropping runtime ids and any
  *  field at its default. Stamps the running schema version. `name` is omitted when
  *  empty (thin convention — the reader derives one). */
-export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], name = ""): ProjectConfig {
+export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], name = ""): ProjectFileConfig {
   return {
     schemaVersion: String(K_PROJECT),
     ...(name ? { name } : {}),
-    settings: { ...settings },
+    // The core fields, then every section at the top level under its own key: a project with a controller block keeps
+    // `settings.controller` where it was, byte for byte, and a block no package contributes is written back as it came.
+    // A core key in the sections record is skipped: the shell's own fields are the core's, whatever a writer put there.
+    settings: {
+      ...coreSettings(settings),
+      ...Object.fromEntries(
+        Object.entries(settings.sections)
+          .filter(([key]) => !(CORE_SETTING_KEYS as readonly string[]).includes(key))
+          .map(([key, value]) => [key, serializeSection(key, value)]),
+      ),
+    },
     systems: systems.map((e) => {
       const t: SystemThin = { platform: e.platform, core: e.core };
       if (e.romPath) t.romPath = e.romPath;
@@ -358,7 +486,7 @@ export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], n
 
 // Apply `fn` to every asset path a system carries (romPath + savPath), storing the
 // result back. The single place path fields are enumerated (mirrors native visitPaths).
-function mapSystemPaths(cfg: ProjectConfig, fn: (path: string) => string): void {
+function mapSystemPaths(cfg: { systems: SystemThin[] }, fn: (path: string) => string): void {
   for (const s of cfg.systems) {
     if (s.romPath) s.romPath = fn(s.romPath);
     if (s.savPath) s.savPath = fn(s.savPath);
@@ -368,15 +496,15 @@ function mapSystemPaths(cfg: ProjectConfig, fn: (path: string) => string): void 
 /** Serialize to JSON, rebasing each asset path relative to `baseDir` (portable). An
  *  empty `baseDir` leaves paths absolute. `canonicalize` backs the realpath-hard
  *  toRelative test. */
-export function serializeConfig(cfg: ProjectConfig, baseDir: string, canonicalize: (p: string) => string): string {
-  const out: ProjectConfig = { ...cfg, settings: { ...cfg.settings }, systems: cfg.systems.map((s) => ({ ...s })) };
+export function serializeConfig(cfg: ProjectFileConfig, baseDir: string, canonicalize: (p: string) => string): string {
+  const out: ProjectFileConfig = { ...cfg, settings: { ...cfg.settings }, systems: cfg.systems.map((s) => ({ ...s })) };
   if (baseDir) mapSystemPaths(out, (p) => rebaseToRelative(p, baseDir, canonicalize));
   return stringifyConfig(out);
 }
 
 /** Parse config JSON with the zod schemas: migrate an older raw shape up to current
  *  (three steps today - see PROJECT_MIGRATIONS), then validate + default + clamp
- *  (unknown fields are STRIPPED, at every level - the schemas are plain `z.object`). Never
+ *  (unknown fields are stripped, except a `settings` key no package contributes, which is kept: E5). Never
  *  throws — malformed JSON / a non-object root yield an empty-default config, a
  *  garbage system entry is dropped, out-of-range/wrong-type values are coerced. */
 export function parseConfig(json: string): ProjectConfig {
@@ -391,9 +519,10 @@ export function parseConfig(json: string): ProjectConfig {
   const migrated = migrateProjectRaw(root, version);
   const parsed = projectConfigSchema.parse(migrated);
 
-  // Settings: default when missing/invalid, else clamped/defaulted.
+  // Settings: default when missing/invalid, else clamped/defaulted; then the sections, each through its contributor.
   const sp = projectSettingsSchema.safeParse(parsed.settings);
-  const settings = (sp.success ? sp.data : projectSettingsSchema.parse({})) as ProjectSettings;
+  const core = (sp.success ? sp.data : projectSettingsSchema.parse({})) as Omit<ProjectSettings, "sections">;
+  const settings: ProjectSettings = { ...core, sections: parseSections(parsed.settings) };
 
   // Systems: keep each valid (object) entry, drop garbage.
   const systems: SystemThin[] = [];

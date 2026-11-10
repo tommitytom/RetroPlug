@@ -37,7 +37,7 @@
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 #include "host/HostServices.hpp"
-#include "host/rpc/HarnessSurfaceLink.hpp"
+#include "launchpad/harness/HarnessSurfaceLink.hpp"
 #include "host/QuickJsGlobals.hpp"
 #include "host/devices/ProviderHost.hpp"
 #include "launchpad/desktop/LaunchpadProvider.hpp"
@@ -115,7 +115,7 @@ int main(int argc, char** argv) try {
     // count. It is the test host's only control surface (it opens no MIDI port); the panel it stands in for has no
     // tests of its own here, so the link is the harness's, not a fake of the Launchpad protocol. Declared before the
     // services, so it outlives the engine whose plans' nodes hold a handle on it.
-    rp::host::HarnessSurfaceLink harnessSurface;
+    rp::launchpad::HarnessSurfaceLink harnessSurface;
     // The N8 this host's sessions reach (a test:native CLI-style session, through the real facet): FakeN8's model of
     // the cart, which the pack's own tests drive too, behind the real N8 provider. This host starts the provider
     // itself, with FakeN8's ports, rather than through a generated rp_start_providers with deps/serial's, so no
@@ -211,7 +211,8 @@ int main(int argc, char** argv) try {
     if (!svc.engine.installLink<rp::launchpad::SurfaceLink>(rp::launchpad::kDeviceName,
                                                             rp::launchpad::kSurfaceLinkInterface, harnessSurface))
         std::fprintf(stderr, "[retroplug-host] the harness surface link was not installed\n");
-    svc.engineSvc.setHarnessSurface(&harnessSurface);
+    svc.engineSvc.setControllerStaging(
+        [&harnessSurface](std::span<const std::uint8_t> bytes) { return harnessSurface.queueInput(bytes); });
 
     // rpcpp server over the QuickJS object codec (marshals request/response as live JS objects against
     // ctx — nothing serialized). No primary object: every facet is mounted cross-object. Async sink unused.

@@ -3,7 +3,7 @@ import { test, expect } from "@retroplug/testing";
 import { EngineGraph } from "../../src/engineGraph";
 import { buildGraph, type GraphSystem } from "../../src/graph/buildGraph";
 import type { ProtocolRole } from "../../src/graph/protocolNodes";
-import type { GraphController } from "../../src/graph/controller";
+import type { GraphController } from "@retroplug/launchpad/placer";
 import { toGraphJson } from "@retroplug/core/graphDocument";
 import type { SetGraphRequest, SetGraphResult } from "../../src/backend";
 
@@ -70,8 +70,11 @@ test("the script nodes are part of the document: a pipeline, MIDI routing or con
   g.publish({ systems: [{ ...gb(1), pipeline: [mgb] }], routing: "stereo" });
   g.publish({ systems: [{ ...gb(1), pipeline: [mgb] }], routing: "stereo", midiRouting: "sendToAll" });
   g.publish({ systems: [{ ...gb(1), pipeline: [{ ...mgb }] }], routing: "stereo", midiRouting: "sendToAll" });
-  g.publish({ systems: [{ ...gb(1), pipeline: [mgb] }], routing: "stereo", midiRouting: "sendToAll", controller });
-  g.publish({ systems: [{ ...gb(1), pipeline: [mgb] }], routing: "stereo", midiRouting: "sendToAll", controller: { ...controller } });
+  g.publish({ systems: [{ ...gb(1), pipeline: [mgb] }], routing: "stereo", midiRouting: "sendToAll", models: { controller } });
+  g.publish({
+    systems: [{ ...gb(1), pipeline: [mgb] }], routing: "stereo", midiRouting: "sendToAll",
+    models: { controller: { ...controller } },
+  });
   expect(e.requests.length).toBe(4);
   expect(e.requests.every((r) => r.tap === undefined)).toBe(true);
 });

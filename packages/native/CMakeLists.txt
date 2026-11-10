@@ -142,7 +142,6 @@ target_link_libraries(retroplug-backend PUBLIC
     retroplug-core-nodes
     retroplug-dsp-nodes
     retroplug-dsp-resample-nodes
-    retroplug-launchpad # rp.launchpad.surface-in / -out's package (HarnessSurfaceLink implements its SurfaceLink)
     qjs                 # bare QuickJS: the script host, the compiler and the render host (no txiki, no libuv)
     rpcpp               # transitively pulls reflectcpp
     miniaudio           # header-only audio decoder used by SampleCache
@@ -167,6 +166,9 @@ add_executable(retroplug-host src/main.cpp)
 
 # The txiki host it runs its control plane on (src/main.cpp): its own library, not the backend's.
 target_link_libraries(retroplug-host PRIVATE retroplug-backend retroplug-tjs-runtime)
+# The staging surface link it stages control-surface messages into (src/main.cpp): the pack's harness, wired into the
+# backend's hook. The backend itself links no Launchpad target (the configure check refuses one).
+target_link_libraries(retroplug-host PRIVATE retroplug-launchpad-harness)
 # Its own N8 provider over a fake cart and its own Launchpad facet over fake ports (src/main.cpp): a test host starts the
 # providers it needs itself, over fakes, rather than rp_start_providers over real hardware.
 retroplug_product(retroplug-host PACKAGES ${RP_DESKTOP_PACKAGES} PROVIDERS n8 launchpad)

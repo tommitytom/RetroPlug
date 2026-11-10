@@ -1,12 +1,14 @@
-// Config validation: parseConfig validates STRICTLY (unknown keys stripped) and coerces
-// malformed values. Forward-tolerance across config versions is field DEFAULTS (an
-// old config missing a newer field gets its default) — not passthrough. Unknown fields
-// from a *different* writer (native C++'s richer shape) are a translation concern for
-// the real adapter, and a *newer* writer is refused by version detection, so
-// an older reader never needs to preserve unknowns. Breaking format changes bump the
-// version and migrate at the load seam (migrateProjectRaw; e.g. v1→v2 backfills `core`).
+// Config validation: parseConfig validates STRICTLY and coerces malformed values.
+// Forward-tolerance across config versions is field DEFAULTS (an old config missing a
+// newer field gets its default) - not passthrough. Unknown fields from a *different*
+// writer (native C++'s richer shape) are a translation concern for the real adapter, and
+// a *newer* writer is refused by version detection, so an older reader never needs to
+// preserve unknowns EXCEPT under `settings`, where a key no package contributes is kept
+// verbatim (docs/modular-graph-phase-f5a-design.md section 8, E5): the shell cannot tell a
+// future section from a package's. Breaking format changes bump the version and migrate at
+// the load seam (migrateProjectRaw; e.g. v1→v2 backfills `core`).
 import { test, expect } from "@retroplug/testing";
-import { parseConfig } from "../../src/projectConfig";
+import { parseConfig, projectSection } from "../../src/projectConfig";
 
 test("additive tolerance: a config missing newer fields gets their defaults", () => {
   const raw = JSON.stringify({
@@ -20,12 +22,12 @@ test("additive tolerance: a config missing newer fields gets their defaults", ()
   // loads with it defaulted off, needing no migration step at all.
   expect(cfg.settings).toEqual({
     layout: "column", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0,
-    controller: { enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} },
+    sections: { controller: { enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} } },
   });
   expect(cfg.systems[0]).toEqual({ platform: "gb", core: "sameboy", romPath: "/a.gb" }); // core backfilled (v1→v2)
 });
 
-test("strict: unknown fields are stripped, known fields kept", () => {
+test("strict: unknown fields are stripped, except a settings key no package contributes", () => {
   const raw = JSON.stringify({
     schemaVersion: "1",
     futureTopLevel: { anything: true }, // unknown root field
@@ -42,7 +44,10 @@ test("strict: unknown fields are stripped, known fields kept", () => {
   });
   const cfg = parseConfig(raw);
   expect((cfg as unknown as Record<string, unknown>).futureTopLevel).toBe(undefined); // root unknown stripped
-  expect((cfg.settings as unknown as Record<string, unknown>).futureSetting).toBe(undefined); // settings unknown stripped
+  // A SETTINGS key no package contributes is kept verbatim and written back (design E5): the shell cannot tell one a
+  // newer build wrote from one of its own packages' sections, so stripping it would silently destroy a downgrade's
+  // data. Every other unknown is stripped as before.
+  expect(projectSection(cfg.settings, "futureSetting")).toBe(42);
   const sys = cfg.systems[0] as unknown as Record<string, unknown>;
   expect(sys.model).toBe(undefined); // per-system unknown stripped
   expect(sys.highpass).toBe(undefined);
@@ -73,6 +78,8 @@ test("a malformed controller block takes its defaults without dragging the other
     }))!;
     expect(cfg.settings.layout).toBe("column");
     expect(cfg.settings.zoom).toBe(4);
-    expect(cfg.settings.controller).toEqual({ enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} });
+    expect(projectSection(cfg.settings, "controller")).toEqual(
+      { enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} },
+    );
   }
 });

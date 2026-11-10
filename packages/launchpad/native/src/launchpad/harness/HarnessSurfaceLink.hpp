@@ -1,10 +1,12 @@
 #pragma once
 
 // The control surface a headless host stages into: a SurfaceLink with no device behind it, so the RPC harness can drive
-// a controller session with no Launchpad attached (docs/modular-graph-phase-c5-design.md section 5). The plugin and the
-// SDL standalone install their real links on the engine; the test host (src/main.cpp, retroplug-host) installs this one
+// a controller session with no Launchpad attached (docs/modular-graph-phase-c5-design.md section 5). It lives in the
+// pack because it is the pack's surface a host stages into: the backend's RPC engine carries no concrete link, only a
+// hook a host binds this one's queueInput to (docs/modular-graph-phase-f5a-design.md section 6.7). The plugin and the
+// SDL standalone install their real links on the engine; the test host (packages/native/src/main.cpp) installs this one
 // instead, so stageControllerIn and renderBlocks' controller field still put a pad press where a session reads it,
-// now through the surface nodes the document places rather than through an engine-owned staging arena.
+// through the surface nodes the document places.
 //
 // Nothing is ever connected, so a session runs unattached exactly as it did when the harness staged into that arena
 // (it decodes presses and sends its LED diff, without the Programmer-mode handshake a link first reporting one brings).
@@ -20,7 +22,7 @@
 #include "transport/SpscRing.hpp"
 #include "launchpad/SurfaceLink.hpp"
 
-namespace rp::host {
+namespace rp::launchpad {
 
 class HarnessSurfaceLink final : public rp::launchpad::SurfaceLink {
 public:
@@ -70,4 +72,4 @@ private:
     std::atomic<std::uint64_t>                          dropped_{0};
 };
 
-}  // namespace rp::host
+}  // namespace rp::launchpad

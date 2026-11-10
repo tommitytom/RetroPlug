@@ -10,7 +10,8 @@
 // `${...}` that closes a span.
 //
 //   node test/source-literals/run-scan.mjs --platforms <id,...> --extensions <.ext,...> \
-//     --cores <id,...> --node-types <type,...> --carts <id,...> [--dirs src,cli,ui] [--root <dir>]
+//     --cores <id,...> --node-types <type,...> --node-prefixes <prefix,...> --carts <id,...> \
+//     [--dirs src,cli,ui] [--root <dir>]
 //
 // The guarded sets are the console registry's, not this file's: the test imports the generated CONSOLES list and passes
 // its platform ids, extensions, cores and node types, so a console a product registers later is guarded without an edit
@@ -40,11 +41,15 @@ const platforms = option("--platforms");
 const extensions = option("--extensions");
 const cores = option("--cores");
 const nodeTypes = option("--node-types");
+// A node type one of a listed package's families covers whether or not a manifest declares it: a package's native node
+// set (the Launchpad's rp.launchpad.surface-in/-out, the N8's rp.n8.nes) has no manifest entry, so its types are its
+// package's alone and the shell spells none of them either. Matched as prefixes with their trailing dot.
+const nodePrefixes = option("--node-prefixes");
 // `--carts` may be EMPTY and the other four may not: a fixture tree whose generated package list declares no cart is
 // scanned with no cart guard, which is right, while every tree has consoles. An absent flag is still not the same as
 // an empty one - it would scan a real tree with none of the cart ids - so it is tested for undefined.
 const carts = option("--carts");
-if (!platforms || !extensions || !cores || !nodeTypes || carts === undefined) {
+if (!platforms || !extensions || !cores || !nodeTypes || nodePrefixes === undefined || carts === undefined) {
   console.error(
     "run-scan: --platforms, --extensions, --cores, --node-types and --carts are required: they are the console and " +
       "package registries', which the caller reads from the generated lists rather than this file keeping a second " +
@@ -59,11 +64,15 @@ const PLATFORMS = new Set(list(platforms));
 const EXTENSIONS = new Set(list(extensions));
 const CORES = new Set(list(cores));
 const NODE_TYPES = new Set(list(nodeTypes));
+const NODE_PREFIXES = list(nodePrefixes);
 const CARTS = new Set(list(carts));
 
 /** True for an exact guarded value: a platform id, an extension, a core id, a node type, a cart id (a kit format's,
  *  an embed's or a tracker integration's), or the `*.gb` glob. */
 const isGuarded = (value) =>
+  // A prefix is a node type's family only: an RPC name in the same shape spells its method and version
+  // (`rp.system.memory/1`), and a node type's id carries no slash.
+  NODE_PREFIXES.some((prefix) => value.startsWith(prefix) && !value.includes("/")) ||
   PLATFORMS.has(value) ||
   EXTENSIONS.has(value) ||
   CORES.has(value) ||

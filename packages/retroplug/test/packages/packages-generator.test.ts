@@ -6,22 +6,22 @@
 // - the generated entry, bundled and loaded, registers the manifests' controller app runtimes and their nodes in
 //   span-label order, and refuses when what the modules define or register is not the manifests' declarations;
 // - each of the generator's refusals is exercised with its own message: a list that puts a package before a
-//   dependency (a cycle is one), a capture on a node that is not wired or whose out decodes nothing, an unlisted dependency that would contribute, a dependency on the shell, a node key no
-//   protocol node reads, a node wired on one side only, a shared span label, a shared node type, a shared role kind, a
-//   controller app id two RUNTIMES declare and one two control-plane halves declare (each naming both packages), an app
-//   entry with a key no runtime reads, a controller app with only one of its two halves (each way), a nodes module named
-//   with no nodes, a sync override whose key, node type or unused off-mode is wrong, two contributions whose generated
-//   identifiers mangle to one name, a label below 16, a gap, a role naming an undeclared or an unwired type, a named
-//   module that does not exist, a contribution its exports do not publish, a manifest whose name is not its
-//   directory's, a contribution outside ts/ and a contributing package the shell does not declare, a views or ui module
-//   named outside the package's ts/ui/ tree, a view body with no
-//   `open` (a session's) or no `component` (a component's), an action id twice (one package or two), an action id its
-//   package does not prefix, and an action default on a key or pad name the shell does not resolve, a single uppercase
-//   letter the hosts never send, or one the shell already binds.
-//   A dependency that contributes nothing, and one whose manifest has no retroplug member, are left out of the ordering
-//   rather than refused; a package contributing an app and no nodes names no nodes module and still registers its app;
-//   a tsconfig that must extend the generated host-module paths because it lists an example session or declares a host
-//   module the UI owns;
+// dependency (a cycle is one), a capture on a node that is not wired or whose out decodes nothing, an unlisted
+// dependency that would contribute, a dependency on the shell, a node key no protocol node reads, a node wired on
+// one side only, a shared span label, a shared node type, a shared role kind, a controller app id two RUNTIMES
+// declare and one two control-plane halves declare (each naming both packages), an app entry with a key no runtime
+// reads, a controller app with only one of its two halves (each way), a nodes module named with no nodes, a sync
+// override whose key, node type or unused off-mode is wrong, two contributions whose generated identifiers mangle
+// to one name, a label below 16, a gap, a role naming an undeclared or an unwired type, a named module that does
+// not exist, a contribution its exports do not publish, a manifest whose name is not its directory's, a
+// contribution outside ts/ and a contributing package the shell does not declare, a views or ui module named
+// outside the package's ts/ui/ tree, a view body with no `open` (a session's) or no `component` (a component's), an
+// action id twice (one package or two), an action id its package does not prefix, and an action default on a key or
+// pad name the shell does not resolve, a single uppercase letter the hosts never send, or one the shell already
+// binds. A dependency that contributes nothing, and one whose manifest has no retroplug member, are left out of the
+// ordering rather than refused; a package contributing an app and no nodes names no nodes module and still
+// registers its app; a tsconfig that must extend the generated host-module paths because it lists an example
+// session or declares a host module the UI owns;
 // - the generated module itself refuses a duplicate key in the lists the registries look up rather than sequence: a
 //   role kind, a kit format's id and a tracker integration's marker role, each with its own message, and an embedded
 //   ROM whose declaration and manifest entry do not pair (or name a console this product does not run);
@@ -129,6 +129,12 @@ test("the fixture product list and manifests generate the expected scriptNodes.t
 
 test("the fixture product list and manifests generate the expected menus.ts", async () => {
   expect(await matchesFixture("generate", "menus.ts")).toBe(true);
+});
+
+test("the fixture product list and manifests generate the expected placers.ts", async () => {
+  // A package's graph placer, in product order: the module buildGraph's slots are filled from, which must carry types
+  // and constants alone (test/script/bundle-protocol.test.ts holds the planner's bundle to it).
+  expect(await matchesFixture("generate", "placers.ts")).toBe(true);
 });
 
 test("the fixture product list and manifests generate the expected views.ts", async () => {
@@ -301,6 +307,80 @@ test("the generator refuses a ui module named outside the package's ts/ui/ tree"
     "alpha: retroplug.ui names ts/ui.ts, which is outside the package's ts/ui/ tree: the ui module is the package's " +
       "UI code, and rule 3 admits a React host module only from there",
   );
+});
+
+test("the generated registry collects the project sections and services in product order", async () => {
+  // Each app module declares them (the shell's ProjectSection contract and the tracker's project service), and the
+  // shell reads the list: a section's key is a block of a .rplg's settings, a service's the instance it builds per
+  // store.
+  const report = await drive("generate");
+  expect(report.projectSections).toEqual(["alpha:alpha", "beta:beta", "retroplug:shell"]);
+  expect(report.projectServices).toEqual(["alpha", "beta", "shell"]);
+});
+
+test("a contribution kind's duplicate item id is refused, naming the package that listed it twice", async () => {
+  const { error } = await drive("kind-duplicate-item");
+  console.log(`# duplicate kind item: ${error}`);
+  expect(error).toBe("the package alpha contributes the widgets item w twice");
+});
+
+test("a contribution kind's item with no control-plane half is refused", async () => {
+  const { error } = await drive("kind-one-half");
+  console.log(`# kind item with no control half: ${error}`);
+  expect(error).toBe("the widgets item w has no control-plane half");
+});
+
+test("a contribution kind named after an app member is refused", async () => {
+  // A kind's items are read from the app module by the kind's own name, so a kind called `roles` would read the app's
+  // roles as items.
+  const { error } = await drive("kind-app-member");
+  console.log(`# kind named after an app member: ${error}`);
+  expect(error).toBe(
+    "alpha: the contribution kind roles is named after the app member roles, which the generated registry would read " +
+      "as that member's list of items (an app's members are roles, romProviders, embeds, projectSections, " +
+      "trackerIntegrations, projectServices, kitFormats)",
+  );
+});
+
+test("a declaring package's check runs over its kind's data at load", async () => {
+  // Generic validation cannot know what a kind's data means: the data's own package refuses a mode naming a node type
+  // no package declares, with the product's node types handed in.
+  const { error } = await drive("kind-check-unknown-node");
+  console.log(`# kind check refusing an unknown node type: ${error}`);
+  expect(error).toBe('the widgets item w names "rp.nowhere", which no package declares');
+});
+
+test("the generated registry refuses a project section two packages declare", async () => {
+  const { error } = await drive("duplicate-section");
+  console.log(`# duplicate project section: ${error}`);
+  expect(error).toBe("two packages declare the project section shared: alpha and beta");
+});
+
+test("the generated registry refuses a project section under one of the shell's own keys", async () => {
+  const { error } = await drive("shell-section");
+  console.log(`# shell-owned project section: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the project section layout, which is one of the shell's own settings " +
+      "(layout, midiRouting, audioRouting, zoom)",
+  );
+});
+
+test("the generated registry refuses two project services under one key", async () => {
+  const { error } = await drive("duplicate-service");
+  console.log(`# duplicate project service: ${error}`);
+  expect(error).toBe("two packages declare the project service shared: alpha and beta");
+});
+
+test("the generated placers module refuses two packages placing one graph model", async () => {
+  const { error } = await drive("duplicate-placer");
+  console.log(`# duplicate graph model: ${error}`);
+  expect(error).toBe("two packages place the graph's model alpha: alpha and beta");
+});
+
+test("the generator refuses a placer module that does not exist", async () => {
+  const { error } = await drive("placer-missing");
+  console.log(`# missing placer module: ${error}`);
+  expect((error ?? "").includes("retroplug.protocol's placer names ts/nowhere.ts, which does not exist")).toBe(true);
 });
 
 test("the generated menus module carries the packages' actions in product order", async () => {
@@ -668,15 +748,15 @@ test("a role kind two packages declare is refused, naming both", async () => {
 test("a controller app id two packages declare is refused, naming both", async () => {
   const { error } = await drive("duplicate-app");
   console.log(`# duplicate app id: ${error}`);
-  expect(error).toBe("two packages declare the controller app alpha-app: alpha and beta");
+  expect(error).toBe("two packages declare the controllerApps item alpha-app: alpha and beta");
 });
 
 test("a controller app entry with a key no runtime reads is refused", async () => {
   const { error } = await drive("app-unknown-key");
   console.log(`# unknown app key: ${error}`);
   expect(error).toBe(
-    'alpha: the controller app alpha-app has "factorY", which no runtime reads (an app\'s keys are id, module, ' +
-      "syncOverride)",
+    'alpha: the controllerApps item alpha-app has "factorY", which nothing reads (its keys are id, module and the ' +
+      "kind's data: syncOverride)",
   );
 });
 
@@ -685,25 +765,19 @@ test("the generated module refuses a controller app with only one half", async (
   // run an app no menu offers.
   const runtimeOnly = await drive("app-unpaired-runtime");
   console.log(`# app with no control-plane half: ${runtimeOnly.error}`);
-  expect(runtimeOnly.error).toBe(
-    "the controller app alpha-app has no control-plane half: a manifest declares its runtime and no package's app " +
-      "contributes it (its label or its config's schema)",
-  );
+  expect(runtimeOnly.error).toBe("the controllerApps item alpha-app has no control-plane half");
   // A control-plane half no manifest declares a runtime for: the menu would offer an app nothing runs.
   const controlOnly = await drive("app-unpaired-control");
   console.log(`# app with no runtime half: ${controlOnly.error}`);
-  expect(controlOnly.error).toBe(
-    "the controller app orphan-app has no runtime half: no package's protocol.apps declares it (the app, its playback " +
-      "model and its target)",
-  );
+  expect(controlOnly.error).toBe("the controllerApps item orphan-app has no runtime half");
 });
 
 test("the generated entry refuses app runtimes that are not the manifests' declarations", async () => {
   const { error } = await drive("app-runtime-mismatch");
   console.log(`# bundled entry (app runtimes): ${error}`);
   expect(error).toBe(
-    "the script bundle's controller app app_alpha_alpha_app registers not-alpha-app, but its manifest entry declares " +
-      "alpha-app",
+    "the script bundle's controllerApps item item_controllerApps_alpha_alpha_app registers not-alpha-app, but its " +
+      "manifest entry declares alpha-app",
   );
 });
 
@@ -762,7 +836,8 @@ test("a contribution its exports do not publish is refused, naming the file and 
   expect(error).toBe(
     "alpha: its manifest names ts/app.ts, which its exports do not publish: the generated import needs the entry " +
       "whose target is ./ts/app.ts (its exports: ./consoles -> ./ts/consoles.ts, ./nodes -> ./ts/nodes.ts, " +
-      "./appRuntime -> ./ts/appRuntime.ts, ./ui -> ./ts/ui/index.ts)",
+      "./appRuntime -> ./ts/appRuntime.ts, ./placer -> ./ts/placer.ts, ./ui -> ./ts/ui/index.ts, " +
+      "./kind -> ./ts/widgetKind.ts, ./widgets -> ./ts/widgets.ts)",
   );
 });
 
@@ -833,8 +908,9 @@ test("a real cart naming a platform no descriptor registers is refused", async (
 });
 
 test("two real carts naming one platform are refused, naming both", async () => {
-  // A project drives one cart: with two registered for a platform, which package's cart a NES sent to would be whichever
-  // the product listed last, and the store's lookup and buildGraph's placement could each answer differently.
+  // A project drives one cart: with two registered for a platform, which package's cart a NES sent to would be
+  // whichever the product listed last, and the store's lookup and buildGraph's placement could each answer
+  // differently.
   const { error } = await drive("realcart-platform-twice");
   console.log(`# two carts on one platform: ${error}`);
   expect(error).toBe("two real carts name the platform nes: rp.alpha.cart and rp.beta.cart");
@@ -929,8 +1005,8 @@ test("an unchanged input leaves the generated files untouched", async () => {
   const report = await drive("twice");
   const [changedFirst, changedSecond] = report.changed as [boolean[], boolean[]];
   const [before, after] = report.mtimes as [number[], number[]];
-  expect(changedFirst).toEqual([true, true, true, true, true, true, true, true, true]);
-  expect(changedSecond).toEqual([false, false, false, false, false, false, false, false, false]);
+  expect(changedFirst).toEqual([true, true, true, true, true, true, true, true, true, true]);
+  expect(changedSecond).toEqual([false, false, false, false, false, false, false, false, false, false]);
   // The driver aged the files by a minute before the second run, so a rewrite would show: these are the same stamps.
   expect(after).toEqual(before);
   expect(after[0]).toBe(before[0]);
@@ -942,6 +1018,7 @@ test("an unchanged input leaves the generated files untouched", async () => {
   expect(after[6]).toBe(before[6]);
   expect(after[7]).toBe(before[7]);
   expect(after[8]).toBe(before[8]);
+  expect(after[9]).toBe(before[9]);
 });
 
 test("the generated module refuses two control-plane halves of one id, naming both packages", async () => {
@@ -949,7 +1026,7 @@ test("the generated module refuses two control-plane halves of one id, naming bo
   // whichever package came last.
   const { error } = await drive("duplicate-app-control");
   console.log(`# duplicate controller app (control plane): ${error}`);
-  expect(error).toBe("two packages declare the controller app same-app: alpha and beta");
+  expect(error).toBe("two packages contribute the controllerApps item same-app: alpha and beta");
 });
 
 test("a nodes module the manifest names with no nodes to export is refused", async () => {
@@ -963,58 +1040,12 @@ test("a nodes module the manifest names with no nodes to export is refused", asy
   );
 });
 
-test("a sync override is data the generator checks: its keys, its unused off-mode and its node type", async () => {
-  const unknown = await drive("sync-unknown-key");
-  console.log(`# sync override key: ${unknown.error}`);
-  expect(unknown.error).toBe(
-    'alpha: the controller app alpha-app\'s syncOverride has "listing", which nothing reads (its keys are node, ' +
-      "mode, listening, off)",
-  );
-  const unused = await drive("sync-unused-off");
-  console.log(`# sync override off without listening: ${unused.error}`);
-  expect(unused.error).toBe(
-    'alpha: the controller app alpha-app\'s syncOverride names an "off" mode and no "listening" value, so the mode ' +
-      "it is for is never used",
-  );
-  // The mode is set on a node type, so a misspelt one would plan and do nothing (a C++ node ignores a setting its type
-  // does not read).
-  const undeclared = await drive("sync-node-undeclared");
-  console.log(`# sync override node: ${undeclared.error}`);
-  expect(undeclared.error).toBe(
-    "alpha: the controller app alpha-app's syncOverride names the node rp.alpha.syncx, which no package declares",
-  );
-});
-
 test("a controller app id ONE package declares twice is refused, naming that package once", async () => {
   // The message says which package, not "alpha and alpha": one manifest listed the id twice, and a reader of the
   // refusal should not go looking for a second package.
   const { error } = await drive("duplicate-app-one-package");
   console.log(`# duplicate controller app (one package): ${error}`);
-  expect(error).toBe("the package alpha declares the controller app same-app twice");
-});
-
-test("a sync override's shape is checked: an object, its node, its mode, and an off that differs from the mode", async () => {
-  // Each of these is data the planner would apply and the cart would never see the effect of, so the generator says
-  // which field is wrong rather than emitting an override that does nothing.
-  const notObject = await drive("sync-not-object");
-  console.log(`# sync override shape: ${notObject.error}`);
-  expect(notObject.error).toBe('alpha: the controller app alpha-app\'s syncOverride must be an object, not "MidiMap"');
-  const noNode = await drive("sync-no-node");
-  console.log(`# sync override node missing: ${noNode.error}`);
-  expect(noNode.error).toBe(
-    'alpha: the controller app alpha-app\'s syncOverride needs a "node": the cart sync node type its mode is set on',
-  );
-  const noMode = await drive("sync-no-mode");
-  console.log(`# sync override mode missing: ${noMode.error}`);
-  expect(noMode.error).toBe(
-    'alpha: the controller app alpha-app\'s syncOverride needs a "mode": the mode that node is put in',
-  );
-  const same = await drive("sync-off-is-mode");
-  console.log(`# sync override off is the mode: ${same.error}`);
-  expect(same.error).toBe(
-    'alpha: the controller app alpha-app\'s syncOverride names "midiMap" as both its mode and the mode a cart that ' +
-      "is not listening is put in, so the override changes nothing",
-  );
+  expect(error).toBe("the package alpha contributes the controllerApps item same-app twice");
 });
 
 test("two contributions whose generated identifiers mangle to one name are refused, naming both", async () => {
@@ -1023,8 +1054,8 @@ test("two contributions whose generated identifiers mangle to one name are refus
   const { error } = await drive("identifier-collision");
   console.log(`# generated identifier collision: ${error}`);
   expect(error).toBe(
-    "two contributions take the generated identifier app_a_b_c: the package a-b's controller app c and the package " +
-      "a's controller app b-c",
+    "two contributions take the generated identifier item_controllerApps_a_b_c: the package a-b's controllerApps " +
+      "item c and the package a's controllerApps item b-c",
   );
 });
 
@@ -1033,8 +1064,8 @@ test("a package contributing an app and no nodes names no module and still regis
   const report = await drive("apps-only");
   const files = report.files as Record<string, string>;
   expect(report.packages).toEqual(["zeta", "alpha", "beta", "retroplug"]);
-  expect(files["scriptNodes.ts"].includes("import app_alpha_alpha_app from")).toBe(true);
-  expect(files["scriptNodes.ts"].includes("registerControllerApps(apps);")).toBe(true);
+  expect(files["scriptNodes.ts"].includes("import item_controllerApps_alpha_alpha_app from")).toBe(true);
+  expect(files["scriptNodes.ts"].includes("registerControllerApps(kindItems_controllerApps);")).toBe(true);
   expect(files["scriptNodes.ts"].includes("nodes_alpha")).toBe(false); // nothing of alpha's to register
   expect(files["scriptNodes.ts"].includes("registerScriptNodes(nodes);")).toBe(true);
 });

@@ -241,7 +241,7 @@ observers. The core hears one thing of it: an `lsdj-sync`'s mode decides its Gam
 `serialOutCapture`, which `rp.lsdj.serial-out` decodes in the two MIDI-out modes: `drive` for MI.OUT, where
 the core plays the Arduinoboy that clocks LSDj, and `listen` for master sync, where LSDj clocks itself; `off`
 in every other mode. It follows the mode the placed node actually runs, the MI.MAP controller's forced one
-included (`serialOutCaptureFor`, [graph/controller.ts](../packages/retroplug/src/graph/controller.ts)), and
+included (`serialOutCaptureFor`, [graph/serialCapture.ts](../packages/retroplug/src/graph/serialCapture.ts)), and
 rides the document that hands the decoder its new mode, so the capture and the decoder change in the same
 block and no byte captured in one mode is decoded in the other.
 
@@ -460,11 +460,11 @@ The rest of the document follows from those nodes:
   is on, fed by fan-out what that system's protocol nodes send its `midi` and `bytes` inputs; and the two
   control-surface nodes (`surface-in` before the systems, `surface-out` after them) when a controller is
   enabled, which is what the session reads and writes in place of the old host controller staging.
-- **The controller** ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): its target
+- **The controller** ([launchpad/ts/control/placer.ts](../packages/launchpad/ts/control/placer.ts)): its target
   "0 is the first system" is resolved here (`controllerTarget`), so it follows a change of first system;
   with no system its host MIDI is tagged `NO_SYSTEM` (4294967295) and the node takes 0, its none. The
   publisher hands it the app config already parsed by the app's own schema (`parseAppConfig`,
-  [controller/registry.ts](../packages/retroplug/src/controller/registry.ts)) and the timing table it read
+  [controller/registry.ts](../packages/launchpad/ts/registry.ts)) and the timing table it read
   from the cart's battery, on the control plane. The `lsdj-sync` nodes of the cart the MI.MAP app drives
   are forced to `midiMap`, or to `off` when the cart's own SYNC setting is not MI.MAP
   (`controllerSyncOverride`, whose rule is the app's `protocol.apps` entry `syncOverride` as DATA: the cart sync node
@@ -522,7 +522,7 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   its nodes take) is [lsdj](../packages/lsdj/ts/lsdjSyncSettings.ts)'s, and the tick counter `clock.ts` and the
   capacities `ports.ts` ([ticks.ts](../packages/core/ts/ticks.ts): `walkTicks`) are core's.
 - [graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts) /
-  [graph/controller.ts](../packages/retroplug/src/graph/controller.ts) /
+  [launchpad/ts/control/placer.ts](../packages/launchpad/ts/control/placer.ts) /
   [graph/buildGraph.ts](../packages/retroplug/src/graph/buildGraph.ts): store → graph, the protocol node per
   role, the controller's target and its cart's sync override.
 - [graph/settingsSchema.ts](../packages/core/ts/settingsSchema.ts) /
@@ -533,7 +533,7 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
   a bundle registers its node types.
 - [launchpad/ts/apps/index.ts](../packages/launchpad/ts/apps/index.ts) /
   [lsdj-launchpad/ts/app.ts](../packages/lsdj-launchpad/ts/app.ts) /
-  [controller/registry.ts](../packages/retroplug/src/controller/registry.ts): the controller apps' runtime (the
+  [controller/registry.ts](../packages/launchpad/ts/registry.ts): the controller apps' runtime (the
   manifests' `protocol.apps`), the MI.MAP app's control-plane half (its id, label, config schema and the cart sync mode
   its `protocol.apps` entry names as data), and the shell's registry over the generated list, beside `parseAppConfig`,
   which hands the publishers an app's config parsed by its own schema.

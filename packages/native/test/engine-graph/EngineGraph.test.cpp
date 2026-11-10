@@ -39,7 +39,7 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/rpc/EngineRpcService.hpp"
-#include "host/rpc/HarnessSurfaceLink.hpp"
+#include "launchpad/harness/HarnessSurfaceLink.hpp"
 #include "system/SystemBuild.hpp"
 #include "system/SystemNode.hpp"
 #include "system/mesen/MesenBackend.hpp"
@@ -315,9 +315,10 @@ TEST_CASE("a press the harness link held before a surface node bound it is never
     Engine                      e(kRate);
     QueuedInvoker               invoker(e);
     EngineRpcService            rpc(e, invoker);
-    rp::host::HarnessSurfaceLink surface;
+    rp::launchpad::HarnessSurfaceLink surface;
     rp::host::test::installSurface(e, surface);  // as the test host installs it: the node binds it by name
-    rpc.setHarnessSurface(&surface);
+    rpc.setControllerStaging(
+        [&surface](std::span<const std::uint8_t> bytes) { return surface.queueInput(bytes); });
 
     // A plan with no surface node reads nothing from the harness's link, so a controller message waits there.
     Engine::GraphRequest noSurface;
@@ -364,6 +365,32 @@ TEST_CASE("a press the harness link held before a surface node bound it is never
     REQUIRE(delivered.midiOut[0].data.size() == live.size());
     for (std::size_t i = 0; i < live.size(); ++i)
         CHECK(std::to_integer<std::uint8_t>(delivered.midiOut[0].data[i]) == live[i]);
+}
+
+TEST_CASE("a host with no control-surface staging hook refuses controller traffic, and renders without it",
+          "[engine-graph]") {
+    // The staging hook is the seam the pack's harness hangs on: a host that mounts none (the plugin) has no surface to
+    // press into, and both of the service's controller doors say so rather than dropping a message.
+    Engine           e(kRate);
+    QueuedInvoker    invoker(e);
+    EngineRpcService rpc(e, invoker);
+    Engine::GraphRequest req;
+    req.document = R"({"nodes":[{"id":"out","type":"rp.host.audio-out","settings":{"buses":[2]}}],"wires":[]})";
+    REQUIRE(e.setGraph(req).ok);
+
+    CHECK_FALSE(rpc.stageControllerIn(std::vector<std::uint8_t>{0x90, 0x33, 100}));
+    const auto refused = rpc.renderBlocks(
+        RpcRenderBlocksRequest{2, {RpcRenderBlock{64, {}, {{0x90, 0x33, 100}}, std::nullopt, std::nullopt,
+                                                   std::nullopt}}});
+    CHECK(refused.error.find("this host has no control surface to stage a controller message into") !=
+          std::string::npos);
+    CHECK(refused.lanes.empty());
+
+    // The same run without one renders: the refusal is the controller stream's, not the host's.
+    const auto rendered = rpc.renderBlocks(
+        RpcRenderBlocksRequest{2, {RpcRenderBlock{64, {}, {}, std::nullopt, std::nullopt, std::nullopt}}});
+    CHECK(rendered.error.empty());
+    REQUIRE(rendered.lanes.size() == 2);
 }
 
 // ---- knobs (docs/modular-graph-phase-c2-design.md section 4) -----------------------------------------------------

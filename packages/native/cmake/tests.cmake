@@ -142,6 +142,7 @@ retroplug_add_test_binary(
              retroplug-testing-allocator               # the no-allocation checks' CountingAllocator
              rpcpp                                     # the server Providers.test.cpp mounts the facets on (QjsRpc.hpp)
              retroplug-launchpad-desktop                # the generated header naming the launchpad provider (below)
+             retroplug-launchpad-harness                # HarnessSurfaceLink, which the RPC engine stages into
     PACKAGES ${RP_DESKTOP_PACKAGES}
     PROVIDERS n8                                   # and the launchpad pack carried for its nodes alone (below)
     INCLUDES ${RP_QUICKJS_INCLUDE}
@@ -409,6 +410,9 @@ set(_rp_gather_cases
     "link-options-dir|refused|adds the link directory ${CMAKE_CURRENT_SOURCE_DIR}/test/packages/gather/packages/beta/lib, which is in the beta"
     "link-options-name|refused|links -lretroplug-beta, a library of the beta package, which alpha does not declare"
     "link-options-name-shell|refused|links -lretroplug-backend, a library of the shell (packages/native)"
+    "includes-target-property|refused|takes the include directories of retroplug-beta, a target of the beta package"
+    "objects|refused|compiles the objects of retroplug-beta-objects, a target of the beta package"
+    "objects-declared|holds|"
     "unjudged|refused|which the boundary check cannot evaluate")
 foreach(_rp_case IN LISTS _rp_gather_cases)
     string(REPLACE "|" ";" _rp_case "${_rp_case}")
@@ -610,6 +614,10 @@ set_target_properties(retroplug-box-usb-cdc PROPERTIES CXX_STANDARD 20 CXX_STAND
 target_include_directories(retroplug-box-usb-cdc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/device-mode/fake-tinyusb
                                                          ${_rp_box_dir})
 target_link_libraries(retroplug-box-usb-cdc PRIVATE retroplug-n8)
+# A test's own objects (the [usb-cdc] case's), compiled into retroplug-device-mode-test: judged against the one package
+# it reaches (the box link's Edio is the N8 pack's) rather than vouched for whole, so a second package's target here
+# fails the boundary check as it would anywhere else (cmake/packages.cmake).
+set_target_properties(retroplug-box-usb-cdc PROPERTIES RP_BOUNDARY_DECLARED "n8")
 
 # The test's own scripttest pack defines more node types than a box's few (script/MqjsHost.cpp's RP_MQJS_MAX_TYPES, 16
 # on a device), which the device-mode host's fixed tables are sized for.

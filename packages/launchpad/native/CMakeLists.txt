@@ -25,6 +25,18 @@ endif()
 # target is visible only in the directory that finds it and below.
 find_package(Threads REQUIRED)
 
+# --- retroplug-launchpad-harness: the surface link a headless host stages into (launchpad/harness/
+# HarnessSurfaceLink.hpp), header-only. A target of its own because it is neither the portable package (a device image
+# carries no test harness) nor the desktop's half (ports and threads, which an in-process ring has neither of): a host
+# that has no device links this, and the backend's RPC engine reaches it through a hook it names no link type in
+# (docs/modular-graph-phase-f5a-design.md section 6.7). The pack's own test support is the same shape: a header a host,
+# and only a host, compiles. Declared below the device early return, so a device build defines none.
+add_library(retroplug-launchpad-harness INTERFACE)
+target_include_directories(retroplug-launchpad-harness INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(retroplug-launchpad-harness
+    INTERFACE retroplug-launchpad        # launchpad/SurfaceLink.hpp and the include root
+              retroplug-node-sdk-headers)  # transport/SpscRing.hpp, the header alone
+
 # --- retroplug-launchpad-desktop: the transport (src/launchpad/desktop/): ControllerLink, the claimed pair with its
 # fixed-slot rings and its writer thread; MidiPortPool, the loose ports a scan opens; PortClaim, the cross-process claim
 # under <configDir>/locks; RtMidiPort, the only RtMidi user (SysEx on). Its manifest entry names the provider

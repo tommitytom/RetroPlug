@@ -89,7 +89,7 @@ project's.
 
 The controller apps' registry paired each app's runtime with a zod schema, and the session parsed its app config
 through it on the block thread. The publisher parses it on the control plane instead, where zod is loaded anyway
-(`parseAppConfig` in [controller/registry.ts](../packages/retroplug/src/controller/registry.ts), section 9), and the
+(`parseAppConfig` in [controller/registry.ts](../packages/launchpad/ts/registry.ts), section 9), and the
 controller node imports only the apps' runtime, never the registry's schemas.
 
 One bundle still serves both of an Engine's script runtimes, so the host's check that a node has the same
@@ -299,11 +299,11 @@ the limitation it found".
 - **The controller's app config is parsed by the publisher, not by `buildGraph`.** Section 3 had `buildGraph` parse
   it; `buildGraph` stays pure and registry-free instead, and the publisher parses it: `ProjectStore.controllerModel`
   for a project, `DirectGraph.setController` for the rest, each through `parseAppConfig(id, raw)` in
-  [controller/registry.ts](../packages/retroplug/src/controller/registry.ts), which gives an id no app has an empty
+  [controller/registry.ts](../packages/launchpad/ts/registry.ts), which gives an id no app has an empty
   config (its node then runs nothing). The apps' runtime moved to a zod-free
   [controller/apps/index.ts](../packages/launchpad/ts/apps/index.ts), which the node imports; the registry
   pairs each runtime with its menu label and its zod schema, and refuses, when it registers, an app with no schema.
-  The rest of what `kernelProjection` did lives in [graph/controller.ts](../packages/retroplug/src/graph/controller.ts):
+  The rest of what `kernelProjection` did lives in [launchpad/ts/control/placer.ts](../packages/launchpad/ts/control/placer.ts):
   the target resolution, the MI.MAP override and the node's settings. The controller node also imports the playback
   predictor's leaf module rather than the `lsdj/playback` barrel, which would have pulled the WRAM reader and the sav
   codec into the bundle.

@@ -28,6 +28,11 @@ const otherCart = risaSav("v2_blumarbl");
 /** A full-size image that carries no LSDj 'jk' magic: the size `workingSongSignature` hashes, and `decodeSav` refuses. */
 const unrecognised = new Uint8Array(0x20000);
 
+/** The project section the Launchpad pack contributes, and what its service published (as the menus read it). */
+const CONTROLLER_SECTION = "controller";
+const cartSyncOf = (stores: ReturnType<typeof composeAppStores>): string | null =>
+  stores.project.serviceState<{ cartSync: string | null }>(CONTROLLER_SECTION)?.cartSync ?? null;
+
 test("E3: the SYNC setting agrees - neither answers for a battery that is not LSDj's", () => {
   for (const sram of [otherCart, unrecognised, null]) {
     expect(LSDJ.syncMode(sram)).toBe(ABSENT.syncMode(sram));
@@ -86,7 +91,7 @@ test("E3: a system that runs no tracker neither publishes nor notifies, and hold
   stores.project.systems.addSystem("/roms/other.gb");
   const id = stores.project.systems.view()[0].id;
   be.setSram(id, otherCart.slice()); // a 64 KiB battery: the one the OLD poll read a moving signature from
-  stores.project.setController({ enabled: true });
+  stores.project.setSection(CONTROLLER_SECTION, { enabled: true });
 
   let publishes = 0;
   const graph = stores.project.graph;
@@ -99,10 +104,10 @@ test("E3: a system that runs no tracker neither publishes nor notifies, and hold
   stores.project.addOnSystemsChange(() => void notifies++);
 
   // The first look adopts nothing either: with no playback there is no signature to adopt and no start to anchor.
-  expect(stores.project.refreshControllerSong()).toBe(false);
+  expect(stores.project.pollServices()).toBe(false);
   expect(publishes).toBe(0);
   expect(notifies).toBe(0);
-  expect(stores.project.controllerCartSync()).toBe(null);
+  expect(cartSyncOf(stores)).toBe(null);
   // The model the publish derives: an empty table reads as "no content anywhere", which is what a table-less
   // integration gives.
   expect(be.graphNode("controller")?.settings?.songRowTicks).toEqual([]);
@@ -111,7 +116,7 @@ test("E3: a system that runs no tracker neither publishes nor notifies, and hold
   const edited = otherCart.slice();
   edited[kModernRegions.chainAssignments] ^= 0xff;
   be.setSram(id, edited);
-  expect(stores.project.refreshControllerSong()).toBe(false);
+  expect(stores.project.pollServices()).toBe(false);
   expect(publishes).toBe(0);
   expect(notifies).toBe(0);
 });

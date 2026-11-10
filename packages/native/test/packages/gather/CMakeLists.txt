@@ -46,9 +46,21 @@
 #   link-options-dir  alpha's LINK_OPTIONS add -L into beta's tree: refused like an include directory
 #   link-options-name  alpha's LINK_OPTIONS name a library of beta's with -l: refused
 #   link-options-name-shell  the same for a library of the shell's
+#   includes-target-property  alpha takes beta's INTERFACE_INCLUDE_DIRECTORIES through $<TARGET_PROPERTY:...>: refused
+#                by the target's package (in LINK_LIBRARIES the same expression is refused as the link it is)
+#   objects      alpha's INTERFACE sources name beta's objects through $<TARGET_OBJECTS:...>, which alpha does not
+#                declare: refused by the objects' target's package
+#   objects-declared  the same with beta declared: holds
 #   unjudged     alpha links a generator expression the check cannot evaluate: refused
 cmake_minimum_required(VERSION 3.19)
 project(retroplug_package_gather NONE)
+
+# The $<TARGET_OBJECTS:...> cases are the only ones that compile anything (an object library needs a source), so only
+# they enable a language: every other case is target properties alone, and a compiler probe per case would be the
+# fixture's cost rather than the check's.
+if(RP_GATHER_CASE STREQUAL "objects" OR RP_GATHER_CASE STREQUAL "objects-declared")
+    enable_language(CXX)
+endif()
 
 if(NOT RP_GATHER_CASE)
     message(FATAL_ERROR "gather/CMakeLists.txt: pass -DRP_GATHER_CASE=<case>")
@@ -64,7 +76,7 @@ set_property(GLOBAL PROPERTY RP_PACKAGES alpha beta testing native)
 # What alpha's manifest declares: beta for the cases that reach it and must hold, nothing for the ones that must be
 # refused (a reach it does not declare).
 if(RP_GATHER_CASE STREQUAL "declared" OR RP_GATHER_CASE STREQUAL "genex-declared"
-   OR RP_GATHER_CASE STREQUAL "alias-declared")
+   OR RP_GATHER_CASE STREQUAL "alias-declared" OR RP_GATHER_CASE STREQUAL "objects-declared")
     set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS beta)
 else()
     set_property(GLOBAL PROPERTY RP_PACKAGE_alpha_DECLARATIONS "")

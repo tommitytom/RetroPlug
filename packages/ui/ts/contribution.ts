@@ -22,7 +22,7 @@ import { cycler, type MenuItem } from "./menu";
  *  (ui/host/uiHost.ts) and a contribution is handed it; core declares the groups, so this is a selection, not a new
  *  contract. */
 export type UiHost = Host<
-  "files" | "png" | "systems" | "songs" | "liveSongs" | "dialogs" | "devices" | "views" | "controller" | "config"
+  "files" | "png" | "systems" | "songs" | "liveSongs" | "dialogs" | "devices" | "views" | "project" | "config"
 >;
 
 /** A value a package owns and the shell watches: a view's `visible`, a debug flag. `get` is synchronous and cheap

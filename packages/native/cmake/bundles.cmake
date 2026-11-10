@@ -6,9 +6,10 @@
 # The embedded JS bytecode bundles: the control plane, the React UI, and the script nodes (with a test-only twin).
 
 # --- the TS package registries and the typecheck paths (docs/modular-graph-phase-f1-design.md section 3,
-# docs/modular-graph-phase-f4b-design.md section 5.4): the shell's src/generated/ (packages.ts, consoles.ts, protocol.ts
-# and scriptNodes.ts), ui/generated/menus.ts, ui/generated/views.ts and cli/generated/tools.ts, and the two tsconfig
-# path files the same list writes. Their inputs are the product list (the root package.json's
+# docs/modular-graph-phase-f4b-design.md section 5.4): the shell's src/generated/ (packages.ts, consoles.ts,
+# protocol.ts, scriptNodes.ts and placers.ts), ui/generated/menus.ts, ui/generated/views.ts and cli/generated/tools.ts,
+# and the two
+# tsconfig path files the same list writes. Their inputs are the product list (the root package.json's
 # retroplug.products.desktop), every package's manifest and the shell's host-modules.json. Every bundle whose inputs
 # reach one of them imports it, so each is ordered after this target.
 # It runs on every build (the bundle targets regenerate unconditionally anyway) and writes only a file whose content
@@ -30,6 +31,7 @@ add_custom_target(retroplug-ts-packages
     COMMAND ${NODE_EXECUTABLE} ${RP_TS_GENERATOR}
     BYPRODUCTS "${RP_TS_GENERATED}/packages.ts" "${RP_TS_GENERATED}/consoles.ts"
                "${RP_TS_GENERATED}/protocol.ts" "${RP_TS_GENERATED}/scriptNodes.ts"
+               "${RP_TS_GENERATED}/placers.ts"
                "${RP_TS_UI_GENERATED}/menus.ts" "${RP_TS_UI_GENERATED}/views.ts"
                "${RP_TS_CLI_GENERATED}/tools.ts"
                "${RP_TS_SHELL}/tsconfig.host-modules.json" "${RP_TS_SHELL}/tsconfig.paths.json"
@@ -37,6 +39,10 @@ add_custom_target(retroplug-ts-packages
             "${RP_TS_SHELL}/host-modules.json" "${RP_TS_SHELL}/tsconfig.aliases.json"
     COMMENT "Generating the TS package registries and the typecheck paths"
     VERBATIM)
+# The generator IS the shell's script (the shell's tree holds it, and it writes the shell's registries and typecheck
+# paths), so this target names the shell by construction and is nobody's to judge against the native package's
+# declarations: the boundary check's voucher, stated here where that is read (cmake/packages.cmake).
+set_target_properties(retroplug-ts-packages PROPERTIES RP_BOUNDARY_SKIP "the shell's own TS generator")
 # The bundles whose esbuild inputs reach the generated modules but which are defined in packages/native/CMakeLists.txt
 # above this include: the render worker, the CLI dispatcher, its example sessions and the SDK it embeds. The control
 # plane, the UI and the script nodes are defined here, below, and take the same dependency where they are made.

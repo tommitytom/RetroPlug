@@ -19,7 +19,8 @@
 // rule; the guard sets are the registries', and a fixture pins each directory's walk.
 import { test, expect } from "@retroplug/testing";
 import { CONSOLES } from "../../src/generated/consoles";
-import { EMBEDS, KIT_FORMATS, TRACKER_INTEGRATIONS } from "../../src/generated/packages";
+import { EMBEDS, KIT_FORMATS, PACKAGE_IDS, TRACKER_INTEGRATIONS } from "../../src/generated/packages";
+import { DECLARED_NODE_TYPES } from "../../src/generated/protocol";
 
 /** The console registry's platform ids, ROM extensions, cores and node types: the descriptors' own, so nothing here is a
  *  second copy. */
@@ -30,7 +31,27 @@ const ROM_EXTENSIONS = [
   ...new Set(CONSOLES.flatMap((console) => console.platforms.flatMap((platform) => platform.extensions))),
 ].sort();
 const CORE_IDS = [...new Set(CONSOLES.map((console) => console.core))].sort();
-const NODE_TYPES = [...new Set(CONSOLES.map((console) => console.nodeType))].sort();
+/** The one declared node type the shell spells, and why: the MIDI routing node's, which buildGraph builds itself for
+ *  every document (core's manifest declares it). */
+const SHELL_NODE_TYPES = ["rp.midi.route"];
+/** Every guarded node type: each console's system node, and every protocol node type a listed package's manifest
+ *  declares (its script nodes), but for the shell's own. Both are the registries', so a package a product adds is
+ *  guarded without an edit here. */
+const NODE_TYPES = [
+  ...new Set([...CONSOLES.map((console) => console.nodeType), ...DECLARED_NODE_TYPES]),
+].filter((type) => !SHELL_NODE_TYPES.includes(type)).sort();
+/** The shell's own node vocabulary: the nodes it builds itself (rp.core.split and -add, rp.host.midi-in/-out and
+ *  audio-out) and the MIDI routing node it names as a constant, which is why those three packages' families are not
+ *  guarded. A DSP chain the kit compiler assembles is the third. It is the one deliberate exception, and it is small
+ *  enough to read. */
+const SHELL_NODE_PACKAGES = ["core", "dsp", "host-io"];
+/** The node types a package registers in its native node set, which no manifest lists: a family prefix per listed
+ *  package, so a shell file spelling rp.launchpad.surface-in (the Launchpad's device node) is a hit even though no
+ *  manifest declares that type. A few packages' nodes are named for a console instead (smsggdj's rp.sms.sync); the
+ *  console descriptors and the manifests' own types cover those. */
+const NODE_PREFIXES = PACKAGE_IDS.filter((id) => !SHELL_NODE_PACKAGES.includes(id))
+  .map((id) => `rp.${id}.`)
+  .sort();
 /** The packages' own ids: what a kit is compiled by, an embedded ROM is loaded by and an integration is looked up by.
  *  A cart's or a console's id is its package's knowledge, so the shell spells none of them either. */
 const CART_IDS = [
@@ -104,6 +125,8 @@ async function scan(root?: string, dirs = "src"): Promise<{ file: string; value:
     CORE_IDS.join(","),
     "--node-types",
     NODE_TYPES.join(","),
+    "--node-prefixes",
+    NODE_PREFIXES.join(","),
     "--carts",
     CART_IDS.join(","),
     "--dirs",
@@ -119,7 +142,8 @@ async function scan(root?: string, dirs = "src"): Promise<{ file: string; value:
 test("the shell's sources, cli/ and ui/ spell no platform, ROM extension or cart id", async () => {
   console.log(
     `# the registry's ids: ${PLATFORM_IDS.join(", ")}; extensions: ${ROM_EXTENSIONS.join(", ")}; ` +
-      `cores: ${CORE_IDS.join(", ")}; node types: ${NODE_TYPES.join(", ")}; carts: ${CART_IDS.join(", ")}`,
+      `cores: ${CORE_IDS.join(", ")}; node types: ${NODE_TYPES.join(", ")}; prefixes: ${NODE_PREFIXES.join(", ")}; ` +
+      `carts: ${CART_IDS.join(", ")}`,
   );
   const literals = await scan(undefined, SHELL_DIRS);
   console.log(`# platform/extension/core/node-type/cart literals: ${JSON.stringify(literals)}`);
@@ -132,6 +156,8 @@ test("the shell's sources, cli/ and ui/ spell no platform, ROM extension or cart
     (key) => !literals.some((hit) => hit.file === key.file && hit.value === key.value),
   );
   expect(stale).toEqual([]);
+  // The node-type exception names a type the manifests really declare: one that stopped naming it is stale too.
+  expect(DECLARED_NODE_TYPES.includes("rp.midi.route")).toBe(true);
 });
 
 test("the walk reads a table's keys, a pattern and a template tail, not a comment or a property access", async () => {

@@ -7,7 +7,8 @@
 // A console's or a cart's enum lives with its owner, and this file re-exports none of them: the SameBoy ones are
 // @retroplug/sameboy's, the Mesen ones @retroplug/mesen's, the LSDj ones @retroplug/lsdj's, MIDI routing's are
 // @retroplug/core's, and a reader names the package for each. What is left here is the app's own: layout and audio
-// routing. The controller's launch target (CONTROLLER_TARGET_VALUES) is @retroplug/launchpad's.
+// routing. The controller's launch target (CONTROLLER_TARGET_VALUES) is the launchpad pack's, and so is the project
+// section that stores one.
 //
 // So the file imports nothing and is imported by the schema, the domain modules (layout), the stores, the menu and the
 // project migration.

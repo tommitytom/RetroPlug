@@ -2,7 +2,7 @@
 // controller apps the control plane offers - each app's id, its menu label, its config's schema and the rows the menu
 // builds from that schema. A bridge package contributes its own app, and the shell's generated registry concatenates
 // them. What an app needs the cart it drives to be set to is NOT here: it is the runtime half's `syncOverride`, in
-// `protocol.apps`, so the shell's planner reads it as data and the app module keeps none of it.
+// `protocol.kinds.controllerApps`, so the shell's planner reads it as data and the app module keeps none of it.
 //
 // The key is declared here, beside ControllerAppContribution, rather than in core, so core needs no type of a package
 // above it. The module is type-only: importing it (a package's ts/app.ts does, as `import type {}`) is what makes the

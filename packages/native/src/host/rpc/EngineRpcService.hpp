@@ -3,13 +3,13 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 #include <rfl/Bytestring.hpp>
 
 #include "host/rpc/BackendTypes.hpp"
-#include "host/rpc/HarnessSurfaceLink.hpp"
 #include "host/script/ScriptHost.hpp"  // DspAllocStats / DspGcResult / DspTraceSpan (no quickjs types)
 
 class Engine;
@@ -136,17 +136,20 @@ public:
     // (1.5 as 1, NaN as 0), so only the TS driver (audioDriver.ts) can refuse a frame that is no integer in range.
     bool            stageMidiIn(std::vector<std::uint8_t> bytes, std::uint32_t frame);
     // The control-surface twin: staged as `controllerIn` rather than musical MIDI, so a headless test
-    // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn. It waits in the harness's
-    // own surface link (setHarnessSurface), which the document's rp.launchpad.surface-in node drains at its next block
-    // as it would a real device's input; false, staging nothing, when this host has no such link. A plan places that
-    // node by its controller setting, and the node discards what the link held when it bound it (a press staged while
-    // no plan placed the surface, including one staged for block 0 of the run that follows the publish), so a message
-    // staged against no surface node is dropped rather than delivered.
+    // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn. It waits in the staging hook
+    // a host set (setControllerStaging), whose link the document's control-surface input node drains at its next block
+    // as it would a real device's input; false, staging nothing, when this host set no hook. A plan places that node by
+    // its controller setting, and the node discards what the link held when it bound it (a press staged while no plan
+    // placed the surface, including one staged for block 0 of the run that follows the publish), so a message staged
+    // against no surface node is dropped rather than delivered.
     bool            stageControllerIn(std::vector<std::uint8_t> bytes);
-    // TEST / HARNESS: the surface a headless host stages into (the test host's, retroplug-host). A host that owns a
-    // real surface installs its link on the Engine (installLink) and leaves this null; the two are alternatives, not
-    // layers: this one exists only where no device does.
-    void            setHarnessSurface(rp::host::HarnessSurfaceLink* surface) { harnessSurface_ = surface; }
+    // TEST / HARNESS: where a headless host stages control-surface messages (the test host's HarnessSurfaceLink's
+    // queueInput, from the launchpad pack). The backend names no link type: a host that owns a real surface installs
+    // its link on the Engine (installLink) and leaves this unset, and then has no surface to stage into: the hook
+    // answers false and a block carrying controller messages is refused.
+    void            setControllerStaging(std::function<bool(std::span<const std::uint8_t>)> staging) {
+        controllerStaging_ = std::move(staging);
+    }
     // TEST / HARNESS: what the product's rp_device_host was told (rp::host::ProviderHost::productCalls), drained so a
     // headless test can hold the facet's claim, its scan's held edge and the startup rendezvous to what reached the
     // product: "reserve_midi:<input>|<output>", "suspend_hardware_inputs:1" or "restored", in order. Empty on a product
@@ -214,6 +217,6 @@ private:
     bool                     continuous_ = false;
     Carry                    carry_;
     std::vector<RpcMidiOut> accumMidiOut_;  // host MIDI out gathered across a render window (drainMidiOut)
-    rp::host::HarnessSurfaceLink* harnessSurface_ = nullptr;  // the headless host's own surface, if it has one
+    std::function<bool(std::span<const std::uint8_t>)> controllerStaging_;  // a headless host's surface, if it set one
     std::vector<std::string>*     productCalls_ = nullptr;    // the product host's record, on a host that keeps one
 };

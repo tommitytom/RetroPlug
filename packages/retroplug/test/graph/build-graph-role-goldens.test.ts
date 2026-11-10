@@ -26,7 +26,7 @@ import { canonicalJson } from "@retroplug/core/canonicalJson";
 import { buildGraph, type GraphModel, type GraphSystem, type HostShape, type TapArm } from "../../src/graph/buildGraph";
 import type { SystemNodeType } from "../../src/platform";
 import { outNodeOf, protocolPipeline } from "../../src/graph/protocolNodes";
-import type { GraphController } from "../../src/graph/controller";
+import type { GraphController } from "@retroplug/launchpad/placer";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import { CHANNEL_EXPORT_VALUES } from "@retroplug/mesen/enums";
 import { MIDI_ROUTING_VALUES } from "@retroplug/core/midiRouting";
@@ -98,12 +98,23 @@ const launchpad = (
 
 const STEREO: HostShape = { kind: "multi", channels: 2 };
 
+/** A case's model as the GOLDEN records it: the pre-split vocabulary, where a controller is the model's `controller`
+ *  member rather than one of the graph's `models`. The files stay byte-identical; only what buildGraph is handed is
+ *  translated (docs/modular-graph-phase-f5a-design.md section 6.3, decision 15). */
+type CaseModel = GraphModel & { controller?: GraphController | null };
+
+/** The model buildGraph is handed for a recorded case: its controller under the key its placer names. */
+const translate = ({ controller, ...rest }: CaseModel): GraphModel => ({
+  ...rest,
+  models: controller ? { controller } : {},
+});
+
 interface Case {
   name: string;
-  model: GraphModel;
+  model: CaseModel;
 }
 
-const model = (systems: GraphSystem[], over: Partial<GraphModel> = {}): GraphModel => ({
+const model = (systems: GraphSystem[], over: Partial<CaseModel> = {}): CaseModel => ({
   systems,
   routing: "stereo",
   shape: STEREO,
@@ -266,7 +277,7 @@ CASES.push(...RIG_CASES);
 
 interface GoldenCase {
   name: string;
-  model: GraphModel;
+  model: CaseModel;
   document: number;
   slots: number[];
   tapArm: TapArm | null;
@@ -277,7 +288,7 @@ interface GoldenCase {
 function record(): string {
   const documents: string[] = [];
   const cases: GoldenCase[] = CASES.map(({ name, model }) => {
-    const built = buildGraph(model);
+    const built = buildGraph(translate(model));
     const doc = canonicalJson(built.document);
     let index = documents.indexOf(doc);
     if (index < 0) index = documents.push(doc) - 1;

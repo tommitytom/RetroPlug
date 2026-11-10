@@ -17,8 +17,9 @@ import {
   type HostShape,
 } from "../../src/graph/buildGraph";
 import { protocolPipeline, type LeftOutRole, type ProtocolRole } from "../../src/graph/protocolNodes";
-import { controllerSyncOverride, serialOutCaptureFor, type GraphController } from "../../src/graph/controller";
-import { CONTROLLER_SYNC } from "../../src/generated/protocol";
+import { serialOutCaptureFor } from "../../src/graph/serialCapture";
+import { controllerSyncOverride, setControllerSyncData, type GraphController } from "@retroplug/launchpad/placer";
+import { KIND_DATA } from "../../src/generated/protocol";
 import { RoleRegistry } from "@retroplug/core/systemRoles";
 import { registerCoreRoles } from "../_coreRoles";
 import { MIDI_ROUTE_NODE_TYPE } from "@retroplug/core/midiRoute";
@@ -44,6 +45,11 @@ const multi = (channels: number): HostShape => ({ kind: "multi", channels });
 
 // The host's I/O, the surface and the cart's node, and the script nodes around the systems: the B1 tables below are
 // the rest, the audio. A cart node is `cart-<system>`, so the prefix test covers it whatever the system's id.
+// The manifest data the placer reads, handed over as the kind's `accept` hands it over at load (the template literal
+// stays the data's one home: generated/protocol.ts). The graph's own read goes through buildGraph's kindData; this is
+// the menu's carrier, which controllerSyncOverride reads.
+setControllerSyncData(KIND_DATA.controllerApps);
+
 const AROUND_THE_AUDIO = new Set(["midi-in", "surface-in", "routing", "controller", "midi-out", "surface-out"]);
 const aroundTheAudio = (id: string): boolean => AROUND_THE_AUDIO.has(id) || id.startsWith("cart-") || id.includes("/");
 
@@ -53,7 +59,10 @@ interface Project {
 }
 
 function built(systems: GraphSystem[], routing: AudioRouting = "stereo", shape: HostShape = multi(2), project: Project = {}) {
-  const model: GraphModel = { systems, routing, shape, ...project };
+  // A project's controller is one of the graph's models, under the key its placer names (the pre-split vocabulary stays
+  // readable in this file's cases, as the goldens keep it).
+  const { controller, ...rest } = project;
+  const model: GraphModel = { systems, routing, shape, ...rest, models: controller ? { controller } : {} };
   const { document, slots, tapArm } = buildGraph(model);
   const from = (to: string): string => document.wires.find((w) => w.to === to)?.from ?? "";
   // What feeds host channel `c` (0-based), in order: the one endpoint wired straight in, or every input of
@@ -535,11 +544,11 @@ test("nothing is overridden without a controller, or when it drives real hardwar
 
 test("the sync override is the app's DATA: a node type, a mode, and what counts as listening", () => {
   // Nothing in the shell names an app, a mode or a node type: the bridge's manifest carries them
-  // (protocol.apps[].syncOverride), the generator renders them into generated/protocol.ts, and this is the whole rule.
-  // A second app with a different cart sync node type is a manifest entry, not a branch here.
-  expect(Object.keys(CONTROLLER_SYNC)).toEqual(["lsdj-midimap"]);
-  expect(CONTROLLER_SYNC["lsdj-midimap"])
-    .toEqual({ node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", off: "off" });
+  // (protocol.kinds.controllerApps[].syncOverride), the generator renders them into generated/protocol.ts, and this is
+  // the whole rule. A second app with a different cart sync node type is a manifest entry, not a branch here.
+  expect(Object.keys(KIND_DATA.controllerApps)).toEqual(["lsdj-midimap"]);
+  expect(KIND_DATA.controllerApps["lsdj-midimap"])
+    .toEqual({ syncOverride: { node: "rp.lsdj.sync", mode: "midiMap", listening: "MidiMap", off: "off" } });
   // `driving` is the app's own answer - the mode its launches need is the one the cart runs - and not "the mode is not
   // the string off": a second app's off-mode is its manifest's to spell.
   expect(controllerSyncOverride([{ id: 7 }], { ...CONTROLLER, cartSync: "MidiMap" }))

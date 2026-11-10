@@ -35,7 +35,7 @@ test("a UI host is its ten groups and no others", () => {
     beginImport: () => {},
   });
   expect(Object.keys(ui).sort()).toEqual(
-    ["config", "controller", "devices", "dialogs", "files", "liveSongs", "png", "songs", "systems", "views"].sort(),
+    ["config", "devices", "dialogs", "files", "liveSongs", "png", "project", "songs", "systems", "views"].sort(),
   );
   // The UI offers what a construct hook, an import and a menu need, and a hook narrower than the host takes it.
   expect(needsDialogs(ui) === ui.dialogs).toBe(true);
@@ -46,7 +46,7 @@ test("a UI host is its ten groups and no others", () => {
     // Each surface's exact group list: a group added to or dropped from a host fails one of these.
     const uiGroups: Record<keyof UiHost, true> = {
       files: true, png: true, systems: true, songs: true, liveSongs: true, dialogs: true, devices: true, views: true,
-      controller: true, config: true,
+      project: true, config: true,
     };
     const cliGroups: Record<keyof CliHost, true> = {
       files: true, png: true, kits: true, devices: true, process: true, songs: true,
@@ -148,17 +148,21 @@ test("every surface's files group reads a prefix, and the UI host reads work RAM
   render.systems;
 });
 
-test("a controller target is checked against the launchpad package's list", () => {
+test("a section patch is merged by its contributor, and an unknown target is refused there", () => {
   const stores = composeAppStores({ backend: new MockBackend("/cfg") });
   const ui = createUiHost(stores, { views: { open: () => {} }, beginImport: () => {} });
-  // A package hands the target over as an open string, and an unknown one would leave launches going nowhere, so it is
-  // refused here rather than written into the live settings and the next save.
-  expect(() => ui.controller.set({ target: "nowhere" })).toThrow("controller target 'nowhere'");
-  expect(ui.controller.settings().target).toBe("system");
-  ui.controller.set({ target: "midiOut" });
-  expect(ui.controller.settings().target).toBe("midiOut");
+  // The group is the shell's, the meaning is the package's: a package hands the target over as an open string, and an
+  // unknown one would leave launches going nowhere, so the section's own `merge` refuses it rather than writing it into
+  // the live settings and the next save.
+  const section = (): Record<string, unknown> => ui.project.section("controller");
+  expect(() => ui.project.setSection("controller", { target: "nowhere" })).toThrow("controller target 'nowhere'");
+  expect(section().target).toBe("system");
+  ui.project.setSection("controller", { target: "midiOut" });
+  expect(section().target).toBe("midiOut");
   // A patch without a target leaves it alone.
-  ui.controller.set({ enabled: true });
-  expect(ui.controller.settings().target).toBe("midiOut");
-  expect(ui.controller.settings().enabled).toBe(true);
+  ui.project.setSection("controller", { enabled: true });
+  expect(section().target).toBe("midiOut");
+  expect(section().enabled).toBe(true);
+  // And a service the product does not contribute answers undefined rather than inventing state.
+  expect(ui.project.serviceState("nothing")).toBe(undefined);
 });

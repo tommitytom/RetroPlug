@@ -555,10 +555,10 @@ bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes, std::uint32_
 }
 
 bool EngineRpcService::stageControllerIn(std::vector<std::uint8_t> bytes) {
-    // A pad press waits in the harness's surface link, as a device's would, and the document's surface-in node drains
-    // it at the next block. No link is no control surface: the host answers so rather than staging into nothing.
-    if (!harnessSurface_ || bytes.empty()) return false;
-    return harnessSurface_->queueInput(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
+    // A pad press waits in the staging hook's link, as a device's would, and the document's surface-in node drains it
+    // at the next block. No hook is no control surface: the host answers so rather than staging into nothing.
+    if (!controllerStaging_ || bytes.empty()) return false;
+    return controllerStaging_(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
 std::vector<std::string> EngineRpcService::drainProductCalls() {
@@ -633,7 +633,7 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
         result.error = "the background audio thread is running";
         return result;
     }
-    result.error = renderBlocksRefusal(req, harnessSurface_ != nullptr);
+    result.error = renderBlocksRefusal(req, controllerStaging_ != nullptr);
     if (!result.error.empty()) return result;
 
     // The graph TS published must be built for these lanes (docs/modular-graph-phase-b2-design.md section 4).
@@ -663,10 +663,10 @@ RpcRenderBlocksResult EngineRpcService::renderBlocks(RpcRenderBlocksRequest req)
         // MIDI-out size filter. ppq (a locate) and controller have no PluginDSP::run counterpart (the
         // plugin never calls setPpq, which would double-count; controller traffic is the SDL standalone's).
         for (const RpcBlockMidi& m : blk.midi) engine_.stageMidi(m.frame, m.bytes);  // copied into the staging
-        // The controller's own stream, into the harness's surface link (a pad press is staged as a device's arrival
-        // would be: frame 0 of this block). A host with no harness surface has no control surface to stage it into.
+        // The controller's own stream, into the staging hook (a pad press is staged as a device's arrival would be:
+        // frame 0 of this block). A host with no hook has no control surface to stage it into.
         for (const auto& c : blk.controller)
-            harnessSurface_->queueInput(std::span<const std::uint8_t>(c.data(), c.size()));
+            controllerStaging_(std::span<const std::uint8_t>(c.data(), c.size()));
         invoker_.drainInto(engine_);
         if (blk.bpm) engine_.setBpm(*blk.bpm);
         if (blk.playing) engine_.setTransport(*blk.playing);

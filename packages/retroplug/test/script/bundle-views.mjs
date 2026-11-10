@@ -56,7 +56,6 @@ function bundle(options) {
   }
 }
 
-
 const result = (() => {
   switch (MODE) {
     case "fixture-view":

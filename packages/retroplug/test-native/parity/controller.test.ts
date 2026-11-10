@@ -27,6 +27,9 @@ const SONG: SavInput = {
 const press = (row: number): number[] => [0x90, padIndex({ x: row < 8 ? 0 : 4, y: row % 8 }), 100];
 const release = (row: number): number[] => [0x80, padIndex({ x: row < 8 ? 0 : 4, y: row % 8 }), 0];
 
+/** The project section the Launchpad package contributes: this group's cases enable the controller through it. */
+const CONTROLLER_SECTION = "controller";
+
 const cases: ParityCase[] = [
   {
     name: "pad-launches",
@@ -36,7 +39,7 @@ const cases: ParityCase[] = [
     audible: [0, 1],
     setup: (rig) => {
       lsdj(rig, ROMS.arduinoboy, savFrom(SONG), { mode: "midiMap" });
-      rig.project.setController({ enabled: true });
+      rig.project.setSection(CONTROLLER_SECTION, { enabled: true });
     },
     segments: [
       boot(),

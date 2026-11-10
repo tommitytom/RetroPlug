@@ -268,7 +268,7 @@ and `setController` as the script nodes ahead of the systems. `publishGraph` pub
 the controller with its app config parsed by the app's schema and the song-timing table it reads from
 the controller cart's battery here, on the control plane. [`buildGraph`](../packages/retroplug/src/graph/buildGraph.ts)
 places the routing node, the controller node and a node per role from them, forcing the MI.MAP
-controller's cart into the sync mode it needs ([`graph/controller.ts`](../packages/retroplug/src/graph/controller.ts)).
+controller's cart into the sync mode it needs ([`launchpad/ts/control/placer.ts`](../packages/launchpad/ts/control/placer.ts)).
 `refreshControllerSong` publishes too, when its poll finds the controller cart's song
 moved or a new start anchor. A load holds the publishes back while it adopts and publishes once; a
 load that throws partway places what it adopted through the same drop-and-retry before rethrowing (a system the
@@ -740,4 +740,4 @@ broader remaining feature gaps live in **doc 07**; this list is only the TS-laye
 | Services | [`src/fileSelection.ts`](../packages/retroplug/src/fileSelection.ts) · [`src/fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts) · [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts) |
 | Composition | [`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) · [`src/appStores.ts`](../packages/retroplug/src/appStores.ts) · [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) |
 | UI | [`ui/main.tsx`](../packages/retroplug/ui/main.tsx) · [`ui/App.tsx`](../packages/retroplug/ui/App.tsx) · [`ui/screens/grid/`](../packages/retroplug/ui/screens/grid) · [`ui/screens/menu/`](../packages/retroplug/ui/screens/menu) · [`ui/lvgl/`](../packages/retroplug/ui/lvgl) · [`ui/app/`](../packages/retroplug/ui/app) · [`ui/host/`](../packages/retroplug/ui/host) · [`ui/hooks/`](../packages/retroplug/ui/hooks) |
-| Protocol nodes (doc 04) | [`packages/*/ts/protocol.ts`](../packages/core/ts/protocol.ts) · [`packages/launchpad/ts/nodes.ts`](../packages/launchpad/ts/nodes.ts) · [`src/graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts) · [`src/graph/controller.ts`](../packages/retroplug/src/graph/controller.ts) |
+| Protocol nodes (doc 04) | [`packages/*/ts/protocol.ts`](../packages/core/ts/protocol.ts) · [`packages/launchpad/ts/nodes.ts`](../packages/launchpad/ts/nodes.ts) · [`src/graph/protocolNodes.ts`](../packages/retroplug/src/graph/protocolNodes.ts) · [`launchpad/ts/control/placer.ts`](../packages/launchpad/ts/control/placer.ts) |

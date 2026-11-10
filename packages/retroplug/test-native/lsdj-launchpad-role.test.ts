@@ -57,7 +57,7 @@ test("a pad press on the controller stream launches a row on a real cart", () =>
 
   expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   // What a project hands its controller, song table and all (DirectGraph parses the app config as the store does).
-  expect(graph.setController({
+  expect(graph.setModel("controller", {
     app: "lsdj-midimap", target: "system", systemId: SYSTEM,
     appConfig: { quantise: "immediate" },
     songRowTicks: songRowTicks(SongSchema.parse(songJson)),
@@ -101,7 +101,7 @@ test("the same bytes on the MUSICAL stream launch a different row, which is why 
     }),
   }, id)).toBeTruthy();
   // The routing alone: the controller session goes, and its state with it.
-  expect(graph.setController(null)).toBeTruthy();
+  expect(graph.setModel("controller", null)).toBeTruthy();
   expect(graph.setMidiRouting("sendToAll")).toBeTruthy();
   expect(graph.setPipeline(id, [{ kind: "lsdj-sync", config: { mode: "midiMap" } }])).toBeTruthy();
 

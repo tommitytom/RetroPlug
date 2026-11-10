@@ -4,6 +4,10 @@
 // nothing but a type, and graph/protocolNodes.ts reads only that one (src/generated/packages.ts, which imports every
 // package's app module, is where they used to live and must not be in this graph).
 //
+// The graph placers are the same rule (docs/modular-graph-phase-f5a-design.md section 6.3): buildGraph reads
+// src/generated/placers.ts, which imports one module per declaring package, so that module must carry types and
+// constants alone - no node module, no schema - and the same bundle is held to it here.
+//
 // The bundle is built here as the build builds it, in memory through tools/build-session.js, and esbuild's metafile
 // says which modules went in: a zod module, the app or the generated app registries among them fails the test, and
 // says which. The build is Node's (esbuild is not a txiki module), so the test runs it in a node child, as
@@ -58,16 +62,43 @@ async function bundle(entry: string): Promise<{ inputs: string[]; bytes: number 
   return JSON.parse(out) as { inputs: string[]; bytes: number };
 }
 
-/** The modules a bundle of the protocol data may not carry: zod, the app, and the generated registries importing it. */
-function forbidden(inputs: readonly string[]): string[] {
-  return inputs.filter(
-    (path) =>
-      /(^|[\\/])zod(@[^\\/]*)?[\\/]/.test(path) ||
+/** The repo-relative paths of every module that defines protocol nodes: each listed manifest's `protocol.module`, and
+ *  core's `defineNode` helper, which a node module reaches. Read from the manifests, so a package added to the product
+ *  has its node module refused here without editing this test. */
+async function nodeModules(): Promise<string[]> {
+  const script =
+    'const fs = require("fs"), path = require("path");' +
+    'const ids = JSON.parse(fs.readFileSync("../../package.json", "utf8")).retroplug.products.desktop;' +
+    'const mods = [path.relative(process.cwd(), path.resolve("../../packages/core/ts/defineNode.ts"))];' +
+    'for (const id of ids) {' +
+    '  const manifest = JSON.parse(fs.readFileSync(path.join("../../packages", id, "package.json"), "utf8"));' +
+    '  const protocol = manifest.retroplug && manifest.retroplug.protocol;' +
+    '  if (protocol && typeof protocol.module === "string") {' +
+    '    mods.push(path.relative(process.cwd(), path.resolve("../../packages", id, protocol.module)));' +
+    '  }' +
+    '}' +
+    'process.stdout.write(JSON.stringify(mods));';
+  const child = tjs.spawn([tjs.env.RP_NODE || "node", "-e", script], { stdout: "pipe", stderr: "pipe" });
+  const [out, err, status] = await Promise.all([text(child.stdout), text(child.stderr), child.wait()]);
+  if (status.term_signal || status.exit_status !== 0) throw new Error(`reading the node modules failed: ${err}`);
+  return JSON.parse(out) as string[];
+}
+
+/** The modules a bundle of the protocol data may not carry: zod, the app, the generated registries importing it, and
+ *  every module that defines a protocol node (its code, not only the table describing it). */
+function forbidden(inputs: readonly string[], nodeModules: readonly string[]): string[] {
+  const norm = (path: string) => path.replace(/\\/g, "/");
+  return inputs.filter((raw) => {
+    const path = norm(raw);
+    return (
+      /(^|\/)zod(@[^/]*)?\//.test(path) ||
       /src\/app\.ts$/.test(path) ||
       /src\/appHost\.ts$/.test(path) ||
       /src\/generated\/packages\.ts$/.test(path) ||
-      /src\/(configSchema|systemRoles)\.ts$/.test(path),
-  );
+      /src\/(configSchema|systemRoles)\.ts$/.test(path) ||
+      nodeModules.some((modulePath) => path === modulePath || path.endsWith(`/${modulePath}`))
+    );
+  });
 }
 
 test("graph/protocolNodes.ts reads the generated protocol data and nothing else", async () => {
@@ -76,15 +107,20 @@ test("graph/protocolNodes.ts reads the generated protocol data and nothing else"
   expect(inputs.includes("src/generated/protocol.ts")).toBe(true);
   // The module and the data it reads: the tables are apart from the node modules that describe them.
   expect(inputs.length).toBe(2);
-  expect(forbidden(inputs)).toEqual([]);
+  expect(forbidden(inputs, await nodeModules())).toEqual([]);
 });
 
 test("graph/buildGraph.ts carries the protocol tables but neither zod nor the app", async () => {
   const { inputs, bytes } = await bundle("src/graph/buildGraph.ts");
   console.log(`# buildGraph.ts: ${inputs.length} modules, ${bytes} bytes`);
   expect(inputs.includes("src/generated/protocol.ts")).toBe(true);
-  // The planner and its own helpers: 15 modules today; the ceiling keeps a whole package's app out of a quiet arrival.
-  expect(inputs.length < 20, `${inputs.length} modules went in`).toBe(true);
+  // The positive control the placers need: the generated placer table IS carried, so the case is not vacuous.
+  expect(inputs.includes("src/generated/placers.ts")).toBe(true);
+  // The planner, its own helpers, the consoles' descriptors it reads, core's placer types, the one package placer the
+  // product ships and that package's node-type constants: 22 modules today, and not one of them is a node module. The
+  // ceiling is the count plus one, so a whole package's app or a node module dragged in by a placer fails by NAME
+  // (forbidden, below) and a quiet arrival of anything else fails by count.
+  expect(inputs.length <= 22, `${inputs.length} modules went in`).toBe(true);
   expect(bytes < 64 * 1024, `the bundle is ${bytes} bytes`).toBe(true);
-  expect(forbidden(inputs)).toEqual([]);
+  expect(forbidden(inputs, await nodeModules())).toEqual([]);
 });

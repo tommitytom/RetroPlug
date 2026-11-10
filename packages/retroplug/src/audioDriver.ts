@@ -53,14 +53,15 @@ export interface RenderBlock {
   /** Host MIDI at frames inside the block, staged in list order; frames may tie but never go backwards. */
   midi?: { frame: number; bytes: number[] }[];
   /** Control-surface messages (a Launchpad pad press), staged as stageControllerIn stages them. A message waits in the
-   *  harness's surface link until the document's rp.launchpad.surface-in node drains it at the start of a block, so: a
-   *  plan that places no surface node (the project's controller setting is off) reads none of them; the node's first
-   *  block after it binds the link DISCARDS what the link already holds, so a message staged before the plan that
-   *  places the surface activated (or with no surface node in the plan before it), including one staged for block 0 of
-   *  the run that follows the publish, is dropped rather than delivered; a message staged while the surface is bound -
-   *  the node past its first block - is delivered at the next block. A run that stages controller messages in a plan
-   *  which places no surface node leaves them in the link, where the plan that later places one discards them. A host
-   *  with no harness surface (the CLI, the Node addon, the render host) refuses controller traffic outright. */
+   *  harness's surface link until the document's control-surface input node (the node the controller's placer places)
+   *  drains it at the start of a block. So: a plan that places no surface node (the project's controller setting is
+   *  off) reads none of them; the node's first block after it binds the link DISCARDS what the link already holds, so
+   *  a message staged before the plan that places the surface activated (or with no surface node in the plan before
+   *  it), including one staged for block 0 of the run that follows the publish, is dropped rather than delivered; a
+   *  message staged while the surface is bound - the node past its first block - is delivered at the next block. A run
+   *  that stages controller messages in a plan which places no surface node leaves them in the link, where the plan
+   *  that later places one discards them. A host with no harness surface (the CLI, the Node addon, the render host)
+   *  refuses controller traffic outright. */
   controller?: number[][];
   /** Transport, applied after the block's queued edits drain and before it renders. */
   playing?: boolean;
@@ -126,11 +127,11 @@ export interface AudioDriver {
    *  `controllerIn` rather than as musical MIDI - so a headless test can drive a controller app with
    *  no controller attached. Separate from stageMidiIn because a pad press is a NoteOn, and a
    *  translator like LSDj's MidiMap would read one on the musical stream as a row launch. It waits in the harness's
-   *  surface link until the document's rp.launchpad.surface-in node drains it at the start of a block: the node's first
-   *  block after it binds the link discards what the link already holds, so a message staged before a plan that places
-   *  the surface activated, including one staged for block 0 of the run that follows the publish, is dropped, and one
-   *  staged while the surface is bound is delivered at the next block. False, staging nothing, on a host with no
-   *  harness surface (the CLI, the Node addon, the render host). */
+   *  surface link until the document's control-surface input node (the one the controller's placer places) drains it
+   *  at the start of a block: the node's first block after it binds the link discards what the link already holds, so
+   *  a message staged before a plan that places the surface activated, including one staged for block 0 of the run
+   *  that follows the publish, is dropped, and one staged while the surface is bound is delivered at the next block.
+   *  False, staging nothing, on a host with no harness surface (the CLI, the Node addon, the render host). */
   stageControllerIn(bytes: Uint8Array | number[]): boolean;
   /** Drain the host MIDI out (e.g. LSDj's serial-out decoder, rp.lsdj.serial-out, in MI.OUT or master
    *  sync, on its `midiOut` port), accumulated across the renderAudio blocks since the last drain. Each

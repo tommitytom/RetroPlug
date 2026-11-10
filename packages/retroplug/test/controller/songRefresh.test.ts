@@ -1,4 +1,4 @@
-// Noticing that the player edited the song ON THE CART.
+// Noticing that the player edited the song ON THE CART (the controller's project service).
 //
 // The controller's row-timing table is derived on the control plane and reaches the audio thread as the
 // controller node's settings in the graph the project publishes, so it only moves when something publishes -
@@ -17,6 +17,15 @@ import { composeAppStores } from "../../src/appStores";
 import * as R from "@retroplug/lsdj/codec/regions";
 import { gbRom } from "../systems/fixtures";
 import { identifyLsdj, resolveLayout } from "@retroplug/lsdj/runtime";
+
+/** The project section the Launchpad package contributes, and what its service published: the tests name the key and
+ *  read the state, as the menus do. */
+const CONTROLLER_SECTION = "controller";
+const cartSyncOf = (stores: ReturnType<typeof composeAppStores>): string | null =>
+  stores.project.serviceState<{ cartSync: string | null }>(CONTROLLER_SECTION)?.cartSync ?? null;
+const anchorOf = (stores: ReturnType<typeof composeAppStores>) =>
+  stores.project.serviceState<{ anchor: { rows: (number | null)[]; seq: number } | null }>(CONTROLLER_SECTION)?.anchor ??
+  null;
 
 /** Count the project's publishes from here on, sent or not (the graph sends only a document that changed). */
 function countPublishes(stores: ReturnType<typeof composeAppStores>): { n: number } {
@@ -50,31 +59,31 @@ function lsdjSav(sync: number): Uint8Array {
   return b;
 }
 
-test("refreshControllerSong publishes the graph exactly once per real edit", () => {
+test("the poll publishes the graph exactly once per real edit", () => {
   const be = new MockBackend();
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/a.gb", lsdjRom());
   stores.project.systems.addSystem("/roms/a.gb");
   const id = stores.project.systems.view()[0].id;
   be.setSram(id, sav());
-  stores.project.setController({ enabled: true });
+  stores.project.setSection(CONTROLLER_SECTION, { enabled: true });
 
   const publishes = countPublishes(stores);
-  expect(stores.project.refreshControllerSong()).toBe(true); // first look: adopt whatever is there
+  expect(stores.project.pollServices()).toBe(true); // first look: adopt whatever is there
   expect(publishes.n).toBe(1);
-  expect(stores.project.refreshControllerSong()).toBe(false); // unchanged -> silent
+  expect(stores.project.pollServices()).toBe(false); // unchanged -> silent
   expect(publishes.n).toBe(1);
 
   const edited = sav();
   edited[R.kModernRegions.chainAssignments + 4 * R.kChannelCount] = 3;
   be.setSram(id, edited);
-  expect(stores.project.refreshControllerSong()).toBe(true);
+  expect(stores.project.pollServices()).toBe(true);
   expect(publishes.n).toBe(2);
-  expect(stores.project.refreshControllerSong()).toBe(false);
+  expect(stores.project.pollServices()).toBe(false);
   expect(publishes.n).toBe(2);
 });
 
-test("refreshControllerSong costs nothing while no controller is enabled", () => {
+test("the poll costs nothing while no controller is enabled", () => {
   // It runs on a 60 fps hook's timer in every session, including the overwhelming majority with no
   // Launchpad anywhere near them, so it must not even read the battery.
   const be = new MockBackend();
@@ -82,7 +91,7 @@ test("refreshControllerSong costs nothing while no controller is enabled", () =>
   be.seed("/roms/a.gb", gbRom());
   stores.project.systems.addSystem("/roms/a.gb");
   const reads = be.readSramCalls.length;
-  expect(stores.project.refreshControllerSong()).toBe(false);
+  expect(stores.project.pollServices()).toBe(false);
   expect(be.readSramCalls.length).toBe(reads);
 });
 
@@ -93,8 +102,8 @@ test("an edit does not dirty the project - the song lives in the cart, not the .
   stores.project.systems.addSystem("/roms/a.gb");
   const id = stores.project.systems.view()[0].id;
   be.setSram(id, sav());
-  stores.project.setController({ enabled: true });
-  stores.project.refreshControllerSong();
+  stores.project.setSection(CONTROLLER_SECTION, { enabled: true });
+  stores.project.pollServices();
 
   // markDirty is what fires onChange, so counting that is the precise test: a publish must re-drive the
   // CONTROLLER NODE without touching the project's saved state. Otherwise every edit in LSDj would put an unsaved
@@ -104,7 +113,7 @@ test("an edit does not dirty the project - the song lives in the cart, not the .
   const edited = sav();
   edited[R.kModernRegions.chainAssignments] = 7;
   be.setSram(id, edited);
-  expect(stores.project.refreshControllerSong()).toBe(true);
+  expect(stores.project.pollServices()).toBe(true);
   expect(changes).toBe(0);
 });
 
@@ -117,16 +126,16 @@ test("the poll also records the cart's SYNC mode, which is how the menu can warn
   be.seed("/roms/a.gb", lsdjRom());
   stores.project.systems.addSystem("/roms/a.gb");
   const id = stores.project.systems.view()[0].id;
-  stores.project.setController({ enabled: true });
+  stores.project.setSection(CONTROLLER_SECTION, { enabled: true });
 
   const inMap = lsdjSav(8); // MidiMap
   be.setSram(id, inMap);
-  stores.project.refreshControllerSong();
-  expect(stores.project.controllerCartSync()).toBe("MidiMap");
+  stores.project.pollServices();
+  expect(cartSyncOf(stores)).toBe("MidiMap");
 
   be.setSram(id, lsdjSav(9)); // the player knocked it to MI.OUT
-  stores.project.refreshControllerSong();
-  expect(stores.project.controllerCartSync()).toBe("MidiOut");
+  stores.project.pollServices();
+  expect(cartSyncOf(stores)).toBe("MidiOut");
 });
 
 test("a non-LSDj battery reports no sync mode rather than a wrong one", () => {
@@ -135,10 +144,10 @@ test("a non-LSDj battery reports no sync mode rather than a wrong one", () => {
   be.seed("/roms/a.gb", gbRom());
   stores.project.systems.addSystem("/roms/a.gb");
   const id = stores.project.systems.view()[0].id;
-  stores.project.setController({ enabled: true });
+  stores.project.setSection(CONTROLLER_SECTION, { enabled: true });
   be.setSram(id, sav()); // all zeroes: no LSDj header
-  stores.project.refreshControllerSong();
-  expect(stores.project.controllerCartSync()).toBe(null);
+  stores.project.pollServices();
+  expect(cartSyncOf(stores)).toBe(null);
 });
 
 // --- the start-edge anchor -------------------------------------------------------------------------
@@ -175,36 +184,36 @@ function controllerCart(): { stores: ReturnType<typeof composeAppStores>; be: Mo
   stores.project.systems.addSystem("/roms/lsdj.gb");
   const id = stores.project.systems.view()[0].id;
   be.setSram(id, sav());
-  stores.project.setController({ enabled: true });
+  stores.project.setSection(CONTROLLER_SECTION, { enabled: true });
   return { stores, be, id };
 }
 
 test("the cart starting on its own is captured as an anchor, once per start", () => {
   const { stores, be, id } = controllerCart();
-  expect(stores.project.controllerStartAnchor()).toBe(null);
+  expect(anchorOf(stores)).toBe(null);
 
   be.setRam(id, wramWith([null, null, null, null])); // idle
-  stores.project.refreshControllerSong();
-  expect(stores.project.controllerStartAnchor()).toBe(null);
+  stores.project.pollServices();
+  expect(anchorOf(stores)).toBe(null);
 
   be.setRam(id, wramWith([5, 5, 5, 5])); // the player pressed START with the cursor on row 5
-  stores.project.refreshControllerSong();
-  const first = stores.project.controllerStartAnchor();
+  stores.project.pollServices();
+  const first = anchorOf(stores);
   expect(first?.rows).toEqual([5, 5, 5, 5]);
   expect(first?.seq).toBe(1);
 
   // Still playing, now further along. NOT a new anchor: this is the edge, not a position feed - correcting
   // mid-song every half second is a different feature (M6) and would fight the predictor's own clock.
   be.setRam(id, wramWith([6, 6, 6, 6]));
-  stores.project.refreshControllerSong();
-  expect(stores.project.controllerStartAnchor()?.seq).toBe(1);
+  stores.project.pollServices();
+  expect(anchorOf(stores)?.seq).toBe(1);
 
   // Stop, then start again: a new anchor, with a new sequence so the role applies it.
   be.setRam(id, wramWith([null, null, null, null]));
-  stores.project.refreshControllerSong();
+  stores.project.pollServices();
   be.setRam(id, wramWith([2, 2, 2, 2]));
-  stores.project.refreshControllerSong();
-  const second = stores.project.controllerStartAnchor();
+  stores.project.pollServices();
+  const second = anchorOf(stores);
   expect(second?.rows).toEqual([2, 2, 2, 2]);
   expect(second?.seq).toBe(2);
 });
@@ -212,19 +221,19 @@ test("the cart starting on its own is captured as an anchor, once per start", ()
 test("the anchor is per channel, because channels diverge in normal play", () => {
   const { stores, be, id } = controllerCart();
   be.setRam(id, wramWith([null, null, null, null]));
-  stores.project.refreshControllerSong();
+  stores.project.pollServices();
   be.setRam(id, wramWith([4, 3, 4, null])); // pu2 lagging on a long chain, noi silent
-  stores.project.refreshControllerSong();
-  expect(stores.project.controllerStartAnchor()?.rows).toEqual([4, 3, 4, null]);
+  stores.project.pollServices();
+  expect(anchorOf(stores)?.rows).toEqual([4, 3, 4, null]);
 });
 
 test("a start edge publishes the graph, or the anchor would sit on the control plane doing nothing", () => {
   const { stores, be, id } = controllerCart();
   be.setRam(id, wramWith([null, null, null, null]));
-  stores.project.refreshControllerSong();
+  stores.project.pollServices();
   const sent = be.graphRequests.length;
   be.setRam(id, wramWith([1, 1, 1, 1]));
-  expect(stores.project.refreshControllerSong()).toBe(true);
+  expect(stores.project.pollServices()).toBe(true);
   expect(be.graphRequests.length).toBe(sent + 1);
   expect(controllerSettings(be)?.anchorRows).toEqual([1, 1, 1, 1]);
 });

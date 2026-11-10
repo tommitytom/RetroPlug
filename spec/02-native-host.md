@@ -706,7 +706,7 @@ The document `buildGraph` writes:
   seeds, `romName`, the setting fields of its system's core-config role (the role whose kind is its core, `sameboy`
   or `mesen`) as that config spells them, its type's construct-time fields, and on a Game Boy `serialOutCapture`,
   for the mode its `lsdj-sync` node actually runs, after the MI.MAP controller's override (`serialOutCaptureFor`,
-  [graph/controller.ts](../packages/retroplug/src/graph/controller.ts)): `drive` for MI.OUT, `listen` for master
+  [graph/serialCapture.ts](../packages/retroplug/src/graph/serialCapture.ts)): `drive` for MI.OUT, `listen` for master
   sync, and `off` otherwise, a Game Boy with no `lsdj-sync` placed included, since a capture left out would leave an
   armed one armed. Its params carry the system's `gain` and a NES's `expansionVolume`. A setting value the node
   would refuse (another label, a number out of range, another type) is left out rather than sent, the core keeping

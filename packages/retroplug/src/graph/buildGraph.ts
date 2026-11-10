@@ -1,13 +1,13 @@
 // The engine's graph as TS builds it (docs/modular-graph-phase-b2-design.md section 2.1): the systems in slot
 // order, the project's audio routing and the host's output shape, turned into the document setGraph plans. Ahead of
 // the systems, each document places the script nodes that feed them (docs/modular-graph-phase-b3b-design.md
-// section 4): the MIDI routing, a controller session when one is enabled, and a protocol node for each role of each
-// system that has one, wired between the host's I/O and the systems as the DSP kernel's ports were. After the
-// systems, it places each role's second node where its type names one, which reads what its system sent in the same
-// block: LSDj's serial-out decoder, whose host MIDI goes where the kernel's did (docs/lsdj-serial-out-design.md). The
-// project's hardware is nodes too (docs/modular-graph-phase-c5-design.md): a NES whose config drives the real cart gets
-// an rp.n8.nes, fanned out from the same sources its core is, and an enabled controller's session reads and writes
-// rp.launchpad.surface-in / -out instead of the host's own controller staging.
+// section 4): the MIDI routing, and a protocol node for each role of each system that has one, wired between the host's
+// I/O and the systems as the DSP kernel's ports were - and, in the slots a package's placer fills, that package's own
+// nodes (a control surface's session and its two device nodes are the launchpad pack's, docs/modular-graph-phase-f5a-
+// design.md section 6.3). After the systems, it places each role's second node where its type names one, which reads
+// what its system sent in the same block: LSDj's serial-out decoder, whose host MIDI goes where the kernel's did
+// (docs/lsdj-serial-out-design.md). The project's hardware is nodes too (docs/modular-graph-phase-c5-design.md): a NES
+// whose config drives the real cart gets an rp.n8.nes, fanned out from the same sources its core is.
 // Each system node carries its core's knobs (docs/modular-graph-phase-c2-design.md section 5): its core config's
 // setting fields and, on a Game Boy, the serial-out capture its LSDj's decoder needs, as settings; its gain and a NES's
 // expansion volume as params. Pure, and held to test/graph/golden/build-graph.json, whose audio wiring is the B1
@@ -27,15 +27,11 @@ import {
   type ProtocolRole,
   type SystemInput,
 } from "./protocolNodes";
-import {
-  controllerSettings,
-  controllerSyncOverride,
-  controllerTarget,
-  NO_SYSTEM,
-  serialOutCaptureFor,
-  type GraphController,
-  type SerialOutCaptureMode,
-} from "./controller";
+import { serialOutCaptureFor, type SerialOutCaptureMode } from "./serialCapture";
+import type { Placement, Placed } from "@retroplug/core/placer";
+import type { KindData } from "@retroplug/core/defineKind";
+import { PLACERS } from "../generated/placers";
+import { KIND_DATA } from "../generated/protocol";
 
 /** The output shape a document is built for: the host's own outputs routed by the project's mode (multi),
  *  each system on its own pair (perSystem), or one system's streams on a pair each (perChannel). A multi
@@ -83,8 +79,10 @@ export interface GraphModel {
   /** How the host's MIDI is fanned out to the systems. Absent or null routes none: no routing node is placed, as a
    *  DirectGraph or a lone SystemsStore publishes before anything sets a mode. */
   midiRouting?: MidiRouting | null;
-  /** The control-surface session, absent or null when none is enabled. */
-  controller?: GraphController | null;
+  /** The models the product's graph placers place, by key ("controller"): a package's own section-derived model, which
+   *  only its placer knows how to turn into nodes. A key no listed package places is ignored, so a product without the
+   *  package publishes the section's model to nothing. */
+  models?: Readonly<Record<string, unknown>>;
 }
 
 /** The NES tap the engine arms for a lone NES under a split routing: its pins (1) or its five channels (3).
@@ -105,10 +103,14 @@ export interface BuiltGraph {
 /** rp.core.add's input limit (CoreNodes.cpp): a longer sum chains adds, continuing the same left-to-right sum. */
 const ADD_INPUTS = 16;
 
-// The project's script node types, as their modules spell them (@retroplug/core's midiRoute.ts and
-// controllerSession.ts, which test/graph/build-graph.test.ts holds these to).
+// The project's script node type, as its module spells it (@retroplug/core's midiRoute.ts, which
+// test/graph/build-graph.test.ts holds this to).
 const MIDI_ROUTE = "rp.midi.route";
-const CONTROLLER_SESSION = "rp.controller.session";
+
+/** What a placer reads through PlaceContext.kindData: generated/protocol.ts's KIND_DATA, the data each contributing
+ *  manifest declares for a kind, by kind and then item id (docs/modular-graph-phase-f5a-design.md section 6.5). A kind
+ *  nothing contributes reads as an empty record, so a placer sees no item rather than an error. */
+const kindData = (kind: string): KindData => KIND_DATA[kind] ?? {};
 
 // A system's node id in the documents buildGraph builds (`sys-<id>`), which the store and `DirectGraph` address a
 // system node by.
@@ -397,11 +399,41 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     return [`${name}.out1`, `${name}.out2`];
   };
 
-  // The hosts' inputs: the musical MIDI always, and the control surface when a controller is on - placed only then, so
-  // a document with no controller holds neither half of the surface (a surface node drains the device's ring, and one
-  // no session reads would take the device's traffic nowhere).
+  // Each package's placement, in product order, for the models it has: the slots below are read from these
+  // (docs/modular-graph-phase-f5a-design.md section 6.3). A placer's nodes land at its slot's position, which is what
+  // makes document order the same for a product that lists the package and for the tests that build the model by hand.
+  const placements: { key: string; placement: Placement }[] = [];
+  for (const { placer } of PLACERS) {
+    const value = model.models ? model.models[placer.key] : undefined;
+    if (value === null || value === undefined) continue;
+    placements.push({ key: placer.key, placement: placer.place(value, { systems, kindData }) });
+  }
+  const slot = (pick: (placement: Placement) => Placed | undefined): Placed[] => {
+    const out: Placed[] = [];
+    for (const { placement } of placements) {
+      const placed = pick(placement);
+      if (placed) out.push(placed);
+    }
+    return out;
+  };
+  const place = (slots: readonly Placed[]): void => {
+    for (const placed of slots) {
+      nodes.push(...placed.nodes);
+      wires.push(...placed.wires);
+    }
+  };
+  // What a placer forces on a system's protocol node of a type, and on that role's second node: the cart sync mode a
+  // controller needs, and what a Game Boy's serial-out capture then follows. Read per role, so one session's mode
+  // reaches the node and its decoder as one value.
+  const overrides: Placement["overrides"] = placements.flatMap(({ placement }) => placement.overrides ?? []);
+  const overrideFor = (system: number, node: string) =>
+    overrides.find((o) => o.system === system && o.node === node);
+
+  // The hosts' inputs: the musical MIDI always, then every placement's inputs (a control surface's device input, placed
+  // only where its placer is: a surface node drains the device's ring, and one no session reads would take the device's
+  // traffic nowhere).
   nodes.push({ id: "midi-in", type: "rp.host.midi-in" });
-  if (model.controller) nodes.push({ id: "surface-in", type: "rp.launchpad.surface-in" });
+  place(slot((placement) => placement.inputs));
   // Every node reads only nodes placed before it in the document, but over a feedback wire, so the plan runs the nodes,
   // the script nodes among them, in document order: the planner orders nodes topologically and breaks ties by document
   // order (Planner.cpp order()), and a feedback wire orders nothing. So the nodes that feed the systems go before them,
@@ -414,28 +446,14 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     nodes.push({ id: "routing", type: MIDI_ROUTE, settings: { mode: midiRouting, systems: systems.map((s) => s.id) } });
     wire("midi-in.midi", "routing.midiIn");
   }
-  // Host MIDI out's inputs: the controller's first, so it wins a tie at a frame (rp.host.midi-out merges its inputs by
-  // frame, the lower input on a tie), then each system's in slot order, every message under the system named beside
-  // it, wherever in the document the node that sends it sits.
+  // Host MIDI out's inputs: the placements' first (a controller's, so it wins a tie at a frame: rp.host.midi-out merges
+  // its inputs by frame, the lower input on a tie), then each system's in slot order, every message under the system
+  // named beside it, wherever in the document the node that sends it sits.
   const hostMidi: { from: string; system: number }[] = [];
-  const controller = model.controller ?? null;
-  const target = controller ? controllerTarget(controller, systems) : NO_SYSTEM;
-  if (controller) {
-    // Its target resolved here ("0 is the first system"), so it follows a change of first system.
-    nodes.push({ id: "controller", type: CONTROLLER_SESSION, settings: controllerSettings(controller, target) });
-    // The device's own side of the session: what it sent, and whether it is attached - two nodes, one each way, so
-    // neither is in a cycle with the session (docs/modular-graph-phase-c5-design.md section 5).
-    wire("surface-in.in", "controller.controllerIn");
-    wire("surface-in.connected", "controller.controllerConnected");
-    // And how many messages the link lost, so the session repaints what its diff believes was sent (a full send ring, a
-    // paint sent while the device was unplugged): the node reports the link's own count, which changes when it changes.
-    wire("surface-in.drops", "controller.controllerDrops");
-    // Driving a cart, it sends no host MIDI; it is wired all the same, as the kernel tagged its MIDI out either way.
-    hostMidi.push({ from: "controller.midiOut", system: target });
-  }
-  // The controller's cart, in the sync mode the app's manifest data asks for: the settings of that cart sync node and of
-  // its serial-out decoder alone, and the capture its Game Boy runs for them, never the project's.
-  const sync = controllerSyncOverride(systems, controller);
+  // The placement's own nodes, after the routing node and its wire: the session, and the wires between it and the
+  // device's two nodes.
+  place(slot((placement) => placement.session));
+  for (const { placement } of placements) for (const input of placement.hostMidi ?? []) hostMidi.push(input);
   // The nodes placed after the systems, in slot order, then pipeline order: each role's second node, and the system
   // output it reads, if any.
   const after: { node: NodeDoc; reads: string | null }[] = [];
@@ -446,13 +464,16 @@ export function buildGraph(model: GraphModel): BuiltGraph {
     for (const role of s.pipeline) {
       const spec: ProtocolNodeSpec = PROTOCOL_NODES[role.node];
       const id = protocolId(s.id, role.kind);
-      const forced = sync !== null && sync.systemId === s.id && role.node === sync.node;
-      const settings = forced ? { ...role.config, mode: sync.mode } : role.config;
+      const override = overrideFor(s.id, role.node);
+      const settings = override ? { ...role.config, ...override.settings } : role.config;
       nodes.push({ id, type: role.node, settings });
       if (spec.midiIn !== null && midiRouting !== null) wire(`routing.${n}`, `${id}.${spec.midiIn}`);
-      // The launches follow the routed MIDI, as the kernel appended them to its target's inbox.
-      if (spec.launches && controller?.target === "system" && target === s.id)
-        wire("controller.launches", `${id}.launches`);
+      // A placement's wires for the node, after its routing wire and before its writes: the controller's launches
+      // follow the routed MIDI, as the kernel appended them to its target's inbox.
+      for (const { placement } of placements) {
+        if (!placement.wires) continue;
+        for (const w of placement.wires(s.id, role, spec, id)) wires.push(w);
+      }
       for (const input of spec.writes) wire(`${id}.${input}`, `${n}.${input}`);
       if (spec.midiOut) hostMidi.push({ from: `${id}.midiOut`, system: s.id });
       // The role's second node takes the same settings, so the two read one mode, the controller's forced one
@@ -474,9 +495,10 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   for (const i of order) {
     const s = systems[i];
     // The override applies to the node type its data names, and to that one only: one naming another decoder says
-    // nothing about what this Game Boy captures.
-    const forced =
-      sync !== null && sync.systemId === s.id && s.pipeline.some((role) => role.node === sync.node) ? sync.mode : null;
+    // nothing about what this Game Boy captures. Its `mode` is the capture table's key.
+    const override = overrides.find((o) => o.system === s.id && s.pipeline.some((role) => role.node === o.node));
+    const mode = override ? override.settings.mode : undefined;
+    const forced = typeof mode === "string" ? mode : null;
     const captures = capabilitiesOf(s.type).serialOut === true ? serialOutCaptureFor(s.pipeline, forced) : null;
     nodes.push(systemNode(s, captures));
   }
@@ -511,10 +533,8 @@ export function buildGraph(model: GraphModel): BuiltGraph {
   // outputs whatever its roles.
   nodes.push({ id: "midi-out", type: "rp.host.midi-out", settings: { systems: hostMidi.map((p) => p.system) } });
   hostMidi.forEach((p, k) => wire(p.from, `midi-out.in${k + 1}`));
-  if (controller) {
-    nodes.push({ id: "surface-out", type: "rp.launchpad.surface-out" });
-    wire("controller.controllerOut", "surface-out.out");
-  }
+  // The placements' outputs, after host MIDI out and its wires: the surface's device output.
+  place(slot((placement) => placement.outputs));
 
   const buses: number[] = [];
   if (shape.kind === "perSystem") {

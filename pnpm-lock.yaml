@@ -283,16 +283,25 @@ importers:
       '@retroplug/host-io':
         specifier: workspace:*
         version: link:../host-io
-      '@retroplug/launchpad':
-        specifier: workspace:*
-        version: link:../launchpad
       '@retroplug/system':
         specifier: workspace:*
         version: link:../system
     devDependencies:
+      '@retroplug/device-io':
+        specifier: workspace:*
+        version: link:../device-io
+      '@retroplug/devtest':
+        specifier: workspace:*
+        version: link:../devtest
+      '@retroplug/launchpad':
+        specifier: workspace:*
+        version: link:../launchpad
       '@retroplug/mgb':
         specifier: workspace:*
         version: link:../mgb
+      '@retroplug/n8':
+        specifier: workspace:*
+        version: link:../n8
       '@retroplug/testing':
         specifier: workspace:*
         version: link:../testing

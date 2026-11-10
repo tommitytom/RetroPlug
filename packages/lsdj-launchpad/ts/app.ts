@@ -1,8 +1,9 @@
 // The LSDj bridge's contribution to the app (docs/modular-graph-phase-f3-design.md sections 2 and 4): the control
-// plane's half of the MI.MAP controller app - its id, the menu's label and the knobs' schema. The runtime half (the app,
-// its playback model and its launch target) is the package's `protocol.apps` entry, ts/appRuntime.ts, and the two are
-// joined by id. Which sync mode the cart those launches drive must be in is the same entry's `syncOverride` data
-// (package.json), which graph/controller.ts applies: data, not code, because the planner must carry no app and no zod.
+// plane's half of the MI.MAP controller app - its id, the menu's label and the knobs' schema. The runtime half (the
+// app, its playback model and its launch target) is the package's `protocol.kinds.controllerApps` entry,
+// ts/appRuntime.ts, and the two are joined by id. Which sync mode the cart those launches drive must be in is the
+// same entry's `syncOverride` data (package.json), which the launchpad pack's graph placer applies: data, not code,
+// because the planner must carry no app and no zod.
 //
 // The direction is the reason this package exists: neither lsdj nor launchpad knows the other, so neither names this
 // app. The bridge imports both, contributes the app to the app's registry and to the script bundle's, and the control
@@ -12,8 +13,8 @@ import { z } from "zod";
 import { boolField, clampedInt, enumField } from "@retroplug/core/configFields";
 import type { ControllerAppContribution } from "@retroplug/launchpad/registry";
 import { MAX_PAGE, QUANTISE_VALUES, type Quantise } from "./lsdjMidiMap";
-// The key the launchpad package adds to the contract (its ts/packageContributions.ts augments it): type-only, so nothing
-// of it loads at run time.
+// The key the launchpad package adds to the contract (its ts/packageContributions.ts augments it): type-only, so
+// nothing of it loads at run time.
 import type {} from "@retroplug/launchpad/packageContributions";
 
 /** The row's text per quantise value: the words a player reads, which only this app has. */
@@ -28,9 +29,9 @@ const QUANTISE_LABELS: Record<Quantise, string> = {
 const MI_MAP: ControllerAppContribution = {
   id: "lsdj-midimap",
   label: "LSDj MI.MAP",
-  // quantise: when a pressed pad's launch actually fires. Default `bar` - one bar is also exactly one LSDj phrase at the
-  // factory groove, so launches land where the music does. follow: scroll the 16-row window to keep the playhead
-  // visible. page: which window to start on.
+  // quantise: when a pressed pad's launch actually fires. Default `bar` - one bar is also exactly one LSDj phrase
+  // at the factory groove, so launches land where the music does. follow: scroll the 16-row window to keep the
+  // playhead visible. page: which window to start on.
   config: z.object({
     quantise: enumField(QUANTISE_VALUES, "bar"),
     follow: boolField(true),
@@ -44,7 +45,8 @@ const MI_MAP: ControllerAppContribution = {
     {
       key: "quantise",
       label: "Launches",
-      // Built from the enum, so a value the schema gained cannot go missing from the row (the labels are the app's words).
+      // Built from the enum, so a value the schema gained cannot go missing from the row (the labels are the app's
+      // words).
       choices: QUANTISE_VALUES.map((value) => ({ value, label: QUANTISE_LABELS[value] })),
     },
     { key: "follow", label: "Follow Playhead", toggle: true },

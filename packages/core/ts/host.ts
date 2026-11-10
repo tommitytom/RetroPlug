@@ -84,46 +84,6 @@ export interface SystemInfo {
   readonly roles: readonly RoleInstance[];
 }
 
-/** One of a controller app's knobs: a fixed choice list, an Off/On toggle, or a numeric range offered in steps (the
- *  shape `@retroplug/ui/contribution` calls a ConfigRow, declared here because a controller app is a control-plane
- *  contribution and the launchpad package's registry is downstream of core). */
-export type ControllerAppField = { readonly key: string; readonly label: string } & (
-  // Exclusive as `@retroplug/ui/contribution`'s ConfigRow is, and held equal to it both ways by that package's test.
-  | {
-      readonly choices: readonly { readonly value: string | number; readonly label: string }[];
-      readonly toggle?: never;
-      readonly range?: never;
-    }
-  | { readonly toggle: true; readonly choices?: never; readonly range?: never }
-  | {
-      readonly range: { readonly steps: readonly number[]; readonly labels: readonly string[] };
-      readonly choices?: never;
-      readonly toggle?: never;
-    }
-);
-/** A controller app as a project surface reads it: its id, its menu text, the rows that edit its config and the schema
- *  a saved config is parsed with. The launchpad package's own contribution type satisfies this as written; core keeps
- *  the narrow shape so the host can name the list without importing the package that registers it. */
-export interface ControllerApp {
-  readonly id: string;
-  readonly label: string;
-  readonly config: { parse(config: unknown): Record<string, unknown> };
-  readonly menu?: readonly ControllerAppField[];
-}
-
-/** The control-surface session a project stores: which app runs, where its launches go and the app's own config. Only
- *  the user's CHOICES live here; the runtime's derived document is the graph's. */
-export interface ControllerSettings {
-  readonly enabled: boolean;
-  readonly app: string;
-  /** Where a launch goes: into the emulated cart's sync node, or out of the host to real hardware. The launchpad
-   *  package's enum is the closed list; the host leaves it an open string, as it does the platform and core ids. */
-  readonly target: string;
-  /** 0 = the first system. */
-  readonly systemId: number;
-  readonly appConfig: Record<string, unknown>;
-}
-
 /** The control surface this machine uses (Settings > MIDI's scan and the instance menu's controller submenu). HOST
  *  state rather than project state, because port names belong to the machine: a project opened elsewhere would carry
  *  names that do not exist there, and one process holds one device for every project it has open.
@@ -258,19 +218,18 @@ export interface ViewsHost {
   open(id: string, systemId: number): void;
 }
 
-/** The project's control-surface session: what the Launchpad submenu reads and edits. */
-export interface ControllerHost {
-  settings(): ControllerSettings;
-  /** Apply a patch to the project's controller. THROWS when `target` is not a launch target this host knows: the patch
-   *  is written into the live settings, the published document and the next save unread, so a bad value would be a
-   *  controller that launches nowhere - a package's bug, refused loudly rather than dropped. */
-  set(patch: { enabled?: boolean; app?: string; appConfig?: Record<string, unknown>; target?: string }): void;
-  /** The cart's own SYNC setting as last polled, or null when it cannot be read. */
-  cartSync(): string | null;
-  /** What an enabled controller does to the cart's sync mode in the published document, or null when it drives none. */
-  syncOverride(): { driving: boolean } | null;
-  /** Every controller app the product carries, in product order. */
-  apps(): readonly ControllerApp[];
+/** The project's own settings, as a package's UI reads and edits them (docs/modular-graph-phase-f5a-design.md section
+ *  6.4): the sections its packages contribute, by key, and what their project services published. It is how a package
+ *  owns a piece of the project - the Launchpad's submenu edits `controller` through it - without the shell knowing the
+ *  key's shape or which package declared it. */
+export interface ProjectHost {
+  /** The section as its contributor parses it (raw JSON for a key no package contributes). */
+  section<T = Record<string, unknown>>(key: string): T;
+  /** Apply a patch through the contributor's `merge`, mark the project dirty, publish the graph and notify. THROWS when
+   *  the contributor refuses the patch, and does nothing for a section stamped newer than its contributor. */
+  setSection(key: string, patch: Readonly<Record<string, unknown>>): void;
+  /** What a project service published (the controller cart's polled SYNC), or undefined for no such service. */
+  serviceState<T = unknown>(key: string): T | undefined;
 }
 
 /** `config.json`'s control surface: the machine's port pair, which a scan fills and the user's choices edit. */
@@ -292,7 +251,7 @@ export interface HostGroups {
   devices: DevicesHost;
   process: ProcessHost;
   views: ViewsHost;
-  controller: ControllerHost;
+  project: ProjectHost;
   config: ConfigHost;
 }
 

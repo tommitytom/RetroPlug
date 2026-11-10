@@ -23,8 +23,9 @@ import { CONTROLLER_TARGET_VALUES } from "./enums";
 import { CONTROLLER_OUT } from "./ports";
 import { ControllerSession } from "./session";
 import { controllerApp, type ControllerAppRuntime, type ControllerPlaybackModel } from "./apps";
+import { CONTROLLER_SESSION_NODE_TYPE } from "./nodeTypes";
 
-export const CONTROLLER_SESSION_NODE_TYPE = "rp.controller.session";
+export { CONTROLLER_SESSION_NODE_TYPE } from "./nodeTypes";
 
 /** 24 PPQN, the resolution every Arduinoboy-family sync mode counts in. The position the app paints from is derived
  *  from ppq (Math.floor(ppq * 24), the quantity walkTicks derives its ticks from), while the ticks the predictor walks

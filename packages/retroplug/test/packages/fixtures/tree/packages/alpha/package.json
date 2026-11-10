@@ -5,7 +5,10 @@
     "./consoles": "./ts/consoles.ts",
     "./nodes": "./ts/nodes.ts",
     "./appRuntime": "./ts/appRuntime.ts",
-    "./ui": "./ts/ui/index.ts"
+    "./placer": "./ts/placer.ts",
+    "./ui": "./ts/ui/index.ts",
+    "./kind": "./ts/widgetKind.ts",
+    "./widgets": "./ts/widgets.ts"
   },
   "private": true,
   "retroplug": {
@@ -14,6 +17,7 @@
     "ui": "ts/ui/index.ts",
     "protocol": {
       "module": "ts/nodes.ts",
+      "placer": "ts/placer.ts",
       "nodes": [
         {
           "type": "rp.alpha.midi",
@@ -27,18 +31,33 @@
       "roles": {
         "alpha-midi": "rp.alpha.midi"
       },
-      "apps": [
-        {
-          "id": "alpha-app",
-          "module": "ts/appRuntime.ts",
-          "syncOverride": {
-            "node": "rp.alpha.midi",
-            "mode": "midiMap",
-            "listening": "MidiMap",
-            "off": "off"
+      "kinds": {
+        "controllerApps": [
+          {
+            "id": "alpha-app",
+            "module": "ts/appRuntime.ts",
+            "syncOverride": {
+              "node": "rp.alpha.midi",
+              "mode": "midiMap",
+              "listening": "MidiMap",
+              "off": "off"
+            }
           }
-        }
-      ]
+        ]
+      }
+    },
+    "kinds": {
+      "widgets": {
+        "control": "ts/widgetKind.ts",
+        "runtime": {
+          "module": "ts/widgets.ts",
+          "register": "registerWidgets",
+          "type": "WidgetRuntime"
+        },
+        "data": [
+          "mode"
+        ]
+      }
     }
   }
 }

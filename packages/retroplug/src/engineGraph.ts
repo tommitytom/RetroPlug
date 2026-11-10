@@ -24,7 +24,7 @@ const sameShape = (a: HostShape, b: HostShape): boolean =>
 
 export class EngineGraph {
   private shape_: HostShape = { kind: "multi", channels: 2 };
-  private model: PublishedModel = { systems: [], routing: "stereo", midiRouting: null, controller: null };
+  private model: PublishedModel = { systems: [], routing: "stereo", midiRouting: null, models: {} };
   /** The canonical text and slots of the last document that planned; null before the first and after a refusal. */
   private sent: string | null = null;
   /** A refused document carried a re-arm: every document sent carries it until one of them plans. */
@@ -56,7 +56,7 @@ export class EngineGraph {
       systems: model.systems.slice(),
       routing: model.routing,
       midiRouting: model.midiRouting ?? null,
-      controller: model.controller ?? null,
+      models: { ...(model.models ?? {}) },
     };
     return this.send(this.shape_, opts.rearmTap === true);
   }

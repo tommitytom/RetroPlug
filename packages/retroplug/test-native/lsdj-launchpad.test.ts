@@ -16,7 +16,7 @@ import { launchMessage } from "@retroplug/lsdj-launchpad/launchTarget";
 import { PredictedLsdjModel } from "@retroplug/lsdj/playback";
 import { SongSchema } from "@retroplug/lsdj/model";
 import { LsdjProbe, fmtSample, type ProbeProject } from "./lsdjPlaybackProbe";
-import type { GraphController } from "../src/graph/controller";
+import type { GraphController } from "@retroplug/launchpad/placer";
 
 // 130 rows, every one a single-phrase chain, so every row is playable and 96 ticks long. Reaching past
 // row 127 is the point: that is where the wire protocol switches to MIDI channel 2. All rows share one

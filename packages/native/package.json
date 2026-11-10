@@ -8,11 +8,14 @@
     "@retroplug/dsp": "workspace:*",
     "@retroplug/graph-runtime": "workspace:*",
     "@retroplug/host-io": "workspace:*",
-    "@retroplug/launchpad": "workspace:*",
     "@retroplug/system": "workspace:*"
   },
   "devDependencies": {
+    "@retroplug/device-io": "workspace:*",
+    "@retroplug/devtest": "workspace:*",
+    "@retroplug/launchpad": "workspace:*",
     "@retroplug/mgb": "workspace:*",
+    "@retroplug/n8": "workspace:*",
     "@retroplug/testing": "workspace:*"
   },
   "retroplug": {

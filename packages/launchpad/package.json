@@ -6,7 +6,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "Novation Launchpad support: the protocol (encode, decode, diff), the controller session and its app runtime registry, the controllerApps contract, the port scan and the profiles, and the rp.controller.session script node (span label 22).",
+  "description": "Novation Launchpad support: the protocol (encode, decode, diff), the controller session and its app runtime registry, the controllerApps contribution kind, the port scan and the profiles, the rp.controller.session script node, and the project's `controller` section with its control-plane service and the graph placer that places them.",
   "exports": {
     ".": "./ts/index.ts",
     "./apps": "./ts/apps/index.ts",
@@ -27,7 +27,12 @@
     "./launchTarget": "./ts/launchTarget.ts",
     "./client": "./ts/client.ts",
     "./ui": "./ts/ui/index.ts",
-    "./cli": "./ts/cli/index.ts"
+    "./cli": "./ts/cli/index.ts",
+    "./app": "./ts/control/index.ts",
+    "./kind": "./ts/control/kind.ts",
+    "./placer": "./ts/control/placer.ts",
+    "./projectSection": "./ts/control/projectSection.ts",
+    "./projectService": "./ts/control/projectService.ts"
   },
   "dependencies": {
     "@retroplug/core": "workspace:*",
@@ -40,9 +45,11 @@
     "typescript": "^7.0.2"
   },
   "retroplug": {
+    "app": "ts/control/index.ts",
     "ui": "ts/ui/index.ts",
     "protocol": {
       "module": "ts/nodes.ts",
+      "placer": "ts/control/placer.ts",
       "nodes": [
         {
           "type": "rp.controller.session",
@@ -60,6 +67,19 @@
         "rpc": { "header": "launchpad/desktop/LaunchpadRpc.hpp", "register": "rp::launchpad::registerRpc" }
       }
     ],
-    "cli": "ts/cli/index.ts"
+    "cli": "ts/cli/index.ts",
+    "kinds": {
+      "controllerApps": {
+        "control": "ts/control/kind.ts",
+        "runtime": {
+          "module": "ts/apps/index.ts",
+          "register": "registerControllerApps",
+          "type": "ControllerAppRuntime"
+        },
+        "data": [
+          "syncOverride"
+        ]
+      }
+    }
   }
 }

@@ -4,12 +4,12 @@
 // protocol node (docs/modular-graph-phase-b3b-design.md section 4), none until set, its core config and gain, its
 // node's knobs (docs/modular-graph-phase-c2-design.md section 5), none until set (so its core keeps the settings it was
 // built with, while the params it does not name start at their defaults at its first block),
-// and the project's MIDI routing and controller, none until set (so no MIDI is routed to any system). It publishes
-// after each call but setParam, which sets a param live. Use one per process, directGraph(): two publishers with
-// separate EngineGraphs would each drop the other's systems from the document. Sharing a session's EngineGraph (so
-// the session's render calls render what this places) does not merge the two models either: each publish replaces
-// the graph's model with the publisher's own systems. It is safe only while the session's stores place nothing, the
-// two publishing in turn, as test-native/parity/render-blocks.test.ts and
+// and the project's MIDI routing and each package's placer model, none until set (so no MIDI is routed to a system and
+// no package places a node). It publishes after each call but setParam, which sets a param live. Use one per process,
+// directGraph(): two publishers with separate EngineGraphs would each drop the other's systems from the document.
+// Sharing a session's EngineGraph (so the session's render calls render what this places) does not merge the two models
+// either: each publish replaces the graph's model with the publisher's own systems. It is safe only while the
+// session's stores place nothing, the two publishing in turn, as test-native/parity/render-blocks.test.ts and
 // packages/lsdj/examples/analyze-lsdj-sync.ts do.
 import { createRealBackend } from "../realBackend";
 import { MidiRouting } from "@retroplug/core/midiRouting";
@@ -17,10 +17,13 @@ import type { AudioRouting } from "../settingsEnums";
 import type { RoleInstance } from "@retroplug/core/systemRoles";
 import type { ConstructSpec, EmulatorBackend, HostBackend } from "../backend";
 import { EngineGraph } from "../engineGraph";
-import { parseAppConfig } from "../controller/registry";
 import { capabilitiesOf, exportModeOf, linkGroupOf, systemKnobs, systemNodeId, type GraphSystem } from "./buildGraph";
 import { bootSystem, ResourcePool, systemHandles, type BootedSystem } from "./systemResources";
-import type { GraphController } from "./controller";
+import { PLACERS } from "../generated/placers";
+// The product's registrations, for their load-time side effect: a package's placer normalizes its model through the
+// registry its contribution kind fills, and this publisher parses no project, so nothing else here would fill it. A
+// module that reads a kind-filled registry imports the generated registry (projectConfig.ts states the rule).
+import "../generated/packages";
 import { protocolPipeline, type LeftOutRole } from "./protocolNodes";
 
 export type DirectBackend = Pick<EmulatorBackend, "putResource" | "releaseResource" | "setGraph" | "setParam"> &
@@ -35,7 +38,8 @@ export class DirectGraph {
   private systems: GraphSystem[] = [];
   private routing: AudioRouting = "stereo";
   private midiRouting: MidiRouting | null = null;
-  private controller: GraphController | null = null;
+  /** The model each placer places, by key: none until set, so nothing of any package's is placed. */
+  private models: Record<string, unknown> = {};
   /** The handles on the resources each placed system's node boots from (graph/systemResources.ts). */
   private readonly pool: ResourcePool;
 
@@ -108,12 +112,19 @@ export class DirectGraph {
     return this.change(() => (this.midiRouting = mode), false);
   }
 
-  /** The control-surface session, or null for none: its app config is parsed by the app's schema here, as the
-   *  project's is, and buildGraph resolves its target and forces its cart's sync mode as it does a project's. False
-   *  when the document did not plan. */
-  setController(controller: GraphController | null): boolean {
-    const parsed = controller && { ...controller, appConfig: parseAppConfig(controller.app, controller.appConfig) };
-    return this.change(() => (this.controller = parsed), false);
+  /** The model the product's placer for `key` places (docs/modular-graph-phase-f5a-design.md section 6.3), or null for
+   *  none: its app config is parsed by the package's own `normalize` here, as the project's publisher does, and the
+   *  placer resolves its target and forces its cart's sync mode as it does a project's. A key no listed package places
+   *  is still stored and published, and places nothing. False when the document did not plan. */
+  setModel(key: string, model: unknown | null): boolean {
+    const normalize = PLACERS.find((entry) => entry.placer.key === key)?.placer.normalize;
+    const parsed = model !== null && model !== undefined && normalize ? normalize(model) : model;
+    return this.change(() => {
+      const models = { ...this.models };
+      if (parsed === null || parsed === undefined) delete models[key];
+      else models[key] = parsed;
+      this.models = models;
+    }, false);
   }
 
   /** Edit system `id`'s core config as the stores' core-config role spells it (`sameboy` or `mesen`,
@@ -173,12 +184,12 @@ export class DirectGraph {
     const systems = this.systems.slice();
     const routing = this.routing;
     const midiRouting = this.midiRouting;
-    const controller = this.controller;
+    const models = this.models;
     const rollback = (): void => {
       this.systems = systems;
       this.routing = routing;
       this.midiRouting = midiRouting;
-      this.controller = controller;
+      this.models = models;
       for (const id of put) {
         try {
           this.pool.drop(id);
@@ -236,8 +247,8 @@ export class DirectGraph {
   }
 
   private publish(rearmTap: boolean): boolean {
-    const { systems, routing, midiRouting, controller } = this;
-    return this.graph.publish({ systems, routing, midiRouting, controller }, { rearmTap });
+    const { systems, routing, midiRouting, models } = this;
+    return this.graph.publish({ systems, routing, midiRouting, models }, { rearmTap });
   }
 }
 

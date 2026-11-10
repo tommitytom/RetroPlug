@@ -21,7 +21,9 @@ test("v2→v3: integer project settings migrate to their string values", () => {
     midiRouting: "fourChannelsPerInstance",
     audioRouting: "onePerInstance",
     zoom: 4, // a magnitude, not an enum — untouched
-    controller: DEFAULT_SETTINGS.controller, // added later, and additive: defaulted in, no migration step
+    // Added later, and additive: defaulted in, no migration step. A section lives under `sections` in the parsed model
+    // and at the top level of the file (the expectation above is the parsed one).
+    sections: DEFAULT_SETTINGS.sections,
   });
 });
 

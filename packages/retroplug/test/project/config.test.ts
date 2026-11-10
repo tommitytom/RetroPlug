@@ -14,10 +14,16 @@ import {
   serializeConfig,
   parseConfig,
   toAbsolute,
+  projectSection,
 } from "../../src/projectConfig";
+import type { ControllerSection } from "@retroplug/launchpad/projectSection";
 import type { SystemEntry } from "../../src/systemsList";
 
 const identity = (p: string) => p;
+
+/** The controller section of a settings object, as the pack's own type reads it. */
+const sectionOf = (settings: Parameters<typeof projectSection>[0]): ControllerSection =>
+  projectSection<ControllerSection>(settings, "controller");
 
 function sys(id: number, romPath: string, savPath = "", savSuffix = 0, embeddedRom = ""): SystemEntry {
   return { id, platform: "gb", core: "sameboy", romPath, savPath, savSuffix, embeddedRom, battery: false, settings: { gainDb: 0, reloadOnRomChange: false }, roles: [], romName: "a", resources: { rom: 1 } };
@@ -98,16 +104,24 @@ test("serializeConfig keeps an out-of-base asset absolute (no ../ chains)", () =
 test("the derived song table never reaches a saved project", () => {
   // A `.rplg` holds the user's CHOICES; a thousand numbers re-derivable from the cart's own battery would be derived
   // data in a config file, and stale the moment the song changed.
-  const settings = { ...DEFAULT_SETTINGS, controller: { enabled: true, app: "lsdj-midimap", target: "system" as const, systemId: 0, appConfig: { quantise: "bar" } } };
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    sections: {
+      ...DEFAULT_SETTINGS.sections,
+      controller: { enabled: true, app: "lsdj-midimap", target: "system" as const, systemId: 0, appConfig: { quantise: "bar" } },
+    },
+  };
   const json = serializeConfig(buildConfig(settings, []), "", identity);
 
   expect(json.includes("songRowTicks")).toBe(false);
   expect(json.includes("launchpad")).toBe(false);
-  expect(parseConfig(json).settings.controller.enabled).toBe(true); // but the choice itself persists
-  expect(parseConfig(json).settings.controller.appConfig).toEqual({ quantise: "bar" });
+  // But the choice itself persists, under its key at the top level of `settings`.
+  expect(JSON.parse(json).settings.controller).toEqual({ enabled: true, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: { quantise: "bar" } });
+  expect(sectionOf(parseConfig(json).settings).enabled).toBe(true);
+  expect(sectionOf(parseConfig(json).settings).appConfig).toEqual({ quantise: "bar" });
 });
 
 test("an older project with no controller key loads with it defaulted off, needing no migration", () => {
   const raw = JSON.stringify({ schemaVersion: K_PROJECT, settings: { layout: "auto", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0 }, systems: [] });
-  expect(parseConfig(raw).settings.controller).toEqual({ enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} });
+  expect(sectionOf(parseConfig(raw).settings)).toEqual({ enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} });
 });

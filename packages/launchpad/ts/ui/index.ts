@@ -13,7 +13,8 @@
 // The rows straddle two scopes on purpose, because setting the feature up needs both: the ports + Connect are HOST
 // state (persisted in config.json's controlSurface, shared by every project), while the app, its own knobs and Enable
 // are PROJECT state (persisted in the .rplg, since which cart a surface drives is a property of the project). The shell
-// hands both scopes in as the host's `config` and `controller` groups.
+// hands both scopes in as the host's `config` and `project` groups; the `controller` section this pack contributes is
+// what `project` reads and patches.
 //
 // The app's rows are built from the registry: the project's app id picks the contribution, and the knobs are the ones
 // ITS module declares (menu), defaulted and bounded by ITS schema. So a second app is a package's change, not a
@@ -23,7 +24,10 @@ import {
   configRowCycler, defineUi, type MenuBuilder, type UiHost, type UiService,
 } from "@retroplug/ui/contribution";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../enums";
-import type { ControllerApp } from "@retroplug/core/host";
+import { CONTROLLER_SECTION_KEY, type ControllerSection } from "../control/projectSection";
+import { controllerApps, type ControllerAppContribution } from "../registry";
+import { controllerSyncOverride } from "../control/placer";
+import type { ControllerServiceState } from "../control/projectService";
 import {
   applyLaunchpadScan, cancelLaunchpadScan, connectLaunchpad, forgetLaunchpad, getLaunchpadConfig,
   getLaunchpadScan, hasLaunchpad, launchpadDetected, launchpadScanBusy, looksLikeLaunchpad, pollControllerRole,
@@ -85,7 +89,7 @@ function launchpadPortNames(ports: string[], selected: string): { names: string[
  *  `defaults` is the schema's default per knob, the fallback readConfigRow takes for a value of the wrong type. */
 function controllerAppRows(
   host: UiHost,
-  app: ControllerApp | undefined,
+  app: ControllerAppContribution | undefined,
   config: Record<string, unknown>,
 ): MenuItem[] {
   if (!app || !app.menu) return [];
@@ -93,25 +97,28 @@ function controllerAppRows(
   const defaults = app.config.parse({}); // the schema is the source of a knob's default, as it is of its bounds
   return app.menu.map((field) =>
     configRowCycler(`lp-app-${field.key}`, field, running[field.key], defaults[field.key], (value) =>
-      host.controller.set({ appConfig: { [field.key]: value } })),
+      host.project.setSection(CONTROLLER_SECTION_KEY, { appConfig: { [field.key]: value } })),
   );
 }
 
 function launchpadMenuChildren(host: UiHost, cfg: LaunchpadConfig): MenuItem[] {
-  const controller = host.controller.settings();
+  const controller = host.project.section<ControllerSection>(CONTROLLER_SECTION_KEY);
   const store = host.config;
   const inp = launchpadPortNames(cfg.inputs, cfg.selectedInput);
   const out = launchpadPortNames(cfg.outputs, cfg.selectedOutput);
   const portAt = (ports: string[], n: number, current: string) => (n === 0 ? "" : ports[n - 1] ?? current);
   const rpc = host.devices.rpc;
 
-  // Polled on the song-watch timer (refreshControllerSong), so reading it here costs a field access
+  // Polled on the song-watch timer (the controller's project service), so reading it here costs a field access
   // rather than a 128 KB battery copy per menu render.
-  const cartSync = controller.enabled ? host.controller.cartSync() : null;
-  // What the published document will have the cart's sync node run, computed by the SAME helper buildGraph uses - so
-  // the row cannot describe something other than what is happening.
-  const syncOverride = controller.enabled ? host.controller.syncOverride() : null;
-  const apps = host.controller.apps();
+  const service = host.project.serviceState<ControllerServiceState>(CONTROLLER_SECTION_KEY);
+  const cartSync = controller.enabled ? (service?.cartSync ?? null) : null;
+  // What the published document will have the cart's sync node run, computed by the SAME helper the pack's placer uses
+  // - so the row cannot describe something other than what is happening.
+  const syncOverride = controller.enabled
+    ? controllerSyncOverride(host.systems.view(), { ...controller, cartSync })
+    : null;
+  const apps = controllerApps.list();
   const appIdx = Math.max(0, apps.findIndex((a) => a.id === controller.app));
   const app = apps.find((a) => a.id === controller.app);
 
@@ -150,15 +157,15 @@ function launchpadMenuChildren(host: UiHost, cfg: LaunchpadConfig): MenuItem[] {
     separator("lp-sep-app"),
     // Project scope from here down: these ride the .rplg, and each edit publishes the graph.
     cycler("lp-enabled", "Use in Project", ["Off", "On"], controller.enabled ? 1 : 0, (n) =>
-      host.controller.set({ enabled: n === 1 })),
+      host.project.setSection(CONTROLLER_SECTION_KEY, { enabled: n === 1 })),
     cycler("lp-app", "App", apps.map((a) => a.label), appIdx, (n) =>
-      host.controller.set({ app: apps[n].id, appConfig: {} })),
+      host.project.setSection(CONTROLLER_SECTION_KEY, { app: apps[n].id, appConfig: {} })),
     ...controllerAppRows(host, app, controller.appConfig),
     // Where launches go. "Emulated Cart" hands them to the tracker's own sync role in the same block; "MIDI Out" sends
     // them out of the host, which is how a real Game Boy behind an Arduinoboy is driven.
     cycler("lp-target", "Launches To", CONTROLLER_TARGET_VALUES.map((t) => CONTROLLER_TARGET_LABELS[t]),
       Math.max(0, (CONTROLLER_TARGET_VALUES as readonly string[]).indexOf(controller.target)), (n) =>
-        host.controller.set({ target: CONTROLLER_TARGET_VALUES[n] })),
+        host.project.setSection(CONTROLLER_SECTION_KEY, { target: CONTROLLER_TARGET_VALUES[n] })),
   ];
 }
 
@@ -264,7 +271,7 @@ function pollLaunchpad(host: UiHost): boolean {
   }
   // And whether the open project still runs the controller: when it stops, the device is let go (see
   // pollControllerRole) rather than left locked in Programmer mode with nothing driving it.
-  pollControllerRole(host.controller.settings().enabled, rpc);
+  pollControllerRole(host.project.section<ControllerSection>(CONTROLLER_SECTION_KEY).enabled, rpc);
   return repaint;
 }
 

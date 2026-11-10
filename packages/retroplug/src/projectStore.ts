@@ -17,20 +17,20 @@ import type { ControlPlaneBackend, GraphError, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
 import { EngineGraph } from "./engineGraph";
 import type { SystemEntry } from "./systemsList";
-import { ROLE_HEADER_LEN, type RoleInstance, type RoleRegistry } from "@retroplug/core/systemRoles";
+import type { RoleRegistry } from "@retroplug/core/systemRoles";
 import type { RecentStore } from "./recentStore";
 import { workingSongReady, songLoadByNameWouldDiscard, songLoadWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker/liveSav";
 import { resolveSongCatalog, resolveTracker } from "./trackerRegistry";
-import type { GraphController } from "./graph/controller";
-import { parseAppConfig } from "./controller/registry";
-import type { ControllerAnchor, PlaybackReader, TrackerPlayback } from "@retroplug/tracker/trackerPlayback";
+import type { ProjectService, ProjectServiceContext } from "@retroplug/tracker/projectService";
+import { PROJECT_SERVICES } from "./generated/packages";
 import { basename, dirname, stem } from "./pathUtil";
 import { siblingRplgPath, resolveSavPath } from "./savPaths";
 import {
   type ProjectConfig,
   type ProjectSettings,
-  type ControllerSettings,
   DEFAULT_SETTINGS,
+  projectSectionOf,
+  assertSectionKey,
   K_PROJECT,
   VersionCheck,
   checkVersion,
@@ -39,6 +39,9 @@ import {
   serializeConfig,
   parseConfig,
   toAbsolute,
+  projectSection,
+  defaultSections,
+  readSectionVersion,
 } from "./projectConfig";
 import { MIDI_ROUTING_VALUES, MidiRouting } from "@retroplug/core/midiRouting";
 import { type SystemLayout, type AudioRouting, LAYOUT_VALUES, AUDIO_ROUTING_VALUES } from "./settingsEnums";
@@ -91,10 +94,9 @@ export interface SongRequest {
   confirmed: boolean;
 }
 
-/** What the controller's poll and its timing table read of a system: the id its battery and WRAM are read by, the ROM
- *  its reader is built from, and the roles that name its tracker. Both of the store's shapes (a SystemEntry and a
- *  SystemView) satisfy it, so a caller passes whichever it already has. */
-type ControllerSystem = { readonly id: number; readonly romPath: string; readonly roles: RoleInstance[] };
+/** A JSON object, which is what a section's value always is. */
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
 
 /** What `settleSong` did with the parked request this time. */
 export type SongSettle =
@@ -126,15 +128,15 @@ export class ProjectStore {
   private pendingLoad: { cfg: ProjectConfig; path: string; blobs: Map<string, Uint8Array> } | null = null;
   private songRequest: (SongRequest & { ticks: number; asked: boolean }) | null = null; // see requestSong / settleSong
   private recentPending = false; // the open project's Recent row is owed, once its cart can say what it holds (see syncRecent)
-  private controllerSongSig = 0; // last seen live-song signature (see refreshControllerSong)
-  private controllerSync: string | null = null; // the controller cart's SYNC setting at the last poll
-  private controllerAnchor: ControllerAnchor | null = null; // where the cart last started on its own
-  private controllerWasPlaying = false; // edge detector for the above
-  private controllerReaderPath = ""; // the ROM path the cached reader was built from
-  private controllerReaderCache: PlaybackReader | null = null;
+  /** One instance per contributed service FACTORY, for this store's whole life: a service's state is its store's, and a
+   *  plugin host's two instances share nothing. A factory's key is its model's and its section's (`controller`). */
+  private readonly services: readonly { key: string; service: ProjectService }[];
   private systemsObservers: Array<() => void> = [];
   private onChangeCb: () => void = () => {};
   private holdGraph = false; // a load's adopts: the graph is published once they are all built
+  /** Section keys whose stamped-newer refusal this session already warned about: one warning per key, not one per
+   *  patch, as a root's warnStampedNewer warns once at load. */
+  private refusedSections = new Set<string>();
 
   /** The engine's graph this project publishes (docs/modular-graph-phase-b2-design.md section 2.2). Share it
    *  with anything else that publishes to the same engine: the render calls' shapes, and a DirectGraph only
@@ -159,6 +161,9 @@ export class ProjectStore {
     );
     this.systems.setOnGraphChange((rearmTap) => this.publishGraph(rearmTap));
     this.systems.setOnLiveParam((systems) => this.graph.systemsMovedLive(systems));
+    // Built once, here: a service's poll and model read the systems and the backend, never a file, so nothing
+    // about them is per-project the way the settings are. `newProject` leaves them standing, as it leaves their state.
+    this.services = PROJECT_SERVICES.map(({ service: factory }) => ({ key: factory.key, service: factory.create() }));
   }
 
   // Publish the engine's graph for the systems, the audio and MIDI routing and the controller as they stand
@@ -174,46 +179,104 @@ export class ProjectStore {
         systems: this.systems.graphSystems(),
         routing: this.projectSettings.audioRouting,
         midiRouting: this.projectSettings.midiRouting,
-        controller: this.controllerModel(),
+        models: this.graphModels(),
       },
       { rearmTap },
     );
   }
 
-  /** The controller as the graph places it, its app config parsed by the app's schema and the derived song-timing
-   *  table the predictor runs on, or null with no controller enabled.
-   *
-   *  The table is built HERE rather than in the node because decoding a battery is a control-plane job - the
-   *  audio thread has neither the bytes nor any business running the sav codec. It is rebuilt on every publish
-   *  and is never persisted. The app config is parsed here for the same reason: zod is loaded on this side, and
-   *  the node imports only the apps' runtime.
-   *
-   *  KNOWN STALENESS: edits the player makes inside LSDj itself publish nothing, so the table lags the cart until
-   *  refreshControllerSong notices the song moved (it polls), or something else publishes. The LEDs then describe
-   *  the song as it was, which is the predictor's standing limitation (docs/launchpad-plan.md risk 5) rather than
-   *  a new one. */
-  private controllerModel(): GraphController | null {
-    const controller = this.projectSettings.controller;
-    if (!controller?.enabled) return null;
-    const views = this.systems.systems();
-    const systemId = controller.systemId > 0 ? controller.systemId : (views[0]?.id ?? 0);
-    const sys = views.find((s) => s.id === systemId);
-    // The battery is read only when a tracker actually predicts rows from it: a read is an RPC, and a system whose
-    // roles run no playback has nothing to say from it.
-    const playback = sys ? this.controllerPlayback(sys) : null;
-    const sram = playback && systemId > 0 ? this.systems.readSram(systemId) : null;
-    const table = playback ? (playback.rowTicks(sram) ?? null) : null;
-    // No readable battery is not a failure: the app still launches rows, it just cannot shade the ones that
-    // hold chains. An empty table reads as "no content anywhere".
+  /** The services' models, by key: what the graph placers place (docs/modular-graph-phase-f5a-design.md section 6.3).
+   *  A service with no model of its own contributes none, so a product whose packages place nothing publishes an empty
+   *  record and no node of theirs appears. */
+  private graphModels(): Record<string, unknown> {
+    const models: Record<string, unknown> = {};
+    for (const { key, service } of this.services) {
+      if (!service.graphModel) continue;
+      const model = service.graphModel(this.serviceContext(key));
+      if (model !== null && model !== undefined) models[key] = model;
+    }
+    return models;
+  }
+
+  /** What a service instance may read of this store: its own section, the systems, and the reads a poll makes (the
+   *  battery, the work RAM, a ROM's header, the tracker integration's playback hook). Nothing more: a service asks
+   *  for a member here rather than reading the store. */
+  private serviceContext(key: string): ProjectServiceContext {
     return {
-      app: controller.app,
-      target: controller.target,
-      systemId: controller.systemId,
-      appConfig: parseAppConfig(controller.app, controller.appConfig),
-      songRowTicks: table ?? [],
-      anchor: this.controllerAnchor,
-      cartSync: this.controllerSync,
+      section: <T>() => this.section<T>(key),
+      // The store's own entries, not the UI's view: the view stats every ROM to fill `missing`, and a poll and a model
+      // read this list at every publish.
+      systems: () => this.systems.systems().map((e) => ({ id: e.id, romPath: e.romPath, roles: e.roles ?? [] })),
+      readSram: (id) => this.backend.readSram(id),
+      readRam: (id) => this.backend.readRam(id),
+      readFilePrefix: (path, bytes) => this.backend.readFilePrefix(path, bytes),
+      playbackOf: (roles) => resolveTracker(roles)?.playback ?? null,
     };
+  }
+
+  /** One poll of every contributed service, on the cadence the UI's song watch calls it at (every ~30 frames,
+   *  editor-driven). True = something the graph reads moved, so the graph is re-published and the observers told.
+   *  Deliberately does NOT mark the project dirty: what a service notices lives in the hardware, not the .rplg. */
+  pollServices(): boolean {
+    let moved = false;
+    for (const { key, service } of this.services) {
+      if (service.poll?.(this.serviceContext(key)) === true) moved = true;
+    }
+    if (!moved) return false;
+    this.publishGraph(false);
+    this.notifySystemsChange();
+    return true;
+  }
+
+  /** What a service published (the controller cart's polled SYNC and its start anchor), or undefined for no such
+   *  service - what `host.project.serviceState` answers a UI. */
+  serviceState<T = unknown>(key: string): T | undefined {
+    const entry = this.services.find((candidate) => candidate.key === key);
+    if (!entry?.service.state) return undefined;
+    return entry.service.state(this.serviceContext(key)) as T;
+  }
+
+  /** A section of the project's settings, as its contributor parses it (raw JSON for a key no package contributes).
+   *  A key that is not a section - one of the shell's own settings, or `__proto__` - is refused, not answered
+   *  undefined. */
+  section<T = unknown>(key: string): T {
+    assertSectionKey(key);
+    return projectSection<T>(this.projectSettings, key);
+  }
+
+  /** Apply a patch to a section through its contributor's `merge`, then mark the project dirty, publish the graph and
+   *  notify: a section's values are what the graph's placers place (the controller node is placed from this one at each
+   *  publish), so a change that was never published would leave the audio thread running the previous session. A patch
+   *  the contributor refuses THROWS, nothing written. A section stamped newer than its contributor is left alone, with
+   *  one warning naming the key and both versions: this build must not rewrite what it cannot read. */
+  setSection(key: string, patch: Readonly<Record<string, unknown>>): void {
+    assertSectionKey(key);
+    const contributor = projectSectionOf(key);
+    const current = this.section<Record<string, unknown>>(key);
+    const version = contributor?.version;
+    // A section's stamp is its own rule (unstamped reads as version 1), not a root's.
+    const stamped = version !== undefined && isObject(current) ? readSectionVersion(current) : 0;
+    if (version !== undefined && stamped > version) {
+      if (!this.refusedSections.has(key)) {
+        this.refusedSections.add(key);
+        console.warn(
+          `[project] the section ${key} is stamped schemaVersion ${stamped}, this build reads ${version}: ` +
+            "keeping it as it is, so the change was not applied.",
+        );
+      }
+      return;
+    }
+    // A contributor's schema parses the patched block, so `section()` answers the same shape a reload would: an
+    // unparsed shallow merge would leave a hand-patched value in memory only.
+    const next = contributor
+      ? contributor.merge
+        ? contributor.merge(current, patch)
+        : contributor.schema.parse({ ...(isObject(current) ? current : {}), ...patch })
+      : { ...(isObject(current) ? current : {}), ...patch };
+    this.projectSettings = { ...this.projectSettings, sections: { ...this.projectSettings.sections, [key]: next } };
+    this.markDirty();
+    this.publishGraph(false);
+    this.notifySystemsChange();
   }
 
   /** Add an observer of the systems structure, called whenever it changes (a user edit, or a load / new; the quiet
@@ -249,7 +312,7 @@ export class ProjectStore {
   }
 
   settings(): ProjectSettings {
-    return { ...this.projectSettings };
+    return { ...this.projectSettings, sections: { ...this.projectSettings.sections } };
   }
   currentPath(): string {
     return this.path;
@@ -470,95 +533,6 @@ export class ProjectStore {
     return "dropped";
   }
 
-  /** Notice an edit the player made INSIDE the tracker and re-publish the graph, so a control surface's song
-   *  grid follows the song.
-   *
-   *  The controller's row-timing table is derived at publish time and reaches the audio thread as the controller
-   *  node's settings, which means it only moves when something publishes. Nothing did: adding a chain to a song row
-   *  left the grid showing the song as it was until the feature was toggled off and on. This is the
-   *  missing signal, and it is polled rather than pushed because a cart being edited on its own screen
-   *  emits nothing. Cheap enough to sit on the same timer as syncRecent: a signature over ~3 KB of
-   *  the live battery, with the sav decode happening only when it moves.
-   *
-   *  Deliberately does NOT mark the project dirty - the song lives in the cart's battery, not the .rplg. */
-  refreshControllerSong(): boolean {
-    const controller = this.projectSettings.controller;
-    if (!controller.enabled) return false;
-    const id = controller.systemId > 0 ? controller.systemId : (this.systems.view()[0]?.id ?? 0);
-    if (id <= 0) return false;
-    // The cart's own playback answers it; a system whose integration has none reads "no sync mode, no signature",
-    // which is what the poll did before for anything that was not an LSDj cart (edge E3).
-    const sys = this.systems.view().find((s) => s.id === id);
-    const playback = this.controllerPlayback(sys);
-    const sram = this.backend.readSram(id);
-    // One read, two answers. The sync mode is recorded EVERY poll (the player can change it without
-    // touching the song), while the re-push is gated on the song actually having moved.
-    this.controllerSync = playback?.syncMode(sram) ?? null;
-    const anchored = this.sampleControllerAnchor(sys, playback);
-    const sig = playback?.songSignature(sram) ?? 0;
-    const songMoved = sig !== this.controllerSongSig;
-    this.controllerSongSig = sig;
-    if (!songMoved && !anchored) return false;
-    this.publishGraph(false);
-    this.notifySystemsChange();
-    return true;
-  }
-
-  /** Watch for the cart starting playback on its OWN - the player pressing START on LSDj's song screen -
-   *  and capture where it actually started, so the predictor can be corrected.
-   *
-   *  Only the not-playing -> playing EDGE, which is what makes this affordable on the structure the graph
-   *  already carries: a start is rare and discrete, where streaming the position every block would be M6. Returns
-   *  whether a new anchor was captured. Emulated carts only - a real Game Boy has no WRAM to read, and
-   *  dead reckoning stays all there is. */
-  private sampleControllerAnchor(sys: ControllerSystem | undefined, playback: TrackerPlayback | null): boolean {
-    if (!sys) return false;
-    const reader = this.controllerReader(sys, playback);
-    if (!reader || !playback) return false;
-    const wram = this.backend.readRam(sys.id);
-    if (!wram) return false;
-    const state = reader.read(wram);
-    const playing = playback.anchor.playing(state);
-    const started = playing && !this.controllerWasPlaying;
-    this.controllerWasPlaying = playing;
-    if (!started) return false;
-    this.controllerAnchor = { rows: playback.anchor.rows(state), seq: (this.controllerAnchor?.seq ?? 0) + 1 };
-    return true;
-  }
-
-  /** The playback of the tracker integration a system's roles name, or null for no such system, or one whose roles
-   *  name no tracker (a non-tracker cart, an mGB). The poll, the controller's timing table and the anchor all read
-   *  through it, so none of them names a cart. */
-  private controllerPlayback(sys: ControllerSystem | undefined): TrackerPlayback | null {
-    return sys ? (resolveTracker(sys.roles)?.playback ?? null) : null;
-  }
-
-  /** The WRAM reader for the controller's cart, built once per ROM. Null for a system whose integration has no
-   *  playback, an embedded ROM (nothing to read a header from), or a build its playback has no reader for. */
-  private controllerReader(sys: ControllerSystem | undefined, playback: TrackerPlayback | null): PlaybackReader | null {
-    const romPath = sys?.romPath ?? "";
-    if (!playback || !romPath) return null;
-    if (this.controllerReaderPath !== romPath) {
-      this.controllerReaderPath = romPath;
-      const header = this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN);
-      this.controllerReaderCache = header ? playback.anchor.reader(header) : null;
-    }
-    return this.controllerReaderCache;
-  }
-
-  /** The latest start-edge anchor, or null when the cart has not started on its own since load. Read by
-   *  the publish, which hands it to the controller node. */
-  controllerStartAnchor(): ControllerAnchor | null {
-    return this.controllerAnchor;
-  }
-
-  /** The controller cart's SYNC setting as of the last poll, or null when it is not a readable LSDj
-   *  battery. Anything other than "MidiMap" means row launches are being silently ignored - the cart goes
-   *  on playing and stepping, so the only symptom is that the pads stop doing anything. */
-  controllerCartSync(): string | null {
-    return this.controllerSync;
-  }
-
   setLayout(v: SystemLayout): boolean {
     return this.setEnumSetting("layout", v);
   }
@@ -582,28 +556,10 @@ export class ProjectStore {
     return true;
   }
 
-  /** Edit the control-surface session (which app runs, where its launches go, the app's own knobs).
-   *
-   *  Like setMidiRouting, and unlike the other setting writers, this publishes the GRAPH, not just the title bar:
-   *  the controller node is placed from these settings at each publish, so a change that was never published would
-   *  leave the audio thread running the previous app.
-   *  `appConfig` merges one knob at a time into the app's own config, so a menu row can set one knob without knowing
-   *  the others; a DIFFERENT app starts from what the patch gives it, because the old app's keys mean nothing to it
-   *  and merging kept them in the .rplg forever. */
-  setController(patch: Partial<ControllerSettings>): void {
-    const current = this.projectSettings.controller;
-    const switching = patch.app !== undefined && patch.app !== current.app;
-    const appConfig = switching ? { ...(patch.appConfig ?? {}) } : { ...current.appConfig, ...(patch.appConfig ?? {}) };
-    this.projectSettings = { ...this.projectSettings, controller: { ...current, ...patch, appConfig } };
-    this.markDirty();
-    this.publishGraph(false);
-    this.notifySystemsChange();
-  }
-
   /** Empty project: tear down systems, reset settings/path, mark clean. */
   newProject(): void {
     this.systems.clear();
-    this.projectSettings = { ...DEFAULT_SETTINGS };
+    this.projectSettings = { ...DEFAULT_SETTINGS, sections: defaultSections() };
     this.publishRouting(); // place nothing, at the default routing
     this.path = "";
     this.projectName = "";

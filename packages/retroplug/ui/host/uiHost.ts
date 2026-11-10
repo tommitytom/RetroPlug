@@ -1,19 +1,16 @@
 // The UI surface's host (docs/modular-graph-phase-f4b-design.md section 3.2): built once, in App.tsx, over the store
 // graph, and the way a cart's or a console's UI code reaches the shell. It offers the ten groups a UI has - files, png,
-// systems, songs, liveSongs, dialogs, devices, views, controller, config - and nothing a UI cannot do: no kits (the UI
+// systems, songs, liveSongs, dialogs, devices, views, project, config - and nothing a UI cannot do: no kits (the UI
 // composes no audio driver) and no process (the UI does not own the process).
 import type { UiHost } from "@retroplug/ui/contribution";
 import type { AppStores } from "../../src/appStores";
 import type { ControlPlaneBackend } from "../../src/backend";
 import type { SystemsStore } from "../../src/systemsStore";
-import type { Call, DevicesHost, Host, SystemInfo, SystemsHost, ViewsHost } from "@retroplug/core/host";
-import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "@retroplug/launchpad/enums";
+import type { Call, DevicesHost, Host, ProjectHost, SystemInfo, SystemsHost, ViewsHost } from "@retroplug/core/host";
 import { roleConfig } from "@retroplug/core/systemRoles";
 import { filesPngHost } from "../../src/hostGroups";
 import { resolveSavPath } from "../../src/savPaths";
 import { cartNodeId, drivenCartSystem, systemNodeId } from "../../src/graph/buildGraph";
-import { controllerSyncOverride } from "../../src/graph/controller";
-import { controllerApps } from "../../src/controller/registry";
 import { mutateLiveSav } from "../../src/tracker/liveSav";
 import { makeCall } from "../../src/rpcClient";
 import { createMidiClient } from "../../src/realBackend";
@@ -61,34 +58,14 @@ export function createUiHost(stores: AppStores, peers: UiHostPeers): UiHost {
     dialogs: { browse: (opts) => stores.backend.openFileBrowser(opts) },
     devices,
     views: peers.views,
-    controller: {
-      settings: () => stores.project.settings().controller,
-      // A package hands the target over as a plain string, and ProjectStore writes the patch into the live settings,
-      // the published document and the next .rplg save unread, so an unknown value would be a controller that launches
-      // nowhere. It is refused here, naming the value, rather than laundered into the closed type with a cast: a bad
-      // target is a package's bug, not a user's input to drop quietly.
-      set: (patch) => {
-        const { target, ...rest } = patch;
-        if (target === undefined) {
-          stores.project.setController(rest);
-          return;
-        }
-        if (!isControllerTarget(target))
-          throw new Error(`controller target '${target}' is not one of ${CONTROLLER_TARGET_VALUES.join(", ")}`);
-        stores.project.setController({ ...rest, target });
-      },
-      cartSync: () => stores.project.controllerCartSync(),
-      // What the published document will have the cart's sync node run, computed by the SAME helper buildGraph uses, so
-      // a row cannot describe something other than what is happening.
-      syncOverride: () => {
-        const settings = stores.project.settings().controller;
-        return controllerSyncOverride(
-          systems.view(),
-          settings.enabled ? { ...settings, cartSync: stores.project.controllerCartSync() } : null,
-        );
-      },
-      apps: () => controllerApps.list(),
-    },
+    // The project's own settings, as this UI's packages read and edit them (docs/modular-graph-phase-f5a-design.md
+    // section 6.4): the Launchpad's submenu is the client, and nothing about the section - its key's shape, the closed
+    // values its `target` may take, what a section stamped newer than this build means - is the shell's business.
+    project: {
+      section: (key) => stores.project.section(key),
+      setSection: (key, patch) => stores.project.setSection(key, patch),
+      serviceState: (key) => stores.project.serviceState(key),
+    } satisfies ProjectHost,
     config: {
       controlSurface: () => stores.userConfig.controlSurface(),
       setControlSurface: (patch) => void stores.userConfig.setControlSurface(patch),
@@ -126,10 +103,4 @@ function systemsHost(backend: ControlPlaneBackend, systems: SystemsStore): Syste
     stageNodeMidi: (nodeId, bytes) => backend.stageNodeMidi(nodeId, bytes),
     capability: (nodeId, op, args, onProgress) => backend.capability(nodeId, op, args, onProgress),
   };
-}
-
-/** Whether `value` is a launch target the shell knows: the controller-host contract carries it as an open string, and
- *  this is the one place it becomes the launchpad package's closed type. */
-function isControllerTarget(value: string): value is ControllerTarget {
-  return (CONTROLLER_TARGET_VALUES as readonly string[]).includes(value);
 }

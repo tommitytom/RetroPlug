@@ -599,7 +599,7 @@ mode selected" indicator on the aboy build. Read the SYNC field text (or the
 ### Master mode (MI.OUT) verification
 
 Serial-out capture is a setting of the Game Boy's node, which `buildGraph` writes for the mode the system's
-`lsdj-sync` node runs (`serialOutCaptureFor` in [graph/controller.ts](../packages/retroplug/src/graph/controller.ts),
+`lsdj-sync` node runs (`serialOutCaptureFor` in [graph/serialCapture.ts](../packages/retroplug/src/graph/serialCapture.ts),
 the MI.MAP controller's forced mode included): `drive` for MI.OUT, `listen` for master sync, `off` otherwise. It
 rides the document that hands the decoder its mode, so a mode switch changes both in the same block.
 The captured bytes reach the system's `rp.lsdj.serial-out` node, placed after the Game Boy, over a forward

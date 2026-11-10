@@ -7,9 +7,13 @@
 // legal in a definePackage call, and the core import below is what the augmentation attaches to.
 import type {} from "@retroplug/core/definePackage";
 import type { TrackerIntegration } from "./trackerIntegration";
+import type { ProjectServiceFactory } from "./projectService";
 
 declare module "@retroplug/core/definePackage" {
   interface PackageContributions {
     readonly trackerIntegrations?: readonly TrackerIntegration[];
+    /** A feature's control-plane half, built per project store (projectService.ts): the controller's poll and model
+     *  are the one today. */
+    readonly projectServices?: readonly ProjectServiceFactory[];
   }
 }

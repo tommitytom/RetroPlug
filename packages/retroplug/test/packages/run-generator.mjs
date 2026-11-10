@@ -10,7 +10,8 @@
 // edit what it needs), edits it where the mode is a refusal, runs the generator and prints one JSON line:
 //
 //   generate        { files: { "packages.ts": <text>, "consoles.ts": <text>, "protocol.ts": <text>,
-//                              "scriptNodes.ts": <text>, "menus.ts": <text>, "views.ts": <text> }, packages: [...] }
+//                              "scriptNodes.ts": <text>, "placers.ts": <text>, "menus.ts": <text>,
+//                              "views.ts": <text> }, packages: [...] }
 //   consoles        { consoles: [{ id, core, nodeType, platforms }], realCarts: [{ platform, cartNode }] }
 //   twice           { mtimes: [<after one run>, <after a second>], changed: [<first run>, <second run>] }
 //   run             { registered: [<the ids the generated entry registers, in order>] }
@@ -19,8 +20,9 @@
 //   duplicate-role | gap | low-label | role-undeclared | role-unwired | missing-module | unexported-app | name-mismatch |
 //   outside-ts | shell-undeclared | unknown-key | capture-bad | half-wired | extra-node | duplicate-role-kind |
 //   duplicate-kit-format | duplicate-marker-role | duplicate-app | duplicate-app-control | app-unknown-key |
-//   app-unpaired-runtime | app-unpaired-control | app-runtime-mismatch | app-module-empty | sync-unknown-key |
-//   sync-unused-off | sync-node-undeclared | sync-not-object | sync-no-node | sync-no-mode | sync-off-is-mode |
+//   duplicate-section | duplicate-service | duplicate-placer | shell-section | placer-missing |
+//   kind-duplicate-item | kind-one-half | kind-check-unknown-node | kind-app-member |
+//   app-unpaired-runtime | app-unpaired-control | app-runtime-mismatch | app-module-empty |
 //   duplicate-app-one-package | identifier-collision | apps-only | capture-unwired | capture-no-decoder |
 //   capture-not-object | capture-out-undeclared | capture-out-not-serial | capture-form | embed-form |
 //   embed-unpaired-manifest | embed-unpaired-declaration | embed-unregistered-platform | embed-duplicate |
@@ -86,6 +88,7 @@ function outputs() {
     "consoles.ts": readFileSync(join(generated, "consoles.ts"), "utf8"),
     "protocol.ts": readFileSync(join(generated, "protocol.ts"), "utf8"),
     "scriptNodes.ts": readFileSync(join(generated, "scriptNodes.ts"), "utf8"),
+    "placers.ts": readFileSync(join(generated, "placers.ts"), "utf8"),
     "menus.ts": readFileSync(join(root, "packages/retroplug/ui/generated/menus.ts"), "utf8"),
     "views.ts": readFileSync(join(root, "packages/retroplug/ui/generated/views.ts"), "utf8"),
   };
@@ -126,6 +129,33 @@ function appWith({ kind, provider, markerRole, kitId }) {
   );
 }
 
+/** The generated placers module, bundled and loaded: its checks run at load, as a build's do (two packages placing one
+ *  graph model). The fixture packages' placers are plain objects, so nothing else is aliased. */
+async function loadPlacers() {
+  const out = join(work, "placers.mjs");
+  const { buildSync } = require("esbuild");
+  buildSync({
+    ...buildOptions(join(generated, "placers.ts"), out, "esm"),
+    alias: {
+      "@retroplug/alpha/placer": join(root, "packages/alpha/ts/placer.ts"),
+      "@retroplug/beta/placer": join(root, "packages/beta/ts/placer.ts"),
+    },
+  });
+  return import(pathToFileURL(out).href);
+}
+
+/** A fixture app contributing one project section and one service, each under its own key: the generated registry
+ *  collects them (packages.ts's PROJECT_SECTIONS and PROJECT_SERVICES) and refuses a key two packages share. */
+function sectionApp(sectionKey, serviceKey = sectionKey) {
+  return (
+    "export default {\n" +
+    `  projectSections: [{ key: ${JSON.stringify(sectionKey)}, schema: { parse: (v) => v }, ` +
+    `defaults: () => ({}) }],\n` +
+    `  projectServices: [{ key: ${JSON.stringify(serviceKey)}, create: () => ({}) }],\n` +
+    "};\n"
+  );
+}
+
 // The generated packages.ts, bundled and loaded: the lists are plain data (the apps it imports are plain objects), so
 // loading reports exactly what a build's registries would see.
 async function loadPackages() {
@@ -137,6 +167,9 @@ async function loadPackages() {
     "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
     "@retroplug/alpha/consoles": join(root, "packages/alpha/ts/consoles.ts"),
     "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
+    // The two declaring packages' control-plane halves (a kind's `accept` and `check`, run at load).
+    "@retroplug/beta/kind": join(root, "packages/beta/ts/kind.ts"),
+    "@retroplug/alpha/kind": join(root, "packages/alpha/ts/widgetKind.ts"),
   };
   buildSync({ ...buildOptions(join(generated, "packages.ts"), out, "esm"), alias });
   // The consoles are a module of their own, so each generated list is loaded as the build loads it: the app's
@@ -150,6 +183,8 @@ async function loadPackages() {
     romProviders: loaded.ROM_PROVIDERS.map((provider) => provider.id),
     trackerIntegrations: loaded.TRACKER_INTEGRATIONS.map((integration) => integration.id),
     kitFormats: loaded.KIT_FORMATS.map((format) => format.id),
+    projectSections: loaded.PROJECT_SECTIONS.map((entry) => `${entry.pkg}:${entry.section.key}`),
+    projectServices: loaded.PROJECT_SERVICES.map((entry) => entry.service.key),
     embeds: loaded.EMBEDS.map((embed) => ({ id: embed.id, label: embed.label, platform: embed.platform })),
     consoles: consoles.CONSOLES.map((descriptor) => ({
       id: descriptor.id,
@@ -275,7 +310,10 @@ async function loadEntry() {
       "@retroplug/core/register": join(root, "packages/core/ts/register.ts"),
       "@retroplug/alpha/nodes": join(root, "packages/alpha/ts/nodes.ts"),
       "@retroplug/alpha/appRuntime": join(root, "packages/alpha/ts/appRuntime.ts"),
-      "@retroplug/launchpad/apps": join(root, "packages/launchpad/ts/apps.ts"),
+      // Each declaring package's runtime registry and each contributing manifest's module, in product order.
+      "@retroplug/beta/apps": join(root, "packages/beta/ts/apps.ts"),
+      "@retroplug/alpha/widgets": join(root, "packages/alpha/ts/widgets.ts"),
+      "@retroplug/beta/widgetRuntime": join(root, "packages/beta/ts/widgetRuntime.ts"),
     },
   });
   await import(pathToFileURL(out).href);
@@ -352,13 +390,21 @@ try {
   switch (MODE) {
     case "generate": {
       const ran = generate({ root });
-      result = { files: outputs(), packages: ran.packages };
+      // The collections are read from the generated modules too: each list's product order is what the shell consumes.
+      const loaded = await loadPackages();
+      result = {
+        files: outputs(),
+        packages: ran.packages,
+        projectSections: loaded.projectSections,
+        projectServices: loaded.projectServices,
+      };
       break;
     }
     case "twice": {
       const first = generate({ root });
       const files = [
-        ...["packages.ts", "consoles.ts", "protocol.ts", "scriptNodes.ts"].map((name) => join(generated, name)),
+        ...["packages.ts", "consoles.ts", "protocol.ts", "scriptNodes.ts", "placers.ts"].map((name) =>
+          join(generated, name)),
         join(root, "packages/retroplug/ui/generated/menus.ts"),
         join(root, "packages/retroplug/ui/generated/views.ts"),
         join(root, "packages/retroplug/cli/generated/tools.ts"),
@@ -962,20 +1008,30 @@ try {
       break;
     case "unlisted-plain":
       // delta contributes nothing (a native library to link) and plain has no retroplug member at all (a pure TS
-      // library), so neither is a product's business: both are left out of the ordering rather than refused.
+      // library), so neither is a product's business: both are left out of the ordering rather than refused. The
+      // rewritten manifest keeps beta's kind declaration, so alpha's contribution still has its declaring package.
       writeTree(
         "packages/beta/package.json",
         `${JSON.stringify(
           {
             name: "@retroplug/beta",
             private: true,
-            exports: { "./app": "./ts/app.ts" },
+            exports: { "./app": "./ts/app.ts", "./kind": "./ts/kind.ts", "./apps": "./ts/apps.ts" },
             dependencies: {
               "@retroplug/alpha": "workspace:*",
               "@retroplug/delta": "workspace:*",
               "@retroplug/plain": "workspace:*",
             },
-            retroplug: { app: "ts/app.ts" },
+            retroplug: {
+              app: "ts/app.ts",
+              kinds: {
+                controllerApps: {
+                  control: "ts/kind.ts",
+                  runtime: { module: "ts/apps.ts", register: "registerControllerApps", type: "ControllerAppRuntime" },
+                  data: ["syncOverride"],
+                },
+              },
+            },
           },
           null,
           2,
@@ -1171,12 +1227,70 @@ try {
         result = { error: e.message };
       }
       break;
+    case "duplicate-section":
+      // Two packages own one block of a .rplg's settings: the shell writes a section back under its key, so one
+      // package's bytes would replace the other's in every project.
+      writeTree("packages/alpha/ts/app.ts", sectionApp("shared", "alpha"));
+      writeTree("packages/beta/ts/app.ts", sectionApp("shared", "beta"));
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "duplicate-service":
+      // Two services under one key: the key is a model's and a section's, so they would fight over the graph's
+      // placement.
+      writeTree("packages/alpha/ts/app.ts", sectionApp("alpha", "shared"));
+      writeTree("packages/beta/ts/app.ts", sectionApp("beta", "shared"));
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "shell-section":
+      // A section under a key the shell owns: `layout` is the shell's own setting, so its schema would be read as the
+      // section's and its bytes written back as one.
+      writeTree("packages/alpha/ts/app.ts", sectionApp("layout"));
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "duplicate-placer":
+      // Two packages placing one graph model: buildGraph would run both placers' slots, so the two node sets would land
+      // in one document and collide.
+      editManifest("beta", (json) => {
+        json.exports["./placer"] = "./ts/placer.ts";
+        json.retroplug.protocol = { placer: "ts/placer.ts" };
+      });
+      writeTree("packages/beta/ts/placer.ts", 'export default { key: "alpha", place: () => ({}) };\n');
+      generate({ root });
+      try {
+        result = await loadPlacers();
+        result = { placers: result.PLACERS.map((entry) => `${entry.pkg}:${entry.placer.key}`) };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "placer-missing":
+      // A placer module named and absent: the generated import would fail at the bundle, so the manifest is refused.
+      editManifest("alpha", (json) => {
+        json.retroplug.protocol.placer = "ts/nowhere.ts";
+      });
+      result = refusal();
+      break;
     case "duplicate-app":
       // Two packages declare one controller app id: a project stores an id and the script bundle looks one up, so one
       // would silently replace the other.
       editManifest("beta", (json) => {
         json.exports["./appRuntime"] = "./ts/appRuntime.ts";
-        json.retroplug.protocol = { apps: [{ id: "alpha-app", module: "ts/appRuntime.ts" }] };
+        json.retroplug.protocol = { kinds: { controllerApps: [{ id: "alpha-app", module: "ts/appRuntime.ts" }] } };
       });
       writeTree("packages/beta/ts/appRuntime.ts", "export default { id: \"alpha-app\" };\n");
       result = refusal();
@@ -1184,9 +1298,9 @@ try {
     case "apps-only":
       // A package contributing an app and NO node names no nodes module: the generated entry still registers the app.
       editManifest("alpha", (json) => {
-        const apps = json.retroplug.protocol.apps;
+        const apps = json.retroplug.protocol.kinds.controllerApps;
         delete apps[0].syncOverride;
-        json.retroplug.protocol = { apps };
+        json.retroplug.protocol = { kinds: { controllerApps: apps } };
       });
       editManifest("retroplug", (json) => {
         delete json.retroplug.protocol;
@@ -1201,56 +1315,6 @@ try {
       // A module that default-exports no nodes has nothing to export: the manifest should not name it.
       editManifest("alpha", (json) => {
         json.retroplug.protocol.nodes = [];
-      });
-      result = refusal();
-      break;
-    case "sync-unknown-key":
-      // A misspelt field of a sync override is data nothing reads: the mode it meant would silently not apply.
-      editManifest("alpha", (json) => {
-        json.retroplug.protocol.apps[0].syncOverride.listing = "MidiMap";
-      });
-      result = refusal();
-      break;
-    case "sync-unused-off":
-      // An `off` with no `listening` value: the mode it is for is never reached.
-      editManifest("alpha", (json) => {
-        delete json.retroplug.protocol.apps[0].syncOverride.listening;
-      });
-      result = refusal();
-      break;
-    case "sync-not-object":
-      // An override that is not an object is data no rule can read at all.
-      editManifest("alpha", (json) => {
-        json.retroplug.protocol.apps[0].syncOverride = "MidiMap";
-      });
-      result = refusal();
-      break;
-    case "sync-no-node":
-      // No node type to set the mode on.
-      editManifest("alpha", (json) => {
-        delete json.retroplug.protocol.apps[0].syncOverride.node;
-      });
-      result = refusal();
-      break;
-    case "sync-no-mode":
-      // No mode to put it in.
-      editManifest("alpha", (json) => {
-        delete json.retroplug.protocol.apps[0].syncOverride.mode;
-      });
-      result = refusal();
-      break;
-    case "sync-off-is-mode":
-      // The "not listening" mode is the listening one: the pair changes nothing, so one of the two is a mistake.
-      editManifest("alpha", (json) => {
-        const sync = json.retroplug.protocol.apps[0].syncOverride;
-        sync.off = sync.mode;
-      });
-      result = refusal();
-      break;
-    case "sync-node-undeclared":
-      // The node type the mode is set on must be one a package declares: a misspelt one would plan, and do nothing.
-      editManifest("alpha", (json) => {
-        json.retroplug.protocol.apps[0].syncOverride.node = "rp.alpha.syncx";
       });
       result = refusal();
       break;
@@ -1300,7 +1364,7 @@ try {
       });
       editManifest("a-b", (json) => {
         json.name = "@retroplug/a-b";
-        json.retroplug.protocol.apps = [{ id: "c", module: "ts/appRuntime.ts" }];
+        json.retroplug.protocol.kinds.controllerApps = [{ id: "c", module: "ts/appRuntime.ts" }];
       });
       writeTree(
         "packages/a-b/ts/app.ts",
@@ -1311,7 +1375,7 @@ try {
         json.name = "@retroplug/a";
         json.dependencies = { "@retroplug/core": "workspace:*" };
         json.exports["./appRuntime"] = "./ts/appRuntime.ts";
-        json.retroplug.protocol = { apps: [{ id: "b-c", module: "ts/appRuntime.ts" }] };
+        json.retroplug.protocol = { kinds: { controllerApps: [{ id: "b-c", module: "ts/appRuntime.ts" }] } };
       });
       writeTree(
         "packages/a/ts/app.ts",
@@ -1320,10 +1384,67 @@ try {
       writeTree("packages/a/ts/appRuntime.ts", "export default { id: \"b-c\" };\n");
       result = refusal();
       break;
+    case "kind-app-member":
+      // A kind named one of the app's own members would read that member's list as its items: the registry cannot tell
+      // "the roles" from "the items of a kind called roles".
+      editManifest("alpha", (json) => {
+        json.retroplug.kinds = {
+          roles: { control: "ts/widgetKind.ts", runtime: { module: "ts/widgets.ts", register: "registerWidgets",
+            type: "WidgetRuntime" }, data: [] },
+        };
+      });
+      result = refusal();
+      break;
+    case "kind-duplicate-item":
+      // ONE app module lists one widget id twice: the declaring package's kind names the package once, not "alpha and
+      // alpha", because a project stores only the id and the second item would be unreachable.
+      writeTree(
+        "packages/alpha/ts/app.ts",
+        "export default { widgets: [{ id: \"w\", label: \"First\" }, { id: \"w\", label: \"Second\" }] };\n",
+      );
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "kind-one-half":
+      // A contributing manifest declares a widget's runtime and no app module lists the item: a document naming it
+      // would run nothing, and a menu would offer nothing.
+      editManifest("beta", (json) => {
+        json.retroplug.protocol = {
+          kinds: { widgets: [{ id: "w", module: "ts/widgetRuntime.ts", mode: "rp.alpha.midi" }] },
+        };
+      });
+      writeTree("packages/beta/ts/app.ts", "export default {};\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "kind-check-unknown-node":
+      // The declaring package's own check over the data: a mode naming a node type no package declares would place
+      // nothing, and no generic validation can know what a kind's data means.
+      editManifest("beta", (json) => {
+        json.retroplug.protocol = {
+          kinds: { widgets: [{ id: "w", module: "ts/widgetRuntime.ts", mode: "rp.nowhere" }] },
+        };
+      });
+      writeTree("packages/alpha/ts/app.ts", "export default { widgets: [{ id: \"w\", label: \"W\" }] };\n");
+      generate({ root });
+      try {
+        result = await loadPackages();
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
     case "app-unknown-key":
       // A misspelt knob in an app entry: nothing reads it, and a runtime would be built without what it meant.
       editManifest("alpha", (json) => {
-        json.retroplug.protocol.apps[0].factorY = "ts/appRuntime.ts";
+        json.retroplug.protocol.kinds.controllerApps[0].factorY = "ts/appRuntime.ts";
       });
       result = refusal();
       break;

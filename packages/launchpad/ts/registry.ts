@@ -2,12 +2,12 @@
 //
 // An app is registered by id, which is the string a project stores. Two runtimes hold its two halves: the control
 // plane (the menu, the project's config validation) has zod and holds the label and the config's schema, and the script
-// node's bundle (which runs the app on the audio thread) has none. This module is the control plane's table; the runtime
-// half is the package's `protocol.apps` entry, joined to it by id (ts/apps/index.ts).
+// node's bundle (which runs the app on the audio thread) has none. This module is the control plane's table; the
+// runtime half is the package's `protocol.kinds.controllerApps` entry, joined to it by id (ts/apps/index.ts).
 //
 // Nothing here names a tracker or a cart: which sync mode an app's launches need is DATA in its manifest's
-// `protocol.apps` entry (the node type, the mode and the polled value that counts as listening), applied by
-// graph/controller.ts, so a new app needs no code in the shell.
+// `protocol.kinds.controllerApps` entry (the node type, the mode and the polled value that counts as listening),
+// applied by this package's graph placer (control/placer.ts), so a new app needs no code in the shell.
 //
 // Loading user scripts at runtime stays the deferred extension model (spec/07).
 
@@ -63,4 +63,29 @@ export class ControllerRegistry {
     const app = this.get(id);
     return app ? app.config.parse({}) : undefined;
   }
+}
+
+/** The product's controller apps, in product order: the table the menu cycles and a saved config is parsed with. The
+ *  shell's generated registry fills it at load through the controllerApps kind (`accept`), so nothing here
+ *  names an app; a product that carries none has an empty table, and the controller node then runs nothing. */
+export const controllerApps = new ControllerRegistry();
+
+/** The app registered under `id`, or undefined for an unknown one. */
+export function controllerApp(id: string): ControllerAppContribution | undefined {
+  return controllerApps.get(id);
+}
+
+/** `config` as app `id`'s schema parses it (defaults filled, values clamped): the app config the control plane hands
+ *  the controller node and the placer, so the audio side parses nothing and imports no schema. An id no app has gets
+ *  an empty config, which nothing reads: its node runs nothing. */
+export function parseAppConfig(id: string, config: unknown): Record<string, unknown> {
+  const app = controllerApps.get(id);
+  return app ? app.config.parse(config ?? {}) : {};
+}
+
+/** The app a fresh project starts with: the first the product registers (an app's position in the product's package
+ *  order is its position in the menu), or "" when it carries none, which runs nothing. A function, not a constant: it
+ *  is read while a project is parsed, which is after the generated registry has filled the table. */
+export function defaultControllerApp(): string {
+  return controllerApps.list()[0]?.id ?? "";
 }

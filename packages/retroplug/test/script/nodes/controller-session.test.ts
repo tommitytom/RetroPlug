@@ -6,7 +6,10 @@
 import { test, expect } from "@retroplug/testing";
 import { CONTROLLER_SESSION_NODE_TYPE, controllerSessionNode } from "@retroplug/launchpad/controllerSession";
 import { lsdjSyncNode } from "@retroplug/lsdj/lsdjSyncNode";
-import { controllerApp } from "../../../src/controller/registry";
+import { controllerApp } from "@retroplug/launchpad/registry";
+// The side effect: the product's generated registry, whose load runs the launchpad package's contribution kind and
+// fills its app table.
+import "../../../src/generated/packages";
 // The generated script bundle registers every app's runtime before the node can run (src/generated/scriptNodes.ts);
 // a test process does the same, with the app the documents below name.
 import { registerControllerApps } from "@retroplug/launchpad/apps";
@@ -106,7 +109,8 @@ test("its ports: the surface in, its link generation and drop count; the surface
     "out events midiOut",
   ]);
   expect(controllerSessionNode.descriptor().id).toBe(CONTROLLER_SESSION_NODE_TYPE);
-  // The three inputs (controllerIn, controllerConnected, controllerDrops) have no declared capacity; the three outputs do.
+  // The three inputs (controllerIn, controllerConnected, controllerDrops) have no declared capacity; the three
+  // outputs do.
   const caps = controllerSessionNode.layout(controllerSessionNode.parseSettings({})).ports.slice(3).map((p) => p.capacity);
   expect(caps).toEqual([{ messages: 256, bytes: 4096 }, { messages: 64, bytes: 256 }, { messages: 1024, bytes: 8192 }]);
   expect(controllerSessionNode.reshapes).toBe(true);
@@ -305,11 +309,11 @@ test("a session that starts after a run with no app begins at the clock, not at 
 });
 
 test("a loop wrap keeps the block's ticks: the playhead does not fall a block further behind", () => {
-  // A DAW loop (or an SPP back) moves the host's timeline backwards, and walkTicks goes on clocking the cart through it:
-  // it merely resyncs its own counter to the block's start. A session that INFERRED the ticks from the position read the
-  // wrap as no elapsed time and dropped the whole block, so the predicted playhead fell a block behind on every pass and
-  // never caught up. Here three of the six playing blocks are wraps: counting the walk keeps all 576 ticks (row 6), while
-  // inferring them would keep 288 (row 3).
+  // A DAW loop (or an SPP back) moves the host's timeline backwards, and walkTicks goes on clocking the cart
+  // through it: it merely resyncs its own counter to the block's start. A session that INFERRED the ticks from the
+  // position read the wrap as no elapsed time and dropped the whole block, so the predicted playhead fell a block
+  // behind on every pass and never caught up. Here three of the six playing blocks are wraps: counting the walk
+  // keeps all 576 ticks (row 6), while inferring them would keep 288 (row 3).
   const rig = session({ songRowTicks: table() }); // sixteen rows of 96 ticks
   const dev = new Device();
   const twoSeconds = 88200; // 2 s at 44.1 kHz / 120 BPM = 96 ticks a block
@@ -377,7 +381,8 @@ test("a link that dropped LED messages gets a full repaint, once", () => {
   expect(rig.run(still({ connected: true, link: 1, drops: 3 })).length).toBe(0);
 });
 
-// --- reacting to a settings change -------------------------------------------------------------------------------------
+// --- reacting to a settings change
+// -------------------------------------------------------------------------------------
 
 // Grid pad (x, y) -> device index. The device counts rows from the BOTTOM.
 const pad = (x: number, y: number) => (7 - y) * 10 + x + 11;

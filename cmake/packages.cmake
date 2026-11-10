@@ -519,14 +519,20 @@ endfunction()
 # _retroplug_unwrap_item(<out> <item> <unwrapable>): the item a link's, include directory's or source's generator
 # expressions leave, and whether every one of them is a form this check evaluates. $<BUILD_INTERFACE:x>, $<LINK_ONLY:x>
 # and $<TARGET_NAME:x> each name x as it stands in this build, so x is judged; nesting unwraps too
-# ($<BUILD_INTERFACE:$<TARGET_NAME:foo>>). Anything else ($<TARGET_PROPERTY:...>, $<TARGET_OBJECTS:...>, a configuration
-# expression) is a value only the build generator knows, which the caller refuses rather than passes unseen.
+# ($<BUILD_INTERFACE:$<TARGET_NAME:foo>>). $<TARGET_PROPERTY:t,INTERFACE_INCLUDE_DIRECTORIES> and $<TARGET_OBJECTS:t>
+# leave the target t, whose include directories or objects are t's package's, so the caller judges the result as it
+# judges a link. Anything else ($<TARGET_PROPERTY:...> of another property, a configuration expression) is a value only
+# the build generator knows, which the caller refuses rather than passes unseen.
 function(_retroplug_unwrap_item out item unwrapable)
     set(_value "${item}")
     set(_ok TRUE)
     while(_value MATCHES "^\\$<")
         if(_value MATCHES "^\\$<(BUILD_INTERFACE|LINK_ONLY|TARGET_NAME):(.+)>$")
             set(_value "${CMAKE_MATCH_2}")
+        elseif(_value MATCHES "^\\$<TARGET_PROPERTY:([^,>]+),INTERFACE_INCLUDE_DIRECTORIES>$")
+            set(_value "${CMAKE_MATCH_1}")
+        elseif(_value MATCHES "^\\$<TARGET_OBJECTS:([^,>]+)>$")
+            set(_value "${CMAKE_MATCH_1}")
         else()
             set(_ok FALSE)
             break()
@@ -637,9 +643,10 @@ endfunction()
 # It takes plain lists so a configure-time fixture can drive it (cmake/check-native-boundaries.cmake, held by
 # packages/native/cmake/tests.cmake): a target's real properties need a target, which script mode has none of.
 function(_retroplug_check_native_boundaries package)
-    cmake_parse_arguments(B "TEST" ""
-                          "LINKS;LINK_PATHS;LINK_DIRS;LIBS;INCLUDES;DEFINITIONS;SOURCES;UNJUDGED;DECLARED;DEV_DECLARED;OWNERS"
-                          ${ARGN})
+    # One argument, as cmake_parse_arguments takes its keywords: a list variable, so the line can be wrapped.
+    set(_rp_multi "LINKS;LINK_PATHS;LINK_DIRS;LIBS;INCLUDES;INCLUDE_TARGETS;DEFINITIONS;SOURCES")
+    list(APPEND _rp_multi "SOURCE_TARGETS" "UNJUDGED" "DECLARED" "DEV_DECLARED" "OWNERS")
+    cmake_parse_arguments(B "TEST" "" "${_rp_multi}" ${ARGN})
     if(B_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "_retroplug_check_native_boundaries(${package}): unrecognised argument(s): "
                             "${B_UNPARSED_ARGUMENTS}")
@@ -767,6 +774,28 @@ function(_retroplug_check_native_boundaries package)
                             "in the ${_owner} package's tree, which ${package} does not declare (its package.json "
                             "dependencies)")
     endforeach()
+    # A target's include directories, named through $<TARGET_PROPERTY:t,INTERFACE_INCLUDE_DIRECTORIES>, are a link to
+    # t's package in everything but spelling: the target decides, as it does for a link.
+    foreach(_pair IN LISTS B_INCLUDE_TARGETS)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _of)
+        set(_owner "${_owner_of_${_of}}")
+        if(NOT _owner)
+            continue()  # no package's target (a vendored or imported one), as for a link
+        endif()
+        if(_owner STREQUAL package OR _owner IN_LIST _allowed)
+            continue()
+        endif()
+        if(_owner IN_LIST _shells)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} takes the include directories of ${_of}, a "
+                                "target of the shell (packages/${_owner}): no package may use the shell")
+        endif()
+        message(FATAL_ERROR "retroplug_package(${package}): ${_target} takes the include directories of ${_of}, a "
+                            "target of the ${_owner} package, which ${package} does not declare (its package.json "
+                            "dependencies)")
+    endforeach()
     # A compile definition whose VALUE is a path is the same door as an include directory: a test binary that opens a
     # package's file (a manifest's ROM) names the path in a -D, and reaches that package's tree though it links nothing
     # of it. The name is kept for the message, since the value alone would not say how it got in.
@@ -808,7 +837,7 @@ function(_retroplug_check_native_boundaries package)
             continue()
         endif()
         string(REGEX REPLACE "/.*$" "" _owner "${_rel}")
-        if(_owner STREQUAL package)
+        if(_owner STREQUAL package OR _owner IN_LIST _allowed)
             continue()
         endif()
         if(_owner IN_LIST _shells)
@@ -818,6 +847,26 @@ function(_retroplug_check_native_boundaries package)
         message(FATAL_ERROR "retroplug_package(${package}): ${_target} compiles ${_source}, which is in the "
                             "${_owner} package's tree, which ${package} does not declare (its package.json "
                             "dependencies)")
+    endforeach()
+    # Another target's objects compiled into this one: which package they are is that target's owner's, as a link's.
+    foreach(_pair IN LISTS B_SOURCE_TARGETS)
+        string(FIND "${_pair}" "=" _at)
+        string(SUBSTRING "${_pair}" 0 ${_at} _target)
+        math(EXPR _at "${_at} + 1")
+        string(SUBSTRING "${_pair}" ${_at} -1 _of)
+        set(_owner "${_owner_of_${_of}}")
+        if(NOT _owner)
+            continue()  # no package's target (a vendored or generated one), as for a link
+        endif()
+        if(_owner STREQUAL package OR _owner IN_LIST _allowed)
+            continue()
+        endif()
+        if(_owner IN_LIST _shells)
+            message(FATAL_ERROR "retroplug_package(${package}): ${_target} compiles the objects of ${_of}, a target of "
+                                "the shell (packages/${_owner}): no package may use the shell")
+        endif()
+        message(FATAL_ERROR "retroplug_package(${package}): ${_target} compiles the objects of ${_of}, a target of the "
+                            "${_owner} package, which ${package} does not declare (its package.json dependencies)")
     endforeach()
     # What the gatherer could not evaluate: a link, include directory or source the build generator resolves to
     # something this check cannot know. Refused rather than passed unseen, unless the target is vouched for
@@ -849,6 +898,13 @@ endfunction()
 # A PRODUCT target is not judged either: retroplug_product() links every listed package's targets into it, and its
 # PACKAGES is that link's declaration. The device check's case generator is the one product in a package's directory, and
 # it carries the device check's own package list rather than its directory package's manifest.
+#
+# A target marked RP_BOUNDARY_PACKAGES <list> is judged against that product list instead of its directory package's
+# manifest: the plugin's static library, which every format is built from, is the plugin PRODUCT's own, so what it
+# links is the plugin's list (its directory manifest is the backend's, which declares no pack at all). Every property is
+# judged the same way, so the voucher is narrower than RP_BOUNDARY_SKIP's and still says which list holds it. A target
+# marked RP_BOUNDARY_DECLARED <package>... states the packages it may reach where it is made, for one whose directory
+# manifest does not describe it (a test's own objects, which reach one pack's headers and no other).
 function(retroplug_check_package_boundaries)
     get_property(_packages GLOBAL PROPERTY RP_PACKAGES)
     if(NOT _packages)
@@ -879,20 +935,39 @@ function(retroplug_check_package_boundaries)
         list(APPEND _targets_of_${_owner} "${_target}")
     endforeach()
     foreach(_package IN LISTS _packages)
-        if(_package STREQUAL "native" OR _package STREQUAL "retroplug")
-            continue()  # the shells: they may use every package
+        if(_package STREQUAL "retroplug")
+            continue()  # the app shell: it carries every product's generated registries and places no node of its own
         endif()
         get_property(_declared GLOBAL PROPERTY RP_PACKAGE_${_package}_DECLARATIONS)
         get_property(_dev GLOBAL PROPERTY RP_PACKAGE_${_package}_DEV_DECLARATIONS)
         foreach(_target IN LISTS _targets_of_${_package})
             get_target_property(_test ${_target} RP_TEST_BINARY)
+            set(_t_declared "${_declared}")
+            set(_t_dev "${_dev}")
+            # A product's own target: its link is the product's list, not its directory package's manifest.
+            get_target_property(_vouched ${_target} RP_BOUNDARY_PACKAGES)
+            if(_vouched)
+                if(NOT DEFINED RP_PRODUCT_PACKAGES_${_vouched})
+                    message(FATAL_ERROR "${_target} is judged against the product list ${_vouched}, which the root "
+                                        "package.json's retroplug.products does not declare")
+                endif()
+                set(_t_declared "${RP_PRODUCT_PACKAGES_${_vouched}}")
+                set(_t_dev "")
+            endif()
+            get_target_property(_stated ${_target} RP_BOUNDARY_DECLARED)
+            if(_stated)
+                set(_t_declared "${_stated}")
+                set(_t_dev "")
+            endif()
             set(_links "")
             set(_link_paths "")
             set(_link_dirs "")
             set(_libs "")
             set(_includes "")
+            set(_include_targets "")
             set(_definitions "")
             set(_sources "")
+            set(_source_targets "")
             set(_unjudged "")
             foreach(_property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
                 get_target_property(_value ${_target} ${_property})
@@ -1070,6 +1145,16 @@ function(retroplug_check_package_boundaries)
                         continue()
                     endif()
                     if(NOT IS_ABSOLUTE "${_item}")
+                        # A target's include directories ($<TARGET_PROPERTY:t,INTERFACE_INCLUDE_DIRECTORIES>) are judged
+                        # by t's package, which is a link's judgement of the same target; a directory is judged below.
+                        if(TARGET "${_item}")
+                            # An alias is not a target of its own, and the owner table is keyed by the real one.
+                            get_target_property(_aliased ${_item} ALIASED_TARGET)
+                            if(_aliased)
+                                set(_item "${_aliased}")
+                            endif()
+                            list(APPEND _include_targets "${_target}=${_item}")
+                        endif()
                         continue()
                     endif()
                     # Normalised lexically, as a source is below: a directory spelled with a `..` in it would otherwise
@@ -1092,6 +1177,16 @@ function(retroplug_check_package_boundaries)
                         continue()
                     endif()
                     if(NOT IS_ABSOLUTE "${_item}")
+                        # $<TARGET_OBJECTS:t> leaves t's name, not a path: what t compiles is t's package's, so the
+                        # target is judged as a link is (SOURCE_TARGETS), never as a source of this target's own tree.
+                        if(TARGET "${_item}")
+                            get_target_property(_aliased ${_item} ALIASED_TARGET)
+                            if(_aliased)
+                                set(_item "${_aliased}")
+                            endif()
+                            list(APPEND _source_targets "${_target}=${_item}")
+                            continue()
+                        endif()
                         get_target_property(_dir ${_target} SOURCE_DIR)
                         if(NOT _dir OR _dir MATCHES "-NOTFOUND$")
                             continue()
@@ -1112,8 +1207,10 @@ function(retroplug_check_package_boundaries)
             endif()
             _retroplug_check_native_boundaries(${_package} LINKS ${_links} LINK_PATHS ${_link_paths}
                                                LINK_DIRS ${_link_dirs} LIBS ${_libs} INCLUDES ${_includes}
-                                               DEFINITIONS ${_definitions} SOURCES ${_sources} UNJUDGED ${_unjudged}
-                                               DECLARED ${_declared} DEV_DECLARED ${_dev} ${_test_arg}
+                                               INCLUDE_TARGETS ${_include_targets} DEFINITIONS ${_definitions}
+                                               SOURCES ${_sources} SOURCE_TARGETS ${_source_targets}
+                                               UNJUDGED ${_unjudged}
+                                               DECLARED ${_t_declared} DEV_DECLARED ${_t_dev} ${_test_arg}
                                                OWNERS ${_owners})
         endforeach()
     endforeach()

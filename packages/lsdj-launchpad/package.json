@@ -27,18 +27,20 @@
   "retroplug": {
     "app": "ts/app.ts",
     "protocol": {
-      "apps": [
-        {
-          "id": "lsdj-midimap",
-          "module": "ts/appRuntime.ts",
-          "syncOverride": {
-            "node": "rp.lsdj.sync",
-            "mode": "midiMap",
-            "listening": "MidiMap",
-            "off": "off"
+      "kinds": {
+        "controllerApps": [
+          {
+            "id": "lsdj-midimap",
+            "module": "ts/appRuntime.ts",
+            "syncOverride": {
+              "node": "rp.lsdj.sync",
+              "mode": "midiMap",
+              "listening": "MidiMap",
+              "off": "off"
+            }
           }
-        }
-      ]
+        ]
+      }
     }
   }
 }

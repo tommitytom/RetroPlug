@@ -759,7 +759,7 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
     cart carrying a stale `mgb`. The fix is `placedRole(...)`
     ([graph/protocolNodes.ts](../packages/retroplug/src/graph/protocolNodes.ts)) in those readers. Not fixed.
   - **The controller's MI.MAP override changed only the document: closed by C2.** `controllerSyncOverride`
-    ([graph/controller.ts](../packages/retroplug/src/graph/controller.ts), applied in `buildGraph`) runs an LSDj's
+    ([launchpad/ts/control/placer.ts](../packages/launchpad/ts/control/placer.ts), applied in `buildGraph`) runs an LSDj's
     nodes in `midiMap` for a cart reading MidiMap (in `off` for one reading another SYNC), and `serialOutCaptureFor`,
     beside it since C2, computes the Game Boy's capture from that forced mode, so a forced cart captures nothing. Only
     `__rp_syncLatencyMs` still follows the stored mode, listed with C2's leftovers above.

@@ -4,18 +4,30 @@
 //
 // The app's registrations, in product order (the list's, which is a dependency order, then the shell): the roles
 // buildAppRegistry applies, the ROM providers it offers, the tracker integrations the Songs and Assets menus
-// search, and the kit formats the audio driver dispatches to. The consoles and the real carts are apart, in
-// ./consoles.ts, and the protocol tables in ./protocol.ts, so a module that needs either imports no package's
-// app.
+// search, the kit formats the audio driver dispatches to, the project sections and services each package owns,
+// and the contribution kinds' items. The consoles and the real carts are apart, in ./consoles.ts, the protocol
+// tables and the kinds' data in ./protocol.ts and the graph placers in ./placers.ts, so a module that needs one
+// of those imports no package's app.
 import type { RoleType, RomProvider } from "@retroplug/core";
 import type { TrackerIntegration } from "@retroplug/tracker/trackerIntegration";
 import type { KitFormat } from "@retroplug/dsp/kitContract";
-import type { ControllerAppContribution } from "@retroplug/launchpad/registry";
-import type { Embed } from "@retroplug/core/definePackage";
+import type { Embed, ProjectSection } from "@retroplug/core/definePackage";
+import type { ProjectServiceFactory } from "@retroplug/tracker/projectService";
 import { CONSOLES } from "./consoles";
 import app_alpha from "@retroplug/alpha/app";
 import app_beta from "@retroplug/beta/app";
 import app_retroplug from "../app";
+import { KIND_DATA, PROTOCOL_NODES } from "./protocol";
+import kind_widgets_alpha from "@retroplug/alpha/kind";
+import kind_controllerApps_beta from "@retroplug/beta/kind";
+
+/** The product's package ids, in product order, the shell excluded: what a contribution's `pkg` names, and the
+ *  prefix a node type of the package's starts with (a few name a console instead: rp.sms.sync is smsggdj's). */
+export const PACKAGE_IDS: readonly string[] = [
+  "zeta",
+  "alpha",
+  "beta",
+];
 
 /** The app's roles, in product order: the role contract's objects, which the registry holds by kind. */
 export const ROLES: readonly RoleType[] = [
@@ -78,50 +90,148 @@ for (const format of KIT_FORMATS) {
   kitIds.add(format.id);
 }
 
-/** The controller apps' CONTROL-PLANE halves, in product order: each app's id, its menu label and the schema its
- *  config is parsed with. The runtime half (the app itself, its playback model and its target) is the same
- *  package's protocol.apps entry, registered by the script bundle, and the sync mode its launches need is that
- *  entry's syncOverride data, in ./protocol.ts. The halves are joined by id, so each id has both and only one of
- *  each. */
-const CONTROLLER_APP_SOURCES: readonly { pkg: string; apps: readonly ControllerAppContribution[] }[] = [
-  { pkg: "alpha", apps: app_alpha.controllerApps ?? [] },
-  { pkg: "beta", apps: app_beta.controllerApps ?? [] },
-  { pkg: "retroplug", apps: app_retroplug.controllerApps ?? [] },
+/** The project sections the product's packages contribute, in product order: a block under a .rplg's
+ *  `settings` which its package parses, defaults and migrates (docs/modular-graph-phase-f5a-design.md
+ *  section 6.1). A key the shell owns, and a key two packages declare, are refused below: the shell keeps
+ *  every non-core key verbatim, so a duplicate would have one section silently replace the other's bytes in
+ *  every project. */
+export const PROJECT_SECTIONS: readonly { pkg: string; section: ProjectSection }[] = [
+  ...(app_alpha.projectSections ?? []).map((section) => ({ pkg: "alpha", section })),
+  ...(app_beta.projectSections ?? []).map((section) => ({ pkg: "beta", section })),
+  ...(app_retroplug.projectSections ?? []).map((section) => ({ pkg: "retroplug", section })),
 ];
-// A duplicate id is refused naming both packages, or the one package that listed it twice: a project stores only
-// the id, so one of the two apps would be unreachable without a word.
-const controllerAppOwners = new Map<string, string>();
-for (const source of CONTROLLER_APP_SOURCES) {
-  for (const app of source.apps) {
-    const owner = controllerAppOwners.get(app.id);
+// Keep in step with the shell's CORE_SETTING_KEYS (packages/retroplug/src/projectConfig.ts): the one list of the
+// settings keys a package may not contribute a section under.
+const SHELL_SECTION_KEYS = ["layout", "midiRouting", "audioRouting", "zoom"];
+const sectionOwners = new Map<string, string>();
+for (const { pkg, section } of PROJECT_SECTIONS) {
+  if (SHELL_SECTION_KEYS.includes(section.key)) {
+    throw new Error(`the package ${pkg} declares the project section ${section.key}, which is one of the ` +
+      `shell's own settings (${SHELL_SECTION_KEYS.join(", ")})`);
+  }
+  const owner = sectionOwners.get(section.key);
+  if (owner !== undefined) {
+    throw new Error(owner === pkg
+      ? `the package ${pkg} declares the project section ${section.key} twice`
+      : `two packages declare the project section ${section.key}: ${owner} and ${pkg}`);
+  }
+  sectionOwners.set(section.key, pkg);
+}
+
+/** The project services the product's packages contribute, in product order: a feature's control-plane
+ *  half, which the shell builds one instance of per project store (docs/modular-graph-phase-f5a-design.md
+ *  section 6.2). A key is a model's and a section's, so two services under one key would fight over the
+ *  graph's placement. */
+export const PROJECT_SERVICES: readonly { pkg: string; service: ProjectServiceFactory }[] = [
+  ...(app_alpha.projectServices ?? []).map((service) => ({ pkg: "alpha", service })),
+  ...(app_beta.projectServices ?? []).map((service) => ({ pkg: "beta", service })),
+  ...(app_retroplug.projectServices ?? []).map((service) => ({ pkg: "retroplug", service })),
+];
+const serviceKeys = new Map<string, string>();
+for (const { pkg, service } of PROJECT_SERVICES) {
+  const owner = serviceKeys.get(service.key);
+  if (owner !== undefined) {
+    throw new Error(owner === pkg
+      ? `the package ${pkg} declares the project service ${service.key} twice`
+      : `two packages declare the project service ${service.key}: ${owner} and ${pkg}`);
+  }
+  serviceKeys.set(service.key, pkg);
+}
+
+/** The widgets items the product's packages contribute, in product order: each app module's
+ *  `widgets` list, which the declaring package accepts (its `accept`). */
+type KindItem_widgets = Parameters<typeof kind_widgets_alpha.accept>[0][number];
+const KIND_SOURCES_widgets: readonly { pkg: string; items: readonly KindItem_widgets[] }[] = [
+  { pkg: "alpha", items: app_alpha.widgets ?? [] },
+  { pkg: "beta", items: app_beta.widgets ?? [] },
+  { pkg: "retroplug", items: app_retroplug.widgets ?? [] },
+];
+// The runtime halves the manifests declare (their protocol.kinds.widgets), which the script bundle
+// registers.
+const KIND_RUNTIMES_widgets: readonly { pkg: string; id: string }[] = [
+];
+// A duplicate item id is refused naming both packages, or the one package that listed it twice: a document
+// names an item by its id alone, so the second one would be unreachable without a word.
+const kindOwners_widgets = new Map<string, string>();
+for (const source of KIND_SOURCES_widgets) {
+  for (const item of source.items) {
+    const id = item.id;
+    const owner = kindOwners_widgets.get(id);
     if (owner !== undefined) {
       throw new Error(owner === source.pkg
-        ? `the package ${source.pkg} declares the controller app ${app.id} twice`
-        : `two packages declare the controller app ${app.id}: ${owner} and ${source.pkg}`);
+        ? `the package ${source.pkg} contributes the widgets item ${id} twice`
+        : `two packages contribute the widgets item ${id}: ${owner} and ${source.pkg}`);
     }
-    controllerAppOwners.set(app.id, source.pkg);
+    kindOwners_widgets.set(id, source.pkg);
   }
 }
-export const CONTROLLER_APPS: readonly ControllerAppContribution[] = [
-  ...(app_alpha.controllerApps ?? []),
-  ...(app_beta.controllerApps ?? []),
-  ...(app_retroplug.controllerApps ?? []),
+// An item with one half and not the other is a document that names an item nothing runs, or a runtime no menu
+// offers.
+for (const runtime of KIND_RUNTIMES_widgets) {
+  if (!kindOwners_widgets.has(runtime.id)) {
+    throw new Error(`the widgets item ${runtime.id} has no control-plane half`);
+  }
+}
+for (const id of kindOwners_widgets.keys()) {
+  if (!KIND_RUNTIMES_widgets.some((runtime) => runtime.id === id)) {
+    throw new Error(`the widgets item ${id} has no runtime half`);
+  }
+}
+const KIND_ITEMS_widgets: readonly KindItem_widgets[] = KIND_SOURCES_widgets.flatMap((source) => source.items);
+// The declaring package's own checks over the items and the manifests' data, then its registry.
+const KIND_DATA_widgets = KIND_DATA.widgets;
+kind_widgets_alpha.check?.(KIND_ITEMS_widgets, KIND_DATA_widgets, {
+  nodeTypes: Object.keys(PROTOCOL_NODES),
+});
+kind_widgets_alpha.accept(KIND_ITEMS_widgets, KIND_DATA_widgets);
+
+/** The controllerApps items the product's packages contribute, in product order: each app module's
+ *  `controllerApps` list, which the declaring package accepts (its `accept`). */
+type KindItem_controllerApps = Parameters<typeof kind_controllerApps_beta.accept>[0][number];
+const KIND_SOURCES_controllerApps: readonly { pkg: string; items: readonly KindItem_controllerApps[] }[] = [
+  { pkg: "alpha", items: app_alpha.controllerApps ?? [] },
+  { pkg: "beta", items: app_beta.controllerApps ?? [] },
+  { pkg: "retroplug", items: app_retroplug.controllerApps ?? [] },
 ];
-// The runtime halves the manifests declare (their protocol.apps), which the script bundle registers. An app with one
-// half and not the other is a document that names an app nothing runs, or a runtime no menu offers.
-const RUNTIME_APP_IDS: readonly string[] = ["alpha-app"];
-for (const id of RUNTIME_APP_IDS) {
-  if (!controllerAppOwners.has(id)) {
-    throw new Error(`the controller app ${id} has no control-plane half: a manifest declares its runtime and no ` +
-      "package's app contributes it (its label or its config's schema)");
+// The runtime halves the manifests declare (their protocol.kinds.controllerApps), which the script bundle
+// registers.
+const KIND_RUNTIMES_controllerApps: readonly { pkg: string; id: string }[] = [
+  { pkg: "alpha", id: "alpha-app" },
+];
+// A duplicate item id is refused naming both packages, or the one package that listed it twice: a document
+// names an item by its id alone, so the second one would be unreachable without a word.
+const kindOwners_controllerApps = new Map<string, string>();
+for (const source of KIND_SOURCES_controllerApps) {
+  for (const item of source.items) {
+    const id = item.id;
+    const owner = kindOwners_controllerApps.get(id);
+    if (owner !== undefined) {
+      throw new Error(owner === source.pkg
+        ? `the package ${source.pkg} contributes the controllerApps item ${id} twice`
+        : `two packages contribute the controllerApps item ${id}: ${owner} and ${source.pkg}`);
+    }
+    kindOwners_controllerApps.set(id, source.pkg);
   }
 }
-for (const controllerApp of CONTROLLER_APPS) {
-  if (!RUNTIME_APP_IDS.includes(controllerApp.id)) {
-    throw new Error(`the controller app ${controllerApp.id} has no runtime half: no package's protocol.apps ` +
-      "declares it (the app, its playback model and its target)");
+// An item with one half and not the other is a document that names an item nothing runs, or a runtime no menu
+// offers.
+for (const runtime of KIND_RUNTIMES_controllerApps) {
+  if (!kindOwners_controllerApps.has(runtime.id)) {
+    throw new Error(`the controllerApps item ${runtime.id} has no control-plane half`);
   }
 }
+for (const id of kindOwners_controllerApps.keys()) {
+  if (!KIND_RUNTIMES_controllerApps.some((runtime) => runtime.id === id)) {
+    throw new Error(`the controllerApps item ${id} has no runtime half`);
+  }
+}
+const KIND_ITEMS_controllerApps: readonly KindItem_controllerApps[] = KIND_SOURCES_controllerApps.flatMap((source) => source.items);
+// The declaring package's own checks over the items and the manifests' data, then its registry.
+const KIND_DATA_controllerApps = KIND_DATA.controllerApps;
+kind_controllerApps_beta.check?.(KIND_ITEMS_controllerApps, KIND_DATA_controllerApps, {
+  nodeTypes: Object.keys(PROTOCOL_NODES),
+});
+kind_controllerApps_beta.accept(KIND_ITEMS_controllerApps, KIND_DATA_controllerApps);
 
 /** The embedded ROMs the product's packages declare, in product order: the id native's resource table knows them
  *  by, the label a menu offers one under, and the console it runs on. A load takes its platform from here, so an

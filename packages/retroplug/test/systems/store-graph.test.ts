@@ -36,6 +36,9 @@ import "../../src/script/bundle";
 import { warned } from "../_warnings";
 import { blipToasterRom, gbRom, lsdjRom, nesRom, smsggdjRom } from "./fixtures";
 
+/** The project section the Launchpad pack contributes: a case sets it through the store, as the menu does. */
+const CONTROLLER_SECTION = "controller";
+
 function project() {
   const be = new MockBackend("/cfg");
   be.seed("/roms/a.gb", gbRom());
@@ -628,10 +631,10 @@ test("a cart the controller drives in MI.MAP captures nothing, and gets its stor
   sys.setRoleConfig(id, "lsdj-sync", { mode: LsdjSyncMode.MidiOut });
   const placed = () => be.graphNode(`sys-${id}`)?.settings?.serialOutCapture;
   expect(placed()).toBe("drive");
-  p.setController({ enabled: true, app: "lsdj-midimap", target: "system", systemId: id });
+  p.setSection(CONTROLLER_SECTION, { enabled: true, app: "lsdj-midimap", target: "system", systemId: id });
   expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings?.mode).toBe("midiMap");
   expect(placed()).toBe("off"); // in the one document that forces the node's mode
-  p.setController({ enabled: false });
+  p.setSection(CONTROLLER_SECTION, { enabled: false });
   expect(placed()).toBe("drive");
 });
 
@@ -679,7 +682,7 @@ test("a controller session is a node of the document, with the sync mode its car
   const { be, p, sys } = project();
   const id = sys.addSystem("/roms/lsdj.gb")!;
   const n = be.graphRequests.length;
-  p.setController({ enabled: true, app: "lsdj-midimap", target: "system", systemId: id });
+  p.setSection(CONTROLLER_SECTION, { enabled: true, app: "lsdj-midimap", target: "system", systemId: id });
   expect(since(be, n)).toEqual([{ slots: [id] }]);
   // Its app config parsed by the app's schema on this side, every default filled; its launches into the cart.
   expect(be.graphNode("controller")?.settings).toEqual(
@@ -691,7 +694,7 @@ test("a controller session is a node of the document, with the sync mode its car
   expect(wired(be, "controller.launches", `sys-${id}/lsdj-sync.launches`)).toBe(true);
   expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings?.mode).toBe("midiMap"); // forced in the document, never saved
   expect(sys.view()[0].roles.find((r) => r.kind === "lsdj-sync")?.config.mode).toBe(LsdjSyncMode.MidiSync);
-  p.setController({ enabled: false });
+  p.setSection(CONTROLLER_SECTION, { enabled: false });
   expect(be.graphNode("controller")).toBe(undefined);
   expect(be.graphNode(`sys-${id}/lsdj-sync`)?.settings?.mode).toBe(LsdjSyncMode.MidiSync);
 });
@@ -702,7 +705,7 @@ test("a load hands the document its project's MIDI routing and controller in the
   const { be, p, sys } = project();
   sys.addSystem("/roms/lsdj.gb");
   p.setMidiRouting(MidiRouting.MidiChannelToInstance);
-  p.setController({ enabled: true, app: "lsdj-midimap", target: "system", systemId: 0 });
+  p.setSection(CONTROLLER_SECTION, { enabled: true, app: "lsdj-midimap", target: "system", systemId: 0 });
   const bytes = p.exportBytes()!;
   p.newProject();
   expect(be.graphNode("routing")?.settings).toEqual({ mode: "sendToAll", systems: [] });
@@ -1292,13 +1295,13 @@ test("DirectGraph sets each system's pipeline and the MIDI routing, each a publi
   expect(left).toEqual([{ kind: "lsdj-sync", input: "serialIn", by: "mgb" }]);
 });
 
-test("DirectGraph takes the project's controller, its app config parsed by the app's schema", () => {
+test("DirectGraph takes the project's controller as one of the graph's models, its app config parsed by the placer", () => {
   const be = new MockBackend("/cfg");
   const g = new DirectGraph(be);
   g.add(MGB, 1);
   expect(g.setMidiRouting("sendToAll")).toBe(true);
   const controller = { app: "lsdj-midimap", target: "midiOut", systemId: 0, appConfig: { quantise: "beat" } } as const;
-  expect(g.setController({ ...controller, songRowTicks: [], anchor: null, cartSync: null })).toBe(true);
+  expect(g.setModel("controller", { ...controller, songRowTicks: [], anchor: null, cartSync: null })).toBe(true);
   expect(be.graphNode("controller")?.settings).toEqual(
     canon({
       app: "lsdj-midimap", target: "midiOut", systemId: 1, appConfig: { quantise: "beat", follow: true, page: 0 },
@@ -1308,7 +1311,7 @@ test("DirectGraph takes the project's controller, its app config parsed by the a
   // Bound for a real Game Boy, its launches leave the host, under the system it resolved.
   expect(be.graphNode("midi-out")?.settings).toEqual({ systems: [1] });
   expect(wired(be, "controller.midiOut", "midi-out.in1")).toBe(true);
-  expect(g.setController(null)).toBe(true);
+  expect(g.setModel("controller", null)).toBe(true);
   expect(be.graphNode("controller")).toBe(undefined);
   expect(be.graphNode("routing") !== undefined).toBe(true); // the routing stays
 });
