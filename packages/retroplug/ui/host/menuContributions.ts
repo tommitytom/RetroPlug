@@ -5,15 +5,34 @@
 // kind no registered type declares or over a key its schema does not read, and a tracker UI no integration matches, so
 // what this module reads it can index.
 import type {
-  MenuBuildContext, MenuBuilder, RoleRow, TrackerUi, UiHost, UiService,
+  MenuBuildContext, MenuBuilder, RoleRow, TileView, TrackerUi, UiHost, UiService, ViewDef, WindowView,
 } from "@retroplug/ui/contribution";
 import type { SystemInfo } from "@retroplug/core/host";
 import type { MenuItem } from "@retroplug/ui/menu";
-import { UI_CONTRIBUTIONS } from "../generated/menus";
+import { UI_CONTRIBUTIONS, VIEWS } from "../generated/menus";
 
 /** Every contributed role row, in product order: the System submenu's package-owned block. */
 export function roleRows(): readonly RoleRow[] {
   return UI_CONTRIBUTIONS.flatMap((entry) => entry.ui.rows ?? []);
+}
+
+/** The view a package registers under `id`, with the package it came from, or undefined. The generated module has
+ *  already refused a duplicate id, so the first match is the only one. */
+export function viewById(id: string): { pkg: string; view: ViewDef } | undefined {
+  return VIEWS.find((entry) => entry.view.id === id);
+}
+
+/** The window view a package registers under `id`, or undefined for an unknown id or a tile view. What
+ *  `host.views.open` looks an id up in, so a tile view's id opens nothing. */
+export function windowViewOf(id: string): WindowView | undefined {
+  const entry = viewById(id);
+  return entry?.view.placement === "window" ? entry.view : undefined;
+}
+
+/** Every tile view, in product order, with the package it came from: the layers EmulatorTile mounts over each tile
+ *  whose system the view's `when` accepts. */
+export function tileViews(): readonly { pkg: string; view: TileView }[] {
+  return VIEWS.filter((entry): entry is { pkg: string; view: TileView } => entry.view.placement === "tile");
 }
 
 /** The tracker UI a cart contributes, by its integration id, or undefined for a cart with no contributed specs. */

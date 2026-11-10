@@ -3,7 +3,8 @@
   "private": true,
   "dependencies": {
     "@retroplug/alpha": "workspace:*",
-    "@retroplug/beta": "workspace:*"
+    "@retroplug/beta": "workspace:*",
+    "@retroplug/zeta": "workspace:*"
   },
   "retroplug": {
     "app": "src/app.ts",

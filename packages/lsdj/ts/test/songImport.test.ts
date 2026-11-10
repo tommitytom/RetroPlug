@@ -42,6 +42,7 @@ class FakeHost {
     return {
       files: {
         readFile: (path) => this.files.get(path) ?? null,
+        readPrefix: (path, bytes) => this.files.get(path)?.slice(0, bytes) ?? null,
         writeFile: (path, bytes) => this.write(path, bytes),
         writeFileAtomic: (path, bytes) => this.writeFileAtomic(path, bytes),
         fileExists: (path) => this.files.has(path),
@@ -52,6 +53,7 @@ class FakeHost {
         setRoleConfig: (id, kind, config) => this.setRoleConfig(id, kind, config),
         reload: () => null,
         readSram: () => this.readSram(),
+        readRam: () => null,
         loadSram: (id, path) => this.loadSram(id, path),
         savPathOf: () => this.savPathOf(),
         nodeIdOf: (id) => `sys-${id}`,

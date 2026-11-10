@@ -7,6 +7,7 @@ import type { FilesHost, Host, PngHost } from "@retroplug/core/host";
 
 const files: FilesHost = {
   readFile: () => null,
+  readPrefix: () => null,
   writeFile: () => true,
   writeFileAtomic: () => true,
   fileExists: () => false,

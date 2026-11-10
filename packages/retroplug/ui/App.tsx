@@ -40,7 +40,10 @@ import type { MenuTree } from "@retroplug/ui/menu";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE, type AppAction } from "../src/keyCodes";
 import { resolveDropAction } from "../src/fileDrop";
-import { createUiHost, uiViews } from "./host/uiHost";
+import { createUiHost } from "./host/uiHost";
+import { viewById, windowViewOf } from "./host/menuContributions";
+import { ViewWindow } from "./views/ViewWindow";
+import { viewAppliesTo } from "./views/viewSession";
 import { resolveTracker } from "../src/trackerRegistry";
 
 const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
@@ -66,13 +69,17 @@ export function App() {
 
   const [menuOpen, setMenuOpen] = useState(true);
   const [menuSystemId, setMenuSystemId] = useState<number | null>(null);
-  // The LSDj HD player, when open: the id of the system it's showing. It replaces the grid but is NOT an
+  // The window view that is open, if any: its id and the system it is showing. It replaces the grid but is NOT an
   // input overlay - the cart keeps playing and keys still reach its joypad, so it doesn't gate `playing`.
-  const [hdSystemId, setHdSystemId] = useState<number | null>(null);
+  //
+  // `host.views.open` looks the id up in the generated registry. The LSDj HD player is the shell's own screen, not a
+  // registry view: "lsdj-hd" is a shell-side entry in `openViewOf` and in the full-window render below, and both go
+  // when the cart registers the same id as a window view.
+  const [openView, setOpenView] = useState<{ id: string; systemId: number } | null>(null);
   // The UI's host (docs/modular-graph-phase-f4b-design.md section 3.2), built once over the stores: the groups a cart's
-  // or a console's UI code reaches the shell through. Its views are the shell's own screens (the HD player today), and
-  // its import picker is useSongImport's overlay, which is resolved against the live system an import names rather than
-  // the snapshot the caller held.
+  // or a console's UI code reaches the shell through. Its `views` group opens the generated registry's window views
+  // (through `openViewOf`, which keeps the HD player's shell-side entry), and its import picker is useSongImport's
+  // overlay, which is resolved against the live system an import names rather than the snapshot the caller held.
   const beginImport = useCallback(
     (sys: SystemInfo, source: Uint8Array): void => {
       const live = stores.project.systems.view().find((s) => s.id === sys.id);
@@ -80,9 +87,39 @@ export function App() {
     },
     [stores, songImport.begin],
   );
-  const uiHost = useMemo(() => createUiHost(stores, { views: uiViews(setHdSystemId), beginImport }), [
+  const openViewOf = useCallback(
+    (id: string, systemId: number): void => {
+      if (id === "lsdj-hd") {
+        // The shell's own entry (above): the HD player is not a registry view yet.
+        setOpenView({ id, systemId });
+        return;
+      }
+      const entry = viewById(id);
+      if (!entry) {
+        console.warn(`[views] no view is registered under the id ${id}`);
+        return;
+      }
+      if (entry.view.placement !== "window") {
+        console.warn(`[views] ${id} is a tile view, which opens no window`);
+        return;
+      }
+      const sys = stores.project.systems.view().find((s) => s.id === systemId);
+      if (!sys) {
+        console.warn(`[views] ${id} was asked for the system ${systemId}, which is not in the project`);
+        return;
+      }
+      if (!viewAppliesTo(entry.view, sys)) {
+        console.warn(`[views] ${id} does not apply to the system ${systemId}`);
+        return;
+      }
+      setOpenView({ id, systemId });
+    },
+    [stores],
+  );
+  const uiHost = useMemo(() => createUiHost(stores, { views: { open: openViewOf }, beginImport }), [
     stores,
     beginImport,
+    openViewOf,
   ]);
   // The product's UI services: the devices whose state lives in the native host (the N8 Pro's card job, a control
   // surface's scan and its startup restore) started, subscribed and polled at their own cadences.
@@ -143,11 +180,11 @@ export function App() {
     }
   }, [menuOpen, menuSystemId, systems, empty]);
 
-  // Close the HD player if the system it's showing goes away (removed, or the project reloaded) - a stale
-  // id would otherwise strand the UI on a screen with nothing to draw.
+  // Close any window view whose system goes away (removed, or the project reloaded): a stale id would otherwise
+  // strand the UI on a screen with nothing to draw. The check is generic over the open view, not the HD player alone.
   useEffect(() => {
-    if (hdSystemId != null && !systems.some((sys) => sys.id === hdSystemId)) setHdSystemId(null);
-  }, [hdSystemId, systems]);
+    if (openView != null && !systems.some((sys) => sys.id === openView.systemId)) setOpenView(null);
+  }, [openView, systems]);
 
   // Idle: point the keypad at the sink when the grid shows without a menu. Not while a modal overlay owns
   // the keypad (close prompt / project modal) — else closing the menu to raise one steals its focus.
@@ -197,7 +234,7 @@ export function App() {
     // Esc always cancels an active overlay — a universal back, independent of the (rebindable) OpenMenu key.
     if (key === KEY_ESCAPE) {
       if (overlay) return void overlay.onClose();
-      if (hdSystemId != null) return void setHdSystemId(null); // HD player → back to the grid
+      if (openView != null) return void setOpenView(null); // a window view → back to the grid
     }
     if (overlay) return; // an overlay owns input; actions don't fire under it
     if (key === KEY_BACKTICK) return void toggleLsdjDebug(); // dev: show/hide the LSDj runtime readout
@@ -301,18 +338,33 @@ export function App() {
     if (!veto) native.__rp_quitWindow?.();
   };
 
-  const ctx: MenuContext = { stores, host: uiHost, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: beginImport, openLsdjHd: setHdSystemId };
+  const ctx: MenuContext = { stores, host: uiHost, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: beginImport, openLsdjHd: (systemId) => openViewOf("lsdj-hd", systemId) };
 
   // A full-window overlay (file browser / close prompt / project modal / song import) draws above
   // everything and owns the keypad; the start menu (empty project) is the same full-window menu, always open.
   if (overlay) return <FullWindowMenu size={windowSize} zoom={resolvedZoom} tree={overlay.tree} onClose={overlay.onClose} />;
   if (empty) return <FullWindowMenu size={windowSize} zoom={resolvedZoom} tree={buildStartMenu(ctx)} onClose={() => {}} />;
 
-  // The HD player takes the whole window in place of the grid. A stale id (its system was removed, or the
-  // project reloaded) falls through to the grid here and is cleared by the effect above.
-  if (hdSystemId != null && systems.some((sys) => sys.id === hdSystemId)) {
+  // A window view takes the whole window in place of the grid. A stale id (its system was removed, or the project
+  // reloaded) falls through to the grid here and is cleared by the effect above.
+  if (openView != null && systems.some((sys) => sys.id === openView.systemId)) {
     const { width, height } = windowSize;
-    return <LsdjHdScreen systemId={hdSystemId} width={width} height={height} testId="lsdj-hd" />;
+    const view = windowViewOf(openView.id);
+    if (view) {
+      const system = systems.find((sys) => sys.id === openView.systemId) ?? null;
+      return (
+        <ViewWindow
+          view={view}
+          host={uiHost}
+          system={system}
+          systemId={openView.systemId}
+          width={width}
+          height={height}
+        />
+      );
+    }
+    // The shell's own entry: the LSDj HD player, until its cart registers the id as a window view.
+    return <LsdjHdScreen systemId={openView.systemId} width={width} height={height} testId="lsdj-hd" />;
   }
 
   // The anchor FOLLOWS its system through an in-place rebuild (a keep-open row like FM Audio resets the
@@ -323,6 +375,7 @@ export function App() {
   const menuTree = anchored ? buildInstanceMenu({ ...ctx, system: anchored }) : undefined;
   return (
     <SystemGrid
+      host={uiHost}
       menuSystemId={menuTree ? anchorId : null}
       menuTree={menuTree}
       onMenuClose={() => {

@@ -16,7 +16,6 @@ const lsdj = defineExtension({
   contribute: ({ node, settings }) => ({
     nodes: [{ id: `${node.id}/lsdj-sync`, type: "rp.lsdj.sync", params: { mode: settings.syncMode } }],
     wires: [{ from: endpoint(`${node.id}/lsdj-sync`, "serialOut"), to: endpoint(node.id, "serialIn") }],
-    views: [{ id: "hd", label: "HD", placement: "fullscreen", component: () => null }],
   }),
 });
 
@@ -31,7 +30,7 @@ test("an extension attaches only to the nodes its matcher accepts", () => {
   expect(() => defineExtension({ id: "  ", matches: () => true, contribute: () => ({}) })).toThrow("whitespace");
 });
 
-test("collect parses each extension's settings and gathers its nodes, wires and views", () => {
+test("collect parses each extension's settings and gathers its nodes, wires and catalogs", () => {
   const reg = new ExtensionRegistry();
   reg.add(lsdj);
   const c = reg.collect([gb, gb2, nes], (node, ext) => (node === "sys-1" && ext === "rp.lsdj" ? { syncMode: "off" } : undefined));
@@ -43,7 +42,6 @@ test("collect parses each extension's settings and gathers its nodes, wires and 
     { from: "sys-1/lsdj-sync.serialOut", to: "sys-1.serialIn" },
     { from: "sys-2/lsdj-sync.serialOut", to: "sys-2.serialIn" },
   ]);
-  expect(c.views.map((v) => [v.node, v.extension, v.view.id])).toEqual([["sys-1", "rp.lsdj", "hd"], ["sys-2", "rp.lsdj", "hd"]]);
   expect(c.attached.map((a) => [a.node, a.extension])).toEqual([["sys-1", "rp.lsdj"], ["sys-2", "rp.lsdj"]]);
   expect(c.conflicts.length).toBe(0);
   expect(c.errors.length).toBe(0);

@@ -30,7 +30,8 @@
 //   realcart-node-twice | ui-missing-module
 //                   { error: <the generator's message, or null when it did not refuse> }
 //   ui | ui-duplicate-row | ui-unknown-placement | ui-role-undeclared | ui-unknown-key | ui-unknown-when-key |
-//   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service
+//   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service | views | views-duplicate-id |
+//   views-duplicate-across | views-bad-placement | views-bad-kind | views-no-body | views-window-visible
 //   cli | cli-duplicate-tool | cli-missing-module | examples-outside | examples-tsconfig-missing |
 //   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | examples-shell-name |
 //   examples-unsafe-name | host-unknown | host-known | react-tsconfig-missing | react-tsconfig-unextended |
@@ -186,6 +187,7 @@ async function loadMenus() {
       "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
       "@retroplug/alpha/ui": join(root, "packages/alpha/ts/ui.ts"),
       "@retroplug/beta/ui": join(root, "packages/beta/ts/ui.ts"),
+      "@retroplug/zeta/ui": join(root, "packages/zeta/ts/ui.ts"),
       // The ui package itself is a workspace dependency of the shell, not a fixture package: a real build resolves it
       // through the pnpm link, so the driver hands the bundle the tree's own copy.
       "@retroplug/ui/contribution": join(HERE, "../../../ui/ts/contribution.ts"),
@@ -193,6 +195,28 @@ async function loadMenus() {
   });
   const loaded = await import(pathToFileURL(out).href);
   return loaded.UI_CONTRIBUTIONS.map((entry) => entry.pkg);
+}
+
+/** The generated menus module's VIEWS, bundled and loaded the way the shell loads it: product order, and each view's
+ *  id, placement and body kind as the registry reports them. */
+async function loadViews() {
+  const out = join(work, "views.mjs");
+  const { buildSync } = require("esbuild");
+  buildSync({
+    ...buildOptions(join(root, "packages/retroplug/ui/generated/menus.ts"), out, "esm"),
+    alias: {
+      "@retroplug/alpha/app": join(root, "packages/alpha/ts/app.ts"),
+      "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
+      "@retroplug/alpha/consoles": join(root, "packages/alpha/ts/consoles.ts"),
+      "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
+      "@retroplug/alpha/ui": join(root, "packages/alpha/ts/ui.ts"),
+      "@retroplug/beta/ui": join(root, "packages/beta/ts/ui.ts"),
+      "@retroplug/zeta/ui": join(root, "packages/zeta/ts/ui.ts"),
+      "@retroplug/ui/contribution": join(HERE, "../../../ui/ts/contribution.ts"),
+    },
+  });
+  const loaded = await import(pathToFileURL(out).href);
+  return loaded.VIEWS.map(({ pkg, view }) => ({ pkg, id: view.id, placement: view.placement, kind: view.body.kind }));
 }
 
 /** The generated CLI tools module, bundled and loaded as the dispatcher loads it: loading it runs its own refusal of a
@@ -206,6 +230,7 @@ async function loadCli() {
       "@retroplug/core/cliTool": join(HERE, "../../../core/ts/cliTool.ts"),
       "@retroplug/alpha/cli": join(root, "packages/alpha/ts/cli.ts"),
       "@retroplug/beta/cli": join(root, "packages/beta/ts/cli.ts"),
+      "@retroplug/zeta/cli": join(root, "packages/zeta/ts/cli.ts"),
     },
   });
   const loaded = await import(pathToFileURL(out).href);
@@ -332,8 +357,9 @@ try {
       break;
     case "ui":
       // The positive side: alpha's app contributes the role its ui module's row names, and beta contributes a builder,
-      // so the menus module loads and its contributions are reported in product order (two contributors, so the order
-      // is what is reported rather than a list of one).
+      // so the menus module loads and its contributions are reported in product order. zeta contributes without an app
+      // of its own and is named FIRST in the product list, so the reported order (zeta, alpha, beta) is the list's and
+      // not a sort of the three names.
       writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
       writeTree("packages/beta/ts/ui.ts", 'export default { menus: [{ placement: "start", build: () => [] }] };\n');
       editManifest("beta", (m) => {
@@ -450,8 +476,158 @@ try {
         result = { error: e.message };
       }
       break;
+    case "views": {
+      // Three contributors, so the reported order is the product order (zeta is listed first) rather than an
+      // alphabetical sort. A view is data: its id, its placement and a body of one kind, which the generated module
+      // names in VIEWS.
+      writeTree(
+        "packages/zeta/ts/ui.ts",
+        'export default { views: [{ id: "zeta-view", label: "Zeta View", placement: "tile", ' +
+          'body: { kind: "readout", open: () => null } }] };\n',
+      );
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile", ' +
+          'body: { kind: "readout", open: () => null } }] };\n',
+      );
+      writeTree(
+        "packages/beta/ts/ui.ts",
+        'export default { views: [{ id: "beta-view", label: "Beta View", placement: "window", ' +
+          'body: { kind: "pixels", open: () => null } }] };\n',
+      );
+      for (const name of ["alpha", "beta"]) {
+        editManifest(name, (m) => {
+          m.retroplug.ui = "ts/ui.ts";
+          m.exports["./ui"] = "./ts/ui.ts";
+        });
+      }
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    }
+    case "views-no-body":
+      // A contribution whose view has no body at all: the data check backs the type with a message that names the
+      // package, rather than a bare TypeError from reading `kind` off nothing.
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile" }] };\n',
+      );
+      editManifest("alpha", (m) => {
+        m.retroplug.ui = "ts/ui.ts";
+        m.exports["./ui"] = "./ts/ui.ts";
+      });
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "views-duplicate-id":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { views: [\n' +
+          '  { id: "same-view", label: "First", placement: "tile", body: { kind: "readout", open: () => null } },\n' +
+          '  { id: "same-view", label: "Second", placement: "window", body: { kind: "pixels", open: () => null } },\n' +
+          '] };\n',
+      );
+      editManifest("alpha", (m) => {
+        m.retroplug.ui = "ts/ui.ts";
+        m.exports["./ui"] = "./ts/ui.ts";
+      });
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "views-duplicate-across":
+      for (const name of ["alpha", "beta"]) {
+        writeTree(
+          `packages/${name}/ts/ui.ts`,
+          `export default { views: [{ id: "same-view", label: "${name}", placement: "tile", ` +
+            'body: { kind: "readout", open: () => null } }] };\n',
+        );
+        editManifest(name, (m) => {
+          m.retroplug.ui = "ts/ui.ts";
+          m.exports["./ui"] = "./ts/ui.ts";
+        });
+      }
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "views-bad-placement":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "float", ' +
+          'body: { kind: "readout", open: () => null } }] };\n',
+      );
+      editManifest("alpha", (m) => {
+        m.retroplug.ui = "ts/ui.ts";
+        m.exports["./ui"] = "./ts/ui.ts";
+      });
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "views-bad-kind":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile", ' +
+          'body: { kind: "hologram", open: () => null } }] };\n',
+      );
+      editManifest("alpha", (m) => {
+        m.retroplug.ui = "ts/ui.ts";
+        m.exports["./ui"] = "./ts/ui.ts";
+      });
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
+    case "views-window-visible":
+      writeTree(
+        "packages/alpha/ts/ui.ts",
+        'const visible = { get: () => true, subscribe: () => () => {} };\n' +
+          'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "window", visible, ' +
+          'body: { kind: "readout", open: () => null } }] };\n',
+      );
+      editManifest("alpha", (m) => {
+        m.retroplug.ui = "ts/ui.ts";
+        m.exports["./ui"] = "./ts/ui.ts";
+      });
+      generate({ root });
+      try {
+        result = { views: await loadViews() };
+      } catch (e) {
+        result = { error: e.message };
+      }
+      break;
     case "cli": {
-      // The positive side: beta contributes one tool and alpha another, so the reported order is the product order.
+      // The positive side: beta contributes one tool and alpha another, and zeta a third; zeta is listed first, so the
+      // reported order is the product order rather than an alphabetical sort of the three names.
+      writeTree(
+        "packages/zeta/ts/cli.ts",
+        'export default [{ name: "zeta-tool", summary: "", help: "", run: () => {} }];\n',
+      );
+      editManifest("zeta", (m) => {
+        m.retroplug.cli = "ts/cli.ts";
+        m.exports["./cli"] = "./ts/cli.ts";
+      });
       writeTree("packages/alpha/ts/cli.ts", 'export default [{ name: "alpha-tool", summary: "", help: "", run: () => {} }];\n');
       writeTree("packages/beta/ts/cli.ts", 'export default [{ name: "beta-tool", summary: "", help: "", run: () => {} }];\n');
       for (const name of ["alpha", "beta"]) {
@@ -954,7 +1130,8 @@ try {
       renameSync(join(root, "packages/beta"), join(root, "packages/a"));
       editList("a-b", "a");
       editManifest("retroplug", (json) => {
-        json.dependencies = { ...json.dependencies, "@retroplug/a-b": "workspace:*", "@retroplug/a": "workspace:*" };
+        // The renamed pair alone: zeta leaves the product list here, so the shell must not depend on it any more.
+        json.dependencies = { "@retroplug/a-b": "workspace:*", "@retroplug/a": "workspace:*" };
       });
       editManifest("a-b", (json) => {
         json.name = "@retroplug/a-b";

@@ -5,7 +5,8 @@
 // defineUi({ ... }); the generator concatenates them in product order into packages/retroplug/ui/generated/menus.ts.
 //
 // Everything here is plain TypeScript: the contract a package's module is checked against, and the helpers that read a
-// row's stored value the way the shell renders it. The React kit is F4c's, in this package beside the menu model.
+// row's stored value the way the shell renders it. The React kit is @retroplug/ui-react, a package of its own, so a
+// package that draws no React never meets it.
 import type { Host, SystemInfo } from "@retroplug/core/host";
 import type { AssetCatalog, AssetTypeInfo } from "@retroplug/tracker/assetCatalog";
 import type { SongCatalog } from "@retroplug/tracker/songCatalog";
@@ -17,6 +18,101 @@ import { cycler, type MenuItem } from "./menu";
 export type UiHost = Host<
   "files" | "png" | "systems" | "songs" | "liveSongs" | "dialogs" | "devices" | "views" | "controller" | "config"
 >;
+
+/** A value a package owns and the shell watches: a view's `visible`, a debug flag. `get` is synchronous and cheap
+ *  (the shell reads it during a render), and `subscribe` asks for a repaint when it moves. */
+export interface Readable<T> {
+  get(): T;
+  subscribe(fn: () => void): () => void;
+}
+
+/** The writable half, so a package's own module can flip what it exposed. `createSignal` (`@retroplug/ui/menu`) is the
+ *  one implementation, so a flag's get/set/subscribe is written once. */
+export interface Signal<T> extends Readable<T> {
+  set(value: T): void;
+}
+
+/** One frame of a pixels view: the packed pixels and the size they are laid out in. The array is the view's own (the
+ *  HD canvas hands the same one every frame) or a subarray of a shared wire buffer; the shell copies only the
+ *  latter. */
+export interface PixelFrame {
+  readonly pixels: Uint32Array;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** A pixels view's session, opened by the shell for one system. */
+export interface PixelSession {
+  /** The next frame, or null when nothing moved (the shell skips the copy and the invalidate). The shell asks for a
+   *  frame only once it has a canvas to draw the result into, so a flush-and-diff session (the HD canvas reports just
+   *  the tiles that changed since its last flush) cannot have a frame swallowed. */
+  frame(): PixelFrame | null;
+  close?(): void;
+}
+
+/** One frame of a readout view: the lines it shows and whether the cart is playing (the colour). */
+export interface ReadoutFrame {
+  readonly lines: readonly string[];
+  readonly playing: boolean;
+}
+
+/** A readout view's session. */
+export interface ReadoutSampler {
+  /** The current readout: null = show nothing (an unsupported cart), undefined = unreadable this frame, keep what
+   *  shows. */
+  sample(): ReadoutFrame | null | undefined;
+  /** Dedupe key for a frame; omitted = the lines and the flag themselves, which is exactly what a readout draws, so a
+   *  sampler whose state moves without its lines changing narrows this and one that shows everything needs nothing.
+   *  It can only coarsen what the default dedupes, and a signature that throws falls back to the default. */
+  signature?(frame: ReadoutFrame): string;
+  close?(): void;
+}
+
+/** What the shell hands a component view: its host, the system it is drawn for, and the space it has. */
+export interface ViewComponentProps {
+  readonly host: UiHost;
+  readonly systemId: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** A view's body, one kind each: the shell draws pixels and readout itself, and mounts a component as it is given
+ *  (`reactView`, in @retroplug/ui-react). `component` is opaque here because this contract imports no React. */
+export type ViewBody =
+  | {
+      readonly kind: "pixels";
+      /** The text to show when `open` returns null (an unsupported cart); absent = draw nothing. */
+      readonly unsupported?: string;
+      open(host: UiHost, systemId: number): PixelSession | null;
+    }
+  | { readonly kind: "readout"; open(host: UiHost, systemId: number): ReadoutSampler | null }
+  | { readonly kind: "component"; readonly component: unknown };
+
+/** The component kind's body: what `reactView` builds, with the component still opaque here. */
+export type ComponentBody = Extract<ViewBody, { kind: "component" }>;
+
+interface ViewBase {
+  /** Also the view's test id: "lsdj-hd", "lsdj-overlay", "risa-overlay". Unique across the product. */
+  readonly id: string;
+  readonly label: string;
+  /** The systems the view applies to; absent = every system. */
+  when?(sys: SystemInfo): boolean;
+  readonly body: ViewBody;
+}
+
+/** A view that takes the whole window in place of the grid, opened by host.views.open(id, systemId). */
+export interface WindowView extends ViewBase {
+  readonly placement: "window";
+}
+
+/** A view that is a layer over every tile whose system `when` accepts. */
+export interface TileView extends ViewBase {
+  readonly placement: "tile";
+  /** Shown only while true; absent = always. A hidden tile view opens no session and does no work. */
+  readonly visible?: Readable<boolean>;
+}
+
+export type ViewDef = WindowView | TileView;
 
 /** One choice of a config row: the value the role schema stores and the label the cycler shows. */
 export interface ConfigChoice {
@@ -153,6 +249,9 @@ export interface UiContribution {
   readonly menus?: readonly MenuBuilder[];
   readonly trackers?: readonly TrackerUi[];
   readonly services?: readonly UiService[];
+  /** The window and tile views the package draws (declarative: the shell renders pixels and readout, and mounts a
+   *  component the package built with @retroplug/ui-react). */
+  readonly views?: readonly ViewDef[];
 }
 
 /** The identity function with types: a UI module's default export, checked against what a package may contribute. */

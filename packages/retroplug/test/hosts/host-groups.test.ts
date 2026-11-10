@@ -122,6 +122,32 @@ test("a render host is its two groups", () => {
   ]);
 });
 
+test("every surface's files group reads a prefix, and the UI host reads work RAM", () => {
+  const backend = new MockBackend("/cfg");
+  backend.seed("/cfg/rom.bin", new Uint8Array([1, 2, 3, 4]));
+  const ui = createUiHost(composeAppStores({ backend }), { views: { open: () => {} }, beginImport: () => {} });
+  const session = {
+    backend,
+    audio: { compileKitFormat: async () => ({ bytes: new Uint8Array(0), errors: [] }) },
+  } as unknown as Session;
+  const cli = cliHost(session);
+  const ctx = { backend, audio: { renderAudio: () => {}, pressButton: () => {} } } as unknown as RenderContext;
+  const render = renderHost(ctx);
+  // One edit in src/hostGroups.ts (filesHost wraps the backend's readFilePrefix), so all three builders gain it.
+  for (const files of [ui.files, cli.files, render.files]) {
+    expect([...(files.readPrefix("/cfg/rom.bin", 2) ?? [])]).toEqual([1, 2]);
+    expect(files.readPrefix("/cfg/missing.bin", 2)).toBe(null);
+  }
+  // Work RAM is the UI host's alone: a render reaches it through its emulator group, and the CLI has no systems.
+  backend.setRam(7, new Uint8Array([9, 8, 7]));
+  expect([...(ui.systems.readRam(7) ?? [])]).toEqual([9, 8, 7]);
+  expect(ui.systems.readRam(8)).toBe(null);
+  // @ts-expect-error a CLI host has no systems group
+  cli.systems;
+  // @ts-expect-error the render host's systems are absent; its one emulator group carries readRam instead
+  render.systems;
+});
+
 test("a controller target is checked against the launchpad package's list", () => {
   const stores = composeAppStores({ backend: new MockBackend("/cfg") });
   const ui = createUiHost(stores, { views: { open: () => {} }, beginImport: () => {} });

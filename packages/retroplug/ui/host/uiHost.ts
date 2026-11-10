@@ -25,9 +25,9 @@ import { batteryListing } from "../../src/batteryListing";
 export type { UiHost } from "@retroplug/ui/contribution";
 
 /** The shell's own full-window screens, by the id a cart names them with. The ids are the leftover shell knowledge of a
- *  cart: "lsdj-hd" is LSDj's HD player, and it is the ONE interim cart id the shell keeps until F4c moves that screen
- *  and the two overlays into the carts' own view registrations. An id this shell does not own is ignored, so a package's
- *  newer view cannot open the wrong screen here. */
+ *  cart: "lsdj-hd" is LSDj's HD player, the one cart id the shell still maps itself; the carts register their views
+ *  (the HD player and the two overlays) once those move. An id this shell does not own is ignored, so a package's newer
+ *  view cannot open the wrong screen here. */
 export function uiViews(openLsdjHd: (systemId: number) => void): ViewsHost {
   return {
     open: (id, systemId) => {
@@ -116,6 +116,7 @@ function systemsHost(backend: ControlPlaneBackend, systems: SystemsStore): Syste
     setRoleConfig: (id, kind, config) => systems.setRoleConfig(id, kind, config),
     reload: (id) => systems.reloadSystem(id),
     readSram: (id) => systems.readSram(id),
+    readRam: (id) => systems.readRam(id),
     loadSram: (id, path) => systems.loadSram(id, path),
     savPathOf: (id) => {
       const sys = view().find((s) => s.id === id);

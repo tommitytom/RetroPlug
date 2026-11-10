@@ -15,14 +15,18 @@ import { StableSlot } from "../../lvgl/StableSlot";
 import { EmulatorTile } from "./EmulatorTile";
 import { Menu } from "../menu/Menu";
 import type { MenuTree } from "@retroplug/ui/menu";
+import type { UiHost } from "@retroplug/ui/contribution";
 import type { SystemView } from "../../../src/systemsStore";
 import { SystemLayout, shapeFor, tileWidth, tileHeight, displayZoom } from "./layout";
 
 export function SystemGrid({
+  host,
   menuSystemId,
   menuTree,
   onMenuClose,
 }: {
+  /** The UI host a tile's views are handed (docs/modular-graph-phase-f4c-design.md section 5.2). */
+  host: UiHost;
   menuSystemId?: number | null;
   menuTree?: MenuTree;
   onMenuClose?: () => void;
@@ -61,6 +65,7 @@ export function SystemGrid({
                   ) : (
                     <EmulatorTile
                       systemId={sys.id}
+                      host={host}
                       focused={sys.focused}
                       single={single}
                       width={tw}

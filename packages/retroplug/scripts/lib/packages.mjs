@@ -765,7 +765,7 @@ function renderMenus({ packages, outDir }) {
     "// system-settings rows, menu builders, tracker specs and services it adds. The shell composes the menus from this",
     "// list, so a package's place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports",
     "// this module: the control plane, the render worker, the SDK and the planner carry no menu contribution.",
-    'import { PLACEMENTS, type RoleRow, type UiContribution } from "@retroplug/ui/contribution";',
+    'import { PLACEMENTS, type RoleRow, type UiContribution, type ViewDef } from "@retroplug/ui/contribution";',
   ];
   for (const p of contributors) {
     lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.ui)}";`);
@@ -781,6 +781,12 @@ function renderMenus({ packages, outDir }) {
     lines.push(`  { pkg: ${JSON.stringify(p.pkg.name)}, ui: ${local(p.pkg.name)} },`);
   }
   lines.push("];");
+  lines.push("");
+  lines.push("/** The product's views, in product order, with the package each came from: what host.views.open looks");
+  lines.push(" *  a window view up by id, and the tile layers every tile mounts in turn. */");
+  lines.push("export const VIEWS: readonly { pkg: string; view: ViewDef }[] = UI_CONTRIBUTIONS.flatMap(({ pkg, ui }) =>");
+  lines.push("  (ui.views ?? []).map((view) => ({ pkg, view })),");
+  lines.push(");");
   lines.push("");
   lines.push("// A row's id has to be unique inside its placement: the menu is keyed by id, so a second row of one id would");
   lines.push("// take the first one's place (a system-settings row lands in the System submenu, a tracker's extras in its own");
@@ -808,6 +814,11 @@ function renderMenus({ packages, outDir }) {
   lines.push("// duplicate is refused rather than let the second definition win.");
   lines.push("const serviceOwners = new Map<string, string>();");
   lines.push("const placements = new Set<string>(PLACEMENTS);");
+  lines.push("// A view's id is its test id and the id host.views.open names, so it is unique across the product; its");
+  lines.push("// placement and its body's kind are the two data fields the type cannot hold a package to at load.");
+  lines.push("const viewOwners = new Map<string, string>();");
+  lines.push('const viewPlacements = new Set<string>(["window", "tile"]);');
+  lines.push('const bodyKinds = new Set<string>(["pixels", "readout", "component"]);');
   lines.push("");
   lines.push("/** One contributed row: its role must be registered, its id unique in its placement, and its key (and its");
   lines.push(" *  gate's key) one its role's schema reads. */");
@@ -832,8 +843,34 @@ function renderMenus({ packages, outDir }) {
   lines.push("  }");
   lines.push("}");
   lines.push("");
+  lines.push("/** One contributed view: its id unique across the product, its placement one the shell has, its body kind");
+  lines.push(" *  one the shell renders, and no `visible` on a window view (the type refuses that; this backs the type). */");
+  lines.push("function checkView(pkg: string, view: ViewDef): void {");
+  lines.push("  const owner = viewOwners.get(view.id);");
+  lines.push("  if (owner !== undefined) {");
+  lines.push("    throw new Error(owner === pkg");
+  lines.push("      ? `the package ${pkg} declares the view ${view.id} twice`");
+  lines.push("      : `two packages declare the view ${view.id}: ${owner} and ${pkg}`);");
+  lines.push("  }");
+  lines.push("  viewOwners.set(view.id, pkg);");
+  lines.push("  if (!viewPlacements.has(view.placement)) {");
+  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} at the placement ${view.placement}, ` +");
+  lines.push('      `which is no placement (the placements are window, tile)`);');
+  lines.push("  }");
+  lines.push("  const kind = view.body?.kind;");
+  lines.push("  if (!bodyKinds.has(kind)) {");
+  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} with the body kind ${kind}, ` +");
+  lines.push('      `which is no body kind (the kinds are pixels, readout, component)`);');
+  lines.push("  }");
+  lines.push("  if (view.placement !== \"tile\" && (view as { readonly visible?: unknown }).visible !== undefined) {");
+  lines.push("    throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +");
+  lines.push('      `a tile view has`);');
+  lines.push("  }");
+  lines.push("}");
+  lines.push("");
   lines.push("for (const { pkg, ui } of UI_CONTRIBUTIONS) {");
   lines.push("  for (const row of ui.rows ?? []) checkRow(\"system.settings\", pkg, row);");
+  lines.push("  for (const view of ui.views ?? []) checkView(pkg, view);");
   lines.push("  for (const tracker of ui.trackers ?? []) {");
   lines.push("    if (!trackerIds.has(tracker.id)) {");
   lines.push(

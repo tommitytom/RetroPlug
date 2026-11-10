@@ -1,0 +1,8 @@
+{
+  "name": "@retroplug/zeta",
+  "exports": {
+    "./ui": "./ts/ui.ts"
+  },
+  "private": true,
+  "retroplug": { "ui": "ts/ui.ts" }
+}

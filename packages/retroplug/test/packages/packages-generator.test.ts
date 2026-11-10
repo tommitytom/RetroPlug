@@ -105,9 +105,9 @@ async function matchesFixture(mode: string, name: string): Promise<boolean> {
 
 test("the fixture product list and manifests generate the expected packages.ts", async () => {
   const report = await drive("generate");
-  // The list is the order (alpha, then beta, which depends on it), and the shell closes the app: no package may depend
-  // on it.
-  expect(report.packages).toEqual(["alpha", "beta", "retroplug"]);
+  // The list is the order: zeta is listed first and depends on nothing, alpha next, then beta (which depends on it);
+  // the shell closes the app, so no package may depend on it.
+  expect(report.packages).toEqual(["zeta", "alpha", "beta", "retroplug"]);
   expect(await matchesFixture("generate", "packages.ts")).toBe(true);
 });
 
@@ -128,8 +128,9 @@ test("the fixture product list and manifests generate the expected menus.ts", as
 });
 
 test("the generated menus module carries the packages' UI contributions in product order", async () => {
+  // zeta is listed before alpha and beta, so this is the product list's order and not an alphabetical sort.
   const { packages } = await drive("ui");
-  expect(packages).toEqual(["alpha", "beta"]);
+  expect(packages).toEqual(["zeta", "alpha", "beta"]);
 });
 
 test("the generated menus module refuses a row id used twice in a placement", async () => {
@@ -191,6 +192,62 @@ test("the generated menus module refuses a UI service id declared twice", async 
   expect(error).toBe("the package alpha declares the UI service alpha-watch twice");
 });
 
+test("the generated menus module carries the packages' views in product order", async () => {
+  const { views, error } = await drive("views");
+  if (error) console.log(`# views: ${error}`);
+  expect(views).toEqual([
+    { pkg: "zeta", id: "zeta-view", placement: "tile", kind: "readout" },
+    { pkg: "alpha", id: "alpha-view", placement: "tile", kind: "readout" },
+    { pkg: "beta", id: "beta-view", placement: "window", kind: "pixels" },
+  ]);
+});
+
+test("the generated menus module refuses a view id one package declares twice", async () => {
+  const { error } = await drive("views-duplicate-id");
+  console.log(`# duplicate view id: ${error}`);
+  expect(error).toBe("the package alpha declares the view same-view twice");
+});
+
+test("the generated menus module refuses a view id two packages declare", async () => {
+  const { error } = await drive("views-duplicate-across");
+  console.log(`# view id across packages: ${error}`);
+  expect(error).toBe("two packages declare the view same-view: alpha and beta");
+});
+
+test("the generated menus module refuses a view at a placement no placement has", async () => {
+  const { error } = await drive("views-bad-placement");
+  console.log(`# unknown view placement: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the view alpha-view at the placement float, which is no placement (the placements " +
+      "are window, tile)",
+  );
+});
+
+test("the generated menus module refuses a view body kind none of the three", async () => {
+  const { error } = await drive("views-bad-kind");
+  console.log(`# unknown body kind: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the view alpha-view with the body kind hologram, which is no body kind (the kinds " +
+      "are pixels, readout, component)",
+  );
+});
+
+test("the generated menus module refuses a view with no body, naming the package", async () => {
+  const { error } = await drive("views-no-body");
+  console.log(`# missing body: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the view alpha-view with the body kind undefined, which is no body kind (the kinds " +
+      "are pixels, readout, component)",
+  );
+});
+
+test("the generated menus module refuses a visible flag on a window view", async () => {
+  const { error } = await drive("views-window-visible");
+  console.log(`# window view visible: ${error}`);
+  expect(error).toBe("the package alpha declares the window view alpha-view with a visible flag, which only a tile " +
+    "view has");
+});
+
 test("a retroplug.ui member naming a module that is not there is refused", async () => {
   const { error } = await drive("ui-missing-module");
   console.log(`# missing ui module: ${error}`);
@@ -198,8 +255,10 @@ test("a retroplug.ui member naming a module that is not there is refused", async
 });
 
 test("the generated cli module carries the packages' tools in product order", async () => {
+  // zeta is listed before alpha and beta, so this is the product list's order and not an alphabetical sort.
   const { tools } = await drive("cli");
   expect(tools).toEqual([
+    { pkg: "zeta", tools: ["zeta-tool"] },
     { pkg: "alpha", tools: ["alpha-tool"] },
     { pkg: "beta", tools: ["beta-tool"] },
   ]);
@@ -346,7 +405,7 @@ test("an unlisted dependency that would contribute to the app is refused", async
 
 test("an unlisted dependency that contributes nothing is left out of the ordering", async () => {
   const report = await drive("unlisted-plain");
-  expect(report.packages).toEqual(["alpha", "beta", "retroplug"]);
+  expect(report.packages).toEqual(["zeta", "alpha", "beta", "retroplug"]);
   expect(await matchesFixture("unlisted-plain", "packages.ts")).toBe(true);
 });
 
@@ -821,7 +880,7 @@ test("a package contributing an app and no nodes names no module and still regis
   // The shape an app bridge has: a protocol member with apps alone, and no nodes.ts to satisfy a check.
   const report = await drive("apps-only");
   const files = report.files as Record<string, string>;
-  expect(report.packages).toEqual(["alpha", "beta", "retroplug"]);
+  expect(report.packages).toEqual(["zeta", "alpha", "beta", "retroplug"]);
   expect(files["scriptNodes.ts"].includes("import app_alpha_alpha_app from")).toBe(true);
   expect(files["scriptNodes.ts"].includes("registerControllerApps(apps);")).toBe(true);
   expect(files["scriptNodes.ts"].includes("nodes_alpha")).toBe(false); // nothing of alpha's to register

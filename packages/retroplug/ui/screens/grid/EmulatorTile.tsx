@@ -18,12 +18,15 @@ import {
   useNativeEvent,
   type CanvasHandle,
 } from "@retroplug/ui-react";
+import type { UiHost } from "@retroplug/ui/contribution";
 import { LsdjOverlay } from "./LsdjOverlay";
 import { RisaOverlay } from "./RisaOverlay";
+import { TileViews } from "../../views/TileViews";
 import { pickActiveRenderJob, renderBadgeLabel, type RenderJobStatus } from "../../host/render";
 
 export function EmulatorTile({
   systemId,
+  host,
   focused,
   single,
   width,
@@ -32,6 +35,8 @@ export function EmulatorTile({
   dimTestId,
 }: {
   systemId: number;
+  /** The UI host: what a package's view is handed when it opens its session. */
+  host: UiHost;
   focused: boolean;
   /** The only system in the project. A lone tile fills the window with no focus border and no dim — the
    *  focus cue only means something when there's another tile to distinguish it from. */
@@ -90,6 +95,10 @@ export function EmulatorTile({
       {/* The risa twin — a live NES-tracker readout (screen + cursor / mode / tempo / version / per-track
           phrase). Renders nothing for a non-risa ROM, so it too is mounted unconditionally. */}
       <RisaOverlay systemId={systemId} width={width} testId="risa-overlay" />
+      {/* The product's tile views, one StableSlot each (docs/modular-graph-phase-f4c-design.md section 5.2): a
+          fixed place in the child list, so a view that appears late does not land over the border or badge. The
+          product registers none yet; a cart's overlays land here once they move. */}
+      <TileViews host={host} systemId={systemId} width={width} height={height} />
       {showBorder && (
         // Accent border on the focused tile — the visible focus cue (the dim is imperceptible on a
         // near-black GB screen). Drawn as a transparent full-tile overlay layered OVER the Canvas, not

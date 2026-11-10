@@ -5,14 +5,22 @@
 // system-settings rows, menu builders, tracker specs and services it adds. The shell composes the menus from this
 // list, so a package's place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports
 // this module: the control plane, the render worker, the SDK and the planner carry no menu contribution.
-import { PLACEMENTS, type RoleRow, type UiContribution } from "@retroplug/ui/contribution";
+import { PLACEMENTS, type RoleRow, type UiContribution, type ViewDef } from "@retroplug/ui/contribution";
+import ui_zeta from "@retroplug/zeta/ui";
 import ui_alpha from "@retroplug/alpha/ui";
 import { ROLES, TRACKER_INTEGRATIONS } from "../../src/generated/packages";
 
 /** Each package's UI contribution, in product order. */
 export const UI_CONTRIBUTIONS: readonly { pkg: string; ui: UiContribution }[] = [
+  { pkg: "zeta", ui: ui_zeta },
   { pkg: "alpha", ui: ui_alpha },
 ];
+
+/** The product's views, in product order, with the package each came from: what host.views.open looks
+ *  a window view up by id, and the tile layers every tile mounts in turn. */
+export const VIEWS: readonly { pkg: string; view: ViewDef }[] = UI_CONTRIBUTIONS.flatMap(({ pkg, ui }) =>
+  (ui.views ?? []).map((view) => ({ pkg, view })),
+);
 
 // A row's id has to be unique inside its placement: the menu is keyed by id, so a second row of one id would
 // take the first one's place (a system-settings row lands in the System submenu, a tracker's extras in its own
@@ -38,6 +46,11 @@ const trackerOwners = new Map<string, string>();
 // duplicate is refused rather than let the second definition win.
 const serviceOwners = new Map<string, string>();
 const placements = new Set<string>(PLACEMENTS);
+// A view's id is its test id and the id host.views.open names, so it is unique across the product; its
+// placement and its body's kind are the two data fields the type cannot hold a package to at load.
+const viewOwners = new Map<string, string>();
+const viewPlacements = new Set<string>(["window", "tile"]);
+const bodyKinds = new Set<string>(["pixels", "readout", "component"]);
 
 /** One contributed row: its role must be registered, its id unique in its placement, and its key (and its
  *  gate's key) one its role's schema reads. */
@@ -58,8 +71,34 @@ function checkRow(placement: string, pkg: string, row: RoleRow): void {
   }
 }
 
+/** One contributed view: its id unique across the product, its placement one the shell has, its body kind
+ *  one the shell renders, and no `visible` on a window view (the type refuses that; this backs the type). */
+function checkView(pkg: string, view: ViewDef): void {
+  const owner = viewOwners.get(view.id);
+  if (owner !== undefined) {
+    throw new Error(owner === pkg
+      ? `the package ${pkg} declares the view ${view.id} twice`
+      : `two packages declare the view ${view.id}: ${owner} and ${pkg}`);
+  }
+  viewOwners.set(view.id, pkg);
+  if (!viewPlacements.has(view.placement)) {
+    throw new Error(`the package ${pkg} declares the view ${view.id} at the placement ${view.placement}, ` +
+      `which is no placement (the placements are window, tile)`);
+  }
+  const kind = view.body?.kind;
+  if (!bodyKinds.has(kind)) {
+    throw new Error(`the package ${pkg} declares the view ${view.id} with the body kind ${kind}, ` +
+      `which is no body kind (the kinds are pixels, readout, component)`);
+  }
+  if (view.placement !== "tile" && (view as { readonly visible?: unknown }).visible !== undefined) {
+    throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +
+      `a tile view has`);
+  }
+}
+
 for (const { pkg, ui } of UI_CONTRIBUTIONS) {
   for (const row of ui.rows ?? []) checkRow("system.settings", pkg, row);
+  for (const view of ui.views ?? []) checkView(pkg, view);
   for (const tracker of ui.trackers ?? []) {
     if (!trackerIds.has(tracker.id)) {
       throw new Error(`the package ${pkg} declares a tracker UI for ${tracker.id}, which no registered ` +

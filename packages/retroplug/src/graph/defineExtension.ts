@@ -1,6 +1,6 @@
 // Extensions: control-plane features that attach to a node INSTANCE (docs/modular-graph-design.md
 // sections 2.6, 2.7 and 7.1). An extension has no ports; it is chosen by a matcher over the node's
-// identity, and contributes nodes it inserts and wires, views, and song / asset catalogs.
+// identity, and contributes nodes it inserts and wires, and song / asset catalogs.
 //
 // Port ownership: each node input may be claimed by only ONE contributor - an extension on a node, or the
 // base graph the builder made itself. collect() reports a second claim as a conflict naming every claimant,
@@ -24,26 +24,11 @@ export interface NodeInfo {
   };
 }
 
-export type ViewPlacement = "tile" | "overlay" | "fullscreen";
-
-export interface ViewDefinition {
-  id: string;
-  label: string;
-  placement: ViewPlacement;
-  /** Beats the node type's own default view (BlipToaster opens on its panel, not NES video). */
-  default?: boolean;
-  /** The UI component. Typed loosely on purpose: src/ never imports ui/, which owns the component types. */
-  component: unknown;
-  /** Data the view reads, so the host can arm only those snapshot ranges. Optional. */
-  needs?: { memory?: { region: string; range: [number, number] }[]; rate?: "frame" | "block" };
-}
-
 /** What an extension adds for one node. Menu items and actions are deliberately absent until the package
  *  split extracts the menu item model (design section 7.7). */
 export interface Contribution {
   nodes?: NodeDoc[];
   wires?: WireDoc[];
-  views?: ViewDefinition[];
   songs?: SongCatalog;
   assets?: AssetCatalog;
 }
@@ -93,15 +78,14 @@ export interface CollectError {
 export interface Collected {
   nodes: NodeDoc[];
   wires: WireDoc[];
-  views: { node: string; extension: string; view: ViewDefinition }[];
   attached: { node: string; extension: string; contribution: Contribution }[];
   conflicts: Conflict[];
   errors: CollectError[];
 }
 
 // A JSON-only copy of a node or wire document, so a builder that edits the collected graph cannot reach the
-// contribution it came from (or the other way round). Views and catalogs are not documents (they carry
-// components and methods), so they are passed through as they are.
+// contribution it came from (or the other way round). Catalogs are not documents (they carry methods), so they are
+// passed through as they are.
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 // Extensions are kept sorted by id, and contributions are collected node by node in that order, so the
@@ -129,7 +113,7 @@ export class ExtensionRegistry {
     settingsFor: (node: string, extension: string) => unknown = () => undefined,
     base: { nodes: readonly NodeDoc[]; wires: readonly WireDoc[] } = { nodes: [], wires: [] },
   ): Collected {
-    const out: Collected = { nodes: [], wires: [], views: [], attached: [], conflicts: [], errors: [] };
+    const out: Collected = { nodes: [], wires: [], attached: [], conflicts: [], errors: [] };
     const inputs = new Map<string, Contributor[]>();
     const ids = new Map<string, Contributor[]>();
     const claim = (map: Map<string, Contributor[]>, key: string, by: Contributor) => map.set(key, [...(map.get(key) ?? []), by]);
@@ -191,7 +175,6 @@ export class ExtensionRegistry {
           claim(inputs, w.to, by);
           out.wires.push(copy(w));
         }
-        for (const view of c.views ?? []) out.views.push({ node: node.id, extension: ext.id, view });
       }
     }
     for (const [input, by] of inputs) if (by.length > 1) out.conflicts.push({ kind: "input", input, by });

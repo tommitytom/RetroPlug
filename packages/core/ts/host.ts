@@ -140,6 +140,9 @@ export interface ControlSurfaceSettings {
 /** The file I/O every surface has, and the backend's own methods one for one. */
 export interface FilesHost {
   readFile(path: string): Uint8Array | null;
+  /** The first `bytes` bytes of the file, or null when it cannot be read. A header read does not copy the whole
+   *  image: the backend truncates to the file's real size. */
+  readPrefix(path: string, bytes: number): Uint8Array | null;
   writeFile(path: string, bytes: Uint8Array): boolean;
   writeFileAtomic(path: string, bytes: Uint8Array): boolean;
   fileExists(path: string): boolean;
@@ -167,6 +170,9 @@ export interface SystemsHost {
   reload(id: number): unknown;
   /** The system's live battery, or null when its core has none to read. */
   readSram(id: number): Uint8Array | null;
+  /** The system's live work RAM, or null when it has none to read. A UI-only read: the render surface reaches work RAM
+   *  through its one emulator group instead. */
+  readRam(id: number): Uint8Array | null;
   /** Reboot a system from the `.sav` at `path`: the one rebuild an import ends in. */
   loadSram(id: number, path: string): unknown;
   /** The `.sav` a save of system `id` writes: its paired-save override when it has one, else the file beside its ROM.
