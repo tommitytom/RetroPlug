@@ -47,6 +47,28 @@ export function uiServices(): readonly UiService[] {
   return SERVICES;
 }
 
+/** Drop the later of two rows of one id in one menu, reporting it. This is what the composers run over the tree they
+ *  built: a duplicate id would silently replace the row a user can see (the menu is keyed by id), and a hand-edited
+ *  asset override can produce one, but a menu that does not render is worse than one row missing, so the FIRST row is
+ *  kept and the rest are reported. `assertUniqueMenuIds` is the same rule as an assertion, for the generator's checks
+ *  and the tests. */
+export function firstWinsMenuIds(
+  items: readonly MenuItem[],
+  where: string,
+  seen: Set<string> = new Set(),
+): MenuItem[] {
+  const kept: MenuItem[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) {
+      console.warn(`[menu] two rows in ${where} share the id ${item.id}: keeping the first and dropping this one`);
+      continue;
+    }
+    seen.add(item.id);
+    kept.push(item.children ? { ...item, children: firstWinsMenuIds(item.children, where, seen) } : item);
+  }
+  return kept;
+}
+
 /** Refuse two rows of one id in one menu. The menu is keyed by id, so a contributed builder emitting one of the
  *  shell's own ids (a footer builder emitting `inst-exit`) would silently take that row's place; the composer runs this
  *  over the tree it just built, which is the only place both halves are known. */

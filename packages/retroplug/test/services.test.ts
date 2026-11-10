@@ -10,10 +10,10 @@ import { composeAppStores, type AppStores } from "../src/appStores";
 import { createUiHost, type UiHost } from "../ui/host/uiHost";
 import { uiServices } from "../ui/host/menuContributions";
 import type { UiHost as AnyUiHost, UiService } from "@retroplug/ui/contribution";
-import { tickServices } from "../ui/app/serviceTicker";
+import { startServices, tickServices } from "../ui/app/serviceTicker";
 import { getN8CartJob, n8RestoreSram, projectCart, resetN8CartJob, setN8LinkClient } from "@retroplug/n8/ui";
 import {
-  resetLaunchpadScanForTest, setLaunchpadClient, setLaunchpadScanClock, startLaunchpadScan,
+  getLaunchpadScan, resetLaunchpadScanForTest, setLaunchpadClient, setLaunchpadScanClock, startLaunchpadScan,
 } from "@retroplug/launchpad/ui";
 import type { LaunchpadClient } from "@retroplug/launchpad/client";
 import { nesRom } from "./systems/fixtures";
@@ -153,6 +153,41 @@ test("the control-surface poll steps a scan and repaints on its news, then settl
   }
 });
 
+test("the automation hook starts a scan over the channel a mount recorded, with nothing read before it", () => {
+  // `__rp_scanControlSurface` runs outside React (the SDL harness's test hook), so it has no host to read the RPC
+  // channel from. It must work from the mount alone: the service's start records the channel it ran against, so the
+  // hook does not depend on a menu having happened to read the facet first.
+  const { host } = rig();
+  const scan = globalThis as { __rp_scanControlSurface?: () => boolean };
+  const call = (method: string): unknown => {
+    switch (method) {
+      case "launchpadPorts": return { inputs: ["LPProMK3 MIDI"], outputs: ["LPProMK3 MIDI"] };
+      case "launchpadStatus": return { connected: false, generation: 0, sent: 0, dropped: 0, input: "", output: "", error: "" };
+      case "launchpadOpenInputs": return [];
+      case "launchpadOpenOutput": return 1;
+      case "launchpadPortSend": return true;
+      case "launchpadPortRead": return { messages: [], dropped: 0 };
+      case "launchpadPortClose": return true;
+      case "launchpadPortError": return "";
+      default: return true;
+    }
+  };
+  setLaunchpadClient(undefined);
+  resetLaunchpadScanForTest();
+  setLaunchpadScanClock(() => 0); // a frozen clock, so the probe's answer window never closes
+  try {
+    service("launchpad").start!({ ...host, devices: { ...host.devices, rpc: call } });
+    // The facet is unprobed again, as a module whose latch the host has not asked for yet: the hook must still reach
+    // the channel the mount recorded rather than depend on a menu having read the facet first.
+    setLaunchpadClient(undefined);
+    expect(scan.__rp_scanControlSurface!()).toBe(true);
+    expect(getLaunchpadScan()?.busy).toBe(true);
+  } finally {
+    resetLaunchpadScanForTest();
+    setLaunchpadClient(undefined);
+  }
+});
+
 test("the frame ticker gives each service its own cadence and answers one repaint per frame", () => {
   // What `useUiServices` does with a frame, without a display: a counter per service, so a 3-frame device and a
   // 6-frame one keep their own cadences, and one answer for the frame (the hook repaints once, not once per service).
@@ -179,4 +214,60 @@ test("the frame ticker gives each service its own cadence and answers one repain
   expect(ticks[0]).toBe(1);
   expect(tickServices(one, host, ticks)).toBe(false);
   expect(ticks[0]).toBe(0);
+});
+
+/** Console warnings a body prints, so a service's report is asserted rather than its silence. */
+function reported(fn: () => void): string[] {
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => void warnings.push(args.map(String).join(" "));
+  try {
+    fn();
+  } finally {
+    console.warn = original;
+  }
+  return warnings;
+}
+
+test("each service starts once per mount, however often the host object changes", () => {
+  // A mount is this component's lifetime, not the identity of one of its props: App rebuilds its host when its own
+  // inputs move, and a start emits, which re-renders, so a start keyed on the host object would loop.
+  const starts: string[] = [];
+  const services: UiService[] = [
+    { id: "one", start: () => void starts.push("one") },
+    { id: "two", start: () => void starts.push("two") },
+  ];
+  const { host } = rig();
+  const started = new Set<string>();
+  startServices(services, host, started);
+  startServices(services, { ...host } as AnyUiHost, started); // a fresh object, as one render would give
+  startServices(services, host, started);
+  expect(starts).toEqual(["one", "two"]);
+});
+
+test("a throw in one service's start is reported, and only that service is skipped", () => {
+  const starts: string[] = [];
+  const services: UiService[] = [
+    { id: "broken", start: () => { throw new Error("no facet"); } },
+    { id: "fine", start: () => void starts.push("fine") },
+  ];
+  const warnings = reported(() => startServices(services, rig().host, new Set()));
+  expect(starts).toEqual(["fine"]);
+  expect(warnings.length).toBe(1);
+  expect(warnings[0].includes("broken") && warnings[0].includes("no facet"), warnings[0]).toBe(true);
+});
+
+test("a throw in one service's poll is reported, and only that service skips the frame", () => {
+  // One frame event drives every service now, so a poll that throws must not take the other devices' ticks with it.
+  const ticked: string[] = [];
+  const services: UiService[] = [
+    { id: "broken", poll: { frames: 1, run: () => { throw new Error("rpc gone"); } } },
+    { id: "fine", poll: { frames: 1, run: () => (ticked.push("fine"), false) } },
+  ];
+  const warnings = reported(() => {
+    expect(tickServices(services, rig().host, [0, 0])).toBe(false);
+  });
+  expect(ticked).toEqual(["fine"]);
+  expect(warnings.length).toBe(1);
+  expect(warnings[0].includes("broken") && warnings[0].includes("rpc gone"), warnings[0]).toBe(true);
 });

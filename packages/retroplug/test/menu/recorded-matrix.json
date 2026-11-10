@@ -54609,5 +54609,1298 @@
    }
   },
   "dialogs": {}
+ },
+ "hand-no-core-role": {
+  "tree": [
+   {
+    "id": "inst-load",
+    "kind": "action",
+    "label": "Load..."
+   },
+   {
+    "id": "inst-save",
+    "kind": "action",
+    "label": "Save Project"
+   },
+   {
+    "id": "inst-new",
+    "kind": "action",
+    "label": "New Project"
+   },
+   {
+    "id": "inst-recent",
+    "kind": "submenu",
+    "label": "Recent",
+    "children": [
+     {
+      "id": "recent-none",
+      "kind": "action",
+      "label": "(No Recent Files)"
+     }
+    ]
+   },
+   {
+    "id": "inst-sep-top",
+    "kind": "separator",
+    "label": ""
+   },
+   {
+    "id": "inst-system",
+    "kind": "submenu",
+    "label": "System",
+    "children": [
+     {
+      "id": "sys-reset",
+      "kind": "action",
+      "label": "Reset"
+     },
+     {
+      "id": "sys-render",
+      "kind": "submenu",
+      "label": "Render",
+      "children": [
+       {
+        "id": "sys-render-dir",
+        "kind": "action",
+        "label": "Output Dir: /roms"
+       },
+       {
+        "id": "sys-render-filename",
+        "kind": "prompt",
+        "label": "Filename: h"
+       },
+       {
+        "id": "sys-render-ifexists",
+        "kind": "cycler",
+        "label": "If Exists: Overwrite"
+       },
+       {
+        "id": "sys-render-sep-opts",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "sys-render-split",
+        "kind": "cycler",
+        "label": "Split: Mix"
+       },
+       {
+        "id": "sys-render-rate",
+        "kind": "cycler",
+        "label": "Sample Rate: 44100 Hz"
+       },
+       {
+        "id": "sys-render-maxdur",
+        "kind": "cycler",
+        "label": "Max Duration: 10:00"
+       },
+       {
+        "id": "sys-render-sep",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "sys-render-go",
+        "kind": "action",
+        "label": "Render"
+       }
+      ]
+     },
+     {
+      "id": "sys-sep-reset",
+      "kind": "separator",
+      "label": ""
+     },
+     {
+      "id": "sys-reload",
+      "kind": "cycler",
+      "label": "Reload on ROM Change: Off"
+     },
+     {
+      "id": "sys-sep-state",
+      "kind": "separator",
+      "label": ""
+     },
+     {
+      "id": "sys-swaprom",
+      "kind": "action",
+      "label": "Swap ROM (Preserve SRAM)..."
+     },
+     {
+      "id": "sys-loadsram",
+      "kind": "action",
+      "label": "Load SRAM..."
+     },
+     {
+      "id": "sys-quicksavesram",
+      "kind": "action",
+      "label": "Save SRAM",
+      "disabled": true
+     },
+     {
+      "id": "sys-savesram",
+      "kind": "action",
+      "label": "Save SRAM As...",
+      "disabled": true
+     },
+     {
+      "id": "sys-loadstate",
+      "kind": "action",
+      "label": "Load State..."
+     },
+     {
+      "id": "sys-quicksavestate",
+      "kind": "action",
+      "label": "Save State"
+     },
+     {
+      "id": "sys-savestate",
+      "kind": "action",
+      "label": "Save State As..."
+     }
+    ]
+   },
+   {
+    "id": "inst-project",
+    "kind": "submenu",
+    "label": "Project",
+    "children": [
+     {
+      "id": "proj-new",
+      "kind": "action",
+      "label": "New Project"
+     },
+     {
+      "id": "proj-load",
+      "kind": "action",
+      "label": "Load Project..."
+     },
+     {
+      "id": "proj-saveas",
+      "kind": "action",
+      "label": "Save Project As..."
+     },
+     {
+      "id": "proj-export",
+      "kind": "action",
+      "label": "Export Zip..."
+     },
+     {
+      "id": "proj-sep0",
+      "kind": "separator",
+      "label": ""
+     },
+     {
+      "id": "proj-name",
+      "kind": "prompt",
+      "label": "Name: h (auto)"
+     },
+     {
+      "id": "proj-layout",
+      "kind": "cycler",
+      "label": "Layout: Auto"
+     },
+     {
+      "id": "proj-zoom",
+      "kind": "cycler",
+      "label": "Zoom: Default"
+     },
+     {
+      "id": "proj-sep1",
+      "kind": "separator",
+      "label": ""
+     },
+     {
+      "id": "proj-midi",
+      "kind": "cycler",
+      "label": "MIDI Routing: Send to All"
+     },
+     {
+      "id": "proj-audio",
+      "kind": "cycler",
+      "label": "Audio Routing: Stereo"
+     }
+    ]
+   },
+   {
+    "id": "inst-settings",
+    "kind": "submenu",
+    "label": "Settings",
+    "children": [
+     {
+      "id": "set-keybindings",
+      "kind": "submenu",
+      "label": "Keyboard Bindings",
+      "children": [
+       {
+        "id": "bind-profile",
+        "kind": "cycler",
+        "label": "Profile: default"
+       },
+       {
+        "id": "bind-sep-top",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "bind-Right",
+        "kind": "capture",
+        "label": "Right: Right"
+       },
+       {
+        "id": "bind-Left",
+        "kind": "capture",
+        "label": "Left: Left"
+       },
+       {
+        "id": "bind-Up",
+        "kind": "capture",
+        "label": "Up: Up"
+       },
+       {
+        "id": "bind-Down",
+        "kind": "capture",
+        "label": "Down: Down"
+       },
+       {
+        "id": "bind-A",
+        "kind": "capture",
+        "label": "A: Z, z"
+       },
+       {
+        "id": "bind-B",
+        "kind": "capture",
+        "label": "B: X, x"
+       },
+       {
+        "id": "bind-Select",
+        "kind": "capture",
+        "label": "Select: ShiftL, ShiftR, Backspace"
+       },
+       {
+        "id": "bind-Start",
+        "kind": "capture",
+        "label": "Start: Enter"
+       },
+       {
+        "id": "bind-sep-actions",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "bind-act-OpenMenu",
+        "kind": "capture",
+        "label": "Open Menu: Escape"
+       },
+       {
+        "id": "bind-act-CycleNext",
+        "kind": "capture",
+        "label": "Cycle Instances: Tab"
+       },
+       {
+        "id": "bind-act-CyclePrev",
+        "kind": "capture",
+        "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-sep-reset",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "bind-reset",
+        "kind": "action",
+        "label": "Reset Keyboard to Defaults"
+       },
+       {
+        "id": "bind-sep-mgmt",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "bind-new",
+        "kind": "prompt",
+        "label": "New Profile..."
+       },
+       {
+        "id": "bind-rename",
+        "kind": "prompt",
+        "label": "Rename..."
+       },
+       {
+        "id": "bind-delete",
+        "kind": "submenu",
+        "label": "Delete Profile",
+        "children": [
+         {
+          "id": "bind-del-none",
+          "kind": "action",
+          "label": "(no other profiles)"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "id": "set-gamepad-bindings",
+      "kind": "submenu",
+      "label": "Gamepad Bindings",
+      "children": [
+       {
+        "id": "bind-gp-profile",
+        "kind": "cycler",
+        "label": "Profile: default"
+       },
+       {
+        "id": "bind-gp-sep-top",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "bind-gp-Right",
+        "kind": "capture",
+        "label": "Right: dpright, leftx+"
+       },
+       {
+        "id": "bind-gp-Left",
+        "kind": "capture",
+        "label": "Left: dpleft, leftx-"
+       },
+       {
+        "id": "bind-gp-Up",
+        "kind": "capture",
+        "label": "Up: dpup, lefty-"
+       },
+       {
+        "id": "bind-gp-Down",
+        "kind": "capture",
+        "label": "Down: dpdown, lefty+"
+       },
+       {
+        "id": "bind-gp-A",
+        "kind": "capture",
+        "label": "A: a"
+       },
+       {
+        "id": "bind-gp-B",
+        "kind": "capture",
+        "label": "B: b"
+       },
+       {
+        "id": "bind-gp-Select",
+        "kind": "capture",
+        "label": "Select: back"
+       },
+       {
+        "id": "bind-gp-Start",
+        "kind": "capture",
+        "label": "Start: start"
+       },
+       {
+        "id": "bind-gp-sep-actions",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "bind-gp-act-OpenMenu",
+        "kind": "capture",
+        "label": "Open Menu: leftshoulder"
+       },
+       {
+        "id": "bind-gp-act-CycleNext",
+        "kind": "capture",
+        "label": "Cycle Instances: rightshoulder"
+       },
+       {
+        "id": "bind-gp-act-CyclePrev",
+        "kind": "capture",
+        "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-sep-reset",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "bind-gp-reset",
+        "kind": "action",
+        "label": "Reset Gamepad to Defaults"
+       },
+       {
+        "id": "bind-gp-sep-mgmt",
+        "kind": "separator",
+        "label": ""
+       },
+       {
+        "id": "bind-gp-new",
+        "kind": "prompt",
+        "label": "New Profile..."
+       },
+       {
+        "id": "bind-gp-rename",
+        "kind": "prompt",
+        "label": "Rename..."
+       },
+       {
+        "id": "bind-gp-delete",
+        "kind": "submenu",
+        "label": "Delete Profile",
+        "children": [
+         {
+          "id": "bind-gp-del-none",
+          "kind": "action",
+          "label": "(no other profiles)"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "id": "set-sep-bindings",
+      "kind": "separator",
+      "label": ""
+     },
+     {
+      "id": "set-sram",
+      "kind": "cycler",
+      "label": "SRAM Auto-Save: On Save"
+     },
+     {
+      "id": "set-defzoom",
+      "kind": "cycler",
+      "label": "Default Zoom: 3x"
+     },
+     {
+      "id": "set-render-dir",
+      "kind": "submenu",
+      "label": "Default Render Dir: (unset)",
+      "children": [
+       {
+        "id": "set-render-dir-set",
+        "kind": "action",
+        "label": "Set..."
+       },
+       {
+        "id": "set-render-dir-clear",
+        "kind": "action",
+        "label": "Clear",
+        "disabled": true
+       }
+      ]
+     },
+     {
+      "id": "set-native-dialogs",
+      "kind": "cycler",
+      "label": "File Dialogs: OS Native"
+     },
+     {
+      "id": "set-open-folder",
+      "kind": "action",
+      "label": "Open Settings Folder"
+     }
+    ]
+   },
+   {
+    "id": "inst-sep1",
+    "kind": "separator",
+    "label": ""
+   },
+   {
+    "id": "inst-add",
+    "kind": "action",
+    "label": "Add Instance"
+   },
+   {
+    "id": "inst-dup",
+    "kind": "action",
+    "label": "Duplicate Instance"
+   }
+  ],
+  "rows": {
+   "sys-render-ifexists": {
+    "default": "If Exists: Overwrite",
+    "steps": [
+     {
+      "label": "If Exists: Rename",
+      "stored": {
+       "user.render.onExists": "rename"
+      },
+      "staged": []
+     },
+     {
+      "label": "If Exists: Overwrite",
+      "stored": {
+       "user.render.onExists": "overwrite"
+      },
+      "staged": []
+     }
+    ]
+   },
+   "sys-render-split": {
+    "default": "Split: Mix",
+    "steps": [
+     {
+      "label": "Split: Channels",
+      "stored": {
+       "user.render.split": "channels"
+      },
+      "staged": []
+     },
+     {
+      "label": "Split: Mix",
+      "stored": {
+       "user.render.split": "mix"
+      },
+      "staged": []
+     }
+    ]
+   },
+   "sys-render-rate": {
+    "default": "Sample Rate: 44100 Hz",
+    "steps": [
+     {
+      "label": "Sample Rate: 48000 Hz",
+      "stored": {
+       "user.render.sampleRate": 48000
+      },
+      "staged": []
+     },
+     {
+      "label": "Sample Rate: 88200 Hz",
+      "stored": {
+       "user.render.sampleRate": 88200
+      },
+      "staged": []
+     },
+     {
+      "label": "Sample Rate: 96000 Hz",
+      "stored": {
+       "user.render.sampleRate": 96000
+      },
+      "staged": []
+     },
+     {
+      "label": "Sample Rate: 176400 Hz",
+      "stored": {
+       "user.render.sampleRate": 176400
+      },
+      "staged": []
+     },
+     {
+      "label": "Sample Rate: 192000 Hz",
+      "stored": {
+       "user.render.sampleRate": 192000
+      },
+      "staged": []
+     },
+     {
+      "label": "Sample Rate: 44100 Hz",
+      "stored": {
+       "user.render.sampleRate": 44100
+      },
+      "staged": []
+     }
+    ]
+   },
+   "sys-render-maxdur": {
+    "default": "Max Duration: 10:00",
+    "steps": [
+     {
+      "label": "Max Duration: 10:01",
+      "stored": {
+       "user.render.maxDurationSec": 601
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:02",
+      "stored": {
+       "user.render.maxDurationSec": 602
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:03",
+      "stored": {
+       "user.render.maxDurationSec": 603
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:04",
+      "stored": {
+       "user.render.maxDurationSec": 604
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:05",
+      "stored": {
+       "user.render.maxDurationSec": 605
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:06",
+      "stored": {
+       "user.render.maxDurationSec": 606
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:07",
+      "stored": {
+       "user.render.maxDurationSec": 607
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:08",
+      "stored": {
+       "user.render.maxDurationSec": 608
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:09",
+      "stored": {
+       "user.render.maxDurationSec": 609
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:10",
+      "stored": {
+       "user.render.maxDurationSec": 610
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:11",
+      "stored": {
+       "user.render.maxDurationSec": 611
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:12",
+      "stored": {
+       "user.render.maxDurationSec": 612
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:13",
+      "stored": {
+       "user.render.maxDurationSec": 613
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:14",
+      "stored": {
+       "user.render.maxDurationSec": 614
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:15",
+      "stored": {
+       "user.render.maxDurationSec": 615
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:16",
+      "stored": {
+       "user.render.maxDurationSec": 616
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:17",
+      "stored": {
+       "user.render.maxDurationSec": 617
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:18",
+      "stored": {
+       "user.render.maxDurationSec": 618
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:19",
+      "stored": {
+       "user.render.maxDurationSec": 619
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:20",
+      "stored": {
+       "user.render.maxDurationSec": 620
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:21",
+      "stored": {
+       "user.render.maxDurationSec": 621
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:22",
+      "stored": {
+       "user.render.maxDurationSec": 622
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:23",
+      "stored": {
+       "user.render.maxDurationSec": 623
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:24",
+      "stored": {
+       "user.render.maxDurationSec": 624
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:25",
+      "stored": {
+       "user.render.maxDurationSec": 625
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:26",
+      "stored": {
+       "user.render.maxDurationSec": 626
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:27",
+      "stored": {
+       "user.render.maxDurationSec": 627
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:28",
+      "stored": {
+       "user.render.maxDurationSec": 628
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:29",
+      "stored": {
+       "user.render.maxDurationSec": 629
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:30",
+      "stored": {
+       "user.render.maxDurationSec": 630
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:31",
+      "stored": {
+       "user.render.maxDurationSec": 631
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:32",
+      "stored": {
+       "user.render.maxDurationSec": 632
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:33",
+      "stored": {
+       "user.render.maxDurationSec": 633
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:34",
+      "stored": {
+       "user.render.maxDurationSec": 634
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:35",
+      "stored": {
+       "user.render.maxDurationSec": 635
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:36",
+      "stored": {
+       "user.render.maxDurationSec": 636
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:37",
+      "stored": {
+       "user.render.maxDurationSec": 637
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:38",
+      "stored": {
+       "user.render.maxDurationSec": 638
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:39",
+      "stored": {
+       "user.render.maxDurationSec": 639
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:40",
+      "stored": {
+       "user.render.maxDurationSec": 640
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:41",
+      "stored": {
+       "user.render.maxDurationSec": 641
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:42",
+      "stored": {
+       "user.render.maxDurationSec": 642
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:43",
+      "stored": {
+       "user.render.maxDurationSec": 643
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:44",
+      "stored": {
+       "user.render.maxDurationSec": 644
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:45",
+      "stored": {
+       "user.render.maxDurationSec": 645
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:46",
+      "stored": {
+       "user.render.maxDurationSec": 646
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:47",
+      "stored": {
+       "user.render.maxDurationSec": 647
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:48",
+      "stored": {
+       "user.render.maxDurationSec": 648
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:49",
+      "stored": {
+       "user.render.maxDurationSec": 649
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:50",
+      "stored": {
+       "user.render.maxDurationSec": 650
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:51",
+      "stored": {
+       "user.render.maxDurationSec": 651
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:52",
+      "stored": {
+       "user.render.maxDurationSec": 652
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:53",
+      "stored": {
+       "user.render.maxDurationSec": 653
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:54",
+      "stored": {
+       "user.render.maxDurationSec": 654
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:55",
+      "stored": {
+       "user.render.maxDurationSec": 655
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:56",
+      "stored": {
+       "user.render.maxDurationSec": 656
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:57",
+      "stored": {
+       "user.render.maxDurationSec": 657
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:58",
+      "stored": {
+       "user.render.maxDurationSec": 658
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 10:59",
+      "stored": {
+       "user.render.maxDurationSec": 659
+      },
+      "staged": []
+     },
+     {
+      "label": "Max Duration: 11:00",
+      "stored": {
+       "user.render.maxDurationSec": 660
+      },
+      "staged": []
+     }
+    ]
+   },
+   "sys-reload": {
+    "default": "Reload on ROM Change: Off",
+    "steps": [
+     {
+      "label": "Reload on ROM Change: On",
+      "stored": {},
+      "staged": []
+     },
+     {
+      "label": "Reload on ROM Change: Off",
+      "stored": {},
+      "staged": []
+     }
+    ]
+   },
+   "proj-layout": {
+    "default": "Layout: Auto",
+    "steps": [
+     {
+      "label": "Layout: Row",
+      "stored": {
+       "project.layout": "row"
+      },
+      "staged": []
+     },
+     {
+      "label": "Layout: Column",
+      "stored": {
+       "project.layout": "column"
+      },
+      "staged": []
+     },
+     {
+      "label": "Layout: Grid",
+      "stored": {
+       "project.layout": "grid"
+      },
+      "staged": []
+     },
+     {
+      "label": "Layout: Auto",
+      "stored": {
+       "project.layout": "auto"
+      },
+      "staged": []
+     }
+    ]
+   },
+   "proj-zoom": {
+    "default": "Zoom: Default",
+    "steps": [
+     {
+      "label": "Zoom: 1x",
+      "stored": {
+       "project.zoom": 1
+      },
+      "staged": []
+     },
+     {
+      "label": "Zoom: 2x",
+      "stored": {
+       "project.zoom": 2
+      },
+      "staged": []
+     },
+     {
+      "label": "Zoom: 3x",
+      "stored": {
+       "project.zoom": 3
+      },
+      "staged": []
+     },
+     {
+      "label": "Zoom: 4x",
+      "stored": {
+       "project.zoom": 4
+      },
+      "staged": []
+     },
+     {
+      "label": "Zoom: 5x",
+      "stored": {
+       "project.zoom": 5
+      },
+      "staged": []
+     },
+     {
+      "label": "Zoom: 6x",
+      "stored": {
+       "project.zoom": 6
+      },
+      "staged": []
+     },
+     {
+      "label": "Zoom: Default",
+      "stored": {
+       "project.zoom": 0
+      },
+      "staged": []
+     }
+    ]
+   },
+   "proj-midi": {
+    "default": "MIDI Routing: Send to All",
+    "steps": [
+     {
+      "label": "MIDI Routing: 4 Ch / Inst",
+      "stored": {
+       "project.midiRouting": "fourChannelsPerInstance"
+      },
+      "staged": []
+     },
+     {
+      "label": "MIDI Routing: 1 Ch / Inst",
+      "stored": {
+       "project.midiRouting": "oneChannelPerInstance"
+      },
+      "staged": []
+     },
+     {
+      "label": "MIDI Routing: Ch -> Inst",
+      "stored": {
+       "project.midiRouting": "midiChannelToInstance"
+      },
+      "staged": []
+     },
+     {
+      "label": "MIDI Routing: Send to All",
+      "stored": {
+       "project.midiRouting": "sendToAll"
+      },
+      "staged": []
+     }
+    ]
+   },
+   "proj-audio": {
+    "default": "Audio Routing: Stereo",
+    "steps": [
+     {
+      "label": "Audio Routing: 2 Ch / Inst",
+      "stored": {
+       "project.audioRouting": "twoPerInstance"
+      },
+      "staged": []
+     },
+     {
+      "label": "Audio Routing: 1 Ch / Inst",
+      "stored": {
+       "project.audioRouting": "onePerInstance"
+      },
+      "staged": []
+     },
+     {
+      "label": "Audio Routing: Channels",
+      "stored": {
+       "project.audioRouting": "channelSplit"
+      },
+      "staged": []
+     },
+     {
+      "label": "Audio Routing: Stereo",
+      "stored": {
+       "project.audioRouting": "stereo"
+      },
+      "staged": []
+     }
+    ]
+   },
+   "bind-profile": {
+    "default": "Profile: default",
+    "steps": [
+     {
+      "label": "Profile: default",
+      "stored": {},
+      "staged": []
+     }
+    ]
+   },
+   "bind-gp-profile": {
+    "default": "Profile: default",
+    "steps": [
+     {
+      "label": "Profile: default",
+      "stored": {},
+      "staged": []
+     }
+    ]
+   },
+   "set-sram": {
+    "default": "SRAM Auto-Save: On Save",
+    "steps": [
+     {
+      "label": "SRAM Auto-Save: Continuous",
+      "stored": {
+       "user.sramAutoSave": "Continuous"
+      },
+      "staged": []
+     },
+     {
+      "label": "SRAM Auto-Save: On Save",
+      "stored": {
+       "user.sramAutoSave": "OnProjectSave"
+      },
+      "staged": []
+     }
+    ]
+   },
+   "set-defzoom": {
+    "default": "Default Zoom: 3x",
+    "steps": [
+     {
+      "label": "Default Zoom: 4x",
+      "stored": {
+       "user.defaultZoom": 4
+      },
+      "staged": []
+     },
+     {
+      "label": "Default Zoom: 5x",
+      "stored": {
+       "user.defaultZoom": 5
+      },
+      "staged": []
+     },
+     {
+      "label": "Default Zoom: 6x",
+      "stored": {
+       "user.defaultZoom": 6
+      },
+      "staged": []
+     },
+     {
+      "label": "Default Zoom: 1x",
+      "stored": {
+       "user.defaultZoom": 1
+      },
+      "staged": []
+     },
+     {
+      "label": "Default Zoom: 2x",
+      "stored": {
+       "user.defaultZoom": 2
+      },
+      "staged": []
+     },
+     {
+      "label": "Default Zoom: 3x",
+      "stored": {
+       "user.defaultZoom": 3
+      },
+      "staged": []
+     }
+    ]
+   },
+   "set-native-dialogs": {
+    "default": "File Dialogs: OS Native",
+    "steps": [
+     {
+      "label": "File Dialogs: In-App",
+      "stored": {
+       "user.useNativeFileDialogs": false
+      },
+      "staged": []
+     },
+     {
+      "label": "File Dialogs: OS Native",
+      "stored": {
+       "user.useNativeFileDialogs": true
+      },
+      "staged": []
+     }
+    ]
+   }
+  },
+  "dialogs": {}
  }
 }

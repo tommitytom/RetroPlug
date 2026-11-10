@@ -10,7 +10,7 @@ import type { ProjectSettings } from "../../../src/projectConfig";
 import { MIDI_ROUTING_VALUES } from "@retroplug/core/midiRouting";
 import { consoleOfPlatform } from "../../../src/consoles";
 import { roleRowItems } from "./configRows";
-import { assertUniqueMenuIds, contributedTrackerUi, menuPlacement, roleRows } from "../../host/menuContributions";
+import { contributedTrackerUi, firstWinsMenuIds, menuPlacement, roleRows } from "../../host/menuContributions";
 import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, type AudioRouting } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
@@ -1481,8 +1481,10 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       ...(isStandalone() ? [separator("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
   ];
-  assertUniqueMenuIds(items, `the ${sys.platform} instance menu`);
-  return { title: instanceTitle(ctx, sys), items };
+  // A duplicate id here would replace the row a user can see (the menu is keyed by id), and a hand-edited asset
+  // override can produce one: the first row is kept, the later ones are reported, and the menu still renders.
+  const unique = firstWinsMenuIds(items, `the ${sys.platform} instance menu`);
+  return { title: instanceTitle(ctx, sys), items: unique };
 }
 
 export function buildStartMenu(ctx: MenuContext): MenuTree {
@@ -1504,6 +1506,6 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
       ...(isStandalone() ? [separator("start-sep-exit"), action("start-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
   ];
-  assertUniqueMenuIds(items, "the start menu");
-  return { title: ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug", items };
+  const unique = firstWinsMenuIds(items, "the start menu");
+  return { title: ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug", items: unique };
 }

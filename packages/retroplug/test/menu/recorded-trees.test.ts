@@ -3,7 +3,9 @@
 // Launchpad running MI.MAP, a two-system project (the Link Group row), the start menu and the settings menus, a
 // standalone host with a control-surface scan idle and in flight, the trackers with songs and a working song, an
 // override and a pinned BlipToaster, a tracker whose ROM cannot be read, and the role and controller configs a
-// hand-edited project can hold.
+// hand-edited project can hold, a project whose roles lack the system's own core role among them (the one case recorded
+// from the NEW code: its record is design section 6's E13 edge, and base's record of the same case showed the six core
+// rows the old menu drew as dead rows - setRoleConfig refuses an absent role).
 //
 // ./recorded-matrix.json was recorded from 8a74339b9's menu code before F4b moved any of it: a `git archive 8a74339b9`
 // tree, over the same ./recorded-cases.ts this test replays, printed `collect()`'s JSON from a throwaway recorder test

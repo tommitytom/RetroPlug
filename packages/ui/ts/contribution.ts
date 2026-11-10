@@ -127,9 +127,11 @@ export interface TrackerUi {
   };
 }
 
-/** A UI service: a device's state the menu shows, kept current without a React hook. `start` runs once when the UI is
- *  up, `subscribe` asks for a repaint on a native-host change, and `poll` runs every `frames` render frames (true =
- *  repaint). The version-and-edge latches live in the service's own closure, so a remount changes nothing. */
+/** A UI service: a device's state the menu shows, kept current without a React hook. `start` runs at every MOUNT of
+ *  the UI (so it must be idempotent: it is where a service puts its version-and-edge latches back for the mount that
+ *  is starting, and a host that hides and shows its UI runs it again rather than once per process), `subscribe` asks
+ *  for a repaint on a native-host change, and `poll` runs every `frames` render frames (true = repaint). A throw in
+ *  either is reported and skips only that service. */
 export interface UiService {
   readonly id: string;
   start?(host: UiHost): void;

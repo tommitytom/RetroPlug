@@ -346,9 +346,19 @@ export function startLaunchpadScan(rpc?: Call): boolean {
   return true;
 }
 
+// The UI host's RPC channel as the last mount of the launchpad service saw it. The automation global below starts a
+// scan outside React, so it has no host to read the channel from; the service's `start` records it here, and the hook
+// reaches the facet through it rather than through a probe some menu happened to make first.
+let mountRpc: Call | undefined;
+
+/** Record the channel the service's mount runs against, which `__rp_scanControlSurface` then starts its scan over. */
+export function setLaunchpadMountRpc(rpc: Call | undefined): void {
+  mountRpc = rpc;
+}
+
 // The same action the Settings > MIDI row takes, as a global: automation (and tools/run-sdl-controller.sh, through the
 // standalone's RETROPLUG_SDL_TEST_SCAN hook) can start a scan without driving the menu.
-(globalThis as { __rp_scanControlSurface?: () => boolean }).__rp_scanControlSurface = () => startLaunchpadScan();
+(globalThis as { __rp_scanControlSurface?: () => boolean }).__rp_scanControlSurface = () => startLaunchpadScan(mountRpc);
 
 /** End a running scan now. Nothing it found is recorded - a scan the user walked away from does not get to rewrite their
  *  selection afterwards. */
@@ -473,5 +483,6 @@ export function resetLaunchpadScanForTest(): void {
   roleWanted = false;
   releaseIn = 0;
   clock = () => Date.now();
+  mountRpc = undefined;
   resetServiceLatches?.();
 }

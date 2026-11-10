@@ -27,8 +27,8 @@ import type { ControllerApp } from "@retroplug/core/host";
 import {
   applyLaunchpadScan, cancelLaunchpadScan, connectLaunchpad, forgetLaunchpad, getLaunchpadConfig,
   getLaunchpadScan, hasLaunchpad, launchpadDetected, launchpadScanBusy, looksLikeLaunchpad, pollControllerRole,
-  onResetLaunchpadScanForTest, pollLaunchpadScan, restoreLaunchpad, setLaunchpadPorts, startLaunchpadScan,
-  subscribeLaunchpad, type LaunchpadConfig, type LaunchpadScanStatus,
+  onResetLaunchpadScanForTest, pollLaunchpadScan, restoreLaunchpad, setLaunchpadMountRpc, setLaunchpadPorts,
+  startLaunchpadScan, subscribeLaunchpad, type LaunchpadConfig, type LaunchpadScanStatus,
 } from "./launchpadDevices";
 
 const CONTROLLER_TARGET_LABELS: Record<ControllerTarget, string> = {
@@ -276,6 +276,9 @@ const launchpadService: UiService = {
   // mounted.
   start: (host) => {
     resetServiceLatches();
+    // The automation hook (`__rp_scanControlSurface`) runs outside React, so a mount records its channel for it:
+    // the hook then needs no menu to have read the facet first.
+    setLaunchpadMountRpc(host.devices.rpc);
     restoreLaunchpad(host.config, host.devices.rpc);
   },
   subscribe: subscribeLaunchpad,
