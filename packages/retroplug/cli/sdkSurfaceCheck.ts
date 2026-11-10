@@ -94,6 +94,22 @@ export type _ConstructSpec = Assert<
   Covers<RealConstructSpec, Dts.ConstructSpec,
     "ConstructSpec: the declaration describes a field the real spec does not have">
 >;
+// The four optional fields above are the ones that drifted once (`ConstructSpec`'s additions), and a one-way check cannot
+// see a field the declaration DROPS or makes `never` (an omitted optional field still satisfies the wider real type).
+// So the key set is exact both ways, and every value is compared both ways except the two the declaration widens on
+// purpose: `platform` and `core` are plain strings there, because a consumer must not import the registry's id types.
+export type _ConstructSpecKeys = Assert<
+  Exact<keyof RealConstructSpec, keyof Dts.ConstructSpec, "ConstructSpec's fields">
+>;
+type ConstructSpecValue<K extends keyof RealConstructSpec> =
+  Exact<RealConstructSpec[K], Dts.ConstructSpec[K], `ConstructSpec.${K & string}`>;
+export type _ConstructSpecValues = Assert<
+  [
+    ConstructSpecValue<"romPath">, ConstructSpecValue<"embeddedRom">, ConstructSpecValue<"savPath">,
+    ConstructSpecValue<"statePath">, ConstructSpecValue<"romBytes">, ConstructSpecValue<"sramBytes">,
+    ConstructSpecValue<"stateBytes">, ConstructSpecValue<"coreConfig">,
+  ] extends [true, true, true, true, true, true, true, true] ? true : "ConstructSpec: a field's type drifted"
+>;
 export type _EngineGraphOpaque = Assert<
   keyof Dts.EngineGraph extends never ? true : "EngineGraph: the declaration names a member, so it is no longer opaque"
 >;

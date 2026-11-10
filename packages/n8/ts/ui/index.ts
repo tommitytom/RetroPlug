@@ -135,8 +135,8 @@ const n8StartMenu: MenuBuilder = {
 const POLL_FRAMES = 6;
 
 /** The card row's poll: the snapshot is replaced as a job moves, so the service repaints its host only when the
- *  version it last saw moves (a progress tick, done, or an error). The latch starts where a mount finds it - -1, so the
- *  first poll repaints once, as the old per-mount ref did - and `start` puts it back on every mount. */
+ *  version it last saw moves (a progress tick, done, or an error). The latch starts where a mount finds it (-1, so the
+ *  first poll repaints once), and `start` puts it back on every mount. */
 let seenVersion = -1;
 
 onResetN8CartJobForTest(() => {

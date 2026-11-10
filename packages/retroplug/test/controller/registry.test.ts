@@ -41,14 +41,15 @@ test("every row an app offers edits a key of its own schema, with values that sc
       rows++;
       expect(Object.prototype.hasOwnProperty.call(schema, field.key)).toBe(true);
       // The row is one of the config row's shapes (the UI contract's ConfigRow): a choice list, an Off/On toggle or a
-      // range of steps. Each step is held like a choice value: the schema must accept it unchanged.
-      expect("toggle" in field || "choices" in field || "range" in field).toBe(true);
-      const values = "choices" in field
+      // range of steps. Each step is held like a choice value: the schema must accept it unchanged. The shapes are
+      // exclusive, so the defined member is the row's only one (the others are `never`).
+      expect(field.toggle !== undefined || field.choices !== undefined || field.range !== undefined).toBe(true);
+      const values = field.choices !== undefined
         ? field.choices.map((c) => c.value)
-        : "range" in field
+        : field.range !== undefined
           ? field.range.steps
           : [schema[field.key]];
-      if ("choices" in field) expect(field.choices.length > 0).toBe(true);
+      if (field.choices !== undefined) expect(field.choices.length > 0).toBe(true);
       for (const value of values) expect(app.config.parse({ [field.key]: value })[field.key]).toEqual(value);
     }
   }

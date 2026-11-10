@@ -18,6 +18,13 @@ type TestFn = () => void | Promise<void>;
 const cases: { name: string; fn: TestFn }[] = [];
 let scheduled = false;
 
+/** How many cases this process has registered. The CLI's `runSession` refuses to run when one has: a session file
+ *  run by path registers none, and a test file calling it would exit the process before the harness reported, which
+ *  the runner reads as a pass. */
+export function registeredCases(): number {
+  return cases.length;
+}
+
 export function test(name: string, fn: TestFn): void {
   cases.push({ name, fn });
   // Schedule the run once, after the current synchronous module body (all the

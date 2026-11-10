@@ -88,9 +88,18 @@ export interface SystemInfo {
  *  shape `@retroplug/ui/contribution` calls a ConfigRow, declared here because a controller app is a control-plane
  *  contribution and the launchpad package's registry is downstream of core). */
 export type ControllerAppField = { readonly key: string; readonly label: string } & (
-  | { readonly choices: readonly { readonly value: string | number; readonly label: string }[] }
-  | { readonly toggle: true }
-  | { readonly range: { readonly steps: readonly number[]; readonly labels: readonly string[] } }
+  // Exclusive as `@retroplug/ui/contribution`'s ConfigRow is, and held equal to it both ways by that package's test.
+  | {
+      readonly choices: readonly { readonly value: string | number; readonly label: string }[];
+      readonly toggle?: never;
+      readonly range?: never;
+    }
+  | { readonly toggle: true; readonly choices?: never; readonly range?: never }
+  | {
+      readonly range: { readonly steps: readonly number[]; readonly labels: readonly string[] };
+      readonly choices?: never;
+      readonly toggle?: never;
+    }
 );
 /** A controller app as a project surface reads it: its id, its menu text, the rows that edit its config and the schema
  *  a saved config is parsed with. The launchpad package's own contribution type satisfies this as written; core keeps

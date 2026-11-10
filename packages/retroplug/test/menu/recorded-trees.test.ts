@@ -16,6 +16,25 @@
 // the wrong values, whose step writes another value than the old one did, or whose step aims a message at another node
 // fails here even though its labels read the same. Each case's card rows also carry the file dialogs they open (the
 // N8's Load ROM filter among them), recorded from the same old tree and held here.
+// RE-RECORDING (a deliberate behaviour change, never a refactor: re-taking a record to hide a diff is the one thing this
+// file cannot be used for). The record is taken from the OLD tree, so it means running THIS file's CASES over that
+// commit's menu code. As it was done for 8a74339b9:
+//   1. `git archive 8a74339b9 | tar -x -C /tmp/rec` and link `/tmp/rec/node_modules` at this worktree's (the runner's
+//      esbuild and typescript-5 resolve through it).
+//   2. Copy ./recorded-cases.ts into `/tmp/rec/packages/retroplug/test/menu/` and repoint its four base-relative
+//      imports: `@retroplug/ui/menu` -> `../../ui/screens/menu/menuTree`, `@retroplug/n8/ui` -> that tree's
+//      `../../ui/screens/menu/n8SdOps` and `n8Devices`, `@retroplug/launchpad/ui` -> its
+//      `../../ui/screens/menu/launchpadDevices`.
+//   3. Copy this worktree's `test/systems/fixtures.ts` and `testing/mockBackend.ts` over base's. They carry two
+//      additions the cases need and nothing else: `MockBackend.unseed`, and an SMS/GG region nibble in the Sega fixture.
+//   4. Add a throwaway case there that prints `JSON.stringify(collect()[name])` over every case, and run it from
+//      `/tmp/rec/packages/retroplug` as `RETROPLUG_TJS=<this worktree's build/dpfjs/.../txiki/tjs> node
+//      scripts/run-tests.mjs menu/<recorder>`.
+//   5. Paste the printed objects into ./recorded-matrix.json (JSON with an indent of 1 and one trailing newline) and
+//      delete the recorder. Replay it here first: a deliberate change makes exactly the cases it changes fail.
+// A case added on purpose AFTER the old commit (hand-no-core-role) cannot be recorded from it: its record is the new
+// code's, and the design section 6 names it as the edge.
+
 import { test, expect } from "@retroplug/testing";
 import recorded from "./recorded-matrix.json";
 import { CASES, collect, type RecordedMatrix } from "./recorded-cases";

@@ -70,8 +70,8 @@ function fakeLaunchpad(connected: boolean) {
 }
 
 test("the product contributes a card-row service and a control-surface service at their own cadences", () => {
-  // The two watchers this stage replaced ran at ~10 Hz and ~20 Hz; a service keeps its own frame divisor, so one
-  // device's cadence cannot drift with the other's.
+  // The two device watchers ran at ~10 Hz and ~20 Hz; a service keeps its own frame divisor, so one device's cadence
+  // cannot drift with the other's.
   expect(service("n8").poll!.frames).toBe(6);
   expect(service("launchpad").poll!.frames).toBe(3);
   expect(typeof service("launchpad").start).toBe("function");
@@ -97,8 +97,8 @@ test("the N8 card poll repaints only when the job's snapshot moves, and a job do
     expect(getN8CartJob().error).toBe("cannot read /saves/missing.srm");
     expect(n8.poll!.run(host)).toBe(true);
     expect(n8.poll!.run(host)).toBe(false);
-    // A remount starts from the latch's initial state (the service's start puts it back, as the old per-mount ref
-    // began), so the first poll after one repaints once even though the snapshot has not moved.
+    // A remount starts from the latch's initial state (the service's start puts it back), so the first poll after one
+    // repaints once even though the snapshot has not moved.
     n8.start!(host);
     expect(n8.poll!.run(host)).toBe(true);
     expect(n8.poll!.run(host)).toBe(false);
@@ -142,8 +142,8 @@ test("the control-surface poll steps a scan and repaints on its news, then settl
     expect(launchpad.poll!.run(host)).toBe(true);
     expect(launchpad.poll!.run(host)).toBe(false);
     expect(launchpad.poll!.run(host)).toBe(false);
-    // A remount puts the latches back where a mount finds them, so its first poll repaints once more (the old hooks'
-    // refs did the same) and takes the finishing edge again, which the applied-scan guard makes a no-op.
+    // A remount puts the latches back where a mount finds them, so its first poll repaints once more and takes the
+    // finishing edge again, which the applied-scan guard makes a no-op.
     launchpad.start!(host);
     expect(launchpad.poll!.run(host)).toBe(true);
     expect(launchpad.poll!.run(host)).toBe(false);

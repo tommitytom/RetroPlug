@@ -148,6 +148,18 @@ else
 	fails=$((fails + 1))
 fi
 
+# 5b. A TEST file that calls runSession is refused: runSession boots the control plane and exits the process, so a test
+#     file using it would end the run before the harness printed, which the runner would read as a pass (exit 0).
+#     Copied to a temp project as step 5's fixture is, so the SDK's .d.ts the fixture demands is written beside its
+#     tests there and not into the repository's fixtures tree.
+RSFIX="$TMP/runsession"
+mkdir -p "$RSFIX/tests"
+cp "$FIX/ts-harness-run-session/run-session.test.ts" "$RSFIX/tests/"
+out="$TMP/run-session.log"
+"$CLI" test "$RSFIX/tests" >"$out" 2>&1
+check "a test file calling runSession fails the run" 1 $?
+contains "the refusal says what to use instead" "$out" "runSession is for a session file run by path"
+
 # 6. `run` executes a single session and honours its exit code.
 out="$TMP/run.log"
 "$CLI" run "$FIX/ts-harness/pass.test.ts" --out "$TMP/build-run" >"$out" 2>&1

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "node ../retroplug/scripts/lib/packages.mjs && tsc -p tsconfig.json"
   },
   "type": "module",
   "description": "The Mesen core's half of the app: the mesen core-config role every Mesen system carries (NES, GBA, SMS/GG) - region, sprite limit, FM, APU latency, the cartridge-accuracy switches, expansion volume, the per-channel export mode, the emulated N8's SD root, FIFO profile and reliable link, and driving a real cart - the settings enums its schema reads; and its native half, the three consoles, their build functions and the rp.mesen.nes / .gba / .sms nodes.",

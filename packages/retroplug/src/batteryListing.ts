@@ -1,7 +1,7 @@
 // A battery image as the lines a listing prints (docs/modular-graph-phase-f4b-design.md section 5.2): a header and one
 // row per saved song, or the "unrecognized battery image" line. Each cart describes its own records through its tracker
 // integration's `batteryListing`, so what a cart's battery means stays the cart's and no cart is named here: the shell
-// composes them in rank order, which is the order the listing used to hard-code (risa before LSDj).
+// composes them in rank order (`BatteryListing.rank`), so two carts that read one image are tried deterministically.
 import type { BatteryListing } from "@retroplug/tracker/trackerIntegration";
 import { TRACKER_INTEGRATIONS } from "./trackerRegistry";
 

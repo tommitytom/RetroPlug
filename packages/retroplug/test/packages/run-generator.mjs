@@ -32,7 +32,8 @@
 //   ui | ui-duplicate-row | ui-unknown-placement | ui-role-undeclared | ui-unknown-key | ui-unknown-when-key |
 //   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service
 //   cli | cli-duplicate-tool | cli-missing-module | examples-outside | examples-tsconfig-missing |
-//   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | host-unknown | host-known
+//   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | examples-shell-name |
+//   examples-unsafe-name | host-unknown | host-known
 //                   the menus module: ui reports the contributing packages in product order, the others load it into
 //                   its own refusal ({ error })
 //                   (unlisted-plain generates, and reports files like generate)
@@ -513,6 +514,33 @@ try {
         writeTree("packages/alpha/tsconfig.json", `{\n  ${extendsLine},\n  "include": ["ts", "examples"]\n}\n`);
       }
       result = MODE === "examples-tsconfig-extended" ? { error: refusal().error } : refusal();
+      break;
+    }
+    case "examples-shell-name": {
+      // The shell's own three example sessions (cli/sessions/render-rom.ts, render-song.ts, rom-test.ts) are bundled to
+      // the same build/cli/<name>.js, so a package's example of one of those names would overwrite a shell session.
+      editManifest("alpha", (m) => {
+        m.retroplug.examples = [{ name: "render-rom", entry: "examples/render-rom.ts" }];
+      });
+      mkdirSync(join(root, "packages/alpha/examples"), { recursive: true });
+      writeTree("packages/alpha/examples/render-rom.ts", "export {};\n");
+      writeTree("packages/alpha/tsconfig.json",
+        '{\n  "extends": ["../../tsconfig.base.json", "../retroplug/tsconfig.host-modules.json"],\n' +
+        '  "include": ["ts", "examples"]\n}\n');
+      result = refusal();
+      break;
+    }
+    case "examples-unsafe-name": {
+      // A name is a FILE STEM under build/cli/: `..` would escape it, and `;` would split the CMake list it lands in.
+      editManifest("alpha", (m) => {
+        m.retroplug.examples = [{ name: "../escape", entry: "examples/escape.ts" }];
+      });
+      mkdirSync(join(root, "packages/alpha/examples"), { recursive: true });
+      writeTree("packages/alpha/examples/escape.ts", "export {};\n");
+      writeTree("packages/alpha/tsconfig.json",
+        '{\n  "extends": ["../../tsconfig.base.json", "../retroplug/tsconfig.host-modules.json"],\n' +
+        '  "include": ["ts", "examples"]\n}\n');
+      result = refusal();
       break;
     }
     case "examples-duplicate-name": {

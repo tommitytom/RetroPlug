@@ -69,6 +69,18 @@ const FIRST_LABEL = 16;
 // The shell, the app itself (see the header).
 const SHELL = "retroplug";
 
+/** A package's example session name: a plain file stem, because it becomes `build/cli/<name>.js` and an entry of the
+ *  CMake list that builds the session bundles. */
+const EXAMPLE_NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
+
+/** The shell's own example sessions, each bundled to `build/cli/<name>.js`: no package may take one of their names
+ *  (the two names would overwrite each other's bundle, and CMake's own refusal does not name the clash). */
+const SHELL_EXAMPLES = new Map([
+  ["render-rom", "cli/sessions/render-rom.ts"],
+  ["render-song", "cli/sessions/render-song.ts"],
+  ["rom-test", "cli/sessions/rom-test.ts"],
+]);
+
 /** The generated modules' directory inside the shell: src/generated, so a package's module is imported by a path
  *  relative to it and the shell's own contributions read as `../app`. */
 const GENERATED = "src/generated";
@@ -305,6 +317,12 @@ function contributions(pkg) {
     for (const example of retroplug.examples) {
       if (!isObject(example) || typeof example.name !== "string" || example.name === "") {
         throw new Error(`${pkg.name}: every retroplug.examples entry needs a "name", the session it is run as`);
+      }
+      // The name IS the bundle's file stem (`build/cli/<name>.js`) and an entry of the CMake list that builds them, so
+      // it may not leave that directory or split that list.
+      if (!EXAMPLE_NAME.test(example.name)) {
+        throw new Error(`${pkg.name}: the example session name ${example.name} is not a file stem: a name must match ` +
+          `${EXAMPLE_NAME.source}, because it becomes build/cli/<name>.js and an entry of the CMake list`);
       }
       if (typeof example.entry !== "string" || example.entry === "") {
         throw new Error(`${pkg.name}: the example ${example.name} needs an "entry", its module`);
@@ -1442,14 +1460,18 @@ export function generate({ root = REPO } = {}) {
     }
   }
 
-  // One build/cli/<name>.js per session: two packages' examples (or one package's twice) writing the same stem would
-  // silently overwrite each other's bundle.
-  const exampleOwners = new Map();
+  // One build/cli/<name>.js per session: the shell's own three sessions are bundled to their own names, and two
+  // packages' examples (or one package's twice) writing the same stem would silently overwrite each other's bundle.
+  const exampleOwners = new Map([...SHELL_EXAMPLES].map(([name, entry]) => [name, `${SHELL} (${entry})`]));
   for (const { pkg, examples } of contributionsOf) {
     for (const example of examples) {
       const owner = exampleOwners.get(example.name);
       if (owner !== undefined) {
-        throw new Error(`the example session ${example.name} is declared twice: ${owner} and ${pkg.name}`);
+        const shellOwnsIt = SHELL_EXAMPLES.has(example.name);
+        throw new Error(shellOwnsIt
+          ? `${pkg.name}: the example session ${example.name} is the shell's own (${SHELL_EXAMPLES.get(example.name)}), ` +
+            `which is bundled to the same build/cli/${example.name}.js`
+          : `the example session ${example.name} is declared twice: ${owner} and ${pkg.name}`);
       }
       exampleOwners.set(example.name, pkg.name);
     }

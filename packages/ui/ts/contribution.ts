@@ -24,11 +24,18 @@ export interface ConfigChoice {
   readonly label: string;
 }
 
-/** A row over one config key: a fixed choice list, an Off/On toggle, or a numeric range offered in steps. */
+/** A row over one config key: a fixed choice list, an Off/On toggle, or a numeric range offered in steps. The three
+ *  are exclusive on purpose: a row declaring two of them would be read one way by `readConfigRow` (choices first) and
+ *  another by `legacyConfigIndex` (toggle first), so the compiler refuses it rather than the two readers disagreeing. */
 export type ConfigRow = { readonly key: string; readonly label: string } & (
-  | { readonly choices: readonly ConfigChoice[] } // exact match; a value the list does not have reads as index 0
-  | { readonly toggle: true } // Off/On, a boolean key
-  | { readonly range: { readonly steps: readonly number[]; readonly labels: readonly string[] } } // nearest step
+  // Exact match; a value the list does not have reads as index 0.
+  | { readonly choices: readonly ConfigChoice[]; readonly toggle?: never; readonly range?: never }
+  | { readonly toggle: true; readonly choices?: never; readonly range?: never } // Off/On, a boolean key
+  | { // The nearest step.
+      readonly range: { readonly steps: readonly number[]; readonly labels: readonly string[] };
+      readonly choices?: never;
+      readonly toggle?: never;
+    }
 );
 
 /** A row over a system's role config: what the shell renders as a cycler and edits with systems.setRoleConfig. Its id
@@ -182,12 +189,15 @@ function typed(value: unknown, fallback: unknown): unknown {
  *  schema's default for the row's key (`schema.parse({})[key]`). */
 export function readConfigRow(row: ConfigRow, stored: unknown, fallback: unknown): RowReading {
   const value = typed(stored, fallback);
-  if ("choices" in row) {
-    const names = row.choices.map((choice) => choice.label);
-    const found = row.choices.findIndex((choice) => choice.value === value);
-    return { names, index: Math.max(0, found), at: (step) => row.choices[step].value };
+  // The three shapes are exclusive, so a defined member is also the row's only one (the other two are `never`, which is
+  // why the check is against undefined rather than `in`: an absent optional member would satisfy `in` too).
+  if (row.choices !== undefined) {
+    const choices = row.choices;
+    const names = choices.map((choice) => choice.label);
+    const found = choices.findIndex((choice) => choice.value === value);
+    return { names, index: Math.max(0, found), at: (step) => choices[step].value };
   }
-  if ("toggle" in row) {
+  if (row.toggle !== undefined) {
     const on = value === true;
     return { names: ["Off", "On"], index: on ? 1 : 0, at: (step) => step === 1 };
   }
@@ -221,8 +231,8 @@ export function configRowCycler(
  *  run another: that latent display bug is owed, not fixed by a move. A `range` row (which these rows did not have) has
  *  no legacy reading, so the caller reads it the typed way. */
 export function legacyConfigIndex(row: ConfigRow, value: unknown): number | undefined {
-  if ("range" in row) return undefined;
-  if ("toggle" in row) return value === false ? 0 : 1;
+  if (row.range !== undefined) return undefined;
+  if (row.toggle !== undefined) return value === false ? 0 : 1;
   return Math.max(0, row.choices.findIndex((choice) => choice.value === value));
 }
 

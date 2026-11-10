@@ -89,11 +89,11 @@ export function App() {
   // The product's UI services: the devices whose state lives in the native host (the N8 Pro's card job, a control
   // surface's scan and its startup restore) started, subscribed and polled at their own cadences.
   useUiServices(uiHost);
-  // The five standalone-only menu sources. Each owns state that lives in the NATIVE host rather than in
-  // a store, so a change there has no path back into React and must be pushed: the Audio submenu's
-  // staged rate/block draft, a MIDI device pick, the transport toggle (which the audio thread publishes
-  // back), the N8 port/connect/lookahead, and the Launchpad port pair. Without this the label would not
-  // repaint until some unrelated render happened to come along.
+  // The three standalone-only menu sources App still owns. Each owns state that lives in the NATIVE host rather than in
+  // a store, so a change there has no path back into React and must be pushed: the Audio submenu's staged rate/block
+  // draft, a MIDI device pick, and the transport toggle (which the audio thread publishes back). Without this the label
+  // would not repaint until some unrelated render happened to come along. The device state the N8 and the Launchpad
+  // show is the products' own UI services now (`useUiServices`), subscribed and polled the same way.
   //
   // A render is a render, so which source fired does not change what happens next. Inert in a DAW / the
   // harness, where nothing ever emits.

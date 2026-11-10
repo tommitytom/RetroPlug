@@ -543,7 +543,8 @@ export declare function bootSession(): Session;
 export declare function hostArgs(): string[];
 
 /** Run a session through the control plane by PATH (`retroplug-cli <file>.js`): boots, calls `main`, and exits with its
- *  outcome (0, or 1 on a throw). For a session file, never for a test file, which would exit the harness. */
+ *  outcome (0, or 1 on a throw). For a session file, never for a test file: a test file that calls it is REFUSED (exit
+ *  1 with a message) rather than exiting the harness with a pass. */
 export declare function runSession(main: (session: Session) => void | Promise<void>): void;
 
 // ─── Timed-event scripting (Timeline + renderTimeline). ──────────────────────────────────────────────

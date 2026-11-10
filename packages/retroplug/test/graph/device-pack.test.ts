@@ -243,8 +243,8 @@ test("the whole-core scan skips the package's app module, and only it", async ()
   expect(skipped.ok, `the whole-core scan refused the app module's own call:\n${skipped.out}${skipped.err}`).toBe(true);
   contains(skipped.out, "no library calls outside MicroQuickJS's stdlib, in the core's 1 module(s)");
   // A manifest's `ui` member names the desktop's menu half: its INDEX marks the whole directory as control-plane code, so
-  // a package whose menu reaches what the engine lacks still proves its core (this stage moved the device menus into
-  // their packages, which is where the rule first mattered).
+  // a package whose menu reaches what the engine lacks still proves its core (the device packs' own menus are where the
+  // rule matters most: they run the same package's core on the box).
   const ui = await scenarioOf(`${FIXTURES}/scenario/ui-module-skip/scenario.ts`, "scenario-ui-module-skip", 65536,
     `${FIXTURES}/scenario/ui-module-skip`);
   expect(ui.ok, `the whole-core scan refused the ui module's own call:\n${ui.out}${ui.err}`).toBe(true);

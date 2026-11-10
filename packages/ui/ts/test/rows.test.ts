@@ -88,6 +88,16 @@ test("a platform gate and a when gate decide whether a row shows", () => {
   expect(rowShownFor(CHANNELS, undefined, undefined)).toBe(true);
 });
 
+// One row is one shape. A row declaring two of the three would read one way in `readConfigRow` (choices first) and
+// another in `legacyConfigIndex` (toggle first), so the union keeps them exclusive and each of these is a compile error.
+// @ts-expect-error a row is a choice list or a toggle, never both
+const choiceOrToggle: ConfigRow = { key: "k", label: "L", choices: [{ value: "a", label: "A" }], toggle: true };
+// @ts-expect-error a row is a toggle or a range, never both
+const toggleOrRange: ConfigRow = { key: "k", label: "L", toggle: true, range: { steps: [0], labels: ["x"] } };
+// @ts-expect-error a row is a range or a choice list, never both
+const rangeOrChoices: ConfigRow = { key: "k", label: "L", range: { steps: [0], labels: ["x"] }, choices: [] };
+void [choiceOrToggle, toggleOrRange, rangeOrChoices];
+
 // A controller app's knob and a config row are one shape, declared twice because core cannot import this package (the
 // launchpad registry, which is downstream of core, aliases one to the other). The compiler holds them equal both ways:
 // if one grows a member the other lacks, the assignment below stops compiling.

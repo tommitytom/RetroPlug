@@ -13,6 +13,7 @@ export { bootSession } from "../src/bootSession";
 export type { Session } from "../src/bootSession";
 import { bootSession } from "../src/bootSession";
 import type { Session } from "../src/bootSession";
+import { registeredCases } from "@retroplug/testing";
 
 // The host records the exit code through globalThis.tjs.exit (see cli/main.cpp).
 declare const tjs: { exit(code: number): void };
@@ -36,6 +37,14 @@ export function hostArgs(): string[] {
  *  returns a promise: the exit then happens when it settles, and a rejection is reported as a throw is.
  *  The launcher keeps pumping the JS job loop until `tjs.exit`, which is what advances those awaits. */
 export function runSession(main: (s: Session) => void | Promise<void>): void {
+  // A test file must not reach for this: it exits the process, which would end the run before the harness printed its
+  // TAP and read as a pass (exit 0). A session file run by path registers no case; a test file registers at least one
+  // before any case runs, so the case list is the test that tells them apart.
+  if (registeredCases() > 0) {
+    console.error("ERROR: runSession is for a session file run by path; a test file uses test()/bootSession()");
+    tjs.exit(1);
+    return;
+  }
   const fail = (e: unknown): void => {
     // Report just the message - these are user-facing usage / IO errors (bad flags, missing ROM, unreadable
     // file), not crashes to debug, so no stack trace. (QuickJS's Error.stack omits the message anyway, so we

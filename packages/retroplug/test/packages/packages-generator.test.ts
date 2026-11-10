@@ -246,6 +246,24 @@ test("a package with examples whose tsconfig extends the generated host modules 
   expect(error).toBe(null);
 });
 
+test("an example named after one of the shell's own sessions is refused, naming the shell's", async () => {
+  const { error } = await drive("examples-shell-name");
+  console.log(`# shell example name: ${error}`);
+  expect(error).toBe(
+    "alpha: the example session render-rom is the shell's own (cli/sessions/render-rom.ts), which is bundled to the " +
+      "same build/cli/render-rom.js",
+  );
+});
+
+test("an example name that is not a plain file stem is refused", async () => {
+  const { error } = await drive("examples-unsafe-name");
+  console.log(`# unsafe example name: ${error}`);
+  expect(error).toBe(
+    "alpha: the example session name ../escape is not a file stem: a name must match ^[A-Za-z0-9_-][A-Za-z0-9._-]*$, " +
+      "because it becomes build/cli/<name>.js and an entry of the CMake list",
+  );
+});
+
 test("two packages declaring the same example session name are refused", async () => {
   const { error } = await drive("examples-duplicate-name");
   console.log(`# duplicate example name: ${error}`);
