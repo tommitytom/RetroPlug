@@ -49,7 +49,8 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
   consoles RetroPlug never runs are compiled out (`MESEN_ENABLE_SNES` / `-PCE` / `-WS`). The `[packages]` golden is the
   one re-record. What it leaves: `MemoryType`'s closed wire enum, the TS unions (F4), the Mesen library chosen per
   product, and the Windows run.
-- **F4: the UI onto extensions**, split into two:
+- **F4: the UI onto extensions**, split into three, and COMPLETE (F4a, F4b and F4c are all built, on
+  `feature/modularize`; F4c's design section 13 records its acceptance run, the final review and the follow-up):
   - **F4a: the non-UI registrations** ([design](modular-graph-phase-f4a-design.md), **built** on `feature/modularize`;
     its section 12 records the execution, the acceptance run, the final review and the follow-up). The `consoles`
     contribution (a descriptor classifies a ROM, places a system and carries its settings, splits, link cable and real
@@ -71,16 +72,19 @@ not the driver: they become cheap afterwards, and nothing here is judged by them
     UI while the UI carries no CLI. Nothing re-recorded; the one behaviour edge an existing output shows is the CLI's
     command index order, and the second (design section 6's E13) is a hand-edited project whose roles omit the system's
     core role losing the core's rows. What it left is F4c, below, and the per-product bundles.
-  - **F4c: React in packages** ([design](modular-graph-phase-f4c-design.md), **built** on `feature/modularize`). The
-    React kit moves into `packages/ui-react` (`Box`, `lv`, the frame-poll hooks, `DebugReadout`, `tagTestId`,
-    `reactView`), so `@retroplug/ui` stays plain TypeScript and a package that wants no React never meets it; the
+  - **F4c: React in packages** ([design](modular-graph-phase-f4c-design.md), **built**, accepted and reviewed on
+    `feature/modularize`). The React kit moves into `packages/ui-react` (`Box`, `lv`, the frame-poll hooks,
+    `DebugReadout`, `tagTestId`, `reactView`), so `@retroplug/ui` stays plain TypeScript and a package that wants no React
+    never meets it; the
     contribution gains declarative views (a full-window screen, or a layer over a tile, drawn as pixels or a readout by
     the shell, or mounted as a component the package built with `reactView`) and actions (a key binding the profile and
     the bindings menus carry); the shell renders views in the grid's place and in per-tile slots, owns their sessions,
     and routes the actions beside its own. The LSDj HD player, the LSDj and risa debug overlays and their two
     `debug-overlay` actions are their packages', so the shell's `ui/` names no cart: rule 9's third root judges `ui/`
-    against its own list, the literal scanner covers it, and the ratchet is gone. The one re-record is the design's edge
-    E1 (each bindings menu gains a row per contributed action). What it leaves is design section 11's.
+    against its own list, the literal scanner covers it, and the ratchet is gone. The design's one recorded edge is E1
+    (each bindings menu gains a row per contributed action); the follow-up adds one more, E10 (a contributed action does
+    not fire while the menu is modal, so a backtick typed into a prompt no longer also toggles the overlays). What it
+    leaves is design section 11's.
 
 ## 3. The order
 

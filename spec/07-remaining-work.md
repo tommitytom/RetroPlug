@@ -892,9 +892,16 @@ frame, `rp.host.midi-out` merges its inputs by frame, the decoders allocate noth
   recorded menu matrix's one edge (E1: each bindings menu gains a row per contributed action, 700 added lines and
   nothing else). Nothing else was re-recorded; the behaviour edges are design section 7's (the backtick is rebindable
   per overlay, `views.open` reports what it refuses, a throwing action is isolated, and a role write reopens that
-  system's views). What it leaves (design section 11):
-  - **A real `component` view**: the kind and its fixture ship, and the first package that needs React for a view proves
-    it on a host, with the `test:ui` case that lands with it.
+  system's views). It was accepted (the verification run's 43 legs each exit 0, its summary identical to the baseline's,
+  and the fixture-gated view and action cases green with the fixtures present) and then reviewed; a follow-up closed the
+  review's findings, one of which is a behaviour edge (E10: a contributed action does not fire while the menu is modal,
+  so a backtick typed into a prompt no longer also toggles the overlays). Design section 13 records the run, the review
+  and the follow-up. What it leaves (design section 11):
+  - **A real `component` view**, and the pure tier's bundle before it: the kind and its fixture ship, and the first
+    package that needs React for a view proves it on a host, with the `test:ui` case that lands with it. Listing that
+    package is not one step, because the pure tier's menu tests bundle the generated `menus.ts`, which eagerly imports
+    every contributor's `ui` module: they would fail to bundle `react`, `react/jsx-runtime`, `lvgljs` and `lvgljs-ui`.
+    Splitting views out of `menus.ts` with per-product bundles is the fix, and the design records it (8.6, section 11).
   - **A kit compile** (`host.kits` in the UI host) when a UI feature needs one, and gamepad axis tokens as action
     bindings if a package wants a stick-driven action.
   - **The controller app's display bug**, the per-product bundles and the shell's hard dependency on `launchpad`,

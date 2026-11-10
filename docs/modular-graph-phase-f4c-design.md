@@ -844,6 +844,18 @@ lifecycle test (a fake component body whose `open`-equivalent is the mount), by 
 logic (`componentFault`: the latch and the report once per body, in `test/ui/view-session.test.ts`, since the boundary
 class itself imports `react` and the pure tier cannot) and by reading, not by pixels.
 
+**And the first product that lists a React view package breaks the pure test tier** (the final review's Important 1,
+found by bundling `packages/ui-fixture/ts/ui/index.ts` with the pure runner's own esbuild options). The pure tier's menu
+tests (`test/menu/`, `test/services.test.ts`) bundle the generated `ui/generated/menus.ts`, which imports every
+contributor's WHOLE `ui` module eagerly and runs its load-time checks; a `ui` module whose view is `reactView(...)` pulls
+in `@retroplug/ui-react`, and the kit's barrel then pulls `react`, `react/jsx-runtime`, `lvgljs` and `lvgljs-ui`.
+`run-tests.mjs` bundles with no `nodePaths` and no `alias` (`tools/build-ui.js` has both), so the bundle fails with
+`Could not resolve "react/jsx-runtime"`, `"react"`, `"lvgljs"` and `"lvgljs-ui"`; even a bundle that resolved would run
+under a runtime with no `lvgljs`. `ui-fixture` is listed by no product, which is exactly why nothing sees this today.
+Listing it to prove a real component view is therefore not one step: the fix is to split views out of `menus.ts` (one
+module per contribution kind, or a view member a composer does not import), with per-product bundles, which is the
+per-product-bundles item below. Nothing in F4c's tree is broken by it; what is owed is the check that would have said so.
+
 ### 8.7 The oracles held, and the new tests
 
 **Nothing is re-recorded but the edge:** the parity baseline (197 cases), the kit and render baselines, the device image
@@ -1022,8 +1034,12 @@ For `spec/07-remaining-work.md`'s F4c entry and the package split's closing note
 - **The controller-app display bug**, the per-product bundles (with F4a's finding that hook code rides every bundle that
   loads a registry; `ui-react` and every package's views are now plain `ts/ui/` modules the generated `menus.ts` alone
   pulls in), and **the shell's hard dependency on `launchpad`**, unchanged.
-- **A real `component` view.** The kind and its fixture ship; the first package that needs React for a view proves it on
-  a host, and its `test:ui` case lands with it. Its `lvgljs-ui` types are still the shell's 54-line slice
+- **A real `component` view, and the pure tier's bundle before it.** The kind and its fixture ship; the first package
+  that needs React for a view proves it on a host, and its `test:ui` case lands with it. Listing that package is NOT one
+  step: the pure tier's menu tests bundle the generated `ui/generated/menus.ts`, which eagerly imports every
+  contributor's `ui` module, so a React view's package makes them fail to bundle `react`, `react/jsx-runtime`, `lvgljs`
+  and `lvgljs-ui` (8.6's last paragraph). Splitting views out of `menus.ts` with per-product bundles is the fix, and it
+  is the same work as the per-product-bundles item. Its `lvgljs-ui` types are still the shell's 54-line slice
   (`packages/retroplug/ui/types/lvgljs-ui.d.ts`), because the package ships TypeScript source rather than declarations
   and the slice is what `tsc` reads instead; a component pack that needs a widget the slice lacks (a slider, a list)
   extends that SHELL file, which no package can do. Moving what a pack needs into `@retroplug/ui-react`'s own
@@ -1238,3 +1254,119 @@ typecheck with no `build/`. The fixture-gated `test:ui` cases ran at the final t
 
 The stage trees' proof script symlinks the worktree's `build/` into each tree; acceptance must not copy that symlink, or a
 bundle step of `pnpm test` there writes into the shared build.
+
+## 13. Execution
+
+The execution, on `feature/modularize` over the design commit `663632d16`, is the plan commit `a35330a8a` and the five
+task commits after it, one per stage, each a replay of its prototype commit rather than a rewrite: every task's tree is
+its prototype's plus the plan document (the final review's `git diff` of each pair names only
+`docs/modular-graph-phase-f4c-plan.md`), and the commit messages are the prototype's subjects. The prototype is
+`proto/f4c-react` (`d1352d6ef` .. `8987a27f3`, section 12); the executed commits are:
+
+1. `feat(f4c): the React kit is a package, and the typecheck follows it` (`7e4c4114b`; the prototype's `d1352d6ef`).
+2. `feat(f4c): the view contract, its registry, and the shell's window and tile slots` (`666513625`; `eb20634ea`).
+3. `feat(f4c): app actions, contributed bindings and the shell's dispatch` (`a518a276a`; `c956580c4`).
+4. `feat(f4c): the LSDj HD player and the two debug overlays are the packages'` (`fcb337418`; `b841dc4e2`).
+5. `feat(f4c): rule 9 and the literal scanner cover ui/, and the ratchet retires` (`484dba777`; `8987a27f3`).
+
+**The implementers' findings** (the five task reports; every task recorded a clean tree, every suite green, nothing
+re-recorded but E1, and no difference from the plan's text is a tree change: each is a plan-text mechanics slip, a count
+a fix pass moved, or a figure the ground rules call moving):
+
+- **Stage 1**: the walk's count step greps lines of a ONE-line JSON report (the intent holds: 36 `specifier` occurrences
+  before the move, 0 after); the per-tree suite chain's `RETROPLUG_TJS=` applied to the first command only, so the later
+  suites needed it exported; and four assertion totals moved (launchpad TSan, engine-graph desktop, TSan and ASan) with
+  every case count exact, the four device-image hashes and three pack bytecodes matching.
+- **Stage 2**: the RED's quoted totals come from a log the prototype's own tree predates by one case (`88 passed, 7
+  failed` there, `88 passed, 8 failed` here, the extra being the no-body refusal the stage's fix pass added); the step's
+  second RED has no command in the plan text; and `check:docs` reads 98 files where the baseline ran 97, which is the
+  plan file itself.
+- **Stage 3**: the same RED-count shape (11 not-ok where the plan quotes 10, the extra being the resolved-code collision
+  case the stage 3 review added); the two-function RED has no block in the plan text; and the launchpad link test's
+  mid-drain swap case flaked once under kit load, passed alone and on the re-run (the load sensitivity F4b recorded).
+- **Stage 4**: the `PixelView` mutation step is inert at this tree because the guard was folded back into stage 2, so the
+  bug was reproduced by hand (with the guard reverted the unchanged `lsdj-hd` case fails on `distinctColors(snap) > 2`);
+  the docs leg needs the new files tracked first, since `check-doc-links` refuses a link whose target is untracked; and
+  four assertion totals moved.
+- **Stage 5**: no finding beyond the moving assertion totals, plus `compare.sh`'s `test` leg carrying Task 4's
+  `lsdj/ui-views` skip line and needing the kit's stdout and the controller log under the baseline's names.
+
+**The acceptance run** (`/tmp/f4cexec/acc-report.md`, at `484dba777`) was PASS, no findings. The 43 legs of the
+verification run each exited 0 and its summary is identical to the two baselines' (times stripped): `pnpm test` 226 files
+and 2,359 cases with its one documented `lsdj/ui-views` skip, `test:ui` 47 files and 53 cases, `test:plugin` 13 binaries
+and the baseline's per-binary case multiset (the engine-graph binary 336 cases), strict parity 30 files and 250 cases with
+`RP_FAIL_ON_SKIP=1`, `test:native` 172 files with the fixture-free picture's 144 skips byte-identical to the baseline's,
+the kit and render baselines, `render-chunks`, the three device-image hashes and the `bliptoaster` pack's three byte
+hashes identical, the device check (87 wrapped symbols) and the box (both images' sizes and both probe refusals), a fresh
+clone typechecked before its cold build (`Scope: 25 of 26`, 19 `Done`, one pre-existing warning), BlipToaster 57/57 and
+NESVJ 19/19 against the rebuilt CLI, `reaper:params` 2725/2725 and `reaper:params-clap` 644/644, `reaper:all`'s 15
+checks, the SDL smoke, `sdl:controller` alone, and `check:boundaries`/`check:docs` clean. The seven fixture-gated
+`test:ui` view and action cases and the pure pixel case all RAN with the fixtures and passed. The bundle module diff
+found the UI bundle up by exactly `ui-react` and the packages' `ts/ui/` modules with the other six bundles unchanged in
+module set. Owed and stated, not run: Windows, macOS, arm64 and CI; a real `component` view on a host; and E4's look on a
+real host (the one screenshot is the empty project's start screen, so it does not discharge it).
+
+**The final review** (`/tmp/f4cexec/final-review.md`, a read-only pass over the whole range) found no Critical and four
+Important, its verdict "ready to call F4c complete with fixes":
+
+1. **The first product that lists a React view package breaks the pure test tier** (8.6's last paragraph and section
+   11): recorded as owed rather than fixed, because the fix is views split out of `menus.ts` with per-product bundles.
+2. **Contributed actions fired under the menu's text prompts and capture rows**: fixed, on the user's decision, by
+   deferring them while `isMenuModalActive()` as `OpenMenu` does. E10 is the one behaviour change.
+3. **The contract's example default key `F` can never fire** (the hosts send letters unshifted): fixed, with the example
+   made lowercase and `checkAction` refusing a single uppercase letter.
+4. **A `component` view was the one piece of package code with no guard**: fixed by the keyed error boundary.
+
+Its twelve minors were the `ViewsHost` doc, three stale "today" wordings, spec/03's tile-slot wording, spec/06's `.tsx`
+sentence and its "tested there", two stale comments, `useViewSession`'s always-true `shown`, a window component view's
+missing test id and backdrop, rule 3's kit bypass, `checkView`'s unchecked body, the `lvgljs-ui` types slice, and four
+things in this document. It reproduced the per-task tree rule, E1's diff (+700/-0, every added line one of the four rows
+per case), the moves line by line, the key maps and the hygiene.
+
+**The follow-up** is four commits on top of the five, each with what it held green (the RED runs are quoted in
+`/tmp/f4cexec/fuA-report.md`):
+
+- `fix(f4c): package actions wait while the menu takes typing` is Important 2: App hands `runActions` no contributed
+  action while `isMenuModalActive()` is true, so a text prompt or an armed capture row takes the key and no action runs
+  (E10; the shell's own three keep their deferrals and their behaviour). RED: a new `test:ui` case,
+  `action-typing`, with the LSDj overlay on and the A row armed: at `484dba777` the backtick bound to the row AND
+  flipped the overlay's flag, so the strip was gone when the menu closed.
+- `fix(f4c): the action contract's keys and a component view's faults` is Importants 3 and 4: the example key is
+  lowercase in the contract and 3.2, `checkAction` refuses a single uppercase ASCII letter naming the lowercase key (RED:
+  the new generator fixture case read `null` for a refusal), and `ComponentView` mounts the component inside a keyed error
+  boundary that renders nothing and reports once per body through `viewSession.ts`'s `componentFault` (its state logic
+  held by a pure case, since the boundary imports `react` and the pure tier cannot).
+- `fix(f4c): the final review's minors` closes all twelve, with the kit's `@retroplug/ui-react` refused from a
+  package's non-UI file (RED: a new boundary fixture reported status 0 before the rule) and `checkView` requiring a
+  session body's `open` or a component body's `component` (RED: two new generator fixture modes, each reporting no error
+  before the check).
+- `docs(f4c): record the acceptance run, the review and the follow-up` is this section, Important 1's record in 8.6 and
+  section 11, the status line, `spec/07`'s F4c entry and `docs/package-split.md`'s F4 note.
+
+**Verification of the final tree** (the parallel kit at `/tmp/f4cexec/fuAv-*`, `sdl:controller` run alone, and
+`compare.sh` against the baseline at `663632d16`): every leg exited 0, and the comparison reports only the four lines the
+phase adds: `docs` 97 -> 98 (this plan file is the 98th tracked Markdown), `test` 219 files and 2,286 cases -> 226 and
+2,364 with the one documented `lsdj/ui-views` skip, `typecheck` with `packages/ui-react` and `packages/ui-fixture`, and
+`ui` 43 files and 49 cases -> 48 and 54. The images' hashes and the pack's three byte hashes are byte-identical to the
+baseline's; `measure` moves only the bundles that embed this phase's code. The five follow-up cases are in the 2,364
+(one pure view-session case, three generator refusals, one boundary refusal) and the sixth is `test:ui`'s `action-typing`
+(48 files, 54 cases). One kit leg failed on the first run and passed on the re-run: `plugin`, on
+`retroplug-graph-test`'s "host commands under a running audio thread each see their own plan's host data", which pushed
+2,502 of the 2,508 its 5-second retry deadline allows while three sanitizer lanes and every pool ran (the binary passes
+alone with 296 cases, and the same case was green in the acceptance run; nothing F4c touches is C++). The seven
+fixture-gated `test:ui` view and action cases, `bindings`, `app-actions` and the new `action-typing` all ran with
+`RETROPLUG_RESOURCES_DIR` and `RP_FAIL_ON_SKIP=1` and passed; `reaper:params` read 2725 parameters before and after and
+`reaper:params-clap` 644; `check:boundaries` is clean and `check:docs` reads 98 files; a fresh `git archive` of the tip
+typechecked at the root with no `build/` at all (`Scope: 25 of 26`, 19 `Done`, no `error TS`); and no added line of the
+whole phase carries an em dash (`git diff 484dba777 HEAD` at the follow-up's tip counts 0).
+
+**What F4c leaves** (the final review's "For the next phase", which section 11's list follows):
+
+- **"A real component view" is not one test away**: listing a React view package breaks every pure menu test's bundle
+  (Important 1, 8.6); a window component had no test id until the follow-up; the `lvgljs-ui` types are the shell's slice;
+  and the error boundary is new, so the throwing shape has a home but no product drawing one.
+- **Per-product bundles.** `ui/generated/menus.ts` is one module carrying rows, menus, trackers, services, views and
+  actions, imported whole by the composers. Splitting views out of it is also the natural fix for Important 1.
+- **Gamepad axis actions.** The axis bus dispatches nothing, and `GAMEPAD_BUTTON_NAMES` excludes stick tokens on purpose;
+  adding them means App's `gamepad-axis` handler, the name set and the collision table (which already holds the stick
+  tokens) together.
