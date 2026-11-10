@@ -9,7 +9,8 @@
 // View with the theme chrome zeroed, `PixelCanvas` the crisp scaled canvas, and the hooks the frame bus and a forced
 // re-render. `DebugReadout` and `tagTestId` are what the debug overlays and the UI tests draw with.
 export { Box, CHROME_RESET } from "./Box";
-export { DebugReadout, hex2 } from "./DebugReadout";
+export { DebugReadout } from "./DebugReadout";
+export { hex2 } from "@retroplug/ui/format";
 export {
   CanvasEx,
   LV_IMAGE_ALIGN_CONTAIN,

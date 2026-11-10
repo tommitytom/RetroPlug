@@ -66,6 +66,11 @@ if (!existsSync(TJS)) {
 const jobs = resolveJobs();
 const filter = stripRunnerFlags()[0];
 
+// The sibling resources tree (ROMs/manuals/...), overridable exactly as the native runner's is: injected into the
+// bundle as __RESOURCES_DIR__ so a pure-tier case that needs a real ROM reaches it through a define, never through
+// tjs.env. Pointing it at a nonexistent directory is how CI's picture is reproduced.
+const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../resources");
+
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -123,7 +128,10 @@ async function runOne({ file, slug }) {
       mainFields: ["module", "main"],
       target: "es2020",
       outfile: outFile,
-      define: { "process.env.NODE_ENV": '"production"' },
+      define: {
+        "process.env.NODE_ENV": '"production"',
+        __RESOURCES_DIR__: JSON.stringify(RESOURCES_DIR),
+      },
     });
   } catch (e) {
     flush(`BUILD FAILED: ${slug}`, `${e?.message ?? e}`);

@@ -36,7 +36,6 @@ function ctxOf(stores: AppStores): MenuContext {
     loadRomAsProject: (romPath: string, explicitSav?: string) =>
       stores.project.openRom(romPath, explicitSav ? { explicitSav } : undefined),
     requestExit: () => {}, // App wires this to the native quit path; inert here.
-    openLsdjHd: () => {},
     beginSongImport: () => {},
   };
 }
@@ -921,12 +920,13 @@ function keyboardBindings(stores: AppStores): MenuItem[] {
   return submenuChildren(settings, "set-keybindings");
 }
 
-test("Keyboard Bindings: 8 GB + 3 app-action rows; capture rebinds write-through, clear + reset", () => {
+test("Keyboard Bindings: 8 GB + 5 app-action rows; capture rebinds write-through, clear + reset", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
 
   const rows = keyboardBindings(stores);
-  expect(rows.filter((r) => r.kind === "capture").length).toBe(11); // 8 GB buttons + Open Menu / Cycle / Cycle (Back)
+  // 8 GB buttons + Open Menu / Cycle / Cycle (Back) + the two cart debug overlays.
+  expect(rows.filter((r) => r.kind === "capture").length).toBe(13);
   expect(findItem(rows, "bind-A")!.label).toBe("A: Z, z"); // resolved default baked into the label
   expect(findItem(rows, "bind-act-OpenMenu")!.label).toBe("Open Menu: Escape"); // app action seeded default
   expect(findItem(rows, "bind-act-CyclePrev")!.label).toBe("Cycle Instances (Back): -"); // unbound by default
@@ -987,7 +987,8 @@ test("Gamepad Bindings: gamepad-source capture rows; button + axis-token rebinds
   const stores = composeAppStores({ backend: be });
 
   const rows = gamepadBindings(stores);
-  expect(rows.filter((r) => r.kind === "capture").length).toBe(11); // 8 GB buttons + 3 app actions
+  // 8 GB buttons + the shell's three app actions + the two cart debug overlays.
+  expect(rows.filter((r) => r.kind === "capture").length).toBe(13);
   expect(findItem(rows, "bind-gp-A")!.capture!.source).toBe("gamepad"); // arms the pad bus, not the key bus
   expect(findItem(rows, "bind-gp-Up")!.label).toBe("Up: dpup, lefty-"); // default d-pad hat + left stick
   expect(findItem(rows, "bind-gp-act-OpenMenu")!.label).toBe("Open Menu: leftshoulder"); // seeded gamepad action

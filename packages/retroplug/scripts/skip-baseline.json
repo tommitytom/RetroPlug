@@ -261,13 +261,34 @@
    "total": 2
   }
  },
- "ts": {},
+ "ts": {
+  "lsdj/ui-views": {
+   "skipped": 1,
+   "total": 5
+  }
+ },
  "ui": {
+  "hd-view-closes": {
+   "skipped": 1,
+   "total": 1
+  },
   "lsdj-hd": {
    "skipped": 1,
    "total": 1
   },
   "lsdj-overlay": {
+   "skipped": 1,
+   "total": 1
+  },
+  "overlay-actions": {
+   "skipped": 1,
+   "total": 1
+  },
+  "overlay-click-through": {
+   "skipped": 1,
+   "total": 1
+  },
+  "overlay-survives-menu": {
    "skipped": 1,
    "total": 1
   },

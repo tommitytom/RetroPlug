@@ -19,8 +19,6 @@ import {
   type CanvasHandle,
 } from "@retroplug/ui-react";
 import type { UiHost } from "@retroplug/ui/contribution";
-import { LsdjOverlay } from "./LsdjOverlay";
-import { RisaOverlay } from "./RisaOverlay";
 import { TileViews } from "../../views/TileViews";
 import { pickActiveRenderJob, renderBadgeLabel, type RenderJobStatus } from "../../host/render";
 
@@ -88,16 +86,9 @@ export function EmulatorTile({
           style={{ width, height, "background-color": "#000000", "background-opacity": 0.5 }}
         />
       )}
-      {/* Live LSDj runtime readout (screen + cursor / play / song row / tempo / version / per-channel
-          phrase). Renders nothing for a non-LSDj ROM, so it's mounted unconditionally; its per-frame
-          re-renders stay in this child subtree. */}
-      <LsdjOverlay systemId={systemId} width={width} testId="lsdj-overlay" />
-      {/* The risa twin — a live NES-tracker readout (screen + cursor / mode / tempo / version / per-track
-          phrase). Renders nothing for a non-risa ROM, so it too is mounted unconditionally. */}
-      <RisaOverlay systemId={systemId} width={width} testId="risa-overlay" />
       {/* The product's tile views, one StableSlot each (docs/modular-graph-phase-f4c-design.md section 5.2): a
-          fixed place in the child list, so a view that appears late does not land over the border or badge. The
-          product registers none yet; a cart's overlays land here once they move. */}
+          fixed place in the child list, so a view that appears late does not land over the border or badge. The two
+          debug overlays are LSDj's and risa's, registered through their packages. */}
       <TileViews host={host} systemId={systemId} width={width} height={height} />
       {showBorder && (
         // Accent border on the focused tile — the visible focus cue (the dim is imperceptible on a

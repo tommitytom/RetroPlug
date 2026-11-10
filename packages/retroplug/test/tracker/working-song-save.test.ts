@@ -357,7 +357,6 @@ function smsMenu() {
     loadProject: () => {},
     loadRomAsProject: () => {},
     requestExit: () => {},
-    openLsdjHd: () => {},
     beginSongImport: () => {},
   });
   const rows = (): MenuItem[] => {
@@ -649,7 +648,6 @@ test("the Songs menu still guards its rows while a reset is carrying the song ba
     loadProject: () => {},
     loadRomAsProject: () => {},
     requestExit: () => {},
-    openLsdjHd: () => {},
     beginSongImport: () => {},
   };
   const sys = stores.project.systems.view().find((x) => x.id === newId)!;
@@ -862,7 +860,6 @@ test("the Songs menu offers Save Working Song & Load for a work-RAM song, and do
     loadProject: () => {},
     loadRomAsProject: () => {},
     requestExit: () => {},
-    openLsdjHd: () => {},
     beginSongImport: () => {},
   };
   const items = buildInstanceMenu({ ...ctx, system: stores.project.systems.view()[0] }).items;

@@ -29,7 +29,6 @@ function ctxOf(stores: AppStores, loadProject: MenuContext["loadProject"] = () =
     loadProject,
     loadRomAsProject: () => {},
     requestExit: () => {},
-    openLsdjHd: () => {},
     beginSongImport: () => {},
   };
 }

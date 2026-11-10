@@ -6,7 +6,7 @@
     "typecheck": "node ../retroplug/scripts/lib/packages.mjs && tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "LSDj's half of the app: the .sav/.lsdsng/.lsdprj codecs and the live/codec model they carry, the ROM asset codec (kits, palettes, fonts), the runtime layout reader and drift detector, the playback predictor, the HD screen model, the lsdj-sync and lsdj-assets roles, its Songs/Assets tracker integration, its kit bank format, its ROM provider, and the rp.lsdj.sync (span label 21) and rp.lsdj.serial-out (23) protocol nodes with the Arduinoboy/kernel-message helpers they read.",
+  "description": "LSDj's half of the app: the .sav/.lsdsng/.lsdprj codecs and the live/codec model they carry, the ROM asset codec (kits, palettes, fonts), the runtime layout reader and drift detector, the playback predictor, the HD screen model, the lsdj-sync and lsdj-assets roles, its Songs/Assets tracker integration, its kit bank format, its ROM provider, its two views (the \"lsdj-hd\" full-window HD player and the \"lsdj-overlay\" debug readout) with the \"lsdj.debug-overlay\" action that toggles the readout, and the rp.lsdj.sync (span label 21) and rp.lsdj.serial-out (23) protocol nodes with the Arduinoboy/kernel-message helpers they read.",
   "exports": {
     ".": "./ts/index.ts",
     "./app": "./ts/app.ts",

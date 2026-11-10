@@ -30,6 +30,17 @@ export function windowViewOf(id: string): WindowView | undefined {
   return entry?.view.placement === "window" ? entry.view : undefined;
 }
 
+/** Resolve a window open against the generated registry: the view, or the report saying why it cannot open. App's
+ *  `views.open` runs this and then the two checks only a project can answer (a system that is gone, a view whose `when`
+ *  rejects it); the menu's fallback host (`hostOf`, for a context built over the stores alone) runs this much and says
+ *  the same words. One function, so the refusals cannot drift apart. */
+export function windowViewOrReport(id: string): { view: WindowView } | { report: string } {
+  const entry = viewById(id);
+  if (!entry) return { report: `[views] no view is registered under the id ${id}` };
+  if (entry.view.placement !== "window") return { report: `[views] ${id} is a tile view, which opens no window` };
+  return { view: entry.view };
+}
+
 /** Every tile view, in product order, with the package it came from: the layers EmulatorTile mounts over each tile
  *  whose system the view's `when` accepts. */
 export function tileViews(): readonly { pkg: string; view: TileView }[] {

@@ -28,8 +28,6 @@ import { native } from "./host/nativeHooks";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
-import { LsdjHdScreen } from "./screens/hd/LsdjHdScreen";
-import { toggleLsdjDebug } from "./screens/grid/lsdjDebug";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel, type MenuContext } from "./screens/menu/menuDefs";
@@ -41,14 +39,13 @@ import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, KEY_ESCAPE } from "../src/keyCodes";
 import { resolveDropAction } from "../src/fileDrop";
 import { createUiHost } from "./host/uiHost";
-import { contributedActionIds, contributedActions, viewById, windowViewOf } from "./host/menuContributions";
+import { contributedActionIds, contributedActions, windowViewOrReport, windowViewOf } from "./host/menuContributions";
 import { runActions } from "./input/appActions";
 import { withActionDefaults } from "../src/bindingMap";
 import { ViewWindow } from "./views/ViewWindow";
 import { viewAppliesTo } from "./views/viewSession";
 import { resolveTracker } from "../src/trackerRegistry";
 
-const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
 const MOUSE_BUTTON_RIGHT = 2; // DPF kMouseButtonRight (left=1, right=2, middle=3) — the "mouse" bus button field
 
 export function App() {
@@ -74,14 +71,12 @@ export function App() {
   // The window view that is open, if any: its id and the system it is showing. It replaces the grid but is NOT an
   // input overlay - the cart keeps playing and keys still reach its joypad, so it doesn't gate `playing`.
   //
-  // `host.views.open` looks the id up in the generated registry. The LSDj HD player is the shell's own screen, not a
-  // registry view: "lsdj-hd" is a shell-side entry in `openViewOf` and in the full-window render below, and both go
-  // when the cart registers the same id as a window view.
+  // `host.views.open` looks the id up in the generated registry, so every window view is a package's.
   const [openView, setOpenView] = useState<{ id: string; systemId: number } | null>(null);
   // The UI's host (docs/modular-graph-phase-f4b-design.md section 3.2), built once over the stores: the groups a cart's
-  // or a console's UI code reaches the shell through. Its `views` group opens the generated registry's window views
-  // (through `openViewOf`, which keeps the HD player's shell-side entry), and its import picker is useSongImport's
-  // overlay, which is resolved against the live system an import names rather than the snapshot the caller held.
+  // or a console's UI code reaches the shell through. Its `views` group opens the generated registry's window views,
+  // and its import picker is useSongImport's overlay, which is resolved against the live system an import names rather
+  // than the snapshot the caller held.
   const beginImport = useCallback(
     (sys: SystemInfo, source: Uint8Array): void => {
       const live = stores.project.systems.view().find((s) => s.id === sys.id);
@@ -91,18 +86,9 @@ export function App() {
   );
   const openViewOf = useCallback(
     (id: string, systemId: number): void => {
-      if (id === "lsdj-hd") {
-        // The shell's own entry (above): the HD player is not a registry view yet.
-        setOpenView({ id, systemId });
-        return;
-      }
-      const entry = viewById(id);
-      if (!entry) {
-        console.warn(`[views] no view is registered under the id ${id}`);
-        return;
-      }
-      if (entry.view.placement !== "window") {
-        console.warn(`[views] ${id} is a tile view, which opens no window`);
+      const open = windowViewOrReport(id);
+      if ("report" in open) {
+        console.warn(open.report);
         return;
       }
       const sys = stores.project.systems.view().find((s) => s.id === systemId);
@@ -110,7 +96,7 @@ export function App() {
         console.warn(`[views] ${id} was asked for the system ${systemId}, which is not in the project`);
         return;
       }
-      if (!viewAppliesTo(entry.view, sys)) {
+      if (!viewAppliesTo(open.view, sys)) {
         console.warn(`[views] ${id} does not apply to the system ${systemId}`);
         return;
       }
@@ -266,7 +252,6 @@ export function App() {
       if (openView != null) return void setOpenView(null); // a window view → back to the grid
     }
     if (overlay) return; // an overlay owns input; actions don't fire under it
-    if (key === KEY_BACKTICK) return void toggleLsdjDebug(); // dev: show/hide the LSDj runtime readout
     runResolved(keyToAction.get(key) ?? []);
   });
   // Gamepad app actions. Overlays (close prompt / project modal) render a <Menu>, so they're cancelled by the
@@ -367,7 +352,21 @@ export function App() {
     if (!veto) native.__rp_quitWindow?.();
   };
 
-  const ctx: MenuContext = { stores, host: uiHost, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: beginImport, openLsdjHd: (systemId) => openViewOf("lsdj-hd", systemId) };
+  const ctx: MenuContext = {
+    stores,
+    host: uiHost,
+    settings,
+    userConfig,
+    bindings,
+    systems,
+    recent,
+    version,
+    newProject: modals.newProject,
+    loadProject: modals.loadProject,
+    loadRomAsProject: modals.loadRomAsProject,
+    requestExit,
+    beginSongImport: beginImport,
+  };
 
   // A full-window overlay (file browser / close prompt / project modal / song import) draws above
   // everything and owns the keypad; the start menu (empty project) is the same full-window menu, always open.
@@ -392,8 +391,6 @@ export function App() {
         />
       );
     }
-    // The shell's own entry: the LSDj HD player, until its cart registers the id as a window view.
-    return <LsdjHdScreen systemId={openView.systemId} width={width} height={height} testId="lsdj-hd" />;
   }
 
   // The anchor FOLLOWS its system through an in-place rebuild (a keep-open row like FM Audio resets the

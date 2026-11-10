@@ -232,7 +232,6 @@ test("Songs Add... hands a picked .sav to beginSongImport (not the single-file i
     loadRomAsProject: () => {},
     beginSongImport: (s, source) => (imported = { id: s.id, bytes: source.length }),
     requestExit: () => {},
-    openLsdjHd: () => {},
   };
 
   const songs = submenuChildren(submenuChildren(buildInstanceMenu({ ...ctx, system: sys() }).items, "inst-lsdj"), "lsdj-songs");

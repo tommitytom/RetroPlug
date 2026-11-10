@@ -322,6 +322,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -434,6 +444,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -1924,6 +1944,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -2036,6 +2066,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -3423,6 +3463,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -3535,6 +3585,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -4900,6 +4960,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -5012,6 +5082,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -6209,6 +6289,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -6321,6 +6411,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -7710,6 +7810,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -7822,6 +7932,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -9021,6 +9141,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -9133,6 +9263,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -10413,6 +10553,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -10525,6 +10675,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -12050,6 +12210,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -12162,6 +12332,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -13971,6 +14151,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -14083,6 +14273,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -15843,6 +16043,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -15955,6 +16165,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -17498,6 +17718,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -17610,6 +17840,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -19119,6 +19359,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -19231,6 +19481,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -20925,6 +21185,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -21037,6 +21307,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -22478,6 +22758,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -22590,6 +22880,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -23966,6 +24266,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -24078,6 +24388,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -26264,6 +26584,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -26376,6 +26706,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -27877,6 +28217,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -27989,6 +28339,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -29543,6 +29903,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -29655,6 +30025,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -31155,6 +31535,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -31267,6 +31657,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -32763,6 +33163,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -32875,6 +33285,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -34558,6 +34978,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -34670,6 +35100,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -36545,6 +36985,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -36657,6 +37107,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -38191,6 +38651,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -38303,6 +38773,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -40081,6 +40561,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -40193,6 +40683,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -42459,6 +42959,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -42571,6 +43081,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -44341,6 +44861,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -44453,6 +44983,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -46457,6 +46997,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -46569,6 +47119,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -47082,6 +47642,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -47194,6 +47764,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -47778,6 +48358,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -47890,6 +48480,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -48689,6 +49289,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -48801,6 +49411,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -50335,6 +50955,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -50447,6 +51077,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -51451,6 +52091,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -51563,6 +52213,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -53260,6 +53920,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -53372,6 +54042,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",
@@ -54903,6 +55583,16 @@
         "label": "Cycle Instances (Back): -"
        },
        {
+        "id": "bind-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: `"
+       },
+       {
+        "id": "bind-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: `"
+       },
+       {
         "id": "bind-sep-reset",
         "kind": "separator",
         "label": ""
@@ -55015,6 +55705,16 @@
         "id": "bind-gp-act-CyclePrev",
         "kind": "capture",
         "label": "Cycle Instances (Back): -"
+       },
+       {
+        "id": "bind-gp-act-lsdj.debug-overlay",
+        "kind": "capture",
+        "label": "LSDj Debug Overlay: -"
+       },
+       {
+        "id": "bind-gp-act-risa.debug-overlay",
+        "kind": "capture",
+        "label": "risa Debug Overlay: -"
        },
        {
         "id": "bind-gp-sep-reset",

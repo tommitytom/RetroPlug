@@ -92,7 +92,6 @@ export function ctxOf(stores: AppStores): MenuContext {
     loadProject: () => {},
     loadRomAsProject: () => {},
     requestExit: () => {},
-    openLsdjHd: () => {},
     beginSongImport: () => {},
   };
 }

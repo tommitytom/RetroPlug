@@ -7,9 +7,6 @@ import { tagTestId } from "./tagTestId";
 
 const HEIGHT = 44;
 
-/** A byte as two uppercase hex digits, "--" when unknown. */
-export const hex2 = (n: number | null): string => (n == null ? "--" : n.toString(16).toUpperCase().padStart(2, "0"));
-
 export function DebugReadout({
   lines,
   playing,

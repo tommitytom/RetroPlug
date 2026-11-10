@@ -1,28 +1,28 @@
-// The HD player's data pump: everything the renderer needs for one system, kept fresh at the right rate.
+// The HD player as a window view (docs/modular-graph-phase-f4c-design.md section 6.1): the song order, all four
+// channels' chains and all four channels' phrases on one full-window screen, drawn in the cartridge's own font and
+// palette. The shell renders the pixels; this module only says how to open the session and what to show when there is
+// nothing to read.
 //
 // Three inputs, on three very different clocks:
 //   - The ROM assets (font, palette, kit sample names) change only when the cartridge does, so the
-//     LsdjRom view is built once per system and the kit names are memoised on first use.
+//     LsdjRom view is built once per session and the kit names are memoised on first use.
 //   - The runtime state (playback positions, screen, cursor) changes every frame, and reading it is cheap
-//     (backend.readRam → LsdjReader), so it is sampled per frame like LsdjOverlay does.
-//   - The working song changes only when the user EDITS, but reading it is expensive: backend.readSram
+//     (host.systems.readRam -> LsdjReader), so it is sampled per frame like the overlay does.
+//   - The working song changes only when the user EDITS, but reading it is expensive: host.systems.readSram
 //     copies the whole 128 KiB image and decodeSong builds ~700 objects. So it is polled a few times a
 //     second and only re-decoded when the working-song region actually changed.
 //
-// The result is exposed as `renderFrame()`, which returns the pixel buffer when something moved and null
-// when it didn't - so the caller can skip pushing an unchanged surface into LVGL.
-
-import { useMemo } from "react";
-
-import { useStores, useSystem } from "../../stores/useStores";
+// `frame()` returns the pixel buffer when something moved and null when it didn't, so the shell can skip pushing an
+// unchanged surface into LVGL.
+import type { Host } from "@retroplug/core/host";
 import { hasRole, roleConfig } from "@retroplug/core/systemRoles";
-import { LsdjReader } from "@retroplug/lsdj/runtime";
-import { decodeSong, type Song } from "@retroplug/lsdj";
-import { LsdjRom } from "@retroplug/lsdj/rom";
-import { applyOverridesToRom, readOverrides } from "@retroplug/lsdj/lsdjAssetsRole";
-import { filesPngHost } from "../../../src/hostGroups";
-import { LsdjHdCanvas, HD_COLS, HD_ROWS, renderMode2, type KitSampleNameLookup } from "@retroplug/lsdj/hd";
-import type { ControlPlaneBackend } from "../../../src/backend";
+import type { PixelFrame, WindowView } from "@retroplug/ui/contribution";
+import { HD_COLS, HD_ROWS, LsdjHdCanvas, renderMode2, type KitSampleNameLookup } from "../hd";
+import { decodeSong } from "../codec/song";
+import type { Song } from "../model";
+import { LsdjRom } from "../rom";
+import { LsdjReader } from "../runtime";
+import { applyOverridesToRom, readOverrides } from "../lsdjAssetsRole";
 
 /** The working song is the first 0x8000 bytes of the sav image (codec/sav.ts's kWorkingSong..kSongBytes). */
 const WORKING_SONG_BYTES = 0x8000;
@@ -44,7 +44,9 @@ function songSignature(sav: Uint8Array): number {
   return h;
 }
 
-class HdSession {
+/** One system's HD data pump. The shell opens it, reads `frame()` per frame and closes it when the window goes; it
+ *  owns no React state. Exported so the cadence is tested over a fake host, with no display. */
+export class HdSession {
   readonly canvas = new LsdjHdCanvas(HD_COLS, HD_ROWS);
   song: Song | null = null;
 
@@ -55,7 +57,7 @@ class HdSession {
   private readonly kitNames = new Map<number, string>();
 
   constructor(
-    private readonly backend: ControlPlaneBackend,
+    private readonly host: Host<"systems">,
     private readonly systemId: number,
     private readonly reader: LsdjReader,
     private readonly rom: LsdjRom,
@@ -78,7 +80,7 @@ class HdSession {
     if (this.pollCountdown-- > 0) return;
     this.pollCountdown = SONG_POLL_FRAMES;
 
-    const sav = this.backend.readSram(this.systemId);
+    const sav = this.host.systems.readSram(this.systemId);
     if (!sav || sav.length < WORKING_SONG_BYTES) return;
 
     const sig = songSignature(sav);
@@ -109,12 +111,19 @@ class HdSession {
     }
   }
 
+  /** The next frame, with the size the canvas lays it out in; null when nothing moved. What the shell's pixels
+   *  renderer reads, so the session is its own PixelSession. */
+  frame(): PixelFrame | null {
+    const pixels = this.renderFrame();
+    return pixels ? { pixels, width: this.canvas.width, height: this.canvas.height } : null;
+  }
+
   /** Draw one frame. Returns the pixel buffer if anything changed, else null. */
   renderFrame(): Uint32Array | null {
     this.pollSong();
     if (!this.song || !this.canvas.ready) return null;
 
-    const wram = this.backend.readRam(this.systemId);
+    const wram = this.host.systems.readRam(this.systemId);
     if (!wram) return null;
 
     renderMode2(this.canvas, this.song, this.reader.read(wram), this.kitSampleName);
@@ -124,47 +133,44 @@ class HdSession {
 
 /** Build the HD session for `systemId`, or null when the system isn't a supported LSDj cart. */
 function buildSession(
-  backend: ControlPlaneBackend,
+  host: Host<"files" | "png" | "systems">,
   systemId: number,
   romPath: string,
   overrideConfig: Record<string, unknown> | undefined,
 ): HdSession | null {
-  const header = backend.readFilePrefix(romPath, 0x150);
+  const header = host.files.readPrefix(romPath, 0x150);
   if (!header) return null;
   const reader = LsdjReader.fromHeader(header);
   if (!reader.supported) return null;
 
-  const base = backend.readFile(romPath);
+  const base = host.files.readFile(romPath);
   if (!base) return null;
   // Fold in the lsdj-assets overrides so the HD view reads the SAME effective ROM the emulator was
   // constructed with - otherwise a replaced font or palette would show on the cart but not here.
   const overrides = readOverrides(overrideConfig);
-  const effective = overrides.length ? applyOverridesToRom(base, overrides, filesPngHost(backend)) : base;
+  const effective = overrides.length ? applyOverridesToRom(base, overrides, host) : base;
   const rom = LsdjRom.fromBytes(effective);
   if (!rom.isLsdj) return null;
 
-  return new HdSession(backend, systemId, reader, rom);
+  return new HdSession(host, systemId, reader, rom);
 }
 
-export interface LsdjHdSession {
-  /** Draw the next frame; null when nothing moved (so the caller skips the LVGL push). */
-  renderFrame(): Uint32Array | null;
-  readonly canvas: LsdjHdCanvas;
-}
-
-/**
- * The HD render session for one system, or null when it isn't a supported LSDj cart (the caller shows a
- * message instead). `enabled` gates the build, so a closed screen costs nothing.
- */
-export function useLsdjHdSession(systemId: number, enabled = true): LsdjHdSession | null {
-  const { backend } = useStores();
-  const sys = useSystem(systemId);
-  const romPath = sys?.romPath ?? "";
-  const isLsdj = hasRole(sys?.roles, "lsdj-sync");
-  const overrideConfig = roleConfig(sys?.roles, "lsdj-assets");
-
-  return useMemo(() => {
-    if (!enabled || !isLsdj || !romPath) return null;
-    return buildSession(backend, systemId, romPath, overrideConfig);
-  }, [enabled, isLsdj, romPath, systemId, backend, overrideConfig]);
-}
+/** The playable window view: it applies to an LSDj-sync system, and its `open` refuses a system with no such role or
+ *  no ROM path itself, since the shell checks `when` only at `views.open` and a renderer opens a session too. `satisfies`
+ *  rather than an annotation, so `open` keeps the host groups it declares (what a pack copied from this one sees)
+ *  instead of widening to the contract's whole UI host. */
+export const hdView = {
+  id: "lsdj-hd",
+  label: "HD Player",
+  placement: "window",
+  when: (sys) => hasRole(sys.roles, "lsdj-sync"),
+  body: {
+    kind: "pixels",
+    unsupported: "HD view needs a supported LSDj cartridge",
+    open: (host: Host<"files" | "png" | "systems">, systemId: number) => {
+      const sys = host.systems.view().find((s) => s.id === systemId);
+      if (!sys || !hasRole(sys.roles, "lsdj-sync") || !sys.romPath) return null;
+      return buildSession(host, systemId, sys.romPath, roleConfig(sys.roles, "lsdj-assets"));
+    },
+  },
+} satisfies WindowView;

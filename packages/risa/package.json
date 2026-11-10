@@ -6,7 +6,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "type": "module",
-  "description": "risa's half of the app: the RSav catalog and song-payload codec, the .rkit-compatible ROM asset layer (kits, themes, fonts), the RAM-layout reader and drift detector, the risa, risa-assets and risa-sync roles, its Songs/Assets tracker integration, its DMC kit bank format, its ROM provider, and the rp.risa.sync protocol node (span label 19) that drives its host-sync receive path.",
+  "description": "risa's half of the app: the RSav catalog and song-payload codec, the .rkit-compatible ROM asset layer (kits, themes, fonts), the RAM-layout reader and drift detector, the risa, risa-assets and risa-sync roles, its Songs/Assets tracker integration, its DMC kit bank format, its ROM provider, its \"risa-overlay\" debug readout view with the \"risa.debug-overlay\" action that toggles it, and the rp.risa.sync protocol node (span label 19) that drives its host-sync receive path.",
   "exports": {
     ".": "./ts/index.ts",
     "./app": "./ts/app.ts",

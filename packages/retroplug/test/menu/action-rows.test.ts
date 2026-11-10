@@ -35,7 +35,6 @@ function ctxOf(stores: AppStores, actions: readonly { pkg: string; action: UiAct
     loadProject: () => {},
     loadRomAsProject: () => {},
     requestExit: () => {},
-    openLsdjHd: () => {},
     beginSongImport: () => {},
     actions,
   };

@@ -16,6 +16,7 @@ import {
   firstWinsMenuIds,
   menuPlacement,
   roleRows,
+  windowViewOrReport,
 } from "../../host/menuContributions";
 import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, type AudioRouting } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
@@ -29,7 +30,7 @@ import { resolveSavPath, siblingPath, SAV_PATTERNS } from "../../../src/savPaths
 import { stem, dirname, basename, extension, joinPath, sanitizeName, shortenMiddle } from "../../../src/pathUtil";
 import { ROM_PATTERNS } from "../../../src/fileSelection";
 import { filesPngHost } from "../../../src/hostGroups";
-import { createUiHost, uiViews, type UiHost } from "../../host/uiHost";
+import { createUiHost, type UiHost } from "../../host/uiHost";
 import { embeddedRomOf, embeddedRoms } from "../../../src/embeds";
 import {
   savEditWouldDiscard,
@@ -86,17 +87,17 @@ export interface MenuContext {
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
   /** Quit the standalone (unsaved-changes guarded). No-op in a DAW (the host owns the window). */
   requestExit: () => void;
-  // Inputs to the FALLBACK host only (below), for a composer that has no `host` of its own: the menu tests, which
-  // build this context over the stores alone. App passes a host, so it reads neither of these.
+  // The one input the FALLBACK host (below) needs: a composer that has no `host` of its own is a menu test's context,
+  // built over the stores alone, and `hostOf` builds a host over this picker. App passes a host, so its own host is
+  // what a contribution uses there.
   //
   // Open the Songs "import from a .sav" picker (validate the source against the cart's console, then show a
   // checkbox list) - owned by useSongImport, wired from App like the project modals.
   beginSongImport: (sys: SystemInfo, source: Uint8Array) => void;
-  /** Show the LSDj HD player for a system (a full-window view; Esc closes it). Owned by App; F4c removes the id. */
-  openLsdjHd: (systemId: number) => void;
   /** The UI host a contributed builder or cart callback reaches the shell through. App passes the one it built over
-   *  the stores; a composer that only has the stores (a menu test) leaves it out and `hostOf` builds the same host
-   *  from this context's own peers, so a contribution sees the groups either way. */
+   *  the stores; a composer that has only the stores (a menu test) leaves it out and `hostOf` builds one over this
+   *  context's `beginSongImport` and the generated view registry, so a contribution always has a host, though only
+   *  App's has a window for a window view to open in. */
   host?: UiHost;
   /** The contributed app actions the bindings editor lists after the shell's three. App leaves it out and the
    *  generated registry answers; a test passes its own action, which is the only way a row for an action no product
@@ -104,15 +105,24 @@ export interface MenuContext {
   actions?: readonly ContributedAction[];
 }
 
-/** The UI host for a context: the one App built when it passed one, else one built from the context's own peers (the
- *  views mapping and the song-import picker), cached for the context's life so a callback sees a stable host. */
+/** The UI host for a context: the one App built when it passed one, else one built over the stores and this
+ *  context's `beginSongImport`, cached for the context's life so a callback sees a stable host. */
 const hosts = new WeakMap<MenuContext, UiHost>();
 function hostOf(ctx: MenuContext): UiHost {
   const given = ctx.host;
   if (given) return given;
   let built = hosts.get(ctx);
   if (!built) {
-    built = createUiHost(ctx.stores, { views: uiViews(ctx.openLsdjHd), beginImport: ctx.beginSongImport });
+    // A context built over the stores alone (the menu tests) has no window to open a view in. Its refusals are App's
+    // (windowViewOrReport is the one place they are worded); a view that resolves simply has nowhere to go here.
+    const views = {
+      open: (id: string) => {
+        const open = windowViewOrReport(id);
+        if ("report" in open) console.warn(open.report);
+        else console.warn(`[views] the menu's host has no window to open ${id} in`);
+      },
+    };
+    built = createUiHost(ctx.stores, { views, beginImport: ctx.beginSongImport });
     hosts.set(ctx, built);
   }
   return built;

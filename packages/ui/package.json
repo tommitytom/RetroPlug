@@ -9,6 +9,7 @@
   "description": "The UI's contract, plain TypeScript: the menu data model and its item builders, the contribution types a package's UI module declares (declarative role-config rows, menu builders and their placements, tracker specs and UI services), and the row-reading helpers the shell renders a row with. The React kit follows in F4c.",
   "exports": {
     "./contribution": "./ts/contribution.ts",
+    "./format": "./ts/format.ts",
     "./menu": "./ts/menu/index.ts"
   },
   "dependencies": {

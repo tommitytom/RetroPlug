@@ -49,7 +49,7 @@ built ([05-data-persistence.md](05-data-persistence.md)).
 There is no live "watch RAM" streaming path. Reads are one-shot through
 the [`SnapshotRegistry`](../packages/native/src/host/engine/SnapshotRegistry.hpp) read door, and the
 consumers that want live memory poll it: the LSDj overlay per frame, and the HD player
-([useLsdjHdSession.ts](../packages/retroplug/ui/screens/hd/useLsdjHdSession.ts)) on a frame divider,
+([useLsdjHdSession.ts](../packages/lsdj/ts/ui/hdView.ts)) on a frame divider,
 because a full 128 KiB WRAM copy plus a song decode is too expensive to do every frame. So this is a
 cost question, not a capability one - an arming seam would let those two stop copying the whole image
 to read a few hundred bytes of it. Nothing of the old mechanism is left to switch on: `enableMemorySnapshot`,

@@ -1,25 +1,18 @@
-// The ui/ ratchet (docs/modular-graph-phase-f4b-design.md section 7.3): until F4c moves the remaining React views into
-// their packages, ONLY the five view files below may import a cart's code, and each must still import one (so F4c
-// deletes this list by emptying it, rather than leaving a rule that has quietly stopped applying to anything). The two
-// overlays are React and the three hooks/data modules are not; all five are F4c's views.
+// The ui/ ratchet (docs/modular-graph-phase-f4b-design.md section 7.3): F4b left five view files allowed to import a
+// cart's code, each still required to import one. F4c's moves took all five into their packages, so the list is now
+// empty and the test requires an empty hit set; it stays (with its runner and fixtures) until the allow-based rule
+// replaces it, rather than being deleted with nothing to show the boundary held.
 //
-// Everything else under ui/ reaches a cart, a console or a device through the generated registries: ui/generated/menus.ts
-// (not judged: it is the one place that names every package), src/generated/* through a store, or - for a menu entry -
-// the package's own `ui` module, which the device menus moved into. A view importing a cart's runtime is the last of
-// F4c's work, which is why the list exists rather than a broad permission.
+// Under ui/, a cart, a console or a device is reached through the generated registries: ui/generated/menus.ts (not
+// judged: it is the one place that names every package), src/generated/* through a store, or - for a menu entry - the
+// package's own `ui` module, which the device menus moved into.
 //
 // The scanner is Node's (the boundary check's), so the test spawns test/boundaries/run-ui-cart-imports.mjs.
 import { test, expect } from "@retroplug/testing";
 
-/** F4b's five remaining cart imports under ui/: the two overlays, the two runtime hooks and the HD session, which F4c
- *  moves into their packages. */
-const ALLOWED = [
-  "packages/retroplug/ui/screens/grid/LsdjOverlay.tsx",
-  "packages/retroplug/ui/screens/grid/RisaOverlay.tsx",
-  "packages/retroplug/ui/screens/grid/useLsdjRuntime.ts",
-  "packages/retroplug/ui/screens/grid/useRisaRuntime.ts",
-  "packages/retroplug/ui/screens/hd/useLsdjHdSession.ts",
-];
+/** The list F4b left, emptied by the moves that took the five files into their packages: the test is kept so the
+ *  ratchet's runner and fixtures still hold an empty hit set until the allow-based rule replaces it. */
+const ALLOWED: string[] = [];
 
 // The packages whose code a view may not name are DERIVED by the runner from the workspace manifests: any package that
 // declares code or baked bytes (an app, ui, cli, examples, protocol, consoles, embed or script member) is guarded, and a
@@ -70,7 +63,7 @@ async function scan(root?: string): Promise<{ hits: { file: string; specifier: s
   return JSON.parse(out.trim().split("\n").at(-1)!) as { hits: { file: string; specifier: string }[] };
 }
 
-test("only the five remaining view files import a cart, a console or a device package", async () => {
+test("no ui/ file imports a cart, a console or a device package", async () => {
   const { hits } = await scan();
   const files = [...new Set(hits.map((hit) => hit.file))].sort();
   // A file NOT on the list importing one is the ratchet biting: it would reach a cart's code directly.

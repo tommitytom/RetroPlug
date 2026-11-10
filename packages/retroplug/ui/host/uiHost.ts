@@ -24,19 +24,7 @@ import { batteryListing } from "../../src/batteryListing";
  *  can still name it. This module re-exports the package's type rather than restating the group list. */
 export type { UiHost } from "@retroplug/ui/contribution";
 
-/** The shell's own full-window screens, by the id a cart names them with. The ids are the leftover shell knowledge of a
- *  cart: "lsdj-hd" is LSDj's HD player, the one cart id the shell still maps itself; the carts register their views
- *  (the HD player and the two overlays) once those move. An id this shell does not own is ignored, so a package's newer
- *  view cannot open the wrong screen here. */
-export function uiViews(openLsdjHd: (systemId: number) => void): ViewsHost {
-  return {
-    open: (id, systemId) => {
-      if (id === "lsdj-hd") openLsdjHd(systemId);
-    },
-  };
-}
-
-/** What the host needs that is not a store: the views the shell owns and the song-import picker, both of them App's
+/** What the host needs that is not a store: the window the views open in and the song-import picker, both of them App's
  *  React state (the picker is useSongImport's overlay). */
 export interface UiHostPeers {
   readonly views: ViewsHost;
