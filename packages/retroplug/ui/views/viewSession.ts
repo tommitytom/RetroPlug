@@ -118,6 +118,15 @@ export function openSession(view: ViewDef, host: UiHost, systemId: number): Open
   }
 }
 
+/** A `component` body's fault, as the shell's error boundary records it: the state the boundary renders nothing for,
+ *  and the report, once per body (the same rule the guards above follow, since a component that throws on every mount
+ *  must not report on every mount). Plain TypeScript, so the pure tier holds it: the boundary itself imports `react`,
+ *  which that tier's tsconfig does not resolve. */
+export function componentFault(body: object, id: string, error: unknown): { readonly failed: boolean } {
+  reportOnce(body, "component", `[views] ${id}: its component threw: ${message(error)}`);
+  return { failed: true };
+}
+
 /** Close a session, reporting a throw: one view's teardown must not stop the shell's. */
 export function closeSession(session: ViewSession | null): void {
   try {

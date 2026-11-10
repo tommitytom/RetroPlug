@@ -927,6 +927,10 @@ function renderMenus({ packages, outDir }) {
   lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ` +");
   lines.push('        `${name} by default, which the shell already binds (a shell action or a Game Boy button)`);');
   lines.push("    }");
+  lines.push("    if (/^[A-Z]$/.test(name)) {");
+  lines.push("      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ${name} by ` +");
+  lines.push('        `default, which no host sends (the hosts send letters unshifted: bind "${name.toLowerCase()}")`);');
+  lines.push("    }");
   lines.push("  }");
   lines.push("  for (const name of action.pad ?? []) {");
   lines.push("    if (!padButtonNames.has(name)) {");

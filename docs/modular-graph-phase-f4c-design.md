@@ -211,11 +211,13 @@ What a declarative body cannot express, found while verifying, and what the desi
 test needs no React: a throwing `when` reads as "no", a throwing `visible` as hidden, a throwing `open` leaves the system
 unsessioned, a throwing `frame` or `sample` drops the session (its reopen key stays held, so a broken cart is retried at
 the next key change, not every frame), and a throwing `signature` falls back to the default; each is reported once per
-view object and per thing that threw. `ReadoutSampler.signature` can only coarsen the default; a sampler whose state
-moves without its lines changing narrows it. A `PixelSession.frame` is asked for only once the shell has a canvas to
-draw the result into (a flush-and-diff session, as the HD canvas is, cannot have a frame swallowed); `PixelView` checks
-the canvas first. `unsupported` is shown by a WINDOW view only: a tile `pixels` view whose `open` returned `null` draws
-nothing.
+view object and per thing that threw. A `component` body's render or effect is guarded too, by the one React error
+boundary in the shell: React 18 unmounts the whole UI for an uncaught render error, so a throw there would take every
+tile down, and the boundary reports it once per body (the same rule and wording) and renders nothing.
+`ReadoutSampler.signature` can only coarsen the default; a sampler whose state moves without its lines changing narrows
+it. A `PixelSession.frame` is asked for only once the shell has a canvas to draw the result into (a flush-and-diff
+session, as the HD canvas is, cannot have a frame swallowed); `PixelView` checks the canvas first. `unsupported` is shown
+by a WINDOW view only: a tile `pixels` view whose `open` returned `null` draws nothing.
 ### 3.2 Actions
 
 ```ts
@@ -223,7 +225,7 @@ export interface UiAction {
   /** "<package>.<name>": the manifest's package name, a dot, a name. Namespaced because the profile stores it. */
   readonly id: string;
   readonly label: string;               // the bindings menus' row text: "LSDj Debug Overlay"
-  readonly keys?: readonly string[];    // default keyboard bindings, by the names the binding profiles use ("`", "F")
+  readonly keys?: readonly string[];    // default keyboard bindings, by the names the binding profiles use ("`", "f")
   readonly pad?: readonly string[];     // default gamepad bindings, by SDL's button names ("leftstick")
   run(host: UiHost, ctx: { readonly systemId: number | null }): void;   // systemId: the focused system, null with none
 }
@@ -302,8 +304,9 @@ tests exercise them through the generated fixture module). They refuse, each nam
 3. an action id declared twice;
 4. an action id not prefixed by `<its own package name>.` (the manifest name, `lsdj`, as `UI_CONTRIBUTIONS`' `pkg`
    carries it), so a profile's stored id names its owner;
-5. a default key name `resolveKeyName` (`keyCodes.ts:60`) does not resolve, or a default pad name outside the gamepad
-   name table (3.6: `GAMEPAD_BUTTON_NAMES` is new);
+5. a default key name `resolveKeyName` (`keyCodes.ts:60`) does not resolve, a single UPPERCASE letter (the hosts
+   deliver a letter unshifted, so `F` would show in the bindings menu and never fire; the refusal names the lowercase
+   key), or a default pad name outside the gamepad name table (3.6: `GAMEPAD_BUTTON_NAMES` is new);
 6. a default that collides with a shell default, compared by RESOLVED DPF CODE and not by spelling (so `Return` collides
    with Enter and `z` with Z): a shell action's (`DEFAULT_KEYBOARD_ACTIONS` /
    `DEFAULT_GAMEPAD_ACTIONS`, `bindingMap.ts:28-29`: `Escape`, `Tab`, `leftshoulder`, `rightshoulder`) or a Game Boy
@@ -832,8 +835,10 @@ the package default-exports `defineUi({ views: [badgeView] })`. What it proves, 
 
 **What is not proved, said plainly.** The UI test binary embeds the production bundle (`test-ui/uiHarness.ts` bundles the
 tests, not the UI), so no `test:ui` case can render a `component` view until a real package ships one. The
-`ComponentView` renderer is a mount and a cast; it is covered by typecheck, by the controller's lifecycle test (a fake
-component body whose `open`-equivalent is the mount) and by reading, not by pixels.
+`ComponentView` renderer is a mount, a cast and a keyed error boundary; it is covered by typecheck, by the controller's
+lifecycle test (a fake component body whose `open`-equivalent is the mount), by the pure test of the boundary's state
+logic (`componentFault`: the latch and the report once per body, in `test/ui/view-session.test.ts`, since the boundary
+class itself imports `react` and the pure tier cannot) and by reading, not by pixels.
 
 ### 8.7 The oracles held, and the new tests
 

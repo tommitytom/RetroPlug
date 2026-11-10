@@ -15,11 +15,11 @@
 //   module that does not exist, a contribution its exports do not publish, a manifest whose name is not its
 //   directory's, a contribution outside ts/ and a contributing package the shell does not declare, an action id
 //   twice (one package or two), an action id its package does not prefix, and an action default on a key or pad
-//   name the shell does not resolve or already binds. A dependency that
-//   contributes nothing, and one whose manifest has no retroplug member, are left out of the ordering rather than
-//   refused; a package contributing an app and no nodes names no nodes module and still registers its app; a tsconfig
-//   that must extend the generated host-module paths because it lists an example session or declares a host module the
-//   UI owns;
+//   name the shell does not resolve, a single uppercase letter the hosts never send, or one the shell already binds.
+//   A dependency that contributes nothing, and one whose manifest has no retroplug member, are left out of the ordering
+//   rather than refused; a package contributing an app and no nodes names no nodes module and still registers its app;
+//   a tsconfig that must extend the generated host-module paths because it lists an example session or declares a host
+//   module the UI owns;
 // - the generated module itself refuses a duplicate key in the lists the registries look up rather than sequence: a
 //   role kind, a kit format's id and a tracker integration's marker role, each with its own message, and an embedded
 //   ROM whose declaration and manifest entry do not pair (or name a console this product does not run);
@@ -286,6 +286,17 @@ test("the generated menus module refuses an action default key name no key resol
   const { error } = await drive("actions-unknown-key");
   console.log(`# action key name: ${error}`);
   expect(error).toBe("the package alpha declares the action alpha.key on the key Nonsense, which is no key name");
+});
+
+test("the generated menus module refuses an action default on a single uppercase letter", async () => {
+  // The hosts deliver a letter unshifted, so "F" would show in the bindings menu and never fire: the refusal names the
+  // lowercase key to bind instead.
+  const { error } = await drive("actions-uppercase-key");
+  console.log(`# action uppercase key: ${error}`);
+  expect(error).toBe(
+    "the package alpha declares the action alpha.key on the key F by default, which no host sends (the hosts send " +
+      'letters unshifted: bind "f")',
+  );
 });
 
 test("the generated menus module refuses an action default pad name outside SDL's button names", async () => {

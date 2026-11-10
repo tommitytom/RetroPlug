@@ -36,8 +36,8 @@
 //   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | examples-shell-name |
 //   examples-unsafe-name | host-unknown | host-known | react-tsconfig-missing | react-tsconfig-unextended |
 //   react-tsconfig-extended | actions | actions-duplicate-id | actions-duplicate-across | actions-bad-prefix |
-//   actions-unknown-key | actions-unknown-pad | actions-shell-key | actions-gb-key | actions-return-key |
-//   actions-gb-pad
+//   actions-unknown-key | actions-uppercase-key | actions-unknown-pad | actions-shell-key | actions-gb-key |
+//   actions-return-key | actions-gb-pad
 //                   the menus module: ui reports the contributing packages in product order, the others load it into
 //                   its own refusal ({ error })
 //                   (unlisted-plain generates, and reports files like generate)
@@ -714,6 +714,13 @@ try {
     case "actions-unknown-key":
       result = await actionRefusal(
         'export default { actions: [{ id: "alpha.key", label: "Key", keys: ["Nonsense"], run: () => {} }] };\n',
+      );
+      break;
+    case "actions-uppercase-key":
+      // A default the hosts can never deliver: DPF sends a letter unshifted ('f' for the F key), so a bare "F" would
+      // show in the bindings menu and never fire.
+      result = await actionRefusal(
+        'export default { actions: [{ id: "alpha.key", label: "Key", keys: ["F"], run: () => {} }] };\n',
       );
       break;
     case "actions-unknown-pad":

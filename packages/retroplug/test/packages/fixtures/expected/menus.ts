@@ -150,6 +150,10 @@ function checkAction(pkg: string, action: UiAction): void {
       throw new Error(`the package ${pkg} declares the action ${action.id} on the key ` +
         `${name} by default, which the shell already binds (a shell action or a Game Boy button)`);
     }
+    if (/^[A-Z]$/.test(name)) {
+      throw new Error(`the package ${pkg} declares the action ${action.id} on the key ${name} by ` +
+        `default, which no host sends (the hosts send letters unshifted: bind "${name.toLowerCase()}")`);
+    }
   }
   for (const name of action.pad ?? []) {
     if (!padButtonNames.has(name)) {

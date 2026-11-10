@@ -10,6 +10,7 @@ import { createSignal } from "@retroplug/ui/menu";
 
 import { warned } from "../_warnings";
 import {
+  componentFault,
   isPixelSession,
   isReadoutSampler,
   openSession,
@@ -365,4 +366,21 @@ test("a throwing signature is reported once and the default over the lines and t
   expect(result).toBe("1|a\nb");
   expect(warnings).toEqual(["[views] test-view: its signature threw: the signature is broken"]);
   expect(warned(() => readoutKey(view, sampler, frame)).warnings).toEqual([]);
+});
+
+test("a component body's fault latches the boundary's state and is reported once per body", () => {
+  // The boundary itself is the one piece of the shell's view code that cannot be tested here (it imports react, which
+  // this tier's tsconfig does not resolve); its whole state logic is this function, and the class only wires React's
+  // getDerivedStateFromError to it.
+  const body = { kind: "component", component: () => null };
+  const { result, warnings } = warned(() => componentFault(body, "test-component", new Error("the widget is broken")));
+  expect(result).toEqual({ failed: true }); // what the boundary renders nothing for
+  expect(warnings).toEqual(["[views] test-component: its component threw: the widget is broken"]);
+  // The same body failing again (a remount under the same view) is the same fault: no second report.
+  expect(warned(() => componentFault(body, "test-component", new Error("again"))).warnings).toEqual([]);
+  // Another body is another fault, reported in its own words.
+  const other = { kind: "component", component: () => null };
+  expect(warned(() => componentFault(other, "other-component", "not an Error")).warnings).toEqual([
+    "[views] other-component: its component threw: not an Error",
+  ]);
 });

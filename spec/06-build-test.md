@@ -371,9 +371,11 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
     ids and a user's profile must name the owner; `label` is the bindings menus' row text, `keys`/`pad` are the
     DEFAULTS (a missing entry reads `-`), and `run(host, ctx)` gets the UI host and the focused system's id (null on the
     start screen). The generated registry refuses a duplicate action id, an id not prefixed by its package's name, a
-    default key `resolveKeyName` cannot resolve, a default pad name outside `GAMEPAD_BUTTON_NAMES` (SDL's button set),
-    and a default that collides with a shell default or a Game Boy button's (a key on both would fire the action and the
-    joypad). Two packages may share a default key; that is how one backtick still flips both debug overlays.
+    default key `resolveKeyName` cannot resolve, a single uppercase letter as a default (the hosts deliver letters
+    unshifted, so `F` would bind and never fire, and the refusal names the lowercase key), a default pad name outside
+    `GAMEPAD_BUTTON_NAMES` (SDL's button set), and a default that collides with a shell default or a Game Boy button's (a
+    key on both would fire the action and the joypad). Two packages may share a default key; that is how one backtick
+    still flips both debug overlays.
 
 **A console package's native half.** A package whose console the engine runs is a native entry like any other, plus
 three rules the two console packages (four node types between them) follow (F2,

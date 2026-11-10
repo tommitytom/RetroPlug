@@ -24,15 +24,7 @@ export function ViewWindow({
   height: number;
 }) {
   if (view.body.kind === "component") {
-    return (
-      <ComponentView
-        component={view.body.component}
-        host={host}
-        systemId={systemId}
-        width={width}
-        height={height}
-      />
-    );
+    return <ComponentView view={view} host={host} systemId={systemId} width={width} height={height} />;
   }
   return (
     <Box innerRef={tagTestId(view.id)} style={{ width, height, "background-color": "#000000" }}>

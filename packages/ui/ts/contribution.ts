@@ -256,8 +256,9 @@ export interface UiAction {
   readonly id: string;
   /** The bindings menus' row text ("LSDj Debug Overlay"); the row shows it, then the bound names. */
   readonly label: string;
-  /** Default keyboard bindings, by the names the profiles store ("`", "F"). A key the shell already binds by default
-   *  (a shell action's or a Game Boy button's) is refused at load, since one press would fire both. */
+  /** Default keyboard bindings, by the names the profiles store ("`", "f"). A key the shell already binds by default
+   *  (a shell action's or a Game Boy button's) is refused at load, since one press would fire both, and so is a single
+   *  uppercase letter: the hosts deliver a letter unshifted, so a default "F" could never fire. */
   readonly keys?: readonly string[];
   /** Default gamepad bindings, by SDL's button names ("leftshoulder", "leftstick"); absent = unbound, which the
    *  gamepad bindings menu shows as "-". */

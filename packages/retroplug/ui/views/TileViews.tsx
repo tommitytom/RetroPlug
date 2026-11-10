@@ -63,9 +63,7 @@ function TileViewBody({
   );
   if (!shown || !viewAppliesTo(view, system)) return null;
   if (view.body.kind === "component") {
-    return (
-      <ComponentView component={view.body.component} host={host} systemId={system.id} width={width} height={height} />
-    );
+    return <ComponentView view={view} host={host} systemId={system.id} width={width} height={height} />;
   }
   if (view.body.kind === "pixels") {
     return <PixelView view={view} host={host} system={system} width={width} height={height} placement="tile" />;
