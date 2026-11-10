@@ -112,6 +112,17 @@ test("the UI bundle carries the kit, and no bundle carries the unlisted fixture 
   }
 });
 
+test("the UI bundle carries the generated view table, and no other bundle does", async () => {
+  // The views are a generated module of their own, reached only by the shell's view slots
+  // (ui/host/viewContributions.ts), which only the UI bundle imports: a non-UI bundle carrying it would be carrying a
+  // package's React view with it.
+  const built = await bundles();
+  const viewTable = (name: string): string[] => built[name]!.filter((path) => /\/ui\/generated\/views\.ts$/.test(path));
+  console.log(`# ui: ${viewTable("ui").length} generated view table`);
+  expect(viewTable("ui").length).toBe(1);
+  for (const name of NON_UI) expect(viewTable(name), `${name} carries the view table`).toEqual([]);
+});
+
 test("the CLI dispatcher carries the generated tool table, and the planner the generated protocol data", async () => {
   // The split is not "carry no generated module": each surface carries its own. A dispatcher that lost the tool table
   // would list no package command, and a planner without the protocol data would place none.

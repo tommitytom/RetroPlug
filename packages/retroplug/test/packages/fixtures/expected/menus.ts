@@ -5,7 +5,7 @@
 // system-settings rows, menu builders, tracker specs and services it adds. The shell composes the menus from this
 // list, so a package's place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports
 // this module: the control plane, the render worker, the SDK and the planner carry no menu contribution.
-import { PLACEMENTS, type ContributedAction, type RoleRow, type UiAction, type UiContribution, type ViewDef } from "@retroplug/ui/contribution";
+import { PLACEMENTS, type ContributedAction, type RoleRow, type UiAction, type UiContribution } from "@retroplug/ui/contribution";
 import ui_zeta from "@retroplug/zeta/ui";
 import ui_alpha from "@retroplug/alpha/ui";
 import { ROLES, TRACKER_INTEGRATIONS } from "../../src/generated/packages";
@@ -17,12 +17,6 @@ export const UI_CONTRIBUTIONS: readonly { pkg: string; ui: UiContribution }[] = 
   { pkg: "zeta", ui: ui_zeta },
   { pkg: "alpha", ui: ui_alpha },
 ];
-
-/** The product's views, in product order, with the package each came from: what host.views.open looks
- *  a window view up by id, and the tile layers every tile mounts in turn. */
-export const VIEWS: readonly { pkg: string; view: ViewDef }[] = UI_CONTRIBUTIONS.flatMap(({ pkg, ui }) =>
-  (ui.views ?? []).map((view) => ({ pkg, view })),
-);
 
 /** The product's app actions, in product order, with the package each came from: the bindings menus'
  *  rows, the key and gamepad maps' known ids, and the dispatch's lookups. */
@@ -54,11 +48,6 @@ const trackerOwners = new Map<string, string>();
 // duplicate is refused rather than let the second definition win.
 const serviceOwners = new Map<string, string>();
 const placements = new Set<string>(PLACEMENTS);
-// A view's id is its test id and the id host.views.open names, so it is unique across the product; its
-// placement and its body's kind are the two data fields the type cannot hold a package to at load.
-const viewOwners = new Map<string, string>();
-const viewPlacements = new Set<string>(["window", "tile"]);
-const bodyKinds = new Set<string>(["pixels", "readout", "component"]);
 // An action's id is what a binding profile stores, so it is unique across the product and names its
 // package. Its defaults are held to the names the shell binds and to the ones it already binds at a
 // default: a key on both would fire the action AND the Game Boy button (or the shell action) it is on.
@@ -96,42 +85,6 @@ function checkRow(placement: string, pkg: string, row: RoleRow): void {
   if (row.when && !keys.has(row.when.key)) {
     throw new Error(`the package ${pkg} declares the row ${row.id} gated on the key ${row.when.key}, which ` +
       `the role ${row.role} does not read`);
-  }
-}
-
-/** One contributed view: its id unique across the product, its placement one the shell has, its body kind
- *  one the shell renders with what that kind is opened by (a session's `open`, a component's `component`), and
- *  no `visible` on a window view (the type refuses that; this backs the type). */
-function checkView(pkg: string, view: ViewDef): void {
-  const owner = viewOwners.get(view.id);
-  if (owner !== undefined) {
-    throw new Error(owner === pkg
-      ? `the package ${pkg} declares the view ${view.id} twice`
-      : `two packages declare the view ${view.id}: ${owner} and ${pkg}`);
-  }
-  viewOwners.set(view.id, pkg);
-  if (!viewPlacements.has(view.placement)) {
-    throw new Error(`the package ${pkg} declares the view ${view.id} at the placement ${view.placement}, ` +
-      `which is no placement (the placements are window, tile)`);
-  }
-  const kind = view.body?.kind;
-  if (!bodyKinds.has(kind)) {
-    throw new Error(`the package ${pkg} declares the view ${view.id} with the body kind ${kind}, ` +
-      `which is no body kind (the kinds are pixels, readout, component)`);
-  }
-  const body = view.body as { readonly open?: unknown; readonly component?: unknown };
-  if (kind === "component") {
-    if (typeof body.component !== "function") {
-      throw new Error(`the package ${pkg} declares the view ${view.id} with a component body and no ` +
-        "component (reactView builds the one a component body carries)");
-    }
-  } else if (typeof body.open !== "function") {
-    throw new Error(`the package ${pkg} declares the view ${view.id} with a ${kind} body and no open ` +
-      `(a ${kind} body's open is what the shell calls)`);
-  }
-  if (view.placement !== "tile" && (view as { readonly visible?: unknown }).visible !== undefined) {
-    throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +
-      `a tile view has`);
   }
 }
 
@@ -180,7 +133,6 @@ function checkAction(pkg: string, action: UiAction): void {
 
 for (const { pkg, ui } of UI_CONTRIBUTIONS) {
   for (const row of ui.rows ?? []) checkRow("system.settings", pkg, row);
-  for (const view of ui.views ?? []) checkView(pkg, view);
   for (const action of ui.actions ?? []) checkAction(pkg, action);
   for (const tracker of ui.trackers ?? []) {
     if (!trackerIds.has(tracker.id)) {

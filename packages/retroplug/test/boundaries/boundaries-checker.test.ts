@@ -491,6 +491,31 @@ test("a .tsx outside the package's ts/ui/ tree is refused, naming the file and t
   ]);
 });
 
+test("a package whose views module names a file outside its ts/ui/ tree is refused", async () => {
+  // A views module is UI code: the tree rule 3 admits React from is where it has to live, or a React view would import
+  // a host module from a file surfaceOf gives no surface, which the declaration checks would never see.
+  const report = await drive("views-outside-ui");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    "packages/alpha/package.json: names retroplug.views ts/views.ts, which is outside packages/alpha/ts/ui/, the " +
+      "tree a package's UI modules live in: a views module is UI code, and rule 3 admits a React host module only " +
+      "from there",
+  ]);
+});
+
+test("a package whose ui module names a file outside its ts/ui/ tree is refused", async () => {
+  // The same rule for `retroplug.ui`: every package's entry is ts/ui/index.ts.
+  const report = await drive("ui-outside-ui");
+  console.log(`# ${(report.refused as string[]).join("\n# ")}`);
+  expect(report.status).toBe(1);
+  expect(report.refused).toEqual([
+    "packages/alpha/package.json: names retroplug.ui ts/ui.ts, which is outside packages/alpha/ts/ui/, the tree a " +
+      "package's UI modules live in: the ui module is the package's UI code, and rule 3 admits a React host module " +
+      "only from there",
+  ]);
+});
+
 test("a package with a .tsx and no react/jsx-runtime declaration is refused", async () => {
   // Automatic JSX imports react/jsx-runtime with no specifier in the source, so a declaration check that read only
   // what an import names would admit a component whose React was never declared.

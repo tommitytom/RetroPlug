@@ -168,8 +168,8 @@ const SHELL_IMPORTS = [
 /** Rule 9's list for `ui/`: a list of its own, because the kit and the view contract are the UI's alone (src/ and cli/
  *  must never reach `@retroplug/ui-react`), and because the control plane needs no menu model or contribution type.
  *  Each entry is a contract module rather than a cart's or a console's code, which the UI reaches through the
- *  generated `ui/generated/menus.ts`; an entry no `ui/` file imports fails the check, as an unused SHELL_IMPORTS entry
- *  does. */
+ *  generated `ui/generated/menus.ts` and `ui/generated/views.ts`; an entry no `ui/` file imports fails the check, as an
+ *  unused SHELL_IMPORTS entry does. */
 const UI_IMPORTS = [
   { specifier: "@retroplug/ui/menu", reason: "the menu model every composer and the Menu draw" },
   { specifier: "@retroplug/ui/contribution", reason: "the contribution and view types the generated registry and the composers read" },
@@ -609,6 +609,26 @@ export function checkBoundaries({ root = REPO } = {}) {
             "was never there, and the entry is the one thing still saying the package publishes it",
         );
       }
+    }
+
+    // A package's `ui` and `views` modules are UI code and sit in its ts/ui/ tree: that tree is what surfaceOf reads (a
+    // React host module is importable only from its files) and what the bundle check classifies a module as UI by, so a
+    // module named outside it could import React where no declaration is checked for it. The generator refuses the same
+    // paths, and this reads the manifest of every package, listed by a product or not.
+    for (const member of ["ui", "views"]) {
+      const named = pkg.manifest.retroplug?.[member];
+      if (typeof named !== "string" || named === "") continue;
+      const rel = relative(join(pkg.dir, "ts", "ui"), resolve(pkg.dir, named)).split("\\").join("/");
+      if (rel !== "" && !rel.startsWith("..")) continue;
+      const why = member === "views" ? "a views module is UI code" : "the ui module is the package's UI code";
+      refuse(
+        "ui-surface",
+        shown(root, pkg.manifestPath),
+        named,
+        `${shown(root, pkg.manifestPath)}: names retroplug.${member} ${named}, which is outside ` +
+          `packages/${pkg.name}/ts/ui/, the tree a package's UI modules live in: ${why}, and rule 3 admits a React ` +
+          "host module only from there",
+      );
     }
 
     // The host modules this package declares: a name the shell's list does not have is refused here (the list is the

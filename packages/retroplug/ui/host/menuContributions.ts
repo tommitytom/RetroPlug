@@ -1,50 +1,20 @@
 // The product's UI contributions (docs/modular-graph-phase-f4b-design.md section 4.2), for the shell's menu composers:
-// the generated list, in product order, is the one place a package's rows, builders, tracker specs and services are
-// read from. Only ui/ imports it, so the control plane, the render worker, the SDK and the planner carry no menu
-// contribution; the generated module has already refused a duplicate row id, an unknown placement, a row over a role
-// kind no registered type declares or over a key its schema does not read, and a tracker UI no integration matches, so
-// what this module reads it can index.
+// the generated list, in product order, is the one place a package's rows, builders, tracker specs, services and app
+// actions are read from. Only ui/ imports it, so the control plane, the render worker, the SDK and the planner carry no
+// menu contribution; the generated module has already refused a duplicate row id, an unknown placement, a row over a
+// role kind no registered type declares or over a key its schema does not read, and a tracker UI no integration
+// matches, so what this module reads it can index. The views are viewContributions.ts's, over their own generated
+// module: a component view imports React, which this module must not reach.
 import type {
-  ContributedAction, MenuBuildContext, MenuBuilder, RoleRow, TileView, TrackerUi, UiHost, UiService, ViewDef,
-  WindowView,
+  ContributedAction, MenuBuildContext, MenuBuilder, RoleRow, TrackerUi, UiHost, UiService,
 } from "@retroplug/ui/contribution";
 import type { SystemInfo } from "@retroplug/core/host";
 import type { MenuItem } from "@retroplug/ui/menu";
-import { ACTIONS, UI_CONTRIBUTIONS, VIEWS } from "../generated/menus";
+import { ACTIONS, UI_CONTRIBUTIONS } from "../generated/menus";
 
 /** Every contributed role row, in product order: the System submenu's package-owned block. */
 export function roleRows(): readonly RoleRow[] {
   return UI_CONTRIBUTIONS.flatMap((entry) => entry.ui.rows ?? []);
-}
-
-/** The view a package registers under `id`, with the package it came from, or undefined. The generated module has
- *  already refused a duplicate id, so the first match is the only one. */
-export function viewById(id: string): { pkg: string; view: ViewDef } | undefined {
-  return VIEWS.find((entry) => entry.view.id === id);
-}
-
-/** The window view a package registers under `id`, or undefined for an unknown id or a tile view. What
- *  `host.views.open` looks an id up in, so a tile view's id opens nothing. */
-export function windowViewOf(id: string): WindowView | undefined {
-  const entry = viewById(id);
-  return entry?.view.placement === "window" ? entry.view : undefined;
-}
-
-/** Resolve a window open against the generated registry: the view, or the report saying why it cannot open. App's
- *  `views.open` runs this and then the two checks only a project can answer (a system that is gone, a view whose `when`
- *  rejects it); the menu's fallback host (`hostOf`, for a context built over the stores alone) runs this much and says
- *  the same words. One function, so the refusals cannot drift apart. */
-export function windowViewOrReport(id: string): { view: WindowView } | { report: string } {
-  const entry = viewById(id);
-  if (!entry) return { report: `[views] no view is registered under the id ${id}` };
-  if (entry.view.placement !== "window") return { report: `[views] ${id} is a tile view, which opens no window` };
-  return { view: entry.view };
-}
-
-/** Every tile view, in product order, with the package it came from: the layers EmulatorTile mounts over each tile
- *  whose system the view's `when` accepts. */
-export function tileViews(): readonly { pkg: string; view: TileView }[] {
-  return VIEWS.filter((entry): entry is { pkg: string; view: TileView } => entry.view.placement === "tile");
 }
 
 /** The tracker UI a cart contributes, by its integration id, or undefined for a cart with no contributed specs. */

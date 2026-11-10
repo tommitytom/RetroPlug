@@ -18,9 +18,8 @@ retroplug_package_library(retroplug-n8
     ${CMAKE_CURRENT_SOURCE_DIR}/src/n8/Edio.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/n8/Menu.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/n8/Ops.cpp)
-# N8Node.cpp includes n8wire/ExpansionVolume.hpp, whose root reaches this target, and the device twin that compiles its
-# sources again and copies its INCLUDE_DIRECTORIES, through the link below: that property carries a linked INTERFACE
-# target's roots.
+# N8Node.cpp includes n8wire/ExpansionVolume.hpp, whose root comes through the PUBLIC link below; the device twin copies
+# this target's INCLUDE_DIRECTORIES, which carries a linked INTERFACE target's roots, so it sees the root too.
 target_include_directories(retroplug-n8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(retroplug-n8 PUBLIC retroplug-node-sdk retroplug-n8-wire)
 

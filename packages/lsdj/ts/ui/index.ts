@@ -26,8 +26,6 @@ import { planLsdprjImport } from "../lsdjLsdprjImport";
 import { lsdjIntegration } from "../lsdjIntegration";
 import { LSDJ_MODE_VALUES } from "../enums";
 import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../rom";
-import { hdView } from "./hdView";
-import { overlayView } from "./overlayView";
 import { lsdjDebugOverlay } from "./debugOverlay";
 import { activeSlot as lsdjActiveSlot, decompressSlot, savSongName, savSongVersion } from "../codec/sav";
 import { encodeLsdsngRaw } from "../codec/lsdsng";
@@ -288,6 +286,5 @@ export const LSDJ_TRACKER_UI: TrackerUi = {
 
 export default defineUi({
   trackers: [LSDJ_TRACKER_UI],
-  views: [hdView, overlayView],
   actions: [lsdjDebugOverlay],
 });

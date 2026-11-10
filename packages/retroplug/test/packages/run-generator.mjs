@@ -10,7 +10,7 @@
 // edit what it needs), edits it where the mode is a refusal, runs the generator and prints one JSON line:
 //
 //   generate        { files: { "packages.ts": <text>, "consoles.ts": <text>, "protocol.ts": <text>,
-//                              "scriptNodes.ts": <text> }, packages: [...] }
+//                              "scriptNodes.ts": <text>, "menus.ts": <text>, "views.ts": <text> }, packages: [...] }
 //   consoles        { consoles: [{ id, core, nodeType, platforms }], realCarts: [{ platform, cartNode }] }
 //   twice           { mtimes: [<after one run>, <after a second>], changed: [<first run>, <second run>] }
 //   run             { registered: [<the ids the generated entry registers, in order>] }
@@ -32,7 +32,7 @@
 //   ui | ui-duplicate-row | ui-unknown-placement | ui-role-undeclared | ui-unknown-key | ui-unknown-when-key |
 //   ui-unknown-tracker | ui-duplicate-tracker | ui-duplicate-service | views | views-duplicate-id |
 //   views-duplicate-across | views-bad-placement | views-bad-kind | views-no-body | views-no-open | views-no-component |
-//   views-window-visible
+//   views-window-visible | views-outside-ui | ui-outside-ui
 //   cli | cli-duplicate-tool | cli-missing-module | examples-outside | examples-tsconfig-missing |
 //   examples-tsconfig-unextended | examples-tsconfig-extended | examples-duplicate-name | examples-shell-name |
 //   examples-unsafe-name | host-unknown | host-known | react-tsconfig-missing | react-tsconfig-unextended |
@@ -51,6 +51,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { generate } from "../../scripts/lib/packages.mjs";
+import { fixtureAliases } from "./fixtureAliases.mjs";
 
 const require = createRequire(import.meta.url);
 const { buildOptions } = require("../../../../tools/build-session.js");
@@ -86,6 +87,7 @@ function outputs() {
     "protocol.ts": readFileSync(join(generated, "protocol.ts"), "utf8"),
     "scriptNodes.ts": readFileSync(join(generated, "scriptNodes.ts"), "utf8"),
     "menus.ts": readFileSync(join(root, "packages/retroplug/ui/generated/menus.ts"), "utf8"),
+    "views.ts": readFileSync(join(root, "packages/retroplug/ui/generated/views.ts"), "utf8"),
   };
 }
 
@@ -177,53 +179,46 @@ function uiApp(name) {
 
 /** The aliases every menu-module loader needs: the fixture packages' ui and app modules the way a pnpm link resolves
  *  them, the real @retroplug/ui contract, and the fixture shell's src/*.ts shims of the real shell's binding
- *  vocabulary. */
+ *  vocabulary. One map, shared with test/script/bundle-views.mjs. */
 function menusAlias() {
-  return {
-    "@retroplug/alpha/app": join(root, "packages/alpha/ts/app.ts"),
-    "@retroplug/beta/app": join(root, "packages/beta/ts/app.ts"),
-    "@retroplug/alpha/consoles": join(root, "packages/alpha/ts/consoles.ts"),
-    "@retroplug/beta/consoles": join(root, "packages/beta/ts/consoles.ts"),
-    "@retroplug/alpha/ui": join(root, "packages/alpha/ts/ui.ts"),
-    "@retroplug/beta/ui": join(root, "packages/beta/ts/ui.ts"),
-    "@retroplug/zeta/ui": join(root, "packages/zeta/ts/ui.ts"),
-    // The ui package itself is a workspace dependency of the shell, not a fixture package: a real build resolves it
-    // through the pnpm link, so the driver hands the bundle the tree's own copy.
-    "@retroplug/ui/contribution": join(HERE, "../../../ui/ts/contribution.ts"),
-    // The fixture shell's src/*.ts shims re-export the real shell's modules, so an action's defaults are checked
-    // against the real key names, pad names and shell defaults rather than against a copy of them.
-    "@retroplug/shell/keyCodes": join(HERE, "../../src/keyCodes.ts"),
-    "@retroplug/shell/bindingMap": join(HERE, "../../src/bindingMap.ts"),
-  };
+  return fixtureAliases(root);
 }
 
-/** Load the generated menus module the way the UI loads it, running its checks (a row's role kind, a row id twice, a
- *  builder's placement, a view's id and body, an action's id and defaults). */
-async function importMenus(name) {
+/** Bundle one of the shell's generated modules over the fixture tree and load it, running its own checks: the menus
+ *  module holds a row's role kind and id, a builder's placement and an action's id and defaults, and the views module a
+ *  view's id, placement and body. */
+async function importGenerated(module, name) {
   const out = join(work, name);
   const { buildSync } = require("esbuild");
   buildSync({
-    ...buildOptions(join(root, "packages/retroplug/ui/generated/menus.ts"), out, "esm"),
+    ...buildOptions(join(root, `packages/retroplug/ui/generated/${module}.ts`), out, "esm"),
     alias: menusAlias(),
   });
   return import(pathToFileURL(out).href);
 }
 
 async function loadMenus() {
-  return (await importMenus("menus.mjs")).UI_CONTRIBUTIONS.map((entry) => entry.pkg);
+  return (await importGenerated("menus", "menus.mjs")).UI_CONTRIBUTIONS.map((entry) => entry.pkg);
 }
 
-/** The generated menus module's VIEWS: product order, and each view's id, placement and body kind as the registry
+/** The package ui modules the generated menus module imports, in the order it imports them: the filter's answer
+ *  without loading it, which a mode whose fixture rows name no registered role could not do. */
+function menusImports() {
+  const source = readFileSync(join(root, "packages/retroplug/ui/generated/menus.ts"), "utf8");
+  return [...source.matchAll(/^import ui_\w+ from "@retroplug\/([^/]+)\/ui";$/gm)].map((match) => match[1]);
+}
+
+/** The generated views module's VIEWS: product order, and each view's id, placement and body kind as the registry
  *  reports them. */
 async function loadViews() {
-  const loaded = await importMenus("views.mjs");
+  const loaded = await importGenerated("views", "views.mjs");
   return loaded.VIEWS.map(({ pkg, view }) => ({ pkg, id: view.id, placement: view.placement, kind: view.body.kind }));
 }
 
 /** The generated menus module's ACTIONS: product order, and each action's id, label and default key and pad names as
  *  the registry reports them. */
 async function loadActions() {
-  const loaded = await importMenus("actions.mjs");
+  const loaded = await importGenerated("menus", "actions.mjs");
   return loaded.ACTIONS.map(({ pkg, action }) => ({
     pkg,
     id: action.id,
@@ -236,10 +231,10 @@ async function loadActions() {
 /** Load the menus module with alpha contributing `ui`, and report the registry's own refusal (or null): the action
  *  checks run as the module loads, so a bad default is a load error. */
 async function actionRefusal(ui) {
-  writeTree("packages/alpha/ts/ui.ts", ui);
+  writeTree("packages/alpha/ts/ui/index.ts", ui);
   editManifest("alpha", (m) => {
-    m.retroplug.ui = "ts/ui.ts";
-    m.exports["./ui"] = "./ts/ui.ts";
+    m.retroplug.ui = "ts/ui/index.ts";
+    m.exports["./ui"] = "./ts/ui/index.ts";
   });
   generate({ root });
   try {
@@ -338,7 +333,18 @@ function consoleModule({ descriptors = [], realCarts = [] }) {
 
 // A file in the fixture tree, rewritten for a mode.
 function writeTree(relative, text) {
+  mkdirSync(dirname(join(root, relative)), { recursive: true });
   writeFileSync(join(root, relative), text);
+}
+
+/** Give a fixture package a views module at the path its manifest names: a package may declare `views` and no `ui`
+ *  (the `views` mode deletes zeta's `ui` member, so it is one) or both. */
+function viewsModule(name, source) {
+  writeTree(`packages/${name}/ts/ui/views.ts`, source);
+  editManifest(name, (m) => {
+    m.retroplug.views = "ts/ui/views.ts";
+    m.exports["./views"] = "./ts/ui/views.ts";
+  });
 }
 
 let result;
@@ -354,6 +360,7 @@ try {
       const files = [
         ...["packages.ts", "consoles.ts", "protocol.ts", "scriptNodes.ts"].map((name) => join(generated, name)),
         join(root, "packages/retroplug/ui/generated/menus.ts"),
+        join(root, "packages/retroplug/ui/generated/views.ts"),
         join(root, "packages/retroplug/cli/generated/tools.ts"),
         join(root, "packages/retroplug/tsconfig.host-modules.json"),
         join(root, "packages/retroplug/tsconfig.paths.json"),
@@ -392,17 +399,17 @@ try {
       // of its own and is named FIRST in the product list, so the reported order (zeta, alpha, beta) is the list's and
       // not a sort of the three names.
       writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
-      writeTree("packages/beta/ts/ui.ts", 'export default { menus: [{ placement: "start", build: () => [] }] };\n');
+      writeTree("packages/beta/ts/ui/index.ts", 'export default { menus: [{ placement: "start", build: () => [] }] };\n');
       editManifest("beta", (m) => {
-        m.retroplug.ui = "ts/ui.ts";
-        m.exports["./ui"] = "./ts/ui.ts";
+        m.retroplug.ui = "ts/ui/index.ts";
+        m.exports["./ui"] = "./ts/ui/index.ts";
       });
       generate({ root });
       result = { packages: await loadMenus() };
       break;
     case "ui-duplicate-row":
       writeTree(
-        "packages/alpha/ts/ui.ts",
+        "packages/alpha/ts/ui/index.ts",
         'export default {\n  rows: [\n' +
           '    { id: "alpha-model", key: "model", label: "Model", role: "alpha-role", toggle: true },\n' +
           '    { id: "alpha-model", key: "other", label: "Other", role: "alpha-role", toggle: true },\n' +
@@ -418,7 +425,7 @@ try {
       break;
     case "ui-unknown-placement":
       writeTree(
-        "packages/alpha/ts/ui.ts",
+        "packages/alpha/ts/ui/index.ts",
         'export default { menus: [{ placement: "instance.elsewhere", build: () => [] }] };\n',
       );
       writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
@@ -431,7 +438,7 @@ try {
       break;
     case "ui-role-undeclared":
       writeTree(
-        "packages/alpha/ts/ui.ts",
+        "packages/alpha/ts/ui/index.ts",
         'export default {\n  rows: [{ id: "alpha-model", key: "model", label: "Model", role: "nowhere", ' +
           'toggle: true }],\n};\n',
       );
@@ -445,7 +452,7 @@ try {
       break;
     case "ui-unknown-key":
       writeTree(
-        "packages/alpha/ts/ui.ts",
+        "packages/alpha/ts/ui/index.ts",
         'export default {\n  rows: [{ id: "alpha-model", key: "nonsense", label: "Model", role: "alpha-role", ' +
           'toggle: true }],\n};\n',
       );
@@ -459,7 +466,7 @@ try {
       break;
     case "ui-unknown-when-key":
       writeTree(
-        "packages/alpha/ts/ui.ts",
+        "packages/alpha/ts/ui/index.ts",
         'export default {\n  rows: [{ id: "alpha-model", key: "model", label: "Model", role: "alpha-role", ' +
           'toggle: true, when: { key: "nonsense", in: ["a"] } }],\n};\n',
       );
@@ -472,7 +479,7 @@ try {
       }
       break;
     case "ui-unknown-tracker":
-      writeTree("packages/alpha/ts/ui.ts", 'export default { trackers: [{ id: "nowhere" }] };\n');
+      writeTree("packages/alpha/ts/ui/index.ts", 'export default { trackers: [{ id: "nowhere" }] };\n');
       writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
       generate({ root });
       try {
@@ -483,7 +490,7 @@ try {
       break;
     case "ui-duplicate-tracker":
       writeTree(
-        "packages/alpha/ts/ui.ts",
+        "packages/alpha/ts/ui/index.ts",
         'export default { trackers: [{ id: "alpha-tracks" }, { id: "alpha-tracks" }] };\n',
       );
       writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
@@ -496,7 +503,7 @@ try {
       break;
     case "ui-duplicate-service":
       writeTree(
-        "packages/alpha/ts/ui.ts",
+        "packages/alpha/ts/ui/index.ts",
         'export default { services: [{ id: "alpha-watch" }, { id: "alpha-watch" }] };\n',
       );
       writeTree("packages/alpha/ts/app.ts", uiApp("alpha"));
@@ -510,31 +517,30 @@ try {
     case "views": {
       // Three contributors, so the reported order is the product order (zeta is listed first) rather than an
       // alphabetical sort. A view is data: its id, its placement and a body of one kind, which the generated module
-      // names in VIEWS.
-      writeTree(
-        "packages/zeta/ts/ui.ts",
+      // names in VIEWS. zeta declares a views module and no ui one, which a package may: its ui member is deleted here,
+      // so this mode runs a views-only package through contributes(), the menus module's filter and the views module.
+      editManifest("zeta", (m) => {
+        delete m.retroplug.ui;
+        delete m.exports["./ui"];
+      });
+      viewsModule(
+        "zeta",
         'export default { views: [{ id: "zeta-view", label: "Zeta View", placement: "tile", ' +
           'body: { kind: "readout", open: () => null } }] };\n',
       );
-      writeTree(
-        "packages/alpha/ts/ui.ts",
+      viewsModule(
+        "alpha",
         'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile", ' +
           'body: { kind: "readout", open: () => null } }] };\n',
       );
-      writeTree(
-        "packages/beta/ts/ui.ts",
+      viewsModule(
+        "beta",
         'export default { views: [{ id: "beta-view", label: "Beta View", placement: "window", ' +
           'body: { kind: "pixels", open: () => null } }] };\n',
       );
-      for (const name of ["alpha", "beta"]) {
-        editManifest(name, (m) => {
-          m.retroplug.ui = "ts/ui.ts";
-          m.exports["./ui"] = "./ts/ui.ts";
-        });
-      }
       generate({ root });
       try {
-        result = { views: await loadViews() };
+        result = { views: await loadViews(), menus: menusImports() };
       } catch (e) {
         result = { error: e.message };
       }
@@ -543,14 +549,10 @@ try {
     case "views-no-body":
       // A contribution whose view has no body at all: the data check backs the type with a message that names the
       // package, rather than a bare TypeError from reading `kind` off nothing.
-      writeTree(
-        "packages/alpha/ts/ui.ts",
+      viewsModule(
+        "alpha",
         'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile" }] };\n',
       );
-      editManifest("alpha", (m) => {
-        m.retroplug.ui = "ts/ui.ts";
-        m.exports["./ui"] = "./ts/ui.ts";
-      });
       generate({ root });
       try {
         result = { views: await loadViews() };
@@ -561,15 +563,11 @@ try {
     case "views-no-open":
       // A session body with nothing to open: the shell calls `body.open`, so this is a view that could never draw. The
       // fixture is plain data (no typecheck), which is why the generated module's check is what catches it.
-      writeTree(
-        "packages/alpha/ts/ui.ts",
+      viewsModule(
+        "alpha",
         'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile", ' +
           'body: { kind: "readout" } }] };\n',
       );
-      editManifest("alpha", (m) => {
-        m.retroplug.ui = "ts/ui.ts";
-        m.exports["./ui"] = "./ts/ui.ts";
-      });
       generate({ root });
       try {
         result = { views: await loadViews() };
@@ -580,15 +578,11 @@ try {
     case "views-no-component":
       // A component body with no component: the shell mounts what `component` names, so an empty one draws nothing and
       // reports nothing.
-      writeTree(
-        "packages/alpha/ts/ui.ts",
+      viewsModule(
+        "alpha",
         'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile", ' +
           'body: { kind: "component" } }] };\n',
       );
-      editManifest("alpha", (m) => {
-        m.retroplug.ui = "ts/ui.ts";
-        m.exports["./ui"] = "./ts/ui.ts";
-      });
       generate({ root });
       try {
         result = { views: await loadViews() };
@@ -597,17 +591,13 @@ try {
       }
       break;
     case "views-duplicate-id":
-      writeTree(
-        "packages/alpha/ts/ui.ts",
+      viewsModule(
+        "alpha",
         'export default { views: [\n' +
           '  { id: "same-view", label: "First", placement: "tile", body: { kind: "readout", open: () => null } },\n' +
           '  { id: "same-view", label: "Second", placement: "window", body: { kind: "pixels", open: () => null } },\n' +
           '] };\n',
       );
-      editManifest("alpha", (m) => {
-        m.retroplug.ui = "ts/ui.ts";
-        m.exports["./ui"] = "./ts/ui.ts";
-      });
       generate({ root });
       try {
         result = { views: await loadViews() };
@@ -617,15 +607,11 @@ try {
       break;
     case "views-duplicate-across":
       for (const name of ["alpha", "beta"]) {
-        writeTree(
-          `packages/${name}/ts/ui.ts`,
+        viewsModule(
+          name,
           `export default { views: [{ id: "same-view", label: "${name}", placement: "tile", ` +
             'body: { kind: "readout", open: () => null } }] };\n',
         );
-        editManifest(name, (m) => {
-          m.retroplug.ui = "ts/ui.ts";
-          m.exports["./ui"] = "./ts/ui.ts";
-        });
       }
       generate({ root });
       try {
@@ -635,15 +621,11 @@ try {
       }
       break;
     case "views-bad-placement":
-      writeTree(
-        "packages/alpha/ts/ui.ts",
+      viewsModule(
+        "alpha",
         'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "float", ' +
           'body: { kind: "readout", open: () => null } }] };\n',
       );
-      editManifest("alpha", (m) => {
-        m.retroplug.ui = "ts/ui.ts";
-        m.exports["./ui"] = "./ts/ui.ts";
-      });
       generate({ root });
       try {
         result = { views: await loadViews() };
@@ -652,15 +634,11 @@ try {
       }
       break;
     case "views-bad-kind":
-      writeTree(
-        "packages/alpha/ts/ui.ts",
+      viewsModule(
+        "alpha",
         'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "tile", ' +
           'body: { kind: "hologram", open: () => null } }] };\n',
       );
-      editManifest("alpha", (m) => {
-        m.retroplug.ui = "ts/ui.ts";
-        m.exports["./ui"] = "./ts/ui.ts";
-      });
       generate({ root });
       try {
         result = { views: await loadViews() };
@@ -669,16 +647,12 @@ try {
       }
       break;
     case "views-window-visible":
-      writeTree(
-        "packages/alpha/ts/ui.ts",
+      viewsModule(
+        "alpha",
         'const visible = { get: () => true, subscribe: () => () => {} };\n' +
           'export default { views: [{ id: "alpha-view", label: "Alpha View", placement: "window", visible, ' +
           'body: { kind: "readout", open: () => null } }] };\n',
       );
-      editManifest("alpha", (m) => {
-        m.retroplug.ui = "ts/ui.ts";
-        m.exports["./ui"] = "./ts/ui.ts";
-      });
       generate({ root });
       try {
         result = { views: await loadViews() };
@@ -686,25 +660,44 @@ try {
         result = { error: e.message };
       }
       break;
+    case "views-outside-ui":
+      // A views module is UI code and lives in the package's ts/ui/ tree: a path beside it would put a React import in
+      // a file no surface rule reads.
+      writeTree("packages/alpha/ts/views.ts", "export default { views: [] };\n");
+      editManifest("alpha", (m) => {
+        m.retroplug.views = "ts/views.ts";
+        m.exports["./views"] = "./ts/views.ts";
+      });
+      result = refusal();
+      break;
+    case "ui-outside-ui":
+      // The same placement rule for the ui module, which every package names as ts/ui/index.ts.
+      writeTree("packages/alpha/ts/ui.ts", "export default {};\n");
+      editManifest("alpha", (m) => {
+        m.retroplug.ui = "ts/ui.ts";
+        m.exports["./ui"] = "./ts/ui.ts";
+      });
+      result = refusal();
+      break;
     case "actions": {
       // The positive side: one action per package, two of them on the same backtick (which two CONTRIBUTIONS may
       // share), so the report is the product order and the defaults as declared.
       writeTree(
-        "packages/zeta/ts/ui.ts",
+        "packages/zeta/ts/ui/index.ts",
         'export default { actions: [{ id: "zeta.first", label: "Zeta First", keys: ["`"], run: () => {} }] };\n',
       );
       writeTree(
-        "packages/alpha/ts/ui.ts",
+        "packages/alpha/ts/ui/index.ts",
         'export default { actions: [{ id: "alpha.second", label: "Alpha Second", keys: ["`"], run: () => {} }] };\n',
       );
       writeTree(
-        "packages/beta/ts/ui.ts",
+        "packages/beta/ts/ui/index.ts",
         'export default { actions: [{ id: "beta.third", label: "Beta Third", pad: ["guide"], run: () => {} }] };\n',
       );
       for (const name of ["alpha", "beta"]) {
         editManifest(name, (m) => {
-          m.retroplug.ui = "ts/ui.ts";
-          m.exports["./ui"] = "./ts/ui.ts";
+          m.retroplug.ui = "ts/ui/index.ts";
+          m.exports["./ui"] = "./ts/ui/index.ts";
         });
       }
       generate({ root });
@@ -728,12 +721,12 @@ try {
       // again.
       for (const name of ["alpha", "beta"]) {
         writeTree(
-          `packages/${name}/ts/ui.ts`,
+          `packages/${name}/ts/ui/index.ts`,
           `export default { actions: [{ id: "alpha.same", label: "${name}", run: () => {} }] };\n`,
         );
         editManifest(name, (m) => {
-          m.retroplug.ui = "ts/ui.ts";
-          m.exports["./ui"] = "./ts/ui.ts";
+          m.retroplug.ui = "ts/ui/index.ts";
+          m.exports["./ui"] = "./ts/ui/index.ts";
         });
       }
       generate({ root });

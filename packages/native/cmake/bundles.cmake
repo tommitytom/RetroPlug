@@ -7,10 +7,10 @@
 
 # --- the TS package registries and the typecheck paths (docs/modular-graph-phase-f1-design.md section 3,
 # docs/modular-graph-phase-f4b-design.md section 5.4): the shell's src/generated/ (packages.ts, consoles.ts, protocol.ts
-# and scriptNodes.ts), ui/generated/menus.ts and cli/generated/tools.ts, and the two tsconfig path files the same list
-# writes. Their inputs are the product list (the root package.json's retroplug.products.desktop), every package's
-# manifest and the shell's host-modules.json. Every bundle whose inputs reach one of them imports it, so each is ordered
-# after this target.
+# and scriptNodes.ts), ui/generated/menus.ts, ui/generated/views.ts and cli/generated/tools.ts, and the two tsconfig
+# path files the same list writes. Their inputs are the product list (the root package.json's
+# retroplug.products.desktop), every package's manifest and the shell's host-modules.json. Every bundle whose inputs
+# reach one of them imports it, so each is ordered after this target.
 # It runs on every build (the bundle targets regenerate unconditionally anyway) and writes only a file whose content
 # changed, so a manifest edit rebuilds the bundles and a build that changes nothing touches no source file.
 #
@@ -30,7 +30,7 @@ add_custom_target(retroplug-ts-packages
     COMMAND ${NODE_EXECUTABLE} ${RP_TS_GENERATOR}
     BYPRODUCTS "${RP_TS_GENERATED}/packages.ts" "${RP_TS_GENERATED}/consoles.ts"
                "${RP_TS_GENERATED}/protocol.ts" "${RP_TS_GENERATED}/scriptNodes.ts"
-               "${RP_TS_UI_GENERATED}/menus.ts"
+               "${RP_TS_UI_GENERATED}/menus.ts" "${RP_TS_UI_GENERATED}/views.ts"
                "${RP_TS_CLI_GENERATED}/tools.ts"
                "${RP_TS_SHELL}/tsconfig.host-modules.json" "${RP_TS_SHELL}/tsconfig.paths.json"
     SOURCES ${RP_TS_GENERATOR} ${_rp_ts_manifests} "${CMAKE_SOURCE_DIR}/package.json"

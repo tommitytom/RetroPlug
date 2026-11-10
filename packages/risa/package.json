@@ -41,6 +41,7 @@
     "./runtime/symbols.generated": "./ts/runtime/symbols.generated.ts",
     "./runtime/types": "./ts/runtime/types.ts",
     "./ui": "./ts/ui/index.ts",
+    "./views": "./ts/ui/views.ts",
     "./cli": "./ts/cli/index.ts"
   },
   "dependencies": {
@@ -58,6 +59,7 @@
   "retroplug": {
     "app": "ts/app.ts",
     "ui": "ts/ui/index.ts",
+    "views": "ts/ui/views.ts",
     "protocol": {
       "module": "ts/protocol.ts",
       "nodes": [{ "type": "rp.risa.sync", "label": 19, "midiIn": null, "writes": ["bytes"] }],

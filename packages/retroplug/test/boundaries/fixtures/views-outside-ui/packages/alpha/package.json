@@ -1,0 +1,6 @@
+{
+  "name": "@retroplug/alpha",
+  "private": true,
+  "exports": { "./views": "./ts/views.ts" },
+  "retroplug": { "views": "ts/views.ts" }
+}

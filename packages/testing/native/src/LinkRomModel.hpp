@@ -1,14 +1,14 @@
 #pragma once
 
-// The two halves of BlipToaster's reliable link test (transport/N8ReliableLink.hpp, the n8-wire package's): the ROM's own
-// rules as a model the sender can be driven against, and the little frame arithmetic a case compares the wire with. The
-// sender's half of the link is the N8 pack's own test binary's, and the emulated cart FIFO that speaks it from the other
-// side is the Mesen package's (system/mesen/roles/NesN8FifoRole.hpp), so the model lives here, in the test helper
+// The two halves of BlipToaster's reliable link test (transport/N8ReliableLink.hpp, the n8-wire package's): the ROM's
+// own rules as a model the sender can be driven against, and the little frame arithmetic a case compares the wire with.
+// The sender's half of the link is the N8 pack's own test binary's, and the emulated cart FIFO that speaks it from the
+// other side is the Mesen package's (system/mesen/roles/NesN8FifoRole.hpp), so the model lives here, in the test helper
 // library, and both test binaries link it: the N8 pack's and the Mesen package's.
 //
-// Why HERE and not beside the wire: the model is a test's DSL for the ROM's rules, not part of the wire, and both binaries
-// already link this library; a door to it from n8-wire would be a second mechanism for one header, and would make a test
-// helper a dependency of the package two packs share. The two sides' models staying one file is the point.
+// Why HERE and not beside the wire: the model is a test's DSL for the ROM's rules, not part of the wire, and both
+// binaries already link this library, so one target serves them; putting it in n8-wire would make that package carry a
+// test helper beside its header, for two consumers that are both tests.
 //
 // The ROM half is pinned in the BlipToaster repo (retroplug-cli/tests/link.test.ts); here the model stands in for it so
 // the sender can be driven through a LOSSY channel shaped like the real one: on NTSC a DMC-DMA halt on `lda $40F0`

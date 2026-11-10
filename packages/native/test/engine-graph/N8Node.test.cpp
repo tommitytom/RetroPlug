@@ -331,8 +331,8 @@ TEST_CASE("rp.n8.nes gives the link its expansion volume at its first block, on 
 TEST_CASE("rp.n8.nes's expansion-volume range is rp.mesen.nes's, since one knob drives both",
           "[engine-graph][n8-node]") {
     // buildGraph hands both nodes the system's one knob, so a range that drifted on one side would clamp the same value
-    // two ways. Both types read their param from n8wire/ExpansionVolume.hpp's constants, and this holds the descriptor a
-    // document is planned against to them: the guard against a second copy of the range.
+    // two ways. Both types read their param from n8wire/ExpansionVolume.hpp's constants, and this holds the descriptor
+    // a document is planned against to them: the guard against a second copy of the range.
     const rp_node_type* nes = nullptr;
     const rp_package*   package = rp_mesen_package();
     for (std::uint32_t t = 0; t < package->node_type_count; ++t)

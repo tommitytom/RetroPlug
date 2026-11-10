@@ -1,9 +1,14 @@
 // What a package's UI module declares (docs/modular-graph-phase-f4b-design.md section 4.2): the system-settings rows it
 // adds as DATA (a role-config knob, its choices and its gate), the menu fragments a function builds where data cannot
 // say it (a state machine over a native host, a peer count), its tracker specs, the services its device needs polled or
-// subscribed to, its views, and its app actions. A manifest's `retroplug.ui` member names the module, which
-// default-exports defineUi({ ... }); the generator concatenates them in product order into
-// packages/retroplug/ui/generated/menus.ts.
+// subscribed to, and its app actions. A manifest's `retroplug.ui` member names the module, which default-exports
+// defineUi({ ... }); the generator concatenates them in product order into packages/retroplug/ui/generated/menus.ts.
+//
+// The views are a module of their own (docs/modular-graph-phase-f5a-design.md section 5): `retroplug.views` names it,
+// it default-exports defineViews({ views }), and the generator writes packages/retroplug/ui/generated/views.ts from
+// them. Apart because a component view imports React, which the pure tier (the menu tests, the control plane, the CLI,
+// the planner) cannot resolve: the menu modules must import no view, or every test that builds a menu would need the
+// UI bundle's aliases.
 //
 // Everything here is plain TypeScript: the contract a package's module is checked against, and the helpers that read a
 // row's stored value the way the shell renders it. The React kit is @retroplug/ui-react, a package of its own, so a
@@ -282,15 +287,24 @@ export interface UiContribution {
   readonly menus?: readonly MenuBuilder[];
   readonly trackers?: readonly TrackerUi[];
   readonly services?: readonly UiService[];
-  /** The window and tile views the package draws (declarative: the shell renders pixels and readout, and mounts a
-   *  component the package built with @retroplug/ui-react). */
-  readonly views?: readonly ViewDef[];
   /** The app actions the package contributes, which the key and gamepad maps dispatch and the bindings menus list. */
   readonly actions?: readonly UiAction[];
 }
 
 /** The identity function with types: a UI module's default export, checked against what a package may contribute. */
 export function defineUi(contribution: UiContribution): UiContribution {
+  return contribution;
+}
+
+/** What a package's views module contributes: the window and tile views it draws (declarative: the shell renders
+ *  pixels and readout, and mounts a component the package built with @retroplug/ui-react). A package may declare one
+ *  and no `ui` contribution, or the reverse. */
+export interface ViewsContribution {
+  readonly views: readonly ViewDef[];
+}
+
+/** The identity function with types: a views module's default export, checked against what a package may contribute. */
+export function defineViews(contribution: ViewsContribution): ViewsContribution {
   return contribution;
 }
 

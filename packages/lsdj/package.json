@@ -38,6 +38,7 @@
     "./lsdjSyncNode": "./ts/lsdjSyncNode.ts",
     "./lsdjSyncSettings": "./ts/lsdjSyncSettings.ts",
     "./ui": "./ts/ui/index.ts",
+    "./views": "./ts/ui/views.ts",
     "./model": "./ts/model.ts",
     "./playback": "./ts/playback/index.ts",
     "./playback/anchor": "./ts/playback/anchor.ts",
@@ -83,6 +84,7 @@
   "retroplug": {
     "app": "ts/app.ts",
     "ui": "ts/ui/index.ts",
+    "views": "ts/ui/views.ts",
     "protocol": {
       "module": "ts/protocol.ts",
       "nodes": [

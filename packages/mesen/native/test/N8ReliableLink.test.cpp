@@ -1,9 +1,9 @@
-// Guards the emulated cart FIFO's use of BlipToaster's reliable link (system/mesen/roles/NesN8FifoRole.cpp, the link from
-// the n8-wire package): the role frames MIDI and consumes the ROM's acks, numbers frames in the order it releases them,
-// and carries a message into the next block so that it is numbered when it is released. The sender's own half of the link
-// is the N8 pack's test binary's (packages/n8/native/test/N8ReliableLink.test.cpp), and the model of the ROM's rules both
-// halves drive is the shared test helper library's LinkRomModel.hpp (@retroplug/testing): a test helper neither pack owns,
-// as neither owns the wire.
+// Guards the emulated cart FIFO's use of BlipToaster's reliable link (system/mesen/roles/NesN8FifoRole.cpp, the link
+// from the n8-wire package): the role frames MIDI and consumes the ROM's acks, numbers frames in the order it releases
+// them, and carries a message into the next block so that it is numbered when it is released. The sender's own half of
+// the link is the N8 pack's test binary's (packages/n8/native/test/N8ReliableLink.test.cpp), and the model of the ROM's
+// rules both halves drive is the shared test helper library's LinkRomModel.hpp (@retroplug/testing): a test helper
+// neither pack owns, as neither owns the wire.
 //
 // Run via `pnpm test:plugin` (retroplug-mesen-test).
 

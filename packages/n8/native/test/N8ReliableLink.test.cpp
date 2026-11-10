@@ -1,8 +1,8 @@
 // Guards the sender half of BlipToaster's reliable link (transport/N8ReliableLink.hpp, the n8-wire package's): messages
 // framed behind one sync, the window and its acks, running status and SysEx, a re-send on the timeout, a ROM that lost
 // track, and a soak through a channel that eats 1-3 byte bursts, where every message must apply once, in order. The
-// emulated cart FIFO that speaks the link from the other side is the Mesen package's, and its own cases are that package's
-// test binary's (packages/mesen/native/test/N8ReliableLink.test.cpp).
+// emulated cart FIFO that speaks the link from the other side is the Mesen package's, and its own cases are that
+// package's test binary's (packages/mesen/native/test/N8ReliableLink.test.cpp).
 //
 // Run via `pnpm test:n8` (retroplug-n8-test).
 

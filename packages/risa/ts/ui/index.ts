@@ -12,7 +12,6 @@ import {
   type TrackerUi,
 } from "@retroplug/ui/contribution";
 import { exportRitAsset, replaceRitAsset, type RitAssetOps } from "@retroplug/tracker/ritAssetOps";
-import { overlayView } from "./overlayView";
 import { risaDebugOverlay } from "./debugOverlay";
 import { risaAssetCatalog } from "../risaAssetCatalog";
 import { risaSongCatalog } from "../risaSongCatalog";
@@ -139,6 +138,5 @@ export const RISA_TRACKER_UI: TrackerUi = {
 
 export default defineUi({
   trackers: [RISA_TRACKER_UI],
-  views: [overlayView],
   actions: [risaDebugOverlay],
 });

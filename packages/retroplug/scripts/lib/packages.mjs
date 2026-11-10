@@ -23,6 +23,11 @@
 //   packages/retroplug/ui/generated/menus.ts          the packages' UI contributions, in product order, and the checks
 //                                                    their rows and builders are held to at load. Imported only by
 //                                                    ui/, so no other bundle carries a menu contribution
+//   packages/retroplug/ui/generated/views.ts          the packages' views, in product order, and the checks their ids,
+//                                                    placements and bodies are held to at load. Apart from menus.ts so
+//                                                    that a React view is reached only from the shell's view slots: the
+//                                                    pure tier bundles the menu modules with no alias, and a component
+//                                                    view could not resolve React there
 //
 // The product list is the root package.json's retroplug.products.desktop, the same array the root CMakeLists.txt reads
 // into RP_DESKTOP_PACKAGES (string(JSON)), so the two languages cannot register different products. THE LIST IS ALSO
@@ -38,8 +43,11 @@
 // A package's contributions are its manifest's retroplug.app (a module default-exporting definePackage's lists),
 // retroplug.consoles (a module default-exporting the console descriptors its cores run and the physical carts one of
 // them can drive), retroplug.protocol (its node definitions' module, the nodes' wiring and labels, and which role
-// kind each is placed as) and retroplug.ui (a module default-exporting defineUi's contribution: the system-settings
-// rows, the menu builders, the tracker specs and the UI services its package adds). The consoles are apart from the app
+// kind each is placed as), retroplug.ui (a module default-exporting defineUi's contribution: the system-settings rows,
+// the menu builders, the tracker specs, the UI services and the app actions its package adds) and retroplug.views (a
+// module default-exporting defineViews: the window and tile views it draws, apart from the menus because a component
+// view reaches React, which the pure tier has no path to). A `ui` or `views` module must sit under the package's
+// ts/ui/ tree, where rule 3 admits a React host module from. The consoles are apart from the app
 // module because they are data the PLANNER reads, and the app module is where a role's schema and zod are
 // (test/script/bundle-protocol.test.ts holds the planner to carrying neither). The app's lists are the product order's,
 // and only a ROM provider's place in it is behaviour: the providers run in order, and the first to match a ROM fixes
@@ -127,6 +135,19 @@ function entryFile(pkg, member, path) {
   return file;
 }
 
+/** A package's `ui` and `views` modules, which must sit under its own ts/ui/ tree: that directory is what rule 3's
+ *  surface rule reads (a React host module is importable only from its files) and what the bundle check classifies a
+ *  module as UI by, so a module outside it could import React with no declaration being checked for it. */
+function uiMemberFile(pkg, member, path, why) {
+  const file = entryFile(pkg, member, path);
+  const rel = relative(join(pkg.dir, "ts", "ui"), file).split(/[\\/]/).join("/");
+  if (rel === "" || rel.startsWith("..")) {
+    throw new Error(`${pkg.name}: retroplug.${member} names ${path}, which is outside the package's ts/ui/ tree: ` +
+      `${why}, and rule 3 admits a React host module only from there`);
+  }
+  return file;
+}
+
 function readPackage(root, name) {
   const dir = join(root, "packages", name);
   const manifest = join(dir, "package.json");
@@ -148,7 +169,8 @@ function readPackage(root, name) {
 function contributes(pkg) {
   return pkg.retroplug.app !== undefined || pkg.retroplug.consoles !== undefined ||
     pkg.retroplug.protocol !== undefined || pkg.retroplug.embed !== undefined ||
-    pkg.retroplug.ui !== undefined || pkg.retroplug.cli !== undefined;
+    pkg.retroplug.ui !== undefined || pkg.retroplug.views !== undefined ||
+    pkg.retroplug.cli !== undefined;
 }
 
 /** Whether an unlisted dependency contributes to the app, judged tolerantly: a package with no manifest, or a manifest
@@ -261,7 +283,7 @@ function syncRule(pkg, appId, sync) {
  *  checked for what the generated modules need. */
 function contributions(pkg) {
   const out = {
-    app: null, consoles: null, protocol: null, ui: null, cli: null, examples: [], host: [],
+    app: null, consoles: null, protocol: null, ui: null, views: null, cli: null, examples: [], host: [],
     nodes: [], roles: {}, apps: [], embeds: [],
   };
   const retroplug = pkg.retroplug;
@@ -301,7 +323,13 @@ function contributions(pkg) {
     if (typeof retroplug.ui !== "string" || retroplug.ui === "") {
       throw new Error(`${pkg.name}: retroplug.ui must be a module path, not ${JSON.stringify(retroplug.ui)}`);
     }
-    out.ui = entryFile(pkg, "ui", retroplug.ui);
+    out.ui = uiMemberFile(pkg, "ui", retroplug.ui, "the ui module is the package's UI code");
+  }
+  if (retroplug.views !== undefined) {
+    if (typeof retroplug.views !== "string" || retroplug.views === "") {
+      throw new Error(`${pkg.name}: retroplug.views must be a module path, not ${JSON.stringify(retroplug.views)}`);
+    }
+    out.views = uiMemberFile(pkg, "views", retroplug.views, "a views module is UI code");
   }
   if (retroplug.cli !== undefined) {
     if (typeof retroplug.cli !== "string" || retroplug.cli === "") {
@@ -765,7 +793,7 @@ function renderMenus({ packages, outDir }) {
     "// system-settings rows, menu builders, tracker specs and services it adds. The shell composes the menus from this",
     "// list, so a package's place in `retroplug.products.desktop` is where its rows and entries land. Only ui/ imports",
     "// this module: the control plane, the render worker, the SDK and the planner carry no menu contribution.",
-    'import { PLACEMENTS, type ContributedAction, type RoleRow, type UiAction, type UiContribution, type ViewDef } ' +
+    'import { PLACEMENTS, type ContributedAction, type RoleRow, type UiAction, type UiContribution } ' +
       'from "@retroplug/ui/contribution";',
   ];
   for (const p of contributors) {
@@ -788,12 +816,6 @@ function renderMenus({ packages, outDir }) {
     lines.push(`  { pkg: ${JSON.stringify(p.pkg.name)}, ui: ${local(p.pkg.name)} },`);
   }
   lines.push("];");
-  lines.push("");
-  lines.push("/** The product's views, in product order, with the package each came from: what host.views.open looks");
-  lines.push(" *  a window view up by id, and the tile layers every tile mounts in turn. */");
-  lines.push("export const VIEWS: readonly { pkg: string; view: ViewDef }[] = UI_CONTRIBUTIONS.flatMap(({ pkg, ui }) =>");
-  lines.push("  (ui.views ?? []).map((view) => ({ pkg, view })),");
-  lines.push(");");
   lines.push("");
   lines.push("/** The product's app actions, in product order, with the package each came from: the bindings menus'");
   lines.push(" *  rows, the key and gamepad maps' known ids, and the dispatch's lookups. */");
@@ -827,11 +849,6 @@ function renderMenus({ packages, outDir }) {
   lines.push("// duplicate is refused rather than let the second definition win.");
   lines.push("const serviceOwners = new Map<string, string>();");
   lines.push("const placements = new Set<string>(PLACEMENTS);");
-  lines.push("// A view's id is its test id and the id host.views.open names, so it is unique across the product; its");
-  lines.push("// placement and its body's kind are the two data fields the type cannot hold a package to at load.");
-  lines.push("const viewOwners = new Map<string, string>();");
-  lines.push('const viewPlacements = new Set<string>(["window", "tile"]);');
-  lines.push('const bodyKinds = new Set<string>(["pixels", "readout", "component"]);');
   lines.push("// An action's id is what a binding profile stores, so it is unique across the product and names its");
   lines.push("// package. Its defaults are held to the names the shell binds and to the ones it already binds at a");
   lines.push("// default: a key on both would fire the action AND the Game Boy button (or the shell action) it is on.");
@@ -873,42 +890,6 @@ function renderMenus({ packages, outDir }) {
     "    throw new Error(`the package ${pkg} declares the row ${row.id} gated on the key ${row.when.key}, which ` +",
   );
   lines.push('      `the role ${row.role} does not read`);');
-  lines.push("  }");
-  lines.push("}");
-  lines.push("");
-  lines.push("/** One contributed view: its id unique across the product, its placement one the shell has, its body kind");
-  lines.push(" *  one the shell renders with what that kind is opened by (a session's `open`, a component's `component`), and");
-  lines.push(" *  no `visible` on a window view (the type refuses that; this backs the type). */");
-  lines.push("function checkView(pkg: string, view: ViewDef): void {");
-  lines.push("  const owner = viewOwners.get(view.id);");
-  lines.push("  if (owner !== undefined) {");
-  lines.push("    throw new Error(owner === pkg");
-  lines.push("      ? `the package ${pkg} declares the view ${view.id} twice`");
-  lines.push("      : `two packages declare the view ${view.id}: ${owner} and ${pkg}`);");
-  lines.push("  }");
-  lines.push("  viewOwners.set(view.id, pkg);");
-  lines.push("  if (!viewPlacements.has(view.placement)) {");
-  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} at the placement ${view.placement}, ` +");
-  lines.push('      `which is no placement (the placements are window, tile)`);');
-  lines.push("  }");
-  lines.push("  const kind = view.body?.kind;");
-  lines.push("  if (!bodyKinds.has(kind)) {");
-  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} with the body kind ${kind}, ` +");
-  lines.push('      `which is no body kind (the kinds are pixels, readout, component)`);');
-  lines.push("  }");
-  lines.push("  const body = view.body as { readonly open?: unknown; readonly component?: unknown };");
-  lines.push("  if (kind === \"component\") {");
-  lines.push("    if (typeof body.component !== \"function\") {");
-  lines.push("      throw new Error(`the package ${pkg} declares the view ${view.id} with a component body and no ` +");
-  lines.push('        "component (reactView builds the one a component body carries)");');
-  lines.push("    }");
-  lines.push("  } else if (typeof body.open !== \"function\") {");
-  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} with a ${kind} body and no open ` +");
-  lines.push('      `(a ${kind} body\'s open is what the shell calls)`);');
-  lines.push("  }");
-  lines.push("  if (view.placement !== \"tile\" && (view as { readonly visible?: unknown }).visible !== undefined) {");
-  lines.push("    throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +");
-  lines.push('      `a tile view has`);');
   lines.push("  }");
   lines.push("}");
   lines.push("");
@@ -957,7 +938,6 @@ function renderMenus({ packages, outDir }) {
   lines.push("");
   lines.push("for (const { pkg, ui } of UI_CONTRIBUTIONS) {");
   lines.push("  for (const row of ui.rows ?? []) checkRow(\"system.settings\", pkg, row);");
-  lines.push("  for (const view of ui.views ?? []) checkView(pkg, view);");
   lines.push("  for (const action of ui.actions ?? []) checkAction(pkg, action);");
   lines.push("  for (const tracker of ui.trackers ?? []) {");
   lines.push("    if (!trackerIds.has(tracker.id)) {");
@@ -992,6 +972,90 @@ function renderMenus({ packages, outDir }) {
   lines.push('        `which is no placement (the placements are ${PLACEMENTS.join(", ")})`);');
   lines.push("    }");
   lines.push("  }");
+  lines.push("}");
+  lines.push("");
+  return lines.join("\n");
+}
+
+/** The generated views module (`<shell>/ui/generated/views.ts`): each package's `retroplug.views` module, in product
+ *  order, and the checks a view is held to at load. Apart from menus.ts, which every pure-tier test that reaches
+ *  menuDefs.ts bundles with no alias: a component view imports React, and the UI bundle is the one that can resolve it
+ *  (tools/build-ui.js's aliases and nodePaths). The order is the views' order: a window view is looked up by id (the
+ *  first match, which the duplicate check makes unique) while the tile layers stack where the package sits in the
+ *  product list, so it is the list's order, not a sort. */
+function renderViews({ packages, outDir }) {
+  const contributors = packages.filter((p) => p.views);
+  const local = (name) => `views_${name.replace(/[^A-Za-z0-9_]/g, "_")}`;
+  const lines = [
+    "// Generated by packages/retroplug/scripts/lib/packages.mjs from the desktop product's package list and the",
+    "// packages' manifests. Do not edit; edit a manifest and rebuild.",
+    "//",
+    "// The product's views, in product order: each package's `retroplug.views` module, default-exporting the window",
+    "// and tile views it draws. Only the shell's view slots import this module, and only the UI bundle resolves it: a",
+    "// component view imports React, which the pure tier (the menu tests, the control plane, the CLI) has no path to.",
+    'import type { ViewDef, ViewsContribution } from "@retroplug/ui/contribution";',
+  ];
+  for (const p of contributors) {
+    lines.push(`import ${local(p.pkg.name)} from "${moduleSpecifier(outDir, p.pkg, p.views)}";`);
+  }
+  lines.push("");
+  lines.push("/** Each package's views, in product order. */");
+  lines.push("export const VIEW_CONTRIBUTIONS: readonly { pkg: string; views: ViewsContribution }[] = [");
+  for (const p of contributors) {
+    lines.push(`  { pkg: ${JSON.stringify(p.pkg.name)}, views: ${local(p.pkg.name)} },`);
+  }
+  lines.push("];");
+  lines.push("");
+  lines.push("/** The product's views, in product order, with the package each came from: what host.views.open looks");
+  lines.push(" *  a window view up by id, and the tile layers every tile mounts in turn. */");
+  lines.push("export const VIEWS: readonly { pkg: string; view: ViewDef }[] = VIEW_CONTRIBUTIONS.flatMap(({ pkg, views }) =>");
+  lines.push("  (views.views ?? []).map((view) => ({ pkg, view })),");
+  lines.push(");");
+  lines.push("");
+  lines.push("// A view's id is its test id and the id host.views.open names, so it is unique across the product; its");
+  lines.push("// placement and its body's kind are the two data fields the type cannot hold a package to at load.");
+  lines.push("const viewOwners = new Map<string, string>();");
+  lines.push('const viewPlacements = new Set<string>(["window", "tile"]);');
+  lines.push('const bodyKinds = new Set<string>(["pixels", "readout", "component"]);');
+  lines.push("");
+  lines.push("/** One contributed view: its id unique across the product, its placement one the shell has, its body kind");
+  lines.push(" *  one the shell renders with what that kind is opened by (a session's `open`, a component's `component`), and");
+  lines.push(" *  no `visible` on a window view (the type refuses that; this backs the type). */");
+  lines.push("function checkView(pkg: string, view: ViewDef): void {");
+  lines.push("  const owner = viewOwners.get(view.id);");
+  lines.push("  if (owner !== undefined) {");
+  lines.push("    throw new Error(owner === pkg");
+  lines.push("      ? `the package ${pkg} declares the view ${view.id} twice`");
+  lines.push("      : `two packages declare the view ${view.id}: ${owner} and ${pkg}`);");
+  lines.push("  }");
+  lines.push("  viewOwners.set(view.id, pkg);");
+  lines.push("  if (!viewPlacements.has(view.placement)) {");
+  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} at the placement ${view.placement}, ` +");
+  lines.push('      `which is no placement (the placements are window, tile)`);');
+  lines.push("  }");
+  lines.push("  const kind = view.body?.kind;");
+  lines.push("  if (!bodyKinds.has(kind)) {");
+  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} with the body kind ${kind}, ` +");
+  lines.push('      `which is no body kind (the kinds are pixels, readout, component)`);');
+  lines.push("  }");
+  lines.push("  const body = view.body as { readonly open?: unknown; readonly component?: unknown };");
+  lines.push('  if (kind === "component") {');
+  lines.push('    if (typeof body.component !== "function") {');
+  lines.push("      throw new Error(`the package ${pkg} declares the view ${view.id} with a component body and no ` +");
+  lines.push('        "component (reactView builds the one a component body carries)");');
+  lines.push("    }");
+  lines.push('  } else if (typeof body.open !== "function") {');
+  lines.push("    throw new Error(`the package ${pkg} declares the view ${view.id} with a ${kind} body and no open ` +");
+  lines.push('      `(a ${kind} body\'s open is what the shell calls)`);');
+  lines.push("  }");
+  lines.push('  if (view.placement !== "tile" && (view as { readonly visible?: unknown }).visible !== undefined) {');
+  lines.push("    throw new Error(`the package ${pkg} declares the window view ${view.id} with a visible flag, which only ` +");
+  lines.push('      `a tile view has`);');
+  lines.push("  }");
+  lines.push("}");
+  lines.push("");
+  lines.push("for (const { pkg, views } of VIEW_CONTRIBUTIONS) {");
+  lines.push("  for (const view of views.views ?? []) checkView(pkg, view);");
   lines.push("}");
   lines.push("");
   return lines.join("\n");
@@ -1629,6 +1693,10 @@ export function generate({ root = REPO } = {}) {
     {
       path: join(shell.dir, "ui/generated/menus.ts"),
       content: renderMenus({ packages: contributionsOf, outDir: join(shell.dir, "ui/generated") }),
+    },
+    {
+      path: join(shell.dir, "ui/generated/views.ts"),
+      content: renderViews({ packages: contributionsOf, outDir: join(shell.dir, "ui/generated") }),
     },
     {
       path: join(shell.dir, "cli/generated/tools.ts"),

@@ -7,8 +7,8 @@
 # meet at a package that is nobody's own.
 #
 # Header-only, so an INTERFACE target: a consumer gets this package's include root, where the two headers keep the paths
-# they are included by ("transport/N8ReliableLink.hpp", "n8wire/ExpansionVolume.hpp"), and node-sdk's include root, for
-# the link's frame store (util/FixedQueue.hpp, header-only: nothing here links reflect-cpp or any library). A device build
+# they are included by ("transport/N8ReliableLink.hpp", "n8wire/ExpansionVolume.hpp"), and node-sdk's include root,
+# for the link's frame store (util/FixedQueue.hpp, header-only: nothing here links reflect-cpp or any library). A build
 # adds it too, between node-sdk and the packages that list it.
 add_library(retroplug-n8-wire INTERFACE)
 target_include_directories(retroplug-n8-wire INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)

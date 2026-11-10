@@ -13,7 +13,7 @@ import { StableSlot } from "../lvgl/StableSlot";
 import { ComponentView } from "./ComponentView";
 import { PixelView } from "./PixelView";
 import { ReadoutView } from "./ReadoutView";
-import { tileViews } from "../host/menuContributions";
+import { tileViews } from "../host/viewContributions";
 import { useSystem } from "../stores/useStores";
 import { subscribeViewShown, viewAppliesTo, viewShown } from "./viewSession";
 

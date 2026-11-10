@@ -16,7 +16,6 @@ import {
   firstWinsMenuIds,
   menuPlacement,
   roleRows,
-  windowViewOrReport,
 } from "../../host/menuContributions";
 import { LAYOUT_VALUES, AUDIO_ROUTING_VALUES, type AudioRouting } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
@@ -113,14 +112,12 @@ function hostOf(ctx: MenuContext): UiHost {
   if (given) return given;
   let built = hosts.get(ctx);
   if (!built) {
-    // A context built over the stores alone (the menu tests) has no window to open a view in. Its refusals are App's
-    // (windowViewOrReport is the one place they are worded); a view that resolves simply has nowhere to go here.
+    // A context built over the stores alone (the menu tests) has no window to open a view in, and no view registry
+    // either: App's `views.open` is the one place an id is looked up and its refusals worded. This host imports no view
+    // function on purpose, because importing viewContributions would pull the generated views module, and with it a
+    // component view's React, into every pure-tier test that reaches this file.
     const views = {
-      open: (id: string) => {
-        const open = windowViewOrReport(id);
-        if ("report" in open) console.warn(open.report);
-        else console.warn(`[views] the menu's host has no window to open ${id} in`);
-      },
+      open: (id: string) => console.warn(`[views] the menu's host has no window to open ${id} in`),
     };
     built = createUiHost(ctx.stores, { views, beginImport: ctx.beginSongImport });
     hosts.set(ctx, built);

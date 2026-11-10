@@ -13,7 +13,8 @@
 //   with no nodes, a sync override whose key, node type or unused off-mode is wrong, two contributions whose generated
 //   identifiers mangle to one name, a label below 16, a gap, a role naming an undeclared or an unwired type, a named
 //   module that does not exist, a contribution its exports do not publish, a manifest whose name is not its
-//   directory's, a contribution outside ts/ and a contributing package the shell does not declare, a view body with no
+//   directory's, a contribution outside ts/ and a contributing package the shell does not declare, a views or ui module
+//   named outside the package's ts/ui/ tree, a view body with no
 //   `open` (a session's) or no `component` (a component's), an action id twice (one package or two), an action id its
 //   package does not prefix, and an action default on a key or pad name the shell does not resolve, a single uppercase
 //   letter the hosts never send, or one the shell already binds.
@@ -130,6 +131,12 @@ test("the fixture product list and manifests generate the expected menus.ts", as
   expect(await matchesFixture("generate", "menus.ts")).toBe(true);
 });
 
+test("the fixture product list and manifests generate the expected views.ts", async () => {
+  // The views are a module of their own: apart from menus.ts, which the pure tier bundles, so that a component view's
+  // React is reached only from the UI bundle.
+  expect(await matchesFixture("generate", "views.ts")).toBe(true);
+});
+
 test("the generated menus module carries the packages' UI contributions in product order", async () => {
   // zeta is listed before alpha and beta, so this is the product list's order and not an alphabetical sort.
   const { packages } = await drive("ui");
@@ -196,13 +203,16 @@ test("the generated menus module refuses a UI service id declared twice", async 
 });
 
 test("the generated menus module carries the packages' views in product order", async () => {
-  const { views, error } = await drive("views");
+  const { views, menus, error } = await drive("views");
   if (error) console.log(`# views: ${error}`);
   expect(views).toEqual([
     { pkg: "zeta", id: "zeta-view", placement: "tile", kind: "readout" },
     { pkg: "alpha", id: "alpha-view", placement: "tile", kind: "readout" },
     { pkg: "beta", id: "beta-view", placement: "window", kind: "pixels" },
   ]);
+  // zeta is a views-only package in this mode, so the menus module lists no row for it while the views module keeps its
+  // view: the two halves read the same manifests and each takes what the package declares.
+  expect(menus).toEqual(["alpha"]);
 });
 
 test("the generated menus module refuses a view id one package declares twice", async () => {
@@ -269,6 +279,28 @@ test("the generated menus module refuses a visible flag on a window view", async
   console.log(`# window view visible: ${error}`);
   expect(error).toBe("the package alpha declares the window view alpha-view with a visible flag, which only a tile " +
     "view has");
+});
+
+test("the generator refuses a views module named outside the package's ts/ui/ tree", async () => {
+  // A views module is UI code, and the tree rule 3 admits a React host module from is ts/ui/: a views module beside it
+  // would be a second, unjudged door for one.
+  const { error } = await drive("views-outside-ui");
+  console.log(`# views outside ts/ui: ${error}`);
+  expect(error).toBe(
+    "alpha: retroplug.views names ts/views.ts, which is outside the package's ts/ui/ tree: a views module is UI " +
+      "code, and rule 3 admits a React host module only from there",
+  );
+});
+
+test("the generator refuses a ui module named outside the package's ts/ui/ tree", async () => {
+  // The same placement rule for `retroplug.ui`: every package's entry is ts/ui/index.ts, and one that were not would
+  // import React from a file surfaceOf gives no surface.
+  const { error } = await drive("ui-outside-ui");
+  console.log(`# ui outside ts/ui: ${error}`);
+  expect(error).toBe(
+    "alpha: retroplug.ui names ts/ui.ts, which is outside the package's ts/ui/ tree: the ui module is the package's " +
+      "UI code, and rule 3 admits a React host module only from there",
+  );
 });
 
 test("the generated menus module carries the packages' actions in product order", async () => {
@@ -730,7 +762,7 @@ test("a contribution its exports do not publish is refused, naming the file and 
   expect(error).toBe(
     "alpha: its manifest names ts/app.ts, which its exports do not publish: the generated import needs the entry " +
       "whose target is ./ts/app.ts (its exports: ./consoles -> ./ts/consoles.ts, ./nodes -> ./ts/nodes.ts, " +
-      "./appRuntime -> ./ts/appRuntime.ts, ./ui -> ./ts/ui.ts)",
+      "./appRuntime -> ./ts/appRuntime.ts, ./ui -> ./ts/ui/index.ts)",
   );
 });
 
@@ -897,8 +929,8 @@ test("an unchanged input leaves the generated files untouched", async () => {
   const report = await drive("twice");
   const [changedFirst, changedSecond] = report.changed as [boolean[], boolean[]];
   const [before, after] = report.mtimes as [number[], number[]];
-  expect(changedFirst).toEqual([true, true, true, true, true, true, true, true]);
-  expect(changedSecond).toEqual([false, false, false, false, false, false, false, false]);
+  expect(changedFirst).toEqual([true, true, true, true, true, true, true, true, true]);
+  expect(changedSecond).toEqual([false, false, false, false, false, false, false, false, false]);
   // The driver aged the files by a minute before the second run, so a rewrite would show: these are the same stamps.
   expect(after).toEqual(before);
   expect(after[0]).toBe(before[0]);
@@ -909,6 +941,7 @@ test("an unchanged input leaves the generated files untouched", async () => {
   expect(after[5]).toBe(before[5]);
   expect(after[6]).toBe(before[6]);
   expect(after[7]).toBe(before[7]);
+  expect(after[8]).toBe(before[8]);
 });
 
 test("the generated module refuses two control-plane halves of one id, naming both packages", async () => {

@@ -1,8 +1,12 @@
 {
   "name": "@retroplug/zeta",
   "exports": {
-    "./ui": "./ts/ui.ts"
+    "./ui": "./ts/ui/index.ts",
+    "./views": "./ts/ui/views.ts"
   },
   "private": true,
-  "retroplug": { "ui": "ts/ui.ts" }
+  "retroplug": {
+    "ui": "ts/ui/index.ts",
+    "views": "ts/ui/views.ts"
+  }
 }
