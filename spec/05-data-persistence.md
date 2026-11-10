@@ -22,7 +22,7 @@ and **parses** it back. The model lives in
 | Type | Fields | Notes |
 |---|---|---|
 | `ProjectConfig` | `schemaVersion: string`, `name?`, `settings`, `systems[]` | The root; `schemaVersion` is a *string* (`"1"`) for historical reasons. `name` is present ONLY when the user named the project (`Project` > `Name`); the display name a nameless project shows is derived from its systems at runtime and never written (see [03-ts-layer.md](03-ts-layer.md)) |
-| `ProjectSettings` | `layout`, `midiRouting`, `audioRouting` (string enums; `layout`/`audioRouting` in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts), `midiRouting` in [@retroplug/core's midiRouting.ts](../packages/core/ts/midiRouting.ts)), `zoom 0-6` | Three string enums + a `zoom` magnitude (`0` = inherit the user default). Native's numeric enums are recovered at the RPC boundary |
+| `ProjectSettings` | `layout`, `midiRouting`, `audioRouting` (string enums; `layout`/`audioRouting` in [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts), `midiRouting` in [@retroplug/core's midiRouting.ts](../packages/core/ts/midiRouting.ts)), `zoom 0-6`, `sections` | Three string enums + a `zoom` magnitude (`0` = inherit the user default) and the package-contributed `sections`, each a block under its own key in the file. Native's numeric enums are recovered at the RPC boundary |
 | `SystemThin` | `platform`, `romPath?`, `savPath?`, `savSuffix?`, `embeddedRom?`, `settings?`, `roles?` | One serialized system |
 
 **"Thin"** means the model carries no binary blobs (ROM/SRAM/savestate/kit
@@ -210,6 +210,18 @@ JSON**, backed by two mechanisms:
    `kind` is persisted verbatim, so this is the case a rename of any role kind must follow: an
    exact-match map over `systems[].roles[].kind`, leaving each role's `config` untouched (the
    assets role's `overrides` list is the user's kit/font/theme replacements).
+
+**Project sections have the same policy at their own scope.** A non-core key under `settings` is a package's
+`ProjectSection` (or, with no contributor, a block the shell keeps verbatim: E5): its contributor may declare an
+optional `version` and `migrations` (raw `(obj) => obj` steps keyed by FROM-version, applied to the block before its
+`schema.parse`), a numeric `schemaVersion` inside the block, and an unstamped block reads as version 1 (so the first
+versioned release declares 2 with one step keyed 1). A block stamped **newer** than its contributor is refused at
+section scope: readers get the contributor's `defaults()`, `ProjectStore.setSection` refuses a patch with one warning
+naming the key and both versions, and the writer keeps the raw block and writes it back byte-identical. A contributor's
+`schema.parse`/`defaults()`, a project service's `poll`/`graphModel`/`state` and a placer's `place` that throw are
+isolated with one warning per package and key and read as no section (its defaults), no model, no state or no
+placement, so the rest of the project loads and publishes. No product's section declares a version today (the
+controller's block is additive and unstamped).
 
 An `*-assets` role config is not limited to `overrides`. BlipToaster's also carries `settings`,
 the fields of the cart's baked 16-byte rig-settings block the project pins (default theme / font /

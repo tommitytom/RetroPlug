@@ -333,10 +333,12 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
    `PackageContributions`, so an app module that declares one imports `@retroplug/tracker/packageContributions` for the
    type. The manifest's `protocol.placer` names a module default-exporting `definePlacer({ key, normalize, place })`,
    which buildGraph calls at the slots it holds; its `key` is the `projectServices` factory's key whose `graphModel` is
-   the model it places. A `placer`, a kind's `control` module and a kind item's control-plane half are CONTROL-PLANE
-   code: they live in the package's `ts/control/`, which a device pack's scenario leaves out (the scanner excludes the
-   directory of an `index` entry, so a sibling of `index.ts` is never part of the portable core), and they may read no
-   node module and no zod beyond what the planner's bundle check allows.
+   the model it places (the generated registry refuses a service or placer key that is one of the shell's own or that
+   names no section). A `placer`, a kind's `control` module and a kind item's control-plane half are CONTROL-PLANE
+   code: they live in the package's `ts/control/`, and they may read no node module and no zod beyond what the planner's
+   bundle check allows. A device pack's scenario leaves that tree out only when its `app` entry IS `ts/control/index.ts`:
+   the scanner skips the `app`, `ui` and `cli` modules and the directory of any of them named `index` (item 10), so with
+   `app: ts/app.ts` a `ts/control/` sibling is scanned like any other module of the core.
 6. `tsconfig.json` extends [tsconfig.base.json](../tsconfig.base.json) in two lines, so the package typechecks alone.
    A package with `retroplug.ui` exports the module it names (the shell imports it through the generated menus), one
    with `retroplug.views` exports `./views` (the generated view table imports it there), one with `retroplug.cli`
@@ -381,13 +383,16 @@ the allocator library is `EXCLUDE_FROM_ALL` because only test binaries (built by
 9. A device pack's imports are limited to `build-device-pack.mjs`'s four-file core SDK (`defineNode`,
    `settingsSchema`, `descriptor`, `register`), and `pico/n8-host/exporter-stale.sh` watches `packages/core/ts` plus
    each pack's own `ts/`.
-10. A scenario's whole-core scan skips ONE module of the package: the manifest's `retroplug.app`, the control plane's
-   half, because that half is the desktop's (zod's) and never runs on the engine. So every zod-using control-plane
-   module has to BE that `app` module: a helper it imports is scanned like any other module of the core, and a library
-   call the engine lacks there is refused, naming the helper's source line. A core module that imports the `app` module is
-   refused by name (the importer and the import), since the scan would otherwise report whichever library call zod's
-   internals make, and the core bundle is held to the same allow list the scenario bundle has: a module the scenario never
-   reaches may not import another package either.
+10. A scenario's whole-core scan skips THREE modules of the package, the control plane's halves: the manifest's
+   `retroplug.app`, `retroplug.ui` and `retroplug.cli`, because those are the desktop's (zod's, React's, the CLI's) and
+   never run on the engine. It also skips the whole directory of one of them that is an `index` module
+   ([build-device-pack.mjs](../packages/retroplug/scripts/build-device-pack.mjs) builds the skip list): an
+   `app: ts/control/index.ts` leaves `ts/control/` out with it, which is why item 5's convention holds only for that
+   entry shape. A helper the scan does not skip (an `app: ts/app.ts` with a `ts/control/` sibling, say) is scanned like
+   any other module of the core, and a library call the engine lacks there is refused, naming the helper's source line.
+   A core module that imports a skipped module is refused by name (the importer and the import), since the scan would
+   otherwise report whichever library call zod's internals make, and the core bundle is held to the same allow list the
+   scenario bundle has: a module the scenario never reaches may not import another package either.
    [test/graph/device-pack.test.ts](../packages/retroplug/test/graph/device-pack.test.ts) holds all of it (a pack whose
    `app` calls what the engine lacks, accepted; a pack whose app imports one that does, refused; a core importing its own
    `app` module, refused by name; an unreached core module importing an undeclared package, refused by name).

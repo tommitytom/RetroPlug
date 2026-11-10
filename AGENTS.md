@@ -479,7 +479,16 @@ The rules below are the parts that don't fit those.
   `(obj) => obj` step to its migrations map
   ([migrate.ts](packages/retroplug/src/migrate.ts)), applied to the raw JSON *before* zod
   validates; steps must be idempotent-safe. Additive-only changes still need no step (zod
-  `.default()`s fill them). Two exceptions: the per-system **role-config** that crosses to
+  `.default()`s fill them). A **package's project section** (a non-core key under `settings`, `ProjectSection` in
+  `core/definePackage`) has the same policy at its own scope: its contributor may declare a `version` and
+  `migrations` (raw steps applied to its block before its `schema.parse`), a numeric `schemaVersion` inside the block,
+  and an unstamped block reads as version 1, so a section's first versioned release declares 2 with one step keyed 1.
+  A block stamped **newer** than its contributor is refused at section scope: readers get its `defaults()`,
+  `setSection` refuses a patch with one warning, and only the writer keeps the raw block, written back byte-identical.
+  E5: every non-core `settings` key is kept verbatim even with no contributor, and a contributor's
+  `schema.parse`/`defaults()`, a service's `poll`/`graphModel`/`state` and a placer's `place` that throw are isolated
+  with one warning per package and key and read as no section / no model / no state / no placement, so the rest of the
+  project loads and publishes. Two exceptions: the per-system **role-config** that crosses to
   native stays reflect-cpp `DefaultIfMissing`-tolerant (the one outlier), and the LSDj `.sav`
   carries its own binary format version. The model + stamps live in
   [spec/05-data-persistence.md](spec/05-data-persistence.md).
